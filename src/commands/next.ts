@@ -50,7 +50,7 @@
 // - The `dashboardCmd` injection point lets tests assert pane B's argv
 //   without spawning the dashboard's alt-screen loop in a test runner.
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 
@@ -88,17 +88,107 @@ const STATE_FILE_PATH = '.claude/ralph-loop.local.md';
 export type HostMode = 'ghostty-split' | 'inline';
 
 /**
+ * Result shape from `ghostty +help` parsing.
+ *
+ * `available` is the full set of `+action` names found in the output (strings
+ * without the leading `+`). `parseError` is set when `ghostty +help` failed to
+ * run (binary not on PATH, exited non-zero) — callers treat it as "actions
+ * unknown, fall back to inline".
+ */
+export interface GhosttyActionsResult {
+	available: Set<string>;
+	parseError?: string;
+}
+
+/**
+ * Injection type for a synchronous spawn used only to probe `ghostty +help`.
+ * Keeping it synchronous (~5ms) avoids the async plumbing overhead for a
+ * quick capability probe.
+ *
+ * `cmd` is argv-style. Returns `{ stdout, exitCode }`.
+ * Returns `null` (or throws) if the binary is not on PATH.
+ */
+export type GhosttySpawnSyncFn = (cmd: string[]) => { stdout: string; exitCode: number } | null;
+
+/** Default synchronous probe using `Bun.spawnSync`. */
+function defaultGhosttySpawnSync(cmd: string[]): { stdout: string; exitCode: number } | null {
+	try {
+		const result = Bun.spawnSync(cmd, {
+			stdout: 'pipe',
+			stderr: 'pipe',
+		});
+		if (result.stdout === null) return null;
+		return {
+			stdout: new TextDecoder().decode(result.stdout),
+			exitCode: result.exitCode ?? 1,
+		};
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Run `ghostty +help` and parse the available action names (lines matching
+ * `/^\s*\+\w+/`). Used by `detectHost` to check whether `+new-split` is
+ * supported before attempting a Ghostty split — avoids the alarming
+ * "Ghostty failed to initialize!" stderr when the action is unavailable.
+ *
+ * If `ghostty +help` fails or is not on PATH, returns `{ available: new Set(), parseError }`.
+ */
+export function detectGhosttyActions(
+	spawnSync: GhosttySpawnSyncFn = defaultGhosttySpawnSync,
+): GhosttyActionsResult {
+	const result = spawnSync(['ghostty', '+help']);
+	if (result === null) {
+		return { available: new Set(), parseError: 'ghostty binary not found or spawn failed' };
+	}
+	if (result.exitCode !== 0 && result.stdout.trim().length === 0) {
+		return { available: new Set(), parseError: `ghostty +help exited with code ${result.exitCode}` };
+	}
+	// Parse lines starting with `+` (optionally preceded by whitespace), extract
+	// the action name up to the first whitespace. Action names may contain
+	// hyphens (e.g. `+new-split`), so we capture `[\w-]+` rather than `\w+`.
+	const actions = new Set<string>();
+	for (const line of result.stdout.split('\n')) {
+		const match = /^\s*\+([\w-]+)/.exec(line);
+		if (match && match[1]) {
+			actions.add(match[1]);
+		}
+	}
+	return { available: actions };
+}
+
+/**
  * Detect the host terminal. The detection order matters: VS Code's embedded
  * terminal sometimes also sets `GHOSTTY_RESOURCES_DIR` (the user may have
  * Ghostty as their default terminal but be running VS Code's embedded
  * terminal which inherits env vars from the parent shell). We check
  * `TERM_PROGRAM=vscode` FIRST so the IDE-embedded case wins.
+ *
+ * When Ghostty env vars are detected, we additionally probe `ghostty +help`
+ * to verify that `+new-split` is available on this version. If the action is
+ * absent or the probe fails, we fall back to inline mode silently.
+ *
+ * Pass a pre-computed `actionsResult` (from a prior `detectGhosttyActions`
+ * call) to avoid a second `ghostty +help` spawn when the result is already
+ * known. Otherwise, a `ghosttySpawnSync` override is accepted for tests.
  */
-export function detectHost(env: NodeJS.ProcessEnv = process.env): HostMode {
+export function detectHost(
+	env: NodeJS.ProcessEnv = process.env,
+	ghosttySpawnSync?: GhosttySpawnSyncFn,
+	actionsResult?: GhosttyActionsResult,
+): HostMode {
 	if (env['TERM_PROGRAM'] === 'vscode') return 'inline';
-	if (env['GHOSTTY_RESOURCES_DIR']) return 'ghostty-split';
-	if (env['TERM_PROGRAM'] === 'ghostty') return 'ghostty-split';
-	return 'inline';
+	const isGhostty = env['GHOSTTY_RESOURCES_DIR'] !== undefined || env['TERM_PROGRAM'] === 'ghostty';
+	if (!isGhostty) return 'inline';
+
+	// Ghostty detected — validate +new-split is available before committing.
+	const { available, parseError } = actionsResult ?? detectGhosttyActions(ghosttySpawnSync);
+	if (parseError !== undefined || !available.has('new-split')) {
+		// Caller will emit the hint; return inline so runNext falls back cleanly.
+		return 'inline';
+	}
+	return 'ghostty-split';
 }
 
 // --- Vendored template -----------------------------------------------------
@@ -168,6 +258,144 @@ export function writeStateFile(
 		);
 	}
 	writeFileSync(target, body, 'utf8');
+	return target;
+}
+
+// --- Stop-hook materialization ---------------------------------------------
+
+/** Path of the stop hook relative to cwd. */
+export const STOP_HOOK_RELATIVE = '.claude/hooks/ralph-loop-stop.sh';
+
+/** Path of the project-local Claude settings file relative to cwd. */
+export const SETTINGS_LOCAL_RELATIVE = '.claude/settings.local.json';
+
+/**
+ * The Claude Code hooks shape this story registers. The Stop event receives
+ * a nested array of hook matchers; each matcher has a `hooks` array of
+ * command descriptors. Per claude-code-hooks docs:
+ *   { hooks: { Stop: [ { hooks: [ { type: 'command', command: '...' } ] } ] } }
+ */
+const STOP_HOOK_COMMAND = `bash ${STOP_HOOK_RELATIVE}`;
+
+/**
+ * Materialize the vendored stop-hook script to `<cwd>/.claude/hooks/ralph-loop-stop.sh`
+ * and chmod it executable. Called BEFORE writing the plugin state file so the
+ * hook is registered before claude starts.
+ *
+ * Injection point `getStopHookContents` lets tests supply a fake body so they
+ * don't depend on the real embedded asset.
+ */
+export function materializeStopHook(
+	cwd: string,
+	getStopHookContents: () => string = () => readEmbedded('ralph-loop-stop-hook.sh'),
+): string {
+	const target = join(cwd, STOP_HOOK_RELATIVE);
+	const dir = dirname(target);
+	if (!existsSync(dir)) {
+		mkdirSync(dir, { recursive: true });
+	}
+	const contents = getStopHookContents();
+	writeFileSync(target, contents, 'utf8');
+	chmodSync(target, 0o755);
+	return target;
+}
+
+/**
+ * Deep-merge helper for plain JSON objects. Source keys overwrite destination
+ * keys at every depth; array values are replaced (not concatenated) to keep
+ * the merge predictable. Non-object values at the same key follow the same
+ * last-write-wins rule.
+ *
+ * We keep this intentionally minimal — `settings.local.json` only ever has
+ * a shallow-to-medium depth (`hooks.Stop[0].hooks[0].command`), so a full
+ * recursive merge is strictly more than needed but adds no risk.
+ */
+export function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+	const result: Record<string, unknown> = { ...target };
+	for (const [key, val] of Object.entries(source)) {
+		const existing = result[key];
+		if (
+			val !== null &&
+			typeof val === 'object' &&
+			!Array.isArray(val) &&
+			existing !== null &&
+			typeof existing === 'object' &&
+			!Array.isArray(existing)
+		) {
+			result[key] = deepMerge(
+				existing as Record<string, unknown>,
+				val as Record<string, unknown>,
+			);
+		} else {
+			result[key] = val;
+		}
+	}
+	return result;
+}
+
+/**
+ * The hooks block ralph injects into `.claude/settings.local.json`. We write
+ * this shape because the Claude Code hooks API requires the nested form:
+ *   { hooks: { Stop: [ { hooks: [ { type: 'command', command: '...' } ] } ] } }
+ * This is the canonical hooks document format per claude-code-hooks docs.
+ */
+function buildHooksBlock(): Record<string, unknown> {
+	return {
+		hooks: {
+			Stop: [
+				{
+					hooks: [
+						{
+							type: 'command',
+							command: STOP_HOOK_COMMAND,
+						},
+					],
+				},
+			],
+		},
+	};
+}
+
+/**
+ * Write or merge `<cwd>/.claude/settings.local.json` so the Stop hook command
+ * is registered. Existing keys in the file are preserved via deep-merge — we
+ * never overwrite a key that ralph didn't put there.
+ *
+ * Injection point `reader` lets tests supply existing file contents without
+ * touching the real filesystem.
+ */
+export function writeSettingsLocal(
+	cwd: string,
+	reader: (path: string) => string | null = (p) => {
+		try {
+			return existsSync(p) ? readFileSync(p, 'utf8') : null;
+		} catch {
+			return null;
+		}
+	},
+): string {
+	const target = join(cwd, SETTINGS_LOCAL_RELATIVE);
+	const dir = dirname(target);
+	if (!existsSync(dir)) {
+		mkdirSync(dir, { recursive: true });
+	}
+
+	const raw = reader(target);
+	let existing: Record<string, unknown> = {};
+	if (raw !== null && raw.trim().length > 0) {
+		try {
+			const parsed: unknown = JSON.parse(raw);
+			if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+				existing = parsed as Record<string, unknown>;
+			}
+		} catch {
+			// Malformed JSON — start from an empty object rather than clobbering.
+			// The merge below will add our keys without losing any valid state.
+		}
+	}
+
+	const merged = deepMerge(existing, buildHooksBlock());
+	writeFileSync(target, JSON.stringify(merged, null, 2) + '\n', 'utf8');
 	return target;
 }
 
@@ -288,6 +516,22 @@ export interface NextOptions {
 	sessionId?: string;
 	/** PID written to the state-file frontmatter (override for tests). Default: `process.pid`. */
 	pid?: number;
+	/**
+	 * Override the stop-hook materializer for tests. Receives `cwd` and a
+	 * `getContents` factory; returns the path written (or simulated).
+	 */
+	hookMaterializer?: (cwd: string) => string;
+	/**
+	 * Override the settings.local.json writer for tests. Receives `cwd`;
+	 * returns the path written (or simulated).
+	 */
+	settingsWriter?: (cwd: string) => string;
+	/**
+	 * Override the synchronous `ghostty +help` probe used by `detectHost` to
+	 * validate `+new-split` availability. Tests inject a scripted response so
+	 * they never exec a real `ghostty` binary.
+	 */
+	ghosttySpawnSync?: GhosttySpawnSyncFn;
 }
 
 /**
@@ -306,11 +550,62 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
 	const completionPromise = options.completionPromise ?? DEFAULT_COMPLETION_PROMISE;
 	const permissionMode = options.permissionMode ?? readPermissionMode();
-	const host = options.hostMode ?? detectHost();
+
+	// When the host mode is not explicitly overridden (i.e., we're in production,
+	// not in a test that supplies `hostMode`), run the Ghostty capability probe
+	// ONCE and pass the pre-computed result to detectHost — avoids a second
+	// `ghostty +help` spawn when both the hint logic and mode detection need it.
+	let host: HostMode;
+	if (options.hostMode !== undefined) {
+		host = options.hostMode;
+	} else {
+		// Run probe once and cache the result.
+		const ghosttyActions = detectGhosttyActions(options.ghosttySpawnSync);
+		host = detectHost(process.env, options.ghosttySpawnSync, ghosttyActions);
+
+		// If Ghostty was detected in env but +new-split is unavailable, inform operator.
+		const isGhosttyEnv =
+			process.env['GHOSTTY_RESOURCES_DIR'] !== undefined ||
+			process.env['TERM_PROGRAM'] === 'ghostty';
+		if (isGhosttyEnv && host === 'inline') {
+			printHint(
+				`Ghostty +new-split unavailable on this version — running inline. Open \`ralph dashboard\` in another pane manually if you want one.`,
+			);
+		}
+	}
+
 	const spawn = options.spawn ?? defaultSpawn;
 	const writer =
 		options.writer ??
 		((cwd2: string, body: string) => writeStateFile(cwd2, body, { force: options.force ?? false }));
+	const hookMaterializer = options.hookMaterializer ?? ((cwd2: string) => materializeStopHook(cwd2));
+	const settingsWriter = options.settingsWriter ?? ((cwd2: string) => writeSettingsLocal(cwd2));
+
+	// 0. Materialize the vendored stop hook and register it in
+	//    .claude/settings.local.json BEFORE writing the state file. This
+	//    ensures the hook is registered in Claude Code's settings so it fires
+	//    on Stop events — even when the official ralph-loop plugin is not
+	//    installed in the spawned session.
+	try {
+		const hookPath = hookMaterializer(cwd);
+		printSuccess(`materialized stop hook`, hookPath);
+	} catch (err) {
+		printError(
+			'failed to materialize stop hook',
+			err instanceof Error ? err.message : String(err),
+		);
+		return 1;
+	}
+	try {
+		const settingsPath = settingsWriter(cwd);
+		printSuccess(`registered Stop hook in`, settingsPath);
+	} catch (err) {
+		printError(
+			'failed to write .claude/settings.local.json',
+			err instanceof Error ? err.message : String(err),
+		);
+		return 1;
+	}
 
 	// 1. Render + write the state file. Failing here is fatal — without an
 	//    armed plugin state file, claude wouldn't know to loop.

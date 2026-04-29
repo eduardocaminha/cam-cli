@@ -35,3 +35,10 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# Project-local Claude Code files materialized by `ralph next` (gitignored by convention)
+.claude/settings.local.json
+.claude/hooks/
+
+# Cursor IDE workspace files (content is already in CLAUDE.md, which Cursor reads as fallback)
+.cursor/

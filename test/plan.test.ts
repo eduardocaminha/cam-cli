@@ -3,11 +3,17 @@
 // Unit tests for `ralph plan`. We mock the claude subprocess via the
 // `spawn` injection point on `runPlan({ spawn, prompt })`, so these tests
 // never actually call `claude` — they verify ralph's plumbing:
-//   - APPROVE detection on a streamed stdout line
+//   - APPROVE detection on a PTY data-callback stream
 //   - prompt firing exactly once even when APPROVE appears multiple times
 //   - kill() on N answer, exit 0
 //   - continue (no kill) on y answer, propagate subprocess exit code
 //   - issue flag flows through to the slash command sent to spawn
+//   - terminal.write() is called with stdin forwarding chunks
+//   - terminal.resize() is called when the spawn callback triggers resize
+//
+// US-004: migrated from piped-stdio fake to PTY terminal fake. The core
+// test logic is unchanged — we now feed chunks via the onData callback
+// instead of via ReadableStream, and assert on terminal.write calls.
 
 import { describe, expect, test } from 'bun:test';
 
@@ -15,63 +21,106 @@ import {
 	findApproveLine,
 	isApproveLine,
 	type PlanSubprocess,
+	type PlanTerminal,
 	type SpawnFn,
 	runPlan,
 } from '../src/commands/plan.ts';
 
 // --- Fakes -----------------------------------------------------------------
 
+interface FakeTerminalHandle {
+	terminal: PlanTerminal;
+	writeCalls: Array<string | Uint8Array>;
+	resizeCalls: Array<{ cols: number; rows: number }>;
+	closeCalls: number;
+}
+
 /**
- * Build a ReadableStream<Uint8Array> that emits a fixed list of string chunks.
- * Each chunk is encoded UTF-8 and enqueued in order, then the stream closes.
- * Used to script claude's stdout deterministically in tests.
+ * Build a fake PlanTerminal. Captures all write/resize/close calls so tests
+ * can assert on them.
  */
-function streamFromChunks(chunks: string[]): ReadableStream<Uint8Array> {
-	const encoder = new TextEncoder();
-	let i = 0;
-	return new ReadableStream<Uint8Array>({
-		pull(controller) {
-			if (i >= chunks.length) {
-				controller.close();
-				return;
-			}
-			controller.enqueue(encoder.encode(chunks[i]!));
-			i += 1;
+function makeFakeTerminal(): FakeTerminalHandle {
+	const writeCalls: Array<string | Uint8Array> = [];
+	const resizeCalls: Array<{ cols: number; rows: number }> = [];
+	let closeCalls = 0;
+
+	const terminal: PlanTerminal = {
+		write(data: string | Uint8Array): number {
+			writeCalls.push(data);
+			return typeof data === 'string' ? data.length : data.byteLength;
 		},
-	});
+		resize(cols: number, rows: number): void {
+			resizeCalls.push({ cols, rows });
+		},
+		close(): void {
+			closeCalls += 1;
+		},
+	};
+
+	return { terminal, writeCalls, resizeCalls, closeCalls: 0 };
 }
 
 interface FakeSubprocessHandle {
 	proc: PlanSubprocess;
 	exitedResolve: (code: number) => void;
 	killCalls: Array<number | string | undefined>;
+	termHandle: FakeTerminalHandle;
+	/** Call this to feed data as if the PTY received output from the child. */
+	emitData: (text: string) => void;
 }
 
+const encoder = new TextEncoder();
+
 /**
- * Build a fake PlanSubprocess. The caller passes scripted stdout/stderr
- * chunks; the returned handle exposes `exitedResolve()` to control when the
- * subprocess "exits" and `killCalls` to assert kill behavior.
+ * Build a fake PlanSubprocess using the PTY callback model.
+ * The caller enqueues chunks via `emitData(text)` — the fake calls the
+ * registered `onData` callback synchronously, just like the real PTY would.
+ * `exitedResolve` controls when the subprocess "exits".
  */
-function makeFakeProcess(opts: {
-	stdoutChunks?: string[];
-	stderrChunks?: string[];
-}): FakeSubprocessHandle {
+function makeFakeProcess(): FakeSubprocessHandle {
 	const killCalls: Array<number | string | undefined> = [];
 	let exitedResolve: (code: number) => void = () => {};
 	const exited = new Promise<number>((resolve) => {
 		exitedResolve = resolve;
 	});
+	const termHandle = makeFakeTerminal();
+
+	// The onData callback is registered by the SpawnFn. We capture it via closure.
+	let capturedOnData: ((bytes: Uint8Array) => void) | null = null;
+
 	const proc: PlanSubprocess = {
-		stdout: streamFromChunks(opts.stdoutChunks ?? []),
-		stderr: streamFromChunks(opts.stderrChunks ?? []),
 		exited,
+		terminal: termHandle.terminal,
 		kill(signal?: number | string) {
 			killCalls.push(signal);
 			// On kill, simulate a clean SIGTERM exit.
 			exitedResolve(143);
 		},
 	};
-	return { proc, exitedResolve, killCalls };
+
+	const spawnFn: SpawnFn = (
+		_cmd: string[],
+		callbacks: { onData: (bytes: Uint8Array) => void; onExit: () => void },
+	): PlanSubprocess => {
+		capturedOnData = callbacks.onData;
+		return proc;
+	};
+
+	const handle: FakeSubprocessHandle = {
+		proc,
+		exitedResolve,
+		killCalls,
+		termHandle,
+		emitData(text: string): void {
+			if (capturedOnData) {
+				capturedOnData(encoder.encode(text));
+			}
+		},
+	};
+
+	// Attach the spawnFn to the handle so runPlan can use it.
+	(handle as FakeSubprocessHandle & { spawnFn: SpawnFn }).spawnFn = spawnFn;
+	return handle;
 }
 
 /**
@@ -79,13 +128,70 @@ function makeFakeProcess(opts: {
  * was called with. The recorded cmd is stored on the returned object's
  * `recordedCmd` property.
  */
-function makeSpawnFn(handle: FakeSubprocessHandle): SpawnFn & { recordedCmd: string[] | null } {
-	const fn = ((cmd: string[]) => {
+function makeSpawnFnFromHandle(
+	handle: FakeSubprocessHandle,
+): SpawnFn & { recordedCmd: string[] | null } {
+	const fn = ((
+		cmd: string[],
+		callbacks: { onData: (bytes: Uint8Array) => void; onExit: () => void },
+	) => {
 		(fn as unknown as { recordedCmd: string[] }).recordedCmd = [...cmd];
+		// Register the onData callback in the handle so emitData works.
+		(
+			handle as FakeSubprocessHandle & {
+				_setOnData: (cb: (b: Uint8Array) => void) => void;
+			}
+		)._setOnData?.(callbacks.onData);
 		return handle.proc;
 	}) as SpawnFn & { recordedCmd: string[] | null };
 	fn.recordedCmd = null;
 	return fn;
+}
+
+/**
+ * Build a complete test harness: a fake subprocess + spawn function that
+ * are pre-wired to each other. `emitData(text)` feeds chunks via the PTY
+ * data callback.
+ */
+function makeTestHarness(): {
+	spawn: SpawnFn & { recordedCmd: string[] | null };
+	killCalls: Array<number | string | undefined>;
+	emitData: (text: string) => void;
+	exitedResolve: (code: number) => void;
+} {
+	const killCalls: Array<number | string | undefined> = [];
+	let exitedResolve: (code: number) => void = () => {};
+	const exited = new Promise<number>((resolve) => {
+		exitedResolve = resolve;
+	});
+	const termHandle = makeFakeTerminal();
+
+	let capturedOnData: ((bytes: Uint8Array) => void) | null = null;
+
+	const proc: PlanSubprocess = {
+		exited,
+		terminal: termHandle.terminal,
+		kill(signal?: number | string) {
+			killCalls.push(signal);
+			exitedResolve(143);
+		},
+	};
+
+	const spawn = ((
+		cmd: string[],
+		callbacks: { onData: (bytes: Uint8Array) => void; onExit: () => void },
+	) => {
+		(spawn as unknown as { recordedCmd: string[] }).recordedCmd = [...cmd];
+		capturedOnData = callbacks.onData;
+		return proc;
+	}) as SpawnFn & { recordedCmd: string[] | null };
+	spawn.recordedCmd = null;
+
+	function emitData(text: string): void {
+		capturedOnData?.(encoder.encode(text));
+	}
+
+	return { spawn, killCalls, emitData, exitedResolve };
 }
 
 // --- isApproveLine / findApproveLine ---------------------------------------
@@ -136,10 +242,9 @@ describe('findApproveLine', () => {
 
 describe('runPlan', () => {
 	test('dispatches /ralph-plan when no issue is provided', async () => {
-		const handle = makeFakeProcess({ stdoutChunks: [] });
-		const spawn = makeSpawnFn(handle);
+		const { spawn, killCalls, exitedResolve } = makeTestHarness();
 		// Subprocess exits cleanly with no APPROVE — prompt never fires.
-		queueMicrotask(() => handle.exitedResolve(0));
+		queueMicrotask(() => exitedResolve(0));
 		const code = await runPlan({
 			spawn,
 			prompt: () => Promise.resolve('y'),
@@ -151,13 +256,12 @@ describe('runPlan', () => {
 			'bypassPermissions',
 			'/ralph-plan',
 		]);
-		expect(handle.killCalls).toEqual([]);
+		expect(killCalls).toEqual([]);
 	});
 
 	test('dispatches /ralph-plan #N when issue option is provided', async () => {
-		const handle = makeFakeProcess({ stdoutChunks: [] });
-		const spawn = makeSpawnFn(handle);
-		queueMicrotask(() => handle.exitedResolve(0));
+		const { spawn, exitedResolve } = makeTestHarness();
+		queueMicrotask(() => exitedResolve(0));
 		await runPlan({
 			issue: 142,
 			spawn,
@@ -172,19 +276,20 @@ describe('runPlan', () => {
 	});
 
 	test('fires prompt on APPROVE and continues on y answer (no kill)', async () => {
-		const handle = makeFakeProcess({
-			stdoutChunks: ['booting...\n', 'planning...\n', '"verdict": "APPROVE"\n', 'continuing...\n'],
-		});
-		const spawn = makeSpawnFn(handle);
+		const { spawn, killCalls, emitData, exitedResolve } = makeTestHarness();
 		const promptCalls: string[] = [];
-		// On y, ralph plan should NOT kill and should propagate the
-		// subprocess exit code. Schedule a clean exit shortly after the
-		// stream drains.
+
+		// Schedule: emit some output, including APPROVE, then exit
 		queueMicrotask(() => {
-			// Let the stream drain + prompt handler resolve before the
-			// subprocess "exits". The setTimeout(0) gives the tee loop a tick.
-			setTimeout(() => handle.exitedResolve(0), 5);
+			emitData('booting...\n');
+			emitData('planning...\n');
+			emitData('"verdict": "APPROVE"\n');
+			emitData('continuing...\n');
+			// Give the promise chain (handleApprove) a tick to resolve
+			// before the subprocess "exits".
+			setTimeout(() => exitedResolve(0), 5);
 		});
+
 		const code = await runPlan({
 			spawn,
 			prompt: (q) => {
@@ -194,62 +299,60 @@ describe('runPlan', () => {
 		});
 		expect(promptCalls.length).toBe(1);
 		expect(promptCalls[0]).toContain('Approve PRD and create branch?');
-		expect(handle.killCalls).toEqual([]);
+		expect(killCalls).toEqual([]);
 		expect(code).toBe(0);
 	});
 
 	test('fires prompt on APPROVE and kills on N answer, exits 0', async () => {
-		const handle = makeFakeProcess({
-			stdoutChunks: ['planning...\n', 'verdict: APPROVE\n'],
+		const { spawn, killCalls, emitData } = makeTestHarness();
+		// Emit APPROVE then let kill() trigger exit.
+		queueMicrotask(() => {
+			emitData('planning...\n');
+			emitData('verdict: APPROVE\n');
 		});
-		const spawn = makeSpawnFn(handle);
 		const code = await runPlan({
 			spawn,
 			prompt: () => Promise.resolve('N'),
 		});
-		expect(handle.killCalls.length).toBe(1);
-		expect(handle.killCalls[0]).toBe('SIGTERM');
+		expect(killCalls.length).toBe(1);
+		expect(killCalls[0]).toBe('SIGTERM');
 		expect(code).toBe(0);
 	});
 
 	test('empty answer (just Enter) defaults to N — kills subprocess', async () => {
-		const handle = makeFakeProcess({
-			stdoutChunks: ['verdict: APPROVE\n'],
+		const { spawn, killCalls, emitData } = makeTestHarness();
+		queueMicrotask(() => {
+			emitData('verdict: APPROVE\n');
 		});
-		const spawn = makeSpawnFn(handle);
 		const code = await runPlan({
 			spawn,
 			prompt: () => Promise.resolve(''),
 		});
-		expect(handle.killCalls.length).toBe(1);
+		expect(killCalls.length).toBe(1);
 		expect(code).toBe(0);
 	});
 
 	test('any non-y answer kills (cautious default)', async () => {
-		const handle = makeFakeProcess({
-			stdoutChunks: ['verdict: APPROVE\n'],
+		const { spawn, killCalls, emitData } = makeTestHarness();
+		queueMicrotask(() => {
+			emitData('verdict: APPROVE\n');
 		});
-		const spawn = makeSpawnFn(handle);
 		const code = await runPlan({
 			spawn,
 			prompt: () => Promise.resolve('maybe later'),
 		});
-		expect(handle.killCalls.length).toBe(1);
+		expect(killCalls.length).toBe(1);
 		expect(code).toBe(0);
 	});
 
-	test('prompt fires only once even if APPROVE appears in multiple lines', async () => {
-		const handle = makeFakeProcess({
-			stdoutChunks: [
-				'first verdict: APPROVE\n',
-				'(planner echoes verdict: APPROVE again)\n',
-				'continuing...\n',
-			],
-		});
-		const spawn = makeSpawnFn(handle);
+	test('prompt fires only once even if APPROVE appears in multiple chunks', async () => {
+		const { spawn, emitData, exitedResolve } = makeTestHarness();
 		let promptCount = 0;
 		queueMicrotask(() => {
-			setTimeout(() => handle.exitedResolve(0), 5);
+			emitData('first verdict: APPROVE\n');
+			emitData('(planner echoes verdict: APPROVE again)\n');
+			emitData('continuing...\n');
+			setTimeout(() => exitedResolve(0), 5);
 		});
 		await runPlan({
 			spawn,
@@ -262,11 +365,12 @@ describe('runPlan', () => {
 	});
 
 	test('subprocess exits without ever emitting APPROVE — prompt does not fire', async () => {
-		const handle = makeFakeProcess({
-			stdoutChunks: ['planning...\n', 'verdict: BLOCK\n'],
+		const { spawn, killCalls, emitData, exitedResolve } = makeTestHarness();
+		queueMicrotask(() => {
+			emitData('planning...\n');
+			emitData('verdict: BLOCK\n');
+			exitedResolve(2);
 		});
-		const spawn = makeSpawnFn(handle);
-		queueMicrotask(() => handle.exitedResolve(2));
 		let promptCount = 0;
 		const code = await runPlan({
 			spawn,
@@ -276,18 +380,20 @@ describe('runPlan', () => {
 			},
 		});
 		expect(promptCount).toBe(0);
-		expect(handle.killCalls).toEqual([]);
+		expect(killCalls).toEqual([]);
 		// Subprocess's own exit code propagates when ralph didn't intervene.
 		expect(code).toBe(2);
 	});
 
-	test('detects APPROVE even when split across stream chunks', async () => {
-		const handle = makeFakeProcess({
-			// Split "verdict: APPROVE" across two chunks to verify the
-			// rolling buffer in teeAndScan stitches partial reads.
-			stdoutChunks: ['blah\nver', 'dict: APP', 'ROVE\n'],
+	test('detects APPROVE even when split across PTY data chunks', async () => {
+		const { spawn, killCalls, emitData } = makeTestHarness();
+		// Split "verdict: APPROVE" across two chunks to verify the rolling
+		// buffer in onData stitches partial reads.
+		queueMicrotask(() => {
+			emitData('blah\nver');
+			emitData('dict: APP');
+			emitData('ROVE\n');
 		});
-		const spawn = makeSpawnFn(handle);
 		let promptCount = 0;
 		const code = await runPlan({
 			spawn,
@@ -297,7 +403,7 @@ describe('runPlan', () => {
 			},
 		});
 		expect(promptCount).toBe(1);
-		expect(handle.killCalls.length).toBe(1);
+		expect(killCalls.length).toBe(1);
 		expect(code).toBe(0);
 	});
 });

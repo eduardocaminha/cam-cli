@@ -37,6 +37,7 @@ import {
 
 const VENDOR_KEYS: readonly EmbeddedKey[] = [
 	'ralph-loop.local.md.tmpl',
+	'ralph-loop-stop-hook.sh',
 	'check-agent-frontmatter.ts',
 	'check-agent-frontmatter.sh',
 	'claude-auto-retry-patterns.ts',
@@ -53,7 +54,7 @@ describe('EMBEDDED_CONTENTS — codegen byte-parity', () => {
 		});
 	}
 
-	test('contains exactly the four files US-011 set up to embed', () => {
+	test('contains exactly the five embedded files (US-011 originals + US-002 stop hook)', () => {
 		// If you add an embedded asset, update this list AND the
 		// `VENDOR_KEYS` array above. Locking the set down here catches a
 		// stray entry that would bloat the binary without intent.
@@ -61,6 +62,7 @@ describe('EMBEDDED_CONTENTS — codegen byte-parity', () => {
 			'check-agent-frontmatter.sh',
 			'check-agent-frontmatter.ts',
 			'claude-auto-retry-patterns.ts',
+			'ralph-loop-stop-hook.sh',
 			'ralph-loop.local.md.tmpl',
 		]);
 	});

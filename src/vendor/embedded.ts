@@ -29,11 +29,13 @@ import {
 	checkAgentFrontmatterShContents,
 	checkAgentFrontmatterTsContents,
 	claudeAutoRetryPatternsContents,
+	ralphLoopStopHookContents,
 	ralphLoopTmplContents,
 } from './_generated.ts';
 
 export type EmbeddedKey =
 	| 'ralph-loop.local.md.tmpl'
+	| 'ralph-loop-stop-hook.sh'
 	| 'check-agent-frontmatter.ts'
 	| 'check-agent-frontmatter.sh'
 	| 'claude-auto-retry-patterns.ts';
@@ -45,6 +47,7 @@ export type EmbeddedKey =
  */
 export const EMBEDDED_CONTENTS: Record<EmbeddedKey, string> = {
 	'ralph-loop.local.md.tmpl': ralphLoopTmplContents,
+	'ralph-loop-stop-hook.sh': ralphLoopStopHookContents,
 	'check-agent-frontmatter.ts': checkAgentFrontmatterTsContents,
 	'check-agent-frontmatter.sh': checkAgentFrontmatterShContents,
 	'claude-auto-retry-patterns.ts': claudeAutoRetryPatternsContents,

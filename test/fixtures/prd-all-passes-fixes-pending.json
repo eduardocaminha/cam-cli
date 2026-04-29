@@ -1,0 +1,7 @@
+{
+  "userStories": [
+    { "id": "US-001", "title": "Story one", "passes": true },
+    { "id": "US-002", "title": "Story two", "passes": true }
+  ],
+  "review": { "roundsCompleted": 1, "maxRounds": 3, "lastReviewSha": "abc1234", "lastVerdict": "FIXES_PENDING" }
+}
