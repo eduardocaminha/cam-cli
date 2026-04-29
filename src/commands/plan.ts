@@ -5,46 +5,46 @@
 // emits its `verdict: "APPROVE"` line, asks the operator whether to let
 // branch + commit happen.
 //
-// Acceptance criteria (US-006):
+// Acceptance criteria (US-006, updated US-004):
 //   1. `ralph plan` exists as a CLI subcommand (wired in index.ts).
-//   2. Spawns `claude --permission-mode bypassPermissions <slash>` inline,
-//      attached to the current TTY for stdin (operator interacts directly).
+//   2. Spawns `claude --permission-mode bypassPermissions <slash>` with PTY mode
+//      via `Bun.spawn(cmd, { terminal: { cols, rows, data(t, bytes) {...} } })`.
+//      The child sees process.stdout.isTTY === true (real TTY), so claude's
+//      interactive TUI stays active. The parent receives bytes via the data
+//      callback for verdict scanning.
 //   3. Dispatches `/ralph-plan` (or `/ralph-plan #N` when --issue is passed)
 //      as the trailing argv prompt — claude treats that as the first user-turn.
-//   4. Watches the subprocess stdout for the prd-auditor's verdict line —
-//      a line containing both the literal substring `verdict` (any case) AND
-//      the literal substring `APPROVE` — and on first match prompts the
-//      operator `Approve PRD and create branch? [y/N]`.
-//   5. On `y` (case-insensitive): prints a short ack and lets the planning
+//   4. The data callback writes bytes to process.stdout (operator sees claude's
+//      output verbatim) AND scans them for the APPROVE verdict line
+//      (existing isApproveLine/findApproveLine helpers reused).
+//   5. Operator keystrokes are forwarded to the child via proc.terminal.write()
+//      — reads process.stdin in raw mode and forwards chunks to the terminal.
+//   6. On terminal resize (process.stdout SIGWINCH), call
+//      proc.terminal.resize(cols, rows) so claude's TUI re-layouts.
+//   7. On `y` (case-insensitive): prints a short ack and lets the planning
 //      session continue to its branch/commit step. We do NOT exit ralph plan;
 //      ralph plan resolves when the claude subprocess itself exits.
-//   6. On `N` / empty / anything else: kills the claude subprocess (which is
+//   8. On `N` / empty / anything else: kills the claude subprocess (which is
 //      the ralph-CLI equivalent of "press Esc and bail") and exits 0 with a
 //      polite cancel message.
-//   7. Bun unit test mocks the claude subprocess (FakeClaudeProcess) and
-//      asserts the prompt fires on APPROVE.
-//   8. `bunx tsc --noEmit` passes.
+//   9. Bun unit test mocks the new spawn surface (terminal.data callback,
+//      terminal.write) and asserts the prompt fires on APPROVE.
+//  10. `bunx tsc --noEmit` passes.
 //
-// IMPLEMENTATION NOTES:
-// - The notes field in the PRD recommended `stdio: ['inherit', 'pipe', 'pipe']`.
-//   That gives us: operator types into claude's TTY directly, ralph reads
-//   stdout to spot the verdict line, ralph reads stderr for diagnostics. The
-//   trade-off is that the operator's keystrokes go straight to claude — they
-//   do NOT also flow through ralph-cli's stdin, so the only way ralph can
-//   "send Esc" is to kill the subprocess. That's functionally identical to
-//   the operator pressing Esc + Ctrl+C inside claude (claude tears down its
-//   TUI on signal); we surface a polite message before killing so the
-//   operator knows ralph initiated the cancel.
-// - Verdict detection regex is **deliberately tolerant**: matches any line
-//   that contains both `verdict` (case-insensitive) and the literal
-//   `APPROVE` (case-sensitive — APPROVE is the canonical machine-parseable
-//   form, lowercase `approve` in prose should NOT trigger). Falsely
-//   triggering on a quoted reproduction of the rule (e.g. claude saying
-//   "the verdict line should look like `verdict: APPROVE`") is acceptable —
-//   the operator still gets the prompt, and they can answer N to back out.
-//   Missing the trigger is the worse failure mode.
-// - The yes/no prompt reads from process.stdin. Default on empty input is N
-//   (cautious default for an action that creates a branch + commit).
+// IMPLEMENTATION NOTES (PTY migration from US-004):
+// - With `terminal:` option, proc.stdin/stdout/stderr are all null — use
+//   proc.terminal instead.
+// - The data callback receives Uint8Array bytes from the child. We write them
+//   directly to process.stdout (passthrough) and also scan the decoded text
+//   for the verdict line.
+// - stdin forwarding: we call process.stdin.setRawMode(true) and listen on
+//   'data' to forward each chunk via proc.terminal.write(). This lets the
+//   operator type directly into claude's TTY. Raw mode must be restored (false)
+//   on exit to avoid leaving the terminal in a broken state.
+// - SIGWINCH: on process.stdout 'resize' event (Node/Bun emits this on
+//   SIGWINCH), we call proc.terminal.resize(cols, rows) with the new dimensions.
+// - The approve prompt pauses stdin forwarding (we need line-editing for y/N),
+//   then resumes forwarding or exits depending on the answer.
 
 import process from 'node:process';
 
@@ -58,8 +58,8 @@ export interface PlanOptions {
 	issue?: number;
 	/**
 	 * Spawn factory — overridable for tests. The default uses Bun.spawn with
-	 * stdio: ['inherit', 'pipe', 'pipe']. Tests pass a fake that emits a
-	 * scripted stdout sequence and resolves `exited` on demand.
+	 * the terminal: PTY option. Tests pass a fake that emits a scripted data
+	 * sequence via the onData callback and resolves `exited` on demand.
 	 */
 	spawn?: SpawnFn;
 	/**
@@ -71,22 +71,47 @@ export interface PlanOptions {
 }
 
 /**
- * The subset of `Bun.Subprocess` that ralph plan actually uses. Defining the
- * surface explicitly (instead of importing `Bun.Subprocess`) keeps tests free
- * of Bun-specific types and makes the contract obvious.
+ * The terminal handle subset that ralph plan actually uses. Defining the
+ * surface explicitly (instead of importing Bun.Terminal) keeps tests free of
+ * Bun-specific types and makes the contract obvious.
+ *
+ * With the terminal: PTY option, this is how we interact with the child —
+ * proc.stdin/stdout/stderr are all null.
+ */
+export interface PlanTerminal {
+	/** Forward bytes to the child's stdin (operator keystrokes). */
+	write(data: string | Uint8Array): number;
+	/** Notify the child of a terminal resize. */
+	resize(cols: number, rows: number): void;
+	/** Close the terminal (tears down the PTY). */
+	close(): void;
+}
+
+/**
+ * Callback-based spawn API for PTY mode. The caller provides:
+ *   - `onData(bytes)` — called for every chunk from the child (stdout+stderr
+ *     merged via PTY). The implementer should write to process.stdout and
+ *     scan for the verdict.
+ *   - `onExit()` — called when the PTY stream closes.
+ * Returns the subprocess handle (for `exited` and `kill`).
  */
 export interface PlanSubprocess {
-	/** stdout stream — must be a ReadableStream of Uint8Array chunks. */
-	readonly stdout: ReadableStream<Uint8Array> | null;
-	/** stderr stream — same shape; may be null when unused. */
-	readonly stderr: ReadableStream<Uint8Array> | null;
 	/** Resolves with the exit code when the subprocess exits. */
 	readonly exited: Promise<number>;
+	/** The terminal handle — write()/resize()/close() the PTY. */
+	readonly terminal: PlanTerminal;
 	/** Send SIGTERM (default). Idempotent. */
 	kill(signal?: number | string): void;
 }
 
-export type SpawnFn = (cmd: string[]) => PlanSubprocess;
+export type SpawnFn = (
+	cmd: string[],
+	callbacks: {
+		onData: (bytes: Uint8Array) => void;
+		onExit: () => void;
+	},
+) => PlanSubprocess;
+
 export type PromptFn = (question: string) => Promise<string>;
 
 // --- Verdict detection -----------------------------------------------------
@@ -140,73 +165,52 @@ async function defaultPrompt(question: string): Promise<string> {
 }
 
 /**
- * Default subprocess spawn — uses Bun.spawn with the stdio shape from the
- * PRD notes. We pin stdin to 'inherit' (operator controls claude's TTY)
- * and pipe stdout + stderr so ralph can scan for the verdict.
+ * Default subprocess spawn — uses Bun.spawn with the PTY terminal: option.
+ * The child sees process.stdout.isTTY === true so claude's interactive TUI
+ * stays active. The parent receives child output via the data callback.
+ *
+ * With terminal: set, proc.stdin/stdout/stderr are null — all I/O goes
+ * through proc.terminal.
  */
-function defaultSpawn(cmd: string[]): PlanSubprocess {
+function defaultSpawn(
+	cmd: string[],
+	callbacks: {
+		onData: (bytes: Uint8Array) => void;
+		onExit: () => void;
+	},
+): PlanSubprocess {
 	const proc = Bun.spawn(cmd, {
-		stdin: 'inherit',
-		stdout: 'pipe',
-		stderr: 'pipe',
+		terminal: {
+			cols: process.stdout.columns ?? 80,
+			rows: process.stdout.rows ?? 24,
+			data(_terminal, bytes) {
+				callbacks.onData(bytes);
+			},
+			exit(_terminal, _exitCode, _signal) {
+				callbacks.onExit();
+			},
+		},
 	});
-	// Bun's typings make stdout/stderr loose; cast to the surface we expose.
+
+	const terminal: PlanTerminal = {
+		write(data: string | Uint8Array): number {
+			return proc.terminal!.write(data);
+		},
+		resize(cols: number, rows: number): void {
+			proc.terminal!.resize(cols, rows);
+		},
+		close(): void {
+			proc.terminal!.close();
+		},
+	};
+
 	return {
-		stdout: proc.stdout as ReadableStream<Uint8Array> | null,
-		stderr: proc.stderr as ReadableStream<Uint8Array> | null,
 		exited: proc.exited,
+		terminal,
 		kill: (signal?: number | string) => {
 			proc.kill(signal as number | NodeJS.Signals | undefined);
 		},
 	};
-}
-
-// --- Stream tee helper -----------------------------------------------------
-
-/**
- * Read `stream` to completion. For each chunk: write its raw bytes to
- * `passthrough` (so the operator still sees claude's output exactly as it
- * was emitted, including ANSI), and append the decoded text to a buffer.
- * After every chunk, if no APPROVE line has been emitted yet, scan the new
- * buffer slice for one and call `onApprove` exactly once when found.
- *
- * Returns a Promise that resolves when the stream ends.
- */
-async function teeAndScan(
-	stream: ReadableStream<Uint8Array>,
-	passthrough: NodeJS.WriteStream,
-	onApprove: (line: string) => void,
-): Promise<void> {
-	const reader = stream.getReader();
-	const decoder = new TextDecoder('utf-8');
-	let buffer = '';
-	let approveFired = false;
-	try {
-		// eslint-disable-next-line no-constant-condition
-		while (true) {
-			const { value, done } = await reader.read();
-			if (done) return;
-			if (value) {
-				passthrough.write(value);
-				if (!approveFired) {
-					buffer += decoder.decode(value, { stream: true });
-					const match = findApproveLine(buffer);
-					if (match !== null) {
-						approveFired = true;
-						onApprove(match);
-					}
-					// Trim buffer to the last 16 KiB so long sessions don't
-					// grow the buffer unboundedly. The verdict line is short;
-					// 16 KiB is plenty of overlap for split chunks.
-					if (buffer.length > 16 * 1024) {
-						buffer = buffer.slice(-8 * 1024);
-					}
-				}
-			}
-		}
-	} finally {
-		reader.releaseLock();
-	}
 }
 
 // --- Public entrypoint -----------------------------------------------------
@@ -230,12 +234,123 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 	const permissionMode = readPermissionMode();
 	const cmd = ['claude', '--permission-mode', permissionMode, slash];
 
-	const spawn = options.spawn ?? defaultSpawn;
+	const spawnFn = options.spawn ?? defaultSpawn;
 	const prompt = options.prompt ?? defaultPrompt;
 
+	// --- Verdict scanning state -----------------------------------------------
+	const decoder = new TextDecoder('utf-8');
+	let buffer = '';
+	let approveFired = false;
+	let promptFired = false;
+	let killedByOperator = false;
 	let proc: PlanSubprocess;
+
+	// --- stdin forwarding state -----------------------------------------------
+	// We enable raw mode on process.stdin so operator keystrokes (including
+	// arrow keys, Ctrl sequences) flow byte-for-byte into the child's PTY.
+	// When the APPROVE prompt fires we pause forwarding (to read the y/N line),
+	// then either resume or exit.
+	let stdinForwarding = false;
+	let rawModeSet = false;
+
+	function startStdinForwarding(): void {
+		if (stdinForwarding) return;
+		stdinForwarding = true;
+		try {
+			if (process.stdin.isTTY) {
+				process.stdin.setRawMode(true);
+				rawModeSet = true;
+			}
+		} catch {
+			// setRawMode may throw if stdin is not a TTY (e.g. piped in CI).
+			// Safe to ignore — forwarding still works, just without raw mode.
+		}
+		process.stdin.resume();
+		process.stdin.on('data', forwardStdinChunk);
+	}
+
+	function stopStdinForwarding(): void {
+		if (!stdinForwarding) return;
+		stdinForwarding = false;
+		process.stdin.off('data', forwardStdinChunk);
+		process.stdin.pause();
+		try {
+			if (rawModeSet) {
+				process.stdin.setRawMode(false);
+				rawModeSet = false;
+			}
+		} catch {
+			// Safe to ignore — best-effort raw mode restoration.
+		}
+	}
+
+	// forwardStdinChunk is defined after proc so it can close over it.
+	// We use a late-binding wrapper that refers to `proc` via closure.
+	function forwardStdinChunk(chunk: Buffer): void {
+		try {
+			proc.terminal.write(chunk);
+		} catch {
+			// Child may have exited — ignore write errors.
+		}
+	}
+
+	// --- SIGWINCH / terminal resize -------------------------------------------
+	function onResize(): void {
+		try {
+			proc.terminal.resize(process.stdout.columns ?? 80, process.stdout.rows ?? 24);
+		} catch {
+			// Child may have exited — ignore resize errors.
+		}
+	}
+
+	// --- APPROVE handler -------------------------------------------------------
+	const handleApprove = async (line: string): Promise<void> => {
+		if (promptFired) return;
+		promptFired = true;
+
+		// Pause stdin forwarding so the y/N prompt can read stdin normally.
+		stopStdinForwarding();
+
+		// Newline before our prompt so it doesn't run into claude's last
+		// output chunk on the same line.
+		process.stdout.write('\n');
+		printSuccess('prd-auditor APPROVE detected', line.trim().slice(0, 80));
+		const answer = await prompt('Approve PRD and create branch? [y/N] ');
+		if (/^y(es)?$/i.test(answer.trim())) {
+			printSuccess('continuing — letting planner finish branch + commit');
+			// Resume stdin forwarding so the operator can keep interacting.
+			startStdinForwarding();
+			return;
+		}
+		printWarning('plan cancelled by operator', 'sending Esc + terminating planning session');
+		killedByOperator = true;
+		proc.kill('SIGTERM');
+	};
+
+	// --- Data callback (verdict scanning + passthrough) -----------------------
+	function onData(bytes: Uint8Array): void {
+		// Write raw bytes to operator's terminal — preserves ANSI sequences.
+		process.stdout.write(bytes);
+
+		if (!approveFired) {
+			buffer += decoder.decode(bytes, { stream: true });
+			const match = findApproveLine(buffer);
+			if (match !== null) {
+				approveFired = true;
+				void handleApprove(match);
+			}
+			// Trim buffer to the last 16 KiB so long sessions don't grow
+			// unboundedly. The verdict line is short; 16 KiB is plenty of
+			// overlap for split chunks.
+			if (buffer.length > 16 * 1024) {
+				buffer = buffer.slice(-8 * 1024);
+			}
+		}
+	}
+
+	// --- Spawn ----------------------------------------------------------------
 	try {
-		proc = spawn(cmd);
+		proc = spawnFn(cmd, { onData, onExit: () => {} });
 	} catch (err) {
 		printError(
 			'failed to spawn `claude`',
@@ -248,46 +363,25 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 	printSuccess(`ralph plan: dispatched ${slash}`);
 	printHint('the planning session is interactive — your keystrokes go directly to claude');
 
-	let promptFired = false;
-	let killedByOperator = false;
+	// Start forwarding stdin to the child PTY immediately.
+	startStdinForwarding();
 
-	const handleApprove = async (line: string): Promise<void> => {
-		if (promptFired) return;
-		promptFired = true;
-		// Newline before our prompt so it doesn't run into claude's last
-		// stdout chunk on the same line.
-		process.stdout.write('\n');
-		printSuccess('prd-auditor APPROVE detected', line.trim().slice(0, 80));
-		const answer = await prompt('Approve PRD and create branch? [y/N] ');
-		if (/^y(es)?$/i.test(answer.trim())) {
-			printSuccess('continuing — letting planner finish branch + commit');
-			return;
-		}
-		printWarning('plan cancelled by operator', 'sending Esc + terminating planning session');
-		killedByOperator = true;
-		proc.kill('SIGTERM');
-	};
+	// Listen for terminal resize events.
+	process.stdout.on('resize', onResize);
 
-	// Tee stdout + stderr to the operator's screen while scanning stdout.
-	// We deliberately only scan stdout — stderr from claude is logging noise,
-	// not the assistant's response stream. Both still pass through to the
-	// operator's terminal so they see warnings / errors as they happen.
-	const stdoutPromise = proc.stdout
-		? teeAndScan(proc.stdout, process.stdout, (line) => {
-				void handleApprove(line);
-			})
-		: Promise.resolve();
-	const stderrPromise = proc.stderr
-		? teeAndScan(proc.stderr, process.stderr, () => {
-				/* no scan on stderr */
-			})
-		: Promise.resolve();
-
+	// Wait for the subprocess to exit.
 	const exitCode = await proc.exited;
-	// Give the tee loops a chance to drain remaining bytes after the
-	// subprocess exits. They resolve on the stream end-of-file; awaiting
-	// them avoids dropping the last line of output.
-	await Promise.allSettled([stdoutPromise, stderrPromise]);
+
+	// Cleanup: remove the resize listener and stop stdin forwarding.
+	process.stdout.off('resize', onResize);
+	stopStdinForwarding();
+
+	// Close the terminal (tears down the PTY) after the process exits.
+	try {
+		proc.terminal.close();
+	} catch {
+		// Already closed — ignore.
+	}
 
 	if (killedByOperator) {
 		// Operator chose to bail. Exit 0 — this is a clean cancel, not an error.
