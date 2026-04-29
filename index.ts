@@ -1,1 +1,493 @@
-console.log("Hello via Bun!");
+// index.ts
+//
+// ralph CLI entrypoint. Dispatches subcommands by argv[2]; everything else is
+// implemented in `src/commands/<name>.ts`. We deliberately avoid pulling in
+// `commander` / `yargs` for the current CLI surface — argv parsing fits
+// inline, and a third-party arg parser would be the largest single dep in
+// the project. As more subcommands with more options land we will revisit
+// (this point gets re-evaluated each story; US-007 still fits inline because
+// only `next` adds two more options, both with simple value parsing).
+//
+// IMPORTANT INVARIANT (US-007 acceptance criterion 7):
+//   No subcommand parser registers a `--permission-mode` flag. The value is
+//   sourced exclusively from `~/.config/ralph/config.toml` via
+//   `src/config/permission-mode.ts`. The unit test
+//   `test/no-permission-mode-flag.test.ts` greps this file (and every file
+//   in `src/commands/`) for `--permission-mode` patterns and fails the build
+//   on a registration. Search markers documented in that test.
+
+import process from 'node:process';
+
+import { runDashboard } from './src/commands/dashboard.ts';
+import { runInit } from './src/commands/init.ts';
+import { runNext } from './src/commands/next.ts';
+import { runPlan } from './src/commands/plan.ts';
+import { runResume, type ExplicitMode } from './src/commands/resume.ts';
+import { runStatus } from './src/commands/status.ts';
+import { runStop } from './src/commands/stop.ts';
+import { printError, printHint } from './src/logging/color.ts';
+import { RALPH_VERSION } from './src/version.ts';
+
+const HELP = `ralph — autonomous Claude Code loop driver
+
+Usage:
+  ralph <command> [options]
+
+Commands:
+  init                    Validate the machine and write ~/.config/ralph/config.toml
+  plan [--issue <N>]      Spawn claude + dispatch /ralph-plan; prompts on APPROVE
+  next [options]          Spawn the autonomous loop (Ghostty split + claude + dashboard)
+  dashboard               Standalone read-only TUI (alt-screen) for monitoring a loop
+  status                  Show current loop state at a glance (idle / active / paused)
+  stop                    Cancel a running loop (clears state file + kills tmux session "ralph")
+  resume [options]        Reconcile loop state after interrupt; auto-detect or --mode <name>
+  version                 Print the installed ralph-cli version (also \`--version\` / \`-v\`)
+  help                    Show this help
+
+Run \`ralph <command> --help\` for command-specific options. Permission mode
+for spawned claude sessions is read from \`~/.config/ralph/config.toml\` —
+no subcommand exposes a CLI flag for it (run \`ralph init\` to set).`;
+
+const PLAN_HELP = `ralph plan — wrap an interactive claude session that runs /ralph-plan
+
+Usage:
+  ralph plan [--issue <N>]
+
+Options:
+  --issue <N>    Plan against GitHub issue #N (passed through as \`/ralph-plan #N\`).
+                 Without this flag, ralph dispatches a bare \`/ralph-plan\` and the
+                 planner picks the highest-priority pending issue itself.
+
+Behaviour:
+  1. Spawns \`claude\` (permission mode from ~/.config/ralph/config.toml)
+     attached to your TTY.
+  2. The slash command is sent as the first user-turn.
+  3. After the prd-auditor emits \`verdict: "APPROVE"\`, ralph asks
+     \`Approve PRD and create branch? [y/N]\`.
+  4. On \`y\`: planner continues to its branch + commit step.
+  5. On \`N\` / empty: ralph terminates the planning session and exits 0.`;
+
+const NEXT_HELP = `ralph next — spawn the autonomous loop
+
+Usage:
+  ralph next [--max-iter <N>] [--completion-promise <STR>]
+
+Options:
+  --max-iter <N>              Max iterations before auto-stop. Default: 30.
+  --completion-promise <STR>  Phrase the assistant emits to end the loop.
+                              Default: COMPLETE (assistant emits
+                              \`<promise>COMPLETE</promise>\`).
+
+Behaviour:
+  1. Reads \`permission_mode\` from \`~/.config/ralph/config.toml\` (default
+     \`bypassPermissions\`). Ralph does NOT accept a \`--permission-mode\`
+     flag — change the config file with \`ralph init\` to override.
+  2. Pre-arms the \`ralph-loop\` plugin by writing
+     \`.claude/ralph-loop.local.md\` (vendored template at
+     \`vendor/ralph-loop.local.md.tmpl\`).
+  3. Detects the host terminal:
+       Ghostty                 → opens a horizontal split (claude in current
+                                 pane, \`ralph dashboard\` in new pane).
+       VS Code (TERM_PROGRAM)  → inline single-pane (the IDE is the dashboard).
+       anything else           → inline single-pane.
+  4. Spawns \`claude\` with \`/ralph-next\` as the first user-turn.
+  5. Returns claude's exit code on session end.
+
+Stop primitives:
+  /cancel-ralph  (preferred — cleans up the state file)
+  rm .claude/ralph-loop.local.md  (kill switch — loop ends after current turn)`;
+
+const STATUS_HELP = `ralph status — show current loop state at a glance
+
+Usage:
+  ralph status
+
+Reads three sources in the current cwd:
+  1. .claude/ralph-loop.local.md  — plugin state file (iteration, started_at,
+                                    completion_promise, active flag).
+  2. prd.json                     — current story = highest-priority passes:false.
+  3. git                          — current branch + last commit (best-effort).
+
+Output:
+  status: idle | active | paused
+  story:  US-NNN <title>
+  iter:   N / M
+  since:  <wall-clock since started_at>
+  branch: <current branch>
+  last:   <sha> <subject>
+
+Exits 0 always — even when no loop is running (status: idle).`;
+
+const DASHBOARD_HELP = `ralph dashboard — read-only TUI for monitoring a running loop
+
+Usage:
+  ralph dashboard
+
+Behaviour:
+  1. Enters the alternate screen buffer (vim/htop style), hides the cursor.
+  2. Polls the cwd's prd.json + .claude/ralph-loop.local.md every 2s and
+     redraws on change.
+  3. Surfaces: branch, current story (id + title), iteration N/M, wall-clock,
+     last 5 progress.txt entries, sleep banner if active:false.
+  4. Exits cleanly on \`q\` or Ctrl+C — restores the cursor + leaves alt-screen.
+
+This command is read-only. \`ralph next\` spawns it in pane B of a Ghostty
+split; you can also run it standalone in any terminal that hosts the loop.`;
+
+const STOP_HELP = `ralph stop — cleanly cancel a running loop
+
+Usage:
+  ralph stop
+
+What it does:
+  1. Removes .claude/ralph-loop.local.md (the plugin state file).
+  2. Kills the tmux session named exactly "ralph" if alive (defensive —
+     unrelated tmux sessions are NOT touched).
+  3. Exits 0. Idempotent: calling \`ralph stop\` with nothing to clean is the
+     success state, not a failure.
+
+After \`ralph stop\`, the next \`ralph next\` will not detect a stale loop.`;
+
+const RESUME_HELP = `ralph resume — reconcile loop state after an interrupt
+
+Usage:
+  ralph resume [--mode <name>] [--dry-run] [--force]
+
+Auto-detected modes (no --mode flag):
+  idle      No state file → run \`ralph next\` to start fresh.
+  noop      claude-auto-retry process alive → loop is in a rate-limit
+            sleep window; will resume on its own.
+  respawn   State file present + heartbeat PID dead + recent commit
+            (≤ 24h) → re-spawn \`ralph next\` to re-attach.
+  prompt    State file present + heartbeat PID dead + last commit
+            > 24h old (or unknown) → asks [Y/n/reset]:
+                  Y      continue (treat as respawn)
+                  n      abort (exit 1; no recovery)
+                  reset  remove state file + exit 0
+  success   PRD already complete → auto-clean orphan state file.
+
+Explicit --mode overrides:
+  --mode reset-current-story   Flip the most-recently-completed story back
+                               to passes:false. Re-runs that story on the
+                               next \`ralph next\`.
+  --mode reset-prd             Flip every story to passes:false. Re-runs the
+                               whole PRD from US-001.
+  --mode reset-branch          Print the operator-driven \`git reset --hard
+                               origin/main\` instruction + remove the state
+                               file. ralph does NOT run the destructive
+                               \`git reset\` itself.
+
+Flags:
+  --dry-run    Classify and print without mutating state or spawning.
+  --force      Skip the confirmation prompt for --mode reset-branch.`;
+
+// --- Argv parsers ----------------------------------------------------------
+
+/**
+ * Parse plan-specific flags from argv. We accept either `--issue 123`
+ * (separate token) or `--issue=123` (joined). Returns the parsed issue
+ * number plus a flag indicating the operator asked for help, or `null` on
+ * a parse error (the caller prints the diagnostic and exits 1).
+ */
+export function parsePlanArgs(args: string[]): { issue?: number; help: boolean } | null {
+	const result: { issue?: number; help: boolean } = { help: false };
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i]!;
+		if (arg === '--help' || arg === '-h') {
+			result.help = true;
+			continue;
+		}
+		if (arg === '--issue') {
+			const next = args[i + 1];
+			if (next === undefined) {
+				printError('--issue requires a number');
+				return null;
+			}
+			const parsed = Number.parseInt(next, 10);
+			if (!Number.isFinite(parsed) || parsed <= 0) {
+				printError(`--issue expects a positive integer, got ${JSON.stringify(next)}`);
+				return null;
+			}
+			result.issue = parsed;
+			i += 1;
+			continue;
+		}
+		if (arg.startsWith('--issue=')) {
+			const value = arg.slice('--issue='.length);
+			const parsed = Number.parseInt(value, 10);
+			if (!Number.isFinite(parsed) || parsed <= 0) {
+				printError(`--issue expects a positive integer, got ${JSON.stringify(value)}`);
+				return null;
+			}
+			result.issue = parsed;
+			continue;
+		}
+		printError(`unknown plan option: ${arg}`);
+		return null;
+	}
+	return result;
+}
+
+/**
+ * Parse next-specific flags. Accepts `--max-iter N` / `--max-iter=N` and
+ * `--completion-promise STR` / `--completion-promise=STR`. Both are
+ * optional; defaults applied in `runNext`.
+ *
+ * NOTE: This parser does NOT accept `--permission-mode` — that's the US-007
+ * acceptance criterion 7 invariant. `test/no-permission-mode-flag.test.ts`
+ * greps this file for the literal `--permission-mode` and fails the build
+ * if it appears.
+ */
+export function parseNextArgs(
+	args: string[],
+): { maxIterations?: number; completionPromise?: string; help: boolean } | null {
+	const result: { maxIterations?: number; completionPromise?: string; help: boolean } = {
+		help: false,
+	};
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i]!;
+		if (arg === '--help' || arg === '-h') {
+			result.help = true;
+			continue;
+		}
+		if (arg === '--max-iter' || arg === '--max-iterations') {
+			const next = args[i + 1];
+			if (next === undefined) {
+				printError(`${arg} requires a number`);
+				return null;
+			}
+			const parsed = Number.parseInt(next, 10);
+			if (!Number.isFinite(parsed) || parsed <= 0) {
+				printError(`${arg} expects a positive integer, got ${JSON.stringify(next)}`);
+				return null;
+			}
+			result.maxIterations = parsed;
+			i += 1;
+			continue;
+		}
+		if (arg.startsWith('--max-iter=') || arg.startsWith('--max-iterations=')) {
+			const value = arg.slice(arg.indexOf('=') + 1);
+			const parsed = Number.parseInt(value, 10);
+			if (!Number.isFinite(parsed) || parsed <= 0) {
+				printError(`${arg.split('=')[0]} expects a positive integer, got ${JSON.stringify(value)}`);
+				return null;
+			}
+			result.maxIterations = parsed;
+			continue;
+		}
+		if (arg === '--completion-promise') {
+			const next = args[i + 1];
+			if (next === undefined) {
+				printError('--completion-promise requires a string');
+				return null;
+			}
+			result.completionPromise = next;
+			i += 1;
+			continue;
+		}
+		if (arg.startsWith('--completion-promise=')) {
+			result.completionPromise = arg.slice('--completion-promise='.length);
+			continue;
+		}
+		printError(`unknown next option: ${arg}`);
+		return null;
+	}
+	return result;
+}
+
+/**
+ * Parse resume-specific flags. Accepts:
+ *
+ *   --mode <name>   one of: reset-current-story | reset-prd | reset-branch
+ *   --mode=<name>   joined form
+ *   --dry-run       classify + print, no mutations
+ *   --force         skip the destructive-mode confirmation prompt
+ *   --help / -h     show RESUME_HELP
+ *
+ * Returns `null` on a parse error (caller prints the diagnostic + exits 1).
+ *
+ * NOTE: This parser does NOT accept `--permission-mode` — that's the US-007
+ * acceptance criterion 7 invariant. The textual smoke in
+ * `test/no-permission-mode-flag.test.ts` greps this file for any registration
+ * of `--permission-mode`; resume is bound by the same invariant.
+ */
+const RESUME_MODES = new Set<ExplicitMode>([
+	'reset-current-story',
+	'reset-prd',
+	'reset-branch',
+]);
+
+function isExplicitMode(value: string): value is ExplicitMode {
+	return (RESUME_MODES as Set<string>).has(value);
+}
+
+export function parseResumeArgs(
+	args: string[],
+): { mode?: ExplicitMode; dryRun: boolean; force: boolean; help: boolean } | null {
+	const result: { mode?: ExplicitMode; dryRun: boolean; force: boolean; help: boolean } = {
+		dryRun: false,
+		force: false,
+		help: false,
+	};
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i]!;
+		if (arg === '--help' || arg === '-h') {
+			result.help = true;
+			continue;
+		}
+		if (arg === '--dry-run') {
+			result.dryRun = true;
+			continue;
+		}
+		if (arg === '--force') {
+			result.force = true;
+			continue;
+		}
+		if (arg === '--mode') {
+			const next = args[i + 1];
+			if (next === undefined) {
+				printError('--mode requires a value (one of reset-current-story | reset-prd | reset-branch)');
+				return null;
+			}
+			if (!isExplicitMode(next)) {
+				printError(`--mode expects reset-current-story | reset-prd | reset-branch, got ${JSON.stringify(next)}`);
+				return null;
+			}
+			result.mode = next;
+			i += 1;
+			continue;
+		}
+		if (arg.startsWith('--mode=')) {
+			const value = arg.slice('--mode='.length);
+			if (!isExplicitMode(value)) {
+				printError(`--mode expects reset-current-story | reset-prd | reset-branch, got ${JSON.stringify(value)}`);
+				return null;
+			}
+			result.mode = value;
+			continue;
+		}
+		printError(`unknown resume option: ${arg}`);
+		return null;
+	}
+	return result;
+}
+
+async function main(argv: string[]): Promise<number> {
+	const command = argv[2];
+	if (!command || command === 'help' || command === '--help' || command === '-h') {
+		process.stdout.write(`${HELP}\n`);
+		return 0;
+	}
+	// `ralph --version` / `ralph -v` / `ralph version`. We accept all three
+	// because Unix CLIs are inconsistent about which form is canonical and
+	// shipping just one would surprise muscle memory. The output shape is
+	// `ralph 0.1.0` (single line, trailing newline) — homebrew formula tests
+	// regex this with `\Aralph \d+\.\d+\.\d+\n\z` so do not reformat.
+	if (command === '--version' || command === '-v' || command === 'version') {
+		process.stdout.write(`ralph ${RALPH_VERSION}\n`);
+		return 0;
+	}
+
+	switch (command) {
+		case 'init':
+			return runInit();
+		case 'plan': {
+			const parsed = parsePlanArgs(argv.slice(3));
+			if (parsed === null) {
+				printHint('run `ralph plan --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(`${PLAN_HELP}\n`);
+				return 0;
+			}
+			return runPlan({ issue: parsed.issue });
+		}
+		case 'next': {
+			const parsed = parseNextArgs(argv.slice(3));
+			if (parsed === null) {
+				printHint('run `ralph next --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(`${NEXT_HELP}\n`);
+				return 0;
+			}
+			return runNext({
+				maxIterations: parsed.maxIterations,
+				completionPromise: parsed.completionPromise,
+			});
+		}
+		case 'dashboard': {
+			const tail = argv.slice(3);
+			if (tail.includes('--help') || tail.includes('-h')) {
+				process.stdout.write(`${DASHBOARD_HELP}\n`);
+				return 0;
+			}
+			if (tail.length > 0) {
+				printError(`unknown dashboard option: ${tail[0]}`);
+				printHint('run `ralph dashboard --help` for usage');
+				return 1;
+			}
+			return runDashboard();
+		}
+		case 'status': {
+			const tail = argv.slice(3);
+			if (tail.includes('--help') || tail.includes('-h')) {
+				process.stdout.write(`${STATUS_HELP}\n`);
+				return 0;
+			}
+			if (tail.length > 0) {
+				printError(`unknown status option: ${tail[0]}`);
+				printHint('run `ralph status --help` for usage');
+				return 1;
+			}
+			return runStatus();
+		}
+		case 'stop': {
+			const tail = argv.slice(3);
+			if (tail.includes('--help') || tail.includes('-h')) {
+				process.stdout.write(`${STOP_HELP}\n`);
+				return 0;
+			}
+			if (tail.length > 0) {
+				printError(`unknown stop option: ${tail[0]}`);
+				printHint('run `ralph stop --help` for usage');
+				return 1;
+			}
+			return runStop();
+		}
+		case 'resume': {
+			const parsed = parseResumeArgs(argv.slice(3));
+			if (parsed === null) {
+				printHint('run `ralph resume --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(`${RESUME_HELP}\n`);
+				return 0;
+			}
+			return runResume({
+				...(parsed.mode ? { mode: parsed.mode } : {}),
+				dryRun: parsed.dryRun,
+				force: parsed.force,
+			});
+		}
+		default:
+			printError(`unknown command: ${command}`);
+			printHint('run `ralph help` to see the available commands');
+			return 1;
+	}
+}
+
+// Only execute when invoked as a script (not when imported by a test).
+// `import.meta.main` is true exactly once — when this module is the entry
+// point passed to `bun`. Tests that import this file to exercise
+// `parsePlanArgs` / `parseNextArgs` skip the dispatcher entirely.
+if (import.meta.main) {
+	const exitCode = await main(process.argv);
+	process.exit(exitCode);
+}
+
+export { main };
+

@@ -1,0 +1,348 @@
+// test/status.test.ts
+//
+// Unit tests for `ralph status`. We use bun's tmpdir as the substitute cwd
+// (the PRD note says "use a tmpdir as `$HOME` substitute" but `ralph status`
+// reads `cwd`-relative files, not `$HOME`-relative — so cwd injection is the
+// right pattern, mirroring `runNext`'s test surface).
+//
+// Coverage:
+//   - parseStateFile: valid frontmatter, malformed, missing trailing `---`.
+//   - pickCurrentStory: priority order, no pending stories, mixed pass states.
+//   - formatWallClock: seconds, minutes-and-seconds, hours-and-minutes, days,
+//     negative input, NaN.
+//   - buildStatusReport: idle (no state file), active (state file present +
+//     active:true), paused (state file present + active:false), state file
+//     present but no PRD.
+//   - runStatus: writes to stdout + always exits 0.
+
+import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+	buildStatusReport,
+	formatWallClock,
+	parseStateFile,
+	pickCurrentStory,
+	runStatus,
+} from '../src/commands/status.ts';
+
+// --- parseStateFile --------------------------------------------------------
+
+describe('parseStateFile', () => {
+	test('parses a complete frontmatter block', () => {
+		const body = [
+			'---',
+			'active: true',
+			'iteration: 5',
+			'session_id: sess-abc',
+			'max_iterations: 30',
+			'completion_promise: "COMPLETE"',
+			'started_at: "2026-04-28T22:00:00Z"',
+			'---',
+			'',
+			'/ralph-next',
+			'',
+		].join('\n');
+		const out = parseStateFile(body);
+		expect(out).toEqual({
+			active: true,
+			iteration: 5,
+			session_id: 'sess-abc',
+			max_iterations: 30,
+			completion_promise: 'COMPLETE',
+			started_at: '2026-04-28T22:00:00Z',
+		});
+	});
+
+	test('returns null when the body has no opening `---`', () => {
+		expect(parseStateFile('iteration: 1\n')).toBeNull();
+	});
+
+	test('returns null when no closing `---` is found', () => {
+		expect(parseStateFile('---\niteration: 1\nactive: true\n')).toBeNull();
+	});
+
+	test('returns null on malformed YAML', () => {
+		expect(parseStateFile('---\niteration: [unclosed\n---\nbody\n')).toBeNull();
+	});
+
+	test('handles `completion_promise: null` distinct from omitted', () => {
+		const body = ['---', 'active: true', 'completion_promise: null', '---', ''].join('\n');
+		const out = parseStateFile(body);
+		expect(out?.completion_promise).toBeNull();
+	});
+
+	test('drops fields with wrong types defensively', () => {
+		const body = ['---', 'iteration: "not-a-number"', 'active: "yes"', '---', ''].join('\n');
+		const out = parseStateFile(body);
+		// Both fields had wrong types; both should be omitted from the result.
+		expect(out).toEqual({});
+	});
+});
+
+// --- pickCurrentStory ------------------------------------------------------
+
+describe('pickCurrentStory', () => {
+	test('returns the lowest-priority passes:false story', () => {
+		const prd = {
+			userStories: [
+				{ id: 'US-001', title: 'one', priority: 1, passes: true },
+				{ id: 'US-002', title: 'two', priority: 2, passes: false },
+				{ id: 'US-003', title: 'three', priority: 3, passes: false },
+			],
+		};
+		expect(pickCurrentStory(prd)?.id).toBe('US-002');
+	});
+
+	test('returns null when all stories pass', () => {
+		const prd = {
+			userStories: [
+				{ id: 'US-001', title: 'one', priority: 1, passes: true },
+				{ id: 'US-002', title: 'two', priority: 2, passes: true },
+			],
+		};
+		expect(pickCurrentStory(prd)).toBeNull();
+	});
+
+	test('returns null on empty PRD', () => {
+		expect(pickCurrentStory({})).toBeNull();
+		expect(pickCurrentStory({ userStories: [] })).toBeNull();
+	});
+
+	test('treats stories without priority as lowest priority (latest)', () => {
+		const prd = {
+			userStories: [
+				{ id: 'US-001', title: 'one', passes: false }, // no priority
+				{ id: 'US-002', title: 'two', priority: 5, passes: false },
+			],
+		};
+		// US-002 has priority 5, US-001 has no priority (treated as MAX_SAFE_INTEGER).
+		expect(pickCurrentStory(prd)?.id).toBe('US-002');
+	});
+});
+
+// --- formatWallClock -------------------------------------------------------
+
+describe('formatWallClock', () => {
+	test('seconds for sub-minute durations', () => {
+		expect(formatWallClock(0)).toBe('0s');
+		expect(formatWallClock(45_000)).toBe('45s');
+	});
+
+	test('minutes + seconds', () => {
+		expect(formatWallClock(7 * 60_000 + 12_000)).toBe('7m 12s');
+	});
+
+	test('hours + minutes (zero-padded minutes)', () => {
+		expect(formatWallClock(2 * 3600_000 + 3 * 60_000)).toBe('2h 03m');
+	});
+
+	test('days + hours (zero-padded hours)', () => {
+		expect(formatWallClock(86400_000 + 4 * 3600_000)).toBe('1d 04h');
+	});
+
+	test('negative or NaN returns "unknown"', () => {
+		expect(formatWallClock(-1)).toBe('unknown');
+		expect(formatWallClock(Number.NaN)).toBe('unknown');
+		expect(formatWallClock(Number.POSITIVE_INFINITY)).toBe('unknown');
+	});
+});
+
+// --- buildStatusReport (integration) --------------------------------------
+
+describe('buildStatusReport', () => {
+	test('idle when no state file is present', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-idle-'));
+		try {
+			const report = buildStatusReport({ cwd: dir });
+			expect(report.state).toBe('idle');
+			expect(report.iteration).toBeUndefined();
+			expect(report.wallClock).toBeUndefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('idle + surfaces next pending story when prd.json is present', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-idle-prd-'));
+		try {
+			writeFileSync(
+				join(dir, 'prd.json'),
+				JSON.stringify({
+					userStories: [
+						{ id: 'US-A', title: 'first', priority: 1, passes: true },
+						{ id: 'US-B', title: 'second', priority: 2, passes: false },
+					],
+				}),
+			);
+			const report = buildStatusReport({ cwd: dir });
+			expect(report.state).toBe('idle');
+			expect(report.currentStory).toEqual({ id: 'US-B', title: 'second' });
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('active state with iteration, wall-clock, and current story', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-active-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'ralph-loop.local.md'),
+				[
+					'---',
+					'active: true',
+					'iteration: 7',
+					'max_iterations: 30',
+					'completion_promise: "COMPLETE"',
+					'started_at: "2026-04-28T22:00:00Z"',
+					'session_id: sess-xyz',
+					'---',
+					'',
+					'/ralph-next',
+					'',
+				].join('\n'),
+			);
+			writeFileSync(
+				join(dir, 'prd.json'),
+				JSON.stringify({
+					userStories: [
+						{ id: 'US-008', title: 'status + stop', priority: 8, passes: false },
+					],
+				}),
+			);
+			// "now" = started_at + 1h 5m 20s
+			const fakeNow = () => new Date('2026-04-28T23:05:20Z');
+			const report = buildStatusReport({ cwd: dir, now: fakeNow });
+			expect(report.state).toBe('active');
+			expect(report.iteration).toEqual({ current: 7, max: 30 });
+			expect(report.wallClock).toBe('1h 05m');
+			expect(report.startedAt).toBe('2026-04-28T22:00:00Z');
+			expect(report.currentStory).toEqual({ id: 'US-008', title: 'status + stop' });
+			expect(report.completionPromise).toBe('COMPLETE');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('paused state when active:false in the frontmatter', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-paused-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'ralph-loop.local.md'),
+				[
+					'---',
+					'active: false',
+					'iteration: 30',
+					'max_iterations: 30',
+					'started_at: "2026-04-28T20:00:00Z"',
+					'---',
+					'',
+					'/ralph-next',
+					'',
+				].join('\n'),
+			);
+			const report = buildStatusReport({
+				cwd: dir,
+				now: () => new Date('2026-04-28T22:00:00Z'),
+			});
+			expect(report.state).toBe('paused');
+			expect(report.iteration).toEqual({ current: 30, max: 30 });
+			expect(report.wallClock).toBe('2h 00m');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('handles missing started_at gracefully', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-no-started-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'ralph-loop.local.md'),
+				['---', 'active: true', 'iteration: 1', 'max_iterations: 30', '---', ''].join('\n'),
+			);
+			const report = buildStatusReport({ cwd: dir });
+			expect(report.state).toBe('active');
+			expect(report.wallClock).toBeUndefined();
+			expect(report.startedAt).toBeUndefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// --- runStatus -------------------------------------------------------------
+
+describe('runStatus', () => {
+	test('exits 0 on idle and writes a `status: idle` line to stdout', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-run-idle-'));
+		try {
+			const original = process.stdout.write.bind(process.stdout);
+			const captured: string[] = [];
+			process.stdout.write = ((chunk: string | Uint8Array) => {
+				captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+				return true;
+			}) as typeof process.stdout.write;
+			try {
+				const code = runStatus({ cwd: dir });
+				expect(code).toBe(0);
+			} finally {
+				process.stdout.write = original;
+			}
+			const out = captured.join('');
+			expect(out).toMatch(/status:.*idle/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('exits 0 on active and writes story + iter lines to stdout', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-run-active-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'ralph-loop.local.md'),
+				[
+					'---',
+					'active: true',
+					'iteration: 3',
+					'max_iterations: 30',
+					'started_at: "2026-04-28T22:00:00Z"',
+					'---',
+					'',
+					'/ralph-next',
+					'',
+				].join('\n'),
+			);
+			writeFileSync(
+				join(dir, 'prd.json'),
+				JSON.stringify({
+					userStories: [{ id: 'US-008', title: 'status', priority: 8, passes: false }],
+				}),
+			);
+			const original = process.stdout.write.bind(process.stdout);
+			const captured: string[] = [];
+			process.stdout.write = ((chunk: string | Uint8Array) => {
+				captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+				return true;
+			}) as typeof process.stdout.write;
+			try {
+				const code = runStatus({ cwd: dir, now: () => new Date('2026-04-28T22:30:00Z') });
+				expect(code).toBe(0);
+			} finally {
+				process.stdout.write = original;
+			}
+			const out = captured.join('');
+			expect(out).toMatch(/status:.*active/);
+			expect(out).toMatch(/US-008/);
+			expect(out).toMatch(/3 \/ 30/);
+			expect(out).toMatch(/30m/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});

@@ -1,12 +1,25 @@
 {
   "name": "ralph-cli",
+  "version": "0.1.0",
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "embed-vendor": "bun scripts/generate-embedded-vendor.ts",
+    "embed-vendor:check": "bun scripts/generate-embedded-vendor.ts --check",
+    "build:release": "bun scripts/generate-embedded-vendor.ts && bash scripts/build-release.sh",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "chalk": "^5.6.2",
+    "js-yaml": "^4.1.1"
   }
 }
