@@ -127,6 +127,14 @@ export function renderStateFile(input: {
 	prompt: string;
 	startedAt: string;
 	sessionId: string;
+	/**
+	 * PID of the long-running driver process (claude or claude-auto-retry)
+	 * that owns the loop. `ralph resume` (US-010) reads this back to
+	 * distinguish a still-alive loop from an orphaned state file: a stale
+	 * PID with no live process means the loop crashed (terminal closed, OS
+	 * rebooted, hard-kill). Defaults to `process.pid` when not provided.
+	 */
+	pid: number;
 }): string {
 	const tmpl = readFileSync(templatePath(), 'utf8');
 	const promiseYaml =
@@ -138,6 +146,7 @@ export function renderStateFile(input: {
 		.replace('{{MAX_ITERATIONS}}', String(input.maxIterations))
 		.replace('{{COMPLETION_PROMISE_YAML}}', promiseYaml)
 		.replace('{{STARTED_AT}}', input.startedAt)
+		.replace('{{PID}}', String(input.pid))
 		.replace('{{PROMPT}}', input.prompt);
 }
 
@@ -283,6 +292,8 @@ export interface NextOptions {
 	startedAt?: string;
 	/** Session id used in the state-file frontmatter (override for tests). */
 	sessionId?: string;
+	/** PID written to the state-file frontmatter (override for tests). Default: `process.pid`. */
+	pid?: number;
 }
 
 /**
@@ -315,6 +326,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		prompt: RALPH_NEXT_PROMPT,
 		startedAt: options.startedAt ?? new Date().toISOString(),
 		sessionId: options.sessionId ?? process.env['CLAUDE_CODE_SESSION_ID'] ?? '',
+		pid: options.pid ?? process.pid,
 	});
 
 	let writtenPath: string;

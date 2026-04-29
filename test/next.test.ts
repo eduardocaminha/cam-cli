@@ -117,6 +117,7 @@ describe('renderStateFile', () => {
 			prompt: '/ralph-next',
 			startedAt: '2026-04-28T22:00:00Z',
 			sessionId: 'sess-abc',
+			pid: 4242,
 		});
 		expect(out).toContain('max_iterations: 30');
 		expect(out).toContain('completion_promise: "COMPLETE"');
@@ -124,6 +125,7 @@ describe('renderStateFile', () => {
 		expect(out).toContain('session_id: sess-abc');
 		expect(out).toContain('active: true');
 		expect(out).toContain('iteration: 1');
+		expect(out).toContain('pid: 4242');
 		expect(out.trimEnd().endsWith('/ralph-next')).toBe(true);
 	});
 
@@ -134,6 +136,7 @@ describe('renderStateFile', () => {
 			prompt: '/ralph-next',
 			startedAt: '2026-04-28T22:00:00Z',
 			sessionId: '',
+			pid: 4242,
 		});
 		expect(out).toContain('completion_promise: null');
 	});
@@ -145,8 +148,21 @@ describe('renderStateFile', () => {
 			prompt: '/ralph-next',
 			startedAt: '2026-04-28T22:00:00Z',
 			sessionId: '',
+			pid: 4242,
 		});
 		expect(out).toContain('completion_promise: "TASK \\"DONE\\""');
+	});
+
+	test('writes the pid field for the heartbeat probe', () => {
+		const out = renderStateFile({
+			maxIterations: 30,
+			completionPromise: 'COMPLETE',
+			prompt: '/ralph-next',
+			startedAt: '2026-04-28T22:00:00Z',
+			sessionId: '',
+			pid: 99999,
+		});
+		expect(out).toContain('pid: 99999');
 	});
 });
 

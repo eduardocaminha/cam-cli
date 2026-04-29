@@ -22,6 +22,7 @@ import { runDashboard } from './src/commands/dashboard.ts';
 import { runInit } from './src/commands/init.ts';
 import { runNext } from './src/commands/next.ts';
 import { runPlan } from './src/commands/plan.ts';
+import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runStop } from './src/commands/stop.ts';
 import { printError, printHint } from './src/logging/color.ts';
@@ -38,6 +39,7 @@ Commands:
   dashboard               Standalone read-only TUI (alt-screen) for monitoring a loop
   status                  Show current loop state at a glance (idle / active / paused)
   stop                    Cancel a running loop (clears state file + kills tmux session "ralph")
+  resume [options]        Reconcile loop state after interrupt; auto-detect or --mode <name>
   help                    Show this help
 
 Run \`ralph <command> --help\` for command-specific options. Permission mode
@@ -143,6 +145,39 @@ What it does:
      success state, not a failure.
 
 After \`ralph stop\`, the next \`ralph next\` will not detect a stale loop.`;
+
+const RESUME_HELP = `ralph resume — reconcile loop state after an interrupt
+
+Usage:
+  ralph resume [--mode <name>] [--dry-run] [--force]
+
+Auto-detected modes (no --mode flag):
+  idle      No state file → run \`ralph next\` to start fresh.
+  noop      claude-auto-retry process alive → loop is in a rate-limit
+            sleep window; will resume on its own.
+  respawn   State file present + heartbeat PID dead + recent commit
+            (≤ 24h) → re-spawn \`ralph next\` to re-attach.
+  prompt    State file present + heartbeat PID dead + last commit
+            > 24h old (or unknown) → asks [Y/n/reset]:
+                  Y      continue (treat as respawn)
+                  n      abort (exit 1; no recovery)
+                  reset  remove state file + exit 0
+  success   PRD already complete → auto-clean orphan state file.
+
+Explicit --mode overrides:
+  --mode reset-current-story   Flip the most-recently-completed story back
+                               to passes:false. Re-runs that story on the
+                               next \`ralph next\`.
+  --mode reset-prd             Flip every story to passes:false. Re-runs the
+                               whole PRD from US-001.
+  --mode reset-branch          Print the operator-driven \`git reset --hard
+                               origin/main\` instruction + remove the state
+                               file. ralph does NOT run the destructive
+                               \`git reset\` itself.
+
+Flags:
+  --dry-run    Classify and print without mutating state or spawning.
+  --force      Skip the confirmation prompt for --mode reset-branch.`;
 
 // --- Argv parsers ----------------------------------------------------------
 
@@ -258,6 +293,83 @@ export function parseNextArgs(
 	return result;
 }
 
+/**
+ * Parse resume-specific flags. Accepts:
+ *
+ *   --mode <name>   one of: reset-current-story | reset-prd | reset-branch
+ *   --mode=<name>   joined form
+ *   --dry-run       classify + print, no mutations
+ *   --force         skip the destructive-mode confirmation prompt
+ *   --help / -h     show RESUME_HELP
+ *
+ * Returns `null` on a parse error (caller prints the diagnostic + exits 1).
+ *
+ * NOTE: This parser does NOT accept `--permission-mode` — that's the US-007
+ * acceptance criterion 7 invariant. The textual smoke in
+ * `test/no-permission-mode-flag.test.ts` greps this file for any registration
+ * of `--permission-mode`; resume is bound by the same invariant.
+ */
+const RESUME_MODES = new Set<ExplicitMode>([
+	'reset-current-story',
+	'reset-prd',
+	'reset-branch',
+]);
+
+function isExplicitMode(value: string): value is ExplicitMode {
+	return (RESUME_MODES as Set<string>).has(value);
+}
+
+export function parseResumeArgs(
+	args: string[],
+): { mode?: ExplicitMode; dryRun: boolean; force: boolean; help: boolean } | null {
+	const result: { mode?: ExplicitMode; dryRun: boolean; force: boolean; help: boolean } = {
+		dryRun: false,
+		force: false,
+		help: false,
+	};
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i]!;
+		if (arg === '--help' || arg === '-h') {
+			result.help = true;
+			continue;
+		}
+		if (arg === '--dry-run') {
+			result.dryRun = true;
+			continue;
+		}
+		if (arg === '--force') {
+			result.force = true;
+			continue;
+		}
+		if (arg === '--mode') {
+			const next = args[i + 1];
+			if (next === undefined) {
+				printError('--mode requires a value (one of reset-current-story | reset-prd | reset-branch)');
+				return null;
+			}
+			if (!isExplicitMode(next)) {
+				printError(`--mode expects reset-current-story | reset-prd | reset-branch, got ${JSON.stringify(next)}`);
+				return null;
+			}
+			result.mode = next;
+			i += 1;
+			continue;
+		}
+		if (arg.startsWith('--mode=')) {
+			const value = arg.slice('--mode='.length);
+			if (!isExplicitMode(value)) {
+				printError(`--mode expects reset-current-story | reset-prd | reset-branch, got ${JSON.stringify(value)}`);
+				return null;
+			}
+			result.mode = value;
+			continue;
+		}
+		printError(`unknown resume option: ${arg}`);
+		return null;
+	}
+	return result;
+}
+
 async function main(argv: string[]): Promise<number> {
 	const command = argv[2];
 	if (!command || command === 'help' || command === '--help' || command === '-h') {
@@ -333,6 +445,22 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			return runStop();
+		}
+		case 'resume': {
+			const parsed = parseResumeArgs(argv.slice(3));
+			if (parsed === null) {
+				printHint('run `ralph resume --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(`${RESUME_HELP}\n`);
+				return 0;
+			}
+			return runResume({
+				...(parsed.mode ? { mode: parsed.mode } : {}),
+				dryRun: parsed.dryRun,
+				force: parsed.force,
+			});
 		}
 		default:
 			printError(`unknown command: ${command}`);

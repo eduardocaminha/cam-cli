@@ -63,6 +63,13 @@ export interface LoopState {
 	completion_promise?: string | null;
 	started_at?: string;
 	session_id?: string;
+	/**
+	 * PID of the long-running driver process that owns the loop. Written by
+	 * `ralph next` (US-007 + US-010); consumed by `ralph resume` to detect
+	 * orphaned state files (PID present but no live process). Optional for
+	 * back-compat with state files written before the field existed.
+	 */
+	pid?: number;
 }
 
 /**
@@ -141,6 +148,9 @@ export function parseStateFile(contents: string): LoopState | null {
 	}
 	if (typeof obj['started_at'] === 'string') out.started_at = obj['started_at'];
 	if (typeof obj['session_id'] === 'string') out.session_id = obj['session_id'];
+	if (typeof obj['pid'] === 'number' && Number.isFinite(obj['pid']) && obj['pid'] > 0) {
+		out.pid = obj['pid'];
+	}
 	return out;
 }
 
