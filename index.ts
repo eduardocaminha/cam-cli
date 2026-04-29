@@ -21,6 +21,8 @@ import process from 'node:process';
 import { runInit } from './src/commands/init.ts';
 import { runNext } from './src/commands/next.ts';
 import { runPlan } from './src/commands/plan.ts';
+import { runStatus } from './src/commands/status.ts';
+import { runStop } from './src/commands/stop.ts';
 import { printError, printHint } from './src/logging/color.ts';
 
 const HELP = `ralph — autonomous Claude Code loop driver
@@ -32,6 +34,8 @@ Commands:
   init                    Validate the machine and write ~/.config/ralph/config.toml
   plan [--issue <N>]      Spawn claude + dispatch /ralph-plan; prompts on APPROVE
   next [options]          Spawn the autonomous loop (Ghostty split + claude + dashboard)
+  status                  Show current loop state at a glance (idle / active / paused)
+  stop                    Cancel a running loop (clears state file + kills tmux session "ralph")
   help                    Show this help
 
 Run \`ralph <command> --help\` for command-specific options. Permission mode
@@ -86,6 +90,41 @@ Behaviour:
 Stop primitives:
   /cancel-ralph  (preferred — cleans up the state file)
   rm .claude/ralph-loop.local.md  (kill switch — loop ends after current turn)`;
+
+const STATUS_HELP = `ralph status — show current loop state at a glance
+
+Usage:
+  ralph status
+
+Reads three sources in the current cwd:
+  1. .claude/ralph-loop.local.md  — plugin state file (iteration, started_at,
+                                    completion_promise, active flag).
+  2. prd.json                     — current story = highest-priority passes:false.
+  3. git                          — current branch + last commit (best-effort).
+
+Output:
+  status: idle | active | paused
+  story:  US-NNN <title>
+  iter:   N / M
+  since:  <wall-clock since started_at>
+  branch: <current branch>
+  last:   <sha> <subject>
+
+Exits 0 always — even when no loop is running (status: idle).`;
+
+const STOP_HELP = `ralph stop — cleanly cancel a running loop
+
+Usage:
+  ralph stop
+
+What it does:
+  1. Removes .claude/ralph-loop.local.md (the plugin state file).
+  2. Kills the tmux session named exactly "ralph" if alive (defensive —
+     unrelated tmux sessions are NOT touched).
+  3. Exits 0. Idempotent: calling \`ralph stop\` with nothing to clean is the
+     success state, not a failure.
+
+After \`ralph stop\`, the next \`ralph next\` will not detect a stale loop.`;
 
 // --- Argv parsers ----------------------------------------------------------
 
@@ -237,6 +276,32 @@ async function main(argv: string[]): Promise<number> {
 				maxIterations: parsed.maxIterations,
 				completionPromise: parsed.completionPromise,
 			});
+		}
+		case 'status': {
+			const tail = argv.slice(3);
+			if (tail.includes('--help') || tail.includes('-h')) {
+				process.stdout.write(`${STATUS_HELP}\n`);
+				return 0;
+			}
+			if (tail.length > 0) {
+				printError(`unknown status option: ${tail[0]}`);
+				printHint('run `ralph status --help` for usage');
+				return 1;
+			}
+			return runStatus();
+		}
+		case 'stop': {
+			const tail = argv.slice(3);
+			if (tail.includes('--help') || tail.includes('-h')) {
+				process.stdout.write(`${STOP_HELP}\n`);
+				return 0;
+			}
+			if (tail.length > 0) {
+				printError(`unknown stop option: ${tail[0]}`);
+				printHint('run `ralph stop --help` for usage');
+				return 1;
+			}
+			return runStop();
 		}
 		default:
 			printError(`unknown command: ${command}`);
