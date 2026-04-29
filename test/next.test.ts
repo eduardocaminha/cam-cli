@@ -25,9 +25,14 @@ import {
 	buildClaudeArgv,
 	buildDashboardArgv,
 	buildGhosttySplitArgv,
+	deepMerge,
 	detectHost,
+	materializeStopHook,
 	renderStateFile,
 	runNext,
+	SETTINGS_LOCAL_RELATIVE,
+	STOP_HOOK_RELATIVE,
+	writeSettingsLocal,
 	writeStateFile,
 	type NextSpawnFn,
 	type NextSubprocess,
@@ -391,5 +396,210 @@ describe('runNext', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+
+	test('materializes stop hook and writes settings.local.json before state file', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-hooks-'));
+		try {
+			const claudeHandle = makeFakeProcess();
+			const spawn = makeRecordingSpawn([claudeHandle]);
+			queueMicrotask(() => claudeHandle.exitedResolve(0));
+
+			const hookPaths: string[] = [];
+			const settingsPaths: string[] = [];
+
+			const code = await runNext({
+				cwd: dir,
+				hostMode: 'inline',
+				permissionMode: 'bypassPermissions',
+				spawn,
+				startedAt: '2026-04-28T22:00:00Z',
+				sessionId: '',
+				hookMaterializer: (cwd2) => {
+					const p = join(cwd2, STOP_HOOK_RELATIVE);
+					hookPaths.push(p);
+					return p;
+				},
+				settingsWriter: (cwd2) => {
+					const p = join(cwd2, SETTINGS_LOCAL_RELATIVE);
+					settingsPaths.push(p);
+					return p;
+				},
+			});
+
+			expect(code).toBe(0);
+			// Both injected before claude spawns (spawn.calls.length === 1 means claude was called)
+			expect(hookPaths).toHaveLength(1);
+			expect(settingsPaths).toHaveLength(1);
+			expect(hookPaths[0]).toBe(join(dir, STOP_HOOK_RELATIVE));
+			expect(settingsPaths[0]).toBe(join(dir, SETTINGS_LOCAL_RELATIVE));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('returns 1 when hook materialization fails', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-hook-fail-'));
+		try {
+			const spawn = makeRecordingSpawn([]);
+
+			const code = await runNext({
+				cwd: dir,
+				hostMode: 'inline',
+				permissionMode: 'bypassPermissions',
+				spawn,
+				startedAt: '2026-04-28T22:00:00Z',
+				sessionId: '',
+				hookMaterializer: () => {
+					throw new Error('permission denied');
+				},
+			});
+
+			expect(code).toBe(1);
+			expect(spawn.calls.length).toBe(0); // claude never spawned
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('returns 1 when settings.local.json write fails', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-settings-fail-'));
+		try {
+			const spawn = makeRecordingSpawn([]);
+
+			const code = await runNext({
+				cwd: dir,
+				hostMode: 'inline',
+				permissionMode: 'bypassPermissions',
+				spawn,
+				startedAt: '2026-04-28T22:00:00Z',
+				sessionId: '',
+				hookMaterializer: (cwd2) => join(cwd2, STOP_HOOK_RELATIVE),
+				settingsWriter: () => {
+					throw new Error('disk full');
+				},
+			});
+
+			expect(code).toBe(1);
+			expect(spawn.calls.length).toBe(0); // claude never spawned
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// --- materializeStopHook ---------------------------------------------------
+
+describe('materializeStopHook', () => {
+	test('writes hook file and makes it executable', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-hook-mat-'));
+		try {
+			const fakeContents = '#!/bin/bash\necho "fake hook"\n';
+			const written = materializeStopHook(dir, () => fakeContents);
+			expect(written).toBe(join(dir, STOP_HOOK_RELATIVE));
+			expect(existsSync(written)).toBe(true);
+			expect(readFileSync(written, 'utf8')).toBe(fakeContents);
+			// Verify it's executable (owner execute bit)
+			const { statSync } = require('node:fs') as typeof import('node:fs');
+			const mode = statSync(written).mode;
+			expect(mode & 0o100).toBeTruthy(); // owner execute bit set
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('creates .claude/hooks/ directory when missing', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-hook-mkdir-'));
+		try {
+			materializeStopHook(dir, () => '#!/bin/bash\n');
+			expect(existsSync(join(dir, '.claude', 'hooks'))).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// --- writeSettingsLocal ----------------------------------------------------
+
+describe('writeSettingsLocal', () => {
+	test('creates settings.local.json with Stop hook when file does not exist', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-settings-new-'));
+		try {
+			const written = writeSettingsLocal(dir, () => null);
+			expect(existsSync(written)).toBe(true);
+			const parsed = JSON.parse(readFileSync(written, 'utf8'));
+			expect(parsed.hooks?.Stop).toBeDefined();
+			expect(parsed.hooks.Stop[0]?.hooks[0]?.type).toBe('command');
+			expect(parsed.hooks.Stop[0]?.hooks[0]?.command).toContain('ralph-loop-stop.sh');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('deep-merges with existing settings.local.json (existing keys preserved)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-settings-merge-'));
+		try {
+			const existing = JSON.stringify({
+				permissions: { allow: ['Bash(*)', 'Edit'] },
+				customKey: 42,
+			});
+			const written = writeSettingsLocal(dir, () => existing);
+			const parsed = JSON.parse(readFileSync(written, 'utf8'));
+			// Existing keys preserved
+			expect(parsed.permissions?.allow).toEqual(['Bash(*)', 'Edit']);
+			expect(parsed.customKey).toBe(42);
+			// Stop hook added
+			expect(parsed.hooks?.Stop).toBeDefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('handles malformed existing JSON gracefully (starts fresh)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-settings-bad-json-'));
+		try {
+			const written = writeSettingsLocal(dir, () => '{ not valid json');
+			const parsed = JSON.parse(readFileSync(written, 'utf8'));
+			expect(parsed.hooks?.Stop).toBeDefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('creates .claude/ directory when missing', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-settings-mkdir-'));
+		try {
+			writeSettingsLocal(dir, () => null);
+			expect(existsSync(join(dir, '.claude'))).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// --- deepMerge -------------------------------------------------------------
+
+describe('deepMerge', () => {
+	test('shallow merge: source keys overwrite target keys', () => {
+		const result = deepMerge({ a: 1, b: 2 }, { b: 99, c: 3 });
+		expect(result).toEqual({ a: 1, b: 99, c: 3 });
+	});
+
+	test('deep merge: nested objects are recursively merged', () => {
+		const result = deepMerge(
+			{ hooks: { PreToolUse: ['existing'] } },
+			{ hooks: { Stop: ['new'] } },
+		);
+		expect(result).toEqual({ hooks: { PreToolUse: ['existing'], Stop: ['new'] } });
+	});
+
+	test('arrays are replaced, not concatenated', () => {
+		const result = deepMerge({ items: [1, 2, 3] }, { items: [4, 5] });
+		expect(result).toEqual({ items: [4, 5] });
+	});
+
+	test('null values overwrite', () => {
+		const result = deepMerge({ a: 'original' }, { a: null });
+		expect(result).toEqual({ a: null });
 	});
 });
