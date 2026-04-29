@@ -1,0 +1,456 @@
+// test/dashboard.test.ts
+//
+// Tests for `ralph dashboard`. We exercise three layers:
+//
+//   1. Pure helpers (parseRecentProgress, snapshot composition) — fast,
+//      no IO, easy to lock the format.
+//   2. `readSnapshot` — full IO read against a tmpdir cwd, mirroring how
+//      runStatus's tests work.
+//   3. `runDashboard` integration — uses fake `reader` / `writer` shapes
+//      (DashboardReader / DashboardWriter) injected via options, so the
+//      test never touches real stdin/stdout. Asserts the alt-screen
+//      lifecycle: enter → render → `q` keypress → exit alt-screen.
+//
+// The runtime loop polls every `pollIntervalMs`; we set it to 1 ms in
+// tests so a `maxTicks: 2` run completes in a couple of milliseconds.
+
+import { describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+	CURSOR,
+	DEFAULT_POLL_INTERVAL_MS,
+	RECENT_ENTRIES_COUNT,
+	composeDashboard,
+	parseRecentProgress,
+	readRecentProgress,
+	readSnapshot,
+	runDashboard,
+	type DashboardData,
+	type DashboardReader,
+	type DashboardWriter,
+} from '../src/commands/dashboard.ts';
+
+// --- Fakes -----------------------------------------------------------------
+
+function makeRecordingWriter(): DashboardWriter & { chunks: string[] } {
+	const chunks: string[] = [];
+	const writer: DashboardWriter & { chunks: string[] } = {
+		chunks,
+		write(chunk: string): boolean {
+			chunks.push(chunk);
+			return true;
+		},
+	};
+	return writer;
+}
+
+interface FakeReaderHandle extends DashboardReader {
+	emit(data: Buffer): void;
+	listeners: Array<(data: Buffer) => void>;
+}
+
+function makeFakeReader(): FakeReaderHandle {
+	const listeners: Array<(data: Buffer) => void> = [];
+	const reader: FakeReaderHandle = {
+		listeners,
+		isTTY: false,
+		on(event, listener) {
+			if (event === 'data') listeners.push(listener);
+		},
+		off(event, listener) {
+			if (event !== 'data') return;
+			const idx = listeners.indexOf(listener);
+			if (idx >= 0) listeners.splice(idx, 1);
+		},
+		emit(data: Buffer) {
+			// Iterate over a snapshot — listeners may detach themselves.
+			for (const l of [...listeners]) l(data);
+		},
+	};
+	return reader;
+}
+
+// --- Constants -------------------------------------------------------------
+
+describe('dashboard constants', () => {
+	test('DEFAULT_POLL_INTERVAL_MS is 2000 (US-009 AC4: every 2s)', () => {
+		expect(DEFAULT_POLL_INTERVAL_MS).toBe(2000);
+	});
+
+	test('RECENT_ENTRIES_COUNT is 5 (US-009 AC2: last 5 progress entries)', () => {
+		expect(RECENT_ENTRIES_COUNT).toBe(5);
+	});
+});
+
+// --- composeDashboard ------------------------------------------------------
+
+describe('composeDashboard', () => {
+	const baseData: DashboardData = {
+		branchName: 'ralph/test-branch',
+		currentStoryId: 'US-009',
+		currentStoryTitle: 'dashboard',
+		iteration: 7,
+		maxIterations: 30,
+		startedAtMs: Date.parse('2026-04-28T22:00:00Z'),
+		nowMs: Date.parse('2026-04-28T22:30:00Z'),
+		paused: false,
+		idle: false,
+		recent: ['2026-04-28 - US-008', '2026-04-28 - US-007'],
+	};
+
+	test('first render uses CURSOR.clear; subsequent uses CURSOR.home', () => {
+		const first = composeDashboard(baseData, 2000, true);
+		const next = composeDashboard(baseData, 2000, false);
+		expect(first.startsWith(CURSOR.clear)).toBe(true);
+		expect(next.startsWith(CURSOR.home)).toBe(true);
+		// Subsequent frame must NOT contain the alt-screen clear sequence.
+		expect(next.includes(CURSOR.clear)).toBe(false);
+	});
+
+	test('frame includes branch, story id+title, iteration, wall-clock', () => {
+		const frame = composeDashboard(baseData, 2000, true);
+		expect(frame).toContain('ralph/test-branch');
+		expect(frame).toContain('US-009');
+		expect(frame).toContain('dashboard');
+		expect(frame).toContain('iter 7/30');
+		// wall-clock is `30m 00s` for a 30-minute delta.
+		expect(frame).toMatch(/30m/);
+	});
+
+	test('frame surfaces the recent entries (newest first)', () => {
+		const frame = composeDashboard(baseData, 2000, true);
+		expect(frame).toContain('2026-04-28 - US-008');
+		expect(frame).toContain('2026-04-28 - US-007');
+	});
+
+	test('paused state renders the sleep banner', () => {
+		const frame = composeDashboard({ ...baseData, paused: true }, 2000, true);
+		expect(frame).toMatch(/loop is paused/);
+	});
+
+	test('idle (no state file) frame shows "(idle)" not the booting label', () => {
+		const frame = composeDashboard(
+			{
+				...baseData,
+				currentStoryId: '',
+				currentStoryTitle: '',
+				idle: true,
+				startedAtMs: 0,
+			},
+			2000,
+			true,
+		);
+		expect(frame).toContain('(idle)');
+		// Wall-clock falls back to em-dash when no startedAt.
+		expect(frame).toMatch(/elapsed —/);
+	});
+
+	test('frame includes the "press q or Ctrl+C to exit" hint', () => {
+		const frame = composeDashboard(baseData, 2000, true);
+		expect(frame).toMatch(/press q or Ctrl\+C/);
+	});
+});
+
+// --- parseRecentProgress ---------------------------------------------------
+
+describe('parseRecentProgress', () => {
+	test('extracts the `## ...` header line of each section, newest first', () => {
+		const body = [
+			'## Codebase Patterns',
+			'',
+			'- some pattern.',
+			'',
+			'---',
+			'',
+			'## 2026-04-28 - US-001',
+			'- did the thing',
+			'---',
+			'',
+			'## 2026-04-28 - US-002',
+			'- did another thing',
+			'---',
+			'',
+		].join('\n');
+		const out = parseRecentProgress(body);
+		// Newest entries first: US-002 then US-001.
+		expect(out).toEqual(['2026-04-28 - US-002', '2026-04-28 - US-001']);
+	});
+
+	test('caps at RECENT_ENTRIES_COUNT entries', () => {
+		const sections: string[] = [];
+		for (let i = 1; i <= 8; i += 1) {
+			sections.push(`## 2026-04-28 - US-${String(i).padStart(3, '0')}`);
+			sections.push('---');
+		}
+		const out = parseRecentProgress(sections.join('\n'));
+		expect(out).toHaveLength(RECENT_ENTRIES_COUNT);
+		// Newest (US-008) first.
+		expect(out[0]).toBe('2026-04-28 - US-008');
+	});
+
+	test('skips non-entry sections (e.g. ## Codebase Patterns)', () => {
+		const body = [
+			'## Codebase Patterns',
+			'',
+			'- some pattern.',
+			'',
+			'---',
+			'',
+			'## 2026-04-28 - US-001',
+			'- the deed',
+			'---',
+			'',
+		].join('\n');
+		const out = parseRecentProgress(body);
+		// Codebase Patterns header is dropped because it doesn't match the
+		// dated-entry pattern; only US-001 surfaces.
+		expect(out).toEqual(['2026-04-28 - US-001']);
+	});
+
+	test('handles a missing trailing `---` (in-flight entry)', () => {
+		const body = [
+			'## 2026-04-28 - US-001',
+			'- done',
+			'---',
+			'',
+			'## 2026-04-28 - US-002',
+			'- in flight, no closing fence yet',
+		].join('\n');
+		const out = parseRecentProgress(body);
+		expect(out).toEqual(['2026-04-28 - US-002', '2026-04-28 - US-001']);
+	});
+
+	test('returns [] on an empty body', () => {
+		expect(parseRecentProgress('')).toEqual([]);
+	});
+});
+
+// --- readRecentProgress + readSnapshot (filesystem) -----------------------
+
+describe('readRecentProgress (IO)', () => {
+	test('returns [] when scripts/ralph/progress.txt is absent', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-no-progress-'));
+		try {
+			expect(readRecentProgress(dir)).toEqual([]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('reads from scripts/ralph/progress.txt under cwd', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-progress-'));
+		try {
+			mkdirSync(join(dir, 'scripts', 'ralph'), { recursive: true });
+			writeFileSync(
+				join(dir, 'scripts', 'ralph', 'progress.txt'),
+				['## 2026-04-28 - US-Z', '- the deed', '---', ''].join('\n'),
+			);
+			const out = readRecentProgress(dir);
+			expect(out).toEqual(['2026-04-28 - US-Z']);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('readSnapshot', () => {
+	test('idle when no state file', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-idle-'));
+		try {
+			const snap = readSnapshot({ cwd: dir, nowMs: Date.parse('2026-04-28T22:00:00Z') });
+			expect(snap.idle).toBe(true);
+			expect(snap.iteration).toBe(0);
+			expect(snap.maxIterations).toBe(0);
+			expect(snap.startedAtMs).toBe(0);
+			expect(snap.paused).toBe(false);
+			expect(snap.recent).toEqual([]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('active state populates iteration/maxIterations/startedAt + branchName + story', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-active-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'ralph-loop.local.md'),
+				[
+					'---',
+					'active: true',
+					'iteration: 4',
+					'max_iterations: 30',
+					'started_at: "2026-04-28T22:00:00Z"',
+					'---',
+					'',
+					'/ralph-next',
+					'',
+				].join('\n'),
+			);
+			writeFileSync(
+				join(dir, 'prd.json'),
+				JSON.stringify({
+					branchName: 'ralph/feature-x',
+					userStories: [{ id: 'US-009', title: 'dashboard', priority: 9, passes: false }],
+				}),
+			);
+			const snap = readSnapshot({ cwd: dir, nowMs: Date.parse('2026-04-28T22:30:00Z') });
+			expect(snap.idle).toBe(false);
+			expect(snap.paused).toBe(false);
+			expect(snap.iteration).toBe(4);
+			expect(snap.maxIterations).toBe(30);
+			expect(snap.startedAtMs).toBe(Date.parse('2026-04-28T22:00:00Z'));
+			expect(snap.branchName).toBe('ralph/feature-x');
+			expect(snap.currentStoryId).toBe('US-009');
+			expect(snap.currentStoryTitle).toBe('dashboard');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('paused state is detected when active:false', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-paused-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'ralph-loop.local.md'),
+				['---', 'active: false', 'iteration: 30', 'max_iterations: 30', '---', ''].join('\n'),
+			);
+			const snap = readSnapshot({ cwd: dir, nowMs: 0 });
+			expect(snap.paused).toBe(true);
+			expect(snap.idle).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// --- runDashboard (integration) -------------------------------------------
+
+describe('runDashboard', () => {
+	test('alt-screen lifecycle: enter → render → `q` → exit alt-screen', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-run-'));
+		try {
+			const writer = makeRecordingWriter();
+			const reader = makeFakeReader();
+
+			// Schedule a `q` keypress shortly after the loop starts so the
+			// dashboard tears down voluntarily (not via maxTicks).
+			setTimeout(() => reader.emit(Buffer.from('q')), 5);
+
+			const code = await runDashboard({
+				cwd: dir,
+				pollIntervalMs: 1,
+				writer,
+				reader,
+				now: () => Date.parse('2026-04-28T22:00:00Z'),
+				maxTicks: 50, // safety net — `q` should fire long before this.
+			});
+			expect(code).toBe(0);
+
+			const all = writer.chunks.join('');
+			// Lifecycle assertions:
+			expect(all).toContain(CURSOR.enterAltScreen);
+			expect(all).toContain(CURSOR.hideCursor);
+			expect(all).toContain(CURSOR.clear); // first render
+			// Cleanup writes show-cursor + leave-alt-screen at the end.
+			expect(all).toContain(CURSOR.showCursor);
+			expect(all).toContain(CURSOR.leaveAltScreen);
+			// leaveAltScreen must appear after the first render's clear.
+			const firstClearIdx = all.indexOf(CURSOR.clear);
+			const leaveIdx = all.indexOf(CURSOR.leaveAltScreen);
+			expect(leaveIdx).toBeGreaterThan(firstClearIdx);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('Ctrl+C (\\x03) keypress triggers exit just like `q`', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-ctrlc-'));
+		try {
+			const writer = makeRecordingWriter();
+			const reader = makeFakeReader();
+			setTimeout(() => reader.emit(Buffer.from('\x03')), 5);
+
+			const code = await runDashboard({
+				cwd: dir,
+				pollIntervalMs: 1,
+				writer,
+				reader,
+				now: () => 0,
+				maxTicks: 50,
+			});
+			expect(code).toBe(0);
+			expect(writer.chunks.join('')).toContain(CURSOR.leaveAltScreen);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('cleanup runs even when an error throws inside the loop (try/finally)', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-throw-'));
+		try {
+			// Writer throws on the FIRST render-frame call (writes 1+2 are the
+			// alt-screen / hide-cursor lifecycle; write 3 is the first frame).
+			// That ensures the loop's try/catch fires + sets exitCode=1, while
+			// the finally still emits leaveAltScreen via the cleanup path.
+			let calls = 0;
+			const chunks: string[] = [];
+			const writer: DashboardWriter & { chunks: string[] } = {
+				chunks,
+				write(chunk) {
+					chunks.push(chunk);
+					calls += 1;
+					// Lifecycle writes are 1 (enterAltScreen) + 2 (hideCursor).
+					// The first render frame is call #3 — fail there.
+					if (calls === 3) {
+						throw new Error('synthetic render failure');
+					}
+					return true;
+				},
+			};
+			const reader = makeFakeReader();
+
+			const code = await runDashboard({
+				cwd: dir,
+				pollIntervalMs: 1,
+				writer,
+				reader,
+				now: () => 0,
+				maxTicks: 50,
+			});
+			expect(code).toBe(1);
+			// Cleanup must still emit leaveAltScreen even though one earlier
+			// write threw — try/catch around cleanup writes guarantees this.
+			expect(chunks.join('')).toContain(CURSOR.leaveAltScreen);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('maxTicks honoured for non-interactive mode (e.g. piped tests)', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-maxticks-'));
+		try {
+			const writer = makeRecordingWriter();
+			const reader = makeFakeReader();
+			const code = await runDashboard({
+				cwd: dir,
+				pollIntervalMs: 1,
+				writer,
+				reader,
+				now: () => 0,
+				maxTicks: 1,
+			});
+			expect(code).toBe(0);
+			// Exactly one render frame plus the lifecycle bytes.
+			const all = writer.chunks.join('');
+			expect(all).toContain(CURSOR.enterAltScreen);
+			expect(all).toContain(CURSOR.leaveAltScreen);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});

@@ -18,6 +18,7 @@
 
 import process from 'node:process';
 
+import { runDashboard } from './src/commands/dashboard.ts';
 import { runInit } from './src/commands/init.ts';
 import { runNext } from './src/commands/next.ts';
 import { runPlan } from './src/commands/plan.ts';
@@ -34,6 +35,7 @@ Commands:
   init                    Validate the machine and write ~/.config/ralph/config.toml
   plan [--issue <N>]      Spawn claude + dispatch /ralph-plan; prompts on APPROVE
   next [options]          Spawn the autonomous loop (Ghostty split + claude + dashboard)
+  dashboard               Standalone read-only TUI (alt-screen) for monitoring a loop
   status                  Show current loop state at a glance (idle / active / paused)
   stop                    Cancel a running loop (clears state file + kills tmux session "ralph")
   help                    Show this help
@@ -111,6 +113,22 @@ Output:
   last:   <sha> <subject>
 
 Exits 0 always — even when no loop is running (status: idle).`;
+
+const DASHBOARD_HELP = `ralph dashboard — read-only TUI for monitoring a running loop
+
+Usage:
+  ralph dashboard
+
+Behaviour:
+  1. Enters the alternate screen buffer (vim/htop style), hides the cursor.
+  2. Polls the cwd's prd.json + .claude/ralph-loop.local.md every 2s and
+     redraws on change.
+  3. Surfaces: branch, current story (id + title), iteration N/M, wall-clock,
+     last 5 progress.txt entries, sleep banner if active:false.
+  4. Exits cleanly on \`q\` or Ctrl+C — restores the cursor + leaves alt-screen.
+
+This command is read-only. \`ralph next\` spawns it in pane B of a Ghostty
+split; you can also run it standalone in any terminal that hosts the loop.`;
 
 const STOP_HELP = `ralph stop — cleanly cancel a running loop
 
@@ -276,6 +294,19 @@ async function main(argv: string[]): Promise<number> {
 				maxIterations: parsed.maxIterations,
 				completionPromise: parsed.completionPromise,
 			});
+		}
+		case 'dashboard': {
+			const tail = argv.slice(3);
+			if (tail.includes('--help') || tail.includes('-h')) {
+				process.stdout.write(`${DASHBOARD_HELP}\n`);
+				return 0;
+			}
+			if (tail.length > 0) {
+				printError(`unknown dashboard option: ${tail[0]}`);
+				printHint('run `ralph dashboard --help` for usage');
+				return 1;
+			}
+			return runDashboard();
 		}
 		case 'status': {
 			const tail = argv.slice(3);

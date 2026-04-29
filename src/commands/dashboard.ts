@@ -4,12 +4,49 @@
 //   - lines 1061-1094 (alt-screen + raw-stdin enter / cleanup lifecycle)
 // (MIT). See LICENSE-OVERSTORY.md.
 //
-// SCOPE: Skeleton only. Mail/Merge/Tasks/Metrics panels DROPPED — ralph CLI
-// has no merge queue, no mail, and a different task model. Concrete panels
-// (story panel, iteration counter, wall-clock) land in later stories.
+// US-009 layered the runtime loop on top of the US-004 skeleton:
+//   - `runDashboard()` reads `prd.json` + `.claude/ralph-loop.local.md` from
+//     cwd (using the same shapes `ralph status` already exports), composes a
+//     `DashboardData` snapshot, and renders it inside the alt-screen.
+//   - The render loop polls every `pollIntervalMs` (default 2000ms) and
+//     redraws on change. Hashing the snapshot avoids burning a redraw on
+//     identical data — important because chalk + alt-screen redraws cost
+//     more than the comparison.
+//   - Alt-screen lifecycle is wrapped in try/finally so a panic during render
+//     does NOT strand the operator's terminal in the alternate buffer (the
+//     story note flagged this as load-bearing).
+//   - The last 5 progress.txt entries (delimited by `---` lines) are
+//     surfaced in a "recent" panel. Each entry is truncated to a single line
+//     so the panel stays width-stable across resizes.
+//   - SIGWINCH triggers a re-render; the next render reuses `isFirstRender:
+//     true` so the new viewport size is fully repainted.
 
-import { color, visibleLength } from "../logging/color.ts";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import process from "node:process";
+
+import { color, muted, visibleLength } from "../logging/color.ts";
 import { renderHeader } from "../logging/theme.ts";
+import {
+	formatWallClock,
+	parseStateFile,
+	pickCurrentStory,
+	type LoopState,
+	type PrdShape,
+} from "./status.ts";
+
+// --- Constants -------------------------------------------------------------
+
+const STATE_FILE_PATH = ".claude/ralph-loop.local.md";
+const PRD_PATH = "prd.json";
+const PROGRESS_PATH = "scripts/ralph/progress.txt";
+
+/** How often the render loop polls cwd for state changes. 2 s per US-009 AC4. */
+export const DEFAULT_POLL_INTERVAL_MS = 2000;
+
+/** How many recent progress.txt entries to surface in the dashboard panel. */
+export const RECENT_ENTRIES_COUNT = 5;
 
 /**
  * Terminal control codes (cursor movement, screen clearing).
@@ -96,18 +133,31 @@ export function dimHorizontalLine(width: number, left: string, right: string): s
 
 /**
  * Snapshot of TUI state assembled by the caller and handed to `renderDashboard`.
- * Concrete panel data (story title, iteration count, elapsed seconds) will be
- * populated by later stories.
+ * `runDashboard` populates this from `prd.json`, the loop's state file, and
+ * `progress.txt`; tests can populate it by hand to exercise the composition
+ * primitive in isolation.
  */
 export interface DashboardData {
 	/** Branch this loop is operating on, e.g. `ralph/pr-127-ralph-cli`. */
 	branchName: string;
 	/** Current PRD story id, e.g. `US-007`. Empty string while booting. */
 	currentStoryId: string;
+	/** Current PRD story title (rendered next to the id). */
+	currentStoryTitle: string;
 	/** Iteration counter (turns sent to claude this run). */
 	iteration: number;
-	/** Wall-clock start time of the run, in ms since epoch. */
+	/** Plugin's `--max-iterations` value. */
+	maxIterations: number;
+	/** Wall-clock start time of the run, in ms since epoch. 0 when booting. */
 	startedAtMs: number;
+	/** "now" in ms since epoch — injected for deterministic tests. */
+	nowMs: number;
+	/** True when the loop's state file marks the run as paused. */
+	paused: boolean;
+	/** True when no state file is present (idle). */
+	idle: boolean;
+	/** Last N entries from progress.txt, newest first, single-line summaries. */
+	recent: string[];
 }
 
 /**
@@ -120,22 +170,72 @@ export function renderDashboard(
 	data: DashboardData,
 	intervalMs: number,
 	isFirstRender: boolean,
+	out: NodeJS.WritableStream = process.stdout,
 ): void {
-	const width = process.stdout.columns ?? 100;
+	out.write(composeDashboard(data, intervalMs, isFirstRender));
+}
+
+/**
+ * Pure composition: produce the bytes that `renderDashboard` would write.
+ * Exposed for tests that want to assert frame contents without spying on
+ * `process.stdout.write`.
+ */
+export function composeDashboard(
+	data: DashboardData,
+	intervalMs: number,
+	isFirstRender: boolean,
+): string {
+	const width = (process.stdout.columns ?? 100) || 100;
 
 	// First render: clear entire alt screen. Subsequent: just home cursor
 	// and overwrite in-place (avoids Warp's block-per-clear issue).
 	let output = isFirstRender ? CURSOR.clear : CURSOR.home;
 
-	// Header (rows 1-2)
-	const elapsedSec = Math.floor((Date.now() - data.startedAtMs) / 1000);
-	const title = `ralph · ${data.branchName} · ${data.currentStoryId || "(booting)"} · iter ${data.iteration} · ${elapsedSec}s · poll=${intervalMs}ms`;
+	// --- Header -----------------------------------------------------------
+	const elapsedMs = data.startedAtMs > 0 ? Math.max(0, data.nowMs - data.startedAtMs) : 0;
+	const wallClock = data.startedAtMs > 0 ? formatWallClock(elapsedMs) : "—";
+	const storyLabel = data.currentStoryId
+		? `${data.currentStoryId} · ${data.currentStoryTitle}`
+		: data.idle
+			? "(idle)"
+			: "(booting)";
+	const title = `ralph · ${data.branchName} · ${storyLabel}`;
 	output += `${renderHeader(title, width)}\n`;
 
-	// Concrete panels (story progress, iteration log, etc.) DROPPED for the
-	// US-004 skeleton — they land in later stories that have real data sources.
+	// --- Status row -------------------------------------------------------
+	const statusBits = [
+		`iter ${data.iteration}/${data.maxIterations}`,
+		`elapsed ${wallClock}`,
+		`poll=${intervalMs}ms`,
+	];
+	output += `${muted(statusBits.join("  ·  "))}\n`;
 
-	process.stdout.write(output);
+	// --- Sleep banner -----------------------------------------------------
+	// Surfaces when the plugin marked the run paused (e.g. completion-promise
+	// landed but the loop hasn't been cleared) — visually distinct from idle.
+	if (data.paused) {
+		const banner = "loop is paused (state file: active:false) — `ralph stop` to clear";
+		output += `${color.yellow(`! ${banner}`)}\n`;
+	}
+
+	// --- Recent progress.txt entries -------------------------------------
+	output += "\n";
+	output += `${color.bold("Recent")}\n`;
+	if (data.recent.length === 0) {
+		output += `${muted("  (no progress.txt entries yet)")}\n`;
+	} else {
+		for (const entry of data.recent) {
+			// Reserve 2 chars for the bullet, account for ANSI overhead by
+			// truncating against visible width — since the bullet is plain
+			// ASCII, `width - 4` is safe.
+			output += `${muted("  · ")}${truncate(entry, Math.max(20, width - 4))}\n`;
+		}
+	}
+
+	// --- Footer hint ------------------------------------------------------
+	output += `\n${muted("press q or Ctrl+C to exit")}\n`;
+
+	return output;
 }
 
 // === Alt-screen lifecycle ===
@@ -156,9 +256,17 @@ export function enterAltScreen(): { cleanup: () => void } {
 		process.stdin.resume();
 	}
 
+	let cleaned = false;
 	const cleanup = () => {
+		// Idempotent — both SIGINT and the `q` handler can race to call us.
+		if (cleaned) return;
+		cleaned = true;
 		if (process.stdin.isTTY) {
-			process.stdin.setRawMode(false);
+			try {
+				process.stdin.setRawMode(false);
+			} catch {
+				// stdin may already be closed during shutdown; ignore.
+			}
 			process.stdin.pause();
 		}
 		process.stdout.write(CURSOR.showCursor);
@@ -186,5 +294,366 @@ export function installQuitHandlers(cleanup: () => void): void {
 			cleanup();
 			process.exitCode = 0;
 		}
+	});
+}
+
+// === Runtime loop (US-009) =================================================
+
+/**
+ * Read the latest snapshot from `cwd`. Pure function — IO only — so the loop
+ * can call it on every poll and diff snapshots without re-implementing
+ * filesystem access.
+ *
+ * - `prd.json` → branch name + current story (highest-priority `passes:false`)
+ * - `.claude/ralph-loop.local.md` → iteration / max / started_at / paused state
+ * - `scripts/ralph/progress.txt` → last RECENT_ENTRIES_COUNT entries
+ *
+ * Each source is best-effort: a missing/corrupt file falls back to defaults
+ * rather than throwing, because the dashboard is read-only and a render
+ * failure mid-loop should NOT brick the operator's terminal.
+ */
+export function readSnapshot(options: { cwd: string; nowMs: number }): DashboardData {
+	const { cwd, nowMs } = options;
+
+	const prd = readPrd(cwd);
+	const state = readState(cwd);
+	const recent = readRecentProgress(cwd);
+
+	// Prefer prd.json's `branchName` (canonical for the loop) and fall back to
+	// `git branch --show-current` so the dashboard still labels itself when
+	// run from a cwd whose prd.json lives elsewhere (e.g. cross-repo).
+	const branchName = prd?.branchName ?? readGitBranch(cwd) ?? "(unknown branch)";
+
+	const data: DashboardData = {
+		branchName,
+		currentStoryId: "",
+		currentStoryTitle: "",
+		iteration: 0,
+		maxIterations: 0,
+		startedAtMs: 0,
+		nowMs,
+		paused: false,
+		idle: state === null,
+		recent,
+	};
+
+	if (prd) {
+		const story = pickCurrentStory(prd);
+		if (story) {
+			data.currentStoryId = story.id;
+			data.currentStoryTitle = story.title;
+		}
+	}
+
+	if (state) {
+		if (typeof state.iteration === "number") data.iteration = state.iteration;
+		if (typeof state.max_iterations === "number") data.maxIterations = state.max_iterations;
+		if (state.started_at) {
+			const startMs = Date.parse(state.started_at);
+			if (Number.isFinite(startMs)) data.startedAtMs = startMs;
+		}
+		if (state.active === false) data.paused = true;
+	}
+
+	return data;
+}
+
+function readPrd(cwd: string): PrdShape | null {
+	const path = join(cwd, PRD_PATH);
+	if (!existsSync(path)) return null;
+	try {
+		const body = readFileSync(path, "utf8");
+		const parsed = JSON.parse(body) as unknown;
+		if (parsed === null || typeof parsed !== "object") return null;
+		return parsed as PrdShape;
+	} catch {
+		return null;
+	}
+}
+
+function readGitBranch(cwd: string): string | null {
+	try {
+		const out = spawnSync("git", ["-C", cwd, "branch", "--show-current"], {
+			encoding: "utf8",
+		});
+		if (out.status !== 0) return null;
+		const name = out.stdout.trim();
+		return name.length > 0 ? name : null;
+	} catch {
+		return null;
+	}
+}
+
+function readState(cwd: string): LoopState | null {
+	const path = join(cwd, STATE_FILE_PATH);
+	if (!existsSync(path)) return null;
+	try {
+		const body = readFileSync(path, "utf8");
+		return parseStateFile(body);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Slice the last `RECENT_ENTRIES_COUNT` entries out of progress.txt. Entries
+ * are delimited by `---` lines (per the format documented in
+ * `scripts/ralph/CLAUDE.md § Progress Report Format`). We surface each
+ * entry's first non-empty line as the panel's bullet text — usually a
+ * `## YYYY-MM-DD - US-NNN` header — which keeps the panel width-stable.
+ */
+export function readRecentProgress(cwd: string): string[] {
+	const path = join(cwd, PROGRESS_PATH);
+	if (!existsSync(path)) return [];
+	let body: string;
+	try {
+		body = readFileSync(path, "utf8");
+	} catch {
+		return [];
+	}
+	return parseRecentProgress(body);
+}
+
+/**
+ * Pure parser exposed for tests: split on `---` (own-line) delimiters, then
+ * pick the first dated `## YYYY-MM-DD - US-...` heading of each section.
+ * Sections without such a heading are skipped — that drops the leading
+ * `## Codebase Patterns` block (general guidance, not a story entry) and
+ * any other non-entry section without rewriting the format.
+ */
+export function parseRecentProgress(body: string): string[] {
+	const lines = body.split("\n");
+	const sections: string[][] = [];
+	let cur: string[] = [];
+	for (const line of lines) {
+		if (line.trim() === "---") {
+			if (cur.length > 0) sections.push(cur);
+			cur = [];
+		} else {
+			cur.push(line);
+		}
+	}
+	// The pattern in progress.txt is `... entry text ...` then `---`, so a
+	// trailing partial section without a closing `---` is the in-flight
+	// addition; include it only if it's non-trivial.
+	if (cur.length > 0 && cur.some((l) => l.trim().length > 0)) {
+		sections.push(cur);
+	}
+
+	// Recognise a dated-entry header. Examples:
+	//   `## 2026-04-28 - US-001`
+	//   `## 2026-04-28 - US-R1-001`
+	//   `## 2026-04-28T10:00 - US-009`
+	const ENTRY_HEADER = /^##\s+\d{4}-\d{2}-\d{2}.*-\s*US-/;
+	const headers: string[] = [];
+	for (const section of sections) {
+		const heading = section.find((l) => ENTRY_HEADER.test(l.trim()));
+		if (heading) {
+			headers.push(heading.trim().replace(/^#+\s*/, ""));
+		}
+	}
+	// Newest entries are at the bottom of progress.txt — surface those first.
+	return headers.slice(-RECENT_ENTRIES_COUNT).reverse();
+}
+
+// === runDashboard ==========================================================
+
+/**
+ * Stream-like writable accepted by `runDashboard` for testability. We don't
+ * need the full `WritableStream` surface — just `write(chunk)` — so this
+ * narrow shape is enough and keeps the test fakes tiny.
+ */
+export interface DashboardWriter {
+	write(chunk: string): boolean;
+}
+
+/**
+ * Stream-like readable accepted by `runDashboard` for testability. Mirrors
+ * the bits of `process.stdin` we use: `on('data', ...)` for keypress
+ * handling, plus optional `setRawMode` / `pause` / `resume` for TTY mode.
+ */
+export interface DashboardReader {
+	on(event: "data", listener: (data: Buffer) => void): void;
+	off?(event: "data", listener: (data: Buffer) => void): void;
+	setRawMode?(enabled: boolean): unknown;
+	resume?(): unknown;
+	pause?(): unknown;
+	isTTY?: boolean;
+}
+
+export interface RunDashboardOptions {
+	/** cwd for state-file / prd.json / progress.txt lookups. */
+	cwd?: string;
+	/** Override poll interval (default 2000ms). */
+	pollIntervalMs?: number;
+	/** Override the writer (default `process.stdout`). */
+	writer?: DashboardWriter;
+	/** Override the reader (default `process.stdin`). */
+	reader?: DashboardReader;
+	/** Override clock — tests pin this for deterministic wall-clock display. */
+	now?: () => number;
+	/** When set, runDashboard exits after this many ticks (test only). */
+	maxTicks?: number;
+	/** Receive the cleanup function before the first render — tests use it
+	 *  to assert the alt-screen lifecycle ran with try/finally. */
+	onMounted?: (handle: { cleanup: () => void }) => void;
+}
+
+/**
+ * Run the dashboard loop. Returns when the user presses `q` or Ctrl+C, or
+ * when `maxTicks` (test mode) is exhausted. The alt-screen lifecycle is
+ * wrapped in `try { ... } finally { cleanup() }` so a thrown error during
+ * render does not strand the terminal in the alternate buffer.
+ */
+export async function runDashboard(options: RunDashboardOptions = {}): Promise<number> {
+	const cwd = options.cwd ?? process.cwd();
+	const intervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+	const writer: DashboardWriter = options.writer ?? process.stdout;
+	const reader: DashboardReader = options.reader ?? process.stdin;
+	const now = options.now ?? (() => Date.now());
+
+	// Enter alt-screen + raw mode. The lifecycle MUST be wrapped in
+	// try/finally so a panic during the render loop doesn't strand the
+	// operator's terminal in the alternate buffer (US-009 story note).
+	const handle = mountAltScreen(writer, reader);
+	if (options.onMounted) options.onMounted({ cleanup: handle.cleanup });
+
+	let firstRender = true;
+	let lastFrameKey = "";
+	let stopped = false;
+
+	const stopSignals = () => {
+		stopped = true;
+	};
+
+	const onKey = (data: Buffer) => {
+		const key = data.toString();
+		if (key === "q" || key === "\x03") {
+			stopSignals();
+		}
+	};
+	reader.on("data", onKey);
+
+	const onSigint = () => stopSignals();
+	process.on("SIGINT", onSigint);
+
+	const onResize = () => {
+		// Force a full repaint at the new viewport size on the next tick.
+		firstRender = true;
+		lastFrameKey = "";
+	};
+	process.on("SIGWINCH", onResize);
+
+	let exitCode = 0;
+	try {
+		let ticks = 0;
+		while (!stopped) {
+			const data = readSnapshot({ cwd, nowMs: now() });
+			const frame = composeDashboard(data, intervalMs, firstRender);
+			const key = snapshotKey(data, firstRender);
+			if (firstRender || key !== lastFrameKey) {
+				writer.write(frame);
+				lastFrameKey = key;
+			}
+			firstRender = false;
+			ticks += 1;
+			if (options.maxTicks !== undefined && ticks >= options.maxTicks) break;
+			await sleep(intervalMs);
+		}
+	} catch (err) {
+		exitCode = 1;
+		// Best-effort: surface the error after we've cleaned up.
+		queueMicrotask(() => {
+			process.stderr.write(`dashboard render error: ${(err as Error).message}\n`);
+		});
+	} finally {
+		process.off("SIGINT", onSigint);
+		process.off("SIGWINCH", onResize);
+		if (typeof reader.off === "function") {
+			reader.off("data", onKey);
+		}
+		handle.cleanup();
+	}
+
+	return exitCode;
+}
+
+/**
+ * Wrapper around `enterAltScreen` that uses the injected reader/writer so
+ * tests don't poke `process.stdin`/`process.stdout` directly.
+ */
+function mountAltScreen(writer: DashboardWriter, reader: DashboardReader): { cleanup: () => void } {
+	writer.write(CURSOR.enterAltScreen);
+	writer.write(CURSOR.hideCursor);
+	if (reader.isTTY && typeof reader.setRawMode === "function") {
+		try {
+			reader.setRawMode(true);
+		} catch {
+			// Stub readers may not support setRawMode; ignore.
+		}
+		if (typeof reader.resume === "function") reader.resume();
+	}
+
+	let cleaned = false;
+	const cleanup = () => {
+		if (cleaned) return;
+		cleaned = true;
+		if (reader.isTTY && typeof reader.setRawMode === "function") {
+			try {
+				reader.setRawMode(false);
+			} catch {
+				// stdin may already be closed.
+			}
+			if (typeof reader.pause === "function") {
+				try {
+					reader.pause();
+				} catch {
+					// stdin already closed during shutdown — ignore.
+				}
+			}
+		}
+		// Cleanup writes must NOT propagate write errors — a panic during
+		// rendering already triggered cleanup; the operator needs the alt
+		// screen escape sequences emitted whether or not the writer is
+		// fault-injected. Fall through to the next write on failure so both
+		// showCursor and leaveAltScreen get a chance to land.
+		try {
+			writer.write(CURSOR.showCursor);
+		} catch {
+			// continue — leaveAltScreen is the more important of the two.
+		}
+		try {
+			writer.write(CURSOR.leaveAltScreen);
+		} catch {
+			// nothing more we can do — the test harness's writer asserts
+			// the bytes that did land.
+		}
+	};
+	return { cleanup };
+}
+
+/**
+ * Stable identity for a snapshot — used to skip writes when nothing changed.
+ * We hash the volatile fields only; `nowMs` is excluded because including it
+ * would force a redraw on every tick (it changes monotonically).
+ */
+function snapshotKey(data: DashboardData, firstRender: boolean): string {
+	if (firstRender) return "first";
+	return [
+		data.branchName,
+		data.currentStoryId,
+		data.currentStoryTitle,
+		data.iteration,
+		data.maxIterations,
+		data.startedAtMs,
+		data.paused ? 1 : 0,
+		data.idle ? 1 : 0,
+		data.recent.join("|"),
+	].join("§");
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => {
+		setTimeout(resolve, ms);
 	});
 }
