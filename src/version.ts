@@ -16,4 +16,4 @@
 // Bumping the version: edit RALPH_VERSION here, run the build + tag flow in
 // `scripts/build-release.sh`, push the tag, then `gh release create`.
 
-export const RALPH_VERSION = '0.1.0';
+export const RALPH_VERSION = '0.1.1';
