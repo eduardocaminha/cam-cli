@@ -50,13 +50,13 @@
 // - The `dashboardCmd` injection point lets tests assert pane B's argv
 //   without spawning the dashboard's alt-screen loop in a test runner.
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import process from 'node:process';
 
 import { readPermissionMode } from '../config/permission-mode.ts';
 import { printError, printHint, printSuccess } from '../logging/color.ts';
+import { readEmbedded } from '../vendor/embedded.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -104,22 +104,16 @@ export function detectHost(env: NodeJS.ProcessEnv = process.env): HostMode {
 // --- Vendored template -----------------------------------------------------
 
 /**
- * Resolve the vendored template path relative to this source file. Works
- * whether the CLI runs from source (`bun src/index.ts next`) or from a
- * compiled binary (US-011 will produce a single-file `ralph` executable).
- */
-function templatePath(): string {
-	const here = dirname(fileURLToPath(import.meta.url));
-	// src/commands/next.ts → ../../vendor/ralph-loop.local.md.tmpl
-	return resolve(here, '..', '..', 'vendor', 'ralph-loop.local.md.tmpl');
-}
-
-/**
  * Render the state-file body from the vendored template. Substitution is a
  * dumb literal `{{KEY}} → value` replace; we don't escape because the values
  * are constrained by us (an integer iteration cap, a non-empty literal
  * promise string, an ISO timestamp). The promise string is wrapped in YAML
  * double quotes to keep parity with the plugin's setup script.
+ *
+ * The template body comes from `vendor/ralph-loop.local.md.tmpl`, which is
+ * embedded into the compiled binary via `with { type: "file" }` (see
+ * `src/vendor/embedded.ts`). In dev mode this reads from the real file on
+ * disk; in compiled mode it reads from the bundled `$bunfs/` virtual path.
  */
 export function renderStateFile(input: {
 	maxIterations: number;
@@ -136,7 +130,7 @@ export function renderStateFile(input: {
 	 */
 	pid: number;
 }): string {
-	const tmpl = readFileSync(templatePath(), 'utf8');
+	const tmpl = readEmbedded('ralph-loop.local.md.tmpl');
 	const promiseYaml =
 		input.completionPromise.length === 0
 			? 'null'

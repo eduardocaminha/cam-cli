@@ -6,6 +6,9 @@ out
 dist
 *.tgz
 
+# Bun build temp files (left behind by `bun build --compile` on macOS)
+.*.bun-build
+
 # code coverage
 coverage
 *.lcov

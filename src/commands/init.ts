@@ -18,12 +18,12 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import process from 'node:process';
 
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 import { mergeIntoConfig } from '../config/toml.ts';
+import { materializeEmbedded, type EmbeddedKey } from '../vendor/embedded.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -44,14 +44,13 @@ function defaultConfigPath(): string {
 }
 
 /**
- * Directory the vendored smoke files live under. Resolved relative to this
- * source file so the path is correct whether the CLI runs from source
- * (`bun src/index.ts init`) or from a compiled binary later.
+ * Resolve a vendored smoke file's on-disk path. In dev mode the embedded
+ * import returns the real `vendor/...` path; in the compiled binary it
+ * materializes into a tmp cache (see `src/vendor/embedded.ts`) so the child
+ * `bun` process spawned by the smoke runner can find it.
  */
-function vendorDir(): string {
-	const here = dirname(fileURLToPath(import.meta.url));
-	// src/commands/init.ts → ../../vendor
-	return resolve(here, '..', '..', 'vendor');
+function vendorScriptPath(key: EmbeddedKey): string {
+	return materializeEmbedded(key);
 }
 
 // --- PATH validation -------------------------------------------------------
@@ -268,12 +267,11 @@ export function runInit(options: InitOptions = {}): number {
 	}
 
 	// 3. vendored smokes
-	const vendor = vendorDir();
-	const frontmatter = runVendoredSmoke(join(vendor, 'check-agent-frontmatter.ts'));
+	const frontmatter = runVendoredSmoke(vendorScriptPath('check-agent-frontmatter.ts'));
 	reportSmoke('check-agent-frontmatter', frontmatter);
 	if (!frontmatter.ok) failures.push('check-agent-frontmatter');
 
-	const autoRetryPatterns = runVendoredSmoke(join(vendor, 'claude-auto-retry-patterns.ts'));
+	const autoRetryPatterns = runVendoredSmoke(vendorScriptPath('claude-auto-retry-patterns.ts'));
 	reportSmoke('claude-auto-retry-patterns', autoRetryPatterns);
 	if (!autoRetryPatterns.ok) failures.push('claude-auto-retry-patterns');
 

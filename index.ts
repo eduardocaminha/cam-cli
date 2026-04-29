@@ -26,6 +26,7 @@ import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runStop } from './src/commands/stop.ts';
 import { printError, printHint } from './src/logging/color.ts';
+import { RALPH_VERSION } from './src/version.ts';
 
 const HELP = `ralph — autonomous Claude Code loop driver
 
@@ -40,6 +41,7 @@ Commands:
   status                  Show current loop state at a glance (idle / active / paused)
   stop                    Cancel a running loop (clears state file + kills tmux session "ralph")
   resume [options]        Reconcile loop state after interrupt; auto-detect or --mode <name>
+  version                 Print the installed ralph-cli version (also \`--version\` / \`-v\`)
   help                    Show this help
 
 Run \`ralph <command> --help\` for command-specific options. Permission mode
@@ -374,6 +376,15 @@ async function main(argv: string[]): Promise<number> {
 	const command = argv[2];
 	if (!command || command === 'help' || command === '--help' || command === '-h') {
 		process.stdout.write(`${HELP}\n`);
+		return 0;
+	}
+	// `ralph --version` / `ralph -v` / `ralph version`. We accept all three
+	// because Unix CLIs are inconsistent about which form is canonical and
+	// shipping just one would surprise muscle memory. The output shape is
+	// `ralph 0.1.0` (single line, trailing newline) — homebrew formula tests
+	// regex this with `\Aralph \d+\.\d+\.\d+\n\z` so do not reformat.
+	if (command === '--version' || command === '-v' || command === 'version') {
+		process.stdout.write(`ralph ${RALPH_VERSION}\n`);
 		return 0;
 	}
 
