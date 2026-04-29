@@ -9,8 +9,11 @@ These files are vendored verbatim from the [eduardocaminha/reporter](https://git
 | `check-agent-frontmatter.sh` | `reporter:scripts/smoke/check-agent-frontmatter.sh` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `check-agent-frontmatter.ts` | `reporter:scripts/smoke/check-agent-frontmatter.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `claude-auto-retry-patterns.ts` | `reporter:scripts/smoke/claude-auto-retry-patterns.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
+| `ralph-loop.local.md.tmpl` | `~/.claude/plugins/cache/claude-plugins-official/ralph-loop/<v>/scripts/setup-ralph-loop.sh` (output shape) | 1.0.0 |
 
 The sha refers to the reporter HEAD at the time of the most recent re-vendor. `test/vendor.test.ts` runs the drift check on every `bun test` run when the reporter checkout is reachable at `~/Documents/Projects/reporter` — silently skips when missing (CI / non-dev machines / non-Eduardo contributors).
+
+The `ralph-loop.local.md.tmpl` template mirrors the YAML-frontmatter-plus-prompt shape that the upstream plugin's `setup-ralph-loop.sh` emits to `.claude/ralph-loop.local.md`. We pre-arm the file ourselves (instead of shelling into the plugin's setup script) so `ralph next` works standalone — without requiring the operator to have a `claude` session running with the plugin installed yet. If the upstream plugin changes its state-file shape in a future release, bump the template here, update the version pin in this README, and re-test by running `ralph next` against the new plugin and confirming the loop arms correctly. Drift detection for the template is implicit — the loop's stop hook silently fails to fire if the frontmatter keys diverge.
 
 ## Why verbatim copies, not git submodules?
 

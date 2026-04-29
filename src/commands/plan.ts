@@ -48,6 +48,7 @@
 
 import process from 'node:process';
 
+import { readPermissionMode } from '../config/permission-mode.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 
 // --- Types -----------------------------------------------------------------
@@ -223,7 +224,11 @@ async function teeAndScan(
  */
 export async function runPlan(options: PlanOptions = {}): Promise<number> {
 	const slash = options.issue !== undefined ? `/ralph-plan #${options.issue}` : '/ralph-plan';
-	const cmd = ['claude', '--permission-mode', 'bypassPermissions', slash];
+	// `permission_mode` is sourced exclusively from `~/.config/ralph/config.toml`
+	// (default `bypassPermissions` — see `config/permission-mode.ts`). No CLI
+	// flag overrides it; that's enforced by `test/no-permission-mode-flag.test.ts`.
+	const permissionMode = readPermissionMode();
+	const cmd = ['claude', '--permission-mode', permissionMode, slash];
 
 	const spawn = options.spawn ?? defaultSpawn;
 	const prompt = options.prompt ?? defaultPrompt;
