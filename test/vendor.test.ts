@@ -70,7 +70,7 @@ describe('vendor/ralph-loop-stop-hook.sh sha256 baseline', () => {
 	 * The test will fail whenever the file and this constant diverge —
 	 * that is the feature: silent rot becomes a test failure.
 	 */
-	const EXPECTED_SHA256 = '9bfa73885fac95eb31db7ad5ae29a6eec00aab00ec00381d5d5049f2c13c5458';
+	const EXPECTED_SHA256 = 'e3e14a7f5b2ff474f41583dd2b5503baa670ae7c05fe03420b1e289941159ba8';
 
 	test('stop hook sha256 matches documented baseline (drift detection)', () => {
 		const hookPath = join(VENDOR_DIR, 'ralph-loop-stop-hook.sh');

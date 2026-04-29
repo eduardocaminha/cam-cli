@@ -10,7 +10,7 @@ These files are vendored verbatim from the [eduardocaminha/reporter](https://git
 | `check-agent-frontmatter.ts` | `reporter:scripts/smoke/check-agent-frontmatter.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `claude-auto-retry-patterns.ts` | `reporter:scripts/smoke/claude-auto-retry-patterns.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `ralph-loop.local.md.tmpl` | `~/.claude/plugins/cache/claude-plugins-official/ralph-loop/<v>/scripts/setup-ralph-loop.sh` (output shape) | 1.0.0 |
-| `ralph-loop-stop-hook.sh` | `~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/hooks/stop-hook.sh` | sha256: `9bfa73885fac95eb31db7ad5ae29a6eec00aab00ec00381d5d5049f2c13c5458` (vendored at plugin version 1.0.0) |
+| `ralph-loop-stop-hook.sh` | `~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/hooks/stop-hook.sh` | sha256: `e3e14a7f5b2ff474f41583dd2b5503baa670ae7c05fe03420b1e289941159ba8` (1.0.0 base + US-003 prd.json secondary check) |
 
 The sha refers to the reporter HEAD at the time of the most recent re-vendor. `test/vendor.test.ts` runs the drift check on every `bun test` run when the reporter checkout is reachable at `~/Documents/Projects/reporter` — silently skips when missing (CI / non-dev machines / non-Eduardo contributors).
 
@@ -26,12 +26,18 @@ The `ralph-loop.local.md.tmpl` template mirrors the YAML-frontmatter-plus-prompt
 ~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/hooks/stop-hook.sh
 ```
 
-### Vendored version: 1.0.0
+### Vendored version: 1.0.0 + US-003 extension
+
+This file is based on plugin version 1.0.0 and was **intentionally extended** in US-003
+with a secondary prd.json completion check (defense-in-depth for Bug 3 + Bug 4). It is no
+longer verbatim upstream. The vendored copy is intentionally diverged; the drift-detection
+ceremony below applies only when the upstream plugin bumps its version and you need to
+re-merge upstream changes with the local extension.
 
 ### sha256 baseline
 
 ```
-9bfa73885fac95eb31db7ad5ae29a6eec00aab00ec00381d5d5049f2c13c5458
+e3e14a7f5b2ff474f41583dd2b5503baa670ae7c05fe03420b1e289941159ba8
 ```
 
 `bun test` computes this sha256 at runtime (in `test/vendor.test.ts`) and fails if the on-disk file diverges from the baseline — this converts silent rot into an explicit test failure and forces the maintainer to either rebaseline or re-run the drift-detection ceremony below.
