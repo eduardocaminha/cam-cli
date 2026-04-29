@@ -26,6 +26,7 @@ import {
 	buildDashboardArgv,
 	buildGhosttySplitArgv,
 	deepMerge,
+	detectGhosttyActions,
 	detectHost,
 	materializeStopHook,
 	renderStateFile,
@@ -34,6 +35,7 @@ import {
 	STOP_HOOK_RELATIVE,
 	writeSettingsLocal,
 	writeStateFile,
+	type GhosttySpawnSyncFn,
 	type NextSpawnFn,
 	type NextSubprocess,
 } from '../src/commands/next.ts';
@@ -81,20 +83,120 @@ function makeRecordingSpawn(handles: FakeNextHandle[]): NextSpawnFn & { calls: S
 	return fn;
 }
 
+// --- detectGhosttyActions --------------------------------------------------
+
+/**
+ * Fake GhosttySpawnSyncFn builders for the 3 cases the acceptance criteria
+ * require: action present, action absent, binary missing.
+ */
+
+const FAKE_GHOSTTY_HELP_WITH_SPLIT = `
+Ghostty Help
+============
+
+Available actions:
+  +new-split  Open a new split in the focused window
+  +new-window Open a new window
+  +list-fonts List available fonts
+`;
+
+const FAKE_GHOSTTY_HELP_WITHOUT_SPLIT = `
+Ghostty Help
+============
+
+Available actions:
+  +new-window Open a new window
+  +list-fonts List available fonts
+`;
+
+function makeSpawnSyncPresent(): GhosttySpawnSyncFn {
+	return (_cmd) => ({ stdout: FAKE_GHOSTTY_HELP_WITH_SPLIT, exitCode: 0 });
+}
+
+function makeSpawnSyncAbsent(): GhosttySpawnSyncFn {
+	return (_cmd) => ({ stdout: FAKE_GHOSTTY_HELP_WITHOUT_SPLIT, exitCode: 0 });
+}
+
+function makeSpawnSyncMissing(): GhosttySpawnSyncFn {
+	return (_cmd) => null;
+}
+
+describe('detectGhosttyActions', () => {
+	test('parses "+new-split" as available when present in +help output', () => {
+		const result = detectGhosttyActions(makeSpawnSyncPresent());
+		expect(result.parseError).toBeUndefined();
+		expect(result.available.has('new-split')).toBe(true);
+	});
+
+	test('returns empty set (no parseError) when +new-split is absent from output', () => {
+		const result = detectGhosttyActions(makeSpawnSyncAbsent());
+		expect(result.parseError).toBeUndefined();
+		expect(result.available.has('new-split')).toBe(false);
+		// Other actions are still parsed correctly.
+		expect(result.available.has('new-window')).toBe(true);
+		expect(result.available.has('list-fonts')).toBe(true);
+	});
+
+	test('returns parseError when ghostty binary is missing (spawnSync returns null)', () => {
+		const result = detectGhosttyActions(makeSpawnSyncMissing());
+		expect(result.parseError).toBeDefined();
+		expect(result.available.size).toBe(0);
+	});
+
+	test('returns parseError when ghostty exits non-zero with empty stdout', () => {
+		const result = detectGhosttyActions((_cmd) => ({ stdout: '', exitCode: 1 }));
+		expect(result.parseError).toBeDefined();
+		expect(result.available.size).toBe(0);
+	});
+
+	test('does NOT treat non-zero exit as error when stdout has content', () => {
+		// Some versions print help to stderr (reflected in stdout via pipe) and
+		// still exit 1. If there's content, we parse it rather than bailing.
+		const result = detectGhosttyActions(
+			(_cmd) => ({ stdout: FAKE_GHOSTTY_HELP_WITH_SPLIT, exitCode: 1 }),
+		);
+		expect(result.parseError).toBeUndefined();
+		expect(result.available.has('new-split')).toBe(true);
+	});
+});
+
 // --- detectHost ------------------------------------------------------------
 
 describe('detectHost', () => {
-	test('returns "ghostty-split" when GHOSTTY_RESOURCES_DIR is set', () => {
-		expect(detectHost({ GHOSTTY_RESOURCES_DIR: '/Applications/Ghostty.app/...' })).toBe(
-			'ghostty-split',
-		);
+	test('returns "ghostty-split" when GHOSTTY_RESOURCES_DIR is set AND +new-split available', () => {
+		expect(
+			detectHost(
+				{ GHOSTTY_RESOURCES_DIR: '/Applications/Ghostty.app/...' },
+				makeSpawnSyncPresent(),
+			),
+		).toBe('ghostty-split');
 	});
 
-	test('returns "ghostty-split" when TERM_PROGRAM=ghostty', () => {
-		expect(detectHost({ TERM_PROGRAM: 'ghostty' })).toBe('ghostty-split');
+	test('returns "ghostty-split" when TERM_PROGRAM=ghostty AND +new-split available', () => {
+		expect(
+			detectHost({ TERM_PROGRAM: 'ghostty' }, makeSpawnSyncPresent()),
+		).toBe('ghostty-split');
 	});
 
-	test('returns "inline" when TERM_PROGRAM=vscode (overrides Ghostty env)', () => {
+	test('returns "inline" when GHOSTTY_RESOURCES_DIR is set BUT +new-split is absent', () => {
+		expect(
+			detectHost(
+				{ GHOSTTY_RESOURCES_DIR: '/Applications/Ghostty.app/...' },
+				makeSpawnSyncAbsent(),
+			),
+		).toBe('inline');
+	});
+
+	test('returns "inline" when ghostty binary is missing (spawnSync returns null)', () => {
+		expect(
+			detectHost(
+				{ GHOSTTY_RESOURCES_DIR: '/Applications/Ghostty.app/...' },
+				makeSpawnSyncMissing(),
+			),
+		).toBe('inline');
+	});
+
+	test('returns "inline" when TERM_PROGRAM=vscode (overrides Ghostty env, no probe needed)', () => {
 		// VS Code's embedded terminal can inherit GHOSTTY_RESOURCES_DIR from
 		// the parent shell — we still fall back to inline because splitting
 		// outside the IDE would surprise the operator.
@@ -109,6 +211,25 @@ describe('detectHost', () => {
 	test('returns "inline" on an unknown terminal', () => {
 		expect(detectHost({})).toBe('inline');
 		expect(detectHost({ TERM_PROGRAM: 'iTerm.app' })).toBe('inline');
+	});
+
+	test('uses pre-computed actionsResult when supplied (no second spawn)', () => {
+		let spawnCount = 0;
+		const countingSpawnSync: GhosttySpawnSyncFn = (_cmd) => {
+			spawnCount++;
+			return { stdout: FAKE_GHOSTTY_HELP_WITH_SPLIT, exitCode: 0 };
+		};
+		const preComputed = detectGhosttyActions(countingSpawnSync);
+		expect(spawnCount).toBe(1);
+
+		// Pass pre-computed result — spawnCount should NOT increase.
+		const mode = detectHost(
+			{ GHOSTTY_RESOURCES_DIR: '/Applications/Ghostty.app/...' },
+			countingSpawnSync,
+			preComputed,
+		);
+		expect(spawnCount).toBe(1); // no second spawn
+		expect(mode).toBe('ghostty-split');
 	});
 });
 

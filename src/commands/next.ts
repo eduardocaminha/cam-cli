@@ -88,17 +88,107 @@ const STATE_FILE_PATH = '.claude/ralph-loop.local.md';
 export type HostMode = 'ghostty-split' | 'inline';
 
 /**
+ * Result shape from `ghostty +help` parsing.
+ *
+ * `available` is the full set of `+action` names found in the output (strings
+ * without the leading `+`). `parseError` is set when `ghostty +help` failed to
+ * run (binary not on PATH, exited non-zero) — callers treat it as "actions
+ * unknown, fall back to inline".
+ */
+export interface GhosttyActionsResult {
+	available: Set<string>;
+	parseError?: string;
+}
+
+/**
+ * Injection type for a synchronous spawn used only to probe `ghostty +help`.
+ * Keeping it synchronous (~5ms) avoids the async plumbing overhead for a
+ * quick capability probe.
+ *
+ * `cmd` is argv-style. Returns `{ stdout, exitCode }`.
+ * Returns `null` (or throws) if the binary is not on PATH.
+ */
+export type GhosttySpawnSyncFn = (cmd: string[]) => { stdout: string; exitCode: number } | null;
+
+/** Default synchronous probe using `Bun.spawnSync`. */
+function defaultGhosttySpawnSync(cmd: string[]): { stdout: string; exitCode: number } | null {
+	try {
+		const result = Bun.spawnSync(cmd, {
+			stdout: 'pipe',
+			stderr: 'pipe',
+		});
+		if (result.stdout === null) return null;
+		return {
+			stdout: new TextDecoder().decode(result.stdout),
+			exitCode: result.exitCode ?? 1,
+		};
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Run `ghostty +help` and parse the available action names (lines matching
+ * `/^\s*\+\w+/`). Used by `detectHost` to check whether `+new-split` is
+ * supported before attempting a Ghostty split — avoids the alarming
+ * "Ghostty failed to initialize!" stderr when the action is unavailable.
+ *
+ * If `ghostty +help` fails or is not on PATH, returns `{ available: new Set(), parseError }`.
+ */
+export function detectGhosttyActions(
+	spawnSync: GhosttySpawnSyncFn = defaultGhosttySpawnSync,
+): GhosttyActionsResult {
+	const result = spawnSync(['ghostty', '+help']);
+	if (result === null) {
+		return { available: new Set(), parseError: 'ghostty binary not found or spawn failed' };
+	}
+	if (result.exitCode !== 0 && result.stdout.trim().length === 0) {
+		return { available: new Set(), parseError: `ghostty +help exited with code ${result.exitCode}` };
+	}
+	// Parse lines starting with `+` (optionally preceded by whitespace), extract
+	// the action name up to the first whitespace. Action names may contain
+	// hyphens (e.g. `+new-split`), so we capture `[\w-]+` rather than `\w+`.
+	const actions = new Set<string>();
+	for (const line of result.stdout.split('\n')) {
+		const match = /^\s*\+([\w-]+)/.exec(line);
+		if (match && match[1]) {
+			actions.add(match[1]);
+		}
+	}
+	return { available: actions };
+}
+
+/**
  * Detect the host terminal. The detection order matters: VS Code's embedded
  * terminal sometimes also sets `GHOSTTY_RESOURCES_DIR` (the user may have
  * Ghostty as their default terminal but be running VS Code's embedded
  * terminal which inherits env vars from the parent shell). We check
  * `TERM_PROGRAM=vscode` FIRST so the IDE-embedded case wins.
+ *
+ * When Ghostty env vars are detected, we additionally probe `ghostty +help`
+ * to verify that `+new-split` is available on this version. If the action is
+ * absent or the probe fails, we fall back to inline mode silently.
+ *
+ * Pass a pre-computed `actionsResult` (from a prior `detectGhosttyActions`
+ * call) to avoid a second `ghostty +help` spawn when the result is already
+ * known. Otherwise, a `ghosttySpawnSync` override is accepted for tests.
  */
-export function detectHost(env: NodeJS.ProcessEnv = process.env): HostMode {
+export function detectHost(
+	env: NodeJS.ProcessEnv = process.env,
+	ghosttySpawnSync?: GhosttySpawnSyncFn,
+	actionsResult?: GhosttyActionsResult,
+): HostMode {
 	if (env['TERM_PROGRAM'] === 'vscode') return 'inline';
-	if (env['GHOSTTY_RESOURCES_DIR']) return 'ghostty-split';
-	if (env['TERM_PROGRAM'] === 'ghostty') return 'ghostty-split';
-	return 'inline';
+	const isGhostty = env['GHOSTTY_RESOURCES_DIR'] !== undefined || env['TERM_PROGRAM'] === 'ghostty';
+	if (!isGhostty) return 'inline';
+
+	// Ghostty detected — validate +new-split is available before committing.
+	const { available, parseError } = actionsResult ?? detectGhosttyActions(ghosttySpawnSync);
+	if (parseError !== undefined || !available.has('new-split')) {
+		// Caller will emit the hint; return inline so runNext falls back cleanly.
+		return 'inline';
+	}
+	return 'ghostty-split';
 }
 
 // --- Vendored template -----------------------------------------------------
@@ -436,6 +526,12 @@ export interface NextOptions {
 	 * returns the path written (or simulated).
 	 */
 	settingsWriter?: (cwd: string) => string;
+	/**
+	 * Override the synchronous `ghostty +help` probe used by `detectHost` to
+	 * validate `+new-split` availability. Tests inject a scripted response so
+	 * they never exec a real `ghostty` binary.
+	 */
+	ghosttySpawnSync?: GhosttySpawnSyncFn;
 }
 
 /**
@@ -454,7 +550,30 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
 	const completionPromise = options.completionPromise ?? DEFAULT_COMPLETION_PROMISE;
 	const permissionMode = options.permissionMode ?? readPermissionMode();
-	const host = options.hostMode ?? detectHost();
+
+	// When the host mode is not explicitly overridden (i.e., we're in production,
+	// not in a test that supplies `hostMode`), run the Ghostty capability probe
+	// ONCE and pass the pre-computed result to detectHost — avoids a second
+	// `ghostty +help` spawn when both the hint logic and mode detection need it.
+	let host: HostMode;
+	if (options.hostMode !== undefined) {
+		host = options.hostMode;
+	} else {
+		// Run probe once and cache the result.
+		const ghosttyActions = detectGhosttyActions(options.ghosttySpawnSync);
+		host = detectHost(process.env, options.ghosttySpawnSync, ghosttyActions);
+
+		// If Ghostty was detected in env but +new-split is unavailable, inform operator.
+		const isGhosttyEnv =
+			process.env['GHOSTTY_RESOURCES_DIR'] !== undefined ||
+			process.env['TERM_PROGRAM'] === 'ghostty';
+		if (isGhosttyEnv && host === 'inline') {
+			printHint(
+				`Ghostty +new-split unavailable on this version — running inline. Open \`ralph dashboard\` in another pane manually if you want one.`,
+			);
+		}
+	}
+
 	const spawn = options.spawn ?? defaultSpawn;
 	const writer =
 		options.writer ??
