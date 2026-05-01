@@ -90,7 +90,7 @@ function tmuxAvailable(): boolean {
  * We point at the agent file rather than inlining its contents — keeping the
  * prompt small and letting claude follow its `.claude/agents/` lookup.
  */
-function buildOrchestratorBootPrompt(): string {
+export function buildOrchestratorBootPrompt(): string {
 	return [
 		'You are the cam orchestrator for this project.',
 		'',

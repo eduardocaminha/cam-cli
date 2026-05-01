@@ -79,7 +79,11 @@ Behaviour:
     6. Writes scripts/cam/project.toml with per-project config.
     7. Opens a tmux split:
          Pane A (left):  claude in bypassPermissions, adapts templates to this project.
-         Pane B (right): key menu — c to interact, v for view-only, q to close.`;
+         Pane B (right): key menu — c to interact, v for view-only, q to close.
+    8. Auto-handoff: when the config agent emits CAM_SETUP_STATUS=DONE,
+       the orchestrator is launched in a new pane immediately. The menu
+       pane updates with options: o (orchestrator), c (config), k (kill
+       config pane), q (close menu).`;
 
 const RUN_HELP = `cam run — open or attach the long-lived orchestrator session
 

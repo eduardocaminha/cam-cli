@@ -34,6 +34,7 @@ import process from 'node:process';
 
 import { mergeIntoConfig } from '../config/toml.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
+import { buildOrchestratorBootPrompt } from './run.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -213,21 +214,115 @@ function buildSetupPrompt(opts: {
 }
 
 /**
- * Spawn the setup agent in a tmux split.
+ * Build the menu pane bash script.
  *
- * Layout (same window, horizontal split):
+ * Two-state menu:
+ *   - "initial": waiting for the config agent to emit CAM_SETUP_STATUS=DONE.
+ *     Polls every 2s via `tmux capture-pane -p -S -` (full scrollback).
+ *     While polling, accepts c/v/q keypresses.
+ *   - "post":    config done → orchestrator pane was just spawned.
+ *     Accepts o/c/k/q (o=orchestrator, c=config, k=kill-config, q=quit menu).
+ *
+ * The script reads `CAM_CONFIG_PANE` and `CAM_ORCH_PROMPT_FILE` from the
+ * environment (passed via `tmux split-window -e`).
+ *
+ * Single quotes guard the bash content from JS string interpolation. Where
+ * we need to embed a JS value, we close the single-quote, concat, and reopen.
+ */
+export function buildSetupMenuScript(): string {
+	return `#!/bin/bash
+set +m
+
+CYAN='\\033[1;36m'
+GREEN='\\033[1;32m'
+BOLD='\\033[1m'
+DIM='\\033[2m'
+RST='\\033[0m'
+
+CAM_CONFIG_PANE="\${CAM_CONFIG_PANE:-}"
+CAM_ORCH_PROMPT_FILE="\${CAM_ORCH_PROMPT_FILE:-.claude/.cam-orchestrator-prompt.txt}"
+CAM_ORCH_PANE=""
+
+show_initial() {
+	clear
+	printf "\${CYAN}  cam init — setup running...\${RST}\\n\\n"
+	printf "  \${BOLD}c\${RST}  switch to config pane (interact)\\n"
+	printf "  \${BOLD}v\${RST}  open read-only viewer\\n"
+	printf "  \${BOLD}q\${RST}  close this menu\\n\\n"
+	printf "\${DIM}  waiting for CAM_SETUP_STATUS=DONE...\${RST}\\n"
+}
+
+show_post() {
+	clear
+	printf "\${GREEN}  ✓ cam setup complete\${RST}\\n\\n"
+	printf "  Orchestrator launched in the new pane.\\n"
+	printf "  Config pane is still alive for review.\\n\\n"
+	printf "  \${BOLD}o\${RST}  switch to orchestrator pane\\n"
+	printf "  \${BOLD}c\${RST}  switch to config pane\\n"
+	printf "  \${BOLD}k\${RST}  close (kill) the config pane\\n"
+	printf "  \${BOLD}q\${RST}  close this menu\\n"
+}
+
+handoff() {
+	# Spawn the orchestrator pane immediately to the right of the config pane.
+	CAM_ORCH_PANE=$(tmux split-window \\
+		-h -t "\${CAM_CONFIG_PANE}" -l 50% -P -F '#{pane_id}' \\
+		"bash -c 'claude --permission-mode bypassPermissions \\"\\$(cat \${CAM_ORCH_PROMPT_FILE})\\"'") || CAM_ORCH_PANE=""
+}
+
+state=initial
+show_initial
+
+while true; do
+	if [[ "\${state}" == "initial" ]]; then
+		# 2s timeout lets the polling fire even if the user is idle.
+		read -rsn1 -t 2 key
+		case "\${key}" in
+			c|C) tmux select-pane -t "\${CAM_CONFIG_PANE}" ;;
+			v|V) tmux split-window -v -l 12 "tmux pipe-pane -t '\${CAM_CONFIG_PANE}' -o 'cat >> /tmp/cam-config.log'; tail -f /tmp/cam-config.log" ;;
+			q|Q) exit 0 ;;
+		esac
+		# Poll for DONE in the config pane's full scrollback.
+		if tmux capture-pane -t "\${CAM_CONFIG_PANE}" -p -S - 2>/dev/null | grep -q "CAM_SETUP_STATUS=DONE"; then
+			handoff
+			state=post
+			show_post
+		fi
+	else
+		read -rsn1 key
+		case "\${key}" in
+			o|O) [[ -n "\${CAM_ORCH_PANE}" ]] && tmux select-pane -t "\${CAM_ORCH_PANE}" ;;
+			c|C) tmux select-pane -t "\${CAM_CONFIG_PANE}" ;;
+			k|K) tmux kill-pane -t "\${CAM_CONFIG_PANE}" ;;
+			q|Q) exit 0 ;;
+		esac
+	fi
+done
+`;
+}
+
+/**
+ * Spawn the setup agent in a tmux split with auto-handoff to the orchestrator.
+ *
+ * Initial layout (same window, horizontal split):
  *   ┌──────────────────────────────┬─────────────────────┐
- *   │  Pane 0: agent (claude/codex)│  Pane 1: key menu   │
+ *   │  Pane: config agent (claude) │  Pane: setup menu   │
  *   │  bypassPermissions           │  c → interact        │
  *   │                              │  v → view-only       │
+ *   │                              │  q → close menu      │
+ *   │                              │  (polling for DONE)  │
  *   └──────────────────────────────┴─────────────────────┘
  *
- * Pane 1 is a small bash script that:
- *   - shows a live tail of the last 10 lines of the agent's output log
- *   - reads a single keypress in a loop:
- *       c → tmux select-pane -t 0  (switch focus to agent for interaction)
- *       v → opens a readonly split of pane 0 (tmux split-window piping pane output)
- *       q → exit the menu pane
+ * After CAM_SETUP_STATUS=DONE is detected, the menu pane spawns the
+ * orchestrator automatically and reshapes itself:
+ *
+ *   ┌────────────────┬────────────────┬───────────────────┐
+ *   │  config agent  │  orchestrator  │  setup menu       │
+ *   │  (idle / quit) │  (interactive) │  o → orchestrator │
+ *   │                │                │  c → config       │
+ *   │                │                │  k → kill config  │
+ *   │                │                │  q → close menu   │
+ *   └────────────────┴────────────────┴───────────────────┘
  */
 function spawnSetupTmux(opts: {
 	prompt: string;
@@ -235,72 +330,89 @@ function spawnSetupTmux(opts: {
 }): void {
 	const { prompt, cwd } = opts;
 
-	// Write prompt to file to avoid shell-quoting nightmares.
+	// Persist all the artifacts the panes need.
 	const dotClaude = join(cwd, '.claude');
 	mkdirSync(dotClaude, { recursive: true });
+
 	const promptFile = join(dotClaude, '.cam-setup-prompt.txt');
 	writeFileSync(promptFile, prompt, 'utf8');
 
+	const orchPromptFile = join(dotClaude, '.cam-orchestrator-prompt.txt');
+	writeFileSync(orchPromptFile, buildOrchestratorBootPrompt(), 'utf8');
+
+	const menuFile = join(dotClaude, '.cam-setup-menu.sh');
+	writeFileSync(menuFile, buildSetupMenuScript(), 'utf8');
+
 	// Agent command — reads prompt from file as first turn.
 	const agentCmd = `claude --permission-mode bypassPermissions "$(cat '${promptFile}')"`;
-
-	// Pane 1: interactive key menu. Uses `read -rsn1` to capture a single
-	// keypress without Enter. `c` switches focus to pane 0; `v` splits a
-	// read-only view; `q` exits.
-	const menuScript = [
-		'set +m',
-		"CYAN='\\033[1;36m' BOLD='\\033[1m' RST='\\033[0m'",
-		'clear',
-		'printf "$CYAN  cam init — project setup running...$RST\\n\\n"',
-		'printf "  The agent is adapting the cam templates to your project.\\n\\n"',
-		'printf "  ${BOLD}c${RST}  switch to agent pane (interact)\\n"',
-		'printf "  ${BOLD}v${RST}  open view-only pane\\n"',
-		'printf "  ${BOLD}q${RST}  close this menu\\n\\n"',
-		'while true; do',
-		'  read -rsn1 key',
-		'  case "$key" in',
-		'    c|C) tmux select-pane -t 0; break ;;',
-		"    v|V) tmux split-window -v -l 12 \"tmux pipe-pane -o -t 0 'cat >> /tmp/cam-agent-view.log'; tail -f /tmp/cam-agent-view.log\"; break ;;",
-		'    q|Q) exit 0 ;;',
-		'  esac',
-		'done',
-	].join('\n');
+	const menuCmd = `bash '${menuFile}'`;
 
 	const insideTmux = Boolean(process.env['TMUX']);
 
 	if (insideTmux) {
-		// We are already in a tmux session.
-		// 1. Split right (pane 1 = menu), keep focus on current pane.
-		// 2. Run the agent in the current pane (pane 0).
+		// Capture the current pane id BEFORE we send-keys; it'll become the
+		// config pane and never changes id even when we run a new command in it.
+		const idResult = spawnSync(
+			'tmux',
+			['display-message', '-p', '#{pane_id}'],
+			{ encoding: 'utf8' },
+		);
+		const configPaneId = (idResult.stdout ?? '').trim();
+		if (!configPaneId) {
+			printWarning('could not capture current tmux pane id — auto-handoff disabled');
+		}
+
+		// Split right with the menu pane, exposing the config pane id + orch
+		// prompt path via env vars so the script can find them.
 		const menuResult = spawnSync(
 			'tmux',
-			['split-window', '-h', '-l', '36', '-d', 'bash', '-c', menuScript],
+			[
+				'split-window', '-h', '-l', '36', '-d',
+				'-e', `CAM_CONFIG_PANE=${configPaneId}`,
+				'-e', `CAM_ORCH_PROMPT_FILE=${orchPromptFile}`,
+				'bash', '-c', menuCmd,
+			],
 			{ stdio: 'inherit' },
 		);
 		if ((menuResult.status ?? 1) !== 0) {
 			printWarning('tmux split for menu pane failed — continuing without it');
 		}
-		// Replace current pane with the agent (exec so it inherits the pane).
+		// Run the agent in the original pane.
 		spawnSync('tmux', ['send-keys', `bash -c ${JSON.stringify(agentCmd)}`, 'Enter'], {
 			stdio: 'inherit',
 		});
 	} else {
-		// Outside tmux: create a detached session, agent in pane 0.
+		// Outside tmux: create a detached session, capture the agent's pane id.
 		const sessionName = 'cam-setup';
-		spawnSync(
+		const newSession = spawnSync(
 			'tmux',
 			[
 				'new-session', '-d',
 				'-s', sessionName,
 				'-x', '220', '-y', '50',
+				'-P', '-F', '#{pane_id}',
 				'bash', '-c', agentCmd,
 			],
-			{ cwd, stdio: 'inherit' },
+			{ cwd, encoding: 'utf8' },
 		);
-		// Add the menu pane (pane 1) in the same window.
+		const configPaneId = (newSession.stdout ?? '').trim();
+		if ((newSession.status ?? 1) !== 0 || !configPaneId) {
+			printError(
+				'tmux new-session failed',
+				`exit code ${newSession.status} — install tmux or run with --no-tmux`,
+			);
+			return;
+		}
+
+		// Add the menu pane (right side) with env vars so it can drive handoff.
 		spawnSync(
 			'tmux',
-			['split-window', '-t', `${sessionName}:0`, '-h', '-l', '36', '-d', 'bash', '-c', menuScript],
+			[
+				'split-window', '-t', `${sessionName}:0`, '-h', '-l', '36', '-d',
+				'-e', `CAM_CONFIG_PANE=${configPaneId}`,
+				'-e', `CAM_ORCH_PROMPT_FILE=${orchPromptFile}`,
+				'bash', '-c', menuCmd,
+			],
 			{ stdio: 'inherit' },
 		);
 		printSuccess(`tmux session "${sessionName}" created`);
