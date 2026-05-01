@@ -24,6 +24,7 @@ import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
+import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runStop } from './src/commands/stop.ts';
 import { printError, printHint } from './src/logging/color.ts';
@@ -36,6 +37,7 @@ Usage:
 
 Commands:
   init [options]          Validate the machine, then run the project-setup wizard
+  run [options]           Open or attach the long-lived orchestrator (tmux session)
   plan [--issue <N>]      Spawn claude + dispatch /ralph-plan; prompts on APPROVE
   next [options]          Spawn the autonomous loop (Ghostty split + claude + dashboard)
   dashboard               Standalone read-only TUI (alt-screen) for monitoring a loop
@@ -78,6 +80,27 @@ Behaviour:
     7. Opens a tmux split:
          Pane A (left):  claude in bypassPermissions, adapts templates to this project.
          Pane B (right): key menu — c to interact, v for view-only, q to close.`;
+
+const RUN_HELP = `cam run — open or attach the long-lived orchestrator session
+
+Usage:
+  cam run [options]
+
+Options:
+  --no-attach    Create the orchestrator session but do not attach the
+                 current terminal to it. Useful for scripting.
+
+Behaviour:
+  1. Verifies tmux and \`.claude/agents/subagent-orchestrator.md\` exist
+     (run \`cam init\` first if not).
+  2. Computes a stable session name per project (cam-orch-<basename>-<hash>).
+  3. If the session exists: attach.
+     Otherwise: create with two panes (orchestrator on the left, status
+     menu on the right) and attach.
+  4. Inside an existing tmux: uses \`switch-client\` instead of \`attach\`.
+
+The orchestrator persona is loaded from
+.claude/agents/subagent-orchestrator.md — see that file for what it does.`;
 
 const PLAN_HELP = `cam plan — wrap an interactive claude session that runs /ralph-plan
 
@@ -438,6 +461,18 @@ async function main(argv: string[]): Promise<number> {
 				description: setupArgs.description,
 				noTmux: setupArgs.noTmux,
 			});
+		}
+		case 'run': {
+			const parsed = parseRunArgs(argv.slice(3));
+			if (parsed === null) {
+				printHint('run `cam run --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(`${RUN_HELP}\n`);
+				return 0;
+			}
+			return runRun({ noAttach: parsed.noAttach });
 		}
 		case 'plan': {
 			const parsed = parsePlanArgs(argv.slice(3));
