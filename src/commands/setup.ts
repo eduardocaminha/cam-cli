@@ -175,7 +175,7 @@ function buildSetupPrompt(opts: {
 	const base = [
 		'You are setting up this project for the cam autonomous loop.',
 		'The cam templates have already been installed into:',
-		'  .claude/commands/  (cam-next.md, cam-plan.md, cam-review.md, cam-ship.md, cam-prune.md)',
+		'  .claude/commands/  (cam-issue.md, cam-plan.md, cam-next.md, cam-review.md, cam-ship.md, cam-prune.md)',
 		'  .claude/agents/    (subagent-planner.md, subagent-implementer.md, subagent-reviewer.md, subagent-auditor.md)',
 		'  scripts/cam/       (CLAUDE.md, handoff.schema.json, journal.md)',
 		'',
