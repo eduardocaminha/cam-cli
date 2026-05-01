@@ -29,7 +29,7 @@
   },
   // Exclude vendored upstream code from typecheck — those files target the
   // reporter monorepo's looser tsconfig (no `noUncheckedIndexedAccess`) and
-  // are invoked by ralph-cli via `bun <file>` at runtime, not as imports.
+  // are invoked by cam-cli via `bun <file>` at runtime, not as imports.
   // The drift smoke (`test/vendor.test.ts`) is what guards them against
   // regressions; static type checking is not the right tool here.
   "exclude": ["node_modules", "vendor"]

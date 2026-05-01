@@ -1,6 +1,6 @@
 // index.ts
 //
-// ralph CLI entrypoint. Dispatches subcommands by argv[2]; everything else is
+// cam CLI entrypoint. Dispatches subcommands by argv[2]; everything else is
 // implemented in `src/commands/<name>.ts`. We deliberately avoid pulling in
 // `commander` / `yargs` for the current CLI surface — argv parsing fits
 // inline, and a third-party arg parser would be the largest single dep in
@@ -10,7 +10,7 @@
 //
 // IMPORTANT INVARIANT (US-007 acceptance criterion 7):
 //   No subcommand parser registers a `--permission-mode` flag. The value is
-//   sourced exclusively from `~/.config/ralph/config.toml` via
+//   sourced exclusively from `~/.config/cam/config.toml` via
 //   `src/config/permission-mode.ts`. The unit test
 //   `test/no-permission-mode-flag.test.ts` greps this file (and every file
 //   in `src/commands/`) for `--permission-mode` patterns and fails the build
@@ -21,56 +21,84 @@ import process from 'node:process';
 import { runDashboard } from './src/commands/dashboard.ts';
 import { runInit } from './src/commands/init.ts';
 import { runNext } from './src/commands/next.ts';
+import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runStop } from './src/commands/stop.ts';
 import { printError, printHint } from './src/logging/color.ts';
-import { RALPH_VERSION } from './src/version.ts';
+import { CAM_VERSION } from './src/version.ts';
 
-const HELP = `ralph — autonomous Claude Code loop driver
+const HELP = `cam — autonomous Claude Code loop driver
 
 Usage:
-  ralph <command> [options]
+  cam <command> [options]
 
 Commands:
-  init                    Validate the machine and write ~/.config/ralph/config.toml
+  init [options]          Validate the machine, then run the project-setup wizard
   plan [--issue <N>]      Spawn claude + dispatch /ralph-plan; prompts on APPROVE
   next [options]          Spawn the autonomous loop (Ghostty split + claude + dashboard)
   dashboard               Standalone read-only TUI (alt-screen) for monitoring a loop
   status                  Show current loop state at a glance (idle / active / paused)
-  stop                    Cancel a running loop (clears state file + kills tmux session "ralph")
+  stop                    Cancel a running loop (clears state file + kills tmux session "cam")
   resume [options]        Reconcile loop state after interrupt; auto-detect or --mode <name>
-  version                 Print the installed ralph-cli version (also \`--version\` / \`-v\`)
+  version                 Print the installed cam-cli version (also \`--version\` / \`-v\`)
   help                    Show this help
 
-Run \`ralph <command> --help\` for command-specific options. Permission mode
-for spawned claude sessions is read from \`~/.config/ralph/config.toml\` —
-no subcommand exposes a CLI flag for it (run \`ralph init\` to set).`;
+Run \`cam <command> --help\` for command-specific options. Permission mode
+for spawned claude sessions is read from \`~/.config/cam/config.toml\` —
+no subcommand exposes a CLI flag for it (run \`cam init\` to set).`;
 
-const PLAN_HELP = `ralph plan — wrap an interactive claude session that runs /ralph-plan
+const INIT_HELP = `cam init — validate the machine and set up the project for the cam loop
 
 Usage:
-  ralph plan [--issue <N>]
+  cam init [options]
+
+Options:
+  --new               Treat this as a new project (skip the new/existing question).
+  --existing          Treat this as an existing project.
+  --description "<t>" Project description for new projects (skip the prompt).
+  --no-tmux           Install templates only; skip spawning the tmux setup session.
+
+Behaviour:
+  Stage 1 — Machine validation:
+    1. Checks \`claude\` is on PATH and logged in.
+    2. Checks \`claude-auto-retry\` is on PATH.
+    3. Runs vendored smokes (check-agent-frontmatter, claude-auto-retry-patterns).
+    4. Writes ~/.config/cam/config.toml with permission_mode = "bypassPermissions".
+
+  Stage 2 — Project setup wizard (if stage 1 passes):
+    1. Asks: new project or existing?
+    2. Verifies claude is installed and logged in.
+    3. If new: asks for a brief project description.
+    4. Installs cam templates into .claude/commands/, .claude/agents/, scripts/cam/.
+    5. Opens a tmux split:
+         Pane A (left):  claude in bypassPermissions, adapts templates to this project.
+         Pane B (right): key menu — c to interact, v for view-only, q to close.`;
+
+const PLAN_HELP = `cam plan — wrap an interactive claude session that runs /ralph-plan
+
+Usage:
+  cam plan [--issue <N>]
 
 Options:
   --issue <N>    Plan against GitHub issue #N (passed through as \`/ralph-plan #N\`).
-                 Without this flag, ralph dispatches a bare \`/ralph-plan\` and the
+                 Without this flag, cam dispatches a bare \`/ralph-plan\` and the
                  planner picks the highest-priority pending issue itself.
 
 Behaviour:
-  1. Spawns \`claude\` (permission mode from ~/.config/ralph/config.toml)
+  1. Spawns \`claude\` (permission mode from ~/.config/cam/config.toml)
      attached to your TTY.
   2. The slash command is sent as the first user-turn.
-  3. After the prd-auditor emits \`verdict: "APPROVE"\`, ralph asks
+  3. After the prd-auditor emits \`verdict: "APPROVE"\`, cam asks
      \`Approve PRD and create branch? [y/N]\`.
   4. On \`y\`: planner continues to its branch + commit step.
-  5. On \`N\` / empty: ralph terminates the planning session and exits 0.`;
+  5. On \`N\` / empty: cam terminates the planning session and exits 0.`;
 
-const NEXT_HELP = `ralph next — spawn the autonomous loop
+const NEXT_HELP = `cam next — spawn the autonomous loop
 
 Usage:
-  ralph next [--max-iter <N>] [--completion-promise <STR>]
+  cam next [--max-iter <N>] [--completion-promise <STR>]
 
 Options:
   --max-iter <N>              Max iterations before auto-stop. Default: 30.
@@ -79,15 +107,15 @@ Options:
                               \`<promise>COMPLETE</promise>\`).
 
 Behaviour:
-  1. Reads \`permission_mode\` from \`~/.config/ralph/config.toml\` (default
-     \`bypassPermissions\`). Ralph does NOT accept a \`--permission-mode\`
-     flag — change the config file with \`ralph init\` to override.
+  1. Reads \`permission_mode\` from \`~/.config/cam/config.toml\` (default
+     \`bypassPermissions\`). cam does NOT accept a \`--permission-mode\`
+     flag — change the config file with \`cam init\` to override.
   2. Pre-arms the \`ralph-loop\` plugin by writing
      \`.claude/ralph-loop.local.md\` (vendored template at
      \`vendor/ralph-loop.local.md.tmpl\`).
   3. Detects the host terminal:
        Ghostty                 → opens a horizontal split (claude in current
-                                 pane, \`ralph dashboard\` in new pane).
+                                 pane, \`cam dashboard\` in new pane).
        VS Code (TERM_PROGRAM)  → inline single-pane (the IDE is the dashboard).
        anything else           → inline single-pane.
   4. Spawns \`claude\` with \`/ralph-next\` as the first user-turn.
@@ -97,10 +125,10 @@ Stop primitives:
   /cancel-ralph  (preferred — cleans up the state file)
   rm .claude/ralph-loop.local.md  (kill switch — loop ends after current turn)`;
 
-const STATUS_HELP = `ralph status — show current loop state at a glance
+const STATUS_HELP = `cam status — show current loop state at a glance
 
 Usage:
-  ralph status
+  cam status
 
 Reads three sources in the current cwd:
   1. .claude/ralph-loop.local.md  — plugin state file (iteration, started_at,
@@ -118,10 +146,10 @@ Output:
 
 Exits 0 always — even when no loop is running (status: idle).`;
 
-const DASHBOARD_HELP = `ralph dashboard — read-only TUI for monitoring a running loop
+const DASHBOARD_HELP = `cam dashboard — read-only TUI for monitoring a running loop
 
 Usage:
-  ralph dashboard
+  cam dashboard
 
 Behaviour:
   1. Enters the alternate screen buffer (vim/htop style), hides the cursor.
@@ -131,34 +159,34 @@ Behaviour:
      last 5 progress.txt entries, sleep banner if active:false.
   4. Exits cleanly on \`q\` or Ctrl+C — restores the cursor + leaves alt-screen.
 
-This command is read-only. \`ralph next\` spawns it in pane B of a Ghostty
+This command is read-only. \`cam next\` spawns it in pane B of a Ghostty
 split; you can also run it standalone in any terminal that hosts the loop.`;
 
-const STOP_HELP = `ralph stop — cleanly cancel a running loop
+const STOP_HELP = `cam stop — cleanly cancel a running loop
 
 Usage:
-  ralph stop
+  cam stop
 
 What it does:
   1. Removes .claude/ralph-loop.local.md (the plugin state file).
-  2. Kills the tmux session named exactly "ralph" if alive (defensive —
+  2. Kills the tmux session named exactly "cam" if alive (defensive —
      unrelated tmux sessions are NOT touched).
-  3. Exits 0. Idempotent: calling \`ralph stop\` with nothing to clean is the
+  3. Exits 0. Idempotent: calling \`cam stop\` with nothing to clean is the
      success state, not a failure.
 
-After \`ralph stop\`, the next \`ralph next\` will not detect a stale loop.`;
+After \`cam stop\`, the next \`cam next\` will not detect a stale loop.`;
 
-const RESUME_HELP = `ralph resume — reconcile loop state after an interrupt
+const RESUME_HELP = `cam resume — reconcile loop state after an interrupt
 
 Usage:
-  ralph resume [--mode <name>] [--dry-run] [--force]
+  cam resume [--mode <name>] [--dry-run] [--force]
 
 Auto-detected modes (no --mode flag):
-  idle      No state file → run \`ralph next\` to start fresh.
+  idle      No state file → run \`cam next\` to start fresh.
   noop      claude-auto-retry process alive → loop is in a rate-limit
             sleep window; will resume on its own.
   respawn   State file present + heartbeat PID dead + recent commit
-            (≤ 24h) → re-spawn \`ralph next\` to re-attach.
+            (≤ 24h) → re-spawn \`cam next\` to re-attach.
   prompt    State file present + heartbeat PID dead + last commit
             > 24h old (or unknown) → asks [Y/n/reset]:
                   Y      continue (treat as respawn)
@@ -169,12 +197,12 @@ Auto-detected modes (no --mode flag):
 Explicit --mode overrides:
   --mode reset-current-story   Flip the most-recently-completed story back
                                to passes:false. Re-runs that story on the
-                               next \`ralph next\`.
+                               next \`cam next\`.
   --mode reset-prd             Flip every story to passes:false. Re-runs the
                                whole PRD from US-001.
   --mode reset-branch          Print the operator-driven \`git reset --hard
                                origin/main\` instruction + remove the state
-                               file. ralph does NOT run the destructive
+                               file. cam does NOT run the destructive
                                \`git reset\` itself.
 
 Flags:
@@ -378,23 +406,39 @@ async function main(argv: string[]): Promise<number> {
 		process.stdout.write(`${HELP}\n`);
 		return 0;
 	}
-	// `ralph --version` / `ralph -v` / `ralph version`. We accept all three
+	// `cam --version` / `cam -v` / `cam version`. We accept all three
 	// because Unix CLIs are inconsistent about which form is canonical and
 	// shipping just one would surprise muscle memory. The output shape is
-	// `ralph 0.1.0` (single line, trailing newline) — homebrew formula tests
-	// regex this with `\Aralph \d+\.\d+\.\d+\n\z` so do not reformat.
+	// `cam 0.1.0` (single line, trailing newline) — homebrew formula tests
+	// regex this with `\Acam \d+\.\d+\.\d+\n\z` so do not reformat.
 	if (command === '--version' || command === '-v' || command === 'version') {
-		process.stdout.write(`ralph ${RALPH_VERSION}\n`);
+		process.stdout.write(`cam ${CAM_VERSION}\n`);
 		return 0;
 	}
 
 	switch (command) {
-		case 'init':
-			return runInit();
+		case 'init': {
+			const setupArgs = parseSetupArgs(argv.slice(3));
+			if (setupArgs === null) {
+				printHint('run `cam init --help` for usage');
+				return 1;
+			}
+			if (setupArgs.help) {
+				process.stdout.write(`${INIT_HELP}\n`);
+				return 0;
+			}
+			const machineCode = runInit();
+			if (machineCode !== 0) return machineCode;
+			return runSetup({
+				projectMode: setupArgs.projectMode,
+				description: setupArgs.description,
+				noTmux: setupArgs.noTmux,
+			});
+		}
 		case 'plan': {
 			const parsed = parsePlanArgs(argv.slice(3));
 			if (parsed === null) {
-				printHint('run `ralph plan --help` for usage');
+				printHint('run `cam plan --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -406,7 +450,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'next': {
 			const parsed = parseNextArgs(argv.slice(3));
 			if (parsed === null) {
-				printHint('run `ralph next --help` for usage');
+				printHint('run `cam next --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -426,7 +470,7 @@ async function main(argv: string[]): Promise<number> {
 			}
 			if (tail.length > 0) {
 				printError(`unknown dashboard option: ${tail[0]}`);
-				printHint('run `ralph dashboard --help` for usage');
+				printHint('run `cam dashboard --help` for usage');
 				return 1;
 			}
 			return runDashboard();
@@ -439,7 +483,7 @@ async function main(argv: string[]): Promise<number> {
 			}
 			if (tail.length > 0) {
 				printError(`unknown status option: ${tail[0]}`);
-				printHint('run `ralph status --help` for usage');
+				printHint('run `cam status --help` for usage');
 				return 1;
 			}
 			return runStatus();
@@ -452,7 +496,7 @@ async function main(argv: string[]): Promise<number> {
 			}
 			if (tail.length > 0) {
 				printError(`unknown stop option: ${tail[0]}`);
-				printHint('run `ralph stop --help` for usage');
+				printHint('run `cam stop --help` for usage');
 				return 1;
 			}
 			return runStop();
@@ -460,7 +504,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'resume': {
 			const parsed = parseResumeArgs(argv.slice(3));
 			if (parsed === null) {
-				printHint('run `ralph resume --help` for usage');
+				printHint('run `cam resume --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -475,7 +519,7 @@ async function main(argv: string[]): Promise<number> {
 		}
 		default:
 			printError(`unknown command: ${command}`);
-			printHint('run `ralph help` to see the available commands');
+			printHint('run `cam help` to see the available commands');
 			return 1;
 	}
 }

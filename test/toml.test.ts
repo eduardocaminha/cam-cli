@@ -19,7 +19,7 @@ import {
 let workDir: string;
 
 beforeEach(() => {
-	workDir = mkdtempSync(join(tmpdir(), 'ralph-cli-toml-'));
+	workDir = mkdtempSync(join(tmpdir(), 'cam-cli-toml-'));
 });
 
 function cleanup(): void {

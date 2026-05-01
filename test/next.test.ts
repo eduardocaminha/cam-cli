@@ -1,19 +1,20 @@
 // test/next.test.ts
 //
-// Unit tests for `ralph next`. We mock both the spawn factory and the
+// Unit tests for `cam next`. We mock both the spawn factory and the
 // state-file writer via the injection points on `runNext({ spawn, writer })`,
-// so these tests never call `claude`, never invoke `ghostty`, and never
+// so these tests never call `claude`, never invoke `tmux`, and never
 // touch the real filesystem outside the bun-test tmpdir.
 //
 // What we cover (mapping to US-007 acceptance criteria 5+6):
 //   - default `--max-iterations 30 --completion-promise "COMPLETE"` flow
 //   - overrides apply (`maxIterations`, `completionPromise`)
 //   - state file is rendered + written with the right frontmatter values
-//   - Ghostty split path: pane B argv is `ghostty +new-split horizontal --
-//     ralph dashboard`, pane A argv is `claude --permission-mode <mode>
+//   - tmux-split path (inside tmux): pane B argv is `tmux split-window -h --
+//     cam dashboard`, pane A argv is `claude --permission-mode <mode>
 //     /ralph-next` — both spawned with the same cwd
-//   - VS Code path: only pane A is spawned (no Ghostty split)
-//   - Inline (unknown terminal): same as VS Code — pane A only
+//   - tmux-split path (outside tmux): pane B via `tmux new-session -d -s cam`
+//   - VS Code path: only pane A is spawned (no split)
+//   - Inline (no tmux): same as VS Code — pane A only
 //   - Render: completion-promise is YAML-quoted; max-iterations is a bare int
 
 import { describe, expect, test } from 'bun:test';
@@ -24,9 +25,8 @@ import { join } from 'node:path';
 import {
 	buildClaudeArgv,
 	buildDashboardArgv,
-	buildGhosttySplitArgv,
+	buildTmuxSplitArgv,
 	deepMerge,
-	detectGhosttyActions,
 	detectHost,
 	materializeStopHook,
 	renderStateFile,
@@ -35,7 +35,7 @@ import {
 	STOP_HOOK_RELATIVE,
 	writeSettingsLocal,
 	writeStateFile,
-	type GhosttySpawnSyncFn,
+	type TmuxProbeFn,
 	type NextSpawnFn,
 	type NextSubprocess,
 } from '../src/commands/next.ts';
@@ -83,153 +83,42 @@ function makeRecordingSpawn(handles: FakeNextHandle[]): NextSpawnFn & { calls: S
 	return fn;
 }
 
-// --- detectGhosttyActions --------------------------------------------------
+// --- Fakes for tmux probe --------------------------------------------------
 
 /**
- * Fake GhosttySpawnSyncFn builders for the 3 cases the acceptance criteria
- * require: action present, action absent, binary missing.
+ * Fake TmuxProbeFn builders for the 2 cases the acceptance criteria
+ * require: tmux available, tmux missing.
  */
 
-const FAKE_GHOSTTY_HELP_WITH_SPLIT = `
-Ghostty Help
-============
-
-Available actions:
-  +new-split  Open a new split in the focused window
-  +new-window Open a new window
-  +list-fonts List available fonts
-`;
-
-const FAKE_GHOSTTY_HELP_WITHOUT_SPLIT = `
-Ghostty Help
-============
-
-Available actions:
-  +new-window Open a new window
-  +list-fonts List available fonts
-`;
-
-function makeSpawnSyncPresent(): GhosttySpawnSyncFn {
-	return (_cmd) => ({ stdout: FAKE_GHOSTTY_HELP_WITH_SPLIT, exitCode: 0 });
+function makeTmuxProbeAvailable(): TmuxProbeFn {
+	return (_cmd) => ({ exitCode: 0 });
 }
 
-function makeSpawnSyncAbsent(): GhosttySpawnSyncFn {
-	return (_cmd) => ({ stdout: FAKE_GHOSTTY_HELP_WITHOUT_SPLIT, exitCode: 0 });
-}
-
-function makeSpawnSyncMissing(): GhosttySpawnSyncFn {
+function makeTmuxProbeMissing(): TmuxProbeFn {
 	return (_cmd) => null;
 }
 
-describe('detectGhosttyActions', () => {
-	test('parses "+new-split" as available when present in +help output', () => {
-		const result = detectGhosttyActions(makeSpawnSyncPresent());
-		expect(result.parseError).toBeUndefined();
-		expect(result.available.has('new-split')).toBe(true);
-	});
-
-	test('returns empty set (no parseError) when +new-split is absent from output', () => {
-		const result = detectGhosttyActions(makeSpawnSyncAbsent());
-		expect(result.parseError).toBeUndefined();
-		expect(result.available.has('new-split')).toBe(false);
-		// Other actions are still parsed correctly.
-		expect(result.available.has('new-window')).toBe(true);
-		expect(result.available.has('list-fonts')).toBe(true);
-	});
-
-	test('returns parseError when ghostty binary is missing (spawnSync returns null)', () => {
-		const result = detectGhosttyActions(makeSpawnSyncMissing());
-		expect(result.parseError).toBeDefined();
-		expect(result.available.size).toBe(0);
-	});
-
-	test('returns parseError when ghostty exits non-zero with empty stdout', () => {
-		const result = detectGhosttyActions((_cmd) => ({ stdout: '', exitCode: 1 }));
-		expect(result.parseError).toBeDefined();
-		expect(result.available.size).toBe(0);
-	});
-
-	test('does NOT treat non-zero exit as error when stdout has content', () => {
-		// Some versions print help to stderr (reflected in stdout via pipe) and
-		// still exit 1. If there's content, we parse it rather than bailing.
-		const result = detectGhosttyActions(
-			(_cmd) => ({ stdout: FAKE_GHOSTTY_HELP_WITH_SPLIT, exitCode: 1 }),
-		);
-		expect(result.parseError).toBeUndefined();
-		expect(result.available.has('new-split')).toBe(true);
-	});
-});
-
-// --- detectHost ------------------------------------------------------------
-
 describe('detectHost', () => {
-	test('returns "ghostty-split" when GHOSTTY_RESOURCES_DIR is set AND +new-split available', () => {
-		expect(
-			detectHost(
-				{ GHOSTTY_RESOURCES_DIR: '/Applications/Ghostty.app/...' },
-				makeSpawnSyncPresent(),
-			),
-		).toBe('ghostty-split');
+	test('returns "tmux-split" when tmux is available and not in VS Code', () => {
+		expect(detectHost({}, makeTmuxProbeAvailable())).toBe('tmux-split');
 	});
 
-	test('returns "ghostty-split" when TERM_PROGRAM=ghostty AND +new-split available', () => {
-		expect(
-			detectHost({ TERM_PROGRAM: 'ghostty' }, makeSpawnSyncPresent()),
-		).toBe('ghostty-split');
+	test('returns "tmux-split" inside any terminal (Ghostty, iTerm, etc.) as long as tmux is present', () => {
+		expect(detectHost({ TERM_PROGRAM: 'ghostty' }, makeTmuxProbeAvailable())).toBe('tmux-split');
+		expect(detectHost({ TERM_PROGRAM: 'iTerm.app' }, makeTmuxProbeAvailable())).toBe('tmux-split');
 	});
 
-	test('returns "inline" when GHOSTTY_RESOURCES_DIR is set BUT +new-split is absent', () => {
-		expect(
-			detectHost(
-				{ GHOSTTY_RESOURCES_DIR: '/Applications/Ghostty.app/...' },
-				makeSpawnSyncAbsent(),
-			),
-		).toBe('inline');
+	test('returns "inline" when tmux is not on PATH', () => {
+		expect(detectHost({}, makeTmuxProbeMissing())).toBe('inline');
 	});
 
-	test('returns "inline" when ghostty binary is missing (spawnSync returns null)', () => {
-		expect(
-			detectHost(
-				{ GHOSTTY_RESOURCES_DIR: '/Applications/Ghostty.app/...' },
-				makeSpawnSyncMissing(),
-			),
-		).toBe('inline');
+	test('returns "inline" when TERM_PROGRAM=vscode regardless of tmux', () => {
+		expect(detectHost({ TERM_PROGRAM: 'vscode' }, makeTmuxProbeAvailable())).toBe('inline');
 	});
 
-	test('returns "inline" when TERM_PROGRAM=vscode (overrides Ghostty env, no probe needed)', () => {
-		// VS Code's embedded terminal can inherit GHOSTTY_RESOURCES_DIR from
-		// the parent shell — we still fall back to inline because splitting
-		// outside the IDE would surprise the operator.
-		expect(
-			detectHost({
-				TERM_PROGRAM: 'vscode',
-				GHOSTTY_RESOURCES_DIR: '/Applications/Ghostty.app/...',
-			}),
-		).toBe('inline');
-	});
-
-	test('returns "inline" on an unknown terminal', () => {
-		expect(detectHost({})).toBe('inline');
-		expect(detectHost({ TERM_PROGRAM: 'iTerm.app' })).toBe('inline');
-	});
-
-	test('uses pre-computed actionsResult when supplied (no second spawn)', () => {
-		let spawnCount = 0;
-		const countingSpawnSync: GhosttySpawnSyncFn = (_cmd) => {
-			spawnCount++;
-			return { stdout: FAKE_GHOSTTY_HELP_WITH_SPLIT, exitCode: 0 };
-		};
-		const preComputed = detectGhosttyActions(countingSpawnSync);
-		expect(spawnCount).toBe(1);
-
-		// Pass pre-computed result — spawnCount should NOT increase.
-		const mode = detectHost(
-			{ GHOSTTY_RESOURCES_DIR: '/Applications/Ghostty.app/...' },
-			countingSpawnSync,
-			preComputed,
-		);
-		expect(spawnCount).toBe(1); // no second spawn
-		expect(mode).toBe('ghostty-split');
+	test('returns "inline" when tmux exits non-zero (e.g. not installed properly)', () => {
+		const badProbe: TmuxProbeFn = (_cmd) => ({ exitCode: 127 });
+		expect(detectHost({}, badProbe)).toBe('inline');
 	});
 });
 
@@ -336,17 +225,30 @@ describe('argv builders', () => {
 		]);
 	});
 
-	test('buildDashboardArgv is `ralph dashboard`', () => {
-		expect(buildDashboardArgv()).toEqual(['ralph', 'dashboard']);
+	test('buildDashboardArgv is `cam dashboard`', () => {
+		expect(buildDashboardArgv()).toEqual(['cam', 'dashboard']);
 	});
 
-	test('buildGhosttySplitArgv puts target after `--`', () => {
-		expect(buildGhosttySplitArgv(['ralph', 'dashboard'])).toEqual([
-			'ghostty',
-			'+new-split',
-			'horizontal',
+	test('buildTmuxSplitArgv uses split-window when inside tmux ($TMUX set)', () => {
+		expect(buildTmuxSplitArgv(['cam', 'dashboard'], { TMUX: '/tmp/tmux-1000/default,1234,0' })).toEqual([
+			'tmux',
+			'split-window',
+			'-h',
 			'--',
-			'ralph',
+			'cam',
+			'dashboard',
+		]);
+	});
+
+	test('buildTmuxSplitArgv uses new-session when outside tmux ($TMUX not set)', () => {
+		expect(buildTmuxSplitArgv(['cam', 'dashboard'], {})).toEqual([
+			'tmux',
+			'new-session',
+			'-d',
+			'-s',
+			'cam',
+			'--',
+			'cam',
 			'dashboard',
 		]);
 	});
@@ -395,20 +297,18 @@ describe('runNext', () => {
 		}
 	});
 
-	test('Ghostty split: spawns ghostty +new-split first, then claude', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-ghostty-'));
+	test('tmux-split (inside tmux): spawns tmux split-window first, then claude', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-tmux-inside-'));
 		try {
 			const splitHandle = makeFakeProcess();
 			const claudeHandle = makeFakeProcess();
 			const spawn = makeRecordingSpawn([splitHandle, claudeHandle]);
-			// Ghostty's split call returns immediately after dispatching.
 			queueMicrotask(() => splitHandle.exitedResolve(0));
-			// Claude exits cleanly after the operator's session ends.
 			queueMicrotask(() => claudeHandle.exitedResolve(0));
 
 			const code = await runNext({
 				cwd: dir,
-				hostMode: 'ghostty-split',
+				hostMode: 'tmux-split',
 				permissionMode: 'bypassPermissions',
 				spawn,
 				startedAt: '2026-04-28T22:00:00Z',
@@ -417,15 +317,6 @@ describe('runNext', () => {
 
 			expect(code).toBe(0);
 			expect(spawn.calls.length).toBe(2);
-			// First call: pane B (dashboard) via ghostty split.
-			expect(spawn.calls[0]!.cmd).toEqual([
-				'ghostty',
-				'+new-split',
-				'horizontal',
-				'--',
-				'ralph',
-				'dashboard',
-			]);
 			// Second call: pane A (claude with the loop kick-off prompt).
 			expect(spawn.calls[1]!.cmd).toEqual([
 				'claude',

@@ -1,13 +1,3 @@
-// Forked from jayminwest/overstory@main:src/logging/format.ts:100-200 (MIT). See LICENSE-OVERSTORY.md.
-// Adaptations vs. upstream:
-//   - `buildAgentColorMap` renamed to `buildStoryColorMap` (ralph CLI's domain
-//     unit is a PRD story, not an agent — the underlying mechanic is identical).
-//   - `mergeStatusColor` (pending/merging/conflict/merged) DROPPED — ralph CLI
-//     has no merge-queue concept. Re-introduce only if a future story
-//     needs it.
-//   - `priorityColor` retained verbatim because PRD stories carry numeric
-//     priorities (1=urgent..4=low), matching the upstream semantics.
-
 import type { ColorFn } from "./color.ts";
 import { color, noColor } from "./color.ts";
 import { AGENT_COLORS } from "./theme.ts";
@@ -17,9 +7,6 @@ import { AGENT_COLORS } from "./theme.ts";
 /**
  * Builds a stable color map for stories by first-appearance order.
  * Stories are assigned colors from AGENT_COLORS cycling as needed.
- *
- * Forked from `buildAgentColorMap`; the only change is the input shape
- * (story IDs as strings, not StoredEvent.agentName) and the function name.
  */
 export function buildStoryColorMap(storyIds: readonly string[]): Map<string, ColorFn> {
 	const colorMap = new Map<string, ColorFn>();

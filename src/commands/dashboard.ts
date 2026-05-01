@@ -1,9 +1,3 @@
-// Forked from jayminwest/overstory@main:src/commands/dashboard.ts
-//   - lines 62-160 (CURSOR consts, BOX/dimBox primitives, truncate/pad/horizontalLine helpers)
-//   - lines 968-1018 (renderDashboard single-write composition skeleton)
-//   - lines 1061-1094 (alt-screen + raw-stdin enter / cleanup lifecycle)
-// (MIT). See LICENSE-OVERSTORY.md.
-//
 // US-009 layered the runtime loop on top of the US-004 skeleton:
 //   - `runDashboard()` reads `prd.json` + `.claude/ralph-loop.local.md` from
 //     cwd (using the same shapes `ralph status` already exports), composes a

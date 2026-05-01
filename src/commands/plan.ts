@@ -25,7 +25,7 @@
 //      session continue to its branch/commit step. We do NOT exit ralph plan;
 //      ralph plan resolves when the claude subprocess itself exits.
 //   8. On `N` / empty / anything else: kills the claude subprocess (which is
-//      the ralph-CLI equivalent of "press Esc and bail") and exits 0 with a
+//      the cam-CLI equivalent of "press Esc and bail") and exits 0 with a
 //      polite cancel message.
 //   9. Bun unit test mocks the new spawn surface (terminal.data callback,
 //      terminal.write) and asserts the prompt fires on APPROVE.
@@ -228,7 +228,7 @@ function defaultSpawn(
  */
 export async function runPlan(options: PlanOptions = {}): Promise<number> {
 	const slash = options.issue !== undefined ? `/ralph-plan #${options.issue}` : '/ralph-plan';
-	// `permission_mode` is sourced exclusively from `~/.config/ralph/config.toml`
+	// `permission_mode` is sourced exclusively from `~/.config/cam/config.toml`
 	// (default `bypassPermissions` — see `config/permission-mode.ts`). No CLI
 	// flag overrides it; that's enforced by `test/no-permission-mode-flag.test.ts`.
 	const permissionMode = readPermissionMode();

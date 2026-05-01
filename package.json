@@ -1,5 +1,5 @@
 {
-  "name": "ralph-cli",
+  "name": "cam-cli",
   "version": "0.1.1",
   "module": "index.ts",
   "type": "module",

@@ -1,7 +1,7 @@
 // src/version.ts
 //
-// Single source of truth for the ralph-cli version string. Surfaced via
-// `ralph --version` and embedded in the compiled binary (US-011).
+// Single source of truth for the cam-cli version string. Surfaced via
+// `cam --version` and embedded in the compiled binary (US-011).
 //
 // We keep this as a plain TS constant rather than reading `package.json` at
 // runtime because:
@@ -13,7 +13,7 @@
 //      release (this file + `package.json` if/when we add a `version` field
 //      there) — both are caught by `test/version.test.ts`.
 //
-// Bumping the version: edit RALPH_VERSION here, run the build + tag flow in
+// Bumping the version: edit CAM_VERSION here, run the build + tag flow in
 // `scripts/build-release.sh`, push the tag, then `gh release create`.
 
-export const RALPH_VERSION = '0.1.1';
+export const CAM_VERSION = '0.1.1';

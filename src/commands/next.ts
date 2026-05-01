@@ -1,9 +1,9 @@
 // src/commands/next.ts
 //
-// Implementation of `ralph next` — spawns the autonomous loop.
+// Implementation of `cam next` — spawns the autonomous loop.
 //
-// What `ralph next` does, step by step:
-//   1. Resolves `permission_mode` from `~/.config/ralph/config.toml` via
+// What `cam next` does, step by step:
+//   1. Resolves `permission_mode` from `~/.config/cam/config.toml` via
 //      `readPermissionMode()` (default `bypassPermissions`). NO CLI flag
 //      overrides this — see acceptance criterion 7 of US-007 and
 //      `test/no-permission-mode-flag.test.ts`.
@@ -11,27 +11,23 @@
 //      `.claude/ralph-loop.local.md` BEFORE claude starts. The on-disk shape
 //      mirrors what the plugin's `setup-ralph-loop.sh` produces (YAML
 //      frontmatter + prompt body); we vendored a template at
-//      `vendor/ralph-loop.local.md.tmpl` so `ralph next` works on a fresh
+//      `vendor/ralph-loop.local.md.tmpl` so `cam next` works on a fresh
 //      machine without shelling into the plugin's setup script.
-//   3. Detects the host terminal:
-//        - Ghostty (`GHOSTTY_RESOURCES_DIR` set, OR `TERM_PROGRAM=ghostty`)
-//          → spawn a horizontal split via `ghostty +new-split horizontal`,
-//            with pane A running `claude --permission-mode <mode> /ralph-next`
-//            and pane B running `ralph dashboard` (read-only).
+//   3. Detects the split mode:
+//        - `tmux` on PATH → tmux-split: pane A runs claude in the current
+//          terminal, pane B runs `cam dashboard` in a tmux pane. Works in
+//          any terminal (Ghostty, iTerm2, Kitty, Terminal.app, SSH, etc.).
+//          If already inside tmux ($TMUX set), uses `tmux split-window -h`.
+//          Otherwise creates a new detached session named `cam`.
 //        - VS Code (`TERM_PROGRAM=vscode`) → inline single-pane fallback.
-//          The IDE is the dashboard; splitting into a Ghostty pane from
-//          inside the embedded terminal would surprise the operator.
-//        - Anything else → inline single-pane fallback. We don't try to
-//          autodetect iTerm/Kitty/etc. — Ghostty is the documented driver
-//          (per `scripts/ralph/CLAUDE.md § Autonomous loop via ralph CLI`).
-//   4. Returns the exit code of the spawned subprocess. For Ghostty splits,
-//      `ghostty +new-split` returns immediately after creating the pane; for
-//      inline fallback, ralph waits on the claude subprocess.
+//        - No tmux → inline single-pane fallback.
+//   4. Returns the exit code of the spawned subprocess. For tmux splits,
+//      the tmux call returns immediately; cam waits on the claude subprocess.
 //
 // Acceptance criteria (US-007):
-//   1. `ralph next` exists as a CLI subcommand (wired in `index.ts`).
-//   2. Detects Ghostty + spawns horizontal split with claude (pane A) and
-//      `ralph dashboard` (pane B); plugin state file pre-armed.
+//   1. `cam next` exists as a CLI subcommand (wired in `index.ts`).
+//   2. Detects tmux + spawns split with claude (pane A) and
+//      `cam dashboard` (pane B); plugin state file pre-armed.
 //   3. Detects `TERM_PROGRAM=vscode` and falls back to inline single-pane.
 //   4. Pre-arming uses the vendored `ralph-loop.local.md.tmpl`.
 //   5. Default `--max-iterations 30 --completion-promise "COMPLETE"`;
@@ -85,110 +81,48 @@ const STATE_FILE_PATH = '.claude/ralph-loop.local.md';
 
 // --- Host detection --------------------------------------------------------
 
-export type HostMode = 'ghostty-split' | 'inline';
+export type HostMode = 'tmux-split' | 'inline';
 
 /**
- * Result shape from `ghostty +help` parsing.
- *
- * `available` is the full set of `+action` names found in the output (strings
- * without the leading `+`). `parseError` is set when `ghostty +help` failed to
- * run (binary not on PATH, exited non-zero) — callers treat it as "actions
- * unknown, fall back to inline".
- */
-export interface GhosttyActionsResult {
-	available: Set<string>;
-	parseError?: string;
-}
-
-/**
- * Injection type for a synchronous spawn used only to probe `ghostty +help`.
- * Keeping it synchronous (~5ms) avoids the async plumbing overhead for a
+ * Injection type for a synchronous spawn used only to probe `tmux`.
+ * Keeping it synchronous (~5ms) avoids async plumbing overhead for a
  * quick capability probe.
  *
- * `cmd` is argv-style. Returns `{ stdout, exitCode }`.
+ * `cmd` is argv-style. Returns `{ exitCode }`.
  * Returns `null` (or throws) if the binary is not on PATH.
  */
-export type GhosttySpawnSyncFn = (cmd: string[]) => { stdout: string; exitCode: number } | null;
+export type TmuxProbeFn = (cmd: string[]) => { exitCode: number } | null;
 
 /** Default synchronous probe using `Bun.spawnSync`. */
-function defaultGhosttySpawnSync(cmd: string[]): { stdout: string; exitCode: number } | null {
+function defaultTmuxProbe(cmd: string[]): { exitCode: number } | null {
 	try {
-		const result = Bun.spawnSync(cmd, {
-			stdout: 'pipe',
-			stderr: 'pipe',
-		});
-		if (result.stdout === null) return null;
-		return {
-			stdout: new TextDecoder().decode(result.stdout),
-			exitCode: result.exitCode ?? 1,
-		};
+		const result = Bun.spawnSync(cmd, { stdout: 'pipe', stderr: 'pipe' });
+		return { exitCode: result.exitCode ?? 1 };
 	} catch {
 		return null;
 	}
 }
 
 /**
- * Run `ghostty +help` and parse the available action names (lines matching
- * `/^\s*\+\w+/`). Used by `detectHost` to check whether `+new-split` is
- * supported before attempting a Ghostty split — avoids the alarming
- * "Ghostty failed to initialize!" stderr when the action is unavailable.
+ * Detect the split mode to use.
  *
- * If `ghostty +help` fails or is not on PATH, returns `{ available: new Set(), parseError }`.
- */
-export function detectGhosttyActions(
-	spawnSync: GhosttySpawnSyncFn = defaultGhosttySpawnSync,
-): GhosttyActionsResult {
-	const result = spawnSync(['ghostty', '+help']);
-	if (result === null) {
-		return { available: new Set(), parseError: 'ghostty binary not found or spawn failed' };
-	}
-	if (result.exitCode !== 0 && result.stdout.trim().length === 0) {
-		return { available: new Set(), parseError: `ghostty +help exited with code ${result.exitCode}` };
-	}
-	// Parse lines starting with `+` (optionally preceded by whitespace), extract
-	// the action name up to the first whitespace. Action names may contain
-	// hyphens (e.g. `+new-split`), so we capture `[\w-]+` rather than `\w+`.
-	const actions = new Set<string>();
-	for (const line of result.stdout.split('\n')) {
-		const match = /^\s*\+([\w-]+)/.exec(line);
-		if (match && match[1]) {
-			actions.add(match[1]);
-		}
-	}
-	return { available: actions };
-}
-
-/**
- * Detect the host terminal. The detection order matters: VS Code's embedded
- * terminal sometimes also sets `GHOSTTY_RESOURCES_DIR` (the user may have
- * Ghostty as their default terminal but be running VS Code's embedded
- * terminal which inherits env vars from the parent shell). We check
- * `TERM_PROGRAM=vscode` FIRST so the IDE-embedded case wins.
- *
- * When Ghostty env vars are detected, we additionally probe `ghostty +help`
- * to verify that `+new-split` is available on this version. If the action is
- * absent or the probe fails, we fall back to inline mode silently.
- *
- * Pass a pre-computed `actionsResult` (from a prior `detectGhosttyActions`
- * call) to avoid a second `ghostty +help` spawn when the result is already
- * known. Otherwise, a `ghosttySpawnSync` override is accepted for tests.
+ * Resolution order:
+ *   1. `TERM_PROGRAM=vscode` → inline (IDE embedded terminal; splitting would
+ *      open a pane inside VS Code's terminal, which is confusing).
+ *   2. `tmux` on PATH → `tmux-split`. Works in any terminal that has tmux
+ *      (Ghostty, iTerm2, Kitty, plain Terminal.app, SSH sessions, etc.).
+ *      If we are already inside a tmux session (`$TMUX` set), we split the
+ *      current window. Otherwise we create a new detached session named `cam`.
+ *   3. Anything else → inline.
  */
 export function detectHost(
 	env: NodeJS.ProcessEnv = process.env,
-	ghosttySpawnSync?: GhosttySpawnSyncFn,
-	actionsResult?: GhosttyActionsResult,
+	tmuxProbe: TmuxProbeFn = defaultTmuxProbe,
 ): HostMode {
 	if (env['TERM_PROGRAM'] === 'vscode') return 'inline';
-	const isGhostty = env['GHOSTTY_RESOURCES_DIR'] !== undefined || env['TERM_PROGRAM'] === 'ghostty';
-	if (!isGhostty) return 'inline';
-
-	// Ghostty detected — validate +new-split is available before committing.
-	const { available, parseError } = actionsResult ?? detectGhosttyActions(ghosttySpawnSync);
-	if (parseError !== undefined || !available.has('new-split')) {
-		// Caller will emit the hint; return inline so runNext falls back cleanly.
-		return 'inline';
-	}
-	return 'ghostty-split';
+	const probeResult = tmuxProbe(['tmux', '-V']);
+	if (probeResult === null || probeResult.exitCode !== 0) return 'inline';
+	return 'tmux-split';
 }
 
 // --- Vendored template -----------------------------------------------------
@@ -213,7 +147,7 @@ export function renderStateFile(input: {
 	sessionId: string;
 	/**
 	 * PID of the long-running driver process (claude or claude-auto-retry)
-	 * that owns the loop. `ralph resume` (US-010) reads this back to
+	 * that owns the loop. `cam resume` (US-010) reads this back to
 	 * distinguish a still-alive loop from an orphaned state file: a stale
 	 * PID with no live process means the loop crashed (terminal closed, OS
 	 * rebooted, hard-kill). Defaults to `process.pid` when not provided.
@@ -334,7 +268,7 @@ export function deepMerge(target: Record<string, unknown>, source: Record<string
 }
 
 /**
- * The hooks block ralph injects into `.claude/settings.local.json`. We write
+ * The hooks block cam injects into `.claude/settings.local.json`. We write
  * this shape because the Claude Code hooks API requires the nested form:
  *   { hooks: { Stop: [ { hooks: [ { type: 'command', command: '...' } ] } ] } }
  * This is the canonical hooks document format per claude-code-hooks docs.
@@ -359,7 +293,7 @@ function buildHooksBlock(): Record<string, unknown> {
 /**
  * Write or merge `<cwd>/.claude/settings.local.json` so the Stop hook command
  * is registered. Existing keys in the file are preserved via deep-merge — we
- * never overwrite a key that ralph didn't put there.
+ * never overwrite a key that cam didn't put there.
  *
  * Injection point `reader` lets tests supply existing file contents without
  * touching the real filesystem.
@@ -402,7 +336,7 @@ export function writeSettingsLocal(
 // --- Spawn surface ---------------------------------------------------------
 
 /**
- * The subset of `Bun.Subprocess` ralph-next uses. Mirrors the shape from
+ * The subset of `Bun.Subprocess` cam-next uses. Mirrors the shape from
  * `commands/plan.ts` so the test fakes can be shared.
  */
 export interface NextSubprocess {
@@ -457,35 +391,42 @@ export function buildClaudeArgv(permissionMode: string): string[] {
 }
 
 /**
- * Build the argv for pane B (the read-only dashboard). On the Ghostty split
+ * Build the argv for pane B (the read-only dashboard). On the tmux split
  * path this runs alongside claude in a sibling pane. On the inline path
  * we don't spawn a dashboard at all — the IDE / single terminal IS the
  * dashboard view of claude's output.
  *
- * The argv form is `ralph dashboard` rather than `bun src/...` because by
- * the time `ralph next` is invoked, the operator has installed `ralph`
+ * The argv form is `cam dashboard` rather than `bun src/...` because by
+ * the time `cam next` is invoked, the operator has installed `cam`
  * (either via `brew install` or the dev's local PATH symlink) — see US-002
  * + US-011 for the install story.
  */
 export function buildDashboardArgv(): string[] {
-	return ['ralph', 'dashboard'];
+	return ['cam', 'dashboard'];
 }
 
 /**
- * Build the argv for the Ghostty split spawn. `ghostty +new-split
- * horizontal -- <cmd>` opens a new horizontal pane in the focused window
- * and runs the trailing command in it. We launch pane B (dashboard) this
- * way and leave pane A (claude) running in the operator's current pane —
- * the operator stays in their existing TTY, and the dashboard appears in
- * the new sibling pane.
+ * Build the argv for the tmux split. Behaviour depends on whether we are
+ * already inside a tmux session:
  *
- * Reference: https://ghostty.org/docs/help/cli (action `+new-split`).
+ *   - Inside tmux (`$TMUX` set): `tmux split-window -h -- <cmd>` opens a
+ *     vertical split in the current window. The current pane stays focused
+ *     (pane A, where claude will run); the new pane runs the dashboard.
+ *
+ *   - Outside tmux: `tmux new-session -d -s cam -x 220 -y 50 -- <cmd>`
+ *     creates a detached session named `cam` running the dashboard. The
+ *     operator's existing terminal runs claude inline (pane A), and the
+ *     tmux session acts as a background dashboard they can attach to with
+ *     `tmux attach -t cam`.
  */
-export function buildGhosttySplitArgv(targetCmd: string[]): string[] {
-	// `--` separates ghostty's flags from the trailing command. Without it,
-	// flags like `--horizontal` could be misinterpreted by ghostty as its
-	// own options.
-	return ['ghostty', '+new-split', 'horizontal', '--', ...targetCmd];
+export function buildTmuxSplitArgv(
+	targetCmd: string[],
+	env: NodeJS.ProcessEnv = process.env,
+): string[] {
+	if (env['TMUX']) {
+		return ['tmux', 'split-window', '-h', '--', ...targetCmd];
+	}
+	return ['tmux', 'new-session', '-d', '-s', 'cam', '--', ...targetCmd];
 }
 
 // --- Public entrypoint -----------------------------------------------------
@@ -527,21 +468,20 @@ export interface NextOptions {
 	 */
 	settingsWriter?: (cwd: string) => string;
 	/**
-	 * Override the synchronous `ghostty +help` probe used by `detectHost` to
-	 * validate `+new-split` availability. Tests inject a scripted response so
-	 * they never exec a real `ghostty` binary.
+	 * Override the tmux probe used by `detectHost`. Tests inject a scripted
+	 * response so they never exec a real `tmux` binary.
 	 */
-	ghosttySpawnSync?: GhosttySpawnSyncFn;
+	tmuxProbe?: TmuxProbeFn;
 }
 
 /**
- * Run the full `ralph next` flow. Returns the process exit code.
+ * Run the full `cam next` flow. Returns the process exit code.
  *
  * Resolution order:
- *   - Ghostty split: write state file → spawn `ghostty +new-split horizontal
- *     -- ralph dashboard` (pane B) → spawn `claude ... /ralph-next` in the
- *     current pane (pane A). Returns claude's exit code.
- *   - Inline fallback (VS Code or unknown terminal): write state file →
+ *   - tmux-split: write state file → spawn `cam dashboard` in a tmux split
+ *     (pane B) → spawn `claude ... /ralph-next` in the current pane (pane A).
+ *     Returns claude's exit code.
+ *   - Inline fallback (VS Code or no tmux): write state file →
  *     spawn `claude ... /ralph-next` in current pane. Returns claude's
  *     exit code. No dashboard pane.
  */
@@ -551,28 +491,8 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const completionPromise = options.completionPromise ?? DEFAULT_COMPLETION_PROMISE;
 	const permissionMode = options.permissionMode ?? readPermissionMode();
 
-	// When the host mode is not explicitly overridden (i.e., we're in production,
-	// not in a test that supplies `hostMode`), run the Ghostty capability probe
-	// ONCE and pass the pre-computed result to detectHost — avoids a second
-	// `ghostty +help` spawn when both the hint logic and mode detection need it.
-	let host: HostMode;
-	if (options.hostMode !== undefined) {
-		host = options.hostMode;
-	} else {
-		// Run probe once and cache the result.
-		const ghosttyActions = detectGhosttyActions(options.ghosttySpawnSync);
-		host = detectHost(process.env, options.ghosttySpawnSync, ghosttyActions);
-
-		// If Ghostty was detected in env but +new-split is unavailable, inform operator.
-		const isGhosttyEnv =
-			process.env['GHOSTTY_RESOURCES_DIR'] !== undefined ||
-			process.env['TERM_PROGRAM'] === 'ghostty';
-		if (isGhosttyEnv && host === 'inline') {
-			printHint(
-				`Ghostty +new-split unavailable on this version — running inline. Open \`ralph dashboard\` in another pane manually if you want one.`,
-			);
-		}
-	}
+	const host: HostMode =
+		options.hostMode ?? detectHost(process.env, options.tmuxProbe);
 
 	const spawn = options.spawn ?? defaultSpawn;
 	const writer =
@@ -634,36 +554,37 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const claudeArgv = buildClaudeArgv(permissionMode);
 
 	// 3. Branch on host detection.
-	if (host === 'ghostty-split') {
-		// Spawn pane B (dashboard) in a new horizontal split. We do this
-		// FIRST so by the time pane A starts producing output, the
-		// dashboard is already visible. The `ghostty +new-split` call
-		// returns quickly (it just dispatches a window-message to the
-		// focused Ghostty instance); we don't wait on it.
+	if (host === 'tmux-split') {
+		// Spawn pane B (dashboard) in a tmux split. We do this FIRST so
+		// by the time pane A starts producing output, the dashboard is
+		// already visible. The tmux call returns quickly; we don't wait on it.
 		const dashboardArgv = buildDashboardArgv();
-		const splitArgv = buildGhosttySplitArgv(dashboardArgv);
+		const splitArgv = buildTmuxSplitArgv(dashboardArgv, process.env);
+		const insideTmux = Boolean(process.env['TMUX']);
 		try {
 			const splitProc = spawn(splitArgv, { cwd });
-			// Best-effort: wait briefly for ghostty to dispatch the split.
-			// If it errors (e.g. ghostty not on PATH, or no focused
-			// instance), we surface a hint and continue with pane A
-			// inline — the operator still gets the loop, just no sibling
-			// dashboard. Don't block the loop on a dashboard issue.
+			// Best-effort: if tmux errors, surface a hint and continue
+			// inline — the operator still gets the loop.
 			void splitProc.exited.catch((err: unknown) => {
 				printHint(
-					`ghostty split failed: ${err instanceof Error ? err.message : String(err)}`,
+					`tmux split failed: ${err instanceof Error ? err.message : String(err)}`,
 				);
-				printHint('continuing inline — open a separate `ralph dashboard` if you want one');
+				printHint('continuing inline — open a separate `cam dashboard` if you want one');
 			});
 		} catch (err) {
 			printHint(
-				`ghostty split spawn errored: ${err instanceof Error ? err.message : String(err)}`,
+				`tmux split spawn errored: ${err instanceof Error ? err.message : String(err)}`,
 			);
-			printHint('continuing inline — open a separate `ralph dashboard` if you want one');
+			printHint('continuing inline — open a separate `cam dashboard` if you want one');
 		}
-		printSuccess('Ghostty split: claude in current pane, dashboard in new horizontal pane');
+		if (insideTmux) {
+			printSuccess('tmux split: claude in current pane, dashboard in new pane');
+		} else {
+			printSuccess('tmux session "cam" created with dashboard');
+			printHint('attach with: tmux attach -t cam');
+		}
 	} else {
-		printSuccess('inline mode (VS Code or unknown terminal): no split');
+		printSuccess('inline mode (VS Code or no tmux): no split');
 		printHint('your current terminal is the dashboard view of the loop');
 	}
 
@@ -677,7 +598,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			'failed to spawn `claude`',
 			err instanceof Error ? err.message : String(err),
 		);
-		printHint('verify `claude` is on PATH (re-run `ralph init` to validate)');
+		printHint('verify `claude` is on PATH (re-run `cam init` to validate)');
 		return 1;
 	}
 	const exitCode = await claudeProc.exited;

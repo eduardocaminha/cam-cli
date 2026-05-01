@@ -1,14 +1,14 @@
 // test/stop.test.ts
 //
-// Unit tests for `ralph stop`. Coverage:
+// Unit tests for `cam stop`. Coverage:
 //   - performStop: removes state file when present, no-op when missing
-//   - performStop: kills tmux session "ralph" when alive
-//   - performStop: leaves tmux untouched when no `ralph` session
+//   - performStop: kills tmux session "cam" when alive
+//   - performStop: leaves tmux untouched when no `cam` session
 //   - performStop: handles tmux not on PATH (treats as "nothing to clean")
-//   - performStop: defensive — only `ralph` is targeted (the kill argv is
-//     fixed; we assert the literal `kill-session -t ralph` form)
+//   - performStop: defensive — only `cam` is targeted (the kill argv is
+//     fixed; we assert the literal `kill-session -t cam` form)
 //   - End-to-end: after `performStop`, the state file is gone (no stale loop
-//     for the next `ralph next` call to detect)
+//     for the next `cam next` call to detect)
 
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -27,8 +27,8 @@ interface SpawnRecord {
 
 interface FakeSpawnHandlers {
 	tmuxAvailable?: boolean; // governs `tmux -V` exit code
-	sessionAlive?: boolean; // governs `tmux has-session -t ralph` exit code
-	killSucceeds?: boolean; // governs `tmux kill-session -t ralph` exit code
+	sessionAlive?: boolean; // governs `tmux has-session -t cam` exit code
+	killSucceeds?: boolean; // governs `tmux kill-session -t cam` exit code
 }
 
 function makeFakeSpawn(handlers: FakeSpawnHandlers): SpawnSyncFn & { calls: SpawnRecord[] } {
@@ -46,9 +46,9 @@ function makeFakeSpawn(handlers: FakeSpawnHandlers): SpawnSyncFn & { calls: Spaw
 		if (cmd === 'tmux') {
 			if (args[0] === '-V') {
 				result.status = handlers.tmuxAvailable === false ? 127 : 0;
-			} else if (args[0] === 'has-session' && args[1] === '-t' && args[2] === 'ralph') {
+			} else if (args[0] === 'has-session' && args[1] === '-t' && args[2] === 'cam') {
 				result.status = handlers.sessionAlive === true ? 0 : 1;
-			} else if (args[0] === 'kill-session' && args[1] === '-t' && args[2] === 'ralph') {
+			} else if (args[0] === 'kill-session' && args[1] === '-t' && args[2] === 'cam') {
 				result.status = handlers.killSucceeds === false ? 1 : 0;
 			}
 		}
@@ -63,7 +63,7 @@ function makeFakeSpawn(handlers: FakeSpawnHandlers): SpawnSyncFn & { calls: Spaw
 
 describe('performStop — state file', () => {
 	test('removes the state file when present', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-stop-state-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-state-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'ralph-loop.local.md');
@@ -78,7 +78,7 @@ describe('performStop — state file', () => {
 	});
 
 	test('reports stateFileRemoved=false when no state file exists', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-stop-no-state-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-no-state-'));
 		try {
 			const spawn = makeFakeSpawn({ tmuxAvailable: false });
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
@@ -89,7 +89,7 @@ describe('performStop — state file', () => {
 	});
 
 	test('continues cleanly even when unlink throws', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-stop-unlink-throws-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-unlink-throws-'));
 		try {
 			const spawn = makeFakeSpawn({ tmuxAvailable: false });
 			const report = performStop({
@@ -109,8 +109,8 @@ describe('performStop — state file', () => {
 });
 
 describe('performStop — tmux session', () => {
-	test('kills the `ralph` session when alive', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-stop-tmux-alive-'));
+	test('kills the `cam` session when alive', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-tmux-alive-'));
 		try {
 			const spawn = makeFakeSpawn({
 				tmuxAvailable: true,
@@ -120,20 +120,20 @@ describe('performStop — tmux session', () => {
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
 			expect(report.tmuxKilled).toBe(true);
 			expect(report.tmuxUnavailable).toBe(false);
-			// The kill argv must be exactly `tmux kill-session -t ralph` —
+			// The kill argv must be exactly `tmux kill-session -t cam` —
 			// nothing else, ever. This is the defensive contract.
 			const kill = spawn.calls.find(
 				(c) => c.cmd === 'tmux' && c.args[0] === 'kill-session',
 			);
 			expect(kill).toBeDefined();
-			expect(kill?.args).toEqual(['kill-session', '-t', 'ralph']);
+			expect(kill?.args).toEqual(['kill-session', '-t', 'cam']);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	test('skips kill when no `ralph` session is alive', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-stop-tmux-none-'));
+	test('skips kill when no `cam` session is alive', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-tmux-none-'));
 		try {
 			const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionAlive: false });
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
@@ -150,7 +150,7 @@ describe('performStop — tmux session', () => {
 	});
 
 	test('reports tmuxUnavailable when `tmux -V` exits non-zero', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-stop-tmux-unavailable-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-tmux-unavailable-'));
 		try {
 			const spawn = makeFakeSpawn({ tmuxAvailable: false });
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
@@ -166,7 +166,7 @@ describe('performStop — tmux session', () => {
 	});
 
 	test('reports kill failure cleanly (kill-session exits non-zero)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-stop-tmux-kill-fails-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-tmux-kill-fails-'));
 		try {
 			const spawn = makeFakeSpawn({
 				tmuxAvailable: true,
@@ -185,7 +185,7 @@ describe('performStop — tmux session', () => {
 
 describe('performStop — end-to-end', () => {
 	test('removes state file AND kills tmux when both are present', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-stop-e2e-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-e2e-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'ralph-loop.local.md');
@@ -198,7 +198,7 @@ describe('performStop — end-to-end', () => {
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
 			expect(report.stateFileRemoved).toBe(true);
 			expect(report.tmuxKilled).toBe(true);
-			// Acceptance criterion: after `ralph stop`, the next `ralph next`
+			// Acceptance criterion: after `cam stop`, the next `cam next`
 			// must NOT detect a stale loop.
 			expect(existsSync(statePath)).toBe(false);
 		} finally {
@@ -211,7 +211,7 @@ describe('performStop — end-to-end', () => {
 
 describe('runStop', () => {
 	test('exits 0 even when there is nothing to clean', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-stop-noop-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-noop-'));
 		try {
 			const spawn = makeFakeSpawn({ tmuxAvailable: false });
 			// Capture stdout to keep test output clean.
@@ -229,7 +229,7 @@ describe('runStop', () => {
 	});
 
 	test('exits 0 when both state file and tmux session were cleaned', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-stop-clean-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-clean-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(join(dir, '.claude', 'ralph-loop.local.md'), 'old\n');

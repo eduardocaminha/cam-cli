@@ -1,7 +1,7 @@
 // src/vendor/embedded.ts
 //
 // Public API over the codegenned `_generated.ts` module — the bridge
-// between ralph-cli's runtime and the vendored smoke files.
+// between cam-cli's runtime and the vendored smoke files.
 //
 // Why a codegen rather than a Bun import attribute? See the comment block at
 // the top of `scripts/generate-embedded-vendor.ts`. TL;DR: TypeScript
@@ -17,14 +17,14 @@
 //   - `materializeEmbedded(key)`: writes the contents to a tempdir and
 //     returns the on-disk path. Use when the file must be handed to a
 //     child process — the child can't see strings inlined into the parent
-//     binary. The tempdir is namespaced by `RALPH_VERSION` so a brew
+//     binary. The tempdir is namespaced by `CAM_VERSION` so a brew
 //     upgrade on the same machine doesn't reuse stale extracted files.
 
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { RALPH_VERSION } from '../version.ts';
+import { CAM_VERSION } from '../version.ts';
 import {
 	checkAgentFrontmatterShContents,
 	checkAgentFrontmatterTsContents,
@@ -65,18 +65,18 @@ export function readEmbedded(key: EmbeddedKey): string {
 
 /**
  * Cache directory we extract embedded scripts into for spawn-as-child usage.
- * Versioned so we don't collide across ralph-cli upgrades on the same
- * machine. We deliberately use the OS tmpdir rather than `~/.cache/ralph`
+ * Versioned so we don't collide across cam-cli upgrades on the same
+ * machine. We deliberately use the OS tmpdir rather than `~/.cache/cam`
  * so the cache is wiped on reboot and we never accumulate stale extracted
  * files across brew upgrades.
  *
- * Override via `RALPH_VENDOR_CACHE_DIR` for tests so they don't leak files
+ * Override via `CAM_VENDOR_CACHE_DIR` for tests so they don't leak files
  * into the system tmpdir between runs.
  */
 function cacheDir(): string {
-	const override = process.env['RALPH_VENDOR_CACHE_DIR'];
+	const override = process.env['CAM_VENDOR_CACHE_DIR'];
 	if (override) return override;
-	return join(tmpdir(), `ralph-cli-vendor-${RALPH_VERSION}`);
+	return join(tmpdir(), `cam-cli-vendor-${CAM_VERSION}`);
 }
 
 /**
@@ -98,7 +98,7 @@ export function materializeEmbedded(key: EmbeddedKey): string {
 	const expectedSize = Buffer.byteLength(contents, 'utf8');
 
 	// Reuse if the cached file already has the same byte size. We don't
-	// content-hash because (a) ralph-cli ships immutable embedded files and
+	// content-hash because (a) cam-cli ships immutable embedded files and
 	// (b) version-namespacing the cache dir already protects us from
 	// cross-version drift.
 	if (existsSync(target)) {

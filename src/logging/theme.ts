@@ -1,4 +1,3 @@
-// Forked from jayminwest/overstory@main:src/logging/theme.ts:1-137 (MIT). See LICENSE-OVERSTORY.md.
 /**
  * Canonical visual theme for ralph CLI output.
  *

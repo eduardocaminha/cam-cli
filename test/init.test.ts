@@ -1,6 +1,6 @@
 // test/init.test.ts
 //
-// End-to-end test for `ralph init` — exercises `runInit()` against a tmp
+// End-to-end test for `cam init` — exercises `runInit()` against a tmp
 // config path. We don't mock the PATH lookups because (a) the dev machine
 // is guaranteed to have `claude` + `claude-auto-retry` (per US-002 progress
 // note + US-005 acceptance criteria), and (b) testing the validators with
@@ -23,17 +23,17 @@ let configPath: string;
 let prevConfigPath: string | undefined;
 
 beforeEach(() => {
-	workDir = mkdtempSync(join(tmpdir(), 'ralph-cli-init-'));
-	configPath = join(workDir, '.config', 'ralph', 'config.toml');
-	prevConfigPath = process.env.RALPH_CONFIG_PATH;
-	process.env.RALPH_CONFIG_PATH = configPath;
+	workDir = mkdtempSync(join(tmpdir(), 'cam-cli-init-'));
+	configPath = join(workDir, '.config', 'cam', 'config.toml');
+	prevConfigPath = process.env.CAM_CONFIG_PATH;
+	process.env.CAM_CONFIG_PATH = configPath;
 });
 
 afterEach(() => {
 	if (prevConfigPath === undefined) {
-		delete process.env.RALPH_CONFIG_PATH;
+		delete process.env.CAM_CONFIG_PATH;
 	} else {
-		process.env.RALPH_CONFIG_PATH = prevConfigPath;
+		process.env.CAM_CONFIG_PATH = prevConfigPath;
 	}
 	if (workDir && existsSync(workDir)) {
 		rmSync(workDir, { recursive: true, force: true });
@@ -60,7 +60,7 @@ describe('runInit', () => {
 		expect(config.permission_mode).toBe('bypassPermissions');
 	});
 
-	test('uses RALPH_CONFIG_PATH override (not ~/.config/ralph/config.toml)', () => {
+	test('uses CAM_CONFIG_PATH override (not ~/.config/cam/config.toml)', () => {
 		runInit();
 		// The tmp config path was written.
 		expect(existsSync(configPath)).toBe(true);

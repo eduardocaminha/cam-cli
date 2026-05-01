@@ -1,6 +1,6 @@
 // src/config/toml.ts
 //
-// Minimal TOML reader + writer for `~/.config/ralph/config.toml`.
+// Minimal TOML reader + writer for `~/.config/cam/config.toml`.
 //
 // Why a hand-rolled writer? Bun ships `Bun.TOML.parse` (verified against
 // https://bun.com/reference/bun/TOML/parse — current API is `parse(input: string): object`)
@@ -8,7 +8,7 @@
 // recommendation is the `@std/toml` package on JSR, but we don't want a runtime
 // dep just for serializing a 2-key config file.
 //
-// The writer here intentionally supports only the subset of TOML the ralph CLI
+// The writer here intentionally supports only the subset of TOML the cam CLI
 // emits and consumes: top-level string/boolean/number scalars, plus single-level
 // `[section]` tables with string/boolean/number scalars. Arrays, nested tables,
 // inline tables, multi-line strings, and dates are deliberately out of scope —
@@ -18,7 +18,7 @@
 // `Bun.TOML.parse` (full TOML support — we don't restrict reads); `saveConfig`
 // emits only what we know how to serialize. A round-trip on a config that uses
 // out-of-scope features will lose those features. That's acceptable for our
-// own writes; the file is owned by ralph CLI, not hand-edited by users for
+// own writes; the file is owned by cam CLI, not hand-edited by users for
 // novel TOML features.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -116,8 +116,8 @@ export function parseToml(text: string): TomlConfig {
  * `node:fs.readFileSync` rather than `Bun.file().text()` so the same code
  * works in tests under tmp-dirs without spinning up Bun's filesystem layer.
  *
- * The `null`-safe contract is important: `ralph init` must work both on a
- * fresh machine (no `~/.config/ralph/`) AND on a machine with prior config.
+ * The `null`-safe contract is important: `cam init` must work both on a
+ * fresh machine (no `~/.config/cam/`) AND on a machine with prior config.
  * Returning `{}` for "missing file" means callers can mutate-and-save without
  * branching on existence.
  */

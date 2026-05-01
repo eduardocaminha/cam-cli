@@ -1,4 +1,3 @@
-// Forked from jayminwest/overstory@main:src/logging/color.ts:1-106 (MIT). See LICENSE-OVERSTORY.md.
 /**
  * Central color and output control using Chalk.
  *
@@ -10,7 +9,7 @@ import chalk from "chalk";
 
 // --- Brand palette (os-eco brand colors) ---
 
-/** Forest green — Overstory primary brand color. */
+/** Forest green — primary brand color. */
 export const brand = chalk.rgb(46, 125, 50);
 
 /** Amber — highlights, warnings. */

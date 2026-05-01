@@ -1,13 +1,13 @@
 // test/version.test.ts
 //
-// US-011 acceptance criterion 3: `ralph --version` prints `ralph X.Y.Z`.
+// US-011 acceptance criterion 3: `cam --version` prints `cam X.Y.Z`.
 // The literal output shape is also load-bearing for US-012 — the homebrew
 // formula's `test do` block regexes the output, so a stylistic change here
-// (e.g. capitalizing "Ralph" or appending build metadata) would break the
-// downstream `brew test ralph` audit.
+// (e.g. capitalizing "Cam" or appending build metadata) would break the
+// downstream `brew test cam` audit.
 //
 // Two layers of coverage:
-//   1. The exported constant `RALPH_VERSION` matches the documented v0.1.0
+//   1. The exported constant `CAM_VERSION` matches the documented v0.1.0
 //      release shape (`MAJOR.MINOR.PATCH`, no pre-release suffix in this
 //      first release).
 //   2. The CLI dispatcher in `index.ts` accepts all three idiomatic forms
@@ -19,24 +19,24 @@
 import { describe, expect, test } from 'bun:test';
 
 import { main } from '../index.ts';
-import { RALPH_VERSION } from '../src/version.ts';
+import { CAM_VERSION } from '../src/version.ts';
 
-describe('RALPH_VERSION constant', () => {
+describe('CAM_VERSION constant', () => {
 	test('parses as a clean semver-major.minor.patch literal', () => {
-		expect(RALPH_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+		expect(CAM_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
 	});
 
 	test('is the v0.1.0 first-release shape (or later)', () => {
 		// Tripwire: a future bump can adjust this assertion. The point is to
 		// make sure nobody accidentally rolls back to 0.0.x once we've
 		// shipped v0.1.0 (which would silently break the homebrew formula).
-		const [major, minor] = RALPH_VERSION.split('.').map((n) => Number.parseInt(n, 10));
+		const [major, minor] = CAM_VERSION.split('.').map((n) => Number.parseInt(n, 10));
 		expect(major).toBeGreaterThanOrEqual(0);
 		expect(minor).toBeGreaterThanOrEqual(1);
 	});
 });
 
-describe('`ralph` dispatch — version variants', () => {
+describe('`cam` dispatch — version variants', () => {
 	function captureStdout(): { restore: () => void; written: () => string } {
 		const original = process.stdout.write.bind(process.stdout);
 		const chunks: string[] = [];
@@ -52,12 +52,12 @@ describe('`ralph` dispatch — version variants', () => {
 		};
 	}
 
-	test('--version prints `ralph X.Y.Z\\n` and exits 0', async () => {
+	test('--version prints `cam X.Y.Z\\n` and exits 0', async () => {
 		const cap = captureStdout();
 		try {
-			const code = await main(['bun', 'ralph', '--version']);
+			const code = await main(['bun', 'cam', '--version']);
 			expect(code).toBe(0);
-			expect(cap.written()).toBe(`ralph ${RALPH_VERSION}\n`);
+			expect(cap.written()).toBe(`cam ${CAM_VERSION}\n`);
 		} finally {
 			cap.restore();
 		}
@@ -66,9 +66,9 @@ describe('`ralph` dispatch — version variants', () => {
 	test('-v alias matches --version', async () => {
 		const cap = captureStdout();
 		try {
-			const code = await main(['bun', 'ralph', '-v']);
+			const code = await main(['bun', 'cam', '-v']);
 			expect(code).toBe(0);
-			expect(cap.written()).toBe(`ralph ${RALPH_VERSION}\n`);
+			expect(cap.written()).toBe(`cam ${CAM_VERSION}\n`);
 		} finally {
 			cap.restore();
 		}
@@ -77,9 +77,9 @@ describe('`ralph` dispatch — version variants', () => {
 	test('bare `version` subcommand matches --version', async () => {
 		const cap = captureStdout();
 		try {
-			const code = await main(['bun', 'ralph', 'version']);
+			const code = await main(['bun', 'cam', 'version']);
 			expect(code).toBe(0);
-			expect(cap.written()).toBe(`ralph ${RALPH_VERSION}\n`);
+			expect(cap.written()).toBe(`cam ${CAM_VERSION}\n`);
 		} finally {
 			cap.restore();
 		}

@@ -1,6 +1,6 @@
 // src/commands/init.ts
 //
-// Implementation of `ralph init` — the per-machine readiness validator.
+// Implementation of `cam init` — the per-machine readiness validator.
 //
 // Acceptance criteria (US-005):
 //   1. Validates `claude` is on PATH; parses `--version`; warns (does not fail) on mismatch.
@@ -11,7 +11,7 @@
 //      A vendored-smoke exit 2 is treated as "skip-with-warning" not "fail" —
 //      it means the smoke can't run in this environment (e.g. no git repo,
 //      no claude-auto-retry installed) and that's fine for `init`.
-//   4. Writes `~/.config/ralph/config.toml` with `permission_mode = "bypassPermissions"`,
+//   4. Writes `~/.config/cam/config.toml` with `permission_mode = "bypassPermissions"`,
 //      preserving any other existing keys.
 //   5. Exits 0 on a clean machine, non-zero with structured diagnostics on a corrupted one.
 
@@ -28,7 +28,7 @@ import { materializeEmbedded, type EmbeddedKey } from '../vendor/embedded.ts';
 // --- Constants -------------------------------------------------------------
 
 /**
- * Minimum version of Claude Code we know works with the Ralph loop driver.
+ * Minimum version of Claude Code we know works with the cam loop driver.
  * The check is **soft**: a mismatch warns but does not abort `init` — Anthropic
  * ships Claude Code on a fast cadence, and pinning a hard floor would block
  * the harness on weeks-old releases for no real reason.
@@ -36,11 +36,11 @@ import { materializeEmbedded, type EmbeddedKey } from '../vendor/embedded.ts';
 const CLAUDE_VERSION_FLOOR = '2.0.0';
 
 /**
- * Default path for the per-user config. Override via the `RALPH_CONFIG_PATH`
+ * Default path for the per-user config. Override via the `CAM_CONFIG_PATH`
  * env var so tests can target a tmpdir without touching the real `~/.config`.
  */
 function defaultConfigPath(): string {
-	return process.env.RALPH_CONFIG_PATH ?? join(homedir(), '.config', 'ralph', 'config.toml');
+	return process.env.CAM_CONFIG_PATH ?? join(homedir(), '.config', 'cam', 'config.toml');
 }
 
 /**
@@ -115,7 +115,7 @@ function validateClaude(): ValidationResult {
 	if (version.status !== 0) {
 		// Found on PATH but `--version` errored. Warn but don't fail — Claude Code
 		// occasionally ships a transient `--version` regression and we don't want
-		// `ralph init` to block on that.
+		// `cam init` to block on that.
 		return {
 			ok: true,
 			message: `claude found at ${path} (version unparseable)`,
@@ -167,7 +167,7 @@ function validateClaudeAutoRetry(): ValidationResult {
 /**
  * Result of running one vendored smoke. We distinguish "skipped" from "passed"
  * so the operator gets a clear signal: a clean machine with no `.claude/agents/`
- * (e.g. running `ralph init` from `~`) shouldn't claim a passing-validation it
+ * (e.g. running `cam init` from `~`) shouldn't claim a passing-validation it
  * never actually ran.
  */
 interface SmokeResult {
@@ -238,11 +238,11 @@ export interface InitOptions {
 }
 
 /**
- * Run the full `ralph init` flow. Returns the process exit code.
+ * Run the full `cam init` flow. Returns the process exit code.
  *
  * Calls into `mergeIntoConfig` for the writer step, so tests can drive the
- * full flow against an alternate config path via `RALPH_CONFIG_PATH` or the
- * `options.configPath` argument without touching `~/.config/ralph/config.toml`.
+ * full flow against an alternate config path via `CAM_CONFIG_PATH` or the
+ * `options.configPath` argument without touching `~/.config/cam/config.toml`.
  */
 export function runInit(options: InitOptions = {}): number {
 	const failures: string[] = [];
@@ -291,11 +291,11 @@ export function runInit(options: InitOptions = {}): number {
 	// 5. summary
 	if (failures.length > 0) {
 		printError(
-			`ralph init: ${failures.length} check(s) failed`,
+			`cam init: ${failures.length} check(s) failed`,
 			`failing: ${failures.join(', ')}`,
 		);
 		return 1;
 	}
-	printSuccess('ralph init: machine ready');
+	printSuccess('cam init: machine ready');
 	return 0;
 }

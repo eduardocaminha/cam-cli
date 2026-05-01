@@ -3,25 +3,25 @@
 #
 # Compile a release-shaped darwin-arm64 binary, package it as the homebrew-
 # audit-friendly tarball, print the SHA256 + size for use in homebrew-tap's
-# Formula/ralph.rb (US-012). Idempotent: re-running overwrites `dist/`.
+# Formula/cam.rb (US-012). Idempotent: re-running overwrites `dist/`.
 #
 # Usage:
-#   ./scripts/build-release.sh              # builds dist/ralph-darwin-arm64
-#                                           # + dist/ralph-darwin-arm64.tar.gz
+#   ./scripts/build-release.sh              # builds dist/cam-darwin-arm64
+#                                           # + dist/cam-darwin-arm64.tar.gz
 #   ./scripts/build-release.sh --no-tarball # binary only (for `--version`/init smoke)
 #
 # Acceptance criteria mapping (US-011):
-#   AC1: produces dist/ralph-darwin-arm64 via `bun build --compile`
+#   AC1: produces dist/cam-darwin-arm64 via `bun build --compile`
 #   AC2: prints binary size + warns if > 100 MB
-#   AC3: invokes ./dist/ralph-darwin-arm64 --version (must print `ralph X.Y.Z`)
-#   AC4: invokes ./dist/ralph-darwin-arm64 init (must exit 0 — soft-checks the validator)
-#   AC6: produces dist/ralph-darwin-arm64.tar.gz with binary + LICENSE
+#   AC3: invokes ./dist/cam-darwin-arm64 --version (must print `cam X.Y.Z`)
+#   AC4: invokes ./dist/cam-darwin-arm64 init (must exit 0 — soft-checks the validator)
+#   AC6: produces dist/cam-darwin-arm64.tar.gz with binary + LICENSE
 #   AC7: prints SHA256 of the tarball (for the Homebrew formula's `sha256`)
 #
 # Tag + release (AC5+AC6) are an operator step so a CI re-run never accidentally
 # re-tags. After this script passes:
 #   git tag v$(grep -oE "[0-9]+\.[0-9]+\.[0-9]+" src/version.ts) && git push --tags
-#   gh release create vX.Y.Z dist/ralph-darwin-arm64.tar.gz --generate-notes
+#   gh release create vX.Y.Z dist/cam-darwin-arm64.tar.gz --generate-notes
 set -euo pipefail
 
 # --- Resolve repo root regardless of cwd -----------------------------------
@@ -48,17 +48,17 @@ for arg in "$@"; do
 done
 
 # --- Read the version literal from src/version.ts --------------------------
-VERSION_LINE="$(grep -E "^export const RALPH_VERSION = '[0-9]+\.[0-9]+\.[0-9]+'" src/version.ts || true)"
+VERSION_LINE="$(grep -E "^export const CAM_VERSION = '[0-9]+\.[0-9]+\.[0-9]+'" src/version.ts || true)"
 if [[ -z "${VERSION_LINE}" ]]; then
-	echo "ERROR: could not parse RALPH_VERSION from src/version.ts" >&2
+	echo "ERROR: could not parse CAM_VERSION from src/version.ts" >&2
 	exit 1
 fi
 VERSION="$(echo "${VERSION_LINE}" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")"
-echo "[build-release] ralph-cli v${VERSION}"
+echo "[build-release] cam-cli v${VERSION}"
 
 # --- Compile ---------------------------------------------------------------
 mkdir -p dist
-BIN="dist/ralph-darwin-arm64"
+BIN="dist/cam-darwin-arm64"
 echo "[build-release] compiling ${BIN}"
 # `--target=bun-darwin-arm64` is the documented Bun target string (the docs
 # require the `bun-` prefix; see https://bun.sh/docs/bundler/executables).
@@ -75,7 +75,7 @@ fi
 
 # --- Sanity: AC3 (--version) -----------------------------------------------
 echo "[build-release] verifying --version output"
-EXPECTED="ralph ${VERSION}"
+EXPECTED="cam ${VERSION}"
 ACTUAL="$("${BIN}" --version)"
 if [[ "${ACTUAL}" != "${EXPECTED}" ]]; then
 	echo "ERROR: --version mismatch — expected ${EXPECTED!r}, got ${ACTUAL!r}" >&2
@@ -84,7 +84,7 @@ fi
 echo "[build-release]   ${ACTUAL}"
 
 # --- Sanity: AC4 (init runs, soft-checks) ----------------------------------
-# `ralph init` validates PATH for claude/claude-auto-retry + runs vendored
+# `cam init` validates PATH for claude/claude-auto-retry + runs vendored
 # smokes. On the dev machine these pass; on a CI box they may fail (no
 # claude binary). We invoke it with a tmp config so we don't clobber the
 # operator's real ~/.config, and we log but DON'T abort on non-zero — the
@@ -93,7 +93,7 @@ echo "[build-release]   ${ACTUAL}"
 # diagnostics", not "every check passes on every machine".
 echo "[build-release] invoking init (soft-check)"
 TMP_CONFIG="$(mktemp -d)/config.toml"
-if RALPH_CONFIG_PATH="${TMP_CONFIG}" "${BIN}" init; then
+if CAM_CONFIG_PATH="${TMP_CONFIG}" "${BIN}" init; then
 	echo "[build-release]   init: ok"
 else
 	rc=$?
@@ -108,12 +108,12 @@ if (( make_tarball == 1 )); then
 	# archives without a LICENSE — the file MUST be at the same level as
 	# the binary so `brew install` extracts both.
 	STAGE="$(mktemp -d)"
-	cp "${BIN}" "${STAGE}/ralph"
+	cp "${BIN}" "${STAGE}/cam"
 	cp LICENSE "${STAGE}/LICENSE"
 	# Use `-C "${STAGE}"` so paths in the tarball are bare (no leading
 	# tmpdir). `--no-xattrs` strips macOS extended attributes so the
 	# tarball SHA is reproducible across machines.
-	tar --no-xattrs -czf "${TARBALL}" -C "${STAGE}" ralph LICENSE
+	tar --no-xattrs -czf "${TARBALL}" -C "${STAGE}" cam LICENSE
 	rm -rf "${STAGE}"
 
 	TAR_SHA="$(shasum -a 256 "${TARBALL}" | awk '{print $1}')"
@@ -127,7 +127,7 @@ if (( make_tarball == 1 )); then
 	echo "  git tag v${VERSION}"
 	echo "  git push origin v${VERSION}"
 	echo "  gh release create v${VERSION} ${TARBALL} --generate-notes \\"
-	echo "    --notes \"ralph-cli v${VERSION}. SHA256: ${TAR_SHA}\""
+	echo "    --notes \"cam-cli v${VERSION}. SHA256: ${TAR_SHA}\""
 fi
 
 echo "[build-release] done"

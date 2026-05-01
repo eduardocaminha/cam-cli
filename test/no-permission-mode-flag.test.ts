@@ -2,7 +2,7 @@
 //
 // US-007 acceptance criterion 7 invariant: NO subcommand parser registers a
 // `--permission-mode` flag. The value is sourced exclusively from
-// `~/.config/ralph/config.toml` via `src/config/permission-mode.ts`. This
+// `~/.config/cam/config.toml` via `src/config/permission-mode.ts`. This
 // test fails the build if a future change accidentally adds the flag back.
 //
 // Two-layer defense:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // scripts/generate-embedded-vendor.ts
 //
-// Codegen step: reads each file in `vendor/` that ralph-cli embeds and
+// Codegen step: reads each file in `vendor/` that cam-cli embeds and
 // writes their contents as raw string constants to
 // `src/vendor/_generated.ts`. The generated module is the single source of
 // truth for `src/vendor/embedded.ts` at runtime — both in dev (`bun

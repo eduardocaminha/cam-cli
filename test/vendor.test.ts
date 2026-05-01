@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 const VENDOR_DIR = resolve(fileURLToPath(import.meta.url), '..', '..', 'vendor');
 const REPORTER_SMOKE_DIR =
-	process.env.RALPH_REPORTER_SMOKE_DIR ?? join(homedir(), 'Documents', 'Projects', 'reporter', 'scripts', 'smoke');
+	process.env.CAM_REPORTER_SMOKE_DIR ?? join(homedir(), 'Documents', 'Projects', 'reporter', 'scripts', 'smoke');
 
 const VENDORED_FILES = [
 	'check-agent-frontmatter.sh',

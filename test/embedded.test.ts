@@ -94,16 +94,16 @@ describe('materializeEmbedded', () => {
 	let prevCache: string | undefined;
 
 	beforeEach(() => {
-		cacheDir = mkdtempSync(join(tmpdir(), 'ralph-embedded-test-'));
-		prevCache = process.env['RALPH_VENDOR_CACHE_DIR'];
-		process.env['RALPH_VENDOR_CACHE_DIR'] = cacheDir;
+		cacheDir = mkdtempSync(join(tmpdir(), 'cam-embedded-test-'));
+		prevCache = process.env['CAM_VENDOR_CACHE_DIR'];
+		process.env['CAM_VENDOR_CACHE_DIR'] = cacheDir;
 	});
 
 	afterEach(() => {
 		if (prevCache === undefined) {
-			delete process.env['RALPH_VENDOR_CACHE_DIR'];
+			delete process.env['CAM_VENDOR_CACHE_DIR'];
 		} else {
-			process.env['RALPH_VENDOR_CACHE_DIR'] = prevCache;
+			process.env['CAM_VENDOR_CACHE_DIR'] = prevCache;
 		}
 		if (cacheDir && existsSync(cacheDir)) {
 			rmSync(cacheDir, { recursive: true, force: true });

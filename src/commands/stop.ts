@@ -1,28 +1,28 @@
 // src/commands/stop.ts
 //
-// Implementation of `ralph stop` — cleanly cancels a running loop.
+// Implementation of `cam stop` — cleanly cancels a running loop.
 //
 // What it does, in order:
 //   1. Removes `.claude/ralph-loop.local.md` (the plugin's state file). After
-//      this, the next `ralph next` invocation does NOT detect a stale loop.
-//   2. If a tmux session named exactly `ralph` is alive, kills it. Defensive
-//      check: we ONLY kill `ralph` — nothing else — so an unrelated tmux
+//      this, the next `cam next` invocation does NOT detect a stale loop.
+//   2. If a tmux session named exactly `cam` is alive, kills it. Defensive
+//      check: we ONLY kill `cam` — nothing else — so an unrelated tmux
 //      session named e.g. `work` is untouched. The PRD note for US-008
 //      explicitly calls this out.
 //   3. Exits 0. Both steps are idempotent: missing state file + missing tmux
-//      session both report `nothing to clean` and still exit 0. `ralph stop`
+//      session both report `nothing to clean` and still exit 0. `cam stop`
 //      is the kill-switch operators reach for, so it never fails on "the
 //      loop wasn't running" — that's the success state.
 //
 // Acceptance criteria (US-008):
-//   3. `ralph stop` exists; removes `.claude/ralph-loop.local.md`, kills any
-//      tmux session named `ralph` (if alive), exits 0.
-//   4. After `ralph stop`, the next `ralph next` invocation does NOT detect a
+//   3. `cam stop` exists; removes `.claude/ralph-loop.local.md`, kills any
+//      tmux session named `cam` (if alive), exits 0.
+//   4. After `cam stop`, the next `cam next` invocation does NOT detect a
 //      stale loop.
 //
-// Tmux detection contract (per the PRD note): `tmux has-session -t ralph
+// Tmux detection contract (per the PRD note): `tmux has-session -t cam
 // 2>/dev/null` — exit 0 means the session exists, exit non-zero means it does
-// not. We only call `tmux kill-session -t ralph` when has-session succeeded.
+// not. We only call `tmux kill-session -t cam` when has-session succeeded.
 // The `tmux` binary may not be installed at all (e.g. on a fresh dev box) —
 // that's also "nothing to clean", not a failure.
 
@@ -36,7 +36,7 @@ import { printHint, printSuccess, printWarning } from '../logging/color.ts';
 // --- Constants -------------------------------------------------------------
 
 const STATE_FILE_PATH = '.claude/ralph-loop.local.md';
-const TMUX_SESSION_NAME = 'ralph';
+const TMUX_SESSION_NAME = 'cam';
 
 // --- Types -----------------------------------------------------------------
 
@@ -61,7 +61,7 @@ export interface StopOptions {
 export interface StopReport {
 	/** Was the state file present + removed by this call? */
 	stateFileRemoved: boolean;
-	/** Was a `ralph` tmux session present + killed by this call? */
+	/** Was a `cam` tmux session present + killed by this call? */
 	tmuxKilled: boolean;
 	/** Was the `tmux` binary unavailable on PATH? (Distinguishes "not installed" from "no session".) */
 	tmuxUnavailable: boolean;
@@ -80,20 +80,20 @@ function tmuxAvailable(spawnFn: SpawnSyncFn): boolean {
 }
 
 /**
- * Does the `ralph` tmux session exist? `tmux has-session -t ralph` exits 0
+ * Does the `cam` tmux session exist? `tmux has-session -t cam` exits 0
  * when the session is alive, non-zero otherwise. We don't pipe stderr through
  * to the operator — the no-session case logs to stderr by default.
  */
-function ralphSessionAlive(spawnFn: SpawnSyncFn): boolean {
+function camSessionAlive(spawnFn: SpawnSyncFn): boolean {
 	const result = spawnFn('tmux', ['has-session', '-t', TMUX_SESSION_NAME], { encoding: 'utf8' });
 	return result.status === 0;
 }
 
 /**
- * Kill the `ralph` tmux session. Returns whether the kill command exited
+ * Kill the `cam` tmux session. Returns whether the kill command exited
  * cleanly. Caller has already verified the session exists.
  */
-function killRalphSession(spawnFn: SpawnSyncFn): boolean {
+function killCamSession(spawnFn: SpawnSyncFn): boolean {
 	const result = spawnFn('tmux', ['kill-session', '-t', TMUX_SESSION_NAME], { encoding: 'utf8' });
 	return result.status === 0;
 }
@@ -101,8 +101,8 @@ function killRalphSession(spawnFn: SpawnSyncFn): boolean {
 // --- Public entrypoint -----------------------------------------------------
 
 /**
- * Run the `ralph stop` flow without printing — returns a structured report.
- * Exposed for tests and any future programmatic consumer (e.g. `ralph resume`
+ * Run the `cam stop` flow without printing — returns a structured report.
+ * Exposed for tests and any future programmatic consumer (e.g. `cam resume`
  * in US-010 may want to call into stop's primitives to wipe state).
  */
 export function performStop(options: StopOptions = {}): StopReport {
@@ -125,16 +125,16 @@ export function performStop(options: StopOptions = {}): StopReport {
 			report.stateFileRemoved = true;
 		} catch {
 			// Couldn't unlink (permissions / race). Treat as not-removed; the
-			// operator gets a warning + exit 0 still — the next `ralph next`
+			// operator gets a warning + exit 0 still — the next `cam next`
 			// will refuse to clobber the file and surface the same diagnostic.
 		}
 	}
 
-	// 2. Kill the `ralph` tmux session if alive.
+	// 2. Kill the `cam` tmux session if alive.
 	if (!tmuxAvailable(spawnFn)) {
 		report.tmuxUnavailable = true;
-	} else if (ralphSessionAlive(spawnFn)) {
-		const killed = killRalphSession(spawnFn);
+	} else if (camSessionAlive(spawnFn)) {
+		const killed = killCamSession(spawnFn);
 		report.tmuxKilled = killed;
 	}
 
@@ -142,7 +142,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 }
 
 /**
- * Run the full `ralph stop` flow with printed diagnostics. Always exits 0 —
+ * Run the full `cam stop` flow with printed diagnostics. Always exits 0 —
  * the kill-switch is forgiving by design.
  */
 export function runStop(options: StopOptions = {}): number {
@@ -163,9 +163,9 @@ export function runStop(options: StopOptions = {}): number {
 	}
 
 	if (!report.stateFileRemoved && !report.tmuxKilled) {
-		printWarning('ralph stop: nothing to clean', 'no active loop or stale state detected');
+		printWarning('cam stop: nothing to clean', 'no active loop or stale state detected');
 	} else {
-		printSuccess('ralph stop: clean');
+		printSuccess('cam stop: clean');
 	}
 	return 0;
 }

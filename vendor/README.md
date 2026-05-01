@@ -42,11 +42,11 @@ e3e14a7f5b2ff474f41583dd2b5503baa670ae7c05fe03420b1e289941159ba8
 
 `bun test` computes this sha256 at runtime (in `test/vendor.test.ts`) and fails if the on-disk file diverges from the baseline — this converts silent rot into an explicit test failure and forces the maintainer to either rebaseline or re-run the drift-detection ceremony below.
 
-### Drift-detection ceremony (run before each ralph-cli minor bump)
+### Drift-detection ceremony (run before each cam-cli minor bump)
 
 ```bash
 UPSTREAM=~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/hooks/stop-hook.sh
-VENDOR=~/Documents/Projects/ralph-cli/vendor/ralph-loop-stop-hook.sh
+VENDOR=~/Documents/Projects/cam-cli/vendor/ralph-loop-stop-hook.sh
 
 # Check for drift
 diff <(sha256sum "$UPSTREAM" | cut -d' ' -f1) \
@@ -66,7 +66,7 @@ If the upstream plugin changes its stop-hook behavior in a future release, re-ve
 
 ## Why verbatim copies, not git submodules?
 
-A submodule would force `brew install ralph` consumers to clone the full reporter monorepo (~MB of unrelated code). Verbatim copies keep the `ralph` formula self-contained. The drift-test alarm catches the only failure mode (silently outdated copies) without the consumer-side cost.
+A submodule would force `brew install cam` consumers to clone the full reporter monorepo (~MB of unrelated code). Verbatim copies keep the `cam` formula self-contained. The drift-test alarm catches the only failure mode (silently outdated copies) without the consumer-side cost.
 
 ## Re-vendoring procedure
 
@@ -74,20 +74,20 @@ When upstream changes land in `reporter:scripts/smoke/{check-agent-frontmatter.s
 
 ```bash
 REPORTER=~/Documents/Projects/reporter
-RALPH=~/Documents/Projects/ralph-cli
-cp $REPORTER/scripts/smoke/check-agent-frontmatter.sh $RALPH/vendor/
-cp $REPORTER/scripts/smoke/check-agent-frontmatter.ts $RALPH/vendor/
-cp $REPORTER/scripts/smoke/claude-auto-retry-patterns.ts $RALPH/vendor/
-chmod +x $RALPH/vendor/check-agent-frontmatter.sh
+CAM=~/Documents/Projects/cam-cli
+cp $REPORTER/scripts/smoke/check-agent-frontmatter.sh $CAM/vendor/
+cp $REPORTER/scripts/smoke/check-agent-frontmatter.ts $CAM/vendor/
+cp $REPORTER/scripts/smoke/claude-auto-retry-patterns.ts $CAM/vendor/
+chmod +x $CAM/vendor/check-agent-frontmatter.sh
 # Update the sha column above
-cd $RALPH && bun test test/vendor.test.ts   # confirms drift cleared
+cd $CAM && bun test test/vendor.test.ts   # confirms drift cleared
 ```
 
 ## Runtime behavior
 
-`ralph init` invokes `check-agent-frontmatter.ts` and `claude-auto-retry-patterns.ts` directly via `bun` (not via the `.sh` wrapper) — Bun is a hard dependency of `ralph` itself, so the runtime-detection ladder in the `.sh` is redundant. The `.sh` is vendored only for parity / drift detection.
+`cam init` invokes `check-agent-frontmatter.ts` and `claude-auto-retry-patterns.ts` directly via `bun` (not via the `.sh` wrapper) — Bun is a hard dependency of `cam` itself, so the runtime-detection ladder in the `.sh` is redundant. The `.sh` is vendored only for parity / drift detection.
 
 Both `.ts` files have built-in skip behavior for environments where the validation target is absent:
 
-- `check-agent-frontmatter.ts` exits 0 when `.claude/agents/` is missing under the resolved repo root, and exits 2 when no git repo is reachable from cwd. `ralph init` treats exit 2 as **skip-with-warning**, not failure — the operator may not be inside a git repo when running `ralph init`.
+- `check-agent-frontmatter.ts` exits 0 when `.claude/agents/` is missing under the resolved repo root, and exits 2 when no git repo is reachable from cwd. `cam init` treats exit 2 as **skip-with-warning**, not failure — the operator may not be inside a git repo when running `cam init`.
 - `claude-auto-retry-patterns.ts` exits 0 with a `[smoke] skipping` log when `claude-auto-retry` is not installed at the hardcoded `/opt/homebrew/lib/node_modules/claude-auto-retry/src/` path.
