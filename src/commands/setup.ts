@@ -32,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
+import { mergeIntoConfig } from '../config/toml.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
@@ -39,9 +40,11 @@ import { printError, printHint, printSuccess, printWarning } from '../logging/co
 // ---------------------------------------------------------------------------
 
 export type ProjectMode = 'new' | 'existing';
+export type IssueSystem = 'linear' | 'github' | 'none';
 
 export interface SetupOptions {
 	projectMode?: ProjectMode;
+	issueSystem?: IssueSystem;
 	description?: string;
 	noTmux?: boolean;
 	cwd?: string;
@@ -335,7 +338,34 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 		return 1;
 	}
 
-	// --- Step 5: project description (new projects only) --------------------
+	// --- Step 3: which issue system? ---------------------------------------
+	let issueSystem = options.issueSystem;
+	if (!issueSystem) {
+		issueSystem = await askChoice(
+			'Which issue system does this project use?',
+			['linear', 'github', 'none'] as const,
+			'none',
+		);
+	}
+	printSuccess(`issue system: ${issueSystem}`);
+	if (issueSystem === 'linear') {
+		printHint('set LINEAR_API_KEY in your shell (get one at https://linear.app/settings/api)');
+	} else if (issueSystem === 'github') {
+		printHint('ensure `gh auth status` passes before running /cam-issue');
+	}
+
+	// Persist to scripts/cam/project.toml (per-project config).
+	try {
+		const projectToml = join(cwd, 'scripts', 'cam', 'project.toml');
+		mergeIntoConfig(projectToml, { issue_system: issueSystem });
+		printSuccess(`wrote ${projectToml.replace(cwd + '/', '')}`);
+	} catch (err) {
+		printWarning(
+			`could not write scripts/cam/project.toml: ${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
+
+	// --- Step 4: project description (new projects only) --------------------
 	let description = options.description ?? '';
 	if (projectMode === 'new' && !description) {
 		description = await ask('What is this project about? (free-form): ');
@@ -377,10 +407,13 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 
 export interface ParsedSetupArgs {
 	projectMode?: ProjectMode;
+	issueSystem?: IssueSystem;
 	description?: string;
 	noTmux: boolean;
 	help: boolean;
 }
+
+const ISSUE_SYSTEMS: readonly IssueSystem[] = ['linear', 'github', 'none'];
 
 export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 	const result: ParsedSetupArgs = { noTmux: false, help: false };
@@ -390,6 +423,24 @@ export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 		if (arg === '--new') { result.projectMode = 'new'; continue; }
 		if (arg === '--existing') { result.projectMode = 'existing'; continue; }
 		if (arg === '--no-tmux') { result.noTmux = true; continue; }
+		if (arg === '--issue-system') {
+			const next = args[++i];
+			if (!next || !(ISSUE_SYSTEMS as readonly string[]).includes(next)) {
+				printError('--issue-system requires: linear | github | none');
+				return null;
+			}
+			result.issueSystem = next as IssueSystem;
+			continue;
+		}
+		if (arg.startsWith('--issue-system=')) {
+			const val = arg.slice('--issue-system='.length);
+			if (!(ISSUE_SYSTEMS as readonly string[]).includes(val)) {
+				printError(`--issue-system must be linear, github, or none — got ${val}`);
+				return null;
+			}
+			result.issueSystem = val as IssueSystem;
+			continue;
+		}
 		if (arg === '--description') {
 			const next = args[++i];
 			if (!next) { printError('--description requires a string'); return null; }

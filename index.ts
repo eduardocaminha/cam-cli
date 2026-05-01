@@ -57,6 +57,7 @@ Usage:
 Options:
   --new               Treat this as a new project (skip the new/existing question).
   --existing          Treat this as an existing project.
+  --issue-system <x>  linear | github | none. Skip the issue-system question.
   --description "<t>" Project description for new projects (skip the prompt).
   --no-tmux           Install templates only; skip spawning the tmux setup session.
 
@@ -70,9 +71,11 @@ Behaviour:
   Stage 2 — Project setup wizard (if stage 1 passes):
     1. Asks: new project or existing?
     2. Verifies claude is installed and logged in.
-    3. If new: asks for a brief project description.
-    4. Installs cam templates into .claude/commands/, .claude/agents/, scripts/cam/.
-    5. Opens a tmux split:
+    3. Asks: which issue system (linear | github | none)?
+    4. If new: asks for a brief project description.
+    5. Installs cam templates into .claude/commands/, .claude/agents/, scripts/cam/.
+    6. Writes scripts/cam/project.toml with per-project config.
+    7. Opens a tmux split:
          Pane A (left):  claude in bypassPermissions, adapts templates to this project.
          Pane B (right): key menu — c to interact, v for view-only, q to close.`;
 
@@ -431,6 +434,7 @@ async function main(argv: string[]): Promise<number> {
 			if (machineCode !== 0) return machineCode;
 			return runSetup({
 				projectMode: setupArgs.projectMode,
+				issueSystem: setupArgs.issueSystem,
 				description: setupArgs.description,
 				noTmux: setupArgs.noTmux,
 			});
