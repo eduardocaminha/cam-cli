@@ -52,8 +52,8 @@ describe('parseRunArgs', () => {
 
 describe('projectSessionName', () => {
 	it('produces a tmux-safe name that includes the basename and a 6-char hash', () => {
-		const name = projectSessionName('/Users/eduardo/Documents/Projects/ralph-cli');
-		expect(name).toMatch(/^cam-orch-ralph-cli-[0-9a-f]{6}$/);
+		const name = projectSessionName('/Users/eduardo/Documents/Projects/cam-cli');
+		expect(name).toMatch(/^cam-orch-cam-cli-[0-9a-f]{6}$/);
 	});
 
 	it('is deterministic for the same path', () => {

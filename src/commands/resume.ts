@@ -1,11 +1,11 @@
 // src/commands/resume.ts
 //
-// Implementation of `ralph resume` — the 4-mode recovery command.
+// Implementation of `cam resume` — the 4-mode recovery command.
 //
 // Reads three sources from the current cwd's repo and reconciles them into a
 // recovery decision:
 //
-//   1. `.claude/ralph-loop.local.md` (the ralph-loop plugin's state file).
+//   1. `.claude/cam-loop.local.md` (the cam-loop plugin's state file).
 //      YAML frontmatter contains `active`, `iteration`, `max_iterations`,
 //      `started_at`, `completion_promise`, `session_id`, and (per US-010) a
 //      `pid` field that names the driver process owning the loop.
@@ -19,8 +19,8 @@
 //   - `continue`            — Mode 1: operator typed mid-loop. State file
 //                             present + commits landed since state-file mtime.
 //                             The loop's own re-injection lifecycle handles
-//                             the next turn; `ralph resume` just re-spawns
-//                             `ralph next`.
+//                             the next turn; `cam resume` just re-spawns
+//                             `cam next`.
 //   - `respawn`             — Mode 2: terminal closed / OS rebooted. State
 //                             file present + heartbeat PID dead + last
 //                             commit ≤ 24h. Same action as Mode 1 — spawn
@@ -35,7 +35,7 @@
 //   - `noop`                — Mode 4: rate-limit sleep killed mid-window.
 //                             `claude-auto-retry`'s PID is alive (detected
 //                             via `pgrep -f claude-auto-retry`); the loop
-//                             will resume on its own. We spawn `ralph next`
+//                             will resume on its own. We spawn `cam next`
 //                             normally — the existing loop's plugin
 //                             refuses-to-clobber semantics protect the
 //                             state file.
@@ -49,14 +49,14 @@
 // back to a different point:
 //   - `reset-current-story` — set `passes:false` on the highest-priority
 //     story that's currently `passes:true` (i.e. the most recently completed
-//     one). Combined with `ralph next` this re-implements that story.
+//     one). Combined with `cam next` this re-implements that story.
 //   - `reset-prd`           — set `passes:false` on every story in the PRD.
 //     Re-runs the entire PRD from the top.
 //   - `reset-branch`        — `git reset --hard origin/main` then re-runs.
 //     Destructive; gated behind a confirmation prompt unless `--force`.
 //
 // Acceptance criteria covered (US-010):
-//   1. `ralph resume` exists; reads `.claude/ralph-loop.local.md` + `prd.json`
+//   1. `cam resume` exists; reads `.claude/cam-loop.local.md` + `prd.json`
 //      + last commit and classifies into ONE of the 4 modes.
 //   2. Mode 1 (typed mid-loop): state file + commit-since-state-file > 0.
 //   3. Mode 2 (terminal closed): state file + PID dead.
@@ -78,7 +78,7 @@ import { color, muted, printError, printHint, printSuccess, printWarning } from 
 
 // --- Constants -------------------------------------------------------------
 
-const STATE_FILE_PATH = '.claude/ralph-loop.local.md';
+const STATE_FILE_PATH = '.claude/cam-loop.local.md';
 const PRD_PATH = 'prd.json';
 
 /**
@@ -96,11 +96,11 @@ export const HARD_KILL_AGE_MS = 24 * 60 * 60 * 1000;
  * so a programmatic caller (or future TUI) can branch.
  */
 export type ResumeMode =
-	| 'noop' // Mode 4: claude-auto-retry alive, just re-spawn `ralph next`
+	| 'noop' // Mode 4: claude-auto-retry alive, just re-spawn `cam next`
 	| 'respawn' // Mode 1+2: state file present, no live PID, recent activity
 	| 'prompt' // Mode 3: needs operator [Y/n/reset]
 	| 'success' // PRD complete; auto-clean state file + exit 0
-	| 'idle' // No state file, no in-flight loop — `ralph next` from scratch
+	| 'idle' // No state file, no in-flight loop — `cam next` from scratch
 	| 'reset-current-story' // explicit --mode override
 	| 'reset-prd' // explicit --mode override
 	| 'reset-branch'; // explicit --mode override
@@ -241,7 +241,7 @@ export interface ClassifyInput {
  * decision tree from the acceptance criteria:
  *
  *   if PRD complete                          → success (auto-clean)
- *   else if no state file                    → idle (fresh `ralph next`)
+ *   else if no state file                    → idle (fresh `cam next`)
  *   else if claude-auto-retry alive          → noop  (Mode 4)
  *   else if heartbeat PID alive              → respawn (Mode 1: typed mid-loop)
  *   else if last commit > 24h old (or null)  → prompt (Mode 3: hard-kill orphan)
@@ -249,7 +249,7 @@ export interface ClassifyInput {
  *
  * The "PID alive but operator typed mid-loop" branch (the spec's Mode 1)
  * collapses into the same `respawn` action because the user-facing behavior
- * is identical: re-spawn `ralph next`, the plugin handles the rest. We keep
+ * is identical: re-spawn `cam next`, the plugin handles the rest. We keep
  * the diagnostic string distinct so the printer can explain what happened.
  */
 export function classifyResumeMode(
@@ -269,7 +269,7 @@ export function classifyResumeMode(
 	if (!state) {
 		return {
 			mode: 'idle',
-			reason: 'no `.claude/ralph-loop.local.md` — ready for a fresh `ralph next`',
+			reason: 'no `.claude/cam-loop.local.md` — ready for a fresh `cam next`',
 		};
 	}
 	if (autoRetryAlive) {
@@ -306,7 +306,7 @@ export function classifyResumeMode(
  * Find the most-recently-completed story and flip it back to `passes:false`.
  * Used by `--mode reset-current-story` to re-do the just-finished work.
  *
- * In ralph's priority scheme, lower `priority` value = earlier in the
+ * In cam's priority scheme, lower `priority` value = earlier in the
  * implementation queue. Stories are picked off in ascending priority order,
  * so the most-recently-completed story is the `passes:true` entry with the
  * HIGHEST priority value. (The next pending story will have a still-higher
@@ -501,20 +501,20 @@ export async function runResume(options: ResumeOptions = {}): Promise<number> {
 			return 0;
 		}
 		case 'idle':
-			printHint('run `ralph next` to start a fresh loop');
+			printHint('run `cam next` to start a fresh loop');
 			return 0;
 		case 'noop':
-			printHint('claude-auto-retry is sleeping — its next wake will spawn `ralph next`');
+			printHint('claude-auto-retry is sleeping — its next wake will spawn `cam next`');
 			return 0;
 		case 'respawn':
-			printHint('next step: re-run `ralph next` from this cwd to re-attach the loop');
+			printHint('next step: re-run `cam next` from this cwd to re-attach the loop');
 			return 0;
 		case 'prompt': {
 			const answer = normalizePromptAnswer(
 				promptFn('Resume the loop? [Y/n/reset] '),
 			);
 			if (answer === 'y') {
-				printSuccess('continuing — re-run `ralph next` to re-attach the loop');
+				printSuccess('continuing — re-run `cam next` to re-attach the loop');
 				return 0;
 			}
 			if (answer === 'reset') {
@@ -561,7 +561,7 @@ async function runExplicitReset(
 		}
 		writePrd(cwd, prd);
 		printSuccess(`reset ${id} → passes:false`);
-		printHint('next step: re-run `ralph next` to re-implement that story');
+		printHint('next step: re-run `cam next` to re-implement that story');
 		return 0;
 	}
 	if (mode === 'reset-prd') {
@@ -582,14 +582,14 @@ async function runExplicitReset(
 		}
 		writePrd(cwd, prd);
 		printSuccess(`reset ${count} stor${count === 1 ? 'y' : 'ies'} → passes:false`);
-		printHint('next step: re-run `ralph next` to re-implement from US-001');
+		printHint('next step: re-run `cam next` to re-implement from US-001');
 		return 0;
 	}
 	if (mode === 'reset-branch') {
 		// Destructive: we DO NOT run `git reset --hard` from here. We surface
 		// the command and require the operator to copy-paste it. The PRD's
 		// `--mode reset-branch` lives at the spec level; the actual destructive
-		// step lives outside ralph — we don't want to be the tool that clobbers
+		// step lives outside cam — we don't want to be the tool that clobbers
 		// uncommitted work because of a misclassification.
 		if (options.dryRun) {
 			printHint('dry run: would print the `git reset --hard origin/main` instruction');
@@ -605,10 +605,10 @@ async function runExplicitReset(
 			}
 		}
 		printWarning(
-			'reset-branch is operator-driven — ralph does NOT run `git reset --hard` itself',
+			'reset-branch is operator-driven — cam does NOT run `git reset --hard` itself',
 			'copy: git reset --hard origin/main',
 		);
-		// Also remove the state file; the next `ralph next` should treat the
+		// Also remove the state file; the next `cam next` should treat the
 		// branch as freshly-checked-out.
 		const removed = removeStateFileIfPresent(cwd);
 		if (removed) {
@@ -632,7 +632,7 @@ function removeStateFileIfPresent(cwd: string): boolean {
 
 /**
  * Print a one-glance human summary of the resume report. Mirrors the shape
- * of `ralph status` so an operator who already knows status can read this
+ * of `cam status` so an operator who already knows status can read this
  * without context-switching.
  */
 function printSummary(report: ResumeReport): void {

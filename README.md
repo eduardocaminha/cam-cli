@@ -5,7 +5,7 @@ sessions, scaffolds a project for the cam autonomous loop, and runs a
 long-lived orchestrator agent that drives `/cam-plan`, `/cam-next`,
 `/cam-review`, `/cam-ship` cycles against Linear, GitHub, or local issues.
 
-Built on Bun + TypeScript. Single-binary distribution via Homebrew.
+Built on Bun + TypeScript. Distributed as a single-file binary built from source.
 
 > **Status:** Phase 2 (orchestrator MVP) — `cam init` scaffolds the project
 > and `cam run` opens the orchestrator. The legacy `cam next` /
@@ -29,12 +29,12 @@ Built on Bun + TypeScript. Single-binary distribution via Homebrew.
 
 ## Install
 
-### Option A — From source (recommended while the tap is being renamed)
+### Option A — From source
 
 ```bash
 # 1. Clone
-git clone https://github.com/eduardocaminha/ralph-cli.git
-cd ralph-cli
+git clone https://github.com/eduardocaminha/cam-cli.git
+cd cam-cli
 
 # 2. Install dependencies
 bun install
@@ -55,30 +55,18 @@ cam --version
 Useful while iterating on `cam` itself or on a non-darwin-arm64 machine:
 
 ```bash
-git clone https://github.com/eduardocaminha/ralph-cli.git
-cd ralph-cli
+git clone https://github.com/eduardocaminha/cam-cli.git
+cd cam-cli
 bun install
 
 # Add a shim that runs the TS entrypoint via Bun:
 cat <<'SHIM' | sudo tee /usr/local/bin/cam >/dev/null
 #!/usr/bin/env bash
-exec bun run /Users/YOU/path/to/ralph-cli/index.ts "$@"
+exec bun run /Users/YOU/path/to/cam-cli/index.ts "$@"
 SHIM
 sudo chmod +x /usr/local/bin/cam
 
 cam --version
-```
-
-### Option C — Homebrew (legacy `ralph` formula)
-
-A formula exists at `eduardocaminha/homebrew-tap` but currently installs
-the v0.1.1 binary as **`ralph`** (pre-rename). It does not yet ship the
-orchestrator (Phase 2) functionality. Track the rename in
-[homebrew-tap](https://github.com/eduardocaminha/homebrew-tap).
-
-```bash
-brew tap eduardocaminha/tap
-brew install ralph    # exposes `ralph` (not `cam`) until the formula is renamed
 ```
 
 ---
@@ -117,7 +105,7 @@ for its full system prompt.
 ```text
 cam init [options]          Validate the machine, then run the project-setup wizard
 cam run  [options]          Open or attach the long-lived orchestrator (tmux session)
-cam plan [--issue <N>]      Spawn claude + dispatch /ralph-plan; prompts on APPROVE
+cam plan [--issue <N>]      Spawn claude + dispatch /cam-plan; prompts on APPROVE
 cam next [options]          Spawn the legacy autonomous loop (Ghostty + claude + dashboard)
 cam dashboard               Standalone read-only TUI for monitoring a loop
 cam status                  Show current loop state (idle / active / paused)
@@ -139,7 +127,7 @@ no subcommand exposes a CLI flag for it.
 bun install
 bun test                 # run the unit-test suite (~240 tests)
 bunx tsc --noEmit        # typecheck
-bun run build:release    # produce dist/cam-darwin-arm64 + tarball
+bun run build:release    # produce dist/cam-darwin-arm64
 ```
 
 Source layout:

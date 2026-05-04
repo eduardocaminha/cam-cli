@@ -1,27 +1,17 @@
 #!/usr/bin/env bash
 # scripts/build-release.sh
 #
-# Compile a release-shaped darwin-arm64 binary, package it as the homebrew-
-# audit-friendly tarball, print the SHA256 + size for use in homebrew-tap's
-# Formula/cam.rb (US-012). Idempotent: re-running overwrites `dist/`.
+# Compile a release-shaped darwin-arm64 binary. Idempotent: re-running
+# overwrites `dist/`.
 #
 # Usage:
 #   ./scripts/build-release.sh              # builds dist/cam-darwin-arm64
-#                                           # + dist/cam-darwin-arm64.tar.gz
-#   ./scripts/build-release.sh --no-tarball # binary only (for `--version`/init smoke)
 #
 # Acceptance criteria mapping (US-011):
 #   AC1: produces dist/cam-darwin-arm64 via `bun build --compile`
 #   AC2: prints binary size + warns if > 100 MB
 #   AC3: invokes ./dist/cam-darwin-arm64 --version (must print `cam X.Y.Z`)
 #   AC4: invokes ./dist/cam-darwin-arm64 init (must exit 0 — soft-checks the validator)
-#   AC6: produces dist/cam-darwin-arm64.tar.gz with binary + LICENSE
-#   AC7: prints SHA256 of the tarball (for the Homebrew formula's `sha256`)
-#
-# Tag + release (AC5+AC6) are an operator step so a CI re-run never accidentally
-# re-tags. After this script passes:
-#   git tag v$(grep -oE "[0-9]+\.[0-9]+\.[0-9]+" src/version.ts) && git push --tags
-#   gh release create vX.Y.Z dist/cam-darwin-arm64.tar.gz --generate-notes
 set -euo pipefail
 
 # --- Resolve repo root regardless of cwd -----------------------------------
@@ -30,14 +20,10 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 # --- Args ------------------------------------------------------------------
-make_tarball=1
 for arg in "$@"; do
 	case "$arg" in
-		--no-tarball)
-			make_tarball=0
-			;;
 		-h|--help)
-			grep '^#' "$0" | head -32 | sed 's/^#//' >&2
+			grep '^#' "$0" | head -16 | sed 's/^#//' >&2
 			exit 0
 			;;
 		*)
@@ -98,36 +84,6 @@ if CAM_CONFIG_PATH="${TMP_CONFIG}" "${BIN}" init; then
 else
 	rc=$?
 	echo "[build-release]   init: exit ${rc} (non-zero is acceptable on machines without claude installed)"
-fi
-
-# --- Tarball: AC6 + AC7 ----------------------------------------------------
-if (( make_tarball == 1 )); then
-	TARBALL="${BIN}.tar.gz"
-	# Stage the binary + LICENSE in a flat layout so `tar -tzf` shows two
-	# files at the top level. Homebrew audits flag formulas pointing at
-	# archives without a LICENSE — the file MUST be at the same level as
-	# the binary so `brew install` extracts both.
-	STAGE="$(mktemp -d)"
-	cp "${BIN}" "${STAGE}/cam"
-	cp LICENSE "${STAGE}/LICENSE"
-	# Use `-C "${STAGE}"` so paths in the tarball are bare (no leading
-	# tmpdir). `--no-xattrs` strips macOS extended attributes so the
-	# tarball SHA is reproducible across machines.
-	tar --no-xattrs -czf "${TARBALL}" -C "${STAGE}" cam LICENSE
-	rm -rf "${STAGE}"
-
-	TAR_SHA="$(shasum -a 256 "${TARBALL}" | awk '{print $1}')"
-	TAR_SIZE_BYTES="$(stat -f '%z' "${TARBALL}")"
-	TAR_SIZE_MB=$(( TAR_SIZE_BYTES / 1024 / 1024 ))
-	echo "[build-release] tarball: ${TARBALL}"
-	echo "[build-release]   size:   ${TAR_SIZE_MB} MB (${TAR_SIZE_BYTES} bytes)"
-	echo "[build-release]   sha256: ${TAR_SHA}"
-	echo
-	echo "Next steps (operator):"
-	echo "  git tag v${VERSION}"
-	echo "  git push origin v${VERSION}"
-	echo "  gh release create v${VERSION} ${TARBALL} --generate-notes \\"
-	echo "    --notes \"cam-cli v${VERSION}. SHA256: ${TAR_SHA}\""
 fi
 
 echo "[build-release] done"

@@ -1,5 +1,5 @@
 /**
- * Canonical visual theme for ralph CLI output.
+ * Canonical visual theme for cam CLI output.
  *
  * Single source of truth for state colors, event labels, agent palette,
  * separators, and header rendering. All TUI commands import from here.

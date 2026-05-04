@@ -39,7 +39,7 @@ describe('stringifyToml + parseToml', () => {
 	});
 
 	test('round-trips boolean and number scalars', () => {
-		const original = { auto_resume: true, max_iterations: 30, prompt: '/ralph-next' };
+		const original = { auto_resume: true, max_iterations: 30, prompt: '/cam-next' };
 		const text = stringifyToml(original);
 		const parsed = parseToml(text);
 		expect(parsed).toEqual(original);
@@ -113,7 +113,7 @@ describe('loadConfig + saveConfig', () => {
 		const path = join(workDir, 'config.toml');
 		const original = {
 			permission_mode: 'bypassPermissions',
-			plugin: { max_iterations: 30, prompt: '/ralph-next' },
+			plugin: { max_iterations: 30, prompt: '/cam-next' },
 		};
 		saveConfig(path, original);
 		const reread = loadConfig(path);
@@ -144,9 +144,9 @@ describe('mergeIntoConfig', () => {
 	test('merges into an existing section, preserving sibling keys', () => {
 		const path = join(workDir, 'config.toml');
 		saveConfig(path, { plugin: { max_iterations: 30, prompt: 'old' } });
-		mergeIntoConfig(path, { plugin: { prompt: '/ralph-next' } });
+		mergeIntoConfig(path, { plugin: { prompt: '/cam-next' } });
 		const result = loadConfig(path);
-		expect(result.plugin).toEqual({ max_iterations: 30, prompt: '/ralph-next' });
+		expect(result.plugin).toEqual({ max_iterations: 30, prompt: '/cam-next' });
 		cleanup();
 	});
 

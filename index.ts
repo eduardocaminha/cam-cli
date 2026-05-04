@@ -38,7 +38,7 @@ Usage:
 Commands:
   init [options]          Validate the machine, then run the project-setup wizard
   run [options]           Open or attach the long-lived orchestrator (tmux session)
-  plan [--issue <N>]      Spawn claude + dispatch /ralph-plan; prompts on APPROVE
+  plan [--issue <N>]      Spawn claude + dispatch /cam-plan; prompts on APPROVE
   next [options]          Spawn the autonomous loop (Ghostty split + claude + dashboard)
   dashboard               Standalone read-only TUI (alt-screen) for monitoring a loop
   status                  Show current loop state at a glance (idle / active / paused)
@@ -106,14 +106,14 @@ Behaviour:
 The orchestrator persona is loaded from
 .claude/agents/subagent-orchestrator.md — see that file for what it does.`;
 
-const PLAN_HELP = `cam plan — wrap an interactive claude session that runs /ralph-plan
+const PLAN_HELP = `cam plan — wrap an interactive claude session that runs /cam-plan
 
 Usage:
   cam plan [--issue <N>]
 
 Options:
-  --issue <N>    Plan against GitHub issue #N (passed through as \`/ralph-plan #N\`).
-                 Without this flag, cam dispatches a bare \`/ralph-plan\` and the
+  --issue <N>    Plan against GitHub issue #N (passed through as \`/cam-plan #N\`).
+                 Without this flag, cam dispatches a bare \`/cam-plan\` and the
                  planner picks the highest-priority pending issue itself.
 
 Behaviour:
@@ -140,20 +140,20 @@ Behaviour:
   1. Reads \`permission_mode\` from \`~/.config/cam/config.toml\` (default
      \`bypassPermissions\`). cam does NOT accept a \`--permission-mode\`
      flag — change the config file with \`cam init\` to override.
-  2. Pre-arms the \`ralph-loop\` plugin by writing
-     \`.claude/ralph-loop.local.md\` (vendored template at
-     \`vendor/ralph-loop.local.md.tmpl\`).
+  2. Pre-arms the \`cam-loop\` plugin by writing
+     \`.claude/cam-loop.local.md\` (vendored template at
+     \`vendor/cam-loop.local.md.tmpl\`).
   3. Detects the host terminal:
        Ghostty                 → opens a horizontal split (claude in current
                                  pane, \`cam dashboard\` in new pane).
        VS Code (TERM_PROGRAM)  → inline single-pane (the IDE is the dashboard).
        anything else           → inline single-pane.
-  4. Spawns \`claude\` with \`/ralph-next\` as the first user-turn.
+  4. Spawns \`claude\` with \`/cam-next\` as the first user-turn.
   5. Returns claude's exit code on session end.
 
 Stop primitives:
-  /cancel-ralph  (preferred — cleans up the state file)
-  rm .claude/ralph-loop.local.md  (kill switch — loop ends after current turn)`;
+  /cancel-cam  (preferred — cleans up the state file)
+  rm .claude/cam-loop.local.md  (kill switch — loop ends after current turn)`;
 
 const STATUS_HELP = `cam status — show current loop state at a glance
 
@@ -161,7 +161,7 @@ Usage:
   cam status
 
 Reads three sources in the current cwd:
-  1. .claude/ralph-loop.local.md  — plugin state file (iteration, started_at,
+  1. .claude/cam-loop.local.md  — plugin state file (iteration, started_at,
                                     completion_promise, active flag).
   2. prd.json                     — current story = highest-priority passes:false.
   3. git                          — current branch + last commit (best-effort).
@@ -183,7 +183,7 @@ Usage:
 
 Behaviour:
   1. Enters the alternate screen buffer (vim/htop style), hides the cursor.
-  2. Polls the cwd's prd.json + .claude/ralph-loop.local.md every 2s and
+  2. Polls the cwd's prd.json + .claude/cam-loop.local.md every 2s and
      redraws on change.
   3. Surfaces: branch, current story (id + title), iteration N/M, wall-clock,
      last 5 progress.txt entries, sleep banner if active:false.
@@ -198,7 +198,7 @@ Usage:
   cam stop
 
 What it does:
-  1. Removes .claude/ralph-loop.local.md (the plugin state file).
+  1. Removes .claude/cam-loop.local.md (the plugin state file).
   2. Kills the tmux session named exactly "cam" if alive (defensive —
      unrelated tmux sessions are NOT touched).
   3. Exits 0. Idempotent: calling \`cam stop\` with nothing to clean is the
@@ -439,8 +439,7 @@ async function main(argv: string[]): Promise<number> {
 	// `cam --version` / `cam -v` / `cam version`. We accept all three
 	// because Unix CLIs are inconsistent about which form is canonical and
 	// shipping just one would surprise muscle memory. The output shape is
-	// `cam 0.1.0` (single line, trailing newline) — homebrew formula tests
-	// regex this with `\Acam \d+\.\d+\.\d+\n\z` so do not reformat.
+	// `cam 0.1.0` (single line, trailing newline).
 	if (command === '--version' || command === '-v' || command === 'version') {
 		process.stdout.write(`cam ${CAM_VERSION}\n`);
 		return 0;

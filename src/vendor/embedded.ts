@@ -17,7 +17,7 @@
 //   - `materializeEmbedded(key)`: writes the contents to a tempdir and
 //     returns the on-disk path. Use when the file must be handed to a
 //     child process — the child can't see strings inlined into the parent
-//     binary. The tempdir is namespaced by `CAM_VERSION` so a brew
+//     binary. The tempdir is namespaced by `CAM_VERSION` so a cam-cli
 //     upgrade on the same machine doesn't reuse stale extracted files.
 
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
@@ -29,13 +29,13 @@ import {
 	checkAgentFrontmatterShContents,
 	checkAgentFrontmatterTsContents,
 	claudeAutoRetryPatternsContents,
-	ralphLoopStopHookContents,
-	ralphLoopTmplContents,
+	camLoopStopHookContents,
+	camLoopTmplContents,
 } from './_generated.ts';
 
 export type EmbeddedKey =
-	| 'ralph-loop.local.md.tmpl'
-	| 'ralph-loop-stop-hook.sh'
+	| 'cam-loop.local.md.tmpl'
+	| 'cam-loop-stop-hook.sh'
 	| 'check-agent-frontmatter.ts'
 	| 'check-agent-frontmatter.sh'
 	| 'claude-auto-retry-patterns.ts';
@@ -46,8 +46,8 @@ export type EmbeddedKey =
  * TypeScript's literal-string indexing.
  */
 export const EMBEDDED_CONTENTS: Record<EmbeddedKey, string> = {
-	'ralph-loop.local.md.tmpl': ralphLoopTmplContents,
-	'ralph-loop-stop-hook.sh': ralphLoopStopHookContents,
+	'cam-loop.local.md.tmpl': camLoopTmplContents,
+	'cam-loop-stop-hook.sh': camLoopStopHookContents,
 	'check-agent-frontmatter.ts': checkAgentFrontmatterTsContents,
 	'check-agent-frontmatter.sh': checkAgentFrontmatterShContents,
 	'claude-auto-retry-patterns.ts': claudeAutoRetryPatternsContents,
@@ -68,7 +68,7 @@ export function readEmbedded(key: EmbeddedKey): string {
  * Versioned so we don't collide across cam-cli upgrades on the same
  * machine. We deliberately use the OS tmpdir rather than `~/.cache/cam`
  * so the cache is wiped on reboot and we never accumulate stale extracted
- * files across brew upgrades.
+ * files across upgrades.
  *
  * Override via `CAM_VENDOR_CACHE_DIR` for tests so they don't leak files
  * into the system tmpdir between runs.

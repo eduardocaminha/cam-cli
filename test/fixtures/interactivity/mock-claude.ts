@@ -112,7 +112,7 @@ function handleEnd(): void {
 }
 
 // On SIGTERM (the kill-by-parent path), exit cleanly with code 143 to mirror
-// the behavior real `claude` exhibits when ralph plan kills its subprocess.
+// the behavior real `claude` exhibits when cam plan kills its subprocess.
 process.on('SIGTERM', () => {
 	emit('{"type":"system","subtype":"terminated"}');
 	process.nextTick(() => {

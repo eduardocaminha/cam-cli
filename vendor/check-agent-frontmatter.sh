@@ -9,8 +9,8 @@
 # CONSUMERS
 #   - .github/workflows/agent-files-lint.yml (CI on push + pull_request)
 #   - .claude/hooks/pre-commit-check.sh (Step 6, skip-when-untouched)
-#   - docs/runbooks/ralph-loop-recovery.md §Scenario 4 (manual diagnostic)
-#   - Local Ralph operators running ad-hoc against tmp copies
+#   - docs/runbooks/cam-loop-recovery.md §Scenario 4 (manual diagnostic)
+#   - Local cam operators running ad-hoc against tmp copies
 #
 # Both .sh and .ts accept an optional list of file paths as positional args.
 # When no args given, the .ts walks .claude/agents/*.md from REPO_ROOT (default

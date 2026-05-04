@@ -3,7 +3,7 @@
 // Implementation of `cam stop` — cleanly cancels a running loop.
 //
 // What it does, in order:
-//   1. Removes `.claude/ralph-loop.local.md` (the plugin's state file). After
+//   1. Removes `.claude/cam-loop.local.md` (the plugin's state file). After
 //      this, the next `cam next` invocation does NOT detect a stale loop.
 //   2. If a tmux session named exactly `cam` is alive, kills it. Defensive
 //      check: we ONLY kill `cam` — nothing else — so an unrelated tmux
@@ -15,7 +15,7 @@
 //      loop wasn't running" — that's the success state.
 //
 // Acceptance criteria (US-008):
-//   3. `cam stop` exists; removes `.claude/ralph-loop.local.md`, kills any
+//   3. `cam stop` exists; removes `.claude/cam-loop.local.md`, kills any
 //      tmux session named `cam` (if alive), exits 0.
 //   4. After `cam stop`, the next `cam next` invocation does NOT detect a
 //      stale loop.
@@ -35,7 +35,7 @@ import { printHint, printSuccess, printWarning } from '../logging/color.ts';
 
 // --- Constants -------------------------------------------------------------
 
-const STATE_FILE_PATH = '.claude/ralph-loop.local.md';
+const STATE_FILE_PATH = '.claude/cam-loop.local.md';
 const TMUX_SESSION_NAME = 'cam';
 
 // --- Types -----------------------------------------------------------------

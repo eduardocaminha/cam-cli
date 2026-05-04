@@ -1,6 +1,6 @@
 // US-009 layered the runtime loop on top of the US-004 skeleton:
-//   - `runDashboard()` reads `prd.json` + `.claude/ralph-loop.local.md` from
-//     cwd (using the same shapes `ralph status` already exports), composes a
+//   - `runDashboard()` reads `prd.json` + `.claude/cam-loop.local.md` from
+//     cwd (using the same shapes `cam status` already exports), composes a
 //     `DashboardData` snapshot, and renders it inside the alt-screen.
 //   - The render loop polls every `pollIntervalMs` (default 2000ms) and
 //     redraws on change. Hashing the snapshot avoids burning a redraw on
@@ -32,9 +32,9 @@ import {
 
 // --- Constants -------------------------------------------------------------
 
-const STATE_FILE_PATH = ".claude/ralph-loop.local.md";
+const STATE_FILE_PATH = ".claude/cam-loop.local.md";
 const PRD_PATH = "prd.json";
-const PROGRESS_PATH = "scripts/ralph/progress.txt";
+const PROGRESS_PATH = "scripts/cam/progress.txt";
 
 /** How often the render loop polls cwd for state changes. 2 s per US-009 AC4. */
 export const DEFAULT_POLL_INTERVAL_MS = 2000;
@@ -132,7 +132,7 @@ export function dimHorizontalLine(width: number, left: string, right: string): s
  * primitive in isolation.
  */
 export interface DashboardData {
-	/** Branch this loop is operating on, e.g. `ralph/pr-127-ralph-cli`. */
+	/** Branch this loop is operating on, e.g. `cam/pr-127-cam-cli`. */
 	branchName: string;
 	/** Current PRD story id, e.g. `US-007`. Empty string while booting. */
 	currentStoryId: string;
@@ -193,7 +193,7 @@ export function composeDashboard(
 		: data.idle
 			? "(idle)"
 			: "(booting)";
-	const title = `ralph · ${data.branchName} · ${storyLabel}`;
+	const title = `cam · ${data.branchName} · ${storyLabel}`;
 	output += `${renderHeader(title, width)}\n`;
 
 	// --- Status row -------------------------------------------------------
@@ -208,7 +208,7 @@ export function composeDashboard(
 	// Surfaces when the plugin marked the run paused (e.g. completion-promise
 	// landed but the loop hasn't been cleared) — visually distinct from idle.
 	if (data.paused) {
-		const banner = "loop is paused (state file: active:false) — `ralph stop` to clear";
+		const banner = "loop is paused (state file: active:false) — `cam stop` to clear";
 		output += `${color.yellow(`! ${banner}`)}\n`;
 	}
 
@@ -299,8 +299,8 @@ export function installQuitHandlers(cleanup: () => void): void {
  * filesystem access.
  *
  * - `prd.json` → branch name + current story (highest-priority `passes:false`)
- * - `.claude/ralph-loop.local.md` → iteration / max / started_at / paused state
- * - `scripts/ralph/progress.txt` → last RECENT_ENTRIES_COUNT entries
+ * - `.claude/cam-loop.local.md` → iteration / max / started_at / paused state
+ * - `scripts/cam/progress.txt` → last RECENT_ENTRIES_COUNT entries
  *
  * Each source is best-effort: a missing/corrupt file falls back to defaults
  * rather than throwing, because the dashboard is read-only and a render
@@ -392,7 +392,7 @@ function readState(cwd: string): LoopState | null {
 /**
  * Slice the last `RECENT_ENTRIES_COUNT` entries out of progress.txt. Entries
  * are delimited by `---` lines (per the format documented in
- * `scripts/ralph/CLAUDE.md § Progress Report Format`). We surface each
+ * `scripts/cam/CLAUDE.md § Progress Report Format`). We surface each
  * entry's first non-empty line as the panel's bullet text — usually a
  * `## YYYY-MM-DD - US-NNN` header — which keeps the panel width-stable.
  */

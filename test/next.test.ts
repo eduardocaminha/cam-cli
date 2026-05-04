@@ -11,7 +11,7 @@
 //   - state file is rendered + written with the right frontmatter values
 //   - tmux-split path (inside tmux): pane B argv is `tmux split-window -h --
 //     cam dashboard`, pane A argv is `claude --permission-mode <mode>
-//     /ralph-next` — both spawned with the same cwd
+//     /cam-next` — both spawned with the same cwd
 //   - tmux-split path (outside tmux): pane B via `tmux new-session -d -s cam`
 //   - VS Code path: only pane A is spawned (no split)
 //   - Inline (no tmux): same as VS Code — pane A only
@@ -129,7 +129,7 @@ describe('renderStateFile', () => {
 		const out = renderStateFile({
 			maxIterations: 30,
 			completionPromise: 'COMPLETE',
-			prompt: '/ralph-next',
+			prompt: '/cam-next',
 			startedAt: '2026-04-28T22:00:00Z',
 			sessionId: 'sess-abc',
 			pid: 4242,
@@ -141,14 +141,14 @@ describe('renderStateFile', () => {
 		expect(out).toContain('active: true');
 		expect(out).toContain('iteration: 1');
 		expect(out).toContain('pid: 4242');
-		expect(out.trimEnd().endsWith('/ralph-next')).toBe(true);
+		expect(out.trimEnd().endsWith('/cam-next')).toBe(true);
 	});
 
 	test('emits null for empty completion-promise', () => {
 		const out = renderStateFile({
 			maxIterations: 0,
 			completionPromise: '',
-			prompt: '/ralph-next',
+			prompt: '/cam-next',
 			startedAt: '2026-04-28T22:00:00Z',
 			sessionId: '',
 			pid: 4242,
@@ -160,7 +160,7 @@ describe('renderStateFile', () => {
 		const out = renderStateFile({
 			maxIterations: 30,
 			completionPromise: 'TASK "DONE"',
-			prompt: '/ralph-next',
+			prompt: '/cam-next',
 			startedAt: '2026-04-28T22:00:00Z',
 			sessionId: '',
 			pid: 4242,
@@ -172,7 +172,7 @@ describe('renderStateFile', () => {
 		const out = renderStateFile({
 			maxIterations: 30,
 			completionPromise: 'COMPLETE',
-			prompt: '/ralph-next',
+			prompt: '/cam-next',
 			startedAt: '2026-04-28T22:00:00Z',
 			sessionId: '',
 			pid: 99999,
@@ -185,10 +185,10 @@ describe('renderStateFile', () => {
 
 describe('writeStateFile', () => {
 	test('creates .claude/ when missing and writes the body', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-write-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-write-'));
 		try {
 			const written = writeStateFile(dir, 'hello\n');
-			expect(written).toBe(join(dir, '.claude', 'ralph-loop.local.md'));
+			expect(written).toBe(join(dir, '.claude', 'cam-loop.local.md'));
 			expect(existsSync(written)).toBe(true);
 			expect(readFileSync(written, 'utf8')).toBe('hello\n');
 		} finally {
@@ -197,14 +197,14 @@ describe('writeStateFile', () => {
 	});
 
 	test('refuses to clobber an existing state file unless force=true', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-clobber-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-clobber-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
-			writeFileSync(join(dir, '.claude', 'ralph-loop.local.md'), 'old\n');
+			writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'old\n');
 			expect(() => writeStateFile(dir, 'new\n')).toThrow(/already exists/);
 			// With force=true, it overwrites.
 			writeStateFile(dir, 'newer\n', { force: true });
-			expect(readFileSync(join(dir, '.claude', 'ralph-loop.local.md'), 'utf8')).toBe(
+			expect(readFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'utf8')).toBe(
 				'newer\n',
 			);
 		} finally {
@@ -221,7 +221,7 @@ describe('argv builders', () => {
 			'claude',
 			'--permission-mode',
 			'bypassPermissions',
-			'/ralph-next',
+			'/cam-next',
 		]);
 	});
 
@@ -258,7 +258,7 @@ describe('argv builders', () => {
 
 describe('runNext', () => {
 	test('inline mode (VS Code): writes state file + spawns claude only (no Ghostty split)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-inline-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-inline-'));
 		try {
 			const claudeHandle = makeFakeProcess();
 			const spawn = makeRecordingSpawn([claudeHandle]);
@@ -279,19 +279,19 @@ describe('runNext', () => {
 				'claude',
 				'--permission-mode',
 				'bypassPermissions',
-				'/ralph-next',
+				'/cam-next',
 			]);
 			expect(spawn.calls[0]!.cwd).toBe(dir);
 
 			// State file was pre-armed with default max=30, promise=COMPLETE.
-			const statePath = join(dir, '.claude', 'ralph-loop.local.md');
+			const statePath = join(dir, '.claude', 'cam-loop.local.md');
 			expect(existsSync(statePath)).toBe(true);
 			const body = readFileSync(statePath, 'utf8');
 			expect(body).toContain('max_iterations: 30');
 			expect(body).toContain('completion_promise: "COMPLETE"');
 			expect(body).toContain('session_id: sess-xyz');
 			expect(body).toContain('started_at: "2026-04-28T22:00:00Z"');
-			expect(body.trimEnd().endsWith('/ralph-next')).toBe(true);
+			expect(body.trimEnd().endsWith('/cam-next')).toBe(true);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -322,7 +322,7 @@ describe('runNext', () => {
 				'claude',
 				'--permission-mode',
 				'bypassPermissions',
-				'/ralph-next',
+				'/cam-next',
 			]);
 			expect(spawn.calls[0]!.cwd).toBe(dir);
 			expect(spawn.calls[1]!.cwd).toBe(dir);
@@ -332,7 +332,7 @@ describe('runNext', () => {
 	});
 
 	test('overrides --max-iter and --completion-promise via options', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-overrides-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-overrides-'));
 		try {
 			const claudeHandle = makeFakeProcess();
 			const spawn = makeRecordingSpawn([claudeHandle]);
@@ -350,7 +350,7 @@ describe('runNext', () => {
 			});
 
 			expect(code).toBe(0);
-			const body = readFileSync(join(dir, '.claude', 'ralph-loop.local.md'), 'utf8');
+			const body = readFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'utf8');
 			expect(body).toContain('max_iterations: 5');
 			expect(body).toContain('completion_promise: "DONE"');
 		} finally {
@@ -359,10 +359,10 @@ describe('runNext', () => {
 	});
 
 	test('returns non-zero when state file already exists (no force)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-existing-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-existing-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
-			writeFileSync(join(dir, '.claude', 'ralph-loop.local.md'), 'old\n');
+			writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'old\n');
 			const claudeHandle = makeFakeProcess();
 			const spawn = makeRecordingSpawn([claudeHandle]);
 
@@ -384,7 +384,7 @@ describe('runNext', () => {
 	});
 
 	test('forwards permission_mode override into claude argv', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-mode-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-mode-'));
 		try {
 			const claudeHandle = makeFakeProcess();
 			const spawn = makeRecordingSpawn([claudeHandle]);
@@ -403,7 +403,7 @@ describe('runNext', () => {
 				'claude',
 				'--permission-mode',
 				'acceptEdits',
-				'/ralph-next',
+				'/cam-next',
 			]);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
@@ -411,7 +411,7 @@ describe('runNext', () => {
 	});
 
 	test('materializes stop hook and writes settings.local.json before state file', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-hooks-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-hooks-'));
 		try {
 			const claudeHandle = makeFakeProcess();
 			const spawn = makeRecordingSpawn([claudeHandle]);
@@ -451,7 +451,7 @@ describe('runNext', () => {
 	});
 
 	test('returns 1 when hook materialization fails', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-hook-fail-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-hook-fail-'));
 		try {
 			const spawn = makeRecordingSpawn([]);
 
@@ -475,7 +475,7 @@ describe('runNext', () => {
 	});
 
 	test('returns 1 when settings.local.json write fails', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-next-settings-fail-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-settings-fail-'));
 		try {
 			const spawn = makeRecordingSpawn([]);
 
@@ -504,7 +504,7 @@ describe('runNext', () => {
 
 describe('materializeStopHook', () => {
 	test('writes hook file and makes it executable', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-hook-mat-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-hook-mat-'));
 		try {
 			const fakeContents = '#!/bin/bash\necho "fake hook"\n';
 			const written = materializeStopHook(dir, () => fakeContents);
@@ -521,7 +521,7 @@ describe('materializeStopHook', () => {
 	});
 
 	test('creates .claude/hooks/ directory when missing', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-hook-mkdir-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-hook-mkdir-'));
 		try {
 			materializeStopHook(dir, () => '#!/bin/bash\n');
 			expect(existsSync(join(dir, '.claude', 'hooks'))).toBe(true);
@@ -535,21 +535,21 @@ describe('materializeStopHook', () => {
 
 describe('writeSettingsLocal', () => {
 	test('creates settings.local.json with Stop hook when file does not exist', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-settings-new-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-settings-new-'));
 		try {
 			const written = writeSettingsLocal(dir, () => null);
 			expect(existsSync(written)).toBe(true);
 			const parsed = JSON.parse(readFileSync(written, 'utf8'));
 			expect(parsed.hooks?.Stop).toBeDefined();
 			expect(parsed.hooks.Stop[0]?.hooks[0]?.type).toBe('command');
-			expect(parsed.hooks.Stop[0]?.hooks[0]?.command).toContain('ralph-loop-stop.sh');
+			expect(parsed.hooks.Stop[0]?.hooks[0]?.command).toContain('cam-loop-stop.sh');
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
 	test('deep-merges with existing settings.local.json (existing keys preserved)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-settings-merge-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-settings-merge-'));
 		try {
 			const existing = JSON.stringify({
 				permissions: { allow: ['Bash(*)', 'Edit'] },
@@ -568,7 +568,7 @@ describe('writeSettingsLocal', () => {
 	});
 
 	test('handles malformed existing JSON gracefully (starts fresh)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-settings-bad-json-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-settings-bad-json-'));
 		try {
 			const written = writeSettingsLocal(dir, () => '{ not valid json');
 			const parsed = JSON.parse(readFileSync(written, 'utf8'));
@@ -579,7 +579,7 @@ describe('writeSettingsLocal', () => {
 	});
 
 	test('creates .claude/ directory when missing', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-settings-mkdir-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-settings-mkdir-'));
 		try {
 			writeSettingsLocal(dir, () => null);
 			expect(existsSync(join(dir, '.claude'))).toBe(true);

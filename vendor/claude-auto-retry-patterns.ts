@@ -3,7 +3,7 @@
 //
 // WHY THIS SMOKE EXISTS
 // ---------------------
-// The Ralph autonomous loop relies on the `claude-auto-retry` shell wrapper
+// The cam autonomous loop relies on the `claude-auto-retry` shell wrapper
 // (https://github.com/cheapestinference/claude-auto-retry) to detect Anthropic
 // rate-limit messages in Claude Code's stdout, parse the reset time, and
 // auto-resume the session after the wait window. If the wrapper's regex
@@ -31,8 +31,8 @@
 //   When /opt/homebrew/lib/node_modules/claude-auto-retry/src/ is missing
 //   (CI containers, non-mac dev machines without the wrapper installed),
 //   the smoke exits 0 with a clear "skipping" log. The real safety net is
-//   the operator running this locally, OR the eduardocaminha/ralph-cli
-//   repo's `ralph init` invoking this script via its absolute path.
+//   the operator running this locally, OR the eduardocaminha/cam-cli
+//   repo's `cam init` invoking this script via its absolute path.
 //
 // Wrapper API surface notes (verified 2026-04-27 against v0.2.2 on disk):
 //   patterns.js   exports: stripAnsi, isRateLimited, findRateLimitMessage
@@ -55,7 +55,7 @@ const TIME_PARSER_PATH = `${WRAPPER_BASE}/time-parser.js`;
 
 if (!existsSync(PATTERNS_PATH) || !existsSync(TIME_PARSER_PATH)) {
   console.log(
-    `[smoke] claude-auto-retry not installed at ${WRAPPER_BASE} — skipping (this is a local-only check invoked by ralph init)`
+    `[smoke] claude-auto-retry not installed at ${WRAPPER_BASE} — skipping (this is a local-only check invoked by cam init)`
   );
   process.exit(0);
 }
@@ -206,7 +206,7 @@ const failures: string[] = [];
 if (failures.length > 0) {
   for (const f of failures) console.error(`[smoke] FAIL ${f}`);
   console.error(
-    `[smoke] claude-auto-retry pattern smoke FAILED (${failures.length} failure(s)). The Ralph loop will silently stall on rate-limit until this is fixed.`
+    `[smoke] claude-auto-retry pattern smoke FAILED (${failures.length} failure(s)). The cam loop will silently stall on rate-limit until this is fixed.`
   );
   process.exit(1);
 }

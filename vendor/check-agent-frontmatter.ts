@@ -39,7 +39,7 @@
 // CONSUMERS
 //   - .github/workflows/agent-files-lint.yml (CI on push + pull_request)
 //   - .claude/hooks/pre-commit-check.sh (skip-when-untouched)
-//   - docs/runbooks/ralph-loop-recovery.md §Scenario 4 (manual diagnostic)
+//   - docs/runbooks/cam-loop-recovery.md §Scenario 4 (manual diagnostic)
 
 import { execSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';

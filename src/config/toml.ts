@@ -148,7 +148,7 @@ export function saveConfig(path: string, config: TomlConfig): void {
  * Merge `updates` into the config at `path`, preserving any pre-existing keys
  * that aren't being overwritten.
  *
- * Used by `ralph init` to set `permission_mode = "bypassPermissions"` without
+ * Used by `cam init` to set `permission_mode = "bypassPermissions"` without
  * clobbering keys a future story (or a hand-edit) may have added. Top-level
  * scalar updates and section-table updates both behave additively:
  *   - top-level scalar update → replaces that one key

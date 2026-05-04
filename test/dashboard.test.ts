@@ -1,6 +1,6 @@
 // test/dashboard.test.ts
 //
-// Tests for `ralph dashboard`. We exercise three layers:
+// Tests for `cam dashboard`. We exercise three layers:
 //
 //   1. Pure helpers (parseRecentProgress, snapshot composition) — fast,
 //      no IO, easy to lock the format.
@@ -89,7 +89,7 @@ describe('dashboard constants', () => {
 
 describe('composeDashboard', () => {
 	const baseData: DashboardData = {
-		branchName: 'ralph/test-branch',
+		branchName: 'cam/test-branch',
 		currentStoryId: 'US-009',
 		currentStoryTitle: 'dashboard',
 		iteration: 7,
@@ -112,7 +112,7 @@ describe('composeDashboard', () => {
 
 	test('frame includes branch, story id+title, iteration, wall-clock', () => {
 		const frame = composeDashboard(baseData, 2000, true);
-		expect(frame).toContain('ralph/test-branch');
+		expect(frame).toContain('cam/test-branch');
 		expect(frame).toContain('US-009');
 		expect(frame).toContain('dashboard');
 		expect(frame).toContain('iter 7/30');
@@ -231,8 +231,8 @@ describe('parseRecentProgress', () => {
 // --- readRecentProgress + readSnapshot (filesystem) -----------------------
 
 describe('readRecentProgress (IO)', () => {
-	test('returns [] when scripts/ralph/progress.txt is absent', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-no-progress-'));
+	test('returns [] when scripts/cam/progress.txt is absent', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-no-progress-'));
 		try {
 			expect(readRecentProgress(dir)).toEqual([]);
 		} finally {
@@ -240,12 +240,12 @@ describe('readRecentProgress (IO)', () => {
 		}
 	});
 
-	test('reads from scripts/ralph/progress.txt under cwd', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-progress-'));
+	test('reads from scripts/cam/progress.txt under cwd', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-progress-'));
 		try {
-			mkdirSync(join(dir, 'scripts', 'ralph'), { recursive: true });
+			mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
 			writeFileSync(
-				join(dir, 'scripts', 'ralph', 'progress.txt'),
+				join(dir, 'scripts', 'cam', 'progress.txt'),
 				['## 2026-04-28 - US-Z', '- the deed', '---', ''].join('\n'),
 			);
 			const out = readRecentProgress(dir);
@@ -258,7 +258,7 @@ describe('readRecentProgress (IO)', () => {
 
 describe('readSnapshot', () => {
 	test('idle when no state file', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-idle-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-idle-'));
 		try {
 			const snap = readSnapshot({ cwd: dir, nowMs: Date.parse('2026-04-28T22:00:00Z') });
 			expect(snap.idle).toBe(true);
@@ -273,11 +273,11 @@ describe('readSnapshot', () => {
 	});
 
 	test('active state populates iteration/maxIterations/startedAt + branchName + story', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-active-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-active-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
-				join(dir, '.claude', 'ralph-loop.local.md'),
+				join(dir, '.claude', 'cam-loop.local.md'),
 				[
 					'---',
 					'active: true',
@@ -286,14 +286,14 @@ describe('readSnapshot', () => {
 					'started_at: "2026-04-28T22:00:00Z"',
 					'---',
 					'',
-					'/ralph-next',
+					'/cam-next',
 					'',
 				].join('\n'),
 			);
 			writeFileSync(
 				join(dir, 'prd.json'),
 				JSON.stringify({
-					branchName: 'ralph/feature-x',
+					branchName: 'cam/feature-x',
 					userStories: [{ id: 'US-009', title: 'dashboard', priority: 9, passes: false }],
 				}),
 			);
@@ -303,7 +303,7 @@ describe('readSnapshot', () => {
 			expect(snap.iteration).toBe(4);
 			expect(snap.maxIterations).toBe(30);
 			expect(snap.startedAtMs).toBe(Date.parse('2026-04-28T22:00:00Z'));
-			expect(snap.branchName).toBe('ralph/feature-x');
+			expect(snap.branchName).toBe('cam/feature-x');
 			expect(snap.currentStoryId).toBe('US-009');
 			expect(snap.currentStoryTitle).toBe('dashboard');
 		} finally {
@@ -312,11 +312,11 @@ describe('readSnapshot', () => {
 	});
 
 	test('paused state is detected when active:false', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-paused-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-paused-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
-				join(dir, '.claude', 'ralph-loop.local.md'),
+				join(dir, '.claude', 'cam-loop.local.md'),
 				['---', 'active: false', 'iteration: 30', 'max_iterations: 30', '---', ''].join('\n'),
 			);
 			const snap = readSnapshot({ cwd: dir, nowMs: 0 });
@@ -332,7 +332,7 @@ describe('readSnapshot', () => {
 
 describe('runDashboard', () => {
 	test('alt-screen lifecycle: enter → render → `q` → exit alt-screen', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-run-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-run-'));
 		try {
 			const writer = makeRecordingWriter();
 			const reader = makeFakeReader();
@@ -369,7 +369,7 @@ describe('runDashboard', () => {
 	});
 
 	test('Ctrl+C (\\x03) keypress triggers exit just like `q`', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-ctrlc-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-ctrlc-'));
 		try {
 			const writer = makeRecordingWriter();
 			const reader = makeFakeReader();
@@ -391,7 +391,7 @@ describe('runDashboard', () => {
 	});
 
 	test('cleanup runs even when an error throws inside the loop (try/finally)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-throw-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-throw-'));
 		try {
 			// Writer throws on the FIRST render-frame call (writes 1+2 are the
 			// alt-screen / hide-cursor lifecycle; write 3 is the first frame).
@@ -432,7 +432,7 @@ describe('runDashboard', () => {
 	});
 
 	test('maxTicks honoured for non-interactive mode (e.g. piped tests)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-dash-maxticks-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-maxticks-'));
 		try {
 			const writer = makeRecordingWriter();
 			const reader = makeFakeReader();

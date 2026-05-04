@@ -1,18 +1,18 @@
 // src/commands/plan.ts
 //
-// Implementation of `ralph plan` — wraps an interactive `claude` session that
-// dispatches `/ralph-plan` (or `/ralph-plan #N`) and, after the prd-auditor
+// Implementation of `cam plan` — wraps an interactive `claude` session that
+// dispatches `/cam-plan` (or `/cam-plan #N`) and, after the prd-auditor
 // emits its `verdict: "APPROVE"` line, asks the operator whether to let
 // branch + commit happen.
 //
 // Acceptance criteria (US-006, updated US-004):
-//   1. `ralph plan` exists as a CLI subcommand (wired in index.ts).
+//   1. `cam plan` exists as a CLI subcommand (wired in index.ts).
 //   2. Spawns `claude --permission-mode bypassPermissions <slash>` with PTY mode
 //      via `Bun.spawn(cmd, { terminal: { cols, rows, data(t, bytes) {...} } })`.
 //      The child sees process.stdout.isTTY === true (real TTY), so claude's
 //      interactive TUI stays active. The parent receives bytes via the data
 //      callback for verdict scanning.
-//   3. Dispatches `/ralph-plan` (or `/ralph-plan #N` when --issue is passed)
+//   3. Dispatches `/cam-plan` (or `/cam-plan #N` when --issue is passed)
 //      as the trailing argv prompt — claude treats that as the first user-turn.
 //   4. The data callback writes bytes to process.stdout (operator sees claude's
 //      output verbatim) AND scans them for the APPROVE verdict line
@@ -22,8 +22,8 @@
 //   6. On terminal resize (process.stdout SIGWINCH), call
 //      proc.terminal.resize(cols, rows) so claude's TUI re-layouts.
 //   7. On `y` (case-insensitive): prints a short ack and lets the planning
-//      session continue to its branch/commit step. We do NOT exit ralph plan;
-//      ralph plan resolves when the claude subprocess itself exits.
+//      session continue to its branch/commit step. We do NOT exit cam plan;
+//      cam plan resolves when the claude subprocess itself exits.
 //   8. On `N` / empty / anything else: kills the claude subprocess (which is
 //      the cam-CLI equivalent of "press Esc and bail") and exits 0 with a
 //      polite cancel message.
@@ -54,7 +54,7 @@ import { printError, printHint, printSuccess, printWarning } from '../logging/co
 // --- Types -----------------------------------------------------------------
 
 export interface PlanOptions {
-	/** Optional GitHub issue number; passed through as `/ralph-plan #N`. */
+	/** Optional GitHub issue number; passed through as `/cam-plan #N`. */
 	issue?: number;
 	/**
 	 * Spawn factory — overridable for tests. The default uses Bun.spawn with
@@ -71,7 +71,7 @@ export interface PlanOptions {
 }
 
 /**
- * The terminal handle subset that ralph plan actually uses. Defining the
+ * The terminal handle subset that cam plan actually uses. Defining the
  * surface explicitly (instead of importing Bun.Terminal) keeps tests free of
  * Bun-specific types and makes the contract obvious.
  *
@@ -216,18 +216,18 @@ function defaultSpawn(
 // --- Public entrypoint -----------------------------------------------------
 
 /**
- * Run the full `ralph plan` flow. Returns the process exit code.
+ * Run the full `cam plan` flow. Returns the process exit code.
  *
  * Resolution order:
  *   - operator answers N / empty / anything-not-y → kill subprocess, exit 0
- *   - operator answers y → let the subprocess continue; ralph plan resolves
+ *   - operator answers y → let the subprocess continue; cam plan resolves
  *     with whatever exit code the subprocess returns
  *   - subprocess exits before any verdict is seen → exit 0 (the planner
  *     might have legitimately bailed early; we surface its exit code as-is)
  *   - subprocess exits with non-zero before verdict → propagate that code
  */
 export async function runPlan(options: PlanOptions = {}): Promise<number> {
-	const slash = options.issue !== undefined ? `/ralph-plan #${options.issue}` : '/ralph-plan';
+	const slash = options.issue !== undefined ? `/cam-plan #${options.issue}` : '/cam-plan';
 	// `permission_mode` is sourced exclusively from `~/.config/cam/config.toml`
 	// (default `bypassPermissions` — see `config/permission-mode.ts`). No CLI
 	// flag overrides it; that's enforced by `test/no-permission-mode-flag.test.ts`.
@@ -356,11 +356,11 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 			'failed to spawn `claude`',
 			err instanceof Error ? err.message : String(err),
 		);
-		printHint('verify `claude` is on PATH (re-run `ralph init` to validate)');
+		printHint('verify `claude` is on PATH (re-run `cam init` to validate)');
 		return 1;
 	}
 
-	printSuccess(`ralph plan: dispatched ${slash}`);
+	printSuccess(`cam plan: dispatched ${slash}`);
 	printHint('the planning session is interactive — your keystrokes go directly to claude');
 
 	// Start forwarding stdin to the child PTY immediately.

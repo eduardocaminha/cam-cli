@@ -7,11 +7,11 @@
 //      `readPermissionMode()` (default `bypassPermissions`). NO CLI flag
 //      overrides this — see acceptance criterion 7 of US-007 and
 //      `test/no-permission-mode-flag.test.ts`.
-//   2. Pre-arms the official `ralph-loop` plugin by writing its state file
-//      `.claude/ralph-loop.local.md` BEFORE claude starts. The on-disk shape
+//   2. Pre-arms the official `cam-loop` plugin by writing its state file
+//      `.claude/cam-loop.local.md` BEFORE claude starts. The on-disk shape
 //      mirrors what the plugin's `setup-ralph-loop.sh` produces (YAML
 //      frontmatter + prompt body); we vendored a template at
-//      `vendor/ralph-loop.local.md.tmpl` so `cam next` works on a fresh
+//      `vendor/cam-loop.local.md.tmpl` so `cam next` works on a fresh
 //      machine without shelling into the plugin's setup script.
 //   3. Detects the split mode:
 //        - `tmux` on PATH → tmux-split: pane A runs claude in the current
@@ -29,7 +29,7 @@
 //   2. Detects tmux + spawns split with claude (pane A) and
 //      `cam dashboard` (pane B); plugin state file pre-armed.
 //   3. Detects `TERM_PROGRAM=vscode` and falls back to inline single-pane.
-//   4. Pre-arming uses the vendored `ralph-loop.local.md.tmpl`.
+//   4. Pre-arming uses the vendored `cam-loop.local.md.tmpl`.
 //   5. Default `--max-iterations 30 --completion-promise "COMPLETE"`;
 //      both overridable via `--max-iter N --completion-promise STR`.
 //   6. Bun unit test mocks spawn + asserts pre-arming file is written and
@@ -57,9 +57,9 @@ import { readEmbedded } from '../vendor/embedded.ts';
 // --- Constants -------------------------------------------------------------
 
 /**
- * Default `--max-iterations` passed to the ralph-loop plugin. 30 covers a
+ * Default `--max-iterations` passed to the cam-loop plugin. 30 covers a
  * typical 15-story PRD plus a couple of review rounds — see
- * `scripts/ralph/CLAUDE.md § Autonomous loop via the official ralph-loop plugin`.
+ * `scripts/cam/CLAUDE.md § Autonomous loop via the official cam-loop plugin`.
  */
 export const DEFAULT_MAX_ITERATIONS = 30;
 
@@ -74,10 +74,10 @@ export const DEFAULT_COMPLETION_PROMISE = 'COMPLETE';
  * The slash command that gets re-injected every turn by the plugin's stop
  * hook. Becomes the body of the state file (after the YAML frontmatter).
  */
-const RALPH_NEXT_PROMPT = '/ralph-next';
+const CAM_NEXT_PROMPT = '/cam-next';
 
 /** State-file path relative to cwd. Owned by the upstream plugin. */
-const STATE_FILE_PATH = '.claude/ralph-loop.local.md';
+const STATE_FILE_PATH = '.claude/cam-loop.local.md';
 
 // --- Host detection --------------------------------------------------------
 
@@ -134,7 +134,7 @@ export function detectHost(
  * promise string, an ISO timestamp). The promise string is wrapped in YAML
  * double quotes to keep parity with the plugin's setup script.
  *
- * The template body comes from `vendor/ralph-loop.local.md.tmpl`, which is
+ * The template body comes from `vendor/cam-loop.local.md.tmpl`, which is
  * embedded into the compiled binary via `with { type: "file" }` (see
  * `src/vendor/embedded.ts`). In dev mode this reads from the real file on
  * disk; in compiled mode it reads from the bundled `$bunfs/` virtual path.
@@ -154,7 +154,7 @@ export function renderStateFile(input: {
 	 */
 	pid: number;
 }): string {
-	const tmpl = readEmbedded('ralph-loop.local.md.tmpl');
+	const tmpl = readEmbedded('cam-loop.local.md.tmpl');
 	const promiseYaml =
 		input.completionPromise.length === 0
 			? 'null'
@@ -169,12 +169,12 @@ export function renderStateFile(input: {
 }
 
 /**
- * Write `.claude/ralph-loop.local.md` under `cwd`, creating `.claude/` if
+ * Write `.claude/cam-loop.local.md` under `cwd`, creating `.claude/` if
  * needed. Returns the absolute path written. Refuses to clobber an existing
  * file unless `force` is true — an existing state file usually means a
  * previous loop is already running, and stomping on it would mid-flight
  * corrupt the iteration counter. The operator is told to clean up via
- * `/cancel-ralph` (or `rm .claude/ralph-loop.local.md`) before re-running.
+ * `/cancel-cam` (or `rm .claude/cam-loop.local.md`) before re-running.
  */
 export function writeStateFile(
 	cwd: string,
@@ -188,7 +188,7 @@ export function writeStateFile(
 	}
 	if (existsSync(target) && !options.force) {
 		throw new Error(
-			`state file already exists at ${target} — run \`/cancel-ralph\` (in the active session) or \`rm ${STATE_FILE_PATH}\` to clear`,
+			`state file already exists at ${target} — run \`/cancel-cam\` (in the active session) or \`rm ${STATE_FILE_PATH}\` to clear`,
 		);
 	}
 	writeFileSync(target, body, 'utf8');
@@ -198,7 +198,7 @@ export function writeStateFile(
 // --- Stop-hook materialization ---------------------------------------------
 
 /** Path of the stop hook relative to cwd. */
-export const STOP_HOOK_RELATIVE = '.claude/hooks/ralph-loop-stop.sh';
+export const STOP_HOOK_RELATIVE = '.claude/hooks/cam-loop-stop.sh';
 
 /** Path of the project-local Claude settings file relative to cwd. */
 export const SETTINGS_LOCAL_RELATIVE = '.claude/settings.local.json';
@@ -212,7 +212,7 @@ export const SETTINGS_LOCAL_RELATIVE = '.claude/settings.local.json';
 const STOP_HOOK_COMMAND = `bash ${STOP_HOOK_RELATIVE}`;
 
 /**
- * Materialize the vendored stop-hook script to `<cwd>/.claude/hooks/ralph-loop-stop.sh`
+ * Materialize the vendored stop-hook script to `<cwd>/.claude/hooks/cam-loop-stop.sh`
  * and chmod it executable. Called BEFORE writing the plugin state file so the
  * hook is registered before claude starts.
  *
@@ -221,7 +221,7 @@ const STOP_HOOK_COMMAND = `bash ${STOP_HOOK_RELATIVE}`;
  */
 export function materializeStopHook(
 	cwd: string,
-	getStopHookContents: () => string = () => readEmbedded('ralph-loop-stop-hook.sh'),
+	getStopHookContents: () => string = () => readEmbedded('cam-loop-stop-hook.sh'),
 ): string {
 	const target = join(cwd, STOP_HOOK_RELATIVE);
 	const dir = dirname(target);
@@ -381,13 +381,13 @@ function defaultSpawn(cmd: string[], options: { cwd: string }): NextSubprocess {
 
 /**
  * Build the argv for pane A (claude with the loop pre-armed). The state
- * file has already been written to `.claude/ralph-loop.local.md`; the
+ * file has already been written to `.claude/cam-loop.local.md`; the
  * plugin's stop hook reads that file to drive the loop. We pass
- * `RALPH_NEXT_PROMPT` as the trailing argument — claude treats that as
+ * `CAM_NEXT_PROMPT` as the trailing argument — claude treats that as
  * the first user-turn, kicking off iteration 1.
  */
 export function buildClaudeArgv(permissionMode: string): string[] {
-	return ['claude', '--permission-mode', permissionMode, RALPH_NEXT_PROMPT];
+	return ['claude', '--permission-mode', permissionMode, CAM_NEXT_PROMPT];
 }
 
 /**
@@ -397,9 +397,9 @@ export function buildClaudeArgv(permissionMode: string): string[] {
  * dashboard view of claude's output.
  *
  * The argv form is `cam dashboard` rather than `bun src/...` because by
- * the time `cam next` is invoked, the operator has installed `cam`
- * (either via `brew install` or the dev's local PATH symlink) — see US-002
- * + US-011 for the install story.
+ * the time `cam next` is invoked, the operator has installed `cam` on
+ * PATH (compiled binary or dev shim) — see US-002 + US-011 for the install
+ * story.
  */
 export function buildDashboardArgv(): string[] {
 	return ['cam', 'dashboard'];
@@ -479,10 +479,10 @@ export interface NextOptions {
  *
  * Resolution order:
  *   - tmux-split: write state file → spawn `cam dashboard` in a tmux split
- *     (pane B) → spawn `claude ... /ralph-next` in the current pane (pane A).
+ *     (pane B) → spawn `claude ... /cam-next` in the current pane (pane A).
  *     Returns claude's exit code.
  *   - Inline fallback (VS Code or no tmux): write state file →
- *     spawn `claude ... /ralph-next` in current pane. Returns claude's
+ *     spawn `claude ... /cam-next` in current pane. Returns claude's
  *     exit code. No dashboard pane.
  */
 export async function runNext(options: NextOptions = {}): Promise<number> {
@@ -504,7 +504,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	// 0. Materialize the vendored stop hook and register it in
 	//    .claude/settings.local.json BEFORE writing the state file. This
 	//    ensures the hook is registered in Claude Code's settings so it fires
-	//    on Stop events — even when the official ralph-loop plugin is not
+	//    on Stop events — even when the official cam-loop plugin is not
 	//    installed in the spawned session.
 	try {
 		const hookPath = hookMaterializer(cwd);
@@ -532,7 +532,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const body = renderStateFile({
 		maxIterations,
 		completionPromise,
-		prompt: RALPH_NEXT_PROMPT,
+		prompt: CAM_NEXT_PROMPT,
 		startedAt: options.startedAt ?? new Date().toISOString(),
 		sessionId: options.sessionId ?? process.env['CLAUDE_CODE_SESSION_ID'] ?? '',
 		pid: options.pid ?? process.pid,
@@ -543,7 +543,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		writtenPath = writer(cwd, body);
 	} catch (err) {
 		printError(
-			'failed to pre-arm ralph-loop state file',
+			'failed to pre-arm cam-loop state file',
 			err instanceof Error ? err.message : String(err),
 		);
 		return 1;

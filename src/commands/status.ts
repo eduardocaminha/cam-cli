@@ -1,10 +1,10 @@
 // src/commands/status.ts
 //
-// Implementation of `ralph status` — reads the local loop state and prints a
+// Implementation of `cam status` — reads the local loop state and prints a
 // one-glance summary of the current run. Reads three sources, all from the
 // current cwd's repo:
 //
-//   1. `.claude/ralph-loop.local.md` — the ralph-loop plugin's state file.
+//   1. `.claude/cam-loop.local.md` — the cam-loop plugin's state file.
 //      YAML frontmatter (`active`, `iteration`, `max_iterations`, `started_at`,
 //      `completion_promise`, `session_id`) followed by the loop's prompt body.
 //      When this file is absent, no loop is active → status: idle.
@@ -17,7 +17,7 @@
 //      the commit line rather than failing.
 //
 // Acceptance criteria (US-008):
-//   1. Reads .claude/ralph-loop.local.md + prd.json + last commit; prints:
+//   1. Reads .claude/cam-loop.local.md + prd.json + last commit; prints:
 //      current story id+title, iteration N/M, wall-clock since start, sleep
 //      state (active / sleeping / no-loop).
 //   2. Exits 0 with sensible output even when no loop is active (`status: idle`).
@@ -45,13 +45,13 @@ import { printError, printHint, printSuccess, printWarning, color, muted } from 
 
 // --- Constants -------------------------------------------------------------
 
-const STATE_FILE_PATH = '.claude/ralph-loop.local.md';
+const STATE_FILE_PATH = '.claude/cam-loop.local.md';
 const PRD_PATH = 'prd.json';
 
 // --- Types -----------------------------------------------------------------
 
 /**
- * Parsed shape of the YAML frontmatter in `.claude/ralph-loop.local.md`. The
+ * Parsed shape of the YAML frontmatter in `.claude/cam-loop.local.md`. The
  * plugin defines all keys; we treat each as optional so a partially-written
  * state file (e.g. one whose loop crashed mid-flush) still parses cleanly and
  * the operator gets a useful status report instead of a parse error.
@@ -65,7 +65,7 @@ export interface LoopState {
 	session_id?: string;
 	/**
 	 * PID of the long-running driver process that owns the loop. Written by
-	 * `ralph next` (US-007 + US-010); consumed by `ralph resume` to detect
+	 * `cam next` (US-007 + US-010); consumed by `cam resume` to detect
 	 * orphaned state files (PID present but no live process). Optional for
 	 * back-compat with state files written before the field existed.
 	 */
@@ -110,7 +110,7 @@ export interface StatusReport {
  *
  * Returns `null` on malformed input — the caller treats that as `idle` since
  * a corrupt state file is functionally indistinguishable from a missing one
- * for status-reporting purposes (the operator should `ralph stop` and start
+ * for status-reporting purposes (the operator should `cam stop` and start
  * fresh either way).
  */
 export function parseStateFile(contents: string): LoopState | null {
@@ -157,7 +157,7 @@ export function parseStateFile(contents: string): LoopState | null {
 /**
  * Pick the "current story" from a PRD's stories list. Definition: the
  * highest-priority entry where `passes:false`. Mirrors the implementer's
- * selection logic so `ralph status` and `/ralph-next` agree on what's
+ * selection logic so `cam status` and `/cam-next` agree on what's
  * being worked on. Returns `null` when the PRD has no pending stories.
  */
 export function pickCurrentStory(prd: PrdShape): PrdStory | null {
@@ -213,7 +213,7 @@ function readStateFile(cwd: string): LoopState | null {
 
 /**
  * Read + parse `prd.json` under `cwd`. Returns `null` when missing or invalid.
- * A bad PRD is non-fatal for `ralph status` — we still print the loop's
+ * A bad PRD is non-fatal for `cam status` — we still print the loop's
  * iteration counter, just without a story id.
  */
 function readPrd(cwd: string): PrdShape | null {
@@ -310,7 +310,7 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 }
 
 /**
- * Pretty-print a `StatusReport` to stdout. Always exits 0 — `ralph status` is
+ * Pretty-print a `StatusReport` to stdout. Always exits 0 — `cam status` is
  * a read-only inspection, never a failure. Idle output is intentionally
  * sparse: a one-line `status: idle` plus (if present) the next-pending story
  * + branch info, so the operator can confirm the right cwd.
@@ -329,7 +329,7 @@ export function runStatus(options: StatusOptions = {}): number {
 		if (report.lastCommit) {
 			process.stdout.write(`last:   ${muted(report.lastCommit.sha)} ${report.lastCommit.subject}\n`);
 		}
-		printHint('no `.claude/ralph-loop.local.md` — start a loop with `ralph next` (or `/ralph-loop` from inside claude)');
+		printHint('no `.claude/cam-loop.local.md` — start a loop with `cam next` (or `/cam-loop` from inside claude)');
 		return 0;
 	}
 
@@ -354,7 +354,7 @@ export function runStatus(options: StatusOptions = {}): number {
 	}
 
 	if (report.state === 'paused') {
-		printWarning('loop is paused (active:false in state file)', 'run `ralph stop` to clear, then `ralph next` to restart');
+		printWarning('loop is paused (active:false in state file)', 'run `cam stop` to clear, then `cam next` to restart');
 	}
 	return 0;
 }

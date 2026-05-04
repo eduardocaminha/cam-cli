@@ -1,6 +1,6 @@
 # Vendored smokes
 
-These files are vendored verbatim from the [eduardocaminha/reporter](https://github.com/eduardocaminha/reporter) monorepo so `ralph init` can validate the operator's machine without depending on a local checkout of `reporter`. After `brew install ralph`, the CLI must work standalone — vendoring is the cheapest way to honor that contract while keeping the smokes' diagnostic precision intact.
+These files are vendored verbatim from the [eduardocaminha/reporter](https://github.com/eduardocaminha/reporter) monorepo so `cam init` can validate the operator's machine without depending on a local checkout of `reporter`. Once installed, the CLI must work standalone — vendoring is the cheapest way to honor that contract while keeping the smokes' diagnostic precision intact.
 
 ## Files
 
@@ -9,16 +9,16 @@ These files are vendored verbatim from the [eduardocaminha/reporter](https://git
 | `check-agent-frontmatter.sh` | `reporter:scripts/smoke/check-agent-frontmatter.sh` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `check-agent-frontmatter.ts` | `reporter:scripts/smoke/check-agent-frontmatter.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `claude-auto-retry-patterns.ts` | `reporter:scripts/smoke/claude-auto-retry-patterns.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
-| `ralph-loop.local.md.tmpl` | `~/.claude/plugins/cache/claude-plugins-official/ralph-loop/<v>/scripts/setup-ralph-loop.sh` (output shape) | 1.0.0 |
-| `ralph-loop-stop-hook.sh` | `~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/hooks/stop-hook.sh` | sha256: `e3e14a7f5b2ff474f41583dd2b5503baa670ae7c05fe03420b1e289941159ba8` (1.0.0 base + US-003 prd.json secondary check) |
+| `cam-loop.local.md.tmpl` | `~/.claude/plugins/cache/claude-plugins-official/ralph-loop/<v>/scripts/setup-ralph-loop.sh` (output shape) | 1.0.0 |
+| `cam-loop-stop-hook.sh` | `~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/hooks/stop-hook.sh` | sha256: `93b0cc03b1b4d1d4b07ec6f0c4857974fc89895e3b856fb5d57f0db505e1174c` (1.0.0 base + US-003 prd.json secondary check + cam rename) |
 
 The sha refers to the reporter HEAD at the time of the most recent re-vendor. `test/vendor.test.ts` runs the drift check on every `bun test` run when the reporter checkout is reachable at `~/Documents/Projects/reporter` — silently skips when missing (CI / non-dev machines / non-Eduardo contributors).
 
-The `ralph-loop.local.md.tmpl` template mirrors the YAML-frontmatter-plus-prompt shape that the upstream plugin's `setup-ralph-loop.sh` emits to `.claude/ralph-loop.local.md`. We pre-arm the file ourselves (instead of shelling into the plugin's setup script) so `ralph next` works standalone — without requiring the operator to have a `claude` session running with the plugin installed yet. If the upstream plugin changes its state-file shape in a future release, bump the template here, update the version pin in this README, and re-test by running `ralph next` against the new plugin and confirming the loop arms correctly. Drift detection for the template is implicit — the loop's stop hook silently fails to fire if the frontmatter keys diverge.
+The `cam-loop.local.md.tmpl` template mirrors the YAML-frontmatter-plus-prompt shape that the upstream plugin's `setup-ralph-loop.sh` emits to `.claude/cam-loop.local.md`. We pre-arm the file ourselves (instead of shelling into the plugin's setup script) so `cam next` works standalone — without requiring the operator to have a `claude` session running with the plugin installed yet. If the upstream plugin changes its state-file shape in a future release, bump the template here, update the version pin in this README, and re-test by running `cam next` against the new plugin and confirming the loop arms correctly. Drift detection for the template is implicit — the loop's stop hook silently fails to fire if the frontmatter keys diverge.
 
-## Stop-hook vendoring policy (`ralph-loop-stop-hook.sh`)
+## Stop-hook vendoring policy (`cam-loop-stop-hook.sh`)
 
-`ralph-loop-stop-hook.sh` is vendored from the official `claude-plugins-official/ralph-loop` plugin so `ralph next` can materialize the hook to `.claude/hooks/ralph-loop-stop.sh` and wire it into `.claude/settings.local.json` — making the Stop hook fire **without** requiring the operator to have the plugin installed in a live Claude Code session.
+`cam-loop-stop-hook.sh` is vendored from the official `claude-plugins-official/ralph-loop` plugin so `cam next` can materialize the hook to `.claude/hooks/cam-loop-stop.sh` and wire it into `.claude/settings.local.json` — making the Stop hook fire **without** requiring the operator to have the plugin installed in a live Claude Code session.
 
 ### Upstream source
 
@@ -37,7 +37,7 @@ re-merge upstream changes with the local extension.
 ### sha256 baseline
 
 ```
-e3e14a7f5b2ff474f41583dd2b5503baa670ae7c05fe03420b1e289941159ba8
+93b0cc03b1b4d1d4b07ec6f0c4857974fc89895e3b856fb5d57f0db505e1174c
 ```
 
 `bun test` computes this sha256 at runtime (in `test/vendor.test.ts`) and fails if the on-disk file diverges from the baseline — this converts silent rot into an explicit test failure and forces the maintainer to either rebaseline or re-run the drift-detection ceremony below.
@@ -46,7 +46,7 @@ e3e14a7f5b2ff474f41583dd2b5503baa670ae7c05fe03420b1e289941159ba8
 
 ```bash
 UPSTREAM=~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/hooks/stop-hook.sh
-VENDOR=~/Documents/Projects/cam-cli/vendor/ralph-loop-stop-hook.sh
+VENDOR=~/Documents/Projects/cam-cli/vendor/cam-loop-stop-hook.sh
 
 # Check for drift
 diff <(sha256sum "$UPSTREAM" | cut -d' ' -f1) \
@@ -66,7 +66,7 @@ If the upstream plugin changes its stop-hook behavior in a future release, re-ve
 
 ## Why verbatim copies, not git submodules?
 
-A submodule would force `brew install cam` consumers to clone the full reporter monorepo (~MB of unrelated code). Verbatim copies keep the `cam` formula self-contained. The drift-test alarm catches the only failure mode (silently outdated copies) without the consumer-side cost.
+A submodule would force `cam` consumers to clone the full reporter monorepo (~MB of unrelated code). Verbatim copies keep the `cam` binary self-contained. The drift-test alarm catches the only failure mode (silently outdated copies) without the consumer-side cost.
 
 ## Re-vendoring procedure
 

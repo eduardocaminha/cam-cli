@@ -1,10 +1,6 @@
 // test/version.test.ts
 //
 // US-011 acceptance criterion 3: `cam --version` prints `cam X.Y.Z`.
-// The literal output shape is also load-bearing for US-012 — the homebrew
-// formula's `test do` block regexes the output, so a stylistic change here
-// (e.g. capitalizing "Cam" or appending build metadata) would break the
-// downstream `brew test cam` audit.
 //
 // Two layers of coverage:
 //   1. The exported constant `CAM_VERSION` matches the documented v0.1.0
@@ -29,7 +25,7 @@ describe('CAM_VERSION constant', () => {
 	test('is the v0.1.0 first-release shape (or later)', () => {
 		// Tripwire: a future bump can adjust this assertion. The point is to
 		// make sure nobody accidentally rolls back to 0.0.x once we've
-		// shipped v0.1.0 (which would silently break the homebrew formula).
+		// shipped v0.1.0.
 		const [major, minor] = CAM_VERSION.split('.').map((n) => Number.parseInt(n, 10));
 		expect(major).toBeGreaterThanOrEqual(0);
 		expect(minor).toBeGreaterThanOrEqual(1);

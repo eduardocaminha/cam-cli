@@ -66,7 +66,7 @@ describe('performStop — state file', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-state-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
-			const statePath = join(dir, '.claude', 'ralph-loop.local.md');
+			const statePath = join(dir, '.claude', 'cam-loop.local.md');
 			writeFileSync(statePath, 'old\n');
 			const spawn = makeFakeSpawn({ tmuxAvailable: false });
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
@@ -188,7 +188,7 @@ describe('performStop — end-to-end', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-e2e-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
-			const statePath = join(dir, '.claude', 'ralph-loop.local.md');
+			const statePath = join(dir, '.claude', 'cam-loop.local.md');
 			writeFileSync(statePath, 'old\n');
 			const spawn = makeFakeSpawn({
 				tmuxAvailable: true,
@@ -232,7 +232,7 @@ describe('runStop', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-clean-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
-			writeFileSync(join(dir, '.claude', 'ralph-loop.local.md'), 'old\n');
+			writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'old\n');
 			const spawn = makeFakeSpawn({
 				tmuxAvailable: true,
 				sessionAlive: true,

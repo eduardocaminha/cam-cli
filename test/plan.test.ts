@@ -1,8 +1,8 @@
 // test/plan.test.ts
 //
-// Unit tests for `ralph plan`. We mock the claude subprocess via the
+// Unit tests for `cam plan`. We mock the claude subprocess via the
 // `spawn` injection point on `runPlan({ spawn, prompt })`, so these tests
-// never actually call `claude` — they verify ralph's plumbing:
+// never actually call `claude` — they verify cam's plumbing:
 //   - APPROVE detection on a PTY data-callback stream
 //   - prompt firing exactly once even when APPROVE appears multiple times
 //   - kill() on N answer, exit 0
@@ -241,7 +241,7 @@ describe('findApproveLine', () => {
 // --- runPlan integration ---------------------------------------------------
 
 describe('runPlan', () => {
-	test('dispatches /ralph-plan when no issue is provided', async () => {
+	test('dispatches /cam-plan when no issue is provided', async () => {
 		const { spawn, killCalls, exitedResolve } = makeTestHarness();
 		// Subprocess exits cleanly with no APPROVE — prompt never fires.
 		queueMicrotask(() => exitedResolve(0));
@@ -254,12 +254,12 @@ describe('runPlan', () => {
 			'claude',
 			'--permission-mode',
 			'bypassPermissions',
-			'/ralph-plan',
+			'/cam-plan',
 		]);
 		expect(killCalls).toEqual([]);
 	});
 
-	test('dispatches /ralph-plan #N when issue option is provided', async () => {
+	test('dispatches /cam-plan #N when issue option is provided', async () => {
 		const { spawn, exitedResolve } = makeTestHarness();
 		queueMicrotask(() => exitedResolve(0));
 		await runPlan({
@@ -271,7 +271,7 @@ describe('runPlan', () => {
 			'claude',
 			'--permission-mode',
 			'bypassPermissions',
-			'/ralph-plan #142',
+			'/cam-plan #142',
 		]);
 	});
 
@@ -381,7 +381,7 @@ describe('runPlan', () => {
 		});
 		expect(promptCount).toBe(0);
 		expect(killCalls).toEqual([]);
-		// Subprocess's own exit code propagates when ralph didn't intervene.
+		// Subprocess's own exit code propagates when cam didn't intervene.
 		expect(code).toBe(2);
 	});
 

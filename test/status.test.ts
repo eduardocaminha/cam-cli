@@ -1,7 +1,7 @@
 // test/status.test.ts
 //
-// Unit tests for `ralph status`. We use bun's tmpdir as the substitute cwd
-// (the PRD note says "use a tmpdir as `$HOME` substitute" but `ralph status`
+// Unit tests for `cam status`. We use bun's tmpdir as the substitute cwd
+// (the PRD note says "use a tmpdir as `$HOME` substitute" but `cam status`
 // reads `cwd`-relative files, not `$HOME`-relative — so cwd injection is the
 // right pattern, mirroring `runNext`'s test surface).
 //
@@ -42,7 +42,7 @@ describe('parseStateFile', () => {
 			'started_at: "2026-04-28T22:00:00Z"',
 			'---',
 			'',
-			'/ralph-next',
+			'/cam-next',
 			'',
 		].join('\n');
 		const out = parseStateFile(body);
@@ -154,7 +154,7 @@ describe('formatWallClock', () => {
 
 describe('buildStatusReport', () => {
 	test('idle when no state file is present', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-idle-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-idle-'));
 		try {
 			const report = buildStatusReport({ cwd: dir });
 			expect(report.state).toBe('idle');
@@ -166,7 +166,7 @@ describe('buildStatusReport', () => {
 	});
 
 	test('idle + surfaces next pending story when prd.json is present', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-idle-prd-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-idle-prd-'));
 		try {
 			writeFileSync(
 				join(dir, 'prd.json'),
@@ -186,11 +186,11 @@ describe('buildStatusReport', () => {
 	});
 
 	test('active state with iteration, wall-clock, and current story', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-active-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-active-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
-				join(dir, '.claude', 'ralph-loop.local.md'),
+				join(dir, '.claude', 'cam-loop.local.md'),
 				[
 					'---',
 					'active: true',
@@ -201,7 +201,7 @@ describe('buildStatusReport', () => {
 					'session_id: sess-xyz',
 					'---',
 					'',
-					'/ralph-next',
+					'/cam-next',
 					'',
 				].join('\n'),
 			);
@@ -228,11 +228,11 @@ describe('buildStatusReport', () => {
 	});
 
 	test('paused state when active:false in the frontmatter', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-paused-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-paused-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
-				join(dir, '.claude', 'ralph-loop.local.md'),
+				join(dir, '.claude', 'cam-loop.local.md'),
 				[
 					'---',
 					'active: false',
@@ -241,7 +241,7 @@ describe('buildStatusReport', () => {
 					'started_at: "2026-04-28T20:00:00Z"',
 					'---',
 					'',
-					'/ralph-next',
+					'/cam-next',
 					'',
 				].join('\n'),
 			);
@@ -258,11 +258,11 @@ describe('buildStatusReport', () => {
 	});
 
 	test('handles missing started_at gracefully', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-no-started-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-no-started-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
-				join(dir, '.claude', 'ralph-loop.local.md'),
+				join(dir, '.claude', 'cam-loop.local.md'),
 				['---', 'active: true', 'iteration: 1', 'max_iterations: 30', '---', ''].join('\n'),
 			);
 			const report = buildStatusReport({ cwd: dir });
@@ -279,7 +279,7 @@ describe('buildStatusReport', () => {
 
 describe('runStatus', () => {
 	test('exits 0 on idle and writes a `status: idle` line to stdout', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-run-idle-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-run-idle-'));
 		try {
 			const original = process.stdout.write.bind(process.stdout);
 			const captured: string[] = [];
@@ -301,11 +301,11 @@ describe('runStatus', () => {
 	});
 
 	test('exits 0 on active and writes story + iter lines to stdout', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ralph-status-run-active-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-run-active-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
-				join(dir, '.claude', 'ralph-loop.local.md'),
+				join(dir, '.claude', 'cam-loop.local.md'),
 				[
 					'---',
 					'active: true',
@@ -314,7 +314,7 @@ describe('runStatus', () => {
 					'started_at: "2026-04-28T22:00:00Z"',
 					'---',
 					'',
-					'/ralph-next',
+					'/cam-next',
 					'',
 				].join('\n'),
 			);

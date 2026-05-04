@@ -3,7 +3,7 @@
 // US-013 — Interactivity preservation tests (Scope D, 4 sub-checks).
 //
 // The contract these tests defend is documented in
-// `~/Documents/Projects/reporter/scripts/ralph/CLAUDE.md § Interactivity
+// `~/Documents/Projects/reporter/scripts/cam/CLAUDE.md § Interactivity
 // preserved`:
 //
 //   "The CLI's TUI does NOT intercept the underlying claude session — Esc
@@ -23,7 +23,7 @@
 // IS the interactivity question.
 //
 // All four tests use Bun.spawn directly — we are testing the spawn surface
-// itself, not ralph's wrappers around it. The wrappers (plan.ts, next.ts)
+// itself, not cam's wrappers around it. The wrappers (plan.ts, next.ts)
 // inject `spawn` for unit tests; here we go straight to the syscall path.
 //
 // Test discipline:
@@ -203,8 +203,8 @@ describe('Test 1: Esc keypress mid-turn interrupts the current claude turn but d
 
 // --- Test 2: Typed message becomes next user-turn -------------------------
 
-describe('Test 2: Operator types a message → next assistant response addresses the typed content, NOT a re-injected /ralph-next', () => {
-	test('typed line "course correct" is reflected in the assistant response, with no /ralph-next prompt re-injection', async () => {
+describe('Test 2: Operator types a message → next assistant response addresses the typed content, NOT a re-injected /cam-next', () => {
+	test('typed line "course correct" is reflected in the assistant response, with no /cam-next prompt re-injection', async () => {
 		const { proc, pid } = spawnMockClaude();
 		const TYPED_MARKER = 'course correct: please re-read the PRD';
 
@@ -244,20 +244,20 @@ describe('Test 2: Operator types a message → next assistant response addresses
 		// message became the next user-turn.
 		expect(assistantText).toContain(TYPED_MARKER);
 
-		// The response must NOT contain `/ralph-next` — proving the loop's
+		// The response must NOT contain `/cam-next` — proving the loop's
 		// prompt re-injection is suppressed for this cycle. (The mock fixture
-		// has no notion of /ralph-next, so this is essentially a guard
+		// has no notion of /cam-next, so this is essentially a guard
 		// against a future regression where someone routes operator input
 		// through a re-injection layer.)
-		expect(assistantText).not.toContain('/ralph-next');
+		expect(assistantText).not.toContain('/cam-next');
 
 		// The response must also not contain pre-flight output markers
-		// (typical of /ralph-next dispatch). The implementer agent's pre-flight
+		// (typical of /cam-next dispatch). The implementer agent's pre-flight
 		// emits a "## Pre-flight" header; if any of that leaks through, the
 		// assistant is responding to a re-injected prompt rather than the
 		// operator's typed message.
 		expect(assistantText).not.toContain('## Pre-flight');
-		expect(assistantText).not.toContain('RALPH_IMPLEMENTER_STATUS');
+		expect(assistantText).not.toContain('CAM_IMPLEMENTER_STATUS');
 
 		// Clean up.
 		(proc.stdin as { end?: () => void }).end?.();
@@ -266,9 +266,9 @@ describe('Test 2: Operator types a message → next assistant response addresses
 	});
 });
 
-// --- Test 3: /cancel-ralph removes state file → ralph status reports idle -
+// --- Test 3: /cancel-cam removes state file → cam status reports idle -
 
-describe('Test 3: /cancel-ralph removes .claude/ralph-loop.local.md AND the next ralph status invocation does NOT detect a stale loop', () => {
+describe('Test 3: /cancel-cam removes .claude/cam-loop.local.md AND the next cam status invocation does NOT detect a stale loop', () => {
 	let tmpDir = '';
 
 	afterEach(() => {
@@ -279,12 +279,12 @@ describe('Test 3: /cancel-ralph removes .claude/ralph-loop.local.md AND the next
 
 	test('after state-file removal, runStatus returns state: idle and no iteration info', () => {
 		// Create a fresh tmpdir + .claude/ subdir.
-		tmpDir = mkdtempSync(join(tmpdir(), 'ralph-cancel-test-'));
+		tmpDir = mkdtempSync(join(tmpdir(), 'cam-cancel-test-'));
 		const claudeDir = join(tmpDir, '.claude');
 		mkdirSync(claudeDir);
-		const stateFilePath = join(claudeDir, 'ralph-loop.local.md');
+		const stateFilePath = join(claudeDir, 'cam-loop.local.md');
 
-		// Pre-arm: write a state file mirroring what `ralph next` would write.
+		// Pre-arm: write a state file mirroring what `cam next` would write.
 		const stateBody = `---
 active: true
 iteration: 7
@@ -295,7 +295,7 @@ started_at: "2026-04-29T03:00:00Z"
 pid: ${process.pid}
 ---
 
-/ralph-next
+/cam-next
 `;
 		writeFileSync(stateFilePath, stateBody, 'utf8');
 		expect(existsSync(stateFilePath)).toBe(true);
@@ -305,14 +305,14 @@ pid: ${process.pid}
 		expect(reportBefore.state).toBe('active');
 		expect(reportBefore.iteration).toEqual({ current: 7, max: 30 });
 
-		// Simulate `/cancel-ralph` — the plugin's cancel command removes the
+		// Simulate `/cancel-cam` — the plugin's cancel command removes the
 		// state file. (We don't dispatch the slash command itself; that
 		// requires a real claude session. The contract we test is the
 		// observable side effect: file removed → next status sees no loop.)
 		rmSync(stateFilePath);
 		expect(existsSync(stateFilePath)).toBe(false);
 
-		// Now `ralph status` (via runStatus → buildStatusReport) must NOT
+		// Now `cam status` (via runStatus → buildStatusReport) must NOT
 		// detect a stale loop. Idle is the only acceptable verdict.
 		const reportAfter = buildStatusReport({ cwd: tmpDir });
 		expect(reportAfter.state).toBe('idle');
@@ -320,17 +320,17 @@ pid: ${process.pid}
 		expect(reportAfter.startedAt).toBeUndefined();
 		expect(reportAfter.completionPromise).toBeUndefined();
 
-		// Also verify `runStatus` (the printing variant) returns 0 — `ralph
+		// Also verify `runStatus` (the printing variant) returns 0 — `cam
 		// status` is documented as always-exit-0, even on idle.
 		const exitCode = runStatus({ cwd: tmpDir });
 		expect(exitCode).toBe(0);
 	});
 
 	test('removing only the state file (leaving prd.json) still yields idle, with prd.json still readable as next-pending', () => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'ralph-cancel-test-'));
+		tmpDir = mkdtempSync(join(tmpdir(), 'cam-cancel-test-'));
 		const claudeDir = join(tmpDir, '.claude');
 		mkdirSync(claudeDir);
-		const stateFilePath = join(claudeDir, 'ralph-loop.local.md');
+		const stateFilePath = join(claudeDir, 'cam-loop.local.md');
 		writeFileSync(
 			stateFilePath,
 			`---
@@ -340,7 +340,7 @@ max_iterations: 30
 started_at: "2026-04-29T02:00:00Z"
 pid: ${process.pid}
 ---
-/ralph-next
+/cam-next
 `,
 			'utf8',
 		);
@@ -364,9 +364,9 @@ pid: ${process.pid}
 	});
 });
 
-// --- Test 4: Type message + later /ralph-next preserves iter count --------
+// --- Test 4: Type message + later /cam-next preserves iter count --------
 
-describe("Test 4: Operator types a message + later /ralph-next resumes without losing iter count (the state file iteration field doesn't reset)", () => {
+describe("Test 4: Operator types a message + later /cam-next resumes without losing iter count (the state file iteration field doesn't reset)", () => {
 	let tmpDir = '';
 
 	afterEach(() => {
@@ -376,10 +376,10 @@ describe("Test 4: Operator types a message + later /ralph-next resumes without l
 	});
 
 	test('typed-message interlude leaves the state file iteration unchanged', async () => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'ralph-resume-test-'));
+		tmpDir = mkdtempSync(join(tmpdir(), 'cam-resume-test-'));
 		const claudeDir = join(tmpDir, '.claude');
 		mkdirSync(claudeDir);
-		const stateFilePath = join(claudeDir, 'ralph-loop.local.md');
+		const stateFilePath = join(claudeDir, 'cam-loop.local.md');
 
 		// Pre-arm with iteration: 5 — pretend the loop is mid-flight.
 		const ITERATION_BEFORE = 5;
@@ -393,7 +393,7 @@ started_at: "2026-04-29T01:00:00Z"
 pid: ${process.pid}
 ---
 
-/ralph-next
+/cam-next
 `;
 		writeFileSync(stateFilePath, stateBody, 'utf8');
 
@@ -450,7 +450,7 @@ pid: ${process.pid}
 		expect(stateAfter?.active).toBe(true);
 
 		// Bonus: `buildStatusReport` should still see iteration: 5/30 — the
-		// "later /ralph-next" referenced in the AC would arm a new claude
+		// "later /cam-next" referenced in the AC would arm a new claude
 		// turn against this same state file, and that next turn picks up at
 		// iteration 5 (then becomes 6 after the next turn's stop hook fires
 		// — but that increment isn't part of THIS test's contract).

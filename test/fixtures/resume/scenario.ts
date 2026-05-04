@@ -1,6 +1,6 @@
 // test/fixtures/resume/scenario.ts
 //
-// Scenario builders for US-014 — `ralph resume` 4-mode tests (Scope E).
+// Scenario builders for US-014 — `cam resume` 4-mode tests (Scope E).
 //
 // Each acceptance criterion describes a recovery scenario in plain English
 // ("operator typed mid-loop", "terminal closed / OS rebooted", "hard-kill
@@ -135,7 +135,7 @@ export interface StateFileSpec {
 
 /**
  * Render the YAML+body payload the plugin writes to
- * `.claude/ralph-loop.local.md`. Order of keys matches the plugin's emit so
+ * `.claude/cam-loop.local.md`. Order of keys matches the plugin's emit so
  * the parser test path stays representative.
  */
 export function renderStateFileBody(spec: StateFileSpec = {}): string {
@@ -148,7 +148,7 @@ export function renderStateFileBody(spec: StateFileSpec = {}): string {
 	if (spec.completionPromise) lines.push(`completion_promise: ${spec.completionPromise}`);
 	lines.push('---');
 	lines.push('');
-	lines.push('/ralph-next');
+	lines.push('/cam-next');
 	lines.push('');
 	return lines.join('\n');
 }
@@ -164,7 +164,7 @@ export interface ScenarioPaths {
 function paths(cwd: string): ScenarioPaths {
 	return {
 		cwd,
-		stateFilePath: join(cwd, '.claude', 'ralph-loop.local.md'),
+		stateFilePath: join(cwd, '.claude', 'cam-loop.local.md'),
 		prdPath: join(cwd, 'prd.json'),
 	};
 }
@@ -195,10 +195,10 @@ export function defaultPrdJson(): string {
  * still running). Recovery action: respawn (re-attach to the loop).
  */
 export function buildScenarioMode1OperatorTyped(): ScenarioPaths {
-	const cwd = mkdtempSync(join(tmpdir(), 'ralph-resume-mode1-'));
+	const cwd = mkdtempSync(join(tmpdir(), 'cam-resume-mode1-'));
 	mkdirSync(join(cwd, '.claude'), { recursive: true });
 	writeFileSync(
-		join(cwd, '.claude', 'ralph-loop.local.md'),
+		join(cwd, '.claude', 'cam-loop.local.md'),
 		renderStateFileBody({ active: true, iteration: 4, maxIterations: 30, pid: ALIVE_PID }),
 	);
 	writeFileSync(join(cwd, 'prd.json'), defaultPrdJson());
@@ -210,10 +210,10 @@ export function buildScenarioMode1OperatorTyped(): ScenarioPaths {
  * dead, last commit recent (≤ 24h). Recovery action: respawn (no prompt).
  */
 export function buildScenarioMode2TerminalClosed(): ScenarioPaths {
-	const cwd = mkdtempSync(join(tmpdir(), 'ralph-resume-mode2-'));
+	const cwd = mkdtempSync(join(tmpdir(), 'cam-resume-mode2-'));
 	mkdirSync(join(cwd, '.claude'), { recursive: true });
 	writeFileSync(
-		join(cwd, '.claude', 'ralph-loop.local.md'),
+		join(cwd, '.claude', 'cam-loop.local.md'),
 		renderStateFileBody({ active: true, iteration: 6, maxIterations: 30, pid: DEAD_PID }),
 	);
 	writeFileSync(join(cwd, 'prd.json'), defaultPrdJson());
@@ -226,10 +226,10 @@ export function buildScenarioMode2TerminalClosed(): ScenarioPaths {
  * `[Y/n/reset]`.
  */
 export function buildScenarioMode3HardKill(): ScenarioPaths {
-	const cwd = mkdtempSync(join(tmpdir(), 'ralph-resume-mode3-'));
+	const cwd = mkdtempSync(join(tmpdir(), 'cam-resume-mode3-'));
 	mkdirSync(join(cwd, '.claude'), { recursive: true });
 	writeFileSync(
-		join(cwd, '.claude', 'ralph-loop.local.md'),
+		join(cwd, '.claude', 'cam-loop.local.md'),
 		renderStateFileBody({ active: true, iteration: 9, maxIterations: 30, pid: DEAD_PID }),
 	);
 	writeFileSync(join(cwd, 'prd.json'), defaultPrdJson());
@@ -240,14 +240,14 @@ export function buildScenarioMode3HardKill(): ScenarioPaths {
  * Mode 4 — rate-limit sleep killed mid-window. State file present, the
  * heartbeat PID is dead-from-the-loop's-POV (the worker exited mid-sleep)
  * but `claude-auto-retry` is still alive in the process table holding the
- * sleep window. Recovery action: noop (auto-retry will respawn `ralph next`
+ * sleep window. Recovery action: noop (auto-retry will respawn `cam next`
  * on its own timer).
  */
 export function buildScenarioMode4RateLimit(): ScenarioPaths {
-	const cwd = mkdtempSync(join(tmpdir(), 'ralph-resume-mode4-'));
+	const cwd = mkdtempSync(join(tmpdir(), 'cam-resume-mode4-'));
 	mkdirSync(join(cwd, '.claude'), { recursive: true });
 	writeFileSync(
-		join(cwd, '.claude', 'ralph-loop.local.md'),
+		join(cwd, '.claude', 'cam-loop.local.md'),
 		renderStateFileBody({ active: true, iteration: 12, maxIterations: 30, pid: DEAD_PID }),
 	);
 	writeFileSync(join(cwd, 'prd.json'), defaultPrdJson());

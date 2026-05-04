@@ -23,7 +23,7 @@ import { loadConfig } from './toml.ts';
 
 /**
  * Default permission mode applied when the config file is missing or the
- * `permission_mode` key is unset / non-string. Matches what `ralph init`
+ * `permission_mode` key is unset / non-string. Matches what `cam init`
  * writes — keeps the "fresh machine" and "configured machine" code paths
  * indistinguishable to the spawn site.
  */

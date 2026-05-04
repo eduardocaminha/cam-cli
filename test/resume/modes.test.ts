@@ -1,12 +1,12 @@
 // test/resume/modes.test.ts
 //
-// US-014 — `ralph resume` 4-mode tests (Scope E).
+// US-014 — `cam resume` 4-mode tests (Scope E).
 //
 // This file is the AC-driven scenario suite: one `describe` block per
 // failure mode, each block walking `runResume` end-to-end against a
 // tmpdir-backed cwd with a mocked filesystem AND a mocked process table
 // (via injected `SpawnSyncFn` + `KillFn` — never a real PID, never a real
-// `pgrep`). The 4 modes mirror `scripts/ralph/CLAUDE.md § Resume
+// `pgrep`). The 4 modes mirror `scripts/cam/CLAUDE.md § Resume
 // reconciliation`:
 //
 //   Mode 1 — operator typed mid-loop      → respawn
@@ -82,7 +82,7 @@ describe('US-014 Mode 1 — operator typed mid-loop', () => {
 				expect(existsSync(stateFilePath)).toBe(true);
 
 				// PRD is preserved verbatim — `runResume` must not flip any
-				// `passes:` flags on Mode 1. The next `ralph next` will pick
+				// `passes:` flags on Mode 1. The next `cam next` will pick
 				// up the next `passes:false` story (US-003 in our fixture)
 				// from the same place the loop left off.
 				const prd = JSON.parse(readFileSync(prdPath, 'utf8'));
@@ -118,7 +118,7 @@ describe('US-014 Mode 1 — operator typed mid-loop', () => {
 				expect(subprocs.has('pgrep')).toBe(true);
 				expect(subprocs.has('git')).toBe(true);
 				// Nothing else — `runResume` does NOT shell out to claude /
-				// claude-auto-retry / homebrew here.
+				// claude-auto-retry here.
 				expect(subprocs.size).toBe(2);
 			} finally {
 				stdout.restore();
@@ -152,7 +152,7 @@ describe('US-014 Mode 2 — terminal closed / OS rebooted', () => {
 				});
 				expect(code).toBe(0);
 
-				// State file lingers — the next `ralph next` re-attaches to
+				// State file lingers — the next `cam next` re-attaches to
 				// the same iteration counter. Mode 2's "respawn" never
 				// removes the file (only Mode 3 reset / Mode `success` does).
 				expect(existsSync(stateFilePath)).toBe(true);
@@ -382,8 +382,8 @@ describe('US-014 Mode 4 — rate-limit sleep killed mid-window', () => {
 		try {
 			// Override the state-file PID to ALIVE so isPidAlive returns true.
 			writeFileSync(
-				join(cwd, '.claude', 'ralph-loop.local.md'),
-				`---\nactive: true\nitertion: 12\npid: ${ALIVE_PID}\n---\n\n/ralph-next\n`,
+				join(cwd, '.claude', 'cam-loop.local.md'),
+				`---\nactive: true\nitertion: 12\npid: ${ALIVE_PID}\n---\n\n/cam-next\n`,
 			);
 			const stdout = silenceStdout();
 			try {

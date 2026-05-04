@@ -5,9 +5,9 @@
 //
 // Each test:
 //   1. Creates a temp project dir with:
-//       - .claude/ralph-loop.local.md  (minimal state file, iteration 1)
+//       - .claude/cam-loop.local.md  (minimal state file, iteration 1)
 //       - .claude/sessions/<id>.jsonl  (minimal valid transcript)
-//       - scripts/ralph/prd.json       (from a fixture under test/fixtures/)
+//       - scripts/cam/prd.json       (from a fixture under test/fixtures/)
 //   2. Calls Bun.spawnSync(['bash', hookPath], { stdin: hookInput, cwd: dir })
 //   3. Asserts on exit code + stdout content.
 //
@@ -37,7 +37,7 @@ import { fileURLToPath } from 'node:url';
 // ─── Path resolution ─────────────────────────────────────────────────────────
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '..', '..');
-const HOOK_PATH = join(REPO_ROOT, 'vendor', 'ralph-loop-stop-hook.sh');
+const HOOK_PATH = join(REPO_ROOT, 'vendor', 'cam-loop-stop-hook.sh');
 const FIXTURES_DIR = join(REPO_ROOT, 'test', 'fixtures');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ function makeMinimalTranscript(text = 'Working on the next story.'): string {
 }
 
 /**
- * Minimal ralph-loop.local.md frontmatter.
+ * Minimal cam-loop.local.md frontmatter.
  * session_id must match the session_id we send in hook stdin so the hook
  * doesn't skip (session isolation check).
  */
@@ -69,7 +69,7 @@ function makeStateFile(sessionId: string, completionPromise = 'COMPLETE'): strin
 		`completion_promise: "${completionPromise}"`,
 		`session_id: ${sessionId}`,
 		'---',
-		'/ralph-next',
+		'/cam-next',
 	].join('\n');
 }
 
@@ -84,10 +84,10 @@ interface SetupResult {
  * Returns the temp dir path, transcript path, and state file path.
  *
  * @param prdFixtureName  Filename under test/fixtures/ to copy into
- *                        scripts/ralph/prd.json, or null to skip (no prd.json).
+ *                        scripts/cam/prd.json, or null to skip (no prd.json).
  */
 function setupProjectDir(prdFixtureName: string | null): SetupResult {
-	const dir = mkdtempSync(join(tmpdir(), 'ralph-hook-test-'));
+	const dir = mkdtempSync(join(tmpdir(), 'cam-hook-test-'));
 
 	// .claude/ directory
 	mkdirSync(join(dir, '.claude', 'sessions'), { recursive: true });
@@ -97,14 +97,14 @@ function setupProjectDir(prdFixtureName: string | null): SetupResult {
 	writeFileSync(transcriptPath, makeMinimalTranscript());
 
 	// State file (session id matches what we send in stdin)
-	const statePath = join(dir, '.claude', 'ralph-loop.local.md');
+	const statePath = join(dir, '.claude', 'cam-loop.local.md');
 	writeFileSync(statePath, makeStateFile('test-session-id'));
 
 	// prd.json (optional)
 	if (prdFixtureName !== null) {
-		mkdirSync(join(dir, 'scripts', 'ralph'), { recursive: true });
+		mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
 		const fixtureContent = readFileSync(join(FIXTURES_DIR, prdFixtureName), 'utf8');
-		writeFileSync(join(dir, 'scripts', 'ralph', 'prd.json'), fixtureContent);
+		writeFileSync(join(dir, 'scripts', 'cam', 'prd.json'), fixtureContent);
 	}
 
 	return { dir, transcriptPath, statePath };

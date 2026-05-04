@@ -1,10 +1,10 @@
 // test/embedded.test.ts
 //
-// US-011 acceptance criterion 4: `./dist/ralph-darwin-arm64 init` runs the
+// US-011 acceptance criterion 4: `./dist/cam-darwin-arm64 init` runs the
 // validator without erroring. The hard part of "without erroring" in a
 // compiled binary is making sure the embedded vendor files
-// (`vendor/ralph-loop.local.md.tmpl` plus the smoke `.ts`/`.sh` files used
-// by `ralph init`) are reachable at runtime.
+// (`vendor/cam-loop.local.md.tmpl` plus the smoke `.ts`/`.sh` files used
+// by `cam init`) are reachable at runtime.
 //
 // Because we use a codegen step (`scripts/generate-embedded-vendor.ts`)
 // rather than runtime reads, the in-process `readEmbedded()` API behaves
@@ -12,7 +12,7 @@
 // inlined string constants in `src/vendor/_generated.ts`. So testing dev
 // mode here is sufficient; the compiled-binary equivalent is exercised once
 // at release time via `scripts/build-release.sh` (which runs
-// `./dist/ralph-darwin-arm64 init` against a tmp config).
+// `./dist/cam-darwin-arm64 init` against a tmp config).
 //
 // What we cover:
 //   1. The codegen output is byte-for-byte identical to the on-disk vendor
@@ -36,8 +36,8 @@ import {
 } from '../src/vendor/embedded.ts';
 
 const VENDOR_KEYS: readonly EmbeddedKey[] = [
-	'ralph-loop.local.md.tmpl',
-	'ralph-loop-stop-hook.sh',
+	'cam-loop.local.md.tmpl',
+	'cam-loop-stop-hook.sh',
 	'check-agent-frontmatter.ts',
 	'check-agent-frontmatter.sh',
 	'claude-auto-retry-patterns.ts',
@@ -59,19 +59,19 @@ describe('EMBEDDED_CONTENTS — codegen byte-parity', () => {
 		// `VENDOR_KEYS` array above. Locking the set down here catches a
 		// stray entry that would bloat the binary without intent.
 		expect(Object.keys(EMBEDDED_CONTENTS).sort()).toEqual([
+			'cam-loop-stop-hook.sh',
+			'cam-loop.local.md.tmpl',
 			'check-agent-frontmatter.sh',
 			'check-agent-frontmatter.ts',
 			'claude-auto-retry-patterns.ts',
-			'ralph-loop-stop-hook.sh',
-			'ralph-loop.local.md.tmpl',
 		]);
 	});
 });
 
 describe('readEmbedded', () => {
 	test('returns the template body byte-for-byte', () => {
-		const fromEmbedded = readEmbedded('ralph-loop.local.md.tmpl');
-		const fromDisk = readFileSync(join(VENDOR_DIR, 'ralph-loop.local.md.tmpl'), 'utf8');
+		const fromEmbedded = readEmbedded('cam-loop.local.md.tmpl');
+		const fromDisk = readFileSync(join(VENDOR_DIR, 'cam-loop.local.md.tmpl'), 'utf8');
 		expect(fromEmbedded).toBe(fromDisk);
 		// Spot-check the placeholder grammar so a sloppy template edit
 		// (renaming `{{MAX_ITERATIONS}}` to something `next.ts` doesn't
