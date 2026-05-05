@@ -25,15 +25,15 @@
 //   --description "<text>"     (new projects only)
 //   --no-tmux                  copy templates + print next steps, no tmux
 
-import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
 import { mergeIntoConfig } from '../config/toml.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
+import { materializeTemplates } from '../templates/embedded.ts';
 import { buildOrchestratorBootPrompt } from './run.ts';
 
 // ---------------------------------------------------------------------------
@@ -127,36 +127,15 @@ function verifyAgent(): AgentVerifyResult {
 // Template installation
 // ---------------------------------------------------------------------------
 
-// Resolve templates/ relative to this source file, regardless of whether
-// we're running from src/ (dev) or from a compiled binary (dist/).
-function templatesDir(): string {
-	const here = dirname(fileURLToPath(import.meta.url));
-	// dev: src/commands/setup.ts → ../../templates
-	// compiled binary lands in project root alongside templates/
-	const candidate = join(here, '../../templates');
-	if (existsSync(candidate)) return candidate;
-	// fallback: same dir as binary
-	return join(here, 'templates');
-}
-
 function copyTemplates(cwd: string): void {
-	const tplDir = templatesDir();
-	const targets: Array<{ src: string; dst: string }> = [
-		{ src: join(tplDir, 'commands'), dst: join(cwd, '.claude', 'commands') },
-		{ src: join(tplDir, 'agents'), dst: join(cwd, '.claude', 'agents') },
-		{ src: join(tplDir, 'scripts', 'cam'), dst: join(cwd, 'scripts', 'cam') },
+	const counts = materializeTemplates(cwd);
+	const targets: Array<{ subtree: keyof typeof counts; rel: string }> = [
+		{ subtree: 'commands', rel: '.claude/commands' },
+		{ subtree: 'agents', rel: '.claude/agents' },
+		{ subtree: 'scripts/cam', rel: 'scripts/cam' },
 	];
-
-	for (const { src, dst } of targets) {
-		if (!existsSync(src)) {
-			printWarning(`template dir not found: ${src} — skipping`);
-			continue;
-		}
-		mkdirSync(dst, { recursive: true });
-		cpSync(src, dst, { recursive: true });
-		const count = readdirSync(src).length;
-		const rel = dst.startsWith(cwd) ? dst.slice(cwd.length + 1) : dst;
-		printSuccess(`installed ${count} file(s) → ${rel}`);
+	for (const { subtree, rel } of targets) {
+		printSuccess(`installed ${counts[subtree]} file(s) → ${rel}`);
 	}
 }
 

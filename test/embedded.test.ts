@@ -24,7 +24,15 @@
 //   4. The materialized file's contents match the embedded contents.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -34,6 +42,7 @@ import {
 	readEmbedded,
 	type EmbeddedKey,
 } from '../src/vendor/embedded.ts';
+import { templatesContents } from '../src/templates/embedded.ts';
 
 const VENDOR_KEYS: readonly EmbeddedKey[] = [
 	'cam-loop.local.md.tmpl',
@@ -85,6 +94,29 @@ describe('readEmbedded', () => {
 		for (const key of VENDOR_KEYS) {
 			const contents = readEmbedded(key);
 			expect(contents.length).toBeGreaterThan(0);
+		}
+	});
+});
+
+describe('templatesContents — codegen byte-parity', () => {
+	test('matches every file under templates/ byte-for-byte', () => {
+		const TEMPLATES_DIR = resolve(import.meta.dir, '..', 'templates');
+		// Walk templates/ on disk and compare to the codegen map.
+		const walk = (root: string, base = ''): string[] => {
+			const out: string[] = [];
+			for (const entry of readdirSync(join(root, base))) {
+				const rel = base ? `${base}/${entry}` : entry;
+				const abs = join(root, rel);
+				if (statSync(abs).isDirectory()) out.push(...walk(root, rel));
+				else out.push(rel);
+			}
+			return out.sort();
+		};
+		const onDisk = walk(TEMPLATES_DIR);
+		const fromCodegen = Object.keys(templatesContents).sort();
+		expect(fromCodegen).toEqual(onDisk);
+		for (const rel of onDisk) {
+			expect(templatesContents[rel]).toBe(readFileSync(join(TEMPLATES_DIR, rel), 'utf8'));
 		}
 	});
 });
