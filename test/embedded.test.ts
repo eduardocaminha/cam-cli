@@ -49,7 +49,6 @@ const VENDOR_KEYS: readonly EmbeddedKey[] = [
 	'cam-loop-stop-hook.sh',
 	'check-agent-frontmatter.ts',
 	'check-agent-frontmatter.sh',
-	'claude-auto-retry-patterns.ts',
 ];
 
 const VENDOR_DIR = resolve(import.meta.dir, '..', 'vendor');
@@ -63,7 +62,7 @@ describe('EMBEDDED_CONTENTS — codegen byte-parity', () => {
 		});
 	}
 
-	test('contains exactly the five embedded files (US-011 originals + US-002 stop hook)', () => {
+	test('contains exactly the four embedded files (US-011 originals + US-002 stop hook)', () => {
 		// If you add an embedded asset, update this list AND the
 		// `VENDOR_KEYS` array above. Locking the set down here catches a
 		// stray entry that would bloat the binary without intent.
@@ -72,7 +71,6 @@ describe('EMBEDDED_CONTENTS — codegen byte-parity', () => {
 			'cam-loop.local.md.tmpl',
 			'check-agent-frontmatter.sh',
 			'check-agent-frontmatter.ts',
-			'claude-auto-retry-patterns.ts',
 		]);
 	});
 });

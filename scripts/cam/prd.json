@@ -1,0 +1,213 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-4-internalize-auto-retry",
+  "description": "Internalize claude-auto-retry (~600 LoC) into cam-cli as src/retry/* and ship cam claude/retry-monitor subcommands so the external dependency can be dropped.",
+  "issueNumber": 4,
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "bun",
+      "url": "https://bun.com/docs/api/spawn",
+      "version": "current",
+      "fetchedAt": "2026-05-14T00:00:00Z",
+      "summary": "Bun.spawn supports stdio: 'inherit'/'pipe'/'ignore', detached, env, proc.pid, proc.kill('SIGTERM'), proc.exited Promise, proc.unref(). ipc and terminal (PTY) available. spawnSync ~60% faster than Node. No breaking changes affect this port.",
+      "status": "ok"
+    },
+    {
+      "lib": "bun",
+      "url": "https://bun.com/docs/runtime/toml",
+      "version": "current",
+      "fetchedAt": "2026-05-14T00:00:00Z",
+      "summary": "Bun.TOML.parse is GA in current Bun and parses TOML v1.0 strings into JS objects; throws on invalid input. Used in US-002 for retry config.",
+      "status": "ok"
+    },
+    {
+      "lib": "bun",
+      "url": "https://bun.com/docs/runtime/shell",
+      "version": "current",
+      "fetchedAt": "2026-05-14T00:00:00Z",
+      "summary": "Bun.$ tagged-template shell with .text()/.json()/.quiet() helpers; replaces node:child_process.execFile for tmux invocations. Used in US-003 for tmux.ts.",
+      "status": "ok"
+    },
+    {
+      "lib": "bun",
+      "url": "https://bun.com/docs/api/file-io",
+      "version": "current",
+      "fetchedAt": "2026-05-14T00:00:00Z",
+      "summary": "Bun.file(path) returns a BunFile; Bun.write(path, data) creates parents on demand — preferred over node:fs per project CLAUDE.md. Used in US-002 for config and logger.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Port patterns.ts + time-parser.ts with tests and license attribution",
+      "description": "As a cam-cli maintainer, I need the pure detection/parsing primitives from claude-auto-retry ported to TypeScript under src/retry/ so subsequent stories can build the config, logger, monitor, and launcher on top of typed, tested helpers.",
+      "acceptanceCriteria": [
+        "src/retry/patterns.ts exports the same rate-limit / usage-limit detection patterns and helpers as the original patterns.js, with explicit TypeScript types on all exports.",
+        "src/retry/time-parser.ts exports the same parsing functions as the original time-parser.js, with explicit TypeScript types and the same semantics for absolute times, relative durations, and 'tomorrow X' shapes.",
+        "Both ported files carry the MIT attribution header (claude-auto-retry v0.2.2, cheapestinference contributors, Eduardo Caminha port).",
+        "LICENSES/claude-auto-retry-MIT.txt exists with the verbatim original MIT license text.",
+        "test/retry/patterns.test.ts covers every exported matcher with positive + negative cases derived from the original behavior.",
+        "test/retry/time-parser.test.ts covers absolute, relative, and 'tomorrow' shapes plus invalid input handling.",
+        "No new runtime dependencies are added to package.json for these two modules.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 1,
+      "passes": true,
+      "requires": null,
+      "notes": "Source: /opt/homebrew/lib/node_modules/claude-auto-retry/src/patterns.js and time-parser.js. New files: src/retry/patterns.ts, src/retry/time-parser.ts, test/retry/patterns.test.ts, test/retry/time-parser.test.ts, LICENSES/claude-auto-retry-MIT.txt. Pure functions only — no Bun APIs, no filesystem, no spawn. Keep exported function names identical to the originals so later ports can import 1:1. Use `import { test, expect } from \"bun:test\"`."
+    },
+    {
+      "id": "US-002",
+      "title": "Port config.ts + logger.ts with cam-namespaced paths",
+      "description": "As a cam-cli user, I need retry config and logs to live under cam-cli's own namespace (~/.config/cam/retry.toml and ~/.cam/retry-logs/) so cam-cli does not collide with or depend on claude-auto-retry's filesystem layout.",
+      "acceptanceCriteria": [
+        "src/retry/config.ts loads/validates TOML config from ~/.config/cam/retry.toml (expanded from $HOME), creating the file with documented defaults on first read if it does not exist.",
+        "src/retry/config.ts uses `Bun.TOML.parse` (not a hand-rolled parser, not a third-party TOML package). On parse failure, surface a clear error including the file path and the parser's exception message.",
+        "src/retry/logger.ts writes structured logs under ~/.cam/retry-logs/ with the same log levels and rotation behavior as the original logger.js.",
+        "Both ported files carry the MIT attribution header.",
+        "Config schema is fully typed (no `any`); invalid TOML fields surface a clear error rather than crashing the process.",
+        "test/retry/config.test.ts covers default-creation, parse success, parse failure, and path expansion using a temp $HOME (e.g. process.env.HOME override).",
+        "test/retry/logger.test.ts covers log file creation, append behavior, and that the directory is created on demand, using a temp $HOME.",
+        "Tests do not write to the real ~/.config/cam or ~/.cam — they isolate via $HOME or an injected base dir.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 2,
+      "passes": true,
+      "requires": null,
+      "notes": "Source: /opt/homebrew/lib/node_modules/claude-auto-retry/src/config.js and logger.js. New files: src/retry/config.ts, src/retry/logger.ts, test/retry/config.test.ts, test/retry/logger.test.ts. TOML parsing: use `Bun.TOML.parse` (GA in current Bun) — no hand-rolled parser, no third-party TOML package. File I/O: prefer `Bun.file` and `Bun.write` over node:fs per project CLAUDE.md. Make the base dir injectable so tests can pass a temp dir without monkey-patching globals."
+    },
+    {
+      "id": "US-003",
+      "title": "Port tmux.ts + monitor.ts with processOneTick adapter for tests",
+      "description": "As a cam-cli maintainer, I need the tmux capture wrapper and the monitor loop ported with a single testable tick function so the rate-limit detection / sleep / resume cycle can be unit-tested without spawning real tmux or sleeping in wall-clock time.",
+      "acceptanceCriteria": [
+        "src/retry/tmux.ts wraps `tmux capture-pane`-style invocations via `Bun.$` (per project CLAUDE.md) and exports typed helpers matching the original tmux.js surface.",
+        "src/retry/monitor.ts exposes a `processOneTick(deps)` function whose dependencies (current time, tmux capture, sleep, logger, config) are injected, so tests can drive a full cycle synchronously.",
+        "The default exported monitor entrypoint composes `processOneTick` with real Bun-backed adapters and preserves the original monitor.js end-to-end behavior.",
+        "Both ported files carry the MIT attribution header.",
+        "test/retry/monitor.test.ts drives processOneTick through: (a) no-limit-detected, (b) rate-limit-detected with future resume time, (c) resume-time-reached → resume signaled, using fake clock + fake tmux output.",
+        "test/retry/tmux.test.ts covers the parsing/shaping of capture output with fixture strings (no real tmux process spawned).",
+        "No test spawns a real tmux session, real sleep > 100ms, or real claude process.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 3,
+      "passes": true,
+      "requires": null,
+      "notes": "Source: /opt/homebrew/lib/node_modules/claude-auto-retry/src/tmux.js and monitor.js. New files: src/retry/tmux.ts, src/retry/monitor.ts, test/retry/tmux.test.ts, test/retry/monitor.test.ts. Depends on US-001 (patterns, time-parser) and US-002 (config, logger). The `processOneTick` shape is the key testability requirement called out in the issue spec — keep deps as a single object param so future stories can inject more without breaking signatures."
+    },
+    {
+      "id": "US-004",
+      "title": "Implement launcher.ts and cam claude subcommand (print mode)",
+      "description": "As a cam-cli user, I need a `cam claude` subcommand that launches Claude in print mode under the retry launcher so that non-interactive runs (used by run/next/plan) automatically survive rate limits without requiring the external claude-auto-retry binary.",
+      "acceptanceCriteria": [
+        "src/retry/launcher.ts exports a `launchClaude(opts)` function that spawns `claude` via `Bun.spawn` with `stdio: 'inherit'` for print mode, forwards args, env, and cwd, and applies the retry/resume policy on rate-limit exit.",
+        "launcher.ts does NOT call `createTmuxSession` — the issue spec explicitly skips that path; interactive/tmux mode is handled separately in US-005.",
+        "launcher.ts carries the MIT attribution header.",
+        "index.ts (or src/commands/claude.ts) registers a `cam claude [args...]` subcommand that delegates to `launchClaude` in print mode and forwards exit code.",
+        "`cam claude --help` prints usage including which flags are forwarded to claude vs. consumed by cam.",
+        "The subcommand does NOT register a `--permission-mode` flag (enforced by test/no-permission-mode-flag.test.ts).",
+        "cam claude does not parse the forwarded argv beyond consuming a leading `--help`. All other args are passed verbatim to the child `claude` process so callers can use any claude flag (including `--permission-mode`) without cam needing to know it. Unit test asserts that `cam claude --permission-mode bypassPermissions /cam-next` reaches the spawn adapter with argv `[claude, --permission-mode, bypassPermissions, /cam-next]`.",
+        "test/retry/launcher.test.ts uses an injectable spawn adapter to verify args forwarding, exit-code propagation, and the rate-limit → wait → retry path without spawning real claude.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 4,
+      "passes": true,
+      "requires": null,
+      "notes": "Source: /opt/homebrew/lib/node_modules/claude-auto-retry/src/launcher.js. New files: src/retry/launcher.ts, src/commands/claude.ts (or wire directly in index.ts — check existing convention in src/commands/init.ts and src/commands/setup.ts), test/retry/launcher.test.ts. Gotcha: `index.ts` and `src/commands/` are scanned by test/no-permission-mode-flag.test.ts — do NOT add `--permission-mode`. Use `Bun.spawn({ stdio: ['inherit','inherit','inherit'] })` and `await proc.exited`. Make the spawn function injectable so tests can stub it."
+    },
+    {
+      "id": "US-005",
+      "title": "Implement interactive mode with monitor fork and cam retry-monitor internal subcommand",
+      "description": "As a cam-cli user running an interactive Claude session, I need cam claude to fork a background monitor process that watches the session via tmux and resumes on rate-limit clear, so interactive sessions get the same auto-retry behavior the external tool provided.",
+      "acceptanceCriteria": [
+        "When `cam claude` is invoked with `$TMUX` env var set (i.e. running inside a tmux session) AND args do not include `-p`/`--print`, it forks a detached `cam retry-monitor <pane> <pid>` child via `Bun.spawn({ detached: true, stdio: 'ignore' })` and `proc.unref()`.",
+        "When `cam claude` is invoked outside tmux (`$TMUX` unset) AND without `-p`/`--print`, the subcommand exits non-zero with an error message pointing the user at `cam run` (which provides the tmux session). Unit test covers this error path.",
+        "`cam retry-monitor` is registered as an internal subcommand (not advertised in top-level help unless `--help` is passed to it directly) that runs the monitor.ts loop against the given pane/pid.",
+        "The monitor child writes its PID to a discoverable location (see US-006) and logs to ~/.cam/retry-logs/ via logger.ts.",
+        "The launcher installs SIGINT/SIGTERM/SIGHUP handlers that propagate to the child claude process and trigger monitor PID-file cleanup; SIGWINCH is forwarded for terminal resize. Unit test mocks `process.on('SIGINT')` and asserts the handler signals the child and calls the cleanup function.",
+        "test/retry/interactive.test.ts (or extends launcher.test.ts) verifies the fork path via an injectable spawn adapter: confirms detached/ignore/unref flags are set and the child argv is `[bun-or-self, ..., 'retry-monitor', pane, pid]`.",
+        "The subcommand does NOT register a `--permission-mode` flag.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 5,
+      "passes": true,
+      "requires": null,
+      "notes": "Builds on US-003 (monitor.processOneTick) and US-004 (launcher). Files: src/retry/launcher.ts (extend), src/commands/retry-monitor.ts, register subcommand in index.ts. Use `Bun.spawn({ detached: true, stdio: 'ignore' })` per Bun docs (officialDocsConsulted entry). Routing key: `$TMUX` env var (NOT TTY check) AND absence of `-p`/`--print` in argv. The 'internal' nature means retry-monitor should still respond to --help but should not be listed in the top-level command index. Coordinate the pane/pid contract with US-006's PID file convention."
+    },
+    {
+      "id": "US-006",
+      "title": "Switchover: route internal claude spawns through cam claude and add retry-pid helpers",
+      "description": "As a cam-cli maintainer, I need run/next/plan to invoke the in-process retry launcher (or `cam claude`) instead of the external `claude-auto-retry` binary, and a small src/util/retry-pid.ts helper to track monitor PIDs, so the internal port becomes the live code path.",
+      "acceptanceCriteria": [
+        "src/util/retry-pid.ts exports helpers to (a) write a monitor PID file at ~/.cam/retry.pid, (b) read it, (c) check liveness via `process.kill(pid, 0)`, (d) remove it on shutdown.",
+        "All cam-cli code paths that currently spawn `claude-auto-retry` (in src/commands/run.ts, src/commands/next.ts, src/commands/plan.ts and any helper) are rerouted to invoke the internal launcher (`launchClaude` from US-004) or `cam claude` subprocess.",
+        "Existing tests for run/next/plan still pass (or are updated to assert the new internal launcher is called).",
+        "No remaining `claude-auto-retry` string literal in `src/commands/run.ts`, `src/commands/next.ts`, or `src/commands/plan.ts` (the rerouted launcher paths). Wider scrub of `init.ts`, `resume.ts`, `index.ts` HELP strings, embedded vendor, and tests is US-007's scope.",
+        "test/retry/retry-pid.test.ts covers write/read/liveness/remove with a temp dir.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 6,
+      "passes": true,
+      "requires": null,
+      "notes": "New file: src/util/retry-pid.ts, test/retry/retry-pid.test.ts. Edits: src/commands/run.ts, src/commands/next.ts, src/commands/plan.ts (verify via `grep -r claude-auto-retry src/commands/`). PID file path is ~/.cam/retry.pid (single file convention used by US-007's resume.ts rewire). Use `process.kill(pid, 0)` for liveness (does not actually signal — throws ESRCH if dead). Do not yet remove the external-dep checks in init.ts / resume.ts — that is US-007's scope."
+    },
+    {
+      "id": "US-007",
+      "title": "Remove external claude-auto-retry dependency from init.ts, resume.ts, embedded vendor, and tests",
+      "description": "As a cam-cli installer, I need cam-cli to stop checking for, pgrep-ing, or embedding the external claude-auto-retry tool so a fresh install requires zero external Node/npm packages beyond what cam-cli vendors itself.",
+      "acceptanceCriteria": [
+        "src/commands/init.ts no longer checks for the presence of `claude-auto-retry` on PATH or via npm (related preflight blocks are removed or replaced with a no-op).",
+        "src/commands/resume.ts no longer uses `pgrep` (or any other detection) against `claude-auto-retry`; if resume needs to detect a running monitor, it uses the retry-pid helpers from US-006 (reading liveness of ~/.cam/retry.pid).",
+        "index.ts HELP/INIT_HELP/RESUME_HELP strings (around lines 69, 70, 216) are scrubbed of `claude-auto-retry` references.",
+        "src/commands/status.ts (around line 30) comment cleanup — drop `claude-auto-retry` reference.",
+        "src/vendor/embedded.ts is updated: remove the `claudeAutoRetryPatternsContents` import, remove the `'claude-auto-retry-patterns.ts'` member of the type union (line 41), and remove the corresponding map entry (line 53). _generated.ts is regenerated accordingly.",
+        "vendor/claude-auto-retry-patterns.ts is deleted from the repo.",
+        "vendor/check-agent-frontmatter.sh (around line 36) comment cleanup — drop `claude-auto-retry` reference.",
+        "scripts/build-release.sh (around line 73) comment cleanup — drop `claude-auto-retry` reference.",
+        "test/embedded.test.ts drops `'claude-auto-retry-patterns.ts'` from the expected lists at lines 52 and 75.",
+        "test/vendor.test.ts (line 10) comment cleanup.",
+        "test/resume.test.ts is rewired: every Mode 4 path that mocks `pgrep -f claude-auto-retry` is replaced with mocks of the PID-file (~/.cam/retry.pid) liveness path introduced in US-006. Affects lines 56, 78, 146, 151, 213, 274, 536.",
+        "test/resume/modes.test.ts is rewired with the same PID-file liveness mocks (lines 121, 345, 363, 378).",
+        "test/fixtures/resume/scenario.ts: replace the `autoRetryAlive` knob with `retryPidAlive` (lines 67, 100, 242) and update all consumers.",
+        "test/init.test.ts and any other resume tests are updated to reflect the removed preflight check; no test still asserts presence of the external binary.",
+        "After this story, `bun install` + `bun run` on a clean machine without `claude-auto-retry` installed runs cam claude/run/next/plan end-to-end (verified by adjusted tests or a documented manual check).",
+        "Verify `.claude/.cam-setup-prompt.txt` has no remaining references (currently clean; defensive grep).",
+        "`grep -rn 'claude-auto-retry' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=LICENSES` returns only porting-attribution headers inside `src/retry/*`.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 7,
+      "passes": true,
+      "requires": null,
+      "notes": "Edits: src/commands/init.ts, src/commands/resume.ts, src/commands/status.ts, index.ts (HELP/INIT_HELP/RESUME_HELP at ~lines 69, 70, 216), src/vendor/embedded.ts (drop import + union member line 41 + map entry line 53), vendor/check-agent-frontmatter.sh (line 36), scripts/build-release.sh (line 73), test/embedded.test.ts (lines 52, 75), test/vendor.test.ts (line 10), test/resume.test.ts (lines 56, 78, 146, 151, 213, 274, 536), test/resume/modes.test.ts (lines 121, 345, 363, 378), test/fixtures/resume/scenario.ts (lines 67, 100, 242 — rename `autoRetryAlive` → `retryPidAlive`), test/init.test.ts. Delete: vendor/claude-auto-retry-patterns.ts. Regenerate: src/vendor/_generated.ts. Run `grep -rn 'claude-auto-retry' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=LICENSES` before and after to confirm scrub. Keep MIT attribution headers in src/retry/* — those legitimately mention the upstream name."
+    },
+    {
+      "id": "US-008",
+      "title": "Update README, INIT_HELP, RESUME_HELP, and cam claude --help",
+      "description": "As a cam-cli user reading the docs, I need the README and the embedded help strings to describe the internal retry behavior, the new `cam claude` and `cam retry-monitor` subcommands, and the new config/log paths so the docs match the shipped behavior.",
+      "acceptanceCriteria": [
+        "README.md (root) describes the internal auto-retry: what it does, when it kicks in (print vs interactive), where config lives (~/.config/cam/retry.toml), where logs live (~/.cam/retry-logs/), and links to the LICENSES/claude-auto-retry-MIT.txt attribution.",
+        "README.md removes any prior instructions to install claude-auto-retry separately.",
+        "INIT_HELP / RESUME_HELP (the embedded help strings in src/commands/init.ts and src/commands/resume.ts, or wherever they live) are updated to drop external-tool references and mention the internal retry behavior.",
+        "`cam claude --help` output is reviewed and tightened (final wording for forwarded args, retry policy, config location).",
+        "If a CHANGELOG.md exists, an entry for this work is added under the next version; if no CHANGELOG, a one-line note in README under a 'Recent changes' or 'Migration' section is acceptable.",
+        "`grep -rn 'claude-auto-retry' README.md` returns no results except an attribution mention pointing at LICENSES/.",
+        "`grep -rn 'claude-auto-retry' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=LICENSES` returns matches only inside MIT-attribution header comments under `src/retry/*` (verified by running the command and confirming the output is bounded to attribution lines).",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 8,
+      "passes": true,
+      "requires": null,
+      "notes": "Edits: README.md, src/commands/init.ts (INIT_HELP constant), src/commands/resume.ts (RESUME_HELP constant), src/commands/claude.ts (--help text), optionally CHANGELOG.md. This is the final story — it assumes US-001 through US-007 already shipped, so the docs describe the live state. Confirm LICENSES/claude-auto-retry-MIT.txt path matches what US-001 created. Run the cross-cutting grep one final time to confirm zero non-attribution references remain."
+    }
+  ]
+}

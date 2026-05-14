@@ -2,13 +2,13 @@
 //
 // End-to-end test for `cam init` — exercises `runInit()` against a tmp
 // config path. We don't mock the PATH lookups because (a) the dev machine
-// is guaranteed to have `claude` + `claude-auto-retry` (per US-002 progress
-// note + US-005 acceptance criteria), and (b) testing the validators with
-// real binaries is the only way to catch a regression like "we accidentally
-// match `claud` instead of `claude`".
+// is guaranteed to have `claude` (per US-002 progress note + US-005
+// acceptance criteria), and (b) testing the validators with the real binary
+// is the only way to catch a regression like "we accidentally match `claud`
+// instead of `claude`".
 //
-// CI machines without those binaries will see a non-zero `runInit()` and
-// the test will fail — that's the correct signal for a misconfigured CI.
+// CI machines without the `claude` binary will see a non-zero `runInit()`
+// and the test will fail — that's the correct signal for a misconfigured CI.
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -43,8 +43,8 @@ afterEach(() => {
 describe('runInit', () => {
 	test('writes config.toml with permission_mode=bypassPermissions on a fresh path', () => {
 		const exitCode = runInit();
-		// On the dev machine claude + claude-auto-retry are on PATH, so we expect 0.
-		// If this fails locally, double-check `which claude` and `which claude-auto-retry`.
+		// On the dev machine claude is on PATH, so we expect 0.
+		// If this fails locally, double-check `which claude`.
 		expect(exitCode).toBe(0);
 		expect(existsSync(configPath)).toBe(true);
 		const config = loadConfig(configPath);

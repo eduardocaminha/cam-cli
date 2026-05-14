@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-008",
+    "title": "Update README, INIT_HELP, RESUME_HELP, and cam claude --help"
+  },
+  "branchName": "cam/pr-4-internalize-auto-retry",
+  "timestamp": "2026-05-14T07:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "README.md",
+    "index.ts",
+    "src/commands/claude.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/progress.txt"
+  ],
+  "deletedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "US-008 is the final story in this PRD — all 8 stories now pass. The orchestrator should run /cam-review to verify the full PRD is complete.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Story is docs-only (README, INIT_HELP, CLAUDE_HELP). No external library API surface exercised."
+    }
+  ]
+}

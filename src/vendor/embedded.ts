@@ -28,7 +28,6 @@ import { CAM_VERSION } from '../version.ts';
 import {
 	checkAgentFrontmatterShContents,
 	checkAgentFrontmatterTsContents,
-	claudeAutoRetryPatternsContents,
 	camLoopStopHookContents,
 	camLoopTmplContents,
 } from './_generated.ts';
@@ -37,8 +36,7 @@ export type EmbeddedKey =
 	| 'cam-loop.local.md.tmpl'
 	| 'cam-loop-stop-hook.sh'
 	| 'check-agent-frontmatter.ts'
-	| 'check-agent-frontmatter.sh'
-	| 'claude-auto-retry-patterns.ts';
+	| 'check-agent-frontmatter.sh';
 
 /**
  * Mapping of stable basename keys to inlined UTF-8 contents. Each entry is
@@ -50,7 +48,6 @@ export const EMBEDDED_CONTENTS: Record<EmbeddedKey, string> = {
 	'cam-loop-stop-hook.sh': camLoopStopHookContents,
 	'check-agent-frontmatter.ts': checkAgentFrontmatterTsContents,
 	'check-agent-frontmatter.sh': checkAgentFrontmatterShContents,
-	'claude-auto-retry-patterns.ts': claudeAutoRetryPatternsContents,
 };
 
 /**

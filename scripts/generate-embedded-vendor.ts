@@ -15,11 +15,10 @@
 //
 //   1. The vendored smoke files have `.ts` extensions. When TypeScript
 //      resolves a `with { type: "text" }` import of a `.ts` file, it still
-//      typechecks the target — and `vendor/check-agent-frontmatter.ts` /
-//      `vendor/claude-auto-retry-patterns.ts` are vendored byte-for-byte
-//      from the reporter monorepo, where they typecheck under a looser
-//      tsconfig (no `noUncheckedIndexedAccess`). Adding `@ts-nocheck` to
-//      the vendored copies would make the byte-diff smoke
+//      typechecks the target — and `vendor/check-agent-frontmatter.ts` is
+//      vendored byte-for-byte from the reporter monorepo, where it typechecks
+//      under a looser tsconfig (no `noUncheckedIndexedAccess`). Adding
+//      `@ts-nocheck` to the vendored copy would make the byte-diff smoke
 //      (`test/vendor.test.ts`) fail.
 //
 //   2. The codegen output is plain TS literals — no exotic loaders, no
@@ -52,7 +51,6 @@ const OUT_PATH = join(REPO_ROOT, 'src', 'vendor', '_generated.ts');
 const FILES = [
 	{ basename: 'check-agent-frontmatter.sh', constName: 'checkAgentFrontmatterShContents' },
 	{ basename: 'check-agent-frontmatter.ts', constName: 'checkAgentFrontmatterTsContents' },
-	{ basename: 'claude-auto-retry-patterns.ts', constName: 'claudeAutoRetryPatternsContents' },
 	{ basename: 'cam-loop-stop-hook.sh', constName: 'camLoopStopHookContents' },
 	{ basename: 'cam-loop.local.md.tmpl', constName: 'camLoopTmplContents' },
 ] as const;

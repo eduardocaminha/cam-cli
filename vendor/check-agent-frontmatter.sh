@@ -33,8 +33,8 @@ if [ ! -f "$TS_FILE" ]; then
   exit 2
 fi
 
-# Suppress Node's "type module" reparse warning — see claude-auto-retry-patterns.sh
-# for the rationale (matches pattern; keep CI logs clean).
+# Suppress Node's "type module" reparse warning when running .ts files with Node.
+# Keeps CI logs clean.
 export NODE_NO_WARNINGS=1
 
 if command -v bun >/dev/null 2>&1; then

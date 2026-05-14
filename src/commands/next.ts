@@ -145,7 +145,7 @@ export function renderStateFile(input: {
 	startedAt: string;
 	sessionId: string;
 	/**
-	 * PID of the long-running driver process (claude or claude-auto-retry)
+	 * PID of the long-running driver process (claude, spawned by cam next)
 	 * that owns the loop. `cam resume` (US-010) reads this back to
 	 * distinguish a still-alive loop from an orphaned state file: a stale
 	 * PID with no live process means the loop crashed (terminal closed, OS

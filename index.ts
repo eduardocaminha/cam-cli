@@ -27,6 +27,8 @@ import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runStop } from './src/commands/stop.ts';
+import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
+import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { printError, printHint } from './src/logging/color.ts';
 import { CAM_VERSION } from './src/version.ts';
 
@@ -40,6 +42,7 @@ Commands:
   run [options]           Open or attach the long-lived orchestrator (tmux session)
   plan [--issue <N>]      Spawn claude + dispatch /cam-plan; prompts on APPROVE
   next [options]          Spawn the autonomous loop (Ghostty split + claude + dashboard)
+  claude [args...]        Run claude in print mode with auto-retry on rate limits
   dashboard               Standalone read-only TUI (alt-screen) for monitoring a loop
   status                  Show current loop state at a glance (idle / active / paused)
   stop                    Cancel a running loop (clears state file + kills tmux session "cam")
@@ -66,9 +69,11 @@ Options:
 Behaviour:
   Stage 1 — Machine validation:
     1. Checks \`claude\` is on PATH and logged in.
-    2. Checks \`claude-auto-retry\` is on PATH.
-    3. Runs vendored smokes (check-agent-frontmatter, claude-auto-retry-patterns).
-    4. Writes ~/.config/cam/config.toml with permission_mode = "bypassPermissions".
+    2. Runs vendored smokes (check-agent-frontmatter).
+    3. Writes ~/.config/cam/config.toml with permission_mode = "bypassPermissions".
+    4. Writes ~/.config/cam/retry.toml with the built-in retry policy defaults
+       (first run only; existing file is preserved). Edit this file to tune
+       max attempts, rate-limit patterns, and the retry log retention window.
 
   Stage 2 — Project setup wizard (if stage 1 passes):
     1. Asks: new project or existing?
@@ -83,7 +88,11 @@ Behaviour:
     8. Auto-handoff: when the config agent emits CAM_SETUP_STATUS=DONE,
        the orchestrator is launched in a new pane immediately. The menu
        pane updates with options: o (orchestrator), c (config), k (kill
-       config pane), q (close menu).`;
+       config pane), q (close menu).
+
+Note: auto-retry on rate limits is built into cam — no external tool required.
+Rate-limit retry config: ~/.config/cam/retry.toml
+Retry logs:             ~/.cam/retry-logs/`;
 
 const RUN_HELP = `cam run — open or attach the long-lived orchestrator session
 
@@ -213,8 +222,8 @@ Usage:
 
 Auto-detected modes (no --mode flag):
   idle      No state file → run \`cam next\` to start fresh.
-  noop      claude-auto-retry process alive → loop is in a rate-limit
-            sleep window; will resume on its own.
+  noop      retry-monitor process alive (PID from ~/.cam/retry.pid) →
+            loop is in a rate-limit sleep window; will resume on its own.
   respawn   State file present + heartbeat PID dead + recent commit
             (≤ 24h) → re-spawn \`cam next\` to re-attach.
   prompt    State file present + heartbeat PID dead + last commit
@@ -558,6 +567,29 @@ async function main(argv: string[]): Promise<number> {
 				dryRun: parsed.dryRun,
 				force: parsed.force,
 			});
+		}
+		case 'claude': {
+			const parsed = parseClaudeArgs(argv.slice(3));
+			if (parsed.help) {
+				process.stdout.write(`${CLAUDE_HELP}\n`);
+				return 0;
+			}
+			return runClaude({ args: parsed.forwardedArgs });
+		}
+		// Internal subcommand — not listed in top-level HELP.
+		// Forked as a detached background process by forkMonitor() when running
+		// inside a tmux session.
+		case 'retry-monitor': {
+			const parsed = parseRetryMonitorArgs(argv.slice(3));
+			if (parsed === null) {
+				printHint('run `cam retry-monitor --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(`${RETRY_MONITOR_HELP}\n`);
+				return 0;
+			}
+			return runRetryMonitor({ pane: parsed.pane, pid: parsed.pid });
 		}
 		default:
 			printError(`unknown command: ${command}`);

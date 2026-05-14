@@ -64,8 +64,13 @@ export const deadKill: KillFn = () => {
 // --- spawnSync fake --------------------------------------------------------
 
 export interface SpawnHandlers {
-	/** When true, `pgrep -f claude-auto-retry` exits 0 with a fake PID line. */
-	autoRetryAlive?: boolean;
+	/**
+	 * When true, the retry-monitor PID is considered alive. Injected via
+	 * `retryMonitorFn` in `runResume` — no longer via `pgrep` since US-007
+	 * replaced process-table detection with PID-file
+	 * liveness (`~/.cam/retry.pid`).
+	 */
+	retryPidAlive?: boolean;
 	/**
 	 * Unix-seconds timestamp returned by `git -C <cwd> log -1 --format=%ct`.
 	 * `undefined` / `null` means git exits 1 (no commits / not a repo).
@@ -78,9 +83,17 @@ export interface SpawnHandlers {
  * call-spy-decorated so a test can assert exactly which subprocesses
  * `runResume` invoked — important for AC verification ("mocked process
  * table" must demonstrably replace the real one).
+ *
+ * Note: retry-monitor liveness is no longer controlled by `spawnFn` (we
+ * removed the `pgrep` path in US-007). Tests that need to simulate Mode 4
+ * (retry-monitor alive) should pass `retryMonitorFn: () => true` directly
+ * to `runResume` / `buildResumeReport`. The `retryPidAlive` handler is kept
+ * here so callers can express intent in the scenario fixture even though the
+ * actual injection is via a separate option key.
  */
 export function makeFakeSpawn(handlers: SpawnHandlers = {}): SpawnSyncFn & {
 	calls: Array<{ cmd: string; args: string[] }>;
+	retryPidAlive: boolean;
 } {
 	const calls: Array<{ cmd: string; args: string[] }> = [];
 	const fn = (
@@ -97,13 +110,6 @@ export function makeFakeSpawn(handlers: SpawnHandlers = {}): SpawnSyncFn & {
 			status: 1,
 			signal: null,
 		};
-		if (cmd === 'pgrep' && args[0] === '-f' && args[1] === 'claude-auto-retry') {
-			if (handlers.autoRetryAlive) {
-				result.status = 0;
-				result.stdout = '12345\n';
-			}
-			return result;
-		}
 		if (cmd === 'git' && args.includes('log')) {
 			if (
 				handlers.gitLogTimestampSec !== null &&
@@ -118,8 +124,10 @@ export function makeFakeSpawn(handlers: SpawnHandlers = {}): SpawnSyncFn & {
 	};
 	const decorated = fn as unknown as SpawnSyncFn & {
 		calls: Array<{ cmd: string; args: string[] }>;
+		retryPidAlive: boolean;
 	};
 	decorated.calls = calls;
+	decorated.retryPidAlive = handlers.retryPidAlive ?? false;
 	return decorated;
 }
 
@@ -239,9 +247,9 @@ export function buildScenarioMode3HardKill(): ScenarioPaths {
 /**
  * Mode 4 — rate-limit sleep killed mid-window. State file present, the
  * heartbeat PID is dead-from-the-loop's-POV (the worker exited mid-sleep)
- * but `claude-auto-retry` is still alive in the process table holding the
- * sleep window. Recovery action: noop (auto-retry will respawn `cam next`
- * on its own timer).
+ * but the retry-monitor is still alive in the process table holding the
+ * sleep window. Recovery action: noop (the retry-monitor will respawn
+ * `cam next` on its own timer).
  */
 export function buildScenarioMode4RateLimit(): ScenarioPaths {
 	const cwd = mkdtempSync(join(tmpdir(), 'cam-resume-mode4-'));
