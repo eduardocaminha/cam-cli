@@ -1,21 +1,13 @@
 #!/bin/bash
 # vendor/cam-loop-stop-hook.sh
 #
-# Based on (intentionally extended, no longer verbatim):
-#   ~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/hooks/stop-hook.sh
-# Upstream version: 1.0.0
-# Upstream sha256 (at time of base): 13c547e77956e44f6af41d1be140f55da0e1ee3c55a540b530f48ee7c7ba9a11
+# Cam Loop Stop Hook — prevents session exit when a cam-loop is active and
+# feeds Claude's last assistant output back as the next prompt to continue
+# the loop. Includes a secondary prd.json completion check that fires after
+# the standard <promise> tag check.
 #
-# Extended in US-003: secondary prd.json completion check added after the
-# standard <promise> tag check. See the "Secondary: prd.json completion check"
-# section below and vendor/README.md for the extension policy.
-#
-# The sha256 baseline for THIS (extended) file is in vendor/README.md and
+# The sha256 baseline for this file is in vendor/README.md and
 # test/vendor.test.ts. Run `bun test test/vendor.test.ts` to verify integrity.
-
-# Cam Loop Stop Hook
-# Prevents session exit when a cam-loop is active
-# Feeds Claude's output back as input to continue the loop
 
 set -euo pipefail
 

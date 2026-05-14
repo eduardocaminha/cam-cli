@@ -3,13 +3,11 @@
 // Covers the sha256 baseline for `vendor/cam-loop-stop-hook.sh` —
 // the baseline is documented in `vendor/README.md`. Any drift between the
 // on-disk file and the baseline fails the test, forcing the maintainer to
-// either rebaseline (re-run the drift-detection ceremony) or roll back.
+// either rebaseline or roll back.
 //
-// The byte-parity drift check against `~/Documents/Projects/reporter` was
-// removed when cam-cli took ownership of the vendored smokes (cam rename
-// diverged the comments from upstream Ralph terminology). cam-cli is now
-// the source of truth for these files; future re-vendoring flows back to
-// reporter, not the other way around.
+// cam-cli is the source of truth for the vendored hook + template; the
+// reporter checkout is referenced only for the smoke files
+// (check-agent-frontmatter.{sh,ts}, claude-auto-retry-patterns.ts).
 
 import { createHash } from 'node:crypto';
 import { describe, expect, test } from 'bun:test';
@@ -21,21 +19,20 @@ const VENDOR_DIR = resolve(fileURLToPath(import.meta.url), '..', '..', 'vendor')
 
 // --- Stop-hook sha256 baseline drift detection ----------------------------
 //
-// The baseline sha256 is documented in two places (vendor/README.md and the
-// comment header of vendor/cam-loop-stop-hook.sh). The test derives the
-// expected value from the README's documented baseline, not from a hardcoded
-// constant in this file, so the single source of truth for "what sha256 is
-// correct" remains the vendor/ documentation.
+// The baseline sha256 is documented in `vendor/README.md`. The test fails
+// whenever the on-disk file diverges from the documented baseline, so any
+// accidental edit to the hook produces an explicit test failure rather
+// than silent rot.
 
 describe('vendor/cam-loop-stop-hook.sh sha256 baseline', () => {
 	/**
-	 * sha256 baseline documented in `vendor/README.md`.
-	 * To update: re-run the drift-detection ceremony in README.md, then
-	 * change this constant AND the README's baseline AND the file header.
-	 * The test will fail whenever the file and this constant diverge —
-	 * that is the feature: silent rot becomes a test failure.
+	 * sha256 baseline documented in `vendor/README.md`. To update after an
+	 * intentional change to the hook: recompute the sha (`shasum -a 256
+	 * vendor/cam-loop-stop-hook.sh`), then change this constant AND the
+	 * README's baseline. The test fails whenever the file and this constant
+	 * diverge — silent rot becomes a test failure.
 	 */
-	const EXPECTED_SHA256 = '93b0cc03b1b4d1d4b07ec6f0c4857974fc89895e3b856fb5d57f0db505e1174c';
+	const EXPECTED_SHA256 = '32587c4699ecbf1f4e4bbf51761b518e4fabe74fa3b0cf8f71fdf3d1a214c5c6';
 
 	test('stop hook sha256 matches documented baseline (drift detection)', () => {
 		const hookPath = join(VENDOR_DIR, 'cam-loop-stop-hook.sh');

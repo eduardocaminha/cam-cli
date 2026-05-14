@@ -9,64 +9,16 @@ These files are vendored verbatim from the [eduardocaminha/reporter](https://git
 | `check-agent-frontmatter.sh` | `reporter:scripts/smoke/check-agent-frontmatter.sh` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `check-agent-frontmatter.ts` | `reporter:scripts/smoke/check-agent-frontmatter.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `claude-auto-retry-patterns.ts` | `reporter:scripts/smoke/claude-auto-retry-patterns.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
-| `cam-loop.local.md.tmpl` | `~/.claude/plugins/cache/claude-plugins-official/ralph-loop/<v>/scripts/setup-ralph-loop.sh` (output shape) | 1.0.0 |
-| `cam-loop-stop-hook.sh` | `~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/hooks/stop-hook.sh` | sha256: `93b0cc03b1b4d1d4b07ec6f0c4857974fc89895e3b856fb5d57f0db505e1174c` (1.0.0 base + US-003 prd.json secondary check + cam rename) |
+| `cam-loop.local.md.tmpl` | cam-cli (state file pre-armed by `cam next`)                                          | n/a |
+| `cam-loop-stop-hook.sh`  | cam-cli (stop hook wired into `.claude/settings.local.json` by `cam next`)            | sha256: `32587c4699ecbf1f4e4bbf51761b518e4fabe74fa3b0cf8f71fdf3d1a214c5c6` |
 
-The sha refers to the reporter HEAD at the time of the most recent re-vendor. `test/vendor.test.ts` runs the drift check on every `bun test` run when the reporter checkout is reachable at `~/Documents/Projects/reporter` — silently skips when missing (CI / non-dev machines / non-Eduardo contributors).
+The sha column for the reporter-derived files refers to the reporter HEAD at the time of the most recent re-vendor. `test/vendor.test.ts` runs the drift check on every `bun test` run when the reporter checkout is reachable at `~/Documents/Projects/reporter` — silently skips when missing (CI / non-dev machines / non-Eduardo contributors).
 
-The `cam-loop.local.md.tmpl` template mirrors the YAML-frontmatter-plus-prompt shape that the upstream plugin's `setup-ralph-loop.sh` emits to `.claude/cam-loop.local.md`. We pre-arm the file ourselves (instead of shelling into the plugin's setup script) so `cam next` works standalone — without requiring the operator to have a `claude` session running with the plugin installed yet. If the upstream plugin changes its state-file shape in a future release, bump the template here, update the version pin in this README, and re-test by running `cam next` against the new plugin and confirming the loop arms correctly. Drift detection for the template is implicit — the loop's stop hook silently fails to fire if the frontmatter keys diverge.
-
-## Stop-hook vendoring policy (`cam-loop-stop-hook.sh`)
-
-`cam-loop-stop-hook.sh` is vendored from the official `claude-plugins-official/ralph-loop` plugin so `cam next` can materialize the hook to `.claude/hooks/cam-loop-stop.sh` and wire it into `.claude/settings.local.json` — making the Stop hook fire **without** requiring the operator to have the plugin installed in a live Claude Code session.
-
-### Upstream source
-
-```
-~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/hooks/stop-hook.sh
-```
-
-### Vendored version: 1.0.0 + US-003 extension
-
-This file is based on plugin version 1.0.0 and was **intentionally extended** in US-003
-with a secondary prd.json completion check (defense-in-depth for Bug 3 + Bug 4). It is no
-longer verbatim upstream. The vendored copy is intentionally diverged; the drift-detection
-ceremony below applies only when the upstream plugin bumps its version and you need to
-re-merge upstream changes with the local extension.
-
-### sha256 baseline
-
-```
-93b0cc03b1b4d1d4b07ec6f0c4857974fc89895e3b856fb5d57f0db505e1174c
-```
-
-`bun test` computes this sha256 at runtime (in `test/vendor.test.ts`) and fails if the on-disk file diverges from the baseline — this converts silent rot into an explicit test failure and forces the maintainer to either rebaseline or re-run the drift-detection ceremony below.
-
-### Drift-detection ceremony (run before each cam-cli minor bump)
-
-```bash
-UPSTREAM=~/.claude/plugins/cache/claude-plugins-official/ralph-loop/1.0.0/hooks/stop-hook.sh
-VENDOR=~/Documents/Projects/cam-cli/vendor/cam-loop-stop-hook.sh
-
-# Check for drift
-diff <(sha256sum "$UPSTREAM" | cut -d' ' -f1) \
-     <(sha256sum "$VENDOR"   | cut -d' ' -f1) \
-  && echo "no drift — vendored copy matches upstream" \
-  || echo "DRIFT DETECTED — upstream has changed"
-
-# If drift found, re-vendor:
-#   1. Copy the new version verbatim (after the vendor header).
-#   2. Update the sha256 baseline above AND in the file's own header comment.
-#   3. Update the table row above.
-#   4. Run: bun test test/vendor.test.ts    # must pass
-#   5. Open a follow-up story to bump + re-vendor (don't auto-merge).
-```
-
-If the upstream plugin changes its stop-hook behavior in a future release, re-vendoring is its own follow-up story — not auto-merged. This converts a silent-rot risk into an explicit ceremony.
+The `cam-loop.local.md.tmpl` template defines the YAML-frontmatter-plus-prompt shape that `cam next` writes to `.claude/cam-loop.local.md` before spawning `claude`. The companion `cam-loop-stop-hook.sh` reads this file on every `Stop` event and either emits the next prompt or removes the file to terminate the loop. The `bun test` suite recomputes the stop-hook's sha256 at runtime (in `test/vendor.test.ts`) and fails if the on-disk file diverges from the baseline — converting silent rot into an explicit test failure.
 
 ## Why verbatim copies, not git submodules?
 
-A submodule would force `cam` consumers to clone the full reporter monorepo (~MB of unrelated code). Verbatim copies keep the `cam` binary self-contained. The drift-test alarm catches the only failure mode (silently outdated copies) without the consumer-side cost.
+A submodule would force `cam` consumers to clone the full reporter monorepo (~MB of unrelated code). Verbatim copies keep the `cam` binary self-contained. The drift-test alarm catches the only failure mode (silently outdated reporter copies) without the consumer-side cost.
 
 ## Re-vendoring procedure
 

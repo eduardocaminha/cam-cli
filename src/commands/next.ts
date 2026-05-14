@@ -7,12 +7,11 @@
 //      `readPermissionMode()` (default `bypassPermissions`). NO CLI flag
 //      overrides this — see acceptance criterion 7 of US-007 and
 //      `test/no-permission-mode-flag.test.ts`.
-//   2. Pre-arms the official `cam-loop` plugin by writing its state file
-//      `.claude/cam-loop.local.md` BEFORE claude starts. The on-disk shape
-//      mirrors what the plugin's `setup-ralph-loop.sh` produces (YAML
-//      frontmatter + prompt body); we vendored a template at
-//      `vendor/cam-loop.local.md.tmpl` so `cam next` works on a fresh
-//      machine without shelling into the plugin's setup script.
+//   2. Pre-arms the cam-loop state file `.claude/cam-loop.local.md` BEFORE
+//      claude starts, using the YAML-frontmatter-plus-prompt template at
+//      `vendor/cam-loop.local.md.tmpl`. The companion stop hook
+//      `vendor/cam-loop-stop-hook.sh` reads this file on every Stop event
+//      and either re-emits the prompt or removes the file to terminate.
 //   3. Detects the split mode:
 //        - `tmux` on PATH → tmux-split: pane A runs claude in the current
 //          terminal, pane B runs `cam dashboard` in a tmux pane. Works in
