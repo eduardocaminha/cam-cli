@@ -15,6 +15,37 @@ Examples of what belongs here:
 - **Regex capture groups**: `match()` capture groups are typed as `string | undefined` under strict+noUncheckedIndexedAccess — always use `?? ''` fallback on capture group access.
 -->
 
+## [2026-05-14 02:00] - US-003: Port tmux.ts + monitor.ts with processOneTick adapter for tests
+
+### What was done
+- Ported `tmux.js` → `src/retry/tmux.ts` using `Bun.spawn`/`Bun.spawnSync` instead of `node:child_process`. All arg-builder helpers typed with string params/return types.
+- Ported `monitor.js` → `src/retry/monitor.ts` with key architectural change: `processOneTick(state, pane, deps)` accepts a `TickDeps` object bundling all I/O (now, capturePane, sendKeys, getPaneCommand, isClaudeForeground, sleep, logger, config, isAlive) so tests can drive a full cycle synchronously.
+- `startMonitor` wires real Bun-backed adapters and runs the recursive-setTimeout loop, preserving original end-to-end behavior.
+- Both files carry MIT attribution header.
+- 20 tmux tests + 17 monitor tests; all isolated (no real tmux, no real sleep > 0ms, no real claude process).
+- `noUncheckedIndexedAccess` required `as unknown as string` double-cast in tests when bun typed `expect(null).toBe(...)`.
+
+### Files changed
+- src/retry/tmux.ts (new)
+- src/retry/monitor.ts (new)
+- test/retry/tmux.test.ts (new)
+- test/retry/monitor.test.ts (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: ok (no lint command configured)
+- Tests: 367 pass / 0 fail (37 new + 330 pre-existing)
+
+### Step 5.5 docs validation
+- lib: Bun.spawn, status: ok
+- Confirmed: `Bun.spawn(cmd, { stdout: "pipe" })` returns Subprocess with `.stdout: ReadableStream` and `.exited: Promise<number>`. `new Response(proc.stdout).text()` is the idiomatic read. `Bun.spawnSync` returns `SyncSubprocess` with `.stdout: Buffer | undefined`. Implementation matches API.
+
+### Notes
+- `Bun.spawn` stdout is `ReadableStream | null | undefined` depending on stdout option. With `{ stdout: "pipe" }` (the default), it's always a `ReadableStream` — safe to pass to `new Response()`.
+- `processOneTick` signature is `(state, pane, deps)` — the `deps` param is a single object so future stories can add fields without breaking call sites.
+- The "isAlive after waitUntil" check returns `"exit"` before doing the rate-limit check — matches original monitor.js logic exactly.
+---
+
 ## [2026-05-14 01:00] - US-002: Port config.ts + logger.ts with cam-namespaced paths
 
 ### What was done

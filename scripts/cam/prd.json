@@ -96,7 +96,7 @@
         "Tests pass"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Source: /opt/homebrew/lib/node_modules/claude-auto-retry/src/tmux.js and monitor.js. New files: src/retry/tmux.ts, src/retry/monitor.ts, test/retry/tmux.test.ts, test/retry/monitor.test.ts. Depends on US-001 (patterns, time-parser) and US-002 (config, logger). The `processOneTick` shape is the key testability requirement called out in the issue spec — keep deps as a single object param so future stories can inject more without breaking signatures."
     },
