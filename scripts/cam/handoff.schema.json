@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Cam Inter-Story Handoff",
+  "description": "Machine-readable state transfer between cam story iterations. Written after completing a story, read at the start of the next.",
+  "type": "object",
+  "required": ["lastCompletedStory", "branchName", "timestamp"],
+  "properties": {
+    "lastCompletedStory": {
+      "type": "object",
+      "description": "The story that was just completed",
+      "required": ["id", "title"],
+      "properties": {
+        "id": { "type": "string", "description": "Story ID, e.g. US-004" },
+        "title": { "type": "string", "description": "Story title from PRD" }
+      }
+    },
+    "branchName": {
+      "type": "string",
+      "description": "Git branch name from the PRD"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when the handoff was written"
+    },
+    "createdFiles": {
+      "type": "array",
+      "description": "Files created during this story",
+      "items": { "type": "string" }
+    },
+    "modifiedFiles": {
+      "type": "array",
+      "description": "Existing files modified during this story",
+      "items": { "type": "string" }
+    },
+    "openQuestions": {
+      "type": "array",
+      "description": "Unresolved questions or decisions deferred to a future story",
+      "items": { "type": "string" }
+    },
+    "nextStoryContext": {
+      "type": "string",
+      "description": "Free-text context the next story iteration should know about — gotchas, dependencies, or setup needed"
+    },
+    "officialDocsValidated": {
+      "type": "array",
+      "description": "Result of Step 5.5 (see .claude/commands/cam-next.md) — one entry per external library cross-checked against its current official docs.",
+      "items": {
+        "type": "object",
+        "required": ["lib", "status"],
+        "properties": {
+          "lib": {
+            "type": "string",
+            "description": "Library / service name. Use literal 'none' when status='no_external_lib_touched'."
+          },
+          "url": {
+            "type": "string",
+            "description": "Exact docs URL that was fetched. Omit when status='no_external_lib_touched'."
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp of the fetch. Omit when status='no_external_lib_touched'."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["aligned", "corrected", "no_external_lib_touched", "fetch_failed"],
+            "description": "aligned: code matches current docs. corrected: code was misaligned and fixed during Step 5.5. no_external_lib_touched: pure refactor/copy/doc/harness story. fetch_failed: fetch failed — reviewer re-checks at PR time."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Optional one-line note about what was checked/aligned/corrected."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
