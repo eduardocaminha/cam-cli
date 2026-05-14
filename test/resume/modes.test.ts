@@ -5,18 +5,18 @@
 // This file is the AC-driven scenario suite: one `describe` block per
 // failure mode, each block walking `runResume` end-to-end against a
 // tmpdir-backed cwd with a mocked filesystem AND a mocked process table
-// (via injected `SpawnSyncFn` + `KillFn` — never a real PID, never a real
-// `pgrep`). The 4 modes mirror `scripts/cam/CLAUDE.md § Resume
-// reconciliation`:
+// (via injected `SpawnSyncFn` + `KillFn` + `retryMonitorFn` — never a real
+// PID, never a real subprocess). The 4 modes mirror `scripts/cam/CLAUDE.md
+// § Resume reconciliation`:
 //
 //   Mode 1 — operator typed mid-loop      → respawn
 //   Mode 2 — terminal closed / OS reboot  → respawn (no prompt)
 //   Mode 3 — hard-kill orphan (> 24h)     → prompt [Y/n/reset]
 //   Mode 4 — rate-limit sleep mid-window  → noop
 //
-// The pre-existing 51 tests in `test/resume.test.ts` cover the pure
+// The pre-existing tests in `test/resume.test.ts` cover the pure
 // classifier (`classifyResumeMode`) and the helper utilities (`isPidAlive`,
-// `isAutoRetryAlive`, `resetCurrentStoryInPlace`, etc.) at unit granularity.
+// `isRetryMonitorAlive`, `resetCurrentStoryInPlace`, etc.) at unit granularity.
 // US-014 deliberately layers ON TOP of that, exercising the public
 // `runResume` entrypoint per the AC's "all 4 tests run under
 // `bun test test/resume/`" requirement. The fixtures live one directory up
@@ -27,7 +27,7 @@
 //     groups + the 3 sub-checks of Mode 3 (Y/n/reset).
 //   - `bunx tsc --noEmit` is checked in the per-workspace quality gate
 //     after this file lands.
-//   - No real subprocesses, no real PIDs, no real `pgrep` invocation —
+//   - No real subprocesses, no real PIDs, no real PID-file reads —
 //     every external dep that `runResume` reaches for is injected.
 
 import { describe, expect, test } from 'bun:test';
@@ -69,6 +69,7 @@ describe('US-014 Mode 1 — operator typed mid-loop', () => {
 						gitLogTimestampSec: Math.floor(RECENT_COMMIT_MS / 1000),
 					}),
 					killFn: aliveKill,
+					retryMonitorFn: () => false,
 					prompt: () => {
 						throw new Error(
 							'Mode 1 must NOT prompt — operator typed mid-loop, no recovery question',
@@ -98,7 +99,7 @@ describe('US-014 Mode 1 — operator typed mid-loop', () => {
 		}
 	});
 
-	test('Mode 1 invokes pgrep + git log via the injected spawn — never a real subprocess', async () => {
+	test('Mode 1 invokes only git log via the injected spawn — no real subprocesses', async () => {
 		const { cwd } = buildScenarioMode1OperatorTyped();
 		try {
 			const stdout = silenceStdout();
@@ -111,15 +112,17 @@ describe('US-014 Mode 1 — operator typed mid-loop', () => {
 					now: () => NOW,
 					spawnFn: spawn,
 					killFn: aliveKill,
+					retryMonitorFn: () => false,
 					prompt: () => 'n',
 				});
-				// Sanity: the only subprocesses we reach for are pgrep and git.
+				// After US-007, the only subprocess `runResume` calls via
+				// spawnFn is `git log` for the commit timestamp. pgrep is gone
+				// (replaced by PID-file liveness via retryMonitorFn).
 				const subprocs = new Set(spawn.calls.map((c) => c.cmd));
-				expect(subprocs.has('pgrep')).toBe(true);
 				expect(subprocs.has('git')).toBe(true);
-				// Nothing else — `runResume` does NOT shell out to claude /
-				// claude-auto-retry here.
-				expect(subprocs.size).toBe(2);
+				expect(subprocs.has('pgrep')).toBe(false);
+				// Nothing else.
+				expect(subprocs.size).toBe(1);
 			} finally {
 				stdout.restore();
 			}
@@ -144,6 +147,7 @@ describe('US-014 Mode 2 — terminal closed / OS rebooted', () => {
 						gitLogTimestampSec: Math.floor(RECENT_COMMIT_MS / 1000),
 					}),
 					killFn: deadKill,
+					retryMonitorFn: () => false,
 					prompt: () => {
 						throw new Error(
 							'Mode 2 must NOT prompt — recent commit means crash was recent enough to auto-respawn',
@@ -185,6 +189,7 @@ describe('US-014 Mode 2 — terminal closed / OS rebooted', () => {
 						killCalls.push(pid);
 						throw new Error('ESRCH');
 					},
+					retryMonitorFn: () => false,
 					prompt: () => 'n',
 				});
 				expect(code).toBe(0);
@@ -215,6 +220,7 @@ describe('US-014 Mode 3 — hard-kill orphan', () => {
 						gitLogTimestampSec: Math.floor(OLD_COMMIT_MS / 1000),
 					}),
 					killFn: deadKill,
+					retryMonitorFn: () => false,
 					prompt: () => {
 						promptCount += 1;
 						return 'y';
@@ -244,6 +250,7 @@ describe('US-014 Mode 3 — hard-kill orphan', () => {
 						gitLogTimestampSec: Math.floor(OLD_COMMIT_MS / 1000),
 					}),
 					killFn: deadKill,
+					retryMonitorFn: () => false,
 					prompt: () => 'n',
 				});
 				// Exit 1 is the documented "operator declined to recover"
@@ -272,6 +279,7 @@ describe('US-014 Mode 3 — hard-kill orphan', () => {
 						gitLogTimestampSec: Math.floor(OLD_COMMIT_MS / 1000),
 					}),
 					killFn: deadKill,
+					retryMonitorFn: () => false,
 					prompt: () => 'reset',
 				});
 				expect(code).toBe(0);
@@ -299,6 +307,7 @@ describe('US-014 Mode 3 — hard-kill orphan', () => {
 							gitLogTimestampSec: Math.floor(OLD_COMMIT_MS / 1000),
 						}),
 						killFn: deadKill,
+						retryMonitorFn: () => false,
 						prompt: () => 'y',
 					});
 					expect(code).toBe(0); // y → continue
@@ -322,6 +331,7 @@ describe('US-014 Mode 3 — hard-kill orphan', () => {
 						// gitLogTimestampSec omitted → spawn returns status 1
 						spawnFn: makeFakeSpawn({}),
 						killFn: deadKill,
+						retryMonitorFn: () => false,
 						prompt: () => {
 							promptCalled = true;
 							return 'y';
@@ -342,7 +352,7 @@ describe('US-014 Mode 3 — hard-kill orphan', () => {
 // --- Mode 4 — rate-limit sleep killed mid-window --------------------------
 
 describe('US-014 Mode 4 — rate-limit sleep killed mid-window', () => {
-	test('claude-auto-retry alive (mocked) → noop, no prompt, state file preserved', async () => {
+	test('retry-monitor alive (mocked via retryMonitorFn) → noop, no prompt, state file preserved', async () => {
 		const { cwd, stateFilePath } = buildScenarioMode4RateLimit();
 		try {
 			const stdout = silenceStdout();
@@ -350,17 +360,16 @@ describe('US-014 Mode 4 — rate-limit sleep killed mid-window', () => {
 				const code = await runResume({
 					cwd,
 					now: () => NOW,
-					// Critical: `autoRetryAlive: true` makes the fake `pgrep`
-					// exit 0 with a fake pid, so `isAutoRetryAlive` returns
-					// true and the classifier short-circuits to `noop`.
 					spawnFn: makeFakeSpawn({
-						autoRetryAlive: true,
 						gitLogTimestampSec: Math.floor(OLD_COMMIT_MS / 1000),
 					}),
 					killFn: deadKill,
+					// Critical: retryMonitorFn returning true simulates a live
+					// retry-monitor PID, so the classifier short-circuits to `noop`.
+					retryMonitorFn: () => true,
 					prompt: () => {
 						throw new Error(
-							'Mode 4 must NOT prompt — claude-auto-retry will respawn the loop on its own timer',
+							'Mode 4 must NOT prompt — retry-monitor will respawn the loop on its own timer',
 						);
 					},
 				});
@@ -375,9 +384,9 @@ describe('US-014 Mode 4 — rate-limit sleep killed mid-window', () => {
 	});
 
 	test('Mode 4 short-circuits even when the heartbeat PID is also alive', async () => {
-		// Edge case from the existing classifier test: claude-auto-retry alive
+		// Edge case from the existing classifier test: retry-monitor alive
 		// + state-file-PID also alive. Mode 4 must win over Mode 1 because
-		// auto-retry owns the recovery cycle — re-confirmed end-to-end.
+		// the retry monitor owns the recovery cycle — re-confirmed end-to-end.
 		const { cwd } = buildScenarioMode4RateLimit();
 		try {
 			// Override the state-file PID to ALIVE so isPidAlive returns true.
@@ -392,10 +401,10 @@ describe('US-014 Mode 4 — rate-limit sleep killed mid-window', () => {
 					cwd,
 					now: () => NOW,
 					spawnFn: makeFakeSpawn({
-						autoRetryAlive: true,
 						gitLogTimestampSec: Math.floor(RECENT_COMMIT_MS / 1000),
 					}),
 					killFn: aliveKill,
+					retryMonitorFn: () => true,
 					prompt: () => {
 						promptCalled = true;
 						return 'n';
@@ -414,8 +423,8 @@ describe('US-014 Mode 4 — rate-limit sleep killed mid-window', () => {
 
 // --- Cross-mode sanity ----------------------------------------------------
 
-describe('US-014 — fixtures use a mocked process table (no real PIDs / no real pgrep)', () => {
-	test('every Mode test injects deadKill / aliveKill — never process.kill on the real PID', () => {
+describe('US-014 — fixtures use a mocked process table (no real PIDs / no real pgrep / no real PID file)', () => {
+	test('every Mode test injects deadKill / aliveKill / retryMonitorFn — never touches real OS resources', () => {
 		// Compile-time-style assertion: the `deadKill` and `aliveKill`
 		// helpers in the scenario fixture file are the only ones any test
 		// in this directory imports. If a future contributor adds a test

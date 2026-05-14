@@ -27,12 +27,12 @@
 //   4. `bunx tsc --noEmit` passes.
 //
 // Sleep-state semantics: the plugin doesn't write a "sleeping" marker per se,
-// but `claude-auto-retry`'s rate-limit pause manifests as the loop being armed
-// (state file present, active:true) but no recent commits or stdout. We
-// surface a `state` value of `active` (state file present + active:true),
-// `paused` (state file present + active:false — the plugin sets this on
-// completion or cancel), `idle` (no state file at all). A future story can
-// promote `active-but-stalled` to a third bucket if we add a heartbeat field.
+// but a rate-limit pause manifests as the loop being armed (state file
+// present, active:true) but no recent commits or stdout. We surface a `state`
+// value of `active` (state file present + active:true), `paused` (state file
+// present + active:false — the plugin sets this on completion or cancel),
+// `idle` (no state file at all). A future story can promote `active-but-stalled`
+// to a third bucket if we add a heartbeat field.
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';

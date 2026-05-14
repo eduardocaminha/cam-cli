@@ -70,13 +70,13 @@ fi
 echo "[build-release]   ${ACTUAL}"
 
 # --- Sanity: AC4 (init runs, soft-checks) ----------------------------------
-# `cam init` validates PATH for claude/claude-auto-retry + runs vendored
-# smokes. On the dev machine these pass; on a CI box they may fail (no
-# claude binary). We invoke it with a tmp config so we don't clobber the
-# operator's real ~/.config, and we log but DON'T abort on non-zero — the
-# acceptance criterion is "runs the validator without erroring", which we
-# interpret as "the binary executes and exits cleanly with structured
-# diagnostics", not "every check passes on every machine".
+# `cam init` validates PATH for claude + runs vendored smokes. On the dev
+# machine these pass; on a CI box they may fail (no claude binary). We invoke
+# it with a tmp config so we don't clobber the operator's real ~/.config,
+# and we log but DON'T abort on non-zero — the acceptance criterion is "runs
+# the validator without erroring", which we interpret as "the binary executes
+# and exits cleanly with structured diagnostics", not "every check passes on
+# every machine".
 echo "[build-release] invoking init (soft-check)"
 TMP_CONFIG="$(mktemp -d)/config.toml"
 if CAM_CONFIG_PATH="${TMP_CONFIG}" "${BIN}" init; then

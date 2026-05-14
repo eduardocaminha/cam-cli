@@ -2,18 +2,16 @@
 //
 // Implementation of `cam init` — the per-machine readiness validator.
 //
-// Acceptance criteria (US-005):
+// Acceptance criteria (US-005, updated US-007):
 //   1. Validates `claude` is on PATH; parses `--version`; warns (does not fail) on mismatch.
-//   2. Validates `claude-auto-retry` is on PATH.
-//   3. Runs the vendored smokes from `vendor/`:
+//   2. Runs the vendored smokes from `vendor/`:
 //        - `check-agent-frontmatter.ts` (gcc-style YAML frontmatter validator)
-//        - `claude-auto-retry-patterns.ts` (legacy + TUI rate-limit pattern smoke)
 //      A vendored-smoke exit 2 is treated as "skip-with-warning" not "fail" —
-//      it means the smoke can't run in this environment (e.g. no git repo,
-//      no claude-auto-retry installed) and that's fine for `init`.
-//   4. Writes `~/.config/cam/config.toml` with `permission_mode = "bypassPermissions"`,
+//      it means the smoke can't run in this environment (e.g. no git repo)
+//      and that's fine for `init`.
+//   3. Writes `~/.config/cam/config.toml` with `permission_mode = "bypassPermissions"`,
 //      preserving any other existing keys.
-//   5. Exits 0 on a clean machine, non-zero with structured diagnostics on a corrupted one.
+//   4. Exits 0 on a clean machine, non-zero with structured diagnostics on a corrupted one.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -147,21 +145,6 @@ function validateClaude(): ValidationResult {
 	};
 }
 
-function validateClaudeAutoRetry(): ValidationResult {
-	const path = lookupOnPath('claude-auto-retry');
-	if (!path) {
-		return {
-			ok: false,
-			message: 'claude-auto-retry is not on PATH',
-			hint: 'install via `npm install -g claude-auto-retry` (or `brew install claude-auto-retry` if a tap exists)',
-		};
-	}
-	return {
-		ok: true,
-		message: `claude-auto-retry found at ${path}`,
-	};
-}
-
 // --- Vendored smoke runners ------------------------------------------------
 
 /**
@@ -200,11 +183,12 @@ function runVendoredSmoke(scriptPath: string): SmokeResult {
 	const stderr = result.stderr ?? '';
 	const status = result.status ?? -1;
 
-	// Heuristic for the "skip-when-uninstalled" pattern in claude-auto-retry-patterns.ts:
-	// the script logs `[smoke] ... skipping` to stdout and exits 0. A passing run
-	// also exits 0 but logs a different summary, so the heuristic discriminates by
-	// substring. False-positive on a script that legitimately printed "skipping"
-	// in its success summary would be a minor labelling issue, not a correctness one.
+	// Heuristic for the "skip-when-environment-unavailable" pattern: if a smoke
+	// script logs `[smoke] ... skipping` to stdout and exits 0, we treat it as
+	// "skipped" rather than "passed". A passing run also exits 0 but logs a
+	// different summary, so the heuristic discriminates by substring. A
+	// false-positive on a script that legitimately printed "skipping" in its
+	// success summary would be a minor labelling issue, not a correctness one.
 	const isSkipLog = /\bskipping\b/i.test(stdout) || /\bskipping\b/i.test(stderr);
 
 	if (status === 0) {
@@ -257,25 +241,12 @@ export function runInit(options: InitOptions = {}): number {
 		failures.push('claude');
 	}
 
-	// 2. claude-auto-retry
-	const autoRetry = validateClaudeAutoRetry();
-	if (autoRetry.ok) {
-		printSuccess(autoRetry.message);
-	} else {
-		printError(autoRetry.message, autoRetry.hint);
-		failures.push('claude-auto-retry');
-	}
-
-	// 3. vendored smokes
+	// 2. vendored smokes
 	const frontmatter = runVendoredSmoke(vendorScriptPath('check-agent-frontmatter.ts'));
 	reportSmoke('check-agent-frontmatter', frontmatter);
 	if (!frontmatter.ok) failures.push('check-agent-frontmatter');
 
-	const autoRetryPatterns = runVendoredSmoke(vendorScriptPath('claude-auto-retry-patterns.ts'));
-	reportSmoke('claude-auto-retry-patterns', autoRetryPatterns);
-	if (!autoRetryPatterns.ok) failures.push('claude-auto-retry-patterns');
-
-	// 4. write config
+	// 3. write config
 	const configPath = options.configPath ?? defaultConfigPath();
 	try {
 		mergeIntoConfig(configPath, { permission_mode: 'bypassPermissions' });

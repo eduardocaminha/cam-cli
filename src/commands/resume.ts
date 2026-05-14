@@ -33,8 +33,8 @@
 //                                n     → abort (exit 1; do nothing)
 //                                reset → remove state file + exit 0
 //   - `noop`                — Mode 4: rate-limit sleep killed mid-window.
-//                             `claude-auto-retry`'s PID is alive (detected
-//                             via `pgrep -f claude-auto-retry`); the loop
+//                             The retry-monitor PID recorded in
+//                             `~/.cam/retry.pid` is still alive; the loop
 //                             will resume on its own. We spawn `cam next`
 //                             normally — the existing loop's plugin
 //                             refuses-to-clobber semantics protect the
@@ -62,7 +62,7 @@
 //   3. Mode 2 (terminal closed): state file + PID dead.
 //   4. Mode 3 (hard-kill): state file + PID dead + > 24h since last commit
 //      → prompts [Y/n/reset].
-//   5. Mode 4 (rate-limit alive): claude-auto-retry PID alive → no-op.
+//   5. Mode 4 (rate-limit alive): retry-monitor PID alive (from ~/.cam/retry.pid) → no-op.
 //   6. Auto-cleanup of orphan state file when reality has moved on (PRD
 //      already complete).
 //   7. Bun unit tests for each mode with mocked filesystem + processes.
@@ -75,6 +75,7 @@ import process from 'node:process';
 
 import { parseStateFile, type LoopState, type PrdShape } from './status.ts';
 import { color, muted, printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
+import { readRetryPid, isRetryPidAlive } from '../util/retry-pid.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -96,7 +97,7 @@ export const HARD_KILL_AGE_MS = 24 * 60 * 60 * 1000;
  * so a programmatic caller (or future TUI) can branch.
  */
 export type ResumeMode =
-	| 'noop' // Mode 4: claude-auto-retry alive, just re-spawn `cam next`
+	| 'noop' // Mode 4: retry-monitor PID alive, just re-spawn `cam next`
 	| 'respawn' // Mode 1+2: state file present, no live PID, recent activity
 	| 'prompt' // Mode 3: needs operator [Y/n/reset]
 	| 'success' // PRD complete; auto-clean state file + exit 0
@@ -110,7 +111,7 @@ export interface ResumeReport {
 	stateFilePresent: boolean;
 	prdComplete: boolean;
 	pidAlive: boolean;
-	autoRetryAlive: boolean;
+	retryPidAlive: boolean;
 	lastCommitAgeMs?: number;
 	cleanedStateFile: boolean;
 	notes: string[]; // human-readable diagnostics for the printer
@@ -215,15 +216,15 @@ export function isPidAlive(pid: number | undefined, killFn: KillFn): boolean {
 }
 
 /**
- * Does any `claude-auto-retry` process exist on this machine? Probes via
- * `pgrep -f claude-auto-retry` (POSIX; macOS + Linux). Exit 0 means a match
- * was found; exit 1 means no match; any other exit is treated as "unknown,
- * assume not running" (safer to fall through to the auto-detect path than to
- * spuriously short-circuit on a tooling glitch).
+ * Is the cam retry-monitor process still alive? Reads the PID from
+ * `~/.cam/retry.pid` (written by `cam claude` when it forks the monitor)
+ * and checks liveness via `isRetryPidAlive`. Returns `false` when the PID
+ * file is absent or the process has exited.
  */
-export function isAutoRetryAlive(spawnFn: SpawnSyncFn): boolean {
-	const result = spawnFn('pgrep', ['-f', 'claude-auto-retry'], { encoding: 'utf8' });
-	return result.status === 0 && result.stdout.trim().length > 0;
+export function isRetryMonitorAlive(): boolean {
+	const pid = readRetryPid();
+	if (pid === null) return false;
+	return isRetryPidAlive(pid);
 }
 
 // --- Mode classification ---------------------------------------------------
@@ -240,12 +241,12 @@ export interface ClassifyInput {
  * tests can drive each branch deterministically. Encapsulates the 4-mode
  * decision tree from the acceptance criteria:
  *
- *   if PRD complete                          → success (auto-clean)
- *   else if no state file                    → idle (fresh `cam next`)
- *   else if claude-auto-retry alive          → noop  (Mode 4)
- *   else if heartbeat PID alive              → respawn (Mode 1: typed mid-loop)
- *   else if last commit > 24h old (or null)  → prompt (Mode 3: hard-kill orphan)
- *   else                                     → respawn (Mode 2: recent crash)
+ *   if PRD complete                               → success (auto-clean)
+ *   else if no state file                         → idle (fresh `cam next`)
+ *   else if retry-monitor PID alive               → noop  (Mode 4)
+ *   else if heartbeat PID alive                   → respawn (Mode 1: typed mid-loop)
+ *   else if last commit > 24h old (or null)       → prompt (Mode 3: hard-kill orphan)
+ *   else                                          → respawn (Mode 2: recent crash)
  *
  * The "PID alive but operator typed mid-loop" branch (the spec's Mode 1)
  * collapses into the same `respawn` action because the user-facing behavior
@@ -257,7 +258,7 @@ export function classifyResumeMode(
 	prd: PrdShape | null,
 	lastCommitMs: number | null,
 	pidAlive: boolean,
-	autoRetryAlive: boolean,
+	retryMonitorAlive: boolean,
 	now: Date,
 ): { mode: ResumeMode; reason: string } {
 	if (isPrdComplete(prd)) {
@@ -272,10 +273,10 @@ export function classifyResumeMode(
 			reason: 'no `.claude/cam-loop.local.md` — ready for a fresh `cam next`',
 		};
 	}
-	if (autoRetryAlive) {
+	if (retryMonitorAlive) {
 		return {
 			mode: 'noop',
-			reason: 'claude-auto-retry process is alive — loop is sleeping in a rate-limit window',
+			reason: 'retry-monitor process is alive — loop is sleeping in a rate-limit window',
 		};
 	}
 	if (pidAlive) {
@@ -414,10 +415,16 @@ export interface ResumeOptions {
 	cwd?: string;
 	/** Override "now" for tests. */
 	now?: () => Date;
-	/** Inject `spawnSync` for liveness probes + git lookups. Default: real `spawnSync`. */
+	/** Inject `spawnSync` for git lookups. Default: real `spawnSync`. */
 	spawnFn?: SpawnSyncFn;
 	/** Inject `process.kill`. Default: `process.kill`. */
 	killFn?: KillFn;
+	/**
+	 * Inject the retry-monitor liveness check. Default: `isRetryMonitorAlive()`.
+	 * Tests inject this so they can control the PID-file liveness path without
+	 * touching the real `~/.cam/retry.pid` on the host machine.
+	 */
+	retryMonitorFn?: () => boolean;
 	/** Inject the prompt function. Default: blocking `prompt(...)` global. */
 	prompt?: PromptFn;
 	/** Skip auto-detection; honor an explicit reset mode. */
@@ -439,20 +446,21 @@ export function buildResumeReport(options: ResumeOptions = {}): ResumeReport {
 	const now = options.now ?? (() => new Date());
 	const spawnFn = options.spawnFn ?? ((cmd, args, opts) => spawnSync(cmd, args, opts));
 	const killFn = options.killFn ?? ((pid: number, signal: 0) => process.kill(pid, signal));
+	const retryMonitorFn = options.retryMonitorFn ?? isRetryMonitorAlive;
 
 	const state = readStateFile(cwd);
 	const prd = readPrd(cwd);
 	const lastCommitMs = readLastCommitTimestamp(cwd, spawnFn);
 	const pidAlive = isPidAlive(state?.pid, killFn);
-	const autoRetryAlive = isAutoRetryAlive(spawnFn);
+	const retryPidAliveResult = retryMonitorFn();
 
-	const decision = classifyResumeMode(state, prd, lastCommitMs, pidAlive, autoRetryAlive, now());
+	const decision = classifyResumeMode(state, prd, lastCommitMs, pidAlive, retryPidAliveResult, now());
 	const report: ResumeReport = {
 		mode: decision.mode,
 		stateFilePresent: state !== null,
 		prdComplete: isPrdComplete(prd),
 		pidAlive,
-		autoRetryAlive,
+		retryPidAlive: retryPidAliveResult,
 		cleanedStateFile: false,
 		notes: [decision.reason],
 	};
@@ -504,7 +512,7 @@ export async function runResume(options: ResumeOptions = {}): Promise<number> {
 			printHint('run `cam next` to start a fresh loop');
 			return 0;
 		case 'noop':
-			printHint('claude-auto-retry is sleeping — its next wake will spawn `cam next`');
+			printHint('retry-monitor is sleeping — it will respawn `cam next` when the rate-limit window ends');
 			return 0;
 		case 'respawn':
 			printHint('next step: re-run `cam next` from this cwd to re-attach the loop');
@@ -650,7 +658,7 @@ function printSummary(report: ResumeReport): void {
 		`pid:     ${report.pidAlive ? color.green('alive') : muted('dead/absent')}\n`,
 	);
 	process.stdout.write(
-		`retry:   ${report.autoRetryAlive ? color.green('claude-auto-retry alive') : muted('not running')}\n`,
+		`retry:   ${report.retryPidAlive ? color.green('retry-monitor alive') : muted('not running')}\n`,
 	);
 	if (typeof report.lastCommitAgeMs === 'number') {
 		const hours = Math.floor(report.lastCommitAgeMs / (60 * 60 * 1000));

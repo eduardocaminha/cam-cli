@@ -19,7 +19,6 @@ Built on Bun + TypeScript. Distributed as a single-file binary built from source
 `cam` shells out to a few tools — install these first:
 
 - **[Claude Code CLI](https://docs.claude.com/en/docs/agents-and-tools/claude-code/quickstart)** — the agent that runs inside every cam pane (`claude` on PATH, signed in)
-- **[claude-auto-retry](https://github.com/agnostic-apollo/claude-auto-retry)** — wrapper that retries claude on transient failures (`claude-auto-retry` on PATH)
 - **tmux** — every cam session lives in a tmux split (`brew install tmux`)
 - **Bun ≥ 1.2** — required only for source installs (`brew install oven-sh/bun/bun`)
 - **`gh` CLI** — only required if you pick `github` as your project's issue system (`brew install gh && gh auth login`)

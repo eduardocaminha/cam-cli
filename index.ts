@@ -69,9 +69,8 @@ Options:
 Behaviour:
   Stage 1 — Machine validation:
     1. Checks \`claude\` is on PATH and logged in.
-    2. Checks \`claude-auto-retry\` is on PATH.
-    3. Runs vendored smokes (check-agent-frontmatter, claude-auto-retry-patterns).
-    4. Writes ~/.config/cam/config.toml with permission_mode = "bypassPermissions".
+    2. Runs vendored smokes (check-agent-frontmatter).
+    3. Writes ~/.config/cam/config.toml with permission_mode = "bypassPermissions".
 
   Stage 2 — Project setup wizard (if stage 1 passes):
     1. Asks: new project or existing?
@@ -216,8 +215,8 @@ Usage:
 
 Auto-detected modes (no --mode flag):
   idle      No state file → run \`cam next\` to start fresh.
-  noop      claude-auto-retry process alive → loop is in a rate-limit
-            sleep window; will resume on its own.
+  noop      retry-monitor process alive (PID from ~/.cam/retry.pid) →
+            loop is in a rate-limit sleep window; will resume on its own.
   respawn   State file present + heartbeat PID dead + recent commit
             (≤ 24h) → re-spawn \`cam next\` to re-attach.
   prompt    State file present + heartbeat PID dead + last commit

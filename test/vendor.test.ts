@@ -7,7 +7,7 @@
 //
 // cam-cli is the source of truth for the vendored hook + template; the
 // reporter checkout is referenced only for the smoke files
-// (check-agent-frontmatter.{sh,ts}, claude-auto-retry-patterns.ts).
+// (check-agent-frontmatter.{sh,ts}).
 
 import { createHash } from 'node:crypto';
 import { describe, expect, test } from 'bun:test';

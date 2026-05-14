@@ -4,7 +4,7 @@
 //
 // The PID file records the OS PID of the most-recently-forked retry-monitor
 // child so that cam resume (US-007) can detect whether a monitor is still
-// alive without relying on the external `claude-auto-retry` binary.
+// alive without relying on an external binary.
 //
 // Single-file convention: one global file per user at ~/.cam/retry.pid.
 // Projects with concurrent monitors would need a per-project path — that is
