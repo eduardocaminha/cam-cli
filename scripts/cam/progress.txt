@@ -16,6 +16,41 @@ Examples of what belongs here:
 - **Bun.spawn detached option**: `detached?: boolean` is in `bun.d.ts` (calls `setsid()` on POSIX) but the docs webpage omits it. Check `node_modules/bun-types/bun.d.ts` directly for full option surface. Always pair with `proc.unref()` and `stdio: ['ignore','ignore','ignore']` to prevent parent from waiting on child.
 -->
 
+## [2026-05-14 05:00] - US-006: Switchover: route internal claude spawns through cam claude and add retry-pid helpers
+
+### What was done
+- Created `src/util/retry-pid.ts` exporting `retryPidPath`, `writeRetryPid`, `readRetryPid`, `isRetryPidAlive`, `removeRetryPid`. PID file lives at `~/.cam/retry.pid`. Liveness uses `process.kill(pid, 0)` — throws ESRCH if dead, EPERM if alive-but-not-ours (treated as alive).
+- Updated `DetachedSpawnAdapter` interface in `src/retry/launcher.ts` to return `number` (the child PID) instead of `void`. Updated `defaultDetachedSpawn` to return `proc.pid`.
+- Added `onMonitorSpawned?: (monitorPid: number) => void` to `InteractiveOptions`. `forkMonitor` now calls `onMonitorSpawned(monitorPid)` immediately after spawning the child.
+- Updated `src/commands/claude.ts`: imports `writeRetryPid` and `removeRetryPid`; passes `onMonitorSpawned: writeRetryPid` and wires `cleanup: () => removeRetryPid()` in the `forkMonitor` call.
+- Fixed comment in `src/commands/next.ts` line 148: removed outdated "claude or claude-auto-retry" reference — now reads "claude, spawned by cam next".
+- Updated `test/retry/interactive.test.ts`: all `DetachedSpawnAdapter` fakes now return `0` (required by the new `number` return type). Added 2 new tests for `onMonitorSpawned` callback.
+- Created `test/retry/retry-pid.test.ts` with 16 tests covering write/read/liveness/remove with the real `~/.cam/retry.pid` path (saves and restores in beforeEach/afterEach to avoid polluting the host machine).
+
+### Files changed
+- src/util/retry-pid.ts (new)
+- test/retry/retry-pid.test.ts (new)
+- src/commands/claude.ts (modified: import retry-pid, wire onMonitorSpawned + cleanup)
+- src/commands/next.ts (modified: comment fix — remove claude-auto-retry reference)
+- src/retry/launcher.ts (modified: DetachedSpawnAdapter returns number, forkMonitor calls onMonitorSpawned)
+- test/retry/interactive.test.ts (modified: fake adapters return 0, 2 new tests)
+- scripts/cam/prd.json (modified: US-006 passes: true)
+
+### Quality gates
+- Typecheck: ok
+- Lint: ok (no lint command configured)
+- Tests: 419 pass / 0 fail (18 new: 16 retry-pid + 2 interactive)
+
+### Step 5.5 docs validation
+- lib: node:process.kill (built-in), status: no_external_lib_touched
+- No third-party library exercised. `process.kill(pid, 0)` is documented Node.js built-in behavior; no fetch needed.
+
+### Notes
+- `DetachedSpawnAdapter` signature change (void → number) required updating all fake adapters in existing interactive tests. Any future story that adds a fake `DetachedSpawnAdapter` must return a `number`.
+- `isRetryPidAlive` treats EPERM as "alive" — a process owned by a different UID is still running, just not signable by us.
+- US-007 is the wider cleanup: remove claude-auto-retry checks from init.ts, resume.ts, index.ts HELP strings.
+---
+
 ## [2026-05-14 04:00] - US-005: Implement interactive mode with monitor fork and cam retry-monitor internal subcommand
 
 ### What was done

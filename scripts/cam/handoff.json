@@ -1,26 +1,29 @@
 {
-  "lastCompletedStory": "US-005",
+  "lastCompletedStory": {
+    "id": "US-006",
+    "title": "Switchover: route internal claude spawns through cam claude and add retry-pid helpers"
+  },
+  "branchName": "cam/pr-4-internalize-auto-retry",
+  "timestamp": "2026-05-14T05:00:00Z",
   "createdFiles": [
-    "src/commands/retry-monitor.ts",
-    "test/retry/interactive.test.ts"
+    "src/util/retry-pid.ts",
+    "test/retry/retry-pid.test.ts"
   ],
   "modifiedFiles": [
-    "src/retry/launcher.ts",
     "src/commands/claude.ts",
-    "index.ts",
+    "src/commands/next.ts",
+    "src/retry/launcher.ts",
+    "test/retry/interactive.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 is the switchover story: route run/next/plan commands through the internal launcher (launchClaude from US-004) instead of the external `claude-auto-retry` binary. Also adds src/util/retry-pid.ts for the monitor PID file at ~/.cam/retry.pid (write/read/liveness/remove). Check src/commands/run.ts, next.ts, plan.ts for `claude-auto-retry` usage via `grep -r claude-auto-retry src/commands/`. US-005's forkMonitor currently writes no PID file — that gap is filled by US-006's retry-pid.ts. The cleanup callback in forkMonitor (claude.ts) is a no-op stub for now; US-006 should wire in the retry-pid remove helper.",
+  "nextStoryContext": "US-007 is the wider cleanup story: remove claude-auto-retry from init.ts, resume.ts, index.ts HELP strings, embedded vendor, and tests. Key things to know: (1) `DetachedSpawnAdapter` now returns `number` (monitor PID) — US-007 does not need to change this. (2) `removeRetryPid` is already wired in `claude.ts`'s cleanup callback. (3) `resume.ts` currently uses `pgrep -f claude-auto-retry` (line 225) to detect liveness — US-007 should replace this with `readRetryPid()` + `isRetryPidAlive(pid)` from `src/util/retry-pid.ts`. (4) `init.ts` checks for `claude-auto-retry` on PATH (line 151) — US-007 should remove that check or replace it with an internal capability check.",
   "officialDocsValidated": [
     {
-      "lib": "Bun.spawn (detached)",
-      "version": "Bun 1.3.13",
-      "url": "https://bun.sh/docs/api/spawn",
-      "fetchedAt": "2026-05-14T04:00:00Z",
-      "status": "ok",
-      "summary": "Confirmed: `detached?: boolean` is in bun.d.ts (calls setsid() on POSIX so child outlives parent). `proc.unref()` exists on Subprocess and prevents parent event loop from waiting on child. stdio: ['ignore','ignore','ignore'] is valid (maps to [Writable, Readable, Readable] tuple). The docs webpage omitted `detached` but type definitions confirmed it. Implementation matches API."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Story only touched Node.js built-ins (process.kill, fs, os.homedir) and internal cam code. No external library API surface to validate."
     }
   ]
 }

@@ -18,6 +18,7 @@
 // textual scan of `src/commands/`.
 
 import { launchClaude, forkMonitor, validateInteractiveEnv, type LaunchOptions, type DetachedSpawnAdapter, type SignalHandler } from '../retry/launcher.ts';
+import { writeRetryPid, removeRetryPid } from '../util/retry-pid.ts';
 
 export const CLAUDE_HELP = `cam claude — run claude with auto-retry on rate limits
 
@@ -120,12 +121,18 @@ export async function runClaude(options: ClaudeOptions): Promise<number> {
   const claudePid = proc.pid;
 
   // Fork the detached monitor child AFTER getting the PID.
+  // onMonitorSpawned writes the monitor's PID to ~/.cam/retry.pid so that
+  // cam resume (US-007) can check liveness via isRetryPidAlive.
+  // cleanup removes the PID file on SIGINT/SIGTERM/SIGHUP.
   forkMonitor({
     args,
     pane,
     claudePid,
+    onMonitorSpawned: writeRetryPid,
     cleanup: () => {
-      // No PID file yet (US-006 adds retry-pid.ts). Nothing to clean up here.
+      // Remove the monitor PID file on SIGINT/SIGTERM/SIGHUP so cam resume
+      // (US-007) can tell the monitor is no longer running.
+      removeRetryPid();
     },
     detachedSpawn,
     onSignal,

@@ -155,7 +155,7 @@
         "Tests pass"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file: src/util/retry-pid.ts, test/retry/retry-pid.test.ts. Edits: src/commands/run.ts, src/commands/next.ts, src/commands/plan.ts (verify via `grep -r claude-auto-retry src/commands/`). PID file path is ~/.cam/retry.pid (single file convention used by US-007's resume.ts rewire). Use `process.kill(pid, 0)` for liveness (does not actually signal — throws ESRCH if dead). Do not yet remove the external-dep checks in init.ts / resume.ts — that is US-007's scope."
     },

@@ -168,9 +168,12 @@ export async function launchClaude(opts: LaunchOptions): Promise<number> {
 /**
  * An adapter that detaches a background monitor process.
  * Injectable for tests (avoids real Bun.spawn calls).
+ *
+ * Returns the monitor child's PID so callers can write a PID file.
+ * Tests that don't care about the PID can return 0.
  */
 export interface DetachedSpawnAdapter {
-  (argv: string[]): void;
+  (argv: string[]): number;
 }
 
 /**
@@ -188,6 +191,12 @@ export interface InteractiveOptions {
   claudePid: number;
   /** Cleanup callback invoked on SIGINT/SIGTERM/SIGHUP (e.g. remove PID file). */
   cleanup: () => void;
+  /**
+   * Called with the monitor child's PID immediately after the detached spawn
+   * returns. Use this to write a PID file (e.g. writeRetryPid from retry-pid.ts).
+   * No-op when not provided.
+   */
+  onMonitorSpawned?: (monitorPid: number) => void;
   /**
    * Injectable adapter for spawning the detached monitor child.
    * Defaults to the real Bun.spawn detached adapter.
@@ -218,6 +227,7 @@ export function forkMonitor(opts: InteractiveOptions): void {
     pane,
     claudePid,
     cleanup,
+    onMonitorSpawned,
     detachedSpawn = defaultDetachedSpawn,
     onSignal = (sig, fn) => process.on(sig, fn),
   } = opts;
@@ -229,7 +239,8 @@ export function forkMonitor(opts: InteractiveOptions): void {
   const mainScript = process.argv[1] ?? 'cam'; // path to index.ts / cam binary
   const monitorArgv = [self, mainScript, 'retry-monitor', pane, String(claudePid)];
 
-  detachedSpawn(monitorArgv);
+  const monitorPid = detachedSpawn(monitorArgv);
+  if (onMonitorSpawned) onMonitorSpawned(monitorPid);
 
   // Install signal handlers that propagate to the claude child and clean up.
   const propagate = (signal: NodeJS.Signals) => {
@@ -258,13 +269,16 @@ export function forkMonitor(opts: InteractiveOptions): void {
 /**
  * The real detached spawn adapter: uses Bun.spawn with detached:true and
  * stdio:'ignore', then unrefs the child so it does not keep the event loop alive.
+ *
+ * Returns the child's PID so the caller can write a PID file.
  */
-function defaultDetachedSpawn(argv: string[]): void {
+function defaultDetachedSpawn(argv: string[]): number {
   const proc = Bun.spawn(argv, {
     detached: true,
     stdio: ['ignore', 'ignore', 'ignore'],
   });
   proc.unref();
+  return proc.pid;
 }
 
 /**

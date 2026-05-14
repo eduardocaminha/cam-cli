@@ -27,6 +27,7 @@ describe('forkMonitor — detached spawn', () => {
     const spawnCalls: string[][] = [];
     const fakeDetachedSpawn: DetachedSpawnAdapter = (argv) => {
       spawnCalls.push(argv);
+      return 0;
     };
     const fakeOnSignal: SignalHandler = (_sig, _fn) => { /* no-op */ };
 
@@ -48,7 +49,7 @@ describe('forkMonitor — detached spawn', () => {
 
   test('argv[0] is process.execPath (bun binary)', () => {
     const spawnCalls: string[][] = [];
-    const fakeDetachedSpawn: DetachedSpawnAdapter = (argv) => { spawnCalls.push(argv); };
+    const fakeDetachedSpawn: DetachedSpawnAdapter = (argv) => { spawnCalls.push(argv); return 0; };
     const fakeOnSignal: SignalHandler = (_sig, _fn) => { /* no-op */ };
 
     forkMonitor({
@@ -65,7 +66,7 @@ describe('forkMonitor — detached spawn', () => {
 
   test('argv contains the subcommand token "retry-monitor"', () => {
     const spawnCalls: string[][] = [];
-    const fakeDetachedSpawn: DetachedSpawnAdapter = (argv) => { spawnCalls.push(argv); };
+    const fakeDetachedSpawn: DetachedSpawnAdapter = (argv) => { spawnCalls.push(argv); return 0; };
     const fakeOnSignal: SignalHandler = (_sig, _fn) => { /* no-op */ };
 
     forkMonitor({
@@ -80,6 +81,38 @@ describe('forkMonitor — detached spawn', () => {
     const argv = spawnCalls[0]!;
     expect(argv).toContain('retry-monitor');
   });
+
+  test('calls onMonitorSpawned with the PID returned by detachedSpawn', () => {
+    const fakeDetachedSpawn: DetachedSpawnAdapter = (_argv) => 9876;
+    const fakeOnSignal: SignalHandler = (_sig, _fn) => { /* no-op */ };
+    const spawnedPids: number[] = [];
+
+    forkMonitor({
+      args: [],
+      pane: '%1',
+      claudePid: 42,
+      cleanup: () => {},
+      onMonitorSpawned: (pid) => { spawnedPids.push(pid); },
+      detachedSpawn: fakeDetachedSpawn,
+      onSignal: fakeOnSignal,
+    });
+
+    expect(spawnedPids).toEqual([9876]);
+  });
+
+  test('does not throw when onMonitorSpawned is not provided', () => {
+    const fakeDetachedSpawn: DetachedSpawnAdapter = (_argv) => 0;
+    const fakeOnSignal: SignalHandler = (_sig, _fn) => { /* no-op */ };
+
+    expect(() => forkMonitor({
+      args: [],
+      pane: '%1',
+      claudePid: 42,
+      cleanup: () => {},
+      detachedSpawn: fakeDetachedSpawn,
+      onSignal: fakeOnSignal,
+    })).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -89,7 +122,7 @@ describe('forkMonitor — detached spawn', () => {
 describe('forkMonitor — signal handlers', () => {
   test('registers SIGINT, SIGTERM, SIGHUP, SIGWINCH handlers', () => {
     const registeredSignals: string[] = [];
-    const fakeDetachedSpawn: DetachedSpawnAdapter = (_argv) => { /* no-op */ };
+    const fakeDetachedSpawn: DetachedSpawnAdapter = (_argv) => 0;
     const fakeOnSignal: SignalHandler = (sig, _fn) => {
       registeredSignals.push(sig);
     };
@@ -113,7 +146,7 @@ describe('forkMonitor — signal handlers', () => {
     let cleanupCalled = false;
     const signalHandlers: Map<string, () => void> = new Map();
 
-    const fakeDetachedSpawn: DetachedSpawnAdapter = (_argv) => { /* no-op */ };
+    const fakeDetachedSpawn: DetachedSpawnAdapter = (_argv) => 0;
     const fakeOnSignal: SignalHandler = (sig, fn) => {
       signalHandlers.set(sig, fn);
     };
@@ -137,7 +170,7 @@ describe('forkMonitor — signal handlers', () => {
     let cleanupCalled = false;
     const signalHandlers: Map<string, () => void> = new Map();
 
-    const fakeDetachedSpawn: DetachedSpawnAdapter = (_argv) => { /* no-op */ };
+    const fakeDetachedSpawn: DetachedSpawnAdapter = (_argv) => 0;
     const fakeOnSignal: SignalHandler = (sig, fn) => {
       signalHandlers.set(sig, fn);
     };
