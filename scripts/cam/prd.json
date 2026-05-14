@@ -76,7 +76,7 @@
         "Tests pass"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Source: /opt/homebrew/lib/node_modules/claude-auto-retry/src/config.js and logger.js. New files: src/retry/config.ts, src/retry/logger.ts, test/retry/config.test.ts, test/retry/logger.test.ts. TOML parsing: use `Bun.TOML.parse` (GA in current Bun) — no hand-rolled parser, no third-party TOML package. File I/O: prefer `Bun.file` and `Bun.write` over node:fs per project CLAUDE.md. Make the base dir injectable so tests can pass a temp dir without monkey-patching globals."
     },

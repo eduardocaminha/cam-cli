@@ -1,23 +1,25 @@
 {
-  "lastCompletedStory": "US-001",
+  "lastCompletedStory": "US-002",
   "createdFiles": [
-    "LICENSES/claude-auto-retry-MIT.txt",
-    "src/retry/patterns.ts",
-    "src/retry/time-parser.ts",
-    "test/retry/patterns.test.ts",
-    "test/retry/time-parser.test.ts"
+    "src/retry/config.ts",
+    "src/retry/logger.ts",
+    "test/retry/config.test.ts",
+    "test/retry/logger.test.ts"
   ],
   "modifiedFiles": [
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 ports config.ts + logger.ts. Key points: use Bun.TOML.parse (not hand-rolled), Bun.file/Bun.write for I/O, base dir injectable for tests. Paths: ~/.config/cam/retry.toml and ~/.cam/retry-logs/. Watch for noUncheckedIndexedAccess on TOML object access — use 'as' casts or guard patterns. The src/retry/ directory is now established and the license/attribution pattern is set.",
+  "nextStoryContext": "US-003 ports tmux.ts + monitor.ts. Key points: use Bun.$ for tmux capture-pane invocations; expose processOneTick(deps) with injectable dependencies (time, tmux capture, sleep, logger, config) for unit-testability. No real tmux spawned in tests. Builds on src/retry/patterns.ts (isRateLimited, findRateLimitMessage), src/retry/time-parser.ts (parseTime), src/retry/config.ts (loadConfig/RetryConfig), and src/retry/logger.ts (createLogger/Logger). Watch for Bun.$ error handling — it throws on non-zero exit; wrap tmux capture in try/catch.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "US-001 is a pure TypeScript port of internal logic from claude-auto-retry. No new runtime dependencies were added to package.json. No external library API surface was exercised."
+      "lib": "Bun.TOML",
+      "version": "Bun 1.3.13",
+      "url": "https://bun.com/reference/bun/TOML/parse",
+      "fetchedAt": "2026-05-14T01:00:00Z",
+      "status": "ok",
+      "summary": "Bun.TOML.parse(str) parses TOML v1.0 string into JS object; throws BuildMessage (extends Error) on invalid TOML. Implementation catches via err instanceof Error and surfaces path + message. API confirmed matches implementation."
     }
   ]
 }

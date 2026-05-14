@@ -15,6 +15,41 @@ Examples of what belongs here:
 - **Regex capture groups**: `match()` capture groups are typed as `string | undefined` under strict+noUncheckedIndexedAccess — always use `?? ''` fallback on capture group access.
 -->
 
+## [2026-05-14 01:00] - US-002: Port config.ts + logger.ts with cam-namespaced paths
+
+### What was done
+- Ported `config.js` → `src/retry/config.ts` with TOML config loaded from `~/.config/cam/retry.toml` (injected `baseDir` default).
+- Used `Bun.TOML.parse` (throws `BuildMessage extends Error` on invalid TOML); catches via `err instanceof Error`, extracts `.message`.
+- On first read (file absent), writes a documented TOML defaults file to disk and returns `DEFAULT_CONFIG`.
+- `validate()` clamps below-min numbers back to defaults, filters bad regex patterns in `customPatterns`, and omits empty `foregroundCommands`.
+- Ported `logger.js` → `src/retry/logger.ts` with logs written under `~/.cam/retry-logs/` (injected `dir` default).
+- Logger uses `node:fs/promises.appendFile` for atomic append (same as original); `Bun.file`/`Bun.write` avoided for append to keep atomicity.
+- Directory created lazily on first `log()` call via `node:fs/promises.mkdir({ recursive: true })`.
+- Rotation cleanup is fire-and-forget (void), matching original behavior.
+- Both files carry MIT attribution header.
+- 14 config tests + 10 logger tests written, all isolated via injected `baseDir`/`dir` — no real `~/.config/cam` or `~/.cam` touched.
+
+### Files changed
+- src/retry/config.ts (new)
+- src/retry/logger.ts (new)
+- test/retry/config.test.ts (new)
+- test/retry/logger.test.ts (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: ok (no lint command configured)
+- Tests: 334 pass / 0 fail (24 new + 310 pre-existing)
+
+### Step 5.5 docs validation
+- lib: Bun.TOML, status: ok
+- Confirmed: `Bun.TOML.parse(str)` returns `object`, throws `BuildMessage` (extends `Error`) on invalid TOML; caught via `err instanceof Error`. API matches implementation.
+
+### Notes
+- `Bun.TOML.parse` throws `BuildMessage` (not a plain `Error` or `SyntaxError`) — but since `BuildMessage` extends `Error`, `err instanceof Error` correctly catches it and `.message` is accessible.
+- For logger append, `node:fs/promises.appendFile` is preferred over `Bun.file` read+write to preserve append atomicity (two concurrent loggers would corrupt data with read+write).
+- `noUncheckedIndexedAccess` requires indexing `raw["field"]` via bracket notation on `Record<string, unknown>`, not dot-access through typed props.
+---
+
 ## [2026-05-14 00:00] - US-001: Port patterns.ts + time-parser.ts with tests and license attribution
 
 ### What was done
