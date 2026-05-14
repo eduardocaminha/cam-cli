@@ -27,6 +27,7 @@ import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runStop } from './src/commands/stop.ts';
+import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
 import { printError, printHint } from './src/logging/color.ts';
 import { CAM_VERSION } from './src/version.ts';
 
@@ -40,6 +41,7 @@ Commands:
   run [options]           Open or attach the long-lived orchestrator (tmux session)
   plan [--issue <N>]      Spawn claude + dispatch /cam-plan; prompts on APPROVE
   next [options]          Spawn the autonomous loop (Ghostty split + claude + dashboard)
+  claude [args...]        Run claude in print mode with auto-retry on rate limits
   dashboard               Standalone read-only TUI (alt-screen) for monitoring a loop
   status                  Show current loop state at a glance (idle / active / paused)
   stop                    Cancel a running loop (clears state file + kills tmux session "cam")
@@ -558,6 +560,14 @@ async function main(argv: string[]): Promise<number> {
 				dryRun: parsed.dryRun,
 				force: parsed.force,
 			});
+		}
+		case 'claude': {
+			const parsed = parseClaudeArgs(argv.slice(3));
+			if (parsed.help) {
+				process.stdout.write(`${CLAUDE_HELP}\n`);
+				return 0;
+			}
+			return runClaude({ args: parsed.forwardedArgs });
 		}
 		default:
 			printError(`unknown command: ${command}`);

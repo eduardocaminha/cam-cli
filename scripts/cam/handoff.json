@@ -1,25 +1,25 @@
 {
-  "lastCompletedStory": "US-003",
+  "lastCompletedStory": "US-004",
   "createdFiles": [
-    "src/retry/tmux.ts",
-    "src/retry/monitor.ts",
-    "test/retry/tmux.test.ts",
-    "test/retry/monitor.test.ts"
+    "src/retry/launcher.ts",
+    "src/commands/claude.ts",
+    "test/retry/launcher.test.ts"
   ],
   "modifiedFiles": [
+    "index.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 likely adds cam-cli subcommands (cam claude / cam retry-monitor) that invoke startMonitor from src/retry/monitor.ts. The processOneTick(state, pane, deps) signature is stable — callers pass a TickDeps object. Bun.spawn stdout pattern: `new Response(proc.stdout).text()`. Monitor entry: bun src/retry/monitor.ts <pane> <pid>. isDirectRun guard checks process.argv[1]?.endsWith('monitor.ts').",
+  "nextStoryContext": "US-005 is the interactive/tmux mode (createTmuxSession path). launcher.ts already exports launchClaude with injectable SpawnAdapter. US-005 will likely add a launchInteractive(opts) or createTmuxSession function — it should NOT touch launchClaude/print mode. The SpawnAdapter interface is in src/retry/launcher.ts. Check if US-005 needs a new entry point in index.ts (e.g. cam run or wired inside existing cam run) or a separate cam command.",
   "officialDocsValidated": [
     {
       "lib": "Bun.spawn",
       "version": "Bun 1.3.13",
       "url": "https://bun.sh/docs/api/spawn",
-      "fetchedAt": "2026-05-14T02:00:00Z",
+      "fetchedAt": "2026-05-14T03:00:00Z",
       "status": "ok",
-      "summary": "Bun.spawn(cmd, { stdout: 'pipe' }) returns Subprocess with .stdout: ReadableStream and .exited: Promise<number>. new Response(proc.stdout).text() is idiomatic. Bun.spawnSync returns SyncSubprocess with .stdout: Buffer | undefined. Implementation confirmed matches API."
+      "summary": "Confirmed: Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe' }) returns Subprocess with .stdout: ReadableStream, .stderr: ReadableStream, .exited: Promise<number>. new Response(proc.stdout).text() is valid (equivalent to proc.stdout.text()). proc.exited resolves to exit code as number. Implementation matches API."
     }
   ]
 }

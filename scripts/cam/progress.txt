@@ -15,6 +15,40 @@ Examples of what belongs here:
 - **Regex capture groups**: `match()` capture groups are typed as `string | undefined` under strict+noUncheckedIndexedAccess — always use `?? ''` fallback on capture group access.
 -->
 
+## [2026-05-14 03:00] - US-004: Implement launcher.ts and cam claude subcommand (print mode)
+
+### What was done
+- Created `src/retry/launcher.ts` with `launchClaude(opts)` function that spawns `claude` in print mode via `Bun.spawn`, captures stdout+stderr, applies rate-limit retry policy, and replays buffered output on clean exit.
+- `SpawnAdapter` interface makes the spawn function injectable so tests never spawn a real claude process.
+- `bunSpawnAdapter` is the default (uses `Bun.spawn` with `stdin: 'inherit'`, `stdout: 'pipe'`, `stderr: 'pipe'`); uses `new Response(proc.stdout).text()` pattern.
+- Does NOT call `createTmuxSession` — only print mode (interactive/tmux is US-005).
+- Carries MIT attribution header.
+- Created `src/commands/claude.ts` with `parseClaudeArgs` and `runClaude`. The parser consumes only a leading `--help` / `-h`; all other args forwarded verbatim including `--permission-mode`.
+- Does NOT register `--permission-mode` as a cam flag — textual smoke in `test/no-permission-mode-flag.test.ts` still passes.
+- Wired `case 'claude'` into `index.ts`; added `claude [args...]` line to global HELP.
+- Created `test/retry/launcher.test.ts` with 12 tests covering args forwarding, exit-code propagation, rate-limit retry, and exhausted retries.
+
+### Files changed
+- src/retry/launcher.ts (new)
+- src/commands/claude.ts (new)
+- test/retry/launcher.test.ts (new)
+- index.ts (modified: added claude import, HELP line, switch case)
+
+### Quality gates
+- Typecheck: ok
+- Lint: ok (no lint command configured)
+- Tests: 379 pass / 0 fail (12 new + 367 pre-existing)
+
+### Step 5.5 docs validation
+- lib: Bun.spawn, status: ok
+- Confirmed: `Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe' })` returns Subprocess with `.stdout: ReadableStream`, `.stderr: ReadableStream`, `.exited: Promise<number>`. `new Response(proc.stdout).text()` is valid (equivalent to `proc.stdout.text()`). `proc.exited` resolves to the exit code as a number. API matches implementation exactly.
+
+### Notes
+- `parseClaudeArgs` only checks the first arg for `--help`; any other position is forwarded. This matches the acceptance criterion: "cam does not parse the forwarded argv beyond consuming a leading `--help`".
+- `filteredProcessEnv()` strips `undefined` values from `process.env` since Bun.spawn's `env` type is `Record<string, string>` not `Record<string, string | undefined>`.
+- setTimeout patching in tests: override with `(fn, _ms) => { fn(); return 0; }` to make wait-loops synchronous. Requires `@ts-expect-error` since the global type expects a `Timeout` return.
+---
+
 ## [2026-05-14 02:00] - US-003: Port tmux.ts + monitor.ts with processOneTick adapter for tests
 
 ### What was done

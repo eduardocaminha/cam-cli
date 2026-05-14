@@ -117,7 +117,7 @@
         "Tests pass"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Source: /opt/homebrew/lib/node_modules/claude-auto-retry/src/launcher.js. New files: src/retry/launcher.ts, src/commands/claude.ts (or wire directly in index.ts — check existing convention in src/commands/init.ts and src/commands/setup.ts), test/retry/launcher.test.ts. Gotcha: `index.ts` and `src/commands/` are scanned by test/no-permission-mode-flag.test.ts — do NOT add `--permission-mode`. Use `Bun.spawn({ stdio: ['inherit','inherit','inherit'] })` and `await proc.exited`. Make the spawn function injectable so tests can stub it."
     },
