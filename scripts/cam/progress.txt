@@ -16,6 +16,47 @@ Examples of what belongs here:
 - **Bun.spawn detached option**: `detached?: boolean` is in `bun.d.ts` (calls `setsid()` on POSIX) but the docs webpage omits it. Check `node_modules/bun-types/bun.d.ts` directly for full option surface. Always pair with `proc.unref()` and `stdio: ['ignore','ignore','ignore']` to prevent parent from waiting on child.
 -->
 
+## [2026-05-14 07:00] - US-008: Update README, INIT_HELP, RESUME_HELP, and cam claude --help
+
+### What was done
+- Updated README.md: added "Auto-retry" section describing the internalized retry
+  (print vs interactive modes, config at ~/.config/cam/retry.toml, logs at
+  ~/.cam/retry-logs/, attribution linking to LICENSES/claude-auto-retry-MIT.txt).
+- Added `cam claude [args...]` to the Commands table in README.
+- Added "Recent changes" section to README describing the removed external dependency
+  and the new `cam claude` subcommand.
+- Updated INIT_HELP (index.ts): added Stage 1 step 4 describing that `cam init`
+  writes ~/.config/cam/retry.toml on first run. Added config/log path note at the
+  end of the help text.
+- Updated CLAUDE_HELP (src/commands/claude.ts): expanded routing descriptions,
+  added Config block listing retry.toml and retry-logs paths and permission mode
+  config.toml.
+- RESUME_HELP already had the correct noop-mode description from US-007 — no changes needed.
+
+### Files changed
+- README.md (modified: added Auto-retry section, cam claude command, Recent changes)
+- index.ts (modified: INIT_HELP — added retry.toml step and config path note)
+- src/commands/claude.ts (modified: CLAUDE_HELP — expanded routing, added Config block)
+- scripts/cam/prd.json (modified: US-008 passes: true)
+
+### Quality gates
+- Typecheck: ok
+- Lint: ok (no lint command configured)
+- Tests: 417 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+- Story is docs-only. No external library API surface exercised. All changes are
+  help text and README prose.
+
+### Notes
+- `grep -rn 'claude-auto-retry' README.md` returns 3 lines, all pointing at LICENSES/
+  (attribution link) — satisfies the "no results except attribution mention" AC.
+- `grep -rn 'claude-auto-retry' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=LICENSES`
+  returns only src/retry/* MIT attribution headers and scripts/cam/ internal files.
+- US-008 is the final story in this PRD. All 8 stories now pass.
+---
+
 ## [2026-05-14 06:00] - US-007: Remove external claude-auto-retry dependency from init.ts, resume.ts, embedded vendor, and tests
 
 ### What was done

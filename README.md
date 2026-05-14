@@ -106,6 +106,7 @@ cam init [options]          Validate the machine, then run the project-setup wiz
 cam run  [options]          Open or attach the long-lived orchestrator (tmux session)
 cam plan [--issue <N>]      Spawn claude + dispatch /cam-plan; prompts on APPROVE
 cam next [options]          Spawn the legacy autonomous loop (Ghostty + claude + dashboard)
+cam claude [args...]        Run claude with built-in auto-retry on rate limits
 cam dashboard               Standalone read-only TUI for monitoring a loop
 cam status                  Show current loop state (idle / active / paused)
 cam stop                    Cancel a running loop
@@ -117,6 +118,37 @@ cam help                    Show top-level help
 Run `cam <command> --help` for command-specific options. Permission mode
 for spawned claude sessions is read from `~/.config/cam/config.toml` —
 no subcommand exposes a CLI flag for it.
+
+---
+
+## Auto-retry
+
+`cam` ships a built-in rate-limit retry mechanism — no external tool required.
+When a `claude` process hits a rate limit, cam automatically waits out the
+back-off window and re-submits the request.
+
+**How it works:**
+
+- **Print mode** (`cam claude -p "…"`): cam captures `claude` output and retries
+  transparently until the request succeeds or the retry budget is exhausted.
+- **Interactive mode** (`cam claude` inside a tmux session): cam forks a detached
+  background monitor (`cam retry-monitor`) that watches the tmux pane and sends
+  the retry keystroke after the rate-limit window expires.
+
+**Configuration** — `~/.config/cam/retry.toml`:
+
+`cam init` writes this file on first run with commented defaults. Edit it to
+tune the retry policy (max attempts, custom rate-limit patterns, foreground
+command allowlist, etc.). If the file is absent, cam uses built-in defaults.
+
+**Logs** — `~/.cam/retry-logs/`:
+
+Each retry event is appended to a dated log file under this directory.
+cam rotates logs automatically and keeps the last 7 days by default.
+
+**Attribution**: the retry logic is ported from
+[claude-auto-retry v0.2.2](https://github.com/cheapestinference/claude-auto-retry)
+under the MIT license — see [LICENSES/claude-auto-retry-MIT.txt](./LICENSES/claude-auto-retry-MIT.txt).
 
 ---
 
@@ -142,6 +174,17 @@ templates/            shipped to projects by `cam init`
   scripts/cam/        CLAUDE.md, journal.md, handoff.schema.json
 test/                 bun:test suites
 ```
+
+---
+
+## Recent changes
+
+- **Auto-retry internalized**: rate-limit retry is now built into `cam` — no
+  external tool installation required. `cam init` no longer checks for any
+  external retry binary. See [LICENSES/claude-auto-retry-MIT.txt](./LICENSES/claude-auto-retry-MIT.txt)
+  for upstream attribution.
+- **`cam claude` subcommand**: new explicit entry point for print-mode and
+  interactive-mode claude runs with built-in retry.
 
 ---
 

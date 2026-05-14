@@ -205,7 +205,7 @@
         "Tests pass"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edits: README.md, src/commands/init.ts (INIT_HELP constant), src/commands/resume.ts (RESUME_HELP constant), src/commands/claude.ts (--help text), optionally CHANGELOG.md. This is the final story — it assumes US-001 through US-007 already shipped, so the docs describe the live state. Confirm LICENSES/claude-auto-retry-MIT.txt path matches what US-001 created. Run the cross-cutting grep one final time to confirm zero non-attribution references remain."
     }

@@ -1,43 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Remove external claude-auto-retry dependency from init.ts, resume.ts, embedded vendor, and tests"
+    "id": "US-008",
+    "title": "Update README, INIT_HELP, RESUME_HELP, and cam claude --help"
   },
   "branchName": "cam/pr-4-internalize-auto-retry",
-  "timestamp": "2026-05-14T06:00:00Z",
+  "timestamp": "2026-05-14T07:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/init.ts",
-    "src/commands/resume.ts",
-    "src/commands/status.ts",
-    "src/util/retry-pid.ts",
-    "src/vendor/embedded.ts",
-    "src/vendor/_generated.ts",
-    "index.ts",
-    "vendor/check-agent-frontmatter.sh",
-    "vendor/README.md",
-    "scripts/build-release.sh",
-    "scripts/generate-embedded-vendor.ts",
-    "test/embedded.test.ts",
-    "test/vendor.test.ts",
-    "test/resume.test.ts",
-    "test/resume/modes.test.ts",
-    "test/fixtures/resume/scenario.ts",
-    "test/init.test.ts",
     "README.md",
+    "index.ts",
+    "src/commands/claude.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
-  "deletedFiles": [
-    "vendor/claude-auto-retry-patterns.ts"
-  ],
+  "deletedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "US-008 is the final docs story: update README.md to describe the internalized auto-retry (what it does, config at ~/.config/cam/retry.toml, logs at ~/.cam/retry-logs/, attribution at LICENSES/claude-auto-retry-MIT.txt). US-007 already removed the 'claude-auto-retry on PATH' prerequisite from README.md and the INIT_HELP/RESUME_HELP strings. US-008 should expand the README to explain the internal retry mechanism and confirm the grep is clean. Key things to know: (1) LICENSES/claude-auto-retry-MIT.txt was created in US-001. (2) src/retry/* contains the internalized code with MIT attribution headers. (3) The grep AC is: `grep -rn 'claude-auto-retry' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=LICENSES` returns only src/retry/* attribution lines after US-008.",
+  "nextStoryContext": "US-008 is the final story in this PRD — all 8 stories now pass. The orchestrator should run /cam-review to verify the full PRD is complete.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story only touched internal cam-cli code and test infrastructure. No external library API surface to validate. The retry-pid helpers (readRetryPid, isRetryPidAlive) were validated in US-006."
+      "summary": "Story is docs-only (README, INIT_HELP, CLAUDE_HELP). No external library API surface exercised."
     }
   ]
 }

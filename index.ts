@@ -71,6 +71,9 @@ Behaviour:
     1. Checks \`claude\` is on PATH and logged in.
     2. Runs vendored smokes (check-agent-frontmatter).
     3. Writes ~/.config/cam/config.toml with permission_mode = "bypassPermissions".
+    4. Writes ~/.config/cam/retry.toml with the built-in retry policy defaults
+       (first run only; existing file is preserved). Edit this file to tune
+       max attempts, rate-limit patterns, and the retry log retention window.
 
   Stage 2 — Project setup wizard (if stage 1 passes):
     1. Asks: new project or existing?
@@ -85,7 +88,11 @@ Behaviour:
     8. Auto-handoff: when the config agent emits CAM_SETUP_STATUS=DONE,
        the orchestrator is launched in a new pane immediately. The menu
        pane updates with options: o (orchestrator), c (config), k (kill
-       config pane), q (close menu).`;
+       config pane), q (close menu).
+
+Note: auto-retry on rate limits is built into cam — no external tool required.
+Rate-limit retry config: ~/.config/cam/retry.toml
+Retry logs:             ~/.cam/retry-logs/`;
 
 const RUN_HELP = `cam run — open or attach the long-lived orchestrator session
 

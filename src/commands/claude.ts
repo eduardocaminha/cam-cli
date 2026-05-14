@@ -20,7 +20,7 @@
 import { launchClaude, forkMonitor, validateInteractiveEnv, type LaunchOptions, type DetachedSpawnAdapter, type SignalHandler } from '../retry/launcher.ts';
 import { writeRetryPid, removeRetryPid } from '../util/retry-pid.ts';
 
-export const CLAUDE_HELP = `cam claude — run claude with auto-retry on rate limits
+export const CLAUDE_HELP = `cam claude — run claude with built-in auto-retry on rate limits
 
 Usage:
   cam claude [args...]
@@ -35,15 +35,20 @@ Examples:
   cam claude --permission-mode bypassPermissions /cam-plan
 
 Routing:
-  • With -p/--print:      print mode — cam captures output and auto-retries.
-  • Inside tmux (no -p):  interactive mode — cam forks a background monitor
-                           that watches the pane and retries on rate limits.
+  • With -p/--print:      print mode — cam captures stdout/stderr and retries
+                           automatically when claude returns a rate-limit error.
+  • Inside tmux (no -p):  interactive mode — cam forks a detached background
+                           monitor (cam retry-monitor) that watches the pane
+                           and sends the retry keystroke after the back-off
+                           window expires.
   • Outside tmux (no -p): error — run \`cam run\` to get a tmux session first.
 
-Permission mode for cam's own spawned sessions is read from
-~/.config/cam/config.toml — \`cam claude\` does not expose a CLI flag for it.
-To use a specific permission mode, pass it directly as a claude flag:
-  cam claude --permission-mode <mode> <prompt>`;
+Config:
+  Retry policy:     ~/.config/cam/retry.toml  (written by \`cam init\`; safe to edit)
+  Retry logs:       ~/.cam/retry-logs/
+  Permission mode:  ~/.config/cam/config.toml — \`cam claude\` does not expose a
+                    CLI flag for it. Pass it directly as a claude arg if needed:
+                      cam claude --permission-mode <mode> <prompt>`;
 
 export interface ClaudeOptions {
   /** Args to forward verbatim to claude (after stripping the leading --help). */
