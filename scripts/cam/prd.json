@@ -185,7 +185,7 @@
         "Tests pass"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edits: src/commands/init.ts, src/commands/resume.ts, src/commands/status.ts, index.ts (HELP/INIT_HELP/RESUME_HELP at ~lines 69, 70, 216), src/vendor/embedded.ts (drop import + union member line 41 + map entry line 53), vendor/check-agent-frontmatter.sh (line 36), scripts/build-release.sh (line 73), test/embedded.test.ts (lines 52, 75), test/vendor.test.ts (line 10), test/resume.test.ts (lines 56, 78, 146, 151, 213, 274, 536), test/resume/modes.test.ts (lines 121, 345, 363, 378), test/fixtures/resume/scenario.ts (lines 67, 100, 242 — rename `autoRetryAlive` → `retryPidAlive`), test/init.test.ts. Delete: vendor/claude-auto-retry-patterns.ts. Regenerate: src/vendor/_generated.ts. Run `grep -rn 'claude-auto-retry' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=LICENSES` before and after to confirm scrub. Keep MIT attribution headers in src/retry/* — those legitimately mention the upstream name."
     },

@@ -1,29 +1,43 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Switchover: route internal claude spawns through cam claude and add retry-pid helpers"
+    "id": "US-007",
+    "title": "Remove external claude-auto-retry dependency from init.ts, resume.ts, embedded vendor, and tests"
   },
   "branchName": "cam/pr-4-internalize-auto-retry",
-  "timestamp": "2026-05-14T05:00:00Z",
-  "createdFiles": [
-    "src/util/retry-pid.ts",
-    "test/retry/retry-pid.test.ts"
-  ],
+  "timestamp": "2026-05-14T06:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/claude.ts",
-    "src/commands/next.ts",
-    "src/retry/launcher.ts",
-    "test/retry/interactive.test.ts",
+    "src/commands/init.ts",
+    "src/commands/resume.ts",
+    "src/commands/status.ts",
+    "src/util/retry-pid.ts",
+    "src/vendor/embedded.ts",
+    "src/vendor/_generated.ts",
+    "index.ts",
+    "vendor/check-agent-frontmatter.sh",
+    "vendor/README.md",
+    "scripts/build-release.sh",
+    "scripts/generate-embedded-vendor.ts",
+    "test/embedded.test.ts",
+    "test/vendor.test.ts",
+    "test/resume.test.ts",
+    "test/resume/modes.test.ts",
+    "test/fixtures/resume/scenario.ts",
+    "test/init.test.ts",
+    "README.md",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
+  "deletedFiles": [
+    "vendor/claude-auto-retry-patterns.ts"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 is the wider cleanup story: remove claude-auto-retry from init.ts, resume.ts, index.ts HELP strings, embedded vendor, and tests. Key things to know: (1) `DetachedSpawnAdapter` now returns `number` (monitor PID) — US-007 does not need to change this. (2) `removeRetryPid` is already wired in `claude.ts`'s cleanup callback. (3) `resume.ts` currently uses `pgrep -f claude-auto-retry` (line 225) to detect liveness — US-007 should replace this with `readRetryPid()` + `isRetryPidAlive(pid)` from `src/util/retry-pid.ts`. (4) `init.ts` checks for `claude-auto-retry` on PATH (line 151) — US-007 should remove that check or replace it with an internal capability check.",
+  "nextStoryContext": "US-008 is the final docs story: update README.md to describe the internalized auto-retry (what it does, config at ~/.config/cam/retry.toml, logs at ~/.cam/retry-logs/, attribution at LICENSES/claude-auto-retry-MIT.txt). US-007 already removed the 'claude-auto-retry on PATH' prerequisite from README.md and the INIT_HELP/RESUME_HELP strings. US-008 should expand the README to explain the internal retry mechanism and confirm the grep is clean. Key things to know: (1) LICENSES/claude-auto-retry-MIT.txt was created in US-001. (2) src/retry/* contains the internalized code with MIT attribution headers. (3) The grep AC is: `grep -rn 'claude-auto-retry' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=LICENSES` returns only src/retry/* attribution lines after US-008.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story only touched Node.js built-ins (process.kill, fs, os.homedir) and internal cam code. No external library API surface to validate."
+      "summary": "Story only touched internal cam-cli code and test infrastructure. No external library API surface to validate. The retry-pid helpers (readRetryPid, isRetryPidAlive) were validated in US-006."
     }
   ]
 }

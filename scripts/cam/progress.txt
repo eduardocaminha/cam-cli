@@ -16,6 +16,62 @@ Examples of what belongs here:
 - **Bun.spawn detached option**: `detached?: boolean` is in `bun.d.ts` (calls `setsid()` on POSIX) but the docs webpage omits it. Check `node_modules/bun-types/bun.d.ts` directly for full option surface. Always pair with `proc.unref()` and `stdio: ['ignore','ignore','ignore']` to prevent parent from waiting on child.
 -->
 
+## [2026-05-14 06:00] - US-007: Remove external claude-auto-retry dependency from init.ts, resume.ts, embedded vendor, and tests
+
+### What was done
+- Removed `validateClaudeAutoRetry()` from `src/commands/init.ts` and its call in `runInit()`. Removed vendored smoke for `claude-auto-retry-patterns.ts` from init flow.
+- Replaced `isAutoRetryAlive(spawnFn)` in `src/commands/resume.ts` with `isRetryMonitorAlive()` — reads `~/.cam/retry.pid` via `readRetryPid()` + `isRetryPidAlive()` from `src/util/retry-pid.ts`. Added `retryMonitorFn?: () => boolean` to `ResumeOptions` for test injection.
+- Renamed `autoRetryAlive` field in `ResumeReport` to `retryPidAlive`.
+- Scrubbed `claude-auto-retry` from `index.ts` INIT_HELP and RESUME_HELP strings.
+- Cleaned comment in `src/commands/status.ts`.
+- Removed `claudeAutoRetryPatternsContents` import, `'claude-auto-retry-patterns.ts'` union member, and map entry from `src/vendor/embedded.ts`.
+- Deleted `vendor/claude-auto-retry-patterns.ts`.
+- Removed `claude-auto-retry-patterns.ts` from `scripts/generate-embedded-vendor.ts` file list.
+- Regenerated `src/vendor/_generated.ts` via codegen script.
+- Updated `vendor/check-agent-frontmatter.sh` and `scripts/build-release.sh` comments.
+- Updated `vendor/README.md` to remove all references to the deleted file.
+- Updated `test/embedded.test.ts` (removed key from VENDOR_KEYS and expected list).
+- Updated `test/vendor.test.ts` comment.
+- Rewired `test/resume.test.ts`: `isAutoRetryAlive` → `isRetryMonitorAlive`, `makeFakeSpawn` lost `autoRetryAlive` handler, all `buildResumeReport`/`runResume` calls now inject `retryMonitorFn`.
+- Rewired `test/resume/modes.test.ts`: Mode 4 tests use `retryMonitorFn: () => true`, spy test updated to assert `pgrep` is absent.
+- Rewired `test/fixtures/resume/scenario.ts`: renamed `autoRetryAlive` → `retryPidAlive` in `SpawnHandlers`, `makeFakeSpawn` no longer dispatches pgrep calls.
+- Updated `test/init.test.ts` and `README.md` comments.
+
+### Files changed
+- src/commands/init.ts (modified: remove validateClaudeAutoRetry, remove smoke runner call for claude-auto-retry-patterns)
+- src/commands/resume.ts (modified: replace isAutoRetryAlive with isRetryMonitorAlive, add retryMonitorFn injection, rename autoRetryAlive → retryPidAlive)
+- src/commands/status.ts (modified: comment cleanup)
+- src/util/retry-pid.ts (modified: comment cleanup)
+- src/vendor/embedded.ts (modified: remove import + union member + map entry)
+- src/vendor/_generated.ts (modified: regenerated - removed claudeAutoRetryPatternsContents)
+- index.ts (modified: scrub INIT_HELP and RESUME_HELP)
+- vendor/claude-auto-retry-patterns.ts (deleted)
+- vendor/check-agent-frontmatter.sh (modified: comment cleanup)
+- vendor/README.md (modified: remove claude-auto-retry-patterns.ts references)
+- scripts/build-release.sh (modified: comment cleanup)
+- scripts/generate-embedded-vendor.ts (modified: remove claude-auto-retry-patterns.ts entry)
+- test/embedded.test.ts (modified: remove claude-auto-retry-patterns.ts from VENDOR_KEYS and expected list)
+- test/vendor.test.ts (modified: comment cleanup)
+- test/resume.test.ts (modified: rewire isAutoRetryAlive tests, add retryMonitorFn to all calls)
+- test/resume/modes.test.ts (modified: Mode 4 retryMonitorFn, spy test updated)
+- test/fixtures/resume/scenario.ts (modified: rename autoRetryAlive → retryPidAlive, remove pgrep dispatch)
+- test/init.test.ts (modified: comment cleanup)
+- README.md (modified: remove claude-auto-retry prerequisite)
+
+### Quality gates
+- Typecheck: ok
+- Lint: ok (no lint command configured)
+- Tests: 417 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+- No new external library exercised. All changes are removal of external-tool references and rewiring to internal PID-file helpers already validated in US-006.
+
+### Notes
+- `ResumeOptions.retryMonitorFn` is the injection point for tests to control Mode 4 (retry-monitor alive). All test calls now explicitly pass `retryMonitorFn: () => false` (for non-noop paths) or `retryMonitorFn: () => true` (for Mode 4 noop tests) to avoid flakiness from the real `~/.cam/retry.pid` on the host machine.
+- The `SpawnSyncFn` in `resume.ts` is now only used for git log (not pgrep). The spy assertion in Mode 1 test was updated to assert `pgrep` is absent and only `git` is present.
+---
+
 ## [2026-05-14 05:00] - US-006: Switchover: route internal claude spawns through cam claude and add retry-pid helpers
 
 ### What was done
