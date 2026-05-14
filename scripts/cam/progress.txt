@@ -1,0 +1,14 @@
+## Codebase Patterns
+
+<!--
+Populated by implementers as reusable patterns emerge during stories.
+Examples of what belongs here:
+
+- **Bun runtime**: always `Bun.spawn`/`Bun.$`/`Bun.file` over `node:child_process`/`fs` per project CLAUDE.md.
+- **Permission mode**: never register a `--permission-mode` CLI flag on any subcommand —
+  enforced by `test/no-permission-mode-flag.test.ts` (greps `index.ts` and `src/commands/`).
+- **Tests**: `bun test` from repo root; test files mirror source under `test/`.
+- **Conventional commits**: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`.
+- **License attribution**: ported files under `src/retry/` carry the MIT header
+  (claude-auto-retry v0.2.2, cheapestinference contributors, Eduardo Caminha port).
+-->
