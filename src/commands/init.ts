@@ -19,9 +19,13 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
 
+import { render } from 'ink';
+import { createElement } from 'react';
+
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 import { mergeIntoConfig } from '../config/toml.ts';
 import { materializeEmbedded, type EmbeddedKey } from '../vendor/embedded.ts';
+import { InitScreen, type CheckDef, type CheckOutcome } from '../ui/InitScreen.tsx';
 
 // --- Constants -------------------------------------------------------------
 
@@ -227,8 +231,22 @@ export interface InitOptions {
  * Calls into `mergeIntoConfig` for the writer step, so tests can drive the
  * full flow against an alternate config path via `CAM_CONFIG_PATH` or the
  * `options.configPath` argument without touching `~/.config/cam/config.toml`.
+ *
+ * Two render paths:
+ *  - Interactive TTY: animated Ink screen with per-check spinners.
+ *  - Non-TTY (CI, pipes, `bun test`): legacy linear print output, kept
+ *    verbatim so existing tests and log-scrapers stay valid.
  */
-export function runInit(options: InitOptions = {}): number {
+export async function runInit(options: InitOptions = {}): Promise<number> {
+	const configPath = options.configPath ?? defaultConfigPath();
+	const isInteractive = Boolean(process.stdout.isTTY) && !process.env.CI;
+	if (!isInteractive) {
+		return runInitLinear(configPath);
+	}
+	return runInitInteractive(configPath);
+}
+
+function runInitLinear(configPath: string): number {
 	const failures: string[] = [];
 
 	// 1. claude
@@ -247,7 +265,6 @@ export function runInit(options: InitOptions = {}): number {
 	if (!frontmatter.ok) failures.push('check-agent-frontmatter');
 
 	// 3. write config
-	const configPath = options.configPath ?? defaultConfigPath();
 	try {
 		mergeIntoConfig(configPath, { permission_mode: 'bypassPermissions' });
 		printSuccess(`config written ${configPath}`);
@@ -259,7 +276,7 @@ export function runInit(options: InitOptions = {}): number {
 		failures.push('config');
 	}
 
-	// 5. summary
+	// 4. summary
 	if (failures.length > 0) {
 		printError(
 			`cam init: ${failures.length} check(s) failed`,
@@ -269,4 +286,90 @@ export function runInit(options: InitOptions = {}): number {
 	}
 	printSuccess('cam init: machine ready');
 	return 0;
+}
+
+async function runInitInteractive(configPath: string): Promise<number> {
+	const checks = buildInteractiveChecks(configPath);
+	let failedIds: string[] = [];
+	const { unmount, waitUntilExit } = render(
+		createElement(InitScreen, {
+			checks,
+			onDone: (ids) => {
+				failedIds = ids;
+				unmount();
+			},
+		}),
+	);
+	await waitUntilExit();
+	return failedIds.length === 0 ? 0 : 1;
+}
+
+function buildInteractiveChecks(configPath: string): CheckDef[] {
+	return [
+		{
+			id: 'claude',
+			label: 'claude',
+			run: () => toOutcome(validateClaude(), { okDetail: parseClaudeDetail }),
+		},
+		{
+			id: 'check-agent-frontmatter',
+			label: 'agent-frontmatter',
+			run: () => smokeToOutcome(runVendoredSmoke(vendorScriptPath('check-agent-frontmatter.ts'))),
+		},
+		{
+			id: 'config',
+			label: 'config',
+			run: () => writeConfigOutcome(configPath),
+		},
+	];
+}
+
+function toOutcome(
+	r: ValidationResult,
+	opts: { okDetail: (r: ValidationResult) => string },
+): CheckOutcome {
+	if (!r.ok) {
+		return { status: 'fail', detail: r.message, ...(r.hint ? { hint: r.hint } : {}) };
+	}
+	const detail = opts.okDetail(r);
+	if (r.hint) {
+		// `ok: true` with a hint = soft warning (version floor, unparseable, etc.).
+		return { status: 'warn', detail, hint: r.hint };
+	}
+	return { status: 'ok', detail };
+}
+
+function parseClaudeDetail(r: ValidationResult): string {
+	const m = r.message.match(/version (\d+\.\d+\.\d+)/);
+	return m ? `v${m[1]}` : 'ready';
+}
+
+function smokeToOutcome(r: SmokeResult): CheckOutcome {
+	if (r.ok && r.skipped) {
+		const note = (r.stdout.trim() || r.stderr.trim() || '').split('\n')[0] ?? 'no diagnostic line';
+		return { status: 'warn', detail: 'skipped', hint: note };
+	}
+	if (r.ok) {
+		return { status: 'ok', detail: 'smoke passed' };
+	}
+	const firstStderrLine = r.stderr.split('\n').find((l) => l.trim() !== '') ?? 'failed';
+	return { status: 'fail', detail: 'smoke failed', hint: firstStderrLine };
+}
+
+function writeConfigOutcome(configPath: string): CheckOutcome {
+	try {
+		mergeIntoConfig(configPath, { permission_mode: 'bypassPermissions' });
+		return { status: 'ok', detail: shortenHomePath(configPath) };
+	} catch (err) {
+		return {
+			status: 'fail',
+			detail: `failed to write ${shortenHomePath(configPath)}`,
+			hint: err instanceof Error ? err.message : String(err),
+		};
+	}
+}
+
+function shortenHomePath(p: string): string {
+	const home = homedir();
+	return p.startsWith(`${home}/`) ? `~/${p.slice(home.length + 1)}` : p;
 }

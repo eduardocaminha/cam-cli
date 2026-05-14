@@ -45,3 +45,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Cascade / Windsurf chat dumps
 Refactor*.md
+
+# Claude Code internal source mirror (local reference material; not part of cam-cli)
+claude-code-harness/

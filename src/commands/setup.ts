@@ -31,10 +31,14 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
+import { render } from 'ink';
+import { createElement } from 'react';
+
 import { mergeIntoConfig } from '../config/toml.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 import { materializeTemplates } from '../templates/embedded.ts';
 import { buildOrchestratorBootPrompt } from './run.ts';
+import { SetupScreen, type SetupAnswers } from '../ui/SetupScreen.tsx';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,7 +56,7 @@ export interface SetupOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Readline helpers
+// Readline helpers (used when stdin is not a TTY: tests, CI, pipes)
 // ---------------------------------------------------------------------------
 
 async function ask(question: string): Promise<string> {
@@ -78,6 +82,83 @@ async function askChoice<T extends string>(
 		if ((choices as readonly string[]).includes(lower)) return lower;
 		printWarning(`Enter one of: ${choices.join(', ')}`);
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Answer collection — Ink wizard when interactive, readline otherwise
+// ---------------------------------------------------------------------------
+
+function isInteractiveTTY(): boolean {
+	return Boolean(process.stdout.isTTY) && !process.env['CI'];
+}
+
+async function collectSetupAnswers(options: SetupOptions): Promise<SetupAnswers | null> {
+	// If every answer came from CLI flags, skip prompting entirely.
+	const needsMode = options.projectMode === undefined;
+	const needsIssue = options.issueSystem === undefined;
+	const needsDesc =
+		options.projectMode === 'new' && options.description === undefined;
+	if (!needsMode && !needsIssue && !needsDesc) {
+		return {
+			projectMode: options.projectMode!,
+			issueSystem: options.issueSystem!,
+			description: options.description ?? '',
+		};
+	}
+
+	if (isInteractiveTTY()) {
+		return collectViaInk(options);
+	}
+	return collectViaReadline(options);
+}
+
+async function collectViaReadline(options: SetupOptions): Promise<SetupAnswers> {
+	const projectMode =
+		options.projectMode ??
+		(await askChoice(
+			'Is this a new project or an existing one?',
+			['new', 'existing'] as const,
+			'existing',
+		));
+	const issueSystem =
+		options.issueSystem ??
+		(await askChoice(
+			'Which issue system does this project use?',
+			['linear', 'github', 'none'] as const,
+			'none',
+		));
+	let description = options.description ?? '';
+	if (projectMode === 'new' && description === '') {
+		description = await ask('What is this project about? (free-form): ');
+	}
+	return { projectMode, issueSystem, description };
+}
+
+function collectViaInk(options: SetupOptions): Promise<SetupAnswers | null> {
+	const prefilled: Partial<SetupAnswers> = {};
+	if (options.projectMode !== undefined) prefilled.projectMode = options.projectMode;
+	if (options.issueSystem !== undefined) prefilled.issueSystem = options.issueSystem;
+	if (options.description !== undefined) prefilled.description = options.description;
+
+	return new Promise((resolve) => {
+		let result: SetupAnswers | null = null;
+		const { unmount, waitUntilExit } = render(
+			createElement(SetupScreen, {
+				prefilled,
+				onDone: (answers) => {
+					result = answers;
+					unmount();
+				},
+				onCancel: () => {
+					result = null;
+					unmount();
+				},
+			}),
+		);
+		waitUntilExit()
+			.then(() => resolve(result))
+			.catch(() => resolve(null));
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -408,37 +489,34 @@ function spawnSetupTmux(opts: {
 export async function runSetup(options: SetupOptions = {}): Promise<number> {
 	const cwd = options.cwd ?? process.cwd();
 
-	// --- Step 1: new or existing? -------------------------------------------
-	let projectMode = options.projectMode;
-	if (!projectMode) {
-		projectMode = await askChoice(
-			'Is this a new project or an existing one?',
-			['new', 'existing'] as const,
-			'existing',
-		);
-	}
-	printSuccess(`project mode: ${projectMode}`);
-
-	// --- Step 2: verify claude is installed and logged in ------------------
+	// --- Step 1: verify claude is installed and logged in -------------------
+	// Run this BEFORE prompting so the user doesn't answer three questions
+	// only to be told claude isn't installed. Same check as before, just
+	// hoisted from between the prompts to in front of them.
 	const agentResult = verifyAgent();
-	if (agentResult.ok) {
-		printSuccess(`claude found at ${agentResult.path}`);
-	} else {
+	if (!agentResult.ok) {
 		printError('claude not ready', agentResult.hint);
 		printHint('fix the issues above and re-run `cam init`');
 		return 1;
 	}
 
-	// --- Step 3: which issue system? ---------------------------------------
-	let issueSystem = options.issueSystem;
-	if (!issueSystem) {
-		issueSystem = await askChoice(
-			'Which issue system does this project use?',
-			['linear', 'github', 'none'] as const,
-			'none',
-		);
+	// --- Step 2: collect answers (interactive Ink screen or readline) -------
+	const answers = await collectSetupAnswers(options);
+	if (answers === null) {
+		printWarning('setup cancelled');
+		return 1;
 	}
-	printSuccess(`issue system: ${issueSystem}`);
+	const { projectMode, issueSystem, description } = answers;
+
+	// In non-TTY mode collectSetupAnswers already echoes nothing — print a
+	// concise confirmation so log scrapers (and the CI test stream) still
+	// see the chosen values. In TTY, the SetupScreen rendered the history
+	// inline and there's nothing more to say here.
+	if (!isInteractiveTTY()) {
+		printSuccess(`project mode: ${projectMode}`);
+		printSuccess(`claude found at ${agentResult.path}`);
+		printSuccess(`issue system: ${issueSystem}`);
+	}
 	if (issueSystem === 'linear') {
 		printHint('set LINEAR_API_KEY in your shell (get one at https://linear.app/settings/api)');
 	} else if (issueSystem === 'github') {
@@ -456,13 +534,8 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 		);
 	}
 
-	// --- Step 4: project description (new projects only) --------------------
-	let description = options.description ?? '';
-	if (projectMode === 'new' && !description) {
-		description = await ask('What is this project about? (free-form): ');
-		if (!description) {
-			printWarning('No description provided — the agent will infer from the codebase.');
-		}
+	if (projectMode === 'new' && description === '') {
+		printWarning('No description provided — the agent will infer from the codebase.');
 	}
 
 	// --- Step 6: copy templates ---------------------------------------------

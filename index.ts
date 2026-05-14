@@ -465,7 +465,7 @@ async function main(argv: string[]): Promise<number> {
 				process.stdout.write(`${INIT_HELP}\n`);
 				return 0;
 			}
-			const machineCode = runInit();
+			const machineCode = await runInit();
 			if (machineCode !== 0) return machineCode;
 			return runSetup({
 				projectMode: setupArgs.projectMode,

@@ -32,5 +32,5 @@
   // are invoked by cam-cli via `bun <file>` at runtime, not as imports.
   // The drift smoke (`test/vendor.test.ts`) is what guards them against
   // regressions; static type checking is not the right tool here.
-  "exclude": ["node_modules", "vendor"]
+  "exclude": ["node_modules", "vendor", "claude-code-harness"]
 }

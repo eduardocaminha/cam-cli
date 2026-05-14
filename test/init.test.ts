@@ -41,8 +41,8 @@ afterEach(() => {
 });
 
 describe('runInit', () => {
-	test('writes config.toml with permission_mode=bypassPermissions on a fresh path', () => {
-		const exitCode = runInit();
+	test('writes config.toml with permission_mode=bypassPermissions on a fresh path', async () => {
+		const exitCode = await runInit();
 		// On the dev machine claude is on PATH, so we expect 0.
 		// If this fails locally, double-check `which claude`.
 		expect(exitCode).toBe(0);
@@ -51,25 +51,25 @@ describe('runInit', () => {
 		expect(config.permission_mode).toBe('bypassPermissions');
 	});
 
-	test('preserves existing keys when re-running', () => {
-		const exitCode1 = runInit();
+	test('preserves existing keys when re-running', async () => {
+		const exitCode1 = await runInit();
 		expect(exitCode1).toBe(0);
-		const exitCode2 = runInit();
+		const exitCode2 = await runInit();
 		expect(exitCode2).toBe(0);
 		const config = loadConfig(configPath);
 		expect(config.permission_mode).toBe('bypassPermissions');
 	});
 
-	test('uses CAM_CONFIG_PATH override (not ~/.config/cam/config.toml)', () => {
-		runInit();
+	test('uses CAM_CONFIG_PATH override (not ~/.config/cam/config.toml)', async () => {
+		await runInit();
 		// The tmp config path was written.
 		expect(existsSync(configPath)).toBe(true);
 		// Sanity: the path is under our tmp dir, not under the real home.
 		expect(configPath.startsWith(workDir)).toBe(true);
 	});
 
-	test('produces a TOML file with a trailing newline', () => {
-		runInit();
+	test('produces a TOML file with a trailing newline', async () => {
+		await runInit();
 		const raw = readFileSync(configPath, 'utf8');
 		expect(raw.endsWith('\n')).toBe(true);
 		expect(raw).toContain('permission_mode = "bypassPermissions"');
