@@ -28,6 +28,7 @@ import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runStop } from './src/commands/stop.ts';
 import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
+import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { printError, printHint } from './src/logging/color.ts';
 import { CAM_VERSION } from './src/version.ts';
 
@@ -568,6 +569,21 @@ async function main(argv: string[]): Promise<number> {
 				return 0;
 			}
 			return runClaude({ args: parsed.forwardedArgs });
+		}
+		// Internal subcommand — not listed in top-level HELP.
+		// Forked as a detached background process by forkMonitor() when running
+		// inside a tmux session.
+		case 'retry-monitor': {
+			const parsed = parseRetryMonitorArgs(argv.slice(3));
+			if (parsed === null) {
+				printHint('run `cam retry-monitor --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(`${RETRY_MONITOR_HELP}\n`);
+				return 0;
+			}
+			return runRetryMonitor({ pane: parsed.pane, pid: parsed.pid });
 		}
 		default:
 			printError(`unknown command: ${command}`);

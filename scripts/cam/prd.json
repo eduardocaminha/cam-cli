@@ -137,7 +137,7 @@
         "Tests pass"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Builds on US-003 (monitor.processOneTick) and US-004 (launcher). Files: src/retry/launcher.ts (extend), src/commands/retry-monitor.ts, register subcommand in index.ts. Use `Bun.spawn({ detached: true, stdio: 'ignore' })` per Bun docs (officialDocsConsulted entry). Routing key: `$TMUX` env var (NOT TTY check) AND absence of `-p`/`--print` in argv. The 'internal' nature means retry-monitor should still respond to --help but should not be listed in the top-level command index. Coordinate the pane/pid contract with US-006's PID file convention."
     },

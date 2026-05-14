@@ -8,12 +8,10 @@
 // src/retry/launcher.ts
 //
 // launchClaude — print-mode launcher with auto-retry on rate limits.
+// launchClaudeInteractive — interactive/tmux launcher that forks a detached
+//   retry-monitor child. (US-005)
 //
-// This module handles ONLY print mode (`claude -p / --print`).
-// Interactive/tmux mode is handled separately in US-005.
-//
-// Design: the `spawn` function is injectable so tests can stub it without
-// spawning a real `claude` process.
+// Design: spawn functions are injectable so tests can stub without real processes.
 
 import { isRateLimited } from './patterns.ts';
 import { parseResetTime, calculateWaitMs } from './time-parser.ts';
@@ -161,6 +159,137 @@ export async function launchClaude(opts: LaunchOptions): Promise<number> {
     );
     await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Interactive launcher (US-005)
+// ---------------------------------------------------------------------------
+
+/**
+ * An adapter that detaches a background monitor process.
+ * Injectable for tests (avoids real Bun.spawn calls).
+ */
+export interface DetachedSpawnAdapter {
+  (argv: string[]): void;
+}
+
+/**
+ * An adapter that registers a signal handler.
+ * Injectable for tests.
+ */
+export type SignalHandler = (signal: NodeJS.Signals, handler: () => void) => void;
+
+export interface InteractiveOptions {
+  /** Forwarded args to pass to claude (must NOT include -p/--print). */
+  args: string[];
+  /** Tmux pane target (e.g. "%1" or "cam:1.0"). */
+  pane: string;
+  /** PID of the claude process (for monitor liveness checks). */
+  claudePid: number;
+  /** Cleanup callback invoked on SIGINT/SIGTERM/SIGHUP (e.g. remove PID file). */
+  cleanup: () => void;
+  /**
+   * Injectable adapter for spawning the detached monitor child.
+   * Defaults to the real Bun.spawn detached adapter.
+   */
+  detachedSpawn?: DetachedSpawnAdapter;
+  /**
+   * Injectable signal registration fn.
+   * Defaults to `process.on`.
+   */
+  onSignal?: SignalHandler;
+}
+
+/**
+ * Fork a detached `cam retry-monitor <pane> <claudePid>` child that watches
+ * the tmux pane and resumes on rate-limit clear.
+ *
+ * The child is fully detached (detached:true, stdio:'ignore', unref'd) so it
+ * outlives the parent process and does not block the parent's event loop.
+ *
+ * SIGINT/SIGTERM/SIGHUP handlers propagate the signal to the claude child and
+ * call `cleanup()`. SIGWINCH is forwarded for terminal resize.
+ *
+ * Call this AFTER the claude child process has been spawned so that
+ * `claudePid` is the real PID.
+ */
+export function forkMonitor(opts: InteractiveOptions): void {
+  const {
+    pane,
+    claudePid,
+    cleanup,
+    detachedSpawn = defaultDetachedSpawn,
+    onSignal = (sig, fn) => process.on(sig, fn),
+  } = opts;
+
+  // Resolve the argv for the monitor child.
+  // We invoke ourselves (the cam binary / bun + this entry point) with
+  // the `retry-monitor` subcommand so the child reuses all our own code.
+  const self = process.execPath; // path to bun executable
+  const mainScript = process.argv[1] ?? 'cam'; // path to index.ts / cam binary
+  const monitorArgv = [self, mainScript, 'retry-monitor', pane, String(claudePid)];
+
+  detachedSpawn(monitorArgv);
+
+  // Install signal handlers that propagate to the claude child and clean up.
+  const propagate = (signal: NodeJS.Signals) => {
+    try {
+      process.kill(claudePid, signal);
+    } catch {
+      // ignore — process already gone
+    }
+    cleanup();
+  };
+
+  onSignal('SIGINT', () => propagate('SIGINT'));
+  onSignal('SIGTERM', () => propagate('SIGTERM'));
+  onSignal('SIGHUP', () => propagate('SIGHUP'));
+
+  // Forward SIGWINCH for terminal resize (claude handles it natively).
+  onSignal('SIGWINCH', () => {
+    try {
+      process.kill(claudePid, 'SIGWINCH');
+    } catch {
+      // ignore
+    }
+  });
+}
+
+/**
+ * The real detached spawn adapter: uses Bun.spawn with detached:true and
+ * stdio:'ignore', then unrefs the child so it does not keep the event loop alive.
+ */
+function defaultDetachedSpawn(argv: string[]): void {
+  const proc = Bun.spawn(argv, {
+    detached: true,
+    stdio: ['ignore', 'ignore', 'ignore'],
+  });
+  proc.unref();
+}
+
+/**
+ * Validate that the environment is suitable for interactive mode.
+ *
+ * Returns `null` if valid, or an error message string if not.
+ * "Valid" means: $TMUX is set (running inside tmux) AND args do NOT include
+ * -p/--print (which would be print mode, not interactive).
+ */
+export function validateInteractiveEnv(
+  args: string[],
+  tmux: string | undefined,
+): string | null {
+  const hasPrint = args.includes('-p') || args.includes('--print');
+  if (hasPrint) {
+    // Caller is in print mode — interactive path should not be taken.
+    return 'print mode detected — use launchClaude instead';
+  }
+  if (!tmux) {
+    return (
+      '$TMUX is not set. Interactive auto-retry requires a tmux session.\n' +
+      "Use `cam run` to open the orchestrator session, which provides tmux."
+    );
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

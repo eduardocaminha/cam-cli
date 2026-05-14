@@ -13,7 +13,40 @@ Examples of what belongs here:
   (claude-auto-retry v0.2.2, cheapestinference contributors, Eduardo Caminha port).
 - **noUncheckedIndexedAccess**: tsconfig has `noUncheckedIndexedAccess: true`. Array indexing returns `T | undefined`; always guard with `?? fallback` or non-null assertion when the index is provably in-bounds.
 - **Regex capture groups**: `match()` capture groups are typed as `string | undefined` under strict+noUncheckedIndexedAccess — always use `?? ''` fallback on capture group access.
+- **Bun.spawn detached option**: `detached?: boolean` is in `bun.d.ts` (calls `setsid()` on POSIX) but the docs webpage omits it. Check `node_modules/bun-types/bun.d.ts` directly for full option surface. Always pair with `proc.unref()` and `stdio: ['ignore','ignore','ignore']` to prevent parent from waiting on child.
 -->
+
+## [2026-05-14 04:00] - US-005: Implement interactive mode with monitor fork and cam retry-monitor internal subcommand
+
+### What was done
+- Extended `src/retry/launcher.ts` with `forkMonitor(opts)` function that forks a detached `cam retry-monitor <pane> <pid>` child via `Bun.spawn({ detached: true, stdio: ['ignore','ignore','ignore'] })` and `proc.unref()`. Both `DetachedSpawnAdapter` and `SignalHandler` are injectable for tests.
+- Added `validateInteractiveEnv(args, tmux)` helper that returns `null` when inside tmux and no `-p`/`--print` in args, or an error string otherwise.
+- Updated `src/commands/claude.ts` routing: when args include `-p`/`--print` → print mode (existing `launchClaude`); when `$TMUX` set and no print → interactive mode (`Bun.spawn` attached to TTY + `forkMonitor`); otherwise → error pointing at `cam run`.
+- Created `src/commands/retry-monitor.ts` with `runRetryMonitor`, `parseRetryMonitorArgs`, `RETRY_MONITOR_HELP`. Not advertised in top-level `HELP`; responds to `--help`. Does NOT register `--permission-mode`.
+- Wired `case 'retry-monitor'` in `index.ts` (after `case 'claude'`). Import added.
+- Created `test/retry/interactive.test.ts` with 22 tests covering: detached spawn argv structure, signal handler registration, SIGINT/SIGTERM cleanup, validateInteractiveEnv paths, non-tmux error path, print-mode routing, parseRetryMonitorArgs, and runRetryMonitor injectable monitor.
+
+### Files changed
+- src/retry/launcher.ts (modified: added forkMonitor, validateInteractiveEnv, DetachedSpawnAdapter, SignalHandler, InteractiveOptions)
+- src/commands/claude.ts (modified: added interactive routing, forkMonitor call, findClaudeBinary/filteredProcessEnv helpers)
+- src/commands/retry-monitor.ts (new)
+- index.ts (modified: import + case 'retry-monitor')
+- test/retry/interactive.test.ts (new, 22 tests)
+
+### Quality gates
+- Typecheck: ok
+- Lint: ok (no lint command configured)
+- Tests: 401 pass / 0 fail (22 new + 379 pre-existing)
+
+### Step 5.5 docs validation
+- lib: Bun.spawn (detached option), status: ok
+- Confirmed: `detached?: boolean` is in `bun.d.ts` (calls `setsid()` on POSIX). `proc.unref()` exists on `Subprocess` and detaches from parent event loop. `stdio: ['ignore','ignore','ignore']` maps to `[Writable, Readable, Readable]` tuple. Doc page didn't list `detached` but the type definition confirms it. Implementation matches API.
+
+### Notes
+- `detached` option is in `bun.d.ts` but the online docs page omits it. Always cross-check the type definitions in `node_modules/bun-types/bun.d.ts` for Bun API completeness.
+- `forkMonitor` uses `process.argv[1]` as the main script path so the child is invoked as `[bunExecPath, mainScript, 'retry-monitor', pane, pid]`. In production, `mainScript` is the cam binary path.
+- `validateInteractiveEnv` returns an error string (not throws) so callers can choose how to surface it.
+---
 
 ## [2026-05-14 03:00] - US-004: Implement launcher.ts and cam claude subcommand (print mode)
 
