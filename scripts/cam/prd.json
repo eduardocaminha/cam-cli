@@ -55,7 +55,7 @@
         "Tests pass"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Source: /opt/homebrew/lib/node_modules/claude-auto-retry/src/patterns.js and time-parser.js. New files: src/retry/patterns.ts, src/retry/time-parser.ts, test/retry/patterns.test.ts, test/retry/time-parser.test.ts, LICENSES/claude-auto-retry-MIT.txt. Pure functions only — no Bun APIs, no filesystem, no spawn. Keep exported function names identical to the originals so later ports can import 1:1. Use `import { test, expect } from \"bun:test\"`."
     },

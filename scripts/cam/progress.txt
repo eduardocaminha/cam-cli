@@ -11,4 +11,36 @@ Examples of what belongs here:
 - **Conventional commits**: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`.
 - **License attribution**: ported files under `src/retry/` carry the MIT header
   (claude-auto-retry v0.2.2, cheapestinference contributors, Eduardo Caminha port).
+- **noUncheckedIndexedAccess**: tsconfig has `noUncheckedIndexedAccess: true`. Array indexing returns `T | undefined`; always guard with `?? fallback` or non-null assertion when the index is provably in-bounds.
+- **Regex capture groups**: `match()` capture groups are typed as `string | undefined` under strict+noUncheckedIndexedAccess — always use `?? ''` fallback on capture group access.
 -->
+
+## [2026-05-14 00:00] - US-001: Port patterns.ts + time-parser.ts with tests and license attribution
+
+### What was done
+- Ported `patterns.js` → `src/retry/patterns.ts` with full TypeScript types on all exports (`stripAnsi`, `isRateLimited`, `findRateLimitMessage`).
+- Ported `time-parser.js` → `src/retry/time-parser.ts` with typed interfaces (`AbsoluteParsedTime`, `RelativeParsedTime`, `ParsedTime`) and identical semantics.
+- Both files carry MIT attribution header per acceptance criteria.
+- Created `LICENSES/claude-auto-retry-MIT.txt` with verbatim MIT license text from source package.
+- Wrote 50 tests across `test/retry/patterns.test.ts` and `test/retry/time-parser.test.ts` covering every exported function with positive, negative, and edge cases.
+- No changes to `package.json` — zero new runtime dependencies.
+
+### Files changed
+- LICENSES/claude-auto-retry-MIT.txt (new)
+- src/retry/patterns.ts (new)
+- src/retry/time-parser.ts (new)
+- test/retry/patterns.test.ts (new)
+- test/retry/time-parser.test.ts (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: ok (no lint command configured)
+- Tests: 310 pass (50 new + 260 pre-existing)
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+
+### Notes
+- `noUncheckedIndexedAccess: true` in tsconfig requires guarding regex capture group access and array index reads with `?? fallback`. Fixed 5 type errors after initial port.
+- The `findRateLimitMessage` function in the original JS accepts `customPatterns` but ignores it — parameter preserved for API parity.
+---
