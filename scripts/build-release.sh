@@ -64,7 +64,7 @@ echo "[build-release] verifying --version output"
 EXPECTED="cam ${VERSION}"
 ACTUAL="$("${BIN}" --version)"
 if [[ "${ACTUAL}" != "${EXPECTED}" ]]; then
-	echo "ERROR: --version mismatch — expected ${EXPECTED!r}, got ${ACTUAL!r}" >&2
+	echo "ERROR: --version mismatch — expected '${EXPECTED}', got '${ACTUAL}'" >&2
 	exit 1
 fi
 echo "[build-release]   ${ACTUAL}"

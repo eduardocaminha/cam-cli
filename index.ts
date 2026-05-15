@@ -531,7 +531,11 @@ async function main(argv: string[]): Promise<number> {
 	// shipping just one would surprise muscle memory. The output shape is
 	// `cam 0.1.0` (single line, trailing newline).
 	if (command === '--version' || command === '-v' || command === 'version') {
-		process.stdout.write(`\ncam ${CAM_VERSION}\n\n`);
+		// `cam --version` is a machine-readable contract: emit exactly
+		// `cam X.Y.Z\n` so scripts piping into `head -1` or doing `==`
+		// comparisons keep working. The "leading/trailing blank line"
+		// convention applies to human-facing screens, not to version probes.
+		process.stdout.write(`cam ${CAM_VERSION}\n`);
 		return 0;
 	}
 
