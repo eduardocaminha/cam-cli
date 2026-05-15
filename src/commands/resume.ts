@@ -74,7 +74,22 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
 
 import { parseStateFile, type LoopState, type PrdShape } from './status.ts';
-import { color, muted, printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
+import {
+	accent,
+	chalk,
+	color,
+	muted,
+	printError,
+	printHint,
+	printSuccess,
+	printWarning,
+	warning,
+} from '../logging/color.ts';
+import {
+	emitSectionHeading,
+	emitTitle,
+	emitTrailingBlank,
+} from '../logging/screen.ts';
 import { readRetryPid, isRetryPidAlive } from '../util/retry-pid.ts';
 import { promptSelect } from '../ui/promptSelect.tsx';
 
@@ -545,11 +560,15 @@ export async function runResume(options: ResumeOptions = {}): Promise<number> {
 		return await runExplicitReset(options.mode, cwd, promptFn, options);
 	}
 
+	emitTitle('cam resume');
+	emitSectionHeading('Summary');
+
 	const report = buildResumeReport(options);
 	printSummary(report);
 
 	if (options.dryRun) {
 		printHint('Dry run: no state mutations or spawns');
+		emitTrailingBlank();
 		return 0;
 	}
 
@@ -562,21 +581,26 @@ export async function runResume(options: ResumeOptions = {}): Promise<number> {
 				printSuccess(`Removed orphan ${STATE_FILE_PATH}`);
 			}
 			printSuccess('PRD complete — nothing to resume');
+			emitTrailingBlank();
 			return 0;
 		}
 		case 'idle':
 			printHint('Run `cam next` to start a fresh loop');
+			emitTrailingBlank();
 			return 0;
 		case 'noop':
 			printHint('retry-monitor is sleeping — it will respawn `cam next` when the rate-limit window ends');
+			emitTrailingBlank();
 			return 0;
 		case 'respawn':
 			printHint('Next step: re-run `cam next` from this cwd to re-attach the loop');
+			emitTrailingBlank();
 			return 0;
 		case 'prompt': {
 			const answer = await askResumeChoice(promptFn, options.prompt !== undefined);
 			if (answer === 'y') {
 				printSuccess('Continuing — re-run `cam next` to re-attach the loop');
+				emitTrailingBlank();
 				return 0;
 			}
 			if (answer === 'reset') {
@@ -585,12 +609,15 @@ export async function runResume(options: ResumeOptions = {}): Promise<number> {
 					report.cleanedStateFile = true;
 					printSuccess(`Removed ${STATE_FILE_PATH}`);
 				}
+				emitTrailingBlank();
 				return 0;
 			}
 			printWarning('Aborted', 'No recovery action taken');
+			emitTrailingBlank();
 			return 1;
 		}
 		default:
+			emitTrailingBlank();
 			return 0;
 	}
 }
@@ -606,45 +633,56 @@ async function runExplicitReset(
 	promptFn: PromptFn,
 	options: ResumeOptions,
 ): Promise<number> {
+	emitTitle('cam resume');
+	emitSectionHeading(`Mode: ${mode}`);
+
 	if (mode === 'reset-current-story') {
 		const prd = readPrd(cwd);
 		if (!prd) {
 			printError('reset-current-story: no prd.json found in cwd');
+			emitTrailingBlank();
 			return 2;
 		}
 		if (options.dryRun) {
 			printHint(`Dry run: would reset the most-recently-completed story`);
+			emitTrailingBlank();
 			return 0;
 		}
 		const id = resetCurrentStoryInPlace(prd);
 		if (!id) {
 			printWarning('Nothing to reset', 'No completed stories in the PRD');
+			emitTrailingBlank();
 			return 2;
 		}
 		writePrd(cwd, prd);
 		printSuccess(`Reset ${id} → passes:false`);
 		printHint('Next step: re-run `cam next` to re-implement that story');
+		emitTrailingBlank();
 		return 0;
 	}
 	if (mode === 'reset-prd') {
 		const prd = readPrd(cwd);
 		if (!prd) {
 			printError('reset-prd: no prd.json found in cwd');
+			emitTrailingBlank();
 			return 2;
 		}
 		if (options.dryRun) {
 			const count = (prd.userStories ?? []).filter((s) => s.passes !== false).length;
 			printHint(`Dry run: would flip ${count} stor${count === 1 ? 'y' : 'ies'} to passes:false`);
+			emitTrailingBlank();
 			return 0;
 		}
 		const count = resetPrdInPlace(prd);
 		if (count === 0) {
 			printHint('PRD already had every story at passes:false');
+			emitTrailingBlank();
 			return 0;
 		}
 		writePrd(cwd, prd);
 		printSuccess(`Reset ${count} stor${count === 1 ? 'y' : 'ies'} → passes:false`);
 		printHint('Next step: re-run `cam next` to re-implement from US-001');
+		emitTrailingBlank();
 		return 0;
 	}
 	if (mode === 'reset-branch') {
@@ -655,12 +693,14 @@ async function runExplicitReset(
 		// uncommitted work because of a misclassification.
 		if (options.dryRun) {
 			printHint('Dry run: would print the `git reset --hard origin/main` instruction');
+			emitTrailingBlank();
 			return 0;
 		}
 		if (!options.force) {
 			const answer = await askResetBranchConfirm(promptFn, options.prompt !== undefined);
 			if (answer !== 'y') {
 				printWarning('Aborted', 'No branch reset performed');
+				emitTrailingBlank();
 				return 1;
 			}
 		}
@@ -674,6 +714,7 @@ async function runExplicitReset(
 		if (removed) {
 			printSuccess(`Removed ${STATE_FILE_PATH}`);
 		}
+		emitTrailingBlank();
 		return 0;
 	}
 	return 2;
@@ -696,28 +737,38 @@ function removeStateFileIfPresent(cwd: string): boolean {
  * without context-switching.
  */
 function printSummary(report: ResumeReport): void {
-	const modeLabel =
-		report.mode === 'noop' || report.mode === 'idle'
-			? muted(report.mode)
-			: report.mode === 'success'
-				? color.green(report.mode)
-				: report.mode === 'prompt'
-					? color.yellow(report.mode)
-					: color.cyan(report.mode);
-	process.stdout.write(`mode:    ${modeLabel}\n`);
-	process.stdout.write(`state:   ${report.stateFilePresent ? 'present' : muted('absent')}\n`);
+	const KEY_W = 9;
+	const padKey = (k: string): string => chalk.bold(k.padEnd(KEY_W));
+	// Color the mode token using the unified palette: success → accent green,
+	// prompt → warning yellow, idle/noop → muted (these are quiet states),
+	// anything else (e.g. respawn) stays default so it doesn't fight for the
+	// eye against success/prompt.
+	const modeLabel = (() => {
+		switch (report.mode) {
+			case 'success':
+				return accent(report.mode);
+			case 'prompt':
+				return warning(report.mode);
+			case 'idle':
+			case 'noop':
+				return muted(report.mode);
+			default:
+				return report.mode;
+		}
+	})();
+
+	process.stdout.write(`    ${padKey('mode')}${modeLabel}\n`);
+	process.stdout.write(`    ${padKey('state')}${report.stateFilePresent ? 'present' : muted('absent')}\n`);
+	process.stdout.write(`    ${padKey('pid')}${report.pidAlive ? accent('alive') : muted('dead/absent')}\n`);
 	process.stdout.write(
-		`pid:     ${report.pidAlive ? color.green('alive') : muted('dead/absent')}\n`,
-	);
-	process.stdout.write(
-		`retry:   ${report.retryPidAlive ? color.green('retry-monitor alive') : muted('not running')}\n`,
+		`    ${padKey('retry')}${report.retryPidAlive ? accent('retry-monitor alive') : muted('not running')}\n`,
 	);
 	if (typeof report.lastCommitAgeMs === 'number') {
 		const hours = Math.floor(report.lastCommitAgeMs / (60 * 60 * 1000));
-		process.stdout.write(`commit:  ${hours}h since last commit\n`);
+		process.stdout.write(`    ${padKey('commit')}${hours}h since last commit\n`);
 	}
 	for (const note of report.notes) {
-		process.stdout.write(`${muted('→')} ${note}\n`);
+		process.stdout.write(`    ${muted(`→ ${note}`)}\n`);
 	}
 }
 

@@ -51,6 +51,13 @@ import process from 'node:process';
 
 import { readPermissionMode } from '../config/permission-mode.ts';
 import { printError, printHint, printSuccess } from '../logging/color.ts';
+import {
+	emitMutedHint,
+	emitOk,
+	emitSectionHeading,
+	emitTitle,
+	emitTrailingBlank,
+} from '../logging/screen.ts';
 import { readEmbedded } from '../vendor/embedded.ts';
 
 // --- Constants -------------------------------------------------------------
@@ -500,6 +507,9 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const hookMaterializer = options.hookMaterializer ?? ((cwd2: string) => materializeStopHook(cwd2));
 	const settingsWriter = options.settingsWriter ?? ((cwd2: string) => writeSettingsLocal(cwd2));
 
+	emitTitle('cam next');
+	emitSectionHeading('Loop');
+
 	// 0. Materialize the vendored stop hook and register it in
 	//    .claude/settings.local.json BEFORE writing the state file. This
 	//    ensures the hook is registered in Claude Code's settings so it fires
@@ -507,22 +517,24 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	//    installed in the spawned session.
 	try {
 		const hookPath = hookMaterializer(cwd);
-		printSuccess(`Materialized stop hook`, hookPath);
+		emitOk('Materialized stop hook', hookPath);
 	} catch (err) {
 		printError(
 			'Failed to materialize stop hook',
 			err instanceof Error ? err.message : String(err),
 		);
+		emitTrailingBlank();
 		return 1;
 	}
 	try {
 		const settingsPath = settingsWriter(cwd);
-		printSuccess(`Registered Stop hook in`, settingsPath);
+		emitOk('Registered Stop hook in', settingsPath);
 	} catch (err) {
 		printError(
 			'Failed to write .claude/settings.local.json',
 			err instanceof Error ? err.message : String(err),
 		);
+		emitTrailingBlank();
 		return 1;
 	}
 
@@ -545,14 +557,16 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			'Failed to pre-arm cam-loop state file',
 			err instanceof Error ? err.message : String(err),
 		);
+		emitTrailingBlank();
 		return 1;
 	}
-	printSuccess(`Armed ${writtenPath}`, `max=${maxIterations} promise="${completionPromise}"`);
+	emitOk(`Armed ${writtenPath}`, `max=${maxIterations} promise="${completionPromise}"`);
 
 	// 2. Build pane A's argv (claude with the loop kick-off prompt).
 	const claudeArgv = buildClaudeArgv(permissionMode);
 
 	// 3. Branch on host detection.
+	emitSectionHeading('Host');
 	if (host === 'tmux-split') {
 		// Spawn pane B (dashboard) in a tmux split. We do this FIRST so
 		// by the time pane A starts producing output, the dashboard is
@@ -577,18 +591,19 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			printHint('Continuing inline — open a separate `cam dashboard` if you want one');
 		}
 		if (insideTmux) {
-			printSuccess('tmux split: claude in current pane, dashboard in new pane');
+			emitOk('tmux split: claude in current pane, dashboard in new pane');
 		} else {
-			printSuccess('tmux session "cam" created with dashboard');
-			printHint('Attach with: tmux attach -t cam');
+			emitOk('tmux session "cam" created with dashboard');
+			emitMutedHint('Attach with: tmux attach -t cam');
 		}
 	} else {
-		printSuccess('Inline mode (VS Code or no tmux): no split');
-		printHint('Your current terminal is the dashboard view of the loop');
+		emitOk('Inline mode (VS Code or no tmux): no split');
+		emitMutedHint('Your current terminal is the dashboard view of the loop');
 	}
 
 	// 4. Spawn pane A (claude). This is the foreground process; we wait on
-	//    its exit.
+	//    its exit. Claude takes over stdout from here, so no trailing blank
+	//    line is needed in the happy path.
 	let claudeProc: NextSubprocess;
 	try {
 		claudeProc = spawn(claudeArgv, { cwd });
@@ -598,6 +613,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			err instanceof Error ? err.message : String(err),
 		);
 		printHint('Verify `claude` is on PATH (re-run `cam init` to validate)');
+		emitTrailingBlank();
 		return 1;
 	}
 	const exitCode = await claudeProc.exited;

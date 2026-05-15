@@ -50,6 +50,13 @@ import process from 'node:process';
 
 import { readPermissionMode } from '../config/permission-mode.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
+import {
+	emitMutedHint,
+	emitOk,
+	emitSectionHeading,
+	emitTitle,
+	emitTrailingBlank,
+} from '../logging/screen.ts';
 import { promptSelect } from '../ui/promptSelect.tsx';
 
 // --- Types -----------------------------------------------------------------
@@ -379,6 +386,9 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 	}
 
 	// --- Spawn ----------------------------------------------------------------
+	emitTitle('cam plan');
+	emitSectionHeading('Session');
+
 	try {
 		proc = spawnFn(cmd, { onData, onExit: () => {} });
 	} catch (err) {
@@ -387,11 +397,12 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 			err instanceof Error ? err.message : String(err),
 		);
 		printHint('Verify `claude` is on PATH (re-run `cam init` to validate)');
+		emitTrailingBlank();
 		return 1;
 	}
 
-	printSuccess(`Dispatched ${slash}`);
-	printHint('The planning session is interactive — your keystrokes go directly to claude');
+	emitOk(`Dispatched ${slash}`);
+	emitMutedHint('The planning session is interactive — your keystrokes go directly to claude');
 
 	// Start forwarding stdin to the child PTY immediately.
 	startStdinForwarding();

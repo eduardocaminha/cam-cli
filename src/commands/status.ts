@@ -52,6 +52,11 @@ import {
 	warning,
 	color,
 } from '../logging/color.ts';
+import {
+	emitSectionHeading,
+	emitTitle,
+	emitTrailingBlank,
+} from '../logging/screen.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -325,16 +330,11 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
  * sparse: a one-line `status: idle` plus (if present) the next-pending story
  * + branch info, so the operator can confirm the right cwd.
  */
-/** Width of section divisors. Matches the Ink `Section` and `renderHelp`. */
-const DIVIDER_WIDTH = 50;
-const DIVIDER = '─'.repeat(DIVIDER_WIDTH);
-
 /** Column width for entry keys (e.g. `state    `, `story    `). */
 const KEY_COL_WIDTH = 9;
 
-/** Indent used inside Sections — matches `renderHelp` and the Ink Section. */
+/** Indent used inside Sections — matches `screen.ts` and the Ink Section. */
 const CONTENT_INDENT = '    ';
-const HEADING_INDENT = '  ';
 
 /**
  * Render a state indicator (icon + label) using the unified palette:
@@ -356,13 +356,8 @@ function renderEntry(key: string, value: string): string {
 export function runStatus(options: StatusOptions = {}): number {
 	const report = buildStatusReport(options);
 
-	// Leading blank line + title row — mirrors `renderHelp` so every screen
-	// breathes away from the shell prompt and shares the same hierarchy.
-	process.stdout.write(`\n${accent.bold('cam status')}\n\n`);
-
-	// Section: Loop  (heading + muted divisor + indented entries)
-	process.stdout.write(`${HEADING_INDENT}${chalk.bold('Loop')}\n`);
-	process.stdout.write(`${HEADING_INDENT}${muted(DIVIDER)}\n`);
+	emitTitle('cam status');
+	emitSectionHeading('Loop');
 
 	// State indicator is always shown; the rest of the rows depend on which
 	// data is available (idle skips iter/since/promise; paused keeps them).
@@ -384,7 +379,7 @@ export function runStatus(options: StatusOptions = {}): number {
 		}
 		process.stdout.write('\n');
 		printHint('No `.claude/cam-loop.local.md` — start a loop with `cam next` (or `/cam-loop` from inside claude)');
-		process.stdout.write('\n');
+		emitTrailingBlank();
 		return 0;
 	}
 
@@ -418,7 +413,7 @@ export function runStatus(options: StatusOptions = {}): number {
 	if (report.state === 'paused') {
 		printWarning('Loop is paused (active:false in state file)', 'Run `cam stop` to clear, then `cam next` to restart');
 	}
-	process.stdout.write('\n');
+	emitTrailingBlank();
 	return 0;
 }
 

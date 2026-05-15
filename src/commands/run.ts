@@ -27,7 +27,14 @@ import { basename } from 'node:path';
 import { createHash } from 'node:crypto';
 import process from 'node:process';
 
-import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
+import { printError, printWarning } from '../logging/color.ts';
+import {
+	emitMutedHint,
+	emitOk,
+	emitSectionHeading,
+	emitTitle,
+	emitTrailingBlank,
+} from '../logging/screen.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -220,9 +227,16 @@ function createOrchestratorSession(opts: {
 export function runRun(options: RunOptions = {}): number {
 	const cwd = options.cwd ?? process.cwd();
 
-	// 1. Pre-flight checks.
+	// Title + leading blank up-front so every code path below shares the same
+	// hierarchy as `cam status` / `cam help`.
+	emitTitle('cam run');
+
+	// 1. Pre-flight checks. Errors use `printError` directly (destructive
+	//    bold lives at col 0 by design — it must stand out, not nestle inside
+	//    a Section column).
 	if (!tmuxAvailable()) {
 		printError('tmux is not on PATH', 'install tmux and re-run `cam run`');
+		emitTrailingBlank();
 		return 1;
 	}
 
@@ -232,41 +246,48 @@ export function runRun(options: RunOptions = {}): number {
 			'subagent-orchestrator.md not found',
 			'This project has not been initialized — run `cam init` first',
 		);
+		emitTrailingBlank();
 		return 1;
 	}
 
 	// 2. Compute session name.
 	const sessionName = projectSessionName(cwd);
 
-	// 3. Create or detect.
+	// 3. Open the "Session" section — everything from here is part of the
+	//    create/attach narrative, so it lives under one heading.
+	emitSectionHeading('Session');
+
 	// Tests set CAM_RUN_DRY_RUN=1 to exercise pre-flight without spawning
 	// real tmux processes. In that mode we only verify checks pass and
 	// return 0 immediately.
 	if (process.env['CAM_RUN_DRY_RUN'] === '1') {
-		printSuccess(`[dry-run] would create/attach session "${sessionName}"`);
+		emitOk(`[dry-run] would create/attach session "${sessionName}"`);
+		emitTrailingBlank();
 		return 0;
 	}
 
 	let result: CreateSessionResult;
 	if (tmuxHasSession(sessionName)) {
-		printSuccess(`tmux session "${sessionName}" already exists — attaching`);
+		emitOk(`tmux session "${sessionName}" already exists — attaching`);
 		result = { sessionName, created: false };
 	} else {
 		try {
 			result = createOrchestratorSession({ cwd, sessionName });
-			printSuccess(`tmux session "${sessionName}" created`);
+			emitOk(`tmux session "${sessionName}" created`);
 		} catch (err) {
 			printError(
 				'Failed to create orchestrator session',
 				err instanceof Error ? err.message : String(err),
 			);
+			emitTrailingBlank();
 			return 1;
 		}
 	}
 
 	// 4. Attach (unless --no-attach).
 	if (options.noAttach) {
-		printHint(`Attach manually: tmux attach -t ${result.sessionName}`);
+		emitMutedHint(`Attach manually: tmux attach -t ${result.sessionName}`);
+		emitTrailingBlank();
 		return 0;
 	}
 
@@ -279,6 +300,7 @@ export function runRun(options: RunOptions = {}): number {
 
 	if ((attach.status ?? 1) !== 0) {
 		printWarning(`tmux attach failed — try manually: tmux attach -t ${result.sessionName}`);
+		emitTrailingBlank();
 		return attach.status ?? 1;
 	}
 	return 0;

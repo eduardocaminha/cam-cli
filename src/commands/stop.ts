@@ -31,7 +31,14 @@ import { join } from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
 
-import { printHint, printSuccess, printWarning } from '../logging/color.ts';
+import { printWarning } from '../logging/color.ts';
+import {
+	emitMutedHint,
+	emitOk,
+	emitSectionHeading,
+	emitTitle,
+	emitTrailingBlank,
+} from '../logging/screen.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -148,31 +155,32 @@ export function performStop(options: StopOptions = {}): StopReport {
 export function runStop(options: StopOptions = {}): number {
 	const report = performStop(options);
 
-	// Leading blank line so the output breathes away from the shell prompt —
-	// mirrors `cam status`, `cam help`, and every other top-level surface.
-	process.stdout.write('\n');
+	emitTitle('cam stop');
+	emitSectionHeading('Cleanup');
 
 	if (report.stateFileRemoved) {
-		printSuccess(`Removed ${STATE_FILE_PATH}`);
+		emitOk(`Removed ${STATE_FILE_PATH}`);
 	} else {
-		printHint(`No ${STATE_FILE_PATH} present (nothing to clean)`);
+		emitMutedHint(`No ${STATE_FILE_PATH} present (nothing to clean)`);
 	}
 
 	if (report.tmuxUnavailable) {
-		printHint('tmux not on PATH (skipping session check)');
+		emitMutedHint('tmux not on PATH (skipping session check)');
 	} else if (report.tmuxKilled) {
-		printSuccess(`Killed tmux session "${TMUX_SESSION_NAME}"`);
+		emitOk(`Killed tmux session "${TMUX_SESSION_NAME}"`);
 	} else {
-		printHint(`No tmux session named "${TMUX_SESSION_NAME}" (nothing to kill)`);
+		emitMutedHint(`No tmux session named "${TMUX_SESSION_NAME}" (nothing to kill)`);
 	}
 
 	if (!report.stateFileRemoved && !report.tmuxKilled) {
+		// printWarning lives at col 0 by design (it's an interrupt) and brings
+		// its own leading blank line, so the visual rhythm stays correct even
+		// outside the Section column.
 		printWarning('Nothing to clean', 'No active loop or stale state detected');
 	} else {
-		printSuccess('Clean');
+		emitOk('Clean');
 	}
 
-	// Trailing blank line — same rationale as the leading one.
-	process.stdout.write('\n');
+	emitTrailingBlank();
 	return 0;
 }
