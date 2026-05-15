@@ -120,3 +120,14 @@ export function printHint(msg: string): void {
 	if (isQuiet()) return;
 	process.stdout.write(`${muted(`  ${msg}`)}\n`);
 }
+
+/**
+ * Hint that is the last line of a fatal flow (parse error, unknown command,
+ * etc.). Behaves like `printHint` but appends a trailing blank line so the
+ * shell prompt lands cleanly under the message — matching the leading blank
+ * line that `printError` already emits above the `✗` glyph.
+ */
+export function printFatalHint(msg: string): void {
+	if (isQuiet()) return;
+	process.stdout.write(`${muted(`  ${msg}`)}\n\n`);
+}

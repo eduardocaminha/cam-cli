@@ -29,7 +29,7 @@ import { runStatus } from './src/commands/status.ts';
 import { runStop } from './src/commands/stop.ts';
 import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
-import { printError, printHint } from './src/logging/color.ts';
+import { printError, printFatalHint, printHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { CAM_VERSION } from './src/version.ts';
 
@@ -531,7 +531,7 @@ async function main(argv: string[]): Promise<number> {
 	// shipping just one would surprise muscle memory. The output shape is
 	// `cam 0.1.0` (single line, trailing newline).
 	if (command === '--version' || command === '-v' || command === 'version') {
-		process.stdout.write(`cam ${CAM_VERSION}\n`);
+		process.stdout.write(`\ncam ${CAM_VERSION}\n\n`);
 		return 0;
 	}
 
@@ -539,7 +539,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'init': {
 			const setupArgs = parseSetupArgs(argv.slice(3));
 			if (setupArgs === null) {
-				printHint('run `cam init --help` for usage');
+				printFatalHint('run `cam init --help` for usage');
 				return 1;
 			}
 			if (setupArgs.help) {
@@ -555,10 +555,30 @@ async function main(argv: string[]): Promise<number> {
 				noTmux: setupArgs.noTmux,
 			});
 		}
+		case 'setup': {
+			// Skip Stage 1 (machine validation) — exposes the SetupScreen directly
+			// for previewing/iterating on its layout without re-running `cam init`.
+			// Accepts the same flags as `cam init` Stage 2.
+			const setupArgs = parseSetupArgs(argv.slice(3));
+			if (setupArgs === null) {
+				printFatalHint('run `cam init --help` for usage (setup shares its flags)');
+				return 1;
+			}
+			if (setupArgs.help) {
+				process.stdout.write(INIT_HELP);
+				return 0;
+			}
+			return runSetup({
+				projectMode: setupArgs.projectMode,
+				issueSystem: setupArgs.issueSystem,
+				description: setupArgs.description,
+				noTmux: setupArgs.noTmux,
+			});
+		}
 		case 'run': {
 			const parsed = parseRunArgs(argv.slice(3));
 			if (parsed === null) {
-				printHint('run `cam run --help` for usage');
+				printFatalHint('run `cam run --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -570,7 +590,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'plan': {
 			const parsed = parsePlanArgs(argv.slice(3));
 			if (parsed === null) {
-				printHint('run `cam plan --help` for usage');
+				printFatalHint('run `cam plan --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -582,7 +602,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'next': {
 			const parsed = parseNextArgs(argv.slice(3));
 			if (parsed === null) {
-				printHint('run `cam next --help` for usage');
+				printFatalHint('run `cam next --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -602,7 +622,7 @@ async function main(argv: string[]): Promise<number> {
 			}
 			if (tail.length > 0) {
 				printError(`unknown dashboard option: ${tail[0]}`);
-				printHint('run `cam dashboard --help` for usage');
+				printFatalHint('run `cam dashboard --help` for usage');
 				return 1;
 			}
 			return runDashboardInk();
@@ -615,7 +635,7 @@ async function main(argv: string[]): Promise<number> {
 			}
 			if (tail.length > 0) {
 				printError(`unknown status option: ${tail[0]}`);
-				printHint('run `cam status --help` for usage');
+				printFatalHint('run `cam status --help` for usage');
 				return 1;
 			}
 			return runStatus();
@@ -628,7 +648,7 @@ async function main(argv: string[]): Promise<number> {
 			}
 			if (tail.length > 0) {
 				printError(`unknown stop option: ${tail[0]}`);
-				printHint('run `cam stop --help` for usage');
+				printFatalHint('run `cam stop --help` for usage');
 				return 1;
 			}
 			return runStop();
@@ -636,7 +656,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'resume': {
 			const parsed = parseResumeArgs(argv.slice(3));
 			if (parsed === null) {
-				printHint('run `cam resume --help` for usage');
+				printFatalHint('run `cam resume --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -663,7 +683,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'retry-monitor': {
 			const parsed = parseRetryMonitorArgs(argv.slice(3));
 			if (parsed === null) {
-				printHint('run `cam retry-monitor --help` for usage');
+				printFatalHint('run `cam retry-monitor --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -674,7 +694,7 @@ async function main(argv: string[]): Promise<number> {
 		}
 		default:
 			printError(`unknown command: ${command}`);
-			printHint('run `cam help` to see the available commands');
+			printFatalHint('run `cam help` to see the available commands');
 			return 1;
 	}
 }

@@ -53,7 +53,7 @@ describe('`cam` dispatch — version variants', () => {
 		try {
 			const code = await main(['bun', 'cam', '--version']);
 			expect(code).toBe(0);
-			expect(cap.written()).toBe(`cam ${CAM_VERSION}\n`);
+			expect(cap.written()).toBe(`\ncam ${CAM_VERSION}\n\n`);
 		} finally {
 			cap.restore();
 		}
@@ -64,7 +64,7 @@ describe('`cam` dispatch — version variants', () => {
 		try {
 			const code = await main(['bun', 'cam', '-v']);
 			expect(code).toBe(0);
-			expect(cap.written()).toBe(`cam ${CAM_VERSION}\n`);
+			expect(cap.written()).toBe(`\ncam ${CAM_VERSION}\n\n`);
 		} finally {
 			cap.restore();
 		}
@@ -75,7 +75,7 @@ describe('`cam` dispatch — version variants', () => {
 		try {
 			const code = await main(['bun', 'cam', 'version']);
 			expect(code).toBe(0);
-			expect(cap.written()).toBe(`cam ${CAM_VERSION}\n`);
+			expect(cap.written()).toBe(`\ncam ${CAM_VERSION}\n\n`);
 		} finally {
 			cap.restore();
 		}

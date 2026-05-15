@@ -76,6 +76,7 @@ import process from 'node:process';
 import { parseStateFile, type LoopState, type PrdShape } from './status.ts';
 import { color, muted, printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 import { readRetryPid, isRetryPidAlive } from '../util/retry-pid.ts';
+import { promptSelect } from '../ui/promptSelect.tsx';
 
 // --- Constants -------------------------------------------------------------
 
@@ -406,6 +407,61 @@ function defaultPrompt(question: string): string {
 	return answer ?? '';
 }
 
+/** True when we can render Ink to the operator's TTY. */
+function isInteractiveTTY(): boolean {
+	return Boolean(process.stdout.isTTY) && !process.env['CI'];
+}
+
+/**
+ * Ask "resume the loop?" — Ink Select in interactive TTY, blocking text prompt
+ * elsewhere (tests inject `options.prompt`, which is why the second arg short-
+ * circuits to the text path even on a real TTY when the caller is asserting
+ * synchronous behaviour).
+ */
+async function askResumeChoice(
+	promptFn: PromptFn,
+	testOverride: boolean,
+): Promise<PromptAnswer> {
+	if (testOverride || !isInteractiveTTY()) {
+		return normalizePromptAnswer(promptFn('Resume the loop? [Y/n/reset] '));
+	}
+	const chosen = await promptSelect<PromptAnswer>({
+		question: 'Resume the loop?',
+		options: [
+			{ value: 'y', label: 'Yes', description: 'Re-run `cam next` to re-attach the loop' },
+			{ value: 'n', label: 'No', description: 'Abort — leave the state file in place' },
+			{ value: 'reset', label: 'Reset', description: 'Remove the state file and start clean' },
+		],
+		defaultValue: 'y',
+	});
+	return chosen ?? 'n';
+}
+
+/**
+ * Confirm the destructive `--mode reset-branch` step. Same Ink-vs-text
+ * branching as `askResumeChoice`. Default is `n` so an accidental Enter
+ * does NOT discard local commits.
+ */
+async function askResetBranchConfirm(
+	promptFn: PromptFn,
+	testOverride: boolean,
+): Promise<PromptAnswer> {
+	if (testOverride || !isInteractiveTTY()) {
+		return normalizePromptAnswer(
+			promptFn('Reset branch will discard local commits — continue? [y/N] '),
+		);
+	}
+	const chosen = await promptSelect<'y' | 'n'>({
+		question: 'Reset branch will discard local commits — continue?',
+		options: [
+			{ value: 'n', label: 'No', description: 'Abort — branch stays untouched' },
+			{ value: 'y', label: 'Yes', description: 'Print the `git reset --hard origin/main` instruction' },
+		],
+		defaultValue: 'n',
+	});
+	return (chosen ?? 'n') as PromptAnswer;
+}
+
 // --- Public entrypoint -----------------------------------------------------
 
 export type ExplicitMode = 'reset-current-story' | 'reset-prd' | 'reset-branch';
@@ -518,9 +574,7 @@ export async function runResume(options: ResumeOptions = {}): Promise<number> {
 			printHint('Next step: re-run `cam next` from this cwd to re-attach the loop');
 			return 0;
 		case 'prompt': {
-			const answer = normalizePromptAnswer(
-				promptFn('Resume the loop? [Y/n/reset] '),
-			);
+			const answer = await askResumeChoice(promptFn, options.prompt !== undefined);
 			if (answer === 'y') {
 				printSuccess('Continuing — re-run `cam next` to re-attach the loop');
 				return 0;
@@ -604,9 +658,7 @@ async function runExplicitReset(
 			return 0;
 		}
 		if (!options.force) {
-			const answer = normalizePromptAnswer(
-				promptFn('Reset branch will discard local commits — continue? [y/N] '),
-			);
+			const answer = await askResetBranchConfirm(promptFn, options.prompt !== undefined);
 			if (answer !== 'y') {
 				printWarning('Aborted', 'No branch reset performed');
 				return 1;

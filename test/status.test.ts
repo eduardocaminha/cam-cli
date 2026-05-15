@@ -294,7 +294,9 @@ describe('runStatus', () => {
 				process.stdout.write = original;
 			}
 			const out = captured.join('');
-			expect(out).toMatch(/status:.*idle/);
+			// New layout: `state    ○ idle` row under a `Loop` section.
+			expect(out).toMatch(/Loop/);
+			expect(out).toMatch(/idle/);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -337,7 +339,9 @@ describe('runStatus', () => {
 				process.stdout.write = original;
 			}
 			const out = captured.join('');
-			expect(out).toMatch(/status:.*active/);
+			// New layout: `state    ● active` row + key/value entries under `Loop`.
+			expect(out).toMatch(/Loop/);
+			expect(out).toMatch(/active/);
 			expect(out).toMatch(/US-008/);
 			expect(out).toMatch(/3 \/ 30/);
 			expect(out).toMatch(/30m/);

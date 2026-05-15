@@ -148,6 +148,10 @@ export function performStop(options: StopOptions = {}): StopReport {
 export function runStop(options: StopOptions = {}): number {
 	const report = performStop(options);
 
+	// Leading blank line so the output breathes away from the shell prompt —
+	// mirrors `cam status`, `cam help`, and every other top-level surface.
+	process.stdout.write('\n');
+
 	if (report.stateFileRemoved) {
 		printSuccess(`Removed ${STATE_FILE_PATH}`);
 	} else {
@@ -167,5 +171,8 @@ export function runStop(options: StopOptions = {}): number {
 	} else {
 		printSuccess('Clean');
 	}
+
+	// Trailing blank line — same rationale as the leading one.
+	process.stdout.write('\n');
 	return 0;
 }

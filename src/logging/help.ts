@@ -55,19 +55,28 @@ const DIVIDER_WIDTH = 50;
 const DIVIDER = "─".repeat(DIVIDER_WIDTH);
 
 /**
- * Render a full help screen as a single ANSI-decorated string. Trailing
- * newline included — callers can write the result straight to stdout.
+ * Render a full help screen as a single ANSI-decorated string. The output is
+ * wrapped in leading/trailing blank lines so it always breathes away from the
+ * shell prompt, and indent levels mirror the Ink `Section` component:
+ *   - title at col 0
+ *   - section heading + divisor at col 2
+ *   - section content (entries / body) at col 4
+ *   - footer at col 2
  */
 export function renderHelp(spec: HelpSpec): string {
 	const parts: string[] = [];
 
-	// Title + tagline ------------------------------------------------------
-	parts.push(`${accent.bold(spec.title)} ${muted("—")} ${spec.tagline}`);
+	// Leading blank line — pushes the title down from whatever was previously
+	// on the operator's terminal (shell prompt, prior command output).
 	parts.push("");
 
+	// Title + tagline ------------------------------------------------------
+	parts.push(`${accent.bold(spec.title)} ${muted("—")} ${spec.tagline}`);
+
 	// Usage block ----------------------------------------------------------
+	parts.push("");
 	parts.push(renderHeading("Usage"));
-	parts.push(`  ${spec.usage}`);
+	parts.push(`    ${spec.usage}`);
 
 	// Sections -------------------------------------------------------------
 	for (const section of spec.sections) {
@@ -80,7 +89,7 @@ export function renderHelp(spec: HelpSpec): string {
 		}
 		if (section.body) {
 			for (const line of section.body.split("\n")) {
-				parts.push(line === "" ? "" : `  ${line}`);
+				parts.push(line === "" ? "" : `    ${line}`);
 			}
 		}
 	}
@@ -89,18 +98,22 @@ export function renderHelp(spec: HelpSpec): string {
 	if (spec.footer) {
 		parts.push("");
 		for (const line of spec.footer.split("\n")) {
-			parts.push(muted(line));
+			parts.push(line === "" ? "" : `  ${muted(line)}`);
 		}
 	}
+
+	// Trailing blank line — separates the help from the shell prompt that
+	// will land on the next row.
+	parts.push("");
 
 	return `${parts.join("\n")}\n`;
 }
 
 function renderHeading(heading: string): string {
-	return `${chalk.bold(heading)}\n${muted(DIVIDER)}`;
+	return `  ${chalk.bold(heading)}\n  ${muted(DIVIDER)}`;
 }
 
 function renderEntry(entry: HelpEntry): string {
 	const paddedName = entry.name.padEnd(NAME_COL_WIDTH);
-	return `  ${chalk.bold(paddedName)}${muted(entry.description)}`;
+	return `    ${chalk.bold(paddedName)}${muted(entry.description)}`;
 }

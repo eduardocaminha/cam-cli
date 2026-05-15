@@ -50,6 +50,7 @@ import process from 'node:process';
 
 import { readPermissionMode } from '../config/permission-mode.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
+import { promptSelect } from '../ui/promptSelect.tsx';
 
 // --- Types -----------------------------------------------------------------
 
@@ -162,6 +163,35 @@ async function defaultPrompt(question: string): Promise<string> {
 		process.stdin.on('data', onData);
 		process.stdin.resume();
 	});
+}
+
+/** True when we can render Ink to the operator's TTY. */
+function isInteractiveTTY(): boolean {
+	return Boolean(process.stdout.isTTY) && !process.env['CI'];
+}
+
+/**
+ * Ask "approve the PRD?" — Ink Select inside an interactive TTY, blocking
+ * text prompt elsewhere (tests inject `options.prompt`, which is why the
+ * second arg short-circuits to the text path even on a real TTY when the
+ * caller is asserting synchronous behaviour).
+ *
+ * Returns `true` when the operator answered yes, `false` otherwise.
+ */
+async function askApprove(promptFn: PromptFn, testOverride: boolean): Promise<boolean> {
+	if (testOverride || !isInteractiveTTY()) {
+		const answer = await promptFn('Approve PRD and create branch? [y/N] ');
+		return /^y(es)?$/i.test(answer.trim());
+	}
+	const chosen = await promptSelect<'y' | 'n'>({
+		question: 'Approve PRD and create branch?',
+		options: [
+			{ value: 'y', label: 'Yes', description: 'Let the planner continue to its branch + commit step' },
+			{ value: 'n', label: 'No', description: 'Cancel — terminate the planning session' },
+		],
+		defaultValue: 'n',
+	});
+	return chosen === 'y';
 }
 
 /**
@@ -315,8 +345,8 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 		// output chunk on the same line.
 		process.stdout.write('\n');
 		printSuccess('prd-auditor APPROVE detected', line.trim().slice(0, 80));
-		const answer = await prompt('Approve PRD and create branch? [y/N] ');
-		if (/^y(es)?$/i.test(answer.trim())) {
+		const approved = await askApprove(prompt, options.prompt !== undefined);
+		if (approved) {
 			printSuccess('Continuing — letting planner finish branch + commit');
 			// Resume stdin forwarding so the operator can keep interacting.
 			startStdinForwarding();

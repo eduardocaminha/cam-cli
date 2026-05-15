@@ -41,7 +41,17 @@ import process from 'node:process';
 
 import yaml from 'js-yaml';
 
-import { printError, printHint, printSuccess, printWarning, color, muted } from '../logging/color.ts';
+import {
+	accent,
+	chalk,
+	muted,
+	printError,
+	printHint,
+	printSuccess,
+	printWarning,
+	warning,
+	color,
+} from '../logging/color.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -315,47 +325,100 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
  * sparse: a one-line `status: idle` plus (if present) the next-pending story
  * + branch info, so the operator can confirm the right cwd.
  */
+/** Width of section divisors. Matches the Ink `Section` and `renderHelp`. */
+const DIVIDER_WIDTH = 50;
+const DIVIDER = '─'.repeat(DIVIDER_WIDTH);
+
+/** Column width for entry keys (e.g. `state    `, `story    `). */
+const KEY_COL_WIDTH = 9;
+
+/** Indent used inside Sections — matches `renderHelp` and the Ink Section. */
+const CONTENT_INDENT = '    ';
+const HEADING_INDENT = '  ';
+
+/**
+ * Render a state indicator (icon + label) using the unified palette:
+ *   idle   → muted ○ idle
+ *   active → accent ● active
+ *   paused → warning ! paused
+ */
+function renderStateIndicator(state: 'idle' | 'active' | 'paused'): string {
+	if (state === 'idle') return `${muted('○')} ${muted('idle')}`;
+	if (state === 'paused') return `${warning('!')} paused`;
+	return `${accent('●')} active`;
+}
+
+/** One key/value row inside the Loop section (bold key column + value). */
+function renderEntry(key: string, value: string): string {
+	return `${CONTENT_INDENT}${chalk.bold(key.padEnd(KEY_COL_WIDTH))}${value}`;
+}
+
 export function runStatus(options: StatusOptions = {}): number {
 	const report = buildStatusReport(options);
-	const stateLabel = report.state === 'idle' ? muted('idle') : report.state === 'paused' ? color.yellow('paused') : color.green('active');
-	process.stdout.write(`status: ${stateLabel}\n`);
+
+	// Leading blank line + title row — mirrors `renderHelp` so every screen
+	// breathes away from the shell prompt and shares the same hierarchy.
+	process.stdout.write(`\n${accent.bold('cam status')}\n\n`);
+
+	// Section: Loop  (heading + muted divisor + indented entries)
+	process.stdout.write(`${HEADING_INDENT}${chalk.bold('Loop')}\n`);
+	process.stdout.write(`${HEADING_INDENT}${muted(DIVIDER)}\n`);
+
+	// State indicator is always shown; the rest of the rows depend on which
+	// data is available (idle skips iter/since/promise; paused keeps them).
+	process.stdout.write(`${renderEntry('state', renderStateIndicator(report.state))}\n`);
 
 	if (report.state === 'idle') {
-		// Shallow info for the idle case.
-		if (report.branchName) process.stdout.write(`branch: ${report.branchName}\n`);
 		if (report.currentStory) {
-			process.stdout.write(`next:   ${color.cyan(report.currentStory.id)} ${report.currentStory.title}\n`);
+			process.stdout.write(
+				`${renderEntry('next', `${accent(report.currentStory.id)} ${report.currentStory.title}`)}\n`,
+			);
+		}
+		if (report.branchName) {
+			process.stdout.write(`${renderEntry('branch', report.branchName)}\n`);
 		}
 		if (report.lastCommit) {
-			process.stdout.write(`last:   ${muted(report.lastCommit.sha)} ${report.lastCommit.subject}\n`);
+			process.stdout.write(
+				`${renderEntry('last', `${muted(report.lastCommit.sha)} ${report.lastCommit.subject}`)}\n`,
+			);
 		}
+		process.stdout.write('\n');
 		printHint('No `.claude/cam-loop.local.md` — start a loop with `cam next` (or `/cam-loop` from inside claude)');
+		process.stdout.write('\n');
 		return 0;
 	}
 
 	if (report.currentStory) {
-		process.stdout.write(`story:  ${color.cyan(report.currentStory.id)} ${report.currentStory.title}\n`);
+		process.stdout.write(
+			`${renderEntry('story', `${accent(report.currentStory.id)} ${report.currentStory.title}`)}\n`,
+		);
 	} else {
-		process.stdout.write(`story:  ${muted('(no pending story in prd.json)')}\n`);
+		process.stdout.write(`${renderEntry('story', muted('(no pending story in prd.json)'))}\n`);
 	}
 	if (report.iteration) {
-		process.stdout.write(`iter:   ${report.iteration.current} / ${report.iteration.max}\n`);
+		process.stdout.write(`${renderEntry('iter', `${report.iteration.current} / ${report.iteration.max}`)}\n`);
 	}
 	if (report.wallClock) {
-		process.stdout.write(`since:  ${report.wallClock}${report.startedAt ? muted(` (${report.startedAt})`) : ''}\n`);
+		const sinceVal = `${report.wallClock}${report.startedAt ? ` ${muted(`(${report.startedAt})`)}` : ''}`;
+		process.stdout.write(`${renderEntry('since', sinceVal)}\n`);
 	}
-	if (report.branchName) process.stdout.write(`branch: ${report.branchName}\n`);
+	if (report.branchName) {
+		process.stdout.write(`${renderEntry('branch', report.branchName)}\n`);
+	}
 	if (report.lastCommit) {
-		process.stdout.write(`last:   ${muted(report.lastCommit.sha)} ${report.lastCommit.subject}\n`);
+		process.stdout.write(
+			`${renderEntry('last', `${muted(report.lastCommit.sha)} ${report.lastCommit.subject}`)}\n`,
+		);
 	}
 	if (report.completionPromise !== undefined) {
 		const promiseShown = report.completionPromise === null ? muted('(none)') : `"${report.completionPromise}"`;
-		process.stdout.write(`promise: ${promiseShown}\n`);
+		process.stdout.write(`${renderEntry('promise', promiseShown)}\n`);
 	}
 
 	if (report.state === 'paused') {
 		printWarning('Loop is paused (active:false in state file)', 'Run `cam stop` to clear, then `cam next` to restart');
 	}
+	process.stdout.write('\n');
 	return 0;
 }
 

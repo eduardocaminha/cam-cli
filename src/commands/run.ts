@@ -118,20 +118,35 @@ export function buildOrchestratorBootPrompt(): string {
  *   - tails .claude/cam-orchestrator.log if it exists for visibility
  */
 function buildRunMenuScript(): string {
+	// 24-bit ANSI escapes matching the unified palette (src/ui/theme.ts and
+	// src/logging/color.ts):
+	//   accent  #4EBE7D  → rgb(78,190,125)
+	//   muted   #808080  → rgb(128,128,128)
+	// Layout follows the Section pattern used by the help screen and Ink
+	// screens: bold heading, muted divisor, command names bold, descriptions
+	// muted on the following line. Two-line entries keep the 36-cell menu
+	// pane readable without horizontal clipping.
 	return [
 		'set +m',
-		"CYAN='\\033[1;36m' BOLD='\\033[1m' DIM='\\033[2m' RST='\\033[0m'",
+		"ACCENT='\\033[38;2;78;190;125m'",
+		"MUTED='\\033[38;2;128;128;128m'",
+		"BOLD='\\033[1m'",
+		"RST='\\033[0m'",
+		"DIV='──────────────────────────────────'",
 		'clear',
-		'printf "$CYAN  cam orchestrator$RST\\n"',
-		'printf "$DIM  long-lived project agent$RST\\n\\n"',
-		'printf "  ${BOLD}Common commands you can ask the orchestrator:${RST}\\n\\n"',
-		'printf "    \\"o que temos pra fazer?\\"   list active issues\\n"',
-		'printf "    \\"plano para <ID>\\"        spawn /cam-plan\\n"',
-		'printf "    \\"implementa\\"               run /cam-next loop\\n"',
-		'printf "    \\"review\\"                   run /cam-review\\n"',
-		'printf "    \\"ship\\"                     run /cam-ship\\n"',
-		'printf "    \\"o que aconteceu antes?\\"   query journal\\n\\n"',
-		'printf "  ${DIM}detach: prefix-d   kill session: tmux kill-session -t \\$(tmux display-message -p \\"#S\\")${RST}\\n"',
+		'printf "${ACCENT}${BOLD}cam orchestrator${RST}\\n"',
+		'printf "${MUTED}long-lived project agent${RST}\\n\\n"',
+		'printf "${BOLD}Common commands${RST}\\n"',
+		'printf "${MUTED}${DIV}${RST}\\n"',
+		'printf "  ${BOLD}o que temos pra fazer?${RST}\\n  ${MUTED}list active issues${RST}\\n\\n"',
+		'printf "  ${BOLD}plano para <ID>${RST}\\n  ${MUTED}spawn /cam-plan${RST}\\n\\n"',
+		'printf "  ${BOLD}implementa${RST}\\n  ${MUTED}run /cam-next loop${RST}\\n\\n"',
+		'printf "  ${BOLD}review${RST}\\n  ${MUTED}run /cam-review${RST}\\n\\n"',
+		'printf "  ${BOLD}ship${RST}\\n  ${MUTED}run /cam-ship${RST}\\n\\n"',
+		'printf "  ${BOLD}o que aconteceu antes?${RST}\\n  ${MUTED}query journal${RST}\\n\\n"',
+		'printf "${MUTED}${DIV}${RST}\\n"',
+		'printf "${MUTED}detach: prefix-d${RST}\\n"',
+		'printf "${MUTED}kill: tmux kill-session -t \\$(tmux display-message -p \\"#S\\")${RST}\\n"',
 		'while sleep 30; do :; done',
 	].join('\n');
 }
