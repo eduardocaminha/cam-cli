@@ -19,13 +19,15 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
 
-import { render } from 'ink';
+import { Box, render } from 'ink';
 import { createElement } from 'react';
 
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 import { mergeIntoConfig } from '../config/toml.ts';
 import { materializeEmbedded, type EmbeddedKey } from '../vendor/embedded.ts';
 import { InitScreen, type CheckDef, type CheckOutcome } from '../ui/InitScreen.tsx';
+import { Splash } from '../ui/Splash.tsx';
+import { CAM_VERSION } from '../version.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -291,15 +293,19 @@ function runInitLinear(configPath: string): number {
 async function runInitInteractive(configPath: string): Promise<number> {
 	const checks = buildInteractiveChecks(configPath);
 	let failedIds: string[] = [];
-	const { unmount, waitUntilExit } = render(
+	const view = createElement(
+		Box,
+		{ flexDirection: 'column' },
+		createElement(Splash, { version: CAM_VERSION }),
 		createElement(InitScreen, {
 			checks,
-			onDone: (ids) => {
+			onDone: (ids: string[]) => {
 				failedIds = ids;
 				unmount();
 			},
 		}),
 	);
+	const { unmount, waitUntilExit } = render(view);
 	await waitUntilExit();
 	return failedIds.length === 0 ? 0 : 1;
 }
@@ -309,16 +315,19 @@ function buildInteractiveChecks(configPath: string): CheckDef[] {
 		{
 			id: 'claude',
 			label: 'claude',
+			description: 'Required to spawn Claude Code sessions.',
 			run: () => toOutcome(validateClaude(), { okDetail: parseClaudeDetail }),
 		},
 		{
 			id: 'check-agent-frontmatter',
 			label: 'agent-frontmatter',
+			description: 'Validates .claude/agents/*.md files.',
 			run: () => smokeToOutcome(runVendoredSmoke(vendorScriptPath('check-agent-frontmatter.ts'))),
 		},
 		{
 			id: 'config',
 			label: 'config',
+			description: 'Saves your default permission mode.',
 			run: () => writeConfigOutcome(configPath),
 		},
 	];

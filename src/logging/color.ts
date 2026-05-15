@@ -7,16 +7,26 @@
 
 import chalk from "chalk";
 
-// --- Brand palette (os-eco brand colors) ---
+// --- Brand palette ---
+//
+// Aligned with `src/ui/theme.ts` so Ink screens and linear CLI output share
+// the same 4-token palette: accent (success ✓), warning (!), destructive (✗),
+// muted (secondary text, divisors, hints).
 
-/** Forest green — primary brand color. */
-export const brand = chalk.rgb(46, 125, 50);
+/** Green — success indicator, brand wordmark, accents. */
+export const accent = chalk.hex("#4EBE7D");
 
-/** Amber — highlights, warnings. */
-export const accent = chalk.rgb(255, 183, 77);
+/** Yellow — soft warnings. */
+export const warning = chalk.hex("#FFCB1F");
 
-/** Stone gray — secondary text, muted content. */
-export const muted = chalk.rgb(120, 120, 110);
+/** Red — hard errors. */
+export const destructive = chalk.hex("#F25F5C");
+
+/** Gray — secondary text, hints, structural lines. */
+export const muted = chalk.hex("#808080");
+
+/** Alias kept for backward compat with `renderHeader` in logging/theme.ts. */
+export const brand = accent;
 
 // --- Standard color functions ---
 
@@ -78,28 +88,28 @@ export function isQuiet(): boolean {
 
 // --- Standardized message formatters (visual-spec.md Message Formats) ---
 
-/** Success: brand checkmark + brand message. Optional accent-colored ID. */
+/** Success: accent ✓ + default-color message. Optional muted ID/path suffix. */
 export function printSuccess(msg: string, id?: string): void {
 	if (isQuiet()) return;
-	const idPart = id ? ` ${accent(id)}` : "";
-	process.stdout.write(`${brand.bold("✓")} ${brand(msg)}${idPart}\n`);
+	const idPart = id ? ` ${muted(id)}` : "";
+	process.stdout.write(`${accent("✓")} ${msg}${idPart}\n`);
 }
 
-/** Warning: yellow ! + yellow message. Optional dim hint. */
+/** Warning: warning ! + default-color message. Optional muted hint. */
 export function printWarning(msg: string, hint?: string): void {
 	if (isQuiet()) return;
-	const hintPart = hint ? ` ${chalk.dim(`— ${hint}`)}` : "";
-	process.stdout.write(`${chalk.yellow.bold("!")} ${chalk.yellow(msg)}${hintPart}\n`);
+	const hintPart = hint ? ` ${muted(`— ${hint}`)}` : "";
+	process.stdout.write(`${warning("!")} ${msg}${hintPart}\n`);
 }
 
-/** Error: red cross + red message. Optional dim hint. Always to stderr. */
+/** Error: destructive ✗ + default-color message. Optional muted hint. Always to stderr. */
 export function printError(msg: string, hint?: string): void {
-	const hintPart = hint ? ` ${chalk.dim(`— ${hint}`)}` : "";
-	process.stderr.write(`${chalk.red.bold("✗")} ${chalk.red(msg)}${hintPart}\n`);
+	const hintPart = hint ? ` ${muted(`— ${hint}`)}` : "";
+	process.stderr.write(`${destructive("✗")} ${msg}${hintPart}\n`);
 }
 
-/** Hint/info: dim indented text. */
+/** Hint/info: muted indented text. */
 export function printHint(msg: string): void {
 	if (isQuiet()) return;
-	process.stdout.write(`${chalk.dim(`  ${msg}`)}\n`);
+	process.stdout.write(`${muted(`  ${msg}`)}\n`);
 }

@@ -1,0 +1,56 @@
+// src/ui/Section.tsx
+//
+// Layout primitive shared by every cam screen: a heading line, a horizontal
+// rule, and an indented content block. Centralizing the pattern means the
+// indent (2 cols heading / 4 cols content), the divisor width (50 cols), and
+// the divisor color semantics (muted | accentFg | destructiveFg) stay in one
+// place — every screen that uses Section automatically matches the target
+// snapshot in `img/ui-snapshot.txt`.
+
+import type { ReactElement, ReactNode } from 'react';
+import { Box, Text } from 'ink';
+
+import { colors } from './theme.ts';
+
+/** Width of the horizontal divisor line. Matches Splash's panel content area. */
+export const SECTION_DIVIDER_WIDTH = 50;
+const DIVIDER = '─'.repeat(SECTION_DIVIDER_WIDTH);
+
+export type SectionTone = 'default' | 'accent' | 'destructive';
+
+interface SectionProps {
+	heading: string;
+	/** Color of the rule under the heading. `default` = muted, `accent` =
+	 *  success states ("All set", "Init complete"), `destructive` = failures. */
+	tone?: SectionTone;
+	children: ReactNode;
+	/** Vertical gap before this section. Defaults to 1 (one blank line). */
+	gapTop?: number;
+}
+
+function dividerColor(tone: SectionTone): string {
+	switch (tone) {
+		case 'accent':
+			return colors.accent;
+		case 'destructive':
+			return colors.destructive;
+		default:
+			return colors.muted;
+	}
+}
+
+export function Section({ heading, tone = 'default', children, gapTop = 1 }: SectionProps): ReactElement {
+	return (
+		<Box flexDirection="column" marginTop={gapTop}>
+			<Box paddingLeft={2}>
+				<Text bold>{heading}</Text>
+			</Box>
+			<Box paddingLeft={2}>
+				<Text color={dividerColor(tone)}>{DIVIDER}</Text>
+			</Box>
+			<Box flexDirection="column" paddingLeft={4}>
+				{children}
+			</Box>
+		</Box>
+	);
+}
