@@ -17,8 +17,4 @@ Your task — adapt ALL template placeholders to this specific project:
    create them under .claude/rules/ or .claude/skills/ with real content inferred from the codebase.
 10. When done, print exactly: CAM_SETUP_STATUS=DONE
 
-Project description provided by the operator: 
-
-Since this is a NEW project, also:
-- Create a minimal CLAUDE.md at the repo root if one does not exist.
-- Create a minimal AGENTS.md if the project will use subagents.
+This is an EXISTING project. Infer everything from the codebase — do NOT assume.
