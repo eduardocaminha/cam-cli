@@ -507,20 +507,20 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	//    installed in the spawned session.
 	try {
 		const hookPath = hookMaterializer(cwd);
-		printSuccess(`materialized stop hook`, hookPath);
+		printSuccess(`Materialized stop hook`, hookPath);
 	} catch (err) {
 		printError(
-			'failed to materialize stop hook',
+			'Failed to materialize stop hook',
 			err instanceof Error ? err.message : String(err),
 		);
 		return 1;
 	}
 	try {
 		const settingsPath = settingsWriter(cwd);
-		printSuccess(`registered Stop hook in`, settingsPath);
+		printSuccess(`Registered Stop hook in`, settingsPath);
 	} catch (err) {
 		printError(
-			'failed to write .claude/settings.local.json',
+			'Failed to write .claude/settings.local.json',
 			err instanceof Error ? err.message : String(err),
 		);
 		return 1;
@@ -542,12 +542,12 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		writtenPath = writer(cwd, body);
 	} catch (err) {
 		printError(
-			'failed to pre-arm cam-loop state file',
+			'Failed to pre-arm cam-loop state file',
 			err instanceof Error ? err.message : String(err),
 		);
 		return 1;
 	}
-	printSuccess(`armed ${writtenPath}`, `max=${maxIterations} promise="${completionPromise}"`);
+	printSuccess(`Armed ${writtenPath}`, `max=${maxIterations} promise="${completionPromise}"`);
 
 	// 2. Build pane A's argv (claude with the loop kick-off prompt).
 	const claudeArgv = buildClaudeArgv(permissionMode);
@@ -568,23 +568,23 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 				printHint(
 					`tmux split failed: ${err instanceof Error ? err.message : String(err)}`,
 				);
-				printHint('continuing inline — open a separate `cam dashboard` if you want one');
+				printHint('Continuing inline — open a separate `cam dashboard` if you want one');
 			});
 		} catch (err) {
 			printHint(
 				`tmux split spawn errored: ${err instanceof Error ? err.message : String(err)}`,
 			);
-			printHint('continuing inline — open a separate `cam dashboard` if you want one');
+			printHint('Continuing inline — open a separate `cam dashboard` if you want one');
 		}
 		if (insideTmux) {
 			printSuccess('tmux split: claude in current pane, dashboard in new pane');
 		} else {
 			printSuccess('tmux session "cam" created with dashboard');
-			printHint('attach with: tmux attach -t cam');
+			printHint('Attach with: tmux attach -t cam');
 		}
 	} else {
-		printSuccess('inline mode (VS Code or no tmux): no split');
-		printHint('your current terminal is the dashboard view of the loop');
+		printSuccess('Inline mode (VS Code or no tmux): no split');
+		printHint('Your current terminal is the dashboard view of the loop');
 	}
 
 	// 4. Spawn pane A (claude). This is the foreground process; we wait on
@@ -594,10 +594,10 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		claudeProc = spawn(claudeArgv, { cwd });
 	} catch (err) {
 		printError(
-			'failed to spawn `claude`',
+			'Failed to spawn `claude`',
 			err instanceof Error ? err.message : String(err),
 		);
-		printHint('verify `claude` is on PATH (re-run `cam init` to validate)');
+		printHint('Verify `claude` is on PATH (re-run `cam init` to validate)');
 		return 1;
 	}
 	const exitCode = await claudeProc.exited;

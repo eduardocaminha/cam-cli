@@ -20,14 +20,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 
-import { color, muted, visibleLength } from "../logging/color.ts";
-import { renderHeader } from "../logging/theme.ts";
+import { chalk, color, muted, visibleLength, warning } from "../logging/color.ts";
+import { renderHeader, separator } from "../logging/theme.ts";
 import {
 	formatWallClock,
 	parseStateFile,
 	pickCurrentStory,
 	type LoopState,
 	type PrdShape,
+	type PrdStory,
 } from "./status.ts";
 
 // --- Constants -------------------------------------------------------------
@@ -152,6 +153,12 @@ export interface DashboardData {
 	idle: boolean;
 	/** Last N entries from progress.txt, newest first, single-line summaries. */
 	recent: string[];
+	/**
+	 * Full ordered story queue from `prd.json` (priority order). Used by the
+	 * Ink dashboard's Stories panel. Optional + defaults to `[]` so test
+	 * fixtures that hand-build `DashboardData` without it stay valid.
+	 */
+	stories?: PrdStory[];
 }
 
 /**
@@ -207,14 +214,17 @@ export function composeDashboard(
 	// --- Sleep banner -----------------------------------------------------
 	// Surfaces when the plugin marked the run paused (e.g. completion-promise
 	// landed but the loop hasn't been cleared) — visually distinct from idle.
+	// Uses the same `!`-warning + default-message pattern as the Ink screens.
 	if (data.paused) {
 		const banner = "loop is paused (state file: active:false) — `cam stop` to clear";
-		output += `${color.yellow(`! ${banner}`)}\n`;
+		output += `\n${warning("!")} ${banner}\n`;
 	}
 
 	// --- Recent progress.txt entries -------------------------------------
+	// Styled as a Section: bold heading + muted divisor, matching Ink screens.
 	output += "\n";
-	output += `${color.bold("Recent")}\n`;
+	output += `${chalk.bold("Recent")}\n`;
+	output += `${muted(separator(width))}\n`;
 	if (data.recent.length === 0) {
 		output += `${muted("  (no progress.txt entries yet)")}\n`;
 	} else {
@@ -329,6 +339,7 @@ export function readSnapshot(options: { cwd: string; nowMs: number }): Dashboard
 		paused: false,
 		idle: state === null,
 		recent,
+		stories: prd?.userStories ?? [],
 	};
 
 	if (prd) {
@@ -650,4 +661,76 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => {
 		setTimeout(resolve, ms);
 	});
+}
+
+// === Ink-based dashboard (production interactive path) ====================
+//
+// `runDashboardInk` is the entrypoint wired into `cam dashboard` from
+// `index.ts`. It enters the alt-screen, mounts the Ink `DashboardApp`, and
+// cleans up on `q` / Ctrl+C. The legacy `runDashboard` (above) is kept
+// because the test suite drives it with fake writer/reader to assert the
+// alt-screen lifecycle byte-for-byte.
+
+export interface RunDashboardInkOptions {
+	cwd?: string;
+	pollIntervalMs?: number;
+	now?: () => number;
+}
+
+/**
+ * Production dashboard entrypoint. Enters the alt-screen + hides the cursor,
+ * mounts the Ink `DashboardApp`, and on user exit (`q` or Ctrl+C) tears the
+ * lifecycle down. Returns 0 on graceful exit. On render error, restores the
+ * terminal and surfaces the error on stderr after cleanup.
+ */
+export async function runDashboardInk(options: RunDashboardInkOptions = {}): Promise<number> {
+	const cwd = options.cwd ?? process.cwd();
+	const intervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+	const now = options.now ?? (() => Date.now());
+
+	// Dynamic imports so the legacy non-Ink path (used by tests) does not
+	// drag React/Ink into the cold-start cost when the dashboard is not
+	// actually launching interactively.
+	const { render } = await import('ink');
+	const { createElement } = await import('react');
+	const { DashboardApp } = await import('../ui/Dashboard.tsx');
+
+	process.stdout.write(CURSOR.enterAltScreen);
+	process.stdout.write(CURSOR.hideCursor);
+
+	let cleaned = false;
+	const cleanup = () => {
+		if (cleaned) return;
+		cleaned = true;
+		try {
+			process.stdout.write(CURSOR.showCursor);
+		} catch {
+			// continue — leaveAltScreen is the more important of the two.
+		}
+		try {
+			process.stdout.write(CURSOR.leaveAltScreen);
+		} catch {
+			// nothing more we can do.
+		}
+	};
+
+	let exitCode = 0;
+	try {
+		const view = createElement(DashboardApp, {
+			readSnapshot: () => readSnapshot({ cwd, nowMs: now() }),
+			pollIntervalMs: intervalMs,
+		});
+		const instance = render(view);
+		await instance.waitUntilExit();
+	} catch (err) {
+		exitCode = 1;
+		queueMicrotask(() => {
+			process.stderr.write(
+				`dashboard render error: ${err instanceof Error ? err.message : String(err)}\n`,
+			);
+		});
+	} finally {
+		cleanup();
+	}
+	return exitCode;
 }

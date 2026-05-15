@@ -20,35 +20,49 @@
 import { launchClaude, forkMonitor, validateInteractiveEnv, type LaunchOptions, type DetachedSpawnAdapter, type SignalHandler } from '../retry/launcher.ts';
 import { writeRetryPid, removeRetryPid } from '../util/retry-pid.ts';
 
-export const CLAUDE_HELP = `cam claude — run claude with built-in auto-retry on rate limits
+import { renderHelp } from '../logging/help.ts';
 
-Usage:
-  cam claude [args...]
-
-Flags consumed by cam:
-  --help, -h    Print this help and exit.
-
-All other flags are forwarded verbatim to the child \`claude\` process.
-Examples:
-  cam claude -p "Hello world"
-  cam claude --print --model claude-opus-4-5 /cam-next
-  cam claude --permission-mode bypassPermissions /cam-plan
-
-Routing:
-  • With -p/--print:      print mode — cam captures stdout/stderr and retries
-                           automatically when claude returns a rate-limit error.
-  • Inside tmux (no -p):  interactive mode — cam forks a detached background
-                           monitor (cam retry-monitor) that watches the pane
-                           and sends the retry keystroke after the back-off
-                           window expires.
-  • Outside tmux (no -p): error — run \`cam run\` to get a tmux session first.
-
-Config:
-  Retry policy:     ~/.config/cam/retry.toml  (written by \`cam init\`; safe to edit)
-  Retry logs:       ~/.cam/retry-logs/
-  Permission mode:  ~/.config/cam/config.toml — \`cam claude\` does not expose a
-                    CLI flag for it. Pass it directly as a claude arg if needed:
-                      cam claude --permission-mode <mode> <prompt>`;
+export const CLAUDE_HELP = renderHelp({
+	title: 'cam claude',
+	tagline: 'Run claude with built-in auto-retry on rate limits',
+	usage: 'cam claude [args...]',
+	sections: [
+		{
+			heading: 'Flags consumed by cam',
+			entries: [
+				{ name: '--help, -h', description: 'Print this help and exit' },
+			],
+		},
+		{
+			heading: 'Examples',
+			body:
+				'cam claude -p "Hello world"\n' +
+				'cam claude --print --model claude-opus-4-5 /cam-next\n' +
+				'cam claude --permission-mode bypassPermissions /cam-plan',
+		},
+		{
+			heading: 'Routing',
+			body:
+				'• With -p/--print:      print mode — cam captures stdout/stderr and retries\n' +
+				'                          automatically when claude returns a rate-limit error.\n' +
+				'• Inside tmux (no -p):  interactive mode — cam forks a detached background\n' +
+				'                          monitor (cam retry-monitor) that watches the pane\n' +
+				'                          and sends the retry keystroke after the back-off\n' +
+				'                          window expires.\n' +
+				'• Outside tmux (no -p): error — run `cam run` to get a tmux session first.',
+		},
+		{
+			heading: 'Config',
+			body:
+				'Retry policy:     ~/.config/cam/retry.toml  (written by `cam init`; safe to edit)\n' +
+				'Retry logs:       ~/.cam/retry-logs/\n' +
+				'Permission mode:  ~/.config/cam/config.toml — `cam claude` does not expose a\n' +
+				'                  CLI flag for it. Pass it directly as a claude arg if needed:\n' +
+				'                    cam claude --permission-mode <mode> <prompt>',
+		},
+	],
+	footer: 'All other flags are forwarded verbatim to the child `claude` process.',
+});
 
 export interface ClaudeOptions {
   /** Args to forward verbatim to claude (after stripping the leading --help). */

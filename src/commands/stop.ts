@@ -149,23 +149,23 @@ export function runStop(options: StopOptions = {}): number {
 	const report = performStop(options);
 
 	if (report.stateFileRemoved) {
-		printSuccess(`removed ${STATE_FILE_PATH}`);
+		printSuccess(`Removed ${STATE_FILE_PATH}`);
 	} else {
-		printHint(`no ${STATE_FILE_PATH} present (nothing to clean)`);
+		printHint(`No ${STATE_FILE_PATH} present (nothing to clean)`);
 	}
 
 	if (report.tmuxUnavailable) {
 		printHint('tmux not on PATH (skipping session check)');
 	} else if (report.tmuxKilled) {
-		printSuccess(`killed tmux session "${TMUX_SESSION_NAME}"`);
+		printSuccess(`Killed tmux session "${TMUX_SESSION_NAME}"`);
 	} else {
-		printHint(`no tmux session named "${TMUX_SESSION_NAME}" (nothing to kill)`);
+		printHint(`No tmux session named "${TMUX_SESSION_NAME}" (nothing to kill)`);
 	}
 
 	if (!report.stateFileRemoved && !report.tmuxKilled) {
-		printWarning('cam stop: nothing to clean', 'no active loop or stale state detected');
+		printWarning('Nothing to clean', 'No active loop or stale state detected');
 	} else {
-		printSuccess('cam stop: clean');
+		printSuccess('Clean');
 	}
 	return 0;
 }

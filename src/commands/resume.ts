@@ -493,7 +493,7 @@ export async function runResume(options: ResumeOptions = {}): Promise<number> {
 	printSummary(report);
 
 	if (options.dryRun) {
-		printHint('dry run: no state mutations or spawns');
+		printHint('Dry run: no state mutations or spawns');
 		return 0;
 	}
 
@@ -503,37 +503,37 @@ export async function runResume(options: ResumeOptions = {}): Promise<number> {
 			const removed = removeStateFileIfPresent(cwd);
 			if (removed) {
 				report.cleanedStateFile = true;
-				printSuccess(`removed orphan ${STATE_FILE_PATH}`);
+				printSuccess(`Removed orphan ${STATE_FILE_PATH}`);
 			}
 			printSuccess('PRD complete — nothing to resume');
 			return 0;
 		}
 		case 'idle':
-			printHint('run `cam next` to start a fresh loop');
+			printHint('Run `cam next` to start a fresh loop');
 			return 0;
 		case 'noop':
 			printHint('retry-monitor is sleeping — it will respawn `cam next` when the rate-limit window ends');
 			return 0;
 		case 'respawn':
-			printHint('next step: re-run `cam next` from this cwd to re-attach the loop');
+			printHint('Next step: re-run `cam next` from this cwd to re-attach the loop');
 			return 0;
 		case 'prompt': {
 			const answer = normalizePromptAnswer(
 				promptFn('Resume the loop? [Y/n/reset] '),
 			);
 			if (answer === 'y') {
-				printSuccess('continuing — re-run `cam next` to re-attach the loop');
+				printSuccess('Continuing — re-run `cam next` to re-attach the loop');
 				return 0;
 			}
 			if (answer === 'reset') {
 				const removed = removeStateFileIfPresent(cwd);
 				if (removed) {
 					report.cleanedStateFile = true;
-					printSuccess(`removed ${STATE_FILE_PATH}`);
+					printSuccess(`Removed ${STATE_FILE_PATH}`);
 				}
 				return 0;
 			}
-			printWarning('aborted', 'no recovery action taken');
+			printWarning('Aborted', 'No recovery action taken');
 			return 1;
 		}
 		default:
@@ -559,17 +559,17 @@ async function runExplicitReset(
 			return 2;
 		}
 		if (options.dryRun) {
-			printHint(`dry run: would reset the most-recently-completed story`);
+			printHint(`Dry run: would reset the most-recently-completed story`);
 			return 0;
 		}
 		const id = resetCurrentStoryInPlace(prd);
 		if (!id) {
-			printWarning('nothing to reset', 'no completed stories in the PRD');
+			printWarning('Nothing to reset', 'No completed stories in the PRD');
 			return 2;
 		}
 		writePrd(cwd, prd);
-		printSuccess(`reset ${id} → passes:false`);
-		printHint('next step: re-run `cam next` to re-implement that story');
+		printSuccess(`Reset ${id} → passes:false`);
+		printHint('Next step: re-run `cam next` to re-implement that story');
 		return 0;
 	}
 	if (mode === 'reset-prd') {
@@ -580,7 +580,7 @@ async function runExplicitReset(
 		}
 		if (options.dryRun) {
 			const count = (prd.userStories ?? []).filter((s) => s.passes !== false).length;
-			printHint(`dry run: would flip ${count} stor${count === 1 ? 'y' : 'ies'} to passes:false`);
+			printHint(`Dry run: would flip ${count} stor${count === 1 ? 'y' : 'ies'} to passes:false`);
 			return 0;
 		}
 		const count = resetPrdInPlace(prd);
@@ -589,8 +589,8 @@ async function runExplicitReset(
 			return 0;
 		}
 		writePrd(cwd, prd);
-		printSuccess(`reset ${count} stor${count === 1 ? 'y' : 'ies'} → passes:false`);
-		printHint('next step: re-run `cam next` to re-implement from US-001');
+		printSuccess(`Reset ${count} stor${count === 1 ? 'y' : 'ies'} → passes:false`);
+		printHint('Next step: re-run `cam next` to re-implement from US-001');
 		return 0;
 	}
 	if (mode === 'reset-branch') {
@@ -600,7 +600,7 @@ async function runExplicitReset(
 		// step lives outside cam — we don't want to be the tool that clobbers
 		// uncommitted work because of a misclassification.
 		if (options.dryRun) {
-			printHint('dry run: would print the `git reset --hard origin/main` instruction');
+			printHint('Dry run: would print the `git reset --hard origin/main` instruction');
 			return 0;
 		}
 		if (!options.force) {
@@ -608,19 +608,19 @@ async function runExplicitReset(
 				promptFn('Reset branch will discard local commits — continue? [y/N] '),
 			);
 			if (answer !== 'y') {
-				printWarning('aborted', 'no branch reset performed');
+				printWarning('Aborted', 'No branch reset performed');
 				return 1;
 			}
 		}
 		printWarning(
 			'reset-branch is operator-driven — cam does NOT run `git reset --hard` itself',
-			'copy: git reset --hard origin/main',
+			'Copy: git reset --hard origin/main',
 		);
 		// Also remove the state file; the next `cam next` should treat the
 		// branch as freshly-checked-out.
 		const removed = removeStateFileIfPresent(cwd);
 		if (removed) {
-			printSuccess(`removed ${STATE_FILE_PATH}`);
+			printSuccess(`Removed ${STATE_FILE_PATH}`);
 		}
 		return 0;
 	}

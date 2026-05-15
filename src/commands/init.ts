@@ -111,8 +111,8 @@ function validateClaude(): ValidationResult {
 	if (!path) {
 		return {
 			ok: false,
-			message: 'claude is not on PATH',
-			hint: 'install Claude Code from https://claude.com/claude-code and ensure the install puts the binary on PATH',
+			message: 'Claude is not on PATH',
+			hint: 'Install Claude Code from https://claude.com/claude-code and ensure the install puts the binary on PATH',
 		};
 	}
 	const version = spawnSync('claude', ['--version'], { encoding: 'utf8' });
@@ -122,7 +122,7 @@ function validateClaude(): ValidationResult {
 		// `cam init` to block on that.
 		return {
 			ok: true,
-			message: `claude found at ${path} (version unparseable)`,
+			message: `Claude found at ${path} (version unparseable)`,
 			hint: '`claude --version` exited non-zero; continuing anyway',
 		};
 	}
@@ -133,7 +133,7 @@ function validateClaude(): ValidationResult {
 	if (!versionMatch) {
 		return {
 			ok: true,
-			message: `claude found at ${path} (version unparseable)`,
+			message: `Claude found at ${path} (version unparseable)`,
 			hint: `\`claude --version\` returned: ${versionString}`,
 		};
 	}
@@ -141,13 +141,13 @@ function validateClaude(): ValidationResult {
 	if (compareVersions(detectedVersion, CLAUDE_VERSION_FLOOR) < 0) {
 		return {
 			ok: true,
-			message: `claude found at ${path} (version ${detectedVersion}, < floor ${CLAUDE_VERSION_FLOOR})`,
-			hint: 'older Claude Code may have different rate-limit message formatting; consider `claude update`',
+			message: `Claude found at ${path} (version ${detectedVersion}, < floor ${CLAUDE_VERSION_FLOOR})`,
+			hint: 'Older Claude Code may have different rate-limit message formatting; consider `claude update`',
 		};
 	}
 	return {
 		ok: true,
-		message: `claude found at ${path} (version ${detectedVersion})`,
+		message: `Claude found at ${path} (version ${detectedVersion})`,
 	};
 }
 
@@ -269,10 +269,10 @@ function runInitLinear(configPath: string): number {
 	// 3. write config
 	try {
 		mergeIntoConfig(configPath, { permission_mode: 'bypassPermissions' });
-		printSuccess(`config written ${configPath}`);
+		printSuccess(`Config written ${configPath}`);
 	} catch (err) {
 		printError(
-			`failed to write ${configPath}`,
+			`Failed to write ${configPath}`,
 			err instanceof Error ? err.message : String(err),
 		);
 		failures.push('config');
@@ -281,12 +281,12 @@ function runInitLinear(configPath: string): number {
 	// 4. summary
 	if (failures.length > 0) {
 		printError(
-			`cam init: ${failures.length} check(s) failed`,
-			`failing: ${failures.join(', ')}`,
+			`${failures.length} check(s) failed`,
+			`Failing: ${failures.join(', ')}`,
 		);
 		return 1;
 	}
-	printSuccess('cam init: machine ready');
+	printSuccess('Machine ready');
 	return 0;
 }
 
@@ -315,19 +315,19 @@ function buildInteractiveChecks(configPath: string): CheckDef[] {
 		{
 			id: 'claude',
 			label: 'claude',
-			description: 'Required to spawn Claude Code sessions.',
+			description: 'Required to spawn Claude Code sessions',
 			run: () => toOutcome(validateClaude(), { okDetail: parseClaudeDetail }),
 		},
 		{
 			id: 'check-agent-frontmatter',
 			label: 'agent-frontmatter',
-			description: 'Validates .claude/agents/*.md files.',
+			description: 'Validates .claude/agents/*.md files',
 			run: () => smokeToOutcome(runVendoredSmoke(vendorScriptPath('check-agent-frontmatter.ts'))),
 		},
 		{
 			id: 'config',
 			label: 'config',
-			description: 'Saves your default permission mode.',
+			description: 'Saves your default permission mode',
 			run: () => writeConfigOutcome(configPath),
 		},
 	];

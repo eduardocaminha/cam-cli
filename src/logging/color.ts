@@ -95,17 +95,24 @@ export function printSuccess(msg: string, id?: string): void {
 	process.stdout.write(`${accent("✓")} ${msg}${idPart}\n`);
 }
 
-/** Warning: warning ! + default-color message. Optional muted hint. */
+/**
+ * Warning: blank line + destructive ✗ + bold message. Optional muted hint.
+ * Visually matches printError — both are interruptive events that the user
+ * needs to notice against a scroll of success lines.
+ */
 export function printWarning(msg: string, hint?: string): void {
 	if (isQuiet()) return;
 	const hintPart = hint ? ` ${muted(`— ${hint}`)}` : "";
-	process.stdout.write(`${warning("!")} ${msg}${hintPart}\n`);
+	process.stdout.write(`\n${destructive.bold(`✗ ${msg}`)}${hintPart}\n`);
 }
 
-/** Error: destructive ✗ + default-color message. Optional muted hint. Always to stderr. */
+/**
+ * Error: blank line + destructive ✗ + bold message. Optional muted hint.
+ * Always to stderr.
+ */
 export function printError(msg: string, hint?: string): void {
 	const hintPart = hint ? ` ${muted(`— ${hint}`)}` : "";
-	process.stderr.write(`${destructive("✗")} ${msg}${hintPart}\n`);
+	process.stderr.write(`\n${destructive.bold(`✗ ${msg}`)}${hintPart}\n`);
 }
 
 /** Hint/info: muted indented text. */

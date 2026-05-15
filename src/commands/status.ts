@@ -329,7 +329,7 @@ export function runStatus(options: StatusOptions = {}): number {
 		if (report.lastCommit) {
 			process.stdout.write(`last:   ${muted(report.lastCommit.sha)} ${report.lastCommit.subject}\n`);
 		}
-		printHint('no `.claude/cam-loop.local.md` — start a loop with `cam next` (or `/cam-loop` from inside claude)');
+		printHint('No `.claude/cam-loop.local.md` — start a loop with `cam next` (or `/cam-loop` from inside claude)');
 		return 0;
 	}
 
@@ -354,7 +354,7 @@ export function runStatus(options: StatusOptions = {}): number {
 	}
 
 	if (report.state === 'paused') {
-		printWarning('loop is paused (active:false in state file)', 'run `cam stop` to clear, then `cam next` to restart');
+		printWarning('Loop is paused (active:false in state file)', 'Run `cam stop` to clear, then `cam next` to restart');
 	}
 	return 0;
 }

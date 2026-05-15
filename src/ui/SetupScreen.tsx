@@ -58,8 +58,8 @@ interface SetupScreenProps {
 type Step = 'mode' | 'issue' | 'description' | 'done';
 
 const MODE_OPTIONS: readonly SelectOption<ProjectMode>[] = [
-	{ value: 'existing', label: 'Existing project', description: 'This folder already has code.' },
-	{ value: 'new', label: 'New project', description: 'Empty folder, scaffold from scratch.' },
+	{ value: 'existing', label: 'Existing project', description: 'This folder already has code' },
+	{ value: 'new', label: 'New project', description: 'Empty folder, scaffold from scratch' },
 ];
 
 const ISSUE_OPTIONS: readonly SelectOption<IssueSystem>[] = [
@@ -190,7 +190,9 @@ export function SetupScreen({ prefilled, onDone, onCancel }: SetupScreenProps): 
 							<Text color={colors.accent}>✓ </Text>
 							<Text>Project configuration saved</Text>
 						</Box>
-						<Text color={colors.muted}>Ready to drive the loop.</Text>
+						<Box paddingLeft={2}>
+							<Text color={colors.muted}>Ready to drive the loop</Text>
+						</Box>
 					</Section>
 					<Section heading="Next">
 						<NextCommand name="cam run" hint="open or attach the orchestrator" />

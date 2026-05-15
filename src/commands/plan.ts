@@ -317,12 +317,12 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 		printSuccess('prd-auditor APPROVE detected', line.trim().slice(0, 80));
 		const answer = await prompt('Approve PRD and create branch? [y/N] ');
 		if (/^y(es)?$/i.test(answer.trim())) {
-			printSuccess('continuing — letting planner finish branch + commit');
+			printSuccess('Continuing — letting planner finish branch + commit');
 			// Resume stdin forwarding so the operator can keep interacting.
 			startStdinForwarding();
 			return;
 		}
-		printWarning('plan cancelled by operator', 'sending Esc + terminating planning session');
+		printWarning('Plan cancelled by operator', 'Sending Esc + terminating planning session');
 		killedByOperator = true;
 		proc.kill('SIGTERM');
 	};
@@ -353,15 +353,15 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 		proc = spawnFn(cmd, { onData, onExit: () => {} });
 	} catch (err) {
 		printError(
-			'failed to spawn `claude`',
+			'Failed to spawn `claude`',
 			err instanceof Error ? err.message : String(err),
 		);
-		printHint('verify `claude` is on PATH (re-run `cam init` to validate)');
+		printHint('Verify `claude` is on PATH (re-run `cam init` to validate)');
 		return 1;
 	}
 
-	printSuccess(`cam plan: dispatched ${slash}`);
-	printHint('the planning session is interactive — your keystrokes go directly to claude');
+	printSuccess(`Dispatched ${slash}`);
+	printHint('The planning session is interactive — your keystrokes go directly to claude');
 
 	// Start forwarding stdin to the child PTY immediately.
 	startStdinForwarding();

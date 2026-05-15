@@ -18,7 +18,7 @@
 
 import process from 'node:process';
 
-import { runDashboard } from './src/commands/dashboard.ts';
+import { runDashboardInk } from './src/commands/dashboard.ts';
 import { runInit } from './src/commands/init.ts';
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
@@ -30,223 +30,304 @@ import { runStop } from './src/commands/stop.ts';
 import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { printError, printHint } from './src/logging/color.ts';
+import { renderHelp } from './src/logging/help.ts';
 import { CAM_VERSION } from './src/version.ts';
 
-const HELP = `cam — autonomous Claude Code loop driver
+const HELP = renderHelp({
+	title: 'cam',
+	tagline: 'Autonomous Claude Code loop driver',
+	usage: 'cam <command> [options]',
+	sections: [
+		{
+			heading: 'Commands',
+			entries: [
+				{ name: 'init [options]', description: 'Validate the machine, then run the project-setup wizard' },
+				{ name: 'run [options]', description: 'Open or attach the long-lived orchestrator (tmux session)' },
+				{ name: 'plan [--issue <N>]', description: 'Spawn claude + dispatch /cam-plan; prompts on APPROVE' },
+				{ name: 'next [options]', description: 'Spawn the autonomous loop (Ghostty split + claude + dashboard)' },
+				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
+				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
+				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
+				{ name: 'stop', description: 'Cancel a running loop (clears state file + kills tmux session "cam")' },
+				{ name: 'resume [options]', description: 'Reconcile loop state after interrupt; auto-detect or --mode <name>' },
+				{ name: 'version', description: 'Print the installed cam-cli version (also `--version` / `-v`)' },
+				{ name: 'help', description: 'Show this help' },
+			],
+		},
+	],
+	footer:
+		'Run `cam <command> --help` for command-specific options. Permission mode\n' +
+		'for spawned claude sessions is read from `~/.config/cam/config.toml` —\n' +
+		'no subcommand exposes a CLI flag for it (run `cam init` to set).',
+});
 
-Usage:
-  cam <command> [options]
+const INIT_HELP = renderHelp({
+	title: 'cam init',
+	tagline: 'Validate the machine and set up the project for the cam loop',
+	usage: 'cam init [options]',
+	sections: [
+		{
+			heading: 'Options',
+			entries: [
+				{ name: '--new', description: 'Treat this as a new project (skip the new/existing question)' },
+				{ name: '--existing', description: 'Treat this as an existing project' },
+				{ name: '--issue-system <x>', description: 'linear | github | none. Skip the issue-system question' },
+				{ name: '--description "<t>"', description: 'Project description for new projects (skip the prompt)' },
+				{ name: '--no-tmux', description: 'Install templates only; skip spawning the tmux setup session' },
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'Stage 1 — Machine validation:\n' +
+				'  1. Checks `claude` is on PATH and logged in.\n' +
+				'  2. Runs vendored smokes (check-agent-frontmatter).\n' +
+				'  3. Writes ~/.config/cam/config.toml with permission_mode = "bypassPermissions".\n' +
+				'  4. Writes ~/.config/cam/retry.toml with the built-in retry policy defaults\n' +
+				'     (first run only; existing file is preserved). Edit this file to tune\n' +
+				'     max attempts, rate-limit patterns, and the retry log retention window.\n' +
+				'\n' +
+				'Stage 2 — Project setup wizard (if stage 1 passes):\n' +
+				'  1. Asks: new project or existing?\n' +
+				'  2. Verifies claude is installed and logged in.\n' +
+				'  3. Asks: which issue system (linear | github | none)?\n' +
+				'  4. If new: asks for a brief project description.\n' +
+				'  5. Installs cam templates into .claude/commands/, .claude/agents/, scripts/cam/.\n' +
+				'  6. Writes scripts/cam/project.toml with per-project config.\n' +
+				'  7. Opens a tmux split:\n' +
+				'       Pane A (left):  claude in bypassPermissions, adapts templates to this project.\n' +
+				'       Pane B (right): key menu — c to interact, v for view-only, q to close.\n' +
+				'  8. Auto-handoff: when the config agent emits CAM_SETUP_STATUS=DONE,\n' +
+				'     the orchestrator is launched in a new pane immediately. The menu\n' +
+				'     pane updates with options: o (orchestrator), c (config), k (kill\n' +
+				'     config pane), q (close menu).',
+		},
+	],
+	footer:
+		'Note: auto-retry on rate limits is built into cam — no external tool required.\n' +
+		'Rate-limit retry config: ~/.config/cam/retry.toml\n' +
+		'Retry logs:             ~/.cam/retry-logs/',
+});
 
-Commands:
-  init [options]          Validate the machine, then run the project-setup wizard
-  run [options]           Open or attach the long-lived orchestrator (tmux session)
-  plan [--issue <N>]      Spawn claude + dispatch /cam-plan; prompts on APPROVE
-  next [options]          Spawn the autonomous loop (Ghostty split + claude + dashboard)
-  claude [args...]        Run claude in print mode with auto-retry on rate limits
-  dashboard               Standalone read-only TUI (alt-screen) for monitoring a loop
-  status                  Show current loop state at a glance (idle / active / paused)
-  stop                    Cancel a running loop (clears state file + kills tmux session "cam")
-  resume [options]        Reconcile loop state after interrupt; auto-detect or --mode <name>
-  version                 Print the installed cam-cli version (also \`--version\` / \`-v\`)
-  help                    Show this help
+const RUN_HELP = renderHelp({
+	title: 'cam run',
+	tagline: 'Open or attach the long-lived orchestrator session',
+	usage: 'cam run [options]',
+	sections: [
+		{
+			heading: 'Options',
+			entries: [
+				{
+					name: '--no-attach',
+					description: 'Create the orchestrator session without attaching (useful for scripting)',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Verifies tmux and `.claude/agents/subagent-orchestrator.md` exist\n' +
+				'   (run `cam init` first if not).\n' +
+				'2. Computes a stable session name per project (cam-orch-<basename>-<hash>).\n' +
+				'3. If the session exists: attach.\n' +
+				'   Otherwise: create with two panes (orchestrator on the left, status\n' +
+				'   menu on the right) and attach.\n' +
+				'4. Inside an existing tmux: uses `switch-client` instead of `attach`.',
+		},
+	],
+	footer:
+		'The orchestrator persona is loaded from\n' +
+		'.claude/agents/subagent-orchestrator.md — see that file for what it does.',
+});
 
-Run \`cam <command> --help\` for command-specific options. Permission mode
-for spawned claude sessions is read from \`~/.config/cam/config.toml\` —
-no subcommand exposes a CLI flag for it (run \`cam init\` to set).`;
+const PLAN_HELP = renderHelp({
+	title: 'cam plan',
+	tagline: 'Wrap an interactive claude session that runs /cam-plan',
+	usage: 'cam plan [--issue <N>]',
+	sections: [
+		{
+			heading: 'Options',
+			entries: [
+				{
+					name: '--issue <N>',
+					description: 'Plan against GitHub issue #N (passed as `/cam-plan #N`)',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Spawns `claude` (permission mode from ~/.config/cam/config.toml)\n' +
+				'   attached to your TTY.\n' +
+				'2. The slash command is sent as the first user-turn.\n' +
+				'3. After the prd-auditor emits `verdict: "APPROVE"`, cam asks\n' +
+				'   `Approve PRD and create branch? [y/N]`.\n' +
+				'4. On `y`: planner continues to its branch + commit step.\n' +
+				'5. On `N` / empty: cam terminates the planning session and exits 0.',
+		},
+	],
+	footer:
+		'Without --issue, cam dispatches a bare `/cam-plan` and the planner picks\n' +
+		'the highest-priority pending issue itself.',
+});
 
-const INIT_HELP = `cam init — validate the machine and set up the project for the cam loop
+const NEXT_HELP = renderHelp({
+	title: 'cam next',
+	tagline: 'Spawn the autonomous loop',
+	usage: 'cam next [--max-iter <N>] [--completion-promise <STR>]',
+	sections: [
+		{
+			heading: 'Options',
+			entries: [
+				{ name: '--max-iter <N>', description: 'Max iterations before auto-stop (default: 30)' },
+				{
+					name: '--completion-promise <STR>',
+					description: 'Phrase the assistant emits to end the loop (default: COMPLETE)',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Reads `permission_mode` from `~/.config/cam/config.toml` (default\n' +
+				'   `bypassPermissions`). cam does NOT accept a `--permission-mode`\n' +
+				'   flag — change the config file with `cam init` to override.\n' +
+				'2. Pre-arms the `cam-loop` plugin by writing\n' +
+				'   `.claude/cam-loop.local.md` (vendored template at\n' +
+				'   `vendor/cam-loop.local.md.tmpl`).\n' +
+				'3. Detects the host terminal:\n' +
+				'     Ghostty                 → opens a horizontal split (claude in current\n' +
+				'                               pane, `cam dashboard` in new pane).\n' +
+				'     VS Code (TERM_PROGRAM)  → inline single-pane (the IDE is the dashboard).\n' +
+				'     anything else           → inline single-pane.\n' +
+				'4. Spawns `claude` with `/cam-next` as the first user-turn.\n' +
+				'5. Returns claude\'s exit code on session end.',
+		},
+		{
+			heading: 'Stop primitives',
+			body:
+				'/cancel-cam  (preferred — cleans up the state file)\n' +
+				'rm .claude/cam-loop.local.md  (kill switch — loop ends after current turn)',
+		},
+	],
+});
 
-Usage:
-  cam init [options]
+const STATUS_HELP = renderHelp({
+	title: 'cam status',
+	tagline: 'Show current loop state at a glance',
+	usage: 'cam status',
+	sections: [
+		{
+			heading: 'Reads three sources in the current cwd',
+			body:
+				'1. .claude/cam-loop.local.md  — plugin state file (iteration, started_at,\n' +
+				'                                completion_promise, active flag).\n' +
+				'2. prd.json                   — current story = highest-priority passes:false.\n' +
+				'3. git                        — current branch + last commit (best-effort).',
+		},
+		{
+			heading: 'Output',
+			body:
+				'status: idle | active | paused\n' +
+				'story:  US-NNN <title>\n' +
+				'iter:   N / M\n' +
+				'since:  <wall-clock since started_at>\n' +
+				'branch: <current branch>\n' +
+				'last:   <sha> <subject>',
+		},
+	],
+	footer: 'Exits 0 always — even when no loop is running (status: idle).',
+});
 
-Options:
-  --new               Treat this as a new project (skip the new/existing question).
-  --existing          Treat this as an existing project.
-  --issue-system <x>  linear | github | none. Skip the issue-system question.
-  --description "<t>" Project description for new projects (skip the prompt).
-  --no-tmux           Install templates only; skip spawning the tmux setup session.
+const DASHBOARD_HELP = renderHelp({
+	title: 'cam dashboard',
+	tagline: 'Read-only TUI for monitoring a running loop',
+	usage: 'cam dashboard',
+	sections: [
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Enters the alternate screen buffer (vim/htop style), hides the cursor.\n' +
+				'2. Polls the cwd\'s prd.json + .claude/cam-loop.local.md every 2s and\n' +
+				'   redraws on change.\n' +
+				'3. Surfaces: branch, current story (id + title), iteration N/M, wall-clock,\n' +
+				'   last 5 progress.txt entries, sleep banner if active:false.\n' +
+				'4. Exits cleanly on `q` or Ctrl+C — restores the cursor + leaves alt-screen.',
+		},
+	],
+	footer:
+		'This command is read-only. `cam next` spawns it in pane B of a Ghostty\n' +
+		'split; you can also run it standalone in any terminal that hosts the loop.',
+});
 
-Behaviour:
-  Stage 1 — Machine validation:
-    1. Checks \`claude\` is on PATH and logged in.
-    2. Runs vendored smokes (check-agent-frontmatter).
-    3. Writes ~/.config/cam/config.toml with permission_mode = "bypassPermissions".
-    4. Writes ~/.config/cam/retry.toml with the built-in retry policy defaults
-       (first run only; existing file is preserved). Edit this file to tune
-       max attempts, rate-limit patterns, and the retry log retention window.
+const STOP_HELP = renderHelp({
+	title: 'cam stop',
+	tagline: 'Cleanly cancel a running loop',
+	usage: 'cam stop',
+	sections: [
+		{
+			heading: 'What it does',
+			body:
+				'1. Removes .claude/cam-loop.local.md (the plugin state file).\n' +
+				'2. Kills the tmux session named exactly "cam" if alive (defensive —\n' +
+				'   unrelated tmux sessions are NOT touched).\n' +
+				'3. Exits 0. Idempotent: calling `cam stop` with nothing to clean is the\n' +
+				'   success state, not a failure.',
+		},
+	],
+	footer: 'After `cam stop`, the next `cam next` will not detect a stale loop.',
+});
 
-  Stage 2 — Project setup wizard (if stage 1 passes):
-    1. Asks: new project or existing?
-    2. Verifies claude is installed and logged in.
-    3. Asks: which issue system (linear | github | none)?
-    4. If new: asks for a brief project description.
-    5. Installs cam templates into .claude/commands/, .claude/agents/, scripts/cam/.
-    6. Writes scripts/cam/project.toml with per-project config.
-    7. Opens a tmux split:
-         Pane A (left):  claude in bypassPermissions, adapts templates to this project.
-         Pane B (right): key menu — c to interact, v for view-only, q to close.
-    8. Auto-handoff: when the config agent emits CAM_SETUP_STATUS=DONE,
-       the orchestrator is launched in a new pane immediately. The menu
-       pane updates with options: o (orchestrator), c (config), k (kill
-       config pane), q (close menu).
-
-Note: auto-retry on rate limits is built into cam — no external tool required.
-Rate-limit retry config: ~/.config/cam/retry.toml
-Retry logs:             ~/.cam/retry-logs/`;
-
-const RUN_HELP = `cam run — open or attach the long-lived orchestrator session
-
-Usage:
-  cam run [options]
-
-Options:
-  --no-attach    Create the orchestrator session but do not attach the
-                 current terminal to it. Useful for scripting.
-
-Behaviour:
-  1. Verifies tmux and \`.claude/agents/subagent-orchestrator.md\` exist
-     (run \`cam init\` first if not).
-  2. Computes a stable session name per project (cam-orch-<basename>-<hash>).
-  3. If the session exists: attach.
-     Otherwise: create with two panes (orchestrator on the left, status
-     menu on the right) and attach.
-  4. Inside an existing tmux: uses \`switch-client\` instead of \`attach\`.
-
-The orchestrator persona is loaded from
-.claude/agents/subagent-orchestrator.md — see that file for what it does.`;
-
-const PLAN_HELP = `cam plan — wrap an interactive claude session that runs /cam-plan
-
-Usage:
-  cam plan [--issue <N>]
-
-Options:
-  --issue <N>    Plan against GitHub issue #N (passed through as \`/cam-plan #N\`).
-                 Without this flag, cam dispatches a bare \`/cam-plan\` and the
-                 planner picks the highest-priority pending issue itself.
-
-Behaviour:
-  1. Spawns \`claude\` (permission mode from ~/.config/cam/config.toml)
-     attached to your TTY.
-  2. The slash command is sent as the first user-turn.
-  3. After the prd-auditor emits \`verdict: "APPROVE"\`, cam asks
-     \`Approve PRD and create branch? [y/N]\`.
-  4. On \`y\`: planner continues to its branch + commit step.
-  5. On \`N\` / empty: cam terminates the planning session and exits 0.`;
-
-const NEXT_HELP = `cam next — spawn the autonomous loop
-
-Usage:
-  cam next [--max-iter <N>] [--completion-promise <STR>]
-
-Options:
-  --max-iter <N>              Max iterations before auto-stop. Default: 30.
-  --completion-promise <STR>  Phrase the assistant emits to end the loop.
-                              Default: COMPLETE (assistant emits
-                              \`<promise>COMPLETE</promise>\`).
-
-Behaviour:
-  1. Reads \`permission_mode\` from \`~/.config/cam/config.toml\` (default
-     \`bypassPermissions\`). cam does NOT accept a \`--permission-mode\`
-     flag — change the config file with \`cam init\` to override.
-  2. Pre-arms the \`cam-loop\` plugin by writing
-     \`.claude/cam-loop.local.md\` (vendored template at
-     \`vendor/cam-loop.local.md.tmpl\`).
-  3. Detects the host terminal:
-       Ghostty                 → opens a horizontal split (claude in current
-                                 pane, \`cam dashboard\` in new pane).
-       VS Code (TERM_PROGRAM)  → inline single-pane (the IDE is the dashboard).
-       anything else           → inline single-pane.
-  4. Spawns \`claude\` with \`/cam-next\` as the first user-turn.
-  5. Returns claude's exit code on session end.
-
-Stop primitives:
-  /cancel-cam  (preferred — cleans up the state file)
-  rm .claude/cam-loop.local.md  (kill switch — loop ends after current turn)`;
-
-const STATUS_HELP = `cam status — show current loop state at a glance
-
-Usage:
-  cam status
-
-Reads three sources in the current cwd:
-  1. .claude/cam-loop.local.md  — plugin state file (iteration, started_at,
-                                    completion_promise, active flag).
-  2. prd.json                     — current story = highest-priority passes:false.
-  3. git                          — current branch + last commit (best-effort).
-
-Output:
-  status: idle | active | paused
-  story:  US-NNN <title>
-  iter:   N / M
-  since:  <wall-clock since started_at>
-  branch: <current branch>
-  last:   <sha> <subject>
-
-Exits 0 always — even when no loop is running (status: idle).`;
-
-const DASHBOARD_HELP = `cam dashboard — read-only TUI for monitoring a running loop
-
-Usage:
-  cam dashboard
-
-Behaviour:
-  1. Enters the alternate screen buffer (vim/htop style), hides the cursor.
-  2. Polls the cwd's prd.json + .claude/cam-loop.local.md every 2s and
-     redraws on change.
-  3. Surfaces: branch, current story (id + title), iteration N/M, wall-clock,
-     last 5 progress.txt entries, sleep banner if active:false.
-  4. Exits cleanly on \`q\` or Ctrl+C — restores the cursor + leaves alt-screen.
-
-This command is read-only. \`cam next\` spawns it in pane B of a Ghostty
-split; you can also run it standalone in any terminal that hosts the loop.`;
-
-const STOP_HELP = `cam stop — cleanly cancel a running loop
-
-Usage:
-  cam stop
-
-What it does:
-  1. Removes .claude/cam-loop.local.md (the plugin state file).
-  2. Kills the tmux session named exactly "cam" if alive (defensive —
-     unrelated tmux sessions are NOT touched).
-  3. Exits 0. Idempotent: calling \`cam stop\` with nothing to clean is the
-     success state, not a failure.
-
-After \`cam stop\`, the next \`cam next\` will not detect a stale loop.`;
-
-const RESUME_HELP = `cam resume — reconcile loop state after an interrupt
-
-Usage:
-  cam resume [--mode <name>] [--dry-run] [--force]
-
-Auto-detected modes (no --mode flag):
-  idle      No state file → run \`cam next\` to start fresh.
-  noop      retry-monitor process alive (PID from ~/.cam/retry.pid) →
-            loop is in a rate-limit sleep window; will resume on its own.
-  respawn   State file present + heartbeat PID dead + recent commit
-            (≤ 24h) → re-spawn \`cam next\` to re-attach.
-  prompt    State file present + heartbeat PID dead + last commit
-            > 24h old (or unknown) → asks [Y/n/reset]:
-                  Y      continue (treat as respawn)
-                  n      abort (exit 1; no recovery)
-                  reset  remove state file + exit 0
-  success   PRD already complete → auto-clean orphan state file.
-
-Explicit --mode overrides:
-  --mode reset-current-story   Flip the most-recently-completed story back
-                               to passes:false. Re-runs that story on the
-                               next \`cam next\`.
-  --mode reset-prd             Flip every story to passes:false. Re-runs the
-                               whole PRD from US-001.
-  --mode reset-branch          Print the operator-driven \`git reset --hard
-                               origin/main\` instruction + remove the state
-                               file. cam does NOT run the destructive
-                               \`git reset\` itself.
-
-Flags:
-  --dry-run    Classify and print without mutating state or spawning.
-  --force      Skip the confirmation prompt for --mode reset-branch.`;
+const RESUME_HELP = renderHelp({
+	title: 'cam resume',
+	tagline: 'Reconcile loop state after an interrupt',
+	usage: 'cam resume [--mode <name>] [--dry-run] [--force]',
+	sections: [
+		{
+			heading: 'Auto-detected modes (no --mode flag)',
+			entries: [
+				{ name: 'idle', description: 'No state file → run `cam next` to start fresh' },
+				{
+					name: 'noop',
+					description: 'retry-monitor alive (PID from ~/.cam/retry.pid) — loop will resume on its own',
+				},
+				{
+					name: 'respawn',
+					description: 'State file + heartbeat dead + recent commit (≤24h) → re-spawn `cam next`',
+				},
+				{
+					name: 'prompt',
+					description: 'State file + heartbeat dead + last commit >24h → asks [Y/n/reset]',
+				},
+				{ name: 'success', description: 'PRD already complete → auto-clean orphan state file' },
+			],
+		},
+		{
+			heading: 'Explicit --mode overrides',
+			entries: [
+				{
+					name: '--mode reset-current-story',
+					description: 'Flip most-recently-completed story back to passes:false (re-runs it next)',
+				},
+				{
+					name: '--mode reset-prd',
+					description: 'Flip every story to passes:false (re-runs PRD from US-001)',
+				},
+				{
+					name: '--mode reset-branch',
+					description: 'Print `git reset --hard origin/main` + remove state file (cam does NOT run reset)',
+				},
+			],
+		},
+		{
+			heading: 'Flags',
+			entries: [
+				{ name: '--dry-run', description: 'Classify and print without mutating state or spawning' },
+				{ name: '--force', description: 'Skip the confirmation prompt for --mode reset-branch' },
+			],
+		},
+	],
+});
 
 // --- Argv parsers ----------------------------------------------------------
 
@@ -442,7 +523,7 @@ export function parseResumeArgs(
 async function main(argv: string[]): Promise<number> {
 	const command = argv[2];
 	if (!command || command === 'help' || command === '--help' || command === '-h') {
-		process.stdout.write(`${HELP}\n`);
+		process.stdout.write(HELP);
 		return 0;
 	}
 	// `cam --version` / `cam -v` / `cam version`. We accept all three
@@ -462,7 +543,7 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			if (setupArgs.help) {
-				process.stdout.write(`${INIT_HELP}\n`);
+				process.stdout.write(INIT_HELP);
 				return 0;
 			}
 			const machineCode = await runInit();
@@ -481,7 +562,7 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			if (parsed.help) {
-				process.stdout.write(`${RUN_HELP}\n`);
+				process.stdout.write(RUN_HELP);
 				return 0;
 			}
 			return runRun({ noAttach: parsed.noAttach });
@@ -493,7 +574,7 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			if (parsed.help) {
-				process.stdout.write(`${PLAN_HELP}\n`);
+				process.stdout.write(PLAN_HELP);
 				return 0;
 			}
 			return runPlan({ issue: parsed.issue });
@@ -505,7 +586,7 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			if (parsed.help) {
-				process.stdout.write(`${NEXT_HELP}\n`);
+				process.stdout.write(NEXT_HELP);
 				return 0;
 			}
 			return runNext({
@@ -516,7 +597,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'dashboard': {
 			const tail = argv.slice(3);
 			if (tail.includes('--help') || tail.includes('-h')) {
-				process.stdout.write(`${DASHBOARD_HELP}\n`);
+				process.stdout.write(DASHBOARD_HELP);
 				return 0;
 			}
 			if (tail.length > 0) {
@@ -524,12 +605,12 @@ async function main(argv: string[]): Promise<number> {
 				printHint('run `cam dashboard --help` for usage');
 				return 1;
 			}
-			return runDashboard();
+			return runDashboardInk();
 		}
 		case 'status': {
 			const tail = argv.slice(3);
 			if (tail.includes('--help') || tail.includes('-h')) {
-				process.stdout.write(`${STATUS_HELP}\n`);
+				process.stdout.write(STATUS_HELP);
 				return 0;
 			}
 			if (tail.length > 0) {
@@ -542,7 +623,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'stop': {
 			const tail = argv.slice(3);
 			if (tail.includes('--help') || tail.includes('-h')) {
-				process.stdout.write(`${STOP_HELP}\n`);
+				process.stdout.write(STOP_HELP);
 				return 0;
 			}
 			if (tail.length > 0) {
@@ -559,7 +640,7 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			if (parsed.help) {
-				process.stdout.write(`${RESUME_HELP}\n`);
+				process.stdout.write(RESUME_HELP);
 				return 0;
 			}
 			return runResume({
@@ -571,7 +652,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'claude': {
 			const parsed = parseClaudeArgs(argv.slice(3));
 			if (parsed.help) {
-				process.stdout.write(`${CLAUDE_HELP}\n`);
+				process.stdout.write(CLAUDE_HELP);
 				return 0;
 			}
 			return runClaude({ args: parsed.forwardedArgs });
@@ -586,7 +667,7 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			if (parsed.help) {
-				process.stdout.write(`${RETRY_MONITOR_HELP}\n`);
+				process.stdout.write(RETRY_MONITOR_HELP);
 				return 0;
 			}
 			return runRetryMonitor({ pane: parsed.pane, pid: parsed.pid });

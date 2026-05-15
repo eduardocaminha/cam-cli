@@ -215,7 +215,7 @@ export function runRun(options: RunOptions = {}): number {
 	if (!existsSync(orchestratorAgent)) {
 		printError(
 			'subagent-orchestrator.md not found',
-			'this project has not been initialized — run `cam init` first',
+			'This project has not been initialized — run `cam init` first',
 		);
 		return 1;
 	}
@@ -242,7 +242,7 @@ export function runRun(options: RunOptions = {}): number {
 			printSuccess(`tmux session "${sessionName}" created`);
 		} catch (err) {
 			printError(
-				'failed to create orchestrator session',
+				'Failed to create orchestrator session',
 				err instanceof Error ? err.message : String(err),
 			);
 			return 1;
@@ -251,7 +251,7 @@ export function runRun(options: RunOptions = {}): number {
 
 	// 4. Attach (unless --no-attach).
 	if (options.noAttach) {
-		printHint(`attach manually: tmux attach -t ${result.sessionName}`);
+		printHint(`Attach manually: tmux attach -t ${result.sessionName}`);
 		return 0;
 	}
 
@@ -284,7 +284,7 @@ export function parseRunArgs(args: string[]): ParsedRunArgs | null {
 			result.noAttach = true;
 			continue;
 		}
-		printError(`unknown run option: ${arg}`);
+		printError(`Unknown run option: ${arg}`);
 		return null;
 	}
 	return result;

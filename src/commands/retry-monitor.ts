@@ -13,23 +13,34 @@
 import { startMonitor } from '../retry/monitor.ts';
 import { createLogger } from '../retry/logger.ts';
 
-export const RETRY_MONITOR_HELP = `cam retry-monitor — internal monitor subcommand (not for direct use)
+import { renderHelp } from '../logging/help.ts';
 
-Usage (internal):
-  cam retry-monitor <pane> <pid>
-
-Arguments:
-  <pane>   Tmux pane target to watch (e.g. "%1" or "cam:1.0").
-  <pid>    PID of the claude process to monitor for liveness.
-
-This subcommand is forked as a detached background process by \`cam claude\`
-when running inside a tmux session. It watches the given pane for rate-limit
-messages and sends the retry key sequence when the rate limit clears.
-
-Logs are written to ~/.cam/retry-logs/.
-
-Do not invoke this subcommand directly — use \`cam run\` to start a managed
-tmux session where interactive auto-retry is handled automatically.`;
+export const RETRY_MONITOR_HELP = renderHelp({
+	title: 'cam retry-monitor',
+	tagline: 'Internal monitor subcommand (not for direct use)',
+	usage: 'cam retry-monitor <pane> <pid>',
+	sections: [
+		{
+			heading: 'Arguments',
+			entries: [
+				{ name: '<pane>', description: 'Tmux pane target to watch (e.g. "%1" or "cam:1.0")' },
+				{ name: '<pid>', description: 'PID of the claude process to monitor for liveness' },
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'This subcommand is forked as a detached background process by `cam claude`\n' +
+				'when running inside a tmux session. It watches the given pane for rate-limit\n' +
+				'messages and sends the retry key sequence when the rate limit clears.\n' +
+				'\n' +
+				'Logs are written to ~/.cam/retry-logs/.',
+		},
+	],
+	footer:
+		'Do not invoke this subcommand directly — use `cam run` to start a managed\n' +
+		'tmux session where interactive auto-retry is handled automatically.',
+});
 
 export interface RetryMonitorOptions {
   pane: string;

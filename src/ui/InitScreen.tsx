@@ -161,7 +161,9 @@ export function InitScreen({ checks, onDone }: InitScreenProps): ReactElement {
 							{passed}/{total} checks passed
 						</Text>
 					</Box>
-					<Text color={colors.muted}>Ready to drive the loop.</Text>
+					<Box paddingLeft={2}>
+						<Text color={colors.muted}>Ready to drive the loop</Text>
+					</Box>
 				</Section>
 			)}
 
@@ -173,9 +175,11 @@ export function InitScreen({ checks, onDone }: InitScreenProps): ReactElement {
 							{failedCount} required check{failedCount === 1 ? '' : 's'} did not pass
 						</Text>
 					</Box>
-					<Text color={colors.muted}>
-						Fix the issue{failedCount === 1 ? '' : 's'} above before continuing.
-					</Text>
+					<Box paddingLeft={2}>
+						<Text color={colors.muted}>
+							Fix the issue{failedCount === 1 ? '' : 's'} above before continuing
+						</Text>
+					</Box>
 				</Section>
 			)}
 

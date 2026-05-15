@@ -7,7 +7,7 @@
 
 import type { AgentState, EventType } from "../types.ts";
 import type { ColorFn } from "./color.ts";
-import { brand, color, noColor, visibleLength } from "./color.ts";
+import { chalk, color, muted, noColor, visibleLength } from "./color.ts";
 
 // === Agent State Theme ===
 
@@ -122,15 +122,19 @@ export function padVisible(str: string, width: number): string {
 }
 
 /**
- * Renders a primary header: brand bold title + newline + thin separator.
+ * Renders a primary header: bold default-color title + newline + muted thin
+ * separator. Matches the Ink `Section` heading pattern so terminal headers
+ * and Ink screens share the same visual rhythm.
  */
 export function renderHeader(title: string, width?: number): string {
-	return `${brand.bold(title)}\n${separator(width)}`;
+	return `${chalk.bold(title)}\n${muted(separator(width))}`;
 }
 
 /**
- * Renders a secondary header: color bold title + newline + dim thin separator.
+ * Renders a secondary header: bold default-color title + newline + muted thin
+ * separator. Same shape as `renderHeader`; the distinction is kept for callers
+ * that want to mark subsections visually via spacing/indent rather than color.
  */
 export function renderSubHeader(title: string, width?: number): string {
-	return `${color.bold(title)}\n${color.dim(separator(width))}`;
+	return `${chalk.bold(title)}\n${muted(separator(width))}`;
 }

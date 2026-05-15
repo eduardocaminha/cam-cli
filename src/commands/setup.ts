@@ -216,7 +216,7 @@ function copyTemplates(cwd: string): void {
 		{ subtree: 'scripts/cam', rel: 'scripts/cam' },
 	];
 	for (const { subtree, rel } of targets) {
-		printSuccess(`installed ${counts[subtree]} file(s) → ${rel}`);
+		printSuccess(`Installed ${counts[subtree]} file(s) → ${rel}`);
 	}
 }
 
@@ -419,7 +419,7 @@ function spawnSetupTmux(opts: {
 		);
 		const configPaneId = (idResult.stdout ?? '').trim();
 		if (!configPaneId) {
-			printWarning('could not capture current tmux pane id — auto-handoff disabled');
+			printWarning('Could not capture current tmux pane id — auto-handoff disabled');
 		}
 
 		// Split right with the menu pane, exposing the config pane id + orch
@@ -459,7 +459,7 @@ function spawnSetupTmux(opts: {
 		if ((newSession.status ?? 1) !== 0 || !configPaneId) {
 			printError(
 				'tmux new-session failed',
-				`exit code ${newSession.status} — install tmux or run with --no-tmux`,
+				`Exit code ${newSession.status} — install tmux or run with --no-tmux`,
 			);
 			return;
 		}
@@ -476,8 +476,8 @@ function spawnSetupTmux(opts: {
 			{ stdio: 'inherit' },
 		);
 		printSuccess(`tmux session "${sessionName}" created`);
-		printHint(`attach:           tmux attach -t ${sessionName}`);
-		printHint(`attach read-only: tmux attach -t ${sessionName} -r`);
+		printHint(`Attach:           tmux attach -t ${sessionName}`);
+		printHint(`Attach read-only: tmux attach -t ${sessionName} -r`);
 	}
 }
 
@@ -496,46 +496,51 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 	const agentResult = verifyAgent();
 	if (!agentResult.ok) {
 		printError('claude not ready', agentResult.hint);
-		printHint('fix the issues above and re-run `cam init`');
+		printHint('Fix the issues above and re-run `cam init`');
 		return 1;
 	}
 
 	// --- Step 2: collect answers (interactive Ink screen or readline) -------
 	const answers = await collectSetupAnswers(options);
 	if (answers === null) {
-		printWarning('setup cancelled');
+		printWarning('Setup cancelled');
 		return 1;
 	}
 	const { projectMode, issueSystem, description } = answers;
+
+	// Blank line to separate the Ink screen's rendered output from the linear
+	// CLI prints that follow. Without this, the first hint/success line glues
+	// to the bottom of the SetupScreen panel.
+	if (isInteractiveTTY()) process.stdout.write('\n');
 
 	// In non-TTY mode collectSetupAnswers already echoes nothing — print a
 	// concise confirmation so log scrapers (and the CI test stream) still
 	// see the chosen values. In TTY, the SetupScreen rendered the history
 	// inline and there's nothing more to say here.
 	if (!isInteractiveTTY()) {
-		printSuccess(`project mode: ${projectMode}`);
+		printSuccess(`Project mode: ${projectMode}`);
 		printSuccess(`claude found at ${agentResult.path}`);
-		printSuccess(`issue system: ${issueSystem}`);
+		printSuccess(`Issue system: ${issueSystem}`);
 	}
 	if (issueSystem === 'linear') {
-		printHint('set LINEAR_API_KEY in your shell (get one at https://linear.app/settings/api)');
+		printHint('Set LINEAR_API_KEY in your shell (get one at https://linear.app/settings/api)');
 	} else if (issueSystem === 'github') {
-		printHint('ensure `gh auth status` passes before running /cam-issue');
+		printHint('Ensure `gh auth status` passes before running /cam-issue');
 	}
 
 	// Persist to scripts/cam/project.toml (per-project config).
 	try {
 		const projectToml = join(cwd, 'scripts', 'cam', 'project.toml');
 		mergeIntoConfig(projectToml, { issue_system: issueSystem });
-		printSuccess(`wrote ${projectToml.replace(cwd + '/', '')}`);
+		printSuccess(`Wrote ${projectToml.replace(cwd + '/', '')}`);
 	} catch (err) {
 		printWarning(
-			`could not write scripts/cam/project.toml: ${err instanceof Error ? err.message : String(err)}`,
+			`Could not write scripts/cam/project.toml: ${err instanceof Error ? err.message : String(err)}`,
 		);
 	}
 
 	if (projectMode === 'new' && description === '') {
-		printWarning('No description provided — the agent will infer from the codebase.');
+		printWarning('No description provided — the agent will infer from the codebase');
 	}
 
 	// --- Step 6: copy templates ---------------------------------------------
@@ -543,8 +548,8 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 
 	// --- Step 7: spawn tmux split (unless --no-tmux) ------------------------
 	if (options.noTmux) {
-		printSuccess('templates installed — skipping tmux (--no-tmux)');
-		printHint('next: open your project in Claude Code and run /cam-plan');
+		printSuccess('Templates installed — skipping tmux (--no-tmux)');
+		printHint('Next: open your project in Claude Code and run /cam-plan');
 		return 0;
 	}
 
@@ -552,13 +557,13 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 
 	try {
 		spawnSetupTmux({ prompt, cwd });
-		printSuccess('setup agent launched in tmux split');
+		printSuccess('Setup agent launched in tmux split');
 	} catch (err) {
 		printError(
-			'failed to launch tmux split',
+			'Failed to launch tmux split',
 			err instanceof Error ? err.message : String(err),
 		);
-		printHint('run `cam init --no-tmux` to skip the tmux step and install templates only');
+		printHint('Run `cam init --no-tmux` to skip the tmux step and install templates only');
 		return 1;
 	}
 
@@ -615,7 +620,7 @@ export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 			result.description = arg.slice('--description='.length);
 			continue;
 		}
-		printError(`unknown init option: ${arg}`);
+		printError(`Unknown init option: ${arg}`);
 		return null;
 	}
 	return result;
