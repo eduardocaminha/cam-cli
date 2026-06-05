@@ -113,7 +113,7 @@ const INIT_HELP = renderHelp({
 
 const RUN_HELP = renderHelp({
 	title: 'cam run',
-	tagline: 'Open or attach the long-lived orchestrator session',
+	tagline: 'Open or attach the single per-project orchestrator session',
 	usage: 'cam run [options]',
 	sections: [
 		{
@@ -131,10 +131,14 @@ const RUN_HELP = renderHelp({
 				'1. Verifies tmux and `.claude/agents/subagent-orchestrator.md` exist\n' +
 				'   (run `cam init` first if not).\n' +
 				'2. Computes a stable session name per project (cam-orch-<basename>-<hash>).\n' +
-				'3. If the session exists: attach.\n' +
-				'   Otherwise: create with two panes (orchestrator on the left, status\n' +
-				'   menu on the right) and attach.\n' +
-				'4. Inside an existing tmux: uses `switch-client` instead of `attach`.',
+				'3. If the session does not exist: creates it with three panes.\n' +
+				'     Pane 0.0 (left):  orchestrator (claude /cam-next loop).\n' +
+				'     Pane 0.1 (top right): cam dashboard (permanent, read-only).\n' +
+				'     Pane 0.2 (bottom right): interactive menu (injects commands into pane 0.0).\n' +
+				'   When the orchestrator exits, the session is torn down automatically.\n' +
+				'4. If the session already exists: attach (or switch-client inside tmux).\n' +
+				'5. plan, next, and issue are thin pane launchers: they open a new pane\n' +
+				'   inside this session and return immediately.',
 		},
 	],
 	footer:
@@ -144,7 +148,7 @@ const RUN_HELP = renderHelp({
 
 const PLAN_HELP = renderHelp({
 	title: 'cam plan',
-	tagline: 'Wrap an interactive claude session that runs /cam-plan',
+	tagline: 'Open a planning pane in the project session',
 	usage: 'cam plan [--issue <N>]',
 	sections: [
 		{
@@ -159,13 +163,15 @@ const PLAN_HELP = renderHelp({
 		{
 			heading: 'Behaviour',
 			body:
-				'1. Spawns `claude` (permission mode from ~/.config/cam/config.toml)\n' +
-				'   attached to your TTY.\n' +
-				'2. The slash command is sent as the first user-turn.\n' +
-				'3. After the prd-auditor emits `verdict: "APPROVE"`, cam asks\n' +
-				'   `Approve PRD and create branch? [y/N]`.\n' +
-				'4. On `y`: planner continues to its branch + commit step.\n' +
-				'5. On `N` / empty: cam terminates the planning session and exits 0.',
+				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
+				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
+				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
+				'   creates it (with 3-pane layout) if needed.\n' +
+				'3. Opens a new pane inside the session running:\n' +
+				'     claude --permission-mode <mode> "/cam-plan" (or "/cam-plan #N")\n' +
+				'4. Returns 0 immediately. The planning flow runs inside the pane.\n' +
+				'5. If not already inside the session, prints a hint:\n' +
+				'     Run `cam run` to open the project session.',
 		},
 	],
 	footer:
@@ -190,15 +196,15 @@ const ISSUE_HELP = renderHelp({
 		{
 			heading: 'Behaviour',
 			body:
-				'1. Reads `permission_mode` from `~/.config/cam/config.toml` (default\n' +
-				'   `bypassPermissions`). cam does NOT accept a `--permission-mode`\n' +
-				'   flag — change the config file with `cam init` to override.\n' +
-				'2. Ensures the project tmux session exists\n' +
-				'   (cam-orch-<basename>-<hash>); creates it if needed.\n' +
+				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
+				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
+				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
+				'   creates it (with 3-pane layout) if needed.\n' +
 				'3. Opens a new pane inside the session running:\n' +
 				'     claude --permission-mode <mode> "/cam-issue create <text>"\n' +
-				'4. Returns 0 immediately — the issue-creation flow runs inside\n' +
-				'   the pane. Attach with `cam run` to watch.',
+				'4. Returns 0 immediately. The issue-creation flow runs inside the pane.\n' +
+				'5. If not already inside the session, prints a hint:\n' +
+				'     Run `cam run` to open the project session.',
 		},
 	],
 	footer:
@@ -208,7 +214,7 @@ const ISSUE_HELP = renderHelp({
 
 const NEXT_HELP = renderHelp({
 	title: 'cam next',
-	tagline: 'Spawn the autonomous loop',
+	tagline: 'Open a loop pane in the project session',
 	usage: 'cam next [--max-iter <N>] [--completion-promise <STR>]',
 	sections: [
 		{
@@ -224,19 +230,18 @@ const NEXT_HELP = renderHelp({
 		{
 			heading: 'Behaviour',
 			body:
-				'1. Reads `permission_mode` from `~/.config/cam/config.toml` (default\n' +
-				'   `bypassPermissions`). cam does NOT accept a `--permission-mode`\n' +
-				'   flag — change the config file with `cam init` to override.\n' +
-				'2. Pre-arms the `cam-loop` plugin by writing\n' +
-				'   `.claude/cam-loop.local.md` (vendored template at\n' +
-				'   `vendor/cam-loop.local.md.tmpl`).\n' +
-				'3. Detects the host terminal:\n' +
-				'     Ghostty                 → opens a horizontal split (claude in current\n' +
-				'                               pane, `cam dashboard` in new pane).\n' +
-				'     VS Code (TERM_PROGRAM)  → inline single-pane (the IDE is the dashboard).\n' +
-				'     anything else           → inline single-pane.\n' +
-				'4. Spawns `claude` with `/cam-next` as the first user-turn.\n' +
-				'5. Returns claude\'s exit code on session end.',
+				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
+				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
+				'2. Pre-arms the cam-loop plugin by writing\n' +
+				'   .claude/cam-loop.local.md (vendored template at\n' +
+				'   vendor/cam-loop.local.md.tmpl).\n' +
+				'3. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
+				'   creates it (with 3-pane layout: orchestrator + dashboard + menu) if needed.\n' +
+				'4. Opens a new pane inside the session running:\n' +
+				'     claude --permission-mode <mode> "/cam-next"\n' +
+				'5. Returns 0 immediately. The loop runs inside the pane.\n' +
+				'6. If not already inside the session, prints a hint:\n' +
+				'     Run `cam run` to open the project session.',
 		},
 		{
 			heading: 'Stop primitives',
@@ -291,8 +296,8 @@ const DASHBOARD_HELP = renderHelp({
 		},
 	],
 	footer:
-		'This command is read-only. `cam next` spawns it in pane B of a Ghostty\n' +
-		'split; you can also run it standalone in any terminal that hosts the loop.',
+		'cam run places this command in pane 0.1 of the project session (permanent,\n' +
+		'always visible). You can also run it standalone in any terminal.',
 });
 
 const STOP_HELP = renderHelp({

@@ -18,10 +18,11 @@ Inventário rápido de quem renderiza o quê:
 |---|---|---|
 | `cam help`, `cam <cmd> --help` | print path (`renderHelp`) | uma tela estática por comando |
 | `cam init` | Ink (`Splash` + `InitScreen`, `SetupScreen`) com fallback linear em CI | validação de máquina, wizard, tmux |
-| `cam run` | print path + tmux | sessão orchestrator (2 panes) |
-| `cam plan` | print path + PTY claude + `promptSelect` (Ink) | sessão de planning, prompt APPROVE |
-| `cam next` | print path + spawn | Loop + Host, depois claude assume o terminal |
-| `cam dashboard` | Ink (alt-screen) | TUI read-only |
+| `cam run` | print path + tmux | sessão orchestrator (3 panes: orquestrador + dashboard + menu) |
+| `cam plan` | print path + tmux (pane launcher) | abre pane na sessão, retorna 0 imediatamente |
+| `cam next` | print path + tmux (pane launcher) | abre pane na sessão, retorna 0 imediatamente |
+| `cam issue` | print path + tmux (pane launcher) | abre pane na sessão, retorna 0 imediatamente |
+| `cam dashboard` | Ink (alt-screen) | TUI read-only; pane 0.1 permanente na sessão |
 | `cam status` | print path | idle / active / paused |
 | `cam stop` | print path | cleanup |
 | `cam resume` | print path + `promptSelect` (Ink) | summary + 5 modos auto + 3 modos reset |
@@ -39,35 +40,40 @@ detalhado na seção 7.
 flowchart TD
     START([repo do projeto]) --> INIT["cam init<br/>setup, uma vez"]
 
-    INIT --> RUN["cam run<br/>orchestrator, sessao longa"]
-    INIT -. "ou pula o orchestrator" .-> PLAN
+    INIT --> RUN["cam run<br/>sessao unica por projeto<br/>3 panes: orquestrador + dashboard + menu"]
 
-    RUN -. "operador pede 'plano para X'" .-> PLAN["cam plan<br/>gera PRD + branch"]
-    PLAN --> NEXT["cam next<br/>loop autonomo"]
-    RUN -. "operador pede 'implementa'" .-> NEXT
+    RUN -. "lançador de pane" .-> PLAN["cam plan<br/>abre pane: /cam-plan"]
+    RUN -. "lançador de pane" .-> NEXT["cam next<br/>abre pane: /cam-next"]
+    RUN -. "lançador de pane" .-> ISSUE["cam issue 'texto'<br/>abre pane: /cam-issue create"]
+
+    PLAN -. "volta pra sessao" .-> RUN
+    NEXT -. "volta pra sessao" .-> RUN
+    ISSUE -. "volta pra sessao" .-> RUN
 
     NEXT --> WATCH{"acompanhar<br/>ou intervir?"}
     WATCH -. "ver de relance" .-> STATUS["cam status"]
-    WATCH -. "monitor ao vivo" .-> DASH["cam dashboard"]
+    WATCH -. "pane 0.1 sempre visivel" .-> DASH["cam dashboard"]
     WATCH -. "cancelar" .-> STOP["cam stop"]
     WATCH -. "voltou depois de cair" .-> RESUME["cam resume"]
 
     STATUS -. "volta pro loop" .-> NEXT
-    DASH -. "volta pro loop" .-> NEXT
     STOP -. "recomeca limpo" .-> NEXT
     RESUME --> NEXT
 
     NEXT -->|"PRD completo + review CLEAN"| SHIP["/cam-ship<br/>push + PR"]
     SHIP --> PRUNE["/cam-prune<br/>volta pra main"]
     PRUNE -. "proximo issue" .-> PLAN
+
+    RUN -. "orquestrador sai" .-> TEARDOWN["sessao destruida<br/>tmux kill-session"]
 ```
 
 Resumo da espinha dorsal: `init` (uma vez) prepara a máquina e instala templates.
-`run` abre o orchestrator, que é a interface humana de longa duração. Dentro (ou fora)
-dele, `plan` cria o PRD e a branch, `next` roda o loop autônomo que implementa o PRD
-história por história. Enquanto o loop roda, `status`, `dashboard`, `stop` e `resume`
-são as telas de observação e controle. Quando o PRD fecha com review limpo, o loop
-emite `COMPLETE`, abre o PR via `/cam-ship` e `/cam-prune` limpa a branch.
+`run` abre a sessão única por projeto com 3 panes: pane 0.0 é o orquestrador, pane 0.1
+é o `cam dashboard` permanente (sempre visível), pane 0.2 é o menu interativo. `plan`,
+`next` e `issue` são lançadores de pane: abrem um pane novo na sessão e retornam 0
+imediatamente. Quando o orquestrador (pane 0.0) sai, a sessão inteira é destruída
+automaticamente. Quando o PRD fecha com review limpo, o loop emite `COMPLETE`, abre o
+PR via `/cam-ship` e `/cam-prune` limpa a branch.
 
 ---
 
@@ -126,46 +132,78 @@ Decisões que mudam a tela: **TTY vs CI** (Ink vs linear), **falha na validaçã
 
 ---
 
-## 3. cam plan (sessao de planning com gate de aprovacao)
+## 2.5. cam run (sessao unica por projeto: 3-pane layout)
 
-`cam plan` é um wrapper fino: spawna `claude` num PTY com `/cam-plan` (ou `/cam-plan #N`)
-como primeiro turno, repassa tudo pro seu terminal, e fica escaneando o output atrás
-da linha de veredito do auditor. Quando acha `APPROVE`, pausa e te pergunta se pode
-deixar o planner criar a branch.
+`cam run` é o ponto central: abre (ou re-anexa) a sessão única do projeto. O nome
+da sessão é estável por projeto (`cam-orch-<basename>-<hash>`). Se a sessão já existe,
+o comando anexa ou faz `switch-client` (dentro do tmux). Se não existe, cria com 3 panes.
 
 ```mermaid
 flowchart TD
-    A["cam plan [--issue N]"] --> SPAWN["spawn claude (PTY)<br/>dispatch /cam-plan ou /cam-plan #N"]
-    SPAWN --> OK{"spawn deu certo?"}
-    OK -->|nao| ERR["erro: failed to spawn claude (stderr)"]
-    ERR --> EXIT1(["exit 1"])
+    A["cam run [--no-attach]"] --> CHECK["verifica tmux e<br/>.claude/agents/subagent-orchestrator.md"]
+    CHECK --> CHKOK{"ok?"}
+    CHKOK -->|nao| ERR["erro: tmux ou orchestrator ausente<br/>(rode cam init)"] --> EXIT1(["exit 1"])
 
-    OK -->|sim| LIVE["sessao interativa:<br/>teclas vao direto pro claude,<br/>cam escaneia o output"]
-    LIVE --> SCAN{"achou linha<br/>verdict APPROVE?"}
-    SCAN -->|"nao (sessao segue)"| LIVE
-    SCAN -->|"claude saiu antes"| PROP(["propaga exit code do claude"])
+    CHKOK -->|sim| EXISTS{"sessao ja existe?"}
+    EXISTS -->|sim| ATTACH["attach ou switch-client"]
+    ATTACH --> EXIT0a(["exit 0"])
 
-    SCAN -->|sim| PROMPT["promptSelect (Ink):<br/>Approve PRD and create branch?"]
-    PROMPT --> CHOICE{"escolha"}
-    CHOICE -->|"Yes"| CONT["ack: planner continua<br/>branch + commit"]
-    CONT --> WAIT["cam espera o claude terminar"]
-    WAIT --> PROP2(["exit code do claude"])
-    CHOICE -->|"No / default"| KILL["mata a sessao (SIGTERM)"]
-    KILL --> EXIT0(["exit 0, cancelado limpo"])
+    EXISTS -->|nao| CREATE["new-session -d (3 panes):"]
+    CREATE --> P0["pane 0.0: orchestrator<br/>(claude /cam-next; ao sair: kill-session)"]
+    CREATE --> P1["pane 0.1: cam dashboard<br/>(permanente, read-only)"]
+    CREATE --> P2["pane 0.2: menu interativo<br/>(n, p, i, s, r, d, q)"]
+
+    P0 --> NOATTACH{"--no-attach?"}
+    P1 --> NOATTACH
+    P2 --> NOATTACH
+    NOATTACH -->|sim| EXIT0b(["exit 0, sem anexar"])
+    NOATTACH -->|nao| ATTACH2["attach ou switch-client"]
+    ATTACH2 --> EXIT0c(["exit 0"])
 ```
 
-Decisão chave: o **prompt APPROVE** (Yes deixa o planner criar branch e commitar;
-No mata a sessão de planning e sai 0). Se o claude sair antes de qualquer veredito,
-o exit code dele é propagado como está.
+O pane 0.0 encadeia `; tmux kill-session -t <sessao>` após o `claude` sair, portanto
+quando o orquestrador termina (por qualquer motivo), os 3 panes somem. O dashboard
+(pane 0.1) é sempre visivel enquanto a sessao existe.
 
 ---
 
-## 4. cam next (arma o loop + detecta o host)
+## 3. cam plan (lancador de pane: abre /cam-plan na sessao)
 
-Antes de spawnar o claude, `cam next` arma o terreno: materializa o stop hook,
-registra ele em `.claude/settings.local.json`, e escreve o state file
-`.claude/cam-loop.local.md`. Qualquer falha nesses três passos é fatal. Depois,
-detecta o host pra decidir se abre um split com dashboard ou roda inline.
+`cam plan` é um lançador fino: garante que a sessão do projeto existe, abre um pane
+novo nela com `claude --permission-mode <mode> "/cam-plan"`, e retorna 0 imediatamente.
+O flow de planning (incluindo o prompt APPROVE) corre dentro do pane. Se o operador
+rodar `cam plan` de fora da sessão, um hint imprime o comando `cam run` para se anexar.
+
+```mermaid
+flowchart TD
+    A["cam plan [--issue N]"] --> SESSION["ensureProjectSession<br/>(cria sessao 3-panes se nao existe)"]
+    SESSION --> OK{"tmux ok?"}
+    OK -->|nao| ERR["erro: tmux unavailable (stderr)"]
+    ERR --> EXIT1(["exit 1"])
+
+    OK -->|sim| PANE["openPaneInSession<br/>split-window: claude /cam-plan (ou /cam-plan #N)"]
+    PANE --> PANEOK{"pane abriu?"}
+    PANEOK -->|nao| PANE_ERR["erro: failed to open pane"]
+    PANE_ERR --> EXIT1b(["exit 1"])
+
+    PANEOK -->|sim| INSIDE{"dentro da<br/>sessao?"}
+    INSIDE -->|nao| HINT["emite hint:<br/>Run cam run to open the project session"]
+    INSIDE -->|sim| EXIT0
+    HINT --> EXIT0(["exit 0"])
+```
+
+Decisao chave: `cam plan` retorna 0 imediatamente. O orquestrador (pane 0.0) e o
+dashboard (pane 0.1) continuam rodando enquanto o pane de planning executa em paralelo.
+Sem `--issue`, o planner pick o issue de maior prioridade pendente por conta proprio.
+
+---
+
+## 4. cam next (lancador de pane: abre /cam-next na sessao)
+
+`cam next` é um lançador fino: arma o state file, garante que a sessão do projeto
+existe, e abre um pane novo nela com `claude --permission-mode <mode> "/cam-next"`.
+Retorna 0 imediatamente. O loop autônomo corre dentro do pane. Se o operador rodar
+`cam next` de fora da sessão, um hint imprime o comando `cam run` para se anexar.
 
 ```mermaid
 flowchart TD
@@ -179,27 +217,50 @@ flowchart TD
     H3 --> H3OK{"ok? (recusa sobrescrever<br/>state file existente)"}
     H3OK -->|nao| F3["erro: state file ja existe,<br/>rode /cancel-cam ou rm"] --> E3(["exit 1"])
 
-    H3OK -->|sim| HOST{"detecta host"}
-    HOST -->|"TERM_PROGRAM=vscode"| INLINE
-    HOST -->|"tmux no PATH"| SPLIT
-    HOST -->|"nada disso"| INLINE
+    H3OK -->|sim| SESSION["ensureProjectSession<br/>(cria sessao 3-panes se nao existe)"]
+    SESSION --> TMUXOK{"tmux ok?"}
+    TMUXOK -->|nao| FERR["erro: tmux unavailable"] --> EERR(["exit 1"])
+    TMUXOK -->|sim| PANE["openPaneInSession<br/>split-window: claude /cam-next"]
+    PANE --> PANEOK{"pane abriu?"}
+    PANEOK -->|nao| FERR2["erro: failed to open pane"] --> EERR2(["exit 1"])
 
-    SPLIT["tmux-split"] --> INTMUX{"ja esta<br/>dentro do tmux?"}
-    INTMUX -->|sim| S1["split-window -h:<br/>claude no pane atual,<br/>cam dashboard no novo pane"]
-    INTMUX -->|nao| S2["new-session -d -s cam:<br/>dashboard na sessao cam,<br/>claude inline no terminal atual"]
-    S1 --> SPAWNC
-    S2 --> SPAWNC
-    INLINE["inline (sem split):<br/>o terminal atual e o dashboard"] --> SPAWNC
-
-    SPAWNC["spawn claude com /cam-next<br/>(foreground)"] --> SPOK{ok?}
-    SPOK -->|nao| FC["erro: failed to spawn claude"] --> EC(["exit 1"])
-    SPOK -->|sim| LOOP["claude assume o terminal:<br/>entra no loop autonomo (secao 7)"]
-    LOOP --> RET(["retorna o exit code do claude"])
+    PANEOK -->|sim| INSIDE{"dentro da<br/>sessao?"}
+    INSIDE -->|nao| HINT["emite hint:<br/>Run cam run to open the project session"]
+    INSIDE -->|sim| E0
+    HINT --> E0(["exit 0"])
 ```
 
-Decisão chave: **host detection**. VS Code e ausência de tmux caem em inline
-(pane único, o próprio terminal é o dashboard). Com tmux, abre o split com
-`cam dashboard` ao lado; dentro do tmux usa o window atual, fora cria a sessão `cam`.
+Decisao chave: `cam next` retorna 0 imediatamente. O loop corre dentro do pane; a
+sessao ja tem pane 0.1 (`cam dashboard`) permanente e pane 0.2 (menu). Nao ha mais
+deteccao de host (`TERM_PROGRAM=vscode`, Ghostty, etc.): a sessao unica por projeto
+e a fonte de verdade, independente do terminal do operador.
+
+---
+
+## 4.5. cam issue (lancador de pane: abre /cam-issue create na sessao)
+
+`cam issue "<texto livre>"` é um lançador fino. O texto é passado verbatim ao slash
+command `/cam-issue create`, que expande para título + descrição estruturada. Retorna
+0 imediatamente; o pane agent cuida do rest.
+
+```mermaid
+flowchart TD
+    A["cam issue 'texto livre'"] --> SESSION["ensureProjectSession<br/>(cria sessao 3-panes se nao existe)"]
+    SESSION --> OK{"tmux ok?"}
+    OK -->|nao| ERR["erro: tmux unavailable"] --> EXIT1(["exit 1"])
+
+    OK -->|sim| PANE["openPaneInSession<br/>split-window: claude /cam-issue create 'texto'"]
+    PANE --> PANEOK{"pane abriu?"}
+    PANEOK -->|nao| PANE_ERR["erro: failed to open pane"] --> EXIT1b(["exit 1"])
+
+    PANEOK -->|sim| INSIDE{"dentro da<br/>sessao?"}
+    INSIDE -->|nao| HINT["emite hint:<br/>Run cam run to open the project session"]
+    INSIDE -->|sim| EXIT0
+    HINT --> EXIT0(["exit 0"])
+```
+
+O mesmo padrao de pane launcher de `cam plan` e `cam next`. A diferença: o comando
+injetado no pane é `/cam-issue create <texto>`, nao um loop ou planner.
 
 ---
 
