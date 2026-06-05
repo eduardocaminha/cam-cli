@@ -5,19 +5,73 @@
 // We focus on the parts that are straightforward to verify without spawning
 // real tmux processes:
 //   - parseRunArgs   (pure CLI parsing)
-//   - projectSessionName (deterministic naming)
+//   - projectSessionName (deterministic naming — re-exported from session module)
 //   - runRun pre-flight failures (no orchestrator file, no tmux on PATH)
-//
-// The success path (creating + attaching to a real tmux session) is left to
-// manual e2e testing — mocking spawnSync deeply for that adds more
-// scaffolding than it earns.
+//   - tmux argv assertions (new-session + split-window + send-keys for dashboard pane)
 
 import { describe, expect, it } from 'bun:test';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { SpawnSyncReturns } from 'node:child_process';
 
 import { parseRunArgs, projectSessionName, runRun } from '../src/commands/run.ts';
+import type { SpawnFn } from '../src/tmux/session.ts';
+
+// ---------------------------------------------------------------------------
+// Fake spawn helper for argv tests
+// ---------------------------------------------------------------------------
+
+interface SpawnRecord {
+	cmd: string;
+	args: string[];
+}
+
+function makeFakeSpawn(opts: {
+	/** Return 0 for tmux -V (tmux is available). Default: true. */
+	tmuxAvailable?: boolean;
+	/** Return 0 for has-session (session exists). Default: false. */
+	sessionExists?: boolean;
+} = {}): SpawnFn & { calls: SpawnRecord[] } {
+	const { tmuxAvailable = true, sessionExists = false } = opts;
+	const calls: SpawnRecord[] = [];
+
+	const fn: SpawnFn = (cmd, args, _options?) => {
+		calls.push({ cmd, args: [...args] });
+
+		const result: SpawnSyncReturns<Buffer> = {
+			pid: 1,
+			output: [null, Buffer.from(''), Buffer.from('')],
+			stdout: Buffer.from(''),
+			stderr: Buffer.from(''),
+			status: 0,
+			signal: null,
+		};
+
+		if (cmd === 'tmux') {
+			if (args[0] === '-V') {
+				result.status = tmuxAvailable ? 0 : 1;
+			} else if (args[0] === 'has-session') {
+				result.status = sessionExists ? 0 : 1;
+			}
+		}
+
+		return result;
+	};
+
+	const decorated = fn as SpawnFn & { calls: SpawnRecord[] };
+	decorated.calls = calls;
+	return decorated;
+}
+
+/** Build a temp dir with the required .claude/agents/subagent-orchestrator.md. */
+function makeTmpProject(): string {
+	const cwd = mkdtempSync(join(tmpdir(), 'cam-run-'));
+	const agentsDir = join(cwd, '.claude', 'agents');
+	mkdirSync(agentsDir, { recursive: true });
+	writeFileSync(join(agentsDir, 'subagent-orchestrator.md'), '# stub\n', 'utf8');
+	return cwd;
+}
 
 // ---------------------------------------------------------------------------
 // parseRunArgs
@@ -47,7 +101,7 @@ describe('parseRunArgs', () => {
 });
 
 // ---------------------------------------------------------------------------
-// projectSessionName
+// projectSessionName (re-exported from session module)
 // ---------------------------------------------------------------------------
 
 describe('projectSessionName', () => {
@@ -100,10 +154,7 @@ describe('runRun pre-flight', () => {
 	});
 
 	it('returns 0 in dry-run when the orchestrator file is present (and tmux is on PATH)', () => {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-run-'));
-		const agentsDir = join(cwd, '.claude', 'agents');
-		mkdirSync(agentsDir, { recursive: true });
-		writeFileSync(join(agentsDir, 'subagent-orchestrator.md'), '# stub\n', 'utf8');
+		const cwd = makeTmpProject();
 		const prev = process.env['CAM_RUN_DRY_RUN'];
 		process.env['CAM_RUN_DRY_RUN'] = '1';
 		try {
@@ -117,5 +168,97 @@ describe('runRun pre-flight', () => {
 			if (prev === undefined) delete process.env['CAM_RUN_DRY_RUN'];
 			else process.env['CAM_RUN_DRY_RUN'] = prev;
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// runRun tmux argv assertions (US-002 acceptance criterion)
+// ---------------------------------------------------------------------------
+
+describe('runRun tmux argv — new session', () => {
+	it('calls tmux new-session (detached) with correct size flags', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		const newSess = spawn.calls.find(c => c.args[0] === 'new-session');
+		expect(newSess).toBeDefined();
+		expect(newSess?.cmd).toBe('tmux');
+		expect(newSess?.args).toContain('-d');
+		expect(newSess?.args).toContain('-s');
+		expect(newSess?.args).toContain(projectSessionName(cwd));
+		expect(newSess?.args).toContain('-x');
+		expect(newSess?.args).toContain('220');
+		expect(newSess?.args).toContain('-y');
+		expect(newSess?.args).toContain('50');
+	});
+
+	it('calls tmux split-window to create the right pane', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		const split = spawn.calls.find(c => c.args[0] === 'split-window');
+		expect(split).toBeDefined();
+		expect(split?.cmd).toBe('tmux');
+		expect(split?.args).toContain('-t');
+		expect(split?.args).toContain(`${projectSessionName(cwd)}:0`);
+		expect(split?.args).toContain('-h');
+		expect(split?.args).toContain('-d');
+	});
+
+	it('sends `cam dashboard` to pane 1 via send-keys', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+		const sessionName = projectSessionName(cwd);
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		// Find the send-keys call that targets pane 0.1 (dashboard pane).
+		const dashboardSendKeys = spawn.calls.find(
+			c => c.args[0] === 'send-keys' && c.args.some(a => a.includes(':0.1')),
+		);
+		expect(dashboardSendKeys).toBeDefined();
+		expect(dashboardSendKeys?.args).toContain('cam dashboard');
+		expect(dashboardSendKeys?.args).toContain(`${sessionName}:0.1`);
+	});
+
+	it('sends the claude command to pane 0 via send-keys', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+		const sessionName = projectSessionName(cwd);
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		const orchSendKeys = spawn.calls.find(
+			c => c.args[0] === 'send-keys' && c.args.some(a => a.includes(':0.0')),
+		);
+		expect(orchSendKeys).toBeDefined();
+		expect(orchSendKeys?.args).toContain(`${sessionName}:0.0`);
+		// The command includes `claude` invocation.
+		expect(orchSendKeys?.args.some(a => a.includes('claude'))).toBe(true);
+	});
+
+	it('skips session creation when session already exists', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: true });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		// When session already exists, no new-session or split-window calls.
+		const newSess = spawn.calls.find(c => c.args[0] === 'new-session');
+		const split = spawn.calls.find(c => c.args[0] === 'split-window');
+		expect(newSess).toBeUndefined();
+		expect(split).toBeUndefined();
+	});
+
+	it('returns 1 when tmux is not available', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: false, sessionExists: false });
+
+		const code = runRun({ cwd, noAttach: true, spawnFn: spawn });
+		expect(code).toBe(1);
 	});
 });

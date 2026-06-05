@@ -5,10 +5,10 @@
 // Behaviour (per project decision: always tmux, single session per project):
 //   1. Compute the session name from the project (cwd basename + short hash).
 //   2. If `tmux has-session -t <name>` succeeds → attach the user to it.
-//   3. Otherwise → create a new session with two panes:
+//   3. Otherwise → create a new session with two panes via ensureProjectSession:
 //        Pane 0 (left, ~70%): claude --permission-mode bypassPermissions
 //                              with the orchestrator boot prompt.
-//        Pane 1 (right, ~30%): status menu (key hints, last journal entry).
+//        Pane 1 (right, ~30%): cam dashboard (permanent pane, US-002).
 //      Then attach.
 //
 // Dependencies:
@@ -23,8 +23,6 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { basename } from 'node:path';
-import { createHash } from 'node:crypto';
 import process from 'node:process';
 
 import { printError } from '../logging/color.ts';
@@ -36,6 +34,15 @@ import {
 	emitTrailingBlank,
 	emitWarn,
 } from '../logging/screen.ts';
+import {
+	projectSessionName,
+	ensureProjectSession,
+	type SpawnFn,
+} from '../tmux/session.ts';
+
+// Re-export projectSessionName so existing callers (test/run.test.ts) continue
+// to import it from this module without breaking.
+export { projectSessionName } from '../tmux/session.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -44,6 +51,8 @@ import {
 export interface RunOptions {
 	noAttach?: boolean;
 	cwd?: string;
+	/** Injectable spawn function for unit tests. Defaults to spawnSync. */
+	spawnFn?: SpawnFn;
 }
 
 export interface ParsedRunArgs {
@@ -52,39 +61,11 @@ export interface ParsedRunArgs {
 }
 
 // ---------------------------------------------------------------------------
-// Session naming
-// ---------------------------------------------------------------------------
-
-/**
- * Derive a tmux session name from the project's working directory.
- *
- * Goals:
- *   - One stable session per project — running `cam run` from the same repo
- *     re-attaches instead of stacking sessions.
- *   - Different projects in different directories get different sessions
- *     (a hash of the absolute path disambiguates same-named directories).
- *   - The name is human-readable for the operator's `tmux ls`.
- *
- * Format: `cam-orch-<basename>-<6-char hash>`. Sanitized to tmux-safe chars.
- */
-export function projectSessionName(cwd: string): string {
-	const baseRaw = basename(cwd) || 'project';
-	const base = baseRaw.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 24);
-	const hash = createHash('sha256').update(cwd).digest('hex').slice(0, 6);
-	return `cam-orch-${base}-${hash}`;
-}
-
-// ---------------------------------------------------------------------------
 // tmux helpers
 // ---------------------------------------------------------------------------
 
-function tmuxHasSession(name: string): boolean {
-	const r = spawnSync('tmux', ['has-session', '-t', name], { stdio: 'ignore' });
-	return r.status === 0;
-}
-
-function tmuxAvailable(): boolean {
-	const r = spawnSync('tmux', ['-V'], { stdio: 'ignore' });
+function tmuxAvailable(spawnFn: SpawnFn): boolean {
+	const r = spawnFn('tmux', ['-V'], { stdio: 'ignore' });
 	return (r.status ?? 1) === 0;
 }
 
@@ -113,66 +94,31 @@ export function buildOrchestratorBootPrompt(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Menu pane script
-// ---------------------------------------------------------------------------
-
-/**
- * Pane 1 script: a static info pane that the operator can leave alone.
- *
- * Unlike the cam-setup menu (which captures keys to switch panes), the run
- * menu is informational only — the operator interacts with the orchestrator
- * directly in pane 0. The menu is here for situational awareness:
- *   - reminds the operator of common commands
- *   - tails .claude/cam-orchestrator.log if it exists for visibility
- */
-function buildRunMenuScript(): string {
-	// 24-bit ANSI escapes matching the unified palette (src/ui/theme.ts and
-	// src/logging/color.ts):
-	//   accent  #4EBE7D  → rgb(78,190,125)
-	//   muted   #808080  → rgb(128,128,128)
-	// Layout follows the Section pattern used by the help screen and Ink
-	// screens: bold heading, muted divisor, command names bold, descriptions
-	// muted on the following line. Two-line entries keep the 36-cell menu
-	// pane readable without horizontal clipping.
-	return [
-		'set +m',
-		"ACCENT='\\033[38;2;78;190;125m'",
-		"MUTED='\\033[38;2;128;128;128m'",
-		"BOLD='\\033[1m'",
-		"RST='\\033[0m'",
-		"DIV='──────────────────────────────────'",
-		'clear',
-		'printf "${ACCENT}${BOLD}cam orchestrator${RST}\\n"',
-		'printf "${MUTED}long-lived project agent${RST}\\n\\n"',
-		'printf "${BOLD}Common commands${RST}\\n"',
-		'printf "${MUTED}${DIV}${RST}\\n"',
-		'printf "  ${BOLD}o que temos pra fazer?${RST}\\n  ${MUTED}list active issues${RST}\\n\\n"',
-		'printf "  ${BOLD}plano para <ID>${RST}\\n  ${MUTED}spawn /cam-plan${RST}\\n\\n"',
-		'printf "  ${BOLD}implementa${RST}\\n  ${MUTED}run /cam-next loop${RST}\\n\\n"',
-		'printf "  ${BOLD}review${RST}\\n  ${MUTED}run /cam-review${RST}\\n\\n"',
-		'printf "  ${BOLD}ship${RST}\\n  ${MUTED}run /cam-ship${RST}\\n\\n"',
-		'printf "  ${BOLD}o que aconteceu antes?${RST}\\n  ${MUTED}query journal${RST}\\n\\n"',
-		'printf "${MUTED}${DIV}${RST}\\n"',
-		'printf "${MUTED}detach: prefix-d${RST}\\n"',
-		'printf "${MUTED}kill: tmux kill-session -t \\$(tmux display-message -p \\"#S\\")${RST}\\n"',
-		'while sleep 30; do :; done',
-	].join('\n');
-}
-
-// ---------------------------------------------------------------------------
 // Session creation
 // ---------------------------------------------------------------------------
 
-interface CreateSessionResult {
-	sessionName: string;
-	created: boolean;
-}
-
-function createOrchestratorSession(opts: {
+/**
+ * Create the orchestrator session using the shared session module.
+ *
+ * Delegates layout creation to ensureProjectSession (2-pane detached session),
+ * then:
+ *   - Sends the claude orchestrator command to pane 0.
+ *   - Sends `cam dashboard` to pane 1 (permanent dashboard pane).
+ *
+ * Returns { sessionName, created: true } when a new session was built,
+ * { sessionName, created: false } when it already existed (just attach).
+ */
+function setupOrchestratorSession(opts: {
 	cwd: string;
 	sessionName: string;
-}): CreateSessionResult {
-	const { cwd, sessionName } = opts;
+	spawnFn: SpawnFn;
+}): { sessionName: string; created: boolean } {
+	const { cwd, sessionName, spawnFn } = opts;
+
+	const created = ensureProjectSession(sessionName, spawnFn);
+	if (!created) {
+		return { sessionName, created: false };
+	}
 
 	// Persist the boot prompt to a file so the agent command stays simple.
 	const dotClaude = join(cwd, '.claude');
@@ -180,43 +126,23 @@ function createOrchestratorSession(opts: {
 	const promptFile = join(dotClaude, '.cam-orchestrator-prompt.txt');
 	writeFileSync(promptFile, buildOrchestratorBootPrompt(), 'utf8');
 
+	// Pane 0: orchestrator (claude).
 	const agentCmd = `claude --permission-mode bypassPermissions "$(cat '${promptFile}')"`;
-	const menuScript = buildRunMenuScript();
-
-	// Create the detached session with the orchestrator in pane 0.
-	const newSession = spawnSync(
+	spawnFn(
 		'tmux',
-		[
-			'new-session', '-d',
-			'-s', sessionName,
-			'-x', '220', '-y', '50',
-			'bash', '-c', agentCmd,
-		],
-		{ cwd, stdio: 'inherit' },
+		['send-keys', '-t', `${sessionName}:0.0`, agentCmd, 'Enter'],
+		{ stdio: 'ignore' },
 	);
-	if ((newSession.status ?? 1) !== 0) {
-		throw new Error(`tmux new-session failed (exit ${newSession.status})`);
-	}
 
-	// Add the menu pane on the right.
-	const menuPane = spawnSync(
+	// Pane 1: cam dashboard (permanent pane, US-002).
+	spawnFn(
 		'tmux',
-		[
-			'split-window',
-			'-t', `${sessionName}:0`,
-			'-h',
-			'-l', '36',
-			'-d',
-			'bash', '-c', menuScript,
-		],
-		{ stdio: 'inherit' },
+		['send-keys', '-t', `${sessionName}:0.1`, 'cam dashboard', 'Enter'],
+		{ stdio: 'ignore' },
 	);
-	if ((menuPane.status ?? 1) !== 0) {
-		emitWarn('tmux split for menu pane failed', 'orchestrator still running in pane 0');
-	}
 
 	// Make sure focus is on the orchestrator pane.
-	spawnSync('tmux', ['select-pane', '-t', `${sessionName}:0.0`], { stdio: 'inherit' });
+	spawnFn('tmux', ['select-pane', '-t', `${sessionName}:0.0`], { stdio: 'ignore' });
 
 	return { sessionName, created: true };
 }
@@ -227,6 +153,9 @@ function createOrchestratorSession(opts: {
 
 export function runRun(options: RunOptions = {}): number {
 	const cwd = options.cwd ?? process.cwd();
+	const spawnFn: SpawnFn = options.spawnFn ?? ((cmd, args, opts) =>
+		spawnSync(cmd, args, { stdio: opts?.stdio ?? 'ignore' })
+	);
 
 	// Title + leading blank up-front so every code path below shares the same
 	// hierarchy as `cam status` / `cam help`.
@@ -235,7 +164,7 @@ export function runRun(options: RunOptions = {}): number {
 	// 1. Pre-flight checks. Errors use `printError` directly (destructive
 	//    bold lives at col 0 by design — it must stand out, not nestle inside
 	//    a Section column).
-	if (!tmuxAvailable()) {
+	if (!tmuxAvailable(spawnFn)) {
 		printError('tmux is not on PATH', 'install tmux and re-run `cam run`');
 		emitTrailingBlank();
 		return 1;
@@ -267,22 +196,21 @@ export function runRun(options: RunOptions = {}): number {
 		return 0;
 	}
 
-	let result: CreateSessionResult;
-	if (tmuxHasSession(sessionName)) {
-		emitOk(`tmux session "${sessionName}" already exists — attaching`);
-		result = { sessionName, created: false };
-	} else {
-		try {
-			result = createOrchestratorSession({ cwd, sessionName });
+	let result: { sessionName: string; created: boolean };
+	try {
+		result = setupOrchestratorSession({ cwd, sessionName, spawnFn });
+		if (result.created) {
 			emitOk(`tmux session "${sessionName}" created`);
-		} catch (err) {
-			printError(
-				'Failed to create orchestrator session',
-				err instanceof Error ? err.message : String(err),
-			);
-			emitTrailingBlank();
-			return 1;
+		} else {
+			emitOk(`tmux session "${sessionName}" already exists — attaching`);
 		}
+	} catch (err) {
+		printError(
+			'Failed to create orchestrator session',
+			err instanceof Error ? err.message : String(err),
+		);
+		emitTrailingBlank();
+		return 1;
 	}
 
 	// 4. Attach (unless --no-attach).
@@ -296,8 +224,8 @@ export function runRun(options: RunOptions = {}): number {
 	// `attach` is rejected — we use `switch-client` instead.
 	const insideTmux = Boolean(process.env['TMUX']);
 	const attach = insideTmux
-		? spawnSync('tmux', ['switch-client', '-t', result.sessionName], { stdio: 'inherit' })
-		: spawnSync('tmux', ['attach-session', '-t', result.sessionName], { stdio: 'inherit' });
+		? spawnFn('tmux', ['switch-client', '-t', result.sessionName], { stdio: 'inherit' })
+		: spawnFn('tmux', ['attach-session', '-t', result.sessionName], { stdio: 'inherit' });
 
 	if ((attach.status ?? 1) !== 0) {
 		emitWarn('tmux attach failed', `try manually: tmux attach -t ${result.sessionName}`);
