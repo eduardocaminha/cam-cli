@@ -67,32 +67,37 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
 Each story must be completable in **one Claude Code context window**. Right-sized stories touch 1-3 files each.
 
 **One story per concern:**
-- 1 database schema change + migration
-- 1 API route or server-side logic change
-- 1 UI component or page change
-- 1 integration point (external API, webhook)
+- 1 shared type / config-schema change
+- 1 command's core logic (`src/commands/<cmd>.ts`) or one module under `src/retry/` / `src/linear/`
+- 1 Ink screen (`src/ui/*.tsx`) or one print-path output (`src/logging/*`)
+- 1 integration point (tmux spawn, Linear GraphQL call, `claude` shell-out, vendor embed)
 
 **Too big — split these:**
-- "Build the entire settings page" → split into: schema, API, each UI section
-- "Add authentication" → split into: schema, middleware, login UI, signup UI
+- "Build the whole `cam dashboard`" → split into: snapshot reader, compose/render helper, Ink screen + keypress lifecycle.
+- "Add the Linear issue system end-to-end" → split into: GraphQL client, `project.toml` wiring, orchestrator dispatch, status-update calls.
 
 ## Story Ordering
 
 Order by dependency (priority 1 = first to implement):
 
-1. **Database**: schema changes, migrations, seed data
-2. **Server**: API routes, server actions, validations
-3. **Client**: UI components, hooks, pages
-4. **Polish**: i18n, tests, edge cases, documentation
+`cam-cli` is a Bun + TypeScript CLI (no database, no HTTP server, no browser):
+
+1. **Types / config**: shared types (`src/types.ts`), config parsing/schema (`src/config/*`), data structures later stories depend on.
+2. **Core logic**: command implementations (`src/commands/*`), retry/launcher/monitor (`src/retry/*`), Linear client (`src/linear/*`), templating/vendor embedding (`src/templates/*`, `src/vendor/*`).
+3. **Surface**: CLI wiring in `index.ts`, Ink UI screens (`src/ui/*.tsx`), the non-interactive print path (`src/logging/*`).
+4. **Polish**: edge cases, `--help` text, README/CHANGELOG, vendor-drift regen.
 
 ## Mandatory Acceptance Criteria
 
 Every story MUST include:
-- `"Typecheck passes"` (e.g. `npx tsc --noEmit` or `bun run typecheck`)
-- `"Tests pass"` (e.g. `npm run test` or `bun test`)
+- `"Typecheck passes (bun run typecheck)"`
+- `"Tests pass (bun test)"`
 
-UI stories MUST also include:
-- `"Verify in browser"` or `"Verify UI renders correctly"`
+Stories that render an Ink TUI screen (`src/ui/*.tsx`) MUST also include:
+- `"Verify the screen renders correctly"` (via `ink-testing-library` and/or an operator screencap; in Ink, success/failure is shown by the ✓/✗ glyph, never by divider color).
+
+Stories that touch `vendor/` or `templates/` MUST also include:
+- `"Vendor drift check passes (bun run embed-vendor:check)"`
 
 ## Story Notes
 
@@ -104,12 +109,14 @@ The `notes` field should include:
 
 ## Project Context
 
-Read the project's `CLAUDE.md` and `AGENTS.md` files to understand:
-- Tech stack and key dependencies.
-- Database tables and their purposes.
-- API route patterns and conventions.
-- UI conventions and design system.
-- Domain-specific terms or constraints.
+This is **cam-cli**: the `cam` binary itself, an autonomous Claude Code loop driver. Stack: **Bun >= 1.2 + TypeScript (strict, `noUncheckedIndexedAccess`) + React 19 rendered via Ink 7** for terminal UIs. No database, no HTTP server, no browser. Config is TOML (`src/config/toml.ts`); state is JSON (`prd.json`, `handoff.json`). It shells out to `claude`, `tmux`, `git`, and optionally `gh` / the Linear GraphQL API. Distributed as a single-file binary (`bun build --compile`) with `vendor/` + `claude-code-harness/` embedded at build time.
+
+Read the project's `CLAUDE.md` (root and `scripts/cam/CLAUDE.md`) and `lessons.md` to understand:
+- Tech stack and key dependencies (above).
+- Command layout: `index.ts` dispatches subcommands implemented under `src/commands/*` (`init`, `run`, `next`, `plan`, `status`, `dashboard`, `resume`, `stop`, `setup`, `claude`, `retry-monitor`).
+- Domain terms: **orchestrator** (long-lived human-facing agent), **worker** (fresh per-story subagent), **PRD** / **story** / **handoff** / **journal**, **cycle**, **issue system** (`linear` | `github` | `none`, in `project.toml`), **tmux pane/split**.
+- UI conventions: interactive screens use Ink (`src/ui/*.tsx`) with shared design tokens (`src/design/tokens.ts`, `src/ui/theme.ts`); linear command output uses the print path (`src/logging/*`). Success/failure is the ✓/✗ glyph, never divider color.
+- Constraints: Bun-only (no Node/npm/vite); never add a `--permission-mode` flag; keep ported `src/retry/*` MIT headers intact.
 
 ## What NOT to Include
 

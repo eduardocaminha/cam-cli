@@ -35,53 +35,54 @@ You are a staff-level code reviewer. Your job: review all changes on the current
 1. Run `git diff main...HEAD --stat` to see all changed files.
 2. Run `git log main..HEAD --oneline` to see all commits.
 3. Read every changed file in full (not just the diff) to understand context.
-4. Run the project's build command to verify the build.
+4. Verify the project: `bun run typecheck` (must be zero errors) and `bun test`. If the diff touches `vendor/` or `templates/`, also run `bun run embed-vendor:check`. There is no separate lint step in this repo. A full `bun run build:release` is only needed if the diff touches the build pipeline (`scripts/*`, embedding, binary entry).
 5. Check each item in the review checklist below against the actual changes.
 6. Report findings using the output format at the bottom.
 
 ## Review Checklist
 
-### Security
-- [ ] No hardcoded secrets, API keys, or tokens in code.
-- [ ] User input validated (Zod, Joi, or project-equivalent schemas).
-- [ ] All API routes check authentication where applicable.
-- [ ] All mutating routes have rate limiting where applicable.
-- [ ] No SQL injection (queries via ORM or parameterized statements, not raw string interpolation).
-- [ ] No XSS vectors (no `dangerouslySetInnerHTML` without sanitization).
+### Security (CLI context)
+- [ ] No hardcoded secrets, API keys, or tokens. `LINEAR_API_KEY` must be read from the environment, never inlined.
+- [ ] No secrets written to logs, `~/.cam/`, `~/.config/cam/`, or committed state files (`prd.json`, `handoff.json`, `progress.txt`).
+- [ ] Shelling out to `claude` / `tmux` / `git` / `gh` does not interpolate untrusted input into a shell string. Prefer `Bun.spawn([...])` with an argv array over `Bun.$` string interpolation for any value derived from user/issue input.
+- [ ] No path traversal when reading/writing project files (validate paths the user/PRD supplies).
 
 ### Correctness
-- [ ] Database migrations are reversible or additive (no destructive column drops without explicit justification).
-- [ ] API responses match expected types.
-- [ ] Error handling follows project pattern.
-- [ ] Edge cases handled: null/undefined, empty arrays, empty states, loading states, concurrent access.
-- [ ] State management: race conditions, stale closures.
-- [ ] Data flow: types match between API and client.
+- [ ] Bun-first: uses `Bun.spawn` / `Bun.$` / `Bun.file` rather than `node:child_process` / `node:fs` (per project CLAUDE.md).
+- [ ] `noUncheckedIndexedAccess` respected: array indexing and regex capture groups (`T | undefined`) are guarded with `?? fallback` or a justified `!`.
+- [ ] Error handling follows the project pattern (clear message + non-zero exit for CLI failures; no swallowed errors).
+- [ ] Edge cases handled: null/undefined, empty arrays, missing files, absent `project.toml` / `prd.json`, `issue_system = none`.
+- [ ] Spawned-process hygiene: long-running children use `detached` + `proc.unref()` + `stdio: ['ignore','ignore','ignore']` where appropriate; no orphaned tmux panes.
+- [ ] No `--permission-mode` flag added to any subcommand (guarded by `test/no-permission-mode-flag.test.ts`).
 
-### Performance
-- [ ] No unnecessary re-renders (missing memo/useCallback where needed).
-- [ ] No blocking operations in server components/hot paths.
-- [ ] Check bundle size impact of new dependencies.
+### Ink / TUI
+- [ ] Ink screens signal success/failure with the ✓ (accent) / ✗ (destructive) glyph, NOT divider color (see `lessons.md` 2026-06-05).
+- [ ] New screens reuse shared design tokens (`src/design/tokens.ts`, `src/ui/theme.ts`) rather than inlining colors.
+- [ ] No unnecessary re-renders; effects/intervals (e.g. dashboard polling) are cleaned up on unmount.
+- [ ] Interactive components are testable via injected reader/writer shapes (no direct real stdin/stdout coupling).
 
 ### Conventions
-- [ ] Code follows the project's established conventions (naming, structure, error patterns).
-- [ ] No new raw strings in UI components if the project uses i18n.
-- [ ] New API routes have validation schemas in the appropriate location.
+- [ ] Code follows established naming/structure: subcommands in `src/commands/*`, UI in `src/ui/*.tsx`, print path in `src/logging/*`, config in `src/config/*`.
+- [ ] Ported `src/retry/*` files keep their MIT attribution header intact.
+- [ ] If `vendor/` or `templates/` changed, the embedded copy was regenerated (`bun run embed-vendor`) and `bun run embed-vendor:check` is clean.
 
 ### External Library Compliance
-- [ ] For each external library touched by the diff, make **≥1 targeted call to the official docs** (via WebFetch / WebSearch) and cite the URL in the DOCS CONSULTED section.
+- [ ] For each external library touched by the diff (e.g. `ink`, `ink-text-input`, `js-yaml`, `chalk`, Bun APIs), make **≥1 targeted call to the official docs** (via WebFetch / WebSearch) and cite the URL in the DOCS CONSULTED section.
 - [ ] Categorize findings: **CRITICAL** = deprecated API / wrong parameter / anti-doc pattern. **WARNING** = working-but-dated pattern with a modern recommended alternative.
 - [ ] If a fetch fails (rate limit / network / 403), note it under DOCS CONSULTED as `- [lib] FETCH_FAILED — <reason>` and continue reviewing based on the diff alone.
 - [ ] Pure harness / doc-only / copy-edit changes require **no** external-doc checks — record `- none — no external library touched`.
 
 ### Build & Types
-- [ ] Build passes with zero errors.
+- [ ] `bun run typecheck` passes with zero errors.
 - [ ] No TypeScript `any` types introduced without justification.
 - [ ] No unused imports or variables.
+- [ ] `bun test` passes; new behavior has a matching test under `test/`.
 
 ### Documentation & Config Sync
-- [ ] `AGENTS.md` (root or relevant) updated if new scripts, commands, or key files were added.
-- [ ] `CLAUDE.md` updated if new domain areas or conventions were introduced.
-- [ ] Any relevant docs in `docs/` updated if code changes affected documented behavior.
+- [ ] `README.md` updated if a command, flag, or install/build step changed.
+- [ ] `CLAUDE.md` (root or `scripts/cam/CLAUDE.md`) updated if a new convention or quality gate was introduced.
+- [ ] `src/version.ts` / `package.json` version bumped if the change warrants a release per project convention.
+- [ ] If `templates/` changed, the installed copies under `.claude/` and `scripts/cam/` are consistent.
 
 ## Output Format
 

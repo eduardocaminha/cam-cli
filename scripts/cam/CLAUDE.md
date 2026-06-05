@@ -23,12 +23,25 @@ The cam-loop terminates when the orchestrator (`/cam-next`) detects that all non
 
 Stories with `requires: "operator"` are **out-of-scope** for autonomous implementation — they are operator ceremonies (TUI keypress, real-API hit, screencap, etc.). The loop falls through to the next implementable story; the operator hand-executes the ceremony and flips `passes: true` manually.
 
+## Project Stack
+
+`cam-cli` is the `cam` binary itself: an autonomous Claude Code loop driver.
+
+- **Runtime**: Bun (>= 1.2). Never Node.js, npm, pnpm, or vite. Use `bun <file>`, `bun test`, `bun install`, `bunx`. Prefer `Bun.spawn` / `Bun.$` / `Bun.file` over `node:child_process` / `node:fs`.
+- **Language**: TypeScript, strict mode with `noUncheckedIndexedAccess: true` (array/regex-group access is `T | undefined`, always guard).
+- **UI**: React 19 rendered to the terminal via Ink 7 (`ink`, `ink-spinner`, `ink-text-input`) for interactive screens (`src/ui/*.tsx`), plus a non-interactive print path (`src/logging/*`) for linear command output. `chalk` for ANSI color.
+- **Config / data**: TOML for project config (`src/config/toml.ts`, `scripts/cam/project.toml`), `js-yaml` for YAML, JSON for PRD/handoff state.
+- **External processes**: `cam` shells out to `claude` (the Claude Code CLI), `tmux` (every session is a tmux split), `git`, and optionally `gh` / the Linear GraphQL API.
+- **Distribution**: single-file binary via `bun build --compile` (`bun run build:release`); upstream-vendored files under `vendor/` and `claude-code-harness/` are embedded at build time.
+
 ## Quality Gates
 
 Run these before committing. Fix failures before proceeding:
-1. **Typecheck**: `<project typecheck command>` (see project's `package.json` or `CLAUDE.md` for the specific command).
-2. **Lint**: `<project lint command>`.
-3. **Tests**: `<project test command>`.
+1. **Typecheck**: `bun run typecheck` (= `bunx tsc --noEmit`). Must be zero errors. `vendor/` and `claude-code-harness/` are excluded from typecheck by design.
+2. **Tests**: `bun test` (Bun's built-in runner). Test files live under `test/`, mirroring source.
+3. **Vendor drift** (only when a story touches `vendor/` or `templates/`): `bun run embed-vendor:check` — fails if the embedded copy is stale; regenerate with `bun run embed-vendor`.
+
+**Lint**: no standalone linter (ESLint/Biome/Prettier) is configured in this repo. The typecheck above is the static gate. Do not add a lint command unless a story explicitly introduces one.
 
 Do NOT use `--no-verify` to bypass pre-commit hooks. If a hook step is wrong, file a follow-up to fix it — never skip it for the current story.
 
@@ -67,10 +80,12 @@ The `## Codebase Patterns` block lives at the very top of `progress.txt`. Exampl
 ```
 ## Codebase Patterns
 
-- **Auth**: all API routes must call `getUser()` from `lib/auth.ts` and return 401 if null.
-- **Errors**: API errors follow `{ error: string }` shape with appropriate HTTP status.
-- **Tests**: use `bun test` from repo root; test files live next to the source file as `*.test.ts`.
-- **Commits**: conventional commits required (`feat:`, `fix:`, `chore:`).
+- **Bun runtime**: always `Bun.spawn` / `Bun.$` / `Bun.file` over `node:child_process` / `node:fs`.
+- **Permission mode**: never register a `--permission-mode` CLI flag on any subcommand — enforced by `test/no-permission-mode-flag.test.ts`.
+- **noUncheckedIndexedAccess**: array indexing and regex capture groups are `T | undefined` — guard with `?? fallback` or a justified non-null assertion.
+- **Ink screens**: success/failure is signalled by the glyph (✓ accent / ✗ destructive), never by divider color. Render and look at the real output; do not trust header comments (see `lessons.md` 2026-06-05).
+- **Tests**: `bun test` from repo root; test files live under `test/`, mirroring source. Inject fake reader/writer shapes instead of touching real stdin/stdout.
+- **Commits**: conventional commits required (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
 ```
 
 Update this block whenever a story reveals a new reusable insight.

@@ -71,7 +71,11 @@ Stories tagged `requires: "operator"` in prd.json need a ceremony only the opera
 ## What you do for the story
 
 1. Implement the chosen story and only that story.
-2. Run quality gates: typecheck, lint, tests. Fix until green. Use the project's configured commands.
+2. Run quality gates, fix until green:
+   - `bun run typecheck` (= `bunx tsc --noEmit`) — must be zero errors.
+   - `bun test` — all tests pass; add/adjust tests under `test/` for new behavior.
+   - If the story touched `vendor/` or `templates/`: `bun run embed-vendor` to regenerate, then `bun run embed-vendor:check` must be clean.
+   - There is **no** separate lint command in this repo; the typecheck is the static gate. Do not invent one.
 3. Commit with message `feat: [Story ID] - [Story Title]`.
 4. Flip `passes: true` for the completed story in `prd.json`.
 5. Append an entry to `progress.txt` following the format in `CLAUDE.md § Progress Report Format`. If you discovered a reusable pattern, add it to `## Codebase Patterns` at the top.
@@ -123,7 +127,7 @@ Above that status line, write a concise natural-language summary: story id, file
 ```
 Implemented US-XXX ([one-line story title]).
 Files changed: path/a, path/b (+N lines), path/c.
-Quality gates: typecheck <ok|fail>, lint <ok|fail>, tests <count> pass / <count> fail.
+Quality gates: typecheck <ok|fail>, tests <count> pass / <count> fail[, vendor-drift <ok|fail|n/a>].
 Step 5.5: <lib>@<version> validated against <url> — <ok|corrected|no_external_lib_touched|fetch_failed>.
 Notes: <one-line gotcha or "none">.
 CAM_IMPLEMENTER_STATUS=DONE story=US-XXX

@@ -78,9 +78,17 @@ Work through every section below. For every finding, record `severity` (critical
 15. No story touches hardened hooks or CI workflows without a rationale?
 16. No story adds secrets inline (env var values, tokens, DB URLs)?
 
-### F. Project-specific sanity (customize per project)
+### F. Project-specific sanity (cam-cli)
 
-17. Any project-specific invariants you can infer from reading `CLAUDE.md` or `AGENTS.md`? Check the most critical ones based on the PRD scope.
+cam-cli is the `cam` binary: a Bun + TypeScript + Ink CLI. Check these invariants for any story whose scope touches them:
+
+17. **Bun-only**: no story introduces Node.js / npm / pnpm / vite / express / `pg` / `ws` / `better-sqlite3` / `ioredis` / execa where a Bun built-in exists (`Bun.spawn`, `Bun.$`, `Bun.file`, `Bun.serve`, `bun:sqlite`, etc.). Flag any such dependency.
+18. **No `--permission-mode` flag**: no story adds a `--permission-mode` CLI flag to any subcommand (guarded by `test/no-permission-mode-flag.test.ts`). Flag any acceptance criterion that would require one.
+19. **Quality gates match reality**: acceptance criteria use `bun run typecheck` and `bun test` (and `bun run embed-vendor:check` when `vendor/`/`templates/` are touched). Flag any story that demands a `lint` command (none is configured) or a browser/E2E/database check (this is a terminal CLI with no DB/server/browser).
+20. **Ink UI honesty**: any story rendering an Ink screen must verify via the ✓/✗ glyph, not divider color, and reuse `src/design/tokens.ts` / `src/ui/theme.ts`. Flag stories that propose color-coded dividers as a success signal.
+21. **Vendor/template sync**: a story editing `vendor/` or `templates/` must also regenerate the embedded copy (`bun run embed-vendor`); flag if that step is missing from notes/criteria.
+22. **No secrets inline**: `LINEAR_API_KEY` and any token must come from the environment, never committed into `project.toml`, `prd.json`, or source.
+23. **Self-hosting caution**: because this repo IS the cam tooling, a story must not modify `.claude/agents/*`, `.claude/hooks/*`, or `templates/` unless its acceptance criteria explicitly say so. Flag incidental edits to the harness itself.
 
 ## Output format
 
