@@ -85,7 +85,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Corrects the layout fork the PRD left unresolved: with only 2 panes the US-004 menu replaced the US-002 dashboard, contradicting US-002 (dashboard = permanent pane) and US-010 (operator smoke expects orchestrator + dashboard as panes). Operator chose the 3-pane layout (orchestrator + dashboard + menu) on 2026-06-05. Touches src/tmux/session.ts (3-pane build), src/commands/run.ts (dashboard + menu wiring, stale comment, d entry), and the affected tests. noUncheckedIndexedAccess: guard array/regex access. Keep the spawn-injected argv-assertion test style. The menu sends slash commands to the orchestrator pane 0.0; d should focus the dashboard pane, never inject text."
     },

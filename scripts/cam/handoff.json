@@ -1,20 +1,22 @@
 {
-  "lastCompletedStory": "US-004",
-  "completedAt": "2026-06-05T14:00:00Z",
+  "lastCompletedStory": "US-011",
+  "completedAt": "2026-06-05T15:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
+    "src/tmux/session.ts",
     "src/commands/run.ts",
     "test/run.test.ts",
+    "test/tmux-session.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 or next unimplemented story: check prd.json. The menu pane (0.1) now runs .cam-run-menu.sh which sends cam commands to the orchestrator pane (0.0). buildRunMenuScript is exported from src/commands/run.ts and takes the orch pane address as a parameter.",
+  "nextStoryContext": "US-011 corrected the layout to 3 panes: pane 0 = orchestrator (:0.0), pane 1 = cam dashboard (:0.1), pane 2 = menu (:0.2). buildRunMenuScript now takes two args: orchPane and dashboardPane. The menu d key uses tmux select-pane to focus the dashboard, never injects text into the orchestrator. ensureProjectSession makes two split-window calls. Check prd.json for next passes:false story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 only touches src/commands/run.ts (buildRunMenuScript function + pane 1 wiring) and test/run.test.ts. No external npm library exercised."
+      "summary": "US-011 touches only src/tmux/session.ts, src/commands/run.ts, and their tests. No external npm library exercised."
     }
   ]
 }

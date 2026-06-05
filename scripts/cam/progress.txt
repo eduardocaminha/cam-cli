@@ -118,3 +118,33 @@ Durable patterns carried across cycles:
 ### Notes
 - isInsideProjectSession relies on CAM_SESSION env var (set by caller when spawning claude inside the session) because $TMUX_PANE does not encode the session name. This is the correct detection pattern for this cycle.
 ---
+
+## [2026-06-05 15:00] - US-011: Three-pane layout: orchestrator + permanent dashboard + interactive menu
+
+### What was done
+- Updated `ensureProjectSession` in src/tmux/session.ts to build a 3-pane layout: pane 0 (orchestrator), pane 1 (dashboard, horizontal split of pane 0.0), pane 2 (menu, vertical split of pane 0.1). Two split-window calls instead of one.
+- Updated the first split-window target from `${sessionName}:0` to `${sessionName}:0.0` (explicit pane target) and added a second split-window call targeting `${sessionName}:0.1`.
+- Updated `setupOrchestratorSession` in src/commands/run.ts to wire pane 1 to `cam dashboard` (send-keys) and pane 2 to the menu script, with the orchestrator remaining in pane 0.
+- Fixed the stale header comment in run.ts (was "two panes", now describes the real 3-pane layout).
+- Updated `buildRunMenuScript` to accept a second `dashboardPane` parameter. The `d` key now calls `tmux select-pane -t "${DASHBOARD_PANE}"` instead of injecting `cam dashboard` text into the orchestrator pane.
+- Updated test/run.test.ts: split-window test now asserts 2 calls with correct targets; added dashboard pane send-keys test; menu send-keys test updated to target pane 0.2; buildRunMenuScript tests updated for 2-argument signature and d-key select-pane behavior.
+- Updated test/tmux-session.test.ts: main test now asserts 4 calls (has-session, new-session, split 0.0, split 0.1); added assertion for second split-window targeting 0.1 with -v.
+
+### Files changed
+- src/tmux/session.ts (3-pane layout, 2 split-window calls, updated target from :0 to :0.0)
+- src/commands/run.ts (header comment, buildRunMenuScript 2-arg, 3-pane wiring in setupOrchestratorSession)
+- test/run.test.ts (updated and new tests for 3-pane)
+- test/tmux-session.test.ts (updated to assert 4 tmux calls and second split-window)
+- scripts/cam/prd.json (passes: true for US-011)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 448 pass / 0 fail (3 new tests)
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (only internal session module and node builtins)
+
+### Notes
+- The first split-window now targets pane :0.0 (not :0) so the dashboard splits from the orchestrator pane specifically. The second split-window targets :0.1 to split the newly-created dashboard pane vertically for the menu.
+- The `d` key in the menu uses `tmux select-pane`, not `send-keys`, because the dashboard is now a permanent pane. Selecting it brings it into focus without injecting any text into the orchestrator.
+---
