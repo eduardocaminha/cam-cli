@@ -194,34 +194,62 @@ describe('runRun tmux argv — new session', () => {
 		expect(newSess?.args).toContain('50');
 	});
 
-	it('calls tmux split-window to create the right pane', () => {
-		const cwd = makeTmpProject();
-		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
-
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
-
-		const split = spawn.calls.find(c => c.args[0] === 'split-window');
-		expect(split).toBeDefined();
-		expect(split?.cmd).toBe('tmux');
-		expect(split?.args).toContain('-t');
-		expect(split?.args).toContain(`${projectSessionName(cwd)}:0`);
-		expect(split?.args).toContain('-h');
-		expect(split?.args).toContain('-d');
-	});
-
-	it('sends the interactive menu script to pane 1 via send-keys (US-004)', () => {
+	it('calls tmux split-window twice to create pane 1 (dashboard) and pane 2 (menu)', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 		const sessionName = projectSessionName(cwd);
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
-		// Find the send-keys call that targets pane 0.1 (menu pane).
+		const splits = spawn.calls.filter(c => c.args[0] === 'split-window');
+		expect(splits.length).toBe(2);
+
+		// First split-window: horizontal split of pane 0 to create dashboard pane 1.
+		const firstSplit = splits[0];
+		expect(firstSplit?.cmd).toBe('tmux');
+		expect(firstSplit?.args).toContain('-t');
+		expect(firstSplit?.args).toContain(`${sessionName}:0.0`);
+		expect(firstSplit?.args).toContain('-h');
+		expect(firstSplit?.args).toContain('-d');
+
+		// Second split-window: vertical split of pane 1 to create menu pane 2.
+		const secondSplit = splits[1];
+		expect(secondSplit?.cmd).toBe('tmux');
+		expect(secondSplit?.args).toContain('-t');
+		expect(secondSplit?.args).toContain(`${sessionName}:0.1`);
+		expect(secondSplit?.args).toContain('-v');
+		expect(secondSplit?.args).toContain('-d');
+	});
+
+	it('sends cam dashboard to pane 1 via send-keys (US-002)', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+		const sessionName = projectSessionName(cwd);
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		// Find the send-keys call that targets pane 0.1 (dashboard pane).
+		const dashboardSendKeys = spawn.calls.find(
+			c => c.args[0] === 'send-keys' && c.args.some(a => a === `${sessionName}:0.1`),
+		);
+		expect(dashboardSendKeys).toBeDefined();
+		expect(dashboardSendKeys?.args).toContain(`${sessionName}:0.1`);
+		expect(dashboardSendKeys?.args.some(a => a.includes('cam dashboard'))).toBe(true);
+	});
+
+	it('sends the interactive menu script to pane 2 via send-keys (US-004)', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+		const sessionName = projectSessionName(cwd);
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		// Find the send-keys call that targets pane 0.2 (menu pane).
 		const menuSendKeys = spawn.calls.find(
-			c => c.args[0] === 'send-keys' && c.args.some(a => a.includes(':0.1')),
+			c => c.args[0] === 'send-keys' && c.args.some(a => a === `${sessionName}:0.2`),
 		);
 		expect(menuSendKeys).toBeDefined();
-		expect(menuSendKeys?.args).toContain(`${sessionName}:0.1`);
+		expect(menuSendKeys?.args).toContain(`${sessionName}:0.2`);
 		// The command should run bash with the .cam-run-menu.sh file.
 		expect(menuSendKeys?.args.some(a => a.includes('.cam-run-menu.sh'))).toBe(true);
 	});
@@ -282,55 +310,69 @@ describe('runRun tmux argv — new session', () => {
 });
 
 // ---------------------------------------------------------------------------
-// buildRunMenuScript (US-004)
+// buildRunMenuScript (US-004, US-011)
 // ---------------------------------------------------------------------------
 
 describe('buildRunMenuScript', () => {
 	const ORCH_PANE = 'cam-orch-myproject-abc123:0.0';
+	const DASHBOARD_PANE = 'cam-orch-myproject-abc123:0.1';
 
 	it('embeds the orchestrator pane target in the script', () => {
-		const script = buildRunMenuScript(ORCH_PANE);
+		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
 		expect(script).toContain(ORCH_PANE);
 	});
 
+	it('embeds the dashboard pane target in the script', () => {
+		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
+		expect(script).toContain(DASHBOARD_PANE);
+	});
+
 	it('contains a send-keys call targeting the orchestrator pane for /cam-next', () => {
-		const script = buildRunMenuScript(ORCH_PANE);
+		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
 		// The send-keys invocation should reference the pane and the command.
 		expect(script).toContain(`tmux send-keys -t "\${ORCH_PANE}" '/cam-next' Enter`);
 	});
 
 	it('contains send-keys entries for all expected commands', () => {
-		const script = buildRunMenuScript(ORCH_PANE);
+		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
 		for (const cmd of ['/cam-next', '/cam-review', '/cam-ship', '/cam-plan', '/cam-issue']) {
 			expect(script).toContain(cmd);
 		}
 	});
 
 	it('uses read -rsn1 for non-blocking single-key input', () => {
-		const script = buildRunMenuScript(ORCH_PANE);
+		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
 		expect(script).toContain('read -rsn1');
 	});
 
 	it('includes a quit key (q/Q) that exits without sending to the orch pane', () => {
-		const script = buildRunMenuScript(ORCH_PANE);
+		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
 		// q|Q case must be present and must call exit 0, not send-keys.
 		expect(script).toContain('q|Q) exit 0');
 	});
 
-	it('pane 1 send-keys calls bash with the menu script file (integration)', () => {
-		// Verify that setupOrchestratorSession wires pane 1 to run the menu script.
+	it('d key uses tmux select-pane to focus dashboard, not send-keys to orchestrator (US-011)', () => {
+		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
+		// d must call tmux select-pane targeting DASHBOARD_PANE.
+		expect(script).toContain('tmux select-pane -t "${DASHBOARD_PANE}"');
+		// d must NOT inject text into the orchestrator pane.
+		expect(script).not.toContain('send-keys -t "${ORCH_PANE}" \'cam dashboard\'');
+	});
+
+	it('pane 2 send-keys calls bash with the menu script file (integration)', () => {
+		// Verify that setupOrchestratorSession wires pane 2 to run the menu script.
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 		const sessionName = projectSessionName(cwd);
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
-		// Pane 0.1 send-keys should reference bash and a .cam-run-menu.sh file.
+		// Pane 0.2 send-keys should reference bash and a .cam-run-menu.sh file.
 		const menuSendKeys = spawn.calls.find(
-			c => c.args[0] === 'send-keys' && c.args.some(a => a.includes(':0.1')),
+			c => c.args[0] === 'send-keys' && c.args.some(a => a === `${sessionName}:0.2`),
 		);
 		expect(menuSendKeys).toBeDefined();
-		expect(menuSendKeys?.args).toContain(`${sessionName}:0.1`);
+		expect(menuSendKeys?.args).toContain(`${sessionName}:0.2`);
 		// The command sent should run bash with the menu file.
 		const sentCmd = menuSendKeys?.args.find(a => a.includes('.cam-run-menu.sh'));
 		expect(sentCmd).toBeDefined();

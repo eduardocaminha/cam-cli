@@ -100,7 +100,7 @@ describe('projectSessionName', () => {
 // ---------------------------------------------------------------------------
 
 describe('ensureProjectSession — new session', () => {
-	test('calls has-session first, then new-session and split-window when session absent', () => {
+	test('calls has-session first, then new-session and two split-window calls when session absent', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		const created = ensureProjectSession('cam-orch-myproj-abc123', spawn);
 
@@ -122,15 +122,25 @@ describe('ensureProjectSession — new session', () => {
 		expect(newSess?.args).toContain('-s');
 		expect(newSess?.args).toContain('cam-orch-myproj-abc123');
 
-		// Third call must be split-window for the dashboard pane.
-		const split = spawn.calls[2];
-		expect(split).toBeDefined();
-		expect(split?.cmd).toBe('tmux');
-		expect(split?.args[0]).toBe('split-window');
-		expect(split?.args).toContain('-t');
-		expect(split?.args).toContain('cam-orch-myproj-abc123:0');
-		expect(split?.args).toContain('-h');
-		expect(split?.args).toContain('-d');
+		// Third call: first split-window creates dashboard pane (horizontal split of pane 0).
+		const firstSplit = spawn.calls[2];
+		expect(firstSplit).toBeDefined();
+		expect(firstSplit?.cmd).toBe('tmux');
+		expect(firstSplit?.args[0]).toBe('split-window');
+		expect(firstSplit?.args).toContain('-t');
+		expect(firstSplit?.args).toContain('cam-orch-myproj-abc123:0.0');
+		expect(firstSplit?.args).toContain('-h');
+		expect(firstSplit?.args).toContain('-d');
+
+		// Fourth call: second split-window creates menu pane (vertical split of pane 1).
+		const secondSplit = spawn.calls[3];
+		expect(secondSplit).toBeDefined();
+		expect(secondSplit?.cmd).toBe('tmux');
+		expect(secondSplit?.args[0]).toBe('split-window');
+		expect(secondSplit?.args).toContain('-t');
+		expect(secondSplit?.args).toContain('cam-orch-myproj-abc123:0.1');
+		expect(secondSplit?.args).toContain('-v');
+		expect(secondSplit?.args).toContain('-d');
 	});
 
 	test('new-session argv includes -x 220 and -y 50', () => {

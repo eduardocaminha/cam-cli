@@ -9,8 +9,11 @@
 //
 // Design decisions (cam-run-workspace cycle):
 //   - One tmux session per project, named by projectSessionName().
-//   - The full session layout has two panes: pane 0 (orchestrator, left) and
-//     pane 1 (dashboard, right). ensureProjectSession creates it lazily.
+//   - The full session layout has three panes (US-011):
+//       Pane 0 (left):         orchestrator (claude)
+//       Pane 1 (top-right):    cam dashboard (permanent)
+//       Pane 2 (bottom-right): interactive menu
+//     ensureProjectSession creates it lazily with two split-window calls.
 //   - openPaneInSession opens a new pane via split-window -t into an existing
 //     session; loop commands use this to host their claude invocations.
 //   - isInsideProjectSession checks the $TMUX_PANE and $CAM_SESSION env vars
@@ -74,13 +77,17 @@ export function hasSession(sessionName: string, spawnFn: SpawnFn): boolean {
 /**
  * Lazily create the full project tmux session if it does not already exist.
  *
- * Layout:
- *   Pane 0 (left): orchestrator — starts with `bash` (callers send-keys the
- *                  actual claude command after attaching, or let `cam run` do
- *                  it). Kept generic here so loop commands can reuse without
- *                  coupling to the boot prompt.
- *   Pane 1 (right, 36 cols): dashboard placeholder — starts `bash` so callers
- *                              can send-keys a dashboard command.
+ * Layout (3-pane, US-011):
+ *   Pane 0 (left):         orchestrator — starts with `bash`; callers
+ *                          send-keys the actual claude command.
+ *   Pane 1 (top-right):    cam dashboard (permanent) — callers send-keys
+ *                          `cam dashboard` here after creation.
+ *   Pane 2 (bottom-right): interactive menu — callers send-keys the menu
+ *                          script here.
+ *
+ * Two split-window calls build the right column: the first creates pane 1
+ * (horizontal split of the full window), the second splits pane 1 vertically
+ * to produce pane 2.
  *
  * Returns `true` when the session was freshly created, `false` when it already
  * existed (caller can decide whether to attach or skip).
@@ -113,9 +120,22 @@ export function ensureProjectSession(
 		'tmux',
 		[
 			'split-window',
-			'-t', `${sessionName}:0`,
+			'-t', `${sessionName}:0.0`,
 			'-h',
 			'-l', '36',
+			'-d',
+			'bash',
+		],
+		{ stdio: 'ignore' },
+	);
+
+	// Split pane 1 vertically to add pane 2 (menu slot, bottom of right column).
+	spawnFn(
+		'tmux',
+		[
+			'split-window',
+			'-t', `${sessionName}:0.1`,
+			'-v',
 			'-d',
 			'bash',
 		],
