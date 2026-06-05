@@ -240,3 +240,32 @@ Durable patterns carried across cycles:
 - parseIssueArgs treats --permission-mode as the text arg and rejects it because a second arg (the mode value) triggers the extra-arg error path, returning null. The invariant is preserved without any special-case code.
 - The thin-launcher pattern is now used by plan, next (tmux-split path), and issue. All three follow: ensureProjectSession + openPaneInSession + return 0.
 ---
+
+## [2026-06-05 19:00] - US-008: Post-exec hint suggesting cam run when detached
+
+### What was done
+- Added emitAttachHint(sessionName, env) to src/logging/screen.ts. Calls isInsideProjectSession from src/tmux/session.ts; emits "Run `cam run` to open the project session, or: tmux attach -t <session>" only when the caller is NOT inside the session. Injectable env param for tests.
+- Updated src/commands/plan.ts: added env field to PlanOptions (defaults to process.env); calls emitAttachHint(sessionName, env) at the end of the successful path, replacing the old unconditional "Attach with:" hint.
+- Updated src/commands/issue.ts: same pattern (env in IssueOptions, emitAttachHint call on success path, unconditional "Attach with:" hint removed).
+- Updated src/commands/next.ts: same pattern (env in NextOptions, emitAttachHint call on tmux-split success path, unconditional "Attach with:" hint removed).
+- Created test/attach-hint.test.ts: 10 tests covering emitAttachHint unit behavior (detached: no TMUX; detached: TMUX set but CAM_SESSION mismatch; detached: TMUX set, no CAM_SESSION; inside: CAM_SESSION matches), plus runPlan, runIssue, and runNext (tmux-split) hint-printed/suppressed integration cases.
+
+### Files changed
+- src/logging/screen.ts (+24 lines: isInsideProjectSession import, emitAttachHint export)
+- src/commands/plan.ts (+10 lines: emitAttachHint import, Env type import, env in PlanOptions, env capture in runPlan, emitAttachHint call replacing old hint)
+- src/commands/issue.ts (+10 lines: emitAttachHint import, Env type import, env in IssueOptions, env capture in runIssue, emitAttachHint call replacing old hint)
+- src/commands/next.ts (+10 lines: emitAttachHint import, Env type import, env in NextOptions, env capture in runNext, emitAttachHint call replacing old hint)
+- test/attach-hint.test.ts (new, +168 lines)
+- scripts/cam/prd.json (passes: true for US-008)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 471 pass / 0 fail (10 new from attach-hint.test.ts)
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (only internal session module and node builtins; no external npm lib exercised)
+
+### Notes
+- isInsideProjectSession keys off CAM_SESSION env var (not $TMUX_PANE), as documented in the Codebase Patterns block. Callers set CAM_SESSION=<sessionName> when spawning claude inside the session.
+- The emitAttachHint helper emits two muted hint lines ("Run `cam run`..." and "  tmux attach -t <session>") so the operator always has the fallback tmux command visible.
+---

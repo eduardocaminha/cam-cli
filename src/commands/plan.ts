@@ -22,6 +22,7 @@ import process from 'node:process';
 import { readPermissionMode } from '../config/permission-mode.ts';
 import { printError } from '../logging/color.ts';
 import {
+	emitAttachHint,
 	emitMutedHint,
 	emitOk,
 	emitSectionHeading,
@@ -29,6 +30,7 @@ import {
 	emitTrailingBlank,
 	emitWarn,
 } from '../logging/screen.ts';
+import type { Env } from '../tmux/session.ts';
 import {
 	ensureProjectSession,
 	openPaneInSession,
@@ -51,6 +53,11 @@ export interface PlanOptions {
 	tmuxSpawnFn?: TmuxSpawnFn;
 	/** Permission-mode override (purely for tests; production reads config). */
 	permissionMode?: string;
+	/**
+	 * Override process.env for attach-hint detection. Tests inject a fake env
+	 * to assert hint printed/suppressed without touching process.env.
+	 */
+	env?: Env;
 }
 
 // --- Verdict detection helpers (kept for future APPROVE-in-pane detection) --
@@ -103,6 +110,7 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 	const cwd = options.cwd ?? process.cwd();
 	const permissionMode = options.permissionMode ?? readPermissionMode();
 	const issue = options.issue;
+	const env = options.env ?? process.env;
 
 	// Default synchronous spawn for tmux session management calls.
 	const { spawnSync } = await import('node:child_process');
@@ -131,8 +139,8 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 
 	const slash = issue !== undefined ? `/cam-plan #${issue}` : '/cam-plan';
 	emitOk(`Launched ${slash} in project session "${sessionName}"`);
-	emitMutedHint(`Attach with: tmux attach -t ${sessionName}`);
 	emitMutedHint('APPROVE prompt appears inside the pane — answer there');
+	emitAttachHint(sessionName, env);
 	emitTrailingBlank();
 	return 0;
 }

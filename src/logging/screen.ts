@@ -22,6 +22,7 @@
 
 import { DIVIDER, glyphs, layout } from "../design/tokens.ts";
 import { accent, chalk, muted, warning } from "./color.ts";
+import { isInsideProjectSession, type Env } from "../tmux/session.ts";
 
 /** Heading column (col 2) and content column (col 4), from the shared tokens. */
 const HEAD_INDENT = " ".repeat(layout.headingIndent);
@@ -90,4 +91,25 @@ export function emitContent(msg: string): void {
 /** Trailing blank line — every screen should end with one before returning. */
 export function emitTrailingBlank(): void {
 	process.stdout.write("\n");
+}
+
+/**
+ * Emit a short hint suggesting `cam run` only when the caller is NOT already
+ * inside the project tmux session.
+ *
+ * Detection: delegates to `isInsideProjectSession(sessionName, env)` from
+ * `src/tmux/session.ts`. When the caller is already attached (CAM_SESSION env
+ * var matches the session name), the hint is suppressed so it doesn't clutter
+ * the in-session output.
+ *
+ * Injectable `env` lets tests control detection without touching process.env.
+ *
+ * Call this at the end of a successful command path, before `emitTrailingBlank`.
+ */
+export function emitAttachHint(sessionName: string, env: Env = process.env): void {
+	if (isInsideProjectSession(sessionName, env)) {
+		return;
+	}
+	emitMutedHint("Run `cam run` to open the project session, or:");
+	emitMutedHint(`  tmux attach -t ${sessionName}`);
 }

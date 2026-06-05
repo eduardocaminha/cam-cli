@@ -24,6 +24,7 @@ import process from 'node:process';
 import { readPermissionMode } from '../config/permission-mode.ts';
 import { printError } from '../logging/color.ts';
 import {
+	emitAttachHint,
 	emitMutedHint,
 	emitOk,
 	emitSectionHeading,
@@ -34,6 +35,7 @@ import {
 	ensureProjectSession,
 	openPaneInSession,
 	projectSessionName,
+	type Env,
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
 
@@ -52,6 +54,11 @@ export interface IssueOptions {
 	tmuxSpawnFn?: TmuxSpawnFn;
 	/** Permission-mode override (purely for tests; production reads config). */
 	permissionMode?: string;
+	/**
+	 * Override process.env for attach-hint detection. Tests inject a fake env
+	 * to assert hint printed/suppressed without touching process.env.
+	 */
+	env?: Env;
 }
 
 // --- argv builder ----------------------------------------------------------
@@ -79,6 +86,7 @@ export async function runIssue(options: IssueOptions): Promise<number> {
 	const cwd = options.cwd ?? process.cwd();
 	const permissionMode = options.permissionMode ?? readPermissionMode();
 	const text = options.text;
+	const env = options.env ?? process.env;
 
 	// Default synchronous spawn for tmux session management calls.
 	const { spawnSync } = await import('node:child_process');
@@ -106,8 +114,8 @@ export async function runIssue(options: IssueOptions): Promise<number> {
 	}
 
 	emitOk(`Launched /cam-issue create in project session "${sessionName}"`);
-	emitMutedHint(`Attach with: tmux attach -t ${sessionName}`);
 	emitMutedHint('Issue title and description are expanded inside the pane');
+	emitAttachHint(sessionName, env);
 	emitTrailingBlank();
 	return 0;
 }

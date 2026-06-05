@@ -52,6 +52,7 @@ import process from 'node:process';
 import { readPermissionMode } from '../config/permission-mode.ts';
 import { printError } from '../logging/color.ts';
 import {
+	emitAttachHint,
 	emitMutedHint,
 	emitOk,
 	emitSectionHeading,
@@ -63,6 +64,7 @@ import {
 	ensureProjectSession,
 	openPaneInSession,
 	projectSessionName,
+	type Env,
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
 import { readEmbedded } from '../vendor/embedded.ts';
@@ -467,6 +469,11 @@ export interface NextOptions {
 	 * never call a real tmux binary. Defaults to a spawnSync wrapper.
 	 */
 	tmuxSpawnFn?: TmuxSpawnFn;
+	/**
+	 * Override process.env for attach-hint detection. Tests inject a fake env
+	 * to assert hint printed/suppressed without touching process.env.
+	 */
+	env?: Env;
 }
 
 /**
@@ -486,6 +493,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
 	const completionPromise = options.completionPromise ?? DEFAULT_COMPLETION_PROMISE;
 	const permissionMode = options.permissionMode ?? readPermissionMode();
+	const env = options.env ?? process.env;
 
 	const host: HostMode =
 		options.hostMode ?? detectHost(process.env, options.tmuxProbe);
@@ -582,7 +590,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			emitMutedHint('Falling back to inline mode — run `cam run` to use the session');
 		}
 		emitOk(`Launched claude in project session "${sessionName}"`);
-		emitMutedHint(`Attach with: tmux attach -t ${sessionName}`);
+		emitAttachHint(sessionName, env);
 		emitTrailingBlank();
 		return 0;
 	} else {

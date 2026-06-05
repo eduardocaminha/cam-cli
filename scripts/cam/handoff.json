@@ -1,23 +1,24 @@
 {
-  "lastCompletedStory": "US-007",
-  "completedAt": "2026-06-05T18:00:00Z",
+  "lastCompletedStory": "US-008",
+  "completedAt": "2026-06-05T19:00:00Z",
   "createdFiles": [
-    "src/commands/issue.ts",
-    "test/issue.test.ts"
+    "test/attach-hint.test.ts"
   ],
   "modifiedFiles": [
-    "index.ts",
-    "test/no-permission-mode-flag.test.ts",
+    "src/logging/screen.ts",
+    "src/commands/plan.ts",
+    "src/commands/issue.ts",
+    "src/commands/next.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 added cam issue <free text> as a thin pane launcher (ensureProjectSession + openPaneInSession), following the same pattern as US-005 cam next and US-006 cam plan. parseIssueArgs exported from index.ts for dispatch tests. The thin-launcher pattern is now fully established for plan/next/issue. Next story should follow the same pattern if it involves a new pane-based subcommand.",
+  "nextStoryContext": "US-008 added emitAttachHint(sessionName, env) to src/logging/screen.ts as the shared helper. It suppresses the hint when isInsideProjectSession(sessionName, env) returns true (CAM_SESSION matches). plan/next/issue all got an injectable env field in their options and call emitAttachHint on their successful path. The unconditional 'Attach with: tmux attach -t ...' muted hints that existed in plan.ts and issue.ts were replaced by the smarter emitAttachHint call (which still emits the tmux attach line as part of the hint, but only when detached). next.ts also had its unconditional 'Attach with:' replaced.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-007 touches only src/commands/issue.ts, index.ts, and test files via the internal session module and node builtins. No external npm library exercised."
+      "summary": "US-008 touches only src/logging/screen.ts, src/commands/plan.ts, src/commands/next.ts, src/commands/issue.ts, and test/attach-hint.test.ts via internal session module and node builtins. No external npm library exercised."
     }
   ]
 }

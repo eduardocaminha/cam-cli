@@ -151,7 +151,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Funds CAM-10 (post-exec attach hint). Depends on US-005, US-006, US-007 (call sites). Files: src/logging/screen.ts (or new util) and call sites src/commands/plan.ts, src/commands/next.ts, src/commands/issue.ts. Detection uses isInsideProjectSession from US-001 (likely TMUX env var matching the project session name)."
     },
