@@ -1,22 +1,22 @@
 {
-  "lastCompletedStory": "US-011",
-  "completedAt": "2026-06-05T15:00:00Z",
+  "lastCompletedStory": "US-005",
+  "completedAt": "2026-06-05T16:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/tmux/session.ts",
-    "src/commands/run.ts",
-    "test/run.test.ts",
-    "test/tmux-session.test.ts",
+    "src/commands/next.ts",
+    "src/commands/stop.ts",
+    "test/next.test.ts",
+    "test/stop.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-011 corrected the layout to 3 panes: pane 0 = orchestrator (:0.0), pane 1 = cam dashboard (:0.1), pane 2 = menu (:0.2). buildRunMenuScript now takes two args: orchPane and dashboardPane. The menu d key uses tmux select-pane to focus the dashboard, never injects text into the orchestrator. ensureProjectSession makes two split-window calls. Check prd.json for next passes:false story.",
+  "nextStoryContext": "US-005 rewired cam next (thin pane launcher via ensureProjectSession + openPaneInSession) and cam stop (targets projectSessionName(cwd) instead of 'cam'). buildTmuxSplitArgv was removed. NextOptions now has tmuxSpawnFn for unit-testable tmux calls. StopReport now includes sessionName field. Next story is US-006 (cam plan becomes a pane launcher) which follows the same thin-launcher pattern established here.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-011 touches only src/tmux/session.ts, src/commands/run.ts, and their tests. No external npm library exercised."
+      "summary": "US-005 touches only src/commands/next.ts, src/commands/stop.ts, and their tests via the internal session module. No external npm library exercised."
     }
   ]
 }

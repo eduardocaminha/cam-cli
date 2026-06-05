@@ -148,3 +148,34 @@ Durable patterns carried across cycles:
 - The first split-window now targets pane :0.0 (not :0) so the dashboard splits from the orchestrator pane specifically. The second split-window targets :0.1 to split the newly-created dashboard pane vertically for the menu.
 - The `d` key in the menu uses `tmux select-pane`, not `send-keys`, because the dashboard is now a permanent pane. Selecting it brings it into focus without injecting any text into the orchestrator.
 ---
+
+## [2026-06-05 16:00] - US-005: cam next becomes a pane launcher; stop is rewired
+
+### What was done
+- Removed `buildTmuxSplitArgv` from src/commands/next.ts (it created a standalone `cam` session).
+- Added imports of `ensureProjectSession`, `openPaneInSession`, `projectSessionName`, `TmuxSpawnFn` from src/tmux/session.ts in next.ts.
+- Added `tmuxSpawnFn?: TmuxSpawnFn` injection point to `NextOptions` for unit-testable tmux calls.
+- `runNext` tmux-split path now: calls `ensureProjectSession(sessionName, tmuxSpawnFn)` then `openPaneInSession(sessionName, claudeCmd, tmuxSpawnFn)` and returns 0 immediately (thin launcher; no async wait for claude).
+- Updated src/commands/stop.ts: removed hardcoded `TMUX_SESSION_NAME = 'cam'`, imported `projectSessionName` from session module, added `sessionName` field to `StopReport`, `performStop` now targets `projectSessionName(cwd)` for has-session and kill-session.
+- Updated test/next.test.ts: removed `buildTmuxSplitArgv` tests, added `TmuxSpawnFn` fake (`makeTmuxSpawnFake`), added new test asserting pane-launcher behavior (no async spawn, correct has-session/new-session/split-window calls, claude cmd in pane arg).
+- Updated test/stop.test.ts: added `projectSessionName` import, updated `makeFakeSpawn` to accept `sessionName` param, updated all tmux session assertions to use `projectSessionName(dir)` instead of `'cam'`.
+
+### Files changed
+- src/commands/next.ts (removed buildTmuxSplitArgv, added session module imports + tmuxSpawnFn, rewired tmux-split path)
+- src/commands/stop.ts (replaced hardcoded cam session with projectSessionName, added sessionName to StopReport)
+- test/next.test.ts (replaced buildTmuxSplitArgv tests with pane-launcher test, added TmuxSpawnFn fake)
+- test/stop.test.ts (updated fake and assertions to use projectSessionName)
+- scripts/cam/prd.json (passes: true for US-005)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 446 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (only internal session module and node builtins)
+
+### Notes
+- The thin-launcher pattern: runNext tmux-split path no longer waits for claude. It calls ensureProjectSession + openPaneInSession and returns 0. The operator attaches to the session manually or via cam run.
+- The makeTmuxSpawnFake must return status: 1 for has-session so ensureProjectSession proceeds to create the session. All other tmux calls return status: 0.
+- The stop rewire changes the observable session name from "cam" to projectSessionName(cwd), making stop and run consistent.
+---

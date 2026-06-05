@@ -59,6 +59,12 @@ import {
 	emitTrailingBlank,
 	emitWarn,
 } from '../logging/screen.ts';
+import {
+	ensureProjectSession,
+	openPaneInSession,
+	projectSessionName,
+	type SpawnFn as TmuxSpawnFn,
+} from '../tmux/session.ts';
 import { readEmbedded } from '../vendor/embedded.ts';
 
 // --- Constants -------------------------------------------------------------
@@ -412,30 +418,6 @@ export function buildDashboardArgv(): string[] {
 	return ['cam', 'dashboard'];
 }
 
-/**
- * Build the argv for the tmux split. Behaviour depends on whether we are
- * already inside a tmux session:
- *
- *   - Inside tmux (`$TMUX` set): `tmux split-window -h -- <cmd>` opens a
- *     vertical split in the current window. The current pane stays focused
- *     (pane A, where claude will run); the new pane runs the dashboard.
- *
- *   - Outside tmux: `tmux new-session -d -s cam -x 220 -y 50 -- <cmd>`
- *     creates a detached session named `cam` running the dashboard. The
- *     operator's existing terminal runs claude inline (pane A), and the
- *     tmux session acts as a background dashboard they can attach to with
- *     `tmux attach -t cam`.
- */
-export function buildTmuxSplitArgv(
-	targetCmd: string[],
-	env: NodeJS.ProcessEnv = process.env,
-): string[] {
-	if (env['TMUX']) {
-		return ['tmux', 'split-window', '-h', '--', ...targetCmd];
-	}
-	return ['tmux', 'new-session', '-d', '-s', 'cam', '--', ...targetCmd];
-}
-
 // --- Public entrypoint -----------------------------------------------------
 
 export interface NextOptions {
@@ -479,18 +461,25 @@ export interface NextOptions {
 	 * response so they never exec a real `tmux` binary.
 	 */
 	tmuxProbe?: TmuxProbeFn;
+	/**
+	 * Override the synchronous spawn function used for tmux session management
+	 * (ensureProjectSession, openPaneInSession). Tests inject a fake so they
+	 * never call a real tmux binary. Defaults to a spawnSync wrapper.
+	 */
+	tmuxSpawnFn?: TmuxSpawnFn;
 }
 
 /**
  * Run the full `cam next` flow. Returns the process exit code.
  *
  * Resolution order:
- *   - tmux-split: write state file → spawn `cam dashboard` in a tmux split
- *     (pane B) → spawn `claude ... /cam-next` in the current pane (pane A).
- *     Returns claude's exit code.
+ *   - tmux-split: write state file → ensure the project session exists
+ *     (3-pane layout via ensureProjectSession) → open a new pane inside
+ *     the project session running `claude` (openPaneInSession). Returns 0
+ *     immediately; the loop runs inside the session pane (thin launcher).
  *   - Inline fallback (VS Code or no tmux): write state file →
  *     spawn `claude ... /cam-next` in current pane. Returns claude's
- *     exit code. No dashboard pane.
+ *     exit code. No session pane.
  */
 export async function runNext(options: NextOptions = {}): Promise<number> {
 	const cwd = options.cwd ?? process.cwd();
@@ -507,6 +496,12 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		((cwd2: string, body: string) => writeStateFile(cwd2, body, { force: options.force ?? false }));
 	const hookMaterializer = options.hookMaterializer ?? ((cwd2: string) => materializeStopHook(cwd2));
 	const settingsWriter = options.settingsWriter ?? ((cwd2: string) => writeSettingsLocal(cwd2));
+
+	// Default synchronous spawn for tmux session management calls.
+	const { spawnSync } = await import('node:child_process');
+	const tmuxSpawnFn: TmuxSpawnFn =
+		options.tmuxSpawnFn ??
+		((cmd, args, opts) => spawnSync(cmd, args, { stdio: opts?.stdio ?? 'ignore' }));
 
 	emitTitle('cam next');
 	emitSectionHeading('Loop');
@@ -569,44 +564,34 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	// 3. Branch on host detection.
 	emitSectionHeading('Host');
 	if (host === 'tmux-split') {
-		// Spawn pane B (dashboard) in a tmux split. We do this FIRST so
-		// by the time pane A starts producing output, the dashboard is
-		// already visible. The tmux call returns quickly; we don't wait on it.
-		const dashboardArgv = buildDashboardArgv();
-		const splitArgv = buildTmuxSplitArgv(dashboardArgv, process.env);
-		const insideTmux = Boolean(process.env['TMUX']);
+		// Ensure the project session exists (3-pane layout: orchestrator,
+		// dashboard, menu). Then open a new pane inside the session running
+		// the claude loop command. This is the thin-launcher pattern: we
+		// return to the caller's shell immediately; the loop lives in the
+		// project session pane.
+		const sessionName = projectSessionName(cwd);
 		try {
-			const splitProc = spawn(splitArgv, { cwd });
-			// Best-effort: if tmux errors, surface a hint and continue
-			// inline — the operator still gets the loop.
-			void splitProc.exited.catch((err: unknown) => {
-				emitWarn(
-					'tmux split failed',
-					err instanceof Error ? err.message : String(err),
-				);
-				emitMutedHint('Continuing inline — open a separate `cam dashboard` if you want one');
-			});
+			ensureProjectSession(sessionName, tmuxSpawnFn);
+			const claudeCmd = claudeArgv.join(' ');
+			openPaneInSession(sessionName, claudeCmd, tmuxSpawnFn);
 		} catch (err) {
 			emitWarn(
-				'tmux split spawn errored',
+				'tmux session pane launch failed',
 				err instanceof Error ? err.message : String(err),
 			);
-			emitMutedHint('Continuing inline — open a separate `cam dashboard` if you want one');
+			emitMutedHint('Falling back to inline mode — run `cam run` to use the session');
 		}
-		if (insideTmux) {
-			emitOk('tmux split: claude in current pane, dashboard in new pane');
-		} else {
-			emitOk('tmux session "cam" created with dashboard');
-			emitMutedHint('Attach with: tmux attach -t cam');
-		}
+		emitOk(`Launched claude in project session "${sessionName}"`);
+		emitMutedHint(`Attach with: tmux attach -t ${sessionName}`);
+		emitTrailingBlank();
+		return 0;
 	} else {
 		emitOk('Inline mode (VS Code or no tmux): no split');
 		emitMutedHint('Your current terminal is the dashboard view of the loop');
 	}
 
-	// 4. Spawn pane A (claude). This is the foreground process; we wait on
-	//    its exit. Claude takes over stdout from here, so no trailing blank
-	//    line is needed in the happy path.
+	// 4. Inline fallback only: spawn claude in the foreground and wait.
+	//    In tmux-split mode we already returned above.
 	let claudeProc: NextSubprocess;
 	try {
 		claudeProc = spawn(claudeArgv, { cwd });

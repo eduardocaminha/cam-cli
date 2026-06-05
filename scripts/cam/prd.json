@@ -101,7 +101,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Funds CAM-9 (plan/next as pane launchers, ripples on stop). Depends on US-001. Files: src/commands/next.ts, src/commands/stop.ts. Architecture reminder: thin launcher pattern - command ensures session, opens pane, returns to shell; interaction migrates inside the session. Today buildTmuxSplitArgv in next.ts creates the 'cam' session - that path is removed by this story."
     },

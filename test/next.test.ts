@@ -25,7 +25,6 @@ import { join } from 'node:path';
 import {
 	buildClaudeArgv,
 	buildDashboardArgv,
-	buildTmuxSplitArgv,
 	deepMerge,
 	detectHost,
 	materializeStopHook,
@@ -39,6 +38,8 @@ import {
 	type NextSpawnFn,
 	type NextSubprocess,
 } from '../src/commands/next.ts';
+import { projectSessionName, type SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
+import type { SpawnSyncReturns } from 'node:child_process';
 
 // --- Fakes -----------------------------------------------------------------
 
@@ -228,31 +229,38 @@ describe('argv builders', () => {
 	test('buildDashboardArgv is `cam dashboard`', () => {
 		expect(buildDashboardArgv()).toEqual(['cam', 'dashboard']);
 	});
-
-	test('buildTmuxSplitArgv uses split-window when inside tmux ($TMUX set)', () => {
-		expect(buildTmuxSplitArgv(['cam', 'dashboard'], { TMUX: '/tmp/tmux-1000/default,1234,0' })).toEqual([
-			'tmux',
-			'split-window',
-			'-h',
-			'--',
-			'cam',
-			'dashboard',
-		]);
-	});
-
-	test('buildTmuxSplitArgv uses new-session when outside tmux ($TMUX not set)', () => {
-		expect(buildTmuxSplitArgv(['cam', 'dashboard'], {})).toEqual([
-			'tmux',
-			'new-session',
-			'-d',
-			'-s',
-			'cam',
-			'--',
-			'cam',
-			'dashboard',
-		]);
-	});
 });
+
+// --- TmuxSpawnFn fake -------------------------------------------------------
+
+interface TmuxSpawnRecord {
+	cmd: string;
+	args: string[];
+}
+
+function makeTmuxSpawnFake(): TmuxSpawnFn & { calls: TmuxSpawnRecord[] } {
+	const calls: TmuxSpawnRecord[] = [];
+	const fn = (
+		cmd: string,
+		args: string[],
+	): SpawnSyncReturns<Buffer> => {
+		calls.push({ cmd, args: [...args] });
+		// has-session returns 1 (not found) so ensureProjectSession creates the session.
+		// All other tmux calls return 0 (success).
+		const isHasSession = cmd === 'tmux' && args[0] === 'has-session';
+		return {
+			pid: 1,
+			output: [null, Buffer.from(''), Buffer.from('')],
+			stdout: Buffer.from(''),
+			stderr: Buffer.from(''),
+			status: isHasSession ? 1 : 0,
+			signal: null,
+		};
+	};
+	const decorated = fn as unknown as TmuxSpawnFn & { calls: TmuxSpawnRecord[] };
+	decorated.calls = calls;
+	return decorated;
+}
 
 // --- runNext integration ---------------------------------------------------
 
@@ -297,35 +305,59 @@ describe('runNext', () => {
 		}
 	});
 
-	test('tmux-split (inside tmux): spawns tmux split-window first, then claude', async () => {
+	test('tmux-split: ensures project session then opens claude as a pane (thin launcher)', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-next-tmux-inside-'));
 		try {
-			const splitHandle = makeFakeProcess();
-			const claudeHandle = makeFakeProcess();
-			const spawn = makeRecordingSpawn([splitHandle, claudeHandle]);
-			queueMicrotask(() => splitHandle.exitedResolve(0));
-			queueMicrotask(() => claudeHandle.exitedResolve(0));
+			// In tmux-split mode, runNext returns 0 immediately (no async claude spawn).
+			const spawn = makeRecordingSpawn([]); // no async spawns expected
+			const tmuxSpawnFake = makeTmuxSpawnFake();
 
 			const code = await runNext({
 				cwd: dir,
 				hostMode: 'tmux-split',
 				permissionMode: 'bypassPermissions',
 				spawn,
+				tmuxSpawnFn: tmuxSpawnFake,
 				startedAt: '2026-04-28T22:00:00Z',
 				sessionId: '',
 			});
 
+			// Thin launcher returns 0 immediately.
 			expect(code).toBe(0);
-			expect(spawn.calls.length).toBe(2);
-			// Second call: pane A (claude with the loop kick-off prompt).
-			expect(spawn.calls[1]!.cmd).toEqual([
-				'claude',
-				'--permission-mode',
-				'bypassPermissions',
-				'/cam-next',
-			]);
-			expect(spawn.calls[0]!.cwd).toBe(dir);
-			expect(spawn.calls[1]!.cwd).toBe(dir);
+			// No async (claude) spawns — claude lives in the session pane.
+			expect(spawn.calls.length).toBe(0);
+
+			const sessionName = projectSessionName(dir);
+
+			// ensureProjectSession: has-session probe + new-session + 2x split-window.
+			const hasSessionCall = tmuxSpawnFake.calls.find(
+				(c) => c.cmd === 'tmux' && c.args[0] === 'has-session',
+			);
+			expect(hasSessionCall).toBeDefined();
+			expect(hasSessionCall?.args).toContain(sessionName);
+
+			const newSessionCall = tmuxSpawnFake.calls.find(
+				(c) => c.cmd === 'tmux' && c.args[0] === 'new-session',
+			);
+			expect(newSessionCall).toBeDefined();
+			expect(newSessionCall?.args).toContain(sessionName);
+
+			// openPaneInSession: split-window -t <sessionName>:0 -v -d <claudeCmd>.
+			// The cmd is passed as a single string: "claude --permission-mode ... /cam-next".
+			const splitCalls = tmuxSpawnFake.calls.filter(
+				(c) => c.cmd === 'tmux' && c.args[0] === 'split-window',
+			);
+			// At least one split-window call opens the claude pane.
+			const claudePaneCall = splitCalls.find(
+				(c) => c.args.some((a) => a.includes('claude')),
+			);
+			expect(claudePaneCall).toBeDefined();
+			// The last arg is the full command string containing all claude flags.
+			const cmdStr = claudePaneCall?.args.at(-1) ?? '';
+			expect(cmdStr).toContain('claude');
+			expect(cmdStr).toContain('--permission-mode');
+			expect(cmdStr).toContain('bypassPermissions');
+			expect(cmdStr).toContain('/cam-next');
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

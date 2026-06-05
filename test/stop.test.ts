@@ -2,11 +2,11 @@
 //
 // Unit tests for `cam stop`. Coverage:
 //   - performStop: removes state file when present, no-op when missing
-//   - performStop: kills tmux session "cam" when alive
-//   - performStop: leaves tmux untouched when no `cam` session
+//   - performStop: kills the project tmux session when alive
+//   - performStop: leaves tmux untouched when the project session does not exist
 //   - performStop: handles tmux not on PATH (treats as "nothing to clean")
-//   - performStop: defensive — only `cam` is targeted (the kill argv is
-//     fixed; we assert the literal `kill-session -t cam` form)
+//   - performStop: defensive — only the project session is targeted (the kill
+//     argv uses the project session name, not the legacy "cam" name)
 //   - End-to-end: after `performStop`, the state file is gone (no stale loop
 //     for the next `cam next` call to detect)
 
@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 import { performStop, runStop, type SpawnSyncFn } from '../src/commands/stop.ts';
+import { projectSessionName } from '../src/tmux/session.ts';
 
 // --- Fakes -----------------------------------------------------------------
 
@@ -27,12 +28,15 @@ interface SpawnRecord {
 
 interface FakeSpawnHandlers {
 	tmuxAvailable?: boolean; // governs `tmux -V` exit code
-	sessionAlive?: boolean; // governs `tmux has-session -t cam` exit code
-	killSucceeds?: boolean; // governs `tmux kill-session -t cam` exit code
+	sessionAlive?: boolean;  // governs `tmux has-session -t <session>` exit code
+	killSucceeds?: boolean;  // governs `tmux kill-session -t <session>` exit code
+	/** The expected session name to match has-session / kill-session calls. */
+	sessionName?: string;
 }
 
 function makeFakeSpawn(handlers: FakeSpawnHandlers): SpawnSyncFn & { calls: SpawnRecord[] } {
 	const calls: SpawnRecord[] = [];
+	const expectedSession = handlers.sessionName ?? '';
 	const fn = (cmd: string, args: string[]): SpawnSyncReturns<string> => {
 		calls.push({ cmd, args: [...args] });
 		const result: SpawnSyncReturns<string> = {
@@ -46,9 +50,17 @@ function makeFakeSpawn(handlers: FakeSpawnHandlers): SpawnSyncFn & { calls: Spaw
 		if (cmd === 'tmux') {
 			if (args[0] === '-V') {
 				result.status = handlers.tmuxAvailable === false ? 127 : 0;
-			} else if (args[0] === 'has-session' && args[1] === '-t' && args[2] === 'cam') {
+			} else if (
+				args[0] === 'has-session' &&
+				args[1] === '-t' &&
+				(expectedSession === '' || args[2] === expectedSession)
+			) {
 				result.status = handlers.sessionAlive === true ? 0 : 1;
-			} else if (args[0] === 'kill-session' && args[1] === '-t' && args[2] === 'cam') {
+			} else if (
+				args[0] === 'kill-session' &&
+				args[1] === '-t' &&
+				(expectedSession === '' || args[2] === expectedSession)
+			) {
 				result.status = handlers.killSucceeds === false ? 1 : 0;
 			}
 		}
@@ -109,33 +121,40 @@ describe('performStop — state file', () => {
 });
 
 describe('performStop — tmux session', () => {
-	test('kills the `cam` session when alive', () => {
+	test('kills the project session when alive', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-tmux-alive-'));
 		try {
+			const session = projectSessionName(dir);
 			const spawn = makeFakeSpawn({
 				tmuxAvailable: true,
 				sessionAlive: true,
 				killSucceeds: true,
+				sessionName: session,
 			});
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
 			expect(report.tmuxKilled).toBe(true);
 			expect(report.tmuxUnavailable).toBe(false);
-			// The kill argv must be exactly `tmux kill-session -t cam` —
-			// nothing else, ever. This is the defensive contract.
+			expect(report.sessionName).toBe(session);
+			// The kill argv must target the project session name.
 			const kill = spawn.calls.find(
 				(c) => c.cmd === 'tmux' && c.args[0] === 'kill-session',
 			);
 			expect(kill).toBeDefined();
-			expect(kill?.args).toEqual(['kill-session', '-t', 'cam']);
+			expect(kill?.args).toEqual(['kill-session', '-t', session]);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	test('skips kill when no `cam` session is alive', () => {
+	test('skips kill when the project session does not exist', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-tmux-none-'));
 		try {
-			const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionAlive: false });
+			const session = projectSessionName(dir);
+			const spawn = makeFakeSpawn({
+				tmuxAvailable: true,
+				sessionAlive: false,
+				sessionName: session,
+			});
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
 			expect(report.tmuxKilled).toBe(false);
 			expect(report.tmuxUnavailable).toBe(false);
@@ -168,10 +187,12 @@ describe('performStop — tmux session', () => {
 	test('reports kill failure cleanly (kill-session exits non-zero)', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-tmux-kill-fails-'));
 		try {
+			const session = projectSessionName(dir);
 			const spawn = makeFakeSpawn({
 				tmuxAvailable: true,
 				sessionAlive: true,
 				killSucceeds: false,
+				sessionName: session,
 			});
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
 			expect(report.tmuxKilled).toBe(false);
@@ -184,20 +205,23 @@ describe('performStop — tmux session', () => {
 // --- end-to-end: state file + tmux kill happen together --------------------
 
 describe('performStop — end-to-end', () => {
-	test('removes state file AND kills tmux when both are present', () => {
+	test('removes state file AND kills project session when both are present', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-e2e-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'cam-loop.local.md');
 			writeFileSync(statePath, 'old\n');
+			const session = projectSessionName(dir);
 			const spawn = makeFakeSpawn({
 				tmuxAvailable: true,
 				sessionAlive: true,
 				killSucceeds: true,
+				sessionName: session,
 			});
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
 			expect(report.stateFileRemoved).toBe(true);
 			expect(report.tmuxKilled).toBe(true);
+			expect(report.sessionName).toBe(session);
 			// Acceptance criterion: after `cam stop`, the next `cam next`
 			// must NOT detect a stale loop.
 			expect(existsSync(statePath)).toBe(false);
@@ -233,10 +257,12 @@ describe('runStop', () => {
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'old\n');
+			const session = projectSessionName(dir);
 			const spawn = makeFakeSpawn({
 				tmuxAvailable: true,
 				sessionAlive: true,
 				killSucceeds: true,
+				sessionName: session,
 			});
 			const original = process.stdout.write.bind(process.stdout);
 			process.stdout.write = (() => true) as typeof process.stdout.write;

@@ -5,26 +5,24 @@
 // What it does, in order:
 //   1. Removes `.claude/cam-loop.local.md` (the plugin's state file). After
 //      this, the next `cam next` invocation does NOT detect a stale loop.
-//   2. If a tmux session named exactly `cam` is alive, kills it. Defensive
-//      check: we ONLY kill `cam` — nothing else — so an unrelated tmux
-//      session named e.g. `work` is untouched. The PRD note for US-008
-//      explicitly calls this out.
+//   2. If the project's tmux session (derived from cwd via projectSessionName)
+//      is alive, kills it. We only kill the project-specific session — nothing
+//      else — so unrelated sessions are untouched.
 //   3. Exits 0. Both steps are idempotent: missing state file + missing tmux
 //      session both report `nothing to clean` and still exit 0. `cam stop`
 //      is the kill-switch operators reach for, so it never fails on "the
 //      loop wasn't running" — that's the success state.
 //
-// Acceptance criteria (US-008):
-//   3. `cam stop` exists; removes `.claude/cam-loop.local.md`, kills any
-//      tmux session named `cam` (if alive), exits 0.
-//   4. After `cam stop`, the next `cam next` invocation does NOT detect a
-//      stale loop.
+// Acceptance criteria (US-005, rewire):
+//   - `cam stop` targets the project session (projectSessionName(cwd)) rather
+//     than the legacy hardcoded `cam` session name.
+//   - After `cam stop`, the next `cam next` invocation does NOT detect a
+//     stale loop.
 //
-// Tmux detection contract (per the PRD note): `tmux has-session -t cam
-// 2>/dev/null` — exit 0 means the session exists, exit non-zero means it does
-// not. We only call `tmux kill-session -t cam` when has-session succeeded.
-// The `tmux` binary may not be installed at all (e.g. on a fresh dev box) —
-// that's also "nothing to clean", not a failure.
+// Tmux detection contract: `tmux has-session -t <sessionName> 2>/dev/null`
+// — exit 0 means the session exists. We only call `tmux kill-session -t
+// <sessionName>` when has-session succeeded. The `tmux` binary may not be
+// installed at all (e.g. on a fresh dev box) — also "nothing to clean".
 
 import { existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -38,11 +36,11 @@ import {
 	emitTitle,
 	emitTrailingBlank,
 } from '../logging/screen.ts';
+import { projectSessionName } from '../tmux/session.ts';
 
 // --- Constants -------------------------------------------------------------
 
 const STATE_FILE_PATH = '.claude/cam-loop.local.md';
-const TMUX_SESSION_NAME = 'cam';
 
 // --- Types -----------------------------------------------------------------
 
@@ -67,10 +65,12 @@ export interface StopOptions {
 export interface StopReport {
 	/** Was the state file present + removed by this call? */
 	stateFileRemoved: boolean;
-	/** Was a `cam` tmux session present + killed by this call? */
+	/** Was the project's tmux session present + killed by this call? */
 	tmuxKilled: boolean;
 	/** Was the `tmux` binary unavailable on PATH? (Distinguishes "not installed" from "no session".) */
 	tmuxUnavailable: boolean;
+	/** The project session name that was targeted (for diagnostic output). */
+	sessionName: string;
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -86,21 +86,20 @@ function tmuxAvailable(spawnFn: SpawnSyncFn): boolean {
 }
 
 /**
- * Does the `cam` tmux session exist? `tmux has-session -t cam` exits 0
- * when the session is alive, non-zero otherwise. We don't pipe stderr through
- * to the operator — the no-session case logs to stderr by default.
+ * Does the named tmux session exist? `tmux has-session -t <name>` exits 0
+ * when the session is alive, non-zero otherwise.
  */
-function camSessionAlive(spawnFn: SpawnSyncFn): boolean {
-	const result = spawnFn('tmux', ['has-session', '-t', TMUX_SESSION_NAME], { encoding: 'utf8' });
+function sessionAlive(spawnFn: SpawnSyncFn, sessionName: string): boolean {
+	const result = spawnFn('tmux', ['has-session', '-t', sessionName], { encoding: 'utf8' });
 	return result.status === 0;
 }
 
 /**
- * Kill the `cam` tmux session. Returns whether the kill command exited
+ * Kill the named tmux session. Returns whether the kill command exited
  * cleanly. Caller has already verified the session exists.
  */
-function killCamSession(spawnFn: SpawnSyncFn): boolean {
-	const result = spawnFn('tmux', ['kill-session', '-t', TMUX_SESSION_NAME], { encoding: 'utf8' });
+function killSession(spawnFn: SpawnSyncFn, sessionName: string): boolean {
+	const result = spawnFn('tmux', ['kill-session', '-t', sessionName], { encoding: 'utf8' });
 	return result.status === 0;
 }
 
@@ -117,10 +116,13 @@ export function performStop(options: StopOptions = {}): StopReport {
 	const unlinkSyncImpl = options.unlinkSyncFn ?? unlinkSync;
 	const spawnFn = options.spawnSyncFn ?? ((cmd, args, opts) => spawnSync(cmd, args, opts));
 
+	const session = projectSessionName(cwd);
+
 	const report: StopReport = {
 		stateFileRemoved: false,
 		tmuxKilled: false,
 		tmuxUnavailable: false,
+		sessionName: session,
 	};
 
 	// 1. Remove the loop state file.
@@ -136,11 +138,11 @@ export function performStop(options: StopOptions = {}): StopReport {
 		}
 	}
 
-	// 2. Kill the `cam` tmux session if alive.
+	// 2. Kill the project tmux session if alive.
 	if (!tmuxAvailable(spawnFn)) {
 		report.tmuxUnavailable = true;
-	} else if (camSessionAlive(spawnFn)) {
-		const killed = killCamSession(spawnFn);
+	} else if (sessionAlive(spawnFn, session)) {
+		const killed = killSession(spawnFn, session);
 		report.tmuxKilled = killed;
 	}
 
@@ -166,9 +168,9 @@ export function runStop(options: StopOptions = {}): number {
 	if (report.tmuxUnavailable) {
 		emitMutedHint('tmux not on PATH (skipping session check)');
 	} else if (report.tmuxKilled) {
-		emitOk(`Killed tmux session "${TMUX_SESSION_NAME}"`);
+		emitOk(`Killed tmux session "${report.sessionName}"`);
 	} else {
-		emitMutedHint(`No tmux session named "${TMUX_SESSION_NAME}" (nothing to kill)`);
+		emitMutedHint(`No tmux session named "${report.sessionName}" (nothing to kill)`);
 	}
 
 	// Closing "Done" section. The divisor stays muted like every other section;
