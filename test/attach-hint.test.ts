@@ -23,7 +23,7 @@ import { runNext } from '../src/commands/next.ts';
 
 // --- stdout capture helper --------------------------------------------------
 
-function captureStdout(fn: () => void | Promise<void>): Promise<string> {
+function captureStdout(fn: () => unknown): Promise<string> {
 	return new Promise<string>(async (resolve) => {
 		const chunks: string[] = [];
 		const orig = process.stdout.write.bind(process.stdout);
