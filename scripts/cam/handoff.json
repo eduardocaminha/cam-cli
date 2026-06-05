@@ -1,6 +1,6 @@
 {
-  "lastCompletedStory": "US-003",
-  "completedAt": "2026-06-05T13:00:00Z",
+  "lastCompletedStory": "US-004",
+  "completedAt": "2026-06-05T14:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "src/commands/run.ts",
@@ -9,12 +9,12 @@
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 (Interactive selectable menu that injects into the orchestrator): buildRunMenuScript in src/commands/run.ts should become a selectable key-loop bash menu (read -rsn1 style, same pattern as setup.ts). On selection the menu invokes tmux send-keys against the orchestrator pane (pane 0.0). Unit test should assert the generated script contains send-keys with the orch pane target for at least one menu entry.",
+  "nextStoryContext": "US-005 or next unimplemented story: check prd.json. The menu pane (0.1) now runs .cam-run-menu.sh which sends cam commands to the orchestrator pane (0.0). buildRunMenuScript is exported from src/commands/run.ts and takes the orch pane address as a parameter.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-003 only touches src/commands/run.ts (agentCmd string and one new test). No external npm library exercised."
+      "summary": "US-004 only touches src/commands/run.ts (buildRunMenuScript function + pane 1 wiring) and test/run.test.ts. No external npm library exercised."
     }
   ]
 }

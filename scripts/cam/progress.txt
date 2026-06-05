@@ -68,6 +68,33 @@ Durable patterns carried across cycles:
 - The kill-session is chained with `;` (not `&&`) so it fires even if claude exits non-zero.
 ---
 
+## [2026-06-05 14:00] - US-004: Interactive selectable menu that injects into the orchestrator
+
+### What was done
+- Added `buildRunMenuScript(orchPane: string): string` to src/commands/run.ts (exported).
+- The function generates a bash key-loop menu using `read -rsn1` that renders cam orchestrator commands (n=/cam-next, r=/cam-review, s=/cam-ship, p=/cam-plan, i=/cam-issue, d=cam dashboard, q=quit).
+- On keypress, the chosen command is sent to the orchestrator pane via `tmux send-keys -t "${ORCH_PANE}" '<cmd>' Enter`.
+- Updated `setupOrchestratorSession` to write the menu script to `.claude/.cam-run-menu.sh` and send `bash '<menuFile>'` to pane 0.1 instead of `cam dashboard`.
+- Updated the existing "sends cam dashboard to pane 1" test to match the new menu-script contract.
+- Added 6 new unit tests in test/run.test.ts for `buildRunMenuScript`: orch pane embedding, send-keys argv, all command entries, read -rsn1 usage, quit key, and integration test asserting pane 0.1 send-keys references .cam-run-menu.sh.
+
+### Files changed
+- src/commands/run.ts (+67 lines: buildRunMenuScript function + updated pane 1 setup)
+- test/run.test.ts (+72 lines: 6 new tests, 1 updated test)
+- scripts/cam/prd.json (passes: true for US-004)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 445 pass / 0 fail (6 new)
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (only bash script generation and tmux send-keys; no npm lib touched)
+
+### Notes
+- The orch pane address is embedded directly in the generated bash script (as `ORCH_PANE='...'`), avoiding the need for env-var wiring at spawn time. This differs from setup.ts which passes CAM_CONFIG_PANE via `tmux split-window -e`.
+- Pattern: bash key-loop menus embed their target pane as a literal string; test by asserting the generated script text contains the expected send-keys substring.
+---
+
 ## [2026-06-05 00:00] - US-001: Project session module (tmux helpers)
 
 ### What was done

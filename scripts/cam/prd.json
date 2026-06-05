@@ -3,7 +3,9 @@
   "branchName": "cam/cam-run-workspace",
   "description": "Unify the cam loop around a single per-project tmux session: lazy-created host with orchestrator + dashboard panes, with plan/next/issue as thin pane launchers, an interactive menu that injects into the orchestrator, and orchestrator exit that tears the session down.",
   "issueNumber": null,
-  "relatedDocs": ["FLOW.md"],
+  "relatedDocs": [
+    "FLOW.md"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -65,7 +67,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Funds CAM-13 (menu pane becomes interactive). Depends on US-002 (dashboard already promoted; menu may sit alongside or replace, follow current run.ts layout decision). Pattern reference: setup.ts key-loop with `read -rsn1`. Files: src/commands/run.ts. Architecture reminder: orchestrator interacts with workers only via structured output + pane focus; this menu is human-triggered injection into a known pane, which is allowed."
     },
