@@ -17,6 +17,7 @@ Durable patterns carried across cycles:
 - **No em-dash in persisted .md**: use commas, colons, parentheses, or periods.
 - **src/tmux/session.ts is the canonical session module**: projectSessionName, ensureProjectSession, openPaneInSession, isInsideProjectSession all live here with injectable SpawnFn. Do not duplicate session logic in command files; import from this module instead.
 - **isInsideProjectSession uses CAM_SESSION env tag**: because $TMUX_PANE only contains a pane index (not the session name), callers must set CAM_SESSION=<sessionName> when spawning claude inside a session for reliable inside-session detection.
+- **`bun test` green is NOT proof of type-safety**: the test runner passes even when `tsc --noEmit` would fail. Always run `bun run typecheck` separately and trust its exit code before claiming the gate passed. US-008 shipped 6 TS2322 errors in `test/attach-hint.test.ts` with a fully green suite (caught at the next pre-flight, fixed in a follow-up). Common trap: a `captureStdout(() => runX(...))` helper typed `() => void | Promise<void>` rejects callbacks returning `Promise<number>`; widen such helpers to `() => unknown`.
 -->
 
 ## [2026-06-05 12:00] - US-002: cam run uses the session module; dashboard becomes a permanent pane
