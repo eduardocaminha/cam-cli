@@ -18,7 +18,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Funds CAM-7 (single project session as host of all loop commands). Decided architecture (applies to whole cycle): one tmux session per project, name already exists as projectSessionName() in src/commands/run.ts = cam-orch-<base>-<hash>; loop commands open panes into it via split-window -t; lazy-create on first command with full layout (orchestrator pane + dashboard pane). Pattern: spawn-injected helpers tested by argv assertions (see existing tmux-related tests). Files: new src/tmux/session.ts; may extract projectSessionName from src/commands/run.ts and re-export. No external deps. noUncheckedIndexedAccess: guard array/regex access."
     },

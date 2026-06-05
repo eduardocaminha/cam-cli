@@ -15,4 +15,30 @@ Durable patterns carried across cycles:
 - **tmux argv tests**: cam shells out to tmux via injectable spawn fns; unit tests assert the argv shape (new-session / split-window / has-session / send-keys / kill-session / select-pane), they do not spin a real tmux server. Follow this pattern for the cam-run-workspace cycle.
 - **Ink screens**: success/failure is signalled by the glyph (accent check / destructive cross), never by divider color. Render and look at real output; do not trust header comments (lessons.md 2026-06-05).
 - **No em-dash in persisted .md**: use commas, colons, parentheses, or periods.
+- **src/tmux/session.ts is the canonical session module**: projectSessionName, ensureProjectSession, openPaneInSession, isInsideProjectSession all live here with injectable SpawnFn. Do not duplicate session logic in command files; import from this module instead.
+- **isInsideProjectSession uses CAM_SESSION env tag**: because $TMUX_PANE only contains a pane index (not the session name), callers must set CAM_SESSION=<sessionName> when spawning claude inside a session for reliable inside-session detection.
 -->
+
+## [2026-06-05 00:00] - US-001: Project session module (tmux helpers)
+
+### What was done
+- Created src/tmux/session.ts exporting: projectSessionName, ensureProjectSession (lazy-creates 2-pane detached session), openPaneInSession (split-window -v -d into existing session), isInsideProjectSession (pure env inspection via TMUX + CAM_SESSION).
+- All helpers accept injectable SpawnFn; no global side effects.
+- Created test/tmux-session.test.ts with 15 tests asserting exact tmux argv for has-session, new-session, and split-window calls.
+- projectSessionName in src/commands/run.ts left in place (US-002 will migrate callers).
+
+### Files changed
+- src/tmux/session.ts (new, +130 lines)
+- test/tmux-session.test.ts (new, +170 lines)
+- scripts/cam/prd.json (passes: true for US-001)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 432 pass (15 new)
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (only node:path and node:crypto built-ins)
+
+### Notes
+- isInsideProjectSession relies on CAM_SESSION env var (set by caller when spawning claude inside the session) because $TMUX_PANE does not encode the session name. This is the correct detection pattern for this cycle.
+---
