@@ -72,6 +72,24 @@
       "notes": "Funds CAM-13 (menu pane becomes interactive). Depends on US-002 (dashboard already promoted; menu may sit alongside or replace, follow current run.ts layout decision). Pattern reference: setup.ts key-loop with `read -rsn1`. Files: src/commands/run.ts. Architecture reminder: orchestrator interacts with workers only via structured output + pane focus; this menu is human-triggered injection into a known pane, which is allowed."
     },
     {
+      "id": "US-011",
+      "title": "Three-pane layout: orchestrator + permanent dashboard + interactive menu",
+      "description": "As a cam user, I want the project session to host three panes (orchestrator, a permanent cam dashboard, and the interactive menu) so that the dashboard stays visible (US-002, US-010) while the menu also keeps its own pane (US-004), instead of the menu replacing the dashboard.",
+      "acceptanceCriteria": [
+        "ensureProjectSession in src/tmux/session.ts builds a detached 3-pane layout (orchestrator pane + dashboard pane + menu pane). Unit tests assert the exact tmux argv (new-session plus the two split-window calls, with their target panes and the resulting pane ids).",
+        "src/commands/run.ts wires the dashboard pane to `cam dashboard` (permanent) and the menu pane to the interactive menu script. The dashboard is no longer replaced by the menu. The orchestrator pane target used by the menu send-keys and by the kill-session chain matches the actual orchestrator pane id after the 3-pane splits.",
+        "The stale header comment in run.ts (currently says pane 1 is `cam dashboard (permanent pane, US-002)`) is corrected to describe the real 3-pane layout.",
+        "The menu `d` entry is fixed: since the dashboard is now a permanent pane, either remove the `d` entry or repoint it to `tmux select-pane` the dashboard pane. It must NOT send the literal text `cam dashboard` into the claude orchestrator pane.",
+        "Existing US-001/US-002/US-004 tests are updated to the new pane targets and still pass.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Corrects the layout fork the PRD left unresolved: with only 2 panes the US-004 menu replaced the US-002 dashboard, contradicting US-002 (dashboard = permanent pane) and US-010 (operator smoke expects orchestrator + dashboard as panes). Operator chose the 3-pane layout (orchestrator + dashboard + menu) on 2026-06-05. Touches src/tmux/session.ts (3-pane build), src/commands/run.ts (dashboard + menu wiring, stale comment, d entry), and the affected tests. noUncheckedIndexedAccess: guard array/regex access. Keep the spawn-injected argv-assertion test style. The menu sends slash commands to the orchestrator pane 0.0; d should focus the dashboard pane, never inject text."
+    },
+    {
       "id": "US-005",
       "title": "cam next becomes a pane launcher; stop is rewired",
       "description": "As a cam user, I want cam next to open the loop's claude as a pane in the project session (instead of creating a separate tmux session named 'cam') and cam stop to target the project session's pane so that everything lives in one session.",
