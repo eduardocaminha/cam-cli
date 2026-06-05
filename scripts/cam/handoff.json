@@ -1,21 +1,20 @@
 {
-  "lastCompletedStory": "US-001",
-  "completedAt": "2026-06-05T00:00:00Z",
-  "createdFiles": [
-    "src/tmux/session.ts",
-    "test/tmux-session.test.ts"
-  ],
+  "lastCompletedStory": "US-002",
+  "completedAt": "2026-06-05T12:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
+    "src/commands/run.ts",
+    "test/run.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 (cam run uses the session module) should import projectSessionName, ensureProjectSession from src/tmux/session.ts and remove the duplicate session-creation logic from src/commands/run.ts. The run.ts file currently exports projectSessionName itself — US-002 should re-export from the canonical module or update callers (test/run.test.ts imports it from run.ts; may need updating too). openPaneInSession is not used yet; US-002 or later stories will use it for loop command pane hosting.",
+  "nextStoryContext": "US-003 (Orchestrator exit tears down the session): pane 0 command in run.ts currently sends `claude --permission-mode bypassPermissions ...` via send-keys. US-003 needs to chain a `tmux kill-session -t <session>` after claude exits. The cleanest approach is to wrap the claude invocation in a bash one-liner: `claude ... ; tmux kill-session -t <session>`. The send-keys call in setupOrchestratorSession (run.ts) is the target. Unit test should assert the composed command contains the kill-session call.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-001 only uses node:path and node:crypto built-ins. No external npm library exercised."
+      "summary": "US-002 only touches node:fs, node:path, and the internal src/tmux/session.ts module. No external npm library exercised."
     }
   ]
 }

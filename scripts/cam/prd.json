@@ -34,7 +34,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Funds CAM-8 (dashboard as permanent pane) and continues CAM-7. Depends on US-001. Files: src/commands/run.ts. Architecture reminder: one tmux session per project hosts everything; this story wires run.ts onto the shared module and promotes dashboard to a pane. Keep success/failure signalling on glyph, not divider color (Ink convention from lessons.md 2026-06-05) if any UI tweak slips in."
     },

@@ -19,6 +19,33 @@ Durable patterns carried across cycles:
 - **isInsideProjectSession uses CAM_SESSION env tag**: because $TMUX_PANE only contains a pane index (not the session name), callers must set CAM_SESSION=<sessionName> when spawning claude inside a session for reliable inside-session detection.
 -->
 
+## [2026-06-05 12:00] - US-002: cam run uses the session module; dashboard becomes a permanent pane
+
+### What was done
+- Removed duplicate projectSessionName, tmuxHasSession, createOrchestratorSession, and buildRunMenuScript from src/commands/run.ts.
+- run.ts now imports projectSessionName and ensureProjectSession from src/tmux/session.ts.
+- Re-exports projectSessionName from run.ts for backward compatibility with test/run.test.ts.
+- runRun accepts injectable SpawnFn via RunOptions.spawnFn (defaults to spawnSync) for unit-testable argv assertions.
+- Right pane now runs `cam dashboard` via tmux send-keys to pane :0.1, replacing the static bash menu script.
+- Added 6 new tmux argv assertion tests in test/run.test.ts (new-session flags, split-window, dashboard send-keys, orchestrator send-keys, session-exists skip, tmux-unavailable failure).
+
+### Files changed
+- src/commands/run.ts (rewritten: -143 lines net, session logic delegated to module)
+- test/run.test.ts (extended: +92 lines, 6 new tests)
+- scripts/cam/prd.json (passes: true for US-002)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 438 pass / 0 fail (6 new)
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (only node:fs, node:path, and the internal session module)
+
+### Notes
+- projectSessionName is re-exported from run.ts (not removed) because test/run.test.ts imports it there; the canonical definition lives in src/tmux/session.ts.
+- The send-keys approach (ensureProjectSession creates bash panes, then send-keys activates the commands) avoids embedding orchestrator boot logic in the shared session module.
+---
+
 ## [2026-06-05 00:00] - US-001: Project session module (tmux helpers)
 
 ### What was done
