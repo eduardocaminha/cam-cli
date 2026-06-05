@@ -46,6 +46,28 @@ Durable patterns carried across cycles:
 - The send-keys approach (ensureProjectSession creates bash panes, then send-keys activates the commands) avoids embedding orchestrator boot logic in the shared session module.
 ---
 
+## [2026-06-05 13:00] - US-003: Orchestrator exit tears down the session
+
+### What was done
+- Added `; tmux kill-session -t <sessionName>` suffix to the agentCmd string sent to pane 0 in setupOrchestratorSession (src/commands/run.ts).
+- Added unit test "pane 0 command chains kill-session after claude exits (US-003)" in test/run.test.ts asserting the composed argv contains `kill-session -t <session>`.
+
+### Files changed
+- src/commands/run.ts (+2 lines: kill-session suffix in agentCmd)
+- test/run.test.ts (+17 lines: new test for kill-session assertion)
+- scripts/cam/prd.json (passes: true for US-003)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 439 pass / 0 fail (1 new)
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (only internal session module and node builtins)
+
+### Notes
+- The kill-session is chained with `;` (not `&&`) so it fires even if claude exits non-zero.
+---
+
 ## [2026-06-05 00:00] - US-001: Project session module (tmux helpers)
 
 ### What was done

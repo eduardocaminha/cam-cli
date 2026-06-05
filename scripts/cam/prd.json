@@ -49,7 +49,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Funds CAM-14 (exit drops back to terminal). Depends on US-002. Small story; touches src/commands/run.ts only. Mechanism: chain `; tmux kill-session -t <session>` to pane 0 command, or set-hook pane-died. Keep spawn-injected test style."
     },
