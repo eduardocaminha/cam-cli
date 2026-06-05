@@ -117,7 +117,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Funds CAM-9 (plan as pane launcher). Depends on US-001. Files: src/commands/plan.ts. Architecture reminder: end of PTY/inherit foreground in cam plan; pane in the project session is the host. APPROVE inside pane for this cycle; flag-file approve is post-MVP (CAM-12)."
     },

@@ -179,3 +179,32 @@ Durable patterns carried across cycles:
 - The makeTmuxSpawnFake must return status: 1 for has-session so ensureProjectSession proceeds to create the session. All other tmux calls return status: 0.
 - The stop rewire changes the observable session name from "cam" to projectSessionName(cwd), making stop and run consistent.
 ---
+
+## [2026-06-05 17:00] - US-006: cam plan becomes a pane launcher
+
+### What was done
+- Rewrote src/commands/plan.ts: removed PTY/foreground inherit path entirely (PlanTerminal, PlanSubprocess, SpawnFn, PromptFn, defaultSpawn, defaultPrompt, askApprove, stdin forwarding, SIGWINCH, verdict-scan loop).
+- New thin-launcher pattern: ensureProjectSession + openPaneInSession + return 0 (identical to US-005 cam next tmux-split path).
+- Added PlanOptions.tmuxSpawnFn (injectable TmuxSpawnFn) and PlanOptions.permissionMode for tests.
+- Added buildPlanArgv(permissionMode, issue?) export.
+- Kept isApproveLine and findApproveLine exports (tested, retained for future APPROVE-in-pane detection).
+- Updated scripts/preview-screens.ts: removed PlanSpawnFn/PlanPromptFn imports, replaced PTY harness with fake tmux spawn, rewrote previewPlan to exercise the thin-launcher scenarios.
+- Rewrote test/plan.test.ts: removed 8 old runPlan PTY tests, added 3 buildPlanArgv tests + 6 runPlan tmux-argv tests (new-session, split-window count, cmd content, issue flag, session-exists skip, error path).
+
+### Files changed
+- src/commands/plan.ts (rewritten: -485 lines net, PTY path removed)
+- test/plan.test.ts (rewritten: removed PTY tests, added 9 new tests)
+- scripts/preview-screens.ts (updated plan section: removed PlanHarness/PTY harness, added fake tmux preview)
+- scripts/cam/prd.json (passes: true for US-006)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 446 pass / 0 fail (18 from plan.test.ts: 6 isApproveLine + 3 findApproveLine + 3 buildPlanArgv + 6 runPlan)
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (only internal session module and node builtins; no external npm lib exercised)
+
+### Notes
+- The thin-launcher returns 0 immediately; APPROVE prompt lives inside the tmux pane, not in the parent process (CAM-12 flag-file approve is post-MVP).
+- preview-screens.ts imports TmuxSpawnFnType from src/tmux/session.ts; SpawnSyncReturns already imported via node:child_process line 31.
+---

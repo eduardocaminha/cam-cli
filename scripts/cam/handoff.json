@@ -1,22 +1,21 @@
 {
-  "lastCompletedStory": "US-005",
-  "completedAt": "2026-06-05T16:00:00Z",
+  "lastCompletedStory": "US-006",
+  "completedAt": "2026-06-05T17:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/next.ts",
-    "src/commands/stop.ts",
-    "test/next.test.ts",
-    "test/stop.test.ts",
+    "src/commands/plan.ts",
+    "test/plan.test.ts",
+    "scripts/preview-screens.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 rewired cam next (thin pane launcher via ensureProjectSession + openPaneInSession) and cam stop (targets projectSessionName(cwd) instead of 'cam'). buildTmuxSplitArgv was removed. NextOptions now has tmuxSpawnFn for unit-testable tmux calls. StopReport now includes sessionName field. Next story is US-006 (cam plan becomes a pane launcher) which follows the same thin-launcher pattern established here.",
+  "nextStoryContext": "US-006 rewired cam plan to a thin pane launcher (ensureProjectSession + openPaneInSession), removing the PTY/foreground inherit path. buildPlanArgv is now an exported function. isApproveLine and findApproveLine are kept for future use (CAM-12). Next story is US-007 (cam issue <free text> subcommand). The thin-launcher pattern is now established for plan/next; issue should follow the same pattern.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-005 touches only src/commands/next.ts, src/commands/stop.ts, and their tests via the internal session module. No external npm library exercised."
+      "summary": "US-006 touches only src/commands/plan.ts, test/plan.test.ts, and scripts/preview-screens.ts via the internal session module. No external npm library exercised."
     }
   ]
 }
