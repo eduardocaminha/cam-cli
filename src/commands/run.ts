@@ -127,7 +127,9 @@ function setupOrchestratorSession(opts: {
 	writeFileSync(promptFile, buildOrchestratorBootPrompt(), 'utf8');
 
 	// Pane 0: orchestrator (claude).
-	const agentCmd = `claude --permission-mode bypassPermissions "$(cat '${promptFile}')"`;
+	// Chain kill-session so that when claude exits the whole tmux session is
+	// torn down automatically, dropping the user back to their shell (US-003).
+	const agentCmd = `claude --permission-mode bypassPermissions "$(cat '${promptFile}')"; tmux kill-session -t ${sessionName}`;
 	spawnFn(
 		'tmux',
 		['send-keys', '-t', `${sessionName}:0.0`, agentCmd, 'Enter'],

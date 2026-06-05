@@ -241,6 +241,23 @@ describe('runRun tmux argv — new session', () => {
 		expect(orchSendKeys?.args.some(a => a.includes('claude'))).toBe(true);
 	});
 
+	it('pane 0 command chains kill-session after claude exits (US-003)', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+		const sessionName = projectSessionName(cwd);
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		const orchSendKeys = spawn.calls.find(
+			c => c.args[0] === 'send-keys' && c.args.some(a => a.includes(':0.0')),
+		);
+		expect(orchSendKeys).toBeDefined();
+		// The composed command must contain a kill-session call for this session.
+		const composedCmd = orchSendKeys?.args.find(a => a.includes('kill-session'));
+		expect(composedCmd).toBeDefined();
+		expect(composedCmd).toContain(`kill-session -t ${sessionName}`);
+	});
+
 	it('skips session creation when session already exists', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: true });
