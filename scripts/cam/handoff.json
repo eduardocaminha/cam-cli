@@ -1,24 +1,21 @@
 {
-  "lastCompletedStory": "US-008",
-  "completedAt": "2026-06-05T19:00:00Z",
-  "createdFiles": [
-    "test/attach-hint.test.ts"
-  ],
+  "lastCompletedStory": "US-009",
+  "completedAt": "2026-06-05T20:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/logging/screen.ts",
-    "src/commands/plan.ts",
-    "src/commands/issue.ts",
-    "src/commands/next.ts",
+    "index.ts",
+    "README.md",
+    "FLOW.md",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-008 added emitAttachHint(sessionName, env) to src/logging/screen.ts as the shared helper. It suppresses the hint when isInsideProjectSession(sessionName, env) returns true (CAM_SESSION matches). plan/next/issue all got an injectable env field in their options and call emitAttachHint on their successful path. The unconditional 'Attach with: tmux attach -t ...' muted hints that existed in plan.ts and issue.ts were replaced by the smarter emitAttachHint call (which still emits the tmux attach line as part of the hint, but only when detached). next.ts also had its unconditional 'Attach with:' replaced.",
+  "nextStoryContext": "US-009 updated RUN_HELP/PLAN_HELP/NEXT_HELP/ISSUE_HELP/DASHBOARD_HELP in index.ts, README.md, and FLOW.md to document the single per-project session model (3-pane layout: pane 0.0 orchestrator + pane 0.1 dashboard + pane 0.2 menu), the thin pane launcher pattern used by plan/next/issue, the contextual attach hint (suppressed inside the session), and orchestrator-exit teardown. All em-dashes removed from persisted .md files. FLOW.md has new sections 2.5 (cam run) and 4.5 (cam issue), and sections 3 and 4 were rewritten as thin-launcher flows.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-008 touches only src/logging/screen.ts, src/commands/plan.ts, src/commands/next.ts, src/commands/issue.ts, and test/attach-hint.test.ts via internal session module and node builtins. No external npm library exercised."
+      "summary": "US-009 is a docs-only story. Only index.ts (HELP strings), README.md, and FLOW.md were modified. No external npm library exercised."
     }
   ]
 }

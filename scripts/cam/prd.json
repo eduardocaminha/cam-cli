@@ -168,7 +168,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Doc maintenance for the new model. Depends on US-001 through US-008. Files: index.ts (HELP strings), README.md, FLOW.md. Project preference: no em-dash in persisted .md (substitute colon, comma, parens, period, or rephrase). Do not announce absence (omit cross-refs that only say content lives elsewhere)."
     },

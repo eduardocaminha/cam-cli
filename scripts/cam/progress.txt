@@ -270,3 +270,32 @@ Durable patterns carried across cycles:
 - isInsideProjectSession keys off CAM_SESSION env var (not $TMUX_PANE), as documented in the Codebase Patterns block. Callers set CAM_SESSION=<sessionName> when spawning claude inside the session.
 - The emitAttachHint helper emits two muted hint lines ("Run `cam run`..." and "  tmux attach -t <session>") so the operator always has the fallback tmux command visible.
 ---
+
+## [2026-06-05 20:00] - US-009: Docs reflect the new single-session model
+
+### What was done
+- Updated RUN_HELP in index.ts: describes 3-pane layout (pane 0.0 orchestrator, pane 0.1 dashboard, pane 0.2 menu), single session per project, orchestrator-exit teardown, and plan/next/issue as thin pane launchers.
+- Updated PLAN_HELP in index.ts: describes thin pane launcher pattern (ensureProjectSession + openPaneInSession + return 0, attach hint when detached).
+- Updated NEXT_HELP in index.ts: same thin launcher description, removed old host-detection prose (Ghostty/VSCode splits gone).
+- Updated ISSUE_HELP in index.ts: aligned style with plan/next (no backtick quoting on flags, consistent step numbering, attach hint mention).
+- Updated DASHBOARD_HELP in index.ts: footer now says "pane 0.1 permanent in the session" instead of the old Ghostty-split reference.
+- Updated README.md: status note, quick-start steps (mentions 3-pane layout and cam issue example), commands table (added cam issue, updated cam run/plan/next/dashboard descriptions), new "Single project session" section documenting the 3-pane layout and thin launcher pattern, updated recent changes, fixed all em-dashes.
+- Updated FLOW.md: commands inventory table (added cam issue row, updated cam run/plan/next/dashboard descriptions), section 1 diagram and summary (single-session model, ISSUE launcher, teardown node), new section 2.5 (cam run 3-pane layout with diagram), sections 3 and 4 rewritten as thin launcher flows with updated mermaid diagrams, new section 4.5 (cam issue launcher diagram).
+
+### Files changed
+- index.ts (RUN_HELP, PLAN_HELP, ISSUE_HELP, NEXT_HELP, DASHBOARD_HELP updated)
+- README.md (status, quick-start, commands table, new "Single project session" section, recent changes, em-dashes removed)
+- FLOW.md (table, section 1 diagram, new section 2.5, sections 3 and 4 rewritten, new section 4.5, no em-dashes)
+- scripts/cam/prd.json (passes: true for US-009)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 471 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (docs-only story, no external npm library exercised)
+
+### Notes
+- All em-dashes removed from persisted .md files (README.md, FLOW.md) per project preference.
+- FLOW.md section numbering kept as 2.5 and 4.5 (inserted between existing sections) to avoid renumbering the entire file.
+---
