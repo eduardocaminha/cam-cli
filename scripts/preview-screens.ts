@@ -36,7 +36,8 @@ import { runStop, type SpawnSyncFn } from '../src/commands/stop.ts';
 import { runResume, type ResumeOptions, type KillFn } from '../src/commands/resume.ts';
 import { runRun } from '../src/commands/run.ts';
 import { runNext, type NextSpawnFn } from '../src/commands/next.ts';
-import { runPlan, type SpawnFn as PlanSpawnFn, type PromptFn as PlanPromptFn } from '../src/commands/plan.ts';
+import { runPlan } from '../src/commands/plan.ts';
+import { type SpawnFn as TmuxSpawnFnType } from '../src/tmux/session.ts';
 
 const HR = '─'.repeat(72);
 
@@ -363,78 +364,47 @@ async function previewNext(): Promise<void> {
 
 // --- cam plan ---------------------------------------------------------------
 
-interface PlanHarness {
-	spawn: PlanSpawnFn;
-	emitData: (text: string) => void;
-	resolveExit: (code: number) => void;
-}
-
-/** Minimal PTY-spawn harness mirroring test/plan.test.ts: captures the onData
- *  callback so `emitData` can feed bytes (e.g. an APPROVE verdict line), and
- *  exposes `resolveExit` to end the fake subprocess. */
-function makePlanHarness(): PlanHarness {
-	let capturedOnData: ((b: Uint8Array) => void) | null = null;
-	let resolveExit: (code: number) => void = () => {};
-	const exited = new Promise<number>((r) => {
-		resolveExit = r;
-	});
-	const enc = new TextEncoder();
-	const terminal = { write: () => 0, resize: () => {}, close: () => {} };
-	const spawn: PlanSpawnFn = (_cmd, callbacks) => {
-		capturedOnData = callbacks.onData;
-		return { exited, terminal, kill: () => {} };
-	};
-	return {
-		spawn,
-		emitData: (text) => capturedOnData?.(enc.encode(text)),
-		resolveExit,
-	};
-}
-
-/** Prompt fake that echoes the question + a canned answer, so the preview
- *  shows the decision point the way an operator's keystroke would. */
-function planPreviewPrompt(answer: string): PlanPromptFn {
-	return (question) => {
-		process.stdout.write(`${question}${answer}\n`);
-		return Promise.resolve(answer);
-	};
+/** Fake tmux spawn for plan preview: session doesn't exist, all calls succeed. */
+function makePlanFakeTmux(sessionExists: boolean): TmuxSpawnFnType {
+	return ((cmd: string, args: string[], _opts?: { stdio?: string }) => {
+		if (args[0] === 'has-session') {
+			return { status: sessionExists ? 0 : 1 } as SpawnSyncReturns<Buffer>;
+		}
+		return { status: 0 } as SpawnSyncReturns<Buffer>;
+	}) as TmuxSpawnFnType;
 }
 
 async function previewPlan(): Promise<void> {
-	section('cam plan — dispatched (interactive session starts, no verdict yet)');
-	{
-		const h = makePlanHarness();
-		queueMicrotask(() => h.resolveExit(0));
-		await runPlan({ spawn: h.spawn, prompt: planPreviewPrompt('y') });
-	}
+	section('cam plan — thin pane launcher (session created fresh)');
+	await runPlan({
+		cwd: '/tmp/my-project',
+		permissionMode: 'bypassPermissions',
+		tmuxSpawnFn: makePlanFakeTmux(false),
+	});
 
-	section('cam plan — APPROVE then Yes (let the planner finish branch + commit)');
-	{
-		const h = makePlanHarness();
-		queueMicrotask(() => {
-			h.emitData('"verdict": "APPROVE"\n');
-			setTimeout(() => h.resolveExit(0), 20);
-		});
-		await runPlan({ spawn: h.spawn, prompt: planPreviewPrompt('y') });
-	}
+	section('cam plan — thin pane launcher (session already exists)');
+	await runPlan({
+		cwd: '/tmp/my-project',
+		permissionMode: 'bypassPermissions',
+		tmuxSpawnFn: makePlanFakeTmux(true),
+	});
 
-	section('cam plan — APPROVE then No (cancel, terminate the planning session)');
-	{
-		const h = makePlanHarness();
-		queueMicrotask(() => {
-			h.emitData('"verdict": "APPROVE"\n');
-			setTimeout(() => h.resolveExit(0), 20);
-		});
-		await runPlan({ spawn: h.spawn, prompt: planPreviewPrompt('n') });
-	}
+	section('cam plan — with --issue flag');
+	await runPlan({
+		cwd: '/tmp/my-project',
+		issue: 42,
+		permissionMode: 'bypassPermissions',
+		tmuxSpawnFn: makePlanFakeTmux(false),
+	});
 
-	section('cam plan — spawn failure (claude not on PATH → fatal on stderr)');
-	{
-		const throwingSpawn: PlanSpawnFn = () => {
-			throw new Error('Executable not found in $PATH: claude');
-		};
-		await runPlan({ spawn: throwingSpawn, prompt: planPreviewPrompt('n') });
-	}
+	section('cam plan — tmux failure (returns 1)');
+	await runPlan({
+		cwd: '/tmp/my-project',
+		permissionMode: 'bypassPermissions',
+		tmuxSpawnFn: ((_cmd: string, args: string[]) => {
+			throw new Error('tmux not found');
+		}) as TmuxSpawnFnType,
+	});
 }
 
 const SCREENS: Record<string, () => void | Promise<void>> = {

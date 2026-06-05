@@ -1,200 +1,56 @@
 // test/plan.test.ts
 //
-// Unit tests for `cam plan`. We mock the claude subprocess via the
-// `spawn` injection point on `runPlan({ spawn, prompt })`, so these tests
-// never actually call `claude` — they verify cam's plumbing:
-//   - APPROVE detection on a PTY data-callback stream
-//   - prompt firing exactly once even when APPROVE appears multiple times
-//   - kill() on N answer, exit 0
-//   - continue (no kill) on y answer, propagate subprocess exit code
-//   - issue flag flows through to the slash command sent to spawn
-//   - terminal.write() is called with stdin forwarding chunks
-//   - terminal.resize() is called when the spawn callback triggers resize
+// Unit tests for `cam plan` (US-006: thin pane launcher).
 //
-// US-004: migrated from piped-stdio fake to PTY terminal fake. The core
-// test logic is unchanged — we now feed chunks via the onData callback
-// instead of via ReadableStream, and assert on terminal.write calls.
+// What we cover:
+//   - isApproveLine: JSON/YAML/case-insensitive detection; negative cases.
+//   - findApproveLine: first-match, no-match, empty-input.
+//   - buildPlanArgv: bare /cam-plan and /cam-plan #N with permission mode.
+//   - runPlan (tmux path): asserts ensureProjectSession + openPaneInSession
+//     tmux argv via injectable tmuxSpawnFn; returns 0 immediately (thin launcher).
+//   - runPlan with --issue option: slash command includes #N.
+//   - runPlan with no tmuxSpawnFn failures: error path returns 1.
+//
+// The old PTY/APPROVE foreground tests are removed per US-006 acceptance
+// criteria: APPROVE happens inside the pane; the parent process does not
+// interact with the child.
 
 import { describe, expect, test } from 'bun:test';
+import { tmpdir } from 'node:os';
+import { mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
+import type { SpawnSyncReturns } from 'node:child_process';
 
 import {
+	buildPlanArgv,
 	findApproveLine,
 	isApproveLine,
-	type PlanSubprocess,
-	type PlanTerminal,
-	type SpawnFn,
 	runPlan,
 } from '../src/commands/plan.ts';
+import { projectSessionName, type SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
 
-// --- Fakes -----------------------------------------------------------------
+// --- Fake tmux spawn --------------------------------------------------------
 
-interface FakeTerminalHandle {
-	terminal: PlanTerminal;
-	writeCalls: Array<string | Uint8Array>;
-	resizeCalls: Array<{ cols: number; rows: number }>;
-	closeCalls: number;
+interface TmuxCall {
+	cmd: string;
+	args: string[];
 }
 
-/**
- * Build a fake PlanTerminal. Captures all write/resize/close calls so tests
- * can assert on them.
- */
-function makeFakeTerminal(): FakeTerminalHandle {
-	const writeCalls: Array<string | Uint8Array> = [];
-	const resizeCalls: Array<{ cols: number; rows: number }> = [];
-	let closeCalls = 0;
-
-	const terminal: PlanTerminal = {
-		write(data: string | Uint8Array): number {
-			writeCalls.push(data);
-			return typeof data === 'string' ? data.length : data.byteLength;
-		},
-		resize(cols: number, rows: number): void {
-			resizeCalls.push({ cols, rows });
-		},
-		close(): void {
-			closeCalls += 1;
-		},
-	};
-
-	return { terminal, writeCalls, resizeCalls, closeCalls: 0 };
-}
-
-interface FakeSubprocessHandle {
-	proc: PlanSubprocess;
-	exitedResolve: (code: number) => void;
-	killCalls: Array<number | string | undefined>;
-	termHandle: FakeTerminalHandle;
-	/** Call this to feed data as if the PTY received output from the child. */
-	emitData: (text: string) => void;
-}
-
-const encoder = new TextEncoder();
-
-/**
- * Build a fake PlanSubprocess using the PTY callback model.
- * The caller enqueues chunks via `emitData(text)` — the fake calls the
- * registered `onData` callback synchronously, just like the real PTY would.
- * `exitedResolve` controls when the subprocess "exits".
- */
-function makeFakeProcess(): FakeSubprocessHandle {
-	const killCalls: Array<number | string | undefined> = [];
-	let exitedResolve: (code: number) => void = () => {};
-	const exited = new Promise<number>((resolve) => {
-		exitedResolve = resolve;
-	});
-	const termHandle = makeFakeTerminal();
-
-	// The onData callback is registered by the SpawnFn. We capture it via closure.
-	let capturedOnData: ((bytes: Uint8Array) => void) | null = null;
-
-	const proc: PlanSubprocess = {
-		exited,
-		terminal: termHandle.terminal,
-		kill(signal?: number | string) {
-			killCalls.push(signal);
-			// On kill, simulate a clean SIGTERM exit.
-			exitedResolve(143);
-		},
-	};
-
-	const spawnFn: SpawnFn = (
-		_cmd: string[],
-		callbacks: { onData: (bytes: Uint8Array) => void; onExit: () => void },
-	): PlanSubprocess => {
-		capturedOnData = callbacks.onData;
-		return proc;
-	};
-
-	const handle: FakeSubprocessHandle = {
-		proc,
-		exitedResolve,
-		killCalls,
-		termHandle,
-		emitData(text: string): void {
-			if (capturedOnData) {
-				capturedOnData(encoder.encode(text));
-			}
-		},
-	};
-
-	// Attach the spawnFn to the handle so runPlan can use it.
-	(handle as FakeSubprocessHandle & { spawnFn: SpawnFn }).spawnFn = spawnFn;
-	return handle;
-}
-
-/**
- * Build a SpawnFn that returns the given fake process and records the cmd it
- * was called with. The recorded cmd is stored on the returned object's
- * `recordedCmd` property.
- */
-function makeSpawnFnFromHandle(
-	handle: FakeSubprocessHandle,
-): SpawnFn & { recordedCmd: string[] | null } {
-	const fn = ((
-		cmd: string[],
-		callbacks: { onData: (bytes: Uint8Array) => void; onExit: () => void },
-	) => {
-		(fn as unknown as { recordedCmd: string[] }).recordedCmd = [...cmd];
-		// Register the onData callback in the handle so emitData works.
-		(
-			handle as FakeSubprocessHandle & {
-				_setOnData: (cb: (b: Uint8Array) => void) => void;
-			}
-		)._setOnData?.(callbacks.onData);
-		return handle.proc;
-	}) as SpawnFn & { recordedCmd: string[] | null };
-	fn.recordedCmd = null;
+function makeFakeTmuxSpawn(sessionExists = false): TmuxSpawnFn & { calls: TmuxCall[] } {
+	const calls: TmuxCall[] = [];
+	const fn = ((cmd: string, args: string[], _opts?: { stdio?: string }) => {
+		calls.push({ cmd, args: [...args] });
+		// has-session returns exit 0 when sessionExists, 1 otherwise.
+		if (args[0] === 'has-session') {
+			return { status: sessionExists ? 0 : 1 } as SpawnSyncReturns<Buffer>;
+		}
+		return { status: 0 } as SpawnSyncReturns<Buffer>;
+	}) as TmuxSpawnFn & { calls: TmuxCall[] };
+	fn.calls = calls;
 	return fn;
 }
 
-/**
- * Build a complete test harness: a fake subprocess + spawn function that
- * are pre-wired to each other. `emitData(text)` feeds chunks via the PTY
- * data callback.
- */
-function makeTestHarness(): {
-	spawn: SpawnFn & { recordedCmd: string[] | null };
-	killCalls: Array<number | string | undefined>;
-	emitData: (text: string) => void;
-	exitedResolve: (code: number) => void;
-} {
-	const killCalls: Array<number | string | undefined> = [];
-	let exitedResolve: (code: number) => void = () => {};
-	const exited = new Promise<number>((resolve) => {
-		exitedResolve = resolve;
-	});
-	const termHandle = makeFakeTerminal();
-
-	let capturedOnData: ((bytes: Uint8Array) => void) | null = null;
-
-	const proc: PlanSubprocess = {
-		exited,
-		terminal: termHandle.terminal,
-		kill(signal?: number | string) {
-			killCalls.push(signal);
-			exitedResolve(143);
-		},
-	};
-
-	const spawn = ((
-		cmd: string[],
-		callbacks: { onData: (bytes: Uint8Array) => void; onExit: () => void },
-	) => {
-		(spawn as unknown as { recordedCmd: string[] }).recordedCmd = [...cmd];
-		capturedOnData = callbacks.onData;
-		return proc;
-	}) as SpawnFn & { recordedCmd: string[] | null };
-	spawn.recordedCmd = null;
-
-	function emitData(text: string): void {
-		capturedOnData?.(encoder.encode(text));
-	}
-
-	return { spawn, killCalls, emitData, exitedResolve };
-}
-
-// --- isApproveLine / findApproveLine ---------------------------------------
+// --- isApproveLine / findApproveLine ----------------------------------------
 
 describe('isApproveLine', () => {
 	test('matches JSON-shaped verdict line', () => {
@@ -210,7 +66,7 @@ describe('isApproveLine', () => {
 		expect(isApproveLine('VERDICT = APPROVE')).toBe(true);
 	});
 
-	test('requires literal uppercase APPROVE — `approve` alone does not match', () => {
+	test('requires literal uppercase APPROVE -- `approve` alone does not match', () => {
 		expect(isApproveLine('verdict: approve')).toBe(false);
 	});
 
@@ -238,172 +94,155 @@ describe('findApproveLine', () => {
 	});
 });
 
-// --- runPlan integration ---------------------------------------------------
+// --- buildPlanArgv ----------------------------------------------------------
 
-describe('runPlan', () => {
-	test('dispatches /cam-plan when no issue is provided', async () => {
-		const { spawn, killCalls, exitedResolve } = makeTestHarness();
-		// Subprocess exits cleanly with no APPROVE — prompt never fires.
-		queueMicrotask(() => exitedResolve(0));
-		const code = await runPlan({
-			spawn,
-			prompt: () => Promise.resolve('y'),
-		});
-		expect(code).toBe(0);
-		expect(spawn.recordedCmd).toEqual([
+describe('buildPlanArgv', () => {
+	test('builds bare /cam-plan when no issue is provided', () => {
+		expect(buildPlanArgv('bypassPermissions')).toEqual([
 			'claude',
 			'--permission-mode',
 			'bypassPermissions',
 			'/cam-plan',
 		]);
-		expect(killCalls).toEqual([]);
 	});
 
-	test('dispatches /cam-plan #N when issue option is provided', async () => {
-		const { spawn, exitedResolve } = makeTestHarness();
-		queueMicrotask(() => exitedResolve(0));
-		await runPlan({
-			issue: 142,
-			spawn,
-			prompt: () => Promise.resolve(''),
-		});
-		expect(spawn.recordedCmd).toEqual([
+	test('builds /cam-plan #N when issue is provided', () => {
+		expect(buildPlanArgv('bypassPermissions', 42)).toEqual([
 			'claude',
 			'--permission-mode',
 			'bypassPermissions',
-			'/cam-plan #142',
+			'/cam-plan #42',
 		]);
 	});
 
-	test('fires prompt on APPROVE and continues on y answer (no kill)', async () => {
-		const { spawn, killCalls, emitData, exitedResolve } = makeTestHarness();
-		const promptCalls: string[] = [];
+	test('uses the supplied permission mode verbatim', () => {
+		const argv = buildPlanArgv('default');
+		expect(argv[2]).toBe('default');
+	});
+});
 
-		// Schedule: emit some output, including APPROVE, then exit
-		queueMicrotask(() => {
-			emitData('booting...\n');
-			emitData('planning...\n');
-			emitData('"verdict": "APPROVE"\n');
-			emitData('continuing...\n');
-			// Give the promise chain (handleApprove) a tick to resolve
-			// before the subprocess "exits".
-			setTimeout(() => exitedResolve(0), 5);
-		});
+// --- runPlan (thin pane launcher) ------------------------------------------
+
+describe('runPlan (tmux pane launcher)', () => {
+	test('calls has-session, new-session (x2 split-window), then split-window for the plan pane', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
+		const tmuxSpawnFn = makeFakeTmuxSpawn(false);
 
 		const code = await runPlan({
-			spawn,
-			prompt: (q) => {
-				promptCalls.push(q);
-				return Promise.resolve('y');
-			},
+			cwd: tmpDir,
+			permissionMode: 'bypassPermissions',
+			tmuxSpawnFn,
 		});
-		expect(promptCalls.length).toBe(1);
-		expect(promptCalls[0]).toContain('Approve PRD and create branch?');
-		expect(killCalls).toEqual([]);
+
 		expect(code).toBe(0);
+
+		// Verify has-session was called with the project session name.
+		const sessionName = projectSessionName(tmpDir);
+		const hasSessionCall = tmuxSpawnFn.calls.find(
+			(c) => c.args[0] === 'has-session' && c.args.includes(sessionName),
+		);
+		expect(hasSessionCall).toBeDefined();
+
+		// Verify new-session was called (session didn't exist).
+		const newSessionCall = tmuxSpawnFn.calls.find((c) => c.args[0] === 'new-session');
+		expect(newSessionCall).toBeDefined();
+		expect(newSessionCall?.args).toContain(sessionName);
+
+		// Verify openPaneInSession was called with split-window.
+		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
+		// ensureProjectSession makes 2 split-window calls (pane 1 + pane 2),
+		// openPaneInSession makes 1 more (the plan pane).
+		expect(splitCalls.length).toBeGreaterThanOrEqual(3);
 	});
 
-	test('fires prompt on APPROVE and kills on N answer, exits 0', async () => {
-		const { spawn, killCalls, emitData } = makeTestHarness();
-		// Emit APPROVE then let kill() trigger exit.
-		queueMicrotask(() => {
-			emitData('planning...\n');
-			emitData('verdict: APPROVE\n');
-		});
-		const code = await runPlan({
-			spawn,
-			prompt: () => Promise.resolve('N'),
-		});
-		expect(killCalls.length).toBe(1);
-		expect(killCalls[0]).toBe('SIGTERM');
-		expect(code).toBe(0);
-	});
+	test('the plan pane split-window includes the claude /cam-plan command', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
+		const tmuxSpawnFn = makeFakeTmuxSpawn(false);
 
-	test('empty answer (just Enter) defaults to N — kills subprocess', async () => {
-		const { spawn, killCalls, emitData } = makeTestHarness();
-		queueMicrotask(() => {
-			emitData('verdict: APPROVE\n');
-		});
-		const code = await runPlan({
-			spawn,
-			prompt: () => Promise.resolve(''),
-		});
-		expect(killCalls.length).toBe(1);
-		expect(code).toBe(0);
-	});
-
-	test('any non-y answer kills (cautious default)', async () => {
-		const { spawn, killCalls, emitData } = makeTestHarness();
-		queueMicrotask(() => {
-			emitData('verdict: APPROVE\n');
-		});
-		const code = await runPlan({
-			spawn,
-			prompt: () => Promise.resolve('maybe later'),
-		});
-		expect(killCalls.length).toBe(1);
-		expect(code).toBe(0);
-	});
-
-	test('prompt fires only once even if APPROVE appears in multiple chunks', async () => {
-		const { spawn, emitData, exitedResolve } = makeTestHarness();
-		let promptCount = 0;
-		queueMicrotask(() => {
-			emitData('first verdict: APPROVE\n');
-			emitData('(planner echoes verdict: APPROVE again)\n');
-			emitData('continuing...\n');
-			setTimeout(() => exitedResolve(0), 5);
-		});
 		await runPlan({
-			spawn,
-			prompt: () => {
-				promptCount += 1;
-				return Promise.resolve('y');
-			},
+			cwd: tmpDir,
+			permissionMode: 'bypassPermissions',
+			tmuxSpawnFn,
 		});
-		expect(promptCount).toBe(1);
+
+		// The last split-window call is openPaneInSession; it must contain the claude cmd.
+		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
+		const lastSplit = splitCalls[splitCalls.length - 1];
+		const cmdArg = lastSplit?.args[lastSplit.args.length - 1] ?? '';
+		expect(cmdArg).toContain('claude');
+		expect(cmdArg).toContain('--permission-mode');
+		expect(cmdArg).toContain('bypassPermissions');
+		expect(cmdArg).toContain('/cam-plan');
+		expect(cmdArg).not.toContain('#');
 	});
 
-	test('subprocess exits without ever emitting APPROVE — prompt does not fire', async () => {
-		const { spawn, killCalls, emitData, exitedResolve } = makeTestHarness();
-		queueMicrotask(() => {
-			emitData('planning...\n');
-			emitData('verdict: BLOCK\n');
-			exitedResolve(2);
+	test('includes #N in the plan pane command when issue is provided', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
+		const tmuxSpawnFn = makeFakeTmuxSpawn(false);
+
+		await runPlan({
+			cwd: tmpDir,
+			permissionMode: 'bypassPermissions',
+			issue: 99,
+			tmuxSpawnFn,
 		});
-		let promptCount = 0;
-		const code = await runPlan({
-			spawn,
-			prompt: () => {
-				promptCount += 1;
-				return Promise.resolve('y');
-			},
-		});
-		expect(promptCount).toBe(0);
-		expect(killCalls).toEqual([]);
-		// Subprocess's own exit code propagates when cam didn't intervene.
-		expect(code).toBe(2);
+
+		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
+		const lastSplit = splitCalls[splitCalls.length - 1];
+		const cmdArg = lastSplit?.args[lastSplit.args.length - 1] ?? '';
+		expect(cmdArg).toContain('/cam-plan #99');
 	});
 
-	test('detects APPROVE even when split across PTY data chunks', async () => {
-		const { spawn, killCalls, emitData } = makeTestHarness();
-		// Split "verdict: APPROVE" across two chunks to verify the rolling
-		// buffer in onData stitches partial reads.
-		queueMicrotask(() => {
-			emitData('blah\nver');
-			emitData('dict: APP');
-			emitData('ROVE\n');
-		});
-		let promptCount = 0;
+	test('skips new-session when session already exists (has-session returns 0)', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
+		const tmuxSpawnFn = makeFakeTmuxSpawn(true); // session already exists
+
 		const code = await runPlan({
-			spawn,
-			prompt: () => {
-				promptCount += 1;
-				return Promise.resolve('N');
-			},
+			cwd: tmpDir,
+			permissionMode: 'bypassPermissions',
+			tmuxSpawnFn,
 		});
-		expect(promptCount).toBe(1);
-		expect(killCalls.length).toBe(1);
+
 		expect(code).toBe(0);
+		const newSessionCall = tmuxSpawnFn.calls.find((c) => c.args[0] === 'new-session');
+		expect(newSessionCall).toBeUndefined();
+
+		// openPaneInSession still runs (1 split-window call for the plan pane).
+		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
+		expect(splitCalls.length).toBe(1);
+	});
+
+	test('returns 1 when tmux throws', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
+		const throwingSpawn: TmuxSpawnFn = ((_cmd: string, args: string[]) => {
+			if (args[0] === 'has-session' || args[0] === 'new-session') {
+				throw new Error('tmux not found');
+			}
+			return { status: 0 } as SpawnSyncReturns<Buffer>;
+		}) as TmuxSpawnFn;
+
+		const code = await runPlan({
+			cwd: tmpDir,
+			permissionMode: 'bypassPermissions',
+			tmuxSpawnFn: throwingSpawn,
+		});
+
+		expect(code).toBe(1);
+	});
+
+	test('plan pane split-window targets the project session', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
+		const tmuxSpawnFn = makeFakeTmuxSpawn(true); // session exists; skip new-session
+		const sessionName = projectSessionName(tmpDir);
+
+		await runPlan({
+			cwd: tmpDir,
+			permissionMode: 'bypassPermissions',
+			tmuxSpawnFn,
+		});
+
+		// With existing session, only openPaneInSession's split-window fires.
+		const splitCall = tmuxSpawnFn.calls.find((c) => c.args[0] === 'split-window');
+		expect(splitCall?.args).toContain(`${sessionName}:0`);
 	});
 });
