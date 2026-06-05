@@ -49,13 +49,14 @@
 import process from 'node:process';
 
 import { readPermissionMode } from '../config/permission-mode.ts';
-import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
+import { printError } from '../logging/color.ts';
 import {
 	emitMutedHint,
 	emitOk,
 	emitSectionHeading,
 	emitTitle,
 	emitTrailingBlank,
+	emitWarn,
 } from '../logging/screen.ts';
 import { promptSelect } from '../ui/promptSelect.tsx';
 
@@ -351,15 +352,15 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 		// Newline before our prompt so it doesn't run into claude's last
 		// output chunk on the same line.
 		process.stdout.write('\n');
-		printSuccess('prd-auditor APPROVE detected', line.trim().slice(0, 80));
+		emitOk('prd-auditor APPROVE detected', line.trim().slice(0, 80));
 		const approved = await askApprove(prompt, options.prompt !== undefined);
 		if (approved) {
-			printSuccess('Continuing — letting planner finish branch + commit');
+			emitOk('Continuing — letting planner finish branch + commit');
 			// Resume stdin forwarding so the operator can keep interacting.
 			startStdinForwarding();
 			return;
 		}
-		printWarning('Plan cancelled by operator', 'Sending Esc + terminating planning session');
+		emitWarn('Plan cancelled by operator', 'Sending Esc + terminating planning session');
 		killedByOperator = true;
 		proc.kill('SIGTERM');
 	};
@@ -394,9 +395,8 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 	} catch (err) {
 		printError(
 			'Failed to spawn `claude`',
-			err instanceof Error ? err.message : String(err),
+			`${err instanceof Error ? err.message : String(err)} (verify claude is on PATH, re-run \`cam init\`)`,
 		);
-		printHint('Verify `claude` is on PATH (re-run `cam init` to validate)');
 		emitTrailingBlank();
 		return 1;
 	}

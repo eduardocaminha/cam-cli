@@ -68,7 +68,7 @@
 //   7. Bun unit tests for each mode with mocked filesystem + processes.
 //   8. `bunx tsc --noEmit` passes.
 
-import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
@@ -77,18 +77,19 @@ import { parseStateFile, type LoopState, type PrdShape } from './status.ts';
 import {
 	accent,
 	chalk,
-	color,
 	muted,
 	printError,
-	printHint,
-	printSuccess,
-	printWarning,
 	warning,
 } from '../logging/color.ts';
 import {
+	emitContent,
+	emitEntry,
+	emitMutedHint,
+	emitOk,
 	emitSectionHeading,
 	emitTitle,
 	emitTrailingBlank,
+	emitWarn,
 } from '../logging/screen.ts';
 import { readRetryPid, isRetryPidAlive } from '../util/retry-pid.ts';
 import { promptSelect } from '../ui/promptSelect.tsx';
@@ -567,52 +568,62 @@ export async function runResume(options: ResumeOptions = {}): Promise<number> {
 	printSummary(report);
 
 	if (options.dryRun) {
-		printHint('Dry run: no state mutations or spawns');
+		emitMutedHint('Dry run: no state mutations or spawns');
 		emitTrailingBlank();
 		return 0;
 	}
 
 	switch (report.mode) {
 		case 'success': {
-			// PRD complete — auto-cleanup the orphan state file.
+			// PRD complete — auto-cleanup the orphan state file. Closing "Done"
+			// section: divisor stays muted, the accent ✓ glyph carries success.
 			const removed = removeStateFileIfPresent(cwd);
+			emitSectionHeading('Done');
 			if (removed) {
 				report.cleanedStateFile = true;
-				printSuccess(`Removed orphan ${STATE_FILE_PATH}`);
+				emitOk(`Removed orphan ${STATE_FILE_PATH}`);
 			}
-			printSuccess('PRD complete — nothing to resume');
+			emitOk('PRD complete — nothing to resume');
 			emitTrailingBlank();
 			return 0;
 		}
 		case 'idle':
-			printHint('Run `cam next` to start a fresh loop');
+			emitSectionHeading('Next');
+			emitEntry('cam next', 'start a fresh loop');
 			emitTrailingBlank();
 			return 0;
 		case 'noop':
-			printHint('retry-monitor is sleeping — it will respawn `cam next` when the rate-limit window ends');
+			emitSectionHeading('Next');
+			emitMutedHint('Nothing to do — the retry-monitor will respawn `cam next` when the rate-limit window ends');
 			emitTrailingBlank();
 			return 0;
 		case 'respawn':
-			printHint('Next step: re-run `cam next` from this cwd to re-attach the loop');
+			emitSectionHeading('Next');
+			emitEntry('cam next', 're-attach the loop from this cwd');
 			emitTrailingBlank();
 			return 0;
 		case 'prompt': {
 			const answer = await askResumeChoice(promptFn, options.prompt !== undefined);
 			if (answer === 'y') {
-				printSuccess('Continuing — re-run `cam next` to re-attach the loop');
+				emitSectionHeading('Next');
+				emitEntry('cam next', 're-attach the loop from this cwd');
 				emitTrailingBlank();
 				return 0;
 			}
 			if (answer === 'reset') {
 				const removed = removeStateFileIfPresent(cwd);
+				emitSectionHeading('Done');
 				if (removed) {
 					report.cleanedStateFile = true;
-					printSuccess(`Removed ${STATE_FILE_PATH}`);
+					emitOk(`Removed ${STATE_FILE_PATH}`);
+				} else {
+					emitMutedHint(`No ${STATE_FILE_PATH} to remove`);
 				}
 				emitTrailingBlank();
 				return 0;
 			}
-			printWarning('Aborted', 'No recovery action taken');
+			emitSectionHeading('Done');
+			emitMutedHint('Aborted — no recovery action taken');
 			emitTrailingBlank();
 			return 1;
 		}
@@ -639,49 +650,54 @@ async function runExplicitReset(
 	if (mode === 'reset-current-story') {
 		const prd = readPrd(cwd);
 		if (!prd) {
+			// Fatal: missing dependency. Errors go to stderr (col 0), matching
+			// the CLI contract — never decorated as a Section "Failed".
 			printError('reset-current-story: no prd.json found in cwd');
 			emitTrailingBlank();
 			return 2;
 		}
 		if (options.dryRun) {
-			printHint(`Dry run: would reset the most-recently-completed story`);
+			emitMutedHint('Dry run: would reset the most-recently-completed story');
 			emitTrailingBlank();
 			return 0;
 		}
 		const id = resetCurrentStoryInPlace(prd);
 		if (!id) {
-			printWarning('Nothing to reset', 'No completed stories in the PRD');
+			emitWarn('Nothing to reset', '(no completed stories in the PRD)');
 			emitTrailingBlank();
 			return 2;
 		}
 		writePrd(cwd, prd);
-		printSuccess(`Reset ${id} → passes:false`);
-		printHint('Next step: re-run `cam next` to re-implement that story');
+		emitOk(`Reset ${id}`, '→ passes:false');
+		emitSectionHeading('Next');
+		emitEntry('cam next', 're-implement that story');
 		emitTrailingBlank();
 		return 0;
 	}
 	if (mode === 'reset-prd') {
 		const prd = readPrd(cwd);
 		if (!prd) {
+			// Fatal: missing dependency → stderr (CLI contract), not a Section.
 			printError('reset-prd: no prd.json found in cwd');
 			emitTrailingBlank();
 			return 2;
 		}
 		if (options.dryRun) {
 			const count = (prd.userStories ?? []).filter((s) => s.passes !== false).length;
-			printHint(`Dry run: would flip ${count} stor${count === 1 ? 'y' : 'ies'} to passes:false`);
+			emitMutedHint(`Dry run: would flip ${count} stor${count === 1 ? 'y' : 'ies'} to passes:false`);
 			emitTrailingBlank();
 			return 0;
 		}
 		const count = resetPrdInPlace(prd);
 		if (count === 0) {
-			printHint('PRD already had every story at passes:false');
+			emitMutedHint('PRD already had every story at passes:false');
 			emitTrailingBlank();
 			return 0;
 		}
 		writePrd(cwd, prd);
-		printSuccess(`Reset ${count} stor${count === 1 ? 'y' : 'ies'} → passes:false`);
-		printHint('Next step: re-run `cam next` to re-implement from US-001');
+		emitOk(`Reset ${count} stor${count === 1 ? 'y' : 'ies'}`, '→ passes:false');
+		emitSectionHeading('Next');
+		emitEntry('cam next', 're-implement from the top');
 		emitTrailingBlank();
 		return 0;
 	}
@@ -692,28 +708,31 @@ async function runExplicitReset(
 		// step lives outside cam — we don't want to be the tool that clobbers
 		// uncommitted work because of a misclassification.
 		if (options.dryRun) {
-			printHint('Dry run: would print the `git reset --hard origin/main` instruction');
+			emitMutedHint('Dry run: would print the `git reset --hard origin/main` instruction');
 			emitTrailingBlank();
 			return 0;
 		}
 		if (!options.force) {
 			const answer = await askResetBranchConfirm(promptFn, options.prompt !== undefined);
 			if (answer !== 'y') {
-				printWarning('Aborted', 'No branch reset performed');
+				emitSectionHeading('Done');
+				emitMutedHint('Aborted — no branch reset performed');
 				emitTrailingBlank();
 				return 1;
 			}
 		}
-		printWarning(
-			'reset-branch is operator-driven — cam does NOT run `git reset --hard` itself',
-			'Copy: git reset --hard origin/main',
-		);
 		// Also remove the state file; the next `cam next` should treat the
-		// branch as freshly-checked-out.
+		// branch as freshly-checked-out. The git command is shown as a content
+		// line (not an emitEntry) because it's far wider than the entry name
+		// column — copy-paste target, not a short command label.
 		const removed = removeStateFileIfPresent(cwd);
+		emitWarn('cam does NOT run `git reset --hard` itself', '(operator-driven)');
+		emitContent('Copy: git reset --hard origin/main');
 		if (removed) {
-			printSuccess(`Removed ${STATE_FILE_PATH}`);
+			emitMutedHint(`Removed ${STATE_FILE_PATH}`);
 		}
+		emitSectionHeading('Next');
+		emitEntry('cam next', 're-run after the reset');
 		emitTrailingBlank();
 		return 0;
 	}
@@ -771,7 +790,3 @@ function printSummary(report: ResumeReport): void {
 		process.stdout.write(`    ${muted(`→ ${note}`)}\n`);
 	}
 }
-
-// --- exports kept alive against unused-export sweeps -----------------------
-
-void statSync;

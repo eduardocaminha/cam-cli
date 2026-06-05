@@ -27,13 +27,14 @@ import { basename } from 'node:path';
 import { createHash } from 'node:crypto';
 import process from 'node:process';
 
-import { printError, printWarning } from '../logging/color.ts';
+import { printError } from '../logging/color.ts';
 import {
 	emitMutedHint,
 	emitOk,
 	emitSectionHeading,
 	emitTitle,
 	emitTrailingBlank,
+	emitWarn,
 } from '../logging/screen.ts';
 
 // ---------------------------------------------------------------------------
@@ -211,7 +212,7 @@ function createOrchestratorSession(opts: {
 		{ stdio: 'inherit' },
 	);
 	if ((menuPane.status ?? 1) !== 0) {
-		printWarning('tmux split for menu pane failed — orchestrator still running in pane 0');
+		emitWarn('tmux split for menu pane failed', 'orchestrator still running in pane 0');
 	}
 
 	// Make sure focus is on the orchestrator pane.
@@ -299,7 +300,7 @@ export function runRun(options: RunOptions = {}): number {
 		: spawnSync('tmux', ['attach-session', '-t', result.sessionName], { stdio: 'inherit' });
 
 	if ((attach.status ?? 1) !== 0) {
-		printWarning(`tmux attach failed — try manually: tmux attach -t ${result.sessionName}`);
+		emitWarn('tmux attach failed', `try manually: tmux attach -t ${result.sessionName}`);
 		emitTrailingBlank();
 		return attach.status ?? 1;
 	}

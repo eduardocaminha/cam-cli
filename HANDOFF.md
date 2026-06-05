@@ -43,18 +43,21 @@ Mapeamento de estado (igual ao Dashboard): idle `◌` muted, active `●` accent
 - `scripts/preview-screens.ts`: NOVO. Preview com cor das telas print (chama run* direto). `bun scripts/preview-screens.ts [status|stop]`. Registry `SCREENS` no fim é onde adicionar run/next/plan/resume.
 - Limpeza: removidos 1.4 GB de artefatos de build gitignored (`.bun-build`, `dist/`). Repo 1.5G -> 121M. Removidos órfãos `SECTION_DIVIDER_WIDTH`, `SCREEN_DIVIDER_WIDTH`, `PaletteToken`, `Glyph`, `ThemeColor`.
 
-## Falta (fase 2): run, next, plan, resume
+## DECISÃO DE DESIGN (RESOLVIDA): erro fatal vai pra stderr
 
-Todos usam `src/logging/screen.ts` + `printError`/`printWarning` de `color.ts`. Aplicar o padrão canônico. Por comando:
+Para erro fatal que aborta o comando (parse error, dependência ausente): mantém `printError` no col 0 / stderr, NÃO vira Section "Failed". Confirmado contra o Claude Code de-minificado: `cli/exit.ts` separa exatamente isso (`cliError(msg)` escreve em stderr + `exit(1)`; `cliOk(msg)` escreve em stdout + `exit(0)`); os handlers (`cli/handlers/mcp.tsx`, `plugins.ts`) e o `cli/print.ts` reportam toda falha que aborta com `stderr.write("Error: ...")`. NÃO existe Section "Failed" no print path deles. Section de fecho ("Done") fica só pra comando que roda até o fim e reporta resultado (sucesso ou no-op calmo). Aplicar essa regra em run/next/plan.
 
-- **`src/commands/resume.ts`**: o mais direto (puro print, sem spawn nos paths de reconcile/reset/dry-run). Tem muitos `printHint`/`printSuccess`/`printWarning` no col 0/2 que devem virar `emit*` na coluna. Tem fecho natural ("o que foi feito") e próximos passos (Section "Next"). Bom candidato para começar.
-- **`src/commands/run.ts`**: pré-flight com `printError` (tmux/orchestrator ausente, exit 1). DECISÃO PENDENTE: erro fatal continua `printError` em stderr (col 0) ou vira Section "Failed" no stdout? Caminho feliz entrega o TTY pro `tmux attach` (sem fecho). Tem `CAM_RUN_DRY_RUN=1` para preview sem spawnar.
-- **`src/commands/next.ts`**: idem run, com vários estágios (materializa hook, arma loop, detecta host). Caminho feliz spawna `claude`. Tem caminhos de erro fatal.
-- **`src/commands/plan.ts`**: prompt já é Ink (`promptSelect`). Caminho feliz spawna `claude`. Alinhar o output ao redor.
+## Fase 2 COMPLETA: resume, run, next, plan (aprovados, verificados)
 
-DECISÃO DE DESIGN a resolver com o usuário no início da fase 2: para erro fatal que aborta o comando (parse error, dependência ausente), manter `printError` no col 0 / stderr (contrato CLI: erros vão pra stderr), OU trazer pra uma Section "Failed" no stdout? Recomendação: manter erros fatais em stderr (col 0) como hoje (são interrupções, devem destoar e ir pro stream certo); usar Section "Failed" só quando o comando roda até o fim e reporta falha como resultado. Confirmar antes de codar.
+Padrão aplicado nos quatro: `printHint`/`printSuccess`/`printWarning` (col 0/2) viraram `emit*` na coluna (col 4); `printError` dos aborts fatais fica em stderr (decisão acima). Verificação global: tsc OK, 417 testes/0 falhas, preview confere em TODAS as telas (39 divisores, todos muted; `✓` accent / `!` warning / `✗` destructive-stderr; ZERO divisor colorido).
 
-Depois de cada comando: registrar no `scripts/preview-screens.ts` (via dry-run onde houver) e rodar o preview pra o usuário aprovar o render.
+- **`src/commands/resume.ts`** (aprovado): fecho por modo, Section "Done" (success / reset / prompt-reset / prompt-n) e "Next" (idle / respawn / noop / prompt-y / reset-current / reset-prd / reset-branch). Imports mortos removidos (`color`, `statSync` + bloco `void statSync`). Comando git do reset-branch sai como `emitContent` (não `emitEntry`: nome largo demais pra coluna de 12, colava na descrição, bug pego no preview).
+- **`src/commands/run.ts`**: já estava quase alinhado. Só os 2 `printWarning` não-fatais (split de pane / attach falhou) viraram `emitWarn` no col 4. Pré-flight (tmux/orchestrator ausente) continua `printError` stderr. `printWarning` removido do import.
+- **`src/commands/next.ts`**: os `printHint` das falhas não-fatais de tmux split viraram `emitWarn` + `emitMutedHint` no col 4. A falha de spawn do claude continua `printError` stderr, com a orientação ("verify claude is on PATH, re-run cam init") foldada no hint do printError (dropado o `printHint` separado, pra uniformizar com os outros paths fatais do arquivo). `printHint`/`printSuccess` removidos do import.
+- **`src/commands/plan.ts`**: o `printSuccess`/`printWarning` do fluxo de approve (APPROVE detected / Continuing / Plan cancelled) viraram `emitOk`/`emitWarn` no col 4. Spawn-fail igual ao next (printError stderr + hint foldado). `printHint`/`printSuccess`/`printWarning` removidos do import.
+- **`scripts/preview-screens.ts`**: `previewRun`/`previewNext`/`previewPlan` registrados em `SCREENS`. run via `CAM_RUN_DRY_RUN=1` + fixture (com/sem orchestrator). next via deps injetadas (spawn/writer/hookMaterializer/settingsWriter/hostMode) + `withEnv('TMUX',...)` pra mostrar inside/outside tmux. plan via harness PTY (captura onData, `emitData` injeta a linha APPROVE, `resolveExit` encerra) espelhando `test/plan.test.ts`. `bun scripts/preview-screens.ts [run|next|plan]`.
+
+Nada mais pendente na fase 2. Telas one-shot remanescentes (help, dashboard, init/setup wizard) já eram Ink ou já estavam no vocabulário; não fazem parte do escopo deste handoff.
 
 ## Gotchas
 

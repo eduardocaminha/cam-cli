@@ -50,13 +50,14 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 
 import { readPermissionMode } from '../config/permission-mode.ts';
-import { printError, printHint, printSuccess } from '../logging/color.ts';
+import { printError } from '../logging/color.ts';
 import {
 	emitMutedHint,
 	emitOk,
 	emitSectionHeading,
 	emitTitle,
 	emitTrailingBlank,
+	emitWarn,
 } from '../logging/screen.ts';
 import { readEmbedded } from '../vendor/embedded.ts';
 
@@ -579,16 +580,18 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			// Best-effort: if tmux errors, surface a hint and continue
 			// inline — the operator still gets the loop.
 			void splitProc.exited.catch((err: unknown) => {
-				printHint(
-					`tmux split failed: ${err instanceof Error ? err.message : String(err)}`,
+				emitWarn(
+					'tmux split failed',
+					err instanceof Error ? err.message : String(err),
 				);
-				printHint('Continuing inline — open a separate `cam dashboard` if you want one');
+				emitMutedHint('Continuing inline — open a separate `cam dashboard` if you want one');
 			});
 		} catch (err) {
-			printHint(
-				`tmux split spawn errored: ${err instanceof Error ? err.message : String(err)}`,
+			emitWarn(
+				'tmux split spawn errored',
+				err instanceof Error ? err.message : String(err),
 			);
-			printHint('Continuing inline — open a separate `cam dashboard` if you want one');
+			emitMutedHint('Continuing inline — open a separate `cam dashboard` if you want one');
 		}
 		if (insideTmux) {
 			emitOk('tmux split: claude in current pane, dashboard in new pane');
@@ -610,9 +613,8 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	} catch (err) {
 		printError(
 			'Failed to spawn `claude`',
-			err instanceof Error ? err.message : String(err),
+			`${err instanceof Error ? err.message : String(err)} (verify claude is on PATH, re-run \`cam init\`)`,
 		);
-		printHint('Verify `claude` is on PATH (re-run `cam init` to validate)');
 		emitTrailingBlank();
 		return 1;
 	}
