@@ -20,6 +20,7 @@ import process from 'node:process';
 
 import { runDashboardInk } from './src/commands/dashboard.ts';
 import { runInit } from './src/commands/init.ts';
+import { runIssue } from './src/commands/issue.ts';
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
@@ -45,6 +46,7 @@ const HELP = renderHelp({
 				{ name: 'run [options]', description: 'Open or attach the long-lived orchestrator (tmux session)' },
 				{ name: 'plan [--issue <N>]', description: 'Spawn claude + dispatch /cam-plan; prompts on APPROVE' },
 				{ name: 'next [options]', description: 'Spawn the autonomous loop (Ghostty split + claude + dashboard)' },
+				{ name: 'issue "<text>"', description: 'File an issue from free text; opens /cam-issue create in a pane' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
@@ -169,6 +171,39 @@ const PLAN_HELP = renderHelp({
 	footer:
 		'Without --issue, cam dispatches a bare `/cam-plan` and the planner picks\n' +
 		'the highest-priority pending issue itself.',
+});
+
+const ISSUE_HELP = renderHelp({
+	title: 'cam issue',
+	tagline: 'File an issue from free text without entering a session manually',
+	usage: 'cam issue "<free text>"',
+	sections: [
+		{
+			heading: 'Arguments',
+			entries: [
+				{
+					name: '"<free text>"',
+					description: 'Free-text description; expanded to title + description by /cam-issue create',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Reads `permission_mode` from `~/.config/cam/config.toml` (default\n' +
+				'   `bypassPermissions`). cam does NOT accept a `--permission-mode`\n' +
+				'   flag — change the config file with `cam init` to override.\n' +
+				'2. Ensures the project tmux session exists\n' +
+				'   (cam-orch-<basename>-<hash>); creates it if needed.\n' +
+				'3. Opens a new pane inside the session running:\n' +
+				'     claude --permission-mode <mode> "/cam-issue create <text>"\n' +
+				'4. Returns 0 immediately — the issue-creation flow runs inside\n' +
+				'   the pane. Attach with `cam run` to watch.',
+		},
+	],
+	footer:
+		'The free text is passed verbatim to the /cam-issue create slash command.\n' +
+		'The pane agent expands it into a structured issue title + description.',
 });
 
 const NEXT_HELP = renderHelp({
@@ -330,6 +365,33 @@ const RESUME_HELP = renderHelp({
 });
 
 // --- Argv parsers ----------------------------------------------------------
+
+/**
+ * Parse issue-subcommand positional argument. Accepts a single free-text
+ * string (the issue description) or `--help` / `-h`. Returns the parsed
+ * text plus a flag indicating the operator asked for help, or `null` on a
+ * parse error (the caller prints the diagnostic and exits 1).
+ *
+ * NOTE: This parser does NOT accept `--permission-mode` — that is the
+ * US-007 acceptance criterion 7 invariant. `test/no-permission-mode-flag.test.ts`
+ * greps this file for the literal `--permission-mode` and fails the build
+ * if a parser registers it.
+ */
+export function parseIssueArgs(args: string[]): { text: string; help: boolean } | null {
+	if (args.includes('--help') || args.includes('-h')) {
+		return { text: '', help: true };
+	}
+	const text = args[0];
+	if (text === undefined || text.trim().length === 0) {
+		printError('cam issue requires a free-text argument');
+		return null;
+	}
+	if (args.length > 1) {
+		printError(`unexpected argument: ${args[1]}`);
+		return null;
+	}
+	return { text, help: false };
+}
 
 /**
  * Parse plan-specific flags from argv. We accept either `--issue 123`
@@ -602,6 +664,18 @@ async function main(argv: string[]): Promise<number> {
 				return 0;
 			}
 			return runPlan({ issue: parsed.issue });
+		}
+		case 'issue': {
+			const parsed = parseIssueArgs(argv.slice(3));
+			if (parsed === null) {
+				printFatalHint('Usage: cam issue "<free text>"');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(ISSUE_HELP);
+				return 0;
+			}
+			return runIssue({ text: parsed.text });
 		}
 		case 'next': {
 			const parsed = parseNextArgs(argv.slice(3));

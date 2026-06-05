@@ -22,7 +22,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { parseNextArgs, parsePlanArgs } from '../index.ts';
+import { parseIssueArgs, parseNextArgs, parsePlanArgs } from '../index.ts';
 
 describe('no `--permission-mode` flag on any subcommand parser (behavioral)', () => {
 	test('parsePlanArgs rejects --permission-mode', () => {
@@ -64,6 +64,21 @@ describe('no `--permission-mode` flag on any subcommand parser (behavioral)', ()
 		process.stderr.write = (() => true) as typeof process.stderr.write;
 		try {
 			expect(parseNextArgs(['--permission-mode=acceptEdits'])).toBeNull();
+		} finally {
+			process.stderr.write = original;
+		}
+	});
+
+	test('parseIssueArgs does not accept --permission-mode as a recognized flag', () => {
+		// The invariant: no issue subcommand parser registers `--permission-mode`.
+		// When given `['--permission-mode', 'acceptEdits']`, parseIssueArgs must
+		// NOT silently consume the flag and its value. Since the parser only
+		// accepts a single positional text arg, two tokens is an error -> null.
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		try {
+			const result = parseIssueArgs(['--permission-mode', 'acceptEdits']);
+			expect(result).toBeNull();
 		} finally {
 			process.stderr.write = original;
 		}
