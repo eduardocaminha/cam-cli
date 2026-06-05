@@ -34,28 +34,21 @@
 // `idle` (no state file at all). A future story can promote `active-but-stalled`
 // to a third bucket if we add a heartbeat field.
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
 import yaml from 'js-yaml';
 
+import { glyphs } from '../design/tokens.ts';
+import { accent, chalk, muted, warning } from '../logging/color.ts';
 import {
-	accent,
-	chalk,
-	muted,
-	printError,
-	printHint,
-	printSuccess,
-	printWarning,
-	warning,
-	color,
-} from '../logging/color.ts';
-import {
+	emitEntry,
 	emitSectionHeading,
 	emitTitle,
 	emitTrailingBlank,
+	emitWarn,
 } from '../logging/screen.ts';
 
 // --- Constants -------------------------------------------------------------
@@ -337,15 +330,16 @@ const KEY_COL_WIDTH = 9;
 const CONTENT_INDENT = '    ';
 
 /**
- * Render a state indicator (icon + label) using the unified palette:
- *   idle   → muted ○ idle
- *   active → accent ● active
- *   paused → warning ! paused
+ * Render a state indicator (glyph + label) from the shared design tokens, so
+ * the print path speaks the same vocabulary as the Ink Dashboard:
+ *   idle   → muted ◌ idle    (glyphs.pending)
+ *   active → accent ● active  (glyphs.active)
+ *   paused → warning ! paused (glyphs.warning)
  */
 function renderStateIndicator(state: 'idle' | 'active' | 'paused'): string {
-	if (state === 'idle') return `${muted('○')} ${muted('idle')}`;
-	if (state === 'paused') return `${warning('!')} paused`;
-	return `${accent('●')} active`;
+	if (state === 'idle') return `${muted(glyphs.pending)} ${muted('idle')}`;
+	if (state === 'paused') return `${warning(glyphs.warning)} paused`;
+	return `${accent(glyphs.active)} active`;
 }
 
 /** One key/value row inside the Loop section (bold key column + value). */
@@ -377,8 +371,9 @@ export function runStatus(options: StatusOptions = {}): number {
 				`${renderEntry('last', `${muted(report.lastCommit.sha)} ${report.lastCommit.subject}`)}\n`,
 			);
 		}
-		process.stdout.write('\n');
-		printHint('No `.claude/cam-loop.local.md` — start a loop with `cam next` (or `/cam-loop` from inside claude)');
+		emitSectionHeading('Next');
+		emitEntry('cam next', 'start the autonomous loop');
+		emitEntry('cam plan', 'plan an issue and create a PRD');
 		emitTrailingBlank();
 		return 0;
 	}
@@ -411,13 +406,11 @@ export function runStatus(options: StatusOptions = {}): number {
 	}
 
 	if (report.state === 'paused') {
-		printWarning('Loop is paused (active:false in state file)', 'Run `cam stop` to clear, then `cam next` to restart');
+		emitWarn('Loop is paused', '(active:false in state file)');
+		emitSectionHeading('Next');
+		emitEntry('cam stop', 'clear the state file');
+		emitEntry('cam next', 'restart the loop');
 	}
 	emitTrailingBlank();
 	return 0;
 }
-
-// Ensure helpers don't get tree-shaken away in unused-export sweeps.
-void statSync;
-void printError;
-void printSuccess;

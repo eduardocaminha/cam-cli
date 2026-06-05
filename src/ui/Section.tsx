@@ -10,11 +10,8 @@
 import type { ReactElement, ReactNode } from 'react';
 import { Box, Text } from 'ink';
 
+import { DIVIDER, layout } from '../design/tokens.ts';
 import { colors } from './theme.ts';
-
-/** Width of the horizontal divisor line. Matches Splash's panel content area. */
-export const SECTION_DIVIDER_WIDTH = 50;
-const DIVIDER = '─'.repeat(SECTION_DIVIDER_WIDTH);
 
 export type SectionTone = 'default' | 'accent' | 'destructive';
 
@@ -42,13 +39,13 @@ function dividerColor(tone: SectionTone): string {
 export function Section({ heading, tone = 'default', children, gapTop = 1 }: SectionProps): ReactElement {
 	return (
 		<Box flexDirection="column" marginTop={gapTop}>
-			<Box paddingLeft={2}>
+			<Box paddingLeft={layout.headingIndent}>
 				<Text bold>{heading}</Text>
 			</Box>
-			<Box paddingLeft={2}>
+			<Box paddingLeft={layout.headingIndent}>
 				<Text color={dividerColor(tone)}>{DIVIDER}</Text>
 			</Box>
-			<Box flexDirection="column" paddingLeft={4}>
+			<Box flexDirection="column" paddingLeft={layout.contentIndent}>
 				{children}
 			</Box>
 		</Box>

@@ -294,7 +294,7 @@ describe('runStatus', () => {
 				process.stdout.write = original;
 			}
 			const out = captured.join('');
-			// New layout: `state    ○ idle` row under a `Loop` section.
+			// New layout: `state    ◌ idle` row under a `Loop` section.
 			expect(out).toMatch(/Loop/);
 			expect(out).toMatch(/idle/);
 		} finally {

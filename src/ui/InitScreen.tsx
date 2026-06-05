@@ -14,19 +14,21 @@
 //        ◌ config              pending
 //          Saves your default permission mode.
 //
-//     All set                                   (success Section, accent divisor)
+//     All set                                   (success Section, muted divisor)
 //     ──────────────────────────────────────
-//        ✓ 3/3 checks passed
+//        ✓ 3/3 checks passed                    (success shown by the accent ✓)
 //        Ready to drive the loop.
 //
-//     Next                                      (default Section, muted divisor)
+//     Next                                      (muted divisor)
 //     ──────────────────────────────────────
 //        cam run     open or attach the orchestrator
 //        cam plan    plan an issue and create a PRD
 //        cam help    list available commands
 //
-// The failure path swaps "All set" for a destructive Section called "Failed"
-// and renders an inline `Fix:` hint under every fail/warn row.
+// The failure path swaps "All set" for a Section called "Failed" and renders
+// an inline `Fix:` hint under every fail/warn row. Every divisor is muted;
+// success/failure is signaled by the glyph color (✓ accent, ✗ destructive),
+// never by the divisor.
 
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';

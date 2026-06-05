@@ -31,7 +31,6 @@ import { join } from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
 
-import { printWarning } from '../logging/color.ts';
 import {
 	emitMutedHint,
 	emitOk,
@@ -172,13 +171,14 @@ export function runStop(options: StopOptions = {}): number {
 		emitMutedHint(`No tmux session named "${TMUX_SESSION_NAME}" (nothing to kill)`);
 	}
 
-	if (!report.stateFileRemoved && !report.tmuxKilled) {
-		// printWarning lives at col 0 by design (it's an interrupt) and brings
-		// its own leading blank line, so the visual rhythm stays correct even
-		// outside the Section column.
-		printWarning('Nothing to clean', 'No active loop or stale state detected');
+	// Closing "Done" section. The divisor stays muted like every other section;
+	// success is signaled by the accent ✓ glyph on the content line (`emitOk`),
+	// matching how the Ink screens do it.
+	emitSectionHeading('Done');
+	if (report.stateFileRemoved || report.tmuxKilled) {
+		emitOk('Loop stopped');
 	} else {
-		emitOk('Clean');
+		emitMutedHint('Nothing to clean — no active loop or stale state');
 	}
 
 	emitTrailingBlank();

@@ -10,6 +10,7 @@
  * through Ink, so it lines up with the linear print helpers in `color.ts`.
  */
 
+import { DIVIDER, layout } from "../design/tokens.ts";
 import { accent, chalk, muted } from "./color.ts";
 
 /** A single command/option/flag row inside a Section. */
@@ -49,10 +50,9 @@ export interface HelpSpec {
 /** Column width for the entry `name`. Names longer than this push the description further right. */
 const NAME_COL_WIDTH = 24;
 
-/** Width of section divisors. Matches Ink's `Section` (50 cells). */
-const DIVIDER_WIDTH = 50;
-
-const DIVIDER = "─".repeat(DIVIDER_WIDTH);
+/** Heading column (col 2) and content column (col 4), from the shared tokens. */
+const HEAD_INDENT = " ".repeat(layout.headingIndent);
+const BODY_INDENT = " ".repeat(layout.contentIndent);
 
 /**
  * Render a full help screen as a single ANSI-decorated string. The output is
@@ -76,7 +76,7 @@ export function renderHelp(spec: HelpSpec): string {
 	// Usage block ----------------------------------------------------------
 	parts.push("");
 	parts.push(renderHeading("Usage"));
-	parts.push(`    ${spec.usage}`);
+	parts.push(`${BODY_INDENT}${spec.usage}`);
 
 	// Sections -------------------------------------------------------------
 	for (const section of spec.sections) {
@@ -89,7 +89,7 @@ export function renderHelp(spec: HelpSpec): string {
 		}
 		if (section.body) {
 			for (const line of section.body.split("\n")) {
-				parts.push(line === "" ? "" : `    ${line}`);
+				parts.push(line === "" ? "" : `${BODY_INDENT}${line}`);
 			}
 		}
 	}
@@ -98,7 +98,7 @@ export function renderHelp(spec: HelpSpec): string {
 	if (spec.footer) {
 		parts.push("");
 		for (const line of spec.footer.split("\n")) {
-			parts.push(line === "" ? "" : `  ${muted(line)}`);
+			parts.push(line === "" ? "" : `${HEAD_INDENT}${muted(line)}`);
 		}
 	}
 
@@ -110,10 +110,10 @@ export function renderHelp(spec: HelpSpec): string {
 }
 
 function renderHeading(heading: string): string {
-	return `  ${chalk.bold(heading)}\n  ${muted(DIVIDER)}`;
+	return `${HEAD_INDENT}${chalk.bold(heading)}\n${HEAD_INDENT}${muted(DIVIDER)}`;
 }
 
 function renderEntry(entry: HelpEntry): string {
 	const paddedName = entry.name.padEnd(NAME_COL_WIDTH);
-	return `    ${chalk.bold(paddedName)}${muted(entry.description)}`;
+	return `${BODY_INDENT}${chalk.bold(paddedName)}${muted(entry.description)}`;
 }

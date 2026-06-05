@@ -7,23 +7,26 @@
 
 import chalk from "chalk";
 
+import { palette } from "../design/tokens.ts";
+
 // --- Brand palette ---
 //
-// Aligned with `src/ui/theme.ts` so Ink screens and linear CLI output share
-// the same 4-token palette: accent (success ✓), warning (!), destructive (✗),
-// muted (secondary text, divisors, hints).
+// Derived from the shared design tokens (`src/design/tokens.ts`) so the print
+// path and the Ink screens use byte-identical hex values: accent (success ✓,
+// live ●), warning (!), destructive (✗), muted (secondary text, divisors,
+// hints, pending ◌).
 
 /** Green — success indicator, brand wordmark, accents. */
-export const accent = chalk.hex("#4EBE7D");
+export const accent = chalk.hex(palette.accent);
 
 /** Yellow — soft warnings. */
-export const warning = chalk.hex("#FFCB1F");
+export const warning = chalk.hex(palette.warning);
 
 /** Red — hard errors. */
-export const destructive = chalk.hex("#F25F5C");
+export const destructive = chalk.hex(palette.destructive);
 
 /** Gray — secondary text, hints, structural lines. */
-export const muted = chalk.hex("#808080");
+export const muted = chalk.hex(palette.muted);
 
 /** Alias kept for backward compat with `renderHeader` in logging/theme.ts. */
 export const brand = accent;
