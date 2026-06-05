@@ -208,3 +208,35 @@ Durable patterns carried across cycles:
 - The thin-launcher returns 0 immediately; APPROVE prompt lives inside the tmux pane, not in the parent process (CAM-12 flag-file approve is post-MVP).
 - preview-screens.ts imports TmuxSpawnFnType from src/tmux/session.ts; SpawnSyncReturns already imported via node:child_process line 31.
 ---
+
+## [2026-06-05 18:00] - US-007: New subcommand cam issue "<free text>"
+
+### What was done
+- Created src/commands/issue.ts: thin pane launcher (ensureProjectSession + openPaneInSession + return 0), following the US-005/US-006 pattern.
+- Added buildIssueArgv(permissionMode, text) export that builds `claude --permission-mode <mode> /cam-issue create <text>`.
+- Reads permission_mode from readPermissionMode() (never from a CLI flag).
+- Added import of runIssue and parseIssueArgs to index.ts; wired `case 'issue':` dispatch block.
+- Added ISSUE_HELP renderHelp block in index.ts (registered per acceptance criteria).
+- Added parseIssueArgs export in index.ts: accepts single positional free-text arg or --help/-h; rejects missing or extra args.
+- Added issue to the top-level HELP commands list.
+- Updated test/no-permission-mode-flag.test.ts: imported parseIssueArgs and added behavioral test asserting two-token input returns null (invariant preserved).
+- Created test/issue.test.ts: 15 tests covering buildIssueArgv, runIssue tmux argv (has-session, new-session, split-window counts, cmd content, session-exists skip, error path, split target), parseIssueArgs dispatch wiring, and ISSUE_HELP existence via main().
+
+### Files changed
+- src/commands/issue.ts (new, +117 lines)
+- index.ts (+65 lines: import, ISSUE_HELP block, parseIssueArgs function, case dispatch, top-level HELP entry)
+- test/issue.test.ts (new, +200 lines)
+- test/no-permission-mode-flag.test.ts (+15 lines: parseIssueArgs import + behavioral test)
+- scripts/cam/prd.json (passes: true for US-007)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 461 pass / 0 fail (15 new from issue.test.ts + 1 new from no-permission-mode-flag.test.ts)
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (only internal session module and node builtins; no external npm lib exercised)
+
+### Notes
+- parseIssueArgs treats --permission-mode as the text arg and rejects it because a second arg (the mode value) triggers the extra-arg error path, returning null. The invariant is preserved without any special-case code.
+- The thin-launcher pattern is now used by plan, next (tmux-split path), and issue. All three follow: ensureProjectSession + openPaneInSession + return 0.
+---

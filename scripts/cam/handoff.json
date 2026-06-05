@@ -1,21 +1,23 @@
 {
-  "lastCompletedStory": "US-006",
-  "completedAt": "2026-06-05T17:00:00Z",
-  "createdFiles": [],
+  "lastCompletedStory": "US-007",
+  "completedAt": "2026-06-05T18:00:00Z",
+  "createdFiles": [
+    "src/commands/issue.ts",
+    "test/issue.test.ts"
+  ],
   "modifiedFiles": [
-    "src/commands/plan.ts",
-    "test/plan.test.ts",
-    "scripts/preview-screens.ts",
+    "index.ts",
+    "test/no-permission-mode-flag.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 rewired cam plan to a thin pane launcher (ensureProjectSession + openPaneInSession), removing the PTY/foreground inherit path. buildPlanArgv is now an exported function. isApproveLine and findApproveLine are kept for future use (CAM-12). Next story is US-007 (cam issue <free text> subcommand). The thin-launcher pattern is now established for plan/next; issue should follow the same pattern.",
+  "nextStoryContext": "US-007 added cam issue <free text> as a thin pane launcher (ensureProjectSession + openPaneInSession), following the same pattern as US-005 cam next and US-006 cam plan. parseIssueArgs exported from index.ts for dispatch tests. The thin-launcher pattern is now fully established for plan/next/issue. Next story should follow the same pattern if it involves a new pane-based subcommand.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-006 touches only src/commands/plan.ts, test/plan.test.ts, and scripts/preview-screens.ts via the internal session module. No external npm library exercised."
+      "summary": "US-007 touches only src/commands/issue.ts, index.ts, and test files via the internal session module and node builtins. No external npm library exercised."
     }
   ]
 }

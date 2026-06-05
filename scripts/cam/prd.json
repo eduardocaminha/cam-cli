@@ -135,7 +135,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Funds CAM-11 (cam issue free-text subcommand). Depends on US-001. Files: index.ts (dispatch), src/commands/issue.ts (new), src/logging/help.ts (help block). Architecture reminder: command doesn't steal the TTY - opens a pane in the project session; output is visible by attaching via cam run. Hard invariant: never register --permission-mode flag (enforced by test/no-permission-mode-flag.test.ts; see scripts/cam/CLAUDE.md Codebase Patterns)."
     },
