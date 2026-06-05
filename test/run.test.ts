@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import { parseRunArgs, projectSessionName, runRun } from '../src/commands/run.ts';
+import { buildRunMenuScript, parseRunArgs, projectSessionName, runRun } from '../src/commands/run.ts';
 import type { SpawnFn } from '../src/tmux/session.ts';
 
 // ---------------------------------------------------------------------------
@@ -209,20 +209,21 @@ describe('runRun tmux argv — new session', () => {
 		expect(split?.args).toContain('-d');
 	});
 
-	it('sends `cam dashboard` to pane 1 via send-keys', () => {
+	it('sends the interactive menu script to pane 1 via send-keys (US-004)', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 		const sessionName = projectSessionName(cwd);
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
-		// Find the send-keys call that targets pane 0.1 (dashboard pane).
-		const dashboardSendKeys = spawn.calls.find(
+		// Find the send-keys call that targets pane 0.1 (menu pane).
+		const menuSendKeys = spawn.calls.find(
 			c => c.args[0] === 'send-keys' && c.args.some(a => a.includes(':0.1')),
 		);
-		expect(dashboardSendKeys).toBeDefined();
-		expect(dashboardSendKeys?.args).toContain('cam dashboard');
-		expect(dashboardSendKeys?.args).toContain(`${sessionName}:0.1`);
+		expect(menuSendKeys).toBeDefined();
+		expect(menuSendKeys?.args).toContain(`${sessionName}:0.1`);
+		// The command should run bash with the .cam-run-menu.sh file.
+		expect(menuSendKeys?.args.some(a => a.includes('.cam-run-menu.sh'))).toBe(true);
 	});
 
 	it('sends the claude command to pane 0 via send-keys', () => {
@@ -277,5 +278,62 @@ describe('runRun tmux argv — new session', () => {
 
 		const code = runRun({ cwd, noAttach: true, spawnFn: spawn });
 		expect(code).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// buildRunMenuScript (US-004)
+// ---------------------------------------------------------------------------
+
+describe('buildRunMenuScript', () => {
+	const ORCH_PANE = 'cam-orch-myproject-abc123:0.0';
+
+	it('embeds the orchestrator pane target in the script', () => {
+		const script = buildRunMenuScript(ORCH_PANE);
+		expect(script).toContain(ORCH_PANE);
+	});
+
+	it('contains a send-keys call targeting the orchestrator pane for /cam-next', () => {
+		const script = buildRunMenuScript(ORCH_PANE);
+		// The send-keys invocation should reference the pane and the command.
+		expect(script).toContain(`tmux send-keys -t "\${ORCH_PANE}" '/cam-next' Enter`);
+	});
+
+	it('contains send-keys entries for all expected commands', () => {
+		const script = buildRunMenuScript(ORCH_PANE);
+		for (const cmd of ['/cam-next', '/cam-review', '/cam-ship', '/cam-plan', '/cam-issue']) {
+			expect(script).toContain(cmd);
+		}
+	});
+
+	it('uses read -rsn1 for non-blocking single-key input', () => {
+		const script = buildRunMenuScript(ORCH_PANE);
+		expect(script).toContain('read -rsn1');
+	});
+
+	it('includes a quit key (q/Q) that exits without sending to the orch pane', () => {
+		const script = buildRunMenuScript(ORCH_PANE);
+		// q|Q case must be present and must call exit 0, not send-keys.
+		expect(script).toContain('q|Q) exit 0');
+	});
+
+	it('pane 1 send-keys calls bash with the menu script file (integration)', () => {
+		// Verify that setupOrchestratorSession wires pane 1 to run the menu script.
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+		const sessionName = projectSessionName(cwd);
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		// Pane 0.1 send-keys should reference bash and a .cam-run-menu.sh file.
+		const menuSendKeys = spawn.calls.find(
+			c => c.args[0] === 'send-keys' && c.args.some(a => a.includes(':0.1')),
+		);
+		expect(menuSendKeys).toBeDefined();
+		expect(menuSendKeys?.args).toContain(`${sessionName}:0.1`);
+		// The command sent should run bash with the menu file.
+		const sentCmd = menuSendKeys?.args.find(a => a.includes('.cam-run-menu.sh'));
+		expect(sentCmd).toBeDefined();
+		expect(sentCmd).toContain('bash');
 	});
 });
