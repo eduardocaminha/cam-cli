@@ -21,6 +21,29 @@ Durable patterns carried across cycles:
 - **tmux shell-command form**: single arg to split-window/new-window goes through `/bin/sh -c` (shell injection risk). Multi-arg form execs directly (bypasses shell). Change `openPaneInSession(session, cmd: string)` to `openPaneInSession(session, cmdArgv: string[])` and spread the argv as separate trailing args after a `--` separator. Do NOT join argv before passing; user-supplied free text (issue descriptions, etc.) must stay as discrete elements.
 -->
 
+## [2026-06-06 12:00] - US-R1-004: Remove misleading inline-fallback message in cam next
+
+### What was done
+- Removed `emitMutedHint('Falling back to inline mode...')` from the catch block in `src/commands/next.ts` (lines 584-590). The hint was false: the code never executed an inline fallback.
+- Added `return 1` in the catch block so the exit code is honest (tmux failed, so we exit with error).
+- Added a trailing blank before the return for consistent spacing.
+- Added unit test `tmux-split: returns 1 on tmux failure without claiming a fallback` in `test/next.test.ts`. The test injects a throwing tmuxSpawnFn, captures stdout, and asserts: code=1, no "Falling back" text, no "Launched claude" text, and the real warning "tmux session pane launch failed" is present.
+
+### Files changed
+- src/commands/next.ts
+- test/next.test.ts
+
+### Quality gates
+- Typecheck: ok
+- Tests: 480 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+
+### Notes
+- The fix follows option (a) from the acceptance criteria: remove the misleading message and report failure plainly. No inline fallback path was added because the pane-launcher model does not support one.
+---
+
 ## [2026-06-06 11:00] - US-R1-003: Update stale top-level HELP and STOP_HELP text
 
 ### What was done

@@ -1,21 +1,22 @@
 {
-  "lastCompletedStory": "US-R1-003",
-  "completedAt": "2026-06-06T11:00:00Z",
+  "lastCompletedStory": "US-R1-004",
+  "completedAt": "2026-06-06T12:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
+    "src/commands/next.ts",
+    "test/next.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-003 was a pure text fix: three HELP entry descriptions in the top-level HELP block (plan, next, stop) and the STOP_HELP body were updated to reflect the single-session model (US-005, US-006). No logic changed, no tests needed updating. Next story in the review-fix queue: US-R1-004 (inline mode log).",
+  "nextStoryContext": "US-R1-004 fixed the misleading 'Falling back to inline mode' hint in the tmux-failure catch block of src/commands/next.ts. The catch now returns 1 and emits no false claims. A new unit test (480th) covers this path. Review queue continues with remaining US-R1-* stories if any are still passes:false.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
       "url": "",
-      "fetchedAt": "2026-06-06T11:00:00Z",
-      "summary": "Story was a pure help-text update with no external library usage."
+      "fetchedAt": "2026-06-06T12:00:00Z",
+      "summary": "Story was a pure logic/message fix in next.ts with no external library usage."
     }
   ]
 }

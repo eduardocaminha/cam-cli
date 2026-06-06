@@ -66,7 +66,7 @@
         "Typecheck passes (bun run typecheck) and tests pass (bun test)."
       ],
       "priority": 0.4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Round-1 review fix (WARNING #5). Code prints the fallback hint then returns 0 after the success message, never reaching the inline spawn."
     },
