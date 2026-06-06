@@ -232,6 +232,42 @@ function setupOrchestratorSession(opts: {
 		{ stdio: 'ignore' },
 	);
 
+	// --- Workspace chrome (CAM-19) ------------------------------------------
+	// Label each pane with a thin tmux border title, recolor to the cam design
+	// tokens, highlight the active pane, and render a single status bar
+	// (cam-cli | dim nav hint | active pane). Labels use a per-pane USER option
+	// (@cam_label) rather than #{pane_title} because the orchestrator pane runs
+	// claude, which can overwrite pane_title via OSC — a user option can't be
+	// clobbered by the app. Option syntax validated against tmux 3.x.
+	const ACCENT = '#4EBE7D';
+	const MUTED = '#808080';
+	const opt = (name: string, value: string): void => {
+		spawnFn('tmux', ['set-option', '-t', sessionName, name, value], { stdio: 'ignore' });
+	};
+	const winOpt = (name: string, value: string): void => {
+		spawnFn('tmux', ['set-window-option', '-t', sessionName, name, value], { stdio: 'ignore' });
+	};
+	const paneLabel = (paneId: string, label: string): void => {
+		spawnFn('tmux', ['set-option', '-p', '-t', paneId, '@cam_label', label], { stdio: 'ignore' });
+	};
+	paneLabel(orchPaneId, 'orchestrator');
+	paneLabel(dashboardPaneId, 'dashboard');
+	paneLabel(menuPaneId, 'menu');
+	const navHint = `#[fg=${MUTED}]click / Ctrl+b ←→ switch · exit orchestrator quits`;
+	opt('pane-border-status', 'top');
+	opt('pane-border-format', `#{?pane_active,#[fg=${ACCENT} bold],#[fg=${MUTED}]} #{@cam_label} #[default]`);
+	opt('pane-active-border-style', `fg=${ACCENT}`);
+	opt('pane-border-style', `fg=${MUTED}`);
+	opt('status', 'on');
+	opt('status-justify', 'centre');
+	opt('status-style', `bg=default fg=${MUTED}`);
+	opt('status-left', `#[fg=${ACCENT} bold] cam-cli #[default]`);
+	opt('status-left-length', '24');
+	opt('status-right', `#[fg=${MUTED}]active: #[fg=${ACCENT} bold]#{@cam_label} #[default]`);
+	opt('status-right-length', '40');
+	winOpt('window-status-format', navHint);
+	winOpt('window-status-current-format', navHint);
+
 	// Enable mouse mode on this session so the operator can click a pane to
 	// focus it and scroll with the trackpad, instead of the tmux prefix dance
 	// (Ctrl+b + arrows). Scoped to this session only. Note: with mouse on,

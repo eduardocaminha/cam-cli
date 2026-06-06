@@ -22,7 +22,7 @@
 // automatically (Ink listens for it internally).
 
 import { useEffect, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
 
 import { colors } from './theme.ts';
@@ -32,7 +32,8 @@ import type { DashboardData } from '../commands/dashboard.ts';
 import type { PrdStory } from '../commands/status.ts';
 import { formatWallClock } from '../commands/status.ts';
 
-/** Width of the iteration progress bar (cells). */
+/** Max width of the iteration progress bar (cells). Shrinks to fit narrow
+ *  panes; this is the cap for a wide standalone terminal. */
 const PROGRESS_BAR_WIDTH = 22;
 
 /** How many stories the panel shows around the current one. */
@@ -54,6 +55,9 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 	// shrink to fit narrow panes. Recomputed on SIGWINCH (Ink re-renders).
 	const cols = stdout?.columns ?? 80;
 	const dividerWidth = Math.max(12, Math.min(layout.dividerWidth, cols - layout.headingIndent - 1));
+	// Progress bar shrinks to fit: leave room for the content indent, the
+	// `iter` key column, and the ` N/M` counter that follows the bar.
+	const barWidth = Math.max(6, Math.min(PROGRESS_BAR_WIDTH, cols - 18));
 
 	useEffect(() => {
 		const id = setInterval(() => {
@@ -70,7 +74,7 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 
 	return (
 		<Box flexDirection="column">
-			<SummaryPanel data={data} />
+			<SummaryPanel data={data} dividerWidth={dividerWidth} barWidth={barWidth} />
 			<StoriesSection
 				stories={data.stories ?? []}
 				currentId={data.currentStoryId}
@@ -78,13 +82,21 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 			/>
 			<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
 			<Box marginTop={1} paddingLeft={2}>
-				<Text color={colors.muted}>press q or Ctrl+C to exit</Text>
+				<Text color={colors.muted}>q quit</Text>
 			</Box>
 		</Box>
 	);
 }
 
-function SummaryPanel({ data }: { data: DashboardData }): ReactElement {
+function SummaryPanel({
+	data,
+	dividerWidth,
+	barWidth,
+}: {
+	data: DashboardData;
+	dividerWidth: number;
+	barWidth: number;
+}): ReactElement {
 	const elapsedMs = data.startedAtMs > 0 ? Math.max(0, data.nowMs - data.startedAtMs) : 0;
 	const elapsed = data.startedAtMs > 0 ? formatWallClock(elapsedMs) : '—';
 	const storyLabel = data.currentStoryId
@@ -92,46 +104,51 @@ function SummaryPanel({ data }: { data: DashboardData }): ReactElement {
 		: data.idle
 			? '(idle)'
 			: '(booting)';
+	// No box: the summary is a Section ("Loop") so the dashboard speaks the same
+	// vocabulary as `cam status` (bold heading + muted rule + key/value rows),
+	// instead of a round border that nothing else in cam uses.
 	return (
-		<Box
-			flexDirection="column"
-			borderStyle="round"
-			borderColor={colors.muted}
-			paddingX={2}
-			paddingY={1}
-		>
-			<Box>
-				<Text bold>cam </Text>
-				<Text color={colors.muted}>· </Text>
-				<Text color={colors.accent}>{data.branchName}</Text>
-			</Box>
-			<Box marginTop={1}>
-				<Text>{storyLabel}</Text>
-			</Box>
-			<Box marginTop={1} flexDirection="row">
-				<Box width={11}>
-					<Text color={colors.muted}>Progress</Text>
-				</Box>
-				<ProgressBar value={data.iteration} max={data.maxIterations} />
-				<Text color={colors.muted}>
-					{'  '}
-					{data.iteration}/{data.maxIterations} iter · {elapsed}
-				</Text>
-			</Box>
-			<Box flexDirection="row">
-				<Box width={11}>
-					<Text color={colors.muted}>Status</Text>
-				</Box>
+		<Section heading="Loop" dividerWidth={dividerWidth} gapTop={0}>
+			<SummaryRow label="state">
 				<StatusIndicator data={data} />
+			</SummaryRow>
+			<SummaryRow label="story">
+				<Text>{storyLabel}</Text>
+			</SummaryRow>
+			<SummaryRow label="iter">
+				<ProgressBar value={data.iteration} max={data.maxIterations} width={barWidth} />
+				<Text color={colors.muted}>
+					{' '}
+					{data.iteration}/{data.maxIterations}
+				</Text>
+			</SummaryRow>
+			<SummaryRow label="since">
+				<Text color={colors.muted}>{elapsed}</Text>
+			</SummaryRow>
+			<SummaryRow label="branch">
+				<Text color={colors.accent}>{data.branchName}</Text>
+			</SummaryRow>
+		</Section>
+	);
+}
+
+/** One key/value row inside the Loop section. Key column matches the print
+ *  path's status rows (muted label, fixed-width column). */
+function SummaryRow({ label, children }: { label: string; children: ReactNode }): ReactElement {
+	return (
+		<Box flexDirection="row">
+			<Box width={8}>
+				<Text color={colors.muted}>{label}</Text>
 			</Box>
+			{children}
 		</Box>
 	);
 }
 
-function ProgressBar({ value, max }: { value: number; max: number }): ReactElement {
+function ProgressBar({ value, max, width }: { value: number; max: number; width: number }): ReactElement {
 	const ratio = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
-	const filled = Math.round(ratio * PROGRESS_BAR_WIDTH);
-	const empty = PROGRESS_BAR_WIDTH - filled;
+	const filled = Math.round(ratio * width);
+	const empty = width - filled;
 	return (
 		<Text>
 			<Text color={colors.accent}>{'█'.repeat(filled)}</Text>
