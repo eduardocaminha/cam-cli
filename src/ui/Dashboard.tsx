@@ -82,7 +82,7 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 			/>
 			<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
 			<Box marginTop={1} paddingLeft={2}>
-				<Text color={colors.muted}>q quit</Text>
+				<Text color={colors.muted}>q close pane</Text>
 			</Box>
 		</Box>
 	);

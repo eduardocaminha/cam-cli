@@ -142,8 +142,7 @@ show_menu() {
 	printf "  \${BOLD}i\${RST}  \${BOLD}/cam-issue \${RST}  \${MUTED}sync issues\${RST}\\n"
 	printf "  \${MUTED}\${DIV}\${RST}\\n"
 	printf "  \${BOLD}d\${RST}  \${MUTED}focus dashboard pane\${RST}\\n"
-	printf "  \${BOLD}q\${RST}  \${MUTED}quit this menu\${RST}\\n"
-	printf "  \${MUTED}press a key\${RST}\\n"
+	printf "  \${BOLD}q\${RST}  \${MUTED}close pane\${RST}\\n"
 }
 
 show_menu
@@ -209,26 +208,33 @@ function setupOrchestratorSession(opts: {
 	// Chain kill-session so that when claude exits the whole tmux session is
 	// torn down automatically, dropping the user back to their shell (US-003).
 	const agentCmd = `claude --permission-mode bypassPermissions "$(cat '${promptFile}')"; tmux kill-session -t ${sessionName}`;
+	// respawn-pane -k runs the command DIRECTLY in the pane, replacing the silent
+	// `cat` placeholder. No interactive bash means no macOS zsh notice / prompt /
+	// command echo flashing before the real command paints (`bash -c` is
+	// non-interactive). When claude exits, the chained kill-session tears the
+	// whole session down (US-003).
 	spawnFn(
 		'tmux',
-		['send-keys', '-t', orchPaneId, agentCmd, 'Enter'],
+		['respawn-pane', '-k', '-t', orchPaneId, 'bash', '-c', agentCmd],
 		{ stdio: 'ignore' },
 	);
 
-	// Pane 1: cam dashboard — permanent pane (US-002, US-010).
+	// Pane 1: cam dashboard — permanent pane (US-002, US-010). Direct respawn,
+	// no shell. `q` exits the dashboard which closes the pane; tmux reflows the
+	// remaining pane to fill the right column.
 	spawnFn(
 		'tmux',
-		['send-keys', '-t', dashboardPaneId, 'cam dashboard', 'Enter'],
+		['respawn-pane', '-k', '-t', dashboardPaneId, 'cam', 'dashboard'],
 		{ stdio: 'ignore' },
 	);
 
-	// Pane 2: interactive menu (US-004).
-	// Write the menu script to a file so the pane command stays simple.
+	// Pane 2: interactive menu (US-004). Direct respawn of the menu script
+	// (non-interactive bash). `q` exits the script, closing the pane.
 	const menuFile = join(dotClaude, '.cam-run-menu.sh');
 	writeFileSync(menuFile, buildRunMenuScript(orchPaneId, dashboardPaneId), 'utf8');
 	spawnFn(
 		'tmux',
-		['send-keys', '-t', menuPaneId, `bash '${menuFile}'`, 'Enter'],
+		['respawn-pane', '-k', '-t', menuPaneId, 'bash', menuFile],
 		{ stdio: 'ignore' },
 	);
 

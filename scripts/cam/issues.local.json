@@ -1,5 +1,5 @@
 {
-  "next_id": 20,
+  "next_id": 21,
   "issues": [
     {
       "id": "CAM-1",
@@ -131,6 +131,13 @@
       "id": "CAM-19",
       "title": "Chrome unificado do workspace: pane-titles + status bar nos tokens + borda do pane ativo",
       "description": "cam run ganhou: (a) título fino por-pane no topo via tmux pane-border-status + @cam_label (user option robusto, não sobrescrito pelo claude): orchestrator/dashboard/menu; (b) borda do pane ativo em accent #4EBE7D, inativos em muted #808080; (c) status bar única no rodapé nos design tokens (sem o verde default do tmux): esquerda cam-cli accent, centro hint dim 'click / Ctrl+b switch · exit orchestrator quits', direita 'active: <pane>' via #{@cam_label}; (d) mouse mode on (clicar pra focar). Dashboard: removido o box arredondado, resumo virou Section Loop (state/story/iter/since/branch, igual ao cam status), barra de progresso responsiva (encolhe pra caber em 36 col). Arquivos: src/commands/run.ts (chrome), src/ui/Dashboard.tsx (Loop + barra responsiva), src/ui/Section.tsx (dividerWidth). Verificado: sintaxe das opções tmux + resolução @cam_label/#{T} + render real do dashboard a 36 col. Cobre o CAM-17 parcialmente (a barra não estoura mais); resta o aperto das story rows (glifo/ID grudados, títulos wrapando, altura) no CAM-17.",
+      "state": "closed",
+      "createdAt": "2026-06-06T12:45:21Z"
+    },
+    {
+      "id": "CAM-20",
+      "title": "Ruído de bash interativo no startup dos panes do cam run",
+      "description": "Os panes do cam run abriam um bash INTERATIVO antes do comando real (via send-keys), imprimindo o aviso do macOS 'default interactive shell is now zsh' + prompt bash-3.2$ + o echo do comando. Ficava visível num flash até o primeiro clear/redraw (mais notável no menu, que não usa alt-screen). CORRIGIDO: ensureProjectSession cria os panes com placeholder silencioso (cat) em vez de bash; run.ts usa respawn-pane -k pra rodar o comando real DIRETO e não-interativo (orquestrador via bash -c, dashboard cam dashboard, menu bash menu.sh). Sem bash interativo = sem aviso/prompt/echo, nem por flash (verificado por captura a ~0.6s). Efeito desejado: q no menu/dashboard fecha o pane (comando sai, pane fecha, tmux reflui a coluna). Padronizada a mensagem de fechar: dashboard e menu agora dizem 'q close pane' (antes divergiam: 'q quit' vs 'q quit this menu' + 'press a key'). Arquivos: src/tmux/session.ts, src/commands/run.ts, src/ui/Dashboard.tsx, test/run.test.ts.",
       "state": "closed",
       "createdAt": "2026-06-06T12:45:21Z"
     }

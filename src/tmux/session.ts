@@ -85,12 +85,17 @@ export interface CreatedPaneIds {
  * Lazily create the full project tmux session if it does not already exist.
  *
  * Layout (3-pane, US-011):
- *   Pane 0 (left):         orchestrator — starts with `bash`; callers
- *                          send-keys the actual claude command.
- *   Pane 1 (top-right):    cam dashboard (permanent) — callers send-keys
- *                          `cam dashboard` here after creation.
- *   Pane 2 (bottom-right): interactive menu — callers send-keys the menu
- *                          script here.
+ *   Pane 0 (left):         orchestrator. Created with a silent `cat`
+ *                          placeholder; the caller respawn-panes claude in.
+ *   Pane 1 (top-right):    cam dashboard (permanent). Caller respawn-panes
+ *                          `cam dashboard` in after creation.
+ *   Pane 2 (bottom-right): interactive menu. Caller respawn-panes the menu
+ *                          script in.
+ *
+ * Panes start with `cat` (silent, no interactive shell) so the real command,
+ * respawned directly by the caller, paints with no macOS shell notice / prompt
+ * / command echo flashing first. A pane closes when its command exits (e.g. the
+ * menu/dashboard `q`); tmux reflows the survivors to fill the column.
  *
  * Two split-window calls build the right column: the first creates pane 1
  * (horizontal split of the full window), the second splits pane 1 vertically
@@ -120,7 +125,8 @@ export function ensureProjectSession(
 		return false;
 	}
 
-	// Create the detached session with pane 0 running bash (orchestrator slot).
+	// Create the detached session with pane 0 running a silent `cat` placeholder
+	// (orchestrator slot); the caller respawns the real command into it.
 	// -P -F '#{pane_id}' prints the stable pane id (%<n>) to stdout.
 	// -e CAM_SESSION=<name> injects the session tag so isInsideProjectSession works.
 	const newSessResult = spawnFn(
@@ -131,7 +137,7 @@ export function ensureProjectSession(
 			'-x', '220', '-y', '50',
 			'-e', `CAM_SESSION=${sessionName}`,
 			'-P', '-F', '#{pane_id}',
-			'bash',
+			'cat',
 		],
 		{ stdio: 'pipe' },
 	);
@@ -148,7 +154,7 @@ export function ensureProjectSession(
 			'-l', '36',
 			'-d',
 			'-P', '-F', '#{pane_id}',
-			'bash',
+			'cat',
 		],
 		{ stdio: 'pipe' },
 	);
@@ -164,7 +170,7 @@ export function ensureProjectSession(
 			'-v',
 			'-d',
 			'-P', '-F', '#{pane_id}',
-			'bash',
+			'cat',
 		],
 		{ stdio: 'pipe' },
 	);
