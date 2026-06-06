@@ -44,13 +44,13 @@ const HELP = renderHelp({
 			entries: [
 				{ name: 'init [options]', description: 'Validate the machine, then run the project-setup wizard' },
 				{ name: 'run [options]', description: 'Open or attach the long-lived orchestrator (tmux session)' },
-				{ name: 'plan [--issue <N>]', description: 'Spawn claude + dispatch /cam-plan; prompts on APPROVE' },
-				{ name: 'next [options]', description: 'Spawn the autonomous loop (Ghostty split + claude + dashboard)' },
+				{ name: 'plan [--issue <N>]', description: 'Spawn claude + dispatch /cam-plan; APPROVE happens inside the pane' },
+				{ name: 'next [options]', description: 'Launch the autonomous loop as a tmux pane in the project session' },
 				{ name: 'issue "<text>"', description: 'File an issue from free text; opens /cam-issue create in a pane' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
-				{ name: 'stop', description: 'Cancel a running loop (clears state file + kills tmux session "cam")' },
+				{ name: 'stop', description: 'Cancel a running loop (clears state file + kills the per-project tmux session)' },
 				{ name: 'resume [options]', description: 'Reconcile loop state after interrupt; auto-detect or --mode <name>' },
 				{ name: 'version', description: 'Print the installed cam-cli version (also `--version` / `-v`)' },
 				{ name: 'help', description: 'Show this help' },
@@ -309,8 +309,8 @@ const STOP_HELP = renderHelp({
 			heading: 'What it does',
 			body:
 				'1. Removes .claude/cam-loop.local.md (the plugin state file).\n' +
-				'2. Kills the tmux session named exactly "cam" if alive (defensive —\n' +
-				'   unrelated tmux sessions are NOT touched).\n' +
+				'2. Kills the per-project tmux session (derived from the project root\n' +
+				'   path) if alive; unrelated tmux sessions are NOT touched.\n' +
 				'3. Exits 0. Idempotent: calling `cam stop` with nothing to clean is the\n' +
 				'   success state, not a failure.',
 		},
