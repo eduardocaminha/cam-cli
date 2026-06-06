@@ -586,7 +586,8 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 				'tmux session pane launch failed',
 				err instanceof Error ? err.message : String(err),
 			);
-			emitMutedHint('Falling back to inline mode — run `cam run` to use the session');
+			emitTrailingBlank();
+			return 1;
 		}
 		emitOk(`Launched claude in project session "${sessionName}"`);
 		emitAttachHint(sessionName, env);

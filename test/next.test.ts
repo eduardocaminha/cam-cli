@@ -529,6 +529,55 @@ describe('runNext', () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	test('tmux-split: returns 1 on tmux failure without claiming a fallback', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-tmux-fail-'));
+		try {
+			const spawn = makeRecordingSpawn([]); // no async spawns expected
+
+			// A tmuxSpawnFn that throws on the first tmux call (simulates tmux failure).
+			const throwingTmuxSpawn = ((_cmd: string, _args: string[]) => {
+				throw new Error('tmux: command failed');
+			}) as unknown as TmuxSpawnFn;
+
+			const chunks: string[] = [];
+			const originalWrite = process.stdout.write.bind(process.stdout);
+			process.stdout.write = ((chunk: string | Uint8Array) => {
+				chunks.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+				return true;
+			}) as typeof process.stdout.write;
+
+			let code: number;
+			try {
+				code = await runNext({
+					cwd: dir,
+					hostMode: 'tmux-split',
+					permissionMode: 'bypassPermissions',
+					spawn,
+					tmuxSpawnFn: throwingTmuxSpawn,
+					startedAt: '2026-04-28T22:00:00Z',
+					sessionId: '',
+				});
+			} finally {
+				process.stdout.write = originalWrite;
+			}
+
+			const output = chunks.join('');
+
+			// Must return 1 — the launch failed.
+			expect(code).toBe(1);
+			// No async claude spawns occurred.
+			expect(spawn.calls.length).toBe(0);
+			// Must NOT claim a fallback that did not happen.
+			expect(output).not.toContain('Falling back to inline mode');
+			// Must NOT claim success when the launch failed.
+			expect(output).not.toContain('Launched claude in project session');
+			// Must report the real failure.
+			expect(output).toContain('tmux session pane launch failed');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 // --- materializeStopHook ---------------------------------------------------
