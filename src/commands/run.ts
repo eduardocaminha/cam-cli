@@ -112,8 +112,8 @@ export function buildOrchestratorBootPrompt(): string {
  * Both pane addresses are embedded in the script so no env wiring is needed
  * at call time.
  *
- * @param orchPane      - tmux pane target for the orchestrator, e.g. "cam-orch-x:0.0"
- * @param dashboardPane - tmux pane target for the dashboard, e.g. "cam-orch-x:0.1"
+ * @param orchPane      - tmux pane ID for the orchestrator, e.g. "%1"
+ * @param dashboardPane - tmux pane ID for the dashboard, e.g. "%2"
  */
 export function buildRunMenuScript(orchPane: string, dashboardPane: string): string {
 	return `#!/bin/bash
