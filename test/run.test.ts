@@ -27,6 +27,11 @@ interface SpawnRecord {
 	args: string[];
 }
 
+/**
+ * Fake spawn that mirrors the real tmux behaviour ensureProjectSession relies
+ * on: new-session and split-window calls that request -P -F #{pane_id} (pipe
+ * stdio) receive sequential stable pane ids (%1, %2, %3) in stdout.
+ */
 function makeFakeSpawn(opts: {
 	/** Return 0 for tmux -V (tmux is available). Default: true. */
 	tmuxAvailable?: boolean;
@@ -35,8 +40,9 @@ function makeFakeSpawn(opts: {
 } = {}): SpawnFn & { calls: SpawnRecord[] } {
 	const { tmuxAvailable = true, sessionExists = false } = opts;
 	const calls: SpawnRecord[] = [];
+	let paneCounter = 0;
 
-	const fn: SpawnFn = (cmd, args, _options?) => {
+	const fn: SpawnFn = (cmd, args, options?) => {
 		calls.push({ cmd, args: [...args] });
 
 		const result: SpawnSyncReturns<Buffer> = {
@@ -53,6 +59,13 @@ function makeFakeSpawn(opts: {
 				result.status = tmuxAvailable ? 0 : 1;
 			} else if (args[0] === 'has-session') {
 				result.status = sessionExists ? 0 : 1;
+			} else if (
+				(args[0] === 'new-session' || args[0] === 'split-window') &&
+				options?.stdio === 'pipe'
+			) {
+				// Return a stable pane id for calls that capture it (-P -F #{pane_id}).
+				paneCounter += 1;
+				result.stdout = Buffer.from(`%${paneCounter}\n`);
 			}
 		}
 
@@ -194,29 +207,56 @@ describe('runRun tmux argv — new session', () => {
 		expect(newSess?.args).toContain('50');
 	});
 
-	it('calls tmux split-window twice to create pane 1 (dashboard) and pane 2 (menu)', () => {
+	it('new-session argv includes -P -F #{pane_id} for stable pane id capture', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		const newSess = spawn.calls.find(c => c.args[0] === 'new-session');
+		expect(newSess?.args).toContain('-P');
+		expect(newSess?.args).toContain('-F');
+		expect(newSess?.args).toContain('#{pane_id}');
+	});
+
+	it('new-session argv includes -e CAM_SESSION= so panes inherit the session tag', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 		const sessionName = projectSessionName(cwd);
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
+		const newSess = spawn.calls.find(c => c.args[0] === 'new-session');
+		expect(newSess?.args).toContain('-e');
+		expect(newSess?.args).toContain(`CAM_SESSION=${sessionName}`);
+	});
+
+	it('calls tmux split-window twice to create pane 1 (dashboard) and pane 2 (menu)', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
 		const splits = spawn.calls.filter(c => c.args[0] === 'split-window');
 		expect(splits.length).toBe(2);
 
-		// First split-window: horizontal split of pane 0 to create dashboard pane 1.
+		// First split-window: horizontal split targeting the captured orch pane id (%1).
+		// Must NOT use a positional index like :0.0 (breaks with pane-base-index 1).
 		const firstSplit = splits[0];
 		expect(firstSplit?.cmd).toBe('tmux');
 		expect(firstSplit?.args).toContain('-t');
-		expect(firstSplit?.args).toContain(`${sessionName}:0.0`);
+		expect(firstSplit?.args).toContain('%1');
+		expect(firstSplit?.args).not.toContain('0.0');
 		expect(firstSplit?.args).toContain('-h');
 		expect(firstSplit?.args).toContain('-d');
 
-		// Second split-window: vertical split of pane 1 to create menu pane 2.
+		// Second split-window: vertical split targeting the captured dashboard pane id (%2).
+		// Must NOT use a positional index like :0.1 (breaks with pane-base-index 1).
 		const secondSplit = splits[1];
 		expect(secondSplit?.cmd).toBe('tmux');
 		expect(secondSplit?.args).toContain('-t');
-		expect(secondSplit?.args).toContain(`${sessionName}:0.1`);
+		expect(secondSplit?.args).toContain('%2');
+		expect(secondSplit?.args).not.toContain('0.1');
 		expect(secondSplit?.args).toContain('-v');
 		expect(secondSplit?.args).toContain('-d');
 	});
@@ -224,32 +264,30 @@ describe('runRun tmux argv — new session', () => {
 	it('sends cam dashboard to pane 1 via send-keys (US-002)', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
-		const sessionName = projectSessionName(cwd);
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
-		// Find the send-keys call that targets pane 0.1 (dashboard pane).
+		// Find the send-keys call that targets the dashboard pane by its stable id (%2).
 		const dashboardSendKeys = spawn.calls.find(
-			c => c.args[0] === 'send-keys' && c.args.some(a => a === `${sessionName}:0.1`),
+			c => c.args[0] === 'send-keys' && c.args.some(a => a === '%2'),
 		);
 		expect(dashboardSendKeys).toBeDefined();
-		expect(dashboardSendKeys?.args).toContain(`${sessionName}:0.1`);
+		expect(dashboardSendKeys?.args).toContain('%2');
 		expect(dashboardSendKeys?.args.some(a => a.includes('cam dashboard'))).toBe(true);
 	});
 
 	it('sends the interactive menu script to pane 2 via send-keys (US-004)', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
-		const sessionName = projectSessionName(cwd);
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
-		// Find the send-keys call that targets pane 0.2 (menu pane).
+		// Find the send-keys call that targets the menu pane by its stable id (%3).
 		const menuSendKeys = spawn.calls.find(
-			c => c.args[0] === 'send-keys' && c.args.some(a => a === `${sessionName}:0.2`),
+			c => c.args[0] === 'send-keys' && c.args.some(a => a === '%3'),
 		);
 		expect(menuSendKeys).toBeDefined();
-		expect(menuSendKeys?.args).toContain(`${sessionName}:0.2`);
+		expect(menuSendKeys?.args).toContain('%3');
 		// The command should run bash with the .cam-run-menu.sh file.
 		expect(menuSendKeys?.args.some(a => a.includes('.cam-run-menu.sh'))).toBe(true);
 	});
@@ -257,15 +295,15 @@ describe('runRun tmux argv — new session', () => {
 	it('sends the claude command to pane 0 via send-keys', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
-		const sessionName = projectSessionName(cwd);
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
+		// The orch pane send-keys targets the captured pane id (%1).
 		const orchSendKeys = spawn.calls.find(
-			c => c.args[0] === 'send-keys' && c.args.some(a => a.includes(':0.0')),
+			c => c.args[0] === 'send-keys' && c.args.some(a => a === '%1'),
 		);
 		expect(orchSendKeys).toBeDefined();
-		expect(orchSendKeys?.args).toContain(`${sessionName}:0.0`);
+		expect(orchSendKeys?.args).toContain('%1');
 		// The command includes `claude` invocation.
 		expect(orchSendKeys?.args.some(a => a.includes('claude'))).toBe(true);
 	});
@@ -277,8 +315,9 @@ describe('runRun tmux argv — new session', () => {
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
+		// The orch pane send-keys targets the captured pane id (%1).
 		const orchSendKeys = spawn.calls.find(
-			c => c.args[0] === 'send-keys' && c.args.some(a => a.includes(':0.0')),
+			c => c.args[0] === 'send-keys' && c.args.some(a => a === '%1'),
 		);
 		expect(orchSendKeys).toBeDefined();
 		// The composed command must contain a kill-session call for this session.
@@ -363,16 +402,15 @@ describe('buildRunMenuScript', () => {
 		// Verify that setupOrchestratorSession wires pane 2 to run the menu script.
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
-		const sessionName = projectSessionName(cwd);
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
-		// Pane 0.2 send-keys should reference bash and a .cam-run-menu.sh file.
+		// Menu pane send-keys targets the captured menu pane id (%3).
 		const menuSendKeys = spawn.calls.find(
-			c => c.args[0] === 'send-keys' && c.args.some(a => a === `${sessionName}:0.2`),
+			c => c.args[0] === 'send-keys' && c.args.some(a => a === '%3'),
 		);
 		expect(menuSendKeys).toBeDefined();
-		expect(menuSendKeys?.args).toContain(`${sessionName}:0.2`);
+		expect(menuSendKeys?.args).toContain('%3');
 		// The command sent should run bash with the menu file.
 		const sentCmd = menuSendKeys?.args.find(a => a.includes('.cam-run-menu.sh'));
 		expect(sentCmd).toBeDefined();

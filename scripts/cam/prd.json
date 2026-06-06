@@ -9,6 +9,68 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Harden ensureProjectSession: stable pane IDs + CAM_SESSION env",
+      "description": "As cam, I need the project session built with stable pane identifiers and a CAM_SESSION tag so that pane targeting works regardless of the user pane-base-index and so inside-session detection actually functions in production.",
+      "acceptanceCriteria": [
+        "[src/tmux/session.ts:107-143 + src/commands/run.ts:196-220] Stop hard-coding pane targets 0.0/0.1/0.2. Capture the pane id of each pane (new-session and the two split-window calls) via -P -F '#{pane_id}' (the pattern already used in src/commands/setup.ts) and address panes by the captured %<n> ids. This must work when the user has pane-base-index 1 in .tmux.conf.",
+        "[src/tmux/session.ts new-session call] Add -e CAM_SESSION=<sessionName> to the new-session argv so panes inherit CAM_SESSION; this is what isInsideProjectSession (session.ts:207) and emitAttachHint (src/logging/screen.ts:109) rely on. Verify the attach hint is actually suppressed inside the session, not only via injected env in tests.",
+        "run.ts pane wiring (orchestrator send-keys + kill-session chain), the menu script ORCH_PANE/DASHBOARD_PANE, and the dashboard/menu send-keys all use the captured pane ids.",
+        "Unit tests (test/tmux-session.test.ts, test/run.test.ts) updated to assert the pane-id-capture argv (-P -F #{pane_id}) and the -e CAM_SESSION= flag, replacing the positional 0.0/0.1/0.2 assertions.",
+        "Typecheck passes (bun run typecheck) and tests pass (bun test)."
+      ],
+      "priority": 0.1,
+      "passes": true,
+      "requires": null,
+      "notes": "Round-1 review fix (CRITICAL #1 + #3, both in ensureProjectSession new-session call). pane-base-index defaults to 0 but is commonly set to 1; positional pane targets break then. setup.ts already captures #{pane_id} - mirror it. CAM_SESSION is read but never set today, so US-008 suppression and isInsideProjectSession are dead in production. While editing the run.ts orchestrator-command region (~line 197), add a one-line comment documenting that --permission-mode bypassPermissions is an INTENTIONAL operator decision (2026-06-06): the orchestrator runs the loop unattended and must bypass; do NOT change it to readPermissionMode. This stops reviewers from re-flagging it (round-1 WARNING #6, ruled intentional)."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Fix shell injection in pane launch commands (openPaneInSession argv)",
+      "description": "As a cam user, I want cam issue (and the other pane launchers) to pass commands safely so that free text or paths containing shell metacharacters are not interpreted by /bin/sh.",
+      "acceptanceCriteria": [
+        "[src/tmux/session.ts:161-177] openPaneInSession passes the command to tmux split-window as multiple argv elements (tmux multi-arg shell-command form, which execs directly and bypasses /bin/sh -c) instead of a single joined string. Change its signature to accept argv as string[].",
+        "[src/commands/issue.ts:100-106] Stop doing claudeArgv.join(' '); pass the argv array straight through so user free text containing ; $() backticks or quotes is NOT shell-interpreted. Verify an issue text with shell metacharacters does not execute embedded commands and does not break quoting.",
+        "Update the other openPaneInSession call sites (src/commands/next.ts, src/commands/plan.ts) to the new argv-array signature.",
+        "Unit tests assert split-window receives the command as separate argv elements (not one sh -c string) and that a metacharacter-laden issue text is passed verbatim.",
+        "Typecheck passes (bun run typecheck) and tests pass (bun test)."
+      ],
+      "priority": 0.2,
+      "passes": false,
+      "requires": null,
+      "notes": "Round-1 review fix (CRITICAL #2). tmux(1): a single-arg shell-command goes through /bin/sh -c; multi-arg execs directly. issue.ts feeds user free text into the joined string today."
+    },
+    {
+      "id": "US-R1-003",
+      "title": "Update stale top-level HELP and STOP_HELP text",
+      "description": "As a cam user reading help, I want the top-level command list and STOP_HELP to match the single-session model so that docs do not describe removed behavior.",
+      "acceptanceCriteria": [
+        "[index.ts:53, 312-313] cam stop help no longer says it kills a session named exactly 'cam'; it describes targeting the per-project session (US-005).",
+        "[index.ts:47] cam plan help no longer claims APPROVE is prompted in the parent process; APPROVE happens inside the pane (US-006).",
+        "[index.ts:48] cam next help no longer says 'Ghostty split'; it describes the tmux pane launcher in the project session (US-005).",
+        "No em-dash introduced in any persisted .md or help string.",
+        "Typecheck passes (bun run typecheck) and tests pass (bun test)."
+      ],
+      "priority": 0.3,
+      "passes": false,
+      "requires": null,
+      "notes": "Round-1 review fix (WARNING #4). US-009 updated the per-command HELP blocks but missed the top-level HELP entries and STOP_HELP body."
+    },
+    {
+      "id": "US-R1-004",
+      "title": "Remove misleading inline-fallback message in cam next",
+      "description": "As a cam user, I want the cam next tmux failure path to not claim a fallback that does not happen so that the output is honest about what occurred.",
+      "acceptanceCriteria": [
+        "[src/commands/next.ts:585-595] The catch block must not print 'Falling back to inline mode' when no fallback occurs. Either remove the misleading message (and report the tmux failure plainly) or actually implement the inline fallback. Pick the simplest correct option.",
+        "Unit test covers the tmux-failure path and asserts the message matches the real behavior.",
+        "Typecheck passes (bun run typecheck) and tests pass (bun test)."
+      ],
+      "priority": 0.4,
+      "passes": false,
+      "requires": null,
+      "notes": "Round-1 review fix (WARNING #5). Code prints the fallback hint then returns 0 after the success message, never reaching the inline spawn."
+    },
+    {
       "id": "US-001",
       "title": "Project session module (tmux helpers)",
       "description": "As the cam codebase, I need a single tmux helper module so that all loop commands share one canonical way to name, create, and split into the per-project session.",
@@ -188,5 +250,11 @@
       "requires": "operator",
       "notes": "Operator ceremony: not autonomous. The user already volunteered to run `cam run` in a real terminal. Depends on US-001 through US-009. The cam-loop falls through this story automatically; only the operator can mark it passed."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "46dc8d86282a65d09dab0da4f0757515d0a04608",
+    "lastVerdict": "FIXES_PENDING"
+  }
 }

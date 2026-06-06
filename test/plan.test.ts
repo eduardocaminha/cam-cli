@@ -38,13 +38,30 @@ interface TmuxCall {
 
 function makeFakeTmuxSpawn(sessionExists = false): TmuxSpawnFn & { calls: TmuxCall[] } {
 	const calls: TmuxCall[] = [];
-	const fn = ((cmd: string, args: string[], _opts?: { stdio?: string }) => {
+	let paneCounter = 0;
+	const fn = ((cmd: string, args: string[], opts?: { stdio?: string }) => {
 		calls.push({ cmd, args: [...args] });
+		const base: SpawnSyncReturns<Buffer> = {
+			pid: 1,
+			output: [null, Buffer.from(''), Buffer.from('')],
+			stdout: Buffer.from(''),
+			stderr: Buffer.from(''),
+			status: 0,
+			signal: null,
+		};
 		// has-session returns exit 0 when sessionExists, 1 otherwise.
 		if (args[0] === 'has-session') {
-			return { status: sessionExists ? 0 : 1 } as SpawnSyncReturns<Buffer>;
+			return { ...base, status: sessionExists ? 0 : 1 };
 		}
-		return { status: 0 } as SpawnSyncReturns<Buffer>;
+		// Return a stable pane id for calls that capture it (-P -F #{pane_id}).
+		if (
+			(args[0] === 'new-session' || args[0] === 'split-window') &&
+			opts?.stdio === 'pipe'
+		) {
+			paneCounter += 1;
+			return { ...base, stdout: Buffer.from(`%${paneCounter}\n`) };
+		}
+		return base;
 	}) as TmuxSpawnFn & { calls: TmuxCall[] };
 	fn.calls = calls;
 	return fn;

@@ -74,6 +74,13 @@ export function hasSession(sessionName: string, spawnFn: SpawnFn): boolean {
 // Session creation
 // ---------------------------------------------------------------------------
 
+/** Pane IDs captured when a new session is freshly created. */
+export interface CreatedPaneIds {
+	orchPaneId: string;
+	dashboardPaneId: string;
+	menuPaneId: string;
+}
+
 /**
  * Lazily create the full project tmux session if it does not already exist.
  *
@@ -89,8 +96,18 @@ export function hasSession(sessionName: string, spawnFn: SpawnFn): boolean {
  * (horizontal split of the full window), the second splits pane 1 vertically
  * to produce pane 2.
  *
- * Returns `true` when the session was freshly created, `false` when it already
- * existed (caller can decide whether to attach or skip).
+ * Pane IDs are captured via `-P -F '#{pane_id}'` on each tmux call so that
+ * pane addressing is stable regardless of the user's `pane-base-index`
+ * setting in .tmux.conf. The returned `%<n>` IDs must be used for all
+ * subsequent send-keys and select-pane calls.
+ *
+ * `CAM_SESSION=<sessionName>` is injected as an env var on new-session so
+ * every pane in the session inherits it. isInsideProjectSession and the
+ * attach-hint suppression both rely on this env var being present at runtime.
+ *
+ * Returns a `CreatedPaneIds` record when the session was freshly created, or
+ * `false` when it already existed (caller can decide whether to attach or
+ * skip).
  *
  * The session is created detached (`-d`) so the caller controls when/whether
  * to attach.
@@ -98,51 +115,62 @@ export function hasSession(sessionName: string, spawnFn: SpawnFn): boolean {
 export function ensureProjectSession(
 	sessionName: string,
 	spawnFn: SpawnFn,
-): boolean {
+): CreatedPaneIds | false {
 	if (hasSession(sessionName, spawnFn)) {
 		return false;
 	}
 
 	// Create the detached session with pane 0 running bash (orchestrator slot).
-	spawnFn(
+	// -P -F '#{pane_id}' prints the stable pane id (%<n>) to stdout.
+	// -e CAM_SESSION=<name> injects the session tag so isInsideProjectSession works.
+	const newSessResult = spawnFn(
 		'tmux',
 		[
 			'new-session', '-d',
 			'-s', sessionName,
 			'-x', '220', '-y', '50',
+			'-e', `CAM_SESSION=${sessionName}`,
+			'-P', '-F', '#{pane_id}',
 			'bash',
 		],
-		{ stdio: 'ignore' },
+		{ stdio: 'pipe' },
 	);
+	const orchPaneId = newSessResult.stdout.toString().trim();
 
 	// Split horizontally to add pane 1 (dashboard slot, 36-column right pane).
-	spawnFn(
+	// Target the orchestrator pane by its stable id, not a positional index.
+	const dashSplitResult = spawnFn(
 		'tmux',
 		[
 			'split-window',
-			'-t', `${sessionName}:0.0`,
+			'-t', orchPaneId,
 			'-h',
 			'-l', '36',
 			'-d',
+			'-P', '-F', '#{pane_id}',
 			'bash',
 		],
-		{ stdio: 'ignore' },
+		{ stdio: 'pipe' },
 	);
+	const dashboardPaneId = dashSplitResult.stdout.toString().trim();
 
 	// Split pane 1 vertically to add pane 2 (menu slot, bottom of right column).
-	spawnFn(
+	// Target the dashboard pane by its stable id.
+	const menuSplitResult = spawnFn(
 		'tmux',
 		[
 			'split-window',
-			'-t', `${sessionName}:0.1`,
+			'-t', dashboardPaneId,
 			'-v',
 			'-d',
+			'-P', '-F', '#{pane_id}',
 			'bash',
 		],
-		{ stdio: 'ignore' },
+		{ stdio: 'pipe' },
 	);
+	const menuPaneId = menuSplitResult.stdout.toString().trim();
 
-	return true;
+	return { orchPaneId, dashboardPaneId, menuPaneId };
 }
 
 // ---------------------------------------------------------------------------

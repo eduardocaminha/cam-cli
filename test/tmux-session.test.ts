@@ -5,8 +5,9 @@
 // Strategy: inject a fake spawn function that records every call and returns
 // configurable exit codes. We assert the exact tmux argv for:
 //   - has-session
-//   - new-session
-//   - split-window (both ensureProjectSession and openPaneInSession)
+//   - new-session  (must include -P -F #{pane_id} and -e CAM_SESSION=)
+//   - split-window (must include -P -F #{pane_id}; target uses captured %id)
+//   - split-window for openPaneInSession
 // We do NOT spin a real tmux server.
 
 import { describe, expect, test } from 'bun:test';
@@ -35,12 +36,18 @@ interface FakeSpawnHandlers {
 	sessionExists?: boolean;
 }
 
+/**
+ * Fake spawn that returns sequential pane IDs (%1, %2, %3) for each
+ * new-session / split-window call that requests -P -F #{pane_id} (pipe stdio).
+ * This mirrors the real tmux behaviour ensureProjectSession relies on.
+ */
 function makeFakeSpawn(
 	handlers: FakeSpawnHandlers = {},
 ): SpawnFn & { calls: SpawnRecord[] } {
 	const calls: SpawnRecord[] = [];
+	let paneCounter = 0;
 
-	const fn: SpawnFn = (cmd, args, _opts?) => {
+	const fn: SpawnFn = (cmd, args, opts?) => {
 		calls.push({ cmd, args: [...args] });
 
 		const result: SpawnSyncReturns<Buffer> = {
@@ -54,6 +61,16 @@ function makeFakeSpawn(
 
 		if (cmd === 'tmux' && args[0] === 'has-session') {
 			result.status = handlers.sessionExists ? 0 : 1;
+		}
+
+		// Return a stable pane id for calls that capture it via -P -F #{pane_id}.
+		if (
+			cmd === 'tmux' &&
+			(args[0] === 'new-session' || args[0] === 'split-window') &&
+			opts?.stdio === 'pipe'
+		) {
+			paneCounter += 1;
+			result.stdout = Buffer.from(`%${paneCounter}\n`);
 		}
 
 		return result;
@@ -102,9 +119,9 @@ describe('projectSessionName', () => {
 describe('ensureProjectSession — new session', () => {
 	test('calls has-session first, then new-session and two split-window calls when session absent', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
-		const created = ensureProjectSession('cam-orch-myproj-abc123', spawn);
+		const result = ensureProjectSession('cam-orch-myproj-abc123', spawn);
 
-		expect(created).toBe(true);
+		expect(result).not.toBe(false);
 
 		// First call must be has-session.
 		const first = spawn.calls[0];
@@ -122,23 +139,27 @@ describe('ensureProjectSession — new session', () => {
 		expect(newSess?.args).toContain('-s');
 		expect(newSess?.args).toContain('cam-orch-myproj-abc123');
 
-		// Third call: first split-window creates dashboard pane (horizontal split of pane 0).
+		// Third call: first split-window creates dashboard pane (horizontal split).
+		// Target must be the captured orchPaneId (%1), NOT a positional index.
 		const firstSplit = spawn.calls[2];
 		expect(firstSplit).toBeDefined();
 		expect(firstSplit?.cmd).toBe('tmux');
 		expect(firstSplit?.args[0]).toBe('split-window');
 		expect(firstSplit?.args).toContain('-t');
-		expect(firstSplit?.args).toContain('cam-orch-myproj-abc123:0.0');
+		expect(firstSplit?.args).toContain('%1');
+		expect(firstSplit?.args).not.toContain('cam-orch-myproj-abc123:0.0');
 		expect(firstSplit?.args).toContain('-h');
 		expect(firstSplit?.args).toContain('-d');
 
 		// Fourth call: second split-window creates menu pane (vertical split of pane 1).
+		// Target must be the captured dashboardPaneId (%2), NOT a positional index.
 		const secondSplit = spawn.calls[3];
 		expect(secondSplit).toBeDefined();
 		expect(secondSplit?.cmd).toBe('tmux');
 		expect(secondSplit?.args[0]).toBe('split-window');
 		expect(secondSplit?.args).toContain('-t');
-		expect(secondSplit?.args).toContain('cam-orch-myproj-abc123:0.1');
+		expect(secondSplit?.args).toContain('%2');
+		expect(secondSplit?.args).not.toContain('cam-orch-myproj-abc123:0.1');
 		expect(secondSplit?.args).toContain('-v');
 		expect(secondSplit?.args).toContain('-d');
 	});
@@ -154,6 +175,52 @@ describe('ensureProjectSession — new session', () => {
 		expect(newSess?.args).toContain('50');
 	});
 
+	test('new-session argv includes -P -F #{pane_id} for stable pane capture', () => {
+		const spawn = makeFakeSpawn({ sessionExists: false });
+		ensureProjectSession('cam-orch-test-000000', spawn);
+
+		const newSess = spawn.calls[1];
+		expect(newSess?.args).toContain('-P');
+		expect(newSess?.args).toContain('-F');
+		expect(newSess?.args).toContain('#{pane_id}');
+	});
+
+	test('new-session argv includes -e CAM_SESSION= so panes inherit the session tag', () => {
+		const spawn = makeFakeSpawn({ sessionExists: false });
+		ensureProjectSession('cam-orch-test-000000', spawn);
+
+		const newSess = spawn.calls[1];
+		expect(newSess?.args).toContain('-e');
+		expect(newSess?.args).toContain('CAM_SESSION=cam-orch-test-000000');
+	});
+
+	test('split-window calls include -P -F #{pane_id} for stable pane capture', () => {
+		const spawn = makeFakeSpawn({ sessionExists: false });
+		ensureProjectSession('cam-orch-test-000000', spawn);
+
+		const firstSplit = spawn.calls[2];
+		expect(firstSplit?.args).toContain('-P');
+		expect(firstSplit?.args).toContain('-F');
+		expect(firstSplit?.args).toContain('#{pane_id}');
+
+		const secondSplit = spawn.calls[3];
+		expect(secondSplit?.args).toContain('-P');
+		expect(secondSplit?.args).toContain('-F');
+		expect(secondSplit?.args).toContain('#{pane_id}');
+	});
+
+	test('returns CreatedPaneIds with captured %n ids when session is created', () => {
+		const spawn = makeFakeSpawn({ sessionExists: false });
+		const result = ensureProjectSession('cam-orch-myproj-abc123', spawn);
+
+		expect(result).not.toBe(false);
+		if (result !== false) {
+			expect(result.orchPaneId).toBe('%1');
+			expect(result.dashboardPaneId).toBe('%2');
+			expect(result.menuPaneId).toBe('%3');
+		}
+	});
+
 	test('split-window for dashboard uses -l 36 right pane', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		ensureProjectSession('cam-orch-test-000000', spawn);
@@ -165,9 +232,9 @@ describe('ensureProjectSession — new session', () => {
 
 	test('returns false and calls only has-session when session already exists', () => {
 		const spawn = makeFakeSpawn({ sessionExists: true });
-		const created = ensureProjectSession('cam-orch-existing-abc123', spawn);
+		const result = ensureProjectSession('cam-orch-existing-abc123', spawn);
 
-		expect(created).toBe(false);
+		expect(result).toBe(false);
 		// Only has-session was called.
 		expect(spawn.calls).toHaveLength(1);
 		expect(spawn.calls[0]?.args[0]).toBe('has-session');

@@ -1,21 +1,27 @@
 {
-  "lastCompletedStory": "US-009",
-  "completedAt": "2026-06-05T20:00:00Z",
+  "lastCompletedStory": "US-R1-001",
+  "completedAt": "2026-06-06T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "README.md",
-    "FLOW.md",
+    "src/tmux/session.ts",
+    "src/commands/run.ts",
+    "test/tmux-session.test.ts",
+    "test/run.test.ts",
+    "test/issue.test.ts",
+    "test/plan.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-009 updated RUN_HELP/PLAN_HELP/NEXT_HELP/ISSUE_HELP/DASHBOARD_HELP in index.ts, README.md, and FLOW.md to document the single per-project session model (3-pane layout: pane 0.0 orchestrator + pane 0.1 dashboard + pane 0.2 menu), the thin pane launcher pattern used by plan/next/issue, the contextual attach hint (suppressed inside the session), and orchestrator-exit teardown. All em-dashes removed from persisted .md files. FLOW.md has new sections 2.5 (cam run) and 4.5 (cam issue), and sections 3 and 4 were rewritten as thin-launcher flows.",
+  "nextStoryContext": "US-R1-001 hardened ensureProjectSession: now returns CreatedPaneIds | false instead of boolean. new-session gets -P -F #{pane_id} (pipe stdio) to capture orchPaneId, plus -e CAM_SESSION=<sessionName>. Both split-window calls capture dashboardPaneId and menuPaneId the same way, targeting the preceding pane by its stable %n ID (not positional :0.0/:0.1). run.ts uses the returned pane IDs for all send-keys and select-pane. All four test files with fake spawns updated to return full SpawnSyncReturns<Buffer> shape (stdout: Buffer.from('%N\\n')) for pipe-mode calls. Next stories in the review-fix queue: US-R1-002 (openPaneInSession argv), US-R1-003 (stale HELP text), US-R1-004 (inline mode log).",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "US-009 is a docs-only story. Only index.ts (HELP strings), README.md, and FLOW.md were modified. No external npm library exercised."
+      "lib": "tmux",
+      "version": "n/a (CLI tool)",
+      "url": "https://man.openbsd.org/tmux",
+      "fetchedAt": "2026-06-06T00:00:00Z",
+      "status": "ok",
+      "summary": "-P -F #{pane_id} confirmed to print stable pane ID to stdout on new-session and split-window; -e VARIABLE=value confirmed to set env vars for newly created session panes."
     }
   ]
 }

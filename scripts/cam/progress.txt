@@ -299,3 +299,49 @@ Durable patterns carried across cycles:
 - All em-dashes removed from persisted .md files (README.md, FLOW.md) per project preference.
 - FLOW.md section numbering kept as 2.5 and 4.5 (inserted between existing sections) to avoid renumbering the entire file.
 ---
+
+## [2026-06-05 15:53] - Review round 1: FIXES_PENDING:4
+
+- subagent-reviewer (round 1/3, vs main) returned REQUEST CHANGES: 3 CRITICAL + 3 WARNING + 2 SUGGESTION.
+- All 3 CRITICALs verified against the code before materializing stories (real, not hallucinations).
+- Created 4 fix-stories at top of queue:
+  - US-R1-001: stable pane IDs (capture #{pane_id}, no positional 0.0/0.1/0.2) + set CAM_SESSION via new-session -e (CRITICAL #1 + #3).
+  - US-R1-002: openPaneInSession argv array so cam issue free text is not sh -c interpreted (CRITICAL #2).
+  - US-R1-003: stale top-level HELP + STOP_HELP text (WARNING #4).
+  - US-R1-004: misleading "Falling back to inline mode" in cam next (WARNING #5).
+- Backlog (not auto-fixed): cam run hardcodes bypassPermissions (product decision, likely pre-cycle); prompt-file single-quote path edge case; dead isApproveLine/findApproveLine.
+- lastReviewSha: 46dc8d8. Round 1/3.
+---
+
+## [2026-06-06 00:00] - US-R1-001: Harden ensureProjectSession: stable pane IDs + CAM_SESSION env
+
+### What was done
+- Changed ensureProjectSession return type from boolean to CreatedPaneIds | false.
+- Added -P -F '#{pane_id}' and stdio: 'pipe' to the new-session call; stdout is the stable orchPaneId (%n).
+- Added -e CAM_SESSION=<sessionName> to the new-session argv so every pane in the session inherits the env tag; isInsideProjectSession and emitAttachHint rely on this.
+- Changed both split-window calls to use -P -F '#{pane_id}' + stdio: 'pipe' and target the preceding captured pane ID, not positional :0.0/:0.1.
+- Updated setupOrchestratorSession in run.ts to destructure the returned pane IDs and use them for all send-keys and select-pane calls.
+- Added intentional-bypassPermissions comment to the orchestrator agentCmd line in run.ts.
+- Updated makeFakeSpawn in test/tmux-session.test.ts, test/run.test.ts, test/issue.test.ts, and test/plan.test.ts to return sequential pane IDs (%1, %2, %3) in stdout for pipe-mode new-session/split-window calls.
+- Updated all positional :0.0/:0.1/:0.2 assertions in test/tmux-session.test.ts and test/run.test.ts to assert %1/%2/%3 pane IDs and assert absence of old positional patterns.
+- Added new test assertions: -P -F #{pane_id} present in new-session and split-window; -e CAM_SESSION= in new-session; CreatedPaneIds shape returned.
+
+### Files changed
+- src/tmux/session.ts (changed ensureProjectSession: new return type, -P -F #{pane_id}, -e CAM_SESSION=, pane-id-targeted splits)
+- src/commands/run.ts (use CreatedPaneIds, bypassPermissions comment, pane-id send-keys)
+- test/tmux-session.test.ts (pane-counter fake spawn, new assertions)
+- test/run.test.ts (pane-counter fake spawn, updated positional assertions to %id, new -P/-F/CAM_SESSION tests)
+- test/issue.test.ts (pane-counter fake spawn with full SpawnSyncReturns shape)
+- test/plan.test.ts (pane-counter fake spawn with full SpawnSyncReturns shape)
+- scripts/cam/prd.json (passes: true for US-R1-001)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 477 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: tmux, version: n/a (CLI tool, not npm), url: https://man.openbsd.org/tmux, fetchedAt: 2026-06-06T00:00:00Z, status: ok, summary: -P -F #{pane_id} confirmed to print stable pane ID to stdout on new-session and split-window; -e VARIABLE=value confirmed to set env for newly created session panes.
+
+### Notes
+- Fake spawn in test files that use ensureProjectSession must return a full SpawnSyncReturns<Buffer> shape (with stdout: Buffer) for pipe-mode calls, not just { status: 0 }. Bare { status: 0 } as SpawnSyncReturns<Buffer> causes runtime crash when .stdout.toString() is called (stdout is undefined).
+---

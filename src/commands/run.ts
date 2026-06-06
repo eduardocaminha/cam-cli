@@ -38,6 +38,7 @@ import {
 	projectSessionName,
 	ensureProjectSession,
 	type SpawnFn,
+	type CreatedPaneIds,
 } from '../tmux/session.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
@@ -169,6 +170,9 @@ done
  *   - Sends `cam dashboard` to pane 1 (permanent dashboard).
  *   - Sends the interactive menu script to pane 2 (menu).
  *
+ * Pane IDs returned by ensureProjectSession are stable %<n> identifiers that
+ * work regardless of the user's pane-base-index in .tmux.conf.
+ *
  * Returns { sessionName, created: true } when a new session was built,
  * { sessionName, created: false } when it already existed (just attach).
  */
@@ -179,10 +183,12 @@ function setupOrchestratorSession(opts: {
 }): { sessionName: string; created: boolean } {
 	const { cwd, sessionName, spawnFn } = opts;
 
-	const created = ensureProjectSession(sessionName, spawnFn);
-	if (!created) {
+	const panes: CreatedPaneIds | false = ensureProjectSession(sessionName, spawnFn);
+	if (!panes) {
 		return { sessionName, created: false };
 	}
+
+	const { orchPaneId, dashboardPaneId, menuPaneId } = panes;
 
 	// Persist the boot prompt to a file so the agent command stays simple.
 	const dotClaude = join(cwd, '.claude');
@@ -191,37 +197,37 @@ function setupOrchestratorSession(opts: {
 	writeFileSync(promptFile, buildOrchestratorBootPrompt(), 'utf8');
 
 	// Pane 0: orchestrator (claude).
+	// --permission-mode bypassPermissions is INTENTIONAL (2026-06-06): the
+	// orchestrator runs the loop unattended and must bypass; do NOT change to
+	// readPermissionMode.
 	// Chain kill-session so that when claude exits the whole tmux session is
 	// torn down automatically, dropping the user back to their shell (US-003).
-	const orchPane = `${sessionName}:0.0`;
 	const agentCmd = `claude --permission-mode bypassPermissions "$(cat '${promptFile}')"; tmux kill-session -t ${sessionName}`;
 	spawnFn(
 		'tmux',
-		['send-keys', '-t', orchPane, agentCmd, 'Enter'],
+		['send-keys', '-t', orchPaneId, agentCmd, 'Enter'],
 		{ stdio: 'ignore' },
 	);
 
 	// Pane 1: cam dashboard — permanent pane (US-002, US-010).
-	const dashboardPane = `${sessionName}:0.1`;
 	spawnFn(
 		'tmux',
-		['send-keys', '-t', dashboardPane, 'cam dashboard', 'Enter'],
+		['send-keys', '-t', dashboardPaneId, 'cam dashboard', 'Enter'],
 		{ stdio: 'ignore' },
 	);
 
 	// Pane 2: interactive menu (US-004).
 	// Write the menu script to a file so the pane command stays simple.
-	const menuPane = `${sessionName}:0.2`;
 	const menuFile = join(dotClaude, '.cam-run-menu.sh');
-	writeFileSync(menuFile, buildRunMenuScript(orchPane, dashboardPane), 'utf8');
+	writeFileSync(menuFile, buildRunMenuScript(orchPaneId, dashboardPaneId), 'utf8');
 	spawnFn(
 		'tmux',
-		['send-keys', '-t', menuPane, `bash '${menuFile}'`, 'Enter'],
+		['send-keys', '-t', menuPaneId, `bash '${menuFile}'`, 'Enter'],
 		{ stdio: 'ignore' },
 	);
 
 	// Make sure focus is on the orchestrator pane.
-	spawnFn('tmux', ['select-pane', '-t', orchPane], { stdio: 'ignore' });
+	spawnFn('tmux', ['select-pane', '-t', orchPaneId], { stdio: 'ignore' });
 
 	return { sessionName, created: true };
 }
