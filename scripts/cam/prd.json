@@ -36,7 +36,7 @@
         "Typecheck passes (bun run typecheck) and tests pass (bun test)."
       ],
       "priority": 0.2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Round-1 review fix (CRITICAL #2). tmux(1): a single-arg shell-command goes through /bin/sh -c; multi-arg execs directly. issue.ts feeds user free text into the joined string today."
     },
