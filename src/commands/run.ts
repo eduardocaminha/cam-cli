@@ -119,9 +119,9 @@ export function buildRunMenuScript(orchPane: string, dashboardPane: string): str
 	return `#!/bin/bash
 set +m
 
-CYAN='\\033[1;36m'
+ACCENT='\\033[38;2;78;190;125m'
+MUTED='\\033[38;2;128;128;128m'
 BOLD='\\033[1m'
-DIM='\\033[2m'
 RST='\\033[0m'
 
 ORCH_PANE='${orchPane}'
@@ -129,15 +129,21 @@ DASHBOARD_PANE='${dashboardPane}'
 
 show_menu() {
 	clear
-	printf "\${CYAN}  cam — orchestrator menu\${RST}\\n\\n"
-	printf "  \${BOLD}n\${RST}  /cam-next   (run next story)\\n"
-	printf "  \${BOLD}r\${RST}  /cam-review (review PRD)\\n"
-	printf "  \${BOLD}s\${RST}  /cam-ship   (ship iteration)\\n"
-	printf "  \${BOLD}p\${RST}  /cam-plan   (plan / re-plan)\\n"
-	printf "  \${BOLD}i\${RST}  /cam-issue  (sync issues)\\n"
-	printf "  \${BOLD}d\${RST}  focus dashboard pane\\n"
-	printf "  \${BOLD}q\${RST}  quit this menu\\n\\n"
-	printf "\${DIM}  Press a key...\${RST}\\n"
+	local COLS RULE_W DIV
+	COLS=$(tput cols 2>/dev/null || echo 36)
+	RULE_W=$(( COLS > 4 ? COLS - 2 : 2 ))
+	DIV=$(printf '─%.0s' $(seq 1 "$RULE_W"))
+	printf "  \${ACCENT}\${BOLD}cam orchestrator\${RST}\\n"
+	printf "  \${MUTED}\${DIV}\${RST}\\n"
+	printf "  \${BOLD}n\${RST}  \${BOLD}/cam-next  \${RST}  \${MUTED}run next story\${RST}\\n"
+	printf "  \${BOLD}r\${RST}  \${BOLD}/cam-review\${RST}  \${MUTED}review PRD\${RST}\\n"
+	printf "  \${BOLD}s\${RST}  \${BOLD}/cam-ship  \${RST}  \${MUTED}ship iteration\${RST}\\n"
+	printf "  \${BOLD}p\${RST}  \${BOLD}/cam-plan  \${RST}  \${MUTED}plan / re-plan\${RST}\\n"
+	printf "  \${BOLD}i\${RST}  \${BOLD}/cam-issue \${RST}  \${MUTED}sync issues\${RST}\\n"
+	printf "  \${MUTED}\${DIV}\${RST}\\n"
+	printf "  \${BOLD}d\${RST}  \${MUTED}focus dashboard pane\${RST}\\n"
+	printf "  \${BOLD}q\${RST}  \${MUTED}quit this menu\${RST}\\n"
+	printf "  \${MUTED}press a key\${RST}\\n"
 }
 
 show_menu
@@ -225,6 +231,12 @@ function setupOrchestratorSession(opts: {
 		['send-keys', '-t', menuPaneId, `bash '${menuFile}'`, 'Enter'],
 		{ stdio: 'ignore' },
 	);
+
+	// Enable mouse mode on this session so the operator can click a pane to
+	// focus it and scroll with the trackpad, instead of the tmux prefix dance
+	// (Ctrl+b + arrows). Scoped to this session only. Note: with mouse on,
+	// selecting text to copy needs Option held down (macOS Terminal/iTerm).
+	spawnFn('tmux', ['set-option', '-t', sessionName, 'mouse', 'on'], { stdio: 'ignore' });
 
 	// Make sure focus is on the orchestrator pane.
 	spawnFn('tmux', ['select-pane', '-t', orchPaneId], { stdio: 'ignore' });

@@ -23,6 +23,10 @@ interface SectionProps {
 	children: ReactNode;
 	/** Vertical gap before this section. Defaults to 1 (one blank line). */
 	gapTop?: number;
+	/** Override the rule width (cells). Defaults to `layout.dividerWidth` (50).
+	 *  Narrow hosts (e.g. the dashboard's ~36-col tmux pane) pass a smaller
+	 *  width so the rule fits the pane instead of wrapping onto a second line. */
+	dividerWidth?: number;
 }
 
 function dividerColor(tone: SectionTone): string {
@@ -36,14 +40,15 @@ function dividerColor(tone: SectionTone): string {
 	}
 }
 
-export function Section({ heading, tone = 'default', children, gapTop = 1 }: SectionProps): ReactElement {
+export function Section({ heading, tone = 'default', children, gapTop = 1, dividerWidth }: SectionProps): ReactElement {
+	const rule = dividerWidth === undefined ? DIVIDER : '─'.repeat(Math.max(1, dividerWidth));
 	return (
 		<Box flexDirection="column" marginTop={gapTop}>
 			<Box paddingLeft={layout.headingIndent}>
 				<Text bold>{heading}</Text>
 			</Box>
 			<Box paddingLeft={layout.headingIndent}>
-				<Text color={dividerColor(tone)}>{DIVIDER}</Text>
+				<Text color={dividerColor(tone)}>{rule}</Text>
 			</Box>
 			<Box flexDirection="column" paddingLeft={layout.contentIndent}>
 				{children}

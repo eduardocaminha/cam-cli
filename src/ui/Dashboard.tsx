@@ -23,9 +23,10 @@
 
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, Text, useApp, useInput, useStdout } from 'ink';
 
 import { colors } from './theme.ts';
+import { layout } from '../design/tokens.ts';
 import { Section } from './Section.tsx';
 import type { DashboardData } from '../commands/dashboard.ts';
 import type { PrdStory } from '../commands/status.ts';
@@ -46,6 +47,13 @@ export interface DashboardAppProps {
 export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps): ReactElement {
 	const [data, setData] = useState<DashboardData>(() => readSnapshot());
 	const { exit } = useApp();
+	const { stdout } = useStdout();
+	// Fit the section rule to the host pane. In the cam-run layout the dashboard
+	// lives in a narrow (~36-col) tmux pane, so a fixed 50-col rule wrapped onto
+	// a second line. Cap at the canonical width for a wide standalone terminal,
+	// shrink to fit narrow panes. Recomputed on SIGWINCH (Ink re-renders).
+	const cols = stdout?.columns ?? 80;
+	const dividerWidth = Math.max(12, Math.min(layout.dividerWidth, cols - layout.headingIndent - 1));
 
 	useEffect(() => {
 		const id = setInterval(() => {
@@ -63,17 +71,12 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 	return (
 		<Box flexDirection="column">
 			<SummaryPanel data={data} />
-			<Box marginTop={1} flexDirection="row">
-				<Box width="50%" flexDirection="column">
-					<StoriesSection
-						stories={data.stories ?? []}
-						currentId={data.currentStoryId}
-					/>
-				</Box>
-				<Box width="50%" flexDirection="column">
-					<RecentSection recent={data.recent} />
-				</Box>
-			</Box>
+			<StoriesSection
+				stories={data.stories ?? []}
+				currentId={data.currentStoryId}
+				dividerWidth={dividerWidth}
+			/>
+			<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
 			<Box marginTop={1} paddingLeft={2}>
 				<Text color={colors.muted}>press q or Ctrl+C to exit</Text>
 			</Box>
@@ -173,13 +176,15 @@ function StatusIndicator({ data }: { data: DashboardData }): ReactElement {
 function StoriesSection({
 	stories,
 	currentId,
+	dividerWidth,
 }: {
 	stories: readonly PrdStory[];
 	currentId: string;
+	dividerWidth: number;
 }): ReactElement {
 	if (stories.length === 0) {
 		return (
-			<Section heading="Stories">
+			<Section heading="Stories" dividerWidth={dividerWidth}>
 				<Text color={colors.muted}>(no prd.json found)</Text>
 			</Section>
 		);
@@ -199,7 +204,7 @@ function StoriesSection({
 	const window = computeWindow(ordered.length, currentIdx, STORIES_WINDOW);
 
 	return (
-		<Section heading="Stories">
+		<Section heading="Stories" dividerWidth={dividerWidth}>
 			{ordered.slice(window.start, window.end).map((s) => (
 				<StoryRow key={s.id} story={s} isCurrent={s.id === currentId} />
 			))}
@@ -249,16 +254,16 @@ function computeWindow(total: number, currentIdx: number, size: number): { start
 	return { start, end: start + size };
 }
 
-function RecentSection({ recent }: { recent: readonly string[] }): ReactElement {
+function RecentSection({ recent, dividerWidth }: { recent: readonly string[]; dividerWidth: number }): ReactElement {
 	if (recent.length === 0) {
 		return (
-			<Section heading="Recent">
+			<Section heading="Recent" dividerWidth={dividerWidth}>
 				<Text color={colors.muted}>(no progress.txt entries yet)</Text>
 			</Section>
 		);
 	}
 	return (
-		<Section heading="Recent">
+		<Section heading="Recent" dividerWidth={dividerWidth}>
 			{recent.map((entry, i) => (
 				<Box key={i} flexDirection="row">
 					<Text color={colors.muted}>· </Text>
