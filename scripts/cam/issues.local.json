@@ -1,5 +1,5 @@
 {
-  "next_id": 15,
+  "next_id": 17,
   "issues": [
     {
       "id": "CAM-1",
@@ -98,6 +98,20 @@
       "description": "Hoje, ao digitar exit no pane do orquestrador, o pane de menu permanece e é preciso ctrl+b d pra sair do tmux. Mudar: fechar a sessão do orquestrador (claude exit no pane 0) deve matar a sessão tmux inteira e devolver ao terminal automaticamente. Mecanismo provável: encadear o comando do pane 0 com tmux kill-session ao sair do claude (claude ...; tmux kill-session -t <sessão>), ou um hook pane-died/pane-exited. Jeito sintético de voltar pro shell, sem ctrl+b d. Pequeno.",
       "state": "open",
       "createdAt": "2026-06-05T16:24:46Z"
+    },
+    {
+      "id": "CAM-15",
+      "title": "build-release.sh: soft-check cam init muta o repo e spawna tmux",
+      "description": "O AC4 do scripts/build-release.sh roda cam init no cwd do repo como soft-check de build. Como há claude logado, o Stage 2 (setup) executa de verdade: copia os templates por cima dos arquivos versionados (sobrescreveu os 4 subagents adaptados + scripts/cam/CLAUDE.md, recuperados via git restore) e tenta tmux new-session (falhou exit 1 no log do operador). Verificação de build NÃO pode ter efeito colateral no working tree. Fix robusto: rodar o smoke num cwd temporário descartável (mktemp -d) com --no-tmux, ou trocar o AC4 por um smoke não-mutante (cam --version + cam help + cam status num tmpdir). Nunca rodar cam init (comando mutante) contra o repo. Arquivo: scripts/build-release.sh.",
+      "state": "open",
+      "createdAt": "2026-06-06T12:09:38Z"
+    },
+    {
+      "id": "CAM-16",
+      "title": "Binário bun build --compile no macOS trava em /usr/local/bin (assinatura inválida + amfid)",
+      "description": "bun build --compile (macOS arm64) gera binário cuja assinatura o codesign -v reporta como inválida (\"code or signature have been modified\"). Em local user-owned (dist/, ~, /tmp) o macOS roda leniente; em /usr/local/bin (root, diretório de sistema) o amfid valida síncrono no exec, o processo trava uninterruptível (nem kill -9 derruba) e o SO mata (SIGKILL, vira \"zsh: killed\"). Causa-raiz do erro do US-010 smoke; o tmux estava saudável. Fixes robustos pra prod, em camadas: (a) MVP: build-release.sh re-assina o binário ad-hoc após compilar (codesign --force --sign - <bin>) e confirma codesign -v passa, deixando o artefato válido em qualquer destino; (b) instalação user-owned por padrão (~/.local/bin, sem sudo) e/ou um subcomando cam install que copia + re-assina + limpa quarantine (xattr -cr) + auto-testa (cam --version); (c) distribuição pública: Developer ID signing + notarytool + stapler (precisa de conta Apple Developer), senão downloads pegam quarantine/Gatekeeper. Arquivos: scripts/build-release.sh, possível novo src/commands/install.ts + index.ts.",
+      "state": "open",
+      "createdAt": "2026-06-06T12:09:38Z"
     }
   ]
 }

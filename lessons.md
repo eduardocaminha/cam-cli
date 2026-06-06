@@ -21,3 +21,11 @@ Achado: `bun test` roda a suíte verde mesmo quando `tsc --noEmit` falharia, por
 Correção aplicada: o parâmetro de `captureStdout` foi alargado para `() => unknown` (o resultado é await-ado e descartado de qualquer forma), zerando os 6 erros sem tocar nos call sites.
 
 Regra (local canônico): `scripts/cam/progress.txt` §"Codebase Patterns" e `scripts/cam/CLAUDE.md` §"Quality Gates" (rodar `bun run typecheck` e confiar no exit code, nunca inferir type-safety da verdura do `bun test`).
+
+## 2026-06-06: binário bun --compile no macOS trava em /usr/local/bin por assinatura inválida
+
+Situação: testando o US-010 (smoke do `cam run` no terminal real), o comando `sudo cp dist/cam-darwin-arm64 /usr/local/bin/cam && cam run` resultou em "zsh: killed". A suspeita inicial foi tmux, mas o tmux estava saudável (3.6a, new-session exit 0).
+
+Achado: `bun build --compile` (macOS arm64) gera um binário cuja assinatura o `codesign -v` marca como inválida ("code or signature have been modified"). O MESMO binário (sha idêntico) roda normal em local user-owned (`dist/`, `~`, `/tmp`), mas em `/usr/local/bin` (root, diretório de sistema) o amfid faz validação síncrona no exec, o processo trava de forma uninterruptível (nem `kill -9` derruba até o amfid soltar) e o SO mata. Re-assinar ad-hoc (`codesign --force --sign -`) deixa o `codesign -v` válido e o binário roda em qualquer destino. Bônus: o `build-release.sh` rodava `cam init` como soft-check dentro do repo, sobrescrevendo a config adaptada (4 subagents + `scripts/cam/CLAUDE.md`) com os templates e tentando spawnar tmux; verificação de build não pode mutar o working tree.
+
+Regra (local canônico): `~/.claude/CLAUDE.md` §"Lições persistentes". Fixes robustos rastreados em CAM-16 (re-sign no build/install) e CAM-15 (soft-check do build-release.sh hermético).
