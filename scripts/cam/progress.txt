@@ -424,3 +424,15 @@ Durable patterns carried across cycles:
 ### Notes
 - Fake spawn in test files that use ensureProjectSession must return a full SpawnSyncReturns<Buffer> shape (with stdout: Buffer) for pipe-mode calls, not just { status: 0 }. Bare { status: 0 } as SpawnSyncReturns<Buffer> causes runtime crash when .stdout.toString() is called (stdout is undefined).
 ---
+
+## [2026-06-06 08:16] - Review round 2: CLEAN
+
+- subagent-reviewer (round 2/3, delta-diff since 46dc8d8) APPROVED. All 4 round-1 fix-stories verified correct, no regressions.
+- Build: typecheck exit 0, 480 tests pass / 0 fail.
+- 0 CRITICAL, 0 WARNING. 3 cosmetic SUGGESTIONs backlogged (not blocking, not fixed to keep the CLEAN record at the reviewed SHA):
+  - next.ts:375 internal JSDoc still says "Ghostty split case" (active path is tmux-split -> openPaneInSession).
+  - session.ts:222-229 isInsideProjectSession JSDoc describes a $TMUX_PANE step-3 fallback the code does not perform.
+  - session.ts:36 SpawnFn.stdout typed Buffer|string, could tighten to Buffer.
+- Review cycle complete. Ready for /cam-ship. Only US-010 (operator smoke) remains, by design.
+- lastReviewSha: d590207. Round 2/3, CLEAN.
+---
