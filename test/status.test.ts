@@ -25,8 +25,44 @@ import {
 	formatWallClock,
 	parseStateFile,
 	pickCurrentStory,
+	resolvePrdPath,
 	runStatus,
 } from '../src/commands/status.ts';
+
+// --- resolvePrdPath --------------------------------------------------------
+
+describe('resolvePrdPath', () => {
+	test('prefers scripts/cam/prd.json when present (canonical)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-resolve-'));
+		try {
+			mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
+			writeFileSync(join(dir, 'scripts', 'cam', 'prd.json'), '{}');
+			writeFileSync(join(dir, 'prd.json'), '{}'); // legacy root also present
+			expect(resolvePrdPath(dir)).toBe(join(dir, 'scripts', 'cam', 'prd.json'));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('falls back to root prd.json when the canonical file is absent', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-resolve-'));
+		try {
+			writeFileSync(join(dir, 'prd.json'), '{}');
+			expect(resolvePrdPath(dir)).toBe(join(dir, 'prd.json'));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('returns the legacy root path when neither exists', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-resolve-'));
+		try {
+			expect(resolvePrdPath(dir)).toBe(join(dir, 'prd.json'));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
 
 // --- parseStateFile --------------------------------------------------------
 

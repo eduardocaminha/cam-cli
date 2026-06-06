@@ -26,6 +26,7 @@ import {
 	formatWallClock,
 	parseStateFile,
 	pickCurrentStory,
+	resolvePrdPath,
 	type LoopState,
 	type PrdShape,
 	type PrdStory,
@@ -34,7 +35,6 @@ import {
 // --- Constants -------------------------------------------------------------
 
 const STATE_FILE_PATH = ".claude/cam-loop.local.md";
-const PRD_PATH = "prd.json";
 const PROGRESS_PATH = "scripts/cam/progress.txt";
 
 /** How often the render loop polls cwd for state changes. 2 s per US-009 AC4. */
@@ -364,7 +364,7 @@ export function readSnapshot(options: { cwd: string; nowMs: number }): Dashboard
 }
 
 function readPrd(cwd: string): PrdShape | null {
-	const path = join(cwd, PRD_PATH);
+	const path = resolvePrdPath(cwd);
 	if (!existsSync(path)) return null;
 	try {
 		const body = readFileSync(path, "utf8");

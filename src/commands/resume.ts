@@ -73,7 +73,7 @@ import { join } from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
 
-import { parseStateFile, type LoopState, type PrdShape } from './status.ts';
+import { parseStateFile, resolvePrdPath, type LoopState, type PrdShape } from './status.ts';
 import {
 	accent,
 	chalk,
@@ -97,7 +97,6 @@ import { promptSelect } from '../ui/promptSelect.tsx';
 // --- Constants -------------------------------------------------------------
 
 const STATE_FILE_PATH = '.claude/cam-loop.local.md';
-const PRD_PATH = 'prd.json';
 
 /**
  * Heuristic cutoff for distinguishing "freshly interrupted" (Mode 2) from
@@ -156,7 +155,7 @@ export function readStateFile(cwd: string): LoopState | null {
  * Read + parse `prd.json` under `cwd`. Returns `null` when missing or invalid.
  */
 export function readPrd(cwd: string): PrdShape | null {
-	const path = join(cwd, PRD_PATH);
+	const path = resolvePrdPath(cwd);
 	if (!existsSync(path)) return null;
 	try {
 		const body = readFileSync(path, 'utf8');
@@ -373,7 +372,7 @@ export function resetPrdInPlace(prd: PrdShape): number {
  * indent) so git diffs stay readable.
  */
 export function writePrd(cwd: string, prd: PrdShape): void {
-	const path = join(cwd, PRD_PATH);
+	const path = resolvePrdPath(cwd);
 	writeFileSync(path, `${JSON.stringify(prd, null, 2)}\n`, 'utf8');
 }
 

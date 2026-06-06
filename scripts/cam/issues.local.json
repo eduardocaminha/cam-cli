@@ -1,5 +1,5 @@
 {
-  "next_id": 17,
+  "next_id": 19,
   "issues": [
     {
       "id": "CAM-1",
@@ -112,6 +112,20 @@
       "description": "bun build --compile (macOS arm64) gera binário cuja assinatura o codesign -v reporta como inválida (\"code or signature have been modified\"). Em local user-owned (dist/, ~, /tmp) o macOS roda leniente; em /usr/local/bin (root, diretório de sistema) o amfid valida síncrono no exec, o processo trava uninterruptível (nem kill -9 derruba) e o SO mata (SIGKILL, vira \"zsh: killed\"). Causa-raiz do erro do US-010 smoke; o tmux estava saudável. Fixes robustos pra prod, em camadas: (a) MVP: build-release.sh re-assina o binário ad-hoc após compilar (codesign --force --sign - <bin>) e confirma codesign -v passa, deixando o artefato válido em qualquer destino; (b) instalação user-owned por padrão (~/.local/bin, sem sudo) e/ou um subcomando cam install que copia + re-assina + limpa quarantine (xattr -cr) + auto-testa (cam --version); (c) distribuição pública: Developer ID signing + notarytool + stapler (precisa de conta Apple Developer), senão downloads pegam quarantine/Gatekeeper. Arquivos: scripts/build-release.sh, possível novo src/commands/install.ts + index.ts.",
       "state": "open",
       "createdAt": "2026-06-06T12:09:38Z"
+    },
+    {
+      "id": "CAM-17",
+      "title": "Dashboard apertado em pane estreito (~36 col): progress bar e story rows quebram",
+      "description": "Render do dashboard a 36 col (largura do pane do cam run) mostra a barra de progresso (PROGRESS_BAR_WIDTH=22) + labels Progress/Status quebrando linha, e as story rows com glifo/ID grudados e títulos wrapando. Os divisores foram resolvidos (responsivos, commit 223bfc0) e o path do PRD também (CAM-18), mas o conteúdo do SummaryPanel e das rows não cabe num pane tão estreito. Fix recomendado: alargar o pane do dashboard no layout (src/tmux/session.ts, split do dashboard hoje -l 36, ir pra ~55) e ajustar test/tmux-session.test.ts; alternativa: ProgressBar responsiva via stdout.columns + truncar títulos. Arquivos: src/tmux/session.ts e/ou src/ui/Dashboard.tsx.",
+      "state": "open",
+      "createdAt": "2026-06-06T12:45:21Z"
+    },
+    {
+      "id": "CAM-18",
+      "title": "status/dashboard/resume liam ./prd.json em vez de scripts/cam/prd.json",
+      "description": "src/commands/status.ts, dashboard.ts e resume.ts definiam PRD_PATH=prd.json (raiz do cwd), mas o PRD canônico (planner, stop hook vendor/cam-loop-stop-hook.sh, cam-next/review/ship) é scripts/cam/prd.json. Efeito: cam status, cam dashboard e cam resume nunca enxergavam o PRD do projeto (dashboard mostrava no prd.json found e 0/0 iter mesmo com PRD ativo). dashboard.ts já usava scripts/cam/progress.txt pro progress, só o PRD ficou no path errado. CORRIGIDO: helper compartilhado resolvePrdPath(cwd) em status.ts (canônico-primeiro com fallback pro root legado), usado por status/dashboard/resume (read e write). Verificado por render (dashboard a 36 col agora lista as stories). Regressão em test/status.test.ts; 483 testes verdes.",
+      "state": "closed",
+      "createdAt": "2026-06-06T12:45:21Z"
     }
   ]
 }

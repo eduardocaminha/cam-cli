@@ -54,7 +54,24 @@ import {
 // --- Constants -------------------------------------------------------------
 
 const STATE_FILE_PATH = '.claude/cam-loop.local.md';
+/** Legacy PRD location (repo root). Kept only as a fallback for old layouts. */
 const PRD_PATH = 'prd.json';
+/** Canonical PRD location: the cam harness dir. Written by the planner and read
+ *  by the stop hook (vendor/cam-loop-stop-hook.sh) + cam-next/review/ship. */
+const PRD_PATH_CANONICAL = 'scripts/cam/prd.json';
+
+/**
+ * Resolve the PRD path for `cwd`, preferring the canonical harness location
+ * (`scripts/cam/prd.json`) and falling back to the legacy repo-root `prd.json`
+ * only when the canonical file is absent. This is what makes `cam status` /
+ * `cam dashboard` / `cam resume` read the SAME PRD the loop does, instead of a
+ * non-existent root file (CAM-18).
+ */
+export function resolvePrdPath(cwd: string): string {
+	const canonical = join(cwd, PRD_PATH_CANONICAL);
+	if (existsSync(canonical)) return canonical;
+	return join(cwd, PRD_PATH);
+}
 
 // --- Types -----------------------------------------------------------------
 
@@ -225,7 +242,7 @@ function readStateFile(cwd: string): LoopState | null {
  * iteration counter, just without a story id.
  */
 function readPrd(cwd: string): PrdShape | null {
-	const path = join(cwd, PRD_PATH);
+	const path = resolvePrdPath(cwd);
 	if (!existsSync(path)) return null;
 	try {
 		const body = readFileSync(path, 'utf8');
