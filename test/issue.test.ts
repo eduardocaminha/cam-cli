@@ -120,7 +120,7 @@ describe('runIssue (tmux pane launcher)', () => {
 		expect(splitCalls.length).toBeGreaterThanOrEqual(3);
 	});
 
-	test('the issue pane split-window includes the claude /cam-issue create command', async () => {
+	test('the issue pane split-window includes the claude /cam-issue create command as separate argv elements', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-test-'));
 		const tmuxSpawnFn = makeFakeTmuxSpawn(false);
 
@@ -131,15 +131,51 @@ describe('runIssue (tmux pane launcher)', () => {
 			tmuxSpawnFn,
 		});
 
-		// The last split-window call is openPaneInSession; it must contain the claude cmd.
+		// The last split-window call is openPaneInSession; it must contain the
+		// claude argv elements as discrete args (not a single joined shell string).
 		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
 		const lastSplit = splitCalls[splitCalls.length - 1];
-		const cmdArg = lastSplit?.args[lastSplit.args.length - 1] ?? '';
-		expect(cmdArg).toContain('claude');
-		expect(cmdArg).toContain('--permission-mode');
-		expect(cmdArg).toContain('bypassPermissions');
-		expect(cmdArg).toContain('/cam-issue create');
-		expect(cmdArg).toContain('Fix the login bug');
+		expect(lastSplit?.args).toContain('claude');
+		expect(lastSplit?.args).toContain('--permission-mode');
+		expect(lastSplit?.args).toContain('bypassPermissions');
+		// The slash + free text is a single discrete element.
+		const slashArg = lastSplit?.args.find((a) => a.startsWith('/cam-issue create'));
+		expect(slashArg).toBeDefined();
+		expect(slashArg).toContain('Fix the login bug');
+		// Must NOT contain the joined form (that was the shell-injection path).
+		const joinedForm = 'claude --permission-mode bypassPermissions /cam-issue create Fix the login bug';
+		expect(lastSplit?.args).not.toContain(joinedForm);
+	});
+
+	test('metacharacter-laden issue text is passed verbatim as a single argv element', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-test-'));
+		const tmuxSpawnFn = makeFakeTmuxSpawn(true); // session exists; skip new-session
+
+		const metacharText = 'fix login; $(echo injected) `whoami` & rm -rf /';
+		await runIssue({
+			text: metacharText,
+			cwd: tmpDir,
+			permissionMode: 'bypassPermissions',
+			tmuxSpawnFn,
+		});
+
+		// Only one split-window call fires (the issue pane; session already exists).
+		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
+		expect(splitCalls.length).toBe(1);
+		const call = splitCalls[0];
+		// The slash+free-text element must be a SINGLE element containing the raw text.
+		const slashArg = call?.args.find((a) => a.startsWith('/cam-issue create'));
+		expect(slashArg).toBeDefined();
+		expect(slashArg).toContain(metacharText);
+		// The element must NOT have been split up by the shell.
+		// If join(' ') were used, the joined string would appear as ONE arg.
+		// Instead we confirm 'claude' is its own separate element.
+		expect(call?.args).toContain('claude');
+		// And the metachar text is its own separate element (not merged with flags).
+		const claudeIdx = call?.args.indexOf('claude') ?? -1;
+		const slashIdx = call?.args.findIndex((a) => a.startsWith('/cam-issue create')) ?? -1;
+		expect(claudeIdx).toBeGreaterThan(-1);
+		expect(slashIdx).toBeGreaterThan(claudeIdx);
 	});
 
 	test('skips new-session when session already exists (has-session returns 0)', async () => {

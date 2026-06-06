@@ -172,7 +172,7 @@ describe('runPlan (tmux pane launcher)', () => {
 		expect(splitCalls.length).toBeGreaterThanOrEqual(3);
 	});
 
-	test('the plan pane split-window includes the claude /cam-plan command', async () => {
+	test('the plan pane split-window includes the claude /cam-plan command as separate argv elements', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
 		const tmuxSpawnFn = makeFakeTmuxSpawn(false);
 
@@ -182,15 +182,17 @@ describe('runPlan (tmux pane launcher)', () => {
 			tmuxSpawnFn,
 		});
 
-		// The last split-window call is openPaneInSession; it must contain the claude cmd.
+		// The last split-window call is openPaneInSession; it must contain each
+		// claude argv element as a discrete arg (not one joined shell string).
 		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
 		const lastSplit = splitCalls[splitCalls.length - 1];
-		const cmdArg = lastSplit?.args[lastSplit.args.length - 1] ?? '';
-		expect(cmdArg).toContain('claude');
-		expect(cmdArg).toContain('--permission-mode');
-		expect(cmdArg).toContain('bypassPermissions');
-		expect(cmdArg).toContain('/cam-plan');
-		expect(cmdArg).not.toContain('#');
+		expect(lastSplit?.args).toContain('claude');
+		expect(lastSplit?.args).toContain('--permission-mode');
+		expect(lastSplit?.args).toContain('bypassPermissions');
+		expect(lastSplit?.args).toContain('/cam-plan');
+		// No issue number, so no '#' in the slash arg.
+		const slashArg = lastSplit?.args.find((a) => a.startsWith('/cam-plan'));
+		expect(slashArg).toBe('/cam-plan');
 	});
 
 	test('includes #N in the plan pane command when issue is provided', async () => {
@@ -206,8 +208,9 @@ describe('runPlan (tmux pane launcher)', () => {
 
 		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
 		const lastSplit = splitCalls[splitCalls.length - 1];
-		const cmdArg = lastSplit?.args[lastSplit.args.length - 1] ?? '';
-		expect(cmdArg).toContain('/cam-plan #99');
+		// The slash command element must include the issue number.
+		const slashArg = lastSplit?.args.find((a) => a.startsWith('/cam-plan'));
+		expect(slashArg).toContain('/cam-plan #99');
 	});
 
 	test('skips new-session when session already exists (has-session returns 0)', async () => {

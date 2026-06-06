@@ -246,9 +246,10 @@ describe('ensureProjectSession — new session', () => {
 // ---------------------------------------------------------------------------
 
 describe('openPaneInSession', () => {
-	test('calls split-window -t <session>:0 -v -d with the command', () => {
+	test('calls split-window -t <session>:0 -v -d -- with the argv elements spread', () => {
 		const spawn = makeFakeSpawn();
-		openPaneInSession('cam-orch-myproj-abc123', 'claude --permission-mode bypassPermissions', spawn);
+		const cmdArgv = ['claude', '--permission-mode', 'bypassPermissions'];
+		openPaneInSession('cam-orch-myproj-abc123', cmdArgv, spawn);
 
 		expect(spawn.calls).toHaveLength(1);
 		const call = spawn.calls[0];
@@ -258,17 +259,46 @@ describe('openPaneInSession', () => {
 		expect(call?.args).toContain('cam-orch-myproj-abc123:0');
 		expect(call?.args).toContain('-v');
 		expect(call?.args).toContain('-d');
-		expect(call?.args).toContain('claude --permission-mode bypassPermissions');
+		// The separator '--' must appear before the command elements.
+		expect(call?.args).toContain('--');
+		// Each argv element is a separate arg, not a joined string.
+		expect(call?.args).toContain('claude');
+		expect(call?.args).toContain('--permission-mode');
+		expect(call?.args).toContain('bypassPermissions');
+		// Must NOT contain the joined form (that was the old shell-injection path).
+		expect(call?.args).not.toContain('claude --permission-mode bypassPermissions');
 	});
 
-	test('passes the exact command string as the last argument', () => {
+	test('passes argv elements as separate tmux args (not a single joined shell string)', () => {
 		const spawn = makeFakeSpawn();
-		const cmd = 'bash -c "echo hello"';
-		openPaneInSession('cam-orch-test-000000', cmd, spawn);
+		// Metacharacters in the issue text must NOT be shell-interpreted.
+		const cmdArgv = [
+			'claude',
+			'--permission-mode',
+			'bypassPermissions',
+			'/cam-issue create fix; $(echo injected) `whoami` & bad > /tmp/x',
+		];
+		openPaneInSession('cam-orch-test-000000', cmdArgv, spawn);
 
 		const call = spawn.calls[0];
+		// The free-text element is passed verbatim as one discrete argv element.
 		const lastArg = call?.args[call.args.length - 1];
-		expect(lastArg).toBe(cmd);
+		expect(lastArg).toBe('/cam-issue create fix; $(echo injected) `whoami` & bad > /tmp/x');
+		// It must NOT be joined into a single /bin/sh -c string.
+		const joinedStr = cmdArgv.join(' ');
+		expect(call?.args).not.toContain(joinedStr);
+	});
+
+	test('separator -- appears before command elements to guard against flag-like args', () => {
+		const spawn = makeFakeSpawn();
+		openPaneInSession('cam-orch-test-000000', ['claude', '/cam-next'], spawn);
+
+		const call = spawn.calls[0];
+		const dashDashIdx = call?.args.indexOf('--') ?? -1;
+		expect(dashDashIdx).toBeGreaterThan(-1);
+		// 'claude' must appear after '--'.
+		const claudeIdx = call?.args.indexOf('claude') ?? -1;
+		expect(claudeIdx).toBeGreaterThan(dashDashIdx);
 	});
 });
 

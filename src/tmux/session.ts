@@ -178,17 +178,23 @@ export function ensureProjectSession(
 // ---------------------------------------------------------------------------
 
 /**
- * Split a new pane into an existing project session and run `cmd` in it.
+ * Split a new pane into an existing project session and run `cmdArgv` in it.
  *
- * Uses `split-window -t <sessionName>:0 -v -d <cmd>` (vertical split,
- * detached so the caller is not immediately switched into it).
+ * Uses `split-window -t <sessionName>:0 -v -d -- <arg0> <arg1> ...` (vertical
+ * split, detached so the caller is not immediately switched into it).
+ *
+ * The command is passed as multiple argv elements (tmux multi-arg
+ * shell-command form), which causes tmux to exec the binary directly rather
+ * than routing through `/bin/sh -c`. This prevents shell-metacharacter
+ * injection when any argv element contains user-supplied free text (e.g. an
+ * issue description with `;`, `$()`, backticks, or quotes).
  *
  * Intended for loop commands that want to host their claude invocation inside
  * the project session without re-creating the session layout.
  */
 export function openPaneInSession(
 	sessionName: string,
-	cmd: string,
+	cmdArgv: string[],
 	spawnFn: SpawnFn,
 ): void {
 	spawnFn(
@@ -198,7 +204,8 @@ export function openPaneInSession(
 			'-t', `${sessionName}:0`,
 			'-v',
 			'-d',
-			cmd,
+			'--',
+			...cmdArgv,
 		],
 		{ stdio: 'ignore' },
 	);

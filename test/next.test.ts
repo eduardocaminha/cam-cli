@@ -342,22 +342,21 @@ describe('runNext', () => {
 			expect(newSessionCall).toBeDefined();
 			expect(newSessionCall?.args).toContain(sessionName);
 
-			// openPaneInSession: split-window -t <sessionName>:0 -v -d <claudeCmd>.
-			// The cmd is passed as a single string: "claude --permission-mode ... /cam-next".
+			// openPaneInSession: split-window -t <sessionName>:0 -v -d -- <arg0> <arg1> ...
+			// Each claude argv element is a discrete arg (not one joined shell string).
 			const splitCalls = tmuxSpawnFake.calls.filter(
 				(c) => c.cmd === 'tmux' && c.args[0] === 'split-window',
 			);
 			// At least one split-window call opens the claude pane.
 			const claudePaneCall = splitCalls.find(
-				(c) => c.args.some((a) => a.includes('claude')),
+				(c) => c.args.some((a) => a === 'claude'),
 			);
 			expect(claudePaneCall).toBeDefined();
-			// The last arg is the full command string containing all claude flags.
-			const cmdStr = claudePaneCall?.args.at(-1) ?? '';
-			expect(cmdStr).toContain('claude');
-			expect(cmdStr).toContain('--permission-mode');
-			expect(cmdStr).toContain('bypassPermissions');
-			expect(cmdStr).toContain('/cam-next');
+			// Each argv element is discrete; no joined string.
+			expect(claudePaneCall?.args).toContain('claude');
+			expect(claudePaneCall?.args).toContain('--permission-mode');
+			expect(claudePaneCall?.args).toContain('bypassPermissions');
+			expect(claudePaneCall?.args).toContain('/cam-next');
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

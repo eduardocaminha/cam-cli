@@ -580,8 +580,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		const sessionName = projectSessionName(cwd);
 		try {
 			ensureProjectSession(sessionName, tmuxSpawnFn);
-			const claudeCmd = claudeArgv.join(' ');
-			openPaneInSession(sessionName, claudeCmd, tmuxSpawnFn);
+			openPaneInSession(sessionName, claudeArgv, tmuxSpawnFn);
 		} catch (err) {
 			emitWarn(
 				'tmux session pane launch failed',

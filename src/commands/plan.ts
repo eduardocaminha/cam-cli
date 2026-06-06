@@ -123,11 +123,10 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 
 	const sessionName = projectSessionName(cwd);
 	const claudeArgv = buildPlanArgv(permissionMode, issue);
-	const claudeCmd = claudeArgv.join(' ');
 
 	try {
 		ensureProjectSession(sessionName, tmuxSpawnFn);
-		openPaneInSession(sessionName, claudeCmd, tmuxSpawnFn);
+		openPaneInSession(sessionName, claudeArgv, tmuxSpawnFn);
 	} catch (err) {
 		printError(
 			'Failed to launch /cam-plan pane',
