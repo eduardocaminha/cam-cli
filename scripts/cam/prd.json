@@ -52,7 +52,7 @@
         "Typecheck passes (bun run typecheck) and tests pass (bun test)."
       ],
       "priority": 0.3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Round-1 review fix (WARNING #4). US-009 updated the per-command HELP blocks but missed the top-level HELP entries and STOP_HELP body."
     },

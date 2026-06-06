@@ -21,6 +21,28 @@ Durable patterns carried across cycles:
 - **tmux shell-command form**: single arg to split-window/new-window goes through `/bin/sh -c` (shell injection risk). Multi-arg form execs directly (bypasses shell). Change `openPaneInSession(session, cmd: string)` to `openPaneInSession(session, cmdArgv: string[])` and spread the argv as separate trailing args after a `--` separator. Do NOT join argv before passing; user-supplied free text (issue descriptions, etc.) must stay as discrete elements.
 -->
 
+## [2026-06-06 11:00] - US-R1-003: Update stale top-level HELP and STOP_HELP text
+
+### What was done
+- index.ts line 47: replaced "prompts on APPROVE" with "APPROVE happens inside the pane" (matches US-006 pane model).
+- index.ts line 48: replaced "Ghostty split + claude + dashboard" with "Launch the autonomous loop as a tmux pane in the project session" (matches US-005 single-session model).
+- index.ts line 53: replaced 'kills tmux session "cam"' with "kills the per-project tmux session" (session name is derived from project root, not hardcoded).
+- index.ts STOP_HELP body (lines 311-312): replaced 'session named exactly "cam"' with per-project session wording; replaced em-dash with semicolon.
+
+### Files changed
+- index.ts
+
+### Quality gates
+- Typecheck: ok
+- Tests: 479 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+
+### Notes
+- Pure text-only fix; no logic changed. No tests assert the specific HELP string content for these three commands, so no test updates needed.
+---
+
 ## [2026-06-06 10:00] - US-R1-002: Fix shell injection in pane launch commands (openPaneInSession argv)
 
 ### What was done
