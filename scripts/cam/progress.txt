@@ -170,3 +170,24 @@ Durable patterns carried across cycles:
 ### Notes
 - None. Pure documentation story; all acceptance criteria met in a focused diff.
 ---
+
+## [2026-06-07 05:00] - US-008: Document recovery runbook for stale tmux servers
+
+### What was done
+- Added "Recovery runbook: stale tmux server" subsection to README.md under "Single project session"
+- Three command blocks with contextual sentences each: (a) stale cam socket via `tmux -L cam kill-server`, (b) stale default socket via `tmux kill-server` then `cam run`, (c) isolation guarantee explanation
+- Verified zero em-dashes in the added section
+
+### Files changed
+- README.md
+
+### Quality gates
+- Typecheck: ok
+- Tests: 490 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (docs-only story; no external library API surface touched)
+
+### Notes
+- None. Pure documentation story; runbook is surgical (three commands, three sentences of context each).
+---

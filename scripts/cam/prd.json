@@ -148,7 +148,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: README.md. Depends on US-006. Keep the runbook surgical: three commands, three sentences of context each. Eduardo's rule: no travessão in persisted .md files."
     }
