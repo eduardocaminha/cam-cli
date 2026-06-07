@@ -49,3 +49,30 @@ Durable patterns carried across cycles:
 ### Notes
 - test files beyond tmux-session.test.ts also needed updating because their fake spawns routed on args[0]; the subcommand guard pattern is documented in Codebase Patterns above
 ---
+
+## [2026-06-07 00:30] - US-002: Thread -L cam through src/commands/run.ts (orchestrator launcher)
+
+### What was done
+- Imported `tmuxArgs` from `src/tmux/session.ts` in `src/commands/run.ts`
+- Updated `tmuxAvailable` probe to use `tmuxArgs(['-V'])` instead of bare `['-V']`
+- Updated all 3 `respawn-pane` calls to use `tmuxArgs(['respawn-pane', ...])` prefix
+- Updated the chained `kill-session` STRING inside `agentCmd` to use literal `tmux -L cam kill-session -t ...` (shell-evaluated string, tmuxArgs does not apply here)
+- Updated `opt()`, `winOpt()`, `paneLabel()` helpers to use `tmuxArgs([...])`
+- Updated mouse `set-option`, `select-pane`, `switch-client`, and `attach-session` calls to use `tmuxArgs([...])`
+- Updated test/run.test.ts: respawn-pane search now uses `c.args[2] === 'respawn-pane'`; added -L/cam prefix assertions; kill-session assertion now checks for `-L cam kill-session -t ...`
+
+### Files changed
+- src/commands/run.ts
+- test/run.test.ts
+
+### Quality gates
+- Typecheck: ok
+- Tests: 487 pass
+
+### Step 5.5 docs validation
+- lib: tmux, status: ok (no change from US-001 validation; same -L flag usage confirmed)
+
+### Notes
+- respawn-pane calls shift from args[0] to args[2] after tmuxArgs() wrapping; test finders updated accordingly
+- the agentCmd kill-session uses a hardcoded `tmux -L cam` string because it is shell-eval'd inside bash -c, not a direct spawn call
+---

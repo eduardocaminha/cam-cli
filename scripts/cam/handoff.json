@@ -1,29 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add CAM_TMUX_SOCKET + tmuxArgs() and thread -L cam through src/tmux/session.ts"
+    "id": "US-002",
+    "title": "Thread -L cam through src/commands/run.ts (orchestrator launcher)"
   },
   "branchName": "cam/CAM-26-tmux-dedicated-socket",
-  "timestamp": "2026-06-07T00:00:00Z",
+  "timestamp": "2026-06-07T00:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/tmux/session.ts",
-    "test/tmux-session.test.ts",
-    "test/run.test.ts",
-    "test/next.test.ts",
-    "test/issue.test.ts",
-    "test/plan.test.ts",
-    "test/attach-hint.test.ts"
+    "src/commands/run.ts",
+    "test/run.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 is the foundation story. CAM_TMUX_SOCKET and tmuxArgs() are now exported from src/tmux/session.ts. All tmux calls in session.ts now use -L cam prefix. The next stories (US-002 through US-008) need to thread -L cam through the remaining call sites: src/commands/run.ts (US-002), src/commands/claude.ts (US-003), src/retry/tmux.ts (US-004), src/commands/retry-monitor.ts (US-005), etc. Pattern: fake spawn handlers in tests should route by subcommand using `const subcommand = args[0] === '-L' ? args[2] : args[0]`; assertions check args[0]==='-L', args[1]==='cam', args[2]===subcommand.",
+  "nextStoryContext": "US-001 threaded -L cam through session.ts; US-002 threaded it through src/commands/run.ts. Next stories (US-003 through US-008) thread it through the remaining call sites: src/commands/claude.ts (US-003), src/retry/tmux.ts (US-004), src/commands/retry-monitor.ts (US-005), etc. Pattern is the same: wrap all direct tmux spawn calls with tmuxArgs([...]). Respawn-pane calls after tmuxArgs() have subcommand at args[2]; update test finders from args[0] to args[2] accordingly. Shell-evaluated strings (like the kill-session chain in agentCmd) must use the literal 'tmux -L cam' since tmuxArgs() only applies to direct spawn calls.",
   "officialDocsValidated": [
     {
       "lib": "tmux",
       "url": "https://man.openbsd.org/tmux.1",
-      "fetchedAt": "2026-06-07T00:00:00Z",
-      "status": "aligned",
-      "summary": "-L is a global option preceding the subcommand; `tmux -L cam new-session` is confirmed correct. Implementation matches."
+      "fetchedAt": "2026-06-07T00:30:00Z",
+      "status": "ok",
+      "summary": "US-001 validation confirmed -L is a global flag preceding subcommand. US-002 uses same pattern; no new external lib introduced."
     }
   ]
 }

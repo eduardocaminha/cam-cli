@@ -3,7 +3,10 @@
   "branchName": "cam/CAM-26-tmux-dedicated-socket",
   "description": "Route every cam tmux invocation through a dedicated `-L cam` socket so cam never attaches to a stale shared default tmux server.",
   "issueNumber": 26,
-  "relatedDocs": ["README.md", "FLOW.md"],
+  "relatedDocs": [
+    "README.md",
+    "FLOW.md"
+  ],
   "officialDocsConsulted": [
     {
       "lib": "tmux",
@@ -46,7 +49,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts, test/run.test.ts, test/attach-hint.test.ts. Depends on US-001. The `agentCmd` chained kill-session is a STRING that gets shell-evaluated, so the `-L cam` literal must be hardcoded inside the string — `tmuxArgs()` does not apply there. Double-check argv-order assertions in tests (the `-L cam` global flags shift indices). Bun + TypeScript + Ink stack."
     },
