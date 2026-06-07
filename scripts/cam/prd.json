@@ -1,260 +1,153 @@
 {
   "project": "cam-cli",
-  "branchName": "cam/cam-run-workspace",
-  "description": "Unify the cam loop around a single per-project tmux session: lazy-created host with orchestrator + dashboard panes, with plan/next/issue as thin pane launchers, an interactive menu that injects into the orchestrator, and orchestrator exit that tears the session down.",
-  "issueNumber": null,
-  "relatedDocs": [
-    "FLOW.md"
+  "branchName": "cam/CAM-26-tmux-dedicated-socket",
+  "description": "Route every cam tmux invocation through a dedicated `-L cam` socket so cam never attaches to a stale shared default tmux server.",
+  "issueNumber": 26,
+  "relatedDocs": ["README.md", "FLOW.md"],
+  "officialDocsConsulted": [
+    {
+      "lib": "tmux",
+      "url": "https://man.openbsd.org/tmux.1",
+      "version": "tmux 3.x (OpenBSD man.1)",
+      "fetchedAt": "2026-06-07",
+      "summary": "-L socket-name selects an independent server socket under /tmp/tmux-<UID>/<name> (or $TMUX_TMPDIR). -L is a global option that must precede the subcommand. `tmux -L cam new-session` starts a fresh independent server if none exists for that socket. -S overrides and ignores -L.",
+      "status": "ok"
+    }
   ],
-  "officialDocsConsulted": [],
   "userStories": [
     {
-      "id": "US-R1-001",
-      "title": "Harden ensureProjectSession: stable pane IDs + CAM_SESSION env",
-      "description": "As cam, I need the project session built with stable pane identifiers and a CAM_SESSION tag so that pane targeting works regardless of the user pane-base-index and so inside-session detection actually functions in production.",
-      "acceptanceCriteria": [
-        "[src/tmux/session.ts:107-143 + src/commands/run.ts:196-220] Stop hard-coding pane targets 0.0/0.1/0.2. Capture the pane id of each pane (new-session and the two split-window calls) via -P -F '#{pane_id}' (the pattern already used in src/commands/setup.ts) and address panes by the captured %<n> ids. This must work when the user has pane-base-index 1 in .tmux.conf.",
-        "[src/tmux/session.ts new-session call] Add -e CAM_SESSION=<sessionName> to the new-session argv so panes inherit CAM_SESSION; this is what isInsideProjectSession (session.ts:207) and emitAttachHint (src/logging/screen.ts:109) rely on. Verify the attach hint is actually suppressed inside the session, not only via injected env in tests.",
-        "run.ts pane wiring (orchestrator send-keys + kill-session chain), the menu script ORCH_PANE/DASHBOARD_PANE, and the dashboard/menu send-keys all use the captured pane ids.",
-        "Unit tests (test/tmux-session.test.ts, test/run.test.ts) updated to assert the pane-id-capture argv (-P -F #{pane_id}) and the -e CAM_SESSION= flag, replacing the positional 0.0/0.1/0.2 assertions.",
-        "Typecheck passes (bun run typecheck) and tests pass (bun test)."
-      ],
-      "priority": 0.1,
-      "passes": true,
-      "requires": null,
-      "notes": "Round-1 review fix (CRITICAL #1 + #3, both in ensureProjectSession new-session call). pane-base-index defaults to 0 but is commonly set to 1; positional pane targets break then. setup.ts already captures #{pane_id} - mirror it. CAM_SESSION is read but never set today, so US-008 suppression and isInsideProjectSession are dead in production. While editing the run.ts orchestrator-command region (~line 197), add a one-line comment documenting that --permission-mode bypassPermissions is an INTENTIONAL operator decision (2026-06-06): the orchestrator runs the loop unattended and must bypass; do NOT change it to readPermissionMode. This stops reviewers from re-flagging it (round-1 WARNING #6, ruled intentional)."
-    },
-    {
-      "id": "US-R1-002",
-      "title": "Fix shell injection in pane launch commands (openPaneInSession argv)",
-      "description": "As a cam user, I want cam issue (and the other pane launchers) to pass commands safely so that free text or paths containing shell metacharacters are not interpreted by /bin/sh.",
-      "acceptanceCriteria": [
-        "[src/tmux/session.ts:161-177] openPaneInSession passes the command to tmux split-window as multiple argv elements (tmux multi-arg shell-command form, which execs directly and bypasses /bin/sh -c) instead of a single joined string. Change its signature to accept argv as string[].",
-        "[src/commands/issue.ts:100-106] Stop doing claudeArgv.join(' '); pass the argv array straight through so user free text containing ; $() backticks or quotes is NOT shell-interpreted. Verify an issue text with shell metacharacters does not execute embedded commands and does not break quoting.",
-        "Update the other openPaneInSession call sites (src/commands/next.ts, src/commands/plan.ts) to the new argv-array signature.",
-        "Unit tests assert split-window receives the command as separate argv elements (not one sh -c string) and that a metacharacter-laden issue text is passed verbatim.",
-        "Typecheck passes (bun run typecheck) and tests pass (bun test)."
-      ],
-      "priority": 0.2,
-      "passes": true,
-      "requires": null,
-      "notes": "Round-1 review fix (CRITICAL #2). tmux(1): a single-arg shell-command goes through /bin/sh -c; multi-arg execs directly. issue.ts feeds user free text into the joined string today."
-    },
-    {
-      "id": "US-R1-003",
-      "title": "Update stale top-level HELP and STOP_HELP text",
-      "description": "As a cam user reading help, I want the top-level command list and STOP_HELP to match the single-session model so that docs do not describe removed behavior.",
-      "acceptanceCriteria": [
-        "[index.ts:53, 312-313] cam stop help no longer says it kills a session named exactly 'cam'; it describes targeting the per-project session (US-005).",
-        "[index.ts:47] cam plan help no longer claims APPROVE is prompted in the parent process; APPROVE happens inside the pane (US-006).",
-        "[index.ts:48] cam next help no longer says 'Ghostty split'; it describes the tmux pane launcher in the project session (US-005).",
-        "No em-dash introduced in any persisted .md or help string.",
-        "Typecheck passes (bun run typecheck) and tests pass (bun test)."
-      ],
-      "priority": 0.3,
-      "passes": true,
-      "requires": null,
-      "notes": "Round-1 review fix (WARNING #4). US-009 updated the per-command HELP blocks but missed the top-level HELP entries and STOP_HELP body."
-    },
-    {
-      "id": "US-R1-004",
-      "title": "Remove misleading inline-fallback message in cam next",
-      "description": "As a cam user, I want the cam next tmux failure path to not claim a fallback that does not happen so that the output is honest about what occurred.",
-      "acceptanceCriteria": [
-        "[src/commands/next.ts:585-595] The catch block must not print 'Falling back to inline mode' when no fallback occurs. Either remove the misleading message (and report the tmux failure plainly) or actually implement the inline fallback. Pick the simplest correct option.",
-        "Unit test covers the tmux-failure path and asserts the message matches the real behavior.",
-        "Typecheck passes (bun run typecheck) and tests pass (bun test)."
-      ],
-      "priority": 0.4,
-      "passes": true,
-      "requires": null,
-      "notes": "Round-1 review fix (WARNING #5). Code prints the fallback hint then returns 0 after the success message, never reaching the inline spawn."
-    },
-    {
       "id": "US-001",
-      "title": "Project session module (tmux helpers)",
-      "description": "As the cam codebase, I need a single tmux helper module so that all loop commands share one canonical way to name, create, and split into the per-project session.",
+      "title": "Add CAM_TMUX_SOCKET + tmuxArgs() and thread -L cam through src/tmux/session.ts",
+      "description": "As a cam maintainer, I need the central tmux helper module to declare a dedicated socket name and a `tmuxArgs()` builder so every downstream call site can prepend `-L cam` consistently, ensuring cam never collides with the user's default tmux server.",
       "acceptanceCriteria": [
-        "New module under src/tmux/ (e.g. src/tmux/session.ts) exports projectSessionName, ensureProjectSession (lazy-creates the full session: orchestrator pane + dashboard pane, detached), openPaneInSession(session, cmd) (split-window -t against the project session), and isInsideProjectSession(env).",
-        "Helpers are pure with an injectable spawn (callers pass a spawn function; no direct global side-effects in unit tests).",
-        "Unit tests assert the exact tmux argv for new-session, split-window, and has-session (spawn-injected fake records calls).",
+        "src/tmux/session.ts exports `CAM_TMUX_SOCKET = 'cam'` and `tmuxArgs(sub: string[]): string[]` that returns `['-L', CAM_TMUX_SOCKET, ...sub]`",
+        "All five session.ts helpers (`hasSession`, `ensureProjectSession` with its new-session + 2× split-window calls, `openPaneInSession`) invoke tmux via `tmuxArgs([...])` so `-L cam` is the first global flag before the subcommand",
+        "`isInsideProjectSession`/`CAM_SESSION` env-based detection is left unchanged (it does not depend on the socket)",
+        "test/tmux-session.test.ts is updated to account for the `-L cam` prefix in argv assertions (e.g. previous `args[0] === 'has-session'` becomes `args[2] === 'has-session'` with `args[0] === '-L'`, `args[1] === 'cam'`) and continues to pass",
         "Typecheck passes (bun run typecheck)",
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": true,
+      "passes": false,
       "requires": null,
-      "notes": "Funds CAM-7 (single project session as host of all loop commands). Decided architecture (applies to whole cycle): one tmux session per project, name already exists as projectSessionName() in src/commands/run.ts = cam-orch-<base>-<hash>; loop commands open panes into it via split-window -t; lazy-create on first command with full layout (orchestrator pane + dashboard pane). Pattern: spawn-injected helpers tested by argv assertions (see existing tmux-related tests). Files: new src/tmux/session.ts; may extract projectSessionName from src/commands/run.ts and re-export. No external deps. noUncheckedIndexedAccess: guard array/regex access."
+      "notes": "Files: src/tmux/session.ts, test/tmux-session.test.ts. This is the foundation every other story depends on. `-L` is a GLOBAL tmux option and MUST precede the subcommand (`tmux -L cam new-session ...`, never `tmux new-session -L cam`). Out of scope (mention in PR description, not here): src/commands/claude.ts, src/commands/retry-monitor.ts, src/retry/tmux.ts. Stack: Bun + TypeScript + Ink; tests via `bun test`; typecheck via `bun run typecheck`. No travessão in any persisted markdown comment."
     },
     {
       "id": "US-002",
-      "title": "cam run uses the session module; dashboard becomes a permanent pane",
-      "description": "As a cam user, I want cam run to assemble the project session via the shared module and run cam dashboard as the right-side pane so that the dashboard is captured from the very first command instead of being a separate UX surface.",
+      "title": "Thread -L cam through src/commands/run.ts (orchestrator launcher)",
+      "description": "As a cam operator, I need `cam run` to invoke every tmux subcommand on the dedicated `-L cam` socket so the orchestrator + worker panes spawn inside a fresh server tied to my current security session, not a stale shared default server.",
       "acceptanceCriteria": [
-        "src/commands/run.ts uses ensureProjectSession from the US-001 module to build the session (no duplicated session-creation logic).",
-        "Right pane runs `cam dashboard` (the binary keeps working, running inside the pane) instead of the static menu (interactive menu lands in US-004).",
-        "Unit tests assert the tmux argv produced by cam run (new-session + split-window for dashboard pane).",
+        "`tmuxAvailable` probe (`tmux -V`) is invoked as `tmux -L cam -V`",
+        "All 3 `respawn-pane` calls are prefixed with `-L cam`",
+        "The chained `tmux kill-session` STRING inside `agentCmd` is rewritten to the literal `tmux -L cam kill-session -t ...` (so the shell-evaluated command also targets the dedicated socket)",
+        "All `set-option`, `set-window-option`, `set-option -p @cam_label`, mouse option, `select-pane`, and `switch-client`/`attach-session` calls go through `tmuxArgs([...])`",
+        "test/run.test.ts and test/attach-hint.test.ts are updated to account for the `-L cam` prefix and continue to pass",
         "Typecheck passes (bun run typecheck)",
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "requires": null,
-      "notes": "Funds CAM-8 (dashboard as permanent pane) and continues CAM-7. Depends on US-001. Files: src/commands/run.ts. Architecture reminder: one tmux session per project hosts everything; this story wires run.ts onto the shared module and promotes dashboard to a pane. Keep success/failure signalling on glyph, not divider color (Ink convention from lessons.md 2026-06-05) if any UI tweak slips in."
+      "notes": "Files: src/commands/run.ts, test/run.test.ts, test/attach-hint.test.ts. Depends on US-001. The `agentCmd` chained kill-session is a STRING that gets shell-evaluated, so the `-L cam` literal must be hardcoded inside the string — `tmuxArgs()` does not apply there. Double-check argv-order assertions in tests (the `-L cam` global flags shift indices). Bun + TypeScript + Ink stack."
     },
     {
       "id": "US-003",
-      "title": "Orchestrator exit tears down the session",
-      "description": "As a cam user, I want exiting the orchestrator (claude exit in pane 0) to kill the whole tmux session and drop me back into the shell so that I never have to ctrl+b d to leave.",
+      "title": "Thread -L cam through cam next / cam plan / cam issue launchers",
+      "description": "As a cam operator, I need `cam next`, `cam plan`, and `cam issue` to probe tmux availability and open panes on the dedicated `-L cam` socket so they always land in the cam workspace server, never on the default socket.",
       "acceptanceCriteria": [
-        "Pane 0 command chains a `tmux kill-session -t <session>` after the claude invocation (or wires a pane-died/pane-exited hook) so that orchestrator exit terminates the session.",
-        "Unit test asserts the composed argv/script for pane 0 contains the kill-session call (or the hook registration argv).",
+        "src/commands/next.ts `tmuxProbe(['tmux','-V'])` becomes `['tmux','-L','cam','-V']`",
+        "src/commands/next.ts, src/commands/plan.ts, src/commands/issue.ts session/pane operations delegate to ensureProjectSession / openPaneInSession (already `-L cam`-aware after US-001) without inline tmux invocations",
+        "test/next.test.ts, test/plan.test.ts, test/issue.test.ts are updated to account for the `-L cam` prefix and continue to pass",
         "Typecheck passes (bun run typecheck)",
         "Tests pass (bun test)"
       ],
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "requires": null,
-      "notes": "Funds CAM-14 (exit drops back to terminal). Depends on US-002. Small story; touches src/commands/run.ts only. Mechanism: chain `; tmux kill-session -t <session>` to pane 0 command, or set-hook pane-died. Keep spawn-injected test style."
+      "notes": "Files: src/commands/next.ts, src/commands/plan.ts, src/commands/issue.ts, test/next.test.ts, test/plan.test.ts, test/issue.test.ts. Depends on US-001. These three commands are thin launchers — most tmux work is delegated to session.ts; the only direct invocation is the `-V` probe in next.ts."
     },
     {
       "id": "US-004",
-      "title": "Interactive selectable menu that injects into the orchestrator",
-      "description": "As a cam user inside the project session, I want the right-side menu pane to be an interactive selectable menu that sends the chosen command into the orchestrator pane so that I don't have to type commands manually.",
+      "title": "Thread -L cam through cam stop and Menu pane control",
+      "description": "As a cam operator, I need `cam stop` and the interactive Menu's pane-control helpers to target the dedicated `-L cam` socket so they act on the cam workspace server and never accidentally hit the default server.",
       "acceptanceCriteria": [
-        "buildRunMenuScript in src/commands/run.ts becomes a selectable key-loop menu (bash-style, same pattern as setup.ts which already uses `read -rsn1`).",
-        "On selection the menu invokes `tmux send-keys -t <orch-pane> <command> Enter` against the known orchestrator pane target (human-triggered action, not worker puppeteering).",
-        "Unit test asserts the generated menu script contains the expected send-keys argv / target pane reference for at least one menu entry.",
+        "src/commands/stop.ts `tmuxAvailable` (`-V`), `has-session`, and `kill-session` invocations all go through `tmuxArgs([...])`",
+        "src/ui/Menu.tsx `tmux([...])` wrapper around ~line 56-57 (the `spawnSync('tmux', args)` for `select-pane`/`send-keys`) is updated to prepend `-L cam` (e.g. `spawnSync('tmux', tmuxArgs(args))`)",
+        "test/stop.test.ts and test/setup-menu.test.ts are updated to account for the `-L cam` prefix in argv assertions and continue to pass",
         "Typecheck passes (bun run typecheck)",
-        "Tests pass (bun test)"
+        "Tests pass (bun test)",
+        "Render Menu.tsx via ink-testing-library and assert the command list renders without exception (success/failure is signalled by the ✓/✗ glyph, not divider color)"
       ],
       "priority": 4,
-      "passes": true,
+      "passes": false,
       "requires": null,
-      "notes": "Funds CAM-13 (menu pane becomes interactive). Depends on US-002 (dashboard already promoted; menu may sit alongside or replace, follow current run.ts layout decision). Pattern reference: setup.ts key-loop with `read -rsn1`. Files: src/commands/run.ts. Architecture reminder: orchestrator interacts with workers only via structured output + pane focus; this menu is human-triggered injection into a known pane, which is allowed."
-    },
-    {
-      "id": "US-011",
-      "title": "Three-pane layout: orchestrator + permanent dashboard + interactive menu",
-      "description": "As a cam user, I want the project session to host three panes (orchestrator, a permanent cam dashboard, and the interactive menu) so that the dashboard stays visible (US-002, US-010) while the menu also keeps its own pane (US-004), instead of the menu replacing the dashboard.",
-      "acceptanceCriteria": [
-        "ensureProjectSession in src/tmux/session.ts builds a detached 3-pane layout (orchestrator pane + dashboard pane + menu pane). Unit tests assert the exact tmux argv (new-session plus the two split-window calls, with their target panes and the resulting pane ids).",
-        "src/commands/run.ts wires the dashboard pane to `cam dashboard` (permanent) and the menu pane to the interactive menu script. The dashboard is no longer replaced by the menu. The orchestrator pane target used by the menu send-keys and by the kill-session chain matches the actual orchestrator pane id after the 3-pane splits.",
-        "The stale header comment in run.ts (currently says pane 1 is `cam dashboard (permanent pane, US-002)`) is corrected to describe the real 3-pane layout.",
-        "The menu `d` entry is fixed: since the dashboard is now a permanent pane, either remove the `d` entry or repoint it to `tmux select-pane` the dashboard pane. It must NOT send the literal text `cam dashboard` into the claude orchestrator pane.",
-        "Existing US-001/US-002/US-004 tests are updated to the new pane targets and still pass.",
-        "Typecheck passes (bun run typecheck)",
-        "Tests pass (bun test)"
-      ],
-      "priority": 4,
-      "passes": true,
-      "requires": null,
-      "notes": "Corrects the layout fork the PRD left unresolved: with only 2 panes the US-004 menu replaced the US-002 dashboard, contradicting US-002 (dashboard = permanent pane) and US-010 (operator smoke expects orchestrator + dashboard as panes). Operator chose the 3-pane layout (orchestrator + dashboard + menu) on 2026-06-05. Touches src/tmux/session.ts (3-pane build), src/commands/run.ts (dashboard + menu wiring, stale comment, d entry), and the affected tests. noUncheckedIndexedAccess: guard array/regex access. Keep the spawn-injected argv-assertion test style. The menu sends slash commands to the orchestrator pane 0.0; d should focus the dashboard pane, never inject text."
+      "notes": "Files: src/commands/stop.ts, src/ui/Menu.tsx, test/stop.test.ts, test/setup-menu.test.ts. Depends on US-001. Menu.tsx is the only Ink screen touched in this PR — render check via ink-testing-library; success/failure is shown by the ✓/✗ glyph, never by divider color."
     },
     {
       "id": "US-005",
-      "title": "cam next becomes a pane launcher; stop is rewired",
-      "description": "As a cam user, I want cam next to open the loop's claude as a pane in the project session (instead of creating a separate tmux session named 'cam') and cam stop to target the project session's pane so that everything lives in one session.",
+      "title": "Thread -L cam through the outside-tmux branch of cam setup",
+      "description": "As a cam operator running `cam setup` from outside an existing tmux session, I need the spawned `cam-setup` session to live on the dedicated `-L cam` socket; conversely, when I'm already inside tmux, the setup commands that split MY live interactive window must stay on the ambient socket because they intentionally target the user's current security session, not the cam workspace.",
       "acceptanceCriteria": [
-        "src/commands/next.ts opens the loop claude as a pane in the project session using the US-001 module (removes the standalone 'cam' session from buildTmuxSplitArgv).",
-        "src/commands/stop.ts targets the pane/session of the project (not the legacy 'cam' session).",
-        "Unit tests assert the new tmux argv for both commands (spawn-injected; no real tmux).",
+        "src/commands/setup.ts outside-tmux branch routes the `cam-setup` `new-session` and its `split-window` through `tmuxArgs([...])` (so the new server is on `-L cam`)",
+        "src/commands/setup.ts inside-tmux branch (`display-message`, `split-window`, `send-keys` against the user's live window) is left on the ambient socket",
+        "A one-line code comment in setup.ts explains the inside-tmux exception: it splits the user's live interactive window, which lives in the user's current security session, so moving it to `-L cam` would target the wrong server",
+        "test/setup-menu.test.ts is updated if it asserts the `cam-setup` argv, and continues to pass",
         "Typecheck passes (bun run typecheck)",
         "Tests pass (bun test)"
       ],
       "priority": 5,
-      "passes": true,
+      "passes": false,
       "requires": null,
-      "notes": "Funds CAM-9 (plan/next as pane launchers, ripples on stop). Depends on US-001. Files: src/commands/next.ts, src/commands/stop.ts. Architecture reminder: thin launcher pattern - command ensures session, opens pane, returns to shell; interaction migrates inside the session. Today buildTmuxSplitArgv in next.ts creates the 'cam' session - that path is removed by this story."
+      "notes": "Files: src/commands/setup.ts, test/setup-menu.test.ts. Depends on US-001. This is the ONLY place where ambient-socket usage is intentional inside the workspace code path. Code comment must be terse and free of travessão (use colon, comma, parens, or period)."
     },
     {
       "id": "US-006",
-      "title": "cam plan becomes a pane launcher",
-      "description": "As a cam user, I want cam plan to open /cam-plan as a pane in the project session (no more foreground PTY) so that APPROVE is answered inside the pane and the plan run shows up alongside the orchestrator and dashboard.",
+      "title": "Document the dedicated -L cam socket in README.md and FLOW.md",
+      "description": "As a future cam user or contributor, I need the README and FLOW docs to explain that cam uses a dedicated `-L cam` tmux socket and WHY, so I can debug stale-server collisions and understand why `cam claude` and `cam retry-monitor` intentionally stay on the ambient socket.",
       "acceptanceCriteria": [
-        "src/commands/plan.ts opens the /cam-plan claude invocation as a pane in the project session via the US-001 module; the PTY/foreground inherit path is removed.",
-        "APPROVE interaction happens inside the pane (the elegant approve-via-flag is CAM-12, explicitly out of scope here).",
-        "Unit test asserts the new tmux argv for cam plan.",
+        "README.md §\"Single project session\" states cam uses a dedicated `tmux -L cam` socket, isolated from the default socket and from claude-auto-retry's accumulated `claude-retry-*` sessions",
+        "README.md retry-monitor mention explicitly notes `cam claude` and `cam retry-monitor` intentionally stay on the user's ambient socket because they watch the user's live interactive pane, not the cam workspace",
+        "FLOW.md is updated with the same isolation guarantee in the tmux/session section",
+        "No travessão (—) appears in the persisted README.md or FLOW.md edits (use colon, comma, parens, or period instead)",
         "Typecheck passes (bun run typecheck)",
         "Tests pass (bun test)"
       ],
       "priority": 6,
-      "passes": true,
+      "passes": false,
       "requires": null,
-      "notes": "Funds CAM-9 (plan as pane launcher). Depends on US-001. Files: src/commands/plan.ts. Architecture reminder: end of PTY/inherit foreground in cam plan; pane in the project session is the host. APPROVE inside pane for this cycle; flag-file approve is post-MVP (CAM-12)."
+      "notes": "Files: README.md, FLOW.md. Depends on US-001 through US-005 being merged (docs reflect shipped behavior). Eduardo's rule: no travessão in persisted .md files (decided 2026-05-20). Anchor the WHY in the real failure mode (stale default server inside a dead macOS security session denies TCC access to ~/Documents)."
     },
     {
       "id": "US-007",
-      "title": "New subcommand cam issue <free text>",
-      "description": "As a cam user, I want to run `cam issue \"<free text>\"` from any terminal to file an issue without entering a session manually, so that issue creation is a first-class CLI verb instead of being reachable only via the /cam-issue slash inside a session.",
+      "title": "Operator smoke: confirm cam panes recover TCC access and target -L cam",
+      "description": "As the human operator, I need to verify in a real macOS terminal that cam's panes have full TCC access (no \"Operation not permitted\" on `~/Documents`) and that all cam tmux state lives under the dedicated `-L cam` socket, because the loop/reviewer cannot reproduce a stale-default-server collision automatically.",
       "acceptanceCriteria": [
-        "index.ts dispatches a new `issue` subcommand to a new src/commands/issue.ts.",
-        "issue.ts reads permission_mode from project config, ensures the project session via the US-001 module, and opens a pane with claude receiving the free-text argument (which expands to title + description and runs /cam-issue create).",
-        "A help block for `cam issue` is registered in src/logging/help.ts.",
-        "No --permission-mode CLI flag is registered (invariant; test/no-permission-mode-flag.test.ts must keep passing).",
-        "Unit tests assert: dispatch wiring in index.ts, the tmux argv used to open the pane, and that the help block exists.",
-        "Typecheck passes (bun run typecheck)",
-        "Tests pass (bun test)"
+        "Operator runs `cam run` in a fresh terminal in the cam-cli repo",
+        "In each pane (orchestrator + 2 workers), operator confirms `ls ~/Documents` and `git status` succeed with NO \"Operation not permitted\"",
+        "`tmux -L cam list-sessions` shows the `cam-orch-*` session",
+        "`tmux list-sessions` (default socket) does NOT show the cam session",
+        "Operator exercises `cam plan`, `cam stop`, and the interactive Menu and confirms each targets `tmux -L cam` (e.g. by checking `lsof`/`ps` or by confirming the default socket has no new cam-related sessions)",
+        "Operator records the result (pass/fail) in the PR/journal"
       ],
       "priority": 7,
-      "passes": true,
-      "requires": null,
-      "notes": "Funds CAM-11 (cam issue free-text subcommand). Depends on US-001. Files: index.ts (dispatch), src/commands/issue.ts (new), src/logging/help.ts (help block). Architecture reminder: command doesn't steal the TTY - opens a pane in the project session; output is visible by attaching via cam run. Hard invariant: never register --permission-mode flag (enforced by test/no-permission-mode-flag.test.ts; see scripts/cam/CLAUDE.md Codebase Patterns)."
+      "passes": false,
+      "requires": "operator",
+      "notes": "Files: none (manual verification). Depends on US-001 through US-005 being merged. This story is intentionally a manual smoke — automated typecheck/test gates do NOT apply here. The bug only reproduces on real macOS with a pre-existing stale default tmux server in a dead security session; the loop has no way to stage that. Operator should ideally test BOTH on a fresh machine (no stale server) and on a machine with an existing default tmux server to confirm isolation."
     },
     {
       "id": "US-008",
-      "title": "Post-exec hint suggesting cam run when detached",
-      "description": "As a cam user, I want loop commands that finish outside the project tmux session to print a short hint telling me to attach via `cam run`, and to suppress the hint when I'm already inside the session, so that I never lose track of where the panes are.",
+      "title": "Document recovery runbook for stale tmux servers",
+      "description": "As a cam operator hitting a stale cam-socket server or a stale default-socket server, I need a recovery runbook in the README so I can recover without losing the cam workspace or rebooting.",
       "acceptanceCriteria": [
-        "Shared helper (e.g. in src/logging/screen.ts or a small util) emits a short attach hint referencing `cam run` only when isInsideProjectSession(env) is false.",
-        "cam plan, cam next, and cam issue call the helper at the end of their successful path.",
-        "Unit tests assert: hint printed when env signals detached; hint suppressed when env signals inside session.",
+        "README.md (or wherever US-006 docs land) adds a recovery runbook section covering: (a) recovering a stale `cam` server via `tmux -L cam kill-server`, (b) the immediate workaround for the default-socket case (`tmux kill-server` on the default, then re-run `cam run` from a terminal in the current session), (c) the isolation guarantee the dedicated socket provides",
+        "No travessão (—) appears in the persisted runbook",
         "Typecheck passes (bun run typecheck)",
         "Tests pass (bun test)"
       ],
       "priority": 8,
-      "passes": true,
-      "requires": null,
-      "notes": "Funds CAM-10 (post-exec attach hint). Depends on US-005, US-006, US-007 (call sites). Files: src/logging/screen.ts (or new util) and call sites src/commands/plan.ts, src/commands/next.ts, src/commands/issue.ts. Detection uses isInsideProjectSession from US-001 (likely TMUX env var matching the project session name)."
-    },
-    {
-      "id": "US-009",
-      "title": "Docs reflect the new single-session model",
-      "description": "As a cam user reading docs, I want HELP blocks, README, and FLOW.md to describe the single project session, pane launchers, dashboard-as-pane, cam issue, and orchestrator-exit teardown so that documentation matches behavior.",
-      "acceptanceCriteria": [
-        "RUN_HELP, NEXT_HELP, PLAN_HELP, DASHBOARD_HELP in index.ts describe the new model (single session, launchers, dashboard as pane, exit teardown).",
-        "README.md updated for the new flow and the cam issue subcommand.",
-        "FLOW.md updated to reflect the new flow.",
-        "No em-dash (—) characters in any persisted .md (project preference).",
-        "Typecheck passes (bun run typecheck)",
-        "Tests pass (bun test)"
-      ],
-      "priority": 9,
-      "passes": true,
-      "requires": null,
-      "notes": "Doc maintenance for the new model. Depends on US-001 through US-008. Files: index.ts (HELP strings), README.md, FLOW.md. Project preference: no em-dash in persisted .md (substitute colon, comma, parens, period, or rephrase). Do not announce absence (omit cross-refs that only say content lives elsewhere)."
-    },
-    {
-      "id": "US-010",
-      "title": "Operator smoke in a real terminal",
-      "description": "As the operator, I need to validate end-to-end in a real terminal that the session, panes, menu, and exit teardown actually behave as specified so that the cycle ships with confidence.",
-      "acceptanceCriteria": [
-        "`cam run` brings up the session with orchestrator + dashboard as panes (operator confirms visually).",
-        "`cam next`, `cam plan`, and `cam issue \"...\"` open panes in the same session when run from another terminal.",
-        "The interactive menu navigates with keys and injects the selected command into the orchestrator pane.",
-        "Typing `exit` in the orchestrator pane kills the tmux session and returns the operator to the shell (no ctrl+b d needed).",
-        "Operator flips passes:true after confirming each of the above."
-      ],
-      "priority": 10,
       "passes": false,
-      "requires": "operator",
-      "notes": "Operator ceremony: not autonomous. The user already volunteered to run `cam run` in a real terminal. Depends on US-001 through US-009. The cam-loop falls through this story automatically; only the operator can mark it passed."
+      "requires": null,
+      "notes": "Files: README.md. Depends on US-006. Keep the runbook surgical: three commands, three sentences of context each. Eduardo's rule: no travessão in persisted .md files."
     }
-  ],
-  "review": {
-    "roundsCompleted": 2,
-    "maxRounds": 3,
-    "lastReviewSha": "d59020796e29db904da2f511c77622c57bb9339f",
-    "lastVerdict": "CLEAN"
-  }
+  ]
 }
