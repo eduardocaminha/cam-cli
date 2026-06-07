@@ -152,6 +152,29 @@ Inside the session, the hint is suppressed.
 When the orchestrator process in pane 0.0 exits, it automatically tears down
 the entire session (`tmux kill-session`).
 
+### Recovery runbook: stale tmux server
+
+**Stale cam socket** (cam server is unresponsive or pane operations fail):
+
+```bash
+tmux -L cam kill-server
+```
+
+This terminates every process attached to the dedicated cam socket and releases the socket file. After running it, `cam run` will spin up a fresh server with the correct security context for the current login session.
+
+**Stale default socket** (you see TCC or file-access errors in the default tmux server that bleed into cam):
+
+```bash
+tmux kill-server   # kills the default socket server, not the cam socket
+cam run            # re-opens the session under the isolated cam socket
+```
+
+Run this only if the default socket server is the one misbehaving. The cam socket and the default socket are independent, so killing one does not affect the other.
+
+**Why the isolation matters:**
+
+The `-L cam` flag routes all cam tmux traffic through a private socket file, separate from `$TMPDIR/tmux-<uid>/default`. If your default tmux server was started in a dead security session (a common macOS scenario after a reboot or logout), it loses TCC access to `~/Documents`, and Claude Code fails silently when reading project files. Because cam uses its own socket, it always starts from a server spawned in the current login session, with the correct entitlements.
+
 ---
 
 ## Auto-retry
