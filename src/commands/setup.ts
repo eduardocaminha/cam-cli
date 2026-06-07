@@ -39,6 +39,7 @@ import { printError, printHint, printSuccess, printWarning } from '../logging/co
 import { materializeTemplates } from '../templates/embedded.ts';
 import { buildOrchestratorBootPrompt } from './run.ts';
 import { SetupScreen, type SetupAnswers } from '../ui/SetupScreen.tsx';
+import { tmuxArgs } from '../tmux/session.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -410,8 +411,9 @@ function spawnSetupTmux(opts: {
 	const insideTmux = Boolean(process.env['TMUX']);
 
 	if (insideTmux) {
-		// Capture the current pane id BEFORE we send-keys; it'll become the
-		// config pane and never changes id even when we run a new command in it.
+		// Inside-tmux: these calls target the user's live interactive window,
+		// which lives in the user's current security session (ambient socket),
+		// not the cam dedicated socket. Do NOT wrap with tmuxArgs() here.
 		const idResult = spawnSync(
 			'tmux',
 			['display-message', '-p', '#{pane_id}'],
@@ -442,17 +444,17 @@ function spawnSetupTmux(opts: {
 			stdio: 'inherit',
 		});
 	} else {
-		// Outside tmux: create a detached session, capture the agent's pane id.
+		// Outside tmux: create a detached session on the dedicated -L cam socket.
 		const sessionName = 'cam-setup';
 		const newSession = spawnSync(
 			'tmux',
-			[
+			tmuxArgs([
 				'new-session', '-d',
 				'-s', sessionName,
 				'-x', '220', '-y', '50',
 				'-P', '-F', '#{pane_id}',
 				'bash', '-c', agentCmd,
-			],
+			]),
 			{ cwd, encoding: 'utf8' },
 		);
 		const configPaneId = (newSession.stdout ?? '').trim();
@@ -467,12 +469,12 @@ function spawnSetupTmux(opts: {
 		// Add the menu pane (right side) with env vars so it can drive handoff.
 		spawnSync(
 			'tmux',
-			[
+			tmuxArgs([
 				'split-window', '-t', `${sessionName}:0`, '-h', '-l', '36', '-d',
 				'-e', `CAM_CONFIG_PANE=${configPaneId}`,
 				'-e', `CAM_ORCH_PROMPT_FILE=${orchPromptFile}`,
 				'bash', '-c', menuCmd,
-			],
+			]),
 			{ stdio: 'inherit' },
 		);
 		printSuccess(`tmux session "${sessionName}" created`);
