@@ -241,7 +241,7 @@ function setupOrchestratorSession(opts: {
 	// --- Workspace chrome (CAM-19) ------------------------------------------
 	// Label each pane with a thin tmux border title, recolor to the cam design
 	// tokens, highlight the active pane, and render a single status bar
-	// (cam-cli | dim nav hint | active pane). Labels use a per-pane USER option
+	// (active pane | dim nav hint | cam-cli). Labels use a per-pane USER option
 	// (@cam_label) rather than #{pane_title} because the orchestrator pane runs
 	// claude, which can overwrite pane_title via OSC — a user option can't be
 	// clobbered by the app. Option syntax validated against tmux 3.x.
@@ -265,12 +265,16 @@ function setupOrchestratorSession(opts: {
 	opt('pane-active-border-style', `fg=${ACCENT}`);
 	opt('pane-border-style', `fg=${MUTED}`);
 	opt('status', 'on');
-	opt('status-justify', 'centre');
+	// absolute-centre keeps the nav hint pinned to the middle of the FULL bar
+	// regardless of the status-left/right widths, so it does not drift when the
+	// active-pane name changes length (orchestrator vs menu).
+	opt('status-justify', 'absolute-centre');
 	opt('status-style', `bg=default fg=${MUTED}`);
-	opt('status-left', `#[fg=${ACCENT} bold] cam-cli #[default]`);
-	opt('status-left-length', '24');
-	opt('status-right', `#[fg=${MUTED}]active: #[fg=${ACCENT} bold]#{@cam_label} #[default]`);
-	opt('status-right-length', '40');
+	// Left: the active pane. Right: cam-cli.
+	opt('status-left', `#[fg=${MUTED}]active: #[fg=${ACCENT} bold]#{@cam_label} #[default]`);
+	opt('status-left-length', '40');
+	opt('status-right', `#[fg=${ACCENT} bold] cam-cli #[default]`);
+	opt('status-right-length', '24');
 	winOpt('window-status-format', navHint);
 	winOpt('window-status-current-format', navHint);
 
