@@ -110,7 +110,7 @@ for its full system prompt.
 ```text
 cam init [options]          Validate the machine, then run the project-setup wizard
 cam run  [options]          Open or attach the single per-project session (3-pane layout)
-cam plan [--issue <N>]      Open a planning pane in the project session (thin launcher)
+cam plan [<N>]              Open a planning pane in the project session (thin launcher)
 cam next [options]          Open a loop pane in the project session (thin launcher)
 cam issue "<text>"          Open an issue-creation pane in the project session (thin launcher)
 cam claude [args...]        Run claude with built-in auto-retry on rate limits

@@ -41,7 +41,7 @@ import {
 // --- Types -----------------------------------------------------------------
 
 export interface PlanOptions {
-	/** Optional GitHub issue number; passed through as `/cam-plan #N`. */
+	/** Optional issue number; passed through as `/cam-plan N`. */
 	issue?: number;
 	/** Override the working directory; default `process.cwd()`. */
 	cwd?: string;
@@ -93,7 +93,7 @@ export function findApproveLine(buffer: string): string | null {
  * Uses `permission_mode` from config (default: bypassPermissions).
  */
 export function buildPlanArgv(permissionMode: string, issue?: number): string[] {
-	const slash = issue !== undefined ? `/cam-plan #${issue}` : '/cam-plan';
+	const slash = issue !== undefined ? `/cam-plan ${issue}` : '/cam-plan';
 	return ['claude', '--permission-mode', permissionMode, slash];
 }
 
@@ -136,7 +136,7 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 		return 1;
 	}
 
-	const slash = issue !== undefined ? `/cam-plan #${issue}` : '/cam-plan';
+	const slash = issue !== undefined ? `/cam-plan ${issue}` : '/cam-plan';
 	emitOk(`Launched ${slash} in project session "${sessionName}"`);
 	emitMutedHint('APPROVE prompt appears inside the pane — answer there');
 	emitAttachHint(sessionName, env);

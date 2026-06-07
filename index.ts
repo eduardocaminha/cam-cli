@@ -150,14 +150,15 @@ const RUN_HELP = renderHelp({
 const PLAN_HELP = renderHelp({
 	title: 'cam plan',
 	tagline: 'Open a planning pane in the project session',
-	usage: 'cam plan [--issue <N>]',
+	usage: 'cam plan [<N>]',
 	sections: [
 		{
-			heading: 'Options',
+			heading: 'Arguments',
 			entries: [
 				{
-					name: '--issue <N>',
-					description: 'Plan against GitHub issue #N (passed as `/cam-plan #N`)',
+					name: '<N>',
+					description:
+						'Issue number to plan (passed to the planner as `/cam-plan N`). A leading `#` is tolerated. Omit it to plan the highest-priority open issue.',
 				},
 			],
 		},
@@ -169,15 +170,16 @@ const PLAN_HELP = renderHelp({
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
 				'   creates it (with 3-pane layout) if needed.\n' +
 				'3. Opens a new pane inside the session running:\n' +
-				'     claude --permission-mode <mode> "/cam-plan" (or "/cam-plan #N")\n' +
+				'     claude --permission-mode <mode> "/cam-plan" (or "/cam-plan N")\n' +
 				'4. Returns 0 immediately. The planning flow runs inside the pane.\n' +
 				'5. If not already inside the session, prints a hint:\n' +
 				'     Run `cam run` to open the project session.',
 		},
 	],
 	footer:
-		'Without --issue, cam dispatches a bare `/cam-plan` and the planner picks\n' +
-		'the highest-priority pending issue itself.',
+		'cam plan accepts only an issue number; any other argument is an error.\n' +
+		'Without a number, cam dispatches a bare `/cam-plan` and the planner\n' +
+		'picks the highest-priority open issue itself.',
 });
 
 const ISSUE_HELP = renderHelp({
@@ -400,10 +402,16 @@ export function parseIssueArgs(args: string[]): { text: string; help: boolean } 
 }
 
 /**
- * Parse plan-specific flags from argv. We accept either `--issue 123`
- * (separate token) or `--issue=123` (joined). Returns the parsed issue
- * number plus a flag indicating the operator asked for help, or `null` on
- * a parse error (the caller prints the diagnostic and exits 1).
+ * Parse `cam plan` args. The command takes at most one POSITIONAL argument:
+ * a positive integer issue number (a leading `#` is tolerated, e.g. `'#21'`).
+ * The CLI is strict on purpose; the `/cam-plan` slash inside claude stays
+ * flexible (number resolved per backend, plus free-text descriptions). A
+ * positional that is not a valid integer is a standardized error. A bare
+ * `cam plan` (no positional) leaves `issue` undefined; the planner then picks
+ * the highest-priority open issue itself.
+ *
+ * Returns `{ issue?, help }` or `null` on a parse error (the caller prints the
+ * diagnostic and exits 1).
  */
 export function parsePlanArgs(args: string[]): { issue?: number; help: boolean } | null {
 	const result: { issue?: number; help: boolean } = { help: false };
@@ -413,33 +421,31 @@ export function parsePlanArgs(args: string[]): { issue?: number; help: boolean }
 			result.help = true;
 			continue;
 		}
-		if (arg === '--issue') {
-			const next = args[i + 1];
-			if (next === undefined) {
-				printError('--issue requires a number');
-				return null;
-			}
-			const parsed = Number.parseInt(next, 10);
-			if (!Number.isFinite(parsed) || parsed <= 0) {
-				printError(`--issue expects a positive integer, got ${JSON.stringify(next)}`);
-				return null;
-			}
-			result.issue = parsed;
-			i += 1;
-			continue;
+		if (arg.startsWith('-')) {
+			printError(
+				`unknown plan option: ${arg}`,
+				'cam plan takes an issue number, e.g. `cam plan 21`',
+			);
+			return null;
 		}
-		if (arg.startsWith('--issue=')) {
-			const value = arg.slice('--issue='.length);
-			const parsed = Number.parseInt(value, 10);
-			if (!Number.isFinite(parsed) || parsed <= 0) {
-				printError(`--issue expects a positive integer, got ${JSON.stringify(value)}`);
-				return null;
-			}
-			result.issue = parsed;
-			continue;
+		if (result.issue !== undefined) {
+			printError(
+				'cam plan: too many arguments',
+				'expected a single issue number, e.g. `cam plan 21`',
+			);
+			return null;
 		}
-		printError(`unknown plan option: ${arg}`);
-		return null;
+		// Positional issue number; tolerate a leading `#` (e.g. `cam plan '#21'`).
+		const token = arg.startsWith('#') ? arg.slice(1) : arg;
+		const parsed = Number.parseInt(token, 10);
+		if (!/^\d+$/.test(token) || parsed <= 0) {
+			printError(
+				'cam plan: invalid issue reference',
+				'expected an issue number, e.g. `cam plan 21`',
+			);
+			return null;
+		}
+		result.issue = parsed;
 	}
 	return result;
 }
