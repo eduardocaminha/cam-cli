@@ -25,6 +25,25 @@ import { createHash } from 'node:crypto';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 // ---------------------------------------------------------------------------
+// Socket / arg builder
+// ---------------------------------------------------------------------------
+
+/** Dedicated tmux socket name used by all cam-cli sessions. */
+export const CAM_TMUX_SOCKET = 'cam';
+
+/**
+ * Prepend the `-L <socket>` global flag to a tmux subcommand argv.
+ *
+ * Usage: spawnFn('tmux', tmuxArgs(['new-session', '-d', '-s', name]))
+ * Result argv: ['-L', 'cam', 'new-session', '-d', '-s', name]
+ *
+ * `-L` is a GLOBAL tmux option and MUST precede the subcommand.
+ */
+export function tmuxArgs(sub: string[]): string[] {
+	return ['-L', CAM_TMUX_SOCKET, ...sub];
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -66,7 +85,7 @@ export function projectSessionName(cwd: string): string {
  * Uses `tmux has-session -t <name>` (exit 0 = exists).
  */
 export function hasSession(sessionName: string, spawnFn: SpawnFn): boolean {
-	const r = spawnFn('tmux', ['has-session', '-t', sessionName], { stdio: 'ignore' });
+	const r = spawnFn('tmux', tmuxArgs(['has-session', '-t', sessionName]), { stdio: 'ignore' });
 	return (r.status ?? 1) === 0;
 }
 
@@ -131,14 +150,14 @@ export function ensureProjectSession(
 	// -e CAM_SESSION=<name> injects the session tag so isInsideProjectSession works.
 	const newSessResult = spawnFn(
 		'tmux',
-		[
+		tmuxArgs([
 			'new-session', '-d',
 			'-s', sessionName,
 			'-x', '220', '-y', '50',
 			'-e', `CAM_SESSION=${sessionName}`,
 			'-P', '-F', '#{pane_id}',
 			'cat',
-		],
+		]),
 		{ stdio: 'pipe' },
 	);
 	const orchPaneId = newSessResult.stdout.toString().trim();
@@ -147,7 +166,7 @@ export function ensureProjectSession(
 	// Target the orchestrator pane by its stable id, not a positional index.
 	const dashSplitResult = spawnFn(
 		'tmux',
-		[
+		tmuxArgs([
 			'split-window',
 			'-t', orchPaneId,
 			'-h',
@@ -155,7 +174,7 @@ export function ensureProjectSession(
 			'-d',
 			'-P', '-F', '#{pane_id}',
 			'cat',
-		],
+		]),
 		{ stdio: 'pipe' },
 	);
 	const dashboardPaneId = dashSplitResult.stdout.toString().trim();
@@ -164,14 +183,14 @@ export function ensureProjectSession(
 	// Target the dashboard pane by its stable id.
 	const menuSplitResult = spawnFn(
 		'tmux',
-		[
+		tmuxArgs([
 			'split-window',
 			'-t', dashboardPaneId,
 			'-v',
 			'-d',
 			'-P', '-F', '#{pane_id}',
 			'cat',
-		],
+		]),
 		{ stdio: 'pipe' },
 	);
 	const menuPaneId = menuSplitResult.stdout.toString().trim();
@@ -205,14 +224,14 @@ export function openPaneInSession(
 ): void {
 	spawnFn(
 		'tmux',
-		[
+		tmuxArgs([
 			'split-window',
 			'-t', `${sessionName}:0`,
 			'-v',
 			'-d',
 			'--',
 			...cmdArgv,
-		],
+		]),
 		{ stdio: 'ignore' },
 	);
 }

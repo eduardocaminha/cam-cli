@@ -247,7 +247,9 @@ function makeTmuxSpawnFake(): TmuxSpawnFn & { calls: TmuxSpawnRecord[] } {
 		calls.push({ cmd, args: [...args] });
 		// has-session returns 1 (not found) so ensureProjectSession creates the session.
 		// All other tmux calls return 0 (success).
-		const isHasSession = cmd === 'tmux' && args[0] === 'has-session';
+		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
+		const subcommand = cmd === 'tmux' && args[0] === '-L' ? args[2] : args[0];
+		const isHasSession = cmd === 'tmux' && subcommand === 'has-session';
 		return {
 			pid: 1,
 			output: [null, Buffer.from(''), Buffer.from('')],
@@ -331,13 +333,13 @@ describe('runNext', () => {
 
 			// ensureProjectSession: has-session probe + new-session + 2x split-window.
 			const hasSessionCall = tmuxSpawnFake.calls.find(
-				(c) => c.cmd === 'tmux' && c.args[0] === 'has-session',
+				(c) => c.cmd === 'tmux' && c.args[2] === 'has-session',
 			);
 			expect(hasSessionCall).toBeDefined();
 			expect(hasSessionCall?.args).toContain(sessionName);
 
 			const newSessionCall = tmuxSpawnFake.calls.find(
-				(c) => c.cmd === 'tmux' && c.args[0] === 'new-session',
+				(c) => c.cmd === 'tmux' && c.args[2] === 'new-session',
 			);
 			expect(newSessionCall).toBeDefined();
 			expect(newSessionCall?.args).toContain(sessionName);
@@ -345,7 +347,7 @@ describe('runNext', () => {
 			// openPaneInSession: split-window -t <sessionName>:0 -v -d -- <arg0> <arg1> ...
 			// Each claude argv element is a discrete arg (not one joined shell string).
 			const splitCalls = tmuxSpawnFake.calls.filter(
-				(c) => c.cmd === 'tmux' && c.args[0] === 'split-window',
+				(c) => c.cmd === 'tmux' && c.args[2] === 'split-window',
 			);
 			// At least one split-window call opens the claude pane.
 			const claudePaneCall = splitCalls.find(

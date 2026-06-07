@@ -18,6 +18,8 @@ import {
 	ensureProjectSession,
 	openPaneInSession,
 	isInsideProjectSession,
+	CAM_TMUX_SOCKET,
+	tmuxArgs,
 	type SpawnFn,
 	type Env,
 } from '../src/tmux/session.ts';
@@ -59,14 +61,14 @@ function makeFakeSpawn(
 			signal: null,
 		};
 
-		if (cmd === 'tmux' && args[0] === 'has-session') {
+		if (cmd === 'tmux' && args[2] === 'has-session') {
 			result.status = handlers.sessionExists ? 0 : 1;
 		}
 
 		// Return a stable pane id for calls that capture it via -P -F #{pane_id}.
 		if (
 			cmd === 'tmux' &&
-			(args[0] === 'new-session' || args[0] === 'split-window') &&
+			(args[2] === 'new-session' || args[2] === 'split-window') &&
 			opts?.stdio === 'pipe'
 		) {
 			paneCounter += 1;
@@ -80,6 +82,35 @@ function makeFakeSpawn(
 	decorated.calls = calls;
 	return decorated;
 }
+
+// ---------------------------------------------------------------------------
+// CAM_TMUX_SOCKET + tmuxArgs
+// ---------------------------------------------------------------------------
+
+describe('CAM_TMUX_SOCKET', () => {
+	test('equals "cam"', () => {
+		expect(CAM_TMUX_SOCKET).toBe('cam');
+	});
+});
+
+describe('tmuxArgs', () => {
+	test('prepends -L and the socket name before the subcommand', () => {
+		expect(tmuxArgs(['has-session', '-t', 'myses'])).toEqual([
+			'-L', 'cam', 'has-session', '-t', 'myses',
+		]);
+	});
+
+	test('works with an empty subcommand array', () => {
+		expect(tmuxArgs([])).toEqual(['-L', 'cam']);
+	});
+
+	test('does not mutate the input array', () => {
+		const sub = ['new-session', '-d'];
+		const result = tmuxArgs(sub);
+		expect(sub).toEqual(['new-session', '-d']);
+		expect(result).toEqual(['-L', 'cam', 'new-session', '-d']);
+	});
+});
 
 // ---------------------------------------------------------------------------
 // projectSessionName
@@ -123,18 +154,22 @@ describe('ensureProjectSession — new session', () => {
 
 		expect(result).not.toBe(false);
 
-		// First call must be has-session.
+		// First call must be has-session, with -L cam prefix.
 		const first = spawn.calls[0];
 		expect(first).toBeDefined();
 		expect(first?.cmd).toBe('tmux');
-		expect(first?.args[0]).toBe('has-session');
+		expect(first?.args[0]).toBe('-L');
+		expect(first?.args[1]).toBe('cam');
+		expect(first?.args[2]).toBe('has-session');
 		expect(first?.args).toContain('cam-orch-myproj-abc123');
 
-		// Second call must be new-session (detached).
+		// Second call must be new-session (detached), with -L cam prefix.
 		const newSess = spawn.calls[1];
 		expect(newSess).toBeDefined();
 		expect(newSess?.cmd).toBe('tmux');
-		expect(newSess?.args[0]).toBe('new-session');
+		expect(newSess?.args[0]).toBe('-L');
+		expect(newSess?.args[1]).toBe('cam');
+		expect(newSess?.args[2]).toBe('new-session');
 		expect(newSess?.args).toContain('-d');
 		expect(newSess?.args).toContain('-s');
 		expect(newSess?.args).toContain('cam-orch-myproj-abc123');
@@ -144,7 +179,9 @@ describe('ensureProjectSession — new session', () => {
 		const firstSplit = spawn.calls[2];
 		expect(firstSplit).toBeDefined();
 		expect(firstSplit?.cmd).toBe('tmux');
-		expect(firstSplit?.args[0]).toBe('split-window');
+		expect(firstSplit?.args[0]).toBe('-L');
+		expect(firstSplit?.args[1]).toBe('cam');
+		expect(firstSplit?.args[2]).toBe('split-window');
 		expect(firstSplit?.args).toContain('-t');
 		expect(firstSplit?.args).toContain('%1');
 		expect(firstSplit?.args).not.toContain('cam-orch-myproj-abc123:0.0');
@@ -156,7 +193,9 @@ describe('ensureProjectSession — new session', () => {
 		const secondSplit = spawn.calls[3];
 		expect(secondSplit).toBeDefined();
 		expect(secondSplit?.cmd).toBe('tmux');
-		expect(secondSplit?.args[0]).toBe('split-window');
+		expect(secondSplit?.args[0]).toBe('-L');
+		expect(secondSplit?.args[1]).toBe('cam');
+		expect(secondSplit?.args[2]).toBe('split-window');
 		expect(secondSplit?.args).toContain('-t');
 		expect(secondSplit?.args).toContain('%2');
 		expect(secondSplit?.args).not.toContain('cam-orch-myproj-abc123:0.1');
@@ -235,9 +274,11 @@ describe('ensureProjectSession — new session', () => {
 		const result = ensureProjectSession('cam-orch-existing-abc123', spawn);
 
 		expect(result).toBe(false);
-		// Only has-session was called.
+		// Only has-session was called, with -L cam prefix.
 		expect(spawn.calls).toHaveLength(1);
-		expect(spawn.calls[0]?.args[0]).toBe('has-session');
+		expect(spawn.calls[0]?.args[0]).toBe('-L');
+		expect(spawn.calls[0]?.args[1]).toBe('cam');
+		expect(spawn.calls[0]?.args[2]).toBe('has-session');
 	});
 });
 
@@ -254,7 +295,9 @@ describe('openPaneInSession', () => {
 		expect(spawn.calls).toHaveLength(1);
 		const call = spawn.calls[0];
 		expect(call?.cmd).toBe('tmux');
-		expect(call?.args[0]).toBe('split-window');
+		expect(call?.args[0]).toBe('-L');
+		expect(call?.args[1]).toBe('cam');
+		expect(call?.args[2]).toBe('split-window');
 		expect(call?.args).toContain('-t');
 		expect(call?.args).toContain('cam-orch-myproj-abc123:0');
 		expect(call?.args).toContain('-v');

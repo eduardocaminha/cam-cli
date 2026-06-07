@@ -55,12 +55,15 @@ function makeFakeSpawn(opts: {
 		};
 
 		if (cmd === 'tmux') {
-			if (args[0] === '-V') {
+			// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
+			// Fallback: also handle the bare (no-prefix) form for legacy callers (e.g. tmux -V check).
+			const subcommand = args[0] === '-L' ? args[2] : args[0];
+			if (subcommand === '-V') {
 				result.status = tmuxAvailable ? 0 : 1;
-			} else if (args[0] === 'has-session') {
+			} else if (subcommand === 'has-session') {
 				result.status = sessionExists ? 0 : 1;
 			} else if (
-				(args[0] === 'new-session' || args[0] === 'split-window') &&
+				(subcommand === 'new-session' || subcommand === 'split-window') &&
 				options?.stdio === 'pipe'
 			) {
 				// Return a stable pane id for calls that capture it (-P -F #{pane_id}).
@@ -195,7 +198,7 @@ describe('runRun tmux argv — new session', () => {
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
-		const newSess = spawn.calls.find(c => c.args[0] === 'new-session');
+		const newSess = spawn.calls.find(c => c.args[2] === 'new-session');
 		expect(newSess).toBeDefined();
 		expect(newSess?.cmd).toBe('tmux');
 		expect(newSess?.args).toContain('-d');
@@ -213,7 +216,7 @@ describe('runRun tmux argv — new session', () => {
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
-		const newSess = spawn.calls.find(c => c.args[0] === 'new-session');
+		const newSess = spawn.calls.find(c => c.args[2] === 'new-session');
 		expect(newSess?.args).toContain('-P');
 		expect(newSess?.args).toContain('-F');
 		expect(newSess?.args).toContain('#{pane_id}');
@@ -226,7 +229,7 @@ describe('runRun tmux argv — new session', () => {
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
-		const newSess = spawn.calls.find(c => c.args[0] === 'new-session');
+		const newSess = spawn.calls.find(c => c.args[2] === 'new-session');
 		expect(newSess?.args).toContain('-e');
 		expect(newSess?.args).toContain(`CAM_SESSION=${sessionName}`);
 	});
@@ -237,7 +240,7 @@ describe('runRun tmux argv — new session', () => {
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
-		const splits = spawn.calls.filter(c => c.args[0] === 'split-window');
+		const splits = spawn.calls.filter(c => c.args[2] === 'split-window');
 		expect(splits.length).toBe(2);
 
 		// First split-window: horizontal split targeting the captured orch pane id (%1).
@@ -337,8 +340,8 @@ describe('runRun tmux argv — new session', () => {
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
 		// When session already exists, no new-session or split-window calls.
-		const newSess = spawn.calls.find(c => c.args[0] === 'new-session');
-		const split = spawn.calls.find(c => c.args[0] === 'split-window');
+		const newSess = spawn.calls.find(c => c.args[2] === 'new-session');
+		const split = spawn.calls.find(c => c.args[2] === 'split-window');
 		expect(newSess).toBeUndefined();
 		expect(split).toBeUndefined();
 	});
