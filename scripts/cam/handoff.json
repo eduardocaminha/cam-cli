@@ -1,24 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Thread -L cam through src/commands/run.ts (orchestrator launcher)"
+    "id": "US-003",
+    "title": "Thread -L cam through cam next / cam plan / cam issue launchers"
   },
   "branchName": "cam/CAM-26-tmux-dedicated-socket",
-  "timestamp": "2026-06-07T00:30:00Z",
+  "timestamp": "2026-06-07T01:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/run.ts",
-    "test/run.test.ts"
+    "src/commands/next.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 threaded -L cam through session.ts; US-002 threaded it through src/commands/run.ts. Next stories (US-003 through US-008) thread it through the remaining call sites: src/commands/claude.ts (US-003), src/retry/tmux.ts (US-004), src/commands/retry-monitor.ts (US-005), etc. Pattern is the same: wrap all direct tmux spawn calls with tmuxArgs([...]). Respawn-pane calls after tmuxArgs() have subcommand at args[2]; update test finders from args[0] to args[2] accordingly. Shell-evaluated strings (like the kill-session chain in agentCmd) must use the literal 'tmux -L cam' since tmuxArgs() only applies to direct spawn calls.",
+  "nextStoryContext": "US-001 threaded -L cam through session.ts; US-002 through run.ts; US-003 through next.ts probe and confirmed plan.ts + issue.ts were already compliant. Next stories thread through remaining call sites. Pattern: wrap all direct tmux spawn calls with tmuxArgs([...]). Shell-evaluated strings (like kill-session chain in agentCmd) must use literal 'tmux -L cam' since tmuxArgs() only applies to direct spawn calls. Fake spawn handlers in tests route by args[2] (the subcommand) not args[0], because args[0]==='-L' and args[1]==='cam' now.",
   "officialDocsValidated": [
     {
       "lib": "tmux",
       "url": "https://man.openbsd.org/tmux.1",
-      "fetchedAt": "2026-06-07T00:30:00Z",
+      "fetchedAt": "2026-06-07T01:00:00Z",
       "status": "ok",
-      "summary": "US-001 validation confirmed -L is a global flag preceding subcommand. US-002 uses same pattern; no new external lib introduced."
+      "summary": "US-001/002/003 all use same -L flag pattern; no new external lib introduced in US-003."
+    },
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-003 only changes a tmux probe argv literal in next.ts. No external library API surface changed."
     }
   ]
 }

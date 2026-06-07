@@ -65,7 +65,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/next.ts, src/commands/plan.ts, src/commands/issue.ts, test/next.test.ts, test/plan.test.ts, test/issue.test.ts. Depends on US-001. These three commands are thin launchers — most tmux work is delegated to session.ts; the only direct invocation is the `-V` probe in next.ts."
     },
