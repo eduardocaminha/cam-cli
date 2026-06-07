@@ -129,6 +129,14 @@ No subcommand exposes a CLI flag for it.
 ### Single project session
 
 `cam run` manages one tmux session per project (named `cam-orch-<basename>-<hash>`).
+All cam session commands use a dedicated `tmux -L cam` socket, isolated from your
+default tmux socket. This isolation guarantees that cam's session is never confused
+with sessions on the default socket and avoids a failure mode specific to macOS:
+a stale tmux server left over from a dead security session denies TCC access to
+`~/Documents`, which causes Claude Code to fail silently when reading project files.
+By using `tmux -L cam`, cam always starts from a fresh server with the correct
+security context for the current login session.
+
 The session layout has three panes:
 
 - **Pane 0.0 (left):** orchestrator claude process running `/cam-next`.
@@ -158,7 +166,9 @@ back-off window and re-submits the request.
   transparently until the request succeeds or the retry budget is exhausted.
 - **Interactive mode** (`cam claude` inside a tmux session): cam forks a detached
   background monitor (`cam retry-monitor`) that watches the tmux pane and sends
-  the retry keystroke after the rate-limit window expires.
+  the retry keystroke after the rate-limit window expires. Note: `cam claude` and
+  `cam retry-monitor` intentionally use the user's ambient tmux socket (not `-L cam`),
+  because they watch the user's live interactive pane, not the cam workspace session.
 
 **Configuration** (`~/.config/cam/retry.toml`):
 

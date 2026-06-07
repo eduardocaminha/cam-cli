@@ -138,6 +138,16 @@ Decisões que mudam a tela: **TTY vs CI** (Ink vs linear), **falha na validaçã
 da sessão é estável por projeto (`cam-orch-<basename>-<hash>`). Se a sessão já existe,
 o comando anexa ou faz `switch-client` (dentro do tmux). Se não existe, cria com 3 panes.
 
+Todos os comandos de sessão do cam usam o socket dedicado `tmux -L cam`, isolado
+do socket padrão do tmux. Esse isolamento evita colisão com sessões acumuladas
+(ex: `claude-retry-*` do claude-auto-retry) e protege contra um problema específico
+do macOS: um servidor tmux deixado por uma sessão de segurança morta nega acesso TCC
+a `~/Documents`, causando falha silenciosa do Claude Code. Com `tmux -L cam`, o cam
+sempre parte de um servidor limpo com o contexto de segurança correto para o login atual.
+
+Exceção intencional: `cam claude` e `cam retry-monitor` ficam no socket ambiente do
+usuário, pois monitoram o pane interativo do usuário, nao a sessao do workspace do cam.
+
 ```mermaid
 flowchart TD
     A["cam run [--no-attach]"] --> CHECK["verifica tmux e<br/>.claude/agents/subagent-orchestrator.md"]
