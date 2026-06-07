@@ -82,7 +82,7 @@
         "Render Menu.tsx via ink-testing-library and assert the command list renders without exception (success/failure is signalled by the ✓/✗ glyph, not divider color)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/stop.ts, src/ui/Menu.tsx, test/stop.test.ts, test/setup-menu.test.ts. Depends on US-001. Menu.tsx is the only Ink screen touched in this PR — render check via ink-testing-library; success/failure is shown by the ✓/✗ glyph, never by divider color."
     },

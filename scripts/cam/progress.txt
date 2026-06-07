@@ -98,3 +98,29 @@ Durable patterns carried across cycles:
 - The probe is a one-off literal; no need to import tmuxArgs() just for this one call
 - plan.ts and issue.ts were already fully compliant; the story was mostly a verification/confirmation pass for those two files
 ---
+
+## [2026-06-07 02:00] - US-004: Thread -L cam through cam stop and Menu pane control
+
+### What was done
+- Imported `tmuxArgs` in `src/commands/stop.ts`; wrapped `tmuxAvailable` (-V), `sessionAlive` (has-session), and `killSession` (kill-session) with `tmuxArgs([...])`
+- Imported `tmuxArgs` in `src/ui/Menu.tsx`; updated default `runTmux` closure to call `spawnSync('tmux', tmuxArgs(args), ...)` instead of bare `spawnSync('tmux', args, ...)`
+- Updated `test/stop.test.ts`: fake spawn handler now routes by subcommand at `args[2]` (guard: `args[0] === '-L' ? args[2] : args[0]`); argv assertions updated to expect `['-L', 'cam', subcommand, ...]`
+- Created `test/menu.test.ts`: smoke-tests MenuApp via ink-testing-library; asserts command list renders without exception and each slash-command key appears in output
+
+### Files changed
+- src/commands/stop.ts
+- src/ui/Menu.tsx
+- test/stop.test.ts
+- test/menu.test.ts (new)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 490 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (all changes are tmux argv wrapping; no new external lib surface)
+
+### Notes
+- setup-menu.test.ts was reviewed; the bash script from buildSetupMenuScript() is not in scope for this story, so no changes were needed there and all existing assertions continue to pass
+- The -L cam guard pattern in tests: `const sub = args[0] === '-L' ? args[2] : args[0]` is now used in stop.test.ts as well as the other test files updated in US-001
+---
