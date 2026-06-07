@@ -1,5 +1,5 @@
 {
-  "next_id": 27,
+  "next_id": 28,
   "issues": [
     {
       "id": "CAM-1",
@@ -197,6 +197,14 @@
       "state": "open",
       "createdAt": "2026-06-07T16:09:20Z",
       "priority": "P0"
+    },
+    {
+      "id": "CAM-27",
+      "title": "Harness state (prd.json/progress.txt/handoff.json) vaza pra main no merge e dispara falso 'in-progress' no /cam-plan",
+      "description": "PROBLEMA: prd.json, progress.txt e handoff.json sao artefatos de trabalho POR-BRANCH, mas o cam-ship abre PR do branch (que inclui esses arquivos) e o merge os deposita em main. cam-ship NAO reseta esses arquivos no fechamento do ciclo, entao main acumula a prd.json do ultimo branch mergeado. Efeito: o /cam-plan Step 1 (check de 'in-progress work') le prd.json em main e dispara FALSO POSITIVO, porque acha stories mesmo quando todas estao passes:true, ou quando so sobra story operator com passes:false. Caso real 2026-06-07: depois de mergear o PR #6 (cam-run-workspace), main ficou com prd.json (US-010 operator passes:false) + progress.txt + handoff stale; o /cam-plan seguinte tratou como trabalho em andamento. Workaround manual aplicado nessa sessao: deletar prd.json de main (commit c9ce481). Mas RECORRE a cada ship. OPCAO A (reset no produtor / cam-ship): cam-ship reseta o harness state num commit final do branch antes do merge, pra que o merge entregue main limpo: remover ou esvaziar prd.json, resetar progress.txt pra so o header '## Codebase Patterns', remover handoff.json. Pros: main sempre limpo; os arquivos viram de fato por-branch. Contras: o reset roda no branch e apaga o registro de 'o que shippou' do estado final do branch (git history preserva); variante de nao versionar prd.json/handoff em main (gitignore) esbarra no dashboard, que le prd.json do cwd e precisa do arquivo no branch. OPCAO B (check mais esperto no consumidor / cam-plan): /cam-plan Step 1 nao deve disparar com PRD shipped ou stale. Refinar o sinal: so tratar como in-progress se houver story com passes:false E requires != operator (PRD all-done ou so-operator nao dispara), E o branch atual for cam/* != main OU o branch de prd.branchName estiver nao-mergeado. Em main com PRD cujo branch ja mergeou: nao e in-progress. Pros: nao mexe no ship, robusto ao vazamento. Contras: nao limpa main (prd.json continua la), so cala o alarme. VALIDACAO DURA (pareia com A): teste ou guard que enforce o invariante 'main nao carrega harness state in-flight'. Ex: um bun test que assere que scripts/cam/prd.json esta ausente OU tem zero stories com passes:false non-operator (falha se um PRD in-progress estiver em main); ou um check no cam-ship/CI que bloqueia o ship se o reset nao foi aplicado; ou guard de pre-push. COMBO RECOMENDADO: A (reset no ship) + validacao dura (teste do invariante) pra nao regredir silenciosamente, com B como camada defensiva barata no /cam-plan de qualquer forma. ESCOPO: decidir A vs B vs A+B; se A, onde mora o reset (novo Step no cam-ship.md + template espelhado em templates/commands/); se validacao dura, o teste do invariante em test/ + onde roda (CI/pre-push hook); se B, refinar o Step 1 do cam-plan.md (e seu template) e o cam-plan CLI. Atualizar cam-ship.md, cam-plan.md Step 1, templates espelhados, e docs.",
+      "state": "open",
+      "createdAt": "2026-06-07T16:39:23Z",
+      "priority": "P2"
     }
   ]
 }
