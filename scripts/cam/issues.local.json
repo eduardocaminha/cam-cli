@@ -47,35 +47,35 @@
       "id": "CAM-7",
       "title": "Sessão única do projeto como host de todos os comandos do loop",
       "description": "Hoje cada comando age sozinho: cam plan toma o TTY (PTY), cam next cria uma sessão tmux separada chamada 'cam', cam dashboard é avulso. Mudar para: uma sessão tmux única por projeto (nome estável já existe em src/commands/run.ts projectSessionName = cam-orch-<base>-<hash>) hospeda tudo. Todo comando do loop (issue/plan/next/review/ship/prune) abre um pane DENTRO dessa sessão via tmux split-window -t <sessão>, funcionando mesmo com a sessão detached. A sessão é criada preguiçosamente no primeiro comando, já com o formato completo do cam run (orquestrador + dashboard), então captura tudo desde o início mesmo sem o usuário ter anexado. Núcleo do MVP.",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-05T16:24:46Z"
     },
     {
       "id": "CAM-8",
       "title": "Dashboard vira pane permanente do cam run",
       "description": "cam dashboard deixa de ser UX avulsa e passa a ser um pane fixo da sessão do cam run (o binário cam dashboard continua, mas roda dentro do pane). Layout do cam run: orquestrador à esquerda + dashboard (e o menu interativo do CAM-13) à direita. Definir o split do lado direito.",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-05T16:24:46Z"
     },
     {
       "id": "CAM-9",
       "title": "cam plan/next viram launchers de pane; rewire de cam next/stop",
       "description": "cam plan e cam next deixam de ser foreground-interativos no TTY e viram launchers finos: garantem a sessão do projeto e abrem o pane com o trabalho real lá dentro, retornando ao shell. A interação (APPROVE do plan, TUI do next) migra pra dentro da sessão (anexa pra interagir). Ripples: cam next para de criar a sessão tmux 'cam' separada (src/commands/next.ts buildTmuxSplitArgv); cam stop muda a semântica (mira o pane do loop / a sessão do projeto em vez da sessão 'cam').",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-05T16:24:46Z"
     },
     {
       "id": "CAM-10",
       "title": "Hint pós-execução sugerindo cam run quando não anexado",
       "description": "Todo comando do loop, ao terminar, se o usuário NÃO estiver anexado à sessão do projeto (TMUX não corresponde), imprime uma dica curta de como anexar (cam run). Se já estiver dentro da sessão, não imprime.",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-05T16:24:46Z"
     },
     {
       "id": "CAM-11",
       "title": "cam issue <texto livre> como subcomando de CLI que abre pane na sessão",
       "description": "Novo subcomando do binário: cam issue \"<texto livre>\" (não existe hoje; issue creation só via slash /cam-issue dentro de sessão). Lê permission_mode do config, garante a sessão do projeto, e abre um pane com claude recebendo o texto livre, que expande pra título+descrição e roda /cam-issue create (none -> issues.local.json, linear/github -> API/gh). Não rouba o TTY; visível pelo cam run. Pedido original do usuário.",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-05T16:24:46Z"
     },
     {
@@ -89,14 +89,14 @@
       "id": "CAM-13",
       "title": "Menu pane do cam run vira menu interativo selecionável (estilo init)",
       "description": "Hoje o pane direito do cam run (src/commands/run.ts buildRunMenuScript) é uma lista estática. Transformar num menu interativo selecionável (mesmo padrão de seleção das telas Ink do init/setup). Ao selecionar um comando, ele é injetado no pane do orquestrador via tmux send-keys -t <orch-pane> (alvo conhecido, ação disparada pelo humano, não é puppeteering de worker). Decidir tech: loop de teclas em bash (como o setup menu já faz com read -rsn1) vs Ink.",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-05T16:24:46Z"
     },
     {
       "id": "CAM-14",
       "title": "Sair do orquestrador derruba a sessão tmux inteira e devolve ao terminal",
       "description": "Hoje, ao digitar exit no pane do orquestrador, o pane de menu permanece e é preciso ctrl+b d pra sair do tmux. Mudar: fechar a sessão do orquestrador (claude exit no pane 0) deve matar a sessão tmux inteira e devolver ao terminal automaticamente. Mecanismo provável: encadear o comando do pane 0 com tmux kill-session ao sair do claude (claude ...; tmux kill-session -t <sessão>), ou um hook pane-died/pane-exited. Jeito sintético de voltar pro shell, sem ctrl+b d. Pequeno.",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-05T16:24:46Z"
     },
     {
@@ -117,7 +117,7 @@
       "id": "CAM-17",
       "title": "Dashboard apertado em pane estreito (~36 col): progress bar e story rows quebram",
       "description": "Render do dashboard a 36 col (largura do pane do cam run) mostra a barra de progresso (PROGRESS_BAR_WIDTH=22) + labels Progress/Status quebrando linha, e as story rows com glifo/ID grudados e títulos wrapando. Os divisores foram resolvidos (responsivos, commit 223bfc0) e o path do PRD também (CAM-18), mas o conteúdo do SummaryPanel e das rows não cabe num pane tão estreito. Fix recomendado: alargar o pane do dashboard no layout (src/tmux/session.ts, split do dashboard hoje -l 36, ir pra ~55) e ajustar test/tmux-session.test.ts; alternativa: ProgressBar responsiva via stdout.columns + truncar títulos. Arquivos: src/tmux/session.ts e/ou src/ui/Dashboard.tsx.",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-06T12:45:21Z"
     },
     {

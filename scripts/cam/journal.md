@@ -48,3 +48,15 @@ Each entry follows this template:
 
 <!-- Entries are appended below. Do not remove this marker. -->
 <!-- ENTRIES_BELOW -->
+
+## cam/cam-run-workspace — cam run persistent workspace
+
+- **Started**: 2026-05-30
+- **Closed**: 2026-06-06
+- **Branch**: cam/cam-run-workspace
+- **Issue**: none
+- **Outcome**: shipped
+- **Summary**: Introduced `cam run` as the canonical operator entry point. Creates a persistent tmux session with three panes: orchestrator, dashboard, and interactive menu. All subcommands (next, plan, issue) become pane launchers inside the shared session. Four hardening stories (R1-001 to R1-004) fixed stable pane IDs, shell injection, stale help text, and a misleading fallback message.
+- **Decisions**: Design tokens for run menu colors (keeps TUI consistent with Ink dashboard); argv-based pane launch to fix shell injection.
+- **Blockers encountered**: Bun arm64 binaries need ad-hoc codesign re-signing when installed to /usr/local/bin (amfid kills the process). Documented in lessons.md 2026-06-06.
+- **Follow-ups**: Add .claude/.cam-run-menu.sh to .gitignore (generated runtime file). US-010 operator smoke left as manual ceremony.
