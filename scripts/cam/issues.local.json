@@ -1,47 +1,53 @@
 {
-  "next_id": 25,
+  "next_id": 26,
   "issues": [
     {
       "id": "CAM-1",
       "title": "Loop não reage a compaction (PreCompact/PostCompact)",
       "description": "O loop autônomo roda numa única sessão claude longa, re-injetada turno a turno pelo Stop hook (vendor/cam-loop-stop-hook.sh). Em PRDs longos o transcript estoura o threshold de auto-compact do Claude Code (~contextWindow-13k) e é resumido silenciosamente. cam só registra o hook Stop (src/commands/next.ts:283, buildHooksBlock), nunca PreCompact/PostCompact. Não há estado nem sinal de compaction. Objetivo: detectar compaction (registrar PreCompact/PostCompact via settings.local.json) e reagir, ex: logar, e garantir re-hidratação a partir de prd.json/handoff.json/progress.txt. Prioridade alta: é o gap que morde em PRD grande.",
       "state": "open",
-      "createdAt": "2026-06-05T16:24:46Z"
+      "createdAt": "2026-06-05T16:24:46Z",
+      "priority": "P3"
     },
     {
       "id": "CAM-2",
       "title": "Estado paused inalcançável com o stop hook vendado",
       "description": "src/commands/status.ts:298 reporta state 'paused' quando active:false, e :408-413 oferece uma seção Next para ele. Mas vendor/cam-loop-stop-hook.sh nunca escreve active:false: ele ou dá rm no state file (COMPLETE/max-iter/corrupção) ou devolve {decision:block} para continuar. O template nasce active:true e nada o rebaixa. Então 'paused' só existe com o plugin oficial cam-loop, não com o fallback vendado. Decidir e alinhar: ou o hook passa a marcar active:false em alguma condição, ou status para de oferecer um estado morto. Barato; é incoerência interna.",
       "state": "open",
-      "createdAt": "2026-06-05T16:24:46Z"
+      "createdAt": "2026-06-05T16:24:46Z",
+      "priority": "P2"
     },
     {
       "id": "CAM-3",
       "title": "session_id coletado mas inerte; resume nunca resume",
       "description": "Dois fios soltos. (a) src/commands/next.ts:549 grava session_id de process.env CLAUDE_CODE_SESSION_ID ?? '' — vazio quando cam next roda de um shell, então o check de isolamento de sessão do stop hook (STATE_SESSION != HOOK_SESSION) é pulado; duas sessões no mesmo projeto se re-injetariam. (b) src/commands/resume.ts lê session_id no LoopState mas não usa em classifyResumeMode e nunca chama claude --resume/--continue; recuperação é sempre sessão fria nova. O harness oferece --resume <UUID> (reidrata transcript, todos, file history, worktree). Decidir: ligar o fio (resume real de sessão) ou remover o campo morto.",
       "state": "open",
-      "createdAt": "2026-06-05T16:24:46Z"
+      "createdAt": "2026-06-05T16:24:46Z",
+      "priority": "P2"
     },
     {
       "id": "CAM-4",
       "title": "Loop depende de scraping de texto em vez de eventos estruturados",
       "description": "Término do loop = regex perl no <promise> do último bloco assistant (com fallback no prd.json). cam plan = scan de bytes do PTY atrás de 'verdict'+'APPROVE' (src/commands/plan.ts isApproveLine). Retry de rate-limit = capture-pane do tmux. O harness oferece -p --output-format stream-json --include-hook-events (eventos Stop, PreToolUse, Notification). Nada disso é consumido (src/commands/claude.ts:107). Frágil a fraseado/markup (APPROVE num diff dispara o gate). Avaliar migrar os pontos críticos para eventos estruturados.",
       "state": "open",
-      "createdAt": "2026-06-05T16:24:46Z"
+      "createdAt": "2026-06-05T16:24:46Z",
+      "priority": "P2"
     },
     {
       "id": "CAM-5",
       "title": "Sem teto no nível do claude (--max-turns / --max-budget-usd)",
       "description": "O único limite do loop é o contador de iterações do stop hook. src/commands/next.ts:396 (buildClaudeArgv) passa só --permission-mode + /cam-next, sem --max-turns nem --max-budget-usd. Se o hook não registrar (settings corrompido, sessão fora do fluxo), o loop fica sem freio, e não há nenhum teto de custo. Adicionar guardrails de turns e/ou budget no nível do claude.",
       "state": "open",
-      "createdAt": "2026-06-05T16:24:46Z"
+      "createdAt": "2026-06-05T16:24:46Z",
+      "priority": "P2"
     },
     {
       "id": "CAM-6",
       "title": "cam-ship.md retém placeholders genéricos de quality gate",
       "description": ".claude/commands/cam-ship.md:31 e :33 ainda têm <project typecheck command> e <project test command>; o config agent do cam init (modo existing) adaptou os subagents + scripts/cam/CLAUDE.md mas não tocou nesse arquivo (não estava na lista do prompt de setup). Quando /cam-ship rodar os quality gates, vê o placeholder literal. Trocar por 'bun run typecheck' e 'bun test', alinhado ao scripts/cam/CLAUDE.md. Conferir também cam-next.md/cam-plan.md (listas de exemplo genéricas npm/bun). Bom candidato a primeira história de teste por ser pequeno e concreto.",
       "state": "open",
-      "createdAt": "2026-06-05T16:24:46Z"
+      "createdAt": "2026-06-05T16:24:46Z",
+      "priority": "P3"
     },
     {
       "id": "CAM-7",
@@ -83,7 +89,8 @@
       "title": "Approve gate via sinal em arquivo (decisões concentradas no orquestrador)",
       "description": "Pós-MVP, a versão mais elegante. Em vez de trocar o foco pro pane do plan pra responder o APPROVE, o gate sai do pane do worker: o plan worker emite o veredito, o orquestrador (onde você já está) pergunta 'aprovar PRD do CAM-N?', e ao confirmar escreve um flag em arquivo (ex: .claude/.cam-approve-<id>) que o worker lê pra destravar. Sem trocar de pane, sem send-keys/scraping (parente do CAM-4). Decisões num lugar só.",
       "state": "open",
-      "createdAt": "2026-06-05T16:24:46Z"
+      "createdAt": "2026-06-05T16:24:46Z",
+      "priority": "P3"
     },
     {
       "id": "CAM-13",
@@ -104,14 +111,16 @@
       "title": "build-release.sh: soft-check cam init muta o repo e spawna tmux",
       "description": "O AC4 do scripts/build-release.sh roda cam init no cwd do repo como soft-check de build. Como há claude logado, o Stage 2 (setup) executa de verdade: copia os templates por cima dos arquivos versionados (sobrescreveu os 4 subagents adaptados + scripts/cam/CLAUDE.md, recuperados via git restore) e tenta tmux new-session (falhou exit 1 no log do operador). Verificação de build NÃO pode ter efeito colateral no working tree. Fix robusto: rodar o smoke num cwd temporário descartável (mktemp -d) com --no-tmux, ou trocar o AC4 por um smoke não-mutante (cam --version + cam help + cam status num tmpdir). Nunca rodar cam init (comando mutante) contra o repo. Arquivo: scripts/build-release.sh.",
       "state": "open",
-      "createdAt": "2026-06-06T12:09:38Z"
+      "createdAt": "2026-06-06T12:09:38Z",
+      "priority": "P2"
     },
     {
       "id": "CAM-16",
       "title": "Binário bun build --compile no macOS trava em /usr/local/bin (assinatura inválida + amfid)",
       "description": "bun build --compile (macOS arm64) gera binário cuja assinatura o codesign -v reporta como inválida (\"code or signature have been modified\"). Em local user-owned (dist/, ~, /tmp) o macOS roda leniente; em /usr/local/bin (root, diretório de sistema) o amfid valida síncrono no exec, o processo trava uninterruptível (nem kill -9 derruba) e o SO mata (SIGKILL, vira \"zsh: killed\"). Causa-raiz do erro do US-010 smoke; o tmux estava saudável. Fixes robustos pra prod, em camadas: (a) MVP: build-release.sh re-assina o binário ad-hoc após compilar (codesign --force --sign - <bin>) e confirma codesign -v passa, deixando o artefato válido em qualquer destino; (b) instalação user-owned por padrão (~/.local/bin, sem sudo) e/ou um subcomando cam install que copia + re-assina + limpa quarantine (xattr -cr) + auto-testa (cam --version); (c) distribuição pública: Developer ID signing + notarytool + stapler (precisa de conta Apple Developer), senão downloads pegam quarantine/Gatekeeper. Arquivos: scripts/build-release.sh, possível novo src/commands/install.ts + index.ts.",
       "state": "open",
-      "createdAt": "2026-06-06T12:09:38Z"
+      "createdAt": "2026-06-06T12:09:38Z",
+      "priority": "P2"
     },
     {
       "id": "CAM-17",
@@ -146,28 +155,40 @@
       "title": "Tokens gastos no dashboard (orchestrator e por story)",
       "description": "Mostrar no dashboard quanto cada parte gastou de tokens, lido dos transcripts reais do Claude Code (~/.claude/projects/<proj>/<session>.jsonl; cada msg assistant tem usage: input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens; confirmado por inspeção). MVP: total do ORCHESTRATOR numa linha da seção Loop (ex: tokens 1.2M in / 340k out, ou custo USD). cam precisa identificar o transcript da sessão do orquestrador (cam run não captura o session id hoje; opções: passar um session id na criação e gravar em .claude/.cam-orch-session, ou pegar o transcript mais recente do projeto). Definir o que conta como gasto (o cache domina: cache_read 450k vs input 22k no sample). Per-STORY depende do CAM-22 (workers viram sessões reais): aí cada story é uma sessão, soma do transcript dela, mostrada na seção Stories. Arquivos: src/commands/dashboard.ts (readSnapshot soma o transcript), src/ui/Dashboard.tsx (linhas), src/commands/run.ts (capturar o session id do orquestrador).",
       "state": "open",
-      "createdAt": "2026-06-07T13:10:11Z"
+      "createdAt": "2026-06-07T13:10:11Z",
+      "priority": "P0"
     },
     {
       "id": "CAM-22",
       "title": "Workers como sessões claude reais, não Task subagents numa sessão longa",
       "description": "Hoje o loop dispara subagent-implementer/reviewer via Task DENTRO de uma única sessão longa (re-injetada pelo stop hook), acumulando contexto. Mudar: cada worker (story, review) roda numa sessão claude separada de verdade (spawn próprio), não Task subagent. Benefícios: (a) não estoura contexto numa sessão só; (b) habilita atribuição de tokens por story (cada story = uma sessão = um transcript somável, ver CAM-21); (c) isolamento real. Relaciona com CAM-1 (compaction) e o modelo de pane-launcher (CAM-9). É pré-requisito do per-story do CAM-21.",
       "state": "open",
-      "createdAt": "2026-06-07T13:10:11Z"
+      "createdAt": "2026-06-07T13:10:11Z",
+      "priority": "P0"
     },
     {
       "id": "CAM-23",
       "title": "Orchestrator faz auto-handoff perto de ~100k tokens (janelas de 100k)",
       "description": "O orquestrador é a sessão mais longa (humano-facing, dura horas/dias) e acumula contexto. Trabalhar em janelas de ~100k tokens: ao se aproximar de 100k tokens, o orquestrador faz um HANDOFF de si mesmo (semelhante ao handoff dos stories) e recomeça numa sessão fresca lendo esse handoff, em vez de depender da auto-compactação silenciosa do Claude (ver CAM-1). O handoff do orquestrador captura: contexto do projeto, ciclo atual, decisões, estado. cam monitora os tokens (via transcript, ver CAM-21) e dispara o handoff no threshold. Em vez de só reagir à compactação do Claude (CAM-1), o cam faz a sua, controlada, então CAM-23 é a estratégia preferida e relaciona/supera o CAM-1. Arquivos: monitor de tokens + handoff do orquestrador + re-spawn no cam run.",
       "state": "open",
-      "createdAt": "2026-06-07T13:10:11Z"
+      "createdAt": "2026-06-07T13:10:11Z",
+      "priority": "P1"
     },
     {
       "id": "CAM-24",
       "title": "Replan limpa o plano atual por completo (cam plan re-plan)",
       "description": "Hoje /cam-plan, ao detectar trabalho em andamento, oferece sobrescrever o prd.json, mas NÃO limpa progress.txt nem handoff.json, então sobra estado do plano anterior. Um re-plan de verdade deve descartar o plano atual por completo (prd.json), limpar os docs do ciclo (progress.txt zerado pro bloco de patterns, handoff.json removido) e começar do zero. Hoje esse replan limpo não existe de fato (o menu dizia 'plan / re-plan', corrigido inline pra 'plan an issue'). Definir um modo de replan (ex: /cam-plan --fresh ou cam plan --replan) que faz a limpeza completa antes de gerar o novo PRD. Arquivos: .claude/commands/cam-plan.md (passo de limpeza), possível flag no cam plan.",
       "state": "open",
-      "createdAt": "2026-06-07T13:10:11Z"
+      "createdAt": "2026-06-07T13:10:11Z",
+      "priority": "P3"
+    },
+    {
+      "id": "CAM-25",
+      "title": "Padrao de id de issue: numero N canonico + resolucao backend-aware (local/github/linear)",
+      "description": "PROBLEMA: tres camadas inconsistentes hoje. (a) issues.local.json usa CAM-N. (b) cam plan (src/commands/plan.ts) tipa o arg como number e emite /cam-plan #N, GitHub-only. (c) /cam-plan.md Step 2 resolve so via gh issue view, senao trata o arg como descricao livre, nunca le o backend local. Resultado: o backend local (CAM-N) esta desconectado do planejamento (/cam-plan CAM-21 hoje vira descricao literal, nao resolve o issue). DECISAO (Eduardo, 2026-06-07): suportar os 3 backends (local, github, linear) com um TOKEN CANONICO UNICO = numero inteiro N (sequencial por projeto). cam plan N, tolerar #N (stripar o #). project.toml ja tem issue_system (hoje 'none'); valores none|local|github|linear, mais issue_prefix (ex CAM) pra local/linear (GitHub nao tem prefixo, usa #). RESOLVER backend-aware (substitui o Step 2 gh-cravado do cam-plan.md): dado N + issue_system: local = lookup do numero N no issues.local.json (manter CAM-N como display legivel, chavear pela parte numerica; next_id ja e numerico); github = gh issue view N (display #N); linear = Linear API por <PREFIX>-N (display CAM-N, PREFIX = team key). Derivar displayId e branchName do backend (CAM-21/#42; branch cam/CAM-21-slug ou cam/pr-42-slug). RESSALVA: o numero so e nao-ambiguo dentro de UM namespace por backend. Local (next_id sequencial) e GitHub (numero por repo) sao namespace unico, N resolve direto. Linear o numero e por-time (CAM-21 e ENG-21 coexistem como 21), entao issue_prefix (o team key) e OBRIGATORIO pro Linear expandir N. ESCOPO: campos no project.toml (issue_system ativo + issue_prefix); resolver N+config -> {displayId, fetchSpec()} dispatching local/gh/linear; CONTRATO cam plan (decisao Eduardo 2026-06-07): aceita SOMENTE um inteiro N (tolera #N, stripando o #); qualquer entrada presente-mas-nao-inteira (texto livre, nao-numerico, malformado) da um ERRO PADRONIZADO nosso (printError + printFatalHint, exit 1, ex: 'cam plan: invalid issue reference (expected an issue number, e.g. cam plan 21)'), NUNCA trata como descricao. BARE 'cam plan' (sem argumento) NAO e erro: comeca o issue OPEN de MAIOR PRIORIDADE do backend (decisao Eduardo 2026-06-07). Isso requer um sinal de prioridade na lista, que HOJE NAO EXISTE: local precisa de um campo priority no issues.local.json (ex P0>P1>P2>P3, ou inteiro; tie-break menor id) + backfill dos issues abertos; linear usa priority nativo; github usa label de prioridade (ou fallback oldest-open). So entrada presente-mas-nao-inteira da o erro padronizado. cam plan emite /cam-plan N (tirar o # hardcoded de plan.ts:96 e 139, manter issue?:number, validar inteiro no parsePlanArgs e emitir o erro padronizado em vez de NaN/crash). ESCOPO DA REGRA: a regra number-only/erro-padronizado e SO do comando cam plan (terminal). O slash /cam-plan dentro do claude NAO segue essa regra (decisao Eduardo 2026-06-07): continua aceitando tanto numero (resolvido backend-aware) quanto texto-livre/Description como hoje. /cam-plan.md Step 2: ADICIONA resolucao backend-aware pra numero (local/gh/linear) e MANTEM a forma Description/texto-livre. Bootstrap (inclusive do proprio CAM-25) pode ser via /cam-plan <descricao> no pane do orquestrador, ja que o slash mantem texto-livre; adapter local de lookup-by-number lendo issues.local.json; testes (parse, resolver, argv) + docs (PLAN_HELP, cam-plan.md, template do project.toml). Supersede a inconsistencia atual entre as 3 camadas.",
+      "state": "open",
+      "createdAt": "2026-06-07T14:38:07Z",
+      "priority": "P0"
     }
   ]
 }
