@@ -49,15 +49,14 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 	const [data, setData] = useState<DashboardData>(() => readSnapshot());
 	const { exit } = useApp();
 	const { stdout } = useStdout();
-	// Fit the section rule to the host pane. In the cam-run layout the dashboard
-	// lives in a narrow (~36-col) tmux pane, so a fixed 50-col rule wrapped onto
-	// a second line. Cap at the canonical width for a wide standalone terminal,
-	// shrink to fit narrow panes. Recomputed on SIGWINCH (Ink re-renders).
+	// Fit the section rule to the host pane: full width minus a symmetric margin
+	// (the heading indent on each side), so the rule spans the pane instead of
+	// stopping at a fixed 50-col cap. Recomputed on SIGWINCH (Ink re-renders).
 	const cols = stdout?.columns ?? 80;
-	const dividerWidth = Math.max(12, Math.min(layout.dividerWidth, cols - layout.headingIndent - 1));
+	const dividerWidth = Math.max(12, cols - layout.headingIndent * 2);
 	// Progress bar shrinks to fit: leave room for the content indent, the
 	// `iter` key column, and the ` N/M` counter that follows the bar.
-	const barWidth = Math.max(6, Math.min(PROGRESS_BAR_WIDTH, cols - 18));
+	const barWidth = Math.max(6, Math.min(PROGRESS_BAR_WIDTH, cols - 22));
 
 	useEffect(() => {
 		const id = setInterval(() => {
@@ -82,7 +81,8 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 			/>
 			<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
 			<Box marginTop={1} paddingLeft={2}>
-				<Text color={colors.muted}>q close pane</Text>
+				<Text bold>q</Text>
+				<Text color={colors.muted}> close pane</Text>
 			</Box>
 		</Box>
 	);
@@ -104,6 +104,11 @@ function SummaryPanel({
 		: data.idle
 			? '(idle)'
 			: '(booting)';
+	// The progress bar reflects PRD completion (stories passed / total), which is
+	// meaningful whether or not a loop is running. `iter` (loop iterations) is a
+	// distinct runtime value, shown as text below.
+	const storiesTotal = (data.stories ?? []).length;
+	const storiesDone = (data.stories ?? []).filter((s) => s.passes === true).length;
 	// No box: the summary is a Section ("Loop") so the dashboard speaks the same
 	// vocabulary as `cam status` (bold heading + muted rule + key/value rows),
 	// instead of a round border that nothing else in cam uses.
@@ -115,10 +120,15 @@ function SummaryPanel({
 			<SummaryRow label="story">
 				<Text>{storyLabel}</Text>
 			</SummaryRow>
-			<SummaryRow label="iter">
-				<ProgressBar value={data.iteration} max={data.maxIterations} width={barWidth} />
+			<SummaryRow label="progress">
+				<ProgressBar value={storiesDone} max={storiesTotal} width={barWidth} />
 				<Text color={colors.muted}>
 					{' '}
+					{storiesDone}/{storiesTotal}
+				</Text>
+			</SummaryRow>
+			<SummaryRow label="iter">
+				<Text color={colors.muted}>
 					{data.iteration}/{data.maxIterations}
 				</Text>
 			</SummaryRow>
@@ -137,7 +147,7 @@ function SummaryPanel({
 function SummaryRow({ label, children }: { label: string; children: ReactNode }): ReactElement {
 	return (
 		<Box flexDirection="row">
-			<Box width={8}>
+			<Box width={9}>
 				<Text color={colors.muted}>{label}</Text>
 			</Box>
 			{children}

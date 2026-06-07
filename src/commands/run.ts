@@ -130,17 +130,17 @@ DASHBOARD_PANE='${dashboardPane}'
 show_menu() {
 	clear
 	local COLS RULE_W DIV
-	COLS=$(tput cols 2>/dev/null || echo 36)
-	RULE_W=$(( COLS > 4 ? COLS - 2 : 2 ))
+	COLS=$(tmux display-message -p '#{pane_width}' 2>/dev/null || echo 36)
+	RULE_W=$(( COLS > 6 ? COLS - 4 : 2 ))
 	DIV=$(printf '─%.0s' $(seq 1 "$RULE_W"))
-	printf "  \${ACCENT}\${BOLD}cam orchestrator\${RST}\\n"
+	printf "  \${BOLD}Commands\${RST}\\n"
 	printf "  \${MUTED}\${DIV}\${RST}\\n"
 	printf "  \${BOLD}n\${RST}  \${BOLD}/cam-next  \${RST}  \${MUTED}run next story\${RST}\\n"
 	printf "  \${BOLD}r\${RST}  \${BOLD}/cam-review\${RST}  \${MUTED}review PRD\${RST}\\n"
 	printf "  \${BOLD}s\${RST}  \${BOLD}/cam-ship  \${RST}  \${MUTED}ship iteration\${RST}\\n"
 	printf "  \${BOLD}p\${RST}  \${BOLD}/cam-plan  \${RST}  \${MUTED}plan / re-plan\${RST}\\n"
 	printf "  \${BOLD}i\${RST}  \${BOLD}/cam-issue \${RST}  \${MUTED}sync issues\${RST}\\n"
-	printf "  \${MUTED}\${DIV}\${RST}\\n"
+	printf "\\n"
 	printf "  \${BOLD}d\${RST}  \${MUTED}focus dashboard pane\${RST}\\n"
 	printf "  \${BOLD}q\${RST}  \${MUTED}close pane\${RST}\\n"
 }
