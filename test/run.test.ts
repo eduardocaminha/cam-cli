@@ -272,10 +272,13 @@ describe('runRun tmux argv — new session', () => {
 
 		// The dashboard runs via respawn-pane (direct command, no interactive
 		// shell) targeting the captured pane id (%2).
+		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]='respawn-pane'.
 		const dashboardRespawn = spawn.calls.find(
-			c => c.args[0] === 'respawn-pane' && c.args.some(a => a === '%2'),
+			c => c.args[2] === 'respawn-pane' && c.args.some(a => a === '%2'),
 		);
 		expect(dashboardRespawn).toBeDefined();
+		expect(dashboardRespawn?.args[0]).toBe('-L');
+		expect(dashboardRespawn?.args[1]).toBe('cam');
 		expect(dashboardRespawn?.args).toContain('%2');
 		expect(dashboardRespawn?.args).toContain('cam');
 		expect(dashboardRespawn?.args).toContain('dashboard');
@@ -287,10 +290,13 @@ describe('runRun tmux argv — new session', () => {
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
+		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]='respawn-pane'.
 		const menuRespawn = spawn.calls.find(
-			c => c.args[0] === 'respawn-pane' && c.args.some(a => a === '%3'),
+			c => c.args[2] === 'respawn-pane' && c.args.some(a => a === '%3'),
 		);
 		expect(menuRespawn).toBeDefined();
+		expect(menuRespawn?.args[0]).toBe('-L');
+		expect(menuRespawn?.args[1]).toBe('cam');
 		expect(menuRespawn?.args).toContain('%3');
 		// Runs `cam menu <orchPane> <dashboardPane>` as discrete argv elements.
 		expect(menuRespawn?.args).toContain('cam');
@@ -307,10 +313,13 @@ describe('runRun tmux argv — new session', () => {
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
 		// The orch pane runs via respawn-pane targeting the captured pane id (%1).
+		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]='respawn-pane'.
 		const orchRespawn = spawn.calls.find(
-			c => c.args[0] === 'respawn-pane' && c.args.some(a => a === '%1'),
+			c => c.args[2] === 'respawn-pane' && c.args.some(a => a === '%1'),
 		);
 		expect(orchRespawn).toBeDefined();
+		expect(orchRespawn?.args[0]).toBe('-L');
+		expect(orchRespawn?.args[1]).toBe('cam');
 		expect(orchRespawn?.args).toContain('%1');
 		// The command includes the `claude` invocation (passed via bash -c).
 		expect(orchRespawn?.args.some(a => a.includes('claude'))).toBe(true);
@@ -323,14 +332,15 @@ describe('runRun tmux argv — new session', () => {
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
+		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]='respawn-pane'.
 		const orchRespawn = spawn.calls.find(
-			c => c.args[0] === 'respawn-pane' && c.args.some(a => a === '%1'),
+			c => c.args[2] === 'respawn-pane' && c.args.some(a => a === '%1'),
 		);
 		expect(orchRespawn).toBeDefined();
-		// The composed command must contain a kill-session call for this session.
+		// The composed command must contain tmux -L cam kill-session for this session.
 		const composedCmd = orchRespawn?.args.find(a => a.includes('kill-session'));
 		expect(composedCmd).toBeDefined();
-		expect(composedCmd).toContain(`kill-session -t ${sessionName}`);
+		expect(composedCmd).toContain(`-L cam kill-session -t ${sessionName}`);
 	});
 
 	it('skips session creation when session already exists', () => {
