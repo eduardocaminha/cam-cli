@@ -129,7 +129,7 @@ function SummaryPanel({
 			</SummaryRow>
 			<SummaryRow label="iter">
 				<Text color={colors.muted}>
-					{data.iteration}/{data.maxIterations}
+					{data.maxIterations > 0 ? `${data.iteration}/${data.maxIterations}` : '—'}
 				</Text>
 			</SummaryRow>
 			<SummaryRow label="since">
