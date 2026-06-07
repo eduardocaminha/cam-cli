@@ -8,7 +8,7 @@
 //   3. Otherwise → create a new session with three panes via ensureProjectSession:
 //        Pane 0 (left):         claude orchestrator with boot prompt (US-001).
 //        Pane 1 (top-right):    cam dashboard — permanent pane (US-002, US-010).
-//        Pane 2 (bottom-right): interactive menu script (US-004).
+//        Pane 2 (bottom-right): interactive menu — the `cam menu` Ink app (US-004).
 //      Then attach.
 //
 // Dependencies:
@@ -95,74 +95,6 @@ export function buildOrchestratorBootPrompt(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Menu script
-// ---------------------------------------------------------------------------
-
-/**
- * Generate a bash key-loop menu for the bottom-right pane of the session.
- *
- * The menu renders a list of cam orchestrator commands. When the user presses
- * a key, the corresponding slash command is sent to the orchestrator pane via
- * `tmux send-keys -t <orchPane> <command> Enter`.
- *
- * The `d` key focuses the permanent dashboard pane (pane 1) via
- * `tmux select-pane` — it does NOT inject text into the orchestrator pane,
- * because the dashboard is already running as a permanent pane (US-011).
- *
- * Both pane addresses are embedded in the script so no env wiring is needed
- * at call time.
- *
- * @param orchPane      - tmux pane ID for the orchestrator, e.g. "%1"
- * @param dashboardPane - tmux pane ID for the dashboard, e.g. "%2"
- */
-export function buildRunMenuScript(orchPane: string, dashboardPane: string): string {
-	return `#!/bin/bash
-set +m
-
-ACCENT='\\033[38;2;78;190;125m'
-MUTED='\\033[38;2;128;128;128m'
-BOLD='\\033[1m'
-RST='\\033[0m'
-
-ORCH_PANE='${orchPane}'
-DASHBOARD_PANE='${dashboardPane}'
-
-show_menu() {
-	clear
-	local COLS RULE_W DIV
-	COLS=$(tmux display-message -p '#{pane_width}' 2>/dev/null || echo 36)
-	RULE_W=$(( COLS > 6 ? COLS - 4 : 2 ))
-	DIV=$(printf '─%.0s' $(seq 1 "$RULE_W"))
-	printf "  \${BOLD}Commands\${RST}\\n"
-	printf "  \${MUTED}\${DIV}\${RST}\\n"
-	printf "  \${BOLD}n\${RST}  \${BOLD}/cam-next  \${RST}  \${MUTED}run next story\${RST}\\n"
-	printf "  \${BOLD}r\${RST}  \${BOLD}/cam-review\${RST}  \${MUTED}review PRD\${RST}\\n"
-	printf "  \${BOLD}s\${RST}  \${BOLD}/cam-ship  \${RST}  \${MUTED}ship iteration\${RST}\\n"
-	printf "  \${BOLD}p\${RST}  \${BOLD}/cam-plan  \${RST}  \${MUTED}plan / re-plan\${RST}\\n"
-	printf "  \${BOLD}i\${RST}  \${BOLD}/cam-issue \${RST}  \${MUTED}sync issues\${RST}\\n"
-	printf "\\n"
-	printf "  \${BOLD}d\${RST}  \${MUTED}focus dashboard pane\${RST}\\n"
-	printf "  \${BOLD}q\${RST}  \${MUTED}close pane\${RST}\\n"
-}
-
-show_menu
-
-while true; do
-	read -rsn1 key
-	case "\${key}" in
-		n|N) tmux send-keys -t "\${ORCH_PANE}" '/cam-next' Enter ; show_menu ;;
-		r|R) tmux send-keys -t "\${ORCH_PANE}" '/cam-review' Enter ; show_menu ;;
-		s|S) tmux send-keys -t "\${ORCH_PANE}" '/cam-ship' Enter ; show_menu ;;
-		p|P) tmux send-keys -t "\${ORCH_PANE}" '/cam-plan' Enter ; show_menu ;;
-		i|I) tmux send-keys -t "\${ORCH_PANE}" '/cam-issue' Enter ; show_menu ;;
-		d|D) tmux select-pane -t "\${DASHBOARD_PANE}" ;;
-		q|Q) exit 0 ;;
-	esac
-done
-`;
-}
-
-// ---------------------------------------------------------------------------
 // Session creation
 // ---------------------------------------------------------------------------
 
@@ -170,10 +102,11 @@ done
  * Create the orchestrator session using the shared session module.
  *
  * Delegates layout creation to ensureProjectSession (3-pane detached session),
- * then:
- *   - Sends the claude orchestrator command to pane 0 (orchestrator).
- *   - Sends `cam dashboard` to pane 1 (permanent dashboard).
- *   - Sends the interactive menu script to pane 2 (menu).
+ * then respawns the real command into each pane (replacing the silent `cat`
+ * placeholder so no interactive shell flashes before it):
+ *   - Pane 0: claude orchestrator (via `bash -c`, chained to kill-session).
+ *   - Pane 1: `cam dashboard` (permanent monitor).
+ *   - Pane 2: `cam menu <orchPane> <dashboardPane>` (the Ink menu).
  *
  * Pane IDs returned by ensureProjectSession are stable %<n> identifiers that
  * work regardless of the user's pane-base-index in .tmux.conf.
@@ -228,13 +161,14 @@ function setupOrchestratorSession(opts: {
 		{ stdio: 'ignore' },
 	);
 
-	// Pane 2: interactive menu (US-004). Direct respawn of the menu script
-	// (non-interactive bash). `q` exits the script, closing the pane.
-	const menuFile = join(dotClaude, '.cam-run-menu.sh');
-	writeFileSync(menuFile, buildRunMenuScript(orchPaneId, dashboardPaneId), 'utf8');
+	// Pane 2: interactive menu (US-004) — the `cam menu` Ink app, which reads its
+	// own pane width (no fragile bash width detection) and reuses the dashboard's
+	// Section so the heading + rule line up. The orchestrator + dashboard pane ids
+	// are passed as args so the menu's keys can target them. `q` exits, closing
+	// the pane.
 	spawnFn(
 		'tmux',
-		['respawn-pane', '-k', '-t', menuPaneId, 'bash', menuFile],
+		['respawn-pane', '-k', '-t', menuPaneId, 'cam', 'menu', orchPaneId, dashboardPaneId],
 		{ stdio: 'ignore' },
 	);
 

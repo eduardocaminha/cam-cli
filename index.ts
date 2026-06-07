@@ -19,6 +19,7 @@
 import process from 'node:process';
 
 import { runDashboardInk } from './src/commands/dashboard.ts';
+import { runMenuInk } from './src/commands/menu.ts';
 import { runInit } from './src/commands/init.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runNext } from './src/commands/next.ts';
@@ -709,6 +710,12 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			return runDashboardInk();
+		}
+		// Internal: spawned by `cam run` as the workspace menu pane. Not listed in
+		// the top-level help. Args are the orchestrator + dashboard pane ids so the
+		// menu's keys can target them.
+		case 'menu': {
+			return runMenuInk({ orchPane: argv[3] ?? '', dashboardPane: argv[4] ?? '' });
 		}
 		case 'status': {
 			const tail = argv.slice(3);

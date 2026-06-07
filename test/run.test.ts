@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import { buildRunMenuScript, parseRunArgs, projectSessionName, runRun } from '../src/commands/run.ts';
+import { parseRunArgs, projectSessionName, runRun } from '../src/commands/run.ts';
 import type { SpawnFn } from '../src/tmux/session.ts';
 
 // ---------------------------------------------------------------------------
@@ -278,7 +278,7 @@ describe('runRun tmux argv — new session', () => {
 		expect(dashboardRespawn?.args).toContain('dashboard');
 	});
 
-	it('respawns the interactive menu script in pane 2 (US-004)', () => {
+	it('respawns the cam menu Ink app in pane 2 (US-004)', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
@@ -289,9 +289,12 @@ describe('runRun tmux argv — new session', () => {
 		);
 		expect(menuRespawn).toBeDefined();
 		expect(menuRespawn?.args).toContain('%3');
-		// Runs bash with the .cam-run-menu.sh file as discrete argv elements.
-		expect(menuRespawn?.args).toContain('bash');
-		expect(menuRespawn?.args.some(a => a.includes('.cam-run-menu.sh'))).toBe(true);
+		// Runs `cam menu <orchPane> <dashboardPane>` as discrete argv elements.
+		expect(menuRespawn?.args).toContain('cam');
+		expect(menuRespawn?.args).toContain('menu');
+		// The orchestrator (%1) and dashboard (%2) pane ids are passed as args.
+		expect(menuRespawn?.args).toContain('%1');
+		expect(menuRespawn?.args).toContain('%2');
 	});
 
 	it('respawns the claude command in pane 0', () => {
@@ -349,72 +352,6 @@ describe('runRun tmux argv — new session', () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// buildRunMenuScript (US-004, US-011)
-// ---------------------------------------------------------------------------
-
-describe('buildRunMenuScript', () => {
-	const ORCH_PANE = 'cam-orch-myproject-abc123:0.0';
-	const DASHBOARD_PANE = 'cam-orch-myproject-abc123:0.1';
-
-	it('embeds the orchestrator pane target in the script', () => {
-		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
-		expect(script).toContain(ORCH_PANE);
-	});
-
-	it('embeds the dashboard pane target in the script', () => {
-		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
-		expect(script).toContain(DASHBOARD_PANE);
-	});
-
-	it('contains a send-keys call targeting the orchestrator pane for /cam-next', () => {
-		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
-		// The send-keys invocation should reference the pane and the command.
-		expect(script).toContain(`tmux send-keys -t "\${ORCH_PANE}" '/cam-next' Enter`);
-	});
-
-	it('contains send-keys entries for all expected commands', () => {
-		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
-		for (const cmd of ['/cam-next', '/cam-review', '/cam-ship', '/cam-plan', '/cam-issue']) {
-			expect(script).toContain(cmd);
-		}
-	});
-
-	it('uses read -rsn1 for non-blocking single-key input', () => {
-		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
-		expect(script).toContain('read -rsn1');
-	});
-
-	it('includes a quit key (q/Q) that exits without sending to the orch pane', () => {
-		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
-		// q|Q case must be present and must call exit 0, not send-keys.
-		expect(script).toContain('q|Q) exit 0');
-	});
-
-	it('d key uses tmux select-pane to focus dashboard, not send-keys to orchestrator (US-011)', () => {
-		const script = buildRunMenuScript(ORCH_PANE, DASHBOARD_PANE);
-		// d must call tmux select-pane targeting DASHBOARD_PANE.
-		expect(script).toContain('tmux select-pane -t "${DASHBOARD_PANE}"');
-		// d must NOT inject text into the orchestrator pane.
-		expect(script).not.toContain('send-keys -t "${ORCH_PANE}" \'cam dashboard\'');
-	});
-
-	it('pane 2 respawns bash with the menu script file (integration)', () => {
-		// Verify that setupOrchestratorSession wires pane 2 to run the menu script.
-		const cwd = makeTmpProject();
-		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
-
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
-
-		// Menu pane runs via respawn-pane targeting the captured menu pane id (%3).
-		const menuRespawn = spawn.calls.find(
-			c => c.args[0] === 'respawn-pane' && c.args.some(a => a === '%3'),
-		);
-		expect(menuRespawn).toBeDefined();
-		expect(menuRespawn?.args).toContain('%3');
-		// Runs bash with the menu file as discrete argv elements.
-		expect(menuRespawn?.args).toContain('bash');
-		const menuFileArg = menuRespawn?.args.find(a => a.includes('.cam-run-menu.sh'));
-		expect(menuFileArg).toBeDefined();
-	});
-});
+// The interactive menu is now the `cam menu` Ink app (src/ui/Menu.tsx); its
+// pane wiring is covered by the "respawns the cam menu Ink app in pane 2" test
+// above. The old bash buildRunMenuScript was removed.
