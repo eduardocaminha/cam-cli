@@ -116,7 +116,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: README.md, FLOW.md. Depends on US-001 through US-005 being merged (docs reflect shipped behavior). Eduardo's rule: no travessão in persisted .md files (decided 2026-05-20). Anchor the WHY in the real failure mode (stale default server inside a dead macOS security session denies TCC access to ~/Documents)."
     },

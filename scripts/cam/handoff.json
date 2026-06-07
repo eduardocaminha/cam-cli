@@ -1,21 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Thread -L cam through the outside-tmux branch of cam setup"
+    "id": "US-006",
+    "title": "Document the dedicated -L cam socket in README.md and FLOW.md"
   },
   "branchName": "cam/CAM-26-tmux-dedicated-socket",
-  "timestamp": "2026-06-07T03:00:00Z",
+  "timestamp": "2026-06-07T04:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/setup.ts"
+    "README.md",
+    "FLOW.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 through US-005 complete: tmuxArgs() is now threaded through session.ts, run.ts, next.ts, stop.ts, Menu.tsx, and setup.ts (outside-tmux branch only). The inside-tmux branch in setup.ts is the one intentional ambient-socket exception. Remaining stories likely cover other command files or the bash script inside buildSetupMenuScript(). test/setup-menu.test.ts only tests the bash script (out of scope for -L threading) and does not assert tmux argv shapes.",
+  "nextStoryContext": "US-001 through US-006 complete. The -L cam socket is threaded through session.ts, run.ts, next.ts, stop.ts, Menu.tsx, and setup.ts (outside-tmux branch). README.md and FLOW.md now document the isolation guarantee and the intentional ambient-socket exception for cam claude / cam retry-monitor. Check prd.json for any remaining passes:false stories.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-005 only wraps existing tmux spawn calls with tmuxArgs() in setup.ts outside-tmux branch. No external library API surface changed."
+      "summary": "US-006 is a docs-only story. No external library API surface was touched."
     }
   ]
 }

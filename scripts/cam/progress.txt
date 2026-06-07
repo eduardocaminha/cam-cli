@@ -147,3 +147,26 @@ Durable patterns carried across cycles:
 ### Notes
 - setup.ts has a clear split: outside-tmux creates the cam-setup session (must be on -L cam socket); inside-tmux targets the user's live window (must stay on ambient socket). This is the only intentional ambient-socket path in workspace code.
 ---
+
+## [2026-06-07 04:30] - US-006: Document the dedicated -L cam socket in README.md and FLOW.md
+
+### What was done
+- Added a paragraph to README.md §"Single project session" explaining that cam uses `tmux -L cam`, why the isolation matters, and the macOS TCC failure mode it avoids
+- Added a note to README.md interactive-mode auto-retry bullet clarifying that `cam claude` and `cam retry-monitor` intentionally stay on the ambient socket (they watch the user's live pane, not the cam workspace)
+- Added an isolation guarantee block to FLOW.md §2.5 (cam run) with the same socket isolation explanation and the intentional ambient-socket exception for `cam claude` / `cam retry-monitor`
+- Verified zero em-dashes in either file (rule: no travessao in persisted .md)
+
+### Files changed
+- README.md
+- FLOW.md
+
+### Quality gates
+- Typecheck: ok
+- Tests: 490 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (docs-only story; no code or external lib touched)
+
+### Notes
+- None. Pure documentation story; all acceptance criteria met in a focused diff.
+---
