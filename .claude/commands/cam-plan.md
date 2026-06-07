@@ -60,14 +60,23 @@ Which option?
 
 ### Step 2: Pick the issue
 
-- **No argument**: check GitHub for the next open issue (`gh issue list --state open --limit 5`) or ask the user which issue to work on.
-- **With argument** (`$ARGUMENTS`): two accepted forms:
-  - **Issue number** (`70` or `#70`): use that issue directly via `gh issue view 70 --json number,title,body,labels,comments,state,url`.
-  - **Description**: use the text as the spec (no GitHub issue).
+First read the configured backend from `scripts/cam/project.toml`: `issue_system` (`none` | `github` | `linear`; `none` is the local-only backend stored in `scripts/cam/issues.local.json`) and `issue_prefix` (the display/team prefix for `none`/`linear`; default `CAM`).
+
+Note: the `cam plan` CLI only ever passes a bare invocation or an integer `N` (it rejects free text). The `/cam-plan` slash additionally accepts a free-text description.
+
+- **No argument**: plan the highest-priority OPEN issue for the backend.
+  - `none`: read `scripts/cam/issues.local.json`, filter `state == "open"`, sort by `priority` (`P0` before `P1` before `P2` before `P3`; a missing `priority` sorts last) then by ascending numeric id, take the first.
+  - `github`: `gh issue list --state open --limit 5` (pick the top, or ask the user).
+  - `linear`: query the active cycle and take the highest-priority open issue.
+- **Integer argument `N`** (`70` or `#70`): resolve that issue from the backend.
+  - `none`: read `scripts/cam/issues.local.json` and find the issue whose `id == "<issue_prefix>-<N>"` (e.g. `CAM-70`). Use its `title` + `description` as the spec. Stop with a clear error if it is missing or not open.
+  - `github`: `gh issue view 70 --json number,title,body,labels,comments,state,url`.
+  - `linear`: fetch `<issue_prefix>-<N>` via the Linear API (same path the orchestrator uses).
+- **Free-text description** (anything not an integer; reachable only via the slash, never from `cam plan`): use the text as the spec, with no linked issue.
 
 ### Step 3: Read context
 
-- Read the issue from GitHub (if applicable): `gh issue view N --json title,body,labels,comments,state,url`.
+- Read the resolved issue's full spec (already fetched in Step 2): GitHub via `gh issue view N --json title,body,labels,comments,state,url`, the local `issues.local.json` entry for `none`, or the Linear API result.
 - Read `CLAUDE.md` and any `AGENTS.md` files to understand the project stack and conventions.
 - Comments frequently carry field evidence, scope corrections, or decisions that never made it into the body — treat them as first-class context.
 
@@ -155,7 +164,7 @@ The subagent reads the project context (`CLAUDE.md`, `AGENTS.md`) itself and out
 
 Rules:
 - Output valid JSON.
-- Set `branchName` to `cam/pr-<github#>-<slug>` (e.g. `cam/pr-21-auth-refactor`). If no GitHub issue number, use `cam/<slug>`.
+- Set `branchName` from the backend: `github` uses `cam/pr-<N>-<slug>` (e.g. `cam/pr-21-auth-refactor`); `none`/`linear` use `cam/<issue_prefix>-<N>-<slug>` (e.g. `cam/CAM-21-auth-refactor`). If there is no issue number (free-text description), use `cam/<slug>`.
 - Each story must be small enough for one conversation (1-3 files or one well-scoped refactor).
 - Order by dependency: DB → server → client → tests → E2E.
 - Every story needs typecheck and lint in acceptance criteria.

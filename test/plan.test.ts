@@ -5,10 +5,12 @@
 // What we cover:
 //   - isApproveLine: JSON/YAML/case-insensitive detection; negative cases.
 //   - findApproveLine: first-match, no-match, empty-input.
-//   - buildPlanArgv: bare /cam-plan and /cam-plan #N with permission mode.
+//   - parsePlanArgs: positional integer, leading-# tolerance, bare (no arg),
+//     and standardized error on any present-but-non-integer token.
+//   - buildPlanArgv: bare /cam-plan and /cam-plan N with permission mode.
 //   - runPlan (tmux path): asserts ensureProjectSession + openPaneInSession
 //     tmux argv via injectable tmuxSpawnFn; returns 0 immediately (thin launcher).
-//   - runPlan with --issue option: slash command includes #N.
+//   - runPlan with an issue number: slash command includes N (no `#`).
 //   - runPlan with no tmuxSpawnFn failures: error path returns 1.
 //
 // The old PTY/APPROVE foreground tests are removed per US-006 acceptance
@@ -27,6 +29,7 @@ import {
 	isApproveLine,
 	runPlan,
 } from '../src/commands/plan.ts';
+import { parsePlanArgs } from '../index.ts';
 import { projectSessionName, type SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
 
 // --- Fake tmux spawn --------------------------------------------------------
@@ -123,18 +126,62 @@ describe('buildPlanArgv', () => {
 		]);
 	});
 
-	test('builds /cam-plan #N when issue is provided', () => {
+	test('builds /cam-plan N when issue is provided', () => {
 		expect(buildPlanArgv('bypassPermissions', 42)).toEqual([
 			'claude',
 			'--permission-mode',
 			'bypassPermissions',
-			'/cam-plan #42',
+			'/cam-plan 42',
 		]);
 	});
 
 	test('uses the supplied permission mode verbatim', () => {
 		const argv = buildPlanArgv('default');
 		expect(argv[2]).toBe('default');
+	});
+});
+
+// --- parsePlanArgs (strict, number-only CLI contract) ----------------------
+
+describe('parsePlanArgs', () => {
+	test('parses a positional integer issue number', () => {
+		expect(parsePlanArgs(['21'])).toEqual({ issue: 21, help: false });
+	});
+
+	test('tolerates a leading `#` on the number', () => {
+		expect(parsePlanArgs(['#21'])).toEqual({ issue: 21, help: false });
+	});
+
+	test('bare (no argument) leaves issue undefined', () => {
+		expect(parsePlanArgs([])).toEqual({ help: false });
+	});
+
+	test('--help / -h set the help flag', () => {
+		expect(parsePlanArgs(['--help'])).toEqual({ help: true });
+		expect(parsePlanArgs(['-h'])).toEqual({ help: true });
+	});
+
+	test('rejects a present-but-non-integer token (returns null)', () => {
+		expect(parsePlanArgs(['abc'])).toBeNull();
+		expect(parsePlanArgs(['1.5'])).toBeNull();
+		expect(parsePlanArgs(['21abc'])).toBeNull();
+		expect(parsePlanArgs(['#abc'])).toBeNull();
+		expect(parsePlanArgs([''])).toBeNull();
+	});
+
+	test('rejects zero and negatives', () => {
+		expect(parsePlanArgs(['0'])).toBeNull();
+		expect(parsePlanArgs(['-5'])).toBeNull();
+	});
+
+	test('rejects the removed --issue flag and any unknown option', () => {
+		expect(parsePlanArgs(['--issue', '21'])).toBeNull();
+		expect(parsePlanArgs(['--issue=21'])).toBeNull();
+		expect(parsePlanArgs(['--bogus'])).toBeNull();
+	});
+
+	test('rejects more than one positional argument', () => {
+		expect(parsePlanArgs(['21', '22'])).toBeNull();
 	});
 });
 
@@ -195,7 +242,7 @@ describe('runPlan (tmux pane launcher)', () => {
 		expect(slashArg).toBe('/cam-plan');
 	});
 
-	test('includes #N in the plan pane command when issue is provided', async () => {
+	test('includes N (no `#`) in the plan pane command when issue is provided', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
 		const tmuxSpawnFn = makeFakeTmuxSpawn(false);
 
@@ -210,7 +257,7 @@ describe('runPlan (tmux pane launcher)', () => {
 		const lastSplit = splitCalls[splitCalls.length - 1];
 		// The slash command element must include the issue number.
 		const slashArg = lastSplit?.args.find((a) => a.startsWith('/cam-plan'));
-		expect(slashArg).toContain('/cam-plan #99');
+		expect(slashArg).toContain('/cam-plan 99');
 	});
 
 	test('skips new-session when session already exists (has-session returns 0)', async () => {
