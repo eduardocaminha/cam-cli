@@ -1,5 +1,5 @@
 {
-  "next_id": 21,
+  "next_id": 25,
   "issues": [
     {
       "id": "CAM-1",
@@ -140,6 +140,34 @@
       "description": "Os panes do cam run abriam um bash INTERATIVO antes do comando real (via send-keys), imprimindo o aviso do macOS 'default interactive shell is now zsh' + prompt bash-3.2$ + o echo do comando. Ficava visível num flash até o primeiro clear/redraw (mais notável no menu, que não usa alt-screen). CORRIGIDO: ensureProjectSession cria os panes com placeholder silencioso (cat) em vez de bash; run.ts usa respawn-pane -k pra rodar o comando real DIRETO e não-interativo (orquestrador via bash -c, dashboard cam dashboard, menu bash menu.sh). Sem bash interativo = sem aviso/prompt/echo, nem por flash (verificado por captura a ~0.6s). Efeito desejado: q no menu/dashboard fecha o pane (comando sai, pane fecha, tmux reflui a coluna). Padronizada a mensagem de fechar: dashboard e menu agora dizem 'q close pane' (antes divergiam: 'q quit' vs 'q quit this menu' + 'press a key'). Arquivos: src/tmux/session.ts, src/commands/run.ts, src/ui/Dashboard.tsx, test/run.test.ts.",
       "state": "closed",
       "createdAt": "2026-06-06T12:45:21Z"
+    },
+    {
+      "id": "CAM-21",
+      "title": "Tokens gastos no dashboard (orchestrator e por story)",
+      "description": "Mostrar no dashboard quanto cada parte gastou de tokens, lido dos transcripts reais do Claude Code (~/.claude/projects/<proj>/<session>.jsonl; cada msg assistant tem usage: input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens; confirmado por inspeção). MVP: total do ORCHESTRATOR numa linha da seção Loop (ex: tokens 1.2M in / 340k out, ou custo USD). cam precisa identificar o transcript da sessão do orquestrador (cam run não captura o session id hoje; opções: passar um session id na criação e gravar em .claude/.cam-orch-session, ou pegar o transcript mais recente do projeto). Definir o que conta como gasto (o cache domina: cache_read 450k vs input 22k no sample). Per-STORY depende do CAM-22 (workers viram sessões reais): aí cada story é uma sessão, soma do transcript dela, mostrada na seção Stories. Arquivos: src/commands/dashboard.ts (readSnapshot soma o transcript), src/ui/Dashboard.tsx (linhas), src/commands/run.ts (capturar o session id do orquestrador).",
+      "state": "open",
+      "createdAt": "2026-06-07T13:10:11Z"
+    },
+    {
+      "id": "CAM-22",
+      "title": "Workers como sessões claude reais, não Task subagents numa sessão longa",
+      "description": "Hoje o loop dispara subagent-implementer/reviewer via Task DENTRO de uma única sessão longa (re-injetada pelo stop hook), acumulando contexto. Mudar: cada worker (story, review) roda numa sessão claude separada de verdade (spawn próprio), não Task subagent. Benefícios: (a) não estoura contexto numa sessão só; (b) habilita atribuição de tokens por story (cada story = uma sessão = um transcript somável, ver CAM-21); (c) isolamento real. Relaciona com CAM-1 (compaction) e o modelo de pane-launcher (CAM-9). É pré-requisito do per-story do CAM-21.",
+      "state": "open",
+      "createdAt": "2026-06-07T13:10:11Z"
+    },
+    {
+      "id": "CAM-23",
+      "title": "Orchestrator faz auto-handoff perto de ~100k tokens (janelas de 100k)",
+      "description": "O orquestrador é a sessão mais longa (humano-facing, dura horas/dias) e acumula contexto. Trabalhar em janelas de ~100k tokens: ao se aproximar de 100k tokens, o orquestrador faz um HANDOFF de si mesmo (semelhante ao handoff dos stories) e recomeça numa sessão fresca lendo esse handoff, em vez de depender da auto-compactação silenciosa do Claude (ver CAM-1). O handoff do orquestrador captura: contexto do projeto, ciclo atual, decisões, estado. cam monitora os tokens (via transcript, ver CAM-21) e dispara o handoff no threshold. Em vez de só reagir à compactação do Claude (CAM-1), o cam faz a sua, controlada, então CAM-23 é a estratégia preferida e relaciona/supera o CAM-1. Arquivos: monitor de tokens + handoff do orquestrador + re-spawn no cam run.",
+      "state": "open",
+      "createdAt": "2026-06-07T13:10:11Z"
+    },
+    {
+      "id": "CAM-24",
+      "title": "Replan limpa o plano atual por completo (cam plan re-plan)",
+      "description": "Hoje /cam-plan, ao detectar trabalho em andamento, oferece sobrescrever o prd.json, mas NÃO limpa progress.txt nem handoff.json, então sobra estado do plano anterior. Um re-plan de verdade deve descartar o plano atual por completo (prd.json), limpar os docs do ciclo (progress.txt zerado pro bloco de patterns, handoff.json removido) e começar do zero. Hoje esse replan limpo não existe de fato (o menu dizia 'plan / re-plan', corrigido inline pra 'plan an issue'). Definir um modo de replan (ex: /cam-plan --fresh ou cam plan --replan) que faz a limpeza completa antes de gerar o novo PRD. Arquivos: .claude/commands/cam-plan.md (passo de limpeza), possível flag no cam plan.",
+      "state": "open",
+      "createdAt": "2026-06-07T13:10:11Z"
     }
   ]
 }

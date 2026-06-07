@@ -32,8 +32,8 @@ const COMMANDS: readonly MenuCommand[] = [
 	{ key: 'n', label: '/cam-next', desc: 'run next story', slash: '/cam-next' },
 	{ key: 'r', label: '/cam-review', desc: 'review PRD', slash: '/cam-review' },
 	{ key: 's', label: '/cam-ship', desc: 'ship iteration', slash: '/cam-ship' },
-	{ key: 'p', label: '/cam-plan', desc: 'plan / re-plan', slash: '/cam-plan' },
-	{ key: 'i', label: '/cam-issue', desc: 'sync issues', slash: '/cam-issue' },
+	{ key: 'p', label: '/cam-plan', desc: 'plan an issue', slash: '/cam-plan' },
+	{ key: 'i', label: '/cam-issue', desc: 'create issue', slash: '/cam-issue' },
 ];
 
 export interface MenuAppProps {
