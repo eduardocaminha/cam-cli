@@ -36,7 +36,7 @@ import {
 	emitTitle,
 	emitTrailingBlank,
 } from '../logging/screen.ts';
-import { projectSessionName } from '../tmux/session.ts';
+import { projectSessionName, tmuxArgs } from '../tmux/session.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -81,7 +81,7 @@ export interface StopReport {
  * we treat that as "tmux unavailable" and skip the session kill cleanly.
  */
 function tmuxAvailable(spawnFn: SpawnSyncFn): boolean {
-	const result = spawnFn('tmux', ['-V'], { encoding: 'utf8' });
+	const result = spawnFn('tmux', tmuxArgs(['-V']), { encoding: 'utf8' });
 	return result.status === 0;
 }
 
@@ -90,7 +90,7 @@ function tmuxAvailable(spawnFn: SpawnSyncFn): boolean {
  * when the session is alive, non-zero otherwise.
  */
 function sessionAlive(spawnFn: SpawnSyncFn, sessionName: string): boolean {
-	const result = spawnFn('tmux', ['has-session', '-t', sessionName], { encoding: 'utf8' });
+	const result = spawnFn('tmux', tmuxArgs(['has-session', '-t', sessionName]), { encoding: 'utf8' });
 	return result.status === 0;
 }
 
@@ -99,7 +99,7 @@ function sessionAlive(spawnFn: SpawnSyncFn, sessionName: string): boolean {
  * cleanly. Caller has already verified the session exists.
  */
 function killSession(spawnFn: SpawnSyncFn, sessionName: string): boolean {
-	const result = spawnFn('tmux', ['kill-session', '-t', sessionName], { encoding: 'utf8' });
+	const result = spawnFn('tmux', tmuxArgs(['kill-session', '-t', sessionName]), { encoding: 'utf8' });
 	return result.status === 0;
 }
 

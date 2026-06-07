@@ -47,19 +47,24 @@ function makeFakeSpawn(handlers: FakeSpawnHandlers): SpawnSyncFn & { calls: Spaw
 			status: 1,
 			signal: null,
 		};
+		// After tmuxArgs(), argv is ['-L', 'cam', <subcommand>, ...].
+		// Route on args[2] (the subcommand) when the -L prefix is present.
+		const sub = args[0] === '-L' ? args[2] : args[0];
+		const subArg1 = args[0] === '-L' ? args[3] : args[1];
+		const subArg2 = args[0] === '-L' ? args[4] : args[2];
 		if (cmd === 'tmux') {
-			if (args[0] === '-V') {
+			if (sub === '-V') {
 				result.status = handlers.tmuxAvailable === false ? 127 : 0;
 			} else if (
-				args[0] === 'has-session' &&
-				args[1] === '-t' &&
-				(expectedSession === '' || args[2] === expectedSession)
+				sub === 'has-session' &&
+				subArg1 === '-t' &&
+				(expectedSession === '' || subArg2 === expectedSession)
 			) {
 				result.status = handlers.sessionAlive === true ? 0 : 1;
 			} else if (
-				args[0] === 'kill-session' &&
-				args[1] === '-t' &&
-				(expectedSession === '' || args[2] === expectedSession)
+				sub === 'kill-session' &&
+				subArg1 === '-t' &&
+				(expectedSession === '' || subArg2 === expectedSession)
 			) {
 				result.status = handlers.killSucceeds === false ? 1 : 0;
 			}
@@ -135,12 +140,12 @@ describe('performStop — tmux session', () => {
 			expect(report.tmuxKilled).toBe(true);
 			expect(report.tmuxUnavailable).toBe(false);
 			expect(report.sessionName).toBe(session);
-			// The kill argv must target the project session name.
+			// The kill argv must target the project session name, with -L cam prefix.
 			const kill = spawn.calls.find(
-				(c) => c.cmd === 'tmux' && c.args[0] === 'kill-session',
+				(c) => c.cmd === 'tmux' && (c.args[0] === '-L' ? c.args[2] : c.args[0]) === 'kill-session',
 			);
 			expect(kill).toBeDefined();
-			expect(kill?.args).toEqual(['kill-session', '-t', session]);
+			expect(kill?.args).toEqual(['-L', 'cam', 'kill-session', '-t', session]);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -160,7 +165,7 @@ describe('performStop — tmux session', () => {
 			expect(report.tmuxUnavailable).toBe(false);
 			// We must NOT have called `tmux kill-session` at all.
 			const kill = spawn.calls.find(
-				(c) => c.cmd === 'tmux' && c.args[0] === 'kill-session',
+				(c) => c.cmd === 'tmux' && (c.args[0] === '-L' ? c.args[2] : c.args[0]) === 'kill-session',
 			);
 			expect(kill).toBeUndefined();
 		} finally {
@@ -175,10 +180,10 @@ describe('performStop — tmux session', () => {
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
 			expect(report.tmuxUnavailable).toBe(true);
 			expect(report.tmuxKilled).toBe(false);
-			// We probed `tmux -V` once — and stopped there. has-session and
+			// We probed `tmux -L cam -V` once — and stopped there. has-session and
 			// kill-session were never attempted.
 			expect(spawn.calls.length).toBe(1);
-			expect(spawn.calls[0]).toEqual({ cmd: 'tmux', args: ['-V'] });
+			expect(spawn.calls[0]).toEqual({ cmd: 'tmux', args: ['-L', 'cam', '-V'] });
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
