@@ -133,7 +133,7 @@
         "Operator records the result (pass/fail) in the PR/journal"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "Files: none (manual verification). Depends on US-001 through US-005 being merged. This story is intentionally a manual smoke — automated typecheck/test gates do NOT apply here. The bug only reproduces on real macOS with a pre-existing stale default tmux server in a dead security session; the loop has no way to stage that. Operator should ideally test BOTH on a fresh machine (no stale server) and on a machine with an existing default tmux server to confirm isolation."
     },
