@@ -44,7 +44,9 @@ function captureStdout(fn: () => unknown): Promise<string> {
 
 function makeFakeTmuxSpawn(sessionExists = false): TmuxSpawnFn {
 	return ((cmd: string, args: string[], _opts?: { stdio?: string }) => {
-		if (args[0] === 'has-session') {
+		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
+		const subcommand = args[0] === '-L' ? args[2] : args[0];
+		if (subcommand === 'has-session') {
 			return { status: sessionExists ? 0 : 1 } as SpawnSyncReturns<Buffer>;
 		}
 		return { status: 0 } as SpawnSyncReturns<Buffer>;

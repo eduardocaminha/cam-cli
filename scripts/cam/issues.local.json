@@ -1,5 +1,5 @@
 {
-  "next_id": 28,
+  "next_id": 29,
   "issues": [
     {
       "id": "CAM-1",
@@ -20,10 +20,10 @@
     {
       "id": "CAM-3",
       "title": "session_id coletado mas inerte; resume nunca resume",
-      "description": "Dois fios soltos. (a) src/commands/next.ts:549 grava session_id de process.env CLAUDE_CODE_SESSION_ID ?? '' — vazio quando cam next roda de um shell, então o check de isolamento de sessão do stop hook (STATE_SESSION != HOOK_SESSION) é pulado; duas sessões no mesmo projeto se re-injetariam. (b) src/commands/resume.ts lê session_id no LoopState mas não usa em classifyResumeMode e nunca chama claude --resume/--continue; recuperação é sempre sessão fria nova. O harness oferece --resume <UUID> (reidrata transcript, todos, file history, worktree). Decidir: ligar o fio (resume real de sessão) ou remover o campo morto.",
+      "description": "Dois fios soltos. (a) src/commands/next.ts:549 grava session_id de process.env CLAUDE_CODE_SESSION_ID ?? '' — vazio quando cam next roda de um shell, então o check de isolamento de sessão do stop hook (STATE_SESSION != HOOK_SESSION) é pulado; duas sessões no mesmo projeto se re-injetariam. (b) src/commands/resume.ts lê session_id no LoopState mas não usa em classifyResumeMode e nunca chama claude --resume/--continue; recuperação é sempre sessão fria nova. O harness oferece --resume <UUID> (reidrata transcript, todos, file history, worktree). Decidir: ligar o fio (resume real de sessão) ou remover o campo morto. REPRO AO VIVO (2026-06-07, confirma a parte (a) em producao; promovido P2->P1): operador rodou cam plan numa sessao, cam run (orchestrator no pane 0) e cam next de um terminal EXTERNO. O cam next externo (sem CLAUDE_CODE_SESSION_ID) gravou .claude/cam-loop.local.md com session_id VAZIO; o stop hook (.claude/hooks/cam-loop-stop.sh:38, guarda [[ -n $STATE_SESSION ]] && [[ $STATE_SESSION != $HOOK_SESSION ]]) pulou o isolamento (empty fall-through, comentado na :35 como legacy) e re-injetou /cam-next no pane do ORCHESTRATOR a cada turno, sequestrando a sessao humano-facing. Vetor: NAO e tmux send-keys; e o state file project-scoped compartilhado + Stop hook que dispara em toda sessao do projeto. Agravante: estado de loop e UM unico arquivo por projeto, entao orchestrator e worker nao tem loop independente (apagar o arquivo mata os dois). FIX da parte (a): isolar por algo conhecido no momento do spawn, o $TMUX_PANE do worker ou um loop-token passado por env/argv pro worker que o hook compara e da exit 0 em quem nao bate, ja que o session_id do worker so existe apos o boot do claude e nao da pra carimbar no state file na hora da escrita. Trocar a guarda pra match estrito sozinho NAO resolve (quebraria o proprio worker, que tambem tem session_id vazio no state file).",
       "state": "open",
       "createdAt": "2026-06-05T16:24:46Z",
-      "priority": "P2"
+      "priority": "P1"
     },
     {
       "id": "CAM-4",
@@ -161,7 +161,7 @@
     {
       "id": "CAM-22",
       "title": "Workers como sessões claude reais, não Task subagents numa sessão longa",
-      "description": "Hoje o loop dispara subagent-implementer/reviewer via Task DENTRO de uma única sessão longa (re-injetada pelo stop hook), acumulando contexto. Mudar: cada worker (story, review) roda numa sessão claude separada de verdade (spawn próprio), não Task subagent. Benefícios: (a) não estoura contexto numa sessão só; (b) habilita atribuição de tokens por story (cada story = uma sessão = um transcript somável, ver CAM-21); (c) isolamento real. Relaciona com CAM-1 (compaction) e o modelo de pane-launcher (CAM-9). É pré-requisito do per-story do CAM-21.",
+      "description": "Hoje o loop dispara subagent-implementer/reviewer via Task DENTRO de uma única sessão longa (re-injetada pelo stop hook), acumulando contexto. Mudar: cada worker (story, review) roda numa sessão claude separada de verdade (spawn próprio), não Task subagent. Benefícios: (a) não estoura contexto numa sessão só; (b) habilita atribuição de tokens por story (cada story = uma sessão = um transcript somável, ver CAM-21); (c) isolamento real. Relaciona com CAM-1 (compaction) e o modelo de pane-launcher (CAM-9). É pré-requisito do per-story do CAM-21. NOTA (avaliar alternativa, 2026-06-07): antes de spawnar uma sessao nova por worker, avaliar usar um clear POS-STOP-HOOK (limpar o contexto da sessao in-place, /clear ou equivalente do harness, entre stories) em vez de gerar uma sessao nova. Vantagem: zera o contexto acumulado (ataca direto o (a) estouro de contexto) sem o custo de subir uma sessao a cada story, mantendo o loop numa sessao so. Trade-off honesto: clear NAO da transcript separado por story, entao o (b) atribuicao de tokens por story (CAM-21) continua exigindo sessao/transcript por story, e o clear nao traz o (c) isolamento de processo. Ou seja o clear resolve so o problema de contexto, nao a observabilidade. Avaliar a combinacao (clear barato pro contexto no caso comum, sessao real so quando precisar de atribuicao de tokens/isolamento).",
       "state": "open",
       "createdAt": "2026-06-07T13:10:11Z",
       "priority": "P0"
@@ -194,7 +194,7 @@
       "id": "CAM-26",
       "title": "cam usa o socket tmux default e gruda em servidor compartilhado stale",
       "description": "cam run (e os launchers cam plan/next/issue/dashboard/menu) usam o socket tmux DEFAULT: src/tmux/session.ts chama tmux has-session/new-session/split-window sem -L/-S. Efeito: cam ATTACHA num servidor tmux pre-existente compartilhado em vez de subir um fresco. Caso real (2026-06-07, diagnosticado): cam run criou a sessao cam-orch-cam-cli-7d25d8 no servidor default pid 67349, que foi iniciado em 28/abr pelo claude-auto-retry sob o Claude Desktop, carregando SECURITYSESSIONID=186b7 (security session ja morta). O orquestrador (pid 86698) era filho desse servidor. Processos nesse servidor stale rodam numa security session detached, e o macOS nega acesso a ~/Documents via TCC, entao TODO pane do cam run deu 'Operation not permitted' em git status/ls/leitura de arquivo, mesmo com pane_current_path correto e binario valido (codesign -v OK, o claude subiu no pane). Nao e codigo de feature; e colisao com servidor compartilhado stale. FIX: cam deve usar um socket DEDICADO (tmux -L cam) em TODAS as invocacoes tmux (session.ts ensureProjectSession/openPaneInSession/isInsideProjectSession; run.ts chrome e respawns; status/stop/dashboard/menu que miram a sessao), garantindo servidor fresco no contexto/security-session do terminal que rodou cam, sem colidir com claude-auto-retry nem outros tmux. Validar que isInsideProjectSession e o CAM_SESSION env continuam corretos com socket dedicado. Testes: argv tmux deve incluir -L cam. Nota: o claude-auto-retry acumula dezenas de sessoes claude-retry-* no socket default; o socket dedicado isola o cam disso. Workaround imediato sem o fix: tmux kill-server (derruba o servidor default stale, mas tambem as sessoes claude-retry-* dele) e rodar cam run de novo num terminal da sessao atual.",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-07T16:09:20Z",
       "priority": "P0"
     },
@@ -205,6 +205,14 @@
       "state": "open",
       "createdAt": "2026-06-07T16:39:23Z",
       "priority": "P2"
+    },
+    {
+      "id": "CAM-28",
+      "title": "Dashboard liveness: state/iter/since amarrados ao state file efemero do cam next; idle/blank durante trabalho real",
+      "description": "PROBLEMA: a secao Loop do dashboard (state/iter/since) deriva de UMA fonte so, .claude/cam-loop.local.md (o state file do cam next), nao de progress.txt nem do trabalho real. src/commands/dashboard.ts:319-364 (readSnapshot): readState(cwd) le join(cwd,'.claude/cam-loop.local.md') (:392-394); idle = state===null (:340); iter = state.iteration (:354); since = state.started_at (:356-358). progress.txt alimenta SO o painel Recent entries (readRecentProgress :410); state/iter/since NAO leem progress.txt. parseStateFile (status.ts:141) parseia o template real (active/iteration/started_at) sem erro, entao quando os tres aparecem vazios ao mesmo tempo a causa e unica: o state file estava ausente no cwd naquele momento (verificado: arquivo nao existe com o loop ativo). RAIZ ARQUITETURAL (por que ausente/congelado durante o trabalho): (1) iteration so e incrementado pelo Stop hook ENTRE turnos da sessao externa; enquanto uma story roda num turno longo / Task subagent (ver CAM-22) nao ha evento Stop, iteration congela e o arquivo nao muda (sintoma observado: US quase terminando e iter sem info); (2) o Stop hook da rm no state file em COMPLETE/max-iter/corrupcao (.claude/hooks/cam-loop-stop.sh:50), entao ao fim de cada cam next o arquivo some e o dashboard vira idle na hora, mesmo com a proxima story comecando; (3) o modelo e por-invocacao-de-cam-next, nao um loop continuo de projeto: cada cam next re-arma o arquivo (iteration volta a 1, started_at reseta), entao iter/since sao descontinuos e sem sentido entre stories. REFRESH LENTO: dashboard.ts:41 DEFAULT_POLL_INTERVAL_MS=2000; poll de 2s sem file-watcher (Dashboard.tsx setInterval(readSnapshot,2000)); re-render so quando o hash do snapshot muda; latencia de ate 2s e por design (US-009 AC4), sem fast-path em evento de filesystem. SECUNDARIO (latente, nao foi a causa observada hoje): os panes do cam run sao criados SEM -c <cwd> (src/tmux/session.ts:151-196), herdando o cwd do server tmux; com o server stale do CAM-26 isso poderia jogar o cwd pra fora do repo e quebrar state E prd de uma vez. FIX: derivar a liveness de algo continuo, nao do state file efemero do stop hook. Opcoes: (a) status running quando ha story passes:false no prd.json + um heartbeat (mtime de progress.txt/handoff.json ou do transcript da sessao viva); (b) ler o transcript real da sessao do loop (~/.claude/projects/.../<session>.jsonl, ver CAM-21) pra atividade/iteracao reais; (c) trocar iter por 'stories done/total' em vez de turnos do stop hook, que nao significam nada pro operador; (d) opcional: passar -c <cwd> na criacao dos panes pra blindar contra cwd herdado errado. RELACIONA: CAM-2 (active:false/paused inalcancavel, mesmo state file), CAM-21 (transcript/tokens), CAM-22 (workers como sessoes reais, pre-requisito de iteracao real). Arquivos: src/commands/dashboard.ts (readSnapshot/readState/StatusIndicator), src/ui/Dashboard.tsx (poll + render), possivel -c <cwd> em src/tmux/session.ts.",
+      "state": "open",
+      "createdAt": "2026-06-07T17:06:48Z",
+      "priority": "P1"
     }
   ]
 }

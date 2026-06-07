@@ -135,7 +135,7 @@ export function detectHost(
 	tmuxProbe: TmuxProbeFn = defaultTmuxProbe,
 ): HostMode {
 	if (env['TERM_PROGRAM'] === 'vscode') return 'inline';
-	const probeResult = tmuxProbe(['tmux', '-V']);
+	const probeResult = tmuxProbe(['tmux', '-L', 'cam', '-V']);
 	if (probeResult === null || probeResult.exitCode !== 0) return 'inline';
 	return 'tmux-split';
 }

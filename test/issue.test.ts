@@ -42,13 +42,15 @@ function makeFakeTmuxSpawn(sessionExists = false): TmuxSpawnFn & { calls: TmuxCa
 			status: 0,
 			signal: null,
 		};
+		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
+		const subcommand = args[0] === '-L' ? args[2] : args[0];
 		// has-session returns exit 0 when sessionExists, 1 otherwise.
-		if (args[0] === 'has-session') {
+		if (subcommand === 'has-session') {
 			return { ...base, status: sessionExists ? 0 : 1 };
 		}
 		// Return a stable pane id for calls that capture it (-P -F #{pane_id}).
 		if (
-			(args[0] === 'new-session' || args[0] === 'split-window') &&
+			(subcommand === 'new-session' || subcommand === 'split-window') &&
 			opts?.stdio === 'pipe'
 		) {
 			paneCounter += 1;
@@ -104,17 +106,17 @@ describe('runIssue (tmux pane launcher)', () => {
 		// Verify has-session was called with the project session name.
 		const sessionName = projectSessionName(tmpDir);
 		const hasSessionCall = tmuxSpawnFn.calls.find(
-			(c) => c.args[0] === 'has-session' && c.args.includes(sessionName),
+			(c) => c.args[2] === 'has-session' && c.args.includes(sessionName),
 		);
 		expect(hasSessionCall).toBeDefined();
 
 		// Verify new-session was called (session didn't exist).
-		const newSessionCall = tmuxSpawnFn.calls.find((c) => c.args[0] === 'new-session');
+		const newSessionCall = tmuxSpawnFn.calls.find((c) => c.args[2] === 'new-session');
 		expect(newSessionCall).toBeDefined();
 		expect(newSessionCall?.args).toContain(sessionName);
 
 		// Verify openPaneInSession was called with split-window.
-		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
+		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[2] === 'split-window');
 		// ensureProjectSession makes 2 split-window calls (pane 1 + pane 2),
 		// openPaneInSession makes 1 more (the issue pane).
 		expect(splitCalls.length).toBeGreaterThanOrEqual(3);
@@ -133,7 +135,7 @@ describe('runIssue (tmux pane launcher)', () => {
 
 		// The last split-window call is openPaneInSession; it must contain the
 		// claude argv elements as discrete args (not a single joined shell string).
-		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
+		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[2] === 'split-window');
 		const lastSplit = splitCalls[splitCalls.length - 1];
 		expect(lastSplit?.args).toContain('claude');
 		expect(lastSplit?.args).toContain('--permission-mode');
@@ -160,7 +162,7 @@ describe('runIssue (tmux pane launcher)', () => {
 		});
 
 		// Only one split-window call fires (the issue pane; session already exists).
-		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
+		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[2] === 'split-window');
 		expect(splitCalls.length).toBe(1);
 		const call = splitCalls[0];
 		// The slash+free-text element must be a SINGLE element containing the raw text.
@@ -190,18 +192,20 @@ describe('runIssue (tmux pane launcher)', () => {
 		});
 
 		expect(code).toBe(0);
-		const newSessionCall = tmuxSpawnFn.calls.find((c) => c.args[0] === 'new-session');
+		const newSessionCall = tmuxSpawnFn.calls.find((c) => c.args[2] === 'new-session');
 		expect(newSessionCall).toBeUndefined();
 
 		// openPaneInSession still runs (1 split-window call for the issue pane).
-		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[0] === 'split-window');
+		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[2] === 'split-window');
 		expect(splitCalls.length).toBe(1);
 	});
 
 	test('returns 1 when tmux throws', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-test-'));
 		const throwingSpawn: TmuxSpawnFn = ((_cmd: string, args: string[]) => {
-			if (args[0] === 'has-session' || args[0] === 'new-session') {
+			// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
+			const subcommand = args[0] === '-L' ? args[2] : args[0];
+			if (subcommand === 'has-session' || subcommand === 'new-session') {
 				throw new Error('tmux not found');
 			}
 			return { status: 0 } as SpawnSyncReturns<Buffer>;
@@ -230,7 +234,7 @@ describe('runIssue (tmux pane launcher)', () => {
 		});
 
 		// With existing session, only openPaneInSession's split-window fires.
-		const splitCall = tmuxSpawnFn.calls.find((c) => c.args[0] === 'split-window');
+		const splitCall = tmuxSpawnFn.calls.find((c) => c.args[2] === 'split-window');
 		expect(splitCall?.args).toContain(`${sessionName}:0`);
 	});
 });

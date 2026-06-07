@@ -37,6 +37,7 @@ import {
 import {
 	projectSessionName,
 	ensureProjectSession,
+	tmuxArgs,
 	type SpawnFn,
 	type CreatedPaneIds,
 } from '../tmux/session.ts';
@@ -66,7 +67,7 @@ export interface ParsedRunArgs {
 // ---------------------------------------------------------------------------
 
 function tmuxAvailable(spawnFn: SpawnFn): boolean {
-	const r = spawnFn('tmux', ['-V'], { stdio: 'ignore' });
+	const r = spawnFn('tmux', tmuxArgs(['-V']), { stdio: 'ignore' });
 	return (r.status ?? 1) === 0;
 }
 
@@ -140,7 +141,7 @@ function setupOrchestratorSession(opts: {
 	// readPermissionMode.
 	// Chain kill-session so that when claude exits the whole tmux session is
 	// torn down automatically, dropping the user back to their shell (US-003).
-	const agentCmd = `claude --permission-mode bypassPermissions "$(cat '${promptFile}')"; tmux kill-session -t ${sessionName}`;
+	const agentCmd = `claude --permission-mode bypassPermissions "$(cat '${promptFile}')"; tmux -L cam kill-session -t ${sessionName}`;
 	// respawn-pane -k runs the command DIRECTLY in the pane, replacing the silent
 	// `cat` placeholder. No interactive bash means no macOS zsh notice / prompt /
 	// command echo flashing before the real command paints (`bash -c` is
@@ -148,7 +149,7 @@ function setupOrchestratorSession(opts: {
 	// whole session down (US-003).
 	spawnFn(
 		'tmux',
-		['respawn-pane', '-k', '-t', orchPaneId, 'bash', '-c', agentCmd],
+		tmuxArgs(['respawn-pane', '-k', '-t', orchPaneId, 'bash', '-c', agentCmd]),
 		{ stdio: 'ignore' },
 	);
 
@@ -157,7 +158,7 @@ function setupOrchestratorSession(opts: {
 	// remaining pane to fill the right column.
 	spawnFn(
 		'tmux',
-		['respawn-pane', '-k', '-t', dashboardPaneId, 'cam', 'dashboard'],
+		tmuxArgs(['respawn-pane', '-k', '-t', dashboardPaneId, 'cam', 'dashboard']),
 		{ stdio: 'ignore' },
 	);
 
@@ -168,7 +169,7 @@ function setupOrchestratorSession(opts: {
 	// the pane.
 	spawnFn(
 		'tmux',
-		['respawn-pane', '-k', '-t', menuPaneId, 'cam', 'menu', orchPaneId, dashboardPaneId],
+		tmuxArgs(['respawn-pane', '-k', '-t', menuPaneId, 'cam', 'menu', orchPaneId, dashboardPaneId]),
 		{ stdio: 'ignore' },
 	);
 
@@ -182,13 +183,13 @@ function setupOrchestratorSession(opts: {
 	const ACCENT = '#4EBE7D';
 	const MUTED = '#808080';
 	const opt = (name: string, value: string): void => {
-		spawnFn('tmux', ['set-option', '-t', sessionName, name, value], { stdio: 'ignore' });
+		spawnFn('tmux', tmuxArgs(['set-option', '-t', sessionName, name, value]), { stdio: 'ignore' });
 	};
 	const winOpt = (name: string, value: string): void => {
-		spawnFn('tmux', ['set-window-option', '-t', sessionName, name, value], { stdio: 'ignore' });
+		spawnFn('tmux', tmuxArgs(['set-window-option', '-t', sessionName, name, value]), { stdio: 'ignore' });
 	};
 	const paneLabel = (paneId: string, label: string): void => {
-		spawnFn('tmux', ['set-option', '-p', '-t', paneId, '@cam_label', label], { stdio: 'ignore' });
+		spawnFn('tmux', tmuxArgs(['set-option', '-p', '-t', paneId, '@cam_label', label]), { stdio: 'ignore' });
 	};
 	paneLabel(orchPaneId, 'orchestrator');
 	paneLabel(dashboardPaneId, 'dashboard');
@@ -216,10 +217,10 @@ function setupOrchestratorSession(opts: {
 	// focus it and scroll with the trackpad, instead of the tmux prefix dance
 	// (Ctrl+b + arrows). Scoped to this session only. Note: with mouse on,
 	// selecting text to copy needs Option held down (macOS Terminal/iTerm).
-	spawnFn('tmux', ['set-option', '-t', sessionName, 'mouse', 'on'], { stdio: 'ignore' });
+	spawnFn('tmux', tmuxArgs(['set-option', '-t', sessionName, 'mouse', 'on']), { stdio: 'ignore' });
 
 	// Make sure focus is on the orchestrator pane.
-	spawnFn('tmux', ['select-pane', '-t', orchPaneId], { stdio: 'ignore' });
+	spawnFn('tmux', tmuxArgs(['select-pane', '-t', orchPaneId]), { stdio: 'ignore' });
 
 	return { sessionName, created: true };
 }
@@ -301,8 +302,8 @@ export function runRun(options: RunOptions = {}): number {
 	// `attach` is rejected — we use `switch-client` instead.
 	const insideTmux = Boolean(process.env['TMUX']);
 	const attach = insideTmux
-		? spawnFn('tmux', ['switch-client', '-t', result.sessionName], { stdio: 'inherit' })
-		: spawnFn('tmux', ['attach-session', '-t', result.sessionName], { stdio: 'inherit' });
+		? spawnFn('tmux', tmuxArgs(['switch-client', '-t', result.sessionName]), { stdio: 'inherit' })
+		: spawnFn('tmux', tmuxArgs(['attach-session', '-t', result.sessionName]), { stdio: 'inherit' });
 
 	if ((attach.status ?? 1) !== 0) {
 		emitWarn('tmux attach failed', `try manually: tmux attach -t ${result.sessionName}`);

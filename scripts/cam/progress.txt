@@ -19,5 +19,181 @@ Durable patterns carried across cycles:
 - **isInsideProjectSession uses CAM_SESSION env tag**: because $TMUX_PANE only contains a pane index (not the session name), callers must set CAM_SESSION=<sessionName> when spawning claude inside a session for reliable inside-session detection.
 - **`bun test` green is NOT proof of type-safety**: the test runner passes even when `tsc --noEmit` would fail. Always run `bun run typecheck` separately and trust its exit code before claiming the gate passed. US-008 shipped 6 TS2322 errors in `test/attach-hint.test.ts` with a fully green suite (caught at the next pre-flight, fixed in a follow-up). Common trap: a `captureStdout(() => runX(...))` helper typed `() => void | Promise<void>` rejects callbacks returning `Promise<number>`; widen such helpers to `() => unknown`.
 - **tmux shell-command form**: single arg to split-window/new-window goes through `/bin/sh -c` (shell injection risk). Multi-arg form execs directly (bypasses shell). Change `openPaneInSession(session, cmd: string)` to `openPaneInSession(session, cmdArgv: string[])` and spread the argv as separate trailing args after a `--` separator. Do NOT join argv before passing; user-supplied free text (issue descriptions, etc.) must stay as discrete elements.
+- **tmuxArgs() is the canonical socket prefix**: all calls to tmux in `src/tmux/session.ts` go through `tmuxArgs(sub)` which prepends `['-L', 'cam']`. Fake spawn handlers in test files route by `args[2]` (the subcommand) not `args[0]`, because `args[0]==='-L'` and `args[1]==='cam'` now. The guard pattern is `const subcommand = args[0] === '-L' ? args[2] : args[0]`.
 -->
 
+## [2026-06-07 00:00] - US-001: Add CAM_TMUX_SOCKET + tmuxArgs() and thread -L cam through src/tmux/session.ts
+
+### What was done
+- Exported `CAM_TMUX_SOCKET = 'cam'` and `tmuxArgs(sub: string[]): string[]` from `src/tmux/session.ts`
+- Wrapped all five tmux spawn calls in session.ts with `tmuxArgs([...])`: hasSession, new-session, 2x split-window (ensureProjectSession), and split-window (openPaneInSession)
+- Updated `test/tmux-session.test.ts`: fake spawn handler routes on `args[2]`; assertions check `args[0]==='-L'`, `args[1]==='cam'`, `args[2]===subcommand`; added CAM_TMUX_SOCKET and tmuxArgs describe blocks
+- Updated fake spawn handlers in `test/run.test.ts`, `test/next.test.ts`, `test/issue.test.ts`, `test/plan.test.ts`, `test/attach-hint.test.ts` to route on the subcommand after the -L prefix
+
+### Files changed
+- src/tmux/session.ts
+- test/tmux-session.test.ts
+- test/run.test.ts
+- test/next.test.ts
+- test/issue.test.ts
+- test/plan.test.ts
+- test/attach-hint.test.ts
+
+### Quality gates
+- Typecheck: ok
+- Tests: 487 pass
+
+### Step 5.5 docs validation
+- lib: tmux, status: ok, url: https://man.openbsd.org/tmux.1 — confirmed -L is a global flag that precedes the subcommand; `tmux -L cam new-session` is correct form
+
+### Notes
+- test files beyond tmux-session.test.ts also needed updating because their fake spawns routed on args[0]; the subcommand guard pattern is documented in Codebase Patterns above
+---
+
+## [2026-06-07 00:30] - US-002: Thread -L cam through src/commands/run.ts (orchestrator launcher)
+
+### What was done
+- Imported `tmuxArgs` from `src/tmux/session.ts` in `src/commands/run.ts`
+- Updated `tmuxAvailable` probe to use `tmuxArgs(['-V'])` instead of bare `['-V']`
+- Updated all 3 `respawn-pane` calls to use `tmuxArgs(['respawn-pane', ...])` prefix
+- Updated the chained `kill-session` STRING inside `agentCmd` to use literal `tmux -L cam kill-session -t ...` (shell-evaluated string, tmuxArgs does not apply here)
+- Updated `opt()`, `winOpt()`, `paneLabel()` helpers to use `tmuxArgs([...])`
+- Updated mouse `set-option`, `select-pane`, `switch-client`, and `attach-session` calls to use `tmuxArgs([...])`
+- Updated test/run.test.ts: respawn-pane search now uses `c.args[2] === 'respawn-pane'`; added -L/cam prefix assertions; kill-session assertion now checks for `-L cam kill-session -t ...`
+
+### Files changed
+- src/commands/run.ts
+- test/run.test.ts
+
+### Quality gates
+- Typecheck: ok
+- Tests: 487 pass
+
+### Step 5.5 docs validation
+- lib: tmux, status: ok (no change from US-001 validation; same -L flag usage confirmed)
+
+### Notes
+- respawn-pane calls shift from args[0] to args[2] after tmuxArgs() wrapping; test finders updated accordingly
+- the agentCmd kill-session uses a hardcoded `tmux -L cam` string because it is shell-eval'd inside bash -c, not a direct spawn call
+---
+
+## [2026-06-07 01:00] - US-003: Thread -L cam through cam next / cam plan / cam issue launchers
+
+### What was done
+- Changed `tmuxProbe(['tmux', '-V'])` to `tmuxProbe(['tmux', '-L', 'cam', '-V'])` in `detectHost()` inside `src/commands/next.ts`
+- Confirmed `plan.ts` and `issue.ts` have no direct tmux invocations; all session/pane work delegates to `ensureProjectSession`/`openPaneInSession` (already -L cam-aware since US-001)
+- Confirmed test fakes in `test/next.test.ts`, `test/plan.test.ts`, `test/issue.test.ts` already route by `args[2]` (the guard `args[0] === '-L' ? args[2] : args[0]` was added in US-001)
+
+### Files changed
+- src/commands/next.ts (1 line: probe argv)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 487 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (only tmux argv literal changed)
+
+### Notes
+- The probe is a one-off literal; no need to import tmuxArgs() just for this one call
+- plan.ts and issue.ts were already fully compliant; the story was mostly a verification/confirmation pass for those two files
+---
+
+## [2026-06-07 02:00] - US-004: Thread -L cam through cam stop and Menu pane control
+
+### What was done
+- Imported `tmuxArgs` in `src/commands/stop.ts`; wrapped `tmuxAvailable` (-V), `sessionAlive` (has-session), and `killSession` (kill-session) with `tmuxArgs([...])`
+- Imported `tmuxArgs` in `src/ui/Menu.tsx`; updated default `runTmux` closure to call `spawnSync('tmux', tmuxArgs(args), ...)` instead of bare `spawnSync('tmux', args, ...)`
+- Updated `test/stop.test.ts`: fake spawn handler now routes by subcommand at `args[2]` (guard: `args[0] === '-L' ? args[2] : args[0]`); argv assertions updated to expect `['-L', 'cam', subcommand, ...]`
+- Created `test/menu.test.ts`: smoke-tests MenuApp via ink-testing-library; asserts command list renders without exception and each slash-command key appears in output
+
+### Files changed
+- src/commands/stop.ts
+- src/ui/Menu.tsx
+- test/stop.test.ts
+- test/menu.test.ts (new)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 490 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (all changes are tmux argv wrapping; no new external lib surface)
+
+### Notes
+- setup-menu.test.ts was reviewed; the bash script from buildSetupMenuScript() is not in scope for this story, so no changes were needed there and all existing assertions continue to pass
+- The -L cam guard pattern in tests: `const sub = args[0] === '-L' ? args[2] : args[0]` is now used in stop.test.ts as well as the other test files updated in US-001
+---
+
+## [2026-06-07 03:00] - US-005: Thread -L cam through the outside-tmux branch of cam setup
+
+### What was done
+- Imported `tmuxArgs` from `../tmux/session.ts` in `src/commands/setup.ts`
+- Wrapped `new-session` and `split-window` calls in the outside-tmux branch of `spawnSetupTmux` with `tmuxArgs([...])`
+- Left inside-tmux branch (`display-message`, `split-window`, `send-keys`) on the ambient socket (intentional exception)
+- Added one-line comment in inside-tmux branch: "Inside-tmux: these calls target the user's live interactive window, which lives in the user's current security session (ambient socket), not the cam dedicated socket."
+- No changes to `test/setup-menu.test.ts`: it only tests the bash script generated by `buildSetupMenuScript()`, which is explicitly out of scope for this threading story
+
+### Files changed
+- src/commands/setup.ts
+
+### Quality gates
+- Typecheck: ok
+- Tests: 490 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (changes are tmux argv wrapping; no new external lib surface)
+
+### Notes
+- setup.ts has a clear split: outside-tmux creates the cam-setup session (must be on -L cam socket); inside-tmux targets the user's live window (must stay on ambient socket). This is the only intentional ambient-socket path in workspace code.
+---
+
+## [2026-06-07 04:30] - US-006: Document the dedicated -L cam socket in README.md and FLOW.md
+
+### What was done
+- Added a paragraph to README.md §"Single project session" explaining that cam uses `tmux -L cam`, why the isolation matters, and the macOS TCC failure mode it avoids
+- Added a note to README.md interactive-mode auto-retry bullet clarifying that `cam claude` and `cam retry-monitor` intentionally stay on the ambient socket (they watch the user's live pane, not the cam workspace)
+- Added an isolation guarantee block to FLOW.md §2.5 (cam run) with the same socket isolation explanation and the intentional ambient-socket exception for `cam claude` / `cam retry-monitor`
+- Verified zero em-dashes in either file (rule: no travessao in persisted .md)
+
+### Files changed
+- README.md
+- FLOW.md
+
+### Quality gates
+- Typecheck: ok
+- Tests: 490 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (docs-only story; no code or external lib touched)
+
+### Notes
+- None. Pure documentation story; all acceptance criteria met in a focused diff.
+---
+
+## [2026-06-07 05:00] - US-008: Document recovery runbook for stale tmux servers
+
+### What was done
+- Added "Recovery runbook: stale tmux server" subsection to README.md under "Single project session"
+- Three command blocks with contextual sentences each: (a) stale cam socket via `tmux -L cam kill-server`, (b) stale default socket via `tmux kill-server` then `cam run`, (c) isolation guarantee explanation
+- Verified zero em-dashes in the added section
+
+### Files changed
+- README.md
+
+### Quality gates
+- Typecheck: ok
+- Tests: 490 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (docs-only story; no external library API surface touched)
+
+### Notes
+- None. Pure documentation story; runbook is surgical (three commands, three sentences of context each).
+---
+## [2026-06-07 14:48] - Review round 1: CLEAN
+- subagent-reviewer APPROVE: 0 CRITICAL, 0 WARNING, 3 SUGGESTION (all backlog/skip).
+- All acceptance criteria for US-001..US-006, US-008 verified. Build PASS (typecheck 0 errors; 490 tests pass).
+- prd.review set: roundsCompleted=1, lastVerdict=CLEAN, lastReviewSha=3db3660.
+- Ready for /cam-ship. Only remaining story is US-007 (requires: operator).
+---

@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { colors } from './theme.ts';
 import { layout } from '../design/tokens.ts';
 import { Section } from './Section.tsx';
+import { tmuxArgs } from '../tmux/session.ts';
 
 /** A single dispatchable command row. */
 interface MenuCommand {
@@ -54,7 +55,7 @@ export function MenuApp({ orchPane, dashboardPane, runTmux }: MenuAppProps): Rea
 	const dividerWidth = Math.max(12, cols - layout.headingIndent * 2);
 
 	const tmux =
-		runTmux ?? ((args: string[]) => void spawnSync('tmux', args, { stdio: 'ignore' }));
+		runTmux ?? ((args: string[]) => void spawnSync('tmux', tmuxArgs(args), { stdio: 'ignore' }));
 
 	useInput((input, key) => {
 		if (key.ctrl && input === 'c') {
