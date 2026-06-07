@@ -28,7 +28,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts, test/tmux-session.test.ts. This is the foundation every other story depends on. `-L` is a GLOBAL tmux option and MUST precede the subcommand (`tmux -L cam new-session ...`, never `tmux new-session -L cam`). Out of scope (mention in PR description, not here): src/commands/claude.ts, src/commands/retry-monitor.ts, src/retry/tmux.ts. Stack: Bun + TypeScript + Ink; tests via `bun test`; typecheck via `bun run typecheck`. No travessão in any persisted markdown comment."
     },

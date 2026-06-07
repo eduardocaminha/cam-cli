@@ -19,5 +19,33 @@ Durable patterns carried across cycles:
 - **isInsideProjectSession uses CAM_SESSION env tag**: because $TMUX_PANE only contains a pane index (not the session name), callers must set CAM_SESSION=<sessionName> when spawning claude inside a session for reliable inside-session detection.
 - **`bun test` green is NOT proof of type-safety**: the test runner passes even when `tsc --noEmit` would fail. Always run `bun run typecheck` separately and trust its exit code before claiming the gate passed. US-008 shipped 6 TS2322 errors in `test/attach-hint.test.ts` with a fully green suite (caught at the next pre-flight, fixed in a follow-up). Common trap: a `captureStdout(() => runX(...))` helper typed `() => void | Promise<void>` rejects callbacks returning `Promise<number>`; widen such helpers to `() => unknown`.
 - **tmux shell-command form**: single arg to split-window/new-window goes through `/bin/sh -c` (shell injection risk). Multi-arg form execs directly (bypasses shell). Change `openPaneInSession(session, cmd: string)` to `openPaneInSession(session, cmdArgv: string[])` and spread the argv as separate trailing args after a `--` separator. Do NOT join argv before passing; user-supplied free text (issue descriptions, etc.) must stay as discrete elements.
+- **tmuxArgs() is the canonical socket prefix**: all calls to tmux in `src/tmux/session.ts` go through `tmuxArgs(sub)` which prepends `['-L', 'cam']`. Fake spawn handlers in test files route by `args[2]` (the subcommand) not `args[0]`, because `args[0]==='-L'` and `args[1]==='cam'` now. The guard pattern is `const subcommand = args[0] === '-L' ? args[2] : args[0]`.
 -->
 
+## [2026-06-07 00:00] - US-001: Add CAM_TMUX_SOCKET + tmuxArgs() and thread -L cam through src/tmux/session.ts
+
+### What was done
+- Exported `CAM_TMUX_SOCKET = 'cam'` and `tmuxArgs(sub: string[]): string[]` from `src/tmux/session.ts`
+- Wrapped all five tmux spawn calls in session.ts with `tmuxArgs([...])`: hasSession, new-session, 2x split-window (ensureProjectSession), and split-window (openPaneInSession)
+- Updated `test/tmux-session.test.ts`: fake spawn handler routes on `args[2]`; assertions check `args[0]==='-L'`, `args[1]==='cam'`, `args[2]===subcommand`; added CAM_TMUX_SOCKET and tmuxArgs describe blocks
+- Updated fake spawn handlers in `test/run.test.ts`, `test/next.test.ts`, `test/issue.test.ts`, `test/plan.test.ts`, `test/attach-hint.test.ts` to route on the subcommand after the -L prefix
+
+### Files changed
+- src/tmux/session.ts
+- test/tmux-session.test.ts
+- test/run.test.ts
+- test/next.test.ts
+- test/issue.test.ts
+- test/plan.test.ts
+- test/attach-hint.test.ts
+
+### Quality gates
+- Typecheck: ok
+- Tests: 487 pass
+
+### Step 5.5 docs validation
+- lib: tmux, status: ok, url: https://man.openbsd.org/tmux.1 — confirmed -L is a global flag that precedes the subcommand; `tmux -L cam new-session` is correct form
+
+### Notes
+- test files beyond tmux-session.test.ts also needed updating because their fake spawns routed on args[0]; the subcommand guard pattern is documented in Codebase Patterns above
+---
