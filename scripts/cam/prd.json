@@ -99,7 +99,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/setup.ts, test/setup-menu.test.ts. Depends on US-001. This is the ONLY place where ambient-socket usage is intentional inside the workspace code path. Code comment must be terse and free of travessão (use colon, comma, parens, or period)."
     },

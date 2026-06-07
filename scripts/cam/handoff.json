@@ -1,25 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Thread -L cam through cam stop and Menu pane control"
+    "id": "US-005",
+    "title": "Thread -L cam through the outside-tmux branch of cam setup"
   },
   "branchName": "cam/CAM-26-tmux-dedicated-socket",
-  "timestamp": "2026-06-07T02:00:00Z",
-  "createdFiles": [
-    "test/menu.test.ts"
-  ],
+  "timestamp": "2026-06-07T03:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/stop.ts",
-    "src/ui/Menu.tsx",
-    "test/stop.test.ts"
+    "src/commands/setup.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 threaded -L cam through session.ts; US-002 through run.ts; US-003 through next.ts probe; US-004 through stop.ts and Menu.tsx default runTmux closure. Pattern: wrap all direct tmux spawn calls with tmuxArgs([...]). Fake spawn handlers in tests route by args[2] (the subcommand) not args[0], because args[0]==='-L' and args[1]==='cam' now. Guard: const sub = args[0] === '-L' ? args[2] : args[0]. setup-menu.test.ts tests a bash script template (buildSetupMenuScript in setup.ts) -- that script is out of scope for the -L cam threading; it still uses bare tmux calls.",
+  "nextStoryContext": "US-001 through US-005 complete: tmuxArgs() is now threaded through session.ts, run.ts, next.ts, stop.ts, Menu.tsx, and setup.ts (outside-tmux branch only). The inside-tmux branch in setup.ts is the one intentional ambient-socket exception. Remaining stories likely cover other command files or the bash script inside buildSetupMenuScript(). test/setup-menu.test.ts only tests the bash script (out of scope for -L threading) and does not assert tmux argv shapes.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 only wraps existing tmux spawn calls with tmuxArgs() in stop.ts and Menu.tsx. No external library API surface changed."
+      "summary": "US-005 only wraps existing tmux spawn calls with tmuxArgs() in setup.ts outside-tmux branch. No external library API surface changed."
     }
   ]
 }
