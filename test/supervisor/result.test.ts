@@ -1,43 +1,24 @@
 // test/supervisor/result.test.ts
 //
-// Unit tests for src/supervisor/result.ts.
+// Unit tests for src/supervisor/result.ts (CAM-32 state-primary outcome).
 //
-// Coverage (all four outcome kinds):
-//   - pass: sentinel DONE + handoff matches + prd passes:true
-//   - fail: sentinel DONE but prd still passes:false
-//   - fail: sentinel DONE but handoff/sentinel storyId mismatch
-//   - fail: sentinel DONE but sentinel missing story= field
-//   - fail: sentinel DONE but handoff missing lastCompletedStory.id
-//   - fail: sentinel DONE but prd.json unreadable
-//   - blocked: BLOCKED_OPERATOR_REQUIRED sentinel
-//   - blocked: BLOCKED_QUALITY sentinel with reason=
-//   - blocked: raw BLOCKED_ token without full sentinel
-//   - pass: PRD_COMPLETE sentinel
-//   - unknown: empty pane text (no signals)
-//   - unknown: pane text with noise but no sentinel
+// readWorkerOutcome derives the outcome from durable state (handoff.json +
+// prd.json) PRIMARILY; the pane sentinel is corroboration, never a gate. This
+// keeps a successful worker from being misreported when the pane dies (BUG 1)
+// or the worker truncates before emitting the sentinel (BUG 2).
 
 import { describe, expect, test } from 'bun:test';
 import { readWorkerOutcome } from '../../src/supervisor/result.ts';
-import type { FileReader, WorkerOutcome } from '../../src/supervisor/result.ts';
+import type { FileReader } from '../../src/supervisor/result.ts';
 
 // ---------------------------------------------------------------------------
-// Fake fixture helpers
+// Fixtures
 // ---------------------------------------------------------------------------
 
-/** Minimal prd.json fixture with one story. */
 function fakePrd(storyId: string, passes: boolean): string {
-	return JSON.stringify({
-		userStories: [
-			{
-				id: storyId,
-				title: `Story ${storyId}`,
-				passes,
-			},
-		],
-	});
+	return JSON.stringify({ userStories: [{ id: storyId, title: `Story ${storyId}`, passes }] });
 }
 
-/** Minimal handoff.json fixture. */
 function fakeHandoff(storyId: string): string {
 	return JSON.stringify({
 		lastCompletedStory: { id: storyId, title: `Story ${storyId}` },
@@ -46,7 +27,6 @@ function fakeHandoff(storyId: string): string {
 	});
 }
 
-/** FileReader that serves fake content for known paths, null for others. */
 function makeReader(files: Record<string, string>): FileReader {
 	return (path: string) => files[path] ?? null;
 }
@@ -54,61 +34,86 @@ function makeReader(files: Record<string, string>): FileReader {
 const PRD_PATH = '/fake/prd.json';
 const HANDOFF_PATH = '/fake/handoff.json';
 
-// Pane text sentinels
 function donePane(storyId: string): string {
 	return `Some implementer output here\nCAM_IMPLEMENTER_STATUS=DONE story=${storyId}\n`;
 }
-
 function blockedOpPane(storyId: string): string {
 	return `Some output\nCAM_IMPLEMENTER_STATUS=BLOCKED_OPERATOR_REQUIRED story=${storyId} reason=needs-human\n`;
 }
-
 function blockedQualityPane(): string {
 	return `Some output\nCAM_IMPLEMENTER_STATUS=BLOCKED_QUALITY story=US-007 reason=typecheck-failed\n`;
 }
-
 function prdCompletePane(): string {
 	return `All stories pass.\nCAM_IMPLEMENTER_STATUS=PRD_COMPLETE\n`;
 }
-
 function noSentinelPane(): string {
 	return `Worker started.\nDoing some work.\nProcess exited with code 0.\n`;
 }
-
 function rawBlockedPane(): string {
 	return `Something went wrong.\nBLOCKED_QUALITY detected in output.\n`;
 }
 
 // ---------------------------------------------------------------------------
-// Tests: pass outcome
+// pass
 // ---------------------------------------------------------------------------
 
 describe('readWorkerOutcome: pass', () => {
-	test('returns pass when sentinel DONE + handoff matches + prd passes:true', () => {
+	test('sentinel DONE + handoff + prd passes:true', () => {
 		const storyId = 'US-004';
 		const result = readWorkerOutcome({
 			prdPath: PRD_PATH,
 			handoffPath: HANDOFF_PATH,
 			capturedPaneText: donePane(storyId),
-			readFile: makeReader({
-				[PRD_PATH]: fakePrd(storyId, true),
-				[HANDOFF_PATH]: fakeHandoff(storyId),
-			}),
+			readFile: makeReader({ [PRD_PATH]: fakePrd(storyId, true), [HANDOFF_PATH]: fakeHandoff(storyId) }),
 		});
-
 		expect(result.kind).toBe('pass');
 		expect(result.storyId).toBe(storyId);
-		expect(result.detail).toContain(storyId);
 	});
 
-	test('returns pass with undefined storyId for PRD_COMPLETE sentinel', () => {
+	test('state-primary: NO sentinel but handoff + prd passes:true (BUG 1, pane died)', () => {
+		const storyId = 'US-011';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: '', // pane died before capture: no sentinel
+			readFile: makeReader({ [PRD_PATH]: fakePrd(storyId, true), [HANDOFF_PATH]: fakeHandoff(storyId) }),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('state-primary');
+	});
+
+	test('DONE sentinel missing story= resolves via handoff + prd passes:true', () => {
+		const storyId = 'US-004';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: 'CAM_IMPLEMENTER_STATUS=DONE\n',
+			readFile: makeReader({ [PRD_PATH]: fakePrd(storyId, true), [HANDOFF_PATH]: fakeHandoff(storyId) }),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('handoff missing but DONE sentinel + prd passes:true resolves via sentinel', () => {
+		const storyId = 'US-004';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: donePane(storyId),
+			readFile: makeReader({ [PRD_PATH]: fakePrd(storyId, true) }), // no handoff
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('PRD_COMPLETE sentinel -> pass with undefined storyId', () => {
 		const result = readWorkerOutcome({
 			prdPath: PRD_PATH,
 			handoffPath: HANDOFF_PATH,
 			capturedPaneText: prdCompletePane(),
 			readFile: makeReader({}),
 		});
-
 		expect(result.kind).toBe('pass');
 		expect(result.storyId).toBeUndefined();
 		expect(result.detail).toContain('PRD_COMPLETE');
@@ -116,209 +121,142 @@ describe('readWorkerOutcome: pass', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests: fail outcome
+// incomplete (worker implemented the story but did not finalize, BUG 2)
 // ---------------------------------------------------------------------------
 
-describe('readWorkerOutcome: fail', () => {
-	test('returns fail when prd still shows passes:false after DONE sentinel', () => {
+describe('readWorkerOutcome: incomplete', () => {
+	test('DONE + handoff but prd still passes:false -> incomplete', () => {
 		const storyId = 'US-004';
 		const result = readWorkerOutcome({
 			prdPath: PRD_PATH,
 			handoffPath: HANDOFF_PATH,
 			capturedPaneText: donePane(storyId),
-			readFile: makeReader({
-				[PRD_PATH]: fakePrd(storyId, false),
-				[HANDOFF_PATH]: fakeHandoff(storyId),
-			}),
+			readFile: makeReader({ [PRD_PATH]: fakePrd(storyId, false), [HANDOFF_PATH]: fakeHandoff(storyId) }),
 		});
-
-		expect(result.kind).toBe('fail');
+		expect(result.kind).toBe('incomplete');
 		expect(result.storyId).toBe(storyId);
-		expect(result.detail).toContain('passes:false');
+		expect(result.detail).toContain('finalize');
 	});
 
-	test('returns fail when sentinel story= does not match handoff lastCompletedStory.id', () => {
-		const sentinelStoryId = 'US-004';
-		const handoffStoryId = 'US-003'; // mismatch
+	test('NO sentinel + handoff but prd passes:false -> incomplete (the real CAM-32 case)', () => {
+		const storyId = 'US-011';
 		const result = readWorkerOutcome({
 			prdPath: PRD_PATH,
 			handoffPath: HANDOFF_PATH,
-			capturedPaneText: donePane(sentinelStoryId),
-			readFile: makeReader({
-				[PRD_PATH]: fakePrd(sentinelStoryId, true),
-				[HANDOFF_PATH]: fakeHandoff(handoffStoryId),
-			}),
+			capturedPaneText: '', // worker truncated: no sentinel emitted
+			readFile: makeReader({ [PRD_PATH]: fakePrd(storyId, false), [HANDOFF_PATH]: fakeHandoff(storyId) }),
 		});
-
-		expect(result.kind).toBe('fail');
-		expect(result.storyId).toBe(sentinelStoryId);
-		expect(result.detail).toContain('mismatch');
+		expect(result.kind).toBe('incomplete');
+		expect(result.storyId).toBe(storyId);
 	});
 
-	test('returns fail when DONE sentinel missing story= field', () => {
-		const paneText = 'CAM_IMPLEMENTER_STATUS=DONE\n'; // no story= part
-		const result = readWorkerOutcome({
-			prdPath: PRD_PATH,
-			handoffPath: HANDOFF_PATH,
-			capturedPaneText: paneText,
-			readFile: makeReader({
-				[PRD_PATH]: fakePrd('US-004', true),
-				[HANDOFF_PATH]: fakeHandoff('US-004'),
-			}),
-		});
-
-		expect(result.kind).toBe('fail');
-		expect(result.detail).toContain('missing story= field');
-	});
-
-	test('returns fail when handoff.json is missing and sentinel is DONE', () => {
+	test('handoff story not present in prd userStories -> incomplete', () => {
 		const storyId = 'US-004';
+		const prdOther = JSON.stringify({ userStories: [{ id: 'US-999', title: 'Other', passes: true }] });
 		const result = readWorkerOutcome({
 			prdPath: PRD_PATH,
 			handoffPath: HANDOFF_PATH,
 			capturedPaneText: donePane(storyId),
-			readFile: makeReader({
-				[PRD_PATH]: fakePrd(storyId, true),
-				// HANDOFF_PATH not in files map -> null
-			}),
+			readFile: makeReader({ [PRD_PATH]: prdOther, [HANDOFF_PATH]: fakeHandoff(storyId) }),
 		});
-
-		expect(result.kind).toBe('fail');
+		expect(result.kind).toBe('incomplete');
 		expect(result.storyId).toBe(storyId);
-		expect(result.detail).toContain('handoff.json has no lastCompletedStory.id');
-	});
-
-	test('returns fail when handoff.json has no lastCompletedStory', () => {
-		const storyId = 'US-004';
-		const handoffNoStory = JSON.stringify({
-			branchName: 'cam/test',
-			timestamp: '2026-06-08T00:00:00Z',
-		});
-		const result = readWorkerOutcome({
-			prdPath: PRD_PATH,
-			handoffPath: HANDOFF_PATH,
-			capturedPaneText: donePane(storyId),
-			readFile: makeReader({
-				[PRD_PATH]: fakePrd(storyId, true),
-				[HANDOFF_PATH]: handoffNoStory,
-			}),
-		});
-
-		expect(result.kind).toBe('fail');
-		expect(result.storyId).toBe(storyId);
-		expect(result.detail).toContain('handoff.json has no lastCompletedStory.id');
-	});
-
-	test('returns fail when prd.json cannot be read', () => {
-		const storyId = 'US-004';
-		const result = readWorkerOutcome({
-			prdPath: PRD_PATH,
-			handoffPath: HANDOFF_PATH,
-			capturedPaneText: donePane(storyId),
-			readFile: makeReader({
-				// PRD_PATH not in files map -> null
-				[HANDOFF_PATH]: fakeHandoff(storyId),
-			}),
-		});
-
-		expect(result.kind).toBe('fail');
-		expect(result.storyId).toBe(storyId);
-		expect(result.detail).toContain('prd.json could not be read');
-	});
-
-	test('returns fail when story id not found in prd userStories', () => {
-		const storyId = 'US-004';
-		// prd has a different story id
-		const prdDifferentStory = JSON.stringify({
-			userStories: [{ id: 'US-999', title: 'Other', passes: true }],
-		});
-		const result = readWorkerOutcome({
-			prdPath: PRD_PATH,
-			handoffPath: HANDOFF_PATH,
-			capturedPaneText: donePane(storyId),
-			readFile: makeReader({
-				[PRD_PATH]: prdDifferentStory,
-				[HANDOFF_PATH]: fakeHandoff(storyId),
-			}),
-		});
-
-		expect(result.kind).toBe('fail');
-		expect(result.storyId).toBe(storyId);
-		expect(result.detail).toContain('passes:false');
 	});
 });
 
 // ---------------------------------------------------------------------------
-// Tests: blocked outcome
+// fail
 // ---------------------------------------------------------------------------
 
-describe('readWorkerOutcome: blocked', () => {
-	test('returns blocked for BLOCKED_OPERATOR_REQUIRED sentinel', () => {
-		const storyId = 'US-010';
+describe('readWorkerOutcome: fail', () => {
+	test('sentinel story= mismatches handoff lastCompletedStory.id', () => {
 		const result = readWorkerOutcome({
 			prdPath: PRD_PATH,
 			handoffPath: HANDOFF_PATH,
-			capturedPaneText: blockedOpPane(storyId),
+			capturedPaneText: donePane('US-004'),
+			readFile: makeReader({ [PRD_PATH]: fakePrd('US-004', true), [HANDOFF_PATH]: fakeHandoff('US-003') }),
+		});
+		expect(result.kind).toBe('fail');
+		expect(result.detail).toContain('mismatch');
+	});
+
+	test('completed story known but prd.json unreadable -> fail', () => {
+		const storyId = 'US-004';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: donePane(storyId),
+			readFile: makeReader({ [HANDOFF_PATH]: fakeHandoff(storyId) }), // no prd
+		});
+		expect(result.kind).toBe('fail');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('prd.json could not be read');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// blocked
+// ---------------------------------------------------------------------------
+
+describe('readWorkerOutcome: blocked', () => {
+	test('BLOCKED_OPERATOR_REQUIRED sentinel', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: blockedOpPane('US-010'),
 			readFile: makeReader({}),
 		});
-
 		expect(result.kind).toBe('blocked');
 		expect(result.detail).toContain('BLOCKED');
 	});
 
-	test('returns blocked for BLOCKED_QUALITY sentinel', () => {
+	test('BLOCKED_QUALITY sentinel', () => {
 		const result = readWorkerOutcome({
 			prdPath: PRD_PATH,
 			handoffPath: HANDOFF_PATH,
 			capturedPaneText: blockedQualityPane(),
 			readFile: makeReader({}),
 		});
-
 		expect(result.kind).toBe('blocked');
-		expect(result.detail).toContain('BLOCKED');
 	});
 
-	test('returns blocked when pane has raw BLOCKED_ token without full sentinel', () => {
+	test('raw BLOCKED_ token without full sentinel', () => {
 		const result = readWorkerOutcome({
 			prdPath: PRD_PATH,
 			handoffPath: HANDOFF_PATH,
 			capturedPaneText: rawBlockedPane(),
 			readFile: makeReader({}),
 		});
-
 		expect(result.kind).toBe('blocked');
 		expect(result.storyId).toBeUndefined();
-		expect(result.detail).toContain('BLOCKED');
 	});
 });
 
 // ---------------------------------------------------------------------------
-// Tests: unknown outcome
+// unknown
 // ---------------------------------------------------------------------------
 
 describe('readWorkerOutcome: unknown', () => {
-	test('returns unknown when pane text is empty', () => {
+	test('empty pane + no handoff -> unknown', () => {
 		const result = readWorkerOutcome({
 			prdPath: PRD_PATH,
 			handoffPath: HANDOFF_PATH,
 			capturedPaneText: '',
 			readFile: makeReader({}),
 		});
-
 		expect(result.kind).toBe('unknown');
 		expect(result.storyId).toBeUndefined();
 	});
 
-	test('returns unknown when pane has noise but no sentinel', () => {
+	test('pane noise, no sentinel, no handoff -> unknown', () => {
 		const result = readWorkerOutcome({
 			prdPath: PRD_PATH,
 			handoffPath: HANDOFF_PATH,
 			capturedPaneText: noSentinelPane(),
 			readFile: makeReader({}),
 		});
-
 		expect(result.kind).toBe('unknown');
 		expect(result.storyId).toBeUndefined();
-		expect(result.detail).toContain('No CAM_IMPLEMENTER_STATUS sentinel');
+		expect(result.detail).toContain('No completed story');
 	});
 });

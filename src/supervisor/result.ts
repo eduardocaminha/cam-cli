@@ -26,7 +26,7 @@
 export type FileReader = (path: string) => string | null;
 
 /** Outcome kinds returned by readWorkerOutcome. */
-export type WorkerOutcomeKind = 'pass' | 'fail' | 'blocked' | 'unknown';
+export type WorkerOutcomeKind = 'pass' | 'incomplete' | 'fail' | 'blocked' | 'unknown';
 
 /** Typed result from readWorkerOutcome. */
 export interface WorkerOutcome {
@@ -186,71 +186,8 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 		};
 	}
 
-	// --- Step 3: DONE path - requires all three signals to agree ---
-	if (sentinel && sentinel.status === 'DONE') {
-		const sentinelStoryId = sentinel.storyId;
-
-		// Read handoff to get lastCompletedStory.id
-		const handoff = readHandoff(handoffPath, readFile);
-		const handoffStoryId = handoff?.lastCompletedStory?.id;
-
-		// Read prd to verify passes:true
-		const prd = readPrd(prdPath, readFile);
-
-		// Cross-check: sentinel story=US-XXX must match handoff lastCompletedStory.id
-		if (!sentinelStoryId) {
-			return {
-				kind: 'fail',
-				storyId: handoffStoryId,
-				detail: 'Sentinel is DONE but missing story= field; cannot cross-check.',
-			};
-		}
-
-		if (!handoffStoryId) {
-			return {
-				kind: 'fail',
-				storyId: sentinelStoryId,
-				detail: `Sentinel reports DONE story=${sentinelStoryId} but handoff.json has no lastCompletedStory.id.`,
-			};
-		}
-
-		if (sentinelStoryId !== handoffStoryId) {
-			return {
-				kind: 'fail',
-				storyId: sentinelStoryId,
-				detail: `Sentinel says story=${sentinelStoryId} but handoff.json has lastCompletedStory.id=${handoffStoryId}; mismatch.`,
-			};
-		}
-
-		// Cross-check: prd.json must show passes:true for this story
-		if (!prd) {
-			return {
-				kind: 'fail',
-				storyId: sentinelStoryId,
-				detail: `Sentinel and handoff agree on story=${sentinelStoryId} but prd.json could not be read.`,
-			};
-		}
-
-		if (!storyPassesInPrd(prd, sentinelStoryId)) {
-			return {
-				kind: 'fail',
-				storyId: sentinelStoryId,
-				detail: `Sentinel and handoff agree on story=${sentinelStoryId} but prd.json still shows passes:false.`,
-			};
-		}
-
-		// All three signals agree: genuine pass
-		return {
-			kind: 'pass',
-			storyId: sentinelStoryId,
-			detail: `story=${sentinelStoryId} confirmed: sentinel DONE, handoff matches, prd.json passes:true.`,
-		};
-	}
-
-	// --- Step 4: PRD_COMPLETE path ---
+	// --- Step 3: PRD_COMPLETE sentinel (worker found nothing to implement) ---
 	if (sentinel && sentinel.status === 'PRD_COMPLETE') {
-		// Worker found no stories to implement (all passes:true already).
-		// Treat as a special pass variant with no storyId.
 		return {
 			kind: 'pass',
 			storyId: undefined,
@@ -258,11 +195,69 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 		};
 	}
 
-	// --- Step 5: Unknown - no recognizable signals ---
+	// --- Step 4: State-primary outcome (CAM-32) ---
+	// The authoritative proof of WHICH story is handoff.json (the worker self-
+	// selects); the authoritative proof of DONE is prd.json passes:true. The
+	// sentinel is corroboration, never a gate: a worker can succeed yet lose its
+	// sentinel when the ephemeral pane dies (BUG 1), or truncate before emitting
+	// it (BUG 2). We never depend on the sentinel alone.
+	const handoff = readHandoff(handoffPath, readFile);
+	const handoffStoryId = handoff?.lastCompletedStory?.id;
+	const prd = readPrd(prdPath, readFile);
+
+	const sentinelDone = sentinel !== null && sentinel.status === 'DONE';
+
+	// A DONE sentinel that names a different story than handoff is a real mismatch.
+	if (
+		sentinel !== null &&
+		sentinel.status === 'DONE' &&
+		sentinel.storyId &&
+		handoffStoryId &&
+		sentinel.storyId !== handoffStoryId
+	) {
+		return {
+			kind: 'fail',
+			storyId: sentinel.storyId,
+			detail: `Sentinel says story=${sentinel.storyId} but handoff.json has lastCompletedStory.id=${handoffStoryId}; mismatch.`,
+		};
+	}
+
+	// Completed story: handoff is authoritative; fall back to a DONE sentinel's story.
+	const completedStory =
+		handoffStoryId ?? (sentinel !== null && sentinel.status === 'DONE' ? sentinel.storyId : undefined);
+
+	if (completedStory === undefined) {
+		return {
+			kind: 'unknown',
+			storyId: undefined,
+			detail:
+				'No completed story: handoff.json has no lastCompletedStory.id and no DONE sentinel with story= was found.',
+		};
+	}
+
+	if (!prd) {
+		return {
+			kind: 'fail',
+			storyId: completedStory,
+			detail: `handoff/sentinel point to ${completedStory} but prd.json could not be read.`,
+		};
+	}
+
+	if (storyPassesInPrd(prd, completedStory)) {
+		const corroboration = sentinelDone ? 'sentinel DONE corroborates' : 'no sentinel, state-primary';
+		return {
+			kind: 'pass',
+			storyId: completedStory,
+			detail: `story=${completedStory} confirmed: handoff matches, prd.json passes:true (${corroboration}).`,
+		};
+	}
+
+	// Worker implemented the story (handoff records it) but prd.json was never
+	// flipped to passes:true: the worker truncated its protocol tail (BUG 2).
+	// The supervisor must verify gates and finalize.
 	return {
-		kind: 'unknown',
-		storyId: undefined,
-		detail:
-			'No CAM_IMPLEMENTER_STATUS sentinel found in pane text and no blocked token detected.',
+		kind: 'incomplete',
+		storyId: completedStory,
+		detail: `Worker completed ${completedStory} (handoff set) but prd.json still shows passes:false; supervisor finalize required.`,
 	};
 }

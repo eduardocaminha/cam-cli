@@ -389,6 +389,63 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		writeFileSync(markerPath, uuid, 'utf8');
 	};
 
+	// --- CAM-32 wiring: durable worker output + supervisor-finalize tail ---
+	// readFile: generic reader for the durable worker out-log (BUG 1).
+	const readFileOpt: RunSupervisorOptions['readFile'] = (p) => {
+		try {
+			return readFileSync(p, 'utf8');
+		} catch {
+			return null;
+		}
+	};
+
+	// workerOutFile: per-uuid durable log path under .claude (BUG 1).
+	const workerOutFile: RunSupervisorOptions['workerOutFile'] = (uuid) =>
+		join(claudeDir, `.cam-worker-out-${uuid}.log`);
+
+	// runGates: deterministic re-check before the supervisor finalizes a worker
+	// that implemented a story but did not flip prd.json (BUG 2).
+	const runGates: RunSupervisorOptions['runGates'] = () => {
+		const tc = spawnSync('bun', ['run', 'typecheck'], { stdio: 'ignore' });
+		if (tc.status !== 0) return { ok: false, detail: 'typecheck failed' };
+		const tt = spawnSync('bun', ['test'], { stdio: 'ignore' });
+		if (tt.status !== 0) return { ok: false, detail: 'tests failed' };
+		return { ok: true, detail: 'typecheck + tests passed' };
+	};
+
+	// finalizeStory: flip prd.json passes:true, commit, and push the tail the
+	// worker truncated (BUG 2). Only invoked after runGates is green.
+	const finalizeStory: RunSupervisorOptions['finalizeStory'] = (storyId) => {
+		try {
+			const prd = readPrd();
+			if (!prd || !Array.isArray(prd.userStories)) {
+				return { ok: false, detail: 'prd.json unreadable for finalize' };
+			}
+			const story = prd.userStories.find((s) => s.id === storyId);
+			if (!story) return { ok: false, detail: `story ${storyId} not found in prd.json` };
+			story.passes = true;
+			writePrd(prd);
+			const add = spawnSync('git', ['add', '-A'], { stdio: 'ignore' });
+			if (add.status !== 0) return { ok: false, detail: 'git add failed' };
+			const commit = spawnSync(
+				'git',
+				['commit', '-m', `chore(cam): finalize ${storyId} (supervisor)`],
+				{ stdio: 'ignore' },
+			);
+			if (commit.status !== 0) return { ok: false, detail: 'git commit failed' };
+			const branchProc = spawnSync('git', ['branch', '--show-current'], {
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const branchName = (typeof branchProc.stdout === 'string' ? branchProc.stdout : '').trim();
+			const push = spawnSync('git', ['push', 'origin', branchName], { stdio: 'ignore' });
+			if (push.status !== 0) return { ok: false, detail: `git push to ${branchName} failed` };
+			return { ok: true, detail: `finalized ${storyId} on ${branchName}` };
+		} catch (e) {
+			return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+		}
+	};
+
 	// 4. Dispatch to the supervisor.
 	const supervisorFn = options.supervisorFn ?? runSupervisor;
 	emitSectionHeading('Loop');
@@ -405,6 +462,10 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			clock,
 			reviewDispatch,
 			writeSessionMarker,
+			readFile: readFileOpt,
+			workerOutFile,
+			runGates,
+			finalizeStory,
 			isPaneAlive,
 			workerPaneId,
 			prdPath,

@@ -336,16 +336,16 @@ describe('runSupervisor', () => {
 	});
 
 	test('worker outcome fail -> blocked', async () => {
-		// Sentinel DONE but handoff missing -> fail outcome
+		// Sentinel says US-001 but handoff records US-002 -> mismatch -> fail
 		const prd = makePrd({
 			stories: [{ id: 'US-001', priority: 1, passes: false }],
 		});
 
-		// Pane has DONE but readHandoff returns null -> fail
+		// Pane DONE story=US-001 but handoff lastCompletedStory.id=US-002: real mismatch.
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
 			capturePane: (_paneId) => donePane('US-001'),
-			readHandoff: () => null, // triggers fail path in readWorkerOutcome
+			readHandoff: () => ({ lastCompletedStory: { id: 'US-002' } }),
 		});
 
 		const result = await runSupervisor(opts);
@@ -370,6 +370,98 @@ describe('runSupervisor', () => {
 		expect(result.status).toBe('blocked');
 		expect(result.iterations).toBe(1);
 		expect(result.lastOutcome?.kind).toBe('unknown');
+	});
+
+	test('incomplete -> supervisor re-runs gates + finalizes -> pass -> complete (CAM-32 BUG 2)', async () => {
+		// Worker implemented US-001 (handoff set) but did not flip prd.json.
+		// readWorkerOutcome returns 'incomplete'; the supervisor finalizes.
+		let finalized = false;
+		let markerStory: string | undefined;
+		const prdBefore = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		const prdAfter = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		const opts = makeBaseOpts({
+			readPrd: () => (finalized ? prdAfter : prdBefore),
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			runGates: () => ({ ok: true, detail: 'gates green' }),
+			finalizeStory: (storyId) => {
+				finalized = true;
+				return { ok: true, detail: `flipped ${storyId}` };
+			},
+			writeSessionMarker: (storyId, _uuid) => {
+				markerStory = storyId;
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.lastOutcome?.kind).toBe('pass');
+		expect(result.lastOutcome?.detail).toContain('supervisor-finalized');
+		expect(markerStory).toBe('US-001');
+	});
+
+	test('incomplete -> gates fail -> blocked (no finalize attempted)', async () => {
+		let finalizeCalled = false;
+		const prd = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			runGates: () => ({ ok: false, detail: 'typecheck failed' }),
+			finalizeStory: (_storyId) => {
+				finalizeCalled = true;
+				return { ok: true, detail: 'should not run' };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.lastOutcome?.kind).toBe('blocked');
+		expect(result.lastOutcome?.detail).toContain('gates failed');
+		expect(finalizeCalled).toBe(false);
+	});
+
+	test('incomplete with no finalize capability -> blocked (kind stays incomplete)', async () => {
+		const prd = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			// no runGates / finalizeStory injected
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.lastOutcome?.kind).toBe('incomplete');
+	});
+
+	test('durable out-file is preferred over capture-pane (CAM-32 BUG 1)', async () => {
+		// The pane reports BLOCKED (as if scraped from a half-dead pane), but the
+		// durable log holds the real DONE output. The supervisor must trust the
+		// durable log: outcome derives from DONE (-> incomplete here, since prd is
+		// not flipped and no finalize is injected), never from the blocked pane.
+		const prd = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			capturePane: (_paneId) => blockedPane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			workerOutFile: (uuid) => `/proj/.claude/.cam-worker-out-${uuid}.log`,
+			readFile: (path) => (path.includes('.cam-worker-out-') ? donePane('US-001') : null),
+		});
+
+		const result = await runSupervisor(opts);
+
+		// If capture-pane had been used, kind would be 'blocked'.
+		expect(result.lastOutcome?.kind).toBe('incomplete');
 	});
 
 	test('review dispatch error -> blocked', async () => {

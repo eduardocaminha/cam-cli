@@ -34,6 +34,13 @@ export interface ImplementerWorkerArgvOptions {
 	 * Defaults to 'subagent-implementer'.
 	 */
 	agentName?: string;
+	/**
+	 * Durable output-log path. When set, the worker's stdout+stderr is tee'd to
+	 * this file so the supervisor can read the result AFTER the ephemeral pane
+	 * dies (CAM-32 BUG 1). Will be shell-escaped. When omitted, output goes only
+	 * to the pane (legacy behaviour).
+	 */
+	outFile?: string;
 }
 
 /** Default agent name; matches .claude/agents/subagent-implementer.md. */
@@ -73,6 +80,10 @@ export function buildImplementerWorkerArgv(opts: ImplementerWorkerArgvOptions): 
 	const agentName = opts.agentName ?? DEFAULT_IMPLEMENTER_AGENT;
 	const escapedPrompt = shellEscape(opts.taskPrompt);
 	const escapedChannel = shellEscape(opts.channel);
+	// When outFile is set, tee stdout+stderr to a durable log so the supervisor
+	// can read the worker result even after the pane dies (CAM-32 BUG 1). The
+	// pipe binds tighter than `;`, so it is (claude ... | tee file) ; (tmux ...).
+	const teePart = opts.outFile ? ` 2>&1 | tee ${shellEscape(opts.outFile)}` : '';
 
 	return (
 		`claude -p` +
@@ -81,6 +92,7 @@ export function buildImplementerWorkerArgv(opts: ImplementerWorkerArgvOptions): 
 		` --output-format text` +
 		` --agent ${agentName}` +
 		` ${escapedPrompt}` +
+		teePart +
 		` ; tmux -L cam wait-for -S ${escapedChannel}`
 	);
 }

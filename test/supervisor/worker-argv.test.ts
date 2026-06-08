@@ -140,4 +140,32 @@ describe('buildImplementerWorkerArgv', () => {
 	test('default agentName is subagent-implementer', () => {
 		expect(DEFAULT_IMPLEMENTER_AGENT).toBe('subagent-implementer');
 	});
+
+	test('omits tee when no outFile is given (legacy pane-only output)', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+		});
+		expect(result).not.toContain('tee');
+	});
+
+	test('tees output to the durable log when outFile is set (CAM-32 BUG 1)', () => {
+		const outFile = '/proj/.claude/.cam-worker-out-a1b2c3d4.log';
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+			outFile,
+		});
+		// stderr merged into stdout and tee'd to the durable file.
+		expect(result).toContain(`2>&1 | tee '${outFile}'`);
+		// tee comes after claude and before the wait-for signal.
+		const teeIdx = result.indexOf('| tee');
+		const waitIdx = result.indexOf('tmux -L cam wait-for -S');
+		expect(teeIdx).toBeGreaterThan(result.indexOf('claude'));
+		expect(waitIdx).toBeGreaterThan(teeIdx);
+	});
 });

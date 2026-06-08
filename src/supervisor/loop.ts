@@ -170,6 +170,25 @@ export interface RunSupervisorOptions {
 	permissionMode: string;
 	/** Free-text task prompt sent to the implementer. */
 	taskPrompt: string;
+	/**
+	 * Generic file reader for the durable worker output log (CAM-32 BUG 1).
+	 * When provided together with workerOutFile, the supervisor reads the worker
+	 * output from disk instead of the racy capture-pane. Optional.
+	 */
+	readFile?: (path: string) => string | null;
+	/** Returns the durable output-log path for a worker uuid. Optional. */
+	workerOutFile?: (uuid: string) => string;
+	/**
+	 * Re-run quality gates (typecheck + test) to verify before finalizing a
+	 * worker that implemented a story but did not flip prd.json (CAM-32 BUG 2).
+	 * Optional; without it, an 'incomplete' outcome becomes blocked.
+	 */
+	runGates?: () => { ok: boolean; detail: string };
+	/**
+	 * Finalize a story the worker implemented but did not finalize: flip prd.json
+	 * passes:true, commit, and push. Optional; without it, 'incomplete' is blocked.
+	 */
+	finalizeStory?: (storyId: string) => { ok: boolean; detail: string };
 	/** Hard max iterations cap. Default: MAX_ITERATIONS (50). */
 	maxIterations?: number;
 }
@@ -253,6 +272,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const genChannel = opts.genChannel ?? defaultGenChannel;
 	const maxIter = opts.maxIterations ?? MAX_ITERATIONS;
 	const perWorkerTimeoutMs = opts.perWorkerTimeoutMs ?? DEFAULT_PER_WORKER_TIMEOUT_MS;
+	const readFile = opts.readFile;
+	const workerOutFile = opts.workerOutFile;
+	const runGates = opts.runGates;
+	const finalizeStory = opts.finalizeStory;
 
 	let iterations = 0;
 	let lastOutcome: WorkerOutcome | null = null;
@@ -289,12 +312,16 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// Build the channel name (advisory storyId used for disambiguation).
 			const channel = genChannel(advisoryStoryId, uuid);
 
-			// Build the shell command for the worker.
+			// Build the shell command for the worker. When a durable out-file path
+			// is available, the worker tee's its output there so the supervisor can
+			// read it after the pane dies (CAM-32 BUG 1).
+			const outFile = workerOutFile ? workerOutFile(uuid) : '';
 			const shellCmd = buildImplementerWorkerArgv({
 				uuid,
 				taskPrompt,
 				permissionMode,
 				channel,
+				...(outFile ? { outFile } : {}),
 			});
 
 			// Respawn the worker pane with the implementer command.
@@ -335,7 +362,8 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			}
 
 			// Capture pane output to detect the sentinel.
-			const paneText = capturePane(workerPaneId);
+			const durable = outFile && readFile ? readFile(outFile) : null;
+				const paneText = durable && durable.length > 0 ? durable : capturePane(workerPaneId);
 
 			// Build a file reader for readWorkerOutcome.
 			// We re-read prd/handoff fresh from disk via the injected functions.
@@ -378,7 +406,43 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				return { status: 'blocked', iterations, lastOutcome };
 			}
 
-			// PRD_COMPLETE sentinel (storyId === undefined): loop will call
+			// --- Incomplete: worker implemented the story but did not finalize ---
+				// (no prd flip / push, CAM-32 BUG 2). Re-run gates, then finalize.
+				if (outcome.kind === 'incomplete' && outcome.storyId !== undefined && runGates && finalizeStory) {
+					const gate = runGates();
+					if (!gate.ok) {
+						lastOutcome = {
+							kind: 'blocked',
+							storyId: outcome.storyId,
+							detail: `finalize aborted, gates failed for ${outcome.storyId}: ${gate.detail}`,
+						};
+						return { status: 'blocked', iterations, lastOutcome };
+					}
+					const fin = finalizeStory(outcome.storyId);
+					if (!fin.ok) {
+						lastOutcome = {
+							kind: 'blocked',
+							storyId: outcome.storyId,
+							detail: `finalize failed for ${outcome.storyId}: ${fin.detail}`,
+						};
+						return { status: 'blocked', iterations, lastOutcome };
+					}
+					lastOutcome = {
+						kind: 'pass',
+						storyId: outcome.storyId,
+						detail: `supervisor-finalized ${outcome.storyId} after worker truncation: ${fin.detail}`,
+					};
+					writeSessionMarker(outcome.storyId, uuid);
+					continue;
+				}
+
+				// Incomplete but no finalize capability (or no storyId): cannot
+				// complete the tail deterministically; stop for the operator.
+				if (outcome.kind === 'incomplete') {
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+
+				// PRD_COMPLETE sentinel (storyId === undefined): loop will call
 			// decideNextAction next iteration which will return 'complete'.
 			// Continue iterating so the state machine picks it up naturally.
 			continue;
