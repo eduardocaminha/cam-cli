@@ -1,24 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Include cache token fields in dashboard snapshotKey"
+    "id": "US-R2-001",
+    "title": "Deduplicate transcript usage lines before summing"
   },
   "branchName": "cam/CAM-21-dashboard-token-spend",
-  "timestamp": "2026-06-08T10:00:00Z",
+  "timestamp": "2026-06-08T12:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/dashboard.ts"
+    "src/transcript/usage.ts",
+    "test/transcript/usage.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 is done. snapshotKey now hashes all four token fields (tokensInput, tokensOutput, tokensCacheRead, tokensCacheCreation). This was the only FIXES_PENDING story from review round 1. All non-operator stories may now pass; orchestrator should run /cam-review.",
+  "nextStoryContext": "US-R2-001 is done. parseTranscriptUsage now deduplicates by (message.id, requestId) before summing, fixing the 1.4x-5x inflation from multi-block assistant turns. All known non-operator stories should now be passing; orchestrator should run /cam-review.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "version": "n/a",
-      "url": "",
-      "fetchedAt": "2026-06-08T10:00:00Z",
-      "status": "no_external_lib_touched",
-      "summary": "Single-file mechanical fix touching only src/commands/dashboard.ts. No external library exercised."
+      "lib": "Claude Code JSONL transcript format",
+      "version": "empirical",
+      "url": "~/.claude/projects/*/session.jsonl",
+      "fetchedAt": "2026-06-08T12:00:00Z",
+      "status": "fetch_failed",
+      "summary": "gilles.ai and ccusage.com not accessible via WebFetch. Field names (message.id, top-level requestId) verified empirically against a real 2178-line transcript from ~/.claude/projects/-Users-eduardo-Documents-Projects-cam-cli/. Inflation ratio 1.44x confirmed. Implementation matches the dedup strategy described in review round 2 notes."
     }
   ]
 }

@@ -23,7 +23,7 @@
         "bun test passes"
       ],
       "priority": 0,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Review round 2 finding (CRITICAL). Core correctness of the CAM-21 honest-numbers contract: the rendered row (renderTokensLine) is laid out correctly but the underlying totals are inflated, which is worse than omitting the row. Dedup strategy matches ccusage and claude-devtools (key by message.id + requestId, keep last usage per request). Sources: gille.ai/en/blog/claude-code-jsonl-logs-undercount-tokens, github.com/anthropics/claude-code/issues/5034, github.com/matt1398/claude-devtools/issues/74, ccusage.com/api/data-loader. Triaged to backlog/skip (do NOT implement here): the WARNING on shell-injection via genSessionId (run.ts:155, production uses randomUUID so the value is always clean hex) and the two SUGGESTIONS (.gitignore .claude/.cam-*, stories field absent from snapshotKey, both pre-existing/out-of-scope). Conventional commit: fix: US-R2-001 - dedupe transcript usage lines before summing."
     },

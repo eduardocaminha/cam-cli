@@ -14,6 +14,32 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Commits**: conventional commits required (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
 - **No em dashes** in persisted files (PRD notes, progress, docs): use colon, comma, parentheses, or period.
 - **Pure transcript parser pattern**: `parseTranscriptUsage` splits on `\n`, `JSON.parse` each trimmed line in a try/catch, checks `message?.usage` existence, accumulates with `toNumber()` guard (returns 0 for non-number). `formatTokens` uses `>= 1_000_000` / `>= 1_000` thresholds with `toFixed(1)M` / `Math.round/k` / raw. Module lives in `src/transcript/usage.ts`; tests under `test/transcript/usage.test.ts`.
+- **Transcript dedup (US-R2-001)**: Claude Code emits one JSONL line per content block per assistant turn (thinking, text, tool_use), all carrying identical `message.usage`. Must deduplicate before summing. Key: `(message.id, requestId)` where `message.id` is at `parsed.message.id` (string UUID) and `requestId` is at the top-level `parsed.requestId` (string, sometimes absent). Lines missing both fields get a unique `__fallback_N` key. Empirically verified on real transcripts: inflation ratio 1.44x in production session. Last-write-wins for each key (payloads are identical so no semantic difference).
+
+## [2026-06-08 12:00] - US-R2-001: Deduplicate transcript usage lines before summing
+
+### What was done
+- Extended `TranscriptLine` interface with `requestId?: string` and `message.id?: string`.
+- Replaced the naive accumulation loop in `parseTranscriptUsage` with a two-pass approach: first pass collects `Map<dedupKey, MessageUsage>` (last-write-wins), second pass sums the deduped map.
+- Dedup key: `"${message.id ?? ''}|${requestId ?? ''}"` when at least one field is present; unique `__fallback_N` key otherwise.
+- Added 4 new tests in `test/transcript/usage.test.ts`: dedup-same-key-counted-once, distinct-pairs-counted-independently, fallback-no-collision, and repeated-key assertion.
+- Empirically verified against a real 2178-line transcript: 829 lines with usage reduced to 577 unique keys (1.44x inflation fixed).
+
+### Files changed
+- src/transcript/usage.ts (modified, +30 lines net)
+- test/transcript/usage.test.ts (modified, +60 lines)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 528 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: Claude Code JSONL transcript format (internal), status: fetch_failed (gilles.ai and ccusage.com not accessible; field names verified empirically against real ~/.claude/projects transcripts)
+
+### Notes
+- `requestId` is absent on some older transcript lines (6/829 in the sampled file); `message.id` is always present. Using `(message.id, requestId|null)` as key is safe.
+- The 4 new dedup tests are standalone and do not depend on network or real transcripts.
+---
 
 ## [2026-06-08 01:00] - US-002: Capture orchestrator session id in cam run + transcript path resolver
 
