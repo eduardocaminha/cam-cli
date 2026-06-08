@@ -5,23 +5,23 @@
 1. Read the PRD at `prd.json` (in the same directory as this file).
 2. Read `handoff.json` (if it exists) for context from the previous story iteration.
 3. Read the progress log at `progress.txt` (check the `## Codebase Patterns` section first).
-4. Check you're on the correct branch from PRD `branchName`. If not, check it out or create from main.
+4. Check you are on the correct branch from PRD `branchName`. If not, check it out or create from main.
 5. Pick the **highest priority** user story where `passes: false` and `requires != "operator"`.
 6. Implement that single user story.
 7. Run quality checks (typecheck, lint, test).
 8. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`.
 9. Update the PRD to set `passes: true` for the completed story.
 10. Append your progress to `progress.txt`.
-11. Validate against official library docs (Step 5.5 in `.claude/commands/cam-next.md`): one targeted fetch against the lib the story touched.
-12. Write `handoff.json` for the next iteration (schema: `handoff.schema.json`) — include the Step 5.5 validation entries in `officialDocsValidated`.
+11. Validate against official library docs (Step 5.5 in the agent SYSTEM PROMPT): one targeted fetch against the lib the story touched.
+12. Write `handoff.json` for the next iteration (schema: `handoff.schema.json`). Include the Step 5.5 validation entries in `officialDocsValidated`.
 13. Push: `git push origin $(git branch --show-current)`.
 14. Print your status line: `CAM_IMPLEMENTER_STATUS=DONE story=US-XXX`.
 
 ## Stop Condition
 
-The cam-loop terminates when the orchestrator (`/cam-next`) detects that all non-operator stories have `passes: true` AND the review cycle is complete (`prd.review.lastVerdict === "CLEAN"` or `"MAX_ROUNDS_DEBT"`).
+The cam-loop terminates when the TS supervisor (`runSupervisor` in `src/supervisor/loop.ts`) detects that all non-operator stories have `passes: true` AND the review cycle is complete (`prd.review.lastVerdict === "CLEAN"` or `"MAX_ROUNDS_DEBT"`). The supervisor is driven by `cam next`, not by a stop-hook or `/cam-next` re-inject.
 
-Stories with `requires: "operator"` are **out-of-scope** for autonomous implementation — they are operator ceremonies (TUI keypress, real-API hit, screencap, etc.). The loop falls through to the next implementable story; the operator hand-executes the ceremony and flips `passes: true` manually.
+Stories with `requires: "operator"` are **out-of-scope** for autonomous implementation (operator ceremonies: TUI keypress, real-API hit, screencap, etc.). The loop falls through to the next implementable story; the operator hand-executes the ceremony and flips `passes: true` manually.
 
 ## Project Stack
 
@@ -39,11 +39,11 @@ Stories with `requires: "operator"` are **out-of-scope** for autonomous implemen
 Run these before committing. Fix failures before proceeding:
 1. **Typecheck**: `bun run typecheck` (= `bunx tsc --noEmit`). Must be zero errors. `vendor/` and `claude-code-harness/` are excluded from typecheck by design.
 2. **Tests**: `bun test` (Bun's built-in runner). Test files live under `test/`, mirroring source.
-3. **Vendor drift** (only when a story touches `vendor/` or `templates/`): `bun run embed-vendor:check` — fails if the embedded copy is stale; regenerate with `bun run embed-vendor`.
+3. **Vendor drift** (only when a story touches `vendor/` or `templates/`): `bun run embed-vendor:check`. Fails if the embedded copy is stale; regenerate with `bun run embed-vendor`.
 
 **Lint**: no standalone linter (ESLint/Biome/Prettier) is configured in this repo. The typecheck above is the static gate. Do not add a lint command unless a story explicitly introduces one.
 
-Do NOT use `--no-verify` to bypass pre-commit hooks. If a hook step is wrong, file a follow-up to fix it — never skip it for the current story.
+Do NOT use `--no-verify` to bypass pre-commit hooks. If a hook step is wrong, file a follow-up to fix it. Never skip it for the current story.
 
 ## Progress Report Format
 
@@ -81,8 +81,8 @@ The `## Codebase Patterns` block lives at the very top of `progress.txt`. Exampl
 ## Codebase Patterns
 
 - **Bun runtime**: always `Bun.spawn` / `Bun.$` / `Bun.file` over `node:child_process` / `node:fs`.
-- **Permission mode**: never register a `--permission-mode` CLI flag on any subcommand — enforced by `test/no-permission-mode-flag.test.ts`.
-- **noUncheckedIndexedAccess**: array indexing and regex capture groups are `T | undefined` — guard with `?? fallback` or a justified non-null assertion.
+- **Permission mode**: never register a `--permission-mode` CLI flag on any subcommand (enforced by `test/no-permission-mode-flag.test.ts`).
+- **noUncheckedIndexedAccess**: array indexing and regex capture groups are `T | undefined`. Guard with `?? fallback` or a justified non-null assertion.
 - **Ink screens**: success/failure is signalled by the glyph (✓ accent / ✗ destructive), never by divider color. Render and look at the real output; do not trust header comments (see `lessons.md` 2026-06-05).
 - **Tests**: `bun test` from repo root; test files live under `test/`, mirroring source. Inject fake reader/writer shapes instead of touching real stdin/stdout.
 - **Commits**: conventional commits required (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
@@ -101,4 +101,4 @@ Some PRDs span multiple repos. A PRD may declare a top-level `crossRepoLayout` b
 }
 ```
 
-Per-story routing is driven by the optional `repo` field on each `userStories[]` entry (default `"main-repo"`). When the implementer picks a story whose `repo` is not the default, it `cd`s into the corresponding path BEFORE reading the story's files or running `git` commands. The harness state files (`prd.json`, `progress.txt`, `handoff.json`) always live in the main repo — only the story's source edits move cwd.
+Per-story routing is driven by the optional `repo` field on each `userStories[]` entry (default `"main-repo"`). When the implementer picks a story whose `repo` is not the default, it `cd`s into the corresponding path BEFORE reading the story's files or running `git` commands. The harness state files (`prd.json`, `progress.txt`, `handoff.json`) always live in the main repo. Only the story's source edits move cwd.

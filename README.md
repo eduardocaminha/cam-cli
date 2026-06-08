@@ -235,8 +235,30 @@ test/                 bun:test suites
 
 ---
 
+## Architecture
+
+`cam next` drives a deterministic TypeScript supervisor (`src/supervisor/loop.ts`) that owns the full implement-review-complete cycle without relying on stop hooks or re-injection. The supervisor reuses a single worker pane across all stories:
+
+```
+cam next
+  └── runSupervisor()
+        ├── decideNextAction(prd)     -- implement | review | complete
+        ├── respawn-pane -k <pane>    -- kill old command, reuse pane id
+        │     claude -p --agent subagent-implementer "<task>"
+        ├── tmux wait-for <channel>   -- block until worker exits
+        ├── capture-pane -p           -- read CAM_IMPLEMENTER_STATUS sentinel
+        └── loop until: complete | blocked | max-iterations
+```
+
+Workers (implementer, reviewer) are real `claude -p` sessions invoked with `--agent <name>`. Each worker exits on its own; the supervisor unblocks via `tmux wait-for`. The old stop-hook driver (`vendor/cam-loop-stop-hook.sh` + `/cam-next` re-inject) is retired.
+
+The worker pane slot is established by `cam plan` and stored in `.claude/.cam-worker-pane`. Every subsequent `cam next` call reuses the same pane id with `respawn-pane -k`, keeping the session layout stable.
+
+---
+
 ## Recent changes
 
+- **Deterministic TS supervisor (CAM-22)**: `cam next` now calls `runSupervisor()` directly. Workers are real per-story `claude -p` sessions in a single reused tmux pane. The stop-hook re-inject loop driver is retired.
 - **Single per-project session**: `cam run` now creates one tmux session per
   project with a 3-pane layout (orchestrator + permanent dashboard + interactive
   menu). The orchestrator exit tears down the session automatically.
