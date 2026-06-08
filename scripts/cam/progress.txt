@@ -191,3 +191,7 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - 3 SUGGESTIONs triaged to skip/optional: (1) stale file-header docstring at usage.ts:1-10 still says "sums across all lines" while the detailed JSDoc below is correct — minor §7 doc drift, optional pre-ship polish; (2) isTranscriptLine only narrows object-non-null, not field types — pre-existing, benign (template coercion + toNumber collapse non-conforming values); (3) theoretical key collision if a message.id contained "|" — not real (Claude IDs are UUID / msg_/req_ base62).
 - All findings resolved or rated cosmetic. Ready for /cam-ship.
 ---
+
+## [2026-06-08 15:20] - Review round 4: CLEAN
+- Delta desde o round-3 CLEAN (fix de paridade do cam status idle + formato de setas no renderTokensLine) revisado pelo subagent-reviewer. Zero CRITICAL/WARNING; 2 sugestoes cosmeticas (fallback unicode das setas, stub de stdout no teste) skipadas. Build PASS (typecheck 0, 529 testes). Pronto pra /cam-ship.
+---
