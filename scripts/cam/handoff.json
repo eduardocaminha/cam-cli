@@ -1,22 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Deterministic worker result reader"
+    "id": "US-005",
+    "title": "Port Branch-decision matrix to pure TS"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-08T17:00:00Z",
+  "timestamp": "2026-06-08T18:00:00Z",
   "createdFiles": [
-    "src/supervisor/result.ts",
-    "test/supervisor/result.test.ts"
+    "src/supervisor/decide.ts",
+    "test/supervisor/decide.test.ts"
   ],
   "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "readWorkerOutcome({ prdPath, handoffPath, capturedPaneText, readFile }) lives in src/supervisor/result.ts. Returns { kind: 'pass' | 'fail' | 'blocked' | 'unknown', storyId: string | undefined, detail: string }. It is a pure function with no I/O: all file reading is injected via FileReader = (path: string) => string | null. Three-way cross-check (sentinel in pane text + handoff.json lastCompletedStory.id + prd.json passes:true) is the architectural invariant for a 'pass' outcome. The supervisor (US-006/US-007) can import this and call it after a worker pane finishes (after the tmux wait-for unblocks or times out) to determine what to do next.",
+  "nextStoryContext": "decideNextAction(prd: PrdSnapshot): SupervisorAction lives in src/supervisor/decide.ts. Returns implement (with storyId), review, complete, or blocked-no-implementable. Key invariant: blocked-no-implementable fires when operator-required stories are still passes=false even if all non-operator stories pass -- the autonomous loop cannot proceed until the operator does their ceremony. Cap row: roundsCompleted >= maxRounds (default 3) returns complete regardless of lastVerdict. US-006 (runSupervisor loop) imports this to sequence workers: call decideNextAction, if 'implement' mint uuid and respawn worker, if 'review' dispatch reviewer, if 'complete' return. The storyId from decideNextAction is advisory/logging only -- the worker self-selects, so the actual completed story id comes from handoff.json/sentinel after the worker exits.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story uses only JSON.parse, regex, and injected file callbacks. No external library dependencies."
+      "summary": "Story uses only pure TypeScript logic (array sort, Set lookup, number comparison). No external library dependencies."
     }
   ]
 }

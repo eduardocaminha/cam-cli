@@ -129,7 +129,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: new src/supervisor/decide.ts, test/supervisor/decide.test.ts. Source of truth for the matrix: .claude/commands/cam-next.md (Branch-decision section). Read existing prd.review shape from .claude/commands/cam-review.md so terminal-verdict detection (CLEAN / MAX_ROUNDS_DEBT) matches today's semantics."
     },

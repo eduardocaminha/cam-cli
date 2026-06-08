@@ -19,6 +19,32 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **openPaneInSession returns pane id (US-001)**: the function now uses `stdio: 'pipe'` and `-P -F #{pane_id}` to capture and return the stable pane id string (e.g. `%5`). All test fakes for split-window must handle `opts?.stdio === 'pipe'` and return a non-empty `stdout` buffer, or they will crash with `Cannot read property toString of undefined`.
 - **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
 
+## 2026-06-08 18:00 - US-005: Port Branch-decision matrix to pure TS
+
+### What was done
+- Created `src/supervisor/decide.ts` with `decideNextAction(prd): SupervisorAction`.
+- Returns one of: `{ kind: 'implement', storyId }`, `{ kind: 'review' }`, `{ kind: 'complete' }`, `{ kind: 'blocked-no-implementable' }`.
+- Mirrors cam-next.md matrix: implementable story with passes=false picked first (priority asc, id asc tie-break), then blocked-no-implementable if only operator stories remain, then review/complete based on review state.
+- Cap row: `roundsCompleted >= maxRounds` (default 3) returns complete regardless of lastVerdict.
+- Terminal verdicts: CLEAN and MAX_ROUNDS_DEBT both return complete.
+- Created `test/supervisor/decide.test.ts` with 23 tests covering all 4 outcome kinds, tie-breaking, operator-only, cap row, and implement-over-review priority.
+
+### Files changed
+- `src/supervisor/decide.ts` (new)
+- `test/supervisor/decide.test.ts` (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 607 pass
+
+### Step 5.5 docs validation
+- lib: none (pure TS, no external libs), status: no_external_lib_touched
+
+### Notes
+- `blocked-no-implementable` fires when operator-incomplete stories exist even if non-operator stories all pass; review/complete only fires when ALL stories (including operator ones) have passes=true. This is the semantically correct interpretation: operator-pending stories block autonomous loop progression.
+---
+
 ## 2026-06-08 17:00 - US-004: Deterministic worker result reader
 
 ### What was done
