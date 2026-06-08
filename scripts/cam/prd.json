@@ -124,7 +124,7 @@
         "Operator captures any drift (e.g. row truncated in the narrow pane, label alignment off, formatTokens edge cases) as a note in the handoff for a follow-up story; passes:true only after visual confirmation."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "This is the visual + real-boot ceremony stories US-001..004 cannot cover from unit tests alone (autonomous implementer cannot launch a real claude session and observe its transcript). Operator-only; the autonomous loop will skip this story (per scripts/cam/CLAUDE.md § Stop Condition: requires:operator stories are out-of-scope for autonomous implementation, the operator flips passes:true after the ceremony). No quality-gate ACs (typecheck/test) because there is no code to land in this story: the implementer ahead of it already shipped + verified static gates. Reference real wire numbers from the issue (cache_read 450k vs fresh input 22k) to validate the cached-honesty wording reads correctly with a cache-dominated total."
     }
