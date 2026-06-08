@@ -203,7 +203,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/stop.ts (performStop, runStop), src/commands/resume.ts (classifyResumeMode), test/stop.test.ts, test/resume.test.ts. Reuse parseStateFile from src/commands/status.ts as the single source for the state-file shape. PID liveness check pattern already exists in resume.ts, mirror it for the worker slot pane via tmux list-panes (-L cam socket)."
     },

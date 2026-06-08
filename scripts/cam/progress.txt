@@ -285,3 +285,65 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 ### Notes
 - The `attach-hint.test.ts` fake was the only collateral breakage: it returned bare `{ status: 0 }` without `stdout`, which crashed when `openPaneInSession` called `.stdout.toString()`. Pattern: any fake spawn for split-window/new-session must include `stdout: Buffer.from(...)` to avoid crashes on the return value.
 ---
+
+## 2026-06-08 22:00 - US-009: cam stop / cam resume target the supervisor
+
+### What was done
+- Updated `src/commands/stop.ts`:
+  - Added `KillFn` type and `killFn` + `workerPaneReader` injectable deps to `StopOptions`.
+  - Added `supervisorKilled` and `workerPaneKilled` fields to `StopReport`.
+  - `performStop` now reads the supervisor PID from the state file (via `parseStateFile`)
+    and sends SIGTERM before removing the state file.
+  - `performStop` reads the worker pane id from `.claude/.cam-worker-pane` and sends
+    `tmux respawn-pane -k -t <pane> echo stopped` to kill the worker command cleanly.
+    Attempted even when the session is not alive (race window protection).
+  - `runStop` prints supervisor/worker pane kill status lines.
+- Updated `src/commands/resume.ts`:
+  - Added `'live-supervisor'` and `'orphaned-worker'` to `ResumeMode`.
+  - Added `workerPaneAlive` to `ResumeReport`.
+  - Added `isWorkerPaneAlive(paneId, spawnFn)`: uses `tmux -L cam list-panes -a -F #{pane_id}`
+    to enumerate panes and checks membership.
+  - `classifyResumeMode` gains optional `workerPaneAlive` 7th parameter:
+    - PID alive → `live-supervisor` (was `respawn`).
+    - PID dead but pane alive → `orphaned-worker`.
+  - `buildResumeReport` reads worker pane marker and passes pane liveness to classifier.
+  - `runResume` handles `live-supervisor` (informs operator, exit 0) and
+    `orphaned-worker` (shows `cam next` with note that pane is allocated).
+  - `printSummary` shows `worker: pane alive/absent` row.
+  - Added `workerPaneReader` injectable dep to `ResumeOptions`.
+- Updated `test/stop.test.ts`:
+  - Added `KillFn` import and `respawnPaneSucceeds` to fake spawn handler.
+  - Added tests: supervisor PID kill (alive, no pid field, dead PID, no file),
+    worker pane kill (pane found, null pane, no session race window).
+- Updated `test/resume.test.ts`:
+  - Added `isWorkerPaneAlive` import; added `livePaneIds` to fake spawn handler.
+  - Added `isWorkerPaneAlive` unit tests (null, empty, found, not found, list-panes fails).
+  - Added US-009 classifier matrix tests (no-state, live-supervisor, orphan-pane,
+    fully-dead, noop wins, live-supervisor wins over orphaned-worker).
+  - Updated existing test: "heartbeat PID alive → respawn" renamed to
+    "supervisor PID alive → live-supervisor".
+
+### Files changed
+- `src/commands/stop.ts` (KillFn type, supervisorKilled/workerPaneKilled, performStop logic)
+- `src/commands/resume.ts` (new modes, isWorkerPaneAlive, buildResumeReport, runResume)
+- `test/stop.test.ts` (supervisor PID and worker pane kill tests)
+- `test/resume.test.ts` (classifier matrix, isWorkerPaneAlive tests, mode rename)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 653 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+- summary: US-009 uses only Node.js process.kill (built-in) and the existing tmux
+  socket pattern (validated in prior stories). No new npm packages.
+
+### Notes
+- isWorkerPaneAlive uses `list-panes -a` (all panes on socket) rather than targeting
+  a specific session, so the check works even if the session name is unknown to resume.
+- The `live-supervisor` mode replaces the old `respawn` for the "PID alive" branch.
+  Existing callers checking for `respawn` mode need updating (done in test file).
+- Worker pane kill is attempted even when the project session is dead to cover the
+  race where the pane outlives the has-session window.
+---
