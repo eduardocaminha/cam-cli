@@ -6,10 +6,10 @@
   "relatedDocs": [],
   "officialDocsConsulted": [],
   "review": {
-    "roundsCompleted": 2,
+    "roundsCompleted": 3,
     "maxRounds": 3,
-    "lastReviewSha": "1fdb653c235d8e3f8e2c07a7430cbaca208680f9",
-    "lastVerdict": "FIXES_PENDING"
+    "lastReviewSha": "0caba9e3203803216c2506d0e63b5fa2a32270c7",
+    "lastVerdict": "CLEAN"
   },
   "userStories": [
     {

@@ -185,3 +185,9 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - 2 SUGGESTIONs triaged to skip: .gitignore .claude/.cam-* (cosmetic), stories field absent from snapshotKey (pre-existing, out-of-scope, production path is Ink).
 - Build at review time: typecheck zero errors, bun test 525 pass / 0 fail.
 ---
+
+## [2026-06-08 11:21] - Review round 3 — CLEAN
+- US-R2-001 dedup fix re-reviewed (delta scope: src/transcript/usage.ts + test). Verdict CLEAN / APPROVE: no CRITICAL, no actionable WARNING. Dedup-by-(message.id, requestId) with last-wins overwrite and unique fallback key for lines missing both fields matches ccusage / claude-devtools convention; edge cases (same msgId diff reqId, diff msgId same reqId, both missing) all resolve correctly. Build at review time: typecheck zero errors, bun test 528 pass / 0 fail.
+- 3 SUGGESTIONs triaged to skip/optional: (1) stale file-header docstring at usage.ts:1-10 still says "sums across all lines" while the detailed JSDoc below is correct — minor §7 doc drift, optional pre-ship polish; (2) isTranscriptLine only narrows object-non-null, not field types — pre-existing, benign (template coercion + toNumber collapse non-conforming values); (3) theoretical key collision if a message.id contained "|" — not real (Claude IDs are UUID / msg_/req_ base62).
+- All findings resolved or rated cosmetic. Ready for /cam-ship.
+---
