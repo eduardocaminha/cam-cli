@@ -17,6 +17,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 
@@ -31,6 +32,7 @@ import {
 	type PrdShape,
 	type PrdStory,
 } from "./status.ts";
+import { orchestratorTranscriptPath, parseTranscriptUsage } from "../transcript/usage.ts";
 
 // --- Constants -------------------------------------------------------------
 
@@ -159,6 +161,16 @@ export interface DashboardData {
 	 * fixtures that hand-build `DashboardData` without it stay valid.
 	 */
 	stories?: PrdStory[];
+	/**
+	 * Token counts from the orchestrator transcript (US-003). All four fields
+	 * are optional: undefined means no session marker was found or the
+	 * transcript is unreadable. The renderer omits the row when tokensInput is
+	 * undefined. Cache fields are added here now so US-004's diff stays small.
+	 */
+	tokensInput?: number;
+	tokensOutput?: number;
+	tokensCacheRead?: number;
+	tokensCacheCreation?: number;
 }
 
 /**
@@ -316,12 +328,14 @@ export function installQuitHandlers(cleanup: () => void): void {
  * rather than throwing, because the dashboard is read-only and a render
  * failure mid-loop should NOT brick the operator's terminal.
  */
-export function readSnapshot(options: { cwd: string; nowMs: number }): DashboardData {
+export function readSnapshot(options: { cwd: string; nowMs: number; claudeDir?: string }): DashboardData {
 	const { cwd, nowMs } = options;
+	const claudeDir = options.claudeDir ?? (process.env["CLAUDE_CONFIG_DIR"] ?? join(homedir(), ".claude"));
 
 	const prd = readPrd(cwd);
 	const state = readState(cwd);
 	const recent = readRecentProgress(cwd);
+	const tokenUsage = readTranscriptTokens(cwd, claudeDir);
 
 	// Prefer prd.json's `branchName` (canonical for the loop) and fall back to
 	// `git branch --show-current` so the dashboard still labels itself when
@@ -340,6 +354,14 @@ export function readSnapshot(options: { cwd: string; nowMs: number }): Dashboard
 		idle: state === null,
 		recent,
 		stories: prd?.userStories ?? [],
+		...(tokenUsage !== null
+			? {
+					tokensInput: tokenUsage.input,
+					tokensOutput: tokenUsage.output,
+					tokensCacheRead: tokenUsage.cacheRead,
+					tokensCacheCreation: tokenUsage.cacheCreation,
+				}
+			: {}),
 	};
 
 	if (prd) {
@@ -395,6 +417,26 @@ function readState(cwd: string): LoopState | null {
 	try {
 		const body = readFileSync(path, "utf8");
 		return parseStateFile(body);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Best-effort read of the orchestrator transcript to sum token usage.
+ * Returns null on any miss (no marker / no transcript file / read error).
+ * Never throws — wraps all IO in try/catch.
+ */
+function readTranscriptTokens(
+	cwd: string,
+	claudeDir: string,
+): { input: number; output: number; cacheRead: number; cacheCreation: number } | null {
+	try {
+		const transcriptPath = orchestratorTranscriptPath(cwd, claudeDir);
+		if (transcriptPath === null) return null;
+		if (!existsSync(transcriptPath)) return null;
+		const body = readFileSync(transcriptPath, "utf8");
+		return parseTranscriptUsage(body);
 	} catch {
 		return null;
 	}
@@ -502,6 +544,8 @@ export interface RunDashboardOptions {
 	/** Receive the cleanup function before the first render — tests use it
 	 *  to assert the alt-screen lifecycle ran with try/finally. */
 	onMounted?: (handle: { cleanup: () => void }) => void;
+	/** Override the Claude config dir (default: CLAUDE_CONFIG_DIR env or ~/.claude). Tests inject a tmpdir. */
+	claudeDir?: string;
 }
 
 /**
@@ -516,6 +560,7 @@ export async function runDashboard(options: RunDashboardOptions = {}): Promise<n
 	const writer: DashboardWriter = options.writer ?? process.stdout;
 	const reader: DashboardReader = options.reader ?? process.stdin;
 	const now = options.now ?? (() => Date.now());
+	const claudeDir = options.claudeDir;
 
 	// Enter alt-screen + raw mode. The lifecycle MUST be wrapped in
 	// try/finally so a panic during the render loop doesn't strand the
@@ -553,7 +598,7 @@ export async function runDashboard(options: RunDashboardOptions = {}): Promise<n
 	try {
 		let ticks = 0;
 		while (!stopped) {
-			const data = readSnapshot({ cwd, nowMs: now() });
+			const data = readSnapshot({ cwd, nowMs: now(), ...(claudeDir !== undefined ? { claudeDir } : {}) });
 			const frame = composeDashboard(data, intervalMs, firstRender);
 			const key = snapshotKey(data, firstRender);
 			if (firstRender || key !== lastFrameKey) {
@@ -654,6 +699,8 @@ function snapshotKey(data: DashboardData, firstRender: boolean): string {
 		data.paused ? 1 : 0,
 		data.idle ? 1 : 0,
 		data.recent.join("|"),
+		data.tokensInput ?? -1,
+		data.tokensOutput ?? -1,
 	].join("§");
 }
 
@@ -675,6 +722,8 @@ export interface RunDashboardInkOptions {
 	cwd?: string;
 	pollIntervalMs?: number;
 	now?: () => number;
+	/** Override the Claude config dir (default: CLAUDE_CONFIG_DIR env or ~/.claude). Tests inject a tmpdir. */
+	claudeDir?: string;
 }
 
 /**
@@ -687,6 +736,7 @@ export async function runDashboardInk(options: RunDashboardInkOptions = {}): Pro
 	const cwd = options.cwd ?? process.cwd();
 	const intervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 	const now = options.now ?? (() => Date.now());
+	const claudeDir = options.claudeDir;
 
 	// Dynamic imports so the legacy non-Ink path (used by tests) does not
 	// drag React/Ink into the cold-start cost when the dashboard is not
@@ -717,7 +767,7 @@ export async function runDashboardInk(options: RunDashboardInkOptions = {}): Pro
 	let exitCode = 0;
 	try {
 		const view = createElement(DashboardApp, {
-			readSnapshot: () => readSnapshot({ cwd, nowMs: now() }),
+			readSnapshot: () => readSnapshot({ cwd, nowMs: now(), ...(claudeDir !== undefined ? { claudeDir } : {}) }),
 			pollIntervalMs: intervalMs,
 		});
 		const instance = render(view);
