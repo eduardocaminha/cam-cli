@@ -1,15 +1,18 @@
 /**
- * Pure transcript-usage parser and orchestrator transcript path resolver.
+ * Pure transcript-usage parser and transcript path resolvers.
  *
  * Parses a Claude Code transcript JSONL and sums token usage across all lines
  * that carry message.usage (assistant and sidechain lines).
  * Malformed / non-JSON lines and lines without message.usage are skipped silently.
  *
- * Also exports orchestratorTranscriptPath to resolve the JSONL path for the
- * running orchestrator session (US-002).
+ * Exports:
+ *   orchestratorTranscriptPath  - resolve the JSONL path for the orchestrator session (US-002).
+ *   transcriptPathForSession    - generalized resolver given an explicit uuid (US-002).
+ *   writeWorkerSessionMarker    - persist a per-story worker session uuid (US-002).
+ *   readWorkerSessionMarker     - read back a per-story worker session uuid (US-002).
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface TranscriptUsage {
@@ -150,14 +153,29 @@ export function renderTokensLine(t: TranscriptUsage): string {
 }
 
 /**
- * Resolves the JSONL transcript path for the orchestrator session.
+ * Resolves the JSONL transcript path for a given session uuid.
  *
- * Reads the session id from <cwd>/.claude/.cam-orch-session (written by
- * cam run on every new session) and returns:
+ * Returns:
  *   <claudeDir>/projects/<encode(cwd)>/<uuid>.jsonl
  *
  * where encode replaces every character not matching /[a-zA-Z0-9]/ with '-'
  * (verified empirically against ~/.claude/projects).
+ *
+ * @param uuid      The session UUID (e.g. from a .cam-worker-<US>.session marker).
+ * @param cwd       The project root directory.
+ * @param claudeDir The Claude config root (honor CLAUDE_CONFIG_DIR; callers
+ *                  typically pass process.env.CLAUDE_CONFIG_DIR ?? join(os.homedir(), '.claude')).
+ */
+export function transcriptPathForSession(uuid: string, cwd: string, claudeDir: string): string {
+	const encoded = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+	return join(claudeDir, 'projects', encoded, `${uuid}.jsonl`);
+}
+
+/**
+ * Resolves the JSONL transcript path for the orchestrator session.
+ *
+ * Thin wrapper around transcriptPathForSession: reads the session id from
+ * <cwd>/.claude/.cam-orch-session (written by cam run on every new session).
  *
  * Returns null when the marker file is absent, unreadable, or empty.
  *
@@ -176,6 +194,45 @@ export function orchestratorTranscriptPath(cwd: string, claudeDir: string): stri
 	}
 	if (uuid === '') return null;
 
-	const encoded = cwd.replace(/[^a-zA-Z0-9]/g, '-');
-	return join(claudeDir, 'projects', encoded, `${uuid}.jsonl`);
+	return transcriptPathForSession(uuid, cwd, claudeDir);
+}
+
+/** Filename prefix for per-story worker session markers. */
+const WORKER_SESSION_MARKER_PREFIX = '.cam-worker-';
+
+/**
+ * Persists a per-story worker session uuid to
+ *   <claudeDir>/<WORKER_SESSION_MARKER_PREFIX><storyId>.session
+ *
+ * Creates the directory if it does not exist. Overwrites any existing marker.
+ *
+ * @param claudeDir  The .claude directory inside the project root (e.g. /project/.claude).
+ * @param storyId    The story identifier (e.g. "US-007").
+ * @param uuid       The Claude Code session UUID for this story's worker run.
+ */
+export function writeWorkerSessionMarker(claudeDir: string, storyId: string, uuid: string): void {
+	mkdirSync(claudeDir, { recursive: true });
+	const markerPath = join(claudeDir, `${WORKER_SESSION_MARKER_PREFIX}${storyId}.session`);
+	writeFileSync(markerPath, uuid, 'utf8');
+}
+
+/**
+ * Reads back the per-story worker session uuid from
+ *   <claudeDir>/<WORKER_SESSION_MARKER_PREFIX><storyId>.session
+ *
+ * Returns null when the marker is absent, unreadable, or empty.
+ *
+ * @param claudeDir  The .claude directory inside the project root.
+ * @param storyId    The story identifier (e.g. "US-007").
+ */
+export function readWorkerSessionMarker(claudeDir: string, storyId: string): string | null {
+	const markerPath = join(claudeDir, `${WORKER_SESSION_MARKER_PREFIX}${storyId}.session`);
+	let raw: string;
+	try {
+		raw = readFileSync(markerPath, 'utf8');
+	} catch {
+		return null;
+	}
+	const uuid = raw.trim();
+	return uuid === '' ? null : uuid;
 }
