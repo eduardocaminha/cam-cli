@@ -27,7 +27,9 @@ interface MessageUsage {
 }
 
 interface TranscriptLine {
+	requestId?: string;
 	message?: {
+		id?: string;
 		usage?: MessageUsage;
 	};
 }
@@ -41,16 +43,21 @@ function toNumber(val: unknown): number {
 }
 
 /**
- * Sums token usage across every line in the JSONL whose parsed JSON has
- * message.usage. Lines without message.usage or malformed JSON are skipped.
+ * Sums token usage across every unique request in the JSONL.
+ *
+ * Real Claude Code transcripts write multiple JSONL lines per assistant turn
+ * (one per content block: thinking, text, tool_use), each carrying an identical
+ * message.usage object. Naive summation inflates totals 2x to 5x.
+ *
+ * Dedup strategy: key each usage-bearing line by (message.id, requestId).
+ * Keep only the LAST usage payload per key, then sum the deduped map.
+ * Lines that carry message.usage but lack both message.id and requestId
+ * (degenerate case) are assigned a unique fallback key so they are counted once.
  */
 export function parseTranscriptUsage(jsonl: string): TranscriptUsage {
-	const result: TranscriptUsage = {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheCreation: 0,
-	};
+	// Map from dedup-key -> last usage seen for that key.
+	const seen = new Map<string, MessageUsage>();
+	let fallbackCounter = 0;
 
 	const lines = jsonl.split("\n");
 	for (const line of lines) {
@@ -70,6 +77,29 @@ export function parseTranscriptUsage(jsonl: string): TranscriptUsage {
 		const usage = parsed.message?.usage;
 		if (usage === undefined || usage === null) continue;
 
+		const msgId = parsed.message?.id ?? null;
+		const reqId = parsed.requestId ?? null;
+
+		let key: string;
+		if (msgId !== null || reqId !== null) {
+			key = `${msgId ?? ""}|${reqId ?? ""}`;
+		} else {
+			// No dedup fields present: count this line once (unique fallback key).
+			key = `__fallback_${fallbackCounter++}`;
+		}
+
+		// Always overwrite: last line wins (identical payloads, so no material
+		// difference — this just matches ccusage / claude-devtools convention).
+		seen.set(key, usage);
+	}
+
+	const result: TranscriptUsage = {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheCreation: 0,
+	};
+	for (const usage of seen.values()) {
 		result.input += toNumber(usage.input_tokens);
 		result.output += toNumber(usage.output_tokens);
 		result.cacheRead += toNumber(usage.cache_read_input_tokens);

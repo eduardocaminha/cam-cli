@@ -94,6 +94,76 @@ describe("parseTranscriptUsage", () => {
 		expect(result.cacheRead).toBe(0);
 		expect(result.cacheCreation).toBe(0);
 	});
+
+	test("deduplicates lines sharing the same (message.id, requestId) — counts each request once not N times", () => {
+		// Simulate a real transcript: 3 content-block lines for one assistant turn,
+		// all carrying identical usage (the inflation pattern described in US-R2-001).
+		const sharedUsage = {
+			input_tokens: 1000,
+			output_tokens: 200,
+			cache_read_input_tokens: 500,
+			cache_creation_input_tokens: 100,
+		};
+		const duplicateLine = JSON.stringify({
+			type: "assistant",
+			requestId: "req_abc123",
+			message: {
+				id: "msg_xyz789",
+				usage: sharedUsage,
+			},
+		});
+		// Same (message.id, requestId) repeated 3 times (thinking, text, tool_use blocks).
+		const jsonl = [duplicateLine, duplicateLine, duplicateLine].join("\n");
+
+		const result = parseTranscriptUsage(jsonl);
+
+		// Must be counted ONCE, not 3x.
+		expect(result.input).toBe(1000);
+		expect(result.output).toBe(200);
+		expect(result.cacheRead).toBe(500);
+		expect(result.cacheCreation).toBe(100);
+	});
+
+	test("counts distinct (message.id, requestId) pairs independently", () => {
+		// Two different requests in the same transcript — both must be counted.
+		const req1 = JSON.stringify({
+			type: "assistant",
+			requestId: "req_111",
+			message: { id: "msg_aaa", usage: { input_tokens: 300, output_tokens: 50 } },
+		});
+		const req2 = JSON.stringify({
+			type: "assistant",
+			requestId: "req_222",
+			message: { id: "msg_bbb", usage: { input_tokens: 700, output_tokens: 150 } },
+		});
+		// req1 repeated twice, req2 once.
+		const jsonl = [req1, req1, req2].join("\n");
+
+		const result = parseTranscriptUsage(jsonl);
+
+		// req1 deduped to 1 + req2 = 2 distinct requests.
+		expect(result.input).toBe(1000);
+		expect(result.output).toBe(200);
+	});
+
+	test("lines without message.id and requestId are each counted once (fallback)", () => {
+		// Lines missing both dedup fields should not collide with each other.
+		const line1 = JSON.stringify({
+			type: "assistant",
+			message: { usage: { input_tokens: 100, output_tokens: 10 } },
+		});
+		const line2 = JSON.stringify({
+			type: "assistant",
+			message: { usage: { input_tokens: 200, output_tokens: 20 } },
+		});
+		const jsonl = [line1, line2].join("\n");
+
+		const result = parseTranscriptUsage(jsonl);
+
+		// Both lines should be counted (no false collision).
+		expect(result.input).toBe(300);
+		expect(result.output).toBe(30);
+	});
 });
 
 // ---------------------------------------------------------------------------
