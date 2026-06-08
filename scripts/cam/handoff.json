@@ -1,27 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-009",
-    "title": "cam stop / cam resume target the supervisor"
+    "id": "US-010",
+    "title": "Docs: rewrite cam-next.md and update CLAUDE.md/README/CHANGELOG"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-08T22:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-08T23:00:00Z",
+  "createdFiles": [
+    "CHANGELOG.md"
+  ],
   "modifiedFiles": [
-    "src/commands/stop.ts",
-    "src/commands/resume.ts",
-    "test/stop.test.ts",
-    "test/resume.test.ts"
+    ".claude/commands/cam-next.md",
+    "scripts/cam/CLAUDE.md",
+    "README.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "ResumeMode now has 'live-supervisor' (was 'respawn' for PID-alive case) and 'orphaned-worker' (pane alive but no supervisor). isWorkerPaneAlive uses tmux list-panes -a -F #{pane_id} on the cam socket. StopReport has supervisorKilled (SIGTERM sent to pid from state file) and workerPaneKilled (respawn-pane -k to .cam-worker-pane pane). Any future story that checks for resume mode 'respawn' should note that 'live-supervisor' is the new name for the PID-alive branch.",
+  "nextStoryContext": "US-010 was a pure docs story. cam-next.md now accurately describes the deterministic TS supervisor (no stop-hook, no Task subagent dispatch). CHANGELOG.md is created. All em-dashes removed from touched files.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "version": "n/a",
       "url": "n/a",
-      "fetchedAt": "2026-06-08T22:00:00Z",
+      "fetchedAt": "2026-06-08T23:00:00Z",
       "status": "no_external_lib_touched",
-      "summary": "US-009 uses only Node.js process.kill (built-in) and the existing tmux socket pattern. No new npm packages introduced."
+      "summary": "US-010 is a pure documentation rewrite. No external libraries were introduced or modified."
     }
   ]
 }

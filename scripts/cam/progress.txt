@@ -347,3 +347,41 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - Worker pane kill is attempted even when the project session is dead to cover the
   race where the pane outlives the has-session window.
 ---
+
+## 2026-06-08 - US-010: Docs: rewrite cam-next.md and update CLAUDE.md/README/CHANGELOG
+
+### What was done
+- Rewrote `.claude/commands/cam-next.md` to describe the deterministic TS supervisor.
+  Removed all references to stop-hook driver, Task subagent dispatch, and /cam-next
+  re-inject. Added Architecture diagram, Worker entrypoint section, Worker exit contract
+  table (CAM_IMPLEMENTER_STATUS sentinel), and updated Branch decision matrix to reflect
+  the supervisor loop (not the COMPLETE promise / stop hook).
+- Updated `scripts/cam/CLAUDE.md` Stop Condition paragraph to reference runSupervisor
+  instead of /cam-next. Fixed all em-dashes throughout the file (project convention).
+- Updated `README.md`: added Architecture section describing the worker-slot + supervisor
+  model, updated Recent changes to lead with CAM-22 deterministic supervisor entry.
+- Created `CHANGELOG.md` with Unreleased entry: "Retired the stop-hook loop driver;
+  workers are now real per-story claude sessions in a single reused tmux pane (CAM-22,
+  closes CAM-29)."
+- No TypeScript or test changes; this is a pure docs story.
+
+### Files changed
+- `.claude/commands/cam-next.md` (rewrite)
+- `scripts/cam/CLAUDE.md` (stop condition + em-dash cleanup)
+- `README.md` (Architecture section + Recent changes)
+- `CHANGELOG.md` (new file)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 653 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+- summary: US-010 is a pure docs rewrite. No external libraries touched.
+
+### Notes
+- cam-next.md no longer describes a COMPLETE promise or stop-hook sentinel. The
+  CAM_IMPLEMENTER_STATUS sentinel is still the worker exit contract, consumed by
+  src/supervisor/result.ts, not by a stop-hook script.
+---

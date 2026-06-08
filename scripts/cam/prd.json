@@ -222,7 +222,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-next.md, scripts/cam/CLAUDE.md, README.md, CHANGELOG.md. Keep the CAM_IMPLEMENTER_STATUS=DONE sentinel protocol described in cam-next.md (it is still the worker exit contract, just consumed by the TS supervisor now). Convention reminder (from ~/.claude/CLAUDE.md): no em-dash in persisted .md files, substitute with colon/comma/parentheses/period."
     },
