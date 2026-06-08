@@ -132,3 +132,22 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - 3 SUGGESTIONs triaged to skip: formatTokens(999_999)='1000k' discontinuity (test-accepted), agentCmd argv-form (controlled values, reviewer said do not act), renderTokensLine separator consistency (stylistic).
 - Build at review time: typecheck zero errors, bun test 525 pass / 0 fail.
 ---
+
+## [2026-06-08 10:00] - US-R1-001: Include cache token fields in dashboard snapshotKey
+
+### What was done
+- Added `data.tokensCacheRead ?? -1` and `data.tokensCacheCreation ?? -1` to the array in `snapshotKey()` (src/commands/dashboard.ts:715-716), so all four token fields contribute to the snapshot identity and the legacy non-Ink loop redraws when only cache totals change.
+
+### Files changed
+- src/commands/dashboard.ts (modified, +2 lines)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 525 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: none (single-file mechanical fix, no external lib touched), status: no_external_lib_touched
+
+### Notes
+- Sentinel value -1 (vs undefined/null) was already the convention used for tokensInput/tokensOutput in the same array; cache fields follow the same pattern.
+---

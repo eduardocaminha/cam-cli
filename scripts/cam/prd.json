@@ -22,7 +22,7 @@
         "bun test passes"
       ],
       "priority": 0,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Review round 1 finding (WARNING). Mechanical, single-file. The displayed tokens line (renderTokensLine) uses in = input + cacheCreation + cacheRead and cached = cacheRead, so cache fields are load-bearing for the rendered string; the legacy loop must redraw when they change. Production path is Ink (re-renders via setState every poll) so impact is bounded to the non-Ink loop, but the AC is literal. Conventional commit: fix: US-R1-001 - include cache token fields in dashboard snapshotKey."
     },
