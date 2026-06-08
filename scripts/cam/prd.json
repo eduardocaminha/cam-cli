@@ -16,7 +16,7 @@
       "url": "https://code.claude.com/docs/en/cli-reference",
       "version": "current (fetched 2026-06-08)",
       "fetchedAt": "2026-06-08",
-      "summary": "Confirmed --agent/--agents/-p/--output-format json/--session-id/--permission-mode/--append-system-prompt. KEY: custom slash commands do NOT run in headless -p mode, worker must use --agent <name>, not /cam-implement.",
+      "summary": "Confirmed --agent/--agents/-p/--output-format json/--session-id/--permission-mode/--append-system-prompt. Workers launch via --agent <name> because the implementer/reviewer are AGENTS, not slash commands (there is no /cam-implement command; commands are issue/next/plan/prune/review/ship). Custom .claude/commands DO run under -p per docs, so that is not the reason. Use --output-format text (default) for workers so the CAM_*_STATUS sentinel stays a raw scrapeable line; json would wrap it in an envelope.",
       "status": "ok"
     },
     {
@@ -81,7 +81,7 @@
       "description": "As the supervisor, I need a pure argv builder that produces the bash -c command launching a headless implementer claude session and signalling completion via tmux wait-for -S.",
       "acceptanceCriteria": [
         "Add buildImplementerWorkerArgv({ uuid, taskPrompt, permissionMode, channel, agentName }) returning the shell string passed to respawn-pane.",
-        "Shape: claude -p --permission-mode <mode> --session-id <uuid> --output-format json --agent <agentName> \"<task>\" ; tmux -L cam wait-for -S <channel>.",
+        "Shape: claude -p --permission-mode <mode> --session-id <uuid> --output-format text --agent <agentName> \"<task>\" ; tmux -L cam wait-for -S <channel>.",
         "Default agentName = 'subagent-implementer' (matches .claude/agents/subagent-implementer.md frontmatter name).",
         "Task prompt and channel are shell-escaped (no string interpolation injection).",
         "Pure function; no spawn here.",
@@ -92,15 +92,15 @@
       "priority": 3,
       "passes": false,
       "requires": null,
-      "notes": "Files: new src/supervisor/worker-argv.ts (or src/commands/next-supervisor.ts module), test/supervisor/worker-argv.test.ts. KEY constraint from Step-5 docs: custom slash commands do NOT run under -p; this is why we use --agent <name>, not /cam-implement. Mirror the chained 'tmux ... kill-session' pattern in src/commands/run.ts:155 for the trailing wait-for -S. Do not introduce a --permission-mode CLI flag on any cam subcommand (see test/no-permission-mode-flag.test.ts), the mode is passed through programmatically."
+      "notes": "Files: new src/supervisor/worker-argv.ts (or src/commands/next-supervisor.ts module), test/supervisor/worker-argv.test.ts. We use --agent <name> because the implementer is an AGENT (.claude/agents/subagent-implementer.md), not a slash command: there is NO /cam-implement command. Custom .claude/commands DO run under -p per official docs, so that is not the reason. Mirror the chained 'tmux ... kill-session' pattern in src/commands/run.ts:155 for the trailing wait-for -S. Do not introduce a --permission-mode CLI flag on any cam subcommand (see test/no-permission-mode-flag.test.ts), the mode is passed through programmatically."
     },
     {
       "id": "US-004",
       "title": "Deterministic worker result reader",
       "description": "As the supervisor, I need to read the outcome of a finished worker from prd.json + handoff.json + the implementer's status sentinel, returning a typed outcome enum, never trusting process exit alone.",
       "acceptanceCriteria": [
-        "Add readWorkerOutcome({ prdPath, handoffPath, storyId, capturedPaneText }) returning { kind: 'pass' | 'fail' | 'blocked' | 'unknown', detail }.",
-        "'pass' requires the target story's passes flipped to true AND handoff.json lastCompletedStory.id === storyId.",
+        "Add readWorkerOutcome({ prdPath, handoffPath, capturedPaneText }) returning { kind: 'pass' | 'fail' | 'blocked' | 'unknown', storyId, detail }, where storyId is the ACTUAL story the worker completed (the agent SELF-SELECTS, so the supervisor does NOT pass an expected id in), derived from handoff.json lastCompletedStory.id and the CAM_IMPLEMENTER_STATUS=DONE story=US-XXX sentinel.",
+        "'pass' requires the completed story's passes flipped to true AND handoff.json lastCompletedStory.id matching the sentinel's story=US-XXX (cross-checked, never a pre-supplied id).",
         "'blocked' detected by BLOCKED_OPERATOR_REQUIRED or BLOCKED_* tokens in the captured pane text OR an explicit sentinel from the implementer.",
         "Extracts the CAM_IMPLEMENTER_STATUS=DONE story=US-XXX sentinel via simple regex over captured pane text (do not depend on jq, runtime is Bun).",
         "Unknown only when no signals at all (used to trigger a fallback timeout/crash path in US-011).",
@@ -139,7 +139,7 @@
       "description": "As the supervisor, I need a single runSupervisor() function that picks the next story, generates a uuid + session marker, respawns the worker in the slot, waits, confirms via result reader, and repeats until decideNextAction returns complete or blocked.",
       "acceptanceCriteria": [
         "Add runSupervisor({ spawn, waitFor, capturePane, readPrd, writePrd, readHandoff, clock, maxIterations }) in src/supervisor/loop.ts.",
-        "Per iteration: call decideNextAction -> if implement, mint uuid, writeWorkerSessionMarker, build implementer argv (US-003), respawn into the worker slot pane (US-001), wait on the channel, then call readWorkerOutcome (US-004); if review, mint uuid + dispatch review worker (deferred to US-008 wiring but the loop branch exists).",
+        "Per iteration: call decideNextAction -> if implement, mint uuid, build implementer argv (US-003), respawn into the worker slot pane (US-001), wait on the channel, call readWorkerOutcome (US-004) which returns the ACTUAL completed story, THEN writeWorkerSessionMarker(actualStoryId, uuid) so the per-story marker is keyed to what the worker really did (never a pre-guessed id); if review, mint uuid + dispatch review worker (deferred to US-008 wiring but the loop branch exists).",
         "Hard max-iterations cap (default 50) prevents runaway loops; cap is configurable.",
         "All side effects (spawn / wait / capture / read / write / clock) injected so the loop is fully unit-testable with fakes.",
         "Returns { status: 'complete' | 'blocked' | 'max-iterations', iterations, lastOutcome }.",
@@ -150,7 +150,7 @@
       "priority": 6,
       "passes": false,
       "requires": null,
-      "notes": "Files: new src/supervisor/loop.ts, test/supervisor/loop.test.ts. Do NOT call Bun.spawn directly here, accept an injected spawner so unit tests do not shell out. The worker slot pane id comes from readWorkerPaneMarker (US-001). Review dispatch is a placeholder calling an injected reviewDispatch fn, fleshed out in US-008."
+      "notes": "Files: new src/supervisor/loop.ts, test/supervisor/loop.test.ts. Do NOT call Bun.spawn directly here, accept an injected spawner so unit tests do not shell out. The worker slot pane id comes from readWorkerPaneMarker (US-001). Review dispatch is a placeholder calling an injected reviewDispatch fn, fleshed out in US-008. ANTI-COUPLING (review fix 2026-06-08): the subagent-implementer agent SELF-SELECTS its story, so the supervisor must NOT bind a story up front. decideNextAction's storyId is advisory (decides implement-vs-review-vs-complete and logging only); the worker is the source of truth for WHICH story, and the supervisor attributes uuid/marker/tokens to the actual completed story from handoff.json/sentinel. Removes the two-independent-selectors mismatch WITHOUT modifying the proven agent."
     },
     {
       "id": "US-007",
@@ -177,7 +177,7 @@
       "title": "Review worker dispatch (autonomous headless reviewer)",
       "description": "As the supervisor, when all implementable stories pass, I need to dispatch a headless reviewer claude session, parse its <review> verdict, and update prd.review so the loop terminates correctly.",
       "acceptanceCriteria": [
-        "Add buildReviewerWorkerArgv({ uuid, channel, agentName='subagent-reviewer' }) mirroring US-003 shape (claude -p --agent subagent-reviewer --output-format json ...).",
+        "Add buildReviewerWorkerArgv({ uuid, channel, agentName='subagent-reviewer' }) mirroring US-003 shape (claude -p --agent subagent-reviewer --output-format text ...; text not json, same sentinel-scrape reason as US-003).",
         "Add parseReviewVerdict(capturedPaneText) returning { verdict: 'CLEAN' | 'FIXES_PENDING', findingsCount: number, newStories: Array<{ id, title }> } per the ACTUAL <review> grammar in .claude/commands/cam-review.md: the reviewer emits ONLY <review>CLEAN</review> or <review>FIXES_PENDING:N</review>. 'MAX_ROUNDS_DEBT' is NOT a parsed verdict; the supervisor derives it when roundsCompleted >= maxRounds.",
         "Supervisor's review branch (US-006) writes prd.review.lastVerdict, increments prd.review.roundsCompleted, and appends any new US-RX-NNN stories with passes=false.",
         "Supervisor treats CLEAN as terminal and FIXES_PENDING as 'loop back to implementer for the new US-RX stories'; once roundsCompleted >= maxRounds the supervisor sets lastVerdict='MAX_ROUNDS_DEBT' (terminal).",
@@ -212,7 +212,7 @@
       "title": "Docs: rewrite cam-next.md and update CLAUDE.md/README/CHANGELOG",
       "description": "As a future reader of this codebase, I need the canonical docs to describe the supervisor + reused-slot model and explicitly note the stop-hook driver is retired, so no one re-introduces the old pattern.",
       "acceptanceCriteria": [
-        ".claude/commands/cam-next.md rewritten to describe the deterministic supervisor: no Task subagent dispatch, no slash command in headless mode; documents --agent <name> as the worker entrypoint.",
+        ".claude/commands/cam-next.md rewritten to describe the deterministic supervisor: no Task subagent dispatch; documents --agent <name> as the worker entrypoint (the implementer/reviewer are agents, not slash commands; there is no /cam-implement command).",
         "Branch-decision matrix in cam-next.md still authoritative (matches US-005 implementation).",
         "scripts/cam/CLAUDE.md updated: agent task list reflects the new model (no /cam-next re-inject reference).",
         "README.md updated: 'Architecture' section describes the worker-slot + supervisor; removes any mention of the stop-hook re-inject as a current feature.",
@@ -260,14 +260,14 @@
       "priority": 12,
       "passes": false,
       "requires": null,
-      "notes": "Files: src/supervisor/loop.ts (extend), src/supervisor/result.ts (extend sentinel parsers for reviewer/<review>), test/supervisor/loop.test.ts. Keep argv builders pure (extend US-003 to accept interactive: boolean -> omit -p, omit --output-format json). Use capture-pane -p -S -N to bound the buffer scan (man page confirmed -S/-N args). Reference: .claude/commands/cam-review.md for the verdict grammar."
+      "notes": "Files: src/supervisor/loop.ts (extend), src/supervisor/result.ts (extend sentinel parsers for reviewer/<review>), test/supervisor/loop.test.ts. Keep argv builders pure (extend US-003 to accept interactive: boolean -> omit -p and the --output-format flag entirely; US-003 autonomous uses --output-format text, interactive uses neither). Use capture-pane -p -S -N to bound the buffer scan (man page confirmed -S/-N args). Reference: .claude/commands/cam-review.md for the verdict grammar."
     },
     {
       "id": "US-013",
       "title": "Structured per-story observability events",
       "description": "As an operator diagnosing a loop, I need structured JSON events for each worker lifecycle step (start, end, result, tokens, uuid) appended to a log so I can replay what happened.",
       "acceptanceCriteria": [
-        "Define WorkerEvent type: { ts, storyId, uuid, kind: 'worker-start' | 'worker-end' | 'result' | 'tokens', detail }.",
+        "Define WorkerEvent type: { ts, storyId, uuid, kind: 'worker-start' | 'worker-end' | 'result' | 'tokens', detail }. The 'result' event detail is RICH enough to be the canonical per-story factual record (so it can subsume progress.txt's per-story prose): { outcome, filesChanged, gates: { typecheck, tests }, docsValidated }. The durable Codebase Patterns prose is a SEPARATE concern, kept out of this log.",
         "Supervisor appends one JSON-line per event to .claude/cam-worker-events.jsonl.",
         "Logger is injected (default: append to file via Bun.file) so tests use an in-memory collector.",
         "'tokens' event reads per-story transcript via transcriptPathForSession (US-002) at worker end and records inputTokens/outputTokens/cacheReadTokens.",
@@ -278,7 +278,7 @@
       "priority": 13,
       "passes": false,
       "requires": null,
-      "notes": "Files: new src/supervisor/events.ts, test/supervisor/events.test.ts, integrate in src/supervisor/loop.ts. Reuse parseTranscriptUsage from src/transcript/usage.ts. The event log is consumed by US-014 (dashboard tokens) and the runbook (US-017)."
+      "notes": "Files: new src/supervisor/events.ts, test/supervisor/events.test.ts, integrate in src/supervisor/loop.ts. Reuse parseTranscriptUsage from src/transcript/usage.ts. The event log is consumed by US-014 (dashboard tokens) and the runbook (US-017). Designed as the canonical per-story factual record so a follow-up (CAM-31) can retire the freeform progress.txt per-story log; the durable Codebase Patterns block stays separate (prose)."
     },
     {
       "id": "US-014",
