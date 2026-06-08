@@ -1,27 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Capture orchestrator session id in cam run + transcript path resolver"
+    "id": "US-003",
+    "title": "Surface orchestrator tokens in the dashboard"
   },
   "branchName": "cam/CAM-21-dashboard-token-spend",
-  "timestamp": "2026-06-08T01:00:00Z",
+  "timestamp": "2026-06-08T02:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/run.ts",
-    "src/transcript/usage.ts",
-    "test/run.test.ts",
-    "test/transcript/usage.test.ts"
+    "src/commands/dashboard.ts",
+    "src/ui/Dashboard.tsx",
+    "test/dashboard.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 needs to wire orchestratorTranscriptPath into the dashboard or status renderer. The resolver is now available in src/transcript/usage.ts. Key callsite contract: caller resolves claudeDir as (process.env.CLAUDE_CONFIG_DIR ?? join(os.homedir(), '.claude')) before passing to orchestratorTranscriptPath. The marker file lives at <cwd>/.claude/.cam-orch-session and is written fresh only on new sessions (not re-attach). parseTranscriptUsage + formatTokens are in the same module.",
+  "nextStoryContext": "US-004 adds the cached token breakdown to Dashboard.tsx (show cache hit vs fresh totals). The four cache fields (tokensCacheRead, tokensCacheCreation) are already present in DashboardData from US-003. The tokens row currently shows total input volume (input + cacheCreation + cacheRead). US-004 will split this into a fresh vs cached display. Key callsite: DashboardData is assembled in readSnapshot (dashboard.ts), rendered in SummaryPanel (Dashboard.tsx). The claudeDir injection pattern is established and tested.",
   "officialDocsValidated": [
     {
-      "lib": "claude-cli --session-id",
-      "version": "current",
-      "url": "claude --help (local binary)",
-      "fetchedAt": "2026-06-08T01:00:00Z",
-      "status": "ok",
-      "summary": "claude --help confirms '--session-id <uuid>  Use a specific session ID for the conversation'. Flag placement (after bypassPermissions, before the prompt) matches the implementation."
+      "lib": "node:fs",
+      "version": "built-in",
+      "url": "https://nodejs.org/api/fs.html",
+      "fetchedAt": "2026-06-08T02:00:00Z",
+      "status": "no_external_lib_touched",
+      "summary": "Story touches only node:fs built-ins and our own src/transcript/usage.ts module. No external library to validate."
     }
   ]
 }

@@ -63,3 +63,31 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 ### Notes
 - noUncheckedIndexedAccess: used runtime shape checks (isTranscriptLine guard) and toNumber() helper to safely extract optional number fields from parsed JSON.
 ---
+
+## [2026-06-08 02:00] - US-003: Surface orchestrator tokens in the dashboard
+
+### What was done
+- `DashboardData` gains four optional token fields: `tokensInput?`, `tokensOutput?`, `tokensCacheRead?`, `tokensCacheCreation?`.
+- `readSnapshot` now accepts `claudeDir?` (defaults to `CLAUDE_CONFIG_DIR ?? ~/.claude`), calls `readTranscriptTokens` (new private helper), and populates token fields when the marker + JSONL are found. Never throws.
+- `readTranscriptTokens` wraps `orchestratorTranscriptPath` + `existsSync` + `readFileSync` + `parseTranscriptUsage` in a single try/catch; returns null on any miss.
+- `snapshotKey` now includes `tokensInput` and `tokensOutput` so the non-Ink render loop redraws when tokens change.
+- `RunDashboardOptions` and `RunDashboardInkOptions` both gain `claudeDir?` and plumb it through to `readSnapshot`.
+- `Dashboard.tsx` imports `formatTokens` and renders a `tokens` SummaryRow (label "tokens") after `since` and before `branch`; the row is omitted when `tokensInput` is undefined.
+- Two new tests in `test/dashboard.test.ts`: (a) fixture with marker file + transcript JSONL, asserts all four token fields; (b) missing-marker path, asserts fields are undefined and no throw.
+
+### Files changed
+- src/commands/dashboard.ts (modified, +70 lines)
+- src/ui/Dashboard.tsx (modified, +14 lines)
+- test/dashboard.test.ts (modified, +65 lines)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 515 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: none (node:fs built-ins, own transcript/usage module), status: no_external_lib_touched
+
+### Notes
+- The tokens row uses total input volume: `tokensInput + tokensCacheCreation + tokensCacheRead` (per AC), not just the non-cached portion. US-004 adds the cached breakdown.
+- claudeDir injection pattern: `options.claudeDir ?? (process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'))` resolves in readSnapshot, consistent with how US-002 documented the contract.
+---
