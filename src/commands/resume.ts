@@ -74,6 +74,7 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
 
 import { parseStateFile, resolvePrdPath, type LoopState, type PrdShape } from './status.ts';
+import { readWorkerPaneMarker } from '../tmux/session.ts';
 import {
 	accent,
 	chalk,
@@ -114,7 +115,9 @@ export const HARD_KILL_AGE_MS = 24 * 60 * 60 * 1000;
  */
 export type ResumeMode =
 	| 'noop' // Mode 4: retry-monitor PID alive, just re-spawn `cam next`
-	| 'respawn' // Mode 1+2: state file present, no live PID, recent activity
+	| 'live-supervisor' // Mode 1: supervisor PID is alive (already running)
+	| 'respawn' // Mode 2: state file present, PID dead, recent activity
+	| 'orphaned-worker' // Mode 2b: no supervisor PID but worker slot pane is alive
 	| 'prompt' // Mode 3: needs operator [Y/n/reset]
 	| 'success' // PRD complete; auto-clean state file + exit 0
 	| 'idle' // No state file, no in-flight loop — `cam next` from scratch
@@ -128,6 +131,8 @@ export interface ResumeReport {
 	prdComplete: boolean;
 	pidAlive: boolean;
 	retryPidAlive: boolean;
+	/** Whether the worker slot pane (%N) was alive at classification time. */
+	workerPaneAlive: boolean;
 	lastCommitAgeMs?: number;
 	cleanedStateFile: boolean;
 	notes: string[]; // human-readable diagnostics for the printer
@@ -243,6 +248,26 @@ export function isRetryMonitorAlive(): boolean {
 	return isRetryPidAlive(pid);
 }
 
+/**
+ * Check whether a specific tmux pane id is currently alive.
+ *
+ * Uses `tmux -L cam list-panes -a -F '#{pane_id}'` to enumerate all panes on
+ * the cam socket and checks whether the given pane id appears in the output.
+ * Returns `false` when tmux is unavailable, the socket is missing, or the pane
+ * id is falsy.
+ */
+export function isWorkerPaneAlive(paneId: string | null, spawnFn: SpawnSyncFn): boolean {
+	if (!paneId || paneId.length === 0) return false;
+	const result = spawnFn(
+		'tmux',
+		['-L', 'cam', 'list-panes', '-a', '-F', '#{pane_id}'],
+		{ encoding: 'utf8' },
+	);
+	if (result.status !== 0) return false;
+	const lines = result.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+	return lines.includes(paneId);
+}
+
 // --- Mode classification ---------------------------------------------------
 
 export interface ClassifyInput {
@@ -254,20 +279,15 @@ export interface ClassifyInput {
 
 /**
  * Pure classifier — no I/O of its own; reads from already-loaded snapshots so
- * tests can drive each branch deterministically. Encapsulates the 4-mode
- * decision tree from the acceptance criteria:
+ * tests can drive each branch deterministically. Encapsulates the decision tree:
  *
  *   if PRD complete                               → success (auto-clean)
  *   else if no state file                         → idle (fresh `cam next`)
  *   else if retry-monitor PID alive               → noop  (Mode 4)
- *   else if heartbeat PID alive                   → respawn (Mode 1: typed mid-loop)
+ *   else if supervisor PID alive                  → live-supervisor (already running)
+ *   else if worker slot pane alive (no sup PID)   → orphaned-worker (relaunch supervisor)
  *   else if last commit > 24h old (or null)       → prompt (Mode 3: hard-kill orphan)
  *   else                                          → respawn (Mode 2: recent crash)
- *
- * The "PID alive but operator typed mid-loop" branch (the spec's Mode 1)
- * collapses into the same `respawn` action because the user-facing behavior
- * is identical: re-spawn `cam next`, the plugin handles the rest. We keep
- * the diagnostic string distinct so the printer can explain what happened.
  */
 export function classifyResumeMode(
 	state: LoopState | null,
@@ -276,6 +296,7 @@ export function classifyResumeMode(
 	pidAlive: boolean,
 	retryMonitorAlive: boolean,
 	now: Date,
+	workerPaneAlive?: boolean,
 ): { mode: ResumeMode; reason: string } {
 	if (isPrdComplete(prd)) {
 		return {
@@ -297,8 +318,15 @@ export function classifyResumeMode(
 	}
 	if (pidAlive) {
 		return {
-			mode: 'respawn',
-			reason: 'heartbeat PID alive but spawn was requested — re-attaching to the loop',
+			mode: 'live-supervisor',
+			reason: 'supervisor PID is alive — loop is already running',
+		};
+	}
+	// Supervisor PID dead or absent. Check worker slot pane liveness.
+	if (workerPaneAlive) {
+		return {
+			mode: 'orphaned-worker',
+			reason: 'supervisor PID dead but worker slot pane is alive — relaunching supervisor',
 		};
 	}
 	const ageMs =
@@ -486,7 +514,7 @@ export interface ResumeOptions {
 	cwd?: string;
 	/** Override "now" for tests. */
 	now?: () => Date;
-	/** Inject `spawnSync` for git lookups. Default: real `spawnSync`. */
+	/** Inject `spawnSync` for git lookups and tmux pane checks. Default: real `spawnSync`. */
 	spawnFn?: SpawnSyncFn;
 	/** Inject `process.kill`. Default: `process.kill`. */
 	killFn?: KillFn;
@@ -496,6 +524,11 @@ export interface ResumeOptions {
 	 * touching the real `~/.cam/retry.pid` on the host machine.
 	 */
 	retryMonitorFn?: () => boolean;
+	/**
+	 * Inject the worker-pane-id reader for tests.
+	 * Default: `readWorkerPaneMarker(claudeDir)`.
+	 */
+	workerPaneReader?: (claudeDir: string) => string | null;
 	/** Inject the prompt function. Default: blocking `prompt(...)` global. */
 	prompt?: PromptFn;
 	/** Skip auto-detection; honor an explicit reset mode. */
@@ -518,20 +551,27 @@ export function buildResumeReport(options: ResumeOptions = {}): ResumeReport {
 	const spawnFn = options.spawnFn ?? ((cmd, args, opts) => spawnSync(cmd, args, opts));
 	const killFn = options.killFn ?? ((pid: number, signal: 0) => process.kill(pid, signal));
 	const retryMonitorFn = options.retryMonitorFn ?? isRetryMonitorAlive;
+	const workerPaneReaderFn = options.workerPaneReader ?? readWorkerPaneMarker;
 
+	const claudeDir = join(cwd, '.claude');
 	const state = readStateFile(cwd);
 	const prd = readPrd(cwd);
 	const lastCommitMs = readLastCommitTimestamp(cwd, spawnFn);
 	const pidAlive = isPidAlive(state?.pid, killFn);
 	const retryPidAliveResult = retryMonitorFn();
+	const workerPaneId = workerPaneReaderFn(claudeDir);
+	const workerPaneAliveResult = isWorkerPaneAlive(workerPaneId, spawnFn);
 
-	const decision = classifyResumeMode(state, prd, lastCommitMs, pidAlive, retryPidAliveResult, now());
+	const decision = classifyResumeMode(
+		state, prd, lastCommitMs, pidAlive, retryPidAliveResult, now(), workerPaneAliveResult,
+	);
 	const report: ResumeReport = {
 		mode: decision.mode,
 		stateFilePresent: state !== null,
 		prdComplete: isPrdComplete(prd),
 		pidAlive,
 		retryPidAlive: retryPidAliveResult,
+		workerPaneAlive: workerPaneAliveResult,
 		cleanedStateFile: false,
 		notes: [decision.reason],
 	};
@@ -594,6 +634,19 @@ export async function runResume(options: ResumeOptions = {}): Promise<number> {
 		case 'noop':
 			emitSectionHeading('Next');
 			emitMutedHint('Nothing to do — the retry-monitor will respawn `cam next` when the rate-limit window ends');
+			emitTrailingBlank();
+			return 0;
+		case 'live-supervisor':
+			emitSectionHeading('Status');
+			emitOk('Supervisor is already running (PID alive) — no action needed');
+			emitTrailingBlank();
+			return 0;
+		case 'orphaned-worker':
+			// Worker pane is alive but supervisor PID is dead. Relaunch the
+			// supervisor (via cam next) without re-running cam plan — the worker
+			// pane marker is still intact so runNext picks it up directly.
+			emitSectionHeading('Next');
+			emitEntry('cam next', 'relaunch supervisor (worker pane already allocated)');
 			emitTrailingBlank();
 			return 0;
 		case 'respawn':
@@ -770,6 +823,10 @@ function printSummary(report: ResumeReport): void {
 			case 'idle':
 			case 'noop':
 				return muted(report.mode);
+			case 'live-supervisor':
+				return accent(report.mode);
+			case 'orphaned-worker':
+				return warning(report.mode);
 			default:
 				return report.mode;
 		}
@@ -780,6 +837,9 @@ function printSummary(report: ResumeReport): void {
 	process.stdout.write(`    ${padKey('pid')}${report.pidAlive ? accent('alive') : muted('dead/absent')}\n`);
 	process.stdout.write(
 		`    ${padKey('retry')}${report.retryPidAlive ? accent('retry-monitor alive') : muted('not running')}\n`,
+	);
+	process.stdout.write(
+		`    ${padKey('worker')}${report.workerPaneAlive ? accent('pane alive') : muted('pane absent')}\n`,
 	);
 	if (typeof report.lastCommitAgeMs === 'number') {
 		const hours = Math.floor(report.lastCommitAgeMs / (60 * 60 * 1000));
