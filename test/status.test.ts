@@ -401,6 +401,54 @@ describe('runStatus', () => {
 		}
 	});
 
+	test('idle path renders the tokens row when marker + transcript are present (US-004 parity)', () => {
+		const base = mkdtempSync(join(tmpdir(), 'cam-status-run-idle-tokens-'));
+		try {
+			const cwd = join(base, 'project');
+			mkdirSync(join(cwd, '.claude'), { recursive: true });
+			// No cam-loop.local.md, so runStatus takes the idle branch.
+			const uuid = 'cafebabe-aaaa-bbbb-cccc-dddddddddddd';
+			writeFileSync(join(cwd, '.claude', '.cam-orch-session'), uuid, 'utf8');
+			const claudeDir = join(base, 'claude-dir');
+			const encoded = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+			mkdirSync(join(claudeDir, 'projects', encoded), { recursive: true });
+			writeFileSync(
+				join(claudeDir, 'projects', encoded, `${uuid}.jsonl`),
+				JSON.stringify({
+					message: {
+						usage: {
+							input_tokens: 1000,
+							output_tokens: 400,
+							cache_read_input_tokens: 200,
+							cache_creation_input_tokens: 50,
+						},
+					},
+				}),
+				'utf8',
+			);
+
+			const original = process.stdout.write.bind(process.stdout);
+			const captured: string[] = [];
+			process.stdout.write = ((chunk: string | Uint8Array) => {
+				captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+				return true;
+			}) as typeof process.stdout.write;
+			try {
+				const code = runStatus({ cwd, claudeDir });
+				expect(code).toBe(0);
+			} finally {
+				process.stdout.write = original;
+			}
+			const out = captured.join('');
+			expect(out).toMatch(/idle/);
+			// in = 1000 + 50 + 200 = 1250 -> "1k"; cached = 200; out = 400.
+			expect(out).toMatch(/tokens/);
+			expect(out).toMatch(/1k in \(200 cached\) · 400 out/);
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
+
 	test('exits 0 on active and writes story + iter lines to stdout', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-status-run-active-'));
 		try {

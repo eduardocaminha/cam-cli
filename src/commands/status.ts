@@ -419,6 +419,9 @@ export function runStatus(options: StatusOptions = {}): number {
 				`${renderEntry('last', `${muted(report.lastCommit.sha)} ${report.lastCommit.subject}`)}\n`,
 			);
 		}
+		if (report.tokens !== undefined) {
+			process.stdout.write(`${renderEntry('tokens', renderTokensLine(report.tokens))}\n`);
+		}
 		emitSectionHeading('Next');
 		emitEntry('cam next', 'start the autonomous loop');
 		emitEntry('cam plan', 'plan an issue and create a PRD');
