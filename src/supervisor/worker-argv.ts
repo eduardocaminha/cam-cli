@@ -27,8 +27,11 @@ export interface ImplementerWorkerArgvOptions {
 	taskPrompt: string;
 	/** Claude permission mode (e.g. 'bypassPermissions', 'acceptEdits'). */
 	permissionMode: string;
-	/** tmux wait-for channel name; will be shell-escaped. */
-	channel: string;
+	/**
+	 * tmux wait-for channel name; will be shell-escaped.
+	 * Required for autonomous (exit) mode. Not used when interactive: true.
+	 */
+	channel?: string;
 	/**
 	 * Agent name matching the .claude/agents/<name>.md frontmatter.
 	 * Defaults to 'subagent-implementer'.
@@ -41,6 +44,13 @@ export interface ImplementerWorkerArgvOptions {
 	 * to the pane (legacy behaviour).
 	 */
 	outFile?: string;
+	/**
+	 * When true, launch claude in interactive mode: omit -p and --output-format
+	 * flags, and omit the tmux wait-for chain. The supervisor will poll
+	 * capture-pane for the sentinel instead of waiting for a channel signal.
+	 * Defaults to false (autonomous headless mode).
+	 */
+	interactive?: boolean;
 }
 
 /** Default agent name; matches .claude/agents/subagent-implementer.md. */
@@ -62,14 +72,22 @@ function shellEscape(s: string): string {
 }
 
 /**
- * Build the shell string passed to `respawn-pane` to launch a headless
- * implementer worker.
+ * Build the shell string passed to `respawn-pane` to launch an implementer worker.
  *
- * Returns a shell string with the shape:
+ * Autonomous (default, interactive: false) returns:
  *
  *   claude -p --permission-mode <mode> --session-id <uuid> \
  *     --output-format text --agent <agentName> '<task>' \
  *     ; tmux -L cam wait-for -S '<channel>'
+ *
+ * Interactive mode (interactive: true) returns:
+ *
+ *   claude --permission-mode <mode> --session-id <uuid> \
+ *     --agent <agentName> '<task>'
+ *
+ * In interactive mode, -p and --output-format are omitted so the process stays
+ * open for operator interaction. The tmux wait-for chain is also omitted; the
+ * supervisor detects completion by polling capture-pane for the sentinel text.
  *
  * Both `<task>` and `<channel>` are single-quote-escaped. The other
  * interpolated values (uuid, permissionMode, agentName) are controlled by
@@ -79,12 +97,24 @@ function shellEscape(s: string): string {
 export function buildImplementerWorkerArgv(opts: ImplementerWorkerArgvOptions): string {
 	const agentName = opts.agentName ?? DEFAULT_IMPLEMENTER_AGENT;
 	const escapedPrompt = shellEscape(opts.taskPrompt);
-	const escapedChannel = shellEscape(opts.channel);
 	// When outFile is set, tee stdout+stderr to a durable log so the supervisor
 	// can read the worker result even after the pane dies (CAM-32 BUG 1). The
 	// pipe binds tighter than `;`, so it is (claude ... | tee file) ; (tmux ...).
 	const teePart = opts.outFile ? ` 2>&1 | tee ${shellEscape(opts.outFile)}` : '';
 
+	if (opts.interactive) {
+		// Interactive mode: no -p, no --output-format, no wait-for chain.
+		return (
+			`claude` +
+			` --permission-mode ${opts.permissionMode}` +
+			` --session-id ${opts.uuid}` +
+			` --agent ${agentName}` +
+			` ${escapedPrompt}` +
+			teePart
+		);
+	}
+
+	const escapedChannel = shellEscape(opts.channel ?? '');
 	return (
 		`claude -p` +
 		` --permission-mode ${opts.permissionMode}` +

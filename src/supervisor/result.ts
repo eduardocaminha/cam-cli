@@ -145,6 +145,51 @@ function storyPassesInPrd(prd: PrdJson, storyId: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Sentinel polling helper (US-012)
+// ---------------------------------------------------------------------------
+
+/** Which sentinel source was matched when polling the pane. */
+export type AnySentinelSource = 'implementer' | 'reviewer' | 'review-tag';
+
+/** Result of parseAnySentinel. */
+export interface AnySentinelMatch {
+	/** Which signal was found. */
+	source: AnySentinelSource;
+	/** Raw matched text. */
+	raw: string;
+}
+
+/**
+ * Scan captured pane text for ANY worker completion sentinel.
+ * Used by the sentinel-polling path in loop.ts to decide when to stop polling.
+ *
+ * Detects (in order):
+ *   - CAM_IMPLEMENTER_STATUS=<VALUE> [story=<ID>]
+ *   - CAM_REVIEWER_STATUS=<VALUE>
+ *   - <review>CLEAN</review> or <review>FIXES_PENDING:N</review>
+ *
+ * Returns the first match found, or null if none present.
+ */
+export function parseAnySentinel(paneText: string): AnySentinelMatch | null {
+	const implMatch = paneText.match(/CAM_IMPLEMENTER_STATUS=\S+/);
+	if (implMatch) {
+		return { source: 'implementer', raw: implMatch[0] ?? '' };
+	}
+
+	const reviewerMatch = paneText.match(/CAM_REVIEWER_STATUS=\S+/);
+	if (reviewerMatch) {
+		return { source: 'reviewer', raw: reviewerMatch[0] ?? '' };
+	}
+
+	const reviewTagMatch = paneText.match(/<review>(CLEAN|FIXES_PENDING:\d+)<\/review>/);
+	if (reviewTagMatch) {
+		return { source: 'review-tag', raw: reviewTagMatch[0] ?? '' };
+	}
+
+	return null;
+}
+
+// ---------------------------------------------------------------------------
 // Exported function
 // ---------------------------------------------------------------------------
 

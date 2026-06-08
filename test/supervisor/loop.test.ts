@@ -16,7 +16,7 @@
 //  11. PRD_COMPLETE sentinel (outcome.storyId undefined) -> continue, next iter complete.
 
 import { describe, expect, test, jest, beforeEach } from 'bun:test';
-import { runSupervisor, MAX_ITERATIONS, DEFAULT_PER_WORKER_TIMEOUT_MS } from '../../src/supervisor/loop.ts';
+import { runSupervisor, MAX_ITERATIONS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
 	SpawnFn,
@@ -794,6 +794,159 @@ describe('runSupervisor', () => {
 		expect(result.status).toBe('max-iterations');
 		expect(result.iterations).toBe(1);
 		expect(result.lastOutcome?.detail).toBe('pane-died-pre-result');
+	});
+
+	// ---------------------------------------------------------------------------
+	// US-012: Sentinel polling mode (detectCompletionBy: 'sentinel')
+	// ---------------------------------------------------------------------------
+
+	test('sentinel mode: sentinel appears on 2nd poll -> detected, outcome pass', async () => {
+		// Iter 1: sentinel polling finds sentinel on 2nd capturePane call.
+		// capturePane call 1: empty (no sentinel) -> check timeout (nowMs always 0, perWorkerTimeoutMs 99999 -> no timeout)
+		// capturePane call 2: DONE sentinel -> pollOutcome = 'sentinel' -> outcome pass.
+		// Iter 2 (review or complete decision): complete.
+
+		const prd_incomplete = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+
+		let prdCallCount = 0;
+		let captureCount = 0;
+		const sleepCalls: number[] = [];
+
+		const opts = makeBaseOpts({
+			implementerMode: 'sentinel',
+			pollIntervalMs: 0,
+			sleepFn: (ms) => { sleepCalls.push(ms); },
+			nowMs: () => 0, // time never advances -> no timeout
+			perWorkerTimeoutMs: 99_999,
+			readPrd: () => {
+				prdCallCount++;
+				// call 1: iter1 top -> decideNextAction (implement)
+				// call 2: outcome check (passes:true confirms done)
+				// call 3: iter2 top -> complete
+				if (prdCallCount <= 1) return prd_incomplete;
+				return prd_done;
+			},
+			capturePane: (_paneId) => {
+				captureCount++;
+				// First capturePane call: polling attempt 1 (no sentinel)
+				// Second: polling attempt 2 (sentinel found)
+				// Third: full pane read after sentinel detected
+				if (captureCount <= 1) return '';
+				return donePane('US-001');
+			},
+			readHandoff: () => makeHandoff('US-001'),
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		expect(result.lastOutcome?.kind).toBe('pass');
+		expect(result.lastOutcome?.storyId).toBe('US-001');
+		// sleepFn called at least twice (once per poll attempt)
+		expect(sleepCalls.length).toBeGreaterThanOrEqual(2);
+	});
+
+	test('sentinel mode: sentinel never appears -> timeout-blocked, loop continues', async () => {
+		// Iter 1: polling times out (nowMs=0, perWorkerTimeoutMs=0 -> immediate timeout).
+		// Iter 2: decideNextAction -> complete (prd is all done after timeout).
+		const prd_incomplete = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+
+		let prdCallCount = 0;
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			implementerMode: 'sentinel',
+			pollIntervalMs: 0,
+			sleepFn: (_ms) => {},
+			nowMs: () => 0, // elapsed = 0 - 0 = 0 >= 0 -> immediate timeout
+			perWorkerTimeoutMs: 0,
+			readPrd: () => {
+				prdCallCount++;
+				// call 1: iter1 top -> implement
+				// call 2: iter2 top -> complete (prd flipped externally)
+				if (prdCallCount <= 1) return prd_incomplete;
+				return prd_done;
+			},
+			capturePane: (_paneId) => '', // never returns sentinel
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1); // 1 timeout iteration, then complete
+		// The timeout path sends the kill command
+		const timeoutKill = spawnCalls.find((a) => a.includes('echo timeout'));
+		expect(timeoutKill).toBeDefined();
+	});
+
+	test('sentinel mode: pane dies during polling -> blocked detail=pane-died-pre-result, loop continues', async () => {
+		// Iter 1: pane dies on first isPaneAlive check -> pane-died, continue.
+		// Iter 2: decideNextAction -> complete (prd all done after pane died).
+		const prd_incomplete = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+
+		let prdCallCount = 0;
+		let isPaneAliveCallCount = 0;
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			implementerMode: 'sentinel',
+			pollIntervalMs: 0,
+			sleepFn: (_ms) => {},
+			nowMs: () => 0,
+			perWorkerTimeoutMs: 99_999,
+			readPrd: () => {
+				prdCallCount++;
+				if (prdCallCount <= 1) return prd_incomplete;
+				return prd_done;
+			},
+			capturePane: (_paneId) => '', // never reached (pane dies first)
+			isPaneAlive: (_paneId) => {
+				isPaneAliveCallCount++;
+				return false; // pane is dead on first check
+			},
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1); // 1 pane-died iteration, then complete
+		// No kill command sent (pane already dead)
+		const timeoutKill = spawnCalls.find((a) => a.includes('echo timeout'));
+		expect(timeoutKill).toBeUndefined();
+		// Only one respawn-pane call (the initial one)
+		const respawnCalls = spawnCalls.filter((a) => a.includes('respawn-pane'));
+		expect(respawnCalls.length).toBe(1);
+	});
+
+	test('DEFAULT_POLL_INTERVAL_MS is 5 seconds', () => {
+		expect(DEFAULT_POLL_INTERVAL_MS).toBe(5_000);
 	});
 
 	test('spawn is called once per implement iteration', async () => {

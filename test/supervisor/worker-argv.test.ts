@@ -168,4 +168,77 @@ describe('buildImplementerWorkerArgv', () => {
 		expect(teeIdx).toBeGreaterThan(result.indexOf('claude'));
 		expect(waitIdx).toBeGreaterThan(teeIdx);
 	});
+
+	// -------------------------------------------------------------------------
+	// US-012: Interactive mode (no -p, no --output-format, no wait-for chain)
+	// -------------------------------------------------------------------------
+
+	test('interactive mode omits -p flag', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			interactive: true,
+		});
+		expect(result).not.toContain('claude -p');
+	});
+
+	test('interactive mode omits --output-format flag', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			interactive: true,
+		});
+		expect(result).not.toContain('--output-format');
+	});
+
+	test('interactive mode omits the tmux wait-for chain', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			interactive: true,
+		});
+		expect(result).not.toContain('wait-for');
+		expect(result).not.toContain('tmux');
+	});
+
+	test('interactive mode retains --permission-mode, --session-id, --agent, and prompt', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			interactive: true,
+		});
+		expect(result).toContain(`--permission-mode ${SAMPLE_MODE}`);
+		expect(result).toContain(`--session-id ${SAMPLE_UUID}`);
+		expect(result).toContain(`--agent ${DEFAULT_IMPLEMENTER_AGENT}`);
+		expect(result).toContain(SAMPLE_PROMPT);
+	});
+
+	test('interactive mode starts with "claude " (no -p)', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			interactive: true,
+		});
+		expect(result.startsWith('claude ')).toBe(true);
+		expect(result).not.toMatch(/^claude -p/);
+	});
+
+	test('interactive mode with outFile still tees output', () => {
+		const outFile = '/proj/.claude/.cam-worker-out-interactive.log';
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			outFile,
+			interactive: true,
+		});
+		expect(result).toContain(`2>&1 | tee '${outFile}'`);
+		// No wait-for after the tee in interactive mode
+		expect(result).not.toContain('wait-for');
+	});
 });

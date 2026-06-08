@@ -23,7 +23,7 @@
 
 import { decideNextAction } from './decide.ts';
 import type { PrdSnapshot } from './decide.ts';
-import { readWorkerOutcome } from './result.ts';
+import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
 
@@ -191,6 +191,30 @@ export interface RunSupervisorOptions {
 	finalizeStory?: (storyId: string) => { ok: boolean; detail: string };
 	/** Hard max iterations cap. Default: MAX_ITERATIONS (50). */
 	maxIterations?: number;
+	/**
+	 * Completion detection mode for implement-branch workers.
+	 * 'exit': wait for tmux wait-for channel signal (autonomous headless workers, default).
+	 * 'sentinel': poll capture-pane for a CAM_*_STATUS or <review> sentinel
+	 *   (interactive workers that do not exit on their own).
+	 */
+	implementerMode?: 'exit' | 'sentinel';
+	/**
+	 * Polling interval in milliseconds for sentinel detection mode.
+	 * Only relevant when implementerMode === 'sentinel'.
+	 * Default: DEFAULT_POLL_INTERVAL_MS (5 seconds).
+	 */
+	pollIntervalMs?: number;
+	/**
+	 * Sleep between polling ticks. Injected so tests can use a no-op and avoid
+	 * real delays. In production, defaults to Bun.sleepSync (synchronous).
+	 * Only called when implementerMode === 'sentinel'.
+	 */
+	sleepFn?: (ms: number) => void;
+	/**
+	 * Return current time in milliseconds. Injected for deterministic tests.
+	 * Defaults to Date.now. Used for elapsed-time tracking in sentinel polling.
+	 */
+	nowMs?: () => number;
 }
 
 /** Terminal status returned by runSupervisor. */
@@ -215,6 +239,9 @@ export const MAX_ITERATIONS = 50;
 
 /** Default per-worker timeout in milliseconds (30 minutes). */
 export const DEFAULT_PER_WORKER_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** Default sentinel polling interval in milliseconds (5 seconds). */
+export const DEFAULT_POLL_INTERVAL_MS = 5_000;
 
 // ---------------------------------------------------------------------------
 // Default injectable helpers (real-world defaults)
@@ -276,6 +303,12 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const workerOutFile = opts.workerOutFile;
 	const runGates = opts.runGates;
 	const finalizeStory = opts.finalizeStory;
+	const implementerMode = opts.implementerMode ?? 'exit';
+	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+	// Real sleep: use a no-op by default so tests never block; callers that want
+	// actual sleeping must inject Bun.sleepSync (or similar).
+	const sleepFn = opts.sleepFn ?? ((_ms: number) => {});
+	const now = opts.nowMs ?? (() => Date.now());
 
 	let iterations = 0;
 	let lastOutcome: WorkerOutcome | null = null;
@@ -321,6 +354,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				taskPrompt,
 				permissionMode,
 				channel,
+				interactive: implementerMode === 'sentinel',
 				...(outFile ? { outFile } : {}),
 			});
 
@@ -328,6 +362,131 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// respawn-pane argv: tmuxArgs(['respawn-pane', '-k', '-t', paneId, ...shellCmd])
 			// We accept a generic spawn fn, so call it directly with the respawn args.
 			spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
+
+			// ---------------------------------------------------------------
+			// Sentinel polling mode (US-012): interactive worker does NOT exit
+			// on its own, so we poll capture-pane until we see the sentinel.
+			// ---------------------------------------------------------------
+			if (implementerMode === 'sentinel') {
+				const startMs = now();
+				let pollOutcome: 'sentinel' | 'pane-died' | 'timeout' = 'timeout';
+
+				while (true) {
+					sleepFn(pollIntervalMs);
+					if (!isPaneAlive(workerPaneId)) {
+						pollOutcome = 'pane-died';
+						break;
+					}
+					const polledText = capturePane(workerPaneId);
+					if (parseAnySentinel(polledText) !== null) {
+						pollOutcome = 'sentinel';
+						break;
+					}
+					if (now() - startMs >= perWorkerTimeoutMs) {
+						break; // timeout
+					}
+				}
+
+				iterations++;
+
+				if (pollOutcome === 'pane-died') {
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: undefined,
+						detail: 'pane-died-pre-result',
+					};
+					continue;
+				}
+				if (pollOutcome === 'timeout') {
+					spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: undefined,
+						detail: 'timeout',
+					};
+					continue;
+				}
+
+				// Sentinel found: read full pane text and determine outcome.
+				const durableSentinel = outFile && readFile ? readFile(outFile) : null;
+				const sentinelPaneText =
+					durableSentinel && durableSentinel.length > 0
+						? durableSentinel
+						: capturePane(workerPaneId);
+
+				const sentinelFileReader = (path: string): string | null => {
+					if (path === prdPath) {
+						const snapshot = readPrd();
+						return snapshot !== null ? JSON.stringify(snapshot) : null;
+					}
+					if (path === handoffPath) {
+						const handoff = _readHandoff();
+						return handoff !== null ? JSON.stringify(handoff) : null;
+					}
+					return null;
+				};
+
+				const sentinelOutcome = readWorkerOutcome({
+					prdPath,
+					handoffPath,
+					capturedPaneText: sentinelPaneText,
+					readFile: sentinelFileReader,
+				});
+
+				lastOutcome = sentinelOutcome;
+
+				if (sentinelOutcome.kind === 'pass' && sentinelOutcome.storyId !== undefined) {
+					writeSessionMarker(sentinelOutcome.storyId, uuid);
+				}
+
+				if (
+					sentinelOutcome.kind === 'blocked' ||
+					sentinelOutcome.kind === 'fail' ||
+					sentinelOutcome.kind === 'unknown'
+				) {
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+
+				if (
+					sentinelOutcome.kind === 'incomplete' &&
+					sentinelOutcome.storyId !== undefined &&
+					runGates &&
+					finalizeStory
+				) {
+					const gate = runGates();
+					if (!gate.ok) {
+						lastOutcome = {
+							kind: 'blocked',
+							storyId: sentinelOutcome.storyId,
+							detail: `finalize aborted, gates failed for ${sentinelOutcome.storyId}: ${gate.detail}`,
+						};
+						return { status: 'blocked', iterations, lastOutcome };
+					}
+					const fin = finalizeStory(sentinelOutcome.storyId);
+					if (!fin.ok) {
+						lastOutcome = {
+							kind: 'blocked',
+							storyId: sentinelOutcome.storyId,
+							detail: `finalize failed for ${sentinelOutcome.storyId}: ${fin.detail}`,
+						};
+						return { status: 'blocked', iterations, lastOutcome };
+					}
+					lastOutcome = {
+						kind: 'pass',
+						storyId: sentinelOutcome.storyId,
+						detail: `supervisor-finalized ${sentinelOutcome.storyId} after worker truncation: ${fin.detail}`,
+					};
+					writeSessionMarker(sentinelOutcome.storyId, uuid);
+					continue;
+				}
+
+				if (sentinelOutcome.kind === 'incomplete') {
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+
+				// PRD_COMPLETE or pass: continue to next decideNextAction call.
+				continue;
+			}
 
 			// Block until the worker signals the channel, bounded by the per-worker deadline.
 			const waitResult = waitFor(channel, perWorkerTimeoutMs);
