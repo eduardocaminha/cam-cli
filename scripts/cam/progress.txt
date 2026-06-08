@@ -1,199 +1,197 @@
 ## Codebase Patterns
 
-<!--
-Populated by implementers as reusable patterns emerge during stories.
-Durable patterns carried across cycles:
+Durable patterns carried across cycles. Implementers append new ones as they emerge.
 
-- **Bun runtime**: always `Bun.spawn`/`Bun.$`/`Bun.file` over `node:child_process`/`fs` per project CLAUDE.md.
-- **Permission mode**: never register a `--permission-mode` CLI flag on any subcommand,
-  enforced by `test/no-permission-mode-flag.test.ts` (greps `index.ts` and `src/commands/`).
-- **Tests**: `bun test` from repo root; test files mirror source under `test/`.
-- **Conventional commits**: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`.
-- **noUncheckedIndexedAccess**: tsconfig has `noUncheckedIndexedAccess: true`. Array indexing returns `T | undefined`; always guard with `?? fallback` or a justified non-null assertion.
-- **Regex capture groups**: `match()` capture groups are `string | undefined` under strict+noUncheckedIndexedAccess; always use `?? ''` fallback.
-- **Bun.spawn detached option**: `detached?: boolean` is in `bun.d.ts` (calls `setsid()` on POSIX) but the docs webpage omits it. Check `node_modules/bun-types/bun.d.ts` for the full option surface. Pair with `proc.unref()` and `stdio: ['ignore','ignore','ignore']` so the parent does not wait on the child.
-- **tmux argv tests**: cam shells out to tmux via injectable spawn fns; unit tests assert the argv shape (new-session / split-window / has-session / send-keys / kill-session / select-pane), they do not spin a real tmux server. Follow this pattern for the cam-run-workspace cycle.
-- **Ink screens**: success/failure is signalled by the glyph (accent check / destructive cross), never by divider color. Render and look at real output; do not trust header comments (lessons.md 2026-06-05).
-- **No em-dash in persisted .md**: use commas, colons, parentheses, or periods.
-- **src/tmux/session.ts is the canonical session module**: projectSessionName, ensureProjectSession, openPaneInSession, isInsideProjectSession all live here with injectable SpawnFn. Do not duplicate session logic in command files; import from this module instead.
-- **isInsideProjectSession uses CAM_SESSION env tag**: because $TMUX_PANE only contains a pane index (not the session name), callers must set CAM_SESSION=<sessionName> when spawning claude inside a session for reliable inside-session detection.
-- **`bun test` green is NOT proof of type-safety**: the test runner passes even when `tsc --noEmit` would fail. Always run `bun run typecheck` separately and trust its exit code before claiming the gate passed. US-008 shipped 6 TS2322 errors in `test/attach-hint.test.ts` with a fully green suite (caught at the next pre-flight, fixed in a follow-up). Common trap: a `captureStdout(() => runX(...))` helper typed `() => void | Promise<void>` rejects callbacks returning `Promise<number>`; widen such helpers to `() => unknown`.
-- **tmux shell-command form**: single arg to split-window/new-window goes through `/bin/sh -c` (shell injection risk). Multi-arg form execs directly (bypasses shell). Change `openPaneInSession(session, cmd: string)` to `openPaneInSession(session, cmdArgv: string[])` and spread the argv as separate trailing args after a `--` separator. Do NOT join argv before passing; user-supplied free text (issue descriptions, etc.) must stay as discrete elements.
-- **tmuxArgs() is the canonical socket prefix**: all calls to tmux in `src/tmux/session.ts` go through `tmuxArgs(sub)` which prepends `['-L', 'cam']`. Fake spawn handlers in test files route by `args[2]` (the subcommand) not `args[0]`, because `args[0]==='-L'` and `args[1]==='cam'` now. The guard pattern is `const subcommand = args[0] === '-L' ? args[2] : args[0]`.
--->
+- **Bun runtime**: prefer `Bun.spawn` / `Bun.$` / `Bun.file` over `node:child_process` / `node:fs` in NEW code. But match the surrounding file's idiom: `src/commands/run.ts`, `dashboard.ts`, and `status.ts` already use `node:fs` / `node:path` / `node:child_process`; keep that style there, do not mix `Bun.file` mid-file.
+- **Permission mode**: never register a `--permission-mode` CLI flag on any subcommand parser, enforced by `test/no-permission-mode-flag.test.ts` (greps `index.ts` and `src/commands/`). The literal may appear only inside a forwarded argv (e.g. the orchestrator `claude --permission-mode bypassPermissions` in `run.ts`, intentional).
+- **noUncheckedIndexedAccess**: tsconfig has it on. Array indexing and regex capture groups are `T | undefined`; guard with `?? fallback` or a justified non-null assertion. JSON.parse results need runtime shape checks before property access.
+- **`bun test` green is NOT proof of type-safety**: the runner passes even when `tsc --noEmit` would fail. Always run `bun run typecheck` separately and trust its exit code before claiming the gate passed.
+- **Read-only readers never throw**: `readSnapshot` / `buildStatusReport` and their helpers wrap every IO in try/catch and fall through to defaults, because dashboard/status are read-only and a render failure must not brick the operator's terminal (see `readPrd` / `readState` in `dashboard.ts`).
+- **Transcript discovery**: Claude Code transcripts live at `~/.claude/projects/<encode(cwd)>/<sessionId>.jsonl`, where `encode = cwd.replace(/[^a-zA-Z0-9]/g, '-')` (verified empirically). Filename == sessionId. Each line is one JSON object; assistant lines carry `message.usage` with `input_tokens` / `output_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens`.
+- **src/tmux/session.ts is the canonical session module**: `projectSessionName`, `ensureProjectSession`, `openPaneInSession`, `isInsideProjectSession`, `tmuxArgs` all live here with injectable `SpawnFn`. All tmux calls go through `tmuxArgs(sub)` which prepends `['-L', 'cam']`; test fakes route by `args[2]` (guard: `args[0] === '-L' ? args[2] : args[0]`).
+- **Ink screens**: success/failure is signalled by the glyph (✓ accent / ✗ destructive), never by divider color. Render and look at the real output; do not trust header comments (see `lessons.md` 2026-06-05).
+- **Tests**: `bun test` from repo root; test files live under `test/`, mirroring source. Inject fake reader/writer/spawn shapes (and injectable `home` / `genSessionId`) instead of touching real stdin/stdout/`~/.claude`.
+- **Commits**: conventional commits required (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
+- **No em dashes** in persisted files (PRD notes, progress, docs): use colon, comma, parentheses, or period.
+- **Pure transcript parser pattern**: `parseTranscriptUsage` splits on `\n`, `JSON.parse` each trimmed line in a try/catch, checks `message?.usage` existence, accumulates with `toNumber()` guard (returns 0 for non-number). `formatTokens` uses `>= 1_000_000` / `>= 1_000` thresholds with `toFixed(1)M` / `Math.round/k` / raw. Module lives in `src/transcript/usage.ts`; tests under `test/transcript/usage.test.ts`.
+- **Transcript dedup (US-R2-001)**: Claude Code emits one JSONL line per content block per assistant turn (thinking, text, tool_use), all carrying identical `message.usage`. Must deduplicate before summing. Key: `(message.id, requestId)` where `message.id` is at `parsed.message.id` (string UUID) and `requestId` is at the top-level `parsed.requestId` (string, sometimes absent). Lines missing both fields get a unique `__fallback_N` key. Empirically verified on real transcripts: inflation ratio 1.44x in production session. Last-write-wins for each key (payloads are identical so no semantic difference).
 
-## [2026-06-07 00:00] - US-001: Add CAM_TMUX_SOCKET + tmuxArgs() and thread -L cam through src/tmux/session.ts
+## [2026-06-08 12:00] - US-R2-001: Deduplicate transcript usage lines before summing
 
 ### What was done
-- Exported `CAM_TMUX_SOCKET = 'cam'` and `tmuxArgs(sub: string[]): string[]` from `src/tmux/session.ts`
-- Wrapped all five tmux spawn calls in session.ts with `tmuxArgs([...])`: hasSession, new-session, 2x split-window (ensureProjectSession), and split-window (openPaneInSession)
-- Updated `test/tmux-session.test.ts`: fake spawn handler routes on `args[2]`; assertions check `args[0]==='-L'`, `args[1]==='cam'`, `args[2]===subcommand`; added CAM_TMUX_SOCKET and tmuxArgs describe blocks
-- Updated fake spawn handlers in `test/run.test.ts`, `test/next.test.ts`, `test/issue.test.ts`, `test/plan.test.ts`, `test/attach-hint.test.ts` to route on the subcommand after the -L prefix
+- Extended `TranscriptLine` interface with `requestId?: string` and `message.id?: string`.
+- Replaced the naive accumulation loop in `parseTranscriptUsage` with a two-pass approach: first pass collects `Map<dedupKey, MessageUsage>` (last-write-wins), second pass sums the deduped map.
+- Dedup key: `"${message.id ?? ''}|${requestId ?? ''}"` when at least one field is present; unique `__fallback_N` key otherwise.
+- Added 4 new tests in `test/transcript/usage.test.ts`: dedup-same-key-counted-once, distinct-pairs-counted-independently, fallback-no-collision, and repeated-key assertion.
+- Empirically verified against a real 2178-line transcript: 829 lines with usage reduced to 577 unique keys (1.44x inflation fixed).
 
 ### Files changed
-- src/tmux/session.ts
-- test/tmux-session.test.ts
-- test/run.test.ts
-- test/next.test.ts
-- test/issue.test.ts
-- test/plan.test.ts
-- test/attach-hint.test.ts
+- src/transcript/usage.ts (modified, +30 lines net)
+- test/transcript/usage.test.ts (modified, +60 lines)
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 487 pass
+- Tests: 528 pass / 0 fail
 
 ### Step 5.5 docs validation
-- lib: tmux, status: ok, url: https://man.openbsd.org/tmux.1 — confirmed -L is a global flag that precedes the subcommand; `tmux -L cam new-session` is correct form
+- lib: Claude Code JSONL transcript format (internal), status: fetch_failed (gilles.ai and ccusage.com not accessible; field names verified empirically against real ~/.claude/projects transcripts)
 
 ### Notes
-- test files beyond tmux-session.test.ts also needed updating because their fake spawns routed on args[0]; the subcommand guard pattern is documented in Codebase Patterns above
+- `requestId` is absent on some older transcript lines (6/829 in the sampled file); `message.id` is always present. Using `(message.id, requestId|null)` as key is safe.
+- The 4 new dedup tests are standalone and do not depend on network or real transcripts.
 ---
 
-## [2026-06-07 00:30] - US-002: Thread -L cam through src/commands/run.ts (orchestrator launcher)
+## [2026-06-08 01:00] - US-002: Capture orchestrator session id in cam run + transcript path resolver
 
 ### What was done
-- Imported `tmuxArgs` from `src/tmux/session.ts` in `src/commands/run.ts`
-- Updated `tmuxAvailable` probe to use `tmuxArgs(['-V'])` instead of bare `['-V']`
-- Updated all 3 `respawn-pane` calls to use `tmuxArgs(['respawn-pane', ...])` prefix
-- Updated the chained `kill-session` STRING inside `agentCmd` to use literal `tmux -L cam kill-session -t ...` (shell-evaluated string, tmuxArgs does not apply here)
-- Updated `opt()`, `winOpt()`, `paneLabel()` helpers to use `tmuxArgs([...])`
-- Updated mouse `set-option`, `select-pane`, `switch-client`, and `attach-session` calls to use `tmuxArgs([...])`
-- Updated test/run.test.ts: respawn-pane search now uses `c.args[2] === 'respawn-pane'`; added -L/cam prefix assertions; kill-session assertion now checks for `-L cam kill-session -t ...`
+- Added `genSessionId?: () => string` to `RunOptions` (default `randomUUID` from `node:crypto`).
+- `setupOrchestratorSession` now generates a uuid via `genSessionId`, writes it to `.claude/.cam-orch-session` (utf8), and inserts `--session-id <uuid>` between `bypassPermissions` and the prompt in the orchestrator `agentCmd`.
+- Re-attach path (`created: false`) returns before the marker write so the original session id persists across `cam run` invocations.
+- `src/transcript/usage.ts` now exports `orchestratorTranscriptPath(cwd, claudeDir)`: reads `.claude/.cam-orch-session`, encodes cwd via `cwd.replace(/[^a-zA-Z0-9]/g, '-')`, returns `<claudeDir>/projects/<encoded>/<uuid>.jsonl` or null if the marker is absent/empty.
+- Extended `test/run.test.ts`: three new tests assert `--session-id` presence in argv, marker file content, and no-rewrite on re-attach.
+- Extended `test/transcript/usage.test.ts`: six new tests cover absent marker, empty marker, whitespace-only, encoding correctness, claudeDir injection (not hardcoded), and trailing-newline trim.
 
 ### Files changed
-- src/commands/run.ts
-- test/run.test.ts
+- src/commands/run.ts (modified, +18 lines)
+- src/transcript/usage.ts (modified, +43 lines)
+- test/run.test.ts (modified, +55 lines)
+- test/transcript/usage.test.ts (modified, +86 lines)
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 487 pass
+- Tests: 513 pass / 0 fail
 
 ### Step 5.5 docs validation
-- lib: tmux, status: ok (no change from US-001 validation; same -L flag usage confirmed)
+- lib: claude-cli --session-id flag, status: ok (confirmed via `claude --help` locally: "Use a specific session ID for the conversation")
 
 ### Notes
-- respawn-pane calls shift from args[0] to args[2] after tmuxArgs() wrapping; test finders updated accordingly
-- the agentCmd kill-session uses a hardcoded `tmux -L cam` string because it is shell-eval'd inside bash -c, not a direct spawn call
+- orchestratorTranscriptPath takes `claudeDir` as a parameter (not hardcoded); callers must resolve `process.env.CLAUDE_CONFIG_DIR ?? join(os.homedir(), '.claude')`.
+- `noUncheckedIndexedAccess`: readFileSync result is trimmed before returning; empty-after-trim returns null.
 ---
 
-## [2026-06-07 01:00] - US-003: Thread -L cam through cam next / cam plan / cam issue launchers
+## [2026-06-08 00:00] - US-001: Pure transcript-usage parser + formatTokens
 
 ### What was done
-- Changed `tmuxProbe(['tmux', '-V'])` to `tmuxProbe(['tmux', '-L', 'cam', '-V'])` in `detectHost()` inside `src/commands/next.ts`
-- Confirmed `plan.ts` and `issue.ts` have no direct tmux invocations; all session/pane work delegates to `ensureProjectSession`/`openPaneInSession` (already -L cam-aware since US-001)
-- Confirmed test fakes in `test/next.test.ts`, `test/plan.test.ts`, `test/issue.test.ts` already route by `args[2]` (the guard `args[0] === '-L' ? args[2] : args[0]` was added in US-001)
+- Created `src/transcript/usage.ts` with `parseTranscriptUsage(jsonl)` and `formatTokens(n)`.
+- Created `test/transcript/usage.test.ts` with 13 tests covering multi-line fixtures, malformed lines, sidechain lines, missing sub-fields, all three formatTokens magnitudes, 0, and edge values.
 
 ### Files changed
-- src/commands/next.ts (1 line: probe argv)
+- src/transcript/usage.ts (new, 82 lines)
+- test/transcript/usage.test.ts (new, 152 lines)
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 487 pass
+- Tests: 503 pass / 0 fail
 
 ### Step 5.5 docs validation
-- lib: none, status: no_external_lib_touched (only tmux argv literal changed)
+- lib: none, status: no_external_lib_touched
 
 ### Notes
-- The probe is a one-off literal; no need to import tmuxArgs() just for this one call
-- plan.ts and issue.ts were already fully compliant; the story was mostly a verification/confirmation pass for those two files
+- noUncheckedIndexedAccess: used runtime shape checks (isTranscriptLine guard) and toNumber() helper to safely extract optional number fields from parsed JSON.
 ---
 
-## [2026-06-07 02:00] - US-004: Thread -L cam through cam stop and Menu pane control
+## [2026-06-08 02:00] - US-003: Surface orchestrator tokens in the dashboard
 
 ### What was done
-- Imported `tmuxArgs` in `src/commands/stop.ts`; wrapped `tmuxAvailable` (-V), `sessionAlive` (has-session), and `killSession` (kill-session) with `tmuxArgs([...])`
-- Imported `tmuxArgs` in `src/ui/Menu.tsx`; updated default `runTmux` closure to call `spawnSync('tmux', tmuxArgs(args), ...)` instead of bare `spawnSync('tmux', args, ...)`
-- Updated `test/stop.test.ts`: fake spawn handler now routes by subcommand at `args[2]` (guard: `args[0] === '-L' ? args[2] : args[0]`); argv assertions updated to expect `['-L', 'cam', subcommand, ...]`
-- Created `test/menu.test.ts`: smoke-tests MenuApp via ink-testing-library; asserts command list renders without exception and each slash-command key appears in output
+- `DashboardData` gains four optional token fields: `tokensInput?`, `tokensOutput?`, `tokensCacheRead?`, `tokensCacheCreation?`.
+- `readSnapshot` now accepts `claudeDir?` (defaults to `CLAUDE_CONFIG_DIR ?? ~/.claude`), calls `readTranscriptTokens` (new private helper), and populates token fields when the marker + JSONL are found. Never throws.
+- `readTranscriptTokens` wraps `orchestratorTranscriptPath` + `existsSync` + `readFileSync` + `parseTranscriptUsage` in a single try/catch; returns null on any miss.
+- `snapshotKey` now includes `tokensInput` and `tokensOutput` so the non-Ink render loop redraws when tokens change.
+- `RunDashboardOptions` and `RunDashboardInkOptions` both gain `claudeDir?` and plumb it through to `readSnapshot`.
+- `Dashboard.tsx` imports `formatTokens` and renders a `tokens` SummaryRow (label "tokens") after `since` and before `branch`; the row is omitted when `tokensInput` is undefined.
+- Two new tests in `test/dashboard.test.ts`: (a) fixture with marker file + transcript JSONL, asserts all four token fields; (b) missing-marker path, asserts fields are undefined and no throw.
 
 ### Files changed
-- src/commands/stop.ts
-- src/ui/Menu.tsx
-- test/stop.test.ts
-- test/menu.test.ts (new)
+- src/commands/dashboard.ts (modified, +70 lines)
+- src/ui/Dashboard.tsx (modified, +14 lines)
+- test/dashboard.test.ts (modified, +65 lines)
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 490 pass
+- Tests: 515 pass / 0 fail
 
 ### Step 5.5 docs validation
-- lib: none, status: no_external_lib_touched (all changes are tmux argv wrapping; no new external lib surface)
+- lib: none (node:fs built-ins, own transcript/usage module), status: no_external_lib_touched
 
 ### Notes
-- setup-menu.test.ts was reviewed; the bash script from buildSetupMenuScript() is not in scope for this story, so no changes were needed there and all existing assertions continue to pass
-- The -L cam guard pattern in tests: `const sub = args[0] === '-L' ? args[2] : args[0]` is now used in stop.test.ts as well as the other test files updated in US-001
+- The tokens row uses total input volume: `tokensInput + tokensCacheCreation + tokensCacheRead` (per AC), not just the non-cached portion. US-004 adds the cached breakdown.
+- claudeDir injection pattern: `options.claudeDir ?? (process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'))` resolves in readSnapshot, consistent with how US-002 documented the contract.
 ---
 
-## [2026-06-07 03:00] - US-005: Thread -L cam through the outside-tmux branch of cam setup
+## [2026-06-08 03:00] - US-004: Cached-token honesty in dashboard + cam status parity
 
 ### What was done
-- Imported `tmuxArgs` from `../tmux/session.ts` in `src/commands/setup.ts`
-- Wrapped `new-session` and `split-window` calls in the outside-tmux branch of `spawnSetupTmux` with `tmuxArgs([...])`
-- Left inside-tmux branch (`display-message`, `split-window`, `send-keys`) on the ambient socket (intentional exception)
-- Added one-line comment in inside-tmux branch: "Inside-tmux: these calls target the user's live interactive window, which lives in the user's current security session (ambient socket), not the cam dedicated socket."
-- No changes to `test/setup-menu.test.ts`: it only tests the bash script generated by `buildSetupMenuScript()`, which is explicitly out of scope for this threading story
+- Added `renderTokensLine(t: TranscriptUsage): string` to `src/transcript/usage.ts`. Single source of truth for the shared format: `<in> in (<cached> cached) · <out> out` where in = input + cacheCreation + cacheRead and cached = cacheRead only (cacheCreation is fresh billed spend). The "(N cached)" suffix is omitted when cached is 0.
+- Updated `Dashboard.tsx` (Ink component) to import and call `renderTokensLine` instead of the previous inline expression. Removed stale `formatTokens` import from that file.
+- Updated `composeDashboard` (non-Ink alt-screen renderer in `dashboard.ts`) to render a `tokens` row using `renderTokensLine` when `tokensInput` is defined; row is absent when undefined.
+- Extended `StatusReport` with an optional `tokens?: { input; output; cacheRead; cacheCreation }` field.
+- Extended `StatusOptions` with `claudeDir?: string` (defaults to `CLAUDE_CONFIG_DIR ?? ~/.claude`).
+- Updated `buildStatusReport` to resolve the orchestrator transcript via `orchestratorTranscriptPath` using the injectable `claudeDir`, parse it with `parseTranscriptUsage`, and populate `report.tokens`. Never throws: wrapped in try/catch, leaves `tokens` undefined on any error.
+- Updated `runStatus` to render a `tokens` entry via `renderEntry` after `last` and before `promise` in the active/paused branch, using `renderTokensLine`. Row skipped when `report.tokens` is undefined.
+- Added 5 `renderTokensLine` tests in `test/transcript/usage.test.ts` covering: cached suffix present when cacheRead > 0, omitted when 0, cacheCreation folded into in total only, all-zero, and tiny cacheRead.
+- Added 3 `composeDashboard` tests in `test/dashboard.test.ts` for: cached suffix present, suffix absent when zero, row absent when tokensInput undefined.
+- Added 2 `buildStatusReport` tests in `test/status.test.ts` for: tokens populated from fixture transcript, and undefined when marker absent.
 
 ### Files changed
-- src/commands/setup.ts
+- src/transcript/usage.ts (modified, +26 lines)
+- src/ui/Dashboard.tsx (modified, import swap + 6 lines changed)
+- src/commands/dashboard.ts (modified, +12 lines)
+- src/commands/status.ts (modified, +38 lines)
+- test/transcript/usage.test.ts (modified, +56 lines)
+- test/dashboard.test.ts (modified, +36 lines)
+- test/status.test.ts (modified, +62 lines)
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 490 pass
+- Tests: 525 pass / 0 fail
 
 ### Step 5.5 docs validation
-- lib: none, status: no_external_lib_touched (changes are tmux argv wrapping; no new external lib surface)
+- lib: none (all changes touch own source modules and node built-ins only), status: no_external_lib_touched
 
 ### Notes
-- setup.ts has a clear split: outside-tmux creates the cam-setup session (must be on -L cam socket); inside-tmux targets the user's live window (must stay on ambient socket). This is the only intentional ambient-socket path in workspace code.
+- The key invariant: cacheCreation is fresh spend (billed above base rate), so it MUST stay in `in` total but MUST NOT appear in `cached`. Only `cacheRead` contributes to the `(N cached)` suffix. This lives in one place (`renderTokensLine`) so it cannot drift.
+- Sample numbers from the issue: cacheRead 450k, fresh input 22k. With this implementation `482k in (450k cached) · Xk out` would render correctly.
 ---
 
-## [2026-06-07 04:30] - US-006: Document the dedicated -L cam socket in README.md and FLOW.md
+## [2026-06-08 09:36] - Review round 1: FIXES_PENDING:1
+- Created 1 story US-R1-001 from review finding (WARNING): snapshotKey in src/commands/dashboard.ts hashes only tokensInput/tokensOutput, omitting tokensCacheRead/tokensCacheCreation. Under US-004 all four contribute to the rendered tokens line, so the legacy non-Ink loop misses redraws when only cache totals change (US-003 AC deviation). Mechanical, single-file fix queued at priority 0.
+- 3 SUGGESTIONs triaged to skip: formatTokens(999_999)='1000k' discontinuity (test-accepted), agentCmd argv-form (controlled values, reviewer said do not act), renderTokensLine separator consistency (stylistic).
+- Build at review time: typecheck zero errors, bun test 525 pass / 0 fail.
+---
+
+## [2026-06-08 10:00] - US-R1-001: Include cache token fields in dashboard snapshotKey
 
 ### What was done
-- Added a paragraph to README.md §"Single project session" explaining that cam uses `tmux -L cam`, why the isolation matters, and the macOS TCC failure mode it avoids
-- Added a note to README.md interactive-mode auto-retry bullet clarifying that `cam claude` and `cam retry-monitor` intentionally stay on the ambient socket (they watch the user's live pane, not the cam workspace)
-- Added an isolation guarantee block to FLOW.md §2.5 (cam run) with the same socket isolation explanation and the intentional ambient-socket exception for `cam claude` / `cam retry-monitor`
-- Verified zero em-dashes in either file (rule: no travessao in persisted .md)
+- Added `data.tokensCacheRead ?? -1` and `data.tokensCacheCreation ?? -1` to the array in `snapshotKey()` (src/commands/dashboard.ts:715-716), so all four token fields contribute to the snapshot identity and the legacy non-Ink loop redraws when only cache totals change.
 
 ### Files changed
-- README.md
-- FLOW.md
+- src/commands/dashboard.ts (modified, +2 lines)
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 490 pass
+- Tests: 525 pass / 0 fail
 
 ### Step 5.5 docs validation
-- lib: none, status: no_external_lib_touched (docs-only story; no code or external lib touched)
+- lib: none (single-file mechanical fix, no external lib touched), status: no_external_lib_touched
 
 ### Notes
-- None. Pure documentation story; all acceptance criteria met in a focused diff.
+- Sentinel value -1 (vs undefined/null) was already the convention used for tokensInput/tokensOutput in the same array; cache fields follow the same pattern.
 ---
 
-## [2026-06-07 05:00] - US-008: Document recovery runbook for stale tmux servers
-
-### What was done
-- Added "Recovery runbook: stale tmux server" subsection to README.md under "Single project session"
-- Three command blocks with contextual sentences each: (a) stale cam socket via `tmux -L cam kill-server`, (b) stale default socket via `tmux kill-server` then `cam run`, (c) isolation guarantee explanation
-- Verified zero em-dashes in the added section
-
-### Files changed
-- README.md
-
-### Quality gates
-- Typecheck: ok
-- Tests: 490 pass
-
-### Step 5.5 docs validation
-- lib: none, status: no_external_lib_touched (docs-only story; no external library API surface touched)
-
-### Notes
-- None. Pure documentation story; runbook is surgical (three commands, three sentences of context each).
+## [2026-06-08 10:59] - Review round 2: FIXES_PENDING:1
+- Created 1 story US-R2-001 from review finding (CRITICAL): parseTranscriptUsage in src/transcript/usage.ts sums every line carrying message.usage, but real Claude Code transcripts write one JSONL line per content block (thinking/text/tool_use) each with an IDENTICAL message.usage object, inflating displayed totals 2x to 5x. Verified empirically on ~/.claude/projects (91 unique message ids across 181 occurrences in one transcript; one msg id 5x with identical usage in another). Breaks the CAM-21 honest-numbers contract. Fix: dedupe by (message.id, requestId), keep last usage per request, then sum. Queued at priority 0.
+- US-R1-001 (round 1 finding) verified landed correctly: snapshotKey now hashes all four token fields.
+- 1 WARNING triaged to skip: shell-injection via genSessionId in run.ts:155 (production uses randomUUID, always clean hex; defensive-only).
+- 2 SUGGESTIONs triaged to skip: .gitignore .claude/.cam-* (cosmetic), stories field absent from snapshotKey (pre-existing, out-of-scope, production path is Ink).
+- Build at review time: typecheck zero errors, bun test 525 pass / 0 fail.
 ---
-## [2026-06-07 14:48] - Review round 1: CLEAN
-- subagent-reviewer APPROVE: 0 CRITICAL, 0 WARNING, 3 SUGGESTION (all backlog/skip).
-- All acceptance criteria for US-001..US-006, US-008 verified. Build PASS (typecheck 0 errors; 490 tests pass).
-- prd.review set: roundsCompleted=1, lastVerdict=CLEAN, lastReviewSha=3db3660.
-- Ready for /cam-ship. Only remaining story is US-007 (requires: operator).
+
+## [2026-06-08 11:21] - Review round 3 — CLEAN
+- US-R2-001 dedup fix re-reviewed (delta scope: src/transcript/usage.ts + test). Verdict CLEAN / APPROVE: no CRITICAL, no actionable WARNING. Dedup-by-(message.id, requestId) with last-wins overwrite and unique fallback key for lines missing both fields matches ccusage / claude-devtools convention; edge cases (same msgId diff reqId, diff msgId same reqId, both missing) all resolve correctly. Build at review time: typecheck zero errors, bun test 528 pass / 0 fail.
+- 3 SUGGESTIONs triaged to skip/optional: (1) stale file-header docstring at usage.ts:1-10 still says "sums across all lines" while the detailed JSDoc below is correct — minor §7 doc drift, optional pre-ship polish; (2) isTranscriptLine only narrows object-non-null, not field types — pre-existing, benign (template coercion + toNumber collapse non-conforming values); (3) theoretical key collision if a message.id contained "|" — not real (Claude IDs are UUID / msg_/req_ base62).
+- All findings resolved or rated cosmetic. Ready for /cam-ship.
+---
+
+## [2026-06-08 15:20] - Review round 4: CLEAN
+- Delta desde o round-3 CLEAN (fix de paridade do cam status idle + formato de setas no renderTokensLine) revisado pelo subagent-reviewer. Zero CRITICAL/WARNING; 2 sugestoes cosmeticas (fallback unicode das setas, stub de stdout no teste) skipadas. Build PASS (typecheck 0, 529 testes). Pronto pra /cam-ship.
 ---

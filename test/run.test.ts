@@ -10,7 +10,7 @@
 //   - tmux argv assertions (new-session + split-window + send-keys for dashboard pane)
 
 import { describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
@@ -368,3 +368,59 @@ describe('runRun tmux argv — new session', () => {
 // The interactive menu is now the `cam menu` Ink app (src/ui/Menu.tsx); its
 // pane wiring is covered by the "respawns the cam menu Ink app in pane 2" test
 // above. The old bash buildRunMenuScript was removed.
+
+// ---------------------------------------------------------------------------
+// runRun session-id + marker file (US-002)
+// ---------------------------------------------------------------------------
+
+describe('runRun session-id and marker file (US-002)', () => {
+	const FIXED_UUID = 'deadbeef-1234-5678-abcd-000000000000';
+
+	it('passes --session-id <uuid> to the orchestrator pane respawn-pane argv', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+
+		// The orchestrator pane targets %1.
+		const orchRespawn = spawn.calls.find(
+			c => c.args[2] === 'respawn-pane' && c.args.some(a => a === '%1'),
+		);
+		expect(orchRespawn).toBeDefined();
+
+		// The composed bash -c command must contain --session-id <uuid>.
+		const composedCmd = orchRespawn?.args.find(a => a.includes('--session-id'));
+		expect(composedCmd).toBeDefined();
+		expect(composedCmd).toContain(`--session-id ${FIXED_UUID}`);
+	});
+
+	it('writes the session uuid to .claude/.cam-orch-session on new session', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+
+		const markerPath = join(cwd, '.claude', '.cam-orch-session');
+		expect(existsSync(markerPath)).toBe(true);
+		expect(readFileSync(markerPath, 'utf8')).toBe(FIXED_UUID);
+	});
+
+	it('does NOT rewrite .cam-orch-session on session re-attach (created: false)', () => {
+		const cwd = makeTmpProject();
+
+		// Pre-write the marker with an original uuid to simulate a previous session.
+		const dotClaude = join(cwd, '.claude');
+		mkdirSync(dotClaude, { recursive: true });
+		const originalUuid = 'original-uuid-0000-0000-0000-000000000000';
+		writeFileSync(join(dotClaude, '.cam-orch-session'), originalUuid, 'utf8');
+
+		// Simulate session already exists (re-attach path).
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: true });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+
+		// Marker must still contain the original uuid, not the new one.
+		const markerPath = join(cwd, '.claude', '.cam-orch-session');
+		expect(readFileSync(markerPath, 'utf8')).toBe(originalUuid);
+	});
+});

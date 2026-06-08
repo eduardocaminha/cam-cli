@@ -36,6 +36,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
@@ -50,6 +51,12 @@ import {
 	emitTrailingBlank,
 	emitWarn,
 } from '../logging/screen.ts';
+import {
+	orchestratorTranscriptPath,
+	parseTranscriptUsage,
+	renderTokensLine,
+	type TranscriptUsage,
+} from '../transcript/usage.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -124,6 +131,9 @@ export interface StatusReport {
 	completionPromise?: string | null;
 	branchName?: string; // from cwd's git repo
 	lastCommit?: { sha: string; subject: string };
+	/** Token usage totals from the orchestrator transcript. Undefined when no
+	 *  orchestrator session marker or no transcript file is present. */
+	tokens?: { input: number; output: number; cacheRead: number; cacheCreation: number };
 }
 
 // --- Parsers ---------------------------------------------------------------
@@ -284,6 +294,9 @@ export interface StatusOptions {
 	cwd?: string;
 	/** Override "now" for wall-clock calculations (tests pin a deterministic time). */
 	now?: () => Date;
+	/** Override the Claude config directory (default: CLAUDE_CONFIG_DIR env var or
+	 *  ~/.claude). Used to locate the orchestrator transcript JSONL. */
+	claudeDir?: string;
 }
 
 /**
@@ -294,6 +307,7 @@ export interface StatusOptions {
 export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 	const cwd = options.cwd ?? process.cwd();
 	const now = options.now ?? (() => new Date());
+	const claudeDir = options.claudeDir ?? (process.env['CLAUDE_CONFIG_DIR'] ?? join(os.homedir(), '.claude'));
 	const state = readStateFile(cwd);
 	const prd = readPrd(cwd);
 	const git = readGitInfo(cwd);
@@ -301,6 +315,23 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 	const report: StatusReport = { state: 'idle' };
 	if (git.branchName) report.branchName = git.branchName;
 	if (git.lastCommit) report.lastCommit = git.lastCommit;
+
+	// Resolve token usage from the orchestrator transcript (best-effort, never throws).
+	const transcriptPath = orchestratorTranscriptPath(cwd, claudeDir);
+	if (transcriptPath !== null) {
+		try {
+			const jsonl = readFileSync(transcriptPath, 'utf8');
+			const usage: TranscriptUsage = parseTranscriptUsage(jsonl);
+			report.tokens = {
+				input: usage.input,
+				output: usage.output,
+				cacheRead: usage.cacheRead,
+				cacheCreation: usage.cacheCreation,
+			};
+		} catch {
+			// Transcript not yet written or unreadable; leave tokens undefined.
+		}
+	}
 
 	if (!state) {
 		// No loop state file. PRD might still exist — surface the "next pending"
@@ -388,6 +419,9 @@ export function runStatus(options: StatusOptions = {}): number {
 				`${renderEntry('last', `${muted(report.lastCommit.sha)} ${report.lastCommit.subject}`)}\n`,
 			);
 		}
+		if (report.tokens !== undefined) {
+			process.stdout.write(`${renderEntry('tokens', renderTokensLine(report.tokens))}\n`);
+		}
 		emitSectionHeading('Next');
 		emitEntry('cam next', 'start the autonomous loop');
 		emitEntry('cam plan', 'plan an issue and create a PRD');
@@ -416,6 +450,9 @@ export function runStatus(options: StatusOptions = {}): number {
 		process.stdout.write(
 			`${renderEntry('last', `${muted(report.lastCommit.sha)} ${report.lastCommit.subject}`)}\n`,
 		);
+	}
+	if (report.tokens !== undefined) {
+		process.stdout.write(`${renderEntry('tokens', renderTokensLine(report.tokens))}\n`);
 	}
 	if (report.completionPromise !== undefined) {
 		const promiseShown = report.completionPromise === null ? muted('(none)') : `"${report.completionPromise}"`;

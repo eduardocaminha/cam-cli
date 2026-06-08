@@ -152,6 +152,45 @@ describe('composeDashboard', () => {
 		const frame = composeDashboard(baseData, 2000, true);
 		expect(frame).toMatch(/press q or Ctrl\+C/);
 	});
+
+	test('tokens row shows cached suffix when cacheRead > 0 (US-004)', () => {
+		const frame = composeDashboard(
+			{
+				...baseData,
+				tokensInput: 22_000,
+				tokensOutput: 5_000,
+				tokensCacheRead: 450_000,
+				tokensCacheCreation: 10_000,
+			},
+			2000,
+			true,
+		);
+		// in = 22000 + 10000 + 450000 = 482000 -> 482k; cached = 450k; out = 5k
+		expect(frame).toContain('↑ 482k in (450k cached) · ↓ 5k out');
+	});
+
+	test('tokens row omits cached suffix when cacheRead is 0 (US-004)', () => {
+		const frame = composeDashboard(
+			{
+				...baseData,
+				tokensInput: 10_000,
+				tokensOutput: 2_000,
+				tokensCacheRead: 0,
+				tokensCacheCreation: 5_000,
+			},
+			2000,
+			true,
+		);
+		// in = 10000 + 5000 + 0 = 15k; no cached suffix; out = 2k
+		expect(frame).toContain('↑ 15k in · ↓ 2k out');
+		expect(frame).not.toContain('cached');
+	});
+
+	test('tokens row is absent when tokensInput is undefined (no transcript)', () => {
+		// baseData has no token fields set, so the row must not appear.
+		const frame = composeDashboard(baseData, 2000, true);
+		expect(frame).not.toContain('tokens');
+	});
 });
 
 // --- parseRecentProgress ---------------------------------------------------
@@ -324,6 +363,78 @@ describe('readSnapshot', () => {
 			expect(snap.idle).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('token fields populate when marker + transcript exist (US-003)', () => {
+		const base = mkdtempSync(join(tmpdir(), 'cam-dash-tokens-'));
+		try {
+			// cwd — write the orch session marker.
+			const cwd = join(base, 'project');
+			mkdirSync(join(cwd, '.claude'), { recursive: true });
+			const uuid = 'aaaabbbb-cccc-dddd-eeee-ffffffffffff';
+			writeFileSync(join(cwd, '.claude', '.cam-orch-session'), uuid, 'utf8');
+
+			// claudeDir — write the fixture transcript JSONL.
+			const claudeDir = join(base, 'claude-dir');
+			const encoded = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+			mkdirSync(join(claudeDir, 'projects', encoded), { recursive: true });
+			const jsonlLines = [
+				JSON.stringify({
+					message: {
+						usage: {
+							input_tokens: 1000,
+							output_tokens: 400,
+							cache_read_input_tokens: 200,
+							cache_creation_input_tokens: 50,
+						},
+					},
+				}),
+				JSON.stringify({
+					message: {
+						usage: {
+							input_tokens: 500,
+							output_tokens: 100,
+							cache_read_input_tokens: 0,
+							cache_creation_input_tokens: 0,
+						},
+					},
+				}),
+			].join('\n');
+			writeFileSync(join(claudeDir, 'projects', encoded, `${uuid}.jsonl`), jsonlLines, 'utf8');
+
+			const snap = readSnapshot({ cwd, nowMs: 0, claudeDir });
+
+			expect(snap.tokensInput).toBe(1500);
+			expect(snap.tokensOutput).toBe(500);
+			expect(snap.tokensCacheRead).toBe(200);
+			expect(snap.tokensCacheCreation).toBe(50);
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
+
+	test('token fields stay undefined when marker is absent (US-003)', () => {
+		const base = mkdtempSync(join(tmpdir(), 'cam-dash-no-marker-'));
+		try {
+			const cwd = join(base, 'project');
+			mkdirSync(join(cwd, '.claude'), { recursive: true });
+			// No .cam-orch-session written.
+			const claudeDir = join(base, 'claude-dir');
+			mkdirSync(claudeDir, { recursive: true });
+
+			// Should not throw.
+			let snap: ReturnType<typeof readSnapshot> | undefined;
+			expect(() => {
+				snap = readSnapshot({ cwd, nowMs: 0, claudeDir });
+			}).not.toThrow();
+
+			expect(snap!.tokensInput).toBeUndefined();
+			expect(snap!.tokensOutput).toBeUndefined();
+			expect(snap!.tokensCacheRead).toBeUndefined();
+			expect(snap!.tokensCacheCreation).toBeUndefined();
+		} finally {
+			rmSync(base, { recursive: true, force: true });
 		}
 	});
 });
