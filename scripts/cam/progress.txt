@@ -19,6 +19,35 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **openPaneInSession returns pane id (US-001)**: the function now uses `stdio: 'pipe'` and `-P -F #{pane_id}` to capture and return the stable pane id string (e.g. `%5`). All test fakes for split-window must handle `opts?.stdio === 'pipe'` and return a non-empty `stdout` buffer, or they will crash with `Cannot read property toString of undefined`.
 - **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
 
+## 2026-06-08 19:00 - US-006: runSupervisor() loop tying primitives together
+
+### What was done
+- Created `src/supervisor/loop.ts` with `runSupervisor(opts): Promise<SupervisorResult>`.
+- All side effects injected: spawn, waitFor, capturePane, readPrd, writePrd, readHandoff, clock, genUuid, genChannel, reviewDispatch, writeSessionMarker.
+- Per iteration: calls decideNextAction -> implement branch mints uuid + channel, respawns worker pane, waits on channel, captures pane, calls readWorkerOutcome, then calls writeSessionMarker(actualStoryId, uuid) keyed to actual completed story (not advisory).
+- Review branch is a placeholder: calls injected reviewDispatch(uuid), exits blocked on error, continues on ok.
+- Hard max-iterations cap defaults to 50 (MAX_ITERATIONS constant).
+- Returns `{ status: 'complete' | 'blocked' | 'max-iterations', iterations, lastOutcome }`.
+- Worker outcome 'fail' or 'unknown' exits as 'blocked' (conservative: do not retry silently).
+- Created `test/supervisor/loop.test.ts` with 14 tests covering: complete-immediately, blocked-immediately, PRD-unreadable, happy-path-2-stories, one-blocked, max-iterations, PRD_COMPLETE-cycle, fail-outcome, unknown-outcome, review-dispatch-error, writeSessionMarker-with-actual-id, spawn-called-per-iteration.
+
+### Files changed
+- `src/supervisor/loop.ts` (new)
+- `test/supervisor/loop.test.ts` (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 621 pass
+
+### Step 5.5 docs validation
+- lib: none (pure TS, no external libs), status: no_external_lib_touched
+
+### Notes
+- `fileReader` for `readWorkerOutcome` calls `readPrd()` once (after worker exits) to get updated prd state. Tests must account for 2 readPrd() calls per implement iteration (top-of-loop + fileReader), except PRD_COMPLETE path which skips the fileReader.
+- Advisory storyId from decideNextAction is used only for channel naming and logging; writeSessionMarker is always called with outcome.storyId (actual story from handoff/sentinel).
+---
+
 ## 2026-06-08 18:00 - US-005: Port Branch-decision matrix to pure TS
 
 ### What was done

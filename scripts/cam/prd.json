@@ -148,7 +148,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: new src/supervisor/loop.ts, test/supervisor/loop.test.ts. Do NOT call Bun.spawn directly here, accept an injected spawner so unit tests do not shell out. The worker slot pane id comes from readWorkerPaneMarker (US-001). Review dispatch is a placeholder calling an injected reviewDispatch fn, fleshed out in US-008. ANTI-COUPLING (review fix 2026-06-08): the subagent-implementer agent SELF-SELECTS its story, so the supervisor must NOT bind a story up front. decideNextAction's storyId is advisory (decides implement-vs-review-vs-complete and logging only); the worker is the source of truth for WHICH story, and the supervisor attributes uuid/marker/tokens to the actual completed story from handoff.json/sentinel. Removes the two-independent-selectors mismatch WITHOUT modifying the proven agent."
     },

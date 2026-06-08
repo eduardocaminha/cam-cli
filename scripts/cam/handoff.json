@@ -1,22 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Port Branch-decision matrix to pure TS"
+    "id": "US-006",
+    "title": "runSupervisor() loop tying primitives together"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-08T18:00:00Z",
+  "timestamp": "2026-06-08T19:00:00Z",
   "createdFiles": [
-    "src/supervisor/decide.ts",
-    "test/supervisor/decide.test.ts"
+    "src/supervisor/loop.ts",
+    "test/supervisor/loop.test.ts"
   ],
   "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "decideNextAction(prd: PrdSnapshot): SupervisorAction lives in src/supervisor/decide.ts. Returns implement (with storyId), review, complete, or blocked-no-implementable. Key invariant: blocked-no-implementable fires when operator-required stories are still passes=false even if all non-operator stories pass -- the autonomous loop cannot proceed until the operator does their ceremony. Cap row: roundsCompleted >= maxRounds (default 3) returns complete regardless of lastVerdict. US-006 (runSupervisor loop) imports this to sequence workers: call decideNextAction, if 'implement' mint uuid and respawn worker, if 'review' dispatch reviewer, if 'complete' return. The storyId from decideNextAction is advisory/logging only -- the worker self-selects, so the actual completed story id comes from handoff.json/sentinel after the worker exits.",
+  "nextStoryContext": "runSupervisor({ spawn, waitFor, capturePane, readPrd, writePrd, readHandoff, clock, genUuid, genChannel, reviewDispatch, writeSessionMarker, workerPaneId, prdPath, handoffPath, permissionMode, taskPrompt, maxIterations? }) lives in src/supervisor/loop.ts. Returns Promise<{ status: 'complete' | 'blocked' | 'max-iterations', iterations, lastOutcome }>. Key invariant: writeSessionMarker is called with the ACTUAL completed storyId from readWorkerOutcome (never the advisory storyId from decideNextAction). Review branch calls injected reviewDispatch(uuid) as a placeholder. US-007 (rewire cam next) will import runSupervisor and wire it to the real tmux/prd/handoff I/O. The workerPaneId comes from readWorkerPaneMarker (US-001). The spawn fn signature is (cmd, args, opts?) => { stdout, exitCode }.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story uses only pure TypeScript logic (array sort, Set lookup, number comparison). No external library dependencies."
+      "summary": "Story uses only pure TypeScript logic plus imports from sibling supervisor modules (decide.ts, result.ts, worker-argv.ts). No external library dependencies."
     }
   ]
 }
