@@ -36,7 +36,7 @@
         "bun test passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (modify setupOrchestratorSession + RunOptions), src/transcript/usage.ts (add orchestratorTranscriptPath), test/run.test.ts (extend existing assertions), test/transcript/usage.test.ts or a new file under test/transcript/ (new coverage for the resolver). The agentCmd string in run.ts is the surface to patch: today it is `claude --permission-mode bypassPermissions \"$(cat '${promptFile}')\"; tmux -L cam kill-session ...`; insert `--session-id <uuid>` between bypassPermissions and the prompt. Use randomUUID from node:crypto (matches the file's existing node: idiom: this file already uses node:fs, node:child_process, node:path). The --session-id flag is documented in `claude --help` as 'Use a specific session ID for the conversation' (verified externally, not a fetchable doc URL — note in officialDocsValidated when filing handoff, but the PRD officialDocsConsulted stays []). Encoding rule (verified against ~/.claude/projects): cwd.replace(/[^a-zA-Z0-9]/g, '-'). Inject `home` (not hardcode os.homedir()) so the resolver is testable against a tmpdir. Re-attach guard MUST live in setupOrchestratorSession's early-return path: the marker write happens AFTER `if (!panes) return { created: false }` so re-attach is a no-op for the marker. Codebase patterns: noUncheckedIndexedAccess (guard the readFileSync result + trim before returning). Conventional commit: feat: US-002 - capture orchestrator session id and resolve transcript path."
     },

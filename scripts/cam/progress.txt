@@ -15,6 +15,34 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **No em dashes** in persisted files (PRD notes, progress, docs): use colon, comma, parentheses, or period.
 - **Pure transcript parser pattern**: `parseTranscriptUsage` splits on `\n`, `JSON.parse` each trimmed line in a try/catch, checks `message?.usage` existence, accumulates with `toNumber()` guard (returns 0 for non-number). `formatTokens` uses `>= 1_000_000` / `>= 1_000` thresholds with `toFixed(1)M` / `Math.round/k` / raw. Module lives in `src/transcript/usage.ts`; tests under `test/transcript/usage.test.ts`.
 
+## [2026-06-08 01:00] - US-002: Capture orchestrator session id in cam run + transcript path resolver
+
+### What was done
+- Added `genSessionId?: () => string` to `RunOptions` (default `randomUUID` from `node:crypto`).
+- `setupOrchestratorSession` now generates a uuid via `genSessionId`, writes it to `.claude/.cam-orch-session` (utf8), and inserts `--session-id <uuid>` between `bypassPermissions` and the prompt in the orchestrator `agentCmd`.
+- Re-attach path (`created: false`) returns before the marker write so the original session id persists across `cam run` invocations.
+- `src/transcript/usage.ts` now exports `orchestratorTranscriptPath(cwd, claudeDir)`: reads `.claude/.cam-orch-session`, encodes cwd via `cwd.replace(/[^a-zA-Z0-9]/g, '-')`, returns `<claudeDir>/projects/<encoded>/<uuid>.jsonl` or null if the marker is absent/empty.
+- Extended `test/run.test.ts`: three new tests assert `--session-id` presence in argv, marker file content, and no-rewrite on re-attach.
+- Extended `test/transcript/usage.test.ts`: six new tests cover absent marker, empty marker, whitespace-only, encoding correctness, claudeDir injection (not hardcoded), and trailing-newline trim.
+
+### Files changed
+- src/commands/run.ts (modified, +18 lines)
+- src/transcript/usage.ts (modified, +43 lines)
+- test/run.test.ts (modified, +55 lines)
+- test/transcript/usage.test.ts (modified, +86 lines)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 513 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: claude-cli --session-id flag, status: ok (confirmed via `claude --help` locally: "Use a specific session ID for the conversation")
+
+### Notes
+- orchestratorTranscriptPath takes `claudeDir` as a parameter (not hardcoded); callers must resolve `process.env.CLAUDE_CONFIG_DIR ?? join(os.homedir(), '.claude')`.
+- `noUncheckedIndexedAccess`: readFileSync result is trimmed before returning; empty-after-trim returns null.
+---
+
 ## [2026-06-08 00:00] - US-001: Pure transcript-usage parser + formatTokens
 
 ### What was done

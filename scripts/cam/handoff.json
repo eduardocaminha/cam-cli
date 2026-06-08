@@ -1,22 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Pure transcript-usage parser + formatTokens"
+    "id": "US-002",
+    "title": "Capture orchestrator session id in cam run + transcript path resolver"
   },
   "branchName": "cam/CAM-21-dashboard-token-spend",
-  "timestamp": "2026-06-08T00:00:00Z",
-  "createdFiles": [
+  "timestamp": "2026-06-08T01:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/run.ts",
     "src/transcript/usage.ts",
+    "test/run.test.ts",
     "test/transcript/usage.test.ts"
   ],
-  "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "US-002 needs cam run to write a session-id marker (.claude/.cam-orch-session) so the transcript path resolver introduced in the next story can find the right JSONL. The transcript parsing module (src/transcript/usage.ts) is now available for import. parseTranscriptUsage and formatTokens are the two exports. The injectable genSessionId pattern is already in the codebase (see test/tmux-session.test.ts for injection examples).",
+  "nextStoryContext": "US-003 needs to wire orchestratorTranscriptPath into the dashboard or status renderer. The resolver is now available in src/transcript/usage.ts. Key callsite contract: caller resolves claudeDir as (process.env.CLAUDE_CONFIG_DIR ?? join(os.homedir(), '.claude')) before passing to orchestratorTranscriptPath. The marker file lives at <cwd>/.claude/.cam-orch-session and is written fresh only on new sessions (not re-attach). parseTranscriptUsage + formatTokens are in the same module.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Pure TS stdlib story: JSON.parse, String.split, Math.round. No external lib touched."
+      "lib": "claude-cli --session-id",
+      "version": "current",
+      "url": "claude --help (local binary)",
+      "fetchedAt": "2026-06-08T01:00:00Z",
+      "status": "ok",
+      "summary": "claude --help confirms '--session-id <uuid>  Use a specific session ID for the conversation'. Flag placement (after bypassPermissions, before the prompt) matches the implementation."
     }
   ]
 }
