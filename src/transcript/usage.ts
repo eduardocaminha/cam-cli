@@ -1,10 +1,16 @@
 /**
- * Pure transcript-usage parser.
+ * Pure transcript-usage parser and orchestrator transcript path resolver.
  *
  * Parses a Claude Code transcript JSONL and sums token usage across all lines
  * that carry message.usage (assistant and sidechain lines).
  * Malformed / non-JSON lines and lines without message.usage are skipped silently.
+ *
+ * Also exports orchestratorTranscriptPath to resolve the JSONL path for the
+ * running orchestrator session (US-002).
  */
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 export interface TranscriptUsage {
 	input: number;
@@ -90,4 +96,35 @@ export function formatTokens(n: number): string {
 		return `${Math.round(n / 1_000)}k`;
 	}
 	return `${n}`;
+}
+
+/**
+ * Resolves the JSONL transcript path for the orchestrator session.
+ *
+ * Reads the session id from <cwd>/.claude/.cam-orch-session (written by
+ * cam run on every new session) and returns:
+ *   <claudeDir>/projects/<encode(cwd)>/<uuid>.jsonl
+ *
+ * where encode replaces every character not matching /[a-zA-Z0-9]/ with '-'
+ * (verified empirically against ~/.claude/projects).
+ *
+ * Returns null when the marker file is absent, unreadable, or empty.
+ *
+ * @param cwd       The project root directory (contains .claude/).
+ * @param claudeDir The Claude config root (honor CLAUDE_CONFIG_DIR; callers
+ *                  typically pass process.env.CLAUDE_CONFIG_DIR ?? join(os.homedir(), '.claude')).
+ */
+export function orchestratorTranscriptPath(cwd: string, claudeDir: string): string | null {
+	const markerPath = join(cwd, '.claude', '.cam-orch-session');
+	let uuid: string;
+	try {
+		const raw = readFileSync(markerPath, 'utf8');
+		uuid = raw.trim();
+	} catch {
+		return null;
+	}
+	if (uuid === '') return null;
+
+	const encoded = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+	return join(claudeDir, 'projects', encoded, `${uuid}.jsonl`);
 }

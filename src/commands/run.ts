@@ -24,6 +24,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import process from 'node:process';
+import { randomUUID } from 'node:crypto';
 
 import { printError } from '../logging/color.ts';
 import {
@@ -55,6 +56,8 @@ export interface RunOptions {
 	cwd?: string;
 	/** Injectable spawn function for unit tests. Defaults to spawnSync. */
 	spawnFn?: SpawnFn;
+	/** Injectable session-id generator for unit tests. Defaults to randomUUID. */
+	genSessionId?: () => string;
 }
 
 export interface ParsedRunArgs {
@@ -119,8 +122,9 @@ function setupOrchestratorSession(opts: {
 	cwd: string;
 	sessionName: string;
 	spawnFn: SpawnFn;
+	genSessionId: () => string;
 }): { sessionName: string; created: boolean } {
-	const { cwd, sessionName, spawnFn } = opts;
+	const { cwd, sessionName, spawnFn, genSessionId } = opts;
 
 	const panes: CreatedPaneIds | false = ensureProjectSession(sessionName, spawnFn);
 	if (!panes) {
@@ -135,13 +139,20 @@ function setupOrchestratorSession(opts: {
 	const promptFile = join(dotClaude, '.cam-orchestrator-prompt.txt');
 	writeFileSync(promptFile, buildOrchestratorBootPrompt(), 'utf8');
 
+	// Generate and persist the orchestrator session id so the dashboard can
+	// locate the JSONL transcript for token-spend reporting (US-002).
+	const sessionId = genSessionId();
+	writeFileSync(join(dotClaude, '.cam-orch-session'), sessionId, 'utf8');
+
 	// Pane 0: orchestrator (claude).
 	// --permission-mode bypassPermissions is INTENTIONAL (2026-06-06): the
 	// orchestrator runs the loop unattended and must bypass; do NOT change to
 	// readPermissionMode.
+	// --session-id passes the known uuid to claude so the transcript is written
+	// at <claudeDir>/projects/<encode(cwd)>/<uuid>.jsonl (US-002).
 	// Chain kill-session so that when claude exits the whole tmux session is
 	// torn down automatically, dropping the user back to their shell (US-003).
-	const agentCmd = `claude --permission-mode bypassPermissions "$(cat '${promptFile}')"; tmux -L cam kill-session -t ${sessionName}`;
+	const agentCmd = `claude --permission-mode bypassPermissions --session-id ${sessionId} "$(cat '${promptFile}')"; tmux -L cam kill-session -t ${sessionName}`;
 	// respawn-pane -k runs the command DIRECTLY in the pane, replacing the silent
 	// `cat` placeholder. No interactive bash means no macOS zsh notice / prompt /
 	// command echo flashing before the real command paints (`bash -c` is
@@ -234,6 +245,7 @@ export function runRun(options: RunOptions = {}): number {
 	const spawnFn: SpawnFn = options.spawnFn ?? ((cmd, args, opts) =>
 		spawnSync(cmd, args, { stdio: opts?.stdio ?? 'ignore' })
 	);
+	const genSessionId = options.genSessionId ?? randomUUID;
 
 	// Title + leading blank up-front so every code path below shares the same
 	// hierarchy as `cam status` / `cam help`.
@@ -276,7 +288,7 @@ export function runRun(options: RunOptions = {}): number {
 
 	let result: { sessionName: string; created: boolean };
 	try {
-		result = setupOrchestratorSession({ cwd, sessionName, spawnFn });
+		result = setupOrchestratorSession({ cwd, sessionName, spawnFn, genSessionId });
 		if (result.created) {
 			emitOk(`tmux session "${sessionName}" created`);
 		} else {

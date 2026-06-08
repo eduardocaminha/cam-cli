@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { formatTokens, parseTranscriptUsage } from "../../src/transcript/usage.ts";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { formatTokens, orchestratorTranscriptPath, parseTranscriptUsage } from "../../src/transcript/usage.ts";
 
 // ---------------------------------------------------------------------------
 // parseTranscriptUsage
@@ -90,6 +93,91 @@ describe("parseTranscriptUsage", () => {
 		expect(result.output).toBe(0);
 		expect(result.cacheRead).toBe(0);
 		expect(result.cacheCreation).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// orchestratorTranscriptPath
+// ---------------------------------------------------------------------------
+
+describe("orchestratorTranscriptPath", () => {
+	function makeTmpProject(): { cwd: string; claudeDir: string } {
+		const base = mkdtempSync(join(tmpdir(), "cam-orch-tp-"));
+		const cwd = join(base, "project");
+		const claudeDir = join(base, "claude-dir");
+		mkdirSync(join(cwd, ".claude"), { recursive: true });
+		mkdirSync(claudeDir, { recursive: true });
+		return { cwd, claudeDir };
+	}
+
+	test("returns null when marker file is absent", () => {
+		const { cwd, claudeDir } = makeTmpProject();
+		// No .cam-orch-session written.
+		expect(orchestratorTranscriptPath(cwd, claudeDir)).toBeNull();
+	});
+
+	test("returns null when marker file is empty", () => {
+		const { cwd, claudeDir } = makeTmpProject();
+		writeFileSync(join(cwd, ".claude", ".cam-orch-session"), "", "utf8");
+		expect(orchestratorTranscriptPath(cwd, claudeDir)).toBeNull();
+	});
+
+	test("returns null when marker file contains only whitespace", () => {
+		const { cwd, claudeDir } = makeTmpProject();
+		writeFileSync(join(cwd, ".claude", ".cam-orch-session"), "  \n  ", "utf8");
+		expect(orchestratorTranscriptPath(cwd, claudeDir)).toBeNull();
+	});
+
+	test("encodes non-alphanumeric chars in cwd as dashes", () => {
+		const { claudeDir } = makeTmpProject();
+		// Use a known cwd with special chars. We build the project dir ourselves.
+		const base = mkdtempSync(join(tmpdir(), "cam-enc-"));
+		// Simulate a cwd that has slashes, dots, dashes in its path.
+		const cwd = join(base, "my.project");
+		mkdirSync(join(cwd, ".claude"), { recursive: true });
+		const uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+		writeFileSync(join(cwd, ".claude", ".cam-orch-session"), uuid, "utf8");
+
+		const result = orchestratorTranscriptPath(cwd, claudeDir);
+		expect(result).not.toBeNull();
+
+		// The encoded segment should replace '/', '.', '-', etc. with '-'.
+		const encoded = cwd.replace(/[^a-zA-Z0-9]/g, "-");
+		const expected = join(claudeDir, "projects", encoded, `${uuid}.jsonl`);
+		expect(result).toBe(expected);
+	});
+
+	test("honors the injected claudeDir (does not hardcode ~/.claude)", () => {
+		const { cwd, claudeDir } = makeTmpProject();
+		const uuid = "11111111-2222-3333-4444-555555555555";
+		writeFileSync(join(cwd, ".claude", ".cam-orch-session"), uuid, "utf8");
+
+		const result = orchestratorTranscriptPath(cwd, claudeDir);
+		expect(result).not.toBeNull();
+		// Path must be inside the injected claudeDir, not any hardcoded ~/.claude.
+		expect(result!.startsWith(claudeDir)).toBe(true);
+	});
+
+	test("returns correct path for a standard uuid marker", () => {
+		const { cwd, claudeDir } = makeTmpProject();
+		const uuid = "deadbeef-1234-5678-abcd-000000000000";
+		writeFileSync(join(cwd, ".claude", ".cam-orch-session"), uuid, "utf8");
+
+		const encoded = cwd.replace(/[^a-zA-Z0-9]/g, "-");
+		const expected = join(claudeDir, "projects", encoded, `${uuid}.jsonl`);
+		expect(orchestratorTranscriptPath(cwd, claudeDir)).toBe(expected);
+	});
+
+	test("trims trailing newline from marker file content", () => {
+		const { cwd, claudeDir } = makeTmpProject();
+		const uuid = "deadbeef-1234-5678-abcd-000000000000";
+		// Write with trailing newline (as writeFileSync in run.ts does not add one,
+		// but shell echo / editors might).
+		writeFileSync(join(cwd, ".claude", ".cam-orch-session"), `${uuid}\n`, "utf8");
+
+		const encoded = cwd.replace(/[^a-zA-Z0-9]/g, "-");
+		const expected = join(claudeDir, "projects", encoded, `${uuid}.jsonl`);
+		expect(orchestratorTranscriptPath(cwd, claudeDir)).toBe(expected);
 	});
 });
 
