@@ -126,3 +126,9 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - The key invariant: cacheCreation is fresh spend (billed above base rate), so it MUST stay in `in` total but MUST NOT appear in `cached`. Only `cacheRead` contributes to the `(N cached)` suffix. This lives in one place (`renderTokensLine`) so it cannot drift.
 - Sample numbers from the issue: cacheRead 450k, fresh input 22k. With this implementation `482k in (450k cached) · Xk out` would render correctly.
 ---
+
+## [2026-06-08 09:36] - Review round 1: FIXES_PENDING:1
+- Created 1 story US-R1-001 from review finding (WARNING): snapshotKey in src/commands/dashboard.ts hashes only tokensInput/tokensOutput, omitting tokensCacheRead/tokensCacheCreation. Under US-004 all four contribute to the rendered tokens line, so the legacy non-Ink loop misses redraws when only cache totals change (US-003 AC deviation). Mechanical, single-file fix queued at priority 0.
+- 3 SUGGESTIONs triaged to skip: formatTokens(999_999)='1000k' discontinuity (test-accepted), agentCmd argv-form (controlled values, reviewer said do not act), renderTokensLine separator consistency (stylistic).
+- Build at review time: typecheck zero errors, bun test 525 pass / 0 fail.
+---

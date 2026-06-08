@@ -5,7 +5,27 @@
   "issueNumber": "CAM-21",
   "relatedDocs": [],
   "officialDocsConsulted": [],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "8eb62005588cd204c448a71beb6abfd42344d79d",
+    "lastVerdict": "FIXES_PENDING"
+  },
   "userStories": [
+    {
+      "id": "US-R1-001",
+      "title": "Include cache token fields in dashboard snapshotKey",
+      "description": "As the legacy non-Ink dashboard render loop, I need snapshotKey to hash all four token fields so a poll where only cache totals change still triggers a redraw, matching the US-003 acceptance criterion that snapshotKey incorporates token totals.",
+      "acceptanceCriteria": [
+        "[src/commands/dashboard.ts:701-716] snapshotKey appends `data.tokensCacheRead ?? -1` and `data.tokensCacheCreation ?? -1` to the hashed array, alongside the existing `tokensInput`/`tokensOutput` entries, so all four token fields contribute to the snapshot identity (US-003 AC: 'snapshotKey incorporates token totals so the legacy non-Ink loop redraws when tokens change' — currently only 2 of 4 are honored, found in review round 1).",
+        "bun run typecheck passes",
+        "bun test passes"
+      ],
+      "priority": 0,
+      "passes": false,
+      "requires": null,
+      "notes": "Review round 1 finding (WARNING). Mechanical, single-file. The displayed tokens line (renderTokensLine) uses in = input + cacheCreation + cacheRead and cached = cacheRead, so cache fields are load-bearing for the rendered string; the legacy loop must redraw when they change. Production path is Ink (re-renders via setState every poll) so impact is bounded to the non-Ink loop, but the AC is literal. Conventional commit: fix: US-R1-001 - include cache token fields in dashboard snapshotKey."
+    },
     {
       "id": "US-001",
       "title": "Pure transcript-usage parser + formatTokens",
