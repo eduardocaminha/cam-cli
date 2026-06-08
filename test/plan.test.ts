@@ -19,7 +19,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { tmpdir } from 'node:os';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -30,7 +30,11 @@ import {
 	runPlan,
 } from '../src/commands/plan.ts';
 import { parsePlanArgs } from '../index.ts';
-import { projectSessionName, type SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
+import {
+	projectSessionName,
+	WORKER_PANE_MARKER,
+	type SpawnFn as TmuxSpawnFn,
+} from '../src/tmux/session.ts';
 
 // --- Fake tmux spawn --------------------------------------------------------
 
@@ -315,5 +319,39 @@ describe('runPlan (tmux pane launcher)', () => {
 		// With existing session, only openPaneInSession's split-window fires.
 		const splitCall = tmuxSpawnFn.calls.find((c) => c.args[2] === 'split-window');
 		expect(splitCall?.args).toContain(`${sessionName}:0`);
+	});
+
+	test('writes a non-empty .claude/.cam-worker-pane after launching the plan pane', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
+		const tmuxSpawnFn = makeFakeTmuxSpawn(false); // session does not exist
+
+		await runPlan({
+			cwd: tmpDir,
+			permissionMode: 'bypassPermissions',
+			tmuxSpawnFn,
+		});
+
+		const markerPath = join(tmpDir, '.claude', WORKER_PANE_MARKER);
+		expect(existsSync(markerPath)).toBe(true);
+		const content = readFileSync(markerPath, 'utf8').trim();
+		expect(content.length).toBeGreaterThan(0);
+		// The pane id should match tmux format (%<n>).
+		expect(content).toMatch(/^%\d+$/);
+	});
+
+	test('writes the captured pane id (not empty) when session already exists', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
+		const tmuxSpawnFn = makeFakeTmuxSpawn(true); // session already exists
+
+		await runPlan({
+			cwd: tmpDir,
+			permissionMode: 'bypassPermissions',
+			tmuxSpawnFn,
+		});
+
+		const markerPath = join(tmpDir, '.claude', WORKER_PANE_MARKER);
+		expect(existsSync(markerPath)).toBe(true);
+		const content = readFileSync(markerPath, 'utf8').trim();
+		expect(content.length).toBeGreaterThan(0);
 	});
 });

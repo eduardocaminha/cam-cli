@@ -43,13 +43,22 @@ function captureStdout(fn: () => unknown): Promise<string> {
 // --- Fake tmux spawn --------------------------------------------------------
 
 function makeFakeTmuxSpawn(sessionExists = false): TmuxSpawnFn {
-	return ((cmd: string, args: string[], _opts?: { stdio?: string }) => {
+	let paneCounter = 0;
+	return ((cmd: string, args: string[], opts?: { stdio?: string }) => {
 		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
 		const subcommand = args[0] === '-L' ? args[2] : args[0];
 		if (subcommand === 'has-session') {
-			return { status: sessionExists ? 0 : 1 } as SpawnSyncReturns<Buffer>;
+			return { status: sessionExists ? 0 : 1, stdout: Buffer.from('') } as SpawnSyncReturns<Buffer>;
 		}
-		return { status: 0 } as SpawnSyncReturns<Buffer>;
+		// Return a stable pane id for calls that capture it via -P -F #{pane_id}.
+		if (
+			(subcommand === 'new-session' || subcommand === 'split-window') &&
+			opts?.stdio === 'pipe'
+		) {
+			paneCounter += 1;
+			return { status: 0, stdout: Buffer.from(`%${paneCounter}\n`) } as SpawnSyncReturns<Buffer>;
+		}
+		return { status: 0, stdout: Buffer.from('') } as SpawnSyncReturns<Buffer>;
 	}) as TmuxSpawnFn;
 }
 

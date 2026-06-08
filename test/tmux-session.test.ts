@@ -13,6 +13,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
 
+import { tmpdir } from 'node:os';
+import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import {
 	projectSessionName,
 	ensureProjectSession,
@@ -20,6 +24,14 @@ import {
 	isInsideProjectSession,
 	CAM_TMUX_SOCKET,
 	tmuxArgs,
+	respawnPaneArgv,
+	waitForArgv,
+	signalWaitForArgv,
+	capturePaneArgv,
+	workerWaitChannel,
+	writeWorkerPaneMarker,
+	readWorkerPaneMarker,
+	WORKER_PANE_MARKER,
 	type SpawnFn,
 	type Env,
 } from '../src/tmux/session.ts';
@@ -74,6 +86,7 @@ function makeFakeSpawn(
 			paneCounter += 1;
 			result.stdout = Buffer.from(`%${paneCounter}\n`);
 		}
+		// respawn-pane and wait-for subcommands: just return status 0.
 
 		return result;
 	};
@@ -287,7 +300,7 @@ describe('ensureProjectSession — new session', () => {
 // ---------------------------------------------------------------------------
 
 describe('openPaneInSession', () => {
-	test('calls split-window -t <session>:0 -v -d -- with the argv elements spread', () => {
+	test('calls split-window -t <session>:0 -v -d -P -F #{pane_id} -- with the argv elements spread', () => {
 		const spawn = makeFakeSpawn();
 		const cmdArgv = ['claude', '--permission-mode', 'bypassPermissions'];
 		openPaneInSession('cam-orch-myproj-abc123', cmdArgv, spawn);
@@ -302,6 +315,10 @@ describe('openPaneInSession', () => {
 		expect(call?.args).toContain('cam-orch-myproj-abc123:0');
 		expect(call?.args).toContain('-v');
 		expect(call?.args).toContain('-d');
+		// Must include -P -F #{pane_id} for stable pane capture.
+		expect(call?.args).toContain('-P');
+		expect(call?.args).toContain('-F');
+		expect(call?.args).toContain('#{pane_id}');
 		// The separator '--' must appear before the command elements.
 		expect(call?.args).toContain('--');
 		// Each argv element is a separate arg, not a joined string.
@@ -310,6 +327,13 @@ describe('openPaneInSession', () => {
 		expect(call?.args).toContain('bypassPermissions');
 		// Must NOT contain the joined form (that was the old shell-injection path).
 		expect(call?.args).not.toContain('claude --permission-mode bypassPermissions');
+	});
+
+	test('returns the captured pane id from stdout', () => {
+		const spawn = makeFakeSpawn();
+		const paneId = openPaneInSession('cam-orch-myproj-abc123', ['claude'], spawn);
+		// makeFakeSpawn increments counter for split-window with stdio: pipe.
+		expect(paneId).toBe('%1');
 	});
 
 	test('passes argv elements as separate tmux args (not a single joined shell string)', () => {
@@ -342,6 +366,145 @@ describe('openPaneInSession', () => {
 		// 'claude' must appear after '--'.
 		const claudeIdx = call?.args.indexOf('claude') ?? -1;
 		expect(claudeIdx).toBeGreaterThan(dashDashIdx);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Worker-slot argv builders (CAM-22 / US-001)
+// ---------------------------------------------------------------------------
+
+describe('respawnPaneArgv', () => {
+	test('prepends -L cam and includes respawn-pane -k -t <paneId>', () => {
+		const argv = respawnPaneArgv('%5', ['claude', '--permission-mode', 'bypassPermissions']);
+		expect(argv[0]).toBe('-L');
+		expect(argv[1]).toBe('cam');
+		expect(argv[2]).toBe('respawn-pane');
+		expect(argv).toContain('-k');
+		expect(argv).toContain('-t');
+		expect(argv).toContain('%5');
+	});
+
+	test('spreads the shell command elements after the target', () => {
+		const argv = respawnPaneArgv('%3', ['bash', '-c', 'echo hello']);
+		const targetIdx = argv.indexOf('-t');
+		expect(targetIdx).toBeGreaterThan(-1);
+		const afterTarget = argv.slice(targetIdx + 2);
+		expect(afterTarget).toEqual(['bash', '-c', 'echo hello']);
+	});
+});
+
+describe('waitForArgv', () => {
+	test('prepends -L cam and includes wait-for <channel>', () => {
+		const argv = waitForArgv('cam-worker-US-007-a1b2c3d4');
+		expect(argv[0]).toBe('-L');
+		expect(argv[1]).toBe('cam');
+		expect(argv[2]).toBe('wait-for');
+		expect(argv).not.toContain('-S');
+		expect(argv).toContain('cam-worker-US-007-a1b2c3d4');
+	});
+});
+
+describe('signalWaitForArgv', () => {
+	test('prepends -L cam and includes wait-for -S <channel>', () => {
+		const argv = signalWaitForArgv('cam-worker-US-007-a1b2c3d4');
+		expect(argv[0]).toBe('-L');
+		expect(argv[1]).toBe('cam');
+		expect(argv[2]).toBe('wait-for');
+		expect(argv).toContain('-S');
+		expect(argv).toContain('cam-worker-US-007-a1b2c3d4');
+	});
+
+	test('-S appears before the channel name', () => {
+		const argv = signalWaitForArgv('my-channel');
+		const sIdx = argv.indexOf('-S');
+		const chanIdx = argv.indexOf('my-channel');
+		expect(sIdx).toBeGreaterThan(-1);
+		expect(chanIdx).toBeGreaterThan(sIdx);
+	});
+});
+
+describe('capturePaneArgv', () => {
+	test('prepends -L cam and includes capture-pane -p -t <paneId>', () => {
+		const argv = capturePaneArgv('%7');
+		expect(argv[0]).toBe('-L');
+		expect(argv[1]).toBe('cam');
+		expect(argv[2]).toBe('capture-pane');
+		expect(argv).toContain('-p');
+		expect(argv).toContain('-t');
+		expect(argv).toContain('%7');
+	});
+});
+
+describe('workerWaitChannel', () => {
+	test('produces cam-worker-<safeStoryId>-<shortUuid>', () => {
+		const channel = workerWaitChannel('US-007', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+		expect(channel).toBe('cam-worker-US-007-a1b2c3d4');
+	});
+
+	test('sanitizes non-alphanumeric characters in storyId to dashes', () => {
+		const channel = workerWaitChannel('US 007', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+		expect(channel).toMatch(/^cam-worker-US-007-[a-f0-9]{8}$/);
+	});
+
+	test('is deterministic for the same storyId and uuid', () => {
+		const uuid = 'aaaabbbb-cccc-dddd-eeee-ffffffffffff';
+		expect(workerWaitChannel('US-001', uuid)).toBe(workerWaitChannel('US-001', uuid));
+	});
+
+	test('differs for different uuids with the same storyId', () => {
+		const a = workerWaitChannel('US-001', 'aaaabbbb-cccc-dddd-eeee-000000000000');
+		const b = workerWaitChannel('US-001', 'bbbbcccc-dddd-eeee-ffff-111111111111');
+		expect(a).not.toBe(b);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Worker pane marker persistence
+// ---------------------------------------------------------------------------
+
+describe('writeWorkerPaneMarker / readWorkerPaneMarker', () => {
+	test('round-trip: write then read returns the same pane id', () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const claudeDir = join(tmpDir, '.claude');
+		writeWorkerPaneMarker(claudeDir, '%5');
+		expect(readWorkerPaneMarker(claudeDir)).toBe('%5');
+	});
+
+	test('creates the claudeDir if it does not exist', () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const claudeDir = join(tmpDir, '.claude');
+		writeWorkerPaneMarker(claudeDir, '%3');
+		expect(existsSync(claudeDir)).toBe(true);
+	});
+
+	test('writes file named WORKER_PANE_MARKER inside claudeDir', () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const claudeDir = join(tmpDir, '.claude');
+		writeWorkerPaneMarker(claudeDir, '%9');
+		const filePath = join(claudeDir, WORKER_PANE_MARKER);
+		expect(existsSync(filePath)).toBe(true);
+		expect(readFileSync(filePath, 'utf8')).toBe('%9');
+	});
+
+	test('readWorkerPaneMarker returns null when file does not exist', () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const claudeDir = join(tmpDir, '.claude');
+		expect(readWorkerPaneMarker(claudeDir)).toBeNull();
+	});
+
+	test('readWorkerPaneMarker returns null when file is empty', () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const claudeDir = join(tmpDir, '.claude');
+		writeWorkerPaneMarker(claudeDir, '');
+		expect(readWorkerPaneMarker(claudeDir)).toBeNull();
+	});
+
+	test('last write wins (overwrites previous pane id)', () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const claudeDir = join(tmpDir, '.claude');
+		writeWorkerPaneMarker(claudeDir, '%1');
+		writeWorkerPaneMarker(claudeDir, '%7');
+		expect(readWorkerPaneMarker(claudeDir)).toBe('%7');
 	});
 });
 
