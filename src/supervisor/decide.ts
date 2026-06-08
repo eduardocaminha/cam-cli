@@ -15,9 +15,12 @@
 export interface PrdSnapshot {
 	userStories?: Array<{
 		id?: string;
+		title?: string;
 		priority?: number;
 		passes?: boolean;
 		requires?: string | null;
+		acceptanceCriteria?: string[];
+		notes?: string;
 	}>;
 	review?: {
 		roundsCompleted?: number;

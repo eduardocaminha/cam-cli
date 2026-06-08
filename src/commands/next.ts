@@ -58,6 +58,7 @@ import {
 } from '../tmux/session.ts';
 import { readEmbedded } from '../vendor/embedded.ts';
 import { runSupervisor, type RunSupervisorOptions } from '../supervisor/loop.ts';
+import { makeReviewDispatch } from '../supervisor/review.ts';
 import type { PrdSnapshot } from '../supervisor/decide.ts';
 
 // --- Constants -------------------------------------------------------------
@@ -327,10 +328,36 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 
 	const clock: RunSupervisorOptions['clock'] = () => new Date().toISOString();
 
-	// Review dispatch placeholder: full wiring in US-008.
-	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = (_uuid) => ({
-		status: 'error' as const,
-		detail: 'Review dispatch not yet implemented (US-008)',
+	// Review dispatch: wired via makeReviewDispatch (US-008).
+	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
+		spawn: (cmd, args) => {
+			const proc = spawnSync(cmd, args, { stdio: 'pipe' });
+			return {
+				stdout: proc.stdout?.toString() ?? '',
+				exitCode: proc.status ?? null,
+			};
+		},
+		waitFor: (channel) => {
+			spawnSync('tmux', ['-L', 'cam', 'wait-for', channel]);
+		},
+		capturePane: (paneId) => {
+			const proc = spawnSync('tmux', ['-L', 'cam', 'capture-pane', '-p', '-t', paneId], {
+				stdio: 'pipe',
+			});
+			return proc.stdout?.toString() ?? '';
+		},
+		readPrd: (): PrdSnapshot | null => {
+			try {
+				const text = readFileSync(prdPath, 'utf8');
+				return JSON.parse(text) as PrdSnapshot;
+			} catch {
+				return null;
+			}
+		},
+		writePrd: (prd) => {
+			writeFileSync(prdPath, JSON.stringify(prd, null, 2), 'utf8');
+		},
+		workerPaneId,
 	});
 
 	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {

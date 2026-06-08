@@ -91,10 +91,10 @@ export type GenChannel = (storyId: string, uuid: string) => string;
 
 /**
  * Dispatch a review worker.
- * Placeholder for US-008. Receives a uuid for session tracking.
+ * Receives a uuid for session tracking and a pre-minted wait-for channel.
  * Returns the outcome of the review dispatch.
  */
-export type ReviewDispatch = (uuid: string) => ReviewDispatchResult;
+export type ReviewDispatch = (uuid: string, channel: string) => ReviewDispatchResult;
 
 /** Result from reviewDispatch (placeholder shape for US-008). */
 export interface ReviewDispatchResult {
@@ -339,10 +339,11 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			continue;
 		}
 
-		// --- Review branch (placeholder; full wiring in US-008) ---
+		// --- Review branch ---
 		if (action.kind === 'review') {
 			const uuid = genUuid();
-			const reviewResult = reviewDispatch(uuid);
+			const channel = genChannel('review', uuid);
+			const reviewResult = reviewDispatch(uuid, channel);
 
 			iterations++;
 

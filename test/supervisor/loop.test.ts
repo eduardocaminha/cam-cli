@@ -115,7 +115,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 	const writePrd: WritePrd = (_prd) => {};
 	const readHandoff: ReadHandoff = () => null;
 	const clock: ClockFn = () => '2026-06-08T00:00:00Z';
-	const reviewDispatch: ReviewDispatch = (_uuid) => ({ status: 'ok', detail: 'review ok' });
+	const reviewDispatch: ReviewDispatch = (_uuid, _channel) => ({ status: 'ok', detail: 'review ok' });
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 
 	return {
@@ -259,7 +259,7 @@ describe('runSupervisor', () => {
 			readPrd: () => prds[prdCallCount++] ?? null,
 			readHandoff: () => handoffs[handoffIdx++] ?? null,
 			capturePane: (_paneId) => paneTexts[paneIdx++] ?? '',
-			reviewDispatch: (_uuid) => ({ status: 'ok', detail: 'review dispatched' }),
+			reviewDispatch: (_uuid, _channel) => ({ status: 'ok', detail: 'review dispatched' }),
 		});
 
 		const result = await runSupervisor(opts);
@@ -378,7 +378,7 @@ describe('runSupervisor', () => {
 
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
-			reviewDispatch: (_uuid) => ({ status: 'error', detail: 'dispatch failed' }),
+			reviewDispatch: (_uuid, _channel) => ({ status: 'error', detail: 'dispatch failed' }),
 		});
 
 		const result = await runSupervisor(opts);
