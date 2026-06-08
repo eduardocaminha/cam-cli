@@ -19,6 +19,31 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **openPaneInSession returns pane id (US-001)**: the function now uses `stdio: 'pipe'` and `-P -F #{pane_id}` to capture and return the stable pane id string (e.g. `%5`). All test fakes for split-window must handle `opts?.stdio === 'pipe'` and return a non-empty `stdout` buffer, or they will crash with `Cannot read property toString of undefined`.
 - **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
 
+## 2026-06-08 16:00 - US-003: Headless implementer worker argv builder
+
+### What was done
+- Created `src/supervisor/worker-argv.ts` with `buildImplementerWorkerArgv(opts)`: pure function, no I/O, returns the shell string for respawn-pane.
+- Shape: `claude -p --permission-mode <mode> --session-id <uuid> --output-format text --agent <agentName> '<task>' ; tmux -L cam wait-for -S '<channel>'`.
+- `shellEscape(s)` wraps the value in single quotes and replaces embedded `'` with `'\''`; applied to both taskPrompt and channel.
+- Default `agentName` is `'subagent-implementer'` (exported as `DEFAULT_IMPLEMENTER_AGENT`).
+- Created `test/supervisor/worker-argv.test.ts` with 11 tests: all required flags, wait-for chain ordering, prompt with `'` + `$` + backtick escaping, channel in wait-for argument, agentName override, and DEFAULT_IMPLEMENTER_AGENT value assertion.
+
+### Files changed
+- `src/supervisor/worker-argv.ts` (new)
+- `test/supervisor/worker-argv.test.ts` (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 570 pass
+
+### Step 5.5 docs validation
+- lib: none (no external libs; pure string manipulation only), status: no_external_lib_touched
+
+### Notes
+- Shell escaping uses POSIX single-quote strategy (`'...'` + `'\''` for embedded quotes); chosen over double-quote because single quotes neutralize `$`, backtick, `\`, and `!` without special-casing each.
+---
+
 ## 2026-06-08 15:00 - US-002: Per-story session marker + transcriptPathForSession resolver
 
 ### What was done

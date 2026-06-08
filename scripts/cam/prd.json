@@ -90,7 +90,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: new src/supervisor/worker-argv.ts (or src/commands/next-supervisor.ts module), test/supervisor/worker-argv.test.ts. We use --agent <name> because the implementer is an AGENT (.claude/agents/subagent-implementer.md), not a slash command: there is NO /cam-implement command. Custom .claude/commands DO run under -p per official docs, so that is not the reason. Mirror the chained 'tmux ... kill-session' pattern in src/commands/run.ts:155 for the trailing wait-for -S. Do not introduce a --permission-mode CLI flag on any cam subcommand (see test/no-permission-mode-flag.test.ts), the mode is passed through programmatically."
     },

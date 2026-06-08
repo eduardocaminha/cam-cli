@@ -1,22 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Per-story session marker + transcriptPathForSession resolver"
+    "id": "US-003",
+    "title": "Headless implementer worker argv builder"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-08T15:00:00Z",
-  "createdFiles": [],
-  "modifiedFiles": [
-    "src/transcript/usage.ts",
-    "test/transcript/usage.test.ts"
+  "timestamp": "2026-06-08T16:00:00Z",
+  "createdFiles": [
+    "src/supervisor/worker-argv.ts",
+    "test/supervisor/worker-argv.test.ts"
   ],
+  "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "transcriptPathForSession(uuid, cwd, claudeDir) is now the canonical path builder in src/transcript/usage.ts. orchestratorTranscriptPath is a thin wrapper that reads .cam-orch-session, calls transcriptPathForSession, and returns null on absent/empty. writeWorkerSessionMarker(claudeDir, storyId, uuid) writes .claude/.cam-worker-<storyId>.session; readWorkerSessionMarker(claudeDir, storyId) reads it back (null if absent/empty). US-006 can call writeWorkerSessionMarker after spawning the worker claude session; dashboard/status can call readWorkerSessionMarker + transcriptPathForSession to display per-story token usage.",
+  "nextStoryContext": "buildImplementerWorkerArgv({ uuid, taskPrompt, permissionMode, channel, agentName? }) lives in src/supervisor/worker-argv.ts. It returns the shell string for respawn-pane: 'claude -p --permission-mode <mode> --session-id <uuid> --output-format text --agent <agentName> <escaped-task> ; tmux -L cam wait-for -S <escaped-channel>'. Both taskPrompt and channel are POSIX single-quote-escaped via shellEscape(). DEFAULT_IMPLEMENTER_AGENT = 'subagent-implementer'. The next story (US-004+) can import this and pass the result to respawnPaneArgv() from src/tmux/session.ts.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story only used Node.js built-ins (node:fs, node:path); no new external libraries introduced."
+      "summary": "Story is a pure string builder with no external library dependencies."
     }
   ]
 }
