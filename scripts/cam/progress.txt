@@ -151,3 +151,11 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 ### Notes
 - Sentinel value -1 (vs undefined/null) was already the convention used for tokensInput/tokensOutput in the same array; cache fields follow the same pattern.
 ---
+
+## [2026-06-08 10:59] - Review round 2: FIXES_PENDING:1
+- Created 1 story US-R2-001 from review finding (CRITICAL): parseTranscriptUsage in src/transcript/usage.ts sums every line carrying message.usage, but real Claude Code transcripts write one JSONL line per content block (thinking/text/tool_use) each with an IDENTICAL message.usage object, inflating displayed totals 2x to 5x. Verified empirically on ~/.claude/projects (91 unique message ids across 181 occurrences in one transcript; one msg id 5x with identical usage in another). Breaks the CAM-21 honest-numbers contract. Fix: dedupe by (message.id, requestId), keep last usage per request, then sum. Queued at priority 0.
+- US-R1-001 (round 1 finding) verified landed correctly: snapshotKey now hashes all four token fields.
+- 1 WARNING triaged to skip: shell-injection via genSessionId in run.ts:155 (production uses randomUUID, always clean hex; defensive-only).
+- 2 SUGGESTIONs triaged to skip: .gitignore .claude/.cam-* (cosmetic), stories field absent from snapshotKey (pre-existing, out-of-scope, production path is Ink).
+- Build at review time: typecheck zero errors, bun test 525 pass / 0 fail.
+---

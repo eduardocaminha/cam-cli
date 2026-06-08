@@ -6,12 +6,27 @@
   "relatedDocs": [],
   "officialDocsConsulted": [],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastReviewSha": "8eb62005588cd204c448a71beb6abfd42344d79d",
+    "lastReviewSha": "1fdb653c235d8e3f8e2c07a7430cbaca208680f9",
     "lastVerdict": "FIXES_PENDING"
   },
   "userStories": [
+    {
+      "id": "US-R2-001",
+      "title": "Deduplicate transcript usage lines before summing",
+      "description": "As the dashboard and cam status token row, I need parseTranscriptUsage to dedupe usage entries by request before summing, because real Claude Code transcripts write one JSONL line per content block (all carrying the same usage object), so naive summing inflates the displayed totals 2x to 5x and breaks the feature's honest-numbers contract.",
+      "acceptanceCriteria": [
+        "[src/transcript/usage.ts:47-79] parseTranscriptUsage no longer sums every line that carries message.usage. Real Claude Code transcripts write multiple JSONL lines per assistant turn (one per content block: thinking, text, tool_use), each carrying an IDENTICAL message.usage object, so naive summation inflates totals 2x to 5x (verified empirically on ~/.claude/projects in review round 2: 91 unique message ids across 181 occurrences in one transcript; one msg id appearing 5x with identical usage in another). Dedupe before summing: key each usage-bearing line by (message.id, requestId) (verify the exact top-level field names empirically against a real transcript before coding), keep the final usage payload per key, then sum the deduped set. Lines that carry message.usage but lack a dedup key fall back to being counted once each (no collision).",
+        "test/transcript/usage.test.ts gains a fixture where the same (message.id, requestId) repeats across multiple lines with identical usage, asserting the request is counted ONCE not N times; the existing distinct-line sum assertions stay green.",
+        "bun run typecheck passes",
+        "bun test passes"
+      ],
+      "priority": 0,
+      "passes": false,
+      "requires": null,
+      "notes": "Review round 2 finding (CRITICAL). Core correctness of the CAM-21 honest-numbers contract: the rendered row (renderTokensLine) is laid out correctly but the underlying totals are inflated, which is worse than omitting the row. Dedup strategy matches ccusage and claude-devtools (key by message.id + requestId, keep last usage per request). Sources: gille.ai/en/blog/claude-code-jsonl-logs-undercount-tokens, github.com/anthropics/claude-code/issues/5034, github.com/matt1398/claude-devtools/issues/74, ccusage.com/api/data-loader. Triaged to backlog/skip (do NOT implement here): the WARNING on shell-injection via genSessionId (run.ts:155, production uses randomUUID so the value is always clean hex) and the two SUGGESTIONS (.gitignore .claude/.cam-*, stories field absent from snapshotKey, both pre-existing/out-of-scope). Conventional commit: fix: US-R2-001 - dedupe transcript usage lines before summing."
+    },
     {
       "id": "US-R1-001",
       "title": "Include cache token fields in dashboard snapshotKey",
