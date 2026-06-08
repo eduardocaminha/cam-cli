@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatTokens, orchestratorTranscriptPath, parseTranscriptUsage } from "../../src/transcript/usage.ts";
+import { formatTokens, orchestratorTranscriptPath, parseTranscriptUsage, renderTokensLine } from "../../src/transcript/usage.ts";
 
 // ---------------------------------------------------------------------------
 // parseTranscriptUsage
@@ -225,5 +225,63 @@ describe("formatTokens", () => {
 
 	test("renders 500 as '500'", () => {
 		expect(formatTokens(500)).toBe("500");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// renderTokensLine (US-004)
+// ---------------------------------------------------------------------------
+
+describe("renderTokensLine", () => {
+	test("includes cached suffix when cacheRead > 0", () => {
+		const line = renderTokensLine({
+			input: 22_000,
+			output: 5_000,
+			cacheRead: 450_000,
+			cacheCreation: 10_000,
+		});
+		// in = 22000 + 10000 + 450000 = 482000 -> 482k
+		// cached = 450000 -> 450k (cacheRead only)
+		// out = 5000 -> 5k
+		expect(line).toBe("482k in (450k cached) · 5k out");
+	});
+
+	test("omits the cached suffix entirely when cacheRead is 0", () => {
+		const line = renderTokensLine({
+			input: 5_000,
+			output: 1_000,
+			cacheRead: 0,
+			cacheCreation: 2_000,
+		});
+		// in = 5000 + 2000 + 0 = 7000 -> 7k; no cached suffix
+		expect(line).toBe("7k in · 1k out");
+	});
+
+	test("cacheCreation is counted in 'in' total but never in 'cached'", () => {
+		const line = renderTokensLine({
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheCreation: 100_000,
+		});
+		// in = 100000 -> 100k; cached = 0 so no suffix; out = 0
+		expect(line).toBe("100k in · 0 out");
+	});
+
+	test("renders '0 in · 0 out' when all fields are zero", () => {
+		const line = renderTokensLine({ input: 0, output: 0, cacheRead: 0, cacheCreation: 0 });
+		expect(line).toBe("0 in · 0 out");
+	});
+
+	test("shows cached suffix even when cached is small fraction of in", () => {
+		const line = renderTokensLine({
+			input: 100_000,
+			output: 10_000,
+			cacheRead: 1,
+			cacheCreation: 0,
+		});
+		// cacheRead = 1 > 0, so suffix appears
+		// in = 100001 -> 100k; cached = 1 -> 1; out = 10000 -> 10k
+		expect(line).toContain("(1 cached)");
 	});
 });

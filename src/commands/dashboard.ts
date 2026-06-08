@@ -32,7 +32,7 @@ import {
 	type PrdShape,
 	type PrdStory,
 } from "./status.ts";
-import { orchestratorTranscriptPath, parseTranscriptUsage } from "../transcript/usage.ts";
+import { orchestratorTranscriptPath, parseTranscriptUsage, renderTokensLine } from "../transcript/usage.ts";
 
 // --- Constants -------------------------------------------------------------
 
@@ -222,6 +222,17 @@ export function composeDashboard(
 		`poll=${intervalMs}ms`,
 	];
 	output += `${muted(statusBits.join("  ·  "))}\n`;
+
+	// --- Token usage row (omitted when no transcript data) ----------------
+	if (data.tokensInput !== undefined) {
+		const tokenLine = renderTokensLine({
+			input: data.tokensInput ?? 0,
+			output: data.tokensOutput ?? 0,
+			cacheRead: data.tokensCacheRead ?? 0,
+			cacheCreation: data.tokensCacheCreation ?? 0,
+		});
+		output += `${muted(`tokens  ${tokenLine}`)}\n`;
+	}
 
 	// --- Sleep banner -----------------------------------------------------
 	// Surfaces when the plugin marked the run paused (e.g. completion-promise

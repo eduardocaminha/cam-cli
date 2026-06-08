@@ -99,6 +99,27 @@ export function formatTokens(n: number): string {
 }
 
 /**
+ * Renders the token usage line shared by both the dashboard and cam status.
+ *
+ * Format: "<in> in (<cached> cached) · <out> out"
+ * where:
+ *   in     = t.input + t.cacheCreation + t.cacheRead  (total input volume)
+ *   cached = t.cacheRead only (cacheCreation is fresh billed spend, not cached)
+ *
+ * The "(N cached)" suffix is omitted entirely when cached is 0 (clean display
+ * for runs with no cache yet). When cached > 0 it always appears.
+ *
+ * Single source of truth: both Dashboard.tsx and status.ts import this so the
+ * wording cannot drift between the two surfaces.
+ */
+export function renderTokensLine(t: TranscriptUsage): string {
+	const inTotal = t.input + t.cacheCreation + t.cacheRead;
+	const cached = t.cacheRead;
+	const cachedSuffix = cached > 0 ? ` (${formatTokens(cached)} cached)` : '';
+	return `${formatTokens(inTotal)} in${cachedSuffix} · ${formatTokens(t.output)} out`;
+}
+
+/**
  * Resolves the JSONL transcript path for the orchestrator session.
  *
  * Reads the session id from <cwd>/.claude/.cam-orch-session (written by

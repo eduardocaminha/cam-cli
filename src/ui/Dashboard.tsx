@@ -31,7 +31,7 @@ import { Section } from './Section.tsx';
 import type { DashboardData } from '../commands/dashboard.ts';
 import type { PrdStory } from '../commands/status.ts';
 import { formatWallClock } from '../commands/status.ts';
-import { formatTokens } from '../transcript/usage.ts';
+import { renderTokensLine } from '../transcript/usage.ts';
 
 /** Max width of the iteration progress bar (cells). Shrinks to fit narrow
  *  panes; this is the cap for a wide standalone terminal. */
@@ -139,12 +139,12 @@ function SummaryPanel({
 			{data.tokensInput !== undefined ? (
 				<SummaryRow label="tokens">
 					<Text color={colors.muted}>
-						{formatTokens(
-							(data.tokensInput ?? 0) +
-							(data.tokensCacheCreation ?? 0) +
-							(data.tokensCacheRead ?? 0),
-						)}{' in · '}
-						{formatTokens(data.tokensOutput ?? 0)}{' out'}
+						{renderTokensLine({
+							input: data.tokensInput ?? 0,
+							output: data.tokensOutput ?? 0,
+							cacheRead: data.tokensCacheRead ?? 0,
+							cacheCreation: data.tokensCacheCreation ?? 0,
+						})}
 					</Text>
 				</SummaryRow>
 			) : null}

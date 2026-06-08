@@ -27,6 +27,7 @@ import {
 	pickCurrentStory,
 	resolvePrdPath,
 	runStatus,
+	type StatusOptions,
 } from '../src/commands/status.ts';
 
 // --- resolvePrdPath --------------------------------------------------------
@@ -305,6 +306,68 @@ describe('buildStatusReport', () => {
 			expect(report.state).toBe('active');
 			expect(report.wallClock).toBeUndefined();
 			expect(report.startedAt).toBeUndefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('tokens populates from transcript when marker + transcript are present (US-004)', () => {
+		const base = mkdtempSync(join(tmpdir(), 'cam-status-tokens-'));
+		try {
+			const cwd = join(base, 'project');
+			mkdirSync(join(cwd, '.claude'), { recursive: true });
+
+			const uuid = 'cafebabe-1111-2222-3333-444444444444';
+			writeFileSync(join(cwd, '.claude', '.cam-orch-session'), uuid, 'utf8');
+
+			const claudeDir = join(base, 'claude-dir');
+			const encoded = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+			mkdirSync(join(claudeDir, 'projects', encoded), { recursive: true });
+
+			const jsonlLines = [
+				JSON.stringify({
+					message: {
+						usage: {
+							input_tokens: 1000,
+							output_tokens: 400,
+							cache_read_input_tokens: 200,
+							cache_creation_input_tokens: 50,
+						},
+					},
+				}),
+				JSON.stringify({
+					message: {
+						usage: {
+							input_tokens: 500,
+							output_tokens: 100,
+							cache_read_input_tokens: 0,
+							cache_creation_input_tokens: 0,
+						},
+					},
+				}),
+			].join('\n');
+			writeFileSync(join(claudeDir, 'projects', encoded, `${uuid}.jsonl`), jsonlLines, 'utf8');
+
+			const opts: StatusOptions = { cwd, claudeDir };
+			const report = buildStatusReport(opts);
+
+			expect(report.tokens).toBeDefined();
+			expect(report.tokens!.input).toBe(1500);
+			expect(report.tokens!.output).toBe(500);
+			expect(report.tokens!.cacheRead).toBe(200);
+			expect(report.tokens!.cacheCreation).toBe(50);
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
+
+	test('tokens is undefined when the orch-session marker is absent (US-004)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-no-tokens-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			// No .cam-orch-session file.
+			const report = buildStatusReport({ cwd: dir, claudeDir: dir });
+			expect(report.tokens).toBeUndefined();
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

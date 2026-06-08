@@ -152,6 +152,45 @@ describe('composeDashboard', () => {
 		const frame = composeDashboard(baseData, 2000, true);
 		expect(frame).toMatch(/press q or Ctrl\+C/);
 	});
+
+	test('tokens row shows cached suffix when cacheRead > 0 (US-004)', () => {
+		const frame = composeDashboard(
+			{
+				...baseData,
+				tokensInput: 22_000,
+				tokensOutput: 5_000,
+				tokensCacheRead: 450_000,
+				tokensCacheCreation: 10_000,
+			},
+			2000,
+			true,
+		);
+		// in = 22000 + 10000 + 450000 = 482000 -> 482k; cached = 450k; out = 5k
+		expect(frame).toContain('482k in (450k cached) · 5k out');
+	});
+
+	test('tokens row omits cached suffix when cacheRead is 0 (US-004)', () => {
+		const frame = composeDashboard(
+			{
+				...baseData,
+				tokensInput: 10_000,
+				tokensOutput: 2_000,
+				tokensCacheRead: 0,
+				tokensCacheCreation: 5_000,
+			},
+			2000,
+			true,
+		);
+		// in = 10000 + 5000 + 0 = 15k; no cached suffix; out = 2k
+		expect(frame).toContain('15k in · 2k out');
+		expect(frame).not.toContain('cached');
+	});
+
+	test('tokens row is absent when tokensInput is undefined (no transcript)', () => {
+		// baseData has no token fields set, so the row must not appear.
+		const frame = composeDashboard(baseData, 2000, true);
+		expect(frame).not.toContain('tokens');
+	});
 });
 
 // --- parseRecentProgress ---------------------------------------------------
