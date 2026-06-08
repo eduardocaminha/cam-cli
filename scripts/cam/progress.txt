@@ -19,6 +19,31 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **openPaneInSession returns pane id (US-001)**: the function now uses `stdio: 'pipe'` and `-P -F #{pane_id}` to capture and return the stable pane id string (e.g. `%5`). All test fakes for split-window must handle `opts?.stdio === 'pipe'` and return a non-empty `stdout` buffer, or they will crash with `Cannot read property toString of undefined`.
 - **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
 
+## 2026-06-08 15:00 - US-002: Per-story session marker + transcriptPathForSession resolver
+
+### What was done
+- Added `transcriptPathForSession(uuid, cwd, claudeDir)` to `src/transcript/usage.ts`: generalized resolver that builds the `<claudeDir>/projects/<encode(cwd)>/<uuid>.jsonl` path from an explicit uuid.
+- Refactored `orchestratorTranscriptPath(cwd, claudeDir)` into a thin wrapper over `transcriptPathForSession`; external API unchanged.
+- Added `writeWorkerSessionMarker(claudeDir, storyId, uuid)` and `readWorkerSessionMarker(claudeDir, storyId)` for `.claude/.cam-worker-<storyId>.session` round-trip; returns null on absence/empty; creates dir if needed.
+- Added `WORKER_SESSION_MARKER_PREFIX` constant (module-private) for consistent filename construction.
+- Extended `test/transcript/usage.test.ts` with 10 new tests covering `transcriptPathForSession` (3 tests) and marker round-trip (7 tests); updated import list.
+
+### Files changed
+- `src/transcript/usage.ts`
+- `test/transcript/usage.test.ts`
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 559 pass
+
+### Step 5.5 docs validation
+- lib: none (only Node.js built-ins fs, path; no new external libs), status: no_external_lib_touched
+
+### Notes
+- `orchestratorTranscriptPath` now delegates to `transcriptPathForSession`; all existing tests still pass unchanged, confirming backward compatibility.
+---
+
 ## 2026-06-08 14:00 - US-001: tmux worker-slot primitives in session.ts
 
 ### What was done

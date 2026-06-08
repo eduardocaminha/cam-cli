@@ -1,25 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "tmux worker-slot primitives in session.ts"
+    "id": "US-002",
+    "title": "Per-story session marker + transcriptPathForSession resolver"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-08T14:00:00Z",
+  "timestamp": "2026-06-08T15:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/tmux/session.ts",
-    "src/commands/plan.ts",
-    "test/tmux-session.test.ts",
-    "test/plan.test.ts",
-    "test/attach-hint.test.ts"
+    "src/transcript/usage.ts",
+    "test/transcript/usage.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "openPaneInSession now returns the captured pane id (string) instead of void, using stdio: 'pipe' and -P -F #{pane_id}. Any test fake for split-window must return a non-empty stdout Buffer or it will crash. Worker pane marker (.claude/.cam-worker-pane) is now written by plan.ts after openPaneInSession. US-002 and beyond can read it via readWorkerPaneMarker(claudeDir). All new argv builders (respawnPaneArgv, waitForArgv, signalWaitForArgv, capturePaneArgv, workerWaitChannel) are exported from src/tmux/session.ts.",
+  "nextStoryContext": "transcriptPathForSession(uuid, cwd, claudeDir) is now the canonical path builder in src/transcript/usage.ts. orchestratorTranscriptPath is a thin wrapper that reads .cam-orch-session, calls transcriptPathForSession, and returns null on absent/empty. writeWorkerSessionMarker(claudeDir, storyId, uuid) writes .claude/.cam-worker-<storyId>.session; readWorkerSessionMarker(claudeDir, storyId) reads it back (null if absent/empty). US-006 can call writeWorkerSessionMarker after spawning the worker claude session; dashboard/status can call readWorkerSessionMarker + transcriptPathForSession to display per-story token usage.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story only used Node.js built-ins (node:fs, node:path, node:crypto) already present in the codebase."
+      "summary": "Story only used Node.js built-ins (node:fs, node:path); no new external libraries introduced."
     }
   ]
 }
