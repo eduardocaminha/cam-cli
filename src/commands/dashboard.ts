@@ -712,6 +712,8 @@ function snapshotKey(data: DashboardData, firstRender: boolean): string {
 		data.recent.join("|"),
 		data.tokensInput ?? -1,
 		data.tokensOutput ?? -1,
+		data.tokensCacheRead ?? -1,
+		data.tokensCacheCreation ?? -1,
 	].join("§");
 }
 
