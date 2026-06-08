@@ -29,3 +29,15 @@ Situação: testando o US-010 (smoke do `cam run` no terminal real), o comando `
 Achado: `bun build --compile` (macOS arm64) gera um binário cuja assinatura o `codesign -v` marca como inválida ("code or signature have been modified"). O MESMO binário (sha idêntico) roda normal em local user-owned (`dist/`, `~`, `/tmp`), mas em `/usr/local/bin` (root, diretório de sistema) o amfid faz validação síncrona no exec, o processo trava de forma uninterruptível (nem `kill -9` derruba até o amfid soltar) e o SO mata. Re-assinar ad-hoc (`codesign --force --sign -`) deixa o `codesign -v` válido e o binário roda em qualquer destino. Bônus: o `build-release.sh` rodava `cam init` como soft-check dentro do repo, sobrescrevendo a config adaptada (4 subagents + `scripts/cam/CLAUDE.md`) com os templates e tentando spawnar tmux; verificação de build não pode mutar o working tree.
 
 Regra (local canônico): `~/.claude/CLAUDE.md` §"Lições persistentes". Fixes robustos rastreados em CAM-16 (re-sign no build/install) e CAM-15 (soft-check do build-release.sh hermético).
+
+## 2026-06-08: binário cam do PATH pode estar defasado do branch (runaway do stop-hook aposentado)
+
+Situação: pré-voo do /cam-next para US-011. O branch CAM-22 já tinha aposentado o stop-hook driver (US-007) e `src/commands/next.ts` era o supervisor TS novo. Rodei `cam next` (de /usr/local/bin/cam) esperando o gate side-effect-free do supervisor novo ("Worker pane not allocated").
+
+Achado: o binário instalado estava defasado (buildado de um commit anterior ao US-007). Ele executou a arquitetura VELHA: materializou o stop hook, registrou o Stop hook em settings.local.json, armou cam-loop.local.md e spawnou uma sessão claude num tmux session, um runaway do loop aposentado. Pior, o Stop hook registrado dispararia no meu próprio turno. Tive que `tmux -L cam kill-server` e remover os 3 artefatos. Eu li o source do branch mas o runtime era outro binário (eco da lição de 2026-06-05). Sondar arquitetura sem executar: `strings <bin> | grep -c "Materialized stop hook"` (velho) vs `"Worker pane not allocated"` (novo).
+
+Bônus 1 (colisão de concorrência): durante a run, uma sessão `cam run` paralela (humana, no mesmo repo) interleavou o US-011, meu worker fez o feat commit (9eba219), o worker da sessão paralela fez o flip (e8f1012). Antes de dirigir o loop, checar sessões tmux/orchestrator paralelas no socket cam. Dois drivers no mesmo repo é colisão garantida.
+
+Bônus 2 (handshake worker->supervisor): a primeira run real do supervisor reportou um worker que TEVE SUCESSO como `unknown`/blocked, porque o pane do worker morre no instante em que sinaliza o wait-for, e o capture-pane do supervisor lê pane morto. Detalhe e direção de fix em CAM-32.
+
+Regra (local canônico): `~/.claude/CLAUDE.md` §"Lições persistentes" (dogfooding de CLI compilada: o binário do PATH pode lagar o branch; rebuildar+reinstalar com re-sign ANTES, ou rodar via `bun index.ts <cmd>` direto do source). Bugs do supervisor em CAM-32.
