@@ -13,3 +13,25 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Tests**: `bun test` from repo root; test files live under `test/`, mirroring source. Inject fake reader/writer/spawn shapes (and injectable `home` / `genSessionId`) instead of touching real stdin/stdout/`~/.claude`.
 - **Commits**: conventional commits required (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
 - **No em dashes** in persisted files (PRD notes, progress, docs): use colon, comma, parentheses, or period.
+- **Pure transcript parser pattern**: `parseTranscriptUsage` splits on `\n`, `JSON.parse` each trimmed line in a try/catch, checks `message?.usage` existence, accumulates with `toNumber()` guard (returns 0 for non-number). `formatTokens` uses `>= 1_000_000` / `>= 1_000` thresholds with `toFixed(1)M` / `Math.round/k` / raw. Module lives in `src/transcript/usage.ts`; tests under `test/transcript/usage.test.ts`.
+
+## [2026-06-08 00:00] - US-001: Pure transcript-usage parser + formatTokens
+
+### What was done
+- Created `src/transcript/usage.ts` with `parseTranscriptUsage(jsonl)` and `formatTokens(n)`.
+- Created `test/transcript/usage.test.ts` with 13 tests covering multi-line fixtures, malformed lines, sidechain lines, missing sub-fields, all three formatTokens magnitudes, 0, and edge values.
+
+### Files changed
+- src/transcript/usage.ts (new, 82 lines)
+- test/transcript/usage.test.ts (new, 152 lines)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 503 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+
+### Notes
+- noUncheckedIndexedAccess: used runtime shape checks (isTranscriptLine guard) and toNumber() helper to safely extract optional number fields from parsed JSON.
+---

@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Pure transcript-usage parser + formatTokens"
+  },
+  "branchName": "cam/CAM-21-dashboard-token-spend",
+  "timestamp": "2026-06-08T00:00:00Z",
+  "createdFiles": [
+    "src/transcript/usage.ts",
+    "test/transcript/usage.test.ts"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 needs cam run to write a session-id marker (.claude/.cam-orch-session) so the transcript path resolver introduced in the next story can find the right JSONL. The transcript parsing module (src/transcript/usage.ts) is now available for import. parseTranscriptUsage and formatTokens are the two exports. The injectable genSessionId pattern is already in the codebase (see test/tmux-session.test.ts for injection examples).",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure TS stdlib story: JSON.parse, String.split, Math.round. No external lib touched."
+    }
+  ]
+}

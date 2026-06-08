@@ -18,7 +18,7 @@
         "bun test passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/transcript/usage.ts (new), test/transcript/usage.test.ts (new). Wire shape (verified empirically): each line of the transcript JSONL is one JSON object; the assistant entries that carry token accounting have shape { type:'assistant', sessionId, isSidechain?:boolean, message:{ usage:{ input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, ... } } }. Sum across ALL lines with message.usage (including isSidechain:true Task subagents) since that is the true orchestrator-session total. Skip malformed/non-JSON lines silently (best-effort, never throw). Codebase patterns: noUncheckedIndexedAccess is on, so guard array/object access (split-by-newline returns string[] but indexing into JSON.parse results needs runtime shape checks). This module is pure (no I/O), so Node/Bun runtime parity is not a concern: prefer plain JSON.parse + string.split('\\n'). Conventional commit: feat: US-001 - parse Claude Code transcript usage."
     },
