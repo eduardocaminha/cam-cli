@@ -57,7 +57,7 @@ import {
 	type Env,
 } from '../tmux/session.ts';
 import { readEmbedded } from '../vendor/embedded.ts';
-import { runSupervisor, type RunSupervisorOptions } from '../supervisor/loop.ts';
+import { runSupervisor, DEFAULT_PER_WORKER_TIMEOUT_MS, type RunSupervisorOptions } from '../supervisor/loop.ts';
 import { makeReviewDispatch } from '../supervisor/review.ts';
 import type { PrdSnapshot } from '../supervisor/decide.ts';
 
@@ -219,6 +219,16 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const prdPath = options.prdPath ?? join(cwd, PRD_PATH_CANONICAL);
 	const handoffPath = options.handoffPath ?? join(cwd, HANDOFF_PATH_CANONICAL);
 
+	// Per-worker timeout: configurable via CAM_WORKER_TIMEOUT_MS env var or default (30 min).
+	const perWorkerTimeoutMs = (() => {
+		const envVal = process.env['CAM_WORKER_TIMEOUT_MS'];
+		if (envVal !== undefined) {
+			const parsed = parseInt(envVal, 10);
+			if (!isNaN(parsed) && parsed > 0) return parsed;
+		}
+		return DEFAULT_PER_WORKER_TIMEOUT_MS;
+	})();
+
 	const claudeDir = join(cwd, '.claude');
 
 	// Compute session name for attach hint.
@@ -284,8 +294,21 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		};
 	};
 
-	const waitFor: RunSupervisorOptions['waitFor'] = (channel) => {
-		spawnSync('tmux', ['-L', 'cam', 'wait-for', channel], { stdio: 'ignore' });
+	const waitFor: RunSupervisorOptions['waitFor'] = (channel, timeoutMs) => {
+		const result = spawnSync('tmux', ['-L', 'cam', 'wait-for', channel], {
+			stdio: 'ignore',
+			timeout: timeoutMs,
+		} as Parameters<typeof spawnSync>[2]);
+		// signal is set when the process was killed due to timeout (default killSignal = SIGTERM)
+		const timedOut = result.signal !== null && result.signal !== undefined;
+		return { timedOut };
+	};
+
+	const isPaneAlive: RunSupervisorOptions['isPaneAlive'] = (paneId) => {
+		const result = spawnSync('tmux', ['-L', 'cam', 'list-panes', '-t', paneId], {
+			stdio: 'ignore',
+		});
+		return result.status === 0;
 	};
 
 	const capturePane: RunSupervisorOptions['capturePane'] = (paneId) => {
@@ -382,12 +405,14 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			clock,
 			reviewDispatch,
 			writeSessionMarker,
+			isPaneAlive,
 			workerPaneId,
 			prdPath,
 			handoffPath,
 			permissionMode,
 			taskPrompt,
 			maxIterations,
+			perWorkerTimeoutMs,
 		});
 	} catch (err) {
 		printError(

@@ -42,10 +42,17 @@ export type SpawnFn = (
 ) => { stdout: string; exitCode: number | null };
 
 /**
- * Block until the named tmux wait-for channel is signalled.
- * The supervisor calls this after respawning the worker.
+ * Block until the named tmux wait-for channel is signalled, or until
+ * timeoutMs elapses. Returns { timedOut: true } when the deadline fires
+ * before the channel is signalled; { timedOut: false } on normal completion.
  */
-export type WaitForFn = (channel: string) => void;
+export type WaitForFn = (channel: string, timeoutMs: number) => { timedOut: boolean };
+
+/**
+ * Check whether a tmux pane is still alive.
+ * Returns true if the pane exists; false if it has died.
+ */
+export type IsPaneAlive = (paneId: string) => boolean;
 
 /**
  * Capture the visible text of a tmux pane.
@@ -149,6 +156,10 @@ export interface RunSupervisorOptions {
 	reviewDispatch: ReviewDispatch;
 	/** Persist the per-story session marker (keyed to actual completed story). */
 	writeSessionMarker: WriteSessionMarker;
+	/** Check whether the worker pane is still alive (used on timeout). */
+	isPaneAlive: IsPaneAlive;
+	/** Per-worker deadline in milliseconds. Default: DEFAULT_PER_WORKER_TIMEOUT_MS (30 min). */
+	perWorkerTimeoutMs?: number;
 	/** Pane id of the worker slot. Must be pre-allocated by the caller. */
 	workerPaneId: string;
 	/** Absolute path to prd.json (for readWorkerOutcome). */
@@ -182,6 +193,9 @@ export interface SupervisorResult {
 
 /** Default maximum number of iterations before the loop stops. */
 export const MAX_ITERATIONS = 50;
+
+/** Default per-worker timeout in milliseconds (30 minutes). */
+export const DEFAULT_PER_WORKER_TIMEOUT_MS = 30 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Default injectable helpers (real-world defaults)
@@ -227,6 +241,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 		clock: _clock,
 		reviewDispatch,
 		writeSessionMarker,
+		isPaneAlive,
 		workerPaneId,
 		prdPath,
 		handoffPath,
@@ -237,6 +252,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const genUuid = opts.genUuid ?? defaultGenUuid;
 	const genChannel = opts.genChannel ?? defaultGenChannel;
 	const maxIter = opts.maxIterations ?? MAX_ITERATIONS;
+	const perWorkerTimeoutMs = opts.perWorkerTimeoutMs ?? DEFAULT_PER_WORKER_TIMEOUT_MS;
 
 	let iterations = 0;
 	let lastOutcome: WorkerOutcome | null = null;
@@ -286,8 +302,37 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// We accept a generic spawn fn, so call it directly with the respawn args.
 			spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
 
-			// Block until the worker signals the channel.
-			waitFor(channel);
+			// Block until the worker signals the channel, bounded by the per-worker deadline.
+			const waitResult = waitFor(channel, perWorkerTimeoutMs);
+
+			// --- Timeout / pane-death handling ---
+			// If the deadline fired before the channel was signalled, the worker is
+			// either stuck (pane alive) or has crashed (pane dead). In both cases we
+			// mark the iteration blocked and continue to the next decideNextAction call
+			// so the loop can pick another story or reach 'complete'.
+			if (waitResult.timedOut) {
+				iterations++;
+				const alive = isPaneAlive(workerPaneId);
+				if (!alive) {
+					// Pane crashed before it could signal the channel.
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: undefined,
+						detail: 'pane-died-pre-result',
+					};
+				} else {
+					// Pane is alive but stuck: kill it and mark timeout.
+					spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: undefined,
+						detail: 'timeout',
+					};
+				}
+				// US-013 structured log placeholder: supervisor detected timeout/pane-death.
+				// Proceed to decideNextAction on next iteration (do not exit the loop).
+				continue;
+			}
 
 			// Capture pane output to detect the sentinel.
 			const paneText = capturePane(workerPaneId);

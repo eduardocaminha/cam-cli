@@ -26,9 +26,9 @@ import {
 	makeReviewDispatch,
 	DEFAULT_REVIEWER_AGENT,
 } from '../../src/supervisor/review.ts';
-import type { MakeReviewDispatchOptions } from '../../src/supervisor/review.ts';
+import type { MakeReviewDispatchOptions, ReviewWaitForFn } from '../../src/supervisor/review.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
-import type { SpawnFn, WaitForFn, CapturePane, ReadPrd, WritePrd } from '../../src/supervisor/loop.ts';
+import type { SpawnFn, CapturePane, ReadPrd, WritePrd } from '../../src/supervisor/loop.ts';
 
 // ---------------------------------------------------------------------------
 // buildReviewerWorkerArgv tests
@@ -212,7 +212,7 @@ function makeDispatchOpts(
 		capturedSpawnArgs.push(args);
 		return { stdout: '', exitCode: 0 };
 	};
-	const waitFor: WaitForFn = (channel) => {
+	const waitFor: ReviewWaitForFn = (channel) => {
 		capturedWaitChannels.push(channel);
 	};
 	const capturePane: CapturePane = (_paneId) => pane;

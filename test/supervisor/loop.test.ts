@@ -16,7 +16,7 @@
 //  11. PRD_COMPLETE sentinel (outcome.storyId undefined) -> continue, next iter complete.
 
 import { describe, expect, test, jest, beforeEach } from 'bun:test';
-import { runSupervisor, MAX_ITERATIONS } from '../../src/supervisor/loop.ts';
+import { runSupervisor, MAX_ITERATIONS, DEFAULT_PER_WORKER_TIMEOUT_MS } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
 	SpawnFn,
@@ -30,6 +30,7 @@ import type {
 	GenChannel,
 	ReviewDispatch,
 	WriteSessionMarker,
+	IsPaneAlive,
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 
@@ -109,7 +110,7 @@ function fakeGenChannel(storyId: string, uuid: string): string {
  */
 function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervisorOptions {
 	const spawn: SpawnFn = (_cmd, _args) => ({ stdout: '', exitCode: 0 });
-	const waitFor: WaitForFn = (_channel) => {};
+	const waitFor: WaitForFn = (_channel, _timeoutMs) => ({ timedOut: false });
 	const capturePane: CapturePane = (_paneId) => '';
 	const readPrd: ReadPrd = () => null;
 	const writePrd: WritePrd = (_prd) => {};
@@ -117,6 +118,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 	const clock: ClockFn = () => '2026-06-08T00:00:00Z';
 	const reviewDispatch: ReviewDispatch = (_uuid, _channel) => ({ status: 'ok', detail: 'review ok' });
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
+	const isPaneAlive: IsPaneAlive = (_paneId) => true;
 
 	return {
 		spawn,
@@ -130,6 +132,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		genChannel: fakeGenChannel,
 		reviewDispatch,
 		writeSessionMarker,
+		isPaneAlive,
 		workerPaneId: WORKER_PANE_ID,
 		prdPath: PRD_PATH,
 		handoffPath: HANDOFF_PATH,
@@ -474,6 +477,231 @@ describe('runSupervisor', () => {
 
 	test('default MAX_ITERATIONS is 50', () => {
 		expect(MAX_ITERATIONS).toBe(50);
+	});
+
+	test('DEFAULT_PER_WORKER_TIMEOUT_MS is 30 minutes', () => {
+		expect(DEFAULT_PER_WORKER_TIMEOUT_MS).toBe(30 * 60 * 1000);
+	});
+
+	// ---------------------------------------------------------------------------
+	// US-011: Worker timeout + crash detection
+	// ---------------------------------------------------------------------------
+
+	test('timeout path: waitFor timedOut=true, pane alive -> blocked detail=timeout, loop continues', async () => {
+		// Iter 1: timeout fires, pane alive -> blocked 'timeout', continue.
+		// Iter 2: decideNextAction -> implement, waitFor ok, story completes.
+		// Iter 3: decideNextAction -> complete.
+		const prd_incomplete = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+		const prd_complete = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+
+		let prdCallCount = 0;
+		let waitForCallCount = 0;
+
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCallCount++;
+				// Call 1: iter1 top -> decideNextAction (timeout fires, NO fileReader call)
+				// Call 2: iter2 top -> decideNextAction -> implement
+				// Call 3: iter2 fileReader -> needs passes:true to confirm pass outcome
+				// Call 4: iter3 top -> decideNextAction -> complete
+				if (prdCallCount <= 2) return prd_incomplete;
+				return prd_complete;
+			},
+			waitFor: (_channel, _timeoutMs) => {
+				waitForCallCount++;
+				// First call: timeout; subsequent calls: normal
+				if (waitForCallCount === 1) return { timedOut: true };
+				return { timedOut: false };
+			},
+			isPaneAlive: (_paneId) => true, // pane is alive on timeout
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		// iter 1 = timeout, iter 2 = normal complete; review/complete decision = iter 3 in decideNextAction
+		expect(result.iterations).toBe(2);
+		// Timeout outcome recorded
+		expect(result.lastOutcome?.kind).toBe('pass'); // last outcome is the pass from iter 2
+		// spawn called twice: once for iter1 respawn, once for timeout kill, once for iter2 respawn
+		// iter1: respawn + echo timeout (2 calls); iter2: respawn (1 call) = 3 total
+		const respawnCalls = spawnCalls.filter((a) => a.includes('respawn-pane'));
+		expect(respawnCalls.length).toBe(3);
+		// The timeout kill call should have 'echo timeout' as the last element
+		const timeoutKillCall = spawnCalls.find((a) => a.includes('echo timeout'));
+		expect(timeoutKillCall).toBeDefined();
+	});
+
+	test('pane-died path: waitFor timedOut=true, pane dead -> blocked detail=pane-died-pre-result, loop continues', async () => {
+		// Iter 1: timeout fires, pane dead -> blocked 'pane-died-pre-result', continue.
+		// Iter 2: decideNextAction -> complete (all stories pass after pane died scenario).
+		const prd_incomplete = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+		const prd_complete = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+
+		let prdCallCount = 0;
+		let waitForCallCount = 0;
+
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCallCount++;
+				if (prdCallCount <= 2) return prd_incomplete;
+				return prd_complete;
+			},
+			waitFor: (_channel, _timeoutMs) => {
+				waitForCallCount++;
+				if (waitForCallCount === 1) return { timedOut: true };
+				return { timedOut: false };
+			},
+			isPaneAlive: (_paneId) => false, // pane is DEAD on timeout
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			maxIterations: 5,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		// Pane-died does NOT send the 'echo timeout' kill command (pane already dead)
+		const timeoutKillCall = spawnCalls.find((a) => a.includes('echo timeout'));
+		expect(timeoutKillCall).toBeUndefined();
+		// Only the initial respawn-pane for iter1 and iter2
+		const respawnCalls = spawnCalls.filter((a) => a.includes('respawn-pane'));
+		expect(respawnCalls.length).toBe(2);
+	});
+
+	test('waitFor receives the perWorkerTimeoutMs value', async () => {
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+
+		const receivedTimeouts: number[] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			waitFor: (_channel, timeoutMs) => {
+				receivedTimeouts.push(timeoutMs);
+				return { timedOut: false };
+			},
+			capturePane: (_paneId) => UNKNOWN_PANE, // -> unknown -> blocked, stop
+			perWorkerTimeoutMs: 99_999,
+		});
+
+		await runSupervisor(opts);
+
+		expect(receivedTimeouts.length).toBeGreaterThan(0);
+		expect(receivedTimeouts[0]).toBe(99_999);
+	});
+
+	test('timeout followed by story completion: recovery to next story', async () => {
+		// Simulates: iter1 times out (pane alive), iter2 story completes, iter3 complete.
+		// This is the "recovery" scenario from the US-011 acceptance criteria.
+		const prd_incomplete = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+
+		let prdCallCount = 0;
+		let waitForCallCount = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCallCount++;
+				// Call 1: iter1 top -> timeout (no fileReader call in timeout path)
+				// Call 2: iter2 top -> implement
+				// Call 3: iter2 fileReader -> needs passes:true
+				// Call 4: iter3 top -> complete
+				if (prdCallCount <= 2) return prd_incomplete;
+				return prd_done;
+			},
+			waitFor: (_channel, _timeoutMs) => {
+				waitForCallCount++;
+				return waitForCallCount === 1 ? { timedOut: true } : { timedOut: false };
+			},
+			isPaneAlive: (_paneId) => true,
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(2); // 1 timeout iter + 1 pass iter
+	});
+
+	test('timeout outcome is blocked kind with correct detail', async () => {
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+
+		let waitForCallCount = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			waitFor: (_channel, _timeoutMs) => {
+				waitForCallCount++;
+				// Only timeout once; second call returns blocked (so loop exits)
+				if (waitForCallCount === 1) return { timedOut: true };
+				return { timedOut: false };
+			},
+			isPaneAlive: (_paneId) => true, // pane alive -> 'timeout' detail
+			capturePane: (_paneId) => blockedPane('US-001'), // after timeout recovery, worker blocked
+			maxIterations: 2,
+		});
+
+		const result = await runSupervisor(opts);
+
+		// The last outcome (from iter 2) should be 'blocked' from the worker sentinel
+		expect(result.lastOutcome?.kind).toBe('blocked');
+		// Check that we went through the timeout iteration (iterations = 2)
+		expect(result.iterations).toBe(2);
+	});
+
+	test('pane-died lastOutcome has correct detail after only one timeout iter', async () => {
+		// maxIterations=1: only the timeout iter runs, no second iter.
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			waitFor: (_channel, _timeoutMs) => ({ timedOut: true }),
+			isPaneAlive: (_paneId) => false, // pane dead
+			maxIterations: 1,
+		});
+
+		const result = await runSupervisor(opts);
+
+		// 1 iteration (timeout), then max-iterations cap fires
+		expect(result.status).toBe('max-iterations');
+		expect(result.iterations).toBe(1);
+		expect(result.lastOutcome?.detail).toBe('pane-died-pre-result');
 	});
 
 	test('spawn is called once per implement iteration', async () => {

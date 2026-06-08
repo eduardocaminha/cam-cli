@@ -30,7 +30,7 @@
 //   - The reviewer agent is autonomous and exits on its own (like the implementer),
 //     so the same wait-for chain pattern is used.
 
-import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, WaitForFn, CapturePane, ReadPrd, WritePrd } from './loop.ts';
+import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPrd, WritePrd } from './loop.ts';
 import type { PrdSnapshot } from './decide.ts';
 
 // ---------------------------------------------------------------------------
@@ -156,12 +156,21 @@ export function parseReviewVerdict(capturedPaneText: string): ParsedReviewVerdic
 // makeReviewDispatch
 // ---------------------------------------------------------------------------
 
+/**
+ * Unbounded wait-for callback used by makeReviewDispatch.
+ * The review wait is not bounded by a per-worker deadline (it has its own
+ * natural exit point when the reviewer agent finishes). Kept separate from
+ * the supervisor's WaitForFn to avoid coupling review dispatch to the timeout
+ * mechanism introduced in US-011.
+ */
+export type ReviewWaitForFn = (channel: string) => void;
+
 /** Options for makeReviewDispatch. */
 export interface MakeReviewDispatchOptions {
 	/** Spawn a shell command. */
 	spawn: SpawnFn;
 	/** Block until the named tmux wait-for channel is signalled. */
-	waitFor: WaitForFn;
+	waitFor: ReviewWaitForFn;
 	/** Capture the visible text of a tmux pane. */
 	capturePane: CapturePane;
 	/** Read the current prd.json snapshot. */
