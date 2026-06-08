@@ -19,6 +19,60 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **openPaneInSession returns pane id (US-001)**: the function now uses `stdio: 'pipe'` and `-P -F #{pane_id}` to capture and return the stable pane id string (e.g. `%5`). All test fakes for split-window must handle `opts?.stdio === 'pipe'` and return a non-empty `stdout` buffer, or they will crash with `Cannot read property toString of undefined`.
 - **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
 
+## 2026-06-08 21:00 - US-008: Review worker dispatch (autonomous headless reviewer)
+
+### What was done
+- Created `src/supervisor/review.ts` with three exports:
+  - `buildReviewerWorkerArgv({ uuid, channel, agentName? })`: pure argv builder mirroring
+    `buildImplementerWorkerArgv` but without `--permission-mode` (reviewer is read-only).
+  - `parseReviewVerdict(capturedPaneText)`: pure pane-text parser; extracts the last
+    `<review>CLEAN</review>` or `<review>FIXES_PENDING:N</review>` tag; returns null
+    if no tag found; returns `{ verdict, findingsCount, newStories: [] }`.
+  - `makeReviewDispatch(opts)`: factory returning a `ReviewDispatch` closure that spawns
+    the reviewer, waits for channel, captures pane, parses verdict, and updates prd.json:
+    CLEAN sets lastVerdict='CLEAN'; FIXES_PENDING prepends US-R{round}-NNN stories with
+    passes=false; newRound > maxRounds sets lastVerdict='MAX_ROUNDS_DEBT' (terminal).
+- Updated `src/supervisor/loop.ts`:
+  - `ReviewDispatch` type now takes `(uuid: string, channel: string)` (channel passed
+    from loop, consistent with implement branch pattern).
+  - Review branch now calls `genChannel('review', uuid)` and passes channel to dispatch.
+  - Removed "placeholder" comment (wiring is now real).
+- Updated `src/supervisor/decide.ts`:
+  - Added `title?: string`, `acceptanceCriteria?: string[]`, `notes?: string` to
+    `PrdSnapshot.userStories` element type to support fix-story creation.
+- Updated `src/commands/next.ts`:
+  - Replaced placeholder `reviewDispatch` with real `makeReviewDispatch(...)` wiring.
+- Updated `test/supervisor/loop.test.ts`:
+  - Fixed three `reviewDispatch` fakes to match the new two-argument signature.
+- Created `test/supervisor/review.test.ts`: 29 tests covering all verdict paths, story
+  creation, ID format, max-rounds debt, idempotency, and spawn/wait assertions.
+
+### Files changed
+- `src/supervisor/review.ts` (new)
+- `test/supervisor/review.test.ts` (new)
+- `src/supervisor/loop.ts` (ReviewDispatch type + review branch)
+- `src/supervisor/decide.ts` (PrdSnapshot type extension)
+- `src/commands/next.ts` (real reviewDispatch wiring)
+- `test/supervisor/loop.test.ts` (fake signature fix)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 634 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+- summary: US-008 is pure TypeScript over existing tmux primitives. No new npm packages.
+  tmux wait-for channel pattern validated in US-003.
+
+### Notes
+- Reviewer does NOT get --permission-mode; it is read-only and only needs claude -p with
+  --output-format text + the agent flag.
+- MAX_ROUNDS_DEBT is set by makeReviewDispatch when newRound > maxRounds, never by the
+  raw parser (parseReviewVerdict only knows about CLEAN and FIXES_PENDING).
+- fix stories get priorities 1..N; existing stories are bumped by N to make room.
+---
+
 ## 2026-06-08 20:00 - US-007: Rewire cam next to supervisor + retire stop-hook driver
 
 ### What was done

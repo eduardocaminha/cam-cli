@@ -1,27 +1,30 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Rewire cam next to supervisor + retire stop-hook driver"
+    "id": "US-008",
+    "title": "Review worker dispatch (autonomous headless reviewer)"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-08T20:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-08T21:00:00Z",
+  "createdFiles": [
+    "src/supervisor/review.ts",
+    "test/supervisor/review.test.ts"
+  ],
   "modifiedFiles": [
+    "src/supervisor/loop.ts",
+    "src/supervisor/decide.ts",
     "src/commands/next.ts",
-    "test/next.test.ts",
-    "test/attach-hint.test.ts",
-    "scripts/preview-screens.ts"
+    "test/supervisor/loop.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "runNext() in src/commands/next.ts now calls runSupervisor() directly. It reads .claude/.cam-worker-pane (written by cam plan), writes .claude/cam-loop.local.md with YAML frontmatter (no re-inject body), then dispatches to runSupervisor with real I/O adapters. Stop-hook driver RETIRED. The review dispatch in runNext is a placeholder returning {status:'error'} pending US-008. vendor/cam-loop-stop-hook.sh is left on disk for older installs but is no longer written to .claude/hooks/ or settings.local.json. NextOptions injection points: supervisorFn (fake supervisor), workerPaneReader (fake pane id reader), writer (fake state file writer), prdPath/handoffPath (override for tests). US-008 will wire the real review dispatch. US-010 will document the stop-hook retirement in .claude/commands/cam-next.md.",
+  "nextStoryContext": "ReviewDispatch type is now (uuid, channel) => ReviewDispatchResult. The loop generates the channel for review via genChannel('review', uuid) before calling reviewDispatch. makeReviewDispatch in src/supervisor/review.ts is the real wiring used by next.ts. parseReviewVerdict is a pure function: returns null if no <review> tag, or { verdict, findingsCount, newStories: [] } (newStories always empty from parser; populated by makeReviewDispatch). buildReviewerWorkerArgv has no --permission-mode flag. PrdSnapshot.userStories element type now includes title, acceptanceCriteria, notes optional fields. The next story (US-009 or similar) can wire session transcript path reading or the stop-hook retirement docs.",
   "officialDocsValidated": [
     {
-      "lib": "js-yaml",
-      "version": "4.x",
-      "url": "https://github.com/nodeca/js-yaml",
-      "fetchedAt": "2026-06-08T20:00:00Z",
-      "status": "ok",
-      "summary": "yaml.load() API confirmed: returns plain object/string/number/null or throws YAMLException. Usage in test (yaml.load on extracted YAML section) matches current v4 API."
+      "lib": "none",
+      "version": "n/a",
+      "url": "n/a",
+      "fetchedAt": "2026-06-08T21:00:00Z",
+      "status": "no_external_lib_touched",
+      "summary": "US-008 is pure TypeScript over existing tmux primitives. No new npm packages. tmux wait-for channel pattern was validated in US-003."
     }
   ]
 }
