@@ -91,3 +91,38 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - The tokens row uses total input volume: `tokensInput + tokensCacheCreation + tokensCacheRead` (per AC), not just the non-cached portion. US-004 adds the cached breakdown.
 - claudeDir injection pattern: `options.claudeDir ?? (process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'))` resolves in readSnapshot, consistent with how US-002 documented the contract.
 ---
+
+## [2026-06-08 03:00] - US-004: Cached-token honesty in dashboard + cam status parity
+
+### What was done
+- Added `renderTokensLine(t: TranscriptUsage): string` to `src/transcript/usage.ts`. Single source of truth for the shared format: `<in> in (<cached> cached) · <out> out` where in = input + cacheCreation + cacheRead and cached = cacheRead only (cacheCreation is fresh billed spend). The "(N cached)" suffix is omitted when cached is 0.
+- Updated `Dashboard.tsx` (Ink component) to import and call `renderTokensLine` instead of the previous inline expression. Removed stale `formatTokens` import from that file.
+- Updated `composeDashboard` (non-Ink alt-screen renderer in `dashboard.ts`) to render a `tokens` row using `renderTokensLine` when `tokensInput` is defined; row is absent when undefined.
+- Extended `StatusReport` with an optional `tokens?: { input; output; cacheRead; cacheCreation }` field.
+- Extended `StatusOptions` with `claudeDir?: string` (defaults to `CLAUDE_CONFIG_DIR ?? ~/.claude`).
+- Updated `buildStatusReport` to resolve the orchestrator transcript via `orchestratorTranscriptPath` using the injectable `claudeDir`, parse it with `parseTranscriptUsage`, and populate `report.tokens`. Never throws: wrapped in try/catch, leaves `tokens` undefined on any error.
+- Updated `runStatus` to render a `tokens` entry via `renderEntry` after `last` and before `promise` in the active/paused branch, using `renderTokensLine`. Row skipped when `report.tokens` is undefined.
+- Added 5 `renderTokensLine` tests in `test/transcript/usage.test.ts` covering: cached suffix present when cacheRead > 0, omitted when 0, cacheCreation folded into in total only, all-zero, and tiny cacheRead.
+- Added 3 `composeDashboard` tests in `test/dashboard.test.ts` for: cached suffix present, suffix absent when zero, row absent when tokensInput undefined.
+- Added 2 `buildStatusReport` tests in `test/status.test.ts` for: tokens populated from fixture transcript, and undefined when marker absent.
+
+### Files changed
+- src/transcript/usage.ts (modified, +26 lines)
+- src/ui/Dashboard.tsx (modified, import swap + 6 lines changed)
+- src/commands/dashboard.ts (modified, +12 lines)
+- src/commands/status.ts (modified, +38 lines)
+- test/transcript/usage.test.ts (modified, +56 lines)
+- test/dashboard.test.ts (modified, +36 lines)
+- test/status.test.ts (modified, +62 lines)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 525 pass / 0 fail
+
+### Step 5.5 docs validation
+- lib: none (all changes touch own source modules and node built-ins only), status: no_external_lib_touched
+
+### Notes
+- The key invariant: cacheCreation is fresh spend (billed above base rate), so it MUST stay in `in` total but MUST NOT appear in `cached`. Only `cacheRead` contributes to the `(N cached)` suffix. This lives in one place (`renderTokensLine`) so it cannot drift.
+- Sample numbers from the issue: cacheRead 450k, fresh input 22k. With this implementation `482k in (450k cached) · Xk out` would render correctly.
+---
