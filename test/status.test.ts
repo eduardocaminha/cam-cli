@@ -443,7 +443,7 @@ describe('runStatus', () => {
 			expect(out).toMatch(/idle/);
 			// in = 1000 + 50 + 200 = 1250 -> "1k"; cached = 200; out = 400.
 			expect(out).toMatch(/tokens/);
-			expect(out).toMatch(/1k in \(200 cached\) · 400 out/);
+			expect(out).toMatch(/↑ 1k in \(200 cached\) · ↓ 400 out/);
 		} finally {
 			rmSync(base, { recursive: true, force: true });
 		}

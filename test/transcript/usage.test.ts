@@ -313,7 +313,7 @@ describe("renderTokensLine", () => {
 		// in = 22000 + 10000 + 450000 = 482000 -> 482k
 		// cached = 450000 -> 450k (cacheRead only)
 		// out = 5000 -> 5k
-		expect(line).toBe("482k in (450k cached) · 5k out");
+		expect(line).toBe("↑ 482k in (450k cached) · ↓ 5k out");
 	});
 
 	test("omits the cached suffix entirely when cacheRead is 0", () => {
@@ -324,7 +324,7 @@ describe("renderTokensLine", () => {
 			cacheCreation: 2_000,
 		});
 		// in = 5000 + 2000 + 0 = 7000 -> 7k; no cached suffix
-		expect(line).toBe("7k in · 1k out");
+		expect(line).toBe("↑ 7k in · ↓ 1k out");
 	});
 
 	test("cacheCreation is counted in 'in' total but never in 'cached'", () => {
@@ -335,12 +335,12 @@ describe("renderTokensLine", () => {
 			cacheCreation: 100_000,
 		});
 		// in = 100000 -> 100k; cached = 0 so no suffix; out = 0
-		expect(line).toBe("100k in · 0 out");
+		expect(line).toBe("↑ 100k in · ↓ 0 out");
 	});
 
-	test("renders '0 in · 0 out' when all fields are zero", () => {
+	test("renders '↑ 0 in · ↓ 0 out' when all fields are zero", () => {
 		const line = renderTokensLine({ input: 0, output: 0, cacheRead: 0, cacheCreation: 0 });
-		expect(line).toBe("0 in · 0 out");
+		expect(line).toBe("↑ 0 in · ↓ 0 out");
 	});
 
 	test("shows cached suffix even when cached is small fraction of in", () => {

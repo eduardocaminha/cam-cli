@@ -131,7 +131,7 @@ export function formatTokens(n: number): string {
 /**
  * Renders the token usage line shared by both the dashboard and cam status.
  *
- * Format: "<in> in (<cached> cached) · <out> out"
+ * Format: "↑ <in> in (<cached> cached) · ↓ <out> out"
  * where:
  *   in     = t.input + t.cacheCreation + t.cacheRead  (total input volume)
  *   cached = t.cacheRead only (cacheCreation is fresh billed spend, not cached)
@@ -146,7 +146,7 @@ export function renderTokensLine(t: TranscriptUsage): string {
 	const inTotal = t.input + t.cacheCreation + t.cacheRead;
 	const cached = t.cacheRead;
 	const cachedSuffix = cached > 0 ? ` (${formatTokens(cached)} cached)` : '';
-	return `${formatTokens(inTotal)} in${cachedSuffix} · ${formatTokens(t.output)} out`;
+	return `↑ ${formatTokens(inTotal)} in${cachedSuffix} · ↓ ${formatTokens(t.output)} out`;
 }
 
 /**

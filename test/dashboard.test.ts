@@ -166,7 +166,7 @@ describe('composeDashboard', () => {
 			true,
 		);
 		// in = 22000 + 10000 + 450000 = 482000 -> 482k; cached = 450k; out = 5k
-		expect(frame).toContain('482k in (450k cached) · 5k out');
+		expect(frame).toContain('↑ 482k in (450k cached) · ↓ 5k out');
 	});
 
 	test('tokens row omits cached suffix when cacheRead is 0 (US-004)', () => {
@@ -182,7 +182,7 @@ describe('composeDashboard', () => {
 			true,
 		);
 		// in = 10000 + 5000 + 0 = 15k; no cached suffix; out = 2k
-		expect(frame).toContain('15k in · 2k out');
+		expect(frame).toContain('↑ 15k in · ↓ 2k out');
 		expect(frame).not.toContain('cached');
 	});
 
