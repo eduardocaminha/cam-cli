@@ -19,6 +19,36 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **openPaneInSession returns pane id (US-001)**: the function now uses `stdio: 'pipe'` and `-P -F #{pane_id}` to capture and return the stable pane id string (e.g. `%5`). All test fakes for split-window must handle `opts?.stdio === 'pipe'` and return a non-empty `stdout` buffer, or they will crash with `Cannot read property toString of undefined`.
 - **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
 
+## 2026-06-08 17:00 - US-004: Deterministic worker result reader
+
+### What was done
+- Created `src/supervisor/result.ts` with `readWorkerOutcome({ prdPath, handoffPath, capturedPaneText, readFile })`.
+- Returns `{ kind: 'pass' | 'fail' | 'blocked' | 'unknown', storyId: string | undefined, detail: string }`.
+- Pure function: all file I/O injected via `FileReader = (path: string) => string | null` callback.
+- Sentinel parsed from pane text via regex (`CAM_IMPLEMENTER_STATUS=(\S+)(?:\s+story=(US-\S+))?`); guarded for `noUncheckedIndexedAccess`.
+- `pass` requires all three signals to agree: sentinel is DONE, `handoff.json lastCompletedStory.id` matches sentinel `story=US-XXX`, and prd.json shows `passes:true` for that story.
+- `blocked` detected by any `BLOCKED_*` sentinel prefix OR a raw `BLOCKED_\w+` token in pane text without a full sentinel.
+- `PRD_COMPLETE` sentinel produces `kind: 'pass', storyId: undefined` (all stories already passing).
+- `unknown` when no sentinel found and no blocked token present.
+- Created `test/supervisor/result.test.ts` with 14 tests covering all four outcome kinds with fake prd/handoff fixtures.
+
+### Files changed
+- `src/supervisor/result.ts` (new)
+- `test/supervisor/result.test.ts` (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 584 pass
+
+### Step 5.5 docs validation
+- lib: none (no external libs; pure JSON/regex only), status: no_external_lib_touched
+
+### Notes
+- Guard pattern for `noUncheckedIndexedAccess` on regex: `match[1] ?? ''` and `match[2]` (already `string | undefined`, no assertion needed).
+- Three-way cross-check (sentinel + handoff + prd) is the architectural invariant; any single source alone is insufficient.
+---
+
 ## 2026-06-08 16:00 - US-003: Headless implementer worker argv builder
 
 ### What was done

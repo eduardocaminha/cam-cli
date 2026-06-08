@@ -110,7 +110,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: new src/supervisor/result.ts, test/supervisor/result.test.ts. Guard noUncheckedIndexedAccess on regex .match() groups. Why pane-scrape AND prd.json: tmux wait-for signal is not guaranteed buffered (Step-5 tmux finding), so the signal alone never proves success. Reference: .claude/commands/cam-next.md describes the CAM_IMPLEMENTER_STATUS protocol."
     },

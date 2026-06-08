@@ -1,22 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Headless implementer worker argv builder"
+    "id": "US-004",
+    "title": "Deterministic worker result reader"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-08T16:00:00Z",
+  "timestamp": "2026-06-08T17:00:00Z",
   "createdFiles": [
-    "src/supervisor/worker-argv.ts",
-    "test/supervisor/worker-argv.test.ts"
+    "src/supervisor/result.ts",
+    "test/supervisor/result.test.ts"
   ],
   "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "buildImplementerWorkerArgv({ uuid, taskPrompt, permissionMode, channel, agentName? }) lives in src/supervisor/worker-argv.ts. It returns the shell string for respawn-pane: 'claude -p --permission-mode <mode> --session-id <uuid> --output-format text --agent <agentName> <escaped-task> ; tmux -L cam wait-for -S <escaped-channel>'. Both taskPrompt and channel are POSIX single-quote-escaped via shellEscape(). DEFAULT_IMPLEMENTER_AGENT = 'subagent-implementer'. The next story (US-004+) can import this and pass the result to respawnPaneArgv() from src/tmux/session.ts.",
+  "nextStoryContext": "readWorkerOutcome({ prdPath, handoffPath, capturedPaneText, readFile }) lives in src/supervisor/result.ts. Returns { kind: 'pass' | 'fail' | 'blocked' | 'unknown', storyId: string | undefined, detail: string }. It is a pure function with no I/O: all file reading is injected via FileReader = (path: string) => string | null. Three-way cross-check (sentinel in pane text + handoff.json lastCompletedStory.id + prd.json passes:true) is the architectural invariant for a 'pass' outcome. The supervisor (US-006/US-007) can import this and call it after a worker pane finishes (after the tmux wait-for unblocks or times out) to determine what to do next.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story is a pure string builder with no external library dependencies."
+      "summary": "Story uses only JSON.parse, regex, and injected file callbacks. No external library dependencies."
     }
   ]
 }
