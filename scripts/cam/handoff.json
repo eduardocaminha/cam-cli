@@ -1,22 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "runSupervisor() loop tying primitives together"
+    "id": "US-007",
+    "title": "Rewire cam next to supervisor + retire stop-hook driver"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-08T19:00:00Z",
-  "createdFiles": [
-    "src/supervisor/loop.ts",
-    "test/supervisor/loop.test.ts"
+  "timestamp": "2026-06-08T20:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/next.ts",
+    "test/next.test.ts",
+    "test/attach-hint.test.ts",
+    "scripts/preview-screens.ts"
   ],
-  "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "runSupervisor({ spawn, waitFor, capturePane, readPrd, writePrd, readHandoff, clock, genUuid, genChannel, reviewDispatch, writeSessionMarker, workerPaneId, prdPath, handoffPath, permissionMode, taskPrompt, maxIterations? }) lives in src/supervisor/loop.ts. Returns Promise<{ status: 'complete' | 'blocked' | 'max-iterations', iterations, lastOutcome }>. Key invariant: writeSessionMarker is called with the ACTUAL completed storyId from readWorkerOutcome (never the advisory storyId from decideNextAction). Review branch calls injected reviewDispatch(uuid) as a placeholder. US-007 (rewire cam next) will import runSupervisor and wire it to the real tmux/prd/handoff I/O. The workerPaneId comes from readWorkerPaneMarker (US-001). The spawn fn signature is (cmd, args, opts?) => { stdout, exitCode }.",
+  "nextStoryContext": "runNext() in src/commands/next.ts now calls runSupervisor() directly. It reads .claude/.cam-worker-pane (written by cam plan), writes .claude/cam-loop.local.md with YAML frontmatter (no re-inject body), then dispatches to runSupervisor with real I/O adapters. Stop-hook driver RETIRED. The review dispatch in runNext is a placeholder returning {status:'error'} pending US-008. vendor/cam-loop-stop-hook.sh is left on disk for older installs but is no longer written to .claude/hooks/ or settings.local.json. NextOptions injection points: supervisorFn (fake supervisor), workerPaneReader (fake pane id reader), writer (fake state file writer), prdPath/handoffPath (override for tests). US-008 will wire the real review dispatch. US-010 will document the stop-hook retirement in .claude/commands/cam-next.md.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Story uses only pure TypeScript logic plus imports from sibling supervisor modules (decide.ts, result.ts, worker-argv.ts). No external library dependencies."
+      "lib": "js-yaml",
+      "version": "4.x",
+      "url": "https://github.com/nodeca/js-yaml",
+      "fetchedAt": "2026-06-08T20:00:00Z",
+      "status": "ok",
+      "summary": "yaml.load() API confirmed: returns plain object/string/number/null or throws YAMLException. Usage in test (yaml.load on extracted YAML section) matches current v4 API."
     }
   ]
 }

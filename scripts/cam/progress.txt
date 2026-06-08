@@ -19,6 +19,53 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **openPaneInSession returns pane id (US-001)**: the function now uses `stdio: 'pipe'` and `-P -F #{pane_id}` to capture and return the stable pane id string (e.g. `%5`). All test fakes for split-window must handle `opts?.stdio === 'pipe'` and return a non-empty `stdout` buffer, or they will crash with `Cannot read property toString of undefined`.
 - **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
 
+## 2026-06-08 20:00 - US-007: Rewire cam next to supervisor + retire stop-hook driver
+
+### What was done
+- Rewrote `src/commands/next.ts` to dispatch to `runSupervisor()` instead of spawning
+  claude with the stop-hook re-inject pattern.
+- Removed: `materializeStopHook`, `writeSettingsLocal`, `buildHooksBlock`, `deepMerge`,
+  `buildClaudeArgv`, `buildDashboardArgv`, `CAM_NEXT_PROMPT`, `STOP_HOOK_RELATIVE`,
+  `SETTINGS_LOCAL_RELATIVE`, `hookMaterializer`/`settingsWriter`/`hostMode`/`spawn`
+  injection points. Stop-hook driver RETIRED, not coexisting (closes CAM-29).
+- `runNext()` now: reads worker pane marker (from cam plan), writes
+  `.claude/cam-loop.local.md` with YAML frontmatter (active, iteration, started_at,
+  pid, session_id, max_iterations) and empty body (no re-inject), then calls
+  `runSupervisor()` with real I/O adapters.
+- Rewrote `test/next.test.ts`: supervisor dispatch happy path, state-file shape
+  contract (YAML fields + empty body), no stop-hook artifacts, missing pane guard,
+  writer failure, blocked/max-iter/complete exit codes, custom maxIterations.
+- Updated `test/attach-hint.test.ts`: replaced tmux-split-specific runNext tests
+  with supervisor-based ones using `supervisorFn`/`workerPaneReader` injection.
+- Updated `scripts/preview-screens.ts`: replaced removed injection points with
+  `supervisorFn`/`workerPaneReader`.
+
+### Files changed
+- `src/commands/next.ts` (rewritten)
+- `test/next.test.ts` (rewritten)
+- `test/attach-hint.test.ts` (updated)
+- `scripts/preview-screens.ts` (updated)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 605 pass
+
+### Step 5.5 docs validation
+- lib: js-yaml, version: 4.x, status: ok, url: https://github.com/nodeca/js-yaml
+- summary: yaml.load() API confirmed: returns plain object or throws YAMLException.
+  Usage in test (parsing YAML frontmatter section) matches current API.
+
+### Notes
+- vendor/cam-loop-stop-hook.sh left in place for older installs but is no longer
+  written to .claude/hooks/ or registered in settings.local.json by this codepath.
+- review dispatch is a placeholder (returns error) pending US-008.
+- .claude/commands/cam-next.md documentation of retirement deferred to US-010
+  per AC6 ("touched in US-010").
+- `cam next` now reads worker pane from .claude/.cam-worker-pane (written by cam plan).
+  If missing, returns 1 with hint to run cam plan first.
+---
+
 ## 2026-06-08 19:00 - US-006: runSupervisor() loop tying primitives together
 
 ### What was done
