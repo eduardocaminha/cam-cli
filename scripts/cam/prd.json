@@ -258,7 +258,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (extend), src/supervisor/result.ts (extend sentinel parsers for reviewer/<review>), test/supervisor/loop.test.ts. Keep argv builders pure (extend US-003 to accept interactive: boolean -> omit -p and the --output-format flag entirely; US-003 autonomous uses --output-format text, interactive uses neither). Use capture-pane -p -S -N to bound the buffer scan (man page confirmed -S/-N args). Reference: .claude/commands/cam-review.md for the verdict grammar."
     },

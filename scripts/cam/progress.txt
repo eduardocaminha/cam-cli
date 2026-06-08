@@ -19,6 +19,7 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **openPaneInSession returns pane id (US-001)**: the function now uses `stdio: 'pipe'` and `-P -F #{pane_id}` to capture and return the stable pane id string (e.g. `%5`). All test fakes for split-window must handle `opts?.stdio === 'pipe'` and return a non-empty `stdout` buffer, or they will crash with `Cannot read property toString of undefined`.
 - **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
 - **Supervisor timeout pattern (US-011)**: `tmux wait-for` has NO native timeout. Bound it by running via `spawnSync(..., { timeout: ms })`; when the deadline fires, spawnSync kills the client process (SIGTERM) and sets `result.signal`. Check `result.signal !== null` for `timedOut`. Pane-death detection: `spawnSync('tmux', ['-L', 'cam', 'list-panes', '-t', paneId])` exits 0 if pane exists, non-zero if dead. Timeout/pane-died blocked outcomes continue the loop (proceed to decideNextAction) rather than exiting, enabling recovery to the next story. Decouple reviewer wait (`ReviewWaitForFn = (channel) => void`) from supervisor `WaitForFn` to avoid forcing the timeout signature onto the unbounded review wait.
+- **Sentinel polling mode (US-012)**: interactive workers (plan/review with human input) do NOT exit on their own, so the supervisor polls `capture-pane` instead of waiting for a tmux channel. Use `implementerMode: 'sentinel'` in `RunSupervisorOptions`; inject `sleepFn` (no-op for tests), `nowMs` (deterministic time source), and `pollIntervalMs`. `buildImplementerWorkerArgv({ interactive: true })` omits `-p` and `--output-format` and the wait-for chain. `parseAnySentinel(text)` in `result.ts` detects `CAM_IMPLEMENTER_STATUS=*`, `CAM_REVIEWER_STATUS=*`, or `<review>...</review>` tags. Same timeout/pane-died semantics as the exit path: both `continue` the supervisor loop.
 
 ## 2026-06-08 21:00 - US-008: Review worker dispatch (autonomous headless reviewer)
 
@@ -434,4 +435,57 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - cam-next.md no longer describes a COMPLETE promise or stop-hook sentinel. The
   CAM_IMPLEMENTER_STATUS sentinel is still the worker exit contract, consumed by
   src/supervisor/result.ts, not by a stop-hook script.
+---
+
+## 2026-06-08 - US-012: Interactive review/plan in-pane with sentinel detection
+
+### What was done
+- Added `parseAnySentinel(paneText)` to `result.ts`: scans for `CAM_IMPLEMENTER_STATUS=*`,
+  `CAM_REVIEWER_STATUS=*`, or `<review>CLEAN|FIXES_PENDING:N</review>` tags. Returns
+  `{ source, raw }` or null. Used by the polling path to stop polling.
+- Added `interactive?: boolean` to `ImplementerWorkerArgvOptions` in `worker-argv.ts`.
+  When `true`: omits `-p`, omits `--output-format text`, and omits the `; tmux wait-for -S`
+  chain entirely. The `channel` field is now optional (not used in interactive mode).
+- Added four new injections to `RunSupervisorOptions` in `loop.ts`:
+  - `implementerMode?: 'exit' | 'sentinel'` (default: `'exit'`).
+  - `pollIntervalMs?: number` (default: `DEFAULT_POLL_INTERVAL_MS = 5000`).
+  - `sleepFn?: (ms: number) => void` (default: no-op; inject for real sleep).
+  - `nowMs?: () => number` (default: `Date.now`; inject for deterministic tests).
+- Exported `DEFAULT_POLL_INTERVAL_MS = 5_000` constant.
+- Added sentinel polling branch inside the implement action in `runSupervisor`: loops
+  calling `sleepFn(pollIntervalMs)`, then checks `isPaneAlive`, then `capturePane` +
+  `parseAnySentinel`, then elapsed-time timeout. Pane-died and timeout paths mirror the
+  exit-mode timeout/pane-died paths (blocked + continue). Sentinel-found path runs the
+  full `readWorkerOutcome` + outcome-handling identical to the exit path.
+- Added 6 interactive-mode tests to `test/supervisor/worker-argv.test.ts`: omits -p,
+  omits --output-format, omits wait-for chain, retains other flags, starts with "claude ",
+  and tee still works.
+- Added 4 sentinel-polling tests to `test/supervisor/loop.test.ts`: sentinel-detected,
+  timeout-blocked (loops continues), pane-died-blocked (loop continues), constant value.
+
+### Files changed
+- `src/supervisor/result.ts` (new export: parseAnySentinel, AnySentinelMatch, AnySentinelSource)
+- `src/supervisor/worker-argv.ts` (interactive option, channel now optional)
+- `src/supervisor/loop.ts` (4 new injections, DEFAULT_POLL_INTERVAL_MS, sentinel polling branch)
+- `test/supervisor/worker-argv.test.ts` (6 new interactive-mode tests)
+- `test/supervisor/loop.test.ts` (4 new sentinel-polling tests)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 677 pass
+
+### Step 5.5 docs validation
+- lib: tmux, status: ok, url: https://man.openbsd.org/tmux.1
+- summary: capture-pane -p -S -N usage confirmed: -S start-line, -N end-line bound the
+  scrollback region scanned; omitting them dumps entire visible pane which is fine for
+  our polling use case. No mismatches found.
+
+### Notes
+- Default `sleepFn` is a no-op so production code needs the caller (next.ts) to inject
+  `Bun.sleepSync` if real polling delays are wanted. Tests always get a no-op.
+- `implementerMode` defaults to `'exit'` so all existing tests continue to use the exit
+  path unchanged (no fakes needed for the new options).
+- `channel` in ImplementerWorkerArgvOptions is now optional: not needed for interactive
+  mode. Existing callers that pass `channel` explicitly are unaffected.
 ---

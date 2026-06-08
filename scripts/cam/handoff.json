@@ -1,28 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-011",
-    "title": "Worker timeout + crash detection"
+    "id": "US-012",
+    "title": "Interactive review/plan in-pane with sentinel detection"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-08T23:30:00Z",
+  "timestamp": "2026-06-08T23:55:00Z",
   "createdFiles": [],
   "modifiedFiles": [
+    "src/supervisor/result.ts",
+    "src/supervisor/worker-argv.ts",
     "src/supervisor/loop.ts",
-    "src/commands/next.ts",
-    "src/supervisor/review.ts",
     "test/supervisor/loop.test.ts",
-    "test/supervisor/review.test.ts"
+    "test/supervisor/worker-argv.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-011 adds per-worker deadline + pane-death detection. WaitForFn now returns { timedOut: boolean } and requires timeoutMs arg. IsPaneAlive injectable added. ReviewWaitForFn in review.ts is decoupled from WaitForFn. Timeout/pane-died blocked outcomes continue the loop (recovery to next story). CAM_WORKER_TIMEOUT_MS env var configures the timeout in next.ts.",
+  "nextStoryContext": "US-012 adds implementerMode:'sentinel' to runSupervisor. The sentinel polling loop injects sleepFn/nowMs/pollIntervalMs; production callers (next.ts) should inject Bun.sleepSync for real delays if needed. parseAnySentinel() in result.ts detects CAM_IMPLEMENTER_STATUS, CAM_REVIEWER_STATUS, and <review> tags. buildImplementerWorkerArgv now accepts interactive:true (no -p, no --output-format, no wait-for chain). DEFAULT_POLL_INTERVAL_MS = 5000 exported from loop.ts.",
   "officialDocsValidated": [
     {
-      "lib": "tmux (wait-for, list-panes)",
-      "version": "current",
-      "url": "https://github.com/tmux/tmux/blob/master/cmd-wait-for.c",
-      "fetchedAt": "2026-06-08T23:30:00Z",
-      "status": "ok",
-      "summary": "Confirmed: tmux wait-for has no native timeout option. The spawnSync timeout + result.signal check is the correct mechanism to bound the wait. list-panes -t paneId exit code approach for pane-death detection matches the pattern already used by isWorkerPaneAlive in US-009."
+      "lib": "tmux capture-pane",
+      "url": "https://man.openbsd.org/tmux.1",
+      "fetchedAt": "2026-06-08T23:55:00Z",
+      "status": "aligned",
+      "summary": "Confirmed: capture-pane -p routes output to stdout; -S start-line sets the scan start (negative = history). The -N flag in the story notes is a separate formatting flag (preserve trailing spaces), not an end-line bound. End-line is set via -E. Our capturePane is injectable so actual tmux flags are the caller's concern; no mismatch in the loop implementation."
     }
   ]
 }
