@@ -1,28 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-010",
-    "title": "Docs: rewrite cam-next.md and update CLAUDE.md/README/CHANGELOG"
+    "id": "US-011",
+    "title": "Worker timeout + crash detection"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-08T23:00:00Z",
-  "createdFiles": [
-    "CHANGELOG.md"
-  ],
+  "timestamp": "2026-06-08T23:30:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    ".claude/commands/cam-next.md",
-    "scripts/cam/CLAUDE.md",
-    "README.md"
+    "src/supervisor/loop.ts",
+    "src/commands/next.ts",
+    "src/supervisor/review.ts",
+    "test/supervisor/loop.test.ts",
+    "test/supervisor/review.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-010 was a pure docs story. cam-next.md now accurately describes the deterministic TS supervisor (no stop-hook, no Task subagent dispatch). CHANGELOG.md is created. All em-dashes removed from touched files.",
+  "nextStoryContext": "US-011 adds per-worker deadline + pane-death detection. WaitForFn now returns { timedOut: boolean } and requires timeoutMs arg. IsPaneAlive injectable added. ReviewWaitForFn in review.ts is decoupled from WaitForFn. Timeout/pane-died blocked outcomes continue the loop (recovery to next story). CAM_WORKER_TIMEOUT_MS env var configures the timeout in next.ts.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "version": "n/a",
-      "url": "n/a",
-      "fetchedAt": "2026-06-08T23:00:00Z",
-      "status": "no_external_lib_touched",
-      "summary": "US-010 is a pure documentation rewrite. No external libraries were introduced or modified."
+      "lib": "tmux (wait-for, list-panes)",
+      "version": "current",
+      "url": "https://github.com/tmux/tmux/blob/master/cmd-wait-for.c",
+      "fetchedAt": "2026-06-08T23:30:00Z",
+      "status": "ok",
+      "summary": "Confirmed: tmux wait-for has no native timeout option. The spawnSync timeout + result.signal check is the correct mechanism to bound the wait. list-panes -t paneId exit code approach for pane-death detection matches the pattern already used by isWorkerPaneAlive in US-009."
     }
   ]
 }

@@ -18,6 +18,7 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Pure transcript parser pattern**: `parseTranscriptUsage` splits on `\n`, `JSON.parse` each trimmed line in a try/catch, checks `message?.usage` existence, accumulates with `toNumber()` guard (returns 0 for non-number). `formatTokens` uses `>= 1_000_000` / `>= 1_000` thresholds. Module lives in `src/transcript/usage.ts`; tests under `test/transcript/usage.test.ts`. `orchestratorTranscriptPath(cwd, claudeDir)` reads `.claude/.cam-orch-session`; CAM-22 generalizes it to `transcriptPathForSession(uuid, cwd, claudeDir)`.
 - **openPaneInSession returns pane id (US-001)**: the function now uses `stdio: 'pipe'` and `-P -F #{pane_id}` to capture and return the stable pane id string (e.g. `%5`). All test fakes for split-window must handle `opts?.stdio === 'pipe'` and return a non-empty `stdout` buffer, or they will crash with `Cannot read property toString of undefined`.
 - **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
+- **Supervisor timeout pattern (US-011)**: `tmux wait-for` has NO native timeout. Bound it by running via `spawnSync(..., { timeout: ms })`; when the deadline fires, spawnSync kills the client process (SIGTERM) and sets `result.signal`. Check `result.signal !== null` for `timedOut`. Pane-death detection: `spawnSync('tmux', ['-L', 'cam', 'list-panes', '-t', paneId])` exits 0 if pane exists, non-zero if dead. Timeout/pane-died blocked outcomes continue the loop (proceed to decideNextAction) rather than exiting, enabling recovery to the next story. Decouple reviewer wait (`ReviewWaitForFn = (channel) => void`) from supervisor `WaitForFn` to avoid forcing the timeout signature onto the unbounded review wait.
 
 ## 2026-06-08 21:00 - US-008: Review worker dispatch (autonomous headless reviewer)
 
@@ -346,6 +347,55 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
   Existing callers checking for `respawn` mode need updating (done in test file).
 - Worker pane kill is attempted even when the project session is dead to cover the
   race where the pane outlives the has-session window.
+---
+
+## 2026-06-08 - US-011: Worker timeout + crash detection
+
+### What was done
+- Extended `WaitForFn` in `loop.ts` to return `{ timedOut: boolean }` and accept
+  `timeoutMs: number` (breaking change: all callers and fakes updated).
+- Added `IsPaneAlive = (paneId: string) => boolean` injectable type.
+- Added `DEFAULT_PER_WORKER_TIMEOUT_MS = 30 * 60 * 1000` (30 min) constant.
+- Added `isPaneAlive: IsPaneAlive` and `perWorkerTimeoutMs?: number` to
+  `RunSupervisorOptions`.
+- In the implement branch of `runSupervisor`: after `waitFor(channel, perWorkerTimeoutMs)`,
+  check `waitResult.timedOut`: pane dead -> `blocked` detail='pane-died-pre-result';
+  pane alive -> kill pane via `respawn-pane -k ... 'echo timeout'` + `blocked`
+  detail='timeout'. Both timeout cases increment iterations and `continue` the loop
+  (proceed to decideNextAction) instead of exiting, enabling recovery to the next story.
+- Updated `next.ts`: real `waitFor` adapter uses `spawnSync timeout` option and checks
+  `result.signal !== null` for `timedOut`; new `isPaneAlive` adapter uses `list-panes -t
+  paneId` exit code; `perWorkerTimeoutMs` read from `CAM_WORKER_TIMEOUT_MS` env or default.
+- Decoupled `review.ts` from `WaitForFn`: introduced `ReviewWaitForFn = (channel) => void`
+  for the unbounded reviewer wait; stopped importing `WaitForFn` from loop.ts.
+- Updated `loop.test.ts`: `makeBaseOpts` updated with new `waitFor` fake signature and
+  `isPaneAlive` (default: pane alive); added 6 new tests: timeout-path, pane-died-path,
+  waitFor-receives-timeoutMs, recovery-to-next-story, timeout-detail, pane-died-lastOutcome.
+- Updated `review.test.ts`: replaced `WaitForFn` import with `ReviewWaitForFn`.
+
+### Files changed
+- `src/supervisor/loop.ts` (WaitForFn, IsPaneAlive, options, timeout branch)
+- `src/commands/next.ts` (waitFor adapter, isPaneAlive adapter, perWorkerTimeoutMs)
+- `src/supervisor/review.ts` (ReviewWaitForFn decoupling)
+- `test/supervisor/loop.test.ts` (fakes updated, 6 new tests)
+- `test/supervisor/review.test.ts` (ReviewWaitForFn import)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 660 pass
+
+### Step 5.5 docs validation
+- lib: tmux, status: ok, url: https://github.com/tmux/tmux/blob/master/cmd-wait-for.c
+- summary: confirmed wait-for has no native timeout option; spawnSync timeout + signal
+  check is the correct approach. list-panes -t paneId exit code for dead pane is non-zero
+  (confirmed by isWorkerPaneAlive pattern from US-009 already in codebase).
+
+### Notes
+- The key design insight: timeout/pane-died cases CONTINUE the loop (not exit) so the
+  supervisor can pick another story. Only sentinel BLOCKED_* cases exit the loop.
+- Pane-died path does NOT send 'echo timeout' (pane already dead, no need to kill).
+- ReviewWaitForFn decoupling keeps the review dispatch simple (no timeout needed there).
 ---
 
 ## 2026-06-08 - US-010: Docs: rewrite cam-next.md and update CLAUDE.md/README/CHANGELOG

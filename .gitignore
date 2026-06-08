@@ -41,6 +41,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .claude/hooks/
 # Runtime orchestrator session-id marker written by `cam run` (US-002, CAM-21)
 .claude/.cam-orch-session
+# Runtime supervisor markers written by `cam plan` / `cam next` (CAM-22)
+.claude/.cam-worker-pane
+.claude/cam-loop.local.md
 
 # Cursor IDE workspace files (content is already in CLAUDE.md, which Cursor reads as fallback)
 .cursor/

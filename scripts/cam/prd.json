@@ -240,7 +240,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (extend), test/supervisor/loop.test.ts. The 'wait-for signal not guaranteed buffered' tmux finding from Step-5 is precisely why we need a deadline + pane-existence cross-check, do not rely on the channel alone. Use injected clock, never Date.now() directly in the loop."
     },
