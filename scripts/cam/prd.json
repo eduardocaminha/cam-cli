@@ -54,7 +54,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (extend tmuxArgs/CreatedPaneIds neighborhood + make openPaneInSession return the pane id), src/commands/plan.ts (persist the slot marker), test/tmux-session.test.ts and test/plan.test.ts (both already exist, extend them). openPaneInSession today returns void and uses split-window -d with no -P -F capture (src/tmux/session.ts:220-237), add the capture. Mirror the -L socket pattern used today; never inline 'tmux ...' strings (CAM-26). Guard noUncheckedIndexedAccess on any array access. Reference reuse pattern: src/commands/run.ts:121-237 for how respawn-pane is composed today for orchestrator/dashboard/menu panes."
     },

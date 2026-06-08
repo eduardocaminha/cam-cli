@@ -16,3 +16,36 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Commits**: conventional commits required (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
 - **No em dashes** in persisted files (PRD notes, progress, docs): use colon, comma, parentheses, or period.
 - **Pure transcript parser pattern**: `parseTranscriptUsage` splits on `\n`, `JSON.parse` each trimmed line in a try/catch, checks `message?.usage` existence, accumulates with `toNumber()` guard (returns 0 for non-number). `formatTokens` uses `>= 1_000_000` / `>= 1_000` thresholds. Module lives in `src/transcript/usage.ts`; tests under `test/transcript/usage.test.ts`. `orchestratorTranscriptPath(cwd, claudeDir)` reads `.claude/.cam-orch-session`; CAM-22 generalizes it to `transcriptPathForSession(uuid, cwd, claudeDir)`.
+- **openPaneInSession returns pane id (US-001)**: the function now uses `stdio: 'pipe'` and `-P -F #{pane_id}` to capture and return the stable pane id string (e.g. `%5`). All test fakes for split-window must handle `opts?.stdio === 'pipe'` and return a non-empty `stdout` buffer, or they will crash with `Cannot read property toString of undefined`.
+- **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
+
+## 2026-06-08 14:00 - US-001: tmux worker-slot primitives in session.ts
+
+### What was done
+- Added `respawnPaneArgv`, `waitForArgv`, `signalWaitForArgv`, `capturePaneArgv` pure argv builders to `src/tmux/session.ts`, all prepending `-L cam` via `tmuxArgs`.
+- Added `workerWaitChannel(storyId, uuid)` for deterministic channel naming.
+- Added `writeWorkerPaneMarker(claudeDir, paneId)` and `readWorkerPaneMarker(claudeDir)` for `.claude/.cam-worker-pane` persistence; exported `WORKER_PANE_MARKER` constant.
+- Changed `openPaneInSession` return type from `void` to `string`: adds `-P -F #{pane_id}` and `stdio: 'pipe'` to the split-window call, returns the captured pane id.
+- Updated `plan.ts` to capture the returned pane id and call `writeWorkerPaneMarker` before returning (first write of the slot marker).
+- Extended `test/tmux-session.test.ts` with argv-shape tests for all new builders, marker round-trip tests, and openPaneInSession return value test.
+- Extended `test/plan.test.ts` with two tests verifying `.claude/.cam-worker-pane` is written with a non-empty pane id.
+- Fixed `test/attach-hint.test.ts` fake spawn to handle `stdio: 'pipe'` for split-window (returning a `stdout` buffer), which broke after the openPaneInSession signature change.
+
+### Files changed
+- `src/tmux/session.ts`
+- `src/commands/plan.ts`
+- `test/tmux-session.test.ts`
+- `test/plan.test.ts`
+- `test/attach-hint.test.ts`
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 548 pass
+
+### Step 5.5 docs validation
+- lib: none (no new external libraries; only Node.js built-ins `fs`, `path`, `crypto`), status: no_external_lib_touched
+
+### Notes
+- The `attach-hint.test.ts` fake was the only collateral breakage: it returned bare `{ status: 0 }` without `stdout`, which crashed when `openPaneInSession` called `.stdout.toString()`. Pattern: any fake spawn for split-window/new-session must include `stdout: Buffer.from(...)` to avoid crashes on the return value.
+---

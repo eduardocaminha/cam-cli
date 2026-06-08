@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "tmux worker-slot primitives in session.ts"
+  },
+  "branchName": "cam/CAM-22-real-worker-sessions",
+  "timestamp": "2026-06-08T14:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/tmux/session.ts",
+    "src/commands/plan.ts",
+    "test/tmux-session.test.ts",
+    "test/plan.test.ts",
+    "test/attach-hint.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "openPaneInSession now returns the captured pane id (string) instead of void, using stdio: 'pipe' and -P -F #{pane_id}. Any test fake for split-window must return a non-empty stdout Buffer or it will crash. Worker pane marker (.claude/.cam-worker-pane) is now written by plan.ts after openPaneInSession. US-002 and beyond can read it via readWorkerPaneMarker(claudeDir). All new argv builders (respawnPaneArgv, waitForArgv, signalWaitForArgv, capturePaneArgv, workerWaitChannel) are exported from src/tmux/session.ts.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Story only used Node.js built-ins (node:fs, node:path, node:crypto) already present in the codebase."
+    }
+  ]
+}
