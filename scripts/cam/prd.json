@@ -168,7 +168,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/next.ts, test/next.test.ts, src/commands/status.ts (only if state-file shape contract needs a typed accessor extracted, keep edits surgical), vendor/cam-loop-stop-hook.sh (leave the vendor file in place if still referenced by older installs, but stop writing settings.local.json hooks block in this codepath; if removable, delete and add to embed-vendor:check). ARCHITECTURE DECISION (Eduardo 2026-06-08, see top-level architectureDecision): retire, not coexist. Verify dashboard.ts (readSnapshot, readTranscriptTokens, Stories panel) still reads cam-loop.local.md correctly post-rewrite, that contract is consumed by US-014 too."
     },

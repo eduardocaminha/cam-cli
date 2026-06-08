@@ -1,52 +1,43 @@
 // src/commands/next.ts
 //
-// Implementation of `cam next` — spawns the autonomous loop.
+// Implementation of `cam next` -- dispatches to the TS supervisor loop.
+//
+// ARCHITECTURE (Eduardo 2026-06-08, closes CAM-29):
+//   The stop-hook driver (vendor/cam-loop-stop-hook.sh + /cam-next re-inject)
+//   is RETIRED. Each worker is a real separate claude session spawned via
+//   `tmux respawn-pane -k`, reusing the single worker pane established by
+//   `cam plan`. The deterministic TS supervisor sequences stories directly.
 //
 // What `cam next` does, step by step:
 //   1. Resolves `permission_mode` from `~/.config/cam/config.toml` via
 //      `readPermissionMode()` (default `bypassPermissions`). NO CLI flag
-//      overrides this — see acceptance criterion 7 of US-007 and
-//      `test/no-permission-mode-flag.test.ts`.
-//   2. Pre-arms the cam-loop state file `.claude/cam-loop.local.md` BEFORE
-//      claude starts, using the YAML-frontmatter-plus-prompt template at
-//      `vendor/cam-loop.local.md.tmpl`. The companion stop hook
-//      `vendor/cam-loop-stop-hook.sh` reads this file on every Stop event
-//      and either re-emits the prompt or removes the file to terminate.
-//   3. Detects the split mode:
-//        - `tmux` on PATH → tmux-split: pane A runs claude in the current
-//          terminal, pane B runs `cam dashboard` in a tmux pane. Works in
-//          any terminal (Ghostty, iTerm2, Kitty, Terminal.app, SSH, etc.).
-//          If already inside tmux ($TMUX set), uses `tmux split-window -h`.
-//          Otherwise creates a new detached session named `cam`.
-//        - VS Code (`TERM_PROGRAM=vscode`) → inline single-pane fallback.
-//        - No tmux → inline single-pane fallback.
-//   4. Returns the exit code of the spawned subprocess. For tmux splits,
-//      the tmux call returns immediately; cam waits on the claude subprocess.
+//      overrides this.
+//   2. Reads the worker pane id from `.claude/.cam-worker-pane` (written by
+//      `cam plan`). If missing, instructs the operator to run `cam plan` first.
+//   3. Writes `.claude/cam-loop.local.md` with YAML frontmatter (active, iteration,
+//      started_at, pid, session_id, max_iterations) and an empty body -- no
+//      stop-hook re-inject prompt. This file is read by `cam status` and
+//      `cam dashboard` for display.
+//   4. Calls `runSupervisor()` with real I/O adapters (spawn, waitFor, capturePane,
+//      readPrd, writePrd, readHandoff, clock, reviewDispatch, writeSessionMarker).
+//      The supervisor drives the worker loop until complete, blocked, or max-iterations.
+//   5. Returns 0 on complete, 1 on blocked or max-iterations.
 //
 // Acceptance criteria (US-007):
-//   1. `cam next` exists as a CLI subcommand (wired in `index.ts`).
-//   2. Detects tmux + spawns split with claude (pane A) and
-//      `cam dashboard` (pane B); plugin state file pre-armed.
-//   3. Detects `TERM_PROGRAM=vscode` and falls back to inline single-pane.
-//   4. Pre-arming uses the vendored `cam-loop.local.md.tmpl`.
-//   5. Default `--max-iterations 30 --completion-promise "COMPLETE"`;
-//      both overridable via `--max-iter N --completion-promise STR`.
-//   6. Bun unit test mocks spawn + asserts pre-arming file is written and
-//      the right args are passed.
-//   7. No subcommand exposes `--permission-mode`; sourced from config.
-//   8. `bunx tsc --noEmit` passes.
-//
-// Implementation notes:
-// - `Bun.spawn` is the canonical spawn primitive (US-006 validated the API
-//   surface against https://bun.sh/docs/api/spawn). We accept a `SpawnFn`
-//   factory injection point for tests, exactly like `runPlan`.
-// - `writeStateFile` is its own injection point so tests can verify what
-//   would be written without touching the real filesystem.
-// - The `dashboardCmd` injection point lets tests assert pane B's argv
-//   without spawning the dashboard's alt-screen loop in a test runner.
+//   1. runNext dispatches to runSupervisor(); stop-hook code path is REMOVED.
+//   2. materializeStopHook, writeSettingsLocal, buildHooksBlock and /cam-next
+//      re-inject are gone.
+//   3. Supervisor writes .claude/cam-loop.local.md with parseStateFile-compatible
+//      fields (iteration, started_at, pid, session_id) and no re-inject body.
+//   4. buildClaudeArgv and buildDashboardArgv are removed (not used by run.ts).
+//   5. test/next.test.ts covers supervisor dispatch, state-file shape, no stop-hook.
+//   6. Commit body + .claude/commands/cam-next.md (US-010) document retirement.
+//   7. Typecheck passes (bun run typecheck).
+//   8. Tests pass (bun test).
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
 import { readPermissionMode } from '../config/permission-mode.ts';
@@ -61,112 +52,60 @@ import {
 	emitWarn,
 } from '../logging/screen.ts';
 import {
-	ensureProjectSession,
-	openPaneInSession,
 	projectSessionName,
+	readWorkerPaneMarker,
 	type Env,
-	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
 import { readEmbedded } from '../vendor/embedded.ts';
+import { runSupervisor, type RunSupervisorOptions } from '../supervisor/loop.ts';
+import type { PrdSnapshot } from '../supervisor/decide.ts';
 
 // --- Constants -------------------------------------------------------------
 
 /**
- * Default `--max-iterations` passed to the cam-loop plugin. 30 covers a
- * typical 15-story PRD plus a couple of review rounds — see
- * `scripts/cam/CLAUDE.md § Autonomous loop via the official cam-loop plugin`.
+ * Default `--max-iterations` for the supervisor. 30 covers a typical
+ * 15-story PRD plus a couple of review rounds.
  */
 export const DEFAULT_MAX_ITERATIONS = 30;
 
 /**
- * Default `--completion-promise` value. The assistant emits
- * `<promise>COMPLETE</promise>` when the PRD is done, which the plugin's
- * stop hook compares case-sensitively.
+ * Default `--completion-promise` value (kept for CLI help parity).
+ * The TS supervisor does NOT use a completion promise -- it reads prd.json
+ * directly. This constant is preserved for backwards compat with callers
+ * that pass it via options.
  */
 export const DEFAULT_COMPLETION_PROMISE = 'COMPLETE';
 
-/**
- * The slash command that gets re-injected every turn by the plugin's stop
- * hook. Becomes the body of the state file (after the YAML frontmatter).
- */
-const CAM_NEXT_PROMPT = '/cam-next';
-
-/** State-file path relative to cwd. Owned by the upstream plugin. */
+/** State-file path relative to cwd. Read by cam status / cam dashboard. */
 const STATE_FILE_PATH = '.claude/cam-loop.local.md';
 
-// --- Host detection --------------------------------------------------------
+/** Canonical PRD location in the cam harness dir. */
+const PRD_PATH_CANONICAL = 'scripts/cam/prd.json';
 
-export type HostMode = 'tmux-split' | 'inline';
+/** Handoff file location in the cam harness dir. */
+const HANDOFF_PATH_CANONICAL = 'scripts/cam/handoff.json';
 
-/**
- * Injection type for a synchronous spawn used only to probe `tmux`.
- * Keeping it synchronous (~5ms) avoids async plumbing overhead for a
- * quick capability probe.
- *
- * `cmd` is argv-style. Returns `{ exitCode }`.
- * Returns `null` (or throws) if the binary is not on PATH.
- */
-export type TmuxProbeFn = (cmd: string[]) => { exitCode: number } | null;
-
-/** Default synchronous probe using `Bun.spawnSync`. */
-function defaultTmuxProbe(cmd: string[]): { exitCode: number } | null {
-	try {
-		const result = Bun.spawnSync(cmd, { stdout: 'pipe', stderr: 'pipe' });
-		return { exitCode: result.exitCode ?? 1 };
-	} catch {
-		return null;
-	}
-}
-
-/**
- * Detect the split mode to use.
- *
- * Resolution order:
- *   1. `TERM_PROGRAM=vscode` → inline (IDE embedded terminal; splitting would
- *      open a pane inside VS Code's terminal, which is confusing).
- *   2. `tmux` on PATH → `tmux-split`. Works in any terminal that has tmux
- *      (Ghostty, iTerm2, Kitty, plain Terminal.app, SSH sessions, etc.).
- *      If we are already inside a tmux session (`$TMUX` set), we split the
- *      current window. Otherwise we create a new detached session named `cam`.
- *   3. Anything else → inline.
- */
-export function detectHost(
-	env: NodeJS.ProcessEnv = process.env,
-	tmuxProbe: TmuxProbeFn = defaultTmuxProbe,
-): HostMode {
-	if (env['TERM_PROGRAM'] === 'vscode') return 'inline';
-	const probeResult = tmuxProbe(['tmux', '-L', 'cam', '-V']);
-	if (probeResult === null || probeResult.exitCode !== 0) return 'inline';
-	return 'tmux-split';
-}
+/** Default task prompt sent to the implementer agent. */
+export const DEFAULT_TASK_PROMPT =
+	'Implement the next user story from scripts/cam/prd.json per your AGENT.md.';
 
 // --- Vendored template -----------------------------------------------------
 
 /**
- * Render the state-file body from the vendored template. Substitution is a
- * dumb literal `{{KEY}} → value` replace; we don't escape because the values
- * are constrained by us (an integer iteration cap, a non-empty literal
- * promise string, an ISO timestamp). The promise string is wrapped in YAML
- * double quotes to keep parity with the plugin's setup script.
+ * Render the supervisor state-file body from the vendored template.
+ * Substitution is a dumb literal `{{KEY}} -> value` replace.
  *
- * The template body comes from `vendor/cam-loop.local.md.tmpl`, which is
- * embedded into the compiled binary via `with { type: "file" }` (see
- * `src/vendor/embedded.ts`). In dev mode this reads from the real file on
- * disk; in compiled mode it reads from the bundled `$bunfs/` virtual path.
+ * The body section after the closing `---` is left empty: the supervisor
+ * drives the loop directly, so there is no stop-hook re-inject prompt.
+ *
+ * The template body comes from `vendor/cam-loop.local.md.tmpl`, embedded
+ * into the compiled binary via `with { type: "file" }` (src/vendor/embedded.ts).
  */
 export function renderStateFile(input: {
 	maxIterations: number;
 	completionPromise: string;
-	prompt: string;
 	startedAt: string;
 	sessionId: string;
-	/**
-	 * PID of the long-running driver process (claude, spawned by cam next)
-	 * that owns the loop. `cam resume` (US-010) reads this back to
-	 * distinguish a still-alive loop from an orphaned state file: a stale
-	 * PID with no live process means the loop crashed (terminal closed, OS
-	 * rebooted, hard-kill). Defaults to `process.pid` when not provided.
-	 */
 	pid: number;
 }): string {
 	const tmpl = readEmbedded('cam-loop.local.md.tmpl');
@@ -180,16 +119,14 @@ export function renderStateFile(input: {
 		.replace('{{COMPLETION_PROMISE_YAML}}', promiseYaml)
 		.replace('{{STARTED_AT}}', input.startedAt)
 		.replace('{{PID}}', String(input.pid))
-		.replace('{{PROMPT}}', input.prompt);
+		// No stop-hook re-inject prompt: leave the body empty.
+		.replace('{{PROMPT}}', '');
 }
 
 /**
  * Write `.claude/cam-loop.local.md` under `cwd`, creating `.claude/` if
  * needed. Returns the absolute path written. Refuses to clobber an existing
- * file unless `force` is true — an existing state file usually means a
- * previous loop is already running, and stomping on it would mid-flight
- * corrupt the iteration counter. The operator is told to clean up via
- * `/cancel-cam` (or `rm .claude/cam-loop.local.md`) before re-running.
+ * file unless `force` is true.
  */
 export function writeStateFile(
 	cwd: string,
@@ -203,221 +140,11 @@ export function writeStateFile(
 	}
 	if (existsSync(target) && !options.force) {
 		throw new Error(
-			`state file already exists at ${target} — run \`/cancel-cam\` (in the active session) or \`rm ${STATE_FILE_PATH}\` to clear`,
+			`state file already exists at ${target} — run \`cam stop\` to clear`,
 		);
 	}
 	writeFileSync(target, body, 'utf8');
 	return target;
-}
-
-// --- Stop-hook materialization ---------------------------------------------
-
-/** Path of the stop hook relative to cwd. */
-export const STOP_HOOK_RELATIVE = '.claude/hooks/cam-loop-stop.sh';
-
-/** Path of the project-local Claude settings file relative to cwd. */
-export const SETTINGS_LOCAL_RELATIVE = '.claude/settings.local.json';
-
-/**
- * The Claude Code hooks shape this story registers. The Stop event receives
- * a nested array of hook matchers; each matcher has a `hooks` array of
- * command descriptors. Per claude-code-hooks docs:
- *   { hooks: { Stop: [ { hooks: [ { type: 'command', command: '...' } ] } ] } }
- */
-const STOP_HOOK_COMMAND = `bash ${STOP_HOOK_RELATIVE}`;
-
-/**
- * Materialize the vendored stop-hook script to `<cwd>/.claude/hooks/cam-loop-stop.sh`
- * and chmod it executable. Called BEFORE writing the plugin state file so the
- * hook is registered before claude starts.
- *
- * Injection point `getStopHookContents` lets tests supply a fake body so they
- * don't depend on the real embedded asset.
- */
-export function materializeStopHook(
-	cwd: string,
-	getStopHookContents: () => string = () => readEmbedded('cam-loop-stop-hook.sh'),
-): string {
-	const target = join(cwd, STOP_HOOK_RELATIVE);
-	const dir = dirname(target);
-	if (!existsSync(dir)) {
-		mkdirSync(dir, { recursive: true });
-	}
-	const contents = getStopHookContents();
-	writeFileSync(target, contents, 'utf8');
-	chmodSync(target, 0o755);
-	return target;
-}
-
-/**
- * Deep-merge helper for plain JSON objects. Source keys overwrite destination
- * keys at every depth; array values are replaced (not concatenated) to keep
- * the merge predictable. Non-object values at the same key follow the same
- * last-write-wins rule.
- *
- * We keep this intentionally minimal — `settings.local.json` only ever has
- * a shallow-to-medium depth (`hooks.Stop[0].hooks[0].command`), so a full
- * recursive merge is strictly more than needed but adds no risk.
- */
-export function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
-	const result: Record<string, unknown> = { ...target };
-	for (const [key, val] of Object.entries(source)) {
-		const existing = result[key];
-		if (
-			val !== null &&
-			typeof val === 'object' &&
-			!Array.isArray(val) &&
-			existing !== null &&
-			typeof existing === 'object' &&
-			!Array.isArray(existing)
-		) {
-			result[key] = deepMerge(
-				existing as Record<string, unknown>,
-				val as Record<string, unknown>,
-			);
-		} else {
-			result[key] = val;
-		}
-	}
-	return result;
-}
-
-/**
- * The hooks block cam injects into `.claude/settings.local.json`. We write
- * this shape because the Claude Code hooks API requires the nested form:
- *   { hooks: { Stop: [ { hooks: [ { type: 'command', command: '...' } ] } ] } }
- * This is the canonical hooks document format per claude-code-hooks docs.
- */
-function buildHooksBlock(): Record<string, unknown> {
-	return {
-		hooks: {
-			Stop: [
-				{
-					hooks: [
-						{
-							type: 'command',
-							command: STOP_HOOK_COMMAND,
-						},
-					],
-				},
-			],
-		},
-	};
-}
-
-/**
- * Write or merge `<cwd>/.claude/settings.local.json` so the Stop hook command
- * is registered. Existing keys in the file are preserved via deep-merge — we
- * never overwrite a key that cam didn't put there.
- *
- * Injection point `reader` lets tests supply existing file contents without
- * touching the real filesystem.
- */
-export function writeSettingsLocal(
-	cwd: string,
-	reader: (path: string) => string | null = (p) => {
-		try {
-			return existsSync(p) ? readFileSync(p, 'utf8') : null;
-		} catch {
-			return null;
-		}
-	},
-): string {
-	const target = join(cwd, SETTINGS_LOCAL_RELATIVE);
-	const dir = dirname(target);
-	if (!existsSync(dir)) {
-		mkdirSync(dir, { recursive: true });
-	}
-
-	const raw = reader(target);
-	let existing: Record<string, unknown> = {};
-	if (raw !== null && raw.trim().length > 0) {
-		try {
-			const parsed: unknown = JSON.parse(raw);
-			if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-				existing = parsed as Record<string, unknown>;
-			}
-		} catch {
-			// Malformed JSON — start from an empty object rather than clobbering.
-			// The merge below will add our keys without losing any valid state.
-		}
-	}
-
-	const merged = deepMerge(existing, buildHooksBlock());
-	writeFileSync(target, JSON.stringify(merged, null, 2) + '\n', 'utf8');
-	return target;
-}
-
-// --- Spawn surface ---------------------------------------------------------
-
-/**
- * The subset of `Bun.Subprocess` cam-next uses. Mirrors the shape from
- * `commands/plan.ts` so the test fakes can be shared.
- */
-export interface NextSubprocess {
-	readonly exited: Promise<number>;
-	kill(signal?: number | string): void;
-}
-
-/**
- * Spawn factory — `cmd` is argv-style; `cwd` is the working directory.
- * Tests inject a fake that records the cmd + cwd and resolves `exited`
- * on demand.
- */
-export type NextSpawnFn = (cmd: string[], options: { cwd: string }) => NextSubprocess;
-
-/**
- * Default spawn — `Bun.spawn` with stdio:'inherit' across the board. We
- * inherit stdin/stdout/stderr because (1) the operator interacts with
- * claude's TUI directly and (2) for the inline fallback the dashboard is
- * the IDE's own terminal output (no separate pane to stream to).
- *
- * For the Ghostty split case, `ghostty +new-split horizontal -- <cmd>`
- * detaches the pane immediately (it inherits stdio from the new terminal,
- * not from this process), so the inherited stdio here is mostly a no-op —
- * `ghostty +new-split` itself writes a one-line ack to its stdout.
- */
-function defaultSpawn(cmd: string[], options: { cwd: string }): NextSubprocess {
-	const proc = Bun.spawn(cmd, {
-		cwd: options.cwd,
-		stdin: 'inherit',
-		stdout: 'inherit',
-		stderr: 'inherit',
-	});
-	return {
-		exited: proc.exited,
-		kill(signal?: number | string) {
-			proc.kill(signal as number | NodeJS.Signals | undefined);
-		},
-	};
-}
-
-// --- argv builders ---------------------------------------------------------
-
-/**
- * Build the argv for pane A (claude with the loop pre-armed). The state
- * file has already been written to `.claude/cam-loop.local.md`; the
- * plugin's stop hook reads that file to drive the loop. We pass
- * `CAM_NEXT_PROMPT` as the trailing argument — claude treats that as
- * the first user-turn, kicking off iteration 1.
- */
-export function buildClaudeArgv(permissionMode: string): string[] {
-	return ['claude', '--permission-mode', permissionMode, CAM_NEXT_PROMPT];
-}
-
-/**
- * Build the argv for pane B (the read-only dashboard). On the tmux split
- * path this runs alongside claude in a sibling pane. On the inline path
- * we don't spawn a dashboard at all — the IDE / single terminal IS the
- * dashboard view of claude's output.
- *
- * The argv form is `cam dashboard` rather than `bun src/...` because by
- * the time `cam next` is invoked, the operator has installed `cam` on
- * PATH (compiled binary or dev shim) — see US-002 + US-011 for the install
- * story.
- */
-export function buildDashboardArgv(): string[] {
-	return ['cam', 'dashboard'];
 }
 
 // --- Public entrypoint -----------------------------------------------------
@@ -425,19 +152,10 @@ export function buildDashboardArgv(): string[] {
 export interface NextOptions {
 	/** Override `--max-iterations`; default `DEFAULT_MAX_ITERATIONS`. */
 	maxIterations?: number;
-	/** Override `--completion-promise`; default `DEFAULT_COMPLETION_PROMISE`. */
+	/** Override `--completion-promise`; kept for CLI parity, not used by supervisor. */
 	completionPromise?: string;
-	/** Override the host detection result (for tests). */
-	hostMode?: HostMode;
 	/** Override the working directory; default `process.cwd()`. */
 	cwd?: string;
-	/** Spawn factory — overridable for tests. */
-	spawn?: NextSpawnFn;
-	/**
-	 * State-file writer override — overridable for tests. Receives the cwd
-	 * and the rendered body; returns the path that would be written.
-	 */
-	writer?: (cwd: string, body: string) => string;
 	/** Permission-mode override (purely for tests; production reads config). */
 	permissionMode?: string;
 	/** Force-overwrite an existing state file. Default: false. */
@@ -449,44 +167,46 @@ export interface NextOptions {
 	/** PID written to the state-file frontmatter (override for tests). Default: `process.pid`. */
 	pid?: number;
 	/**
-	 * Override the stop-hook materializer for tests. Receives `cwd` and a
-	 * `getContents` factory; returns the path written (or simulated).
-	 */
-	hookMaterializer?: (cwd: string) => string;
-	/**
-	 * Override the settings.local.json writer for tests. Receives `cwd`;
-	 * returns the path written (or simulated).
-	 */
-	settingsWriter?: (cwd: string) => string;
-	/**
-	 * Override the tmux probe used by `detectHost`. Tests inject a scripted
-	 * response so they never exec a real `tmux` binary.
-	 */
-	tmuxProbe?: TmuxProbeFn;
-	/**
-	 * Override the synchronous spawn function used for tmux session management
-	 * (ensureProjectSession, openPaneInSession). Tests inject a fake so they
-	 * never call a real tmux binary. Defaults to a spawnSync wrapper.
-	 */
-	tmuxSpawnFn?: TmuxSpawnFn;
-	/**
 	 * Override process.env for attach-hint detection. Tests inject a fake env
 	 * to assert hint printed/suppressed without touching process.env.
 	 */
 	env?: Env;
+	/**
+	 * Override the state-file writer for tests. Receives the cwd and the
+	 * rendered body; returns the path that would be written.
+	 */
+	writer?: (cwd: string, body: string) => string;
+	/**
+	 * Override the worker-pane-id reader for tests. Receives claudeDir;
+	 * returns the pane id or null.
+	 */
+	workerPaneReader?: (claudeDir: string) => string | null;
+	/**
+	 * Override the runSupervisor implementation for tests. Receives the same
+	 * options bag as the real runSupervisor.
+	 */
+	supervisorFn?: (opts: RunSupervisorOptions) => Promise<import('../supervisor/loop.ts').SupervisorResult>;
+	/**
+	 * Task prompt sent to the implementer agent. Default: DEFAULT_TASK_PROMPT.
+	 */
+	taskPrompt?: string;
+	/**
+	 * Path to prd.json (override for tests). Default: `<cwd>/scripts/cam/prd.json`.
+	 */
+	prdPath?: string;
+	/**
+	 * Path to handoff.json (override for tests). Default: `<cwd>/scripts/cam/handoff.json`.
+	 */
+	handoffPath?: string;
 }
 
 /**
- * Run the full `cam next` flow. Returns the process exit code.
+ * Run the `cam next` flow: writes the state file then delegates to runSupervisor().
  *
- * Resolution order:
- *   - tmux-split: write state file → ensure the project session exists
- *     (3-pane layout via ensureProjectSession) → open a new pane inside
- *     the project session running `claude` (openPaneInSession). Returns 0
- *     immediately; the loop runs inside the session pane (thin launcher).
- *   - Inline fallback (VS Code or no tmux): write state file →
- *     spawn `claude ... /cam-next` in current pane. Returns claude's
- *     exit code. No session pane.
+ * Returns:
+ *   0 — supervisor completed (all stories done or review passed)
+ *   1 — supervisor blocked, max-iterations reached, missing worker pane, or
+ *       state-file write failed
  */
 export async function runNext(options: NextOptions = {}): Promise<number> {
 	const cwd = options.cwd ?? process.cwd();
@@ -494,123 +214,179 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const completionPromise = options.completionPromise ?? DEFAULT_COMPLETION_PROMISE;
 	const permissionMode = options.permissionMode ?? readPermissionMode();
 	const env = options.env ?? process.env;
+	const taskPrompt = options.taskPrompt ?? DEFAULT_TASK_PROMPT;
+	const prdPath = options.prdPath ?? join(cwd, PRD_PATH_CANONICAL);
+	const handoffPath = options.handoffPath ?? join(cwd, HANDOFF_PATH_CANONICAL);
 
-	const host: HostMode =
-		options.hostMode ?? detectHost(process.env, options.tmuxProbe);
+	const claudeDir = join(cwd, '.claude');
 
-	const spawn = options.spawn ?? defaultSpawn;
+	// Compute session name for attach hint.
+	const sessionName = projectSessionName(cwd);
+
+	emitTitle('cam next');
+	emitSectionHeading('Supervisor');
+
+	// 1. Read worker pane id. Must be allocated by `cam plan` first.
+	const workerPaneReader = options.workerPaneReader ?? readWorkerPaneMarker;
+	const workerPaneId = workerPaneReader(claudeDir);
+	if (!workerPaneId) {
+		printError(
+			'Worker pane not allocated',
+			'Run `cam plan` first to create the worker pane, then re-run `cam next`.',
+		);
+		emitTrailingBlank();
+		return 1;
+	}
+	emitOk('Worker pane', workerPaneId);
+
+	// 2. Write the supervisor state file. Fields: active, iteration, started_at,
+	//    pid, session_id, max_iterations. Body: empty (no stop-hook re-inject).
+	const supervisorSessionId =
+		options.sessionId ?? process.env['CLAUDE_CODE_SESSION_ID'] ?? crypto.randomUUID();
+	const startedAt = options.startedAt ?? new Date().toISOString();
+	const pid = options.pid ?? process.pid;
+
+	const stateBody = renderStateFile({
+		maxIterations,
+		completionPromise,
+		startedAt,
+		sessionId: supervisorSessionId,
+		pid,
+	});
+
 	const writer =
 		options.writer ??
 		((cwd2: string, body: string) => writeStateFile(cwd2, body, { force: options.force ?? false }));
-	const hookMaterializer = options.hookMaterializer ?? ((cwd2: string) => materializeStopHook(cwd2));
-	const settingsWriter = options.settingsWriter ?? ((cwd2: string) => writeSettingsLocal(cwd2));
-
-	// Default synchronous spawn for tmux session management calls.
-	const { spawnSync } = await import('node:child_process');
-	const tmuxSpawnFn: TmuxSpawnFn =
-		options.tmuxSpawnFn ??
-		((cmd, args, opts) => spawnSync(cmd, args, { stdio: opts?.stdio ?? 'ignore' }));
-
-	emitTitle('cam next');
-	emitSectionHeading('Loop');
-
-	// 0. Materialize the vendored stop hook and register it in
-	//    .claude/settings.local.json BEFORE writing the state file. This
-	//    ensures the hook is registered in Claude Code's settings so it fires
-	//    on Stop events — even when the official cam-loop plugin is not
-	//    installed in the spawned session.
-	try {
-		const hookPath = hookMaterializer(cwd);
-		emitOk('Materialized stop hook', hookPath);
-	} catch (err) {
-		printError(
-			'Failed to materialize stop hook',
-			err instanceof Error ? err.message : String(err),
-		);
-		emitTrailingBlank();
-		return 1;
-	}
-	try {
-		const settingsPath = settingsWriter(cwd);
-		emitOk('Registered Stop hook in', settingsPath);
-	} catch (err) {
-		printError(
-			'Failed to write .claude/settings.local.json',
-			err instanceof Error ? err.message : String(err),
-		);
-		emitTrailingBlank();
-		return 1;
-	}
-
-	// 1. Render + write the state file. Failing here is fatal — without an
-	//    armed plugin state file, claude wouldn't know to loop.
-	const body = renderStateFile({
-		maxIterations,
-		completionPromise,
-		prompt: CAM_NEXT_PROMPT,
-		startedAt: options.startedAt ?? new Date().toISOString(),
-		sessionId: options.sessionId ?? process.env['CLAUDE_CODE_SESSION_ID'] ?? '',
-		pid: options.pid ?? process.pid,
-	});
 
 	let writtenPath: string;
 	try {
-		writtenPath = writer(cwd, body);
+		writtenPath = writer(cwd, stateBody);
 	} catch (err) {
 		printError(
-			'Failed to pre-arm cam-loop state file',
+			'Failed to write cam-loop state file',
 			err instanceof Error ? err.message : String(err),
 		);
 		emitTrailingBlank();
 		return 1;
 	}
-	emitOk(`Armed ${writtenPath}`, `max=${maxIterations} promise="${completionPromise}"`);
+	emitOk(`State file armed at ${writtenPath}`);
 
-	// 2. Build pane A's argv (claude with the loop kick-off prompt).
-	const claudeArgv = buildClaudeArgv(permissionMode);
+	// 3. Build real I/O adapters for the supervisor.
+	const supervisorSpawn: RunSupervisorOptions['spawn'] = (cmd, args, opts) => {
+		const result = spawnSync(cmd, args, {
+			stdio: opts?.stdio ?? 'pipe',
+			encoding: 'utf8',
+		} as Parameters<typeof spawnSync>[2]);
+		return {
+			stdout: typeof result.stdout === 'string' ? result.stdout : '',
+			exitCode: result.status ?? null,
+		};
+	};
 
-	// 3. Branch on host detection.
-	emitSectionHeading('Host');
-	if (host === 'tmux-split') {
-		// Ensure the project session exists (3-pane layout: orchestrator,
-		// dashboard, menu). Then open a new pane inside the session running
-		// the claude loop command. This is the thin-launcher pattern: we
-		// return to the caller's shell immediately; the loop lives in the
-		// project session pane.
-		const sessionName = projectSessionName(cwd);
+	const waitFor: RunSupervisorOptions['waitFor'] = (channel) => {
+		spawnSync('tmux', ['-L', 'cam', 'wait-for', channel], { stdio: 'ignore' });
+	};
+
+	const capturePane: RunSupervisorOptions['capturePane'] = (paneId) => {
+		const result = spawnSync('tmux', ['-L', 'cam', 'capture-pane', '-p', '-t', paneId], {
+			stdio: 'pipe',
+			encoding: 'utf8',
+		} as Parameters<typeof spawnSync>[2]);
+		return typeof result.stdout === 'string' ? result.stdout : '';
+	};
+
+	const readPrd: RunSupervisorOptions['readPrd'] = () => {
 		try {
-			ensureProjectSession(sessionName, tmuxSpawnFn);
-			openPaneInSession(sessionName, claudeArgv, tmuxSpawnFn);
-		} catch (err) {
-			emitWarn(
-				'tmux session pane launch failed',
-				err instanceof Error ? err.message : String(err),
-			);
-			emitTrailingBlank();
-			return 1;
+			const raw = readFileSync(prdPath, 'utf8');
+			const parsed: unknown = JSON.parse(raw);
+			if (parsed !== null && typeof parsed === 'object') {
+				return parsed as PrdSnapshot;
+			}
+			return null;
+		} catch {
+			return null;
 		}
-		emitOk(`Launched claude in project session "${sessionName}"`);
-		emitAttachHint(sessionName, env);
-		emitTrailingBlank();
-		return 0;
-	} else {
-		emitOk('Inline mode (VS Code or no tmux): no split');
-		emitMutedHint('Your current terminal is the dashboard view of the loop');
-	}
+	};
 
-	// 4. Inline fallback only: spawn claude in the foreground and wait.
-	//    In tmux-split mode we already returned above.
-	let claudeProc: NextSubprocess;
+	const writePrd: RunSupervisorOptions['writePrd'] = (prd) => {
+		writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\n', 'utf8');
+	};
+
+	const readHandoff: RunSupervisorOptions['readHandoff'] = () => {
+		try {
+			const raw = readFileSync(handoffPath, 'utf8');
+			const parsed: unknown = JSON.parse(raw);
+			if (parsed !== null && typeof parsed === 'object') {
+				return parsed as ReturnType<RunSupervisorOptions['readHandoff']>;
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	};
+
+	const clock: RunSupervisorOptions['clock'] = () => new Date().toISOString();
+
+	// Review dispatch placeholder: full wiring in US-008.
+	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = (_uuid) => ({
+		status: 'error' as const,
+		detail: 'Review dispatch not yet implemented (US-008)',
+	});
+
+	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {
+		const markerPath = join(claudeDir, `.cam-worker-${storyId}.session`);
+		mkdirSync(claudeDir, { recursive: true });
+		writeFileSync(markerPath, uuid, 'utf8');
+	};
+
+	// 4. Dispatch to the supervisor.
+	const supervisorFn = options.supervisorFn ?? runSupervisor;
+	emitSectionHeading('Loop');
+
+	let result: import('../supervisor/loop.ts').SupervisorResult;
 	try {
-		claudeProc = spawn(claudeArgv, { cwd });
+		result = await supervisorFn({
+			spawn: supervisorSpawn,
+			waitFor,
+			capturePane,
+			readPrd,
+			writePrd,
+			readHandoff,
+			clock,
+			reviewDispatch,
+			writeSessionMarker,
+			workerPaneId,
+			prdPath,
+			handoffPath,
+			permissionMode,
+			taskPrompt,
+			maxIterations,
+		});
 	} catch (err) {
 		printError(
-			'Failed to spawn `claude`',
-			`${err instanceof Error ? err.message : String(err)} (verify claude is on PATH, re-run \`cam init\`)`,
+			'Supervisor loop failed',
+			err instanceof Error ? err.message : String(err),
 		);
 		emitTrailingBlank();
 		return 1;
 	}
-	const exitCode = await claudeProc.exited;
-	return exitCode ?? 0;
+
+	// 5. Report result.
+	if (result.status === 'complete') {
+		emitOk(`Complete after ${result.iterations} iteration(s)`);
+	} else if (result.status === 'max-iterations') {
+		emitWarn(`Stopped: max iterations (${result.iterations}) reached`);
+	} else {
+		// blocked
+		emitWarn(`Blocked after ${result.iterations} iteration(s)`);
+		if (result.lastOutcome) {
+			emitMutedHint(`Last outcome: ${result.lastOutcome.kind}`);
+		}
+	}
+
+	// Emit attach hint if caller is running outside the project session.
+	emitAttachHint(sessionName, env);
+	emitTrailingBlank();
+
+	return result.status === 'complete' ? 0 : 1;
 }
