@@ -89,5 +89,11 @@
       "requires": null,
       "notes": "Files: docs/recovery-runbook.md (~line 14 table row), README.md (~line 253), vendor/README.md (already touched in US-003 row drop; this story handles the prose paragraph if not already touched there), .claude/commands/cam-next.md (~line 48), FLOW.md (~line 409). Per global CLAUDE.md (Eduardo): NO em-dash (—) in persisted .md files — substitute with colon, comma, parens, period, or rephrase. Per project CLAUDE.md §7: doc updates land in the same PRD as the behaviour change, not as deferred debt. Per AGENTS.md: keep changes surgical — do not rewrite full sentences when removing one stale word/path is enough. Verification: `grep -rn 'cam-loop-stop-hook\\|session_id' docs/ README.md FLOW.md .claude/commands/` should show only intentional references (if any remain in CHANGELOG or historical context) after this story."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "906352d45e3a5bc8ffdf6bd7c844518fe223c6be",
+    "lastVerdict": "CLEAN"
+  }
 }
