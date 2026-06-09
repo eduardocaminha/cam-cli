@@ -21,9 +21,10 @@
       "id": "CAM-3",
       "title": "session_id coletado mas inerte; resume nunca resume",
       "description": "Dois fios soltos. (a) src/commands/next.ts:549 grava session_id de process.env CLAUDE_CODE_SESSION_ID ?? '' — vazio quando cam next roda de um shell, então o check de isolamento de sessão do stop hook (STATE_SESSION != HOOK_SESSION) é pulado; duas sessões no mesmo projeto se re-injetariam. (b) src/commands/resume.ts lê session_id no LoopState mas não usa em classifyResumeMode e nunca chama claude --resume/--continue; recuperação é sempre sessão fria nova. O harness oferece --resume <UUID> (reidrata transcript, todos, file history, worktree). Decidir: ligar o fio (resume real de sessão) ou remover o campo morto. REPRO AO VIVO (2026-06-07, confirma a parte (a) em producao; promovido P2->P1): operador rodou cam plan numa sessao, cam run (orchestrator no pane 0) e cam next de um terminal EXTERNO. O cam next externo (sem CLAUDE_CODE_SESSION_ID) gravou .claude/cam-loop.local.md com session_id VAZIO; o stop hook (.claude/hooks/cam-loop-stop.sh:38, guarda [[ -n $STATE_SESSION ]] && [[ $STATE_SESSION != $HOOK_SESSION ]]) pulou o isolamento (empty fall-through, comentado na :35 como legacy) e re-injetou /cam-next no pane do ORCHESTRATOR a cada turno, sequestrando a sessao humano-facing. Vetor: NAO e tmux send-keys; e o state file project-scoped compartilhado + Stop hook que dispara em toda sessao do projeto. Agravante: estado de loop e UM unico arquivo por projeto, entao orchestrator e worker nao tem loop independente (apagar o arquivo mata os dois). FIX da parte (a): isolar por algo conhecido no momento do spawn, o $TMUX_PANE do worker ou um loop-token passado por env/argv pro worker que o hook compara e da exit 0 em quem nao bate, ja que o session_id do worker so existe apos o boot do claude e nao da pra carimbar no state file na hora da escrita. Trocar a guarda pra match estrito sozinho NAO resolve (quebraria o proprio worker, que tambem tem session_id vazio no state file).",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-05T16:24:46Z",
-      "priority": "P1"
+      "priority": "P1",
+      "closedAt": "2026-06-09T20:18:19Z"
     },
     {
       "id": "CAM-4",
