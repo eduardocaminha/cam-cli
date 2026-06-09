@@ -118,6 +118,48 @@ describe('readWorkerOutcome: pass', () => {
 		expect(result.storyId).toBeUndefined();
 		expect(result.detail).toContain('PRD_COMPLETE');
 	});
+
+	// CAM-35: the worker often emits the sentinel as prose wrapped in a markdown
+	// code span. The trailing backtick must NOT be captured into the story id,
+	// else it false-mismatches the clean handoff id and degrades a real pass to
+	// fail. Regression for the dogfooding bug found on CAM-33.
+	test('backtick-wrapped DONE sentinel does not spoof a story mismatch (CAM-35)', () => {
+		const storyId = 'US-001';
+		const pane = `Done.\n\`CAM_IMPLEMENTER_STATUS=DONE story=${storyId}\`\n`;
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: pane,
+			readFile: makeReader({ [PRD_PATH]: fakePrd(storyId, true), [HANDOFF_PATH]: fakeHandoff(storyId) }),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('backtick-wrapped DONE preserves a review-round id US-RX-NNN (CAM-35)', () => {
+		const storyId = 'US-R1-001';
+		const pane = `Fixed the finding.\n\`CAM_IMPLEMENTER_STATUS=DONE story=${storyId}\`\n`;
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: pane,
+			readFile: makeReader({ [PRD_PATH]: fakePrd(storyId, true), [HANDOFF_PATH]: fakeHandoff(storyId) }),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('backtick-wrapped PRD_COMPLETE still parses the status cleanly (CAM-35)', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: 'All stories pass.\n`CAM_IMPLEMENTER_STATUS=PRD_COMPLETE`\n',
+			readFile: makeReader({}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBeUndefined();
+		expect(result.detail).toContain('PRD_COMPLETE');
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -218,6 +260,18 @@ describe('readWorkerOutcome: blocked', () => {
 			readFile: makeReader({}),
 		});
 		expect(result.kind).toBe('blocked');
+	});
+
+	test('backtick-wrapped BLOCKED status still parses (CAM-35)', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText:
+				'Stuck.\n`CAM_IMPLEMENTER_STATUS=BLOCKED_QUALITY story=US-007 reason=typecheck-failed`\n',
+			readFile: makeReader({}),
+		});
+		expect(result.kind).toBe('blocked');
+		expect(result.storyId).toBe('US-007');
 	});
 
 	test('raw BLOCKED_ token without full sentinel', () => {

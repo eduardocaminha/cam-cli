@@ -66,9 +66,22 @@ function parseSentinel(paneText: string): {
 	storyId: string | undefined;
 	raw: string;
 } | null {
-	// Match CAM_IMPLEMENTER_STATUS=<VALUE> optionally followed by story=<ID>
+	// Match CAM_IMPLEMENTER_STATUS=<VALUE> optionally followed by story=<ID>.
 	// The sentinel may appear anywhere in the pane output.
-	const match = paneText.match(/CAM_IMPLEMENTER_STATUS=(\S+)(?:\s+story=(US-\S+))?/);
+	//
+	// The capture classes are tight on purpose (NOT \S+): a worker often wraps
+	// the sentinel in markdown when it emits it as prose — a code span
+	// (`CAM_IMPLEMENTER_STATUS=DONE story=US-001`), **bold**, or a trailing
+	// period. \S+ would swallow that punctuation into the captured value, e.g.
+	// the trailing backtick above yields storyId="US-001`". That polluted id then
+	// false-mismatches the clean handoff id in readWorkerOutcome and degrades a
+	// real pass to fail (CAM-35), contradicting this module's own contract that
+	// the sentinel is corroboration, never a gate. The classes stop at the first
+	// non-id character. Status is uppercase letters/digits/underscores
+	// (DONE, PRD_COMPLETE, BLOCKED_QUALITY, RATE_LIMIT, ...); story ids are
+	// US-<alnum> and include the review-round form US-RX-NNN, so the hyphen is
+	// allowed inside the id.
+	const match = paneText.match(/CAM_IMPLEMENTER_STATUS=([A-Z0-9_]+)(?:\s+story=(US-[A-Za-z0-9-]+))?/);
 	if (!match) return null;
 
 	const status = match[1] ?? '';

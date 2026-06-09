@@ -1,5 +1,5 @@
 {
-  "next_id": 35,
+  "next_id": 36,
   "issues": [
     {
       "id": "CAM-1",
@@ -261,6 +261,14 @@
       "state": "open",
       "createdAt": "2026-06-09T11:30:41Z",
       "priority": "P2"
+    },
+    {
+      "id": "CAM-35",
+      "title": "Supervisor: sentinel do implementer entre backticks vira storyId mal-parseado e falso-fail",
+      "description": "PROBLEMA (descoberto dogfooding CAM-33): o worker imprimiu a linha de status envolta em backticks de markdown (`CAM_IMPLEMENTER_STATUS=DONE story=US-001`). O parser parseSentinel em src/supervisor/result.ts usa a regex story=(US-\\S+), e \\S+ engole o backtick final, produzindo storyId=\"US-001`\". CONSEQUENCIA: o guard de mismatch em readWorkerOutcome (result.ts) compara esse storyId sujo com o lastCompletedStory.id limpo do handoff.json (US-001), detecta um falso mismatch e retorna kind:fail, fazendo o supervisor reportar Blocked apesar de handoff + prd.json concordarem que a story passou (passes:true). Isso contradiz o design declarado do proprio modulo: \"the sentinel is corroboration, never a gate\". IMPACTO: quebra a autonomia do loop. A cada story o supervisor falso-bloqueia no pos-processamento (o trabalho do worker ja foi commitado e pushado antes do parse, entao nao ha perda de dado, mas o loop nao avanca sozinho). FIX: endurecer parseSentinel para nao capturar pontuacao final (classes de caractere especificas para status e storyId em vez de \\S+), com teste de regressao cobrindo sentinel entre backticks. parseReviewVerdict (review.ts) ja e robusto (exige a tag </review> de fechamento), entao so o caminho do implementer precisa de fix.",
+      "state": "open",
+      "createdAt": "2026-06-09T12:49:26Z",
+      "priority": "P1"
     }
   ]
 }
