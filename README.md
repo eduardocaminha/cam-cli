@@ -250,7 +250,7 @@ cam next
         └── loop until: complete | blocked | max-iterations
 ```
 
-Workers (implementer, reviewer) are real `claude -p` sessions invoked with `--agent <name>`. Each worker exits on its own; the supervisor unblocks via `tmux wait-for`. The old stop-hook driver (`vendor/cam-loop-stop-hook.sh` + `/cam-next` re-inject) is retired.
+Workers (implementer, reviewer) are real `claude -p` sessions invoked with `--agent <name>`. Each worker exits on its own; the supervisor unblocks via `tmux wait-for`. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired.
 
 The worker pane slot is established by `cam plan` and stored in `.claude/.cam-worker-pane`. Every subsequent `cam next` call reuses the same pane id with `respawn-pane -k`, keeping the session layout stable.
 

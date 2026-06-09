@@ -19,7 +19,7 @@
 //      vendored byte-for-byte from the reporter monorepo, where it typechecks
 //      under a looser tsconfig (no `noUncheckedIndexedAccess`). Adding
 //      `@ts-nocheck` to the vendored copy would make the byte-diff smoke
-//      (`test/vendor.test.ts`) fail.
+//      (`test/embedded.test.ts`) fail.
 //
 //   2. The codegen output is plain TS literals — no exotic loaders, no
 //      compiler-specific behavior. It works identically with `bun src/...`

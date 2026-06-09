@@ -406,7 +406,7 @@ flowchart TD
     PR --> PRUNEC["/cam-prune<br/>volta pra main, deleta branch"]
 ```
 
-Como o loop "anda" sozinho: o stop hook (`vendor/cam-loop-stop-hook.sh`, registrado
+Como o loop "anda" sozinho: o stop hook (registrado
 em `settings.local.json` por `cam next`) dispara no evento Stop de cada turno. Ele lê
 o state file: se ainda não viu `<promise>COMPLETE</promise>` e não bateu o teto, re-injeta
 `/cam-next`, e o loop re-entra na matriz de decisão. Quando vê COMPLETE ou estoura

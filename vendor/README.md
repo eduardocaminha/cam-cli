@@ -10,9 +10,9 @@ These files are vendored verbatim from the [eduardocaminha/reporter](https://git
 | `check-agent-frontmatter.ts` | `reporter:scripts/smoke/check-agent-frontmatter.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `cam-loop.local.md.tmpl` | cam-cli (state file pre-armed by `cam next`)                                          | n/a |
 
-The sha column for the reporter-derived files refers to the reporter HEAD at the time of the most recent re-vendor. `test/vendor.test.ts` runs the drift check on every `bun test` run when the reporter checkout is reachable at `~/Documents/Projects/reporter` — silently skips when missing (CI / non-dev machines / non-Eduardo contributors).
+The sha column for the reporter-derived files refers to the reporter HEAD at the time of the most recent re-vendor. Byte-parity of the embedded copies (in `src/vendor/_generated.ts`) against the on-disk vendor files is checked by `test/embedded.test.ts` on every `bun test` run, and by `bun run embed-vendor:check`.
 
-The `cam-loop.local.md.tmpl` template defines the YAML-frontmatter-plus-prompt shape that `cam next` writes to `.claude/cam-loop.local.md` before spawning `claude`. The companion `cam-loop-stop-hook.sh` reads this file on every `Stop` event and either emits the next prompt or removes the file to terminate the loop. The `bun test` suite recomputes the stop-hook's sha256 at runtime (in `test/vendor.test.ts`) and fails if the on-disk file diverges from the baseline — converting silent rot into an explicit test failure.
+The `cam-loop.local.md.tmpl` template defines the YAML-frontmatter-plus-prompt shape that `cam next` writes to `.claude/cam-loop.local.md` before spawning `claude`. The supervisor (the deterministic TS loop driven by `cam next`) reads and updates this file directly; the old vendored Stop hook that drove the loop was retired in CAM-22 and its script was deleted in CAM-3.
 
 ## Why verbatim copies, not git submodules?
 
@@ -29,7 +29,7 @@ cp $REPORTER/scripts/smoke/check-agent-frontmatter.sh $CAM/vendor/
 cp $REPORTER/scripts/smoke/check-agent-frontmatter.ts $CAM/vendor/
 chmod +x $CAM/vendor/check-agent-frontmatter.sh
 # Update the sha column above
-cd $CAM && bun test test/vendor.test.ts   # confirms drift cleared
+cd $CAM && bun run embed-vendor && bun test test/embedded.test.ts   # re-embed + confirm parity
 ```
 
 ## Runtime behavior

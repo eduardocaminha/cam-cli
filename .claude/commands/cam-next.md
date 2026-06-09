@@ -45,7 +45,7 @@ cam next
 
 Workers (implementer and reviewer) are real separate `claude -p` sessions. Each story runs in a **reused worker pane**: `respawn-pane -k` kills the previous command and starts the next one in the same pane id. The worker pane id is written by `cam plan` to `.claude/.cam-worker-pane` and read by the supervisor on every iteration.
 
-**Stop-hook driver is retired.** The old model (vendor/cam-loop-stop-hook.sh injecting `/cam-next` on each assistant turn) is gone. Workers are real per-story `claude -p` sessions that exit on their own; the supervisor waits on a `tmux wait-for` channel instead of relying on a stop hook.
+**Stop-hook driver is retired.** The old model (a vendored Stop hook injecting `/cam-next` on each assistant turn) is gone. Workers are real per-story `claude -p` sessions that exit on their own; the supervisor waits on a `tmux wait-for` channel instead of relying on a stop hook.
 
 ---
 

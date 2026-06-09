@@ -11,7 +11,7 @@ All paths are relative to the project root.
 
 | File | Written by | What it tells you |
 |---|---|---|
-| `.claude/cam-loop.local.md` | `cam next` | Loop state. YAML frontmatter: `active`, `iteration`, `started_at`, `pid` (the supervisor process), `session_id`, `max_iterations`. |
+| `.claude/cam-loop.local.md` | `cam next` | Loop state. YAML frontmatter: `active`, `iteration`, `started_at`, `pid` (the supervisor process), `max_iterations`. |
 | `.claude/.cam-worker-pane` | `cam plan` | The reused worker pane id (e.g. `%5`). The supervisor drives this single pane with `respawn-pane -k`. |
 | `.claude/.cam-worker-<US>.session` | `cam next` | Per-story worker session uuid (one file per completed story), used to resolve that story's transcript. |
 | `.claude/.cam-worker-out-<uuid>.log` | the worker | Durable per-worker stdout+stderr (survives the pane dying). |
