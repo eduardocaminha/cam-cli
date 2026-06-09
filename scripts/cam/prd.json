@@ -82,5 +82,11 @@
       "requires": "operator",
       "notes": "Files: src/commands/run.ts (buildOrchestratorBootPrompt at line 87-99), .claude/agents/subagent-orchestrator.md (append a new \"Self-handoff lifecycle\" section near the bottom, before \"Failure modes\"; do NOT rewrite existing sections). Tests: extend test/run.test.ts to assert the boot prompt mentions the handoff file. The operator verification step is the reason this story is requires: \"operator\" — the deterministic CLI pieces (boot prompt string + agent doc text) are still unit-testable, but the actual multi-hour roll-over only happens in a real session. Do NOT conflate this with the setup→orchestrator handoff in src/commands/setup.ts (unrelated). Doc Maintenance: if docs/recovery-runbook.md describes the orchestrator lifecycle, add one line pointing to .cam-orch-handoff.json and the respawn behavior; otherwise leave it alone (surgical). F-01: also edit templates/agents/subagent-orchestrator.md (same section, no em-dash) and re-run `bun run embed-vendor` + `bun run embed-vendor:check`; src/templates/embedded.ts is regenerated, not hand-edited."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "466faee1232baac9b6082250c41e25bbb8b26dcb",
+    "lastVerdict": "CLEAN"
+  }
 }
