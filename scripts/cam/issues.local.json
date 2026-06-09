@@ -1,5 +1,5 @@
 {
-  "next_id": 36,
+  "next_id": 37,
   "issues": [
     {
       "id": "CAM-1",
@@ -268,6 +268,14 @@
       "description": "PROBLEMA (descoberto dogfooding CAM-33): o worker imprimiu a linha de status envolta em backticks de markdown (`CAM_IMPLEMENTER_STATUS=DONE story=US-001`). O parser parseSentinel em src/supervisor/result.ts usa a regex story=(US-\\S+), e \\S+ engole o backtick final, produzindo storyId=\"US-001`\". CONSEQUENCIA: o guard de mismatch em readWorkerOutcome (result.ts) compara esse storyId sujo com o lastCompletedStory.id limpo do handoff.json (US-001), detecta um falso mismatch e retorna kind:fail, fazendo o supervisor reportar Blocked apesar de handoff + prd.json concordarem que a story passou (passes:true). Isso contradiz o design declarado do proprio modulo: \"the sentinel is corroboration, never a gate\". IMPACTO: quebra a autonomia do loop. A cada story o supervisor falso-bloqueia no pos-processamento (o trabalho do worker ja foi commitado e pushado antes do parse, entao nao ha perda de dado, mas o loop nao avanca sozinho). FIX: endurecer parseSentinel para nao capturar pontuacao final (classes de caractere especificas para status e storyId em vez de \\S+), com teste de regressao cobrindo sentinel entre backticks. parseReviewVerdict (review.ts) ja e robusto (exige a tag </review> de fechamento), entao so o caminho do implementer precisa de fix.",
       "state": "closed",
       "createdAt": "2026-06-09T12:49:26Z",
+      "priority": "P1"
+    },
+    {
+      "id": "CAM-36",
+      "title": "Supervisor spina re-confirmando story ja concluida quando o worker no-opa (no-progress detection)",
+      "description": "PROBLEMA (descoberto dogfooding CAM-28): apos uma story passar, se o worker da story seguinte no-opa (instant-exit: o claude -p sai antes de inicializar, entao nao ha out-log nem transcript, mas o ; tmux wait-for -S do fim do comando ainda sinaliza o canal), o pane capturado fica vazio. Como readWorkerOutcome e state-primary (CAM-32), com pane vazio ele cai no fallback handoff.json + prd.json e reporta kind:pass com storyId da ULTIMA story concluida (ex: US-001), nao da advisory dispatchada (US-002). O supervisor trata isso como pass, faz continue, e decideNextAction re-seleciona a mesma story ainda passes:false, re-dispatchando indefinidamente ate MAX_ITERATIONS (50). CONSEQUENCIA: o loop spina, queimando uma invocacao de claude por iteracao (observado: 26-30 dispatches em ~18s), e nunca avanca. O mismatch advisory(US-002) vs outcome(US-001) nunca e detectado como zero-progresso. Mesma familia de fragilidade da nota de memoria (sentinel/handoff como gate). FIX (este PR): guard de no-progress em src/supervisor/loop.ts. Se um outcome pass reporta uma story que JA estava passes:true no topo da iteracao atual (o worker re-confirmou em vez de avancar), incrementa um streak; bloqueia apos MAX_NO_PROGRESS_RETRIES (2) passes consecutivos sem progresso, em vez de spinar ate o cap. Usa o snapshot de prd ja lido (sem leitura extra). Streak reseta em qualquer progresso real (incluindo supervisor-finalize). NOTA: a causa de o worker no-opar (Bug B: claude -p saindo instantaneo apos a story longa anterior, provavelmente rate-limit/estado) fica como follow-up separado; este fix mata o spin deterministicamente independentemente da causa.",
+      "state": "open",
+      "createdAt": "2026-06-09T16:03:32Z",
       "priority": "P1"
     }
   ]

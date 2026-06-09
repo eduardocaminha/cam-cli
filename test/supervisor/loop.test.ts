@@ -16,7 +16,7 @@
 //  11. PRD_COMPLETE sentinel (outcome.storyId undefined) -> continue, next iter complete.
 
 import { describe, expect, test, jest, beforeEach } from 'bun:test';
-import { runSupervisor, MAX_ITERATIONS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
+import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
 	SpawnFn,
@@ -342,6 +342,103 @@ describe('runSupervisor', () => {
 
 		expect(result.status).toBe('max-iterations');
 		expect(result.iterations).toBe(3);
+	});
+
+	test('no-progress spin: worker re-confirms an already-done story -> blocked (CAM-36)', async () => {
+		// Regression for the dogfood spin. US-001 done, US-002 pending. The US-002
+		// worker no-op's (instant-exit): the captured pane is empty, so
+		// readWorkerOutcome is state-primary and falls back to the stale handoff
+		// (lastCompletedStory US-001) + prd (US-001 passes) -> pass/US-001. The PRD
+		// never advances (US-002 stays false), so without the guard the loop would
+		// re-dispatch US-002 every iteration up to maxIterations (50). The guard
+		// blocks after MAX_NO_PROGRESS_RETRIES consecutive no-op passes.
+		const prd = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: false },
+			],
+		});
+
+		const opts = makeBaseOpts({
+			readPrd: () => prd, // never advances: US-002 stays false
+			readHandoff: () => makeHandoff('US-001'), // stale: last completed = US-001
+			capturePane: (_paneId) => '', // empty pane -> state-primary fallback
+			maxIterations: 50, // would spin to 50 without the guard
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(MAX_NO_PROGRESS_RETRIES); // 2, not 50
+		expect(result.lastOutcome?.kind).toBe('blocked');
+		expect(result.lastOutcome?.detail).toContain('no-progress');
+	});
+
+	test('no-progress streak resets after real progress (CAM-36)', async () => {
+		// One transient no-op must NOT block: iter 1 the US-002 worker no-op's
+		// (pass/US-001, streak -> 1); iter 2 it really completes US-002 (the
+		// reported-completed story was NOT already passing -> streak resets to 0);
+		// the loop then reviews CLEAN and completes. Guards the "tolerate one
+		// transient" + reset semantics so a single hiccup never blocks a live run.
+		const prd_001done = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: false },
+			],
+		});
+		const prd_bothDone_noReview = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: true },
+			],
+			review: { roundsCompleted: 0, lastVerdict: null },
+		});
+		const prd_bothDone_clean = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: true },
+			],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+
+		// readPrd() call sequence (mirrors the happy-path test; the no-progress
+		// guard adds NO extra read, it reuses the top-of-loop snapshot):
+		//   iter 1 (no-op US-002): call 0 top, call 1 outcome (pass US-001, stale)
+		//   iter 2 (real US-002):  call 2 top, call 3 outcome (pass US-002)
+		//   iter 3 (review):       call 4 top -> review, call 5 post-dispatch
+		//   iter 4 (complete):     call 6 top -> complete
+		const prds: PrdSnapshot[] = [
+			prd_001done, // 0
+			prd_001done, // 1: outcome check (US-002 still false -> handoff US-001 -> pass US-001)
+			prd_001done, // 2
+			prd_bothDone_noReview, // 3: outcome check (US-002 now true -> pass US-002)
+			prd_bothDone_noReview, // 4
+			prd_bothDone_noReview, // 5
+			prd_bothDone_clean, // 6
+		];
+
+		// handoff consumed only by iter 1's no-op (-> stale pass US-001). After it
+		// overflows to null, iter 2's outcome comes from the DONE sentinel (US-002)
+		// with no handoff mismatch. Mirrors the happy-path test's handoff handling.
+		let handoffIdx = 0;
+		const handoffs = [makeHandoff('US-001')];
+
+		let prdCallCount = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => prds[prdCallCount++] ?? null,
+			readHandoff: () => handoffs[handoffIdx++] ?? null,
+			// iter 1: empty pane (no-op). iter 2: DONE sentinel for US-002.
+			capturePane: (() => {
+				let paneIdx = 0;
+				const panes = ['', donePane('US-002')];
+				return (_paneId: string) => panes[paneIdx++] ?? '';
+			})(),
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(3); // 2 implement + 1 review, never blocked
 	});
 
 	test('worker outcome fail -> blocked', async () => {

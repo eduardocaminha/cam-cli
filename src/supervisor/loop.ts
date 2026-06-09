@@ -354,6 +354,18 @@ export const DEFAULT_POLL_INTERVAL_MS = 5_000;
 /** Default max rate-limit pause/resume attempts before blocking the story (US-016). */
 export const DEFAULT_MAX_RATE_LIMIT_RETRIES = 5;
 
+/**
+ * Max consecutive no-progress passes before the loop blocks (CAM-36). A worker
+ * that no-ops (e.g. instant-exit: claude never initialises, so there is no
+ * out-log / transcript, yet the trailing `tmux wait-for -S` still signals the
+ * channel) leaves an empty captured pane, so readWorkerOutcome falls back to the
+ * STALE handoff.json + prd.json and reports kind:'pass' for the LAST completed
+ * story. Without this cap the loop re-dispatches the same still-pending advisory
+ * story every iteration until MAX_ITERATIONS, burning one claude invocation per
+ * turn. We tolerate one transient no-op, then block on the second in a row.
+ */
+export const MAX_NO_PROGRESS_RETRIES = 2;
+
 /** Matches the headless worker's rate-limit exit sentinel (US-016). */
 const RATE_LIMIT_SENTINEL_RE = /CAM_IMPLEMENTER_STATUS=RATE_LIMIT/;
 
@@ -491,6 +503,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 	let iterations = 0;
 	let lastOutcome: WorkerOutcome | null = null;
+
+	// CAM-36: counts consecutive worker passes that merely re-confirmed an
+	// already-done story (zero PRD progress). See MAX_NO_PROGRESS_RETRIES.
+	let noProgressStreak = 0;
 
 	outer: while (iterations < maxIter) {
 		// --- Read current PRD state ---
@@ -891,6 +907,37 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				}
 			}
 
+			// CAM-36: no-progress guard. readWorkerOutcome is state-primary, so a
+			// worker that no-op'd (instant-exit: empty captured pane, no out-log /
+			// transcript, yet the trailing `tmux wait-for -S` still signals) makes
+			// it fall back to the stale handoff/prd and report 'pass' for the LAST
+			// completed story. Detect that the reported-completed story was ALREADY
+			// passing at the top of THIS iteration (`prd`, already read): the worker
+			// advanced nothing. Tolerate one transient, then block on the second in
+			// a row instead of spinning to MAX_ITERATIONS. No extra PRD read.
+			if (outcome.kind === 'pass' && outcome.storyId !== undefined) {
+				const completedAlreadyPassing = (prd.userStories ?? []).some(
+					(s) => s.id === outcome.storyId && s.passes === true,
+				);
+				if (completedAlreadyPassing) {
+					noProgressStreak += 1;
+					if (noProgressStreak >= MAX_NO_PROGRESS_RETRIES) {
+						// storyId points at the ADVISORY story (the one that is stuck
+						// and not advancing), not outcome.storyId (the stale already-
+						// done story the worker re-confirmed). That is what an operator
+						// needs to inspect.
+						lastOutcome = {
+							kind: 'blocked',
+							storyId: advisoryStoryId,
+							detail: `no-progress: ${noProgressStreak} consecutive worker passes re-confirmed an already-done story (advisory ${advisoryStoryId}, completed ${outcome.storyId})`,
+						};
+						return { status: 'blocked', iterations, lastOutcome };
+					}
+				} else {
+					noProgressStreak = 0;
+				}
+			}
+
 			// Worker blocked: exit loop.
 			if (outcome.kind === 'blocked') {
 				notifyTerminal('blocked');
@@ -933,6 +980,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						detail: `supervisor-finalized ${outcome.storyId} after worker truncation: ${fin.detail}`,
 					};
 					writeSessionMarker(outcome.storyId, uuid);
+					// CAM-36: finalize flipped a story to pass; real progress, so
+					// clear any no-progress streak accumulated by prior no-op passes.
+					noProgressStreak = 0;
 					continue;
 				}
 
@@ -968,6 +1018,12 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			if (updatedPrd !== null) {
 				writePrd(updatedPrd);
 			}
+
+			// CAM-36: a review iteration is real state-machine progress, so it
+			// breaks any run of consecutive no-progress implement passes. Reset the
+			// streak here so the "consecutive" semantics hold across a review (e.g.
+			// no-op pass -> review FIXES_PENDING -> fresh implement starts at 0).
+			noProgressStreak = 0;
 
 			// Continue: next iteration's decideNextAction will evaluate the verdict.
 			continue;
