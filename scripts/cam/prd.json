@@ -46,7 +46,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-001 (needs ensurePushed already wired). Files to touch: src/supervisor/events.ts (extend WorkerEventKind union + add PushEventDetail to the WorkerEventDetail union with explanatory comment), src/supervisor/loop.ts (call emit('pushed', ...) after ensurePushed in both pass-branch sites), test/supervisor/events.test.ts (round-trip test for the new kind), test/supervisor/loop.test.ts (extend US-001 cases). Use the existing emit() helper inside runSupervisor (around line 392-400) which already guards on logEvent presence: do not introduce a parallel emitter. Event ordering: emit the 'result' event first (already happens for pass), then writeSessionMarker, then ensurePushed, then emit('pushed', ...). Use the ACTUAL completed story id (outcome.storyId for exit mode, sentinelOutcome.storyId for sentinel mode), not advisoryStoryId. Gotchas: WorkerEventDetail is currently `ResultEventDetail | TokensEventDetail | Record<string, unknown>` so adding PushEventDetail as a named member is type-safe but the Record<string, unknown> already accepts the shape; still add the named alias for documentation/grep. noUncheckedIndexedAccess applies. Conventional commit; if a new event kind shows up in CHANGELOG/README anywhere, update there too per Doc Maintenance principle."
     }

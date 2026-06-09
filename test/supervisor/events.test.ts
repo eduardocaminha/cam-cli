@@ -15,6 +15,7 @@ import {
 	makeFileEventLogger,
 	makeInMemoryEventLogger,
 	readWorkerTokens,
+	type PushEventDetail,
 	type WorkerEvent,
 } from '../../src/supervisor/events.ts';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
@@ -62,6 +63,51 @@ describe('makeFileEventLogger', () => {
 			expect(first.kind).toBe('worker-start');
 			expect(second.kind).toBe('worker-end');
 			expect(first.uuid).toBe('u1');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// 'pushed' event kind (US-002)
+// ---------------------------------------------------------------------------
+
+describe("'pushed' event kind", () => {
+	const pushDetail: PushEventDetail = {
+		sha: 'abc1234',
+		pushed: true,
+		ok: true,
+		detail: 'pushed to origin/cam-test',
+	};
+
+	test('makeInMemoryEventLogger captures a pushed event', () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const ev: WorkerEvent = {
+			ts: '2026-06-09T00:00:00Z',
+			storyId: 'US-002',
+			uuid: 'u1',
+			kind: 'pushed',
+			detail: pushDetail,
+		};
+		logger(ev);
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('pushed');
+		expect(events[0]?.detail).toEqual(pushDetail);
+	});
+
+	test('makeFileEventLogger appends the pushed event as a single JSON line', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-events-pushed-'));
+		try {
+			const path = join(dir, 'cam-worker-events.jsonl');
+			const logger = makeFileEventLogger(path);
+			logger({ ts: 't1', storyId: 'US-002', uuid: 'u1', kind: 'pushed', detail: pushDetail });
+
+			const lines = readFileSync(path, 'utf8').trimEnd().split('\n');
+			expect(lines).toHaveLength(1);
+			const parsed = JSON.parse(lines[0] ?? '') as WorkerEvent;
+			expect(parsed.kind).toBe('pushed');
+			expect(parsed.detail).toEqual(pushDetail);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

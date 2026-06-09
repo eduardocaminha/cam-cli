@@ -572,6 +572,14 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					// US-001: verify the pass actually landed on origin before continuing.
 					if (ensurePushed) {
 						const pushCheck = ensurePushed();
+						// US-002: structured audit record of the verification, emitted
+						// whether ok or not, before any blocked return.
+						emit('pushed', sentinelOutcome.storyId, uuid, {
+							sha: pushCheck.sha,
+							pushed: pushCheck.pushed,
+							ok: pushCheck.ok,
+							detail: pushCheck.detail,
+						});
 						if (!pushCheck.ok) {
 							lastOutcome = {
 								kind: 'blocked',
@@ -770,6 +778,14 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				// US-001: verify the pass actually landed on origin before continuing.
 				if (ensurePushed) {
 					const pushCheck = ensurePushed();
+					// US-002: structured audit record of the verification, emitted
+					// whether ok or not, before any blocked return.
+					emit('pushed', outcome.storyId, uuid, {
+						sha: pushCheck.sha,
+						pushed: pushCheck.pushed,
+						ok: pushCheck.ok,
+						detail: pushCheck.detail,
+					});
 					if (!pushCheck.ok) {
 						lastOutcome = {
 							kind: 'blocked',

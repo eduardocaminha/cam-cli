@@ -1282,3 +1282,130 @@ describe('runSupervisor ensurePushed (US-001)', () => {
 		expect(result.lastOutcome?.kind).toBe('pass');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// US-002: 'pushed' structured event emitted on push verification
+// ---------------------------------------------------------------------------
+
+describe("runSupervisor 'pushed' event (US-002)", () => {
+	function makePassingPrds() {
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdTrue = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		return { prdFalse, prdTrue };
+	}
+
+	test('(a) pass + ensurePushed ok -> exactly one "pushed" event, ordered after "result", mirrors adapter', async () => {
+		const { prdFalse, prdTrue } = makePassingPrds();
+		let prdCall = 0;
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			ensurePushed: () => ({
+				ok: true,
+				pushed: true,
+				sha: 'abc1234',
+				detail: 'pushed to origin/cam-test',
+			}),
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('complete');
+
+		const pushedEvents = events.filter((e) => e.kind === 'pushed');
+		expect(pushedEvents).toHaveLength(1);
+		expect(pushedEvents[0]?.storyId).toBe('US-001');
+		expect(pushedEvents[0]?.detail).toEqual({
+			sha: 'abc1234',
+			pushed: true,
+			ok: true,
+			detail: 'pushed to origin/cam-test',
+		});
+
+		// 'pushed' is ordered AFTER the 'result' event.
+		const resultIdx = events.findIndex((e) => e.kind === 'result');
+		const pushedIdx = events.findIndex((e) => e.kind === 'pushed');
+		expect(resultIdx).toBeGreaterThanOrEqual(0);
+		expect(pushedIdx).toBeGreaterThan(resultIdx);
+	});
+
+	test('(b) ensurePushed ok:false -> still emits a "pushed" event (ok:false) before returning blocked', async () => {
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdTrue = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
+		let prdCall = 0;
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			ensurePushed: () => ({
+				ok: false,
+				pushed: false,
+				sha: '',
+				detail: 'network error during push to origin',
+			}),
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('blocked');
+
+		const pushedEvents = events.filter((e) => e.kind === 'pushed');
+		expect(pushedEvents).toHaveLength(1);
+		expect(pushedEvents[0]?.detail).toMatchObject({ ok: false, pushed: false });
+	});
+
+	test('(c) ensurePushed present but logEvent absent -> no crash, completes', async () => {
+		const { prdFalse, prdTrue } = makePassingPrds();
+		let prdCall = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			ensurePushed: () => ({ ok: true, pushed: true, sha: 'abc1234', detail: 'ok' }),
+			// logEvent intentionally absent: emit is a no-op, no 'pushed' event.
+		});
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('complete');
+	});
+
+	test('(d) ensurePushed absent -> zero "pushed" events', async () => {
+		const { prdFalse, prdTrue } = makePassingPrds();
+		let prdCall = 0;
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			logEvent: logger,
+			// ensurePushed intentionally absent: the event corresponds to a real
+			// verification, not a phantom one.
+		});
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('complete');
+		expect(events.filter((e) => e.kind === 'pushed')).toHaveLength(0);
+	});
+});

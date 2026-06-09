@@ -1,23 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Supervisor verifies origin-synced on every pass (deterministic backstop)"
+    "id": "US-002",
+    "title": "Structured push-verification event for audit"
   },
   "branchName": "cam/CAM-33-supervisor-verifies-push",
-  "timestamp": "2026-06-09T12:00:00Z",
+  "timestamp": "2026-06-09T10:21:00-03:00",
   "createdFiles": [],
   "modifiedFiles": [
+    "src/supervisor/events.ts",
     "src/supervisor/loop.ts",
-    "src/commands/next.ts",
-    "test/supervisor/loop.test.ts"
+    "test/supervisor/events.test.ts",
+    "test/supervisor/loop.test.ts",
+    "docs/recovery-runbook.md",
+    "CHANGELOG.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 depends on US-001 (ensurePushed already wired). It needs to add the 'pushed' WorkerEventKind to events.ts and call emit('pushed', ...) after ensurePushed in both pass-branch sites. The emit helper already guards on logEvent absence. Event ordering: 'result' first, then writeSessionMarker, then ensurePushed, then emit('pushed'). Use outcome.storyId (exit mode) or sentinelOutcome.storyId (sentinel mode), not advisoryStoryId.",
+  "nextStoryContext": "US-002 is the last story in the PRD; both US-001 and US-002 now pass:true. No further implementable (non-operator) stories remain. The supervisor should next dispatch the reviewer (subagent-reviewer) until the review verdict is terminal (CLEAN / MAX_ROUNDS_DEBT), then complete the PRD. The 'pushed' event is emitted right after ensurePushed() in both pass-branch sites of loop.ts; PushEventDetail is exported from events.ts.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Reuses existing node:child_process.spawnSync and git CLI already present throughout the codebase; no new external library introduced."
+      "summary": "US-002 extends the in-repo structured-event type system (WorkerEventKind union, PushEventDetail) and the loop's emit() helper. No new external library is exercised; the change is pure TypeScript over existing project types."
     }
   ]
 }
