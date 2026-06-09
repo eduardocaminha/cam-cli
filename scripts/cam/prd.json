@@ -1,0 +1,93 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-3-remove-inert-session-id",
+  "description": "Remove the inert supervisor session_id field and the dead vendored stop-hook left over from the retired stop-hook driver architecture (CAM-22).",
+  "issueNumber": 3,
+  "relatedDocs": [
+    "docs/recovery-runbook.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Drop session_id from state-file writer + vendored template",
+      "description": "As a maintainer, I need the supervisor to stop generating and writing the inert session_id field into .claude/cam-loop.local.md so that the loop state file stops carrying a vestige of the retired stop-hook architecture (the supervisor lock at .claude/.cam-supervisor.lock is the real session-isolation primitive; workers get a fresh uuid; the orchestrator session id lives at .cam-orch-session).",
+      "acceptanceCriteria": [
+        "vendor/cam-loop.local.md.tmpl no longer contains the `session_id:` frontmatter line or the `{{SESSION_ID}}` placeholder.",
+        "src/commands/next.ts renderStateFile() no longer accepts a sessionId input field, no longer performs the `{{SESSION_ID}}` replace, and no longer writes session_id into stateFileBase.",
+        "src/commands/next.ts no longer reads `options.sessionId` / `process.env.CLAUDE_CODE_SESSION_ID` / synthesizes a crypto.randomUUID() for the supervisor session id (the variable is removed; it was used for nothing else).",
+        "test/next.test.ts and test/interactivity/interactivity.test.ts are updated to stop asserting on `session_id:` in the rendered state-file body; they still assert the other frontmatter fields (active, iteration, max_iterations, started_at, pid, completion_promise).",
+        "src/vendor/_generated.ts is regenerated via `bun run embed-vendor` so the embedded copy of the template matches the new on-disk vendor file.",
+        "DO NOT touch src/commands/run.ts session_id handling (`.cam-orch-session` + `claude --session-id` ~lines 144-155): that is the orchestrator's active claude session id, unrelated to the inert supervisor field.",
+        "src/commands/next.ts header comments (~lines 6, 18, 32) and the in-function comment (~line 392) drop the `session_id` field name and the retired-stop-hook references; the rest of the architectural prose stays intact (CLAUDE.md §7 Doc Maintenance).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)",
+        "Vendor drift check passes (bun run embed-vendor:check)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: vendor/cam-loop.local.md.tmpl (drop line 4 + the {{SESSION_ID}} placeholder), src/commands/next.ts (~line 154 sessionId field, ~line 181 {{SESSION_ID}} replace, ~lines 393-394 supervisorSessionId derivation, ~line 402 sessionId arg into renderStateFile, ~line 427 stateFileBase), src/vendor/_generated.ts (regenerate), test/next.test.ts (`expect(out).toContain('session_id: sess-abc')` at ~line 69, `parsed['session_id']` at ~line 122, ~line 221 `session_id: shape-test`), test/interactivity/interactivity.test.ts (~line 291 + ~line 389 + ~line 448 `session_id:` fixture lines and assertion). After editing the .tmpl, run `bun run embed-vendor` and commit the regenerated `src/vendor/_generated.ts` in the same commit as the template change so vendor-drift never goes red. Per AGENTS.md: noUncheckedIndexedAccess is strict — when removing the sessionId arg from renderStateFile(), make sure no caller still passes it. The vendored stop-hook in src/vendor/_generated.ts still references session_id; do NOT touch that string here, US-003 deletes the whole stop-hook embed."
+    },
+    {
+      "id": "US-002",
+      "title": "Drop session_id from state-file readers and inert references",
+      "description": "As a maintainer, I need the state-file parser, the LoopState type, and the inert resume/status header comments to stop carrying the dead session_id field so the type signature reflects reality and old-state-file back-compat still holds (the field is silently ignored on read, not asserted absent).",
+      "acceptanceCriteria": [
+        "src/commands/status.ts LoopState interface no longer declares `session_id?: string` (~line 97).",
+        "src/commands/status.ts parseStateFile() no longer copies `session_id` into the LoopState output (~line 223). It MUST still parse cleanly when an OLD state file contains a `session_id:` line: the line is silently ignored (typeof-guard pattern, no throw).",
+        "src/commands/status.ts header comment (~line 9) and the stop-hook reference at ~line 67 are updated to remove the dead `session_id` field name from the documented frontmatter list (per the runbook canonical list).",
+        "src/commands/resume.ts header comment (~line 10) stops listing `session_id` as a state-file frontmatter field; classifyResumeMode logic is unchanged because it never used the field.",
+        "test/status.test.ts is updated to stop asserting `session_id: 'sess-abc'` in the LoopState shape (~line 89) but a new assertion confirms that an old state file containing `session_id: legacy-value` still parses to a LoopState without that key (back-compat smoke).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/status.ts (LoopState ~line 97, parseStateFile ~line 223, header comment ~line 9, stop-hook ref comment ~line 67), src/commands/resume.ts (header comment ~line 10), test/status.test.ts (~line 76 fixture line, ~line 89 LoopState assertion, ~line 238 fixture line). Dashboard.tsx and dashboard.ts were already confirmed to NOT reference session_id (verified with grep) — no edit needed there. Back-compat constraint per the re-grounded scope: readers must NOT throw on an OLD state file that still HAS session_id; the existing typeof-guard pattern naturally accomplishes that by simply not copying unknown keys. Add a tiny test fixture proving the back-compat. Per CLAUDE.md: comment-driven assumptions are not proof — verify by reading the parseStateFile() body in this story to confirm the guard pattern, then run `bun test test/status.test.ts` to confirm both new and old fixtures parse."
+    },
+    {
+      "id": "US-003",
+      "title": "Delete the dead vendored cam-loop-stop-hook.sh and its embed",
+      "description": "As a maintainer, I need the vestigial vendor/cam-loop-stop-hook.sh shell script (and every wire it travels on into src/vendor/_generated.ts + EmbeddedKey + EMBEDDED_CONTENTS + the codegen FILES list) removed so the binary stops shipping a 9.6kB dead script that no command materializes or installs.",
+      "acceptanceCriteria": [
+        "vendor/cam-loop-stop-hook.sh is deleted.",
+        "scripts/generate-embedded-vendor.ts FILES list drops the `cam-loop-stop-hook.sh` / `camLoopStopHookContents` entry (~line 54).",
+        "src/vendor/embedded.ts EmbeddedKey union drops `'cam-loop-stop-hook.sh'` and EMBEDDED_CONTENTS drops the matching key+value. The `camLoopStopHookContents` import is removed.",
+        "test/vendor.test.ts no longer has the `vendor/cam-loop-stop-hook.sh sha256 baseline` describe block (the whole block is removed). The file may be deleted if no other vendor-baseline test remains.",
+        "test/stop-hook.test.ts is deleted (it tests the deleted shell script's behaviour).",
+        "test/embedded.test.ts VENDOR_KEYS array drops `'cam-loop-stop-hook.sh'` (~line 49).",
+        "vendor/README.md table drops the `cam-loop-stop-hook.sh` row (~line 12). The prose paragraph (~line 16) is left to US-004 to rewrite, to avoid two stories editing the same paragraph.",
+        "src/vendor/_generated.ts is regenerated via `bun run embed-vendor` so the embedded string constant is dropped.",
+        "Verify no remaining code path in src/ references `cam-loop-stop-hook` or `camLoopStopHookContents` (grep returns empty).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)",
+        "Vendor drift check passes (bun run embed-vendor:check)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: vendor/cam-loop-stop-hook.sh (delete), scripts/generate-embedded-vendor.ts (FILES list ~line 54), src/vendor/embedded.ts (EmbeddedKey union ~line 37, EMBEDDED_CONTENTS map ~line 48, import ~line 31), src/vendor/_generated.ts (regenerate), test/vendor.test.ts (drop the describe block ~lines 27-50; if that was the file's only test, delete the file), test/stop-hook.test.ts (delete entire file), test/embedded.test.ts (VENDOR_KEYS array ~line 49), vendor/README.md (drop the table row + prose). Verification command before commit: `grep -rn 'cam-loop-stop-hook\\|camLoopStopHook' src/ test/ scripts/ vendor/ docs/ --include='*.ts' --include='*.tsx' --include='*.md' --include='*.sh'` should return 0 hits. Per AGENTS.md quality gates: this story touches vendor/, so `bun run embed-vendor:check` is mandatory — fail-fast on any drift. Per CLAUDE.md (Surgical Changes): do NOT delete unrelated vendor files, only the stop-hook + its embed wiring; the cam-loop.local.md.tmpl entry stays."
+    },
+    {
+      "id": "US-004",
+      "title": "Doc maintenance: drop session_id and retired stop-hook references",
+      "description": "As an operator reading the runbook and project docs, I need the recovery runbook + README + FLOW.md + cam-next slash-command doc to stop listing session_id as a frontmatter field and stop describing the retired stop-hook driver so the docs match the code after CAM-3.",
+      "acceptanceCriteria": [
+        "docs/recovery-runbook.md table row for `.claude/cam-loop.local.md` (~line 14) drops `session_id` from the YAML frontmatter field list; the remaining fields (`active`, `iteration`, `started_at`, `pid`, `max_iterations`, plus the US-001 live-progress fields) stay.",
+        "README.md ~line 253 prose is updated: the parenthetical `vendor/cam-loop-stop-hook.sh` reference is removed (the surrounding sentence about the retired driver may stay or be shortened, but no path that no longer exists is named).",
+        "vendor/README.md prose paragraph (the one that paired the template with the hook) is updated to describe just the template's role; the sha256-test sentence is removed since US-003 drops the test.",
+        ".claude/commands/cam-next.md (~line 48) is updated so the `vendor/cam-loop-stop-hook.sh` filename is dropped from the parenthetical (the sentence about the retired driver may stay).",
+        "FLOW.md (~line 409) is updated to drop the `vendor/cam-loop-stop-hook.sh` filename reference; the broader retired-driver narrative may stay if rephrased to not name the deleted file.",
+        "No new content is added beyond the minimum needed to remove stale references (per CLAUDE.md §2 Surgical Changes).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: docs/recovery-runbook.md (~line 14 table row), README.md (~line 253), vendor/README.md (already touched in US-003 row drop; this story handles the prose paragraph if not already touched there), .claude/commands/cam-next.md (~line 48), FLOW.md (~line 409). Per global CLAUDE.md (Eduardo): NO em-dash (—) in persisted .md files — substitute with colon, comma, parens, period, or rephrase. Per project CLAUDE.md §7: doc updates land in the same PRD as the behaviour change, not as deferred debt. Per AGENTS.md: keep changes surgical — do not rewrite full sentences when removing one stale word/path is enough. Verification: `grep -rn 'cam-loop-stop-hook\\|session_id' docs/ README.md FLOW.md .claude/commands/` should show only intentional references (if any remain in CHANGELOG or historical context) after this story."
+    }
+  ]
+}
