@@ -34,12 +34,30 @@ Steps:
    ```
    Fix any failures before proceeding.
 
-4. **Push the branch**:
+4. **Cycle-close hygiene (backend-aware close + harness reset) — before push.**
+
+   Read the issue backend from `scripts/cam/project.toml`: `issue_system` (`none` | `github` | `linear`) and `issue_prefix` (default `CAM`).
+
+   a. **Close the `none` (local) backend issue now (CAM-30).** When `issue_system = "none"`, the issue lives in `scripts/cam/issues.local.json` and must be flipped HERE, in a commit, so the closure propagates to `main` on merge. Read the PRD `issueNumber`, find the entry whose `id == "<issue_prefix>-<issueNumber>"`, and set its `state` to `"closed"` with a `closedAt` ISO timestamp. (For `github` / `linear` the close is a no-commit API call done in Step 7 after the PR exists; skip this sub-step for those backends.)
+
+   b. **Reset the per-branch harness working state (CAM-27).** `prd.json`, `handoff.json`, and `progress.txt` are per-branch artifacts. Left in the branch they leak into `main` on merge and make `/cam-plan` Step 1 report a FALSE 'in-progress' (it reads a stale `prd.json` in `main`). Remove them so `main` stays clean:
+   ```bash
+   git rm -q scripts/cam/prd.json scripts/cam/handoff.json scripts/cam/progress.txt 2>/dev/null || true
+   ```
+   `issues.local.json` is the persistent backlog, NOT per-branch state: do NOT remove it.
+
+   c. Stage the issues.local.json edit (if `none`) + the removals and commit them together:
+   ```bash
+   git add -A
+   git commit -m "chore(cam): close <issue-id> + drop per-branch harness state (CAM-27 hygiene)"
+   ```
+
+5. **Push the branch**:
    ```bash
    git push origin $(git branch --show-current)
    ```
 
-5. **Open PR**:
+6. **Open PR**:
    ```bash
    gh pr create \
      --title "<issue title>" \
@@ -64,15 +82,18 @@ Steps:
    <anything reviewers should know>
    ```
 
-6. **Close the GitHub issue** (if applicable):
+7. **Close the `github` / `linear` backend issue (if applicable).** The `none` backend was already closed in Step 4a; for the others:
    ```bash
+   # github:
    gh issue close <N> --reason completed --comment "Shipped via PR #<PR>"
+   # linear: transition <issue_prefix>-<N> to Done via the Linear API.
    ```
 
-7. **Print summary**:
+8. **Print summary**:
    ```
    ✅ Shipped: PR #<N> opened
    Branch: <branch>
+   Issue: <issue-id> closed (<backend>)
    Stories: <M> completed
    ```
 
