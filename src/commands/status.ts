@@ -102,6 +102,26 @@ export interface LoopState {
 	 * back-compat with state files written before the field existed.
 	 */
 	pid?: number;
+	/**
+	 * Advisory story id the supervisor dispatched this iteration (US-001 live
+	 * progress tracking). Written on every iteration rewrite; absent in state
+	 * files written before the field existed.
+	 */
+	current_story?: string | null;
+	/**
+	 * Count of non-operator stories with passes:true at the time of the last
+	 * state-file rewrite (US-001). Optional for back-compat.
+	 */
+	stories_done?: number;
+	/**
+	 * Total count of non-operator stories (US-001). Optional for back-compat.
+	 */
+	stories_total?: number;
+	/**
+	 * ISO timestamp of the last supervisor iteration tick (US-001). Written
+	 * on every state-file rewrite so the dashboard can detect a stalled loop.
+	 */
+	last_activity?: string;
 }
 
 /**
@@ -134,6 +154,24 @@ export interface StatusReport {
 	/** Token usage totals from the orchestrator transcript. Undefined when no
 	 *  orchestrator session marker or no transcript file is present. */
 	tokens?: { input: number; output: number; cacheRead: number; cacheCreation: number };
+	/**
+	 * Count of non-operator stories with passes:true at the time of the last
+	 * state-file rewrite (US-002). Undefined when the state file is absent or
+	 * the field was not written (old state files).
+	 */
+	storiesDone?: number;
+	/**
+	 * Total count of non-operator stories (US-002). Undefined when the state
+	 * file is absent or the field was not written.
+	 */
+	storiesTotal?: number;
+	/**
+	 * ISO timestamp of the last supervisor iteration tick (US-002). Used by
+	 * `runStatus` to show time-since-last-real-work in the `since` row instead
+	 * of time-since-loop-start, so a stalled loop is visually distinct from an
+	 * active one.
+	 */
+	lastActivity?: string;
 }
 
 // --- Parsers ---------------------------------------------------------------
@@ -185,6 +223,21 @@ export function parseStateFile(contents: string): LoopState | null {
 	if (typeof obj['session_id'] === 'string') out.session_id = obj['session_id'];
 	if (typeof obj['pid'] === 'number' && Number.isFinite(obj['pid']) && obj['pid'] > 0) {
 		out.pid = obj['pid'];
+	}
+	// US-001 live-progress fields — all optional for back-compat.
+	if (obj['current_story'] === null) {
+		out.current_story = null;
+	} else if (typeof obj['current_story'] === 'string') {
+		out.current_story = obj['current_story'];
+	}
+	if (typeof obj['stories_done'] === 'number' && Number.isFinite(obj['stories_done'])) {
+		out.stories_done = obj['stories_done'];
+	}
+	if (typeof obj['stories_total'] === 'number' && Number.isFinite(obj['stories_total'])) {
+		out.stories_total = obj['stories_total'];
+	}
+	if (typeof obj['last_activity'] === 'string' && obj['last_activity'].length > 0) {
+		out.last_activity = obj['last_activity'];
 	}
 	return out;
 }
@@ -357,6 +410,16 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 	if (state.completion_promise !== undefined) {
 		report.completionPromise = state.completion_promise;
 	}
+	// US-002: live-progress fields from the state file.
+	if (typeof state.stories_done === 'number' && Number.isFinite(state.stories_done)) {
+		report.storiesDone = state.stories_done;
+	}
+	if (typeof state.stories_total === 'number' && Number.isFinite(state.stories_total)) {
+		report.storiesTotal = state.stories_total;
+	}
+	if (typeof state.last_activity === 'string' && state.last_activity.length > 0) {
+		report.lastActivity = state.last_activity;
+	}
 
 	if (prd) {
 		const story = pickCurrentStory(prd);
@@ -396,6 +459,7 @@ function renderEntry(key: string, value: string): string {
 }
 
 export function runStatus(options: StatusOptions = {}): number {
+	const now = options.now ?? (() => new Date());
 	const report = buildStatusReport(options);
 
 	emitTitle('cam status');
@@ -436,12 +500,26 @@ export function runStatus(options: StatusOptions = {}): number {
 	} else {
 		process.stdout.write(`${renderEntry('story', muted('(no pending story in prd.json)'))}\n`);
 	}
-	if (report.iteration) {
-		process.stdout.write(`${renderEntry('iter', `${report.iteration.current} / ${report.iteration.max}`)}\n`);
+	// US-002: replace meaningless stop-hook `iter N/max` with real per-story
+	// progress `stories done/total` sourced from the live state file.
+	if (report.storiesDone !== undefined && report.storiesTotal !== undefined) {
+		process.stdout.write(
+			`${renderEntry('stories', `${report.storiesDone} / ${report.storiesTotal}`)}\n`,
+		);
 	}
-	if (report.wallClock) {
-		const sinceVal = `${report.wallClock}${report.startedAt ? ` ${muted(`(${report.startedAt})`)}` : ''}`;
-		process.stdout.write(`${renderEntry('since', sinceVal)}\n`);
+	// US-002: `since` uses last_activity (real last-work heartbeat) when
+	// present, falling back to the loop start time. This makes a stalled loop
+	// visually distinct from an active one.
+	const sinceTimestamp = report.lastActivity ?? report.startedAt;
+	if (sinceTimestamp) {
+		const sinceMs = Date.parse(sinceTimestamp);
+		const sinceVal = Number.isFinite(sinceMs)
+			? formatWallClock(now().getTime() - sinceMs)
+			: report.wallClock ?? '';
+		const annotation = muted(`(${sinceTimestamp})`);
+		if (sinceVal) {
+			process.stdout.write(`${renderEntry('since', `${sinceVal} ${annotation}`)}\n`);
+		}
 	}
 	if (report.branchName) {
 		process.stdout.write(`${renderEntry('branch', report.branchName)}\n`);

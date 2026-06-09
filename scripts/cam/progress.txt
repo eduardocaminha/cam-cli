@@ -28,65 +28,81 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Recovery runbook (US-017)**: `docs/recovery-runbook.md` is the canonical operator playbook for a stuck loop. Covers stuck supervisor (find `pid:` in `.claude/cam-loop.local.md`, `cam stop` then `cam resume`), orphaned worker pane (`cam stop`/`cam resume`, or `tmux -L cam respawn-pane -k -t <pane>`), partial story (handoff names it but `prd.json` not flipped: re-run gates, flip `passes:true`, commit), stale `.cam-supervisor.lock` (auto-taken-over on next `cam next`; `rm` only when the recorded pid is dead), and reading `.claude/cam-worker-events.jsonl` to diagnose. Reference facts captured while writing it: `cam stop` SIGTERMs the supervisor pid from the state file + removes the state file + kills the project tmux session (it does NOT remove the lock); `cam resume` is the 4-mode recovery (continue/respawn/prompt/noop + explicit `--mode reset-*`). Keep the runbook's file table in sync if the `.claude/` runtime filenames change.
 - **ensurePushed hook (US-001)**: optional `ensurePushed?: () => { ok, pushed, sha, detail }` on `RunSupervisorOptions`. Called INSIDE the `if (outcome.kind === 'pass' ...)` block, after `writeSessionMarker` and before falling through to `continue`. Both exit-mode and sentinel-mode pass branches share the identical call site pattern. Absent hook: zero behavior change (existing tests pass unmodified). `ok:false` returns `{ status: 'blocked', ... }` immediately; `ok:true` is a no-op (loop continues). Production adapter in `next.ts` uses `spawnSync` with `stdio:'pipe', encoding:'utf8'` for `git push origin <branch>` (treats "Everything up-to-date" as `pushed:false ok:true`) then cross-checks `git rev-parse HEAD` vs `git rev-parse origin/<branch>`. Captures stderr separately (supervisorSpawn drops stderr; use spawnSync directly in the adapter).
 - **'pushed' event (US-002)**: the supervisor emits one `'pushed'` `WorkerEvent` per push verification, RIGHT after `ensurePushed()` returns and BEFORE the `ok:false` blocked return, so a failed verification still leaves an auditable record. Detail is `PushEventDetail { sha, pushed, ok, detail }` (exported from `events.ts`; added to the `WorkerEventDetail` union for grep even though `Record<string,unknown>` already structurally accepts it). Reuses the existing guarded `emit()` helper (no-op when `logEvent` absent), so absent-logger and absent-`ensurePushed` both emit zero events. Story id is the ACTUAL completed story (`outcome.storyId` / `sentinelOutcome.storyId`), never `advisoryStoryId`. Doc Maintenance: the kind list in `docs/recovery-runbook.md` (table row + grep examples) and `CHANGELOG.md [Unreleased]` were updated in the same change.
+- **onProgress hook (US-001)**: optional `onProgress?: OnProgress` on `RunSupervisorOptions`. Called (a) once per iteration after `decideNextAction` with `ProgressPayload { iteration, currentStoryId, storiesDone, storiesTotal, lastActivity }` and (b) once more on every terminal exit with `terminalStatus` set. Both `ProgressPayload` and `OnProgress` are exported from `loop.ts`. Production adapter in `next.ts` rewrites `.claude/cam-loop.local.md` on each live call and unlinks it on terminal; the file is never left stale-active. The `lastIterProgress` helper variable tracks the most recent payload so `notifyTerminal(status)` can spread it and add `terminalStatus`. Template uses `{{ACTIVE}}`/`{{ITERATION}}` placeholders (defaults: true/1); all callers not overriding get the same initial-write behavior as before.
+- **renderStateFile dynamic fields (US-001)**: `active` and `iteration` are now substitutable via `{{ACTIVE}}`/`{{ITERATION}}` in `vendor/cam-loop.local.md.tmpl`. Four new optional fields (currentStory, storiesDone, storiesTotal, lastActivity) added with defaults (null/0/0/startedAt). `parseStateFile` in `status.ts` parses them all with `typeof` guards (number, string, null), mirroring the existing `pid` guard pattern. Read-only consumers never throw on missing fields.
 
-## [2026-06-09 12:00] - US-001: Supervisor verifies origin-synced on every pass (deterministic backstop)
+## [2026-06-09 00:00] - US-001: Supervisor keeps .claude/cam-loop.local.md live across iterations
 
 ### What was done
-- Added optional `ensurePushed?` hook to `RunSupervisorOptions` in `loop.ts`
-- Inserted `ensurePushed` call in both pass-branch sites (exit-mode and sentinel-mode), after `writeSessionMarker`, before `continue`
-- `ok:false` degrades `lastOutcome` to `{ kind: 'blocked', ... }` and returns `{ status: 'blocked' }`; `ok:true` is a no-op; absent is byte-for-byte backward compatible
-- Wired real `ensurePushed` adapter in `next.ts`: idempotent `git push origin <branch>` + `git rev-parse HEAD` vs `origin/<branch>` equality check, using `spawnSync` with `stdio:'pipe', encoding:'utf8'`
-- Added 4 new loop tests: (a) pushed:true ok:true continues, (b) pushed:false ok:true continues, (c) ok:false blocks with detail, (d) absent no-op
+- Added `ProgressPayload` interface and `OnProgress` type to `src/supervisor/loop.ts`
+- Added optional `onProgress?: OnProgress` to `RunSupervisorOptions`
+- Supervisor calls `onProgress` at the top of each iteration (after `decideNextAction`) with `{ iteration, currentStoryId, storiesDone, storiesTotal, lastActivity }`
+- Supervisor calls `onProgress` with `terminalStatus` set before every terminal return (complete, awaiting-operator, blocked, max-iterations)
+- Used a `lastIterProgress` variable + `notifyTerminal()` helper to avoid repeating payload construction at every return site
+- Extended `vendor/cam-loop.local.md.tmpl` with `{{ACTIVE}}`, `{{ITERATION}}`, `{{CURRENT_STORY_YAML}}`, `{{STORIES_DONE}}`, `{{STORIES_TOTAL}}`, `{{LAST_ACTIVITY}}` placeholders
+- Extended `renderStateFile()` in `next.ts` with optional new fields (active, iteration, currentStory, storiesDone, storiesTotal, lastActivity), all backward-compatible with defaults
+- Added `progressOnProgress` adapter in `next.ts`: live calls rewrite the state file; terminal calls unlink it
+- Extended `LoopState` and `parseStateFile` in `status.ts` with four new optional fields, all guarded with `typeof` checks
+- Re-ran `bun run embed-vendor` to regenerate `src/vendor/_generated.ts`
 
 ### Files changed
-- src/supervisor/loop.ts (+18 lines: ensurePushed? in interface, destructure, 2 call sites)
-- src/commands/next.ts (+51 lines: ensurePushed adapter, pass to supervisorFn)
-- test/supervisor/loop.test.ts (+86 lines: 4 new test cases in new describe block)
+- `src/supervisor/loop.ts` (new types, onProgress option, notifyTerminal helper, computeProgress helper, ~60 lines added)
+- `src/commands/next.ts` (renderStateFile extended, progressOnProgress adapter wired, ~50 lines added)
+- `src/commands/status.ts` (LoopState extended, parseStateFile extended, ~25 lines added)
+- `vendor/cam-loop.local.md.tmpl` (6 new placeholders, active/iteration parameterized)
+- `src/vendor/_generated.ts` (regenerated)
+- `test/supervisor/loop.test.ts` (new describe block: 7 tests for onProgress)
+- `test/next.test.ts` (3 new tests for progress writer + clear-on-exit)
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 719 pass / 0 fail
+- Tests: 739 pass (10 new tests added)
+- Vendor drift: ok
 
 ### Step 5.5 docs validation
-- lib: none, status: no_external_lib_touched (reuses existing node:child_process.spawnSync and git CLI already present throughout the codebase)
+- lib: js-yaml, status: aligned
 
 ### Notes
-- supervisorSpawn wrapper drops stderr; adapter in next.ts calls spawnSync directly to capture both stdout and stderr for push error detail
+- `SupervisorStatus` is referenced in `ProgressPayload` before it is textually declared in the same file; TypeScript resolves this correctly (module-level type hoisting).
+- The `writtenPath` in the `progressOnProgress` adapter is the actual path returned by the writer. Tests that use a fake writer pointing to a non-existent path will not crash (unlink catches the error).
 ---
 
-## [2026-06-09 10:21] - US-002: Structured push-verification event for audit
+## [2026-06-09 00:10] - US-002: Dashboard + cam status render real per-story progress
 
 ### What was done
-- Added the `'pushed'` literal to the `WorkerEventKind` union in `events.ts` and a sentence to its doc comment
-- Added an exported `PushEventDetail { sha, pushed, ok, detail }` interface with a comment explaining why a new kind over folding into `'result'` (single auditable record per push, decoupled from the rich per-story record), and added it to the `WorkerEventDetail` union
-- `loop.ts`: after `ensurePushed()` in BOTH pass-branch sites (exit-mode and sentinel-mode), call `emit('pushed', <actual storyId>, uuid, { sha, pushed, ok, detail })` BEFORE the `ok:false` blocked return, so a failed verification still records an event
-- `events.test.ts`: round-trip test for the `'pushed'` kind via `makeInMemoryEventLogger` and `makeFileEventLogger`
-- `loop.test.ts`: new US-002 describe block, 4 cases: (a) ok -> exactly one `pushed` event after `result`, mirroring the adapter; (b) ok:false -> still one `pushed` event (ok:false) before blocked; (c) ensurePushed present + logEvent absent -> no crash; (d) ensurePushed absent -> zero `pushed` events
-- Doc Maintenance: `docs/recovery-runbook.md` kind list + grep examples and `CHANGELOG.md [Unreleased]` updated
+- Added `lastActivity?: string` to `DashboardData` in `dashboard.ts`, populated from `state.last_activity` in `readSnapshot`
+- Updated `Dashboard.tsx` `StatusIndicator` to accept `storiesDone`/`storiesTotal` and render "running US-XXX (N/total)" when active
+- Removed the meaningless `SummaryRow label="iter"` (stop-hook turns) from Dashboard.tsx Loop section
+- Updated the `since` row in Dashboard.tsx to use `lastActivity` (real supervisor heartbeat) when present, falling back to `started_at`
+- Added `storiesDone?`, `storiesTotal?`, `lastActivity?` to `StatusReport` in `status.ts`
+- `buildStatusReport` populates the new fields from `state.stories_done`, `state.stories_total`, `state.last_activity` with `typeof` guards
+- `runStatus`: replaced `iter` row with `stories done/total`, updated `since` row to use `lastActivity` when present
+- 10 new tests across `test/dashboard.test.ts` (4 Ink render assertions for 3 fixtures) and `test/status.test.ts` (6 assertions: 2 for buildStatusReport fields, 4 for 3-fixture runStatus rendering)
 
 ### Files changed
-- src/supervisor/events.ts (+27 lines: 'pushed' kind, PushEventDetail, union member, doc comments)
-- src/supervisor/loop.ts (+14 lines: emit('pushed', ...) in both pass branches)
-- test/supervisor/events.test.ts (+42 lines: 'pushed' kind describe block + PushEventDetail import)
-- test/supervisor/loop.test.ts (+118 lines: US-002 describe block, 4 cases)
-- docs/recovery-runbook.md (+3 lines: kind in table row + grep example)
-- CHANGELOG.md (+5 lines: Added section for CAM-33 push verification)
+- `src/commands/dashboard.ts` (DashboardData extended, readSnapshot maps lastActivity)
+- `src/ui/Dashboard.tsx` (StatusIndicator updated, iter row removed, since row updated)
+- `src/commands/status.ts` (StatusReport extended, buildStatusReport + runStatus updated)
+- `test/dashboard.test.ts` (4 new Ink render tests, 1 updated for US-002)
+- `test/status.test.ts` (6 new tests: 2 buildStatusReport + 4 runStatus fixtures)
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 729 pass / 0 fail
+- Tests: 751 pass (12 new tests added)
+- Vendor drift: n/a
 
 ### Step 5.5 docs validation
-- lib: none, status: no_external_lib_touched (extends the in-repo event type system; no new external library exercised)
+- lib: ink-testing-library, status: ok (render/lastFrame/unmount API confirmed matches usage)
 
 ### Notes
-- `Record<string,unknown>` was already in the `WorkerEventDetail` union, so a `PushEventDetail`-shaped literal is type-accepted without the named alias; the alias is added purely for documentation/grep per the story notes
-- `emit()` already guards on `logEvent` presence, so no extra guard was needed at the new emit sites
+- `runStatus` now re-derives the `now` function from `options.now ?? (() => new Date())` so the `since` row can compute elapsed ms from `lastActivity` without going through `buildStatusReport`.
+- The existing `composeDashboard` (non-Ink legacy path) was intentionally NOT changed per surgical-changes principle; its `iter 7/30` test still passes.
 ---
 
 
-## [2026-06-09 13:31] - Review round 1: CLEAN
-- subagent-reviewer sobre a branch CAM-33 (US-001 ensurePushed backstop + US-002 pushed event): APPROVE, zero CRITICAL/WARNING, build PASS (729 testes).
-- 3 SUGGESTIONs cosmeticas skipadas: DRY dos casts spawnSync em next.ts, match i18n de "Everything up-to-date", DRY dos dois pass-branch blocks identicos em loop.ts.
-- Pronto para /cam-ship.
+## [2026-06-09T17:00:32Z] Review round 1: CLEAN (1 CRITICAL fixed in-branch)
+- subagent-reviewer round 1 verdict: FIXES_PENDING:1.
+- CRITICAL: CAM-36 no-progress guard em src/supervisor/loop.ts retornava blocked sem notifyTerminal('blocked'), deixando o state file 'active' stale apos um block (so aparece na convivencia CAM-36 + US-001 clear-on-exit). Fix: adicionada a chamada + teste de regressao no describe onProgress (US-001). Reviewer pre-aprovou o fix exato; gates verdes (752 pass, typecheck, embed-vendor:check). Round concluido CLEAN.
+- WARNING (skip): DashboardData deriva stories done/total do PRD live em vez do state file. Funcionalmente equivalente, fonte live e arguivelmente melhor. Decisao documentada.
+- Ready for /cam-ship.
 ---

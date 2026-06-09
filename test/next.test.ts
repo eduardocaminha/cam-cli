@@ -541,4 +541,110 @@ describe('runNext', () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	// US-001: progress writer + clear-on-exit --------------------------------
+
+	test('progress writer: live onProgress call rewrites state file with new fields', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-prog-live-'));
+		try {
+			const code = await runNext({
+				cwd: dir,
+				permissionMode: 'bypassPermissions',
+				workerPaneReader: (_claudeDir) => '%5',
+				supervisorFn: async (opts: RunSupervisorOptions) => {
+					// Simulate a live iteration progress call (no terminalStatus).
+					opts.onProgress?.({
+						iteration: 3,
+						currentStoryId: 'US-007',
+						storiesDone: 4,
+						storiesTotal: 10,
+						lastActivity: '2026-06-09T10:00:00Z',
+					});
+					// Return without a terminal onProgress call so the file stays on disk.
+					return { status: 'complete' as const, iterations: 3, lastOutcome: null };
+				},
+				startedAt: '2026-06-09T09:00:00Z',
+				sessionId: 'prog-live',
+				pid: 42,
+			});
+
+			expect(code).toBe(0);
+			const statePath = join(dir, '.claude', 'cam-loop.local.md');
+			// File still exists (no terminal call was made in this fake).
+			expect(existsSync(statePath)).toBe(true);
+			const body = readFileSync(statePath, 'utf8');
+			expect(body).toContain('iteration: 3');
+			expect(body).toContain('current_story: "US-007"');
+			expect(body).toContain('stories_done: 4');
+			expect(body).toContain('stories_total: 10');
+			expect(body).toContain('last_activity: "2026-06-09T10:00:00Z"');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('progress writer: terminal onProgress call unlinks the state file', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-prog-term-'));
+		try {
+			const code = await runNext({
+				cwd: dir,
+				permissionMode: 'bypassPermissions',
+				workerPaneReader: (_claudeDir) => '%5',
+				supervisorFn: async (opts: RunSupervisorOptions) => {
+					// Simulate a terminal exit progress call.
+					opts.onProgress?.({
+						iteration: 2,
+						currentStoryId: undefined,
+						storiesDone: 5,
+						storiesTotal: 5,
+						lastActivity: '2026-06-09T10:05:00Z',
+						terminalStatus: 'complete',
+					});
+					return { status: 'complete' as const, iterations: 2, lastOutcome: null };
+				},
+				startedAt: '2026-06-09T09:00:00Z',
+				sessionId: 'prog-term',
+				pid: 42,
+			});
+
+			expect(code).toBe(0);
+			const statePath = join(dir, '.claude', 'cam-loop.local.md');
+			// State file must be unlinked after terminal onProgress call.
+			expect(existsSync(statePath)).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('progress writer: null currentStoryId renders as null in YAML', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-prog-nullid-'));
+		try {
+			await runNext({
+				cwd: dir,
+				permissionMode: 'bypassPermissions',
+				workerPaneReader: (_claudeDir) => '%5',
+				supervisorFn: async (opts: RunSupervisorOptions) => {
+					opts.onProgress?.({
+						iteration: 1,
+						currentStoryId: undefined,
+						storiesDone: 0,
+						storiesTotal: 3,
+						lastActivity: '2026-06-09T10:00:00Z',
+					});
+					return { status: 'complete' as const, iterations: 1, lastOutcome: null };
+				},
+				startedAt: '2026-06-09T09:00:00Z',
+				sessionId: 'prog-nullid',
+				pid: 42,
+			});
+
+			const statePath = join(dir, '.claude', 'cam-loop.local.md');
+			expect(existsSync(statePath)).toBe(true);
+			const body = readFileSync(statePath, 'utf8');
+			expect(body).toContain('current_story: null');
+			expect(body).toContain('stories_total: 3');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });

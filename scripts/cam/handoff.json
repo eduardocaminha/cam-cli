@@ -1,0 +1,28 @@
+{
+  "lastCompletedStory": {
+    "id": "US-002",
+    "title": "Dashboard + cam status render real per-story progress"
+  },
+  "branchName": "cam/CAM-28-dashboard-liveness",
+  "timestamp": "2026-06-09T00:10:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/dashboard.ts",
+    "src/ui/Dashboard.tsx",
+    "src/commands/status.ts",
+    "test/dashboard.test.ts",
+    "test/status.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 extended DashboardData with lastActivity (ISO string from state file), extended StatusReport with storiesDone/storiesTotal/lastActivity, replaced the iter row in both Dashboard.tsx and runStatus with a stories done/total row, and updated the since row to use last_activity when present. The composeDashboard (non-Ink legacy) path was NOT changed (surgical changes). All state-file fields are guarded with typeof checks per the read-only-readers-never-throw pattern.",
+  "officialDocsValidated": [
+    {
+      "lib": "ink-testing-library",
+      "version": "latest",
+      "url": "https://github.com/vadimdemedes/ink-testing-library",
+      "fetchedAt": "2026-06-09T00:10:00Z",
+      "status": "ok",
+      "summary": "render(ReactElement) returns {lastFrame, unmount, frames, rerender, stdin, stdout}. lastFrame() returns the last rendered string. unmount() unmounts the component. Usage confirmed matches implementation."
+    }
+  ]
+}

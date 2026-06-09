@@ -60,7 +60,7 @@ import {
 	type Env,
 } from '../tmux/session.ts';
 import { readEmbedded } from '../vendor/embedded.ts';
-import { runSupervisor, DEFAULT_PER_WORKER_TIMEOUT_MS, type RunSupervisorOptions } from '../supervisor/loop.ts';
+import { runSupervisor, DEFAULT_PER_WORKER_TIMEOUT_MS, type RunSupervisorOptions, type OnProgress } from '../supervisor/loop.ts';
 import { makeReviewDispatch } from '../supervisor/review.ts';
 import { makeFileEventLogger, readWorkerTokens } from '../supervisor/events.ts';
 import { acquireSupervisorLock, SUPERVISOR_LOCK_FILE, type AcquireLockResult } from '../supervisor/lock.ts';
@@ -138,6 +138,14 @@ function installShutdownHandler(release: () => void): void {
  *
  * The template body comes from `vendor/cam-loop.local.md.tmpl`, embedded
  * into the compiled binary via `with { type: "file" }` (src/vendor/embedded.ts).
+ *
+ * New optional fields (US-001 live progress tracking):
+ *   active        - defaults to true (set to false on terminal rewrite)
+ *   iteration     - defaults to 1 (updated on each supervisor iteration)
+ *   currentStory  - advisory story id or null
+ *   storiesDone   - count of non-operator stories with passes:true
+ *   storiesTotal  - total count of non-operator stories
+ *   lastActivity  - ISO timestamp of latest supervisor tick
  */
 export function renderStateFile(input: {
 	maxIterations: number;
@@ -145,18 +153,40 @@ export function renderStateFile(input: {
 	startedAt: string;
 	sessionId: string;
 	pid: number;
+	/** defaults to true */
+	active?: boolean;
+	/** defaults to 1 */
+	iteration?: number;
+	/** advisory story id or null; defaults to null */
+	currentStory?: string | null;
+	/** defaults to 0 */
+	storiesDone?: number;
+	/** defaults to 0 */
+	storiesTotal?: number;
+	/** ISO timestamp; defaults to startedAt */
+	lastActivity?: string;
 }): string {
 	const tmpl = readEmbedded('cam-loop.local.md.tmpl');
 	const promiseYaml =
 		input.completionPromise.length === 0
 			? 'null'
 			: `"${input.completionPromise.replace(/"/g, '\\"')}"`;
+	const currentStoryYaml =
+		input.currentStory != null && input.currentStory.length > 0
+			? `"${input.currentStory.replace(/"/g, '\\"')}"`
+			: 'null';
 	return tmpl
+		.replace('{{ACTIVE}}', String(input.active ?? true))
+		.replace('{{ITERATION}}', String(input.iteration ?? 1))
 		.replace('{{SESSION_ID}}', input.sessionId)
 		.replace('{{MAX_ITERATIONS}}', String(input.maxIterations))
 		.replace('{{COMPLETION_PROMISE_YAML}}', promiseYaml)
 		.replace('{{STARTED_AT}}', input.startedAt)
 		.replace('{{PID}}', String(input.pid))
+		.replace('{{CURRENT_STORY_YAML}}', currentStoryYaml)
+		.replace('{{STORIES_DONE}}', String(input.storiesDone ?? 0))
+		.replace('{{STORIES_TOTAL}}', String(input.storiesTotal ?? 0))
+		.replace('{{LAST_ACTIVITY}}', input.lastActivity ?? input.startedAt)
 		// No stop-hook re-inject prompt: leave the body empty.
 		.replace('{{PROMPT}}', '');
 }
@@ -390,6 +420,33 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		return 1;
 	}
 	emitOk(`State file armed at ${writtenPath}`);
+
+	// US-001: build the per-iteration progress writer. Called by the supervisor
+	// on each iteration (live rewrite) and on terminal exit (unlink so dashboard
+	// shows idle instead of a stale active state).
+	const stateFileBase = { maxIterations, completionPromise, startedAt, sessionId: supervisorSessionId, pid };
+	const progressOnProgress: OnProgress = (payload) => {
+		if (payload.terminalStatus !== undefined) {
+			// Terminal exit: remove the state file so `cam status` shows idle.
+			try { unlinkSync(writtenPath); } catch { /* already gone */ }
+			return;
+		}
+		// Live iteration: rewrite with current progress fields.
+		const body = renderStateFile({
+			...stateFileBase,
+			active: true,
+			iteration: payload.iteration,
+			currentStory: payload.currentStoryId ?? null,
+			storiesDone: payload.storiesDone,
+			storiesTotal: payload.storiesTotal,
+			lastActivity: payload.lastActivity,
+		});
+		try {
+			writeFileSync(writtenPath, body, 'utf8');
+		} catch {
+			// Non-fatal: live-update failed; loop continues.
+		}
+	};
 
 	// 3. Build real I/O adapters for the supervisor.
 	const supervisorSpawn: RunSupervisorOptions['spawn'] = (cmd, args, opts) => {
@@ -658,6 +715,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			readWorkerTokens: readWorkerTokensAdapter,
 			rateLimitResume,
 			ensurePushed,
+			onProgress: progressOnProgress,
 		});
 	} catch (err) {
 		lock.release();

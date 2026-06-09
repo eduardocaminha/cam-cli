@@ -374,6 +374,57 @@ describe('buildStatusReport', () => {
 	});
 });
 
+// --- buildStatusReport: US-002 new fields ----------------------------------
+
+describe('buildStatusReport US-002 live-progress fields', () => {
+	test('storiesDone/storiesTotal/lastActivity populate from state file', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-us002-fields-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'cam-loop.local.md'),
+				[
+					'---',
+					'active: true',
+					'iteration: 3',
+					'max_iterations: 30',
+					'started_at: "2026-04-28T22:00:00Z"',
+					'stories_done: 2',
+					'stories_total: 5',
+					'last_activity: "2026-04-28T22:25:00Z"',
+					'---',
+					'',
+					'/cam-next',
+					'',
+				].join('\n'),
+			);
+			const report = buildStatusReport({ cwd: dir });
+			expect(report.storiesDone).toBe(2);
+			expect(report.storiesTotal).toBe(5);
+			expect(report.lastActivity).toBe('2026-04-28T22:25:00Z');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('storiesDone/storiesTotal/lastActivity are undefined when absent from state file', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-us002-absent-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'cam-loop.local.md'),
+				['---', 'active: true', 'iteration: 1', 'max_iterations: 30', '---', ''].join('\n'),
+			);
+			const report = buildStatusReport({ cwd: dir });
+			expect(report.storiesDone).toBeUndefined();
+			expect(report.storiesTotal).toBeUndefined();
+			expect(report.lastActivity).toBeUndefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
 // --- runStatus -------------------------------------------------------------
 
 describe('runStatus', () => {
@@ -449,7 +500,7 @@ describe('runStatus', () => {
 		}
 	});
 
-	test('exits 0 on active and writes story + iter lines to stdout', () => {
+	test('exits 0 on active and writes story + stories rows to stdout (US-002)', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-status-run-active-'));
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
@@ -461,6 +512,8 @@ describe('runStatus', () => {
 					'iteration: 3',
 					'max_iterations: 30',
 					'started_at: "2026-04-28T22:00:00Z"',
+					'stories_done: 2',
+					'stories_total: 5',
 					'---',
 					'',
 					'/cam-next',
@@ -486,12 +539,178 @@ describe('runStatus', () => {
 				process.stdout.write = original;
 			}
 			const out = captured.join('');
-			// New layout: `state    ● active` row + key/value entries under `Loop`.
+			// US-002: `iter` row is gone; `stories` row shows real progress.
 			expect(out).toMatch(/Loop/);
 			expect(out).toMatch(/active/);
 			expect(out).toMatch(/US-008/);
-			expect(out).toMatch(/3 \/ 30/);
+			// stories row replaces the old iter row
+			expect(out).toMatch(/stories/);
+			expect(out).toMatch(/2 \/ 5/);
+			// `since` still shows wall-clock (last_activity absent, falls back to started_at)
 			expect(out).toMatch(/30m/);
+			// iter row must NOT appear
+			expect(out).not.toMatch(/\biter\b/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// --- runStatus: three-fixture rendering (US-002 AC5) ----------------------
+//
+// The same three scenarios required by AC4 for the Ink dashboard, but for the
+// print path. Asserts that the rendered output shows real per-story progress
+// (stories N/total + current story id) for each state.
+
+describe('runStatus US-002 three-fixture rendering', () => {
+	function captureRunStatus(opts: Parameters<typeof runStatus>[0]): string {
+		const original = process.stdout.write.bind(process.stdout);
+		const chunks: string[] = [];
+		process.stdout.write = ((chunk: string | Uint8Array) => {
+			chunks.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+			return true;
+		}) as typeof process.stdout.write;
+		try {
+			runStatus(opts);
+		} finally {
+			process.stdout.write = original;
+		}
+		return chunks.join('');
+	}
+
+	test('fixture 1: no state file -> idle, shows next pending story', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-f1-'));
+		try {
+			writeFileSync(
+				join(dir, 'prd.json'),
+				JSON.stringify({
+					userStories: [
+						{ id: 'US-001', title: 'first', priority: 1, passes: true },
+						{ id: 'US-002', title: 'second', priority: 2, passes: false },
+					],
+				}),
+			);
+			const out = captureRunStatus({ cwd: dir });
+			expect(out).toMatch(/idle/);
+			// Shows the "next" pending story in idle path.
+			expect(out).toMatch(/US-002/);
+			// No `stories` row (no state file means no state-file data).
+			expect(out).not.toMatch(/\bstories\b/);
+			// No `iter` row (removed in US-002).
+			expect(out).not.toMatch(/\biter\b/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('fixture 2: live state-file mid-run -> shows story id + stories N/total', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-f2-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'cam-loop.local.md'),
+				[
+					'---',
+					'active: true',
+					'iteration: 5',
+					'max_iterations: 30',
+					'started_at: "2026-04-28T22:00:00Z"',
+					'stories_done: 3',
+					'stories_total: 8',
+					'current_story: US-004',
+					'---',
+					'',
+					'/cam-next',
+					'',
+				].join('\n'),
+			);
+			writeFileSync(
+				join(dir, 'prd.json'),
+				JSON.stringify({
+					userStories: [{ id: 'US-004', title: 'my story', priority: 4, passes: false }],
+				}),
+			);
+			const out = captureRunStatus({
+				cwd: dir,
+				now: () => new Date('2026-04-28T22:30:00Z'),
+			});
+			expect(out).toMatch(/active/);
+			expect(out).toMatch(/US-004/);
+			// stories row replaces old iter row
+			expect(out).toMatch(/stories/);
+			expect(out).toMatch(/3 \/ 8/);
+			// since row present (falls back to started_at)
+			expect(out).toMatch(/30m/);
+			// No iter row
+			expect(out).not.toMatch(/\biter\b/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('fixture 3: state-file with active:false -> paused', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-f3-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'cam-loop.local.md'),
+				[
+					'---',
+					'active: false',
+					'iteration: 10',
+					'max_iterations: 30',
+					'started_at: "2026-04-28T22:00:00Z"',
+					'stories_done: 6',
+					'stories_total: 10',
+					'---',
+					'',
+					'/cam-next',
+					'',
+				].join('\n'),
+			);
+			const out = captureRunStatus({
+				cwd: dir,
+				now: () => new Date('2026-04-28T22:30:00Z'),
+			});
+			expect(out).toMatch(/paused/);
+			// stories row still present when paused
+			expect(out).toMatch(/stories/);
+			expect(out).toMatch(/6 \/ 10/);
+			// No iter row
+			expect(out).not.toMatch(/\biter\b/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('fixture 2 with last_activity: since row reflects last_activity not started_at', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-status-f2-lastact-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'cam-loop.local.md'),
+				[
+					'---',
+					'active: true',
+					'iteration: 2',
+					'max_iterations: 30',
+					'started_at: "2026-04-28T22:00:00Z"',
+					'stories_done: 1',
+					'stories_total: 5',
+					'last_activity: "2026-04-28T22:25:00Z"',
+					'---',
+					'',
+					'/cam-next',
+					'',
+				].join('\n'),
+			);
+			const out = captureRunStatus({
+				cwd: dir,
+				now: () => new Date('2026-04-28T22:30:00Z'),
+			});
+			// since = 5m (time since last_activity), NOT 30m (time since started_at)
+			expect(out).toMatch(/5m/);
+			expect(out).not.toMatch(/30m 00s/);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

@@ -651,6 +651,118 @@ describe('runDashboard', () => {
 	});
 });
 
+// --- DashboardApp Ink render: Loop section (US-002) ------------------------
+//
+// Three fixtures per AC4: idle (no state file), running mid-run, paused/done.
+// Rendered with ink-testing-library (not a comment — we look at the real output
+// per the 2026-06-05 lesson). State stays signalled by the glyph; divider color
+// is never used.
+
+describe('DashboardApp Loop section per-story progress (US-002)', () => {
+	function makeData(overrides: Partial<DashboardData>): DashboardData {
+		return {
+			branchName: 'cam/test-branch',
+			currentStoryId: '',
+			currentStoryTitle: '',
+			iteration: 0,
+			maxIterations: 30,
+			startedAtMs: 0,
+			nowMs: Date.parse('2026-04-28T22:30:00Z'),
+			paused: false,
+			idle: false,
+			recent: [],
+			stories: [],
+			storyTokens: {},
+			...overrides,
+		};
+	}
+
+	it('idle fixture: no state file shows ◌ idle', () => {
+		const data = makeData({ idle: true });
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => data,
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		expect(frame).toContain('◌');
+		expect(frame).toContain('idle');
+		// Must NOT show "running" or "paused" for idle fixture.
+		expect(frame).not.toContain('running');
+		expect(frame).not.toContain('paused');
+		unmount();
+	});
+
+	it('running fixture: mid-run shows running US-XXX (N/total)', () => {
+		const data = makeData({
+			idle: false,
+			paused: false,
+			startedAtMs: Date.parse('2026-04-28T22:00:00Z'),
+			currentStoryId: 'US-002',
+			currentStoryTitle: 'second story',
+			stories: [
+				{ id: 'US-001', title: 'first', priority: 1, passes: true },
+				{ id: 'US-002', title: 'second story', priority: 2, passes: false },
+			],
+		});
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => data,
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		// State indicator: "running US-002 (1/2)"
+		expect(frame).toContain('running');
+		expect(frame).toContain('US-002');
+		expect(frame).toContain('1/2');
+		unmount();
+	});
+
+	it('paused fixture: state-file with active:false shows paused', () => {
+		const data = makeData({
+			idle: false,
+			paused: true,
+			startedAtMs: Date.parse('2026-04-28T22:00:00Z'),
+		});
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => data,
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		expect(frame).toContain('paused');
+		expect(frame).not.toContain('running');
+		unmount();
+	});
+
+	it('running fixture: last_activity is used for the since row when present', () => {
+		// last_activity is 5 minutes before nowMs; started_at is 30 minutes before.
+		// The since row should show ~5m, not ~30m.
+		const nowMs = Date.parse('2026-04-28T22:30:00Z');
+		const data = makeData({
+			idle: false,
+			paused: false,
+			startedAtMs: Date.parse('2026-04-28T22:00:00Z'), // 30m ago
+			lastActivity: '2026-04-28T22:25:00Z', // 5m ago
+			nowMs,
+		});
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => data,
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		// Should show 5m (since last_activity), not 30m (since started_at).
+		expect(frame).toMatch(/5m/);
+		expect(frame).not.toMatch(/30m/);
+		unmount();
+	});
+});
+
 // --- DashboardApp Ink render (US-014: per-story tokens) --------------------
 //
 // Rendered with ink-testing-library so we assert against the ACTUAL screen,

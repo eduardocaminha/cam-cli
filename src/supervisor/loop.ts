@@ -276,7 +276,48 @@ export interface RunSupervisorOptions {
 	 * When absent, the pass branch is byte-for-byte unchanged (backward compatible).
 	 */
 	ensurePushed?: () => { ok: boolean; pushed: boolean; sha: string; detail: string };
+	/**
+	 * Per-iteration progress sink (US-001). When provided the supervisor calls it:
+	 *   (a) Once per iteration, at the top, after decideNextAction resolves, with
+	 *       at least { iteration, currentStoryId, storiesDone, storiesTotal,
+	 *       lastActivity } and no terminalStatus.
+	 *   (b) Once more on every terminal exit (complete / awaiting-operator /
+	 *       blocked / max-iterations) with the same shape plus terminalStatus.
+	 * Absent onProgress is a pure no-op; existing loop tests pass unchanged.
+	 */
+	onProgress?: OnProgress;
 }
+
+// ---------------------------------------------------------------------------
+// Progress tracking types (US-001)
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload emitted by the supervisor to the optional onProgress callback.
+ */
+export interface ProgressPayload {
+	/** 1-based iteration index at the time this callback fires. */
+	iteration: number;
+	/**
+	 * Advisory story id the supervisor dispatched this iteration. Undefined for
+	 * review, complete, blocked-no-implementable, and terminal-only emissions.
+	 */
+	currentStoryId: string | undefined;
+	/** Count of non-operator stories where passes:true at emission time. */
+	storiesDone: number;
+	/** Total count of non-operator stories at emission time. */
+	storiesTotal: number;
+	/** ISO timestamp of this progress event (from the injected clock). */
+	lastActivity: string;
+	/**
+	 * Set only on the terminal-exit emission (the second call per iteration for
+	 * direct-terminal decisions; the only call for mid-iteration early returns).
+	 */
+	terminalStatus?: SupervisorStatus;
+}
+
+/** Optional per-iteration progress sink injected into RunSupervisorOptions. */
+export type OnProgress = (payload: ProgressPayload) => void;
 
 /** Terminal status returned by runSupervisor. */
 export type SupervisorStatus = 'complete' | 'awaiting-operator' | 'blocked' | 'max-iterations';
@@ -411,6 +452,35 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const rateLimitResume = opts.rateLimitResume;
 	const maxRateLimitRetries = opts.maxRateLimitRetries ?? DEFAULT_MAX_RATE_LIMIT_RETRIES;
 	const ensurePushed = opts.ensurePushed;
+	const onProgress = opts.onProgress;
+
+	// --- US-001 progress tracking helpers ---
+	// Compute done/total counts from a PRD snapshot (non-operator stories only).
+	function computeProgress(prd: PrdSnapshot): { storiesDone: number; storiesTotal: number } {
+		const stories = prd.userStories ?? [];
+		const implementable = stories.filter((s) => s.requires !== 'operator');
+		return {
+			storiesDone: implementable.filter((s) => s.passes === true).length,
+			storiesTotal: implementable.length,
+		};
+	}
+
+	// Tracks the most recent progress payload so terminal-exit emits can reuse
+	// the iteration / storiesDone / storiesTotal values from the same iteration.
+	let lastIterProgress: ProgressPayload = {
+		iteration: 0,
+		currentStoryId: undefined,
+		storiesDone: 0,
+		storiesTotal: 0,
+		lastActivity: clock(),
+	};
+
+	// Emit a terminal-exit progress notification before every return path. No-op
+	// when onProgress is absent (backward compatible).
+	const notifyTerminal = (status: SupervisorStatus): void => {
+		if (!onProgress) return;
+		onProgress({ ...lastIterProgress, terminalStatus: status });
+	};
 
 	// --- US-013 structured event emitters (no-op when logEvent absent) ---
 	const emit = (
@@ -443,20 +513,36 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 		const prd = readPrd();
 		if (prd === null) {
 			// PRD unreadable: treat as blocked.
+			notifyTerminal('blocked');
 			return { status: 'blocked', iterations, lastOutcome };
 		}
 
 		// --- Decide next action ---
 		const action = decideNextAction(prd);
 
+		// --- US-001: emit top-of-iteration progress (after decideNextAction) ---
+		{
+			const { storiesDone, storiesTotal } = computeProgress(prd);
+			lastIterProgress = {
+				iteration: iterations + 1,
+				currentStoryId: action.kind === 'implement' ? action.storyId : undefined,
+				storiesDone,
+				storiesTotal,
+				lastActivity: clock(),
+			};
+			if (onProgress) onProgress(lastIterProgress);
+		}
+
 		// --- Handle terminal decisions ---
 		if (action.kind === 'complete') {
+			notifyTerminal('complete');
 			return { status: 'complete', iterations, lastOutcome };
 		}
 
 		if (action.kind === 'await-operator') {
 			// All implementable work is done and reviewed clean; only operator
 			// ceremonies remain. This is a successful terminal state, not a block.
+			notifyTerminal('awaiting-operator');
 			return {
 				status: 'awaiting-operator',
 				iterations,
@@ -466,6 +552,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 		}
 
 		if (action.kind === 'blocked-no-implementable') {
+			notifyTerminal('blocked');
 			return { status: 'blocked', iterations, lastOutcome };
 		}
 
@@ -602,6 +689,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 								storyId: sentinelOutcome.storyId,
 								detail: `push-verification failed: ${pushCheck.detail}`,
 							};
+							notifyTerminal('blocked');
 							return { status: 'blocked', iterations, lastOutcome };
 						}
 					}
@@ -612,6 +700,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					sentinelOutcome.kind === 'fail' ||
 					sentinelOutcome.kind === 'unknown'
 				) {
+					notifyTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
 
@@ -628,6 +717,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 							storyId: sentinelOutcome.storyId,
 							detail: `finalize aborted, gates failed for ${sentinelOutcome.storyId}: ${gate.detail}`,
 						};
+						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}
 					const fin = finalizeStory(sentinelOutcome.storyId);
@@ -637,6 +727,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 							storyId: sentinelOutcome.storyId,
 							detail: `finalize failed for ${sentinelOutcome.storyId}: ${fin.detail}`,
 						};
+						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}
 					lastOutcome = {
@@ -649,6 +740,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				}
 
 				if (sentinelOutcome.kind === 'incomplete') {
+					notifyTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
 
@@ -754,6 +846,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						storyId: advisoryStoryId,
 						detail: `rate-limit retries exhausted after ${rlAttempts}`,
 					};
+					notifyTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
 			}
@@ -808,6 +901,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 							storyId: outcome.storyId,
 							detail: `push-verification failed: ${pushCheck.detail}`,
 						};
+						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}
 				}
@@ -837,6 +931,11 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 							storyId: advisoryStoryId,
 							detail: `no-progress: ${noProgressStreak} consecutive worker passes re-confirmed an already-done story (advisory ${advisoryStoryId}, completed ${outcome.storyId})`,
 						};
+						// Fire the terminal progress callback so next.ts clears the
+						// live state file (US-001 clear-on-exit). Every other terminal
+						// return in this loop does this; the no-progress block is a
+						// real terminal exit too.
+						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}
 				} else {
@@ -846,12 +945,14 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 			// Worker blocked: exit loop.
 			if (outcome.kind === 'blocked') {
+				notifyTerminal('blocked');
 				return { status: 'blocked', iterations, lastOutcome };
 			}
 
 			// Worker failed or unknown: exit loop to let the operator inspect.
 			// This is a conservative choice: do not retry silently.
 			if (outcome.kind === 'fail' || outcome.kind === 'unknown') {
+				notifyTerminal('blocked');
 				return { status: 'blocked', iterations, lastOutcome };
 			}
 
@@ -865,6 +966,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 							storyId: outcome.storyId,
 							detail: `finalize aborted, gates failed for ${outcome.storyId}: ${gate.detail}`,
 						};
+						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}
 					const fin = finalizeStory(outcome.storyId);
@@ -874,6 +976,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 							storyId: outcome.storyId,
 							detail: `finalize failed for ${outcome.storyId}: ${fin.detail}`,
 						};
+						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}
 					lastOutcome = {
@@ -891,6 +994,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				// Incomplete but no finalize capability (or no storyId): cannot
 				// complete the tail deterministically; stop for the operator.
 				if (outcome.kind === 'incomplete') {
+					notifyTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
 
@@ -910,6 +1014,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 			if (reviewResult.status === 'error') {
 				// Review dispatch failed: treat as blocked.
+				notifyTerminal('blocked');
 				return { status: 'blocked', iterations, lastOutcome };
 			}
 
@@ -931,5 +1036,6 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	}
 
 	// Hard cap reached.
+	notifyTerminal('max-iterations');
 	return { status: 'max-iterations', iterations, lastOutcome };
 }
