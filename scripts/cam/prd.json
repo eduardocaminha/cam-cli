@@ -43,7 +43,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/status.ts (LoopState ~line 97, parseStateFile ~line 223, header comment ~line 9, stop-hook ref comment ~line 67), src/commands/resume.ts (header comment ~line 10), test/status.test.ts (~line 76 fixture line, ~line 89 LoopState assertion, ~line 238 fixture line). Dashboard.tsx and dashboard.ts were already confirmed to NOT reference session_id (verified with grep) — no edit needed there. Back-compat constraint per the re-grounded scope: readers must NOT throw on an OLD state file that still HAS session_id; the existing typeof-guard pattern naturally accomplishes that by simply not copying unknown keys. Add a tiny test fixture proving the back-compat. Per CLAUDE.md: comment-driven assumptions are not proof — verify by reading the parseStateFile() body in this story to confirm the guard pattern, then run `bun test test/status.test.ts` to confirm both new and old fixtures parse."
     },

@@ -39,3 +39,30 @@
 ### Notes
 - `test/attach-hint.test.ts` also had sessionId in runNext calls (not listed in story notes). Grepping all test files for the field name is the safe approach when removing from NextOptions.
 ---
+
+## [2026-06-09 00:01] - US-002: Drop session_id from state-file readers and inert references
+
+### What was done
+- Removed `session_id?: string` from `LoopState` interface in `src/commands/status.ts`
+- Removed the `if (typeof obj['session_id'] === 'string') out.session_id = obj['session_id'];` copy-line from `parseStateFile()` (the typeof-guard pattern naturally ignores unknown keys, so no explicit "ignore" logic was needed)
+- Updated header comment in `src/commands/status.ts` (~line 9) to remove `session_id` from the documented frontmatter field list
+- Updated header comment in `src/commands/resume.ts` (~line 10) to remove `session_id` from the documented frontmatter field list
+- Updated `test/status.test.ts`: removed `session_id: sess-abc` from the "parses a complete frontmatter block" fixture and its expected output; removed `session_id: sess-xyz` from the "active state" integration fixture
+- Added back-compat smoke test confirming that a state file with `session_id: legacy-value` still parses cleanly to a LoopState without that key
+
+### Files changed
+- src/commands/status.ts
+- src/commands/resume.ts
+- test/status.test.ts
+
+### Quality gates
+- Typecheck: ok
+- Tests: 759 pass
+- Vendor drift: n/a
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+
+### Notes
+- The typeof-guard copy pattern in parseStateFile() naturally achieves back-compat: only explicitly listed fields are copied, so unknown fields in old state files are silently dropped without any extra logic.
+---

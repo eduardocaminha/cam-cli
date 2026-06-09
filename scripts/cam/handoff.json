@@ -1,21 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Drop session_id from state-file writer + vendored template"
+    "id": "US-002",
+    "title": "Drop session_id from state-file readers and inert references"
   },
   "branchName": "cam/CAM-3-remove-inert-session-id",
-  "timestamp": "2026-06-09T00:00:00Z",
+  "timestamp": "2026-06-09T00:01:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "vendor/cam-loop.local.md.tmpl",
-    "src/commands/next.ts",
-    "src/vendor/_generated.ts",
-    "test/next.test.ts",
-    "test/attach-hint.test.ts",
-    "test/interactivity/interactivity.test.ts"
+    "src/commands/status.ts",
+    "src/commands/resume.ts",
+    "test/status.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 removed session_id from the state-file writer and template. The LoopState type in status.ts still has an optional session_id field (permissive reader for legacy files) -- that is intentional and not in scope for this story. test/attach-hint.test.ts was not listed in the story notes but also had sessionId in runNext calls; always grep all test files when removing a field from NextOptions.",
+  "nextStoryContext": "US-002 removed session_id from the LoopState type, parseStateFile() copy-block, and header comments in status.ts and resume.ts. The typeof-guard copy pattern in parseStateFile() naturally achieves back-compat for old state files. The codebase no longer has any session_id references in the reader path.",
   "officialDocsValidated": [
     {
       "lib": "none",
