@@ -28,8 +28,8 @@ Run these checks before doing anything else. If any check fails, report the fail
    git status
    ```
    If there are uncommitted changes, warn the user and ask how to proceed (stash, commit, or discard).
-4. **Typecheck**: run the project's typecheck command. If it fails, fix before proceeding.
-5. **Tests**: run the project's test command. If tests fail, fix before proceeding.
+4. **Typecheck**: `bun run typecheck`. If it fails, fix before proceeding.
+5. **Tests**: `bun test`. If tests fail, fix before proceeding.
 
 Only proceed to Step 1 once all pre-flight checks pass.
 
