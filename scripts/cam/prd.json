@@ -22,7 +22,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: new module src/orchestrator/budget.ts (pure function) + a tiny CLI surface (preferred: new subcommand src/commands/orch-budget.ts wired in index.ts, OR a flag on src/commands/status.ts — pick whichever requires the smaller diff). Tests under test/orchestrator/budget.test.ts. Reuse src/transcript/usage.ts (do not duplicate). Read project.toml via existing src/config/toml.ts helpers. Bun runtime: prefer Bun.file over node:fs where the surrounding code already does so. noUncheckedIndexedAccess: guard regex / array accesses. Do not register a --permission-mode flag on the new subcommand. Inject the transcript reader / env / toml reader in the pure function signature so tests don't touch real ~/.claude or process.env."
     },
