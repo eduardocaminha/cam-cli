@@ -28,9 +28,11 @@ Steps:
 3. **Run quality gates**:
    ```bash
    # Typecheck
-   <project typecheck command>
+   bun run typecheck
    # Tests
-   <project test command>
+   bun test
+   # Vendor/templates drift (only when the branch touched vendor/ or templates/)
+   bun run embed-vendor:check
    ```
    Fix any failures before proceeding.
 
