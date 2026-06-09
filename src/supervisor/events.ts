@@ -36,17 +36,20 @@ import type { WorkerOutcome, WorkerOutcomeKind } from './result.ts';
 /**
  * Lifecycle step a WorkerEvent records.
  *
- * Most kinds are per-worker. 'stale-lock' is a supervisor-level event (US-015):
- * it records that a new supervisor took over a lock whose owning pid was dead.
- * 'rate-limited' (US-016) records a worker pause (phase: 'pause') and the
- * subsequent resume (phase: 'resume') when a worker hits an Anthropic
- * rate-limit; the story is paused, never marked failed.
+ * Most kinds are per-worker. 'pushed' (US-002) records the supervisor's
+ * deterministic verification that a worker's pass actually landed on origin
+ * (HEAD == origin/<branch>); see PushEventDetail. 'stale-lock' is a
+ * supervisor-level event (US-015): it records that a new supervisor took over a
+ * lock whose owning pid was dead. 'rate-limited' (US-016) records a worker
+ * pause (phase: 'pause') and the subsequent resume (phase: 'resume') when a
+ * worker hits an Anthropic rate-limit; the story is paused, never marked failed.
  */
 export type WorkerEventKind =
 	| 'worker-start'
 	| 'worker-end'
 	| 'result'
 	| 'tokens'
+	| 'pushed'
 	| 'stale-lock'
 	| 'rate-limited';
 
@@ -79,8 +82,33 @@ export interface TokensEventDetail {
 	cacheReadTokens: number;
 }
 
+/**
+ * 'pushed' event detail: a single auditable record of one push verification.
+ *
+ * Why a new 'pushed' kind rather than folding this into the 'result' event:
+ * the supervisor verifies the push on EVERY pass (US-001), a distinct lifecycle
+ * moment from the rich per-story 'result' record. A dedicated kind gives one
+ * auditable record per push and decouples its lifecycle from 'result', so
+ * verifying a push at every pass does not perturb the existing result-event
+ * consumer surface (e.g. CAM-31's planned progress.txt retirement).
+ *   - sha: the local HEAD sha confirmed against origin/<branch>.
+ *   - pushed: true if the push moved origin; false if origin already matched.
+ *   - ok: whether HEAD == origin/<branch> held after the idempotent push.
+ *   - detail: human-readable outcome (git stdout/stderr, or 'up-to-date').
+ */
+export interface PushEventDetail {
+	sha: string;
+	pushed: boolean;
+	ok: boolean;
+	detail: string;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
-export type WorkerEventDetail = ResultEventDetail | TokensEventDetail | Record<string, unknown>;
+export type WorkerEventDetail =
+	| ResultEventDetail
+	| TokensEventDetail
+	| PushEventDetail
+	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */
 export interface WorkerEvent {

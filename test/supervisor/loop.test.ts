@@ -1166,3 +1166,246 @@ describe('runSupervisor rate-limit handling (US-016)', () => {
 		expect(result.status).toBe('blocked');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// US-001: ensurePushed -- origin-sync backstop on every pass
+// ---------------------------------------------------------------------------
+
+describe('runSupervisor ensurePushed (US-001)', () => {
+	// Helper: build prds so that readPrd returns prdFalse on first call
+	// (decideNextAction dispatches implement) and prdTrue on subsequent calls
+	// (fileReader in readWorkerOutcome sees passes:true -> pass outcome).
+	function makePassingPrds() {
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdTrue = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		return { prdFalse, prdTrue };
+	}
+
+	test('(a) pass-but-unpushed: ensurePushed ok:true pushed:true -> loop continues to complete', async () => {
+		const { prdFalse, prdTrue } = makePassingPrds();
+		let prdCall = 0;
+		let ensurePushedCalls = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			ensurePushed: () => {
+				ensurePushedCalls++;
+				return { ok: true, pushed: true, sha: 'abc1234', detail: 'pushed to origin/cam-test' };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(ensurePushedCalls).toBe(1);
+		expect(result.lastOutcome?.kind).toBe('pass');
+	});
+
+	test('(b) pass-already-synced: ensurePushed ok:true pushed:false -> loop continues, no extra side effects', async () => {
+		const { prdFalse, prdTrue } = makePassingPrds();
+		let prdCall = 0;
+		let ensurePushedCalls = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			ensurePushed: () => {
+				ensurePushedCalls++;
+				return { ok: true, pushed: false, sha: 'abc1234', detail: 'already up-to-date' };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(ensurePushedCalls).toBe(1);
+		expect(result.lastOutcome?.kind).toBe('pass');
+	});
+
+	test('(c) ensurePushed ok:false -> supervisor returns status:blocked with push-failure detail', async () => {
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdTrue = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
+		let prdCall = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			ensurePushed: () => ({
+				ok: false,
+				pushed: false,
+				sha: '',
+				detail: 'network error during push to origin',
+			}),
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.lastOutcome?.kind).toBe('blocked');
+		expect(result.lastOutcome?.detail).toContain('push-verification failed');
+		expect(result.lastOutcome?.detail).toContain('network error during push to origin');
+	});
+
+	test('(d) ensurePushed absent -> pass-branch behavior unchanged (backward compatible)', async () => {
+		const { prdFalse, prdTrue } = makePassingPrds();
+		let prdCall = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			// ensurePushed intentionally absent: zero behavior change.
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.lastOutcome?.kind).toBe('pass');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-002: 'pushed' structured event emitted on push verification
+// ---------------------------------------------------------------------------
+
+describe("runSupervisor 'pushed' event (US-002)", () => {
+	function makePassingPrds() {
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdTrue = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		return { prdFalse, prdTrue };
+	}
+
+	test('(a) pass + ensurePushed ok -> exactly one "pushed" event, ordered after "result", mirrors adapter', async () => {
+		const { prdFalse, prdTrue } = makePassingPrds();
+		let prdCall = 0;
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			ensurePushed: () => ({
+				ok: true,
+				pushed: true,
+				sha: 'abc1234',
+				detail: 'pushed to origin/cam-test',
+			}),
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('complete');
+
+		const pushedEvents = events.filter((e) => e.kind === 'pushed');
+		expect(pushedEvents).toHaveLength(1);
+		expect(pushedEvents[0]?.storyId).toBe('US-001');
+		expect(pushedEvents[0]?.detail).toEqual({
+			sha: 'abc1234',
+			pushed: true,
+			ok: true,
+			detail: 'pushed to origin/cam-test',
+		});
+
+		// 'pushed' is ordered AFTER the 'result' event.
+		const resultIdx = events.findIndex((e) => e.kind === 'result');
+		const pushedIdx = events.findIndex((e) => e.kind === 'pushed');
+		expect(resultIdx).toBeGreaterThanOrEqual(0);
+		expect(pushedIdx).toBeGreaterThan(resultIdx);
+	});
+
+	test('(b) ensurePushed ok:false -> still emits a "pushed" event (ok:false) before returning blocked', async () => {
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdTrue = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
+		let prdCall = 0;
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			ensurePushed: () => ({
+				ok: false,
+				pushed: false,
+				sha: '',
+				detail: 'network error during push to origin',
+			}),
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('blocked');
+
+		const pushedEvents = events.filter((e) => e.kind === 'pushed');
+		expect(pushedEvents).toHaveLength(1);
+		expect(pushedEvents[0]?.detail).toMatchObject({ ok: false, pushed: false });
+	});
+
+	test('(c) ensurePushed present but logEvent absent -> no crash, completes', async () => {
+		const { prdFalse, prdTrue } = makePassingPrds();
+		let prdCall = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			ensurePushed: () => ({ ok: true, pushed: true, sha: 'abc1234', detail: 'ok' }),
+			// logEvent intentionally absent: emit is a no-op, no 'pushed' event.
+		});
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('complete');
+	});
+
+	test('(d) ensurePushed absent -> zero "pushed" events', async () => {
+		const { prdFalse, prdTrue } = makePassingPrds();
+		let prdCall = 0;
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			logEvent: logger,
+			// ensurePushed intentionally absent: the event corresponds to a real
+			// verification, not a phantom one.
+		});
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('complete');
+		expect(events.filter((e) => e.kind === 'pushed')).toHaveLength(0);
+	});
+});

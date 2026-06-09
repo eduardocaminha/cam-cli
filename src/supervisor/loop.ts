@@ -265,6 +265,17 @@ export interface RunSupervisorOptions {
 	 * up and blocks the story. Default: DEFAULT_MAX_RATE_LIMIT_RETRIES.
 	 */
 	maxRateLimitRetries?: number;
+	/**
+	 * Verify that the worker's pass actually landed on origin before the supervisor
+	 * continues the loop (US-001). Runs after writeSessionMarker, before continue.
+	 * Returns { ok, pushed, sha, detail }:
+	 *   ok:true  -> origin is in sync, loop continues unchanged.
+	 *   ok:false -> supervisor degrades outcome to blocked and exits the loop.
+	 *   pushed:true  -> git push moved origin (local was ahead).
+	 *   pushed:false -> local sha already matched origin (no-op push).
+	 * When absent, the pass branch is byte-for-byte unchanged (backward compatible).
+	 */
+	ensurePushed?: () => { ok: boolean; pushed: boolean; sha: string; detail: string };
 }
 
 /** Terminal status returned by runSupervisor. */
@@ -387,6 +398,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const readWorkerTokens = opts.readWorkerTokens;
 	const rateLimitResume = opts.rateLimitResume;
 	const maxRateLimitRetries = opts.maxRateLimitRetries ?? DEFAULT_MAX_RATE_LIMIT_RETRIES;
+	const ensurePushed = opts.ensurePushed;
 
 	// --- US-013 structured event emitters (no-op when logEvent absent) ---
 	const emit = (
@@ -557,6 +569,26 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 				if (sentinelOutcome.kind === 'pass' && sentinelOutcome.storyId !== undefined) {
 					writeSessionMarker(sentinelOutcome.storyId, uuid);
+					// US-001: verify the pass actually landed on origin before continuing.
+					if (ensurePushed) {
+						const pushCheck = ensurePushed();
+						// US-002: structured audit record of the verification, emitted
+						// whether ok or not, before any blocked return.
+						emit('pushed', sentinelOutcome.storyId, uuid, {
+							sha: pushCheck.sha,
+							pushed: pushCheck.pushed,
+							ok: pushCheck.ok,
+							detail: pushCheck.detail,
+						});
+						if (!pushCheck.ok) {
+							lastOutcome = {
+								kind: 'blocked',
+								storyId: sentinelOutcome.storyId,
+								detail: `push-verification failed: ${pushCheck.detail}`,
+							};
+							return { status: 'blocked', iterations, lastOutcome };
+						}
+					}
 				}
 
 				if (
@@ -743,6 +775,26 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// Write session marker keyed to the ACTUAL completed story.
 			if (outcome.kind === 'pass' && outcome.storyId !== undefined) {
 				writeSessionMarker(outcome.storyId, uuid);
+				// US-001: verify the pass actually landed on origin before continuing.
+				if (ensurePushed) {
+					const pushCheck = ensurePushed();
+					// US-002: structured audit record of the verification, emitted
+					// whether ok or not, before any blocked return.
+					emit('pushed', outcome.storyId, uuid, {
+						sha: pushCheck.sha,
+						pushed: pushCheck.pushed,
+						ok: pushCheck.ok,
+						detail: pushCheck.detail,
+					});
+					if (!pushCheck.ok) {
+						lastOutcome = {
+							kind: 'blocked',
+							storyId: outcome.storyId,
+							detail: `push-verification failed: ${pushCheck.detail}`,
+						};
+						return { status: 'blocked', iterations, lastOutcome };
+					}
+				}
 			}
 
 			// Worker blocked: exit loop.

@@ -555,6 +555,57 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		}
 	};
 
+	// --- US-001 wiring: verify worker pass landed on origin before loop continues ---
+	// Idempotent push + HEAD vs origin/<branch> equality check. Uses spawnSync
+	// (encoding utf8) consistent with finalizeStory's git invocations above.
+	const ensurePushed: RunSupervisorOptions['ensurePushed'] = () => {
+		try {
+			const branchProc = spawnSync('git', ['branch', '--show-current'], {
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const branchName = (typeof branchProc.stdout === 'string' ? branchProc.stdout : '').trim();
+			if (!branchName) {
+				return { ok: false, pushed: false, sha: '', detail: 'could not determine current branch' };
+			}
+			// Idempotent push: "Everything up-to-date" -> ok:true pushed:false.
+			const pushProc = spawnSync('git', ['push', 'origin', branchName], {
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const pushStdout = typeof pushProc.stdout === 'string' ? pushProc.stdout : '';
+			const pushStderr = typeof pushProc.stderr === 'string' ? pushProc.stderr : '';
+			const combined = pushStdout + pushStderr;
+			const noop = combined.includes('Everything up-to-date');
+			if (pushProc.status !== 0 && !noop) {
+				return { ok: false, pushed: false, sha: '', detail: `git push failed: ${combined.trim()}` };
+			}
+			const pushed = !noop;
+			// Verify HEAD == origin/<branch>.
+			const headProc = spawnSync('git', ['rev-parse', 'HEAD'], {
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const localSha = (typeof headProc.stdout === 'string' ? headProc.stdout : '').trim();
+			const originProc = spawnSync('git', ['rev-parse', `origin/${branchName}`], {
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const originSha = (typeof originProc.stdout === 'string' ? originProc.stdout : '').trim();
+			if (!localSha || !originSha || localSha !== originSha) {
+				return {
+					ok: false,
+					pushed,
+					sha: localSha,
+					detail: `HEAD (${localSha || 'unknown'}) != origin/${branchName} (${originSha || 'unknown'}) after push`,
+				};
+			}
+			return { ok: true, pushed, sha: localSha, detail: `HEAD == origin/${branchName} (${localSha})` };
+		} catch (e) {
+			return { ok: false, pushed: false, sha: '', detail: e instanceof Error ? e.message : String(e) };
+		}
+	};
+
 	// --- US-013 wiring: structured per-story observability events ---
 	// logEvent is defined above (shared with the US-015 concurrency guard).
 	// readWorkerTokens: resolve a worker's transcript by uuid and sum its usage.
@@ -606,6 +657,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			logEvent,
 			readWorkerTokens: readWorkerTokensAdapter,
 			rateLimitResume,
+			ensurePushed,
 		});
 	} catch (err) {
 		lock.release();
