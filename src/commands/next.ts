@@ -416,13 +416,36 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	emitOk(`State file armed at ${writtenPath}`);
 
 	// US-001: build the per-iteration progress writer. Called by the supervisor
-	// on each iteration (live rewrite) and on terminal exit (unlink so dashboard
-	// shows idle instead of a stale active state).
+	// on each iteration (live rewrite) and on terminal exit. On 'complete' the
+	// state file is removed (idle); on a non-success terminal it is rewritten with
+	// active:false so status/dashboard show 'paused' (CAM-2) — see below.
 	const stateFileBase = { maxIterations, completionPromise, startedAt, pid };
 	const progressOnProgress: OnProgress = (payload) => {
 		if (payload.terminalStatus !== undefined) {
-			// Terminal exit: remove the state file so `cam status` shows idle.
-			try { unlinkSync(writtenPath); } catch { /* already gone */ }
+			// Terminal exit. 'complete' = the run finished cleanly: remove the state
+			// file so `cam status` / dashboard show idle. Any other terminal
+			// (blocked / awaiting-operator / max-iterations) STOPPED but needs the
+			// operator: rewrite with active:false so status/dashboard show 'paused'
+			// (the actionable state) instead of idle (CAM-2). Never leave active:true
+			// behind (that would read as a still-running loop).
+			if (payload.terminalStatus === 'complete') {
+				try { unlinkSync(writtenPath); } catch { /* already gone */ }
+				return;
+			}
+			const pausedBody = renderStateFile({
+				...stateFileBase,
+				active: false,
+				iteration: payload.iteration,
+				currentStory: payload.currentStoryId ?? null,
+				storiesDone: payload.storiesDone,
+				storiesTotal: payload.storiesTotal,
+				lastActivity: payload.lastActivity,
+			});
+			try {
+				writeFileSync(writtenPath, pausedBody, 'utf8');
+			} catch {
+				// Non-fatal: a stale active:true would be worse, but best-effort here.
+			}
 			return;
 		}
 		// Live iteration: rewrite with current progress fields.
