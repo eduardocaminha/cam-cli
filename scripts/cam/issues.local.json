@@ -1,5 +1,5 @@
 {
-  "next_id": 37,
+  "next_id": 38,
   "issues": [
     {
       "id": "CAM-1",
@@ -279,6 +279,14 @@
       "createdAt": "2026-06-09T16:03:32Z",
       "priority": "P1",
       "closedAt": "2026-06-09T16:36:40Z"
+    },
+    {
+      "id": "CAM-37",
+      "title": "Review dispatch sem out-log nem retry: reviewer no-op instantaneo bloqueia o loop (Bug B)",
+      "description": "PROBLEMA (descoberto dogfooding CAM-28, Bug B): o reviewer worker e os implement workers ocasionalmente saem instantaneos sem inicializar (claude -p instant-exit: sem transcript, pane vazio), mas o ; tmux wait-for -S do fim do comando ainda sinaliza o canal. Causa provavel: rate-limit apos run pesado (US-002 queimou 2.9M cache tokens em 9min, e o review worker logo depois no-opou) ou race de captura (pane morto antes do capture-pane). O implement path tem mitigacao (CAM-32 BUG 1 deu out-log duravel ao implementer; CAM-36 bloqueia spin de no-op). O REVIEW path nao tem nenhuma: buildReviewerWorkerArgv nao tem out-log, e makeReviewDispatch faz capturePane -> parseReviewVerdict -> se null retorna status:error, e o loop bloqueia na hora (zero retry). Foi o que matou a iteracao 2 do run de US-002 (review worker no-opou -> error -> Blocked, mesmo com ambas as stories passando). FIX (este PR): espelhar no review path a robustez do implementer. (1) out-log duravel pro reviewer (2>&1 | tee), makeReviewDispatch le o log duravel (fallback capturePane) pro verdict, fechando o gap classe CAM-32 BUG 1. (2) retry bounded no review dispatch: re-dispacha com uuid/channel frescos ate MAX_REVIEW_DISPATCH_ATTEMPTS antes de bloquear, tolerando instant-exit transiente. NOTA: a causa-raiz do instant-exit (rate-limit/env do claude) e intermitente e nao reproduzivel sob demanda; este fix torna o loop resiliente + o out-log torna a proxima ocorrencia diagnosticavel.",
+      "state": "open",
+      "createdAt": "2026-06-09T18:01:54Z",
+      "priority": "P1"
     }
   ]
 }

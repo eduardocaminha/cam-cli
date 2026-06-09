@@ -48,6 +48,14 @@ export interface ReviewerWorkerArgvOptions {
 	 * Defaults to 'subagent-reviewer'.
 	 */
 	agentName?: string;
+	/**
+	 * Durable output-log path. When set, the reviewer's stdout+stderr is tee'd to
+	 * this file so the verdict (and any instant-exit / rate-limit message) can be
+	 * read AFTER the ephemeral pane dies (CAM-37, mirrors CAM-32 BUG 1 for the
+	 * implementer). Will be shell-escaped. When omitted, output goes only to the
+	 * pane (legacy behaviour).
+	 */
+	outFile?: string;
 }
 
 /** Default agent name; matches .claude/agents/subagent-reviewer.md. */
@@ -78,12 +86,17 @@ function shellEscape(s: string): string {
 export function buildReviewerWorkerArgv(opts: ReviewerWorkerArgvOptions): string {
 	const agentName = opts.agentName ?? DEFAULT_REVIEWER_AGENT;
 	const escapedChannel = shellEscape(opts.channel);
+	// When outFile is set, tee stdout+stderr to a durable log so the verdict can
+	// be read even if the pane dies before capture-pane (CAM-32 BUG 1 class). The
+	// pipe binds tighter than `;`, so it is (claude ... | tee file) ; (tmux ...).
+	const teePart = opts.outFile ? ` 2>&1 | tee ${shellEscape(opts.outFile)}` : '';
 
 	return (
 		`claude -p` +
 		` --session-id ${opts.uuid}` +
 		` --output-format text` +
 		` --agent ${agentName}` +
+		teePart +
 		` ; tmux -L cam wait-for -S ${escapedChannel}`
 	);
 }
@@ -181,6 +194,16 @@ export interface MakeReviewDispatchOptions {
 	workerPaneId: string;
 	/** Agent name override. Defaults to DEFAULT_REVIEWER_AGENT. */
 	agentName?: string;
+	/**
+	 * Per-uuid durable out-log path for the reviewer (CAM-37). When provided
+	 * together with readFile, the dispatch tee's the reviewer output to this file
+	 * and reads the verdict from it (falling back to capture-pane), so a verdict
+	 * is not lost when the pane dies before capture. Optional: absent ⇒ legacy
+	 * capture-pane-only behaviour.
+	 */
+	workerOutFile?: (uuid: string) => string;
+	/** Read a file's contents (durable out-log reader). Optional; see workerOutFile. */
+	readFile?: (path: string) => string | null;
 }
 
 /** Default max review rounds (mirrors decide.ts and cam-review.md). */
@@ -215,19 +238,32 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		readPrd,
 		writePrd,
 		workerPaneId,
+		workerOutFile,
+		readFile,
 	} = opts;
 	const agentName = opts.agentName ?? DEFAULT_REVIEWER_AGENT;
 
 	return function reviewDispatch(uuid: string, channel: string): ReviewDispatchResult {
+		// CAM-37: tee the reviewer to a durable out-log when wired, so the verdict
+		// survives a pane that dies before capture-pane (mirrors CAM-32 BUG 1).
+		const outFile = workerOutFile ? workerOutFile(uuid) : '';
+
 		// Build and respawn the reviewer.
-		const shellCmd = buildReviewerWorkerArgv({ uuid, channel, agentName });
+		const shellCmd = buildReviewerWorkerArgv({
+			uuid,
+			channel,
+			agentName,
+			...(outFile ? { outFile } : {}),
+		});
 		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
 
 		// Block until the reviewer signals the channel.
 		waitFor(channel);
 
-		// Capture pane output.
-		const paneText = capturePane(workerPaneId);
+		// Prefer the durable out-log (survives pane death); fall back to the live
+		// pane capture when no out-log is wired or it is empty.
+		const durable = outFile && readFile ? readFile(outFile) : null;
+		const paneText = durable && durable.length > 0 ? durable : capturePane(workerPaneId);
 
 		// Parse the verdict.
 		const parsed = parseReviewVerdict(paneText);

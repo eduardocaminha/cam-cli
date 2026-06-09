@@ -517,7 +517,21 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 
 	const clock: RunSupervisorOptions['clock'] = () => new Date().toISOString();
 
-	// Review dispatch: wired via makeReviewDispatch (US-008).
+	// readFile + workerOutFile: durable worker out-log reader + per-uuid path
+	// (CAM-32 BUG 1). Defined here, before reviewDispatch, so the reviewer can
+	// reuse them for its own durable out-log (CAM-37).
+	const readFileOpt: RunSupervisorOptions['readFile'] = (p) => {
+		try {
+			return readFileSync(p, 'utf8');
+		} catch {
+			return null;
+		}
+	};
+	const workerOutFile: RunSupervisorOptions['workerOutFile'] = (uuid) =>
+		join(claudeDir, `.cam-worker-out-${uuid}.log`);
+
+	// Review dispatch: wired via makeReviewDispatch (US-008). Gets the same
+	// durable out-log treatment as the implementer (CAM-37).
 	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
 		spawn: (cmd, args) => {
 			const proc = spawnSync(cmd, args, { stdio: 'pipe' });
@@ -547,6 +561,8 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\n', 'utf8');
 		},
 		workerPaneId,
+		workerOutFile,
+		readFile: readFileOpt,
 	});
 
 	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {
@@ -556,18 +572,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	};
 
 	// --- CAM-32 wiring: durable worker output + supervisor-finalize tail ---
-	// readFile: generic reader for the durable worker out-log (BUG 1).
-	const readFileOpt: RunSupervisorOptions['readFile'] = (p) => {
-		try {
-			return readFileSync(p, 'utf8');
-		} catch {
-			return null;
-		}
-	};
-
-	// workerOutFile: per-uuid durable log path under .claude (BUG 1).
-	const workerOutFile: RunSupervisorOptions['workerOutFile'] = (uuid) =>
-		join(claudeDir, `.cam-worker-out-${uuid}.log`);
+	// (readFileOpt + workerOutFile are defined above, before reviewDispatch.)
 
 	// runGates: deterministic re-check before the supervisor finalizes a worker
 	// that implemented a story but did not flip prd.json (BUG 2).
