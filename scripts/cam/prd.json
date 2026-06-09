@@ -45,5 +45,11 @@
       "requires": null,
       "notes": "Files: src/commands/dashboard.ts (readSnapshot ~line 356-414; extend DashboardData; map new state fields), src/ui/Dashboard.tsx (Loop section; find the existing `SummaryRow label=\\\"iter\\\"` that renders `iter ${data.iteration}/${data.maxIterations}` by symbol, not line number, since lines drift), src/commands/status.ts (runStatus + parseStateFile output rendering). Depends on US-001 (the new state-file fields must exist before the UI can render them). Skills: Ink TUI rendering (`src/design/tokens.ts`, `src/ui/theme.ts`), ink-testing-library for the render assertion. Gotchas: readSnapshot and buildStatusReport are read-only and MUST NOT throw on missing/old-shape state files — keep the typeof guards and existing fallback-to-defaults pattern; do not introduce a divider-color signal for success/failure (project convention: glyph only)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "06279f8245c6c60df633b0c9a79a4b3ec0f598df",
+    "lastVerdict": "CLEAN"
+  }
 }

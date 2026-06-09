@@ -99,3 +99,10 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - The existing `composeDashboard` (non-Ink legacy path) was intentionally NOT changed per surgical-changes principle; its `iter 7/30` test still passes.
 ---
 
+
+## [2026-06-09T17:00:32Z] Review round 1: CLEAN (1 CRITICAL fixed in-branch)
+- subagent-reviewer round 1 verdict: FIXES_PENDING:1.
+- CRITICAL: CAM-36 no-progress guard em src/supervisor/loop.ts retornava blocked sem notifyTerminal('blocked'), deixando o state file 'active' stale apos um block (so aparece na convivencia CAM-36 + US-001 clear-on-exit). Fix: adicionada a chamada + teste de regressao no describe onProgress (US-001). Reviewer pre-aprovou o fix exato; gates verdes (752 pass, typecheck, embed-vendor:check). Round concluido CLEAN.
+- WARNING (skip): DashboardData deriva stories done/total do PRD live em vez do state file. Funcionalmente equivalente, fonte live e arguivelmente melhor. Decisao documentada.
+- Ready for /cam-ship.
+---
