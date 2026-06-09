@@ -36,6 +36,7 @@
 //   8. Tests pass (bun test).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
@@ -59,6 +60,7 @@ import {
 import { readEmbedded } from '../vendor/embedded.ts';
 import { runSupervisor, DEFAULT_PER_WORKER_TIMEOUT_MS, type RunSupervisorOptions } from '../supervisor/loop.ts';
 import { makeReviewDispatch } from '../supervisor/review.ts';
+import { makeFileEventLogger, readWorkerTokens } from '../supervisor/events.ts';
 import type { PrdSnapshot } from '../supervisor/decide.ts';
 
 // --- Constants -------------------------------------------------------------
@@ -446,6 +448,19 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		}
 	};
 
+	// --- US-013 wiring: structured per-story observability events ---
+	// logEvent: append one JSON line per worker lifecycle step to the durable
+	// event log under the project's .claude dir.
+	const logEvent: RunSupervisorOptions['logEvent'] = makeFileEventLogger(
+		join(claudeDir, 'cam-worker-events.jsonl'),
+	);
+	// readWorkerTokens: resolve a worker's transcript by uuid and sum its usage.
+	// Transcripts live under the Claude CONFIG dir (~/.claude or CLAUDE_CONFIG_DIR),
+	// not the project's .claude — match the convention in status.ts/dashboard.ts.
+	const transcriptClaudeDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude');
+	const readWorkerTokensAdapter: RunSupervisorOptions['readWorkerTokens'] = (uuid) =>
+		readWorkerTokens(uuid, cwd, transcriptClaudeDir);
+
 	// 4. Dispatch to the supervisor.
 	const supervisorFn = options.supervisorFn ?? runSupervisor;
 	emitSectionHeading('Loop');
@@ -474,6 +489,8 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			taskPrompt,
 			maxIterations,
 			perWorkerTimeoutMs,
+			logEvent,
+			readWorkerTokens: readWorkerTokensAdapter,
 		});
 	} catch (err) {
 		printError(

@@ -20,6 +20,7 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
 - **Supervisor timeout pattern (US-011)**: `tmux wait-for` has NO native timeout. Bound it by running via `spawnSync(..., { timeout: ms })`; when the deadline fires, spawnSync kills the client process (SIGTERM) and sets `result.signal`. Check `result.signal !== null` for `timedOut`. Pane-death detection: `spawnSync('tmux', ['-L', 'cam', 'list-panes', '-t', paneId])` exits 0 if pane exists, non-zero if dead. Timeout/pane-died blocked outcomes continue the loop (proceed to decideNextAction) rather than exiting, enabling recovery to the next story. Decouple reviewer wait (`ReviewWaitForFn = (channel) => void`) from supervisor `WaitForFn` to avoid forcing the timeout signature onto the unbounded review wait.
 - **Sentinel polling mode (US-012)**: interactive workers (plan/review with human input) do NOT exit on their own, so the supervisor polls `capture-pane` instead of waiting for a tmux channel. Use `implementerMode: 'sentinel'` in `RunSupervisorOptions`; inject `sleepFn` (no-op for tests), `nowMs` (deterministic time source), and `pollIntervalMs`. `buildImplementerWorkerArgv({ interactive: true })` omits `-p` and `--output-format` and the wait-for chain. `parseAnySentinel(text)` in `result.ts` detects `CAM_IMPLEMENTER_STATUS=*`, `CAM_REVIEWER_STATUS=*`, or `<review>...</review>` tags. Same timeout/pane-died semantics as the exit path: both `continue` the supervisor loop.
+- **Structured worker events (US-013)**: `src/supervisor/events.ts` defines `WorkerEvent { ts, storyId, uuid, kind, detail }` and the supervisor appends one JSON line per lifecycle step to `.claude/cam-worker-events.jsonl`. The logger is injected (`logEvent?: WorkerEventLogger`); default `makeFileEventLogger(path)`, tests use `makeInMemoryEventLogger()`. Both injections (`logEvent`, `readWorkerTokens`) are OPTIONAL: absent `logEvent` means zero events and zero behavior change (existing loop tests pass untouched). Emit sites in `loop.ts`: `worker-start` right after `respawn-pane`, `worker-end` after `waitFor`/poll-loop, `result`+`tokens` only where `readWorkerOutcome` produced a real outcome (NOT on timeout/pane-death: no canonical per-story record exists there). `buildResultDetail(outcome, handoff)` builds the rich `result` detail: `filesChanged` = handoff `createdFiles ++ modifiedFiles`, `gates` = `pass` only for a `pass` outcome else `unknown` (supervisor has no per-worker gate transcript), `docsValidated` mirrors handoff `officialDocsValidated`. The `tokens` event reuses `readWorkerTokens(uuid, cwd, claudeDir)` -> `transcriptPathForSession` + `parseTranscriptUsage`, skipped (no event) when the transcript is absent, never logs zeros. Logger uses synchronous `appendFileSync` (not async `Bun.file`) to match the supervisor's all-synchronous injected I/O.
 
 ## 2026-06-08 21:00 - US-008: Review worker dispatch (autonomous headless reviewer)
 
@@ -488,4 +489,64 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
   path unchanged (no fakes needed for the new options).
 - `channel` in ImplementerWorkerArgvOptions is now optional: not needed for interactive
   mode. Existing callers that pass `channel` explicitly are unaffected.
+---
+
+## 2026-06-08 - US-013: Structured per-story observability events
+
+### What was done
+- Created `src/supervisor/events.ts`:
+  - `WorkerEvent { ts, storyId, uuid, kind, detail }` with `kind` in
+    `worker-start | worker-end | result | tokens`.
+  - `ResultEventDetail { outcome, filesChanged, gates: { typecheck, tests }, docsValidated }`,
+    the canonical per-story factual record (intended to subsume progress.txt's per-story
+    prose under CAM-31; the durable Codebase Patterns prose stays separate).
+  - `TokensEventDetail { inputTokens, outputTokens, cacheReadTokens }`.
+  - `WorkerEventLogger` injected sink; `makeFileEventLogger(path)` (default, appends one
+    JSON line via synchronous `appendFileSync`) and `makeInMemoryEventLogger()` (tests).
+  - `buildResultDetail(outcome, handoff)`: filesChanged = createdFiles ++ modifiedFiles;
+    gates pass only for a pass outcome else unknown; docsValidated mirrors handoff.
+  - `readWorkerTokens(uuid, cwd, claudeDir, readFile?)`: resolves the per-story transcript
+    via `transcriptPathForSession` (US-002), sums with `parseTranscriptUsage`; null when
+    the transcript is absent.
+- Integrated in `src/supervisor/loop.ts`: added optional `logEvent` + `readWorkerTokens`
+  injections; emit `worker-start` after respawn-pane, `worker-end` after waitFor/poll-loop,
+  and `result`+`tokens` only where `readWorkerOutcome` produced a real outcome (both exit
+  and sentinel paths). Extended `HandoffSnapshot` with createdFiles/modifiedFiles/
+  officialDocsValidated to feed the result detail. `clock` (was unused `_clock`) now drives
+  event timestamps.
+- Wired `src/commands/next.ts`: `logEvent` -> `makeFileEventLogger(.claude/cam-worker-events.jsonl)`;
+  `readWorkerTokens` bound to cwd + the Claude config dir (`CLAUDE_CONFIG_DIR` or `~/.claude`),
+  matching status.ts/dashboard.ts.
+- Created `test/supervisor/events.test.ts` (10 tests): logger round-trips, buildResultDetail
+  mapping, readWorkerTokens path/sum/null, the full lifecycle through runSupervisor
+  (worker-start -> worker-end -> result -> tokens, one uuid), and a zero-events-when-absent
+  guard.
+
+### Files changed
+- `src/supervisor/events.ts` (new)
+- `src/supervisor/loop.ts` (optional logEvent/readWorkerTokens, emit sites, HandoffSnapshot fields)
+- `src/commands/next.ts` (production adapters)
+- `test/supervisor/events.test.ts` (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 687 pass
+
+### Step 5.5 docs validation
+- lib: Bun file I/O (node:fs append), status: corrected, url: https://bun.com/docs/api/file-io
+- summary: AC#3 said "append via Bun.file", but Bun.write is async and overwrites, FileSink
+  is async, and there is no synchronous Bun.file append; Bun ships a near-complete node:fs.
+  Used synchronous `appendFileSync` to keep the logger aligned with the supervisor's
+  all-synchronous injected I/O (and the existing node:fs idiom in usage.ts/next.ts). The
+  file-logger test proves the append empirically.
+
+### Notes
+- Both injections are OPTIONAL: absent `logEvent` => zero events and zero behavior change,
+  so all pre-existing loop tests pass untouched (no fakes needed).
+- No `result`/`tokens` on timeout/pane-death: a worker that never produced an outcome has
+  no canonical per-story record. `worker-end` still fires there with the failure mode.
+- `tokens` is skipped (no event) when the transcript is absent rather than logging zeros.
+- For US-014 (dashboard tokens) the event log is now the durable per-story token source;
+  US-014 may also read `.cam-worker-<US>.session` markers directly.
 ---

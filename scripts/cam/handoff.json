@@ -1,27 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-012",
-    "title": "Interactive review/plan in-pane with sentinel detection"
+    "id": "US-013",
+    "title": "Structured per-story observability events"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-08T23:55:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-09T00:35:22Z",
+  "createdFiles": [
+    "src/supervisor/events.ts",
+    "test/supervisor/events.test.ts"
+  ],
   "modifiedFiles": [
-    "src/supervisor/result.ts",
-    "src/supervisor/worker-argv.ts",
     "src/supervisor/loop.ts",
-    "test/supervisor/loop.test.ts",
-    "test/supervisor/worker-argv.test.ts"
+    "src/commands/next.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-012 adds implementerMode:'sentinel' to runSupervisor. The sentinel polling loop injects sleepFn/nowMs/pollIntervalMs; production callers (next.ts) should inject Bun.sleepSync for real delays if needed. parseAnySentinel() in result.ts detects CAM_IMPLEMENTER_STATUS, CAM_REVIEWER_STATUS, and <review> tags. buildImplementerWorkerArgv now accepts interactive:true (no -p, no --output-format, no wait-for chain). DEFAULT_POLL_INTERVAL_MS = 5000 exported from loop.ts.",
+  "nextStoryContext": "US-013 added src/supervisor/events.ts (WorkerEvent / WorkerEventLogger / buildResultDetail / readWorkerTokens) and emits worker-start/worker-end/result/tokens from runSupervisor to .claude/cam-worker-events.jsonl. Both loop injections (logEvent, readWorkerTokens) are OPTIONAL: absent logEvent means zero events and zero behavior change. US-014 (Per-story token display in dashboard) can reuse readWorkerTokens(uuid, cwd, claudeDir) + transcriptPathForSession to resolve per-story tokens from the .cam-worker-<US>.session markers; cam-worker-events.jsonl is also a durable per-story token source. Remaining non-operator stories: US-014, US-015, US-016, US-017. US-018 requires:operator (real E2E). NOTE: there is no live -L cam tmux worker pane / .claude/.cam-worker-pane in this checkout, so the supervisor cannot be driven headless here without bootstrapping the slot; US-013 was implemented directly in a Claude Code session, not via a dispatched worker.",
   "officialDocsValidated": [
     {
-      "lib": "tmux capture-pane",
-      "url": "https://man.openbsd.org/tmux.1",
-      "fetchedAt": "2026-06-08T23:55:00Z",
-      "status": "aligned",
-      "summary": "Confirmed: capture-pane -p routes output to stdout; -S start-line sets the scan start (negative = history). The -N flag in the story notes is a separate formatting flag (preserve trailing spaces), not an end-line bound. End-line is set via -E. Our capturePane is injectable so actual tmux flags are the caller's concern; no mismatch in the loop implementation."
+      "lib": "Bun file I/O (node:fs append)",
+      "url": "https://bun.com/docs/api/file-io",
+      "fetchedAt": "2026-06-09T00:35:22Z",
+      "status": "corrected",
+      "summary": "AC#3 said 'append via Bun.file', but Bun.write is async and overwrites, FileSink is async, and there is no synchronous Bun.file append; Bun ships a near-complete node:fs implementation. Used synchronous appendFileSync to match the supervisor's all-synchronous injected I/O and the existing node:fs idiom in usage.ts/next.ts. The file-logger test proves the append empirically."
     }
   ]
 }

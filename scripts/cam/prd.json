@@ -276,7 +276,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: new src/supervisor/events.ts, test/supervisor/events.test.ts, integrate in src/supervisor/loop.ts. Reuse parseTranscriptUsage from src/transcript/usage.ts. The event log is consumed by US-014 (dashboard tokens) and the runbook (US-017). Designed as the canonical per-story factual record so a follow-up (CAM-31) can retire the freeform progress.txt per-story log; the durable Codebase Patterns block stays separate (prose)."
     },

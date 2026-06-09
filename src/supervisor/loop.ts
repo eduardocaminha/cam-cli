@@ -26,6 +26,8 @@ import type { PrdSnapshot } from './decide.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
+import { buildResultDetail } from './events.ts';
+import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail } from './events.ts';
 
 // ---------------------------------------------------------------------------
 // Injected dependency types
@@ -126,6 +128,12 @@ export interface HandoffSnapshot {
 		id?: string;
 		title?: string;
 	};
+	/** Files the worker created this story (surfaced for US-013 result events). */
+	createdFiles?: string[];
+	/** Files the worker modified this story (surfaced for US-013 result events). */
+	modifiedFiles?: string[];
+	/** Step-5.5 docs validated this story (surfaced for US-013 result events). */
+	officialDocsValidated?: Array<{ lib?: string; status?: string; url?: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +223,19 @@ export interface RunSupervisorOptions {
 	 * Defaults to Date.now. Used for elapsed-time tracking in sentinel polling.
 	 */
 	nowMs?: () => number;
+	/**
+	 * Structured observability event sink (US-013). When provided, the supervisor
+	 * emits worker-start / worker-end / result / tokens events per worker
+	 * lifecycle. Optional: absent ⇒ no events (zero behavior change).
+	 */
+	logEvent?: WorkerEventLogger;
+	/**
+	 * Resolve per-story token usage for a worker uuid (US-013). Bound by the
+	 * caller to cwd + claude config dir (see readWorkerTokens in events.ts).
+	 * Returns null when the transcript is absent; a null result skips the
+	 * 'tokens' event. Optional: absent ⇒ no 'tokens' events.
+	 */
+	readWorkerTokens?: (uuid: string) => TokensEventDetail | null;
 }
 
 /** Terminal status returned by runSupervisor. */
@@ -284,7 +305,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 		readPrd,
 		writePrd,
 		readHandoff: _readHandoff,
-		clock: _clock,
+		clock,
 		reviewDispatch,
 		writeSessionMarker,
 		isPaneAlive,
@@ -309,6 +330,27 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// actual sleeping must inject Bun.sleepSync (or similar).
 	const sleepFn = opts.sleepFn ?? ((_ms: number) => {});
 	const now = opts.nowMs ?? (() => Date.now());
+	const logEvent = opts.logEvent;
+	const readWorkerTokens = opts.readWorkerTokens;
+
+	// --- US-013 structured event emitters (no-op when logEvent absent) ---
+	const emit = (
+		kind: WorkerEventKind,
+		storyId: string | undefined,
+		uuid: string,
+		detail: WorkerEventDetail,
+	): void => {
+		if (!logEvent) return;
+		logEvent({ ts: clock(), storyId, uuid, kind, detail });
+	};
+	// 'tokens' event: read the per-story transcript at worker end. Skipped when
+	// no reader is wired or the transcript is absent (null) — never logs zeros.
+	const emitTokens = (storyId: string | undefined, uuid: string): void => {
+		if (!logEvent || !readWorkerTokens) return;
+		const tokens = readWorkerTokens(uuid);
+		if (tokens === null) return;
+		logEvent({ ts: clock(), storyId, uuid, kind: 'tokens', detail: tokens });
+	};
 
 	let iterations = 0;
 	let lastOutcome: WorkerOutcome | null = null;
@@ -363,6 +405,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// We accept a generic spawn fn, so call it directly with the respawn args.
 			spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
 
+			// US-013: worker-start. storyId is advisory here (the worker
+			// self-selects); later events carry the actual completed story.
+			emit('worker-start', advisoryStoryId, uuid, { channel, mode: implementerMode });
+
 			// ---------------------------------------------------------------
 			// Sentinel polling mode (US-012): interactive worker does NOT exit
 			// on its own, so we poll capture-pane until we see the sentinel.
@@ -388,6 +434,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				}
 
 				iterations++;
+
+				// US-013: worker-end (sentinel mode). pollOutcome records how it ended.
+				emit('worker-end', advisoryStoryId, uuid, { mode: 'sentinel', pollOutcome });
 
 				if (pollOutcome === 'pane-died') {
 					lastOutcome = {
@@ -434,6 +483,11 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				});
 
 				lastOutcome = sentinelOutcome;
+
+				// US-013: result + tokens, keyed to the ACTUAL completed story.
+				const sentinelStoryId = sentinelOutcome.storyId ?? advisoryStoryId;
+				emit('result', sentinelStoryId, uuid, buildResultDetail(sentinelOutcome, _readHandoff()));
+				emitTokens(sentinelStoryId, uuid);
 
 				if (sentinelOutcome.kind === 'pass' && sentinelOutcome.storyId !== undefined) {
 					writeSessionMarker(sentinelOutcome.storyId, uuid);
@@ -491,6 +545,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// Block until the worker signals the channel, bounded by the per-worker deadline.
 			const waitResult = waitFor(channel, perWorkerTimeoutMs);
 
+			// US-013: worker-end (exit mode). The worker has stopped (signalled or timed out).
+			emit('worker-end', advisoryStoryId, uuid, { mode: 'exit', timedOut: waitResult.timedOut });
+
 			// --- Timeout / pane-death handling ---
 			// If the deadline fired before the channel was signalled, the worker is
 			// either stuck (pane alive) or has crashed (pane dead). In both cases we
@@ -515,7 +572,8 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						detail: 'timeout',
 					};
 				}
-				// US-013 structured log placeholder: supervisor detected timeout/pane-death.
+				// US-013: worker-end already emitted above. No 'result'/'tokens' on a
+				// timeout/pane-death: there is no canonical per-story record to log.
 				// Proceed to decideNextAction on next iteration (do not exit the loop).
 				continue;
 			}
@@ -548,6 +606,11 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 			lastOutcome = outcome;
 			iterations++;
+
+			// US-013: result + tokens, keyed to the ACTUAL completed story.
+			const exitStoryId = outcome.storyId ?? advisoryStoryId;
+			emit('result', exitStoryId, uuid, buildResultDetail(outcome, _readHandoff()));
+			emitTokens(exitStoryId, uuid);
 
 			// Write session marker keyed to the ACTUAL completed story.
 			if (outcome.kind === 'pass' && outcome.storyId !== undefined) {
