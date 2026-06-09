@@ -63,6 +63,7 @@ import { runSupervisor, DEFAULT_PER_WORKER_TIMEOUT_MS, type RunSupervisorOptions
 import { makeReviewDispatch } from '../supervisor/review.ts';
 import { makeFileEventLogger, readWorkerTokens } from '../supervisor/events.ts';
 import { acquireSupervisorLock, SUPERVISOR_LOCK_FILE, type AcquireLockResult } from '../supervisor/lock.ts';
+import { parseResetTime, calculateWaitMs } from '../retry/time-parser.ts';
 import type { PrdSnapshot } from '../supervisor/decide.ts';
 
 // --- Constants -------------------------------------------------------------
@@ -93,6 +94,12 @@ const HANDOFF_PATH_CANONICAL = 'scripts/cam/handoff.json';
 /** Default task prompt sent to the implementer agent. */
 export const DEFAULT_TASK_PROMPT =
 	'Implement the next user story from scripts/cam/prd.json per your AGENT.md.';
+
+/** Rate-limit resume tuning (US-016): margin + fallback fed to calculateWaitMs. */
+const RL_MARGIN_SECONDS = 60;
+const RL_FALLBACK_HOURS = 5;
+/** Cap a single synchronous rate-limit sleep so the loop cannot block forever. */
+const RL_MAX_SLEEP_MS = 6 * 60 * 60 * 1000;
 
 // --- Concurrency-guard shutdown handler (US-015) ---------------------------
 
@@ -555,6 +562,17 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const readWorkerTokensAdapter: RunSupervisorOptions['readWorkerTokens'] = (uuid) =>
 		readWorkerTokens(uuid, cwd, transcriptClaudeDir);
 
+	// --- US-016 wiring: pause on rate-limit, then resume (respawn same session) ---
+	// Reuse src/retry/* timing to compute how long to wait from the rate-limit
+	// message, then sleep synchronously before the supervisor respawns the worker
+	// with the same --session-id. Capped at RL_MAX_SLEEP_MS so the loop cannot
+	// block indefinitely on a garbled/unparseable reset time.
+	const rateLimitResume: RunSupervisorOptions['rateLimitResume'] = (info) => {
+		const parsed = info.message ? parseResetTime(info.message) : null;
+		const waitMs = calculateWaitMs(parsed, RL_MARGIN_SECONDS, RL_FALLBACK_HOURS, new Date());
+		if (waitMs > 0) Bun.sleepSync(Math.min(waitMs, RL_MAX_SLEEP_MS));
+	};
+
 	// 4. Dispatch to the supervisor.
 	const supervisorFn = options.supervisorFn ?? runSupervisor;
 	emitSectionHeading('Loop');
@@ -585,6 +603,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			perWorkerTimeoutMs,
 			logEvent,
 			readWorkerTokens: readWorkerTokensAdapter,
+			rateLimitResume,
 		});
 	} catch (err) {
 		lock.release();

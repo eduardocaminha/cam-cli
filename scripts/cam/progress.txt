@@ -23,6 +23,36 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Structured worker events (US-013)**: `src/supervisor/events.ts` defines `WorkerEvent { ts, storyId, uuid, kind, detail }` and the supervisor appends one JSON line per lifecycle step to `.claude/cam-worker-events.jsonl`. The logger is injected (`logEvent?: WorkerEventLogger`); default `makeFileEventLogger(path)`, tests use `makeInMemoryEventLogger()`. Both injections (`logEvent`, `readWorkerTokens`) are OPTIONAL: absent `logEvent` means zero events and zero behavior change (existing loop tests pass untouched). Emit sites in `loop.ts`: `worker-start` right after `respawn-pane`, `worker-end` after `waitFor`/poll-loop, `result`+`tokens` only where `readWorkerOutcome` produced a real outcome (NOT on timeout/pane-death: no canonical per-story record exists there). `buildResultDetail(outcome, handoff)` builds the rich `result` detail: `filesChanged` = handoff `createdFiles ++ modifiedFiles`, `gates` = `pass` only for a `pass` outcome else `unknown` (supervisor has no per-worker gate transcript), `docsValidated` mirrors handoff `officialDocsValidated`. The `tokens` event reuses `readWorkerTokens(uuid, cwd, claudeDir)` -> `transcriptPathForSession` + `parseTranscriptUsage`, skipped (no event) when the transcript is absent, never logs zeros. Logger uses synchronous `appendFileSync` (not async `Bun.file`) to match the supervisor's all-synchronous injected I/O.
 - **Per-story tokens in dashboard (US-014)**: `readSnapshot` now returns `storyTokens: Record<storyId, TranscriptUsage>`. It reads each story's `.claude/.cam-worker-<id>.session` marker (project `.claude`, via `readWorkerSessionMarker`), resolves the transcript with `transcriptPathForSession(uuid, cwd, claudeDir)`, and sums usage. `readTranscriptTokens` was generalized to take a resolved path (one reader for the orchestrator transcript AND per-story transcripts); the orchestrator caller now resolves the path first. Stories with no marker (or unreadable transcript) are omitted from the map, so `Dashboard.tsx` `StoryRow` shows a muted `STORY_TOKENS_PLACEHOLDER` (`·`) instead of crashing; stories with data show `renderTokensLine(...)` next to the row. State stays signalled by the glyph (✓/→/◌), never the divider. The Ink render is asserted via `ink-testing-library` (`test/dashboard.test.ts`), not a comment.
 - **Single-supervisor lock (US-015)**: `src/supervisor/lock.ts` is the pure guard: `acquireSupervisorLock(pid, project, io)` over an injected `LockIo` (`read`/`write`/`remove`/`pidAlive`/`clock` + optional `logEvent`). It refuses when an existing lock names a DIFFERENT, live pid; takes over a dead pid after emitting a `stale-lock` event (the union in `events.ts` gained `'stale-lock'`, a supervisor-level event with `uuid: 'supervisor'`); overwrites an unparseable lock with no event. Wired in `next.ts` (NOT in the pure `runSupervisor`, which stays side-effect-free): acquire right after the worker-pane check and before the state-file write, reject with exit 1 on conflict, and release at every terminal return AND via a single process-wide SIGINT/SIGTERM handler (`installShutdownHandler`, module-singleton tracking `currentLockRelease`). `acquireLock` and `onShutdown` are injectable on `NextOptions` so tests drive the conflict/release paths without real processes or signals. PID liveness reuses `isPidAlive` from `resume.ts` (do NOT duplicate the signal-0 probe). Lock file `.claude/.cam-supervisor.lock` is gitignored.
+- **Rate-limit pause/resume (US-016)**: handled ONLY in the exit-mode worker path of `loop.ts`, gated behind an optional `rateLimitResume?` injection (absent ⇒ zero behavior change; a RATE_LIMIT pane then flows through `readWorkerOutcome` as `unknown` -> blocked exactly as before). After capturing pane text, `detectRateLimit(text)` = the `CAM_IMPLEMENTER_STATUS=RATE_LIMIT` sentinel OR `isRateLimited(text)` (reused from `src/retry/patterns.ts`). On detection the supervisor emits a `'rate-limited'` event (`phase: 'pause'`), awaits `rateLimitResume({ message, attempt })`, emits `phase: 'resume'`, then RESPAWNS the SAME `shellCmd` (same uuid == `--session-id`, same channel marker -> session continuity, AC4), re-waits, and re-captures, bounded by `maxRateLimitRetries` (default 5). A resume-wait timeout reuses the normal timeout path via a labeled `continue outer`; exhausting retries returns blocked `rate-limit retries exhausted`. `result.ts` / `WorkerOutcomeKind` were NOT changed (avoids regressing the sentinel-mode path). The production `rateLimitResume` (in `next.ts`) reuses `parseResetTime` + `calculateWaitMs` from `src/retry/time-parser.ts` and `Bun.sleepSync`, capped at `RL_MAX_SLEEP_MS` (6h). The outer supervisor `while` is now labeled `outer:` so the inner resume loop can bail to the next iteration on timeout.
+
+## 2026-06-09 03:00 - US-016: Rate-limit handling via src/retry/*
+
+### What was done
+- `src/supervisor/loop.ts`: added an optional `rateLimitResume?` + `maxRateLimitRetries?` to `RunSupervisorOptions`, a `detectRateLimit()` helper (RATE_LIMIT sentinel OR `isRateLimited`), and a bounded pause/resume loop in the exit-mode worker path that respawns the SAME session and emits `'rate-limited'` pause/resume events. Labeled the outer loop `outer:` for timeout bail-out.
+- `src/supervisor/events.ts`: added `'rate-limited'` to `WorkerEventKind`.
+- `src/commands/next.ts`: wired the production `rateLimitResume` reusing `parseResetTime`/`calculateWaitMs` (`src/retry/time-parser.ts`) + `Bun.sleepSync` (capped at 6h), and passed it to the supervisor.
+- `test/supervisor/loop.test.ts`: 5 new tests (sentinel-triggered resume + same-session respawn, TUI-message-triggered resume, retries-exhausted -> blocked, resume timeout, no-hook zero-behavior-change).
+
+### Files changed
+- `src/supervisor/loop.ts`
+- `src/supervisor/events.ts`
+- `src/commands/next.ts`
+- `test/supervisor/loop.test.ts`
+- `scripts/cam/prd.json`, `scripts/cam/progress.txt`, `scripts/cam/handoff.json`
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 708 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+- summary: Reuses the in-repo `src/retry/*` (ported from claude-auto-retry, already vendored) and the `claude --session-id` continuity contract established + validated in US-002/US-003. No new npm packages, no external doc fetch warranted.
+
+### Notes
+- Scoped to exit-mode (autonomous headless) workers, where "resume == respawn with the same --session-id" is well-defined. Sentinel/interactive mode (plan/review) keeps its prior behavior (a RATE_LIMIT there reads as blocked); a keys-based retry-monitor for interactive panes can be a follow-up if needed.
+- Implemented directly in a Claude Code session (no live -L cam worker pane in this checkout), not via a dispatched headless worker; no .cam-worker-US-016.session marker exists.
+---
 
 ## 2026-06-09 02:00 - US-015: Single-supervisor concurrency guard
 

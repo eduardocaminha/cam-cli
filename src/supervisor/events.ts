@@ -38,8 +38,17 @@ import type { WorkerOutcome, WorkerOutcomeKind } from './result.ts';
  *
  * Most kinds are per-worker. 'stale-lock' is a supervisor-level event (US-015):
  * it records that a new supervisor took over a lock whose owning pid was dead.
+ * 'rate-limited' (US-016) records a worker pause (phase: 'pause') and the
+ * subsequent resume (phase: 'resume') when a worker hits an Anthropic
+ * rate-limit; the story is paused, never marked failed.
  */
-export type WorkerEventKind = 'worker-start' | 'worker-end' | 'result' | 'tokens' | 'stale-lock';
+export type WorkerEventKind =
+	| 'worker-start'
+	| 'worker-end'
+	| 'result'
+	| 'tokens'
+	| 'stale-lock'
+	| 'rate-limited';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';

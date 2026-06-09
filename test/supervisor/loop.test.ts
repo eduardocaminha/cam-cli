@@ -33,6 +33,7 @@ import type {
 	IsPaneAlive,
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
 // Fake builder helpers
@@ -983,5 +984,178 @@ describe('runSupervisor', () => {
 		const firstCall = spawnCalls[0] ?? [];
 		expect(firstCall).toContain('respawn-pane');
 		expect(firstCall).toContain(WORKER_PANE_ID);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-016: rate-limit pause/resume
+// ---------------------------------------------------------------------------
+
+/** Pane text with the headless worker's RATE_LIMIT exit sentinel. */
+const RATE_LIMIT_SENTINEL_PANE = `Working hard\nCAM_IMPLEMENTER_STATUS=RATE_LIMIT\n`;
+/** Pane text with the claude TUI rate-limit message (matched by isRateLimited). */
+const TUI_RATE_LIMIT_PANE = `Hit your usage limit\nresets 3pm\n`;
+
+describe('runSupervisor rate-limit handling (US-016)', () => {
+	test('RATE_LIMIT sentinel: pauses, resumes the same session, then completes', async () => {
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdTrue = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
+		const prdDone = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+
+		let prdCall = 0;
+		const readPrd = () => {
+			prdCall++;
+			if (prdCall === 1) return prdFalse; // decideNextAction iter 1 -> implement
+			if (prdCall === 2) return prdTrue; // readWorkerOutcome fileReader -> pass
+			return prdDone; // decideNextAction iter 2 -> complete
+		};
+
+		let capCall = 0;
+		const capturePane = (_paneId: string) => {
+			capCall++;
+			return capCall === 1 ? RATE_LIMIT_SENTINEL_PANE : donePane('US-001');
+		};
+
+		const spawnCalls: string[][] = [];
+		let rlCalls = 0;
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const opts = makeBaseOpts({
+			readPrd,
+			readHandoff: () => makeHandoff('US-001'),
+			capturePane,
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			rateLimitResume: () => {
+				rlCalls++;
+			},
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		// The pause hook fired exactly once.
+		expect(rlCalls).toBe(1);
+		// Pause + resume events were recorded.
+		const rl = events.filter((e) => e.kind === 'rate-limited');
+		expect(rl.map((e) => (e.detail as Record<string, unknown>)['phase'])).toEqual(['pause', 'resume']);
+		// The worker was respawned twice with the SAME session-id (continuity).
+		const workerRespawns = spawnCalls.filter(
+			(a) => a[2] === 'respawn-pane' && a[6] !== undefined && a[6] !== 'echo timeout',
+		);
+		expect(workerRespawns).toHaveLength(2);
+		const uuid = '00000000-0000-0000-0000-000000000001';
+		expect(workerRespawns[0]![6]).toContain(`--session-id ${uuid}`);
+		expect(workerRespawns[1]![6]).toContain(`--session-id ${uuid}`);
+	});
+
+	test('claude TUI rate-limit message also triggers the resume flow', async () => {
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdTrue = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
+		const prdDone = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+
+		let prdCall = 0;
+		const readPrd = () => {
+			prdCall++;
+			if (prdCall === 1) return prdFalse;
+			if (prdCall === 2) return prdTrue;
+			return prdDone;
+		};
+
+		let capCall = 0;
+		const capturePane = (_paneId: string) => {
+			capCall++;
+			return capCall === 1 ? TUI_RATE_LIMIT_PANE : donePane('US-001');
+		};
+
+		let rlCalls = 0;
+		const opts = makeBaseOpts({
+			readPrd,
+			readHandoff: () => makeHandoff('US-001'),
+			capturePane,
+			rateLimitResume: (info) => {
+				rlCalls++;
+				// The parsed rate-limit message is forwarded to the hook.
+				expect(info.message).toContain('resets');
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(rlCalls).toBe(1);
+	});
+
+	test('blocks when rate-limit persists beyond maxRateLimitRetries', async () => {
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+
+		let rlCalls = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => prdFalse,
+			readHandoff: () => makeHandoff('US-001'),
+			// Always rate-limited.
+			capturePane: (_paneId) => RATE_LIMIT_SENTINEL_PANE,
+			rateLimitResume: () => {
+				rlCalls++;
+			},
+			maxRateLimitRetries: 2,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(rlCalls).toBe(2);
+		expect(result.lastOutcome?.detail).toContain('rate-limit retries exhausted');
+	});
+
+	test('a timeout during a resume attempt is handled like any worker timeout', async () => {
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+
+		// First wait succeeds (worker emits rate-limit), the resume wait times out.
+		let waitCall = 0;
+		const waitFor = (_channel: string, _timeoutMs: number) => {
+			waitCall++;
+			return { timedOut: waitCall >= 2 };
+		};
+
+		const opts = makeBaseOpts({
+			readPrd: () => prdFalse,
+			readHandoff: () => makeHandoff('US-001'),
+			capturePane: (_paneId) => RATE_LIMIT_SENTINEL_PANE,
+			waitFor,
+			rateLimitResume: () => {},
+			maxIterations: 1,
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Resume timed out -> blocked outcome, loop hit the iteration cap.
+		expect(result.status).toBe('max-iterations');
+		expect(result.lastOutcome?.detail).toBe('timeout');
+	});
+
+	test('no rateLimitResume injected: rate-limit is not specially handled (zero behavior change)', async () => {
+		// Without the hook, a RATE_LIMIT pane flows through readWorkerOutcome as
+		// 'unknown' -> blocked, exactly as before US-016.
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+
+		const opts = makeBaseOpts({
+			readPrd: () => prdFalse,
+			readHandoff: () => null,
+			capturePane: (_paneId) => RATE_LIMIT_SENTINEL_PANE,
+			// rateLimitResume intentionally omitted.
+		});
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('blocked');
 	});
 });

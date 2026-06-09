@@ -26,6 +26,7 @@ import type { PrdSnapshot } from './decide.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
+import { isRateLimited, findRateLimitMessage } from '../retry/patterns.ts';
 import { buildResultDetail } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail } from './events.ts';
 
@@ -118,6 +119,20 @@ export interface ReviewDispatchResult {
  * Called with the ACTUAL completed storyId (from handoff/sentinel), not advisory.
  */
 export type WriteSessionMarker = (storyId: string, uuid: string) => void;
+
+/**
+ * Pause until an Anthropic rate-limit clears, then return so the supervisor can
+ * resume the worker (US-016). The supervisor calls this on detecting a
+ * rate-limit; the production adapter (in next.ts) reuses src/retry/* to compute
+ * the wait from the rate-limit message and sleeps. Tests inject a fake that
+ * returns immediately to keep runtime low. May be sync or async.
+ */
+export type RateLimitResume = (info: {
+	/** The rate-limit message scraped from the pane, or null if none parsed. */
+	message: string | null;
+	/** 1-based resume attempt number. */
+	attempt: number;
+}) => void | Promise<void>;
 
 /**
  * Minimal shape of handoff.json consumed by runSupervisor.
@@ -236,6 +251,20 @@ export interface RunSupervisorOptions {
 	 * 'tokens' event. Optional: absent ⇒ no 'tokens' events.
 	 */
 	readWorkerTokens?: (uuid: string) => TokensEventDetail | null;
+	/**
+	 * Pause/resume hook for worker rate-limits (US-016). When provided, an
+	 * exit-mode worker whose output shows a rate-limit (the RATE_LIMIT sentinel
+	 * or the claude TUI rate-limit message) is paused via this hook and then
+	 * respawned with the SAME session-id (same uuid) + channel, so the story is
+	 * resumed rather than marked failed. Optional: absent ⇒ rate-limit detection
+	 * is skipped (zero behavior change).
+	 */
+	rateLimitResume?: RateLimitResume;
+	/**
+	 * Max number of rate-limit pause/resume attempts before the supervisor gives
+	 * up and blocks the story. Default: DEFAULT_MAX_RATE_LIMIT_RETRIES.
+	 */
+	maxRateLimitRetries?: number;
 }
 
 /** Terminal status returned by runSupervisor. */
@@ -263,6 +292,21 @@ export const DEFAULT_PER_WORKER_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** Default sentinel polling interval in milliseconds (5 seconds). */
 export const DEFAULT_POLL_INTERVAL_MS = 5_000;
+
+/** Default max rate-limit pause/resume attempts before blocking the story (US-016). */
+export const DEFAULT_MAX_RATE_LIMIT_RETRIES = 5;
+
+/** Matches the headless worker's rate-limit exit sentinel (US-016). */
+const RATE_LIMIT_SENTINEL_RE = /CAM_IMPLEMENTER_STATUS=RATE_LIMIT/;
+
+/**
+ * Detect a worker rate-limit from its captured output: either the explicit
+ * RATE_LIMIT exit sentinel or the claude TUI rate-limit message (reusing the
+ * retry module's isRateLimited matcher).
+ */
+function detectRateLimit(paneText: string): boolean {
+	return RATE_LIMIT_SENTINEL_RE.test(paneText) || isRateLimited(paneText);
+}
 
 // ---------------------------------------------------------------------------
 // Default injectable helpers (real-world defaults)
@@ -332,6 +376,8 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const now = opts.nowMs ?? (() => Date.now());
 	const logEvent = opts.logEvent;
 	const readWorkerTokens = opts.readWorkerTokens;
+	const rateLimitResume = opts.rateLimitResume;
+	const maxRateLimitRetries = opts.maxRateLimitRetries ?? DEFAULT_MAX_RATE_LIMIT_RETRIES;
 
 	// --- US-013 structured event emitters (no-op when logEvent absent) ---
 	const emit = (
@@ -355,7 +401,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	let iterations = 0;
 	let lastOutcome: WorkerOutcome | null = null;
 
-	while (iterations < maxIter) {
+	outer: while (iterations < maxIter) {
 		// --- Read current PRD state ---
 		const prd = readPrd();
 		if (prd === null) {
@@ -579,8 +625,70 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			}
 
 			// Capture pane output to detect the sentinel.
-			const durable = outFile && readFile ? readFile(outFile) : null;
-				const paneText = durable && durable.length > 0 ? durable : capturePane(workerPaneId);
+			let durable = outFile && readFile ? readFile(outFile) : null;
+			let paneText = durable && durable.length > 0 ? durable : capturePane(workerPaneId);
+
+			// --- US-016: rate-limit pause/resume ---
+			// If the worker output shows a rate-limit (the RATE_LIMIT exit sentinel
+			// or the claude TUI rate-limit message), pause via the injected hook and
+			// respawn the SAME session so the story is resumed, not failed. Bounded
+			// by maxRateLimitRetries. Skipped entirely when rateLimitResume is absent.
+			if (rateLimitResume) {
+				let rlAttempts = 0;
+				while (detectRateLimit(paneText) && rlAttempts < maxRateLimitRetries) {
+					rlAttempts++;
+					const message = findRateLimitMessage(paneText);
+					emit('rate-limited', advisoryStoryId, uuid, {
+						phase: 'pause',
+						attempt: rlAttempts,
+						message,
+					});
+					await rateLimitResume({ message, attempt: rlAttempts });
+					emit('rate-limited', advisoryStoryId, uuid, { phase: 'resume', attempt: rlAttempts });
+
+					// Respawn the SAME worker command: same uuid (== --session-id) and
+					// the same channel marker preserve session continuity (US-002, AC4).
+					spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
+					emit('worker-start', advisoryStoryId, uuid, {
+						channel,
+						mode: implementerMode,
+						resumeAfterRateLimit: true,
+					});
+
+					const resumeWait = waitFor(channel, perWorkerTimeoutMs);
+					emit('worker-end', advisoryStoryId, uuid, {
+						mode: 'exit',
+						timedOut: resumeWait.timedOut,
+						resumeAfterRateLimit: true,
+					});
+
+					if (resumeWait.timedOut) {
+						iterations++;
+						const alive = isPaneAlive(workerPaneId);
+						if (!alive) {
+							lastOutcome = { kind: 'blocked', storyId: undefined, detail: 'pane-died-pre-result' };
+						} else {
+							spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
+							lastOutcome = { kind: 'blocked', storyId: undefined, detail: 'timeout' };
+						}
+						continue outer;
+					}
+
+					durable = outFile && readFile ? readFile(outFile) : null;
+					paneText = durable && durable.length > 0 ? durable : capturePane(workerPaneId);
+				}
+
+				// Still rate-limited after exhausting retries: block for the operator.
+				if (detectRateLimit(paneText)) {
+					iterations++;
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: advisoryStoryId,
+						detail: `rate-limit retries exhausted after ${rlAttempts}`,
+					};
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+			}
 
 			// Build a file reader for readWorkerOutcome.
 			// We re-read prd/handoff fresh from disk via the injected functions.

@@ -330,7 +330,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (extend), src/supervisor/rate-limit.ts (new), src/retry/* (read only, do not modify, keep MIT headers intact). Reference: existing detached-fork pattern in src/commands/retry-monitor.ts. The --session-id stability is what makes resume coherent on the claude side, do not mint a new uuid on resume."
     },
