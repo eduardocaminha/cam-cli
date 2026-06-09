@@ -7,8 +7,8 @@
 //
 //   1. `.claude/cam-loop.local.md` (the cam-loop plugin's state file).
 //      YAML frontmatter contains `active`, `iteration`, `max_iterations`,
-//      `started_at`, `completion_promise`, `session_id`, and (per US-010) a
-//      `pid` field that names the driver process owning the loop.
+//      `started_at`, `completion_promise`, and (per US-010) a `pid` field
+//      that names the driver process owning the loop.
 //   2. `prd.json` — the harness PRD. We pick the next story (highest-priority
 //      `passes:false`) so the operator knows what would be picked up next.
 //   3. The last commit on the current branch — git's `log -1 --format=%H %ct`.

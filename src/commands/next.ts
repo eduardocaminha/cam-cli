@@ -3,8 +3,9 @@
 // Implementation of `cam next` -- dispatches to the TS supervisor loop.
 //
 // ARCHITECTURE (Eduardo 2026-06-08, closes CAM-29):
-//   The stop-hook driver (vendor/cam-loop-stop-hook.sh + /cam-next re-inject)
-//   is RETIRED. Each worker is a real separate claude session spawned via
+//   The old stop-hook driver (a vendored Stop hook + /cam-next re-inject) is
+//   RETIRED (its vendored script was deleted in CAM-3). Each worker is a real
+//   separate claude session spawned via
 //   `tmux respawn-pane -k`, reusing the single worker pane established by
 //   `cam plan`. The deterministic TS supervisor sequences stories directly.
 //
@@ -15,7 +16,7 @@
 //   2. Reads the worker pane id from `.claude/.cam-worker-pane` (written by
 //      `cam plan`). If missing, instructs the operator to run `cam plan` first.
 //   3. Writes `.claude/cam-loop.local.md` with YAML frontmatter (active, iteration,
-//      started_at, pid, session_id, max_iterations) and an empty body -- no
+//      started_at, pid, max_iterations) and an empty body -- no
 //      stop-hook re-inject prompt. This file is read by `cam status` and
 //      `cam dashboard` for display.
 //   4. Calls `runSupervisor()` with real I/O adapters (spawn, waitFor, capturePane,
@@ -29,7 +30,7 @@
 //   2. materializeStopHook, writeSettingsLocal, buildHooksBlock and /cam-next
 //      re-inject are gone.
 //   3. Supervisor writes .claude/cam-loop.local.md with parseStateFile-compatible
-//      fields (iteration, started_at, pid, session_id) and no re-inject body.
+//      fields (iteration, started_at, pid) and no re-inject body.
 //   4. buildClaudeArgv and buildDashboardArgv are removed (not used by run.ts).
 //   5. test/next.test.ts covers supervisor dispatch, state-file shape, no stop-hook.
 //   6. Commit body + .claude/commands/cam-next.md (US-010) document retirement.
@@ -151,7 +152,6 @@ export function renderStateFile(input: {
 	maxIterations: number;
 	completionPromise: string;
 	startedAt: string;
-	sessionId: string;
 	pid: number;
 	/** defaults to true */
 	active?: boolean;
@@ -178,7 +178,6 @@ export function renderStateFile(input: {
 	return tmpl
 		.replace('{{ACTIVE}}', String(input.active ?? true))
 		.replace('{{ITERATION}}', String(input.iteration ?? 1))
-		.replace('{{SESSION_ID}}', input.sessionId)
 		.replace('{{MAX_ITERATIONS}}', String(input.maxIterations))
 		.replace('{{COMPLETION_PROMISE_YAML}}', promiseYaml)
 		.replace('{{STARTED_AT}}', input.startedAt)
@@ -230,8 +229,6 @@ export interface NextOptions {
 	force?: boolean;
 	/** ISO timestamp used in the state-file frontmatter (override for tests). */
 	startedAt?: string;
-	/** Session id used in the state-file frontmatter (override for tests). */
-	sessionId?: string;
 	/** PID written to the state-file frontmatter (override for tests). Default: `process.pid`. */
 	pid?: number;
 	/**
@@ -389,9 +386,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	registerShutdown(lock.release);
 
 	// 2. Write the supervisor state file. Fields: active, iteration, started_at,
-	//    pid, session_id, max_iterations. Body: empty (no stop-hook re-inject).
-	const supervisorSessionId =
-		options.sessionId ?? process.env['CLAUDE_CODE_SESSION_ID'] ?? crypto.randomUUID();
+	//    pid, max_iterations. Body: empty (no stop-hook re-inject).
 	const startedAt = options.startedAt ?? new Date().toISOString();
 	const pid = options.pid ?? process.pid;
 
@@ -399,7 +394,6 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		maxIterations,
 		completionPromise,
 		startedAt,
-		sessionId: supervisorSessionId,
 		pid,
 	});
 
@@ -424,7 +418,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	// US-001: build the per-iteration progress writer. Called by the supervisor
 	// on each iteration (live rewrite) and on terminal exit (unlink so dashboard
 	// shows idle instead of a stale active state).
-	const stateFileBase = { maxIterations, completionPromise, startedAt, sessionId: supervisorSessionId, pid };
+	const stateFileBase = { maxIterations, completionPromise, startedAt, pid };
 	const progressOnProgress: OnProgress = (payload) => {
 		if (payload.terminalStatus !== undefined) {
 			// Terminal exit: remove the state file so `cam status` shows idle.

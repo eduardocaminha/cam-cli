@@ -201,7 +201,6 @@ describe('runNext attach hint', () => {
 				workerPaneReader: (_claudeDir: string) => '%3',
 				supervisorFn: fakeSupervisor,
 				startedAt: '2026-06-08T00:00:00Z',
-				sessionId: 'hint-test-session',
 				env: {},
 			}),
 		);
@@ -222,7 +221,6 @@ describe('runNext attach hint', () => {
 				workerPaneReader: (_claudeDir: string) => '%3',
 				supervisorFn: fakeSupervisor,
 				startedAt: '2026-06-08T00:00:00Z',
-				sessionId: 'hint-test-session',
 				env: { TMUX: '/tmp/tmux-1/default,1234,0', CAM_SESSION: sessionName },
 			}),
 		);

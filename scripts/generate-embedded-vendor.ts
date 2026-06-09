@@ -19,7 +19,7 @@
 //      vendored byte-for-byte from the reporter monorepo, where it typechecks
 //      under a looser tsconfig (no `noUncheckedIndexedAccess`). Adding
 //      `@ts-nocheck` to the vendored copy would make the byte-diff smoke
-//      (`test/vendor.test.ts`) fail.
+//      (`test/embedded.test.ts`) fail.
 //
 //   2. The codegen output is plain TS literals — no exotic loaders, no
 //      compiler-specific behavior. It works identically with `bun src/...`
@@ -51,7 +51,6 @@ const OUT_PATH = join(REPO_ROOT, 'src', 'vendor', '_generated.ts');
 const FILES = [
 	{ basename: 'check-agent-frontmatter.sh', constName: 'checkAgentFrontmatterShContents' },
 	{ basename: 'check-agent-frontmatter.ts', constName: 'checkAgentFrontmatterTsContents' },
-	{ basename: 'cam-loop-stop-hook.sh', constName: 'camLoopStopHookContents' },
 	{ basename: 'cam-loop.local.md.tmpl', constName: 'camLoopTmplContents' },
 ] as const;
 

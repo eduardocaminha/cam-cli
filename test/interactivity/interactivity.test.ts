@@ -288,7 +288,6 @@ describe('Test 3: /cancel-cam removes .claude/cam-loop.local.md AND the next cam
 		const stateBody = `---
 active: true
 iteration: 7
-session_id: test-session
 max_iterations: 30
 completion_promise: "COMPLETE"
 started_at: "2026-04-29T03:00:00Z"
@@ -386,7 +385,6 @@ describe("Test 4: Operator types a message + later /cam-next resumes without los
 		const stateBody = `---
 active: true
 iteration: ${ITERATION_BEFORE}
-session_id: resume-test-session
 max_iterations: 30
 completion_promise: "COMPLETE"
 started_at: "2026-04-29T01:00:00Z"
@@ -445,7 +443,6 @@ pid: ${process.pid}
 		// All other state-file fields likewise unchanged.
 		expect(stateAfter?.max_iterations).toBe(30);
 		expect(stateAfter?.completion_promise).toBe('COMPLETE');
-		expect(stateAfter?.session_id).toBe('resume-test-session');
 		expect(stateAfter?.started_at).toBe('2026-04-29T01:00:00Z');
 		expect(stateAfter?.active).toBe(true);
 
