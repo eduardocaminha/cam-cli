@@ -7,7 +7,7 @@
 //      right arguments (permissionMode, workerPaneId, prdPath, handoffPath, etc.).
 //   2. State-file shape contract: the file written to .claude/cam-loop.local.md
 //      has the fields parseStateFile expects (iteration, started_at, pid,
-//      session_id, max_iterations, active) and no stop-hook re-inject body.
+//      max_iterations, active) and no stop-hook re-inject body.
 //   3. No stop-hook artifacts: settings.local.json hooks block is NOT written,
 //      .claude/hooks/cam-loop-stop.sh is NOT created.
 //   4. Missing worker pane: returns 1 and does not invoke supervisorFn.

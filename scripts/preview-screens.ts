@@ -322,7 +322,6 @@ function nextPreviewOptions() {
 		workerPaneReader: (_claudeDir: string) => '%3',
 		supervisorFn: fakeSupervisor,
 		startedAt: '2026-06-05T13:30:00Z',
-		sessionId: 'preview-session',
 		cwd: '/project',
 	};
 }
