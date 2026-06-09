@@ -108,14 +108,20 @@ function SummaryPanel({
 }): ReactElement {
 	const elapsedMs = data.startedAtMs > 0 ? Math.max(0, data.nowMs - data.startedAtMs) : 0;
 	const elapsed = data.startedAtMs > 0 ? formatWallClock(elapsedMs) : '—';
+	// US-002: `since` row uses last_activity when present (real last-work
+	// heartbeat), falling back to started_at-based elapsed so a stalled loop
+	// is visually distinguishable from a productive one.
+	const lastActivityMs =
+		data.lastActivity !== undefined ? Date.parse(data.lastActivity) : NaN;
+	const sinceDisplay = Number.isFinite(lastActivityMs)
+		? formatWallClock(Math.max(0, data.nowMs - lastActivityMs))
+		: elapsed;
 	const storyLabel = data.currentStoryId
 		? `${data.currentStoryId}  ${data.currentStoryTitle}`
 		: data.idle
 			? '(idle)'
 			: '(booting)';
-	// The progress bar reflects PRD completion (stories passed / total), which is
-	// meaningful whether or not a loop is running. `iter` (loop iterations) is a
-	// distinct runtime value, shown as text below.
+	// The progress bar reflects PRD completion (stories passed / total).
 	const storiesTotal = (data.stories ?? []).length;
 	const storiesDone = (data.stories ?? []).filter((s) => s.passes === true).length;
 	// No box: the summary is a Section ("Loop") so the dashboard speaks the same
@@ -124,7 +130,12 @@ function SummaryPanel({
 	return (
 		<Section heading="Loop" dividerWidth={dividerWidth} gapTop={0}>
 			<SummaryRow label="state">
-				<StatusIndicator data={data} />
+				{/* US-002: StatusIndicator shows "running US-XXX (N/total)" when active */}
+				<StatusIndicator
+					data={data}
+					storiesDone={storiesDone}
+					storiesTotal={storiesTotal}
+				/>
 			</SummaryRow>
 			<SummaryRow label="story">
 				<Text>{storyLabel}</Text>
@@ -136,13 +147,10 @@ function SummaryPanel({
 					{storiesDone}/{storiesTotal}
 				</Text>
 			</SummaryRow>
-			<SummaryRow label="iter">
-				<Text color={colors.muted}>
-					{data.maxIterations > 0 ? `${data.iteration}/${data.maxIterations}` : '—'}
-				</Text>
-			</SummaryRow>
+			{/* US-002: `iter` (stop-hook turns) row removed; replaced by stories
+			    count in the StatusIndicator and progress bar above. */}
 			<SummaryRow label="since">
-				<Text color={colors.muted}>{elapsed}</Text>
+				<Text color={colors.muted}>{sinceDisplay}</Text>
 			</SummaryRow>
 			{data.tokensInput !== undefined ? (
 				<SummaryRow label="tokens">
@@ -188,7 +196,15 @@ function ProgressBar({ value, max, width }: { value: number; max: number; width:
 	);
 }
 
-function StatusIndicator({ data }: { data: DashboardData }): ReactElement {
+function StatusIndicator({
+	data,
+	storiesDone,
+	storiesTotal,
+}: {
+	data: DashboardData;
+	storiesDone: number;
+	storiesTotal: number;
+}): ReactElement {
 	if (data.idle) {
 		return (
 			<Text>
@@ -201,7 +217,7 @@ function StatusIndicator({ data }: { data: DashboardData }): ReactElement {
 		return (
 			<Text>
 				<Text color={colors.warning}>! </Text>
-				<Text>paused (active:false) — `cam stop` to clear</Text>
+				<Text>paused (active:false)</Text>
 			</Text>
 		);
 	}
@@ -213,10 +229,14 @@ function StatusIndicator({ data }: { data: DashboardData }): ReactElement {
 			</Text>
 		);
 	}
+	// US-002: show "running US-XXX (N/total)" so the operator can see real
+	// per-story progress instead of the meaningless stop-hook iteration count.
+	const storyPart = data.currentStoryId ? ` ${data.currentStoryId}` : '';
+	const countPart = storiesTotal > 0 ? ` (${storiesDone}/${storiesTotal})` : '';
 	return (
 		<Text>
 			<Text color={colors.accent}>● </Text>
-			<Text>running</Text>
+			<Text>running{storyPart}{countPart}</Text>
 		</Text>
 	);
 }

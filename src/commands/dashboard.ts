@@ -185,6 +185,14 @@ export interface DashboardData {
 	 * Optional + defaults to `{}` so hand-built test fixtures stay valid.
 	 */
 	storyTokens?: Record<string, TranscriptUsage>;
+	/**
+	 * ISO timestamp of the last supervisor iteration tick (US-002). Read from
+	 * the state file's `last_activity` field. Undefined when absent (old state
+	 * files or initial boot). Used by the Loop section to show time-since-last-
+	 * real-work instead of time-since-start, so the operator can detect a
+	 * stalled loop.
+	 */
+	lastActivity?: string;
 }
 
 /**
@@ -408,6 +416,10 @@ export function readSnapshot(options: { cwd: string; nowMs: number; claudeDir?: 
 			if (Number.isFinite(startMs)) data.startedAtMs = startMs;
 		}
 		if (state.active === false) data.paused = true;
+		// US-002: map live-progress fields from the state file.
+		if (typeof state.last_activity === "string" && state.last_activity.length > 0) {
+			data.lastActivity = state.last_activity;
+		}
 	}
 
 	return data;
