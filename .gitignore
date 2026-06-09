@@ -47,6 +47,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Runtime supervisor markers written by `cam plan` / `cam next` (CAM-22)
 .claude/.cam-worker-pane
 .claude/cam-loop.local.md
+# Runtime single-supervisor concurrency lock written by `cam next` (US-015)
+.claude/.cam-supervisor.lock
 
 # Cursor IDE workspace files (content is already in CLAUDE.md, which Cursor reads as fallback)
 .cursor/

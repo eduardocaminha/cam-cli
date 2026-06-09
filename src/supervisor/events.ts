@@ -33,8 +33,13 @@ import type { WorkerOutcome, WorkerOutcomeKind } from './result.ts';
 // Event types
 // ---------------------------------------------------------------------------
 
-/** Lifecycle step a WorkerEvent records. */
-export type WorkerEventKind = 'worker-start' | 'worker-end' | 'result' | 'tokens';
+/**
+ * Lifecycle step a WorkerEvent records.
+ *
+ * Most kinds are per-worker. 'stale-lock' is a supervisor-level event (US-015):
+ * it records that a new supervisor took over a lock whose owning pid was dead.
+ */
+export type WorkerEventKind = 'worker-start' | 'worker-end' | 'result' | 'tokens' | 'stale-lock';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';

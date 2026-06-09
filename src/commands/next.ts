@@ -35,13 +35,14 @@
 //   7. Typecheck passes (bun run typecheck).
 //   8. Tests pass (bun test).
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
 import { readPermissionMode } from '../config/permission-mode.ts';
+import { isPidAlive } from './resume.ts';
 import { printError } from '../logging/color.ts';
 import {
 	emitAttachHint,
@@ -61,6 +62,7 @@ import { readEmbedded } from '../vendor/embedded.ts';
 import { runSupervisor, DEFAULT_PER_WORKER_TIMEOUT_MS, type RunSupervisorOptions } from '../supervisor/loop.ts';
 import { makeReviewDispatch } from '../supervisor/review.ts';
 import { makeFileEventLogger, readWorkerTokens } from '../supervisor/events.ts';
+import { acquireSupervisorLock, SUPERVISOR_LOCK_FILE, type AcquireLockResult } from '../supervisor/lock.ts';
 import type { PrdSnapshot } from '../supervisor/decide.ts';
 
 // --- Constants -------------------------------------------------------------
@@ -91,6 +93,31 @@ const HANDOFF_PATH_CANONICAL = 'scripts/cam/handoff.json';
 /** Default task prompt sent to the implementer agent. */
 export const DEFAULT_TASK_PROMPT =
 	'Implement the next user story from scripts/cam/prd.json per your AGENT.md.';
+
+// --- Concurrency-guard shutdown handler (US-015) ---------------------------
+
+/**
+ * Single process-wide shutdown handler that releases the active supervisor lock
+ * on SIGINT/SIGTERM (US-015 AC4). The handler is registered at most once per
+ * process; `currentLockRelease` always points at the most recently acquired
+ * lock, so a single handler serves any number of sequential runNext calls
+ * without leaking listeners.
+ */
+let shutdownInstalled = false;
+let currentLockRelease: (() => void) | null = null;
+
+function installShutdownHandler(release: () => void): void {
+	currentLockRelease = release;
+	if (shutdownInstalled) return;
+	shutdownInstalled = true;
+	const handle = (signal: NodeJS.Signals): void => {
+		if (currentLockRelease) currentLockRelease();
+		// Conventional exit code 128 + signal number (SIGINT=2, SIGTERM=15).
+		process.exit(signal === 'SIGINT' ? 130 : 143);
+	};
+	process.once('SIGINT', () => handle('SIGINT'));
+	process.once('SIGTERM', () => handle('SIGTERM'));
+}
 
 // --- Vendored template -----------------------------------------------------
 
@@ -201,6 +228,23 @@ export interface NextOptions {
 	 * Path to handoff.json (override for tests). Default: `<cwd>/scripts/cam/handoff.json`.
 	 */
 	handoffPath?: string;
+	/**
+	 * Path to the supervisor lockfile (override for tests).
+	 * Default: `<cwd>/.claude/.cam-supervisor.lock`.
+	 */
+	lockPath?: string;
+	/**
+	 * Override the lock acquirer (US-015). Default: fs/process-backed acquire
+	 * via acquireSupervisorLock. Tests inject a fake to drive the
+	 * already-running / stale-takeover branches without real processes.
+	 */
+	acquireLock?: () => AcquireLockResult;
+	/**
+	 * Register a shutdown handler that releases the lock on SIGINT/SIGTERM
+	 * (US-015 AC4). Default: a single process-wide handler. Tests inject a
+	 * no-op (or capturing) registrar so they do not touch process signals.
+	 */
+	onShutdown?: (release: () => void) => void;
 }
 
 /**
@@ -252,6 +296,59 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	}
 	emitOk('Worker pane', workerPaneId);
 
+	// US-013 structured event sink, shared by the concurrency guard (stale-lock)
+	// and the supervisor (worker lifecycle events).
+	const logEvent: RunSupervisorOptions['logEvent'] = makeFileEventLogger(
+		join(claudeDir, 'cam-worker-events.jsonl'),
+	);
+
+	// 1.5 Concurrency guard (US-015): refuse to start if another supervisor is
+	//     already driving this project. Writes .claude/.cam-supervisor.lock and
+	//     releases it on every terminal return below AND on SIGINT/SIGTERM.
+	const lockPath = options.lockPath ?? join(claudeDir, SUPERVISOR_LOCK_FILE);
+	const acquireLock =
+		options.acquireLock ??
+		(() =>
+			acquireSupervisorLock(process.pid, sessionName, {
+				read: () => {
+					try {
+						return readFileSync(lockPath, 'utf8');
+					} catch {
+						return null;
+					}
+				},
+				write: (content) => {
+					mkdirSync(dirname(lockPath), { recursive: true });
+					writeFileSync(lockPath, content, 'utf8');
+				},
+				remove: () => {
+					try {
+						unlinkSync(lockPath);
+					} catch {
+						/* already gone */
+					}
+				},
+				// Reuse the canonical signal-0 liveness probe from resume.ts so the
+				// concurrency guard agrees with the rest of the lifecycle commands.
+				pidAlive: (probePid) => isPidAlive(probePid, (p, s) => process.kill(p, s)),
+				clock: () => new Date().toISOString(),
+				logEvent,
+			}));
+
+	const lock = acquireLock();
+	if (!lock.acquired) {
+		printError(
+			'Supervisor already running',
+			`supervisor already running (pid=${lock.holderPid}) — run \`cam stop\` to clear if it is not.`,
+		);
+		emitTrailingBlank();
+		return 1;
+	}
+	emitOk('Lock acquired', lockPath);
+
+	const registerShutdown = options.onShutdown ?? installShutdownHandler;
+	registerShutdown(lock.release);
+
 	// 2. Write the supervisor state file. Fields: active, iteration, started_at,
 	//    pid, session_id, max_iterations. Body: empty (no stop-hook re-inject).
 	const supervisorSessionId =
@@ -275,6 +372,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	try {
 		writtenPath = writer(cwd, stateBody);
 	} catch (err) {
+		lock.release();
 		printError(
 			'Failed to write cam-loop state file',
 			err instanceof Error ? err.message : String(err),
@@ -449,11 +547,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	};
 
 	// --- US-013 wiring: structured per-story observability events ---
-	// logEvent: append one JSON line per worker lifecycle step to the durable
-	// event log under the project's .claude dir.
-	const logEvent: RunSupervisorOptions['logEvent'] = makeFileEventLogger(
-		join(claudeDir, 'cam-worker-events.jsonl'),
-	);
+	// logEvent is defined above (shared with the US-015 concurrency guard).
 	// readWorkerTokens: resolve a worker's transcript by uuid and sum its usage.
 	// Transcripts live under the Claude CONFIG dir (~/.claude or CLAUDE_CONFIG_DIR),
 	// not the project's .claude — match the convention in status.ts/dashboard.ts.
@@ -493,6 +587,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			readWorkerTokens: readWorkerTokensAdapter,
 		});
 	} catch (err) {
+		lock.release();
 		printError(
 			'Supervisor loop failed',
 			err instanceof Error ? err.message : String(err),
@@ -500,6 +595,9 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		emitTrailingBlank();
 		return 1;
 	}
+
+	// Loop reached a terminal state: release the concurrency lock (US-015 AC4).
+	lock.release();
 
 	// 5. Report result.
 	if (result.status === 'complete') {

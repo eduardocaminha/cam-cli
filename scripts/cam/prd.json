@@ -312,7 +312,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/lock.ts (new), src/supervisor/loop.ts (integrate), test/supervisor/lock.test.ts. PID liveness pattern already exists in src/commands/resume.ts (classifyResumeMode), reuse the same primitive instead of duplicating. Fully closes the CAM-29 double-run risk on top of US-007's retirement of the stop-hook re-inject."
     },

@@ -22,6 +22,38 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Sentinel polling mode (US-012)**: interactive workers (plan/review with human input) do NOT exit on their own, so the supervisor polls `capture-pane` instead of waiting for a tmux channel. Use `implementerMode: 'sentinel'` in `RunSupervisorOptions`; inject `sleepFn` (no-op for tests), `nowMs` (deterministic time source), and `pollIntervalMs`. `buildImplementerWorkerArgv({ interactive: true })` omits `-p` and `--output-format` and the wait-for chain. `parseAnySentinel(text)` in `result.ts` detects `CAM_IMPLEMENTER_STATUS=*`, `CAM_REVIEWER_STATUS=*`, or `<review>...</review>` tags. Same timeout/pane-died semantics as the exit path: both `continue` the supervisor loop.
 - **Structured worker events (US-013)**: `src/supervisor/events.ts` defines `WorkerEvent { ts, storyId, uuid, kind, detail }` and the supervisor appends one JSON line per lifecycle step to `.claude/cam-worker-events.jsonl`. The logger is injected (`logEvent?: WorkerEventLogger`); default `makeFileEventLogger(path)`, tests use `makeInMemoryEventLogger()`. Both injections (`logEvent`, `readWorkerTokens`) are OPTIONAL: absent `logEvent` means zero events and zero behavior change (existing loop tests pass untouched). Emit sites in `loop.ts`: `worker-start` right after `respawn-pane`, `worker-end` after `waitFor`/poll-loop, `result`+`tokens` only where `readWorkerOutcome` produced a real outcome (NOT on timeout/pane-death: no canonical per-story record exists there). `buildResultDetail(outcome, handoff)` builds the rich `result` detail: `filesChanged` = handoff `createdFiles ++ modifiedFiles`, `gates` = `pass` only for a `pass` outcome else `unknown` (supervisor has no per-worker gate transcript), `docsValidated` mirrors handoff `officialDocsValidated`. The `tokens` event reuses `readWorkerTokens(uuid, cwd, claudeDir)` -> `transcriptPathForSession` + `parseTranscriptUsage`, skipped (no event) when the transcript is absent, never logs zeros. Logger uses synchronous `appendFileSync` (not async `Bun.file`) to match the supervisor's all-synchronous injected I/O.
 - **Per-story tokens in dashboard (US-014)**: `readSnapshot` now returns `storyTokens: Record<storyId, TranscriptUsage>`. It reads each story's `.claude/.cam-worker-<id>.session` marker (project `.claude`, via `readWorkerSessionMarker`), resolves the transcript with `transcriptPathForSession(uuid, cwd, claudeDir)`, and sums usage. `readTranscriptTokens` was generalized to take a resolved path (one reader for the orchestrator transcript AND per-story transcripts); the orchestrator caller now resolves the path first. Stories with no marker (or unreadable transcript) are omitted from the map, so `Dashboard.tsx` `StoryRow` shows a muted `STORY_TOKENS_PLACEHOLDER` (`·`) instead of crashing; stories with data show `renderTokensLine(...)` next to the row. State stays signalled by the glyph (✓/→/◌), never the divider. The Ink render is asserted via `ink-testing-library` (`test/dashboard.test.ts`), not a comment.
+- **Single-supervisor lock (US-015)**: `src/supervisor/lock.ts` is the pure guard: `acquireSupervisorLock(pid, project, io)` over an injected `LockIo` (`read`/`write`/`remove`/`pidAlive`/`clock` + optional `logEvent`). It refuses when an existing lock names a DIFFERENT, live pid; takes over a dead pid after emitting a `stale-lock` event (the union in `events.ts` gained `'stale-lock'`, a supervisor-level event with `uuid: 'supervisor'`); overwrites an unparseable lock with no event. Wired in `next.ts` (NOT in the pure `runSupervisor`, which stays side-effect-free): acquire right after the worker-pane check and before the state-file write, reject with exit 1 on conflict, and release at every terminal return AND via a single process-wide SIGINT/SIGTERM handler (`installShutdownHandler`, module-singleton tracking `currentLockRelease`). `acquireLock` and `onShutdown` are injectable on `NextOptions` so tests drive the conflict/release paths without real processes or signals. PID liveness reuses `isPidAlive` from `resume.ts` (do NOT duplicate the signal-0 probe). Lock file `.claude/.cam-supervisor.lock` is gitignored.
+
+## 2026-06-09 02:00 - US-015: Single-supervisor concurrency guard
+
+### What was done
+- New `src/supervisor/lock.ts`: `acquireSupervisorLock` + `parseLockInfo` over an injected `LockIo`. Fresh start writes `{ pid, startedAt, project }`; a live-pid lock is rejected; a dead-pid lock is taken over with a `stale-lock` event.
+- `src/supervisor/events.ts`: added `'stale-lock'` to `WorkerEventKind` (supervisor-level event).
+- `src/commands/next.ts`: acquire the lock before writing the state file; reject with `supervisor already running (pid=N)` + exit 1 on conflict; release the lock at every terminal return and via one process-wide SIGINT/SIGTERM handler. New `lockPath` / `acquireLock` / `onShutdown` options for tests. `logEvent` definition lifted up so the guard and supervisor share one sink. PID probe reuses `isPidAlive` from `resume.ts`.
+- `.gitignore`: ignore `.claude/.cam-supervisor.lock`.
+
+### Files changed
+- `src/supervisor/lock.ts` (new)
+- `test/supervisor/lock.test.ts` (new)
+- `src/supervisor/events.ts` (WorkerEventKind + 'stale-lock')
+- `src/commands/next.ts` (guard wiring + options)
+- `test/next.test.ts` (two guard tests)
+- `.gitignore`
+- `scripts/cam/prd.json`, `scripts/cam/progress.txt`, `scripts/cam/handoff.json`
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 703 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+- summary: Pure TypeScript over `node:fs` + `process.kill(pid, 0)`. No new npm packages. The signal-0 liveness pattern is reused from the in-repo `isPidAlive` (`resume.ts`), already validated.
+
+### Notes
+- The guard lives in `next.ts`, not in `runSupervisor`, to keep the supervisor loop pure/fully-injected (its established design). "On runSupervisor start" is honored by acquiring immediately before the supervisor is dispatched.
+- Implemented directly in a Claude Code session (operator chose "implement here" via `/cam-next`), not via a dispatched headless worker, because this checkout has no live `-L cam` worker pane. No `.cam-worker-US-015.session` marker exists.
+---
 
 ## 2026-06-08 21:00 - US-008: Review worker dispatch (autonomous headless reviewer)
 

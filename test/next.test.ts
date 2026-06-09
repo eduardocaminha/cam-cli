@@ -417,6 +417,77 @@ describe('runNext', () => {
 		}
 	});
 
+	test('concurrency guard: another live supervisor -> returns 1 without dispatching', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-lock-busy-'));
+		try {
+			const { supervisorFn, calls } = makeFakeSupervisor({
+				status: 'complete',
+				iterations: 0,
+				lastOutcome: null,
+			});
+
+			const code = await runNext({
+				cwd: dir,
+				permissionMode: 'bypassPermissions',
+				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
+				workerPaneReader: (_claudeDir) => '%5',
+				supervisorFn,
+				acquireLock: () => ({ acquired: false, holderPid: 4242 }),
+				onShutdown: () => {},
+				startedAt: '2026-06-08T12:00:00Z',
+				sessionId: 'lock-busy',
+			});
+
+			expect(code).toBe(1);
+			expect(calls).toHaveLength(0);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('concurrency guard: lock released on normal exit and handed to shutdown registrar', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-lock-release-'));
+		try {
+			const { supervisorFn } = makeFakeSupervisor({
+				status: 'complete',
+				iterations: 1,
+				lastOutcome: null,
+			});
+
+			let released = 0;
+			const reg: { fn: (() => void) | null } = { fn: null };
+			const release = () => {
+				released += 1;
+			};
+
+			const code = await runNext({
+				cwd: dir,
+				permissionMode: 'bypassPermissions',
+				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
+				workerPaneReader: (_claudeDir) => '%5',
+				supervisorFn,
+				acquireLock: () => ({
+					acquired: true,
+					info: { pid: 1234, startedAt: '2026-06-08T12:00:00Z', project: 'cam-cli' },
+					release,
+				}),
+				onShutdown: (rel) => {
+					reg.fn = rel;
+				},
+				startedAt: '2026-06-08T12:00:00Z',
+				sessionId: 'lock-release',
+			});
+
+			expect(code).toBe(0);
+			// Released at least once on the normal terminal return.
+			expect(released).toBeGreaterThanOrEqual(1);
+			// The same release fn was handed to the shutdown registrar (AC4).
+			expect(reg.fn).toBe(release);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test('existing state file causes error without force', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-next-existing-'));
 		try {

@@ -1,27 +1,30 @@
 {
   "lastCompletedStory": {
-    "id": "US-014",
-    "title": "Per-story token display in dashboard Stories panel"
+    "id": "US-015",
+    "title": "Single-supervisor concurrency guard"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-09T00:56:28Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-09T02:00:00Z",
+  "createdFiles": [
+    "src/supervisor/lock.ts",
+    "test/supervisor/lock.test.ts"
+  ],
   "modifiedFiles": [
-    "src/commands/dashboard.ts",
-    "src/ui/Dashboard.tsx",
-    "test/dashboard.test.ts",
+    "src/supervisor/events.ts",
+    "src/commands/next.ts",
+    "test/next.test.ts",
+    ".gitignore",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-014 added per-story token display to the dashboard. readSnapshot (src/commands/dashboard.ts) now returns storyTokens: Record<storyId, TranscriptUsage>, built by readStoryTokens(cwd, claudeDir, stories): for each story it reads the .claude/.cam-worker-<id>.session marker via readWorkerSessionMarker, resolves the transcript via transcriptPathForSession(uuid, cwd, claudeDir), and sums usage with parseTranscriptUsage. readTranscriptTokens was generalized from (cwd, claudeDir) to (transcriptPath) so one path-based reader serves both the orchestrator transcript and per-story transcripts; the orchestrator caller resolves the path first. Dashboard.tsx StoryRow renders renderTokensLine(tokens) next to the row when present, else the exported muted STORY_TOKENS_PLACEHOLDER ('.'); StoriesSection threads storyTokens, DashboardApp passes data.storyTokens ?? {}. State is signalled by the glyph (success/current/pending), never the divider color. Remaining non-operator stories: US-015 (single-supervisor concurrency guard), US-016 (rate-limit handling via src/retry/*), US-017 (recovery runbook in docs/). US-018 requires:operator (real E2E). NOTE: this checkout has no live -L cam tmux worker pane / .claude/.cam-worker-pane, so US-014 was implemented directly in a Claude Code session (operator chose 'implement here' via /cam-next), not via a dispatched headless worker; no .cam-worker-US-014.session marker exists in this checkout.",
+  "nextStoryContext": "US-015 added the single-supervisor concurrency guard. src/supervisor/lock.ts exports acquireSupervisorLock(pid, project, io) and parseLockInfo over an injected LockIo (read/write/remove/pidAlive/clock + optional logEvent). Behavior: no/unparseable lock -> take it; lock owned by a DIFFERENT live pid -> { acquired: false, holderPid }; dead pid -> emit a 'stale-lock' WorkerEvent (events.ts WorkerEventKind gained 'stale-lock', uuid 'supervisor') then take over. Wired in src/commands/next.ts (NOT runSupervisor, which stays pure): acquire right after the worker-pane check and before the state-file write; on conflict printError('supervisor already running (pid=N)') + return 1; release at every terminal return AND via one process-wide SIGINT/SIGTERM handler (installShutdownHandler, module-singleton currentLockRelease). New NextOptions: lockPath, acquireLock, onShutdown (all injectable for tests). logEvent is now created once near the top of runNext and shared by the guard + supervisor. PID liveness reuses isPidAlive from resume.ts. Lock file .claude/.cam-supervisor.lock is gitignored. Remaining non-operator stories: US-016 (rate-limit handling via src/retry/*), US-017 (recovery runbook in docs/). US-018 requires:operator (real E2E). NOTE: implemented directly in a Claude Code session (no live -L cam worker pane in this checkout), not via a dispatched headless worker; no .cam-worker-US-015.session marker exists.",
   "officialDocsValidated": [
     {
-      "lib": "ink-testing-library",
-      "url": "https://github.com/vadimdemedes/ink-testing-library",
-      "fetchedAt": "2026-06-09T00:56:28Z",
-      "status": "ok",
-      "summary": "Confirmed render() returns { lastFrame, frames, rerender, unmount, stdin } and lastFrame() returns the last rendered frame as a string. The US-014 render tests use render(React.createElement(DashboardApp, ...)) then lastFrame() for substring assertions, matching both the official API and the existing in-repo precedent in test/menu.test.ts. No correction needed."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "fetchedAt": "2026-06-09T02:00:00Z",
+      "summary": "US-015 is pure TypeScript over node:fs and process.kill(pid, 0). No new npm packages. The signal-0 liveness probe is reused from the in-repo isPidAlive (src/commands/resume.ts), already validated in prior work; no external doc fetch warranted."
     }
   ]
 }
