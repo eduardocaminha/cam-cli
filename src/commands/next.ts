@@ -714,6 +714,18 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			rateLimitResume,
 			ensurePushed,
 			onProgress: progressOnProgress,
+			// CAM-38: real blocking sleep so the no-progress backoff actually waits
+			// for a transient rate-limit to clear (tests inject a no-op sleepFn).
+			// Notes: (1) Bun.sleepSync blocks the thread, so a queued SIGINT during a
+			// backoff (worst case ~180s total before block) only releases the lock
+			// after the sleep returns — Ctrl-C feels laggy, same as rateLimitResume's
+			// Bun.sleepSync above. (2) This also activates the sleepFn(pollIntervalMs)
+			// in the supervisor's sentinel-poll loop; sentinel mode is not wired in
+			// production today, but if it ever is, polling will correctly wait
+			// between capture-pane reads instead of hot-spinning.
+			sleepFn: (ms) => {
+				Bun.sleepSync(ms);
+			},
 		});
 	} catch (err) {
 		lock.release();

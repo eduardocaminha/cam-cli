@@ -362,9 +362,26 @@ export const DEFAULT_MAX_RATE_LIMIT_RETRIES = 5;
  * STALE handoff.json + prd.json and reports kind:'pass' for the LAST completed
  * story. Without this cap the loop re-dispatches the same still-pending advisory
  * story every iteration until MAX_ITERATIONS, burning one claude invocation per
- * turn. We tolerate one transient no-op, then block on the second in a row.
+ * turn. CAM-38 added a backoff between retries (NO_PROGRESS_BACKOFF_MS), which
+ * makes a couple more attempts worthwhile, so the cap is 3 (block on the 3rd
+ * consecutive no-op after two paused retries).
  */
-export const MAX_NO_PROGRESS_RETRIES = 2;
+export const MAX_NO_PROGRESS_RETRIES = 3;
+
+/**
+ * Base backoff (ms) before re-dispatching a story whose worker no-op'd (CAM-38).
+ * The most likely cause of a pre-session instant-exit is a startup rate-limit,
+ * whose message is never printed, so US-016 rate-limit detection cannot fire and
+ * the durable out-log captures nothing. A blind escalating backoff
+ * (NO_PROGRESS_BACKOFF_MS * streak) is the only defense: it gives the rate-limit
+ * window a few minutes to clear across the bounded retries before blocking. With
+ * the current values the worst-case total wait before blocking is
+ * NO_PROGRESS_BACKOFF_MS * (1 + 2 + ... + (MAX_NO_PROGRESS_RETRIES - 1)) = 180s.
+ * This is best-effort: a longer (usage-tier) rate-limit still blocks, and the
+ * operator re-runs once it clears. In production next.ts injects Bun.sleepSync;
+ * tests inject a no-op sleepFn so they never actually wait.
+ */
+export const NO_PROGRESS_BACKOFF_MS = 60_000;
 
 /**
  * Max review-dispatch attempts before the loop blocks (CAM-37). A reviewer
@@ -950,6 +967,18 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}
+					// CAM-38: still under the cap, so the loop will re-dispatch the
+					// same still-pending story. Back off first (escalating by streak)
+					// so a transient startup rate-limit — the most likely cause of a
+					// pre-session instant-exit, whose message is never printed and so
+					// is invisible to US-016 + the durable out-log — can clear. A blind
+					// backoff is the only defense when the worker produced no output.
+					emit('no-progress-retry', advisoryStoryId, uuid, {
+						attempt: noProgressStreak,
+						backoffMs: NO_PROGRESS_BACKOFF_MS * noProgressStreak,
+						completedStory: outcome.storyId,
+					});
+					sleepFn(NO_PROGRESS_BACKOFF_MS * noProgressStreak);
 				} else {
 					noProgressStreak = 0;
 				}
