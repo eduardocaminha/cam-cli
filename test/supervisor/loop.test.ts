@@ -16,7 +16,7 @@
 //  11. PRD_COMPLETE sentinel (outcome.storyId undefined) -> continue, next iter complete.
 
 import { describe, expect, test, jest, beforeEach } from 'bun:test';
-import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
+import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
 	SpawnFn,
@@ -439,6 +439,57 @@ describe('runSupervisor', () => {
 
 		expect(result.status).toBe('complete');
 		expect(result.iterations).toBe(3); // 2 implement + 1 review, never blocked
+	});
+
+	test('review dispatch: retries a transient error then succeeds -> complete (CAM-37)', async () => {
+		// All stories pass -> decideNextAction returns 'review'. The reviewer errors
+		// on the first 2 attempts (silent no-op) then succeeds; the loop must retry
+		// (not block on the first miss) and reach 'complete'.
+		const prd_noReview = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 0, lastVerdict: null },
+		});
+		const prd_clean = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		const prds = [prd_noReview, prd_noReview, prd_clean];
+		let prdCall = 0;
+		let reviewCalls = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => prds[prdCall++] ?? prd_clean,
+			reviewDispatch: (_uuid, _channel) => {
+				reviewCalls += 1;
+				return reviewCalls < 3
+					? { status: 'error', detail: 'no <review> verdict (silent no-op)' }
+					: { status: 'ok', detail: 'CLEAN' };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(reviewCalls).toBe(3); // errored twice, succeeded on the 3rd attempt
+	});
+
+	test('review dispatch: blocks after MAX_REVIEW_DISPATCH_ATTEMPTS persistent errors (CAM-37)', async () => {
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 0, lastVerdict: null },
+		});
+		let reviewCalls = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			reviewDispatch: (_uuid, _channel) => {
+				reviewCalls += 1;
+				return { status: 'error', detail: 'no <review> verdict (silent no-op)' };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(reviewCalls).toBe(MAX_REVIEW_DISPATCH_ATTEMPTS); // bounded, then block
 	});
 
 	test('worker outcome fail -> blocked', async () => {

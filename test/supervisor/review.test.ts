@@ -100,6 +100,22 @@ describe('buildReviewerWorkerArgv', () => {
 	test('DEFAULT_REVIEWER_AGENT is subagent-reviewer', () => {
 		expect(DEFAULT_REVIEWER_AGENT).toBe('subagent-reviewer');
 	});
+
+	test('outFile: tees stdout+stderr to a durable log before the wait-for (CAM-37)', () => {
+		const result = buildReviewerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			channel: SAMPLE_CHANNEL,
+			outFile: '/tmp/.cam-worker-out-abc.log',
+		});
+		expect(result).toContain("2>&1 | tee '/tmp/.cam-worker-out-abc.log'");
+		// tee comes before the wait-for chain (pipe binds tighter than `;`).
+		expect(result.indexOf('| tee')).toBeLessThan(result.indexOf('wait-for'));
+	});
+
+	test('outFile omitted: no tee (legacy pane-only behaviour)', () => {
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID, channel: SAMPLE_CHANNEL });
+		expect(result).not.toContain('tee');
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -344,6 +360,38 @@ describe('makeReviewDispatch', () => {
 
 		expect(result.status).toBe('error');
 		expect(result.detail).toContain('No <review>');
+	});
+
+	test('durable out-log: verdict read from out-log when pane is empty (CAM-37)', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		let capturePaneCalls = 0;
+		// Pane would be empty (reviewer pane died before capture), but the durable
+		// out-log carries the verdict -> dispatch must read the out-log and must NOT
+		// fall back to capture-pane when the durable log is non-empty.
+		const opts = {
+			...makeDispatchOpts({
+				prd: makePrd({
+					stories: [{ id: 'US-001', priority: 1, passes: true }],
+					review: { roundsCompleted: 0, maxRounds: 3 },
+				}),
+				capturedWrittenPrd,
+				capturePane: (_paneId: string) => {
+					capturePaneCalls += 1;
+					return '';
+				},
+			}),
+			workerOutFile: (uuid: string) => `/tmp/.cam-worker-out-${uuid}.log`,
+			readFile: (_path: string): string | null => '<review>CLEAN</review>',
+		};
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+
+		expect(result.status).toBe('ok');
+		expect(capturedWrittenPrd[0]?.review?.lastVerdict).toBe('CLEAN');
+		// Prefer-durable contract: capture-pane is not consulted when the out-log
+		// is non-empty.
+		expect(capturePaneCalls).toBe(0);
 	});
 
 	test('prd unreadable returns status=error', () => {

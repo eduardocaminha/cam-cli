@@ -366,6 +366,18 @@ export const DEFAULT_MAX_RATE_LIMIT_RETRIES = 5;
  */
 export const MAX_NO_PROGRESS_RETRIES = 2;
 
+/**
+ * Max review-dispatch attempts before the loop blocks (CAM-37). A reviewer
+ * worker can silently no-op (claude instant-exit / rate-limited: empty output,
+ * no `<review>` verdict) or its pane can be captured empty before it flushes,
+ * making reviewDispatch return status:'error'. Rather than failing the whole
+ * loop on one transient miss, the review branch re-dispatches with a fresh
+ * uuid/channel up to this many times before blocking. reviewDispatch only
+ * mutates prd.json on a non-error verdict, so retrying after 'error' is
+ * side-effect free.
+ */
+export const MAX_REVIEW_DISPATCH_ATTEMPTS = 3;
+
 /** Matches the headless worker's rate-limit exit sentinel (US-016). */
 const RATE_LIMIT_SENTINEL_RE = /CAM_IMPLEMENTER_STATUS=RATE_LIMIT/;
 
@@ -1006,14 +1018,25 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 		// --- Review branch ---
 		if (action.kind === 'review') {
-			const uuid = genUuid();
-			const channel = genChannel('review', uuid);
-			const reviewResult = reviewDispatch(uuid, channel);
+			// CAM-37: a reviewer worker can silently no-op (instant-exit /
+			// rate-limited: empty output, no `<review>` verdict) or its pane can be
+			// captured before it flushes, making reviewDispatch return 'error'.
+			// Retry with a fresh uuid/channel up to MAX_REVIEW_DISPATCH_ATTEMPTS
+			// before blocking, so one transient reviewer miss does not fail the
+			// whole loop. reviewDispatch only writes prd.json on a real verdict, so
+			// re-dispatching after 'error' is side-effect free.
+			let reviewResult: ReviewDispatchResult | null = null;
+			for (let attempt = 1; attempt <= MAX_REVIEW_DISPATCH_ATTEMPTS; attempt += 1) {
+				const uuid = genUuid();
+				const channel = genChannel('review', uuid);
+				reviewResult = reviewDispatch(uuid, channel);
+				if (reviewResult.status !== 'error') break;
+			}
 
 			iterations++;
 
-			if (reviewResult.status === 'error') {
-				// Review dispatch failed: treat as blocked.
+			if (reviewResult === null || reviewResult.status === 'error') {
+				// Review still failing after all attempts: treat as blocked.
 				notifyTerminal('blocked');
 				return { status: 'blocked', iterations, lastOutcome };
 			}
