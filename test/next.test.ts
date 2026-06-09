@@ -587,8 +587,42 @@ describe('runNext', () => {
 
 			expect(code).toBe(0);
 			const statePath = join(dir, '.claude', 'cam-loop.local.md');
-			// State file must be unlinked after terminal onProgress call.
+			// State file must be unlinked after a 'complete' terminal call.
 			expect(existsSync(statePath)).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('progress writer: non-success terminal rewrites state file with active:false (paused, CAM-2)', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-prog-paused-'));
+		try {
+			const code = await runNext({
+				cwd: dir,
+				permissionMode: 'bypassPermissions',
+				workerPaneReader: (_claudeDir) => '%5',
+				supervisorFn: async (opts: RunSupervisorOptions) => {
+					// A blocked terminal exit: the loop STOPPED but needs the operator.
+					opts.onProgress?.({
+						iteration: 3,
+						currentStoryId: 'US-002',
+						storiesDone: 1,
+						storiesTotal: 4,
+						lastActivity: '2026-06-09T10:10:00Z',
+						terminalStatus: 'blocked',
+					});
+					return { status: 'blocked' as const, iterations: 3, lastOutcome: null };
+				},
+				startedAt: '2026-06-09T09:00:00Z',
+				pid: 42,
+			});
+
+			expect(code).toBe(1); // blocked exits non-zero
+			const statePath = join(dir, '.claude', 'cam-loop.local.md');
+			// The file must remain, marked active:false so status/dashboard render
+			// 'paused' (the stopped-needs-operator state) instead of idle.
+			expect(existsSync(statePath)).toBe(true);
+			expect(readFileSync(statePath, 'utf8')).toContain('active: false');
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
