@@ -60,13 +60,11 @@ describe('renderStateFile', () => {
 			maxIterations: 30,
 			completionPromise: 'COMPLETE',
 			startedAt: '2026-06-08T12:00:00Z',
-			sessionId: 'sess-abc',
 			pid: 4242,
 		});
 		expect(out).toContain('max_iterations: 30');
 		expect(out).toContain('completion_promise: "COMPLETE"');
 		expect(out).toContain('started_at: "2026-06-08T12:00:00Z"');
-		expect(out).toContain('session_id: sess-abc');
 		expect(out).toContain('active: true');
 		expect(out).toContain('iteration: 1');
 		expect(out).toContain('pid: 4242');
@@ -77,7 +75,6 @@ describe('renderStateFile', () => {
 			maxIterations: 30,
 			completionPromise: 'COMPLETE',
 			startedAt: '2026-06-08T12:00:00Z',
-			sessionId: '',
 			pid: 1,
 		});
 		// Split at the closing YAML delimiter and verify body is blank/whitespace only.
@@ -93,7 +90,6 @@ describe('renderStateFile', () => {
 			maxIterations: 0,
 			completionPromise: '',
 			startedAt: '2026-06-08T12:00:00Z',
-			sessionId: '',
 			pid: 1,
 		});
 		expect(out).toContain('completion_promise: null');
@@ -104,7 +100,6 @@ describe('renderStateFile', () => {
 			maxIterations: 50,
 			completionPromise: 'COMPLETE',
 			startedAt: '2026-06-08T12:00:00Z',
-			sessionId: 'test-session',
 			pid: 9999,
 		});
 		// Extract YAML section between the two --- delimiters.
@@ -119,7 +114,6 @@ describe('renderStateFile', () => {
 		expect(parsed['active']).toBe(true);
 		expect(parsed['iteration']).toBe(1);
 		expect(parsed['max_iterations']).toBe(50);
-		expect(parsed['session_id']).toBe('test-session');
 		expect(typeof parsed['started_at']).toBe('string');
 		expect(parsed['pid']).toBe(9999);
 	});
@@ -173,7 +167,6 @@ describe('runNext', () => {
 				workerPaneReader: (_claudeDir) => '%5',
 				supervisorFn,
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'test-session',
 				pid: 1234,
 				prdPath: join(dir, 'scripts/cam/prd.json'),
 				handoffPath: join(dir, 'scripts/cam/handoff.json'),
@@ -207,7 +200,6 @@ describe('runNext', () => {
 				workerPaneReader: (_claudeDir) => '%5',
 				supervisorFn,
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'shape-test',
 				pid: 5678,
 			});
 
@@ -218,7 +210,6 @@ describe('runNext', () => {
 			// YAML frontmatter fields
 			expect(body).toContain('active: true');
 			expect(body).toContain('iteration: 1');
-			expect(body).toContain('session_id: shape-test');
 			expect(body).toContain('started_at: "2026-06-08T12:00:00Z"');
 			expect(body).toContain('pid: 5678');
 			expect(body).toContain(`max_iterations: ${DEFAULT_MAX_ITERATIONS}`);
@@ -253,7 +244,6 @@ describe('runNext', () => {
 				workerPaneReader: (_claudeDir) => '%5',
 				supervisorFn,
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'no-hooks-test',
 			});
 
 			// settings.local.json must NOT be written
@@ -280,7 +270,6 @@ describe('runNext', () => {
 				workerPaneReader: (_claudeDir) => null, // no pane allocated
 				supervisorFn,
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'no-pane',
 			});
 
 			expect(code).toBe(1);
@@ -306,7 +295,6 @@ describe('runNext', () => {
 				workerPaneReader: (_claudeDir) => '%5',
 				supervisorFn,
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'writer-fail',
 			});
 
 			expect(code).toBe(1);
@@ -332,7 +320,6 @@ describe('runNext', () => {
 				workerPaneReader: (_claudeDir) => '%5',
 				supervisorFn,
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'blocked-test',
 			});
 
 			expect(code).toBe(1);
@@ -358,7 +345,6 @@ describe('runNext', () => {
 				workerPaneReader: (_claudeDir) => '%5',
 				supervisorFn,
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'awaitop-test',
 			});
 
 			expect(code).toBe(0);
@@ -383,7 +369,6 @@ describe('runNext', () => {
 				workerPaneReader: (_claudeDir) => '%5',
 				supervisorFn,
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'maxiter-test',
 			});
 
 			expect(code).toBe(1);
@@ -408,7 +393,6 @@ describe('runNext', () => {
 				workerPaneReader: (_claudeDir) => '%5',
 				supervisorFn,
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'complete-test',
 			});
 
 			expect(code).toBe(0);
@@ -434,7 +418,6 @@ describe('runNext', () => {
 				supervisorFn,
 				maxIterations: 10,
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'custom-iter',
 			});
 
 			expect(calls[0]!.opts.maxIterations).toBe(10);
@@ -461,7 +444,6 @@ describe('runNext', () => {
 				acquireLock: () => ({ acquired: false, holderPid: 4242 }),
 				onShutdown: () => {},
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'lock-busy',
 			});
 
 			expect(code).toBe(1);
@@ -501,7 +483,6 @@ describe('runNext', () => {
 					reg.fn = rel;
 				},
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'lock-release',
 			});
 
 			expect(code).toBe(0);
@@ -532,7 +513,6 @@ describe('runNext', () => {
 				workerPaneReader: (_claudeDir) => '%5',
 				supervisorFn,
 				startedAt: '2026-06-08T12:00:00Z',
-				sessionId: 'existing',
 			});
 
 			expect(code).toBe(1);
@@ -564,7 +544,6 @@ describe('runNext', () => {
 					return { status: 'complete' as const, iterations: 3, lastOutcome: null };
 				},
 				startedAt: '2026-06-09T09:00:00Z',
-				sessionId: 'prog-live',
 				pid: 42,
 			});
 
@@ -603,7 +582,6 @@ describe('runNext', () => {
 					return { status: 'complete' as const, iterations: 2, lastOutcome: null };
 				},
 				startedAt: '2026-06-09T09:00:00Z',
-				sessionId: 'prog-term',
 				pid: 42,
 			});
 
@@ -634,7 +612,6 @@ describe('runNext', () => {
 					return { status: 'complete' as const, iterations: 1, lastOutcome: null };
 				},
 				startedAt: '2026-06-09T09:00:00Z',
-				sessionId: 'prog-nullid',
 				pid: 42,
 			});
 
