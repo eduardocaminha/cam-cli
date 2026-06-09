@@ -39,7 +39,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/cam/orch-handoff.schema.json (new), src/orchestrator/handoff.ts (new), test/orchestrator/handoff.test.ts (new). The handoff lives at <cwd>/.claude/.cam-orch-handoff.json (matches the existing convention of .claude/.cam-orch-session and .claude/.cam-orchestrator-prompt.txt set in src/commands/run.ts:137-145). This story is plumbing only: the orchestrator agent itself is told to populate the file in US-004. Do NOT touch the unrelated setup→orchestrator handoff in src/commands/setup.ts. No em-dash in any .md emitted (schema description strings are fine; this is JSON, but keep prose clean). noUncheckedIndexedAccess: any parsed JSON access must be guarded."
     },
