@@ -1,6 +1,6 @@
 ## Pre-flight Checks (run in this session)
 
-Run these checks yourself, in the current session, before delegating the story. They're cheap and they fail fast; running them once per invocation is saner than running them inside every subagent.
+Run these checks yourself, in the current session, before the supervisor starts. They are cheap and fail fast.
 
 1. **Sync with remote**:
    First fetch all refs (including main), then check if the remote tracking branch exists:
@@ -9,144 +9,107 @@ Run these checks yourself, in the current session, before delegating the story. 
    git rev-parse --verify origin/$(git branch --show-current) >/dev/null 2>&1
    ```
    - **If it exists**: `git pull origin $(git branch --show-current)` to get updates.
-   - **If it doesn't exist**: `git push -u origin $(git branch --show-current)` to create it (this means `/cam-plan` didn't push — fix it now).
+   - **If it does not exist**: `git push -u origin $(git branch --show-current)` to create it (this means `/cam-plan` did not push; fix it now).
 2. **Check working tree**:
    ```bash
    git status
    ```
    If there are uncommitted changes, warn the user and ask how to proceed.
 3. **Typecheck**:
-   Run the project's typecheck command (e.g. `npm run typecheck`, `bun run typecheck`, `npx tsc --noEmit`).
-   If it fails, fix the type errors before proceeding.
+   Run `bun run typecheck`. If it fails, fix type errors before proceeding.
 4. **Tests**:
-   Run the project's test command (e.g. `npm run test`, `bun test`).
-   If tests fail, fix them before proceeding.
+   Run `bun test`. If tests fail, fix them before proceeding.
 
 Only proceed once all pre-flight checks pass.
 
 ---
 
-## Emitting the COMPLETE promise — verbatim format
+## Architecture: deterministic TS supervisor
 
-When the Branch decision matrix (below) tells you to emit COMPLETE, you must output **exactly** this string, on its own line, with no decoration:
-
-```
-<promise>COMPLETE</promise>
-```
-
-**DO NOT emit plain text like this:**
+`cam next` does NOT dispatch a Task subagent. It calls `runSupervisor()` directly in the current TypeScript process. The supervisor owns the full implement-review-complete loop:
 
 ```
-COMPLETE
+cam next
+  └── runSupervisor(options)
+        ├── decideNextAction(prd)        -- implement | review | complete | blocked
+        ├── respawn-pane -k <worker-pane> <claude-argv>
+        │     worker = claude -p --permission-mode <mode>
+        │               --session-id <uuid>
+        │               --output-format text
+        │               --agent <name>
+        │               "<task-prompt>"
+        ├── tmux wait-for <channel>      -- blocks until worker exits + signals
+        ├── capture-pane -p              -- scrape pane for CAM_*_STATUS sentinel
+        └── loop until: complete | blocked | max-iterations
 ```
 
-Plain `COMPLETE` without the XML wrapper **never matches**. The plugin's Stop hook (`stop-hook.sh`) does a case-sensitive literal-string match on the first `<promise>...</promise>` tag it finds in your last assistant text block. A bare word, even in all-caps, is invisible to the hook and the loop will not terminate.
+Workers (implementer and reviewer) are real separate `claude -p` sessions. Each story runs in a **reused worker pane**: `respawn-pane -k` kills the previous command and starts the next one in the same pane id. The worker pane id is written by `cam plan` to `.claude/.cam-worker-pane` and read by the supervisor on every iteration.
 
-Rules:
-- Emit it **on its own line**.
-- Emit it **exactly once** per turn.
-- Emit it **only** when the conditions in the Branch decision matrix are met (see below).
-- Do not wrap it in a fenced code block when actually emitting it — only the example above is in a fence.
+**Stop-hook driver is retired.** The old model (a vendored Stop hook injecting `/cam-next` on each assistant turn) is gone. Workers are real per-story `claude -p` sessions that exit on their own; the supervisor waits on a `tmux wait-for` channel instead of relying on a stop hook.
 
 ---
 
-## Branch decision: implementer, reviewer, or COMPLETE?
+## Worker entrypoint
 
-Before dispatching anything, read `scripts/cam/prd.json` and decide what this iteration should do:
+Workers are invoked as `--agent <name>` agents, not as slash commands:
+
+```
+claude -p \
+  --permission-mode <mode> \
+  --session-id <uuid> \
+  --output-format text \
+  --agent subagent-implementer \
+  "<task-prompt>"
+```
+
+There is no `/cam-implement` slash command. The implementer and reviewer are agents (`subagent-implementer`, `subagent-reviewer`) defined in `.claude/agents/`.
+
+The task prompt for the implementer is:
+
+```
+Implement the next user story from scripts/cam/prd.json per your AGENT.md.
+Branch: <current-branch>
+Return with one of the CAM_IMPLEMENTER_STATUS= lines on your last line.
+```
+
+---
+
+## Worker exit contract (CAM_IMPLEMENTER_STATUS sentinel)
+
+Every implementer worker must print exactly one of these lines as the **last line** of its output. The supervisor scrapes the worker pane with `capture-pane -p` and matches this sentinel to decide the next action.
+
+| Status line | Meaning |
+|---|---|
+| `CAM_IMPLEMENTER_STATUS=DONE story=US-XXX` | Story implemented, committed, handoff written, pushed. |
+| `CAM_IMPLEMENTER_STATUS=PRD_COMPLETE` | Worker found nothing to implement (stories already passing). Supervisor re-evaluates via `decideNextAction` (review, await-operator, or complete). |
+| `CAM_IMPLEMENTER_STATUS=BLOCKED_QUALITY story=US-XXX reason=<short>` | Quality gate failed repeatedly; story still `passes: false`. Supervisor surfaces to operator. |
+| `CAM_IMPLEMENTER_STATUS=BLOCKED_AMBIGUITY story=US-XXX question=<short>` | Story acceptance criteria are ambiguous. Worker documents in `openQuestions` and exits. |
+| `CAM_IMPLEMENTER_STATUS=BLOCKED_OPERATOR_REQUIRED story=US-XXX reason=<short>` | Story has `requires: "operator"`. Worker exits without touching files. |
+| `CAM_IMPLEMENTER_STATUS=RATE_LIMIT` | Hit Anthropic rate-limit mid-story; partial work left uncommitted. |
+
+The sentinel is consumed by the TS supervisor (`src/supervisor/result.ts`). It is NOT consumed by a stop-hook script.
+
+---
+
+## Branch decision: implement, review, or complete?
+
+Before dispatching a worker, `decideNextAction` reads `scripts/cam/prd.json` and returns one of:
+
+Decision order (operator-required stories do **not** block the review cycle: review runs first, the operator ceremony is the final seal over reviewed, stable code):
 
 | Condition | Action |
 |---|---|
-| Any story has `passes: false` | Dispatch **implementer** subagent (skip to next section) |
-| All stories `passes: true` AND `prd.review?.lastVerdict === "CLEAN"` | Emit `<promise>COMPLETE</promise>` and stop. Cam-loop terminates. |
-| All stories `passes: true` AND `prd.review?.lastVerdict === "MAX_ROUNDS_DEBT"` | Emit `<promise>COMPLETE</promise>` and stop. Ship with debt. |
-| All stories `passes: true` AND `prd.review?.roundsCompleted >= prd.review?.maxRounds` (default 3) | Emit `<promise>COMPLETE</promise>` and stop. Cap reached. |
-| All stories `passes: true` AND not yet reviewed (or `lastVerdict === "FIXES_PENDING"` from previous round, fixes now landed) | Auto-dispatch **`/cam-review`** (it spawns the `subagent-reviewer` and updates the PRD review state). After it completes, emit nothing — the next cam-loop iteration re-enters here, sees the new state, and decides again. |
+| Any **non-operator** story has `passes: false` | Dispatch implementer worker (lowest `priority`, then `id` asc). |
+| All non-operator stories `passes: true` AND review **not** terminal (`lastVerdict` is `null` or `"FIXES_PENDING"`, and `roundsCompleted < maxRounds`) | Dispatch reviewer worker (`subagent-reviewer`). A pending operator-required story does **not** block this. After it finishes, supervisor re-evaluates. |
+| All non-operator stories `passes: true` AND review terminal (`"CLEAN"` / `"MAX_ROUNDS_DEBT"` / cap reached) AND an operator-required story is still `passes: false` | **Await operator** (`await-operator`, status `awaiting-operator`). Autonomous work is done and reviewed clean; the supervisor exits **0** and hands the ceremony to the operator. The operator runs it, flips the story to `passes: true`, and re-runs `cam next` to complete the PRD. |
+| All stories `passes: true` (incl. operator) AND review terminal (`"CLEAN"` / `"MAX_ROUNDS_DEBT"` / cap reached) | Complete. Supervisor exits 0. |
 
-**Why auto-dispatch /cam-review and not `subagent-reviewer` directly?** The `/cam-review` command owns the post-review bookkeeping (parsing `<review>` tag, creating `US-RX-NNN` stories, updating `prd.review` state). Calling `subagent-reviewer` without that wrapper drops the autonomous-loop semantics on the floor.
-
-**`<promise>COMPLETE</promise>` etiquette**: emit it on its own line, exactly once, and only when the conditions above are met. The plugin's Stop hook does a literal-string match on the first `<promise>...</promise>` in your last assistant block. Don't decorate.
-
----
-
-## Delegate the story to a fresh subagent
-
-Every story runs in its own fresh Task subagent. The parent session owns scheduling (pre-flight, status parsing, next-step guidance) but never implements — that guarantees zero context bleed between stories in a long-lived orchestrator session (like the tmux runner).
-
-Invoke the implementer:
-
-```
-Task(
-  subagent_type="subagent-implementer",
-  description="Implement next story",
-  prompt="""
-Implement the next user story from scripts/cam/prd.json per your AGENT.md.
-Branch: <current branch name>
-Return with one of the CAM_IMPLEMENTER_STATUS= lines on your last line.
-"""
-)
-```
-
-The subagent reads `handoff.json`, `progress.txt`, `prd.json`, picks the highest-priority `passes: false` story, implements it, runs quality gates, commits, runs Step 5.5 docs validation, writes `handoff.json`, and pushes. You don't repeat that logic here — it's in the subagent's AGENT.md.
-
----
-
-## Parse the status line and act
-
-Read the last line of the subagent's output. Match one of:
-
-### `CAM_IMPLEMENTER_STATUS=DONE story=US-XXX`
-
-The story is committed and pushed. Show a concise status block:
-
-```
-📋 Progress: {done}/{total} stories complete, {remaining} remaining.
-
-Next story: {US-ID} - {title}
-Run /cam-next in a new conversation (or the orchestrator will do it).
-```
-
-If `done == total` after this story, the next cam-loop iteration will hit the **Branch decision** matrix above.
-
-### `CAM_IMPLEMENTER_STATUS=PRD_COMPLETE`
-
-The PRD was already fully passing when the implementer ran. Log the inconsistency and re-evaluate the matrix:
-- All `passes:true` AND `lastVerdict !== "CLEAN"` AND under cap → run `/cam-review`
-- All `passes:true` AND `lastVerdict === "CLEAN"` → emit `<promise>COMPLETE</promise>`
-
-Do not re-invoke the implementer.
-
-### `CAM_IMPLEMENTER_STATUS=BLOCKED_QUALITY story=US-XXX reason=...`
-
-Surface to the user. Show the subagent's summary verbatim plus:
-
-```
-⚠ Story US-XXX blocked on quality gate: <reason>
-
-Recommended actions:
-- Inspect the failing output in the subagent transcript above
-- Fix the root cause locally or mark the story blocked in prd.json
-- Do NOT re-run /cam-next until resolved — you'd just re-hit the gate
-```
-
-### `CAM_IMPLEMENTER_STATUS=BLOCKED_AMBIGUITY story=US-XXX question=...`
-
-The acceptance criteria are under-specified. Show:
-
-```
-❓ Story US-XXX blocked on ambiguity: <question>
-
-The subagent appended the question to handoff.json.openQuestions.
-Update prd.json or the issue to resolve, then re-run /cam-next.
-```
-
-### `CAM_IMPLEMENTER_STATUS=RATE_LIMIT`
-
-Hit Anthropic rate-limit mid-story. Wait for the limit to reset and run again — the partial work left by the subagent is re-done fresh on retry.
+The supervisor loops internally until it reaches a terminal state. The orchestrator process running `cam next` does not need to re-invoke itself.
 
 ---
 
 ## IMPORTANT
 
-Work on **ONE** story only. After the subagent returns, stop. Do not re-invoke automatically — the orchestrator (tmux runner or the human) decides when to run `/cam-next` again.
+The supervisor drives **one story per worker invocation**. After each worker exits, it reads the outcome, updates state, and dispatches the next worker. It does not return control to an external orchestrator between stories.
 
-The parent session's context stays shallow on purpose: pre-flight output, one Task spawn, a status line, and a summary. If you notice your context growing past that, something is wrong.
+The parent `cam next` process context stays shallow on purpose: pre-flight output, supervisor call, a terminal status, and a summary. The supervisor itself is fully injectable and unit-tested in `test/supervisor/`.
