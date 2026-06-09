@@ -37,6 +37,12 @@
     }
   ],
   "architectureDecision": "BINDING (Eduardo, 2026-06-08): each worker is a REAL separate claude session spawned via 'tmux respawn-pane -k', REUSING ONE single pane (the worker slot established at 'cam plan'). plan, US-1, US-2, ..., review all run in that SAME slot, each replacing the previous. A deterministic TS/Bun supervisor (NOT a claude, NOT Task) sequences stories. The stop-hook driver (vendor/cam-loop-stop-hook.sh + /cam-next re-inject) is RETIRED, not coexisting. Closes CAM-29. Per-story session-id markers (.claude/.cam-worker-<US>.session) enable per-story transcript token attribution, closing the CAM-21 half that depends on per-story transcripts. NON-GOALS: no new panes/windows per worker; no /clear; no Task subagents.",
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "ac4ce593fae7e7547467816f00ff7bf2e6060cb3",
+    "lastVerdict": "CLEAN"
+  },
   "userStories": [
     {
       "id": "US-001",

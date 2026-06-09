@@ -709,3 +709,10 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
   dashboard shows the placeholder for US-014 until a real worker session runs it.
 - Remaining non-operator stories: US-015, US-016, US-017. US-018 requires:operator (real E2E).
 ---
+
+## [2026-06-09 11:42] - Review round 1: CLEAN
+- subagent-reviewer sobre toda a branch CAM-22 vs main (39 commits, 42 arquivos, +8499/-1238): APPROVE, zero CRITICAL, build PASS (715 testes).
+- 2 WARNINGs aplicados inline (operator path, nao re-revisado por agente): .claude/commands/cam-next.md output-format json -> text (gap US-010); next.ts makeReviewDispatch writePrd agora com trailing newline igual ao writer primario.
+- 3 SUGGESTIONs skipadas/backlog: out-logs sem prune, cam stop sem unlink do .cam-supervisor.lock (auto-cura), wait do review sem timeout.
+- Pronto para US-018 (operator E2E) + ship.
+---
