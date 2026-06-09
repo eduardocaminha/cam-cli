@@ -24,6 +24,29 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Per-story tokens in dashboard (US-014)**: `readSnapshot` now returns `storyTokens: Record<storyId, TranscriptUsage>`. It reads each story's `.claude/.cam-worker-<id>.session` marker (project `.claude`, via `readWorkerSessionMarker`), resolves the transcript with `transcriptPathForSession(uuid, cwd, claudeDir)`, and sums usage. `readTranscriptTokens` was generalized to take a resolved path (one reader for the orchestrator transcript AND per-story transcripts); the orchestrator caller now resolves the path first. Stories with no marker (or unreadable transcript) are omitted from the map, so `Dashboard.tsx` `StoryRow` shows a muted `STORY_TOKENS_PLACEHOLDER` (`·`) instead of crashing; stories with data show `renderTokensLine(...)` next to the row. State stays signalled by the glyph (✓/→/◌), never the divider. The Ink render is asserted via `ink-testing-library` (`test/dashboard.test.ts`), not a comment.
 - **Single-supervisor lock (US-015)**: `src/supervisor/lock.ts` is the pure guard: `acquireSupervisorLock(pid, project, io)` over an injected `LockIo` (`read`/`write`/`remove`/`pidAlive`/`clock` + optional `logEvent`). It refuses when an existing lock names a DIFFERENT, live pid; takes over a dead pid after emitting a `stale-lock` event (the union in `events.ts` gained `'stale-lock'`, a supervisor-level event with `uuid: 'supervisor'`); overwrites an unparseable lock with no event. Wired in `next.ts` (NOT in the pure `runSupervisor`, which stays side-effect-free): acquire right after the worker-pane check and before the state-file write, reject with exit 1 on conflict, and release at every terminal return AND via a single process-wide SIGINT/SIGTERM handler (`installShutdownHandler`, module-singleton tracking `currentLockRelease`). `acquireLock` and `onShutdown` are injectable on `NextOptions` so tests drive the conflict/release paths without real processes or signals. PID liveness reuses `isPidAlive` from `resume.ts` (do NOT duplicate the signal-0 probe). Lock file `.claude/.cam-supervisor.lock` is gitignored.
 - **Rate-limit pause/resume (US-016)**: handled ONLY in the exit-mode worker path of `loop.ts`, gated behind an optional `rateLimitResume?` injection (absent ⇒ zero behavior change; a RATE_LIMIT pane then flows through `readWorkerOutcome` as `unknown` -> blocked exactly as before). After capturing pane text, `detectRateLimit(text)` = the `CAM_IMPLEMENTER_STATUS=RATE_LIMIT` sentinel OR `isRateLimited(text)` (reused from `src/retry/patterns.ts`). On detection the supervisor emits a `'rate-limited'` event (`phase: 'pause'`), awaits `rateLimitResume({ message, attempt })`, emits `phase: 'resume'`, then RESPAWNS the SAME `shellCmd` (same uuid == `--session-id`, same channel marker -> session continuity, AC4), re-waits, and re-captures, bounded by `maxRateLimitRetries` (default 5). A resume-wait timeout reuses the normal timeout path via a labeled `continue outer`; exhausting retries returns blocked `rate-limit retries exhausted`. `result.ts` / `WorkerOutcomeKind` were NOT changed (avoids regressing the sentinel-mode path). The production `rateLimitResume` (in `next.ts`) reuses `parseResetTime` + `calculateWaitMs` from `src/retry/time-parser.ts` and `Bun.sleepSync`, capped at `RL_MAX_SLEEP_MS` (6h). The outer supervisor `while` is now labeled `outer:` so the inner resume loop can bail to the next iteration on timeout.
+- **Recovery runbook (US-017)**: `docs/recovery-runbook.md` is the canonical operator playbook for a stuck loop. Covers stuck supervisor (find `pid:` in `.claude/cam-loop.local.md`, `cam stop` then `cam resume`), orphaned worker pane (`cam stop`/`cam resume`, or `tmux -L cam respawn-pane -k -t <pane>`), partial story (handoff names it but `prd.json` not flipped: re-run gates, flip `passes:true`, commit), stale `.cam-supervisor.lock` (auto-taken-over on next `cam next`; `rm` only when the recorded pid is dead), and reading `.claude/cam-worker-events.jsonl` to diagnose. Reference facts captured while writing it: `cam stop` SIGTERMs the supervisor pid from the state file + removes the state file + kills the project tmux session (it does NOT remove the lock); `cam resume` is the 4-mode recovery (continue/respawn/prompt/noop + explicit `--mode reset-*`). Keep the runbook's file table in sync if the `.claude/` runtime filenames change.
+
+## 2026-06-09 04:00 - US-017: Recovery runbook in docs/
+
+### What was done
+- New `docs/recovery-runbook.md`: operator recovery playbook with a canonical-files table and five scenarios (stuck supervisor, orphaned worker pane, partial story, stale lock, event-log diagnosis). All tmux commands use the `-L cam` socket; no em-dash characters (project convention).
+
+### Files changed
+- `docs/recovery-runbook.md` (new)
+- `scripts/cam/prd.json`, `scripts/cam/progress.txt`, `scripts/cam/handoff.json`
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 708 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+- summary: Documentation-only story. No code, no external library. Commands documented (`cam status`/`stop`/`resume`, `tmux -L cam ...`, `bun run typecheck`/`bun test`) were cross-checked against the actual implementations in src/commands/{status,stop,resume}.ts and src/supervisor/* before writing.
+
+### Notes
+- Implemented directly in a Claude Code session (no live -L cam worker pane in this checkout), not via a dispatched headless worker. With US-015/016/017 all passing, the only remaining story is US-018 (requires:operator, real E2E). The branch is now ready for the review cycle.
+---
 
 ## 2026-06-09 03:00 - US-016: Rate-limit handling via src/retry/*
 

@@ -347,7 +347,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: docs/recovery-runbook.md (new), README.md (link to runbook). Pull the exact PID/state-file field names from src/commands/status.ts (parseStateFile) so the runbook does not drift. No code changes expected, typecheck/tests are mandatory acceptance gates only."
     },
