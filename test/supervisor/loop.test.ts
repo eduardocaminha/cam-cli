@@ -1681,6 +1681,36 @@ describe('runSupervisor onProgress callback (US-001)', () => {
 		expect(terminal[0]?.terminalStatus).toBe('blocked');
 	});
 
+	test('terminal call on blocked via CAM-36 no-progress guard', async () => {
+		// CAM-36 + US-001 integration regression: when the loop blocks because a
+		// worker no-op'd and re-confirmed an already-done story, the terminal
+		// onProgress MUST still fire so next.ts clears the live state file. Without
+		// notifyTerminal('blocked') in the no-progress guard the state file would
+		// stay 'active' forever after the block.
+		const prd = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: false },
+			],
+		});
+		const progressCalls: ProgressPayload[] = [];
+		const opts = makeBaseOpts({
+			readPrd: () => prd, // never advances: US-002 stays false
+			readHandoff: () => makeHandoff('US-001'), // stale completed story
+			capturePane: (_paneId) => '', // empty pane -> state-primary -> pass US-001
+			maxIterations: 50,
+			onProgress: (p) => {
+				progressCalls.push({ ...p });
+			},
+		});
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(MAX_NO_PROGRESS_RETRIES);
+		const terminal = progressCalls.filter((p) => p.terminalStatus !== undefined);
+		expect(terminal).toHaveLength(1);
+		expect(terminal[0]?.terminalStatus).toBe('blocked');
+	});
+
 	test('lastActivity is the injected clock value', async () => {
 		const prd = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
 		const prdDone = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }], review: { roundsCompleted: 1, lastVerdict: 'CLEAN' } });

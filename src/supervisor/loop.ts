@@ -931,6 +931,11 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 							storyId: advisoryStoryId,
 							detail: `no-progress: ${noProgressStreak} consecutive worker passes re-confirmed an already-done story (advisory ${advisoryStoryId}, completed ${outcome.storyId})`,
 						};
+						// Fire the terminal progress callback so next.ts clears the
+						// live state file (US-001 clear-on-exit). Every other terminal
+						// return in this loop does this; the no-progress block is a
+						// real terminal exit too.
+						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}
 				} else {
