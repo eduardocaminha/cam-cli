@@ -20,7 +20,7 @@
 // CLI contract:
 //   cam run [--no-attach]         (don't attach, just create the session)
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -150,7 +150,11 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		`claude --permission-mode bypassPermissions --session-id "$sid" "$(cat ${q(opts.promptFile)})"; ` +
 		`if [ -f ${q(opts.handoffMarker)} ] && [ "$n" -lt "$max" ]; then ` +
 		`mv ${q(opts.handoffMarker)} ${q(consumed)}; ` +
-		`sid=$(uuidgen); ` +
+		// Lowercase the uuid: macOS `uuidgen` emits UPPERCASE, but claude writes
+		// transcripts with lowercase-uuid filenames (node randomUUID is lowercase),
+		// so an uppercase --session-id would make orchestratorTranscriptPath miss
+		// the transcript after a respawn and silently disable the budget check.
+		`sid=$(uuidgen | tr 'A-Z' 'a-z'); ` +
 		`printf '%s' "$sid" > ${q(opts.sessionIdMarker)}; ` +
 		`n=$((n + 1)); ` +
 		`else ` +
@@ -197,6 +201,20 @@ function setupOrchestratorSession(opts: {
 	}
 
 	const { orchPaneId, dashboardPaneId, menuPaneId } = panes;
+
+	// CAM-23: a freshly created session must not inherit a stale handoff. If a
+	// previous session was killed (cam stop, tmux kill-server, reboot) AFTER its
+	// agent wrote .cam-orch-handoff.json but BEFORE the wrapper consumed it, the
+	// file would linger and make this new session rehydrate from (and respawn off)
+	// the wrong payload. Clear it; best-effort, a leftover is non-fatal.
+	const staleHandoff = join(cwd, '.claude', '.cam-orch-handoff.json');
+	if (existsSync(staleHandoff)) {
+		try {
+			rmSync(staleHandoff);
+		} catch {
+			// non-fatal: the wrapper would still consume it on the first exit.
+		}
+	}
 
 	// Persist the boot prompt to a file so the agent command stays simple.
 	const dotClaude = join(cwd, '.claude');

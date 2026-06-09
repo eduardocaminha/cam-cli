@@ -433,6 +433,20 @@ describe('runRun session-id and marker file (US-002)', () => {
 		const markerPath = join(cwd, '.claude', '.cam-orch-session');
 		expect(readFileSync(markerPath, 'utf8')).toBe(originalUuid);
 	});
+
+	it('clears a stale .cam-orch-handoff.json on a newly created session (CAM-23)', () => {
+		const cwd = makeTmpProject();
+		const dotClaude = join(cwd, '.claude');
+		mkdirSync(dotClaude, { recursive: true });
+		const handoff = join(dotClaude, '.cam-orch-handoff.json');
+		writeFileSync(handoff, '{"schemaVersion":1,"writtenAt":"x","reason":"stale"}', 'utf8');
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+
+		// A fresh session must not inherit the leftover handoff.
+		expect(existsSync(handoff)).toBe(false);
+	});
 });
 
 describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
@@ -460,8 +474,10 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		expect(cmd).toContain(`> '${base.sessionIdMarker}'`);
 	});
 
-	it('mints a fresh uuid via uuidgen on respawn (F-03)', () => {
-		expect(buildOrchestratorPaneCommand(base)).toContain('sid=$(uuidgen)');
+	it('mints a fresh LOWERCASED uuid via uuidgen on respawn (F-03 + macOS case fix)', () => {
+		// macOS uuidgen is UPPERCASE; claude transcript filenames are lowercase, so
+		// the respawn uuid must be lowercased or the budget check breaks post-respawn.
+		expect(buildOrchestratorPaneCommand(base)).toContain("sid=$(uuidgen | tr 'A-Z' 'a-z')");
 	});
 
 	it('falls back to kill-session for the tmux session', () => {
@@ -470,10 +486,15 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		);
 	});
 
-	it('respects the maxRespawns cap (default, overridable)', () => {
-		expect(buildOrchestratorPaneCommand(base)).toContain(`max=${DEFAULT_MAX_ORCH_RESPAWNS}`);
+	it('respects the maxRespawns cap and only increments inside the under-cap gate', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain(`max=${DEFAULT_MAX_ORCH_RESPAWNS}`);
 		expect(buildOrchestratorPaneCommand({ ...base, maxRespawns: 2 })).toContain('max=2');
-		expect(buildOrchestratorPaneCommand(base)).toContain('[ "$n" -lt "$max" ]');
+		expect(cmd).toContain('[ "$n" -lt "$max" ]');
+		expect(cmd).toContain('n=$((n + 1))');
+		// The increment sits AFTER the under-cap guard (inside the respawn branch),
+		// so a write-then-instant-exit cannot loop past the cap.
+		expect(cmd.indexOf('[ "$n" -lt "$max" ]')).toBeLessThan(cmd.indexOf('n=$((n + 1))'));
 	});
 });
 

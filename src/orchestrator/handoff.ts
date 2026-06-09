@@ -93,8 +93,11 @@ export function readOrchHandoff(claudeDir: string): OrchHandoffPayload | null {
 			`orch-handoff: unsupported schemaVersion ${String(obj['schemaVersion'])} in ${path} (expected ${ORCH_HANDOFF_SCHEMA_VERSION})`,
 		);
 	}
-	if (typeof obj['writtenAt'] !== 'string' || typeof obj['reason'] !== 'string') {
-		throw new Error(`orch-handoff: ${path} is missing a required field (writtenAt, reason)`);
+	if (typeof obj['writtenAt'] !== 'string') {
+		throw new Error(`orch-handoff: ${path} is missing a required field: writtenAt`);
+	}
+	if (typeof obj['reason'] !== 'string') {
+		throw new Error(`orch-handoff: ${path} is missing a required field: reason`);
 	}
 
 	// Forward compatibility: return the whole parsed object so unknown keys
