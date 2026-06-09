@@ -15,7 +15,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import { parseRunArgs, projectSessionName, runRun } from '../src/commands/run.ts';
+import {
+	parseRunArgs,
+	projectSessionName,
+	runRun,
+	buildOrchestratorPaneCommand,
+	buildOrchestratorBootPrompt,
+	DEFAULT_MAX_ORCH_RESPAWNS,
+} from '../src/commands/run.ts';
 import type { SpawnFn } from '../src/tmux/session.ts';
 
 // ---------------------------------------------------------------------------
@@ -388,10 +395,13 @@ describe('runRun session-id and marker file (US-002)', () => {
 		);
 		expect(orchRespawn).toBeDefined();
 
-		// The composed bash -c command must contain --session-id <uuid>.
+		// The composed bash -c command must seed the session uuid. The CAM-23
+		// self-handoff wrapper sets `sid='<uuid>'` then passes `--session-id "$sid"`
+		// (so respawns can re-point sid at a fresh uuid via uuidgen).
 		const composedCmd = orchRespawn?.args.find(a => a.includes('--session-id'));
 		expect(composedCmd).toBeDefined();
-		expect(composedCmd).toContain(`--session-id ${FIXED_UUID}`);
+		expect(composedCmd).toContain(`sid='${FIXED_UUID}'`);
+		expect(composedCmd).toContain('--session-id "$sid"');
 	});
 
 	it('writes the session uuid to .claude/.cam-orch-session on new session', () => {
@@ -422,5 +432,78 @@ describe('runRun session-id and marker file (US-002)', () => {
 		// Marker must still contain the original uuid, not the new one.
 		const markerPath = join(cwd, '.claude', '.cam-orch-session');
 		expect(readFileSync(markerPath, 'utf8')).toBe(originalUuid);
+	});
+
+	it('clears a stale .cam-orch-handoff.json on a newly created session (CAM-23)', () => {
+		const cwd = makeTmpProject();
+		const dotClaude = join(cwd, '.claude');
+		mkdirSync(dotClaude, { recursive: true });
+		const handoff = join(dotClaude, '.cam-orch-handoff.json');
+		writeFileSync(handoff, '{"schemaVersion":1,"writtenAt":"x","reason":"stale"}', 'utf8');
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+
+		// A fresh session must not inherit the leftover handoff.
+		expect(existsSync(handoff)).toBe(false);
+	});
+});
+
+describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
+	const base = {
+		sessionName: 'cam-orch-proj-abc123',
+		sessionId: '11111111-2222-3333-4444-555555555555',
+		promptFile: '/project/.claude/.cam-orchestrator-prompt.txt',
+		sessionIdMarker: '/project/.claude/.cam-orch-session',
+		handoffMarker: '/project/.claude/.cam-orch-handoff.json',
+	};
+
+	it('preserves --permission-mode bypassPermissions and the initial session-id', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain('claude --permission-mode bypassPermissions');
+		expect(cmd).toContain(`sid='${base.sessionId}'`);
+		expect(cmd).toContain('--session-id "$sid"');
+	});
+
+	it('guards on the handoff file, consumes it, and rewrites the session marker on respawn', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain(`[ -f '${base.handoffMarker}' ]`);
+		expect(cmd).toContain(
+			`mv '${base.handoffMarker}' '/project/.claude/.cam-orch-handoff.consumed.json'`,
+		);
+		expect(cmd).toContain(`> '${base.sessionIdMarker}'`);
+	});
+
+	it('mints a fresh LOWERCASED uuid via uuidgen on respawn (F-03 + macOS case fix)', () => {
+		// macOS uuidgen is UPPERCASE; claude transcript filenames are lowercase, so
+		// the respawn uuid must be lowercased or the budget check breaks post-respawn.
+		expect(buildOrchestratorPaneCommand(base)).toContain("sid=$(uuidgen | tr 'A-Z' 'a-z')");
+	});
+
+	it('falls back to kill-session for the tmux session', () => {
+		expect(buildOrchestratorPaneCommand(base)).toContain(
+			`tmux -L cam kill-session -t ${base.sessionName}`,
+		);
+	});
+
+	it('respects the maxRespawns cap and only increments inside the under-cap gate', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain(`max=${DEFAULT_MAX_ORCH_RESPAWNS}`);
+		expect(buildOrchestratorPaneCommand({ ...base, maxRespawns: 2 })).toContain('max=2');
+		expect(cmd).toContain('[ "$n" -lt "$max" ]');
+		expect(cmd).toContain('n=$((n + 1))');
+		// The increment sits AFTER the under-cap guard (inside the respawn branch),
+		// so a write-then-instant-exit cannot loop past the cap.
+		expect(cmd.indexOf('[ "$n" -lt "$max" ]')).toBeLessThan(cmd.indexOf('n=$((n + 1))'));
+	});
+});
+
+describe('buildOrchestratorBootPrompt (CAM-23 rehydration directive)', () => {
+	it('directs the orchestrator to rehydrate from the handoff file when present', () => {
+		const prompt = buildOrchestratorBootPrompt();
+		expect(prompt).toContain('.claude/.cam-orch-handoff.json');
+		expect(prompt.toLowerCase()).toContain('rehydrate');
+		// Still tells it to read its agent system prompt.
+		expect(prompt).toContain('subagent-orchestrator.md');
 	});
 });

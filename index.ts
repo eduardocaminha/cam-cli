@@ -28,6 +28,7 @@ import { runPlan } from './src/commands/plan.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
+import { runOrchBudget } from './src/commands/orch-budget.ts';
 import { runStop } from './src/commands/stop.ts';
 import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
@@ -735,6 +736,11 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			return runStatus();
+		}
+		case 'orch-budget': {
+			// CAM-23 US-001: machine-parseable orchestrator token-budget line.
+			// Read-only, no flags; the orchestrator agent invokes it each cycle.
+			return runOrchBudget();
 		}
 		case 'stop': {
 			const tail = argv.slice(3);
