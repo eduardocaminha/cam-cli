@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Supervisor verifies origin-synced on every pass (deterministic backstop)"
+  },
+  "branchName": "cam/CAM-33-supervisor-verifies-push",
+  "timestamp": "2026-06-09T12:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/loop.ts",
+    "src/commands/next.ts",
+    "test/supervisor/loop.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 depends on US-001 (ensurePushed already wired). It needs to add the 'pushed' WorkerEventKind to events.ts and call emit('pushed', ...) after ensurePushed in both pass-branch sites. The emit helper already guards on logEvent absence. Event ordering: 'result' first, then writeSessionMarker, then ensurePushed, then emit('pushed'). Use outcome.storyId (exit mode) or sentinelOutcome.storyId (sentinel mode), not advisoryStoryId.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Reuses existing node:child_process.spawnSync and git CLI already present throughout the codebase; no new external library introduced."
+    }
+  ]
+}

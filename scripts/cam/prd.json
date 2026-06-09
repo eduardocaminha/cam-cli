@@ -25,7 +25,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files to touch: src/supervisor/loop.ts (add ensurePushed to RunSupervisorOptions, call it in both pass branches after writeSessionMarker), src/commands/next.ts (wire real ensurePushed adapter, pass through to runSupervisor), test/supervisor/loop.test.ts (4 new cases with fake ensurePushed). Reuse the spawnSync + `git branch --show-current` pattern already in finalizeStory in next.ts (around line 545-551). 'pass' branch in loop.ts lives at two sites: exit mode around line 743-746 (writeSessionMarker on outcome.kind==='pass') and sentinel mode around line 558-560 (same call). Both must call ensurePushed AFTER writeSessionMarker and BEFORE the `continue`. Treat 'Everything up-to-date' from `git push` as ok:true pushed:false. Gotchas: noUncheckedIndexedAccess (guard match[N] when parsing stdout); supervisorSpawn returns { stdout, exitCode } so detail must concatenate stderr separately (use spawnSync directly in next.ts adapter, not the supervisorSpawn wrapper which drops stderr). Conventional commit. Do not add any --permission-mode flag (project rule)."
     },
