@@ -6,3 +6,36 @@
 - **Ink screens**: success/failure is signalled by the glyph (✓ accent / ✗ destructive), never by divider color. Render and look at the real output.
 - **Vendor drift**: when a story touches `vendor/` or `templates/`, re-run `bun run embed-vendor` and confirm `bun run embed-vendor:check` passes.
 - **Commits**: conventional commits required (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
+- **sessionId callers**: `test/attach-hint.test.ts` also passes sessionId to runNext; grep all test files for the field when removing it from NextOptions.
+
+## [2026-06-09 00:00] - US-001: Drop session_id from state-file writer + vendored template
+
+### What was done
+- Removed `session_id: {{SESSION_ID}}` line from `vendor/cam-loop.local.md.tmpl`
+- Removed `sessionId: string` from `renderStateFile()` input type and the `.replace('{{SESSION_ID}}', ...)` call
+- Removed `sessionId?: string` from `NextOptions` interface
+- Removed `supervisorSessionId` derivation (`options.sessionId ?? CLAUDE_CODE_SESSION_ID ?? crypto.randomUUID()`) and its use in `renderStateFile()` and `stateFileBase`
+- Updated header comments to drop `session_id,` from field lists and retire stop-hook references
+- Regenerated `src/vendor/_generated.ts` via `bun run embed-vendor`
+- Removed all `sessionId:` args from `runNext()` calls and `renderStateFile()` calls in tests
+- Removed `session_id:` assertions from `test/next.test.ts` and fixture bodies + assertion from `test/interactivity/interactivity.test.ts`
+
+### Files changed
+- vendor/cam-loop.local.md.tmpl
+- src/commands/next.ts
+- src/vendor/_generated.ts
+- test/next.test.ts
+- test/attach-hint.test.ts
+- test/interactivity/interactivity.test.ts
+
+### Quality gates
+- Typecheck: ok
+- Tests: 757 pass
+- Vendor drift: ok
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+
+### Notes
+- `test/attach-hint.test.ts` also had sessionId in runNext calls (not listed in story notes). Grepping all test files for the field name is the safe approach when removing from NextOptions.
+---

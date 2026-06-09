@@ -25,7 +25,7 @@
         "Vendor drift check passes (bun run embed-vendor:check)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: vendor/cam-loop.local.md.tmpl (drop line 4 + the {{SESSION_ID}} placeholder), src/commands/next.ts (~line 154 sessionId field, ~line 181 {{SESSION_ID}} replace, ~lines 393-394 supervisorSessionId derivation, ~line 402 sessionId arg into renderStateFile, ~line 427 stateFileBase), src/vendor/_generated.ts (regenerate), test/next.test.ts (`expect(out).toContain('session_id: sess-abc')` at ~line 69, `parsed['session_id']` at ~line 122, ~line 221 `session_id: shape-test`), test/interactivity/interactivity.test.ts (~line 291 + ~line 389 + ~line 448 `session_id:` fixture lines and assertion). After editing the .tmpl, run `bun run embed-vendor` and commit the regenerated `src/vendor/_generated.ts` in the same commit as the template change so vendor-drift never goes red. Per AGENTS.md: noUncheckedIndexedAccess is strict — when removing the sessionId arg from renderStateFile(), make sure no caller still passes it. The vendored stop-hook in src/vendor/_generated.ts still references session_id; do NOT touch that string here, US-003 deletes the whole stop-hook embed."
     },
