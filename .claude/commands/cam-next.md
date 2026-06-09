@@ -81,7 +81,7 @@ Every implementer worker must print exactly one of these lines as the **last lin
 | Status line | Meaning |
 |---|---|
 | `CAM_IMPLEMENTER_STATUS=DONE story=US-XXX` | Story implemented, committed, handoff written, pushed. |
-| `CAM_IMPLEMENTER_STATUS=PRD_COMPLETE` | No non-operator stories had `passes: false`. Supervisor triggers review cycle. |
+| `CAM_IMPLEMENTER_STATUS=PRD_COMPLETE` | Worker found nothing to implement (stories already passing). Supervisor re-evaluates via `decideNextAction` (review, await-operator, or complete). |
 | `CAM_IMPLEMENTER_STATUS=BLOCKED_QUALITY story=US-XXX reason=<short>` | Quality gate failed repeatedly; story still `passes: false`. Supervisor surfaces to operator. |
 | `CAM_IMPLEMENTER_STATUS=BLOCKED_AMBIGUITY story=US-XXX question=<short>` | Story acceptance criteria are ambiguous. Worker documents in `openQuestions` and exits. |
 | `CAM_IMPLEMENTER_STATUS=BLOCKED_OPERATOR_REQUIRED story=US-XXX reason=<short>` | Story has `requires: "operator"`. Worker exits without touching files. |
@@ -95,13 +95,14 @@ The sentinel is consumed by the TS supervisor (`src/supervisor/result.ts`). It i
 
 Before dispatching a worker, `decideNextAction` reads `scripts/cam/prd.json` and returns one of:
 
+Decision order (operator-required stories do **not** block the review cycle: review runs first, the operator ceremony is the final seal over reviewed, stable code):
+
 | Condition | Action |
 |---|---|
-| Any story has `passes: false` | Dispatch implementer worker |
-| All stories `passes: true` AND `prd.review?.lastVerdict === "CLEAN"` | Complete. Supervisor exits 0. |
-| All stories `passes: true` AND `prd.review?.lastVerdict === "MAX_ROUNDS_DEBT"` | Complete. Supervisor exits 0 (ship with debt). |
-| All stories `passes: true` AND `prd.review?.roundsCompleted >= prd.review?.maxRounds` | Complete. Cap reached. |
-| All stories `passes: true` AND not yet reviewed (or `lastVerdict === "FIXES_PENDING"`, fixes now landed) | Dispatch reviewer worker (`subagent-reviewer`). After it finishes, supervisor re-evaluates. |
+| Any **non-operator** story has `passes: false` | Dispatch implementer worker (lowest `priority`, then `id` asc). |
+| All non-operator stories `passes: true` AND review **not** terminal (`lastVerdict` is `null` or `"FIXES_PENDING"`, and `roundsCompleted < maxRounds`) | Dispatch reviewer worker (`subagent-reviewer`). A pending operator-required story does **not** block this. After it finishes, supervisor re-evaluates. |
+| All non-operator stories `passes: true` AND review terminal (`"CLEAN"` / `"MAX_ROUNDS_DEBT"` / cap reached) AND an operator-required story is still `passes: false` | **Await operator** (`await-operator`, status `awaiting-operator`). Autonomous work is done and reviewed clean; the supervisor exits **0** and hands the ceremony to the operator. The operator runs it, flips the story to `passes: true`, and re-runs `cam next` to complete the PRD. |
+| All stories `passes: true` (incl. operator) AND review terminal (`"CLEAN"` / `"MAX_ROUNDS_DEBT"` / cap reached) | Complete. Supervisor exits 0. |
 
 The supervisor loops internally until it reaches a terminal state. The orchestrator process running `cam next` does not need to re-invoke itself.
 

@@ -24,7 +24,34 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Per-story tokens in dashboard (US-014)**: `readSnapshot` now returns `storyTokens: Record<storyId, TranscriptUsage>`. It reads each story's `.claude/.cam-worker-<id>.session` marker (project `.claude`, via `readWorkerSessionMarker`), resolves the transcript with `transcriptPathForSession(uuid, cwd, claudeDir)`, and sums usage. `readTranscriptTokens` was generalized to take a resolved path (one reader for the orchestrator transcript AND per-story transcripts); the orchestrator caller now resolves the path first. Stories with no marker (or unreadable transcript) are omitted from the map, so `Dashboard.tsx` `StoryRow` shows a muted `STORY_TOKENS_PLACEHOLDER` (`·`) instead of crashing; stories with data show `renderTokensLine(...)` next to the row. State stays signalled by the glyph (✓/→/◌), never the divider. The Ink render is asserted via `ink-testing-library` (`test/dashboard.test.ts`), not a comment.
 - **Single-supervisor lock (US-015)**: `src/supervisor/lock.ts` is the pure guard: `acquireSupervisorLock(pid, project, io)` over an injected `LockIo` (`read`/`write`/`remove`/`pidAlive`/`clock` + optional `logEvent`). It refuses when an existing lock names a DIFFERENT, live pid; takes over a dead pid after emitting a `stale-lock` event (the union in `events.ts` gained `'stale-lock'`, a supervisor-level event with `uuid: 'supervisor'`); overwrites an unparseable lock with no event. Wired in `next.ts` (NOT in the pure `runSupervisor`, which stays side-effect-free): acquire right after the worker-pane check and before the state-file write, reject with exit 1 on conflict, and release at every terminal return AND via a single process-wide SIGINT/SIGTERM handler (`installShutdownHandler`, module-singleton tracking `currentLockRelease`). `acquireLock` and `onShutdown` are injectable on `NextOptions` so tests drive the conflict/release paths without real processes or signals. PID liveness reuses `isPidAlive` from `resume.ts` (do NOT duplicate the signal-0 probe). Lock file `.claude/.cam-supervisor.lock` is gitignored.
 - **Rate-limit pause/resume (US-016)**: handled ONLY in the exit-mode worker path of `loop.ts`, gated behind an optional `rateLimitResume?` injection (absent ⇒ zero behavior change; a RATE_LIMIT pane then flows through `readWorkerOutcome` as `unknown` -> blocked exactly as before). After capturing pane text, `detectRateLimit(text)` = the `CAM_IMPLEMENTER_STATUS=RATE_LIMIT` sentinel OR `isRateLimited(text)` (reused from `src/retry/patterns.ts`). On detection the supervisor emits a `'rate-limited'` event (`phase: 'pause'`), awaits `rateLimitResume({ message, attempt })`, emits `phase: 'resume'`, then RESPAWNS the SAME `shellCmd` (same uuid == `--session-id`, same channel marker -> session continuity, AC4), re-waits, and re-captures, bounded by `maxRateLimitRetries` (default 5). A resume-wait timeout reuses the normal timeout path via a labeled `continue outer`; exhausting retries returns blocked `rate-limit retries exhausted`. `result.ts` / `WorkerOutcomeKind` were NOT changed (avoids regressing the sentinel-mode path). The production `rateLimitResume` (in `next.ts`) reuses `parseResetTime` + `calculateWaitMs` from `src/retry/time-parser.ts` and `Bun.sleepSync`, capped at `RL_MAX_SLEEP_MS` (6h). The outer supervisor `while` is now labeled `outer:` so the inner resume loop can bail to the next iteration on timeout.
+- **Operator stories do NOT block review (decide.ts, revised 2026-06-09)**: `decideNextAction` runs the review cycle BEFORE gating on `requires:operator` stories. Order: (1) any non-operator `passes:false` -> implement; (2) all non-operator pass AND review not terminal -> review; (3) review terminal AND an operator story still `passes:false` -> `await-operator` (carries `pendingStoryIds`); (4) all pass incl. operator AND review terminal -> complete. `await-operator` maps to `SupervisorStatus 'awaiting-operator'` in `loop.ts` and exits 0 in `next.ts` (success: autonomous work done + reviewed clean, operator ceremony pending), it is NOT a block. `blocked-no-implementable` is now only the degenerate guard (implementable story with no id). This SUPERSEDES the US-005 note (further down this log) that said operator-pending stories block the loop. Rationale: an operator E2E ceremony validates the product; review can change the code, so review must run first. See lessons.md 2026-06-09.
 - **Recovery runbook (US-017)**: `docs/recovery-runbook.md` is the canonical operator playbook for a stuck loop. Covers stuck supervisor (find `pid:` in `.claude/cam-loop.local.md`, `cam stop` then `cam resume`), orphaned worker pane (`cam stop`/`cam resume`, or `tmux -L cam respawn-pane -k -t <pane>`), partial story (handoff names it but `prd.json` not flipped: re-run gates, flip `passes:true`, commit), stale `.cam-supervisor.lock` (auto-taken-over on next `cam next`; `rm` only when the recorded pid is dead), and reading `.claude/cam-worker-events.jsonl` to diagnose. Reference facts captured while writing it: `cam stop` SIGTERMs the supervisor pid from the state file + removes the state file + kills the project tmux session (it does NOT remove the lock); `cam resume` is the 4-mode recovery (continue/respawn/prompt/noop + explicit `--mode reset-*`). Keep the runbook's file table in sync if the `.claude/` runtime filenames change.
+
+## 2026-06-09 07:56 - Fix: review runs before operator ceremony (decide.ts Interpretation B)
+
+### What was done
+- Reordered `decideNextAction` (`src/supervisor/decide.ts`): operator-required stories no longer block the review cycle. New order: implement -> review (if not terminal) -> await-operator (review terminal + operator pending) -> complete.
+- New `SupervisorAction` kind `await-operator` (carries `pendingStoryIds`); `blocked-no-implementable` retained only as the degenerate no-id guard.
+- New `SupervisorStatus` `awaiting-operator` + optional `pendingStoryIds` on `SupervisorResult` (`src/supervisor/loop.ts`); handler returns it as a successful terminal state.
+- `cam next` (`src/commands/next.ts`) reports `awaiting-operator` as success (exit 0) with a handoff hint listing the pending operator stories.
+- Reconciled docs to the new behavior: `.claude/commands/cam-next.md` (Branch-decision table + PRD_COMPLETE row), US-018 notes in `prd.json`, `scripts/cam/CLAUDE.md` Stop Condition.
+
+### Files changed
+- `src/supervisor/decide.ts`, `src/supervisor/loop.ts`, `src/commands/next.ts`
+- `test/supervisor/decide.test.ts`, `test/supervisor/loop.test.ts`, `test/next.test.ts`
+- `.claude/commands/cam-next.md`, `scripts/cam/CLAUDE.md`, `scripts/cam/prd.json`, `lessons.md`
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 715 pass
+
+### Step 5.5 docs validation
+- lib: none (pure TS, no external libs), status: no_external_lib_touched
+
+### Notes
+- Supersedes the US-005 note (further down this log) that claimed operator-pending stories block the loop. Operator ceremonies are now gated only AFTER review is terminal. Full rationale in lessons.md 2026-06-09. Triggered by the operator catching that doc-reconciliation alone was treating the symptom, not the ordering problem.
+---
 
 ## 2026-06-09 04:00 - US-017: Recovery runbook in docs/
 
@@ -261,7 +288,7 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - lib: none (pure TS, no external libs), status: no_external_lib_touched
 
 ### Notes
-- `blocked-no-implementable` fires when operator-incomplete stories exist even if non-operator stories all pass; review/complete only fires when ALL stories (including operator ones) have passes=true. This is the semantically correct interpretation: operator-pending stories block autonomous loop progression.
+- `blocked-no-implementable` fires when operator-incomplete stories exist even if non-operator stories all pass; review/complete only fires when ALL stories (including operator ones) have passes=true. This is the semantically correct interpretation: operator-pending stories block autonomous loop progression. (SUPERSEDED 2026-06-09: review now runs BEFORE the operator gate; operator-pending stories no longer block review. See the 2026-06-09 entry above and the Codebase Patterns bullet.)
 ---
 
 ## 2026-06-08 17:00 - US-004: Deterministic worker result reader

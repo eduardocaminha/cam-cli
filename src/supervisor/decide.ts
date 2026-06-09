@@ -7,9 +7,14 @@
 //
 // Decision order:
 //   1. Any non-operator story with passes=false -> implement (highest priority, tie-break by id asc)
-//   2. Any story with passes=false but ALL are operator-required -> blocked-no-implementable
-//   3. All non-operator stories pass AND review is terminal -> complete
-//   4. All non-operator stories pass AND review not terminal -> review
+//   2. All non-operator stories pass AND review not terminal -> review
+//   3. Review terminal AND an operator-required story is still pending -> await-operator
+//   4. All stories pass (incl. operator) AND review terminal -> complete
+//
+// The review cycle runs BEFORE gating on operator ceremonies: an operator-
+// required story (e.g. a manual E2E pass) must not block the automated review
+// of code that is already implemented. Review first; the operator ceremony is
+// the final seal over reviewed, stable code.
 
 /** Minimal prd.json shape consumed by decideNextAction. */
 export interface PrdSnapshot {
@@ -29,11 +34,16 @@ export interface PrdSnapshot {
 	};
 }
 
-/** The four actions the supervisor can take. */
+/** The actions the supervisor can take. */
 export type SupervisorAction =
 	| { kind: 'implement'; storyId: string }
 	| { kind: 'review' }
 	| { kind: 'complete' }
+	/** All implementable work is done and reviewed clean; one or more
+	 *  operator-required ceremonies remain. The autonomous loop stops and hands
+	 *  off to the operator. Carries the ids of the pending operator stories. */
+	| { kind: 'await-operator'; pendingStoryIds: string[] }
+	/** Degenerate guard: an implementable story exists but has no id. */
 	| { kind: 'blocked-no-implementable' };
 
 /** Default max review rounds, mirrors cam-review.md. */
@@ -82,33 +92,36 @@ export function decideNextAction(prd: PrdSnapshot): SupervisorAction {
 		return { kind: 'implement', storyId: first.id };
 	}
 
-	// --- 2. All passes=false stories are operator-required ---
-	// Non-operator stories are all passing. If any operator stories are still
-	// incomplete, the autonomous loop cannot proceed (operator must do their
-	// ceremony first). Return blocked-no-implementable so the loop exits cleanly.
-	if (operatorIncomplete.length > 0) {
-		return { kind: 'blocked-no-implementable' };
-	}
+	// At this point: all NON-operator stories pass. Operator-required stories
+	// may still be incomplete, but they do NOT block the review cycle. Resolve
+	// review state first; the operator ceremony is gated only AFTER review is
+	// terminal (see header comment).
 
-	// At this point: all stories (including operator ones) have passes=true.
-
-	// --- 3. Resolve review state ---
+	// --- Resolve review state ---
 	const review = prd.review;
 	const roundsCompleted = review?.roundsCompleted ?? 0;
 	const maxRounds = review?.maxRounds ?? DEFAULT_MAX_ROUNDS;
 	const lastVerdict = review?.lastVerdict ?? null;
 
-	// Cap row: roundsCompleted >= maxRounds -> complete regardless of lastVerdict.
-	if (roundsCompleted >= maxRounds) {
-		return { kind: 'complete' };
+	// Review is terminal when the round cap is reached OR the last verdict is a
+	// terminal one (CLEAN / MAX_ROUNDS_DEBT).
+	const reviewTerminal =
+		roundsCompleted >= maxRounds ||
+		(lastVerdict !== null && TERMINAL_VERDICTS.has(lastVerdict));
+
+	// --- 2. Review not yet terminal (null / FIXES_PENDING / under cap) -> review ---
+	if (!reviewTerminal) {
+		return { kind: 'review' };
 	}
 
-	// Terminal verdict row.
-	if (lastVerdict !== null && TERMINAL_VERDICTS.has(lastVerdict)) {
-		return { kind: 'complete' };
+	// --- 3. Review terminal but operator ceremonies remain -> await operator ---
+	if (operatorIncomplete.length > 0) {
+		const pendingStoryIds = operatorIncomplete
+			.map((s) => s.id)
+			.filter((id): id is string => typeof id === 'string' && id.length > 0);
+		return { kind: 'await-operator', pendingStoryIds };
 	}
 
-	// Not yet reviewed (null), or FIXES_PENDING (fixes have landed since last round)
-	// -> dispatch review.
-	return { kind: 'review' };
+	// --- 4. All stories pass (incl. operator) AND review terminal -> complete ---
+	return { kind: 'complete' };
 }

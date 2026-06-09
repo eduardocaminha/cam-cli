@@ -104,28 +104,13 @@ describe('implement', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 'blocked-no-implementable' outcome
+// 'blocked-no-implementable' outcome (degenerate guard only)
 // ---------------------------------------------------------------------------
 
 describe('blocked-no-implementable', () => {
-	test('returns blocked when all remaining stories are operator-required', () => {
+	test('returns blocked when an implementable story has no id (degenerate)', () => {
 		const prd: PrdSnapshot = {
-			userStories: [
-				makeStory('US-001', 1, true),
-				makeStory('US-002', 2, false, 'operator'),
-				makeStory('US-003', 3, false, 'operator'),
-			],
-		};
-		const action = decideNextAction(prd);
-		expect(action).toEqual({ kind: 'blocked-no-implementable' });
-	});
-
-	test('returns blocked when entire PRD is operator-required stories', () => {
-		const prd: PrdSnapshot = {
-			userStories: [
-				makeStory('US-001', 1, false, 'operator'),
-				makeStory('US-002', 2, false, 'operator'),
-			],
+			userStories: [{ priority: 1, passes: false }],
 		};
 		const action = decideNextAction(prd);
 		expect(action).toEqual({ kind: 'blocked-no-implementable' });
@@ -187,9 +172,9 @@ describe('review', () => {
 		expect(action).toEqual({ kind: 'review' });
 	});
 
-	test('returns blocked-no-implementable when operator stories pending (not review)', () => {
-		// All non-operator stories pass, but operator stories are still incomplete.
-		// The loop cannot proceed autonomously until the operator ceremony is done.
+	test('operator stories pending but review not yet run -> review (review runs first)', () => {
+		// All non-operator stories pass; operator stories are still incomplete.
+		// Operator ceremonies do NOT block the review cycle: review runs first.
 		const prd: PrdSnapshot = {
 			userStories: [
 				makeStory('US-001', 1, true),
@@ -198,7 +183,30 @@ describe('review', () => {
 			review: { roundsCompleted: 0, maxRounds: 3, lastVerdict: null },
 		};
 		const action = decideNextAction(prd);
-		expect(action).toEqual({ kind: 'blocked-no-implementable' });
+		expect(action).toEqual({ kind: 'review' });
+	});
+
+	test('operator stories pending and no review block -> review', () => {
+		const prd: PrdSnapshot = {
+			userStories: [
+				makeStory('US-001', 1, true),
+				makeStory('US-002', 2, false, 'operator'),
+				makeStory('US-003', 3, false, 'operator'),
+			],
+		};
+		const action = decideNextAction(prd);
+		expect(action).toEqual({ kind: 'review' });
+	});
+
+	test('entire PRD is operator-required stories, no review -> review (degenerate)', () => {
+		const prd: PrdSnapshot = {
+			userStories: [
+				makeStory('US-001', 1, false, 'operator'),
+				makeStory('US-002', 2, false, 'operator'),
+			],
+		};
+		const action = decideNextAction(prd);
+		expect(action).toEqual({ kind: 'review' });
 	});
 
 	test('dispatches review when roundsCompleted is less than maxRounds', () => {
@@ -216,10 +224,77 @@ describe('review', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 'await-operator' outcome (review terminal + operator ceremony pending)
+// ---------------------------------------------------------------------------
+
+describe('await-operator', () => {
+	test('review CLEAN but operator story pending -> await-operator', () => {
+		const prd: PrdSnapshot = {
+			userStories: [
+				makeStory('US-001', 1, true),
+				makeStory('US-002', 2, false, 'operator'),
+			],
+			review: { roundsCompleted: 1, maxRounds: 3, lastVerdict: 'CLEAN' },
+		};
+		const action = decideNextAction(prd);
+		expect(action).toEqual({ kind: 'await-operator', pendingStoryIds: ['US-002'] });
+	});
+
+	test('review MAX_ROUNDS_DEBT but operator story pending -> await-operator', () => {
+		const prd: PrdSnapshot = {
+			userStories: [
+				makeStory('US-001', 1, true),
+				makeStory('US-002', 2, false, 'operator'),
+			],
+			review: { roundsCompleted: 3, maxRounds: 3, lastVerdict: 'MAX_ROUNDS_DEBT' },
+		};
+		const action = decideNextAction(prd);
+		expect(action).toEqual({ kind: 'await-operator', pendingStoryIds: ['US-002'] });
+	});
+
+	test('review cap reached (non-terminal verdict) but operator pending -> await-operator', () => {
+		const prd: PrdSnapshot = {
+			userStories: [
+				makeStory('US-001', 1, true),
+				makeStory('US-002', 2, false, 'operator'),
+			],
+			review: { roundsCompleted: 3, maxRounds: 3, lastVerdict: 'FIXES_PENDING' },
+		};
+		const action = decideNextAction(prd);
+		expect(action).toEqual({ kind: 'await-operator', pendingStoryIds: ['US-002'] });
+	});
+
+	test('multiple operator stories pending -> all ids returned', () => {
+		const prd: PrdSnapshot = {
+			userStories: [
+				makeStory('US-001', 1, true),
+				makeStory('US-002', 2, false, 'operator'),
+				makeStory('US-003', 3, false, 'operator'),
+			],
+			review: { roundsCompleted: 1, maxRounds: 3, lastVerdict: 'CLEAN' },
+		};
+		const action = decideNextAction(prd);
+		expect(action).toEqual({ kind: 'await-operator', pendingStoryIds: ['US-002', 'US-003'] });
+	});
+});
+
+// ---------------------------------------------------------------------------
 // 'complete' outcome
 // ---------------------------------------------------------------------------
 
 describe('complete', () => {
+	test('returns complete when operator story also passes and review CLEAN', () => {
+		const prd: PrdSnapshot = {
+			userStories: [
+				makeStory('US-001', 1, true),
+				makeStory('US-002', 2, true, 'operator'),
+			],
+			review: { roundsCompleted: 1, maxRounds: 3, lastVerdict: 'CLEAN' },
+		};
+		const action = decideNextAction(prd);
+		expect(action).toEqual({ kind: 'complete' });
+	});
+
 	test('returns complete when lastVerdict is CLEAN', () => {
 		const prd: PrdSnapshot = {
 			userStories: [makeStory('US-001', 1, true)],

@@ -341,6 +341,32 @@ describe('runNext', () => {
 		}
 	});
 
+	test('supervisor awaiting-operator: returns 0 (success, operator ceremony pending)', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-awaitop-'));
+		try {
+			const { supervisorFn } = makeFakeSupervisor({
+				status: 'awaiting-operator',
+				iterations: 4,
+				lastOutcome: null,
+				pendingStoryIds: ['US-018'],
+			});
+
+			const code = await runNext({
+				cwd: dir,
+				permissionMode: 'bypassPermissions',
+				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
+				workerPaneReader: (_claudeDir) => '%5',
+				supervisorFn,
+				startedAt: '2026-06-08T12:00:00Z',
+				sessionId: 'awaitop-test',
+			});
+
+			expect(code).toBe(0);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test('supervisor max-iterations: returns 1', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-next-maxiter-'));
 		try {

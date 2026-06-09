@@ -20,8 +20,9 @@
 //      `cam dashboard` for display.
 //   4. Calls `runSupervisor()` with real I/O adapters (spawn, waitFor, capturePane,
 //      readPrd, writePrd, readHandoff, clock, reviewDispatch, writeSessionMarker).
-//      The supervisor drives the worker loop until complete, blocked, or max-iterations.
-//   5. Returns 0 on complete, 1 on blocked or max-iterations.
+//      The supervisor drives the worker loop until complete, awaiting-operator,
+//      blocked, or max-iterations.
+//   5. Returns 0 on complete or awaiting-operator, 1 on blocked or max-iterations.
 //
 // Acceptance criteria (US-007):
 //   1. runNext dispatches to runSupervisor(); stop-hook code path is REMOVED.
@@ -258,7 +259,8 @@ export interface NextOptions {
  * Run the `cam next` flow: writes the state file then delegates to runSupervisor().
  *
  * Returns:
- *   0 — supervisor completed (all stories done or review passed)
+ *   0 — supervisor completed (all stories done + review passed), or finished
+ *       all autonomous work and is awaiting an operator ceremony
  *   1 — supervisor blocked, max-iterations reached, missing worker pane, or
  *       state-file write failed
  */
@@ -621,6 +623,14 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	// 5. Report result.
 	if (result.status === 'complete') {
 		emitOk(`Complete after ${result.iterations} iteration(s)`);
+	} else if (result.status === 'awaiting-operator') {
+		// Implement + review done (review clean); only operator ceremonies remain.
+		// This is a successful terminal state, not a block.
+		const pending = result.pendingStoryIds?.join(', ') || 'operator story';
+		emitOk(`Reviewed clean after ${result.iterations} iteration(s) — autonomous work done`);
+		emitMutedHint(
+			`Awaiting operator ceremony: ${pending}. Run it, flip the story to passes:true, then re-run \`cam next\`.`,
+		);
 	} else if (result.status === 'max-iterations') {
 		emitWarn(`Stopped: max iterations (${result.iterations}) reached`);
 	} else {
@@ -635,5 +645,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	emitAttachHint(sessionName, env);
 	emitTrailingBlank();
 
-	return result.status === 'complete' ? 0 : 1;
+	// 'awaiting-operator' is a successful terminal state (autonomous work done,
+	// reviewed clean, operator ceremony pending) — exit 0 like 'complete'.
+	return result.status === 'complete' || result.status === 'awaiting-operator' ? 0 : 1;
 }

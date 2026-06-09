@@ -268,7 +268,7 @@ export interface RunSupervisorOptions {
 }
 
 /** Terminal status returned by runSupervisor. */
-export type SupervisorStatus = 'complete' | 'blocked' | 'max-iterations';
+export type SupervisorStatus = 'complete' | 'awaiting-operator' | 'blocked' | 'max-iterations';
 
 /** Return value of runSupervisor. */
 export interface SupervisorResult {
@@ -278,6 +278,12 @@ export interface SupervisorResult {
 	iterations: number;
 	/** Outcome of the last worker run, or null if no worker ran. */
 	lastOutcome: WorkerOutcome | null;
+	/**
+	 * Pending operator-required story ids, set only when status is
+	 * 'awaiting-operator'. The autonomous loop finished everything it could
+	 * (implement + review) and these ceremonies remain for the operator.
+	 */
+	pendingStoryIds?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -332,8 +338,11 @@ function defaultGenChannel(storyId: string, uuid: string): string {
 /**
  * Run the cam supervisor loop.
  *
- * Iterates until one of three terminal states:
- *   - 'complete': decideNextAction returned complete (or review terminal).
+ * Iterates until one of four terminal states:
+ *   - 'complete': decideNextAction returned complete (all stories pass, incl.
+ *                 operator ones, and review is terminal).
+ *   - 'awaiting-operator': implement + review are done (review clean) and only
+ *                 operator-required ceremonies remain. Success, not a block.
  *   - 'blocked':  decideNextAction returned blocked-no-implementable, OR a
  *                 worker came back with kind='blocked'.
  *   - 'max-iterations': hard cap reached.
@@ -415,6 +424,17 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 		// --- Handle terminal decisions ---
 		if (action.kind === 'complete') {
 			return { status: 'complete', iterations, lastOutcome };
+		}
+
+		if (action.kind === 'await-operator') {
+			// All implementable work is done and reviewed clean; only operator
+			// ceremonies remain. This is a successful terminal state, not a block.
+			return {
+				status: 'awaiting-operator',
+				iterations,
+				lastOutcome,
+				pendingStoryIds: action.pendingStoryIds,
+			};
 		}
 
 		if (action.kind === 'blocked-no-implementable') {

@@ -19,9 +19,9 @@
 
 ## Stop Condition
 
-The cam-loop terminates when the TS supervisor (`runSupervisor` in `src/supervisor/loop.ts`) detects that all non-operator stories have `passes: true` AND the review cycle is complete (`prd.review.lastVerdict === "CLEAN"` or `"MAX_ROUNDS_DEBT"`). The supervisor is driven by `cam next`, not by a stop-hook or `/cam-next` re-inject.
+The cam-loop reaches a terminal state when the TS supervisor (`runSupervisor` in `src/supervisor/loop.ts`) detects either: (a) **complete**, all stories (including operator ones) have `passes: true` AND the review cycle is terminal (`prd.review.lastVerdict === "CLEAN"` or `"MAX_ROUNDS_DEBT"`); or (b) **awaiting-operator**, all non-operator stories pass AND review is terminal AND one or more `requires: "operator"` stories are still `passes: false`. The supervisor is driven by `cam next`, not by a stop-hook or `/cam-next` re-inject.
 
-Stories with `requires: "operator"` are **out-of-scope** for autonomous implementation (operator ceremonies: TUI keypress, real-API hit, screencap, etc.). The loop falls through to the next implementable story; the operator hand-executes the ceremony and flips `passes: true` manually.
+Stories with `requires: "operator"` are **out-of-scope** for autonomous implementation (operator ceremonies: TUI keypress, real-API hit, screencap, etc.). They do NOT block the review cycle: the loop implements all non-operator stories, runs review to a terminal verdict, then exits with status `awaiting-operator` (exit 0). The operator hand-executes the ceremony, flips `passes: true` manually, and re-runs `cam next` to complete the PRD.
 
 ## Project Stack
 

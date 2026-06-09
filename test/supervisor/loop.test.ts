@@ -8,7 +8,7 @@
 //   3. Max-iterations cap fires before any story completes.
 //   4. PRD unreadable on first iteration -> 'blocked'.
 //   5. decideNextAction returns 'complete' immediately -> 'complete' with 0 iterations.
-//   6. decideNextAction returns 'blocked-no-implementable' -> 'blocked'.
+//   6. decideNextAction returns 'await-operator' -> 'awaiting-operator'.
 //   7. Worker outcome 'fail' -> 'blocked'.
 //   8. Worker outcome 'unknown' -> 'blocked'.
 //   9. Review dispatch error -> 'blocked'.
@@ -174,10 +174,16 @@ describe('runSupervisor', () => {
 		expect(result.lastOutcome).toBeNull();
 	});
 
-	test('immediately returns blocked when decideNextAction -> blocked-no-implementable', async () => {
-		// PRD with only operator-required stories remaining.
+	test('immediately returns awaiting-operator when review terminal and operator ceremony pending', async () => {
+		// Non-operator stories pass + review CLEAN; an operator-required story
+		// remains. Operator ceremonies are gated AFTER review, so this is a
+		// successful terminal state, not a block.
 		const prd = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: false, requires: 'operator' }],
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: false, requires: 'operator' },
+			],
+			review: { roundsCompleted: 1, maxRounds: 3, lastVerdict: 'CLEAN' },
 		});
 
 		const opts = makeBaseOpts({
@@ -186,8 +192,9 @@ describe('runSupervisor', () => {
 
 		const result = await runSupervisor(opts);
 
-		expect(result.status).toBe('blocked');
+		expect(result.status).toBe('awaiting-operator');
 		expect(result.iterations).toBe(0);
+		expect(result.pendingStoryIds).toEqual(['US-002']);
 	});
 
 	test('returns blocked when PRD is unreadable on first iteration', async () => {
