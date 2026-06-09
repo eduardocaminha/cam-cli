@@ -20,6 +20,7 @@ import {
 	projectSessionName,
 	runRun,
 	buildOrchestratorPaneCommand,
+	buildOrchestratorBootPrompt,
 	DEFAULT_MAX_ORCH_RESPAWNS,
 } from '../src/commands/run.ts';
 import type { SpawnFn } from '../src/tmux/session.ts';
@@ -473,5 +474,15 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		expect(buildOrchestratorPaneCommand(base)).toContain(`max=${DEFAULT_MAX_ORCH_RESPAWNS}`);
 		expect(buildOrchestratorPaneCommand({ ...base, maxRespawns: 2 })).toContain('max=2');
 		expect(buildOrchestratorPaneCommand(base)).toContain('[ "$n" -lt "$max" ]');
+	});
+});
+
+describe('buildOrchestratorBootPrompt (CAM-23 rehydration directive)', () => {
+	it('directs the orchestrator to rehydrate from the handoff file when present', () => {
+		const prompt = buildOrchestratorBootPrompt();
+		expect(prompt).toContain('.claude/.cam-orch-handoff.json');
+		expect(prompt.toLowerCase()).toContain('rehydrate');
+		// Still tells it to read its agent system prompt.
+		expect(prompt).toContain('subagent-orchestrator.md');
 	});
 });
