@@ -102,6 +102,26 @@ export interface LoopState {
 	 * back-compat with state files written before the field existed.
 	 */
 	pid?: number;
+	/**
+	 * Advisory story id the supervisor dispatched this iteration (US-001 live
+	 * progress tracking). Written on every iteration rewrite; absent in state
+	 * files written before the field existed.
+	 */
+	current_story?: string | null;
+	/**
+	 * Count of non-operator stories with passes:true at the time of the last
+	 * state-file rewrite (US-001). Optional for back-compat.
+	 */
+	stories_done?: number;
+	/**
+	 * Total count of non-operator stories (US-001). Optional for back-compat.
+	 */
+	stories_total?: number;
+	/**
+	 * ISO timestamp of the last supervisor iteration tick (US-001). Written
+	 * on every state-file rewrite so the dashboard can detect a stalled loop.
+	 */
+	last_activity?: string;
 }
 
 /**
@@ -185,6 +205,21 @@ export function parseStateFile(contents: string): LoopState | null {
 	if (typeof obj['session_id'] === 'string') out.session_id = obj['session_id'];
 	if (typeof obj['pid'] === 'number' && Number.isFinite(obj['pid']) && obj['pid'] > 0) {
 		out.pid = obj['pid'];
+	}
+	// US-001 live-progress fields — all optional for back-compat.
+	if (obj['current_story'] === null) {
+		out.current_story = null;
+	} else if (typeof obj['current_story'] === 'string') {
+		out.current_story = obj['current_story'];
+	}
+	if (typeof obj['stories_done'] === 'number' && Number.isFinite(obj['stories_done'])) {
+		out.stories_done = obj['stories_done'];
+	}
+	if (typeof obj['stories_total'] === 'number' && Number.isFinite(obj['stories_total'])) {
+		out.stories_total = obj['stories_total'];
+	}
+	if (typeof obj['last_activity'] === 'string' && obj['last_activity'].length > 0) {
+		out.last_activity = obj['last_activity'];
 	}
 	return out;
 }

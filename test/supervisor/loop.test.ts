@@ -31,6 +31,7 @@ import type {
 	ReviewDispatch,
 	WriteSessionMarker,
 	IsPaneAlive,
+	ProgressPayload,
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
@@ -1407,5 +1408,200 @@ describe("runSupervisor 'pushed' event (US-002)", () => {
 		const result = await runSupervisor(opts);
 		expect(result.status).toBe('complete');
 		expect(events.filter((e) => e.kind === 'pushed')).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001: onProgress callback — per-iteration + terminal-exit emissions
+// ---------------------------------------------------------------------------
+
+describe('runSupervisor onProgress callback (US-001)', () => {
+	test('absent onProgress: backward compatible, no change in behavior', async () => {
+		// Existing test: no onProgress injected, loop completes normally.
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+		const prdDone = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		let prdCall = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd : prdDone;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			// onProgress intentionally absent.
+		});
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('complete');
+	});
+
+	test('called once per iteration with correct storyId + done/total counts', async () => {
+		// 2-story PRD: US-001 (priority 1, passes:false), US-002 (priority 2, passes:false).
+		// Iter 1: decideNextAction -> implement US-001 (advisory); prd has 0 done / 2 total.
+		// After iter 1 worker: US-001 passes:true.
+		// Iter 2: decideNextAction -> implement US-002 (advisory); prd has 1 done / 2 total.
+		// After iter 2 worker: US-002 passes:true.
+		// Iter 3: review CLEAN -> complete.
+		const prd0 = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }, { id: 'US-002', priority: 2, passes: false }] });
+		const prd1 = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }, { id: 'US-002', priority: 2, passes: false }] });
+		const prd2 = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }, { id: 'US-002', priority: 2, passes: true }], review: { roundsCompleted: 0, lastVerdict: null } });
+		const prd3 = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }, { id: 'US-002', priority: 2, passes: true }], review: { roundsCompleted: 1, lastVerdict: 'CLEAN' } });
+
+		let prdCall = 0;
+		let handoffIdx = 0;
+		let paneIdx = 0;
+		const handoffs = [makeHandoff('US-001'), makeHandoff('US-002')];
+		const panes = [donePane('US-001'), donePane('US-002')];
+
+		const progressCalls: ProgressPayload[] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				// call 1: iter1 top (implement US-001)
+				// call 2: iter1 fileReader (passes:true for US-001)
+				// call 3: iter2 top (implement US-002)
+				// call 4: iter2 fileReader (passes:true for US-002)
+				// call 5: iter3 top (review)
+				// call 6: after reviewDispatch
+				// call 7: iter4 top (complete)
+				if (prdCall === 1) return prd0;
+				if (prdCall === 2) return prd1;
+				if (prdCall === 3) return prd1;
+				if (prdCall === 4) return prd2;
+				if (prdCall === 5) return prd2;
+				if (prdCall === 6) return prd2;
+				return prd3;
+			},
+			readHandoff: () => handoffs[handoffIdx++] ?? null,
+			capturePane: (_paneId) => panes[paneIdx++] ?? '',
+			reviewDispatch: (_uuid, _channel) => ({ status: 'ok', detail: 'review ok' }),
+			onProgress: (p) => { progressCalls.push({ ...p }); },
+		});
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('complete');
+
+		// One regular call per iteration (iter 1, 2, 3 implement/review + iter 4 complete).
+		const regular = progressCalls.filter((p) => p.terminalStatus === undefined);
+		// Iterations: implement US-001, implement US-002, review, complete = 4 regular calls.
+		expect(regular.length).toBe(4);
+
+		// Iter 1: currentStoryId = US-001, storiesDone = 0, storiesTotal = 2.
+		expect(regular[0]?.currentStoryId).toBe('US-001');
+		expect(regular[0]?.storiesDone).toBe(0);
+		expect(regular[0]?.storiesTotal).toBe(2);
+		expect(regular[0]?.iteration).toBe(1);
+
+		// Iter 2: currentStoryId = US-002, storiesDone = 1, storiesTotal = 2.
+		expect(regular[1]?.currentStoryId).toBe('US-002');
+		expect(regular[1]?.storiesDone).toBe(1);
+		expect(regular[1]?.storiesTotal).toBe(2);
+		expect(regular[1]?.iteration).toBe(2);
+
+		// Iter 3 (review): currentStoryId = undefined, storiesDone = 2.
+		expect(regular[2]?.currentStoryId).toBeUndefined();
+		expect(regular[2]?.storiesDone).toBe(2);
+
+		// Iter 4 (complete decision): currentStoryId = undefined.
+		expect(regular[3]?.currentStoryId).toBeUndefined();
+
+		// Exactly one terminal call with terminalStatus = 'complete'.
+		const terminal = progressCalls.filter((p) => p.terminalStatus !== undefined);
+		expect(terminal).toHaveLength(1);
+		expect(terminal[0]?.terminalStatus).toBe('complete');
+	});
+
+	test('terminal call on awaiting-operator status', async () => {
+		const prd = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: false, requires: 'operator' },
+			],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		const progressCalls: ProgressPayload[] = [];
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			onProgress: (p) => { progressCalls.push({ ...p }); },
+		});
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('awaiting-operator');
+		const terminal = progressCalls.filter((p) => p.terminalStatus !== undefined);
+		expect(terminal).toHaveLength(1);
+		expect(terminal[0]?.terminalStatus).toBe('awaiting-operator');
+	});
+
+	test('terminal call on blocked status (worker sentinel)', async () => {
+		const prd = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const progressCalls: ProgressPayload[] = [];
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			capturePane: (_paneId) => blockedPane('US-001'),
+			onProgress: (p) => { progressCalls.push({ ...p }); },
+		});
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('blocked');
+		const terminal = progressCalls.filter((p) => p.terminalStatus !== undefined);
+		expect(terminal).toHaveLength(1);
+		expect(terminal[0]?.terminalStatus).toBe('blocked');
+	});
+
+	test('terminal call on max-iterations', async () => {
+		// Loop cycling on PRD_COMPLETE until cap fires.
+		const prd = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const progressCalls: ProgressPayload[] = [];
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			capturePane: (_paneId) => PRD_COMPLETE_PANE,
+			maxIterations: 2,
+			onProgress: (p) => { progressCalls.push({ ...p }); },
+		});
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('max-iterations');
+		const terminal = progressCalls.filter((p) => p.terminalStatus !== undefined);
+		expect(terminal).toHaveLength(1);
+		expect(terminal[0]?.terminalStatus).toBe('max-iterations');
+		// 2 regular calls (one per iteration) + 1 terminal = 3 total.
+		expect(progressCalls).toHaveLength(3);
+	});
+
+	test('terminal call on blocked when PRD unreadable', async () => {
+		const progressCalls: ProgressPayload[] = [];
+		const opts = makeBaseOpts({
+			readPrd: () => null,
+			onProgress: (p) => { progressCalls.push({ ...p }); },
+		});
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('blocked');
+		// PRD unreadable: no regular call (decideNextAction never ran), but terminal fires.
+		const terminal = progressCalls.filter((p) => p.terminalStatus !== undefined);
+		expect(terminal).toHaveLength(1);
+		expect(terminal[0]?.terminalStatus).toBe('blocked');
+	});
+
+	test('lastActivity is the injected clock value', async () => {
+		const prd = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdDone = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }], review: { roundsCompleted: 1, lastVerdict: 'CLEAN' } });
+		let prdCall = 0;
+		const progressCalls: ProgressPayload[] = [];
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd : prdDone;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			clock: () => '2026-06-09T12:34:56Z',
+			onProgress: (p) => { progressCalls.push({ ...p }); },
+		});
+		await runSupervisor(opts);
+		for (const p of progressCalls) {
+			expect(p.lastActivity).toBe('2026-06-09T12:34:56Z');
+		}
 	});
 });
