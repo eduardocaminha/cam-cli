@@ -9,7 +9,6 @@ These files are vendored verbatim from the [eduardocaminha/reporter](https://git
 | `check-agent-frontmatter.sh` | `reporter:scripts/smoke/check-agent-frontmatter.sh` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `check-agent-frontmatter.ts` | `reporter:scripts/smoke/check-agent-frontmatter.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `cam-loop.local.md.tmpl` | cam-cli (state file pre-armed by `cam next`)                                          | n/a |
-| `cam-loop-stop-hook.sh`  | cam-cli (stop hook wired into `.claude/settings.local.json` by `cam next`)            | sha256: `32587c4699ecbf1f4e4bbf51761b518e4fabe74fa3b0cf8f71fdf3d1a214c5c6` |
 
 The sha column for the reporter-derived files refers to the reporter HEAD at the time of the most recent re-vendor. `test/vendor.test.ts` runs the drift check on every `bun test` run when the reporter checkout is reachable at `~/Documents/Projects/reporter` — silently skips when missing (CI / non-dev machines / non-Eduardo contributors).
 

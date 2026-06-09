@@ -3,8 +3,9 @@
 // Implementation of `cam next` -- dispatches to the TS supervisor loop.
 //
 // ARCHITECTURE (Eduardo 2026-06-08, closes CAM-29):
-//   The stop-hook driver (vendor/cam-loop-stop-hook.sh + /cam-next re-inject)
-//   is RETIRED. Each worker is a real separate claude session spawned via
+//   The old stop-hook driver (a vendored Stop hook + /cam-next re-inject) is
+//   RETIRED (its vendored script was deleted in CAM-3). Each worker is a real
+//   separate claude session spawned via
 //   `tmux respawn-pane -k`, reusing the single worker pane established by
 //   `cam plan`. The deterministic TS supervisor sequences stories directly.
 //

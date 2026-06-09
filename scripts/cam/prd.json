@@ -66,7 +66,7 @@
         "Vendor drift check passes (bun run embed-vendor:check)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: vendor/cam-loop-stop-hook.sh (delete), scripts/generate-embedded-vendor.ts (FILES list ~line 54), src/vendor/embedded.ts (EmbeddedKey union ~line 37, EMBEDDED_CONTENTS map ~line 48, import ~line 31), src/vendor/_generated.ts (regenerate), test/vendor.test.ts (drop the describe block ~lines 27-50; if that was the file's only test, delete the file), test/stop-hook.test.ts (delete entire file), test/embedded.test.ts (VENDOR_KEYS array ~line 49), vendor/README.md (drop the table row + prose). Verification command before commit: `grep -rn 'cam-loop-stop-hook\\|camLoopStopHook' src/ test/ scripts/ vendor/ docs/ --include='*.ts' --include='*.tsx' --include='*.md' --include='*.sh'` should return 0 hits. Per AGENTS.md quality gates: this story touches vendor/, so `bun run embed-vendor:check` is mandatory — fail-fast on any drift. Per CLAUDE.md (Surgical Changes): do NOT delete unrelated vendor files, only the stop-hook + its embed wiring; the cam-loop.local.md.tmpl entry stays."
     },

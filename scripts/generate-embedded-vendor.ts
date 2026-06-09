@@ -51,7 +51,6 @@ const OUT_PATH = join(REPO_ROOT, 'src', 'vendor', '_generated.ts');
 const FILES = [
 	{ basename: 'check-agent-frontmatter.sh', constName: 'checkAgentFrontmatterShContents' },
 	{ basename: 'check-agent-frontmatter.ts', constName: 'checkAgentFrontmatterTsContents' },
-	{ basename: 'cam-loop-stop-hook.sh', constName: 'camLoopStopHookContents' },
 	{ basename: 'cam-loop.local.md.tmpl', constName: 'camLoopTmplContents' },
 ] as const;
 

@@ -46,7 +46,6 @@ import { templatesContents } from '../src/templates/embedded.ts';
 
 const VENDOR_KEYS: readonly EmbeddedKey[] = [
 	'cam-loop.local.md.tmpl',
-	'cam-loop-stop-hook.sh',
 	'check-agent-frontmatter.ts',
 	'check-agent-frontmatter.sh',
 ];
@@ -62,12 +61,11 @@ describe('EMBEDDED_CONTENTS — codegen byte-parity', () => {
 		});
 	}
 
-	test('contains exactly the four embedded files (US-011 originals + US-002 stop hook)', () => {
+	test('contains exactly the three embedded files (US-011 originals; stop hook dropped in CAM-3)', () => {
 		// If you add an embedded asset, update this list AND the
 		// `VENDOR_KEYS` array above. Locking the set down here catches a
 		// stray entry that would bloat the binary without intent.
 		expect(Object.keys(EMBEDDED_CONTENTS).sort()).toEqual([
-			'cam-loop-stop-hook.sh',
 			'cam-loop.local.md.tmpl',
 			'check-agent-frontmatter.sh',
 			'check-agent-frontmatter.ts',

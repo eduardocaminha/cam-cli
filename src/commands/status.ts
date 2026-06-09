@@ -64,7 +64,7 @@ const STATE_FILE_PATH = '.claude/cam-loop.local.md';
 /** Legacy PRD location (repo root). Kept only as a fallback for old layouts. */
 const PRD_PATH = 'prd.json';
 /** Canonical PRD location: the cam harness dir. Written by the planner and read
- *  by the stop hook (vendor/cam-loop-stop-hook.sh) + cam-next/review/ship. */
+ *  by the supervisor (cam next) + cam-review/ship. */
 const PRD_PATH_CANONICAL = 'scripts/cam/prd.json';
 
 /**

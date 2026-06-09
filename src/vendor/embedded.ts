@@ -28,13 +28,11 @@ import { CAM_VERSION } from '../version.ts';
 import {
 	checkAgentFrontmatterShContents,
 	checkAgentFrontmatterTsContents,
-	camLoopStopHookContents,
 	camLoopTmplContents,
 } from './_generated.ts';
 
 export type EmbeddedKey =
 	| 'cam-loop.local.md.tmpl'
-	| 'cam-loop-stop-hook.sh'
 	| 'check-agent-frontmatter.ts'
 	| 'check-agent-frontmatter.sh';
 
@@ -45,7 +43,6 @@ export type EmbeddedKey =
  */
 export const EMBEDDED_CONTENTS: Record<EmbeddedKey, string> = {
 	'cam-loop.local.md.tmpl': camLoopTmplContents,
-	'cam-loop-stop-hook.sh': camLoopStopHookContents,
 	'check-agent-frontmatter.ts': checkAgentFrontmatterTsContents,
 	'check-agent-frontmatter.sh': checkAgentFrontmatterShContents,
 };
