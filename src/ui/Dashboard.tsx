@@ -31,7 +31,7 @@ import { Section } from './Section.tsx';
 import type { DashboardData } from '../commands/dashboard.ts';
 import type { PrdStory } from '../commands/status.ts';
 import { formatWallClock } from '../commands/status.ts';
-import { renderTokensLine } from '../transcript/usage.ts';
+import { renderTokensLine, type TranscriptUsage } from '../transcript/usage.ts';
 
 /** Max width of the iteration progress bar (cells). Shrinks to fit narrow
  *  panes; this is the cap for a wide standalone terminal. */
@@ -39,6 +39,13 @@ const PROGRESS_BAR_WIDTH = 22;
 
 /** How many stories the panel shows around the current one. */
 const STORIES_WINDOW = 8;
+
+/**
+ * Shown in the Stories panel next to a story that has no worker session marker
+ * yet (US-014). A muted middot keeps the row visually quiet for the pending
+ * queue while still signalling "no token data" rather than crashing.
+ */
+export const STORY_TOKENS_PLACEHOLDER = '·';
 
 export interface DashboardAppProps {
 	/** Called every `pollIntervalMs` to refresh the data snapshot. */
@@ -79,6 +86,7 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 				stories={data.stories ?? []}
 				currentId={data.currentStoryId}
 				dividerWidth={dividerWidth}
+				storyTokens={data.storyTokens ?? {}}
 			/>
 			<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
 			<Box marginTop={1} paddingLeft={2}>
@@ -217,10 +225,12 @@ function StoriesSection({
 	stories,
 	currentId,
 	dividerWidth,
+	storyTokens,
 }: {
 	stories: readonly PrdStory[];
 	currentId: string;
 	dividerWidth: number;
+	storyTokens: Record<string, TranscriptUsage>;
 }): ReactElement {
 	if (stories.length === 0) {
 		return (
@@ -246,7 +256,7 @@ function StoriesSection({
 	return (
 		<Section heading="Stories" dividerWidth={dividerWidth}>
 			{ordered.slice(window.start, window.end).map((s) => (
-				<StoryRow key={s.id} story={s} isCurrent={s.id === currentId} />
+				<StoryRow key={s.id} story={s} isCurrent={s.id === currentId} tokens={storyTokens[s.id]} />
 			))}
 			{window.end < ordered.length ? (
 				<Text color={colors.muted}>
@@ -257,8 +267,20 @@ function StoriesSection({
 	);
 }
 
-function StoryRow({ story, isCurrent }: { story: PrdStory; isCurrent: boolean }): ReactElement {
+function StoryRow({
+	story,
+	isCurrent,
+	tokens,
+}: {
+	story: PrdStory;
+	isCurrent: boolean;
+	tokens: TranscriptUsage | undefined;
+}): ReactElement {
 	const { icon, iconColor, titleColor } = storyVisual(story, isCurrent);
+	// Per-story tokens sit next to the row (US-014). Reuse renderTokensLine so the
+	// wording matches the Loop panel's `tokens` row; a missing marker shows a muted
+	// placeholder instead of crashing. State stays signalled by the glyph (✓/→/◌),
+	// never the Section divider color.
 	return (
 		<Box flexDirection="row">
 			<Text color={iconColor}>{icon} </Text>
@@ -266,6 +288,10 @@ function StoryRow({ story, isCurrent }: { story: PrdStory; isCurrent: boolean })
 				<Text color={titleColor}>{story.id}</Text>
 			</Box>
 			<Text color={titleColor}>{story.title}</Text>
+			<Text color={colors.muted}>
+				{'  '}
+				{tokens ? renderTokensLine(tokens) : STORY_TOKENS_PLACEHOLDER}
+			</Text>
 		</Box>
 	);
 }

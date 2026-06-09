@@ -294,7 +294,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/dashboard.ts, src/ui/Dashboard.tsx (current Stories panel component), test/dashboard.test.ts (extend existing). ink ^7.0.3 + ink-testing-library ^4.0.0 are already deps. Closes the CAM-21 per-story-tokens half. UI convention from project CLAUDE.md / lessons.md 2026-06-05: success/failure is the glyph, never the divider color, do not regress on this. Render the actual screen in the test, do not trust comments."
     },

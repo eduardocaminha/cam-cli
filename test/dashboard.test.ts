@@ -14,10 +14,12 @@
 // The runtime loop polls every `pollIntervalMs`; we set it to 1 ms in
 // tests so a `maxTicks: 2` run completes in a couple of milliseconds.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, it, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { render } from 'ink-testing-library';
+import React from 'react';
 
 import {
 	CURSOR,
@@ -32,6 +34,8 @@ import {
 	type DashboardReader,
 	type DashboardWriter,
 } from '../src/commands/dashboard.ts';
+import { DashboardApp, STORY_TOKENS_PLACEHOLDER } from '../src/ui/Dashboard.tsx';
+import type { TranscriptUsage } from '../src/transcript/usage.ts';
 
 // --- Fakes -----------------------------------------------------------------
 
@@ -437,6 +441,87 @@ describe('readSnapshot', () => {
 			rmSync(base, { recursive: true, force: true });
 		}
 	});
+
+	test('per-story tokens populate from .cam-worker-<US>.session markers (US-014)', () => {
+		const base = mkdtempSync(join(tmpdir(), 'cam-dash-story-tokens-'));
+		try {
+			const cwd = join(base, 'project');
+			mkdirSync(join(cwd, '.claude'), { recursive: true });
+
+			// prd.json: US-001 will have a marker, US-002 will not.
+			writeFileSync(
+				join(cwd, 'prd.json'),
+				JSON.stringify({
+					branchName: 'cam/feature-tokens',
+					userStories: [
+						{ id: 'US-001', title: 'first', priority: 1, passes: true },
+						{ id: 'US-002', title: 'second', priority: 2, passes: false },
+					],
+				}),
+			);
+
+			// Worker session marker for US-001 only (in the project's .claude dir).
+			const uuid = '11112222-3333-4444-5555-666677778888';
+			writeFileSync(join(cwd, '.claude', '.cam-worker-US-001.session'), uuid, 'utf8');
+
+			// Transcript JSONL for that uuid under the config claudeDir.
+			const claudeDir = join(base, 'claude-dir');
+			const encoded = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+			mkdirSync(join(claudeDir, 'projects', encoded), { recursive: true });
+			writeFileSync(
+				join(claudeDir, 'projects', encoded, `${uuid}.jsonl`),
+				JSON.stringify({
+					message: {
+						usage: {
+							input_tokens: 8000,
+							output_tokens: 3000,
+							cache_read_input_tokens: 1500,
+							cache_creation_input_tokens: 500,
+						},
+					},
+				}),
+				'utf8',
+			);
+
+			const snap = readSnapshot({ cwd, nowMs: 0, claudeDir });
+
+			expect(snap.storyTokens?.['US-001']).toEqual({
+				input: 8000,
+				output: 3000,
+				cacheRead: 1500,
+				cacheCreation: 500,
+			});
+			// No marker → absent from the map (the renderer shows a placeholder).
+			expect(snap.storyTokens?.['US-002']).toBeUndefined();
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
+
+	test('per-story tokens map is empty (never throws) when no markers exist (US-014)', () => {
+		const base = mkdtempSync(join(tmpdir(), 'cam-dash-no-story-tokens-'));
+		try {
+			const cwd = join(base, 'project');
+			mkdirSync(join(cwd, '.claude'), { recursive: true });
+			writeFileSync(
+				join(cwd, 'prd.json'),
+				JSON.stringify({
+					branchName: 'cam/x',
+					userStories: [{ id: 'US-001', title: 'first', priority: 1, passes: false }],
+				}),
+			);
+			const claudeDir = join(base, 'claude-dir');
+			mkdirSync(claudeDir, { recursive: true });
+
+			let snap: ReturnType<typeof readSnapshot> | undefined;
+			expect(() => {
+				snap = readSnapshot({ cwd, nowMs: 0, claudeDir });
+			}).not.toThrow();
+			expect(snap!.storyTokens).toEqual({});
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
 });
 
 // --- runDashboard (integration) -------------------------------------------
@@ -563,5 +648,72 @@ describe('runDashboard', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+// --- DashboardApp Ink render (US-014: per-story tokens) --------------------
+//
+// Rendered with ink-testing-library so we assert against the ACTUAL screen,
+// not a comment about it (project lesson 2026-06-05). Story state stays
+// signalled by the glyph (✓/→/◌), never the divider color.
+
+describe('DashboardApp per-story tokens (US-014)', () => {
+	function snapshotWith(storyTokens: Record<string, TranscriptUsage>): DashboardData {
+		return {
+			branchName: 'cam/feature-tokens',
+			currentStoryId: 'US-002',
+			currentStoryTitle: 'second',
+			iteration: 1,
+			maxIterations: 30,
+			startedAtMs: 0,
+			nowMs: 0,
+			paused: false,
+			idle: false,
+			recent: [],
+			stories: [
+				{ id: 'US-001', title: 'first', priority: 1, passes: true },
+				{ id: 'US-002', title: 'second', priority: 2, passes: false },
+			],
+			storyTokens,
+		};
+	}
+
+	it('renders a real tokens line next to a story that has a marker', () => {
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () =>
+					snapshotWith({
+						'US-001': { input: 12_000, output: 3_000, cacheRead: 5_000, cacheCreation: 0 },
+					}),
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		// Both story rows render, state shown by glyph (✓ = passed, → = current).
+		expect(frame).toContain('✓');
+		expect(frame).toContain('→');
+		expect(frame).toContain('US-001');
+		expect(frame).toContain('US-002');
+		// US-001 (has a marker) shows the renderTokensLine output.
+		expect(frame).toContain('17k in');
+		expect(frame).toContain('5k cached');
+		expect(frame).toContain('3k out');
+		unmount();
+	});
+
+	it('renders the placeholder for stories with no marker (no crash)', () => {
+		// No story has tokens, no Loop-panel tokens row, no recent entries — so
+		// the only source of the placeholder glyph is the Stories rows.
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => snapshotWith({}),
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		expect(frame).toContain('US-001');
+		expect(frame).toContain('US-002');
+		expect(frame).toContain(STORY_TOKENS_PLACEHOLDER);
+		unmount();
 	});
 });

@@ -1,29 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-013",
-    "title": "Structured per-story observability events"
+    "id": "US-014",
+    "title": "Per-story token display in dashboard Stories panel"
   },
   "branchName": "cam/CAM-22-real-worker-sessions",
-  "timestamp": "2026-06-09T00:35:22Z",
-  "createdFiles": [
-    "src/supervisor/events.ts",
-    "test/supervisor/events.test.ts"
-  ],
+  "timestamp": "2026-06-09T00:56:28Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/commands/next.ts",
+    "src/commands/dashboard.ts",
+    "src/ui/Dashboard.tsx",
+    "test/dashboard.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/progress.txt"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-013 added src/supervisor/events.ts (WorkerEvent / WorkerEventLogger / buildResultDetail / readWorkerTokens) and emits worker-start/worker-end/result/tokens from runSupervisor to .claude/cam-worker-events.jsonl. Both loop injections (logEvent, readWorkerTokens) are OPTIONAL: absent logEvent means zero events and zero behavior change. US-014 (Per-story token display in dashboard) can reuse readWorkerTokens(uuid, cwd, claudeDir) + transcriptPathForSession to resolve per-story tokens from the .cam-worker-<US>.session markers; cam-worker-events.jsonl is also a durable per-story token source. Remaining non-operator stories: US-014, US-015, US-016, US-017. US-018 requires:operator (real E2E). NOTE: there is no live -L cam tmux worker pane / .claude/.cam-worker-pane in this checkout, so the supervisor cannot be driven headless here without bootstrapping the slot; US-013 was implemented directly in a Claude Code session, not via a dispatched worker.",
+  "nextStoryContext": "US-014 added per-story token display to the dashboard. readSnapshot (src/commands/dashboard.ts) now returns storyTokens: Record<storyId, TranscriptUsage>, built by readStoryTokens(cwd, claudeDir, stories): for each story it reads the .claude/.cam-worker-<id>.session marker via readWorkerSessionMarker, resolves the transcript via transcriptPathForSession(uuid, cwd, claudeDir), and sums usage with parseTranscriptUsage. readTranscriptTokens was generalized from (cwd, claudeDir) to (transcriptPath) so one path-based reader serves both the orchestrator transcript and per-story transcripts; the orchestrator caller resolves the path first. Dashboard.tsx StoryRow renders renderTokensLine(tokens) next to the row when present, else the exported muted STORY_TOKENS_PLACEHOLDER ('.'); StoriesSection threads storyTokens, DashboardApp passes data.storyTokens ?? {}. State is signalled by the glyph (success/current/pending), never the divider color. Remaining non-operator stories: US-015 (single-supervisor concurrency guard), US-016 (rate-limit handling via src/retry/*), US-017 (recovery runbook in docs/). US-018 requires:operator (real E2E). NOTE: this checkout has no live -L cam tmux worker pane / .claude/.cam-worker-pane, so US-014 was implemented directly in a Claude Code session (operator chose 'implement here' via /cam-next), not via a dispatched headless worker; no .cam-worker-US-014.session marker exists in this checkout.",
   "officialDocsValidated": [
     {
-      "lib": "Bun file I/O (node:fs append)",
-      "url": "https://bun.com/docs/api/file-io",
-      "fetchedAt": "2026-06-09T00:35:22Z",
-      "status": "corrected",
-      "summary": "AC#3 said 'append via Bun.file', but Bun.write is async and overwrites, FileSink is async, and there is no synchronous Bun.file append; Bun ships a near-complete node:fs implementation. Used synchronous appendFileSync to match the supervisor's all-synchronous injected I/O and the existing node:fs idiom in usage.ts/next.ts. The file-logger test proves the append empirically."
+      "lib": "ink-testing-library",
+      "url": "https://github.com/vadimdemedes/ink-testing-library",
+      "fetchedAt": "2026-06-09T00:56:28Z",
+      "status": "ok",
+      "summary": "Confirmed render() returns { lastFrame, frames, rerender, unmount, stdin } and lastFrame() returns the last rendered frame as a string. The US-014 render tests use render(React.createElement(DashboardApp, ...)) then lastFrame() for substring assertions, matching both the official API and the existing in-repo precedent in test/menu.test.ts. No correction needed."
     }
   ]
 }

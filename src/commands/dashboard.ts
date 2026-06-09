@@ -32,7 +32,14 @@ import {
 	type PrdShape,
 	type PrdStory,
 } from "./status.ts";
-import { orchestratorTranscriptPath, parseTranscriptUsage, renderTokensLine } from "../transcript/usage.ts";
+import {
+	orchestratorTranscriptPath,
+	parseTranscriptUsage,
+	readWorkerSessionMarker,
+	renderTokensLine,
+	transcriptPathForSession,
+	type TranscriptUsage,
+} from "../transcript/usage.ts";
 
 // --- Constants -------------------------------------------------------------
 
@@ -171,6 +178,13 @@ export interface DashboardData {
 	tokensOutput?: number;
 	tokensCacheRead?: number;
 	tokensCacheCreation?: number;
+	/**
+	 * Per-story session token usage, keyed by story id (US-014). Only stories
+	 * with a `.cam-worker-<id>.session` marker AND a readable transcript appear;
+	 * stories without a marker are absent (the renderer shows a placeholder).
+	 * Optional + defaults to `{}` so hand-built test fixtures stay valid.
+	 */
+	storyTokens?: Record<string, TranscriptUsage>;
 }
 
 /**
@@ -346,7 +360,9 @@ export function readSnapshot(options: { cwd: string; nowMs: number; claudeDir?: 
 	const prd = readPrd(cwd);
 	const state = readState(cwd);
 	const recent = readRecentProgress(cwd);
-	const tokenUsage = readTranscriptTokens(cwd, claudeDir);
+	const orchPath = orchestratorTranscriptPath(cwd, claudeDir);
+	const tokenUsage = orchPath !== null ? readTranscriptTokens(orchPath) : null;
+	const storyTokens = readStoryTokens(cwd, claudeDir, prd?.userStories ?? []);
 
 	// Prefer prd.json's `branchName` (canonical for the loop) and fall back to
 	// `git branch --show-current` so the dashboard still labels itself when
@@ -365,6 +381,7 @@ export function readSnapshot(options: { cwd: string; nowMs: number; claudeDir?: 
 		idle: state === null,
 		recent,
 		stories: prd?.userStories ?? [],
+		storyTokens,
 		...(tokenUsage !== null
 			? {
 					tokensInput: tokenUsage.input,
@@ -434,23 +451,48 @@ function readState(cwd: string): LoopState | null {
 }
 
 /**
- * Best-effort read of the orchestrator transcript to sum token usage.
- * Returns null on any miss (no marker / no transcript file / read error).
- * Never throws — wraps all IO in try/catch.
+ * Best-effort read of a transcript JSONL at `transcriptPath` to sum token
+ * usage. Returns null on any miss (no file / read error). Never throws.
+ *
+ * Generalized in US-014 to accept a resolved path so both the orchestrator
+ * transcript and per-story worker transcripts share one reader. Callers
+ * resolve the path (orchestratorTranscriptPath / transcriptPathForSession)
+ * before calling.
  */
-function readTranscriptTokens(
-	cwd: string,
-	claudeDir: string,
-): { input: number; output: number; cacheRead: number; cacheCreation: number } | null {
+function readTranscriptTokens(transcriptPath: string): TranscriptUsage | null {
 	try {
-		const transcriptPath = orchestratorTranscriptPath(cwd, claudeDir);
-		if (transcriptPath === null) return null;
 		if (!existsSync(transcriptPath)) return null;
 		const body = readFileSync(transcriptPath, "utf8");
 		return parseTranscriptUsage(body);
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Read per-story session token usage for every story that has a worker session
+ * marker (`.claude/.cam-worker-<id>.session`, written by the supervisor's
+ * writeSessionMarker, US-002) AND a readable transcript.
+ *
+ * marker → uuid → transcript path (transcriptPathForSession) → parsed usage.
+ * Stories without a marker or with an unreadable transcript are omitted so the
+ * renderer can show a placeholder. Never throws: readWorkerSessionMarker and
+ * readTranscriptTokens both swallow their IO errors.
+ */
+function readStoryTokens(
+	cwd: string,
+	claudeDir: string,
+	stories: readonly PrdStory[],
+): Record<string, TranscriptUsage> {
+	const projectClaudeDir = join(cwd, ".claude");
+	const out: Record<string, TranscriptUsage> = {};
+	for (const story of stories) {
+		const uuid = readWorkerSessionMarker(projectClaudeDir, story.id);
+		if (uuid === null) continue;
+		const usage = readTranscriptTokens(transcriptPathForSession(uuid, cwd, claudeDir));
+		if (usage !== null) out[story.id] = usage;
+	}
+	return out;
 }
 
 /**

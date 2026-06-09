@@ -21,6 +21,7 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Supervisor timeout pattern (US-011)**: `tmux wait-for` has NO native timeout. Bound it by running via `spawnSync(..., { timeout: ms })`; when the deadline fires, spawnSync kills the client process (SIGTERM) and sets `result.signal`. Check `result.signal !== null` for `timedOut`. Pane-death detection: `spawnSync('tmux', ['-L', 'cam', 'list-panes', '-t', paneId])` exits 0 if pane exists, non-zero if dead. Timeout/pane-died blocked outcomes continue the loop (proceed to decideNextAction) rather than exiting, enabling recovery to the next story. Decouple reviewer wait (`ReviewWaitForFn = (channel) => void`) from supervisor `WaitForFn` to avoid forcing the timeout signature onto the unbounded review wait.
 - **Sentinel polling mode (US-012)**: interactive workers (plan/review with human input) do NOT exit on their own, so the supervisor polls `capture-pane` instead of waiting for a tmux channel. Use `implementerMode: 'sentinel'` in `RunSupervisorOptions`; inject `sleepFn` (no-op for tests), `nowMs` (deterministic time source), and `pollIntervalMs`. `buildImplementerWorkerArgv({ interactive: true })` omits `-p` and `--output-format` and the wait-for chain. `parseAnySentinel(text)` in `result.ts` detects `CAM_IMPLEMENTER_STATUS=*`, `CAM_REVIEWER_STATUS=*`, or `<review>...</review>` tags. Same timeout/pane-died semantics as the exit path: both `continue` the supervisor loop.
 - **Structured worker events (US-013)**: `src/supervisor/events.ts` defines `WorkerEvent { ts, storyId, uuid, kind, detail }` and the supervisor appends one JSON line per lifecycle step to `.claude/cam-worker-events.jsonl`. The logger is injected (`logEvent?: WorkerEventLogger`); default `makeFileEventLogger(path)`, tests use `makeInMemoryEventLogger()`. Both injections (`logEvent`, `readWorkerTokens`) are OPTIONAL: absent `logEvent` means zero events and zero behavior change (existing loop tests pass untouched). Emit sites in `loop.ts`: `worker-start` right after `respawn-pane`, `worker-end` after `waitFor`/poll-loop, `result`+`tokens` only where `readWorkerOutcome` produced a real outcome (NOT on timeout/pane-death: no canonical per-story record exists there). `buildResultDetail(outcome, handoff)` builds the rich `result` detail: `filesChanged` = handoff `createdFiles ++ modifiedFiles`, `gates` = `pass` only for a `pass` outcome else `unknown` (supervisor has no per-worker gate transcript), `docsValidated` mirrors handoff `officialDocsValidated`. The `tokens` event reuses `readWorkerTokens(uuid, cwd, claudeDir)` -> `transcriptPathForSession` + `parseTranscriptUsage`, skipped (no event) when the transcript is absent, never logs zeros. Logger uses synchronous `appendFileSync` (not async `Bun.file`) to match the supervisor's all-synchronous injected I/O.
+- **Per-story tokens in dashboard (US-014)**: `readSnapshot` now returns `storyTokens: Record<storyId, TranscriptUsage>`. It reads each story's `.claude/.cam-worker-<id>.session` marker (project `.claude`, via `readWorkerSessionMarker`), resolves the transcript with `transcriptPathForSession(uuid, cwd, claudeDir)`, and sums usage. `readTranscriptTokens` was generalized to take a resolved path (one reader for the orchestrator transcript AND per-story transcripts); the orchestrator caller now resolves the path first. Stories with no marker (or unreadable transcript) are omitted from the map, so `Dashboard.tsx` `StoryRow` shows a muted `STORY_TOKENS_PLACEHOLDER` (`·`) instead of crashing; stories with data show `renderTokensLine(...)` next to the row. State stays signalled by the glyph (✓/→/◌), never the divider. The Ink render is asserted via `ink-testing-library` (`test/dashboard.test.ts`), not a comment.
 
 ## 2026-06-08 21:00 - US-008: Review worker dispatch (autonomous headless reviewer)
 
@@ -549,4 +550,50 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - `tokens` is skipped (no event) when the transcript is absent rather than logging zeros.
 - For US-014 (dashboard tokens) the event log is now the durable per-story token source;
   US-014 may also read `.cam-worker-<US>.session` markers directly.
+---
+
+## 2026-06-09 - US-014: Per-story token display in dashboard Stories panel
+
+### What was done
+- Extended `readSnapshot` (`src/commands/dashboard.ts`) to return
+  `storyTokens: Record<storyId, TranscriptUsage>`. For each story in prd.json it reads the
+  `.claude/.cam-worker-<id>.session` marker via `readWorkerSessionMarker(projectClaudeDir, id)`,
+  resolves the transcript with `transcriptPathForSession(uuid, cwd, claudeDir)`, and sums usage.
+  Stories without a marker (or with an unreadable transcript) are omitted (renderer shows a
+  placeholder). New helper `readStoryTokens(cwd, claudeDir, stories)`.
+- Generalized `readTranscriptTokens(cwd, claudeDir)` to `readTranscriptTokens(transcriptPath)`:
+  a single path-based reader now serves both the orchestrator transcript and per-story
+  transcripts. The orchestrator caller resolves the path (`orchestratorTranscriptPath`) first.
+  Added `storyTokens?` to the `DashboardData` interface (optional, defaults to `{}`).
+- `src/ui/Dashboard.tsx`: `StoryRow` takes an optional `tokens` and renders `renderTokensLine(...)`
+  next to the row when present, else a muted `STORY_TOKENS_PLACEHOLDER` (`·`). `StoriesSection`
+  threads `storyTokens` down; `DashboardApp` passes `data.storyTokens ?? {}`. State stays
+  signalled by the glyph (✓/→/◌); the Section divider color is untouched.
+
+### Files changed
+- `src/commands/dashboard.ts` (storyTokens field, readStoryTokens, path-based readTranscriptTokens)
+- `src/ui/Dashboard.tsx` (StoryRow/StoriesSection tokens, STORY_TOKENS_PLACEHOLDER export)
+- `test/dashboard.test.ts` (readSnapshot per-story tokens + ink-testing-library render assertions)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 691 pass
+
+### Step 5.5 docs validation
+- lib: ink-testing-library, status: ok
+- summary: `render()` returns `{ lastFrame, unmount }`; `lastFrame()` yields the latest
+  rendered frame string for substring assertions. Matches the existing usage in
+  `test/menu.test.ts`. No API correction needed.
+
+### Notes
+- Per-story tokens render "next to the row" (same flex row). Alignment is ragged because
+  titles vary in length; verified the real frame via a throwaway ink render (readable,
+  screencap-friendly). A future story could fix-width the title column to align the token
+  column if desired.
+- Implemented directly in a Claude Code session (operator chose "implement here" via
+  `/cam-next`), not via a dispatched headless worker: this checkout has no live `-L cam`
+  tmux worker pane, so no `.cam-worker-US-014.session` marker exists here and the live
+  dashboard shows the placeholder for US-014 until a real worker session runs it.
+- Remaining non-operator stories: US-015, US-016, US-017. US-018 requires:operator (real E2E).
 ---
