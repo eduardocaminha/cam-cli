@@ -35,7 +35,7 @@ cam next
         ├── respawn-pane -k <worker-pane> <claude-argv>
         │     worker = claude -p --permission-mode <mode>
         │               --session-id <uuid>
-        │               --output-format json
+        │               --output-format text
         │               --agent <name>
         │               "<task-prompt>"
         ├── tmux wait-for <channel>      -- blocks until worker exits + signals
@@ -57,7 +57,7 @@ Workers are invoked as `--agent <name>` agents, not as slash commands:
 claude -p \
   --permission-mode <mode> \
   --session-id <uuid> \
-  --output-format json \
+  --output-format text \
   --agent subagent-implementer \
   "<task-prompt>"
 ```

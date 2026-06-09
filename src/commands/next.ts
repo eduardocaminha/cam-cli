@@ -487,7 +487,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			}
 		},
 		writePrd: (prd) => {
-			writeFileSync(prdPath, JSON.stringify(prd, null, 2), 'utf8');
+			writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\n', 'utf8');
 		},
 		workerPaneId,
 	});
