@@ -6,7 +6,7 @@
 //   - emitAttachHint: emits hint when env signals detached (no TMUX or
 //     CAM_SESSION mismatch); suppresses hint when inside session.
 //   - runPlan: hint emitted when detached; suppressed when inside session.
-//   - runNext (tmux-split): hint emitted when detached; suppressed when inside.
+//   - runNext: hint emitted when detached; suppressed when inside session.
 //   - runIssue: hint emitted when detached; suppressed when inside session.
 
 import { describe, expect, test } from 'bun:test';
@@ -43,13 +43,22 @@ function captureStdout(fn: () => unknown): Promise<string> {
 // --- Fake tmux spawn --------------------------------------------------------
 
 function makeFakeTmuxSpawn(sessionExists = false): TmuxSpawnFn {
-	return ((cmd: string, args: string[], _opts?: { stdio?: string }) => {
+	let paneCounter = 0;
+	return ((cmd: string, args: string[], opts?: { stdio?: string }) => {
 		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
 		const subcommand = args[0] === '-L' ? args[2] : args[0];
 		if (subcommand === 'has-session') {
-			return { status: sessionExists ? 0 : 1 } as SpawnSyncReturns<Buffer>;
+			return { status: sessionExists ? 0 : 1, stdout: Buffer.from('') } as SpawnSyncReturns<Buffer>;
 		}
-		return { status: 0 } as SpawnSyncReturns<Buffer>;
+		// Return a stable pane id for calls that capture it via -P -F #{pane_id}.
+		if (
+			(subcommand === 'new-session' || subcommand === 'split-window') &&
+			opts?.stdio === 'pipe'
+		) {
+			paneCounter += 1;
+			return { status: 0, stdout: Buffer.from(`%${paneCounter}\n`) } as SpawnSyncReturns<Buffer>;
+		}
+		return { status: 0, stdout: Buffer.from('') } as SpawnSyncReturns<Buffer>;
 	}) as TmuxSpawnFn;
 }
 
@@ -170,30 +179,29 @@ describe('runIssue attach hint', () => {
 	});
 });
 
-// --- runNext (tmux-split): hint is contextual --------------------------------
+// --- runNext: hint is contextual --------------------------------
 
-describe('runNext attach hint (tmux-split path)', () => {
-	// Minimal fakes for runNext: suppress state-file and hook I/O.
-	const fakeWriter = (_cwd: string, _body: string) => '/fake/.claude/cam-loop.local.md';
-	const fakeHookMaterializer = (_cwd: string) => '/fake/.claude/hooks/cam-loop-stop.sh';
-	const fakeSettingsWriter = (_cwd: string) => '/fake/.claude/settings.local.json';
-	const fakeTmuxProbe = (_cmd: string[]) => ({ exitCode: 0 }); // tmux available
+describe('runNext attach hint', () => {
+	/** Fake supervisor that completes immediately. */
+	const fakeSupervisor = async () => ({
+		status: 'complete' as const,
+		iterations: 1,
+		lastOutcome: null,
+	});
 
 	test('emits attach hint when caller is detached (no TMUX)', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-next-hint-'));
-		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 
 		const output = await captureStdout(() =>
 			runNext({
 				cwd: tmpDir,
 				permissionMode: 'bypassPermissions',
-				hostMode: 'tmux-split',
-				writer: fakeWriter,
-				hookMaterializer: fakeHookMaterializer,
-				settingsWriter: fakeSettingsWriter,
-				tmuxProbe: fakeTmuxProbe,
-				tmuxSpawnFn,
+				writer: (_cwd2: string, _body: string) => '/fake/.claude/cam-loop.local.md',
+				workerPaneReader: (_claudeDir: string) => '%3',
+				supervisorFn: fakeSupervisor,
+				startedAt: '2026-06-08T00:00:00Z',
+				sessionId: 'hint-test-session',
 				env: {},
 			}),
 		);
@@ -204,19 +212,17 @@ describe('runNext attach hint (tmux-split path)', () => {
 
 	test('suppresses attach hint when caller is inside the session', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-next-hint-'));
-		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 
 		const output = await captureStdout(() =>
 			runNext({
 				cwd: tmpDir,
 				permissionMode: 'bypassPermissions',
-				hostMode: 'tmux-split',
-				writer: fakeWriter,
-				hookMaterializer: fakeHookMaterializer,
-				settingsWriter: fakeSettingsWriter,
-				tmuxProbe: fakeTmuxProbe,
-				tmuxSpawnFn,
+				writer: (_cwd2: string, _body: string) => '/fake/.claude/cam-loop.local.md',
+				workerPaneReader: (_claudeDir: string) => '%3',
+				supervisorFn: fakeSupervisor,
+				startedAt: '2026-06-08T00:00:00Z',
+				sessionId: 'hint-test-session',
 				env: { TMUX: '/tmp/tmux-1/default,1234,0', CAM_SESSION: sessionName },
 			}),
 		);

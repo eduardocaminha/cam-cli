@@ -39,6 +39,7 @@ import {
 	isRetryMonitorAlive,
 	isPidAlive,
 	isPrdComplete,
+	isWorkerPaneAlive,
 	normalizePromptAnswer,
 	readLastCommitTimestamp,
 	readPrd,
@@ -54,6 +55,8 @@ import {
 
 interface FakeSpawnHandlers {
 	gitLogTimestamp?: number | null; // controls `git -C <cwd> log -1 --format=%ct`
+	/** List of pane ids returned by `tmux list-panes -a`. Default: []. */
+	livePaneIds?: string[];
 }
 
 function makeFakeSpawn(handlers: FakeSpawnHandlers = {}): SpawnSyncFn & {
@@ -79,6 +82,13 @@ function makeFakeSpawn(handlers: FakeSpawnHandlers = {}): SpawnSyncFn & {
 				result.status = 0;
 				result.stdout = `${handlers.gitLogTimestamp}\n`;
 			}
+			return result;
+		}
+		// Handle `tmux -L cam list-panes -a -F #{pane_id}`.
+		if (cmd === 'tmux' && args.includes('list-panes')) {
+			const panes = handlers.livePaneIds ?? [];
+			result.status = 0;
+			result.stdout = panes.join('\n') + (panes.length > 0 ? '\n' : '');
 			return result;
 		}
 		return result;
@@ -213,7 +223,7 @@ describe('classifyResumeMode', () => {
 		expect(decision.mode).toBe('noop');
 	});
 
-	test('state file + heartbeat PID alive → respawn (Mode 1)', () => {
+	test('state file + supervisor PID alive → live-supervisor (Mode 1)', () => {
 		const decision = classifyResumeMode(
 			{ active: true, pid: ALIVE_PID },
 			null,
@@ -222,7 +232,7 @@ describe('classifyResumeMode', () => {
 			false,
 			NOW,
 		);
-		expect(decision.mode).toBe('respawn');
+		expect(decision.mode).toBe('live-supervisor');
 	});
 
 	test('state file + PID dead + recent commit → respawn (Mode 2)', () => {
@@ -261,9 +271,9 @@ describe('classifyResumeMode', () => {
 		expect(decision.mode).toBe('prompt');
 	});
 
-	test('Mode 4 wins over Mode 1 — retry-monitor alive short-circuits PID liveness', () => {
+	test('Mode 4 wins over live-supervisor — retry-monitor alive short-circuits PID liveness', () => {
 		// Edge case: retry-monitor PID alive + state-file-PID also alive. We
-		// must report `noop` (Mode 4) not `respawn` (Mode 1) — the retry
+		// must report `noop` (Mode 4) not `live-supervisor` (Mode 1) — the retry
 		// monitor owns the recovery cycle.
 		const decision = classifyResumeMode(
 			{ active: true, pid: ALIVE_PID },
@@ -274,6 +284,131 @@ describe('classifyResumeMode', () => {
 			NOW,
 		);
 		expect(decision.mode).toBe('noop');
+	});
+});
+
+// --- isWorkerPaneAlive (US-009) --------------------------------------------
+
+describe('isWorkerPaneAlive (US-009)', () => {
+	test('returns false for null pane id', () => {
+		const spawn = makeFakeSpawn({ livePaneIds: ['%1', '%2'] });
+		expect(isWorkerPaneAlive(null, spawn)).toBe(false);
+	});
+
+	test('returns false for empty string pane id', () => {
+		const spawn = makeFakeSpawn({ livePaneIds: ['%1'] });
+		expect(isWorkerPaneAlive('', spawn)).toBe(false);
+	});
+
+	test('returns true when pane id appears in list-panes output', () => {
+		const spawn = makeFakeSpawn({ livePaneIds: ['%1', '%5', '%9'] });
+		expect(isWorkerPaneAlive('%5', spawn)).toBe(true);
+	});
+
+	test('returns false when pane id is not in list-panes output', () => {
+		const spawn = makeFakeSpawn({ livePaneIds: ['%1', '%2'] });
+		expect(isWorkerPaneAlive('%5', spawn)).toBe(false);
+	});
+
+	test('returns false when list-panes exits non-zero (tmux unavailable)', () => {
+		// Default fakeFn returns status=1 for non-list and non-git calls.
+		const spawn = makeFakeSpawn(); // livePaneIds undefined → status 0 with empty output
+		// Override to return status 1 for list-panes.
+		const failSpawn: SpawnSyncFn = (cmd, args, opts) => {
+			const base = spawn(cmd, args, opts);
+			if (cmd === 'tmux' && args.includes('list-panes')) {
+				return { ...base, status: 1, stdout: '' };
+			}
+			return base;
+		};
+		expect(isWorkerPaneAlive('%5', failSpawn)).toBe(false);
+	});
+});
+
+// --- classifyResumeMode matrix (US-009) ------------------------------------
+
+describe('classifyResumeMode — US-009 matrix', () => {
+	test('no-state: no state file → idle', () => {
+		const decision = classifyResumeMode(null, null, RECENT_COMMIT_MS, false, false, NOW, false);
+		expect(decision.mode).toBe('idle');
+	});
+
+	test('live-supervisor: state file + supervisor PID alive → live-supervisor', () => {
+		const decision = classifyResumeMode(
+			{ active: true, pid: ALIVE_PID },
+			null,
+			RECENT_COMMIT_MS,
+			true, // pidAlive
+			false,
+			NOW,
+			false,
+		);
+		expect(decision.mode).toBe('live-supervisor');
+	});
+
+	test('orphan-pane: state file + PID dead + worker pane alive → orphaned-worker', () => {
+		const decision = classifyResumeMode(
+			{ active: true, pid: DEAD_PID },
+			null,
+			RECENT_COMMIT_MS,
+			false, // pidAlive = false
+			false,
+			NOW,
+			true, // workerPaneAlive = true
+		);
+		expect(decision.mode).toBe('orphaned-worker');
+	});
+
+	test('fully-dead: state file + PID dead + pane dead + recent commit → respawn', () => {
+		const decision = classifyResumeMode(
+			{ active: true, pid: DEAD_PID },
+			null,
+			RECENT_COMMIT_MS,
+			false,
+			false,
+			NOW,
+			false, // workerPaneAlive = false
+		);
+		expect(decision.mode).toBe('respawn');
+	});
+
+	test('fully-dead + stale commit: state file + PID dead + pane dead + >24h → prompt', () => {
+		const decision = classifyResumeMode(
+			{ active: true, pid: DEAD_PID },
+			null,
+			OLD_COMMIT_MS,
+			false,
+			false,
+			NOW,
+			false,
+		);
+		expect(decision.mode).toBe('prompt');
+	});
+
+	test('noop wins over orphaned-worker: retry-monitor alive short-circuits pane check', () => {
+		const decision = classifyResumeMode(
+			{ active: true, pid: DEAD_PID },
+			null,
+			RECENT_COMMIT_MS,
+			false,
+			true, // retryMonitorAlive
+			NOW,
+			true, // workerPaneAlive
+		);
+		expect(decision.mode).toBe('noop');
+	});
+
+	test('live-supervisor wins over orphaned-worker: PID alive takes priority', () => {
+		const decision = classifyResumeMode(
+			{ active: true, pid: ALIVE_PID },
+			null,
+			RECENT_COMMIT_MS,
+			true, // pidAlive
+			false,
+			NOW,
+			true, // workerPaneAlive — but PID wins
+		);
+		expect(decision.mode).toBe('live-supervisor');
 	});
 });
 

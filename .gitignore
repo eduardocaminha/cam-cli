@@ -41,6 +41,14 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .claude/hooks/
 # Runtime orchestrator session-id marker written by `cam run` (US-002, CAM-21)
 .claude/.cam-orch-session
+# Runtime per-story supervisor artifacts: session markers + durable out-logs (CAM-22/CAM-32)
+.claude/.cam-worker-*.session
+.claude/.cam-worker-out-*.log
+# Runtime supervisor markers written by `cam plan` / `cam next` (CAM-22)
+.claude/.cam-worker-pane
+.claude/cam-loop.local.md
+# Runtime single-supervisor concurrency lock written by `cam next` (US-015)
+.claude/.cam-supervisor.lock
 
 # Cursor IDE workspace files (content is already in CLAUDE.md, which Cursor reads as fallback)
 .cursor/

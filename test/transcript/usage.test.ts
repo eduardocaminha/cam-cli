@@ -2,7 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatTokens, orchestratorTranscriptPath, parseTranscriptUsage, renderTokensLine } from "../../src/transcript/usage.ts";
+import {
+	formatTokens,
+	orchestratorTranscriptPath,
+	parseTranscriptUsage,
+	readWorkerSessionMarker,
+	renderTokensLine,
+	transcriptPathForSession,
+	writeWorkerSessionMarker,
+} from "../../src/transcript/usage.ts";
 
 // ---------------------------------------------------------------------------
 // parseTranscriptUsage
@@ -353,5 +361,116 @@ describe("renderTokensLine", () => {
 		// cacheRead = 1 > 0, so suffix appears
 		// in = 100001 -> 100k; cached = 1 -> 1; out = 10000 -> 10k
 		expect(line).toContain("(1 cached)");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// transcriptPathForSession (US-002)
+// ---------------------------------------------------------------------------
+
+describe("transcriptPathForSession", () => {
+	test("returns expected ~/.claude/projects/<slug>/<uuid>.jsonl shape", () => {
+		const cwd = "/Users/alice/Documents/Projects/my-project";
+		const claudeDir = "/Users/alice/.claude";
+		const uuid = "deadbeef-1234-5678-abcd-000000000000";
+
+		const result = transcriptPathForSession(uuid, cwd, claudeDir);
+
+		const encoded = cwd.replace(/[^a-zA-Z0-9]/g, "-");
+		const expected = join(claudeDir, "projects", encoded, `${uuid}.jsonl`);
+		expect(result).toBe(expected);
+	});
+
+	test("encodes special chars in cwd as dashes", () => {
+		const cwd = "/tmp/my.project_test";
+		const claudeDir = "/home/user/.claude";
+		const uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+		const result = transcriptPathForSession(uuid, cwd, claudeDir);
+
+		const encoded = cwd.replace(/[^a-zA-Z0-9]/g, "-");
+		expect(result).toBe(join(claudeDir, "projects", encoded, `${uuid}.jsonl`));
+	});
+
+	test("uses the injected claudeDir, not any hardcoded path", () => {
+		const cwd = "/project/root";
+		const claudeDir = "/custom/claude-dir";
+		const uuid = "11111111-2222-3333-4444-555555555555";
+
+		const result = transcriptPathForSession(uuid, cwd, claudeDir);
+
+		expect(result.startsWith(claudeDir)).toBe(true);
+		expect(result.endsWith(`${uuid}.jsonl`)).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// writeWorkerSessionMarker / readWorkerSessionMarker (US-002)
+// ---------------------------------------------------------------------------
+
+describe("writeWorkerSessionMarker / readWorkerSessionMarker", () => {
+	function makeTmpClaudeDir(): string {
+		const base = mkdtempSync(join(tmpdir(), "cam-wsm-"));
+		const claudeDir = join(base, ".claude");
+		mkdirSync(claudeDir, { recursive: true });
+		return claudeDir;
+	}
+
+	test("round-trip: write then read returns the same uuid", () => {
+		const claudeDir = makeTmpClaudeDir();
+		const uuid = "deadbeef-1234-5678-abcd-000000000000";
+		writeWorkerSessionMarker(claudeDir, "US-007", uuid);
+		expect(readWorkerSessionMarker(claudeDir, "US-007")).toBe(uuid);
+	});
+
+	test("write creates the correct filename: .cam-worker-<storyId>.session", () => {
+		const claudeDir = makeTmpClaudeDir();
+		const uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+		writeWorkerSessionMarker(claudeDir, "US-012", uuid);
+		// Read directly from the expected path to confirm the file name.
+		const raw = require("node:fs").readFileSync(join(claudeDir, ".cam-worker-US-012.session"), "utf8");
+		expect(raw).toBe(uuid);
+	});
+
+	test("readWorkerSessionMarker returns null when marker is absent", () => {
+		const claudeDir = makeTmpClaudeDir();
+		expect(readWorkerSessionMarker(claudeDir, "US-999")).toBeNull();
+	});
+
+	test("readWorkerSessionMarker returns null when marker is empty", () => {
+		const claudeDir = makeTmpClaudeDir();
+		writeFileSync(join(claudeDir, ".cam-worker-US-001.session"), "", "utf8");
+		expect(readWorkerSessionMarker(claudeDir, "US-001")).toBeNull();
+	});
+
+	test("readWorkerSessionMarker returns null when marker contains only whitespace", () => {
+		const claudeDir = makeTmpClaudeDir();
+		writeFileSync(join(claudeDir, ".cam-worker-US-001.session"), "   \n  ", "utf8");
+		expect(readWorkerSessionMarker(claudeDir, "US-001")).toBeNull();
+	});
+
+	test("writeWorkerSessionMarker overwrites an existing marker", () => {
+		const claudeDir = makeTmpClaudeDir();
+		writeWorkerSessionMarker(claudeDir, "US-003", "old-uuid-0000");
+		writeWorkerSessionMarker(claudeDir, "US-003", "new-uuid-1111");
+		expect(readWorkerSessionMarker(claudeDir, "US-003")).toBe("new-uuid-1111");
+	});
+
+	test("markers for different stories are independent", () => {
+		const claudeDir = makeTmpClaudeDir();
+		writeWorkerSessionMarker(claudeDir, "US-001", "uuid-story-001");
+		writeWorkerSessionMarker(claudeDir, "US-002", "uuid-story-002");
+		expect(readWorkerSessionMarker(claudeDir, "US-001")).toBe("uuid-story-001");
+		expect(readWorkerSessionMarker(claudeDir, "US-002")).toBe("uuid-story-002");
+	});
+
+	test("writeWorkerSessionMarker creates the claudeDir if it does not exist", () => {
+		const base = mkdtempSync(join(tmpdir(), "cam-wsm-create-"));
+		// Use a claudeDir that does not yet exist.
+		const claudeDir = join(base, "new", ".claude");
+		const uuid = "freshly-created-dir-uuid";
+		// Should not throw even though the directory is missing.
+		writeWorkerSessionMarker(claudeDir, "US-042", uuid);
+		expect(readWorkerSessionMarker(claudeDir, "US-042")).toBe(uuid);
 	});
 });

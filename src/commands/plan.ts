@@ -30,11 +30,14 @@ import {
 	emitTrailingBlank,
 	emitWarn,
 } from '../logging/screen.ts';
+import { join } from 'node:path';
+
 import type { Env } from '../tmux/session.ts';
 import {
 	ensureProjectSession,
 	openPaneInSession,
 	projectSessionName,
+	writeWorkerPaneMarker,
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
 
@@ -126,7 +129,9 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 
 	try {
 		ensureProjectSession(sessionName, tmuxSpawnFn);
-		openPaneInSession(sessionName, claudeArgv, tmuxSpawnFn);
+		const paneId = openPaneInSession(sessionName, claudeArgv, tmuxSpawnFn);
+		const claudeDir = join(cwd, '.claude');
+		writeWorkerPaneMarker(claudeDir, paneId);
 	} catch (err) {
 		printError(
 			'Failed to launch /cam-plan pane',

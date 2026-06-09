@@ -19,9 +19,18 @@
 //   - isInsideProjectSession checks the $TMUX_PANE and $CAM_SESSION env vars
 //     to detect whether the caller is already running inside the project
 //     session (prevents double-attach).
+//
+// Worker-slot primitives (CAM-22 / US-001):
+//   - respawnPaneArgv, waitForArgv, signalWaitForArgv, capturePaneArgv: pure
+//     argv builders for the supervisor to drive a reused worker pane.
+//   - workerWaitChannel: deterministic channel name per worker invocation.
+//   - writeWorkerPaneMarker / readWorkerPaneMarker: persist/read the worker
+//     pane id in .claude/.cam-worker-pane so supervisor and lifecycle commands
+//     can address the slot across process restarts.
 
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 // ---------------------------------------------------------------------------
@@ -205,14 +214,19 @@ export function ensureProjectSession(
 /**
  * Split a new pane into an existing project session and run `cmdArgv` in it.
  *
- * Uses `split-window -t <sessionName>:0 -v -d -- <arg0> <arg1> ...` (vertical
- * split, detached so the caller is not immediately switched into it).
+ * Uses `split-window -t <sessionName>:0 -v -d -P -F #{pane_id} -- <arg0> ...`
+ * (vertical split, detached so the caller is not immediately switched into it).
+ * `-P -F #{pane_id}` causes tmux to print the stable pane id (%<n>) to stdout.
  *
  * The command is passed as multiple argv elements (tmux multi-arg
  * shell-command form), which causes tmux to exec the binary directly rather
  * than routing through `/bin/sh -c`. This prevents shell-metacharacter
  * injection when any argv element contains user-supplied free text (e.g. an
  * issue description with `;`, `$()`, backticks, or quotes).
+ *
+ * Returns the captured pane id string (e.g. `%5`). Callers that want to
+ * address the pane later (respawn-pane, capture-pane, etc.) should persist
+ * this via writeWorkerPaneMarker.
  *
  * Intended for loop commands that want to host their claude invocation inside
  * the project session without re-creating the session layout.
@@ -221,19 +235,123 @@ export function openPaneInSession(
 	sessionName: string,
 	cmdArgv: string[],
 	spawnFn: SpawnFn,
-): void {
-	spawnFn(
+): string {
+	const result = spawnFn(
 		'tmux',
 		tmuxArgs([
 			'split-window',
 			'-t', `${sessionName}:0`,
 			'-v',
 			'-d',
+			'-P', '-F', '#{pane_id}',
 			'--',
 			...cmdArgv,
 		]),
-		{ stdio: 'ignore' },
+		{ stdio: 'pipe' },
 	);
+	return result.stdout.toString().trim();
+}
+
+// ---------------------------------------------------------------------------
+// Worker-slot argv builders (CAM-22 / US-001)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the argv for `tmux respawn-pane -k -t <paneId> <shellCmd...>`.
+ *
+ * `respawn-pane -k` kills the currently running command in the pane and
+ * starts the new command in the same pane id, so the pane address is stable
+ * across multiple worker invocations.
+ *
+ * The shell command is passed as individual argv elements after the pane
+ * target; tmux joins them with a space into a shell string internally, which
+ * is the standard respawn-pane calling convention.
+ */
+export function respawnPaneArgv(paneId: string, shellCmd: string[]): string[] {
+	return tmuxArgs(['respawn-pane', '-k', '-t', paneId, ...shellCmd]);
+}
+
+/**
+ * Build the argv for `tmux wait-for <channel>`.
+ *
+ * Blocks the calling client until signalWaitForArgv fires the same channel.
+ * Must be run inside the tmux session (e.g. as a chained command after the
+ * worker process exits) because the call blocks until the channel is signalled.
+ */
+export function waitForArgv(channel: string): string[] {
+	return tmuxArgs(['wait-for', channel]);
+}
+
+/**
+ * Build the argv for `tmux wait-for -S <channel>`.
+ *
+ * Unblocks all clients waiting on the channel. The supervisor calls this
+ * after detecting the worker has finished (via capture-pane sentinel).
+ */
+export function signalWaitForArgv(channel: string): string[] {
+	return tmuxArgs(['wait-for', '-S', channel]);
+}
+
+/**
+ * Build the argv for `tmux capture-pane -p -t <paneId>`.
+ *
+ * Prints the visible pane content to stdout. The supervisor uses the output
+ * to grep for completion sentinels (e.g. `CAM_IMPLEMENTER_STATUS=`).
+ *
+ * `-p` prints to stdout instead of writing to the capture buffer.
+ */
+export function capturePaneArgv(paneId: string): string[] {
+	return tmuxArgs(['capture-pane', '-p', '-t', paneId]);
+}
+
+/**
+ * Derive a deterministic wait-for channel name for a worker invocation.
+ *
+ * Format: `cam-worker-<storyId>-<shortUuid>` where shortUuid is the first 8
+ * characters of a UUID (enough entropy to disambiguate parallel runs of the
+ * same story). The channel name contains only tmux-safe characters.
+ *
+ * storyId example: `US-007`
+ * shortUuid example: `a1b2c3d4`
+ */
+export function workerWaitChannel(storyId: string, uuid: string): string {
+	const safeStoryId = storyId.replace(/[^a-zA-Z0-9]/g, '-');
+	const shortUuid = uuid.replace(/-/g, '').slice(0, 8);
+	return `cam-worker-${safeStoryId}-${shortUuid}`;
+}
+
+// ---------------------------------------------------------------------------
+// Worker pane marker persistence (CAM-22 / US-001)
+// ---------------------------------------------------------------------------
+
+/** Filename within `.claude/` where the worker pane id is persisted. */
+export const WORKER_PANE_MARKER = '.cam-worker-pane';
+
+/**
+ * Persist the worker pane id to `<claudeDir>/.cam-worker-pane`.
+ *
+ * `claudeDir` is typically `<cwd>/.claude`. Creates the directory if absent.
+ * The file contains the bare pane id string (e.g. `%5`), no trailing newline.
+ */
+export function writeWorkerPaneMarker(claudeDir: string, paneId: string): void {
+	mkdirSync(claudeDir, { recursive: true });
+	writeFileSync(join(claudeDir, WORKER_PANE_MARKER), paneId, 'utf8');
+}
+
+/**
+ * Read the worker pane id from `<claudeDir>/.cam-worker-pane`.
+ *
+ * Returns the pane id string (e.g. `%5`), or `null` if the file does not
+ * exist or is empty. Never throws; callers must treat null as "slot not yet
+ * allocated".
+ */
+export function readWorkerPaneMarker(claudeDir: string): string | null {
+	try {
+		const content = readFileSync(join(claudeDir, WORKER_PANE_MARKER), 'utf8').trim();
+		return content.length > 0 ? content : null;
+	} catch {
+		return null;
+	}
 }
 
 // ---------------------------------------------------------------------------

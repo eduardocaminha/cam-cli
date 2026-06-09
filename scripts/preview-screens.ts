@@ -35,7 +35,7 @@ import { runStatus } from '../src/commands/status.ts';
 import { runStop, type SpawnSyncFn } from '../src/commands/stop.ts';
 import { runResume, type ResumeOptions, type KillFn } from '../src/commands/resume.ts';
 import { runRun } from '../src/commands/run.ts';
-import { runNext, type NextSpawnFn } from '../src/commands/next.ts';
+import { runNext } from '../src/commands/next.ts';
 import { runPlan } from '../src/commands/plan.ts';
 import { type SpawnFn as TmuxSpawnFnType } from '../src/tmux/session.ts';
 
@@ -306,21 +306,21 @@ function previewRun(): void {
 
 // --- cam next ---------------------------------------------------------------
 
-/** Fake spawn: every spawned process "exits" cleanly with 0. Used for both the
- *  dashboard split and the claude pane so `runNext` returns without launching
- *  anything real. */
-const fakeNextSpawn: NextSpawnFn = () => ({ exited: Promise.resolve(0), kill: () => {} });
+/** Fake supervisor: completes immediately with 0 iterations. */
+const fakeSupervisor = async () => ({
+	status: 'complete' as const,
+	iterations: 0,
+	lastOutcome: null,
+});
 
-/** Common non-destructive `runNext` deps: fake spawn + writers that return a
- *  path without touching disk, fixed permission mode + frontmatter values. */
-function nextPreviewOptions(hostMode: 'tmux-split' | 'inline') {
+/** Common non-destructive `runNext` deps: fake supervisor + writer that
+ *  returns a path without touching disk, fixed permission mode + frontmatter. */
+function nextPreviewOptions() {
 	return {
-		hostMode,
 		permissionMode: 'bypassPermissions',
-		spawn: fakeNextSpawn,
 		writer: (_cwd: string, _body: string) => '/project/.claude/cam-loop.local.md',
-		hookMaterializer: () => '/project/.claude/hooks/cam-loop-stop.sh',
-		settingsWriter: () => '/project/.claude/settings.local.json',
+		workerPaneReader: (_claudeDir: string) => '%3',
+		supervisorFn: fakeSupervisor,
 		startedAt: '2026-06-05T13:30:00Z',
 		sessionId: 'preview-session',
 		cwd: '/project',
@@ -342,23 +342,24 @@ async function withEnv(key: string, value: string | undefined, fn: () => Promise
 }
 
 async function previewNext(): Promise<void> {
-	section('cam next — tmux-split, outside tmux (creates the "cam" session)');
-	await withEnv('TMUX', undefined, () => runNext(nextPreviewOptions('tmux-split')));
+	section('cam next — dispatches to supervisor (complete)');
+	await runNext(nextPreviewOptions());
 
-	section('cam next — tmux-split, inside tmux (splits the current window)');
-	await withEnv('TMUX', '/tmp/fake-tmux-socket', () => runNext(nextPreviewOptions('tmux-split')));
-
-	section('cam next — inline (VS Code or no tmux: single pane)');
-	await runNext(nextPreviewOptions('inline'));
-
-	section('cam next — fatal (stop-hook materialization fails → stderr)');
+	section('cam next — no worker pane (run cam plan first)');
 	await runNext({
-		hostMode: 'inline',
 		permissionMode: 'bypassPermissions',
-		hookMaterializer: () => {
-			throw new Error('EACCES: permission denied, mkdir .claude/hooks');
-		},
+		workerPaneReader: (_claudeDir: string) => null,
 		cwd: '/project',
+	});
+
+	section('cam next — supervisor blocked after 2 iterations');
+	await runNext({
+		...nextPreviewOptions(),
+		supervisorFn: async () => ({
+			status: 'blocked' as const,
+			iterations: 2,
+			lastOutcome: { kind: 'blocked' as const, storyId: undefined, detail: 'Quality gate failed' },
+		}),
 	});
 }
 

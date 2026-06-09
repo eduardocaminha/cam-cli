@@ -1,0 +1,244 @@
+// test/supervisor/worker-argv.test.ts
+//
+// Unit tests for src/supervisor/worker-argv.ts.
+//
+// Coverage:
+//   1. All required claude flags are present in the output string.
+//   2. The tmux wait-for -S chain follows the claude command.
+//   3. A task prompt containing quotes and $ is shell-escaped.
+//   4. The agent name can be overridden.
+
+import { describe, expect, test } from 'bun:test';
+import {
+	buildImplementerWorkerArgv,
+	DEFAULT_IMPLEMENTER_AGENT,
+} from '../../src/supervisor/worker-argv.ts';
+
+const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+const SAMPLE_CHANNEL = 'cam-worker-US-003-a1b2c3d4';
+const SAMPLE_PROMPT = 'Implement US-003 per the PRD.';
+const SAMPLE_MODE = 'bypassPermissions';
+
+describe('buildImplementerWorkerArgv', () => {
+	test('contains claude -p flag', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+		});
+		expect(result).toContain('claude -p');
+	});
+
+	test('contains --permission-mode with the supplied mode', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+		});
+		expect(result).toContain(`--permission-mode ${SAMPLE_MODE}`);
+	});
+
+	test('contains --session-id with the supplied uuid', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+		});
+		expect(result).toContain(`--session-id ${SAMPLE_UUID}`);
+	});
+
+	test('contains --output-format text', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+		});
+		expect(result).toContain('--output-format text');
+	});
+
+	test('contains --agent with the default agent name', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+		});
+		expect(result).toContain(`--agent ${DEFAULT_IMPLEMENTER_AGENT}`);
+	});
+
+	test('contains tmux -L cam wait-for -S chain after the implementer command', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+		});
+		// The chain must appear after `claude`
+		const claudeIdx = result.indexOf('claude');
+		const waitIdx = result.indexOf('tmux -L cam wait-for -S');
+		expect(claudeIdx).toBeGreaterThanOrEqual(0);
+		expect(waitIdx).toBeGreaterThan(claudeIdx);
+	});
+
+	test('channel is present in the wait-for -S argument', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+		});
+		// Channel is single-quoted, but the bare channel name should still appear
+		expect(result).toContain(SAMPLE_CHANNEL);
+	});
+
+	test('task prompt with embedded single quotes is shell-escaped', () => {
+		const dangerousPrompt = "Implement it's critical; use $HOME and `backtick`";
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: dangerousPrompt,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+		});
+		// The prompt content must be present but the single quote must be escaped
+		// as '\'' so the shell cannot break out of the quoted argument.
+		expect(result).toContain("'\\''");
+		// $ and backtick must not be interpolated: they remain literal inside
+		// single quotes, so the raw characters should still appear in the string.
+		expect(result).toContain('$HOME');
+		expect(result).toContain('`backtick`');
+	});
+
+	test('task prompt with dollar sign and backticks is safely enclosed in single quotes', () => {
+		const dangerousPrompt = 'Cost is $100 and run `ls`';
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: dangerousPrompt,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+		});
+		// The prompt must be wrapped in single quotes (so $ and ` are literal)
+		expect(result).toMatch(/'Cost is \$100 and run `ls`'/);
+	});
+
+	test('agentName can be overridden', () => {
+		const customAgent = 'my-custom-agent';
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+			agentName: customAgent,
+		});
+		expect(result).toContain(`--agent ${customAgent}`);
+		expect(result).not.toContain(`--agent ${DEFAULT_IMPLEMENTER_AGENT}`);
+	});
+
+	test('default agentName is subagent-implementer', () => {
+		expect(DEFAULT_IMPLEMENTER_AGENT).toBe('subagent-implementer');
+	});
+
+	test('omits tee when no outFile is given (legacy pane-only output)', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+		});
+		expect(result).not.toContain('tee');
+	});
+
+	test('tees output to the durable log when outFile is set (CAM-32 BUG 1)', () => {
+		const outFile = '/proj/.claude/.cam-worker-out-a1b2c3d4.log';
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			channel: SAMPLE_CHANNEL,
+			outFile,
+		});
+		// stderr merged into stdout and tee'd to the durable file.
+		expect(result).toContain(`2>&1 | tee '${outFile}'`);
+		// tee comes after claude and before the wait-for signal.
+		const teeIdx = result.indexOf('| tee');
+		const waitIdx = result.indexOf('tmux -L cam wait-for -S');
+		expect(teeIdx).toBeGreaterThan(result.indexOf('claude'));
+		expect(waitIdx).toBeGreaterThan(teeIdx);
+	});
+
+	// -------------------------------------------------------------------------
+	// US-012: Interactive mode (no -p, no --output-format, no wait-for chain)
+	// -------------------------------------------------------------------------
+
+	test('interactive mode omits -p flag', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			interactive: true,
+		});
+		expect(result).not.toContain('claude -p');
+	});
+
+	test('interactive mode omits --output-format flag', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			interactive: true,
+		});
+		expect(result).not.toContain('--output-format');
+	});
+
+	test('interactive mode omits the tmux wait-for chain', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			interactive: true,
+		});
+		expect(result).not.toContain('wait-for');
+		expect(result).not.toContain('tmux');
+	});
+
+	test('interactive mode retains --permission-mode, --session-id, --agent, and prompt', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			interactive: true,
+		});
+		expect(result).toContain(`--permission-mode ${SAMPLE_MODE}`);
+		expect(result).toContain(`--session-id ${SAMPLE_UUID}`);
+		expect(result).toContain(`--agent ${DEFAULT_IMPLEMENTER_AGENT}`);
+		expect(result).toContain(SAMPLE_PROMPT);
+	});
+
+	test('interactive mode starts with "claude " (no -p)', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			interactive: true,
+		});
+		expect(result.startsWith('claude ')).toBe(true);
+		expect(result).not.toMatch(/^claude -p/);
+	});
+
+	test('interactive mode with outFile still tees output', () => {
+		const outFile = '/proj/.claude/.cam-worker-out-interactive.log';
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			outFile,
+			interactive: true,
+		});
+		expect(result).toContain(`2>&1 | tee '${outFile}'`);
+		// No wait-for after the tee in interactive mode
+		expect(result).not.toContain('wait-for');
+	});
+});

@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import { performStop, runStop, type SpawnSyncFn } from '../src/commands/stop.ts';
+import { performStop, runStop, type SpawnSyncFn, type KillFn } from '../src/commands/stop.ts';
 import { projectSessionName } from '../src/tmux/session.ts';
 
 // --- Fakes -----------------------------------------------------------------
@@ -30,6 +30,7 @@ interface FakeSpawnHandlers {
 	tmuxAvailable?: boolean; // governs `tmux -V` exit code
 	sessionAlive?: boolean;  // governs `tmux has-session -t <session>` exit code
 	killSucceeds?: boolean;  // governs `tmux kill-session -t <session>` exit code
+	respawnPaneSucceeds?: boolean; // governs `tmux respawn-pane -k` exit code
 	/** The expected session name to match has-session / kill-session calls. */
 	sessionName?: string;
 }
@@ -67,6 +68,8 @@ function makeFakeSpawn(handlers: FakeSpawnHandlers): SpawnSyncFn & { calls: Spaw
 				(expectedSession === '' || subArg2 === expectedSession)
 			) {
 				result.status = handlers.killSucceeds === false ? 1 : 0;
+			} else if (sub === 'respawn-pane') {
+				result.status = handlers.respawnPaneSucceeds === false ? 1 : 0;
 			}
 		}
 		return result;
@@ -277,6 +280,151 @@ describe('runStop', () => {
 			} finally {
 				process.stdout.write = original;
 			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// --- US-009: supervisor PID kill -------------------------------------------
+
+const STATE_FILE_WITH_PID = (pid: number) =>
+	`---\nactive: true\niteration: 3\npid: ${pid}\n---\n\n`;
+
+describe('performStop — supervisor PID kill (US-009)', () => {
+	test('sends SIGTERM to the supervisor PID from the state file', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-sup-pid-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), STATE_FILE_WITH_PID(12345));
+			const killed: number[] = [];
+			const fakKill: KillFn = (pid) => {
+				killed.push(pid);
+			};
+			const spawn = makeFakeSpawn({ tmuxAvailable: false });
+			const report = performStop({ cwd: dir, spawnSyncFn: spawn, killFn: fakKill });
+			expect(report.supervisorKilled).toBe(true);
+			expect(killed).toEqual([12345]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('supervisorKilled=false when state file has no pid field', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-sup-no-pid-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'cam-loop.local.md'),
+				'---\nactive: true\niteration: 1\n---\n\n',
+			);
+			const fakKill: KillFn = () => {
+				throw new Error('should not be called');
+			};
+			const spawn = makeFakeSpawn({ tmuxAvailable: false });
+			const report = performStop({ cwd: dir, spawnSyncFn: spawn, killFn: fakKill });
+			expect(report.supervisorKilled).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('supervisorKilled=false when kill throws (PID already dead)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-sup-dead-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), STATE_FILE_WITH_PID(99999));
+			const fakKill: KillFn = () => {
+				throw new Error('ESRCH');
+			};
+			const spawn = makeFakeSpawn({ tmuxAvailable: false });
+			const report = performStop({ cwd: dir, spawnSyncFn: spawn, killFn: fakKill });
+			expect(report.supervisorKilled).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('supervisorKilled=false when state file is absent', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-sup-no-file-'));
+		try {
+			const fakKill: KillFn = () => {
+				throw new Error('should not be called');
+			};
+			const spawn = makeFakeSpawn({ tmuxAvailable: false });
+			const report = performStop({ cwd: dir, spawnSyncFn: spawn, killFn: fakKill });
+			expect(report.supervisorKilled).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// --- US-009: worker pane kill -----------------------------------------------
+
+describe('performStop — worker slot pane kill (US-009)', () => {
+	test('kills the worker pane when session is alive and pane id is known', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-worker-pane-'));
+		try {
+			const session = projectSessionName(dir);
+			const spawn = makeFakeSpawn({
+				tmuxAvailable: true,
+				sessionAlive: true,
+				killSucceeds: true,
+				respawnPaneSucceeds: true,
+				sessionName: session,
+			});
+			const report = performStop({
+				cwd: dir,
+				spawnSyncFn: spawn,
+				workerPaneReader: () => '%5',
+			});
+			expect(report.workerPaneKilled).toBe(true);
+			// The respawn-pane argv must target the worker pane id.
+			// After tmuxArgs(), argv is: ['-L', 'cam', 'respawn-pane', '-k', '-t', paneId, ...]
+			const respawn = spawn.calls.find(
+				(c) => c.cmd === 'tmux' && (c.args[0] === '-L' ? c.args[2] : c.args[0]) === 'respawn-pane',
+			);
+			expect(respawn).toBeDefined();
+			// paneId is at index 5 when -L cam prefix is present: [-L, cam, respawn-pane, -k, -t, paneId, ...]
+			const paneArg = respawn?.args[0] === '-L' ? respawn.args[5] : respawn?.args[3];
+			expect(paneArg).toBe('%5');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('workerPaneKilled=false when workerPaneReader returns null', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-worker-pane-null-'));
+		try {
+			const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionAlive: false });
+			const report = performStop({
+				cwd: dir,
+				spawnSyncFn: spawn,
+				workerPaneReader: () => null,
+			});
+			expect(report.workerPaneKilled).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('attempts worker pane kill even when session is not alive (race window)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-worker-pane-no-session-'));
+		try {
+			const spawn = makeFakeSpawn({
+				tmuxAvailable: true,
+				sessionAlive: false,
+				respawnPaneSucceeds: true,
+			});
+			// If respawn-pane exits 0, workerPaneKilled should be true even without session.
+			const report = performStop({
+				cwd: dir,
+				spawnSyncFn: spawn,
+				workerPaneReader: () => '%3',
+			});
+			// respawn-pane was attempted (exits 0)
+			expect(report.workerPaneKilled).toBe(true);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

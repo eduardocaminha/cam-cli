@@ -3,195 +3,716 @@
 Durable patterns carried across cycles. Implementers append new ones as they emerge.
 
 - **Bun runtime**: prefer `Bun.spawn` / `Bun.$` / `Bun.file` over `node:child_process` / `node:fs` in NEW code. But match the surrounding file's idiom: `src/commands/run.ts`, `dashboard.ts`, and `status.ts` already use `node:fs` / `node:path` / `node:child_process`; keep that style there, do not mix `Bun.file` mid-file.
-- **Permission mode**: never register a `--permission-mode` CLI flag on any subcommand parser, enforced by `test/no-permission-mode-flag.test.ts` (greps `index.ts` and `src/commands/`). The literal may appear only inside a forwarded argv (e.g. the orchestrator `claude --permission-mode bypassPermissions` in `run.ts`, intentional).
+- **Permission mode**: never register a `--permission-mode` CLI flag on any subcommand parser, enforced by `test/no-permission-mode-flag.test.ts` (greps `index.ts` and `src/commands/`). The literal may appear only inside a forwarded argv (e.g. the orchestrator `claude --permission-mode bypassPermissions` in `run.ts`, intentional, and the spawned worker argv in CAM-22).
 - **noUncheckedIndexedAccess**: tsconfig has it on. Array indexing and regex capture groups are `T | undefined`; guard with `?? fallback` or a justified non-null assertion. JSON.parse results need runtime shape checks before property access.
 - **`bun test` green is NOT proof of type-safety**: the runner passes even when `tsc --noEmit` would fail. Always run `bun run typecheck` separately and trust its exit code before claiming the gate passed.
 - **Read-only readers never throw**: `readSnapshot` / `buildStatusReport` and their helpers wrap every IO in try/catch and fall through to defaults, because dashboard/status are read-only and a render failure must not brick the operator's terminal (see `readPrd` / `readState` in `dashboard.ts`).
-- **Transcript discovery**: Claude Code transcripts live at `~/.claude/projects/<encode(cwd)>/<sessionId>.jsonl`, where `encode = cwd.replace(/[^a-zA-Z0-9]/g, '-')` (verified empirically). Filename == sessionId. Each line is one JSON object; assistant lines carry `message.usage` with `input_tokens` / `output_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens`.
+- **Transcript discovery**: Claude Code transcripts live at `~/.claude/projects/<encode(cwd)>/<sessionId>.jsonl`, where `encode = cwd.replace(/[^a-zA-Z0-9]/g, '-')` (verified empirically). Filename == sessionId. Each line is one JSON object; assistant lines carry `message.usage` with `input_tokens` / `output_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens`. Dedupe by `(message.id, requestId)` before summing (one JSONL line per content block carries identical usage; inflation ~1.44x).
 - **src/tmux/session.ts is the canonical session module**: `projectSessionName`, `ensureProjectSession`, `openPaneInSession`, `isInsideProjectSession`, `tmuxArgs` all live here with injectable `SpawnFn`. All tmux calls go through `tmuxArgs(sub)` which prepends `['-L', 'cam']`; test fakes route by `args[2]` (guard: `args[0] === '-L' ? args[2] : args[0]`).
+- **tmux worker primitives (CAM-22)**: `respawn-pane -k -t <pane> <cmd>` kills the running command and reuses the SAME pane id; `wait-for <chan>` blocks the client until `wait-for -S <chan>` signals it (the signal is NOT guaranteed buffered if sent before the wait, so always confirm the outcome by reading `prd.json` / `handoff.json`, never trust the channel alone); `capture-pane -p [-S -N]` dumps a pane to stdout for sentinel grepping.
+- **Claude worker invocation (CAM-22)**: custom slash commands do NOT run in headless `-p` mode. A worker session is `claude -p --permission-mode <mode> --session-id <uuid> --output-format json --agent <name> "<task>"`, never `claude -p "/cam-..."`. Autonomous workers (implementer/reviewer) exit on their own so a chained `; tmux -L cam wait-for -S <chan>` works; interactive workers (plan, optional review) do NOT exit, so detect completion by scraping `capture-pane -p` for the `CAM_*_STATUS` / `<review>` sentinel.
 - **Ink screens**: success/failure is signalled by the glyph (✓ accent / ✗ destructive), never by divider color. Render and look at the real output; do not trust header comments (see `lessons.md` 2026-06-05).
-- **Tests**: `bun test` from repo root; test files live under `test/`, mirroring source. Inject fake reader/writer/spawn shapes (and injectable `home` / `genSessionId`) instead of touching real stdin/stdout/`~/.claude`.
+- **Tests**: `bun test` from repo root. Tests for `src/commands/*` and `src/tmux/*` live FLAT at `test/<name>.test.ts` (e.g. `test/next.test.ts`, `test/tmux-session.test.ts`); subdir mirrors exist for `test/retry/*`, `test/transcript/*`, and (new in CAM-22) `test/supervisor/*`. Inject fake reader/writer/spawn shapes (and injectable `home` / `genSessionId`) instead of touching real stdin/stdout/`~/.claude`/tmux.
 - **Commits**: conventional commits required (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
 - **No em dashes** in persisted files (PRD notes, progress, docs): use colon, comma, parentheses, or period.
-- **Pure transcript parser pattern**: `parseTranscriptUsage` splits on `\n`, `JSON.parse` each trimmed line in a try/catch, checks `message?.usage` existence, accumulates with `toNumber()` guard (returns 0 for non-number). `formatTokens` uses `>= 1_000_000` / `>= 1_000` thresholds with `toFixed(1)M` / `Math.round/k` / raw. Module lives in `src/transcript/usage.ts`; tests under `test/transcript/usage.test.ts`.
-- **Transcript dedup (US-R2-001)**: Claude Code emits one JSONL line per content block per assistant turn (thinking, text, tool_use), all carrying identical `message.usage`. Must deduplicate before summing. Key: `(message.id, requestId)` where `message.id` is at `parsed.message.id` (string UUID) and `requestId` is at the top-level `parsed.requestId` (string, sometimes absent). Lines missing both fields get a unique `__fallback_N` key. Empirically verified on real transcripts: inflation ratio 1.44x in production session. Last-write-wins for each key (payloads are identical so no semantic difference).
+- **Pure transcript parser pattern**: `parseTranscriptUsage` splits on `\n`, `JSON.parse` each trimmed line in a try/catch, checks `message?.usage` existence, accumulates with `toNumber()` guard (returns 0 for non-number). `formatTokens` uses `>= 1_000_000` / `>= 1_000` thresholds. Module lives in `src/transcript/usage.ts`; tests under `test/transcript/usage.test.ts`. `orchestratorTranscriptPath(cwd, claudeDir)` reads `.claude/.cam-orch-session`; CAM-22 generalizes it to `transcriptPathForSession(uuid, cwd, claudeDir)`.
+- **openPaneInSession returns pane id (US-001)**: the function now uses `stdio: 'pipe'` and `-P -F #{pane_id}` to capture and return the stable pane id string (e.g. `%5`). All test fakes for split-window must handle `opts?.stdio === 'pipe'` and return a non-empty `stdout` buffer, or they will crash with `Cannot read property toString of undefined`.
+- **Worker pane marker (US-001)**: the first write of `.claude/.cam-worker-pane` happens in `plan.ts` immediately after `openPaneInSession`. Supervisor and lifecycle commands address the slot via `readWorkerPaneMarker(claudeDir)`. Returns null if the file is missing or empty; never throws.
+- **Supervisor timeout pattern (US-011)**: `tmux wait-for` has NO native timeout. Bound it by running via `spawnSync(..., { timeout: ms })`; when the deadline fires, spawnSync kills the client process (SIGTERM) and sets `result.signal`. Check `result.signal !== null` for `timedOut`. Pane-death detection: `spawnSync('tmux', ['-L', 'cam', 'list-panes', '-t', paneId])` exits 0 if pane exists, non-zero if dead. Timeout/pane-died blocked outcomes continue the loop (proceed to decideNextAction) rather than exiting, enabling recovery to the next story. Decouple reviewer wait (`ReviewWaitForFn = (channel) => void`) from supervisor `WaitForFn` to avoid forcing the timeout signature onto the unbounded review wait.
+- **Sentinel polling mode (US-012)**: interactive workers (plan/review with human input) do NOT exit on their own, so the supervisor polls `capture-pane` instead of waiting for a tmux channel. Use `implementerMode: 'sentinel'` in `RunSupervisorOptions`; inject `sleepFn` (no-op for tests), `nowMs` (deterministic time source), and `pollIntervalMs`. `buildImplementerWorkerArgv({ interactive: true })` omits `-p` and `--output-format` and the wait-for chain. `parseAnySentinel(text)` in `result.ts` detects `CAM_IMPLEMENTER_STATUS=*`, `CAM_REVIEWER_STATUS=*`, or `<review>...</review>` tags. Same timeout/pane-died semantics as the exit path: both `continue` the supervisor loop.
+- **Structured worker events (US-013)**: `src/supervisor/events.ts` defines `WorkerEvent { ts, storyId, uuid, kind, detail }` and the supervisor appends one JSON line per lifecycle step to `.claude/cam-worker-events.jsonl`. The logger is injected (`logEvent?: WorkerEventLogger`); default `makeFileEventLogger(path)`, tests use `makeInMemoryEventLogger()`. Both injections (`logEvent`, `readWorkerTokens`) are OPTIONAL: absent `logEvent` means zero events and zero behavior change (existing loop tests pass untouched). Emit sites in `loop.ts`: `worker-start` right after `respawn-pane`, `worker-end` after `waitFor`/poll-loop, `result`+`tokens` only where `readWorkerOutcome` produced a real outcome (NOT on timeout/pane-death: no canonical per-story record exists there). `buildResultDetail(outcome, handoff)` builds the rich `result` detail: `filesChanged` = handoff `createdFiles ++ modifiedFiles`, `gates` = `pass` only for a `pass` outcome else `unknown` (supervisor has no per-worker gate transcript), `docsValidated` mirrors handoff `officialDocsValidated`. The `tokens` event reuses `readWorkerTokens(uuid, cwd, claudeDir)` -> `transcriptPathForSession` + `parseTranscriptUsage`, skipped (no event) when the transcript is absent, never logs zeros. Logger uses synchronous `appendFileSync` (not async `Bun.file`) to match the supervisor's all-synchronous injected I/O.
+- **Per-story tokens in dashboard (US-014)**: `readSnapshot` now returns `storyTokens: Record<storyId, TranscriptUsage>`. It reads each story's `.claude/.cam-worker-<id>.session` marker (project `.claude`, via `readWorkerSessionMarker`), resolves the transcript with `transcriptPathForSession(uuid, cwd, claudeDir)`, and sums usage. `readTranscriptTokens` was generalized to take a resolved path (one reader for the orchestrator transcript AND per-story transcripts); the orchestrator caller now resolves the path first. Stories with no marker (or unreadable transcript) are omitted from the map, so `Dashboard.tsx` `StoryRow` shows a muted `STORY_TOKENS_PLACEHOLDER` (`·`) instead of crashing; stories with data show `renderTokensLine(...)` next to the row. State stays signalled by the glyph (✓/→/◌), never the divider. The Ink render is asserted via `ink-testing-library` (`test/dashboard.test.ts`), not a comment.
+- **Single-supervisor lock (US-015)**: `src/supervisor/lock.ts` is the pure guard: `acquireSupervisorLock(pid, project, io)` over an injected `LockIo` (`read`/`write`/`remove`/`pidAlive`/`clock` + optional `logEvent`). It refuses when an existing lock names a DIFFERENT, live pid; takes over a dead pid after emitting a `stale-lock` event (the union in `events.ts` gained `'stale-lock'`, a supervisor-level event with `uuid: 'supervisor'`); overwrites an unparseable lock with no event. Wired in `next.ts` (NOT in the pure `runSupervisor`, which stays side-effect-free): acquire right after the worker-pane check and before the state-file write, reject with exit 1 on conflict, and release at every terminal return AND via a single process-wide SIGINT/SIGTERM handler (`installShutdownHandler`, module-singleton tracking `currentLockRelease`). `acquireLock` and `onShutdown` are injectable on `NextOptions` so tests drive the conflict/release paths without real processes or signals. PID liveness reuses `isPidAlive` from `resume.ts` (do NOT duplicate the signal-0 probe). Lock file `.claude/.cam-supervisor.lock` is gitignored.
+- **Rate-limit pause/resume (US-016)**: handled ONLY in the exit-mode worker path of `loop.ts`, gated behind an optional `rateLimitResume?` injection (absent ⇒ zero behavior change; a RATE_LIMIT pane then flows through `readWorkerOutcome` as `unknown` -> blocked exactly as before). After capturing pane text, `detectRateLimit(text)` = the `CAM_IMPLEMENTER_STATUS=RATE_LIMIT` sentinel OR `isRateLimited(text)` (reused from `src/retry/patterns.ts`). On detection the supervisor emits a `'rate-limited'` event (`phase: 'pause'`), awaits `rateLimitResume({ message, attempt })`, emits `phase: 'resume'`, then RESPAWNS the SAME `shellCmd` (same uuid == `--session-id`, same channel marker -> session continuity, AC4), re-waits, and re-captures, bounded by `maxRateLimitRetries` (default 5). A resume-wait timeout reuses the normal timeout path via a labeled `continue outer`; exhausting retries returns blocked `rate-limit retries exhausted`. `result.ts` / `WorkerOutcomeKind` were NOT changed (avoids regressing the sentinel-mode path). The production `rateLimitResume` (in `next.ts`) reuses `parseResetTime` + `calculateWaitMs` from `src/retry/time-parser.ts` and `Bun.sleepSync`, capped at `RL_MAX_SLEEP_MS` (6h). The outer supervisor `while` is now labeled `outer:` so the inner resume loop can bail to the next iteration on timeout.
+- **Operator stories do NOT block review (decide.ts, revised 2026-06-09)**: `decideNextAction` runs the review cycle BEFORE gating on `requires:operator` stories. Order: (1) any non-operator `passes:false` -> implement; (2) all non-operator pass AND review not terminal -> review; (3) review terminal AND an operator story still `passes:false` -> `await-operator` (carries `pendingStoryIds`); (4) all pass incl. operator AND review terminal -> complete. `await-operator` maps to `SupervisorStatus 'awaiting-operator'` in `loop.ts` and exits 0 in `next.ts` (success: autonomous work done + reviewed clean, operator ceremony pending), it is NOT a block. `blocked-no-implementable` is now only the degenerate guard (implementable story with no id). This SUPERSEDES the US-005 note (further down this log) that said operator-pending stories block the loop. Rationale: an operator E2E ceremony validates the product; review can change the code, so review must run first. See lessons.md 2026-06-09.
+- **Recovery runbook (US-017)**: `docs/recovery-runbook.md` is the canonical operator playbook for a stuck loop. Covers stuck supervisor (find `pid:` in `.claude/cam-loop.local.md`, `cam stop` then `cam resume`), orphaned worker pane (`cam stop`/`cam resume`, or `tmux -L cam respawn-pane -k -t <pane>`), partial story (handoff names it but `prd.json` not flipped: re-run gates, flip `passes:true`, commit), stale `.cam-supervisor.lock` (auto-taken-over on next `cam next`; `rm` only when the recorded pid is dead), and reading `.claude/cam-worker-events.jsonl` to diagnose. Reference facts captured while writing it: `cam stop` SIGTERMs the supervisor pid from the state file + removes the state file + kills the project tmux session (it does NOT remove the lock); `cam resume` is the 4-mode recovery (continue/respawn/prompt/noop + explicit `--mode reset-*`). Keep the runbook's file table in sync if the `.claude/` runtime filenames change.
 
-## [2026-06-08 12:00] - US-R2-001: Deduplicate transcript usage lines before summing
+## 2026-06-09 07:56 - Fix: review runs before operator ceremony (decide.ts Interpretation B)
 
 ### What was done
-- Extended `TranscriptLine` interface with `requestId?: string` and `message.id?: string`.
-- Replaced the naive accumulation loop in `parseTranscriptUsage` with a two-pass approach: first pass collects `Map<dedupKey, MessageUsage>` (last-write-wins), second pass sums the deduped map.
-- Dedup key: `"${message.id ?? ''}|${requestId ?? ''}"` when at least one field is present; unique `__fallback_N` key otherwise.
-- Added 4 new tests in `test/transcript/usage.test.ts`: dedup-same-key-counted-once, distinct-pairs-counted-independently, fallback-no-collision, and repeated-key assertion.
-- Empirically verified against a real 2178-line transcript: 829 lines with usage reduced to 577 unique keys (1.44x inflation fixed).
+- Reordered `decideNextAction` (`src/supervisor/decide.ts`): operator-required stories no longer block the review cycle. New order: implement -> review (if not terminal) -> await-operator (review terminal + operator pending) -> complete.
+- New `SupervisorAction` kind `await-operator` (carries `pendingStoryIds`); `blocked-no-implementable` retained only as the degenerate no-id guard.
+- New `SupervisorStatus` `awaiting-operator` + optional `pendingStoryIds` on `SupervisorResult` (`src/supervisor/loop.ts`); handler returns it as a successful terminal state.
+- `cam next` (`src/commands/next.ts`) reports `awaiting-operator` as success (exit 0) with a handoff hint listing the pending operator stories.
+- Reconciled docs to the new behavior: `.claude/commands/cam-next.md` (Branch-decision table + PRD_COMPLETE row), US-018 notes in `prd.json`, `scripts/cam/CLAUDE.md` Stop Condition.
 
 ### Files changed
-- src/transcript/usage.ts (modified, +30 lines net)
-- test/transcript/usage.test.ts (modified, +60 lines)
+- `src/supervisor/decide.ts`, `src/supervisor/loop.ts`, `src/commands/next.ts`
+- `test/supervisor/decide.test.ts`, `test/supervisor/loop.test.ts`, `test/next.test.ts`
+- `.claude/commands/cam-next.md`, `scripts/cam/CLAUDE.md`, `scripts/cam/prd.json`, `lessons.md`
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 528 pass / 0 fail
+- Lint: n/a (no linter configured)
+- Tests: 715 pass
 
 ### Step 5.5 docs validation
-- lib: Claude Code JSONL transcript format (internal), status: fetch_failed (gilles.ai and ccusage.com not accessible; field names verified empirically against real ~/.claude/projects transcripts)
+- lib: none (pure TS, no external libs), status: no_external_lib_touched
 
 ### Notes
-- `requestId` is absent on some older transcript lines (6/829 in the sampled file); `message.id` is always present. Using `(message.id, requestId|null)` as key is safe.
-- The 4 new dedup tests are standalone and do not depend on network or real transcripts.
+- Supersedes the US-005 note (further down this log) that claimed operator-pending stories block the loop. Operator ceremonies are now gated only AFTER review is terminal. Full rationale in lessons.md 2026-06-09. Triggered by the operator catching that doc-reconciliation alone was treating the symptom, not the ordering problem.
 ---
 
-## [2026-06-08 01:00] - US-002: Capture orchestrator session id in cam run + transcript path resolver
+## 2026-06-09 04:00 - US-017: Recovery runbook in docs/
 
 ### What was done
-- Added `genSessionId?: () => string` to `RunOptions` (default `randomUUID` from `node:crypto`).
-- `setupOrchestratorSession` now generates a uuid via `genSessionId`, writes it to `.claude/.cam-orch-session` (utf8), and inserts `--session-id <uuid>` between `bypassPermissions` and the prompt in the orchestrator `agentCmd`.
-- Re-attach path (`created: false`) returns before the marker write so the original session id persists across `cam run` invocations.
-- `src/transcript/usage.ts` now exports `orchestratorTranscriptPath(cwd, claudeDir)`: reads `.claude/.cam-orch-session`, encodes cwd via `cwd.replace(/[^a-zA-Z0-9]/g, '-')`, returns `<claudeDir>/projects/<encoded>/<uuid>.jsonl` or null if the marker is absent/empty.
-- Extended `test/run.test.ts`: three new tests assert `--session-id` presence in argv, marker file content, and no-rewrite on re-attach.
-- Extended `test/transcript/usage.test.ts`: six new tests cover absent marker, empty marker, whitespace-only, encoding correctness, claudeDir injection (not hardcoded), and trailing-newline trim.
+- New `docs/recovery-runbook.md`: operator recovery playbook with a canonical-files table and five scenarios (stuck supervisor, orphaned worker pane, partial story, stale lock, event-log diagnosis). All tmux commands use the `-L cam` socket; no em-dash characters (project convention).
 
 ### Files changed
-- src/commands/run.ts (modified, +18 lines)
-- src/transcript/usage.ts (modified, +43 lines)
-- test/run.test.ts (modified, +55 lines)
-- test/transcript/usage.test.ts (modified, +86 lines)
+- `docs/recovery-runbook.md` (new)
+- `scripts/cam/prd.json`, `scripts/cam/progress.txt`, `scripts/cam/handoff.json`
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 513 pass / 0 fail
-
-### Step 5.5 docs validation
-- lib: claude-cli --session-id flag, status: ok (confirmed via `claude --help` locally: "Use a specific session ID for the conversation")
-
-### Notes
-- orchestratorTranscriptPath takes `claudeDir` as a parameter (not hardcoded); callers must resolve `process.env.CLAUDE_CONFIG_DIR ?? join(os.homedir(), '.claude')`.
-- `noUncheckedIndexedAccess`: readFileSync result is trimmed before returning; empty-after-trim returns null.
----
-
-## [2026-06-08 00:00] - US-001: Pure transcript-usage parser + formatTokens
-
-### What was done
-- Created `src/transcript/usage.ts` with `parseTranscriptUsage(jsonl)` and `formatTokens(n)`.
-- Created `test/transcript/usage.test.ts` with 13 tests covering multi-line fixtures, malformed lines, sidechain lines, missing sub-fields, all three formatTokens magnitudes, 0, and edge values.
-
-### Files changed
-- src/transcript/usage.ts (new, 82 lines)
-- test/transcript/usage.test.ts (new, 152 lines)
-
-### Quality gates
-- Typecheck: ok
-- Tests: 503 pass / 0 fail
+- Lint: n/a (no linter configured)
+- Tests: 708 pass
 
 ### Step 5.5 docs validation
 - lib: none, status: no_external_lib_touched
+- summary: Documentation-only story. No code, no external library. Commands documented (`cam status`/`stop`/`resume`, `tmux -L cam ...`, `bun run typecheck`/`bun test`) were cross-checked against the actual implementations in src/commands/{status,stop,resume}.ts and src/supervisor/* before writing.
 
 ### Notes
-- noUncheckedIndexedAccess: used runtime shape checks (isTranscriptLine guard) and toNumber() helper to safely extract optional number fields from parsed JSON.
+- Implemented directly in a Claude Code session (no live -L cam worker pane in this checkout), not via a dispatched headless worker. With US-015/016/017 all passing, the only remaining story is US-018 (requires:operator, real E2E). The branch is now ready for the review cycle.
 ---
 
-## [2026-06-08 02:00] - US-003: Surface orchestrator tokens in the dashboard
+## 2026-06-09 03:00 - US-016: Rate-limit handling via src/retry/*
 
 ### What was done
-- `DashboardData` gains four optional token fields: `tokensInput?`, `tokensOutput?`, `tokensCacheRead?`, `tokensCacheCreation?`.
-- `readSnapshot` now accepts `claudeDir?` (defaults to `CLAUDE_CONFIG_DIR ?? ~/.claude`), calls `readTranscriptTokens` (new private helper), and populates token fields when the marker + JSONL are found. Never throws.
-- `readTranscriptTokens` wraps `orchestratorTranscriptPath` + `existsSync` + `readFileSync` + `parseTranscriptUsage` in a single try/catch; returns null on any miss.
-- `snapshotKey` now includes `tokensInput` and `tokensOutput` so the non-Ink render loop redraws when tokens change.
-- `RunDashboardOptions` and `RunDashboardInkOptions` both gain `claudeDir?` and plumb it through to `readSnapshot`.
-- `Dashboard.tsx` imports `formatTokens` and renders a `tokens` SummaryRow (label "tokens") after `since` and before `branch`; the row is omitted when `tokensInput` is undefined.
-- Two new tests in `test/dashboard.test.ts`: (a) fixture with marker file + transcript JSONL, asserts all four token fields; (b) missing-marker path, asserts fields are undefined and no throw.
+- `src/supervisor/loop.ts`: added an optional `rateLimitResume?` + `maxRateLimitRetries?` to `RunSupervisorOptions`, a `detectRateLimit()` helper (RATE_LIMIT sentinel OR `isRateLimited`), and a bounded pause/resume loop in the exit-mode worker path that respawns the SAME session and emits `'rate-limited'` pause/resume events. Labeled the outer loop `outer:` for timeout bail-out.
+- `src/supervisor/events.ts`: added `'rate-limited'` to `WorkerEventKind`.
+- `src/commands/next.ts`: wired the production `rateLimitResume` reusing `parseResetTime`/`calculateWaitMs` (`src/retry/time-parser.ts`) + `Bun.sleepSync` (capped at 6h), and passed it to the supervisor.
+- `test/supervisor/loop.test.ts`: 5 new tests (sentinel-triggered resume + same-session respawn, TUI-message-triggered resume, retries-exhausted -> blocked, resume timeout, no-hook zero-behavior-change).
 
 ### Files changed
-- src/commands/dashboard.ts (modified, +70 lines)
-- src/ui/Dashboard.tsx (modified, +14 lines)
-- test/dashboard.test.ts (modified, +65 lines)
+- `src/supervisor/loop.ts`
+- `src/supervisor/events.ts`
+- `src/commands/next.ts`
+- `test/supervisor/loop.test.ts`
+- `scripts/cam/prd.json`, `scripts/cam/progress.txt`, `scripts/cam/handoff.json`
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 515 pass / 0 fail
+- Lint: n/a (no linter configured)
+- Tests: 708 pass
 
 ### Step 5.5 docs validation
-- lib: none (node:fs built-ins, own transcript/usage module), status: no_external_lib_touched
+- lib: none, status: no_external_lib_touched
+- summary: Reuses the in-repo `src/retry/*` (ported from claude-auto-retry, already vendored) and the `claude --session-id` continuity contract established + validated in US-002/US-003. No new npm packages, no external doc fetch warranted.
 
 ### Notes
-- The tokens row uses total input volume: `tokensInput + tokensCacheCreation + tokensCacheRead` (per AC), not just the non-cached portion. US-004 adds the cached breakdown.
-- claudeDir injection pattern: `options.claudeDir ?? (process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'))` resolves in readSnapshot, consistent with how US-002 documented the contract.
+- Scoped to exit-mode (autonomous headless) workers, where "resume == respawn with the same --session-id" is well-defined. Sentinel/interactive mode (plan/review) keeps its prior behavior (a RATE_LIMIT there reads as blocked); a keys-based retry-monitor for interactive panes can be a follow-up if needed.
+- Implemented directly in a Claude Code session (no live -L cam worker pane in this checkout), not via a dispatched headless worker; no .cam-worker-US-016.session marker exists.
 ---
 
-## [2026-06-08 03:00] - US-004: Cached-token honesty in dashboard + cam status parity
+## 2026-06-09 02:00 - US-015: Single-supervisor concurrency guard
 
 ### What was done
-- Added `renderTokensLine(t: TranscriptUsage): string` to `src/transcript/usage.ts`. Single source of truth for the shared format: `<in> in (<cached> cached) · <out> out` where in = input + cacheCreation + cacheRead and cached = cacheRead only (cacheCreation is fresh billed spend). The "(N cached)" suffix is omitted when cached is 0.
-- Updated `Dashboard.tsx` (Ink component) to import and call `renderTokensLine` instead of the previous inline expression. Removed stale `formatTokens` import from that file.
-- Updated `composeDashboard` (non-Ink alt-screen renderer in `dashboard.ts`) to render a `tokens` row using `renderTokensLine` when `tokensInput` is defined; row is absent when undefined.
-- Extended `StatusReport` with an optional `tokens?: { input; output; cacheRead; cacheCreation }` field.
-- Extended `StatusOptions` with `claudeDir?: string` (defaults to `CLAUDE_CONFIG_DIR ?? ~/.claude`).
-- Updated `buildStatusReport` to resolve the orchestrator transcript via `orchestratorTranscriptPath` using the injectable `claudeDir`, parse it with `parseTranscriptUsage`, and populate `report.tokens`. Never throws: wrapped in try/catch, leaves `tokens` undefined on any error.
-- Updated `runStatus` to render a `tokens` entry via `renderEntry` after `last` and before `promise` in the active/paused branch, using `renderTokensLine`. Row skipped when `report.tokens` is undefined.
-- Added 5 `renderTokensLine` tests in `test/transcript/usage.test.ts` covering: cached suffix present when cacheRead > 0, omitted when 0, cacheCreation folded into in total only, all-zero, and tiny cacheRead.
-- Added 3 `composeDashboard` tests in `test/dashboard.test.ts` for: cached suffix present, suffix absent when zero, row absent when tokensInput undefined.
-- Added 2 `buildStatusReport` tests in `test/status.test.ts` for: tokens populated from fixture transcript, and undefined when marker absent.
+- New `src/supervisor/lock.ts`: `acquireSupervisorLock` + `parseLockInfo` over an injected `LockIo`. Fresh start writes `{ pid, startedAt, project }`; a live-pid lock is rejected; a dead-pid lock is taken over with a `stale-lock` event.
+- `src/supervisor/events.ts`: added `'stale-lock'` to `WorkerEventKind` (supervisor-level event).
+- `src/commands/next.ts`: acquire the lock before writing the state file; reject with `supervisor already running (pid=N)` + exit 1 on conflict; release the lock at every terminal return and via one process-wide SIGINT/SIGTERM handler. New `lockPath` / `acquireLock` / `onShutdown` options for tests. `logEvent` definition lifted up so the guard and supervisor share one sink. PID probe reuses `isPidAlive` from `resume.ts`.
+- `.gitignore`: ignore `.claude/.cam-supervisor.lock`.
 
 ### Files changed
-- src/transcript/usage.ts (modified, +26 lines)
-- src/ui/Dashboard.tsx (modified, import swap + 6 lines changed)
-- src/commands/dashboard.ts (modified, +12 lines)
-- src/commands/status.ts (modified, +38 lines)
-- test/transcript/usage.test.ts (modified, +56 lines)
-- test/dashboard.test.ts (modified, +36 lines)
-- test/status.test.ts (modified, +62 lines)
+- `src/supervisor/lock.ts` (new)
+- `test/supervisor/lock.test.ts` (new)
+- `src/supervisor/events.ts` (WorkerEventKind + 'stale-lock')
+- `src/commands/next.ts` (guard wiring + options)
+- `test/next.test.ts` (two guard tests)
+- `.gitignore`
+- `scripts/cam/prd.json`, `scripts/cam/progress.txt`, `scripts/cam/handoff.json`
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 525 pass / 0 fail
+- Lint: n/a (no linter configured)
+- Tests: 703 pass
 
 ### Step 5.5 docs validation
-- lib: none (all changes touch own source modules and node built-ins only), status: no_external_lib_touched
+- lib: none, status: no_external_lib_touched
+- summary: Pure TypeScript over `node:fs` + `process.kill(pid, 0)`. No new npm packages. The signal-0 liveness pattern is reused from the in-repo `isPidAlive` (`resume.ts`), already validated.
 
 ### Notes
-- The key invariant: cacheCreation is fresh spend (billed above base rate), so it MUST stay in `in` total but MUST NOT appear in `cached`. Only `cacheRead` contributes to the `(N cached)` suffix. This lives in one place (`renderTokensLine`) so it cannot drift.
-- Sample numbers from the issue: cacheRead 450k, fresh input 22k. With this implementation `482k in (450k cached) · Xk out` would render correctly.
+- The guard lives in `next.ts`, not in `runSupervisor`, to keep the supervisor loop pure/fully-injected (its established design). "On runSupervisor start" is honored by acquiring immediately before the supervisor is dispatched.
+- Implemented directly in a Claude Code session (operator chose "implement here" via `/cam-next`), not via a dispatched headless worker, because this checkout has no live `-L cam` worker pane. No `.cam-worker-US-015.session` marker exists.
 ---
 
-## [2026-06-08 09:36] - Review round 1: FIXES_PENDING:1
-- Created 1 story US-R1-001 from review finding (WARNING): snapshotKey in src/commands/dashboard.ts hashes only tokensInput/tokensOutput, omitting tokensCacheRead/tokensCacheCreation. Under US-004 all four contribute to the rendered tokens line, so the legacy non-Ink loop misses redraws when only cache totals change (US-003 AC deviation). Mechanical, single-file fix queued at priority 0.
-- 3 SUGGESTIONs triaged to skip: formatTokens(999_999)='1000k' discontinuity (test-accepted), agentCmd argv-form (controlled values, reviewer said do not act), renderTokensLine separator consistency (stylistic).
-- Build at review time: typecheck zero errors, bun test 525 pass / 0 fail.
----
-
-## [2026-06-08 10:00] - US-R1-001: Include cache token fields in dashboard snapshotKey
+## 2026-06-08 21:00 - US-008: Review worker dispatch (autonomous headless reviewer)
 
 ### What was done
-- Added `data.tokensCacheRead ?? -1` and `data.tokensCacheCreation ?? -1` to the array in `snapshotKey()` (src/commands/dashboard.ts:715-716), so all four token fields contribute to the snapshot identity and the legacy non-Ink loop redraws when only cache totals change.
+- Created `src/supervisor/review.ts` with three exports:
+  - `buildReviewerWorkerArgv({ uuid, channel, agentName? })`: pure argv builder mirroring
+    `buildImplementerWorkerArgv` but without `--permission-mode` (reviewer is read-only).
+  - `parseReviewVerdict(capturedPaneText)`: pure pane-text parser; extracts the last
+    `<review>CLEAN</review>` or `<review>FIXES_PENDING:N</review>` tag; returns null
+    if no tag found; returns `{ verdict, findingsCount, newStories: [] }`.
+  - `makeReviewDispatch(opts)`: factory returning a `ReviewDispatch` closure that spawns
+    the reviewer, waits for channel, captures pane, parses verdict, and updates prd.json:
+    CLEAN sets lastVerdict='CLEAN'; FIXES_PENDING prepends US-R{round}-NNN stories with
+    passes=false; newRound > maxRounds sets lastVerdict='MAX_ROUNDS_DEBT' (terminal).
+- Updated `src/supervisor/loop.ts`:
+  - `ReviewDispatch` type now takes `(uuid: string, channel: string)` (channel passed
+    from loop, consistent with implement branch pattern).
+  - Review branch now calls `genChannel('review', uuid)` and passes channel to dispatch.
+  - Removed "placeholder" comment (wiring is now real).
+- Updated `src/supervisor/decide.ts`:
+  - Added `title?: string`, `acceptanceCriteria?: string[]`, `notes?: string` to
+    `PrdSnapshot.userStories` element type to support fix-story creation.
+- Updated `src/commands/next.ts`:
+  - Replaced placeholder `reviewDispatch` with real `makeReviewDispatch(...)` wiring.
+- Updated `test/supervisor/loop.test.ts`:
+  - Fixed three `reviewDispatch` fakes to match the new two-argument signature.
+- Created `test/supervisor/review.test.ts`: 29 tests covering all verdict paths, story
+  creation, ID format, max-rounds debt, idempotency, and spawn/wait assertions.
 
 ### Files changed
-- src/commands/dashboard.ts (modified, +2 lines)
+- `src/supervisor/review.ts` (new)
+- `test/supervisor/review.test.ts` (new)
+- `src/supervisor/loop.ts` (ReviewDispatch type + review branch)
+- `src/supervisor/decide.ts` (PrdSnapshot type extension)
+- `src/commands/next.ts` (real reviewDispatch wiring)
+- `test/supervisor/loop.test.ts` (fake signature fix)
 
 ### Quality gates
 - Typecheck: ok
-- Tests: 525 pass / 0 fail
+- Lint: n/a
+- Tests: 634 pass
 
 ### Step 5.5 docs validation
-- lib: none (single-file mechanical fix, no external lib touched), status: no_external_lib_touched
+- lib: none, status: no_external_lib_touched
+- summary: US-008 is pure TypeScript over existing tmux primitives. No new npm packages.
+  tmux wait-for channel pattern validated in US-003.
 
 ### Notes
-- Sentinel value -1 (vs undefined/null) was already the convention used for tokensInput/tokensOutput in the same array; cache fields follow the same pattern.
+- Reviewer does NOT get --permission-mode; it is read-only and only needs claude -p with
+  --output-format text + the agent flag.
+- MAX_ROUNDS_DEBT is set by makeReviewDispatch when newRound > maxRounds, never by the
+  raw parser (parseReviewVerdict only knows about CLEAN and FIXES_PENDING).
+- fix stories get priorities 1..N; existing stories are bumped by N to make room.
 ---
 
-## [2026-06-08 10:59] - Review round 2: FIXES_PENDING:1
-- Created 1 story US-R2-001 from review finding (CRITICAL): parseTranscriptUsage in src/transcript/usage.ts sums every line carrying message.usage, but real Claude Code transcripts write one JSONL line per content block (thinking/text/tool_use) each with an IDENTICAL message.usage object, inflating displayed totals 2x to 5x. Verified empirically on ~/.claude/projects (91 unique message ids across 181 occurrences in one transcript; one msg id 5x with identical usage in another). Breaks the CAM-21 honest-numbers contract. Fix: dedupe by (message.id, requestId), keep last usage per request, then sum. Queued at priority 0.
-- US-R1-001 (round 1 finding) verified landed correctly: snapshotKey now hashes all four token fields.
-- 1 WARNING triaged to skip: shell-injection via genSessionId in run.ts:155 (production uses randomUUID, always clean hex; defensive-only).
-- 2 SUGGESTIONs triaged to skip: .gitignore .claude/.cam-* (cosmetic), stories field absent from snapshotKey (pre-existing, out-of-scope, production path is Ink).
-- Build at review time: typecheck zero errors, bun test 525 pass / 0 fail.
+## 2026-06-08 20:00 - US-007: Rewire cam next to supervisor + retire stop-hook driver
+
+### What was done
+- Rewrote `src/commands/next.ts` to dispatch to `runSupervisor()` instead of spawning
+  claude with the stop-hook re-inject pattern.
+- Removed: `materializeStopHook`, `writeSettingsLocal`, `buildHooksBlock`, `deepMerge`,
+  `buildClaudeArgv`, `buildDashboardArgv`, `CAM_NEXT_PROMPT`, `STOP_HOOK_RELATIVE`,
+  `SETTINGS_LOCAL_RELATIVE`, `hookMaterializer`/`settingsWriter`/`hostMode`/`spawn`
+  injection points. Stop-hook driver RETIRED, not coexisting (closes CAM-29).
+- `runNext()` now: reads worker pane marker (from cam plan), writes
+  `.claude/cam-loop.local.md` with YAML frontmatter (active, iteration, started_at,
+  pid, session_id, max_iterations) and empty body (no re-inject), then calls
+  `runSupervisor()` with real I/O adapters.
+- Rewrote `test/next.test.ts`: supervisor dispatch happy path, state-file shape
+  contract (YAML fields + empty body), no stop-hook artifacts, missing pane guard,
+  writer failure, blocked/max-iter/complete exit codes, custom maxIterations.
+- Updated `test/attach-hint.test.ts`: replaced tmux-split-specific runNext tests
+  with supervisor-based ones using `supervisorFn`/`workerPaneReader` injection.
+- Updated `scripts/preview-screens.ts`: replaced removed injection points with
+  `supervisorFn`/`workerPaneReader`.
+
+### Files changed
+- `src/commands/next.ts` (rewritten)
+- `test/next.test.ts` (rewritten)
+- `test/attach-hint.test.ts` (updated)
+- `scripts/preview-screens.ts` (updated)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 605 pass
+
+### Step 5.5 docs validation
+- lib: js-yaml, version: 4.x, status: ok, url: https://github.com/nodeca/js-yaml
+- summary: yaml.load() API confirmed: returns plain object or throws YAMLException.
+  Usage in test (parsing YAML frontmatter section) matches current API.
+
+### Notes
+- vendor/cam-loop-stop-hook.sh left in place for older installs but is no longer
+  written to .claude/hooks/ or registered in settings.local.json by this codepath.
+- review dispatch is a placeholder (returns error) pending US-008.
+- .claude/commands/cam-next.md documentation of retirement deferred to US-010
+  per AC6 ("touched in US-010").
+- `cam next` now reads worker pane from .claude/.cam-worker-pane (written by cam plan).
+  If missing, returns 1 with hint to run cam plan first.
 ---
 
-## [2026-06-08 11:21] - Review round 3 — CLEAN
-- US-R2-001 dedup fix re-reviewed (delta scope: src/transcript/usage.ts + test). Verdict CLEAN / APPROVE: no CRITICAL, no actionable WARNING. Dedup-by-(message.id, requestId) with last-wins overwrite and unique fallback key for lines missing both fields matches ccusage / claude-devtools convention; edge cases (same msgId diff reqId, diff msgId same reqId, both missing) all resolve correctly. Build at review time: typecheck zero errors, bun test 528 pass / 0 fail.
-- 3 SUGGESTIONs triaged to skip/optional: (1) stale file-header docstring at usage.ts:1-10 still says "sums across all lines" while the detailed JSDoc below is correct — minor §7 doc drift, optional pre-ship polish; (2) isTranscriptLine only narrows object-non-null, not field types — pre-existing, benign (template coercion + toNumber collapse non-conforming values); (3) theoretical key collision if a message.id contained "|" — not real (Claude IDs are UUID / msg_/req_ base62).
-- All findings resolved or rated cosmetic. Ready for /cam-ship.
+## 2026-06-08 19:00 - US-006: runSupervisor() loop tying primitives together
+
+### What was done
+- Created `src/supervisor/loop.ts` with `runSupervisor(opts): Promise<SupervisorResult>`.
+- All side effects injected: spawn, waitFor, capturePane, readPrd, writePrd, readHandoff, clock, genUuid, genChannel, reviewDispatch, writeSessionMarker.
+- Per iteration: calls decideNextAction -> implement branch mints uuid + channel, respawns worker pane, waits on channel, captures pane, calls readWorkerOutcome, then calls writeSessionMarker(actualStoryId, uuid) keyed to actual completed story (not advisory).
+- Review branch is a placeholder: calls injected reviewDispatch(uuid), exits blocked on error, continues on ok.
+- Hard max-iterations cap defaults to 50 (MAX_ITERATIONS constant).
+- Returns `{ status: 'complete' | 'blocked' | 'max-iterations', iterations, lastOutcome }`.
+- Worker outcome 'fail' or 'unknown' exits as 'blocked' (conservative: do not retry silently).
+- Created `test/supervisor/loop.test.ts` with 14 tests covering: complete-immediately, blocked-immediately, PRD-unreadable, happy-path-2-stories, one-blocked, max-iterations, PRD_COMPLETE-cycle, fail-outcome, unknown-outcome, review-dispatch-error, writeSessionMarker-with-actual-id, spawn-called-per-iteration.
+
+### Files changed
+- `src/supervisor/loop.ts` (new)
+- `test/supervisor/loop.test.ts` (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 621 pass
+
+### Step 5.5 docs validation
+- lib: none (pure TS, no external libs), status: no_external_lib_touched
+
+### Notes
+- `fileReader` for `readWorkerOutcome` calls `readPrd()` once (after worker exits) to get updated prd state. Tests must account for 2 readPrd() calls per implement iteration (top-of-loop + fileReader), except PRD_COMPLETE path which skips the fileReader.
+- Advisory storyId from decideNextAction is used only for channel naming and logging; writeSessionMarker is always called with outcome.storyId (actual story from handoff/sentinel).
 ---
 
-## [2026-06-08 15:20] - Review round 4: CLEAN
-- Delta desde o round-3 CLEAN (fix de paridade do cam status idle + formato de setas no renderTokensLine) revisado pelo subagent-reviewer. Zero CRITICAL/WARNING; 2 sugestoes cosmeticas (fallback unicode das setas, stub de stdout no teste) skipadas. Build PASS (typecheck 0, 529 testes). Pronto pra /cam-ship.
+## 2026-06-08 18:00 - US-005: Port Branch-decision matrix to pure TS
+
+### What was done
+- Created `src/supervisor/decide.ts` with `decideNextAction(prd): SupervisorAction`.
+- Returns one of: `{ kind: 'implement', storyId }`, `{ kind: 'review' }`, `{ kind: 'complete' }`, `{ kind: 'blocked-no-implementable' }`.
+- Mirrors cam-next.md matrix: implementable story with passes=false picked first (priority asc, id asc tie-break), then blocked-no-implementable if only operator stories remain, then review/complete based on review state.
+- Cap row: `roundsCompleted >= maxRounds` (default 3) returns complete regardless of lastVerdict.
+- Terminal verdicts: CLEAN and MAX_ROUNDS_DEBT both return complete.
+- Created `test/supervisor/decide.test.ts` with 23 tests covering all 4 outcome kinds, tie-breaking, operator-only, cap row, and implement-over-review priority.
+
+### Files changed
+- `src/supervisor/decide.ts` (new)
+- `test/supervisor/decide.test.ts` (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 607 pass
+
+### Step 5.5 docs validation
+- lib: none (pure TS, no external libs), status: no_external_lib_touched
+
+### Notes
+- `blocked-no-implementable` fires when operator-incomplete stories exist even if non-operator stories all pass; review/complete only fires when ALL stories (including operator ones) have passes=true. This is the semantically correct interpretation: operator-pending stories block autonomous loop progression. (SUPERSEDED 2026-06-09: review now runs BEFORE the operator gate; operator-pending stories no longer block review. See the 2026-06-09 entry above and the Codebase Patterns bullet.)
+---
+
+## 2026-06-08 17:00 - US-004: Deterministic worker result reader
+
+### What was done
+- Created `src/supervisor/result.ts` with `readWorkerOutcome({ prdPath, handoffPath, capturedPaneText, readFile })`.
+- Returns `{ kind: 'pass' | 'fail' | 'blocked' | 'unknown', storyId: string | undefined, detail: string }`.
+- Pure function: all file I/O injected via `FileReader = (path: string) => string | null` callback.
+- Sentinel parsed from pane text via regex (`CAM_IMPLEMENTER_STATUS=(\S+)(?:\s+story=(US-\S+))?`); guarded for `noUncheckedIndexedAccess`.
+- `pass` requires all three signals to agree: sentinel is DONE, `handoff.json lastCompletedStory.id` matches sentinel `story=US-XXX`, and prd.json shows `passes:true` for that story.
+- `blocked` detected by any `BLOCKED_*` sentinel prefix OR a raw `BLOCKED_\w+` token in pane text without a full sentinel.
+- `PRD_COMPLETE` sentinel produces `kind: 'pass', storyId: undefined` (all stories already passing).
+- `unknown` when no sentinel found and no blocked token present.
+- Created `test/supervisor/result.test.ts` with 14 tests covering all four outcome kinds with fake prd/handoff fixtures.
+
+### Files changed
+- `src/supervisor/result.ts` (new)
+- `test/supervisor/result.test.ts` (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 584 pass
+
+### Step 5.5 docs validation
+- lib: none (no external libs; pure JSON/regex only), status: no_external_lib_touched
+
+### Notes
+- Guard pattern for `noUncheckedIndexedAccess` on regex: `match[1] ?? ''` and `match[2]` (already `string | undefined`, no assertion needed).
+- Three-way cross-check (sentinel + handoff + prd) is the architectural invariant; any single source alone is insufficient.
+---
+
+## 2026-06-08 16:00 - US-003: Headless implementer worker argv builder
+
+### What was done
+- Created `src/supervisor/worker-argv.ts` with `buildImplementerWorkerArgv(opts)`: pure function, no I/O, returns the shell string for respawn-pane.
+- Shape: `claude -p --permission-mode <mode> --session-id <uuid> --output-format text --agent <agentName> '<task>' ; tmux -L cam wait-for -S '<channel>'`.
+- `shellEscape(s)` wraps the value in single quotes and replaces embedded `'` with `'\''`; applied to both taskPrompt and channel.
+- Default `agentName` is `'subagent-implementer'` (exported as `DEFAULT_IMPLEMENTER_AGENT`).
+- Created `test/supervisor/worker-argv.test.ts` with 11 tests: all required flags, wait-for chain ordering, prompt with `'` + `$` + backtick escaping, channel in wait-for argument, agentName override, and DEFAULT_IMPLEMENTER_AGENT value assertion.
+
+### Files changed
+- `src/supervisor/worker-argv.ts` (new)
+- `test/supervisor/worker-argv.test.ts` (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 570 pass
+
+### Step 5.5 docs validation
+- lib: none (no external libs; pure string manipulation only), status: no_external_lib_touched
+
+### Notes
+- Shell escaping uses POSIX single-quote strategy (`'...'` + `'\''` for embedded quotes); chosen over double-quote because single quotes neutralize `$`, backtick, `\`, and `!` without special-casing each.
+---
+
+## 2026-06-08 15:00 - US-002: Per-story session marker + transcriptPathForSession resolver
+
+### What was done
+- Added `transcriptPathForSession(uuid, cwd, claudeDir)` to `src/transcript/usage.ts`: generalized resolver that builds the `<claudeDir>/projects/<encode(cwd)>/<uuid>.jsonl` path from an explicit uuid.
+- Refactored `orchestratorTranscriptPath(cwd, claudeDir)` into a thin wrapper over `transcriptPathForSession`; external API unchanged.
+- Added `writeWorkerSessionMarker(claudeDir, storyId, uuid)` and `readWorkerSessionMarker(claudeDir, storyId)` for `.claude/.cam-worker-<storyId>.session` round-trip; returns null on absence/empty; creates dir if needed.
+- Added `WORKER_SESSION_MARKER_PREFIX` constant (module-private) for consistent filename construction.
+- Extended `test/transcript/usage.test.ts` with 10 new tests covering `transcriptPathForSession` (3 tests) and marker round-trip (7 tests); updated import list.
+
+### Files changed
+- `src/transcript/usage.ts`
+- `test/transcript/usage.test.ts`
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 559 pass
+
+### Step 5.5 docs validation
+- lib: none (only Node.js built-ins fs, path; no new external libs), status: no_external_lib_touched
+
+### Notes
+- `orchestratorTranscriptPath` now delegates to `transcriptPathForSession`; all existing tests still pass unchanged, confirming backward compatibility.
+---
+
+## 2026-06-08 14:00 - US-001: tmux worker-slot primitives in session.ts
+
+### What was done
+- Added `respawnPaneArgv`, `waitForArgv`, `signalWaitForArgv`, `capturePaneArgv` pure argv builders to `src/tmux/session.ts`, all prepending `-L cam` via `tmuxArgs`.
+- Added `workerWaitChannel(storyId, uuid)` for deterministic channel naming.
+- Added `writeWorkerPaneMarker(claudeDir, paneId)` and `readWorkerPaneMarker(claudeDir)` for `.claude/.cam-worker-pane` persistence; exported `WORKER_PANE_MARKER` constant.
+- Changed `openPaneInSession` return type from `void` to `string`: adds `-P -F #{pane_id}` and `stdio: 'pipe'` to the split-window call, returns the captured pane id.
+- Updated `plan.ts` to capture the returned pane id and call `writeWorkerPaneMarker` before returning (first write of the slot marker).
+- Extended `test/tmux-session.test.ts` with argv-shape tests for all new builders, marker round-trip tests, and openPaneInSession return value test.
+- Extended `test/plan.test.ts` with two tests verifying `.claude/.cam-worker-pane` is written with a non-empty pane id.
+- Fixed `test/attach-hint.test.ts` fake spawn to handle `stdio: 'pipe'` for split-window (returning a `stdout` buffer), which broke after the openPaneInSession signature change.
+
+### Files changed
+- `src/tmux/session.ts`
+- `src/commands/plan.ts`
+- `test/tmux-session.test.ts`
+- `test/plan.test.ts`
+- `test/attach-hint.test.ts`
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 548 pass
+
+### Step 5.5 docs validation
+- lib: none (no new external libraries; only Node.js built-ins `fs`, `path`, `crypto`), status: no_external_lib_touched
+
+### Notes
+- The `attach-hint.test.ts` fake was the only collateral breakage: it returned bare `{ status: 0 }` without `stdout`, which crashed when `openPaneInSession` called `.stdout.toString()`. Pattern: any fake spawn for split-window/new-session must include `stdout: Buffer.from(...)` to avoid crashes on the return value.
+---
+
+## 2026-06-08 22:00 - US-009: cam stop / cam resume target the supervisor
+
+### What was done
+- Updated `src/commands/stop.ts`:
+  - Added `KillFn` type and `killFn` + `workerPaneReader` injectable deps to `StopOptions`.
+  - Added `supervisorKilled` and `workerPaneKilled` fields to `StopReport`.
+  - `performStop` now reads the supervisor PID from the state file (via `parseStateFile`)
+    and sends SIGTERM before removing the state file.
+  - `performStop` reads the worker pane id from `.claude/.cam-worker-pane` and sends
+    `tmux respawn-pane -k -t <pane> echo stopped` to kill the worker command cleanly.
+    Attempted even when the session is not alive (race window protection).
+  - `runStop` prints supervisor/worker pane kill status lines.
+- Updated `src/commands/resume.ts`:
+  - Added `'live-supervisor'` and `'orphaned-worker'` to `ResumeMode`.
+  - Added `workerPaneAlive` to `ResumeReport`.
+  - Added `isWorkerPaneAlive(paneId, spawnFn)`: uses `tmux -L cam list-panes -a -F #{pane_id}`
+    to enumerate panes and checks membership.
+  - `classifyResumeMode` gains optional `workerPaneAlive` 7th parameter:
+    - PID alive → `live-supervisor` (was `respawn`).
+    - PID dead but pane alive → `orphaned-worker`.
+  - `buildResumeReport` reads worker pane marker and passes pane liveness to classifier.
+  - `runResume` handles `live-supervisor` (informs operator, exit 0) and
+    `orphaned-worker` (shows `cam next` with note that pane is allocated).
+  - `printSummary` shows `worker: pane alive/absent` row.
+  - Added `workerPaneReader` injectable dep to `ResumeOptions`.
+- Updated `test/stop.test.ts`:
+  - Added `KillFn` import and `respawnPaneSucceeds` to fake spawn handler.
+  - Added tests: supervisor PID kill (alive, no pid field, dead PID, no file),
+    worker pane kill (pane found, null pane, no session race window).
+- Updated `test/resume.test.ts`:
+  - Added `isWorkerPaneAlive` import; added `livePaneIds` to fake spawn handler.
+  - Added `isWorkerPaneAlive` unit tests (null, empty, found, not found, list-panes fails).
+  - Added US-009 classifier matrix tests (no-state, live-supervisor, orphan-pane,
+    fully-dead, noop wins, live-supervisor wins over orphaned-worker).
+  - Updated existing test: "heartbeat PID alive → respawn" renamed to
+    "supervisor PID alive → live-supervisor".
+
+### Files changed
+- `src/commands/stop.ts` (KillFn type, supervisorKilled/workerPaneKilled, performStop logic)
+- `src/commands/resume.ts` (new modes, isWorkerPaneAlive, buildResumeReport, runResume)
+- `test/stop.test.ts` (supervisor PID and worker pane kill tests)
+- `test/resume.test.ts` (classifier matrix, isWorkerPaneAlive tests, mode rename)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 653 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+- summary: US-009 uses only Node.js process.kill (built-in) and the existing tmux
+  socket pattern (validated in prior stories). No new npm packages.
+
+### Notes
+- isWorkerPaneAlive uses `list-panes -a` (all panes on socket) rather than targeting
+  a specific session, so the check works even if the session name is unknown to resume.
+- The `live-supervisor` mode replaces the old `respawn` for the "PID alive" branch.
+  Existing callers checking for `respawn` mode need updating (done in test file).
+- Worker pane kill is attempted even when the project session is dead to cover the
+  race where the pane outlives the has-session window.
+---
+
+## 2026-06-08 - US-011: Worker timeout + crash detection
+
+### What was done
+- Extended `WaitForFn` in `loop.ts` to return `{ timedOut: boolean }` and accept
+  `timeoutMs: number` (breaking change: all callers and fakes updated).
+- Added `IsPaneAlive = (paneId: string) => boolean` injectable type.
+- Added `DEFAULT_PER_WORKER_TIMEOUT_MS = 30 * 60 * 1000` (30 min) constant.
+- Added `isPaneAlive: IsPaneAlive` and `perWorkerTimeoutMs?: number` to
+  `RunSupervisorOptions`.
+- In the implement branch of `runSupervisor`: after `waitFor(channel, perWorkerTimeoutMs)`,
+  check `waitResult.timedOut`: pane dead -> `blocked` detail='pane-died-pre-result';
+  pane alive -> kill pane via `respawn-pane -k ... 'echo timeout'` + `blocked`
+  detail='timeout'. Both timeout cases increment iterations and `continue` the loop
+  (proceed to decideNextAction) instead of exiting, enabling recovery to the next story.
+- Updated `next.ts`: real `waitFor` adapter uses `spawnSync timeout` option and checks
+  `result.signal !== null` for `timedOut`; new `isPaneAlive` adapter uses `list-panes -t
+  paneId` exit code; `perWorkerTimeoutMs` read from `CAM_WORKER_TIMEOUT_MS` env or default.
+- Decoupled `review.ts` from `WaitForFn`: introduced `ReviewWaitForFn = (channel) => void`
+  for the unbounded reviewer wait; stopped importing `WaitForFn` from loop.ts.
+- Updated `loop.test.ts`: `makeBaseOpts` updated with new `waitFor` fake signature and
+  `isPaneAlive` (default: pane alive); added 6 new tests: timeout-path, pane-died-path,
+  waitFor-receives-timeoutMs, recovery-to-next-story, timeout-detail, pane-died-lastOutcome.
+- Updated `review.test.ts`: replaced `WaitForFn` import with `ReviewWaitForFn`.
+
+### Files changed
+- `src/supervisor/loop.ts` (WaitForFn, IsPaneAlive, options, timeout branch)
+- `src/commands/next.ts` (waitFor adapter, isPaneAlive adapter, perWorkerTimeoutMs)
+- `src/supervisor/review.ts` (ReviewWaitForFn decoupling)
+- `test/supervisor/loop.test.ts` (fakes updated, 6 new tests)
+- `test/supervisor/review.test.ts` (ReviewWaitForFn import)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 660 pass
+
+### Step 5.5 docs validation
+- lib: tmux, status: ok, url: https://github.com/tmux/tmux/blob/master/cmd-wait-for.c
+- summary: confirmed wait-for has no native timeout option; spawnSync timeout + signal
+  check is the correct approach. list-panes -t paneId exit code for dead pane is non-zero
+  (confirmed by isWorkerPaneAlive pattern from US-009 already in codebase).
+
+### Notes
+- The key design insight: timeout/pane-died cases CONTINUE the loop (not exit) so the
+  supervisor can pick another story. Only sentinel BLOCKED_* cases exit the loop.
+- Pane-died path does NOT send 'echo timeout' (pane already dead, no need to kill).
+- ReviewWaitForFn decoupling keeps the review dispatch simple (no timeout needed there).
+---
+
+## 2026-06-08 - US-010: Docs: rewrite cam-next.md and update CLAUDE.md/README/CHANGELOG
+
+### What was done
+- Rewrote `.claude/commands/cam-next.md` to describe the deterministic TS supervisor.
+  Removed all references to stop-hook driver, Task subagent dispatch, and /cam-next
+  re-inject. Added Architecture diagram, Worker entrypoint section, Worker exit contract
+  table (CAM_IMPLEMENTER_STATUS sentinel), and updated Branch decision matrix to reflect
+  the supervisor loop (not the COMPLETE promise / stop hook).
+- Updated `scripts/cam/CLAUDE.md` Stop Condition paragraph to reference runSupervisor
+  instead of /cam-next. Fixed all em-dashes throughout the file (project convention).
+- Updated `README.md`: added Architecture section describing the worker-slot + supervisor
+  model, updated Recent changes to lead with CAM-22 deterministic supervisor entry.
+- Created `CHANGELOG.md` with Unreleased entry: "Retired the stop-hook loop driver;
+  workers are now real per-story claude sessions in a single reused tmux pane (CAM-22,
+  closes CAM-29)."
+- No TypeScript or test changes; this is a pure docs story.
+
+### Files changed
+- `.claude/commands/cam-next.md` (rewrite)
+- `scripts/cam/CLAUDE.md` (stop condition + em-dash cleanup)
+- `README.md` (Architecture section + Recent changes)
+- `CHANGELOG.md` (new file)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 653 pass
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched
+- summary: US-010 is a pure docs rewrite. No external libraries touched.
+
+### Notes
+- cam-next.md no longer describes a COMPLETE promise or stop-hook sentinel. The
+  CAM_IMPLEMENTER_STATUS sentinel is still the worker exit contract, consumed by
+  src/supervisor/result.ts, not by a stop-hook script.
+---
+
+## 2026-06-08 - US-012: Interactive review/plan in-pane with sentinel detection
+
+### What was done
+- Added `parseAnySentinel(paneText)` to `result.ts`: scans for `CAM_IMPLEMENTER_STATUS=*`,
+  `CAM_REVIEWER_STATUS=*`, or `<review>CLEAN|FIXES_PENDING:N</review>` tags. Returns
+  `{ source, raw }` or null. Used by the polling path to stop polling.
+- Added `interactive?: boolean` to `ImplementerWorkerArgvOptions` in `worker-argv.ts`.
+  When `true`: omits `-p`, omits `--output-format text`, and omits the `; tmux wait-for -S`
+  chain entirely. The `channel` field is now optional (not used in interactive mode).
+- Added four new injections to `RunSupervisorOptions` in `loop.ts`:
+  - `implementerMode?: 'exit' | 'sentinel'` (default: `'exit'`).
+  - `pollIntervalMs?: number` (default: `DEFAULT_POLL_INTERVAL_MS = 5000`).
+  - `sleepFn?: (ms: number) => void` (default: no-op; inject for real sleep).
+  - `nowMs?: () => number` (default: `Date.now`; inject for deterministic tests).
+- Exported `DEFAULT_POLL_INTERVAL_MS = 5_000` constant.
+- Added sentinel polling branch inside the implement action in `runSupervisor`: loops
+  calling `sleepFn(pollIntervalMs)`, then checks `isPaneAlive`, then `capturePane` +
+  `parseAnySentinel`, then elapsed-time timeout. Pane-died and timeout paths mirror the
+  exit-mode timeout/pane-died paths (blocked + continue). Sentinel-found path runs the
+  full `readWorkerOutcome` + outcome-handling identical to the exit path.
+- Added 6 interactive-mode tests to `test/supervisor/worker-argv.test.ts`: omits -p,
+  omits --output-format, omits wait-for chain, retains other flags, starts with "claude ",
+  and tee still works.
+- Added 4 sentinel-polling tests to `test/supervisor/loop.test.ts`: sentinel-detected,
+  timeout-blocked (loops continues), pane-died-blocked (loop continues), constant value.
+
+### Files changed
+- `src/supervisor/result.ts` (new export: parseAnySentinel, AnySentinelMatch, AnySentinelSource)
+- `src/supervisor/worker-argv.ts` (interactive option, channel now optional)
+- `src/supervisor/loop.ts` (4 new injections, DEFAULT_POLL_INTERVAL_MS, sentinel polling branch)
+- `test/supervisor/worker-argv.test.ts` (6 new interactive-mode tests)
+- `test/supervisor/loop.test.ts` (4 new sentinel-polling tests)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a
+- Tests: 677 pass
+
+### Step 5.5 docs validation
+- lib: tmux, status: ok, url: https://man.openbsd.org/tmux.1
+- summary: capture-pane -p -S -N usage confirmed: -S start-line, -N end-line bound the
+  scrollback region scanned; omitting them dumps entire visible pane which is fine for
+  our polling use case. No mismatches found.
+
+### Notes
+- Default `sleepFn` is a no-op so production code needs the caller (next.ts) to inject
+  `Bun.sleepSync` if real polling delays are wanted. Tests always get a no-op.
+- `implementerMode` defaults to `'exit'` so all existing tests continue to use the exit
+  path unchanged (no fakes needed for the new options).
+- `channel` in ImplementerWorkerArgvOptions is now optional: not needed for interactive
+  mode. Existing callers that pass `channel` explicitly are unaffected.
+---
+
+## 2026-06-08 - US-013: Structured per-story observability events
+
+### What was done
+- Created `src/supervisor/events.ts`:
+  - `WorkerEvent { ts, storyId, uuid, kind, detail }` with `kind` in
+    `worker-start | worker-end | result | tokens`.
+  - `ResultEventDetail { outcome, filesChanged, gates: { typecheck, tests }, docsValidated }`,
+    the canonical per-story factual record (intended to subsume progress.txt's per-story
+    prose under CAM-31; the durable Codebase Patterns prose stays separate).
+  - `TokensEventDetail { inputTokens, outputTokens, cacheReadTokens }`.
+  - `WorkerEventLogger` injected sink; `makeFileEventLogger(path)` (default, appends one
+    JSON line via synchronous `appendFileSync`) and `makeInMemoryEventLogger()` (tests).
+  - `buildResultDetail(outcome, handoff)`: filesChanged = createdFiles ++ modifiedFiles;
+    gates pass only for a pass outcome else unknown; docsValidated mirrors handoff.
+  - `readWorkerTokens(uuid, cwd, claudeDir, readFile?)`: resolves the per-story transcript
+    via `transcriptPathForSession` (US-002), sums with `parseTranscriptUsage`; null when
+    the transcript is absent.
+- Integrated in `src/supervisor/loop.ts`: added optional `logEvent` + `readWorkerTokens`
+  injections; emit `worker-start` after respawn-pane, `worker-end` after waitFor/poll-loop,
+  and `result`+`tokens` only where `readWorkerOutcome` produced a real outcome (both exit
+  and sentinel paths). Extended `HandoffSnapshot` with createdFiles/modifiedFiles/
+  officialDocsValidated to feed the result detail. `clock` (was unused `_clock`) now drives
+  event timestamps.
+- Wired `src/commands/next.ts`: `logEvent` -> `makeFileEventLogger(.claude/cam-worker-events.jsonl)`;
+  `readWorkerTokens` bound to cwd + the Claude config dir (`CLAUDE_CONFIG_DIR` or `~/.claude`),
+  matching status.ts/dashboard.ts.
+- Created `test/supervisor/events.test.ts` (10 tests): logger round-trips, buildResultDetail
+  mapping, readWorkerTokens path/sum/null, the full lifecycle through runSupervisor
+  (worker-start -> worker-end -> result -> tokens, one uuid), and a zero-events-when-absent
+  guard.
+
+### Files changed
+- `src/supervisor/events.ts` (new)
+- `src/supervisor/loop.ts` (optional logEvent/readWorkerTokens, emit sites, HandoffSnapshot fields)
+- `src/commands/next.ts` (production adapters)
+- `test/supervisor/events.test.ts` (new)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 687 pass
+
+### Step 5.5 docs validation
+- lib: Bun file I/O (node:fs append), status: corrected, url: https://bun.com/docs/api/file-io
+- summary: AC#3 said "append via Bun.file", but Bun.write is async and overwrites, FileSink
+  is async, and there is no synchronous Bun.file append; Bun ships a near-complete node:fs.
+  Used synchronous `appendFileSync` to keep the logger aligned with the supervisor's
+  all-synchronous injected I/O (and the existing node:fs idiom in usage.ts/next.ts). The
+  file-logger test proves the append empirically.
+
+### Notes
+- Both injections are OPTIONAL: absent `logEvent` => zero events and zero behavior change,
+  so all pre-existing loop tests pass untouched (no fakes needed).
+- No `result`/`tokens` on timeout/pane-death: a worker that never produced an outcome has
+  no canonical per-story record. `worker-end` still fires there with the failure mode.
+- `tokens` is skipped (no event) when the transcript is absent rather than logging zeros.
+- For US-014 (dashboard tokens) the event log is now the durable per-story token source;
+  US-014 may also read `.cam-worker-<US>.session` markers directly.
+---
+
+## 2026-06-09 - US-014: Per-story token display in dashboard Stories panel
+
+### What was done
+- Extended `readSnapshot` (`src/commands/dashboard.ts`) to return
+  `storyTokens: Record<storyId, TranscriptUsage>`. For each story in prd.json it reads the
+  `.claude/.cam-worker-<id>.session` marker via `readWorkerSessionMarker(projectClaudeDir, id)`,
+  resolves the transcript with `transcriptPathForSession(uuid, cwd, claudeDir)`, and sums usage.
+  Stories without a marker (or with an unreadable transcript) are omitted (renderer shows a
+  placeholder). New helper `readStoryTokens(cwd, claudeDir, stories)`.
+- Generalized `readTranscriptTokens(cwd, claudeDir)` to `readTranscriptTokens(transcriptPath)`:
+  a single path-based reader now serves both the orchestrator transcript and per-story
+  transcripts. The orchestrator caller resolves the path (`orchestratorTranscriptPath`) first.
+  Added `storyTokens?` to the `DashboardData` interface (optional, defaults to `{}`).
+- `src/ui/Dashboard.tsx`: `StoryRow` takes an optional `tokens` and renders `renderTokensLine(...)`
+  next to the row when present, else a muted `STORY_TOKENS_PLACEHOLDER` (`·`). `StoriesSection`
+  threads `storyTokens` down; `DashboardApp` passes `data.storyTokens ?? {}`. State stays
+  signalled by the glyph (✓/→/◌); the Section divider color is untouched.
+
+### Files changed
+- `src/commands/dashboard.ts` (storyTokens field, readStoryTokens, path-based readTranscriptTokens)
+- `src/ui/Dashboard.tsx` (StoryRow/StoriesSection tokens, STORY_TOKENS_PLACEHOLDER export)
+- `test/dashboard.test.ts` (readSnapshot per-story tokens + ink-testing-library render assertions)
+
+### Quality gates
+- Typecheck: ok
+- Lint: n/a (no linter configured)
+- Tests: 691 pass
+
+### Step 5.5 docs validation
+- lib: ink-testing-library, status: ok
+- summary: `render()` returns `{ lastFrame, unmount }`; `lastFrame()` yields the latest
+  rendered frame string for substring assertions. Matches the existing usage in
+  `test/menu.test.ts`. No API correction needed.
+
+### Notes
+- Per-story tokens render "next to the row" (same flex row). Alignment is ragged because
+  titles vary in length; verified the real frame via a throwaway ink render (readable,
+  screencap-friendly). A future story could fix-width the title column to align the token
+  column if desired.
+- Implemented directly in a Claude Code session (operator chose "implement here" via
+  `/cam-next`), not via a dispatched headless worker: this checkout has no live `-L cam`
+  tmux worker pane, so no `.cam-worker-US-014.session` marker exists here and the live
+  dashboard shows the placeholder for US-014 until a real worker session runs it.
+- Remaining non-operator stories: US-015, US-016, US-017. US-018 requires:operator (real E2E).
+---
+
+## [2026-06-09 11:42] - Review round 1: CLEAN
+- subagent-reviewer sobre toda a branch CAM-22 vs main (39 commits, 42 arquivos, +8499/-1238): APPROVE, zero CRITICAL, build PASS (715 testes).
+- 2 WARNINGs aplicados inline (operator path, nao re-revisado por agente): .claude/commands/cam-next.md output-format json -> text (gap US-010); next.ts makeReviewDispatch writePrd agora com trailing newline igual ao writer primario.
+- 3 SUGGESTIONs skipadas/backlog: out-logs sem prune, cam stop sem unlink do .cam-supervisor.lock (auto-cura), wait do review sem timeout.
+- Pronto para US-018 (operator E2E) + ship.
 ---
