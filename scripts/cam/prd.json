@@ -5,6 +5,12 @@
   "issueNumber": 33,
   "relatedDocs": [],
   "officialDocsConsulted": [],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "e9e81738c8dc8215103c4721d704d846b48e509d",
+    "lastVerdict": "CLEAN"
+  },
   "userStories": [
     {
       "id": "US-001",
