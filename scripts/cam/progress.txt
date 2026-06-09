@@ -67,3 +67,35 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - The `writtenPath` in the `progressOnProgress` adapter is the actual path returned by the writer. Tests that use a fake writer pointing to a non-existent path will not crash (unlink catches the error).
 ---
 
+## [2026-06-09 00:10] - US-002: Dashboard + cam status render real per-story progress
+
+### What was done
+- Added `lastActivity?: string` to `DashboardData` in `dashboard.ts`, populated from `state.last_activity` in `readSnapshot`
+- Updated `Dashboard.tsx` `StatusIndicator` to accept `storiesDone`/`storiesTotal` and render "running US-XXX (N/total)" when active
+- Removed the meaningless `SummaryRow label="iter"` (stop-hook turns) from Dashboard.tsx Loop section
+- Updated the `since` row in Dashboard.tsx to use `lastActivity` (real supervisor heartbeat) when present, falling back to `started_at`
+- Added `storiesDone?`, `storiesTotal?`, `lastActivity?` to `StatusReport` in `status.ts`
+- `buildStatusReport` populates the new fields from `state.stories_done`, `state.stories_total`, `state.last_activity` with `typeof` guards
+- `runStatus`: replaced `iter` row with `stories done/total`, updated `since` row to use `lastActivity` when present
+- 10 new tests across `test/dashboard.test.ts` (4 Ink render assertions for 3 fixtures) and `test/status.test.ts` (6 assertions: 2 for buildStatusReport fields, 4 for 3-fixture runStatus rendering)
+
+### Files changed
+- `src/commands/dashboard.ts` (DashboardData extended, readSnapshot maps lastActivity)
+- `src/ui/Dashboard.tsx` (StatusIndicator updated, iter row removed, since row updated)
+- `src/commands/status.ts` (StatusReport extended, buildStatusReport + runStatus updated)
+- `test/dashboard.test.ts` (4 new Ink render tests, 1 updated for US-002)
+- `test/status.test.ts` (6 new tests: 2 buildStatusReport + 4 runStatus fixtures)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 751 pass (12 new tests added)
+- Vendor drift: n/a
+
+### Step 5.5 docs validation
+- lib: ink-testing-library, status: ok (render/lastFrame/unmount API confirmed matches usage)
+
+### Notes
+- `runStatus` now re-derives the `now` function from `options.now ?? (() => new Date())` so the `since` row can compute elapsed ms from `lastActivity` without going through `buildStatusReport`.
+- The existing `composeDashboard` (non-Ink legacy path) was intentionally NOT changed per surgical-changes principle; its `iter 7/30` test still passes.
+---
+

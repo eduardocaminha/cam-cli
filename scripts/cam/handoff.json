@@ -1,29 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Supervisor keeps .claude/cam-loop.local.md live across iterations"
+    "id": "US-002",
+    "title": "Dashboard + cam status render real per-story progress"
   },
   "branchName": "cam/CAM-28-dashboard-liveness",
-  "timestamp": "2026-06-09T00:00:00Z",
+  "timestamp": "2026-06-09T00:10:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/commands/next.ts",
+    "src/commands/dashboard.ts",
+    "src/ui/Dashboard.tsx",
     "src/commands/status.ts",
-    "vendor/cam-loop.local.md.tmpl",
-    "src/vendor/_generated.ts",
-    "test/supervisor/loop.test.ts",
-    "test/next.test.ts"
+    "test/dashboard.test.ts",
+    "test/status.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added onProgress to loop.ts (ProgressPayload, OnProgress types exported). The template now has active/iteration as dynamic placeholders ({{ACTIVE}}, {{ITERATION}}) plus four new fields. parseStateFile in status.ts parses the new optional fields. The live progress writer in next.ts uses writeFileSync(writtenPath, ...) to rewrite in place; terminal call calls unlinkSync(writtenPath). All existing tests pass unchanged.",
+  "nextStoryContext": "US-002 extended DashboardData with lastActivity (ISO string from state file), extended StatusReport with storiesDone/storiesTotal/lastActivity, replaced the iter row in both Dashboard.tsx and runStatus with a stories done/total row, and updated the since row to use last_activity when present. The composeDashboard (non-Ink legacy) path was NOT changed (surgical changes). All state-file fields are guarded with typeof checks per the read-only-readers-never-throw pattern.",
   "officialDocsValidated": [
     {
-      "lib": "js-yaml",
-      "url": "https://github.com/nodeca/js-yaml",
-      "fetchedAt": "2026-06-09T00:00:00Z",
-      "status": "aligned",
-      "summary": "yaml.load() throws YAMLException on error (wrapped in try/catch in parseStateFile), returns plain JS objects with string/number/null values matching the guards used for new fields."
+      "lib": "ink-testing-library",
+      "version": "latest",
+      "url": "https://github.com/vadimdemedes/ink-testing-library",
+      "fetchedAt": "2026-06-09T00:10:00Z",
+      "status": "ok",
+      "summary": "render(ReactElement) returns {lastFrame, unmount, frames, rerender, stdin, stdout}. lastFrame() returns the last rendered string. unmount() unmounts the component. Usage confirmed matches implementation."
     }
   ]
 }
