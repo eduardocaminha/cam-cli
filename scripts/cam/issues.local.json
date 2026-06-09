@@ -1,5 +1,5 @@
 {
-  "next_id": 38,
+  "next_id": 39,
   "issues": [
     {
       "id": "CAM-1",
@@ -288,6 +288,15 @@
       "createdAt": "2026-06-09T18:01:54Z",
       "priority": "P1",
       "closedAt": "2026-06-09T18:15:03Z"
+    },
+    {
+      "id": "CAM-38",
+      "title": "Bug B: worker instant-exit (rate-limit pre-sessao) sem output; supervisor precisa pausar-e-retry no no-op, nao bloquear imediato",
+      "description": "PROBLEMA (Bug B, reincidente no dogfood de CAM-36/37/CAM-3): um claude -p worker as vezes sai INSTANTANEO antes de inicializar a sessao (sem transcript, sem out-log NEM via tee do CAM-32 BUG 1, porque o claude morre antes do tee abrir o arquivo), mas o ; tmux wait-for -S ainda sinaliza. Padrao consistente: story PESADA -> worker seguinte no-opa (ex: no run de CAM-3, US-001 rodou 8min queimando 3.5M cache tokens, e o worker de US-002 logo depois no-opou 2x). Forte sinal de rate-limit no startup do claude, cuja mensagem nao e impressa, entao US-016 (detectRateLimit no pane) NAO dispara e o out-log duravel do CAM-37 nao ajuda (nada e escrito). O CAM-36 detecta o no-op (pass stale re-confirmando story ja feita) e bloqueia limpo, mas sem pausa: re-dispacha imediato, e como o rate-limit ainda esta ativo, no-opa de novo e bloqueia. Interrompe a autonomia. FIX: pausa-e-retry no path de no-progress do CAM-36. Em vez de re-dispachar imediato, PAUSAR (backoff escalonado) antes de cada re-dispatch, dando tempo pro rate-limit limpar; so bloquear apos esgotar as tentativas com pausa. Como o instant-exit nao deixa output diagnosticavel, backoff cego e a unica defesa. Injetar sleep (Bun.sleepSync em prod, no-op nos testes). Observabilidade: logar um evento (no-progress-retry) com o attempt, pra a proxima ocorrencia aparecer no event log.",
+      "state": "closed",
+      "createdAt": "2026-06-09T19:45:27Z",
+      "priority": "P1",
+      "closedAt": "2026-06-09T19:56:01Z"
     }
   ]
 }

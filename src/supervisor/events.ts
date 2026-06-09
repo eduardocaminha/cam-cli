@@ -43,6 +43,10 @@ import type { WorkerOutcome, WorkerOutcomeKind } from './result.ts';
  * lock whose owning pid was dead. 'rate-limited' (US-016) records a worker
  * pause (phase: 'pause') and the subsequent resume (phase: 'resume') when a
  * worker hits an Anthropic rate-limit; the story is paused, never marked failed.
+ * 'no-progress-retry' (CAM-38) records that a worker no-op'd (pre-session
+ * instant-exit, likely a startup rate-limit with no printed message) and the
+ * supervisor is backing off before re-dispatching the same story; carries a
+ * free-form { attempt, backoffMs, completedStory } detail.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -51,7 +55,8 @@ export type WorkerEventKind =
 	| 'tokens'
 	| 'pushed'
 	| 'stale-lock'
-	| 'rate-limited';
+	| 'rate-limited'
+	| 'no-progress-retry';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';

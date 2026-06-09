@@ -16,7 +16,7 @@
 //  11. PRD_COMPLETE sentinel (outcome.storyId undefined) -> continue, next iter complete.
 
 import { describe, expect, test, jest, beforeEach } from 'bun:test';
-import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
+import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
 	SpawnFn,
@@ -369,9 +369,47 @@ describe('runSupervisor', () => {
 		const result = await runSupervisor(opts);
 
 		expect(result.status).toBe('blocked');
-		expect(result.iterations).toBe(MAX_NO_PROGRESS_RETRIES); // 2, not 50
+		expect(result.iterations).toBe(MAX_NO_PROGRESS_RETRIES); // bounded, not 50
 		expect(result.lastOutcome?.kind).toBe('blocked');
 		expect(result.lastOutcome?.detail).toContain('no-progress');
+	});
+
+	test('no-progress: backs off (escalating) + emits no-progress-retry before each retry (CAM-38)', async () => {
+		// Same spin as above, but assert the CAM-38 backoff: before each re-dispatch
+		// the supervisor sleeps (escalating by streak) so a transient startup
+		// rate-limit can clear, and emits a no-progress-retry event for visibility.
+		const prd = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: false },
+			],
+		});
+		const sleeps: number[] = [];
+		const { logger, events } = makeInMemoryEventLogger();
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			readHandoff: () => makeHandoff('US-001'),
+			capturePane: (_paneId) => '',
+			maxIterations: 50,
+			sleepFn: (ms) => {
+				sleeps.push(ms);
+			},
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(MAX_NO_PROGRESS_RETRIES);
+		// Two paused retries before the 3rd no-op blocks: escalating backoff.
+		expect(sleeps).toEqual([NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2]);
+		const retryEvents = events.filter((e) => e.kind === 'no-progress-retry');
+		expect(retryEvents).toHaveLength(MAX_NO_PROGRESS_RETRIES - 1);
+		expect(retryEvents[0]?.detail).toMatchObject({
+			attempt: 1,
+			backoffMs: NO_PROGRESS_BACKOFF_MS,
+			completedStory: 'US-001',
+		});
 	});
 
 	test('no-progress streak resets after real progress (CAM-36)', async () => {
