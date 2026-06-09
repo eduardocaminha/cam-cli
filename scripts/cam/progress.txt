@@ -28,4 +28,42 @@ Durable patterns carried across cycles. Implementers append new ones as they eme
 - **Recovery runbook (US-017)**: `docs/recovery-runbook.md` is the canonical operator playbook for a stuck loop. Covers stuck supervisor (find `pid:` in `.claude/cam-loop.local.md`, `cam stop` then `cam resume`), orphaned worker pane (`cam stop`/`cam resume`, or `tmux -L cam respawn-pane -k -t <pane>`), partial story (handoff names it but `prd.json` not flipped: re-run gates, flip `passes:true`, commit), stale `.cam-supervisor.lock` (auto-taken-over on next `cam next`; `rm` only when the recorded pid is dead), and reading `.claude/cam-worker-events.jsonl` to diagnose. Reference facts captured while writing it: `cam stop` SIGTERMs the supervisor pid from the state file + removes the state file + kills the project tmux session (it does NOT remove the lock); `cam resume` is the 4-mode recovery (continue/respawn/prompt/noop + explicit `--mode reset-*`). Keep the runbook's file table in sync if the `.claude/` runtime filenames change.
 - **ensurePushed hook (US-001)**: optional `ensurePushed?: () => { ok, pushed, sha, detail }` on `RunSupervisorOptions`. Called INSIDE the `if (outcome.kind === 'pass' ...)` block, after `writeSessionMarker` and before falling through to `continue`. Both exit-mode and sentinel-mode pass branches share the identical call site pattern. Absent hook: zero behavior change (existing tests pass unmodified). `ok:false` returns `{ status: 'blocked', ... }` immediately; `ok:true` is a no-op (loop continues). Production adapter in `next.ts` uses `spawnSync` with `stdio:'pipe', encoding:'utf8'` for `git push origin <branch>` (treats "Everything up-to-date" as `pushed:false ok:true`) then cross-checks `git rev-parse HEAD` vs `git rev-parse origin/<branch>`. Captures stderr separately (supervisorSpawn drops stderr; use spawnSync directly in the adapter).
 - **'pushed' event (US-002)**: the supervisor emits one `'pushed'` `WorkerEvent` per push verification, RIGHT after `ensurePushed()` returns and BEFORE the `ok:false` blocked return, so a failed verification still leaves an auditable record. Detail is `PushEventDetail { sha, pushed, ok, detail }` (exported from `events.ts`; added to the `WorkerEventDetail` union for grep even though `Record<string,unknown>` already structurally accepts it). Reuses the existing guarded `emit()` helper (no-op when `logEvent` absent), so absent-logger and absent-`ensurePushed` both emit zero events. Story id is the ACTUAL completed story (`outcome.storyId` / `sentinelOutcome.storyId`), never `advisoryStoryId`. Doc Maintenance: the kind list in `docs/recovery-runbook.md` (table row + grep examples) and `CHANGELOG.md [Unreleased]` were updated in the same change.
+- **onProgress hook (US-001)**: optional `onProgress?: OnProgress` on `RunSupervisorOptions`. Called (a) once per iteration after `decideNextAction` with `ProgressPayload { iteration, currentStoryId, storiesDone, storiesTotal, lastActivity }` and (b) once more on every terminal exit with `terminalStatus` set. Both `ProgressPayload` and `OnProgress` are exported from `loop.ts`. Production adapter in `next.ts` rewrites `.claude/cam-loop.local.md` on each live call and unlinks it on terminal; the file is never left stale-active. The `lastIterProgress` helper variable tracks the most recent payload so `notifyTerminal(status)` can spread it and add `terminalStatus`. Template uses `{{ACTIVE}}`/`{{ITERATION}}` placeholders (defaults: true/1); all callers not overriding get the same initial-write behavior as before.
+- **renderStateFile dynamic fields (US-001)**: `active` and `iteration` are now substitutable via `{{ACTIVE}}`/`{{ITERATION}}` in `vendor/cam-loop.local.md.tmpl`. Four new optional fields (currentStory, storiesDone, storiesTotal, lastActivity) added with defaults (null/0/0/startedAt). `parseStateFile` in `status.ts` parses them all with `typeof` guards (number, string, null), mirroring the existing `pid` guard pattern. Read-only consumers never throw on missing fields.
+
+## [2026-06-09 00:00] - US-001: Supervisor keeps .claude/cam-loop.local.md live across iterations
+
+### What was done
+- Added `ProgressPayload` interface and `OnProgress` type to `src/supervisor/loop.ts`
+- Added optional `onProgress?: OnProgress` to `RunSupervisorOptions`
+- Supervisor calls `onProgress` at the top of each iteration (after `decideNextAction`) with `{ iteration, currentStoryId, storiesDone, storiesTotal, lastActivity }`
+- Supervisor calls `onProgress` with `terminalStatus` set before every terminal return (complete, awaiting-operator, blocked, max-iterations)
+- Used a `lastIterProgress` variable + `notifyTerminal()` helper to avoid repeating payload construction at every return site
+- Extended `vendor/cam-loop.local.md.tmpl` with `{{ACTIVE}}`, `{{ITERATION}}`, `{{CURRENT_STORY_YAML}}`, `{{STORIES_DONE}}`, `{{STORIES_TOTAL}}`, `{{LAST_ACTIVITY}}` placeholders
+- Extended `renderStateFile()` in `next.ts` with optional new fields (active, iteration, currentStory, storiesDone, storiesTotal, lastActivity), all backward-compatible with defaults
+- Added `progressOnProgress` adapter in `next.ts`: live calls rewrite the state file; terminal calls unlink it
+- Extended `LoopState` and `parseStateFile` in `status.ts` with four new optional fields, all guarded with `typeof` checks
+- Re-ran `bun run embed-vendor` to regenerate `src/vendor/_generated.ts`
+
+### Files changed
+- `src/supervisor/loop.ts` (new types, onProgress option, notifyTerminal helper, computeProgress helper, ~60 lines added)
+- `src/commands/next.ts` (renderStateFile extended, progressOnProgress adapter wired, ~50 lines added)
+- `src/commands/status.ts` (LoopState extended, parseStateFile extended, ~25 lines added)
+- `vendor/cam-loop.local.md.tmpl` (6 new placeholders, active/iteration parameterized)
+- `src/vendor/_generated.ts` (regenerated)
+- `test/supervisor/loop.test.ts` (new describe block: 7 tests for onProgress)
+- `test/next.test.ts` (3 new tests for progress writer + clear-on-exit)
+
+### Quality gates
+- Typecheck: ok
+- Tests: 739 pass (10 new tests added)
+- Vendor drift: ok
+
+### Step 5.5 docs validation
+- lib: js-yaml, status: aligned
+
+### Notes
+- `SupervisorStatus` is referenced in `ProgressPayload` before it is textually declared in the same file; TypeScript resolves this correctly (module-level type hoisting).
+- The `writtenPath` in the `progressOnProgress` adapter is the actual path returned by the writer. Tests that use a fake writer pointing to a non-existent path will not crash (unlink catches the error).
+---
 

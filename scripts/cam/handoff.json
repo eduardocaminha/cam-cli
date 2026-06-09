@@ -1,0 +1,29 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Supervisor keeps .claude/cam-loop.local.md live across iterations"
+  },
+  "branchName": "cam/CAM-28-dashboard-liveness",
+  "timestamp": "2026-06-09T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/loop.ts",
+    "src/commands/next.ts",
+    "src/commands/status.ts",
+    "vendor/cam-loop.local.md.tmpl",
+    "src/vendor/_generated.ts",
+    "test/supervisor/loop.test.ts",
+    "test/next.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added onProgress to loop.ts (ProgressPayload, OnProgress types exported). The template now has active/iteration as dynamic placeholders ({{ACTIVE}}, {{ITERATION}}) plus four new fields. parseStateFile in status.ts parses the new optional fields. The live progress writer in next.ts uses writeFileSync(writtenPath, ...) to rewrite in place; terminal call calls unlinkSync(writtenPath). All existing tests pass unchanged.",
+  "officialDocsValidated": [
+    {
+      "lib": "js-yaml",
+      "url": "https://github.com/nodeca/js-yaml",
+      "fetchedAt": "2026-06-09T00:00:00Z",
+      "status": "aligned",
+      "summary": "yaml.load() throws YAMLException on error (wrapped in try/catch in parseStateFile), returns plain JS objects with string/number/null values matching the guards used for new fields."
+    }
+  ]
+}

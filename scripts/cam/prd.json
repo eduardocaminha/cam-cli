@@ -22,7 +22,7 @@
         "Vendor drift check passes (bun run embed-vendor:check)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (add onProgress to RunSupervisorOptions; call at top of outer: while loop ~line 425 and on every terminal return); src/commands/next.ts (build callback, reuse writeStateFile/renderStateFile, add clear-on-exit; do NOT add a --permission-mode CLI flag); vendor/cam-loop.local.md.tmpl (extend frontmatter, re-embed); src/commands/status.ts parseStateFile (accept the new optional fields). Re-run `bun run embed-vendor` + `bun run embed-vendor:check` after touching vendor/. CAM-22 retired the stop-hook driver: the supervisor is now the only writer, so this is the only place to fix the source. Keep ported src/retry/* MIT headers intact (untouched here). Read-only readers (readSnapshot, parseStateFile) must never throw on missing fields: gate the new fields with `typeof === 'number'` checks and string presence, mirroring the existing pattern in readSnapshot ~line 404-410."
     },
