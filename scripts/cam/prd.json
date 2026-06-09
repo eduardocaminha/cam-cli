@@ -58,7 +58,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/commands/run.ts (modify setupOrchestratorSession around lines 121-185, specifically the agentCmd at line 155 and the respawn-pane call at lines 161-165). Add a sibling helper export buildOrchestratorPaneCommand. Tests under test/run.test.ts (extend the existing run tests). Keep the existing dashboard / menu panes untouched. The handoff-marker path is <cwd>/.claude/.cam-orch-handoff.json (matches US-002). After a successful respawn-read, the wrapper should rename the handoff file (e.g. to .cam-orch-handoff.consumed.json) so the next claude exit does not trigger another respawn off the same payload; the rename is part of the wrapper string, not a separate cam command. Reuse genSessionId injection so tests are deterministic. Bun runtime: existing code uses spawnSync from node:child_process here — DO NOT change that in this story (out of scope, surgical only). F-03: the respawn wrapper mints the fresh session uuid in bash via `uuidgen` (present at /usr/bin/uuidgen on macOS arm64); the builder unit test asserts the wrapper string contains the uuid-generation token so a missing/typo'd source is caught."
     },

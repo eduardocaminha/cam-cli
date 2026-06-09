@@ -99,6 +99,66 @@ export function buildOrchestratorBootPrompt(): string {
 }
 
 // ---------------------------------------------------------------------------
+// Orchestrator pane command (CAM-23: bounded self-handoff respawn)
+// ---------------------------------------------------------------------------
+
+/** Max consecutive orchestrator self-respawns per tmux session before teardown (CAM-23). */
+export const DEFAULT_MAX_ORCH_RESPAWNS = 5;
+
+/** Inputs for {@link buildOrchestratorPaneCommand}. */
+export interface OrchestratorPaneCommandOptions {
+	/** tmux session name to kill on teardown. */
+	sessionName: string;
+	/** Initial orchestrator session uuid (genSessionId; respawns mint fresh via uuidgen). */
+	sessionId: string;
+	/** Path to the boot-prompt file the orchestrator reads. */
+	promptFile: string;
+	/** Path to .cam-orch-session, rewritten with the fresh uuid on each respawn. */
+	sessionIdMarker: string;
+	/** Path to .cam-orch-handoff.json; its presence on claude exit triggers a respawn. */
+	handoffMarker: string;
+	/** Max consecutive respawns (default DEFAULT_MAX_ORCH_RESPAWNS). */
+	maxRespawns?: number;
+}
+
+/**
+ * Build the `bash -c` payload for the orchestrator pane (CAM-23 US-003).
+ *
+ * The wrapper runs claude in a BOUNDED loop. On each claude exit it inspects the
+ * handoff marker: if present (and under the respawn cap) it consumes the handoff
+ * (rename to .consumed.json so the same payload cannot re-trigger), mints a FRESH
+ * session uuid via `uuidgen`, rewrites .cam-orch-session, and re-execs claude so
+ * the new session rehydrates from the handoff (US-004). Otherwise it tears the
+ * tmux session down via kill-session (the pre-CAM-23 behavior). `bypassPermissions`
+ * is preserved (intentional, 2026-06-06 lesson on macOS amfid). Pure string
+ * assembly, no I/O, so it is unit-testable.
+ */
+export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOptions): string {
+	const max = opts.maxRespawns ?? DEFAULT_MAX_ORCH_RESPAWNS;
+	const consumed = opts.handoffMarker.replace(/\.json$/, '.consumed.json');
+	// Single-quote-escape paths/values embedded in the bash -c string so a cwd
+	// with spaces or quotes cannot break out of the argument boundary.
+	const q = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+	return (
+		`sid=${q(opts.sessionId)}; n=0; max=${max}; ` +
+		`while true; do ` +
+		`claude --permission-mode bypassPermissions --session-id "$sid" "$(cat ${q(opts.promptFile)})"; ` +
+		`if [ -f ${q(opts.handoffMarker)} ] && [ "$n" -lt "$max" ]; then ` +
+		`mv ${q(opts.handoffMarker)} ${q(consumed)}; ` +
+		`sid=$(uuidgen); ` +
+		`printf '%s' "$sid" > ${q(opts.sessionIdMarker)}; ` +
+		`n=$((n + 1)); ` +
+		`else ` +
+		`if [ "$n" -ge "$max" ]; then echo "cam: orchestrator respawn cap ($max) reached, tearing down"; fi; ` +
+		// sessionName is a sanitized identifier (projectSessionName); unquoted to
+		// match the pre-CAM-23 command + the kill-session assertion in run.test.ts.
+		`tmux -L cam kill-session -t ${opts.sessionName}; break; ` +
+		`fi; ` +
+		`done`
+	);
+}
+
+// ---------------------------------------------------------------------------
 // Session creation
 // ---------------------------------------------------------------------------
 
@@ -144,20 +204,25 @@ function setupOrchestratorSession(opts: {
 	const sessionId = genSessionId();
 	writeFileSync(join(dotClaude, '.cam-orch-session'), sessionId, 'utf8');
 
-	// Pane 0: orchestrator (claude).
-	// --permission-mode bypassPermissions is INTENTIONAL (2026-06-06): the
-	// orchestrator runs the loop unattended and must bypass; do NOT change to
-	// readPermissionMode.
-	// --session-id passes the known uuid to claude so the transcript is written
-	// at <claudeDir>/projects/<encode(cwd)>/<uuid>.jsonl (US-002).
-	// Chain kill-session so that when claude exits the whole tmux session is
-	// torn down automatically, dropping the user back to their shell (US-003).
-	const agentCmd = `claude --permission-mode bypassPermissions --session-id ${sessionId} "$(cat '${promptFile}')"; tmux -L cam kill-session -t ${sessionName}`;
+	// Pane 0: orchestrator (claude), wrapped in the CAM-23 bounded self-handoff
+	// loop. --permission-mode bypassPermissions is INTENTIONAL (2026-06-06): the
+	// orchestrator runs unattended and must bypass; do NOT change to
+	// readPermissionMode. --session-id passes the known uuid so the transcript is
+	// written at <claudeDir>/projects/<encode(cwd)>/<uuid>.jsonl (US-002). On
+	// claude exit the wrapper either respawns a FRESH orchestrator reading the
+	// handoff (when .cam-orch-handoff.json is present, bounded by maxRespawns) or
+	// kill-sessions the whole tmux session (the pre-CAM-23 teardown).
+	const agentCmd = buildOrchestratorPaneCommand({
+		sessionName,
+		sessionId,
+		promptFile,
+		sessionIdMarker: join(dotClaude, '.cam-orch-session'),
+		handoffMarker: join(dotClaude, '.cam-orch-handoff.json'),
+	});
 	// respawn-pane -k runs the command DIRECTLY in the pane, replacing the silent
 	// `cat` placeholder. No interactive bash means no macOS zsh notice / prompt /
 	// command echo flashing before the real command paints (`bash -c` is
-	// non-interactive). When claude exits, the chained kill-session tears the
-	// whole session down (US-003).
+	// non-interactive).
 	spawnFn(
 		'tmux',
 		tmuxArgs(['respawn-pane', '-k', '-t', orchPaneId, 'bash', '-c', agentCmd]),

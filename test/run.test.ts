@@ -15,7 +15,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import { parseRunArgs, projectSessionName, runRun } from '../src/commands/run.ts';
+import {
+	parseRunArgs,
+	projectSessionName,
+	runRun,
+	buildOrchestratorPaneCommand,
+	DEFAULT_MAX_ORCH_RESPAWNS,
+} from '../src/commands/run.ts';
 import type { SpawnFn } from '../src/tmux/session.ts';
 
 // ---------------------------------------------------------------------------
@@ -388,10 +394,13 @@ describe('runRun session-id and marker file (US-002)', () => {
 		);
 		expect(orchRespawn).toBeDefined();
 
-		// The composed bash -c command must contain --session-id <uuid>.
+		// The composed bash -c command must seed the session uuid. The CAM-23
+		// self-handoff wrapper sets `sid='<uuid>'` then passes `--session-id "$sid"`
+		// (so respawns can re-point sid at a fresh uuid via uuidgen).
 		const composedCmd = orchRespawn?.args.find(a => a.includes('--session-id'));
 		expect(composedCmd).toBeDefined();
-		expect(composedCmd).toContain(`--session-id ${FIXED_UUID}`);
+		expect(composedCmd).toContain(`sid='${FIXED_UUID}'`);
+		expect(composedCmd).toContain('--session-id "$sid"');
 	});
 
 	it('writes the session uuid to .claude/.cam-orch-session on new session', () => {
@@ -422,5 +431,47 @@ describe('runRun session-id and marker file (US-002)', () => {
 		// Marker must still contain the original uuid, not the new one.
 		const markerPath = join(cwd, '.claude', '.cam-orch-session');
 		expect(readFileSync(markerPath, 'utf8')).toBe(originalUuid);
+	});
+});
+
+describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
+	const base = {
+		sessionName: 'cam-orch-proj-abc123',
+		sessionId: '11111111-2222-3333-4444-555555555555',
+		promptFile: '/project/.claude/.cam-orchestrator-prompt.txt',
+		sessionIdMarker: '/project/.claude/.cam-orch-session',
+		handoffMarker: '/project/.claude/.cam-orch-handoff.json',
+	};
+
+	it('preserves --permission-mode bypassPermissions and the initial session-id', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain('claude --permission-mode bypassPermissions');
+		expect(cmd).toContain(`sid='${base.sessionId}'`);
+		expect(cmd).toContain('--session-id "$sid"');
+	});
+
+	it('guards on the handoff file, consumes it, and rewrites the session marker on respawn', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain(`[ -f '${base.handoffMarker}' ]`);
+		expect(cmd).toContain(
+			`mv '${base.handoffMarker}' '/project/.claude/.cam-orch-handoff.consumed.json'`,
+		);
+		expect(cmd).toContain(`> '${base.sessionIdMarker}'`);
+	});
+
+	it('mints a fresh uuid via uuidgen on respawn (F-03)', () => {
+		expect(buildOrchestratorPaneCommand(base)).toContain('sid=$(uuidgen)');
+	});
+
+	it('falls back to kill-session for the tmux session', () => {
+		expect(buildOrchestratorPaneCommand(base)).toContain(
+			`tmux -L cam kill-session -t ${base.sessionName}`,
+		);
+	});
+
+	it('respects the maxRespawns cap (default, overridable)', () => {
+		expect(buildOrchestratorPaneCommand(base)).toContain(`max=${DEFAULT_MAX_ORCH_RESPAWNS}`);
+		expect(buildOrchestratorPaneCommand({ ...base, maxRespawns: 2 })).toContain('max=2');
+		expect(buildOrchestratorPaneCommand(base)).toContain('[ "$n" -lt "$max" ]');
 	});
 });
