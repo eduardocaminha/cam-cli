@@ -6,7 +6,7 @@
 //
 //   1. `.claude/cam-loop.local.md` — the cam-loop plugin's state file.
 //      YAML frontmatter (`active`, `iteration`, `max_iterations`, `started_at`,
-//      `completion_promise`, `session_id`) followed by the loop's prompt body.
+//      `completion_promise`) followed by the loop's prompt body.
 //      When this file is absent, no loop is active → status: idle.
 //   2. `prd.json` (in the cwd) — the harness PRD. We pull the current story —
 //      defined as the highest-priority `passes:false` story — and surface its
@@ -94,7 +94,6 @@ export interface LoopState {
 	max_iterations?: number;
 	completion_promise?: string | null;
 	started_at?: string;
-	session_id?: string;
 	/**
 	 * PID of the long-running driver process that owns the loop. Written by
 	 * `cam next` (US-007 + US-010); consumed by `cam resume` to detect
@@ -220,7 +219,6 @@ export function parseStateFile(contents: string): LoopState | null {
 		out.completion_promise = obj['completion_promise'];
 	}
 	if (typeof obj['started_at'] === 'string') out.started_at = obj['started_at'];
-	if (typeof obj['session_id'] === 'string') out.session_id = obj['session_id'];
 	if (typeof obj['pid'] === 'number' && Number.isFinite(obj['pid']) && obj['pid'] > 0) {
 		out.pid = obj['pid'];
 	}

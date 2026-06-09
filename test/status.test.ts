@@ -73,7 +73,6 @@ describe('parseStateFile', () => {
 			'---',
 			'active: true',
 			'iteration: 5',
-			'session_id: sess-abc',
 			'max_iterations: 30',
 			'completion_promise: "COMPLETE"',
 			'started_at: "2026-04-28T22:00:00Z"',
@@ -86,11 +85,30 @@ describe('parseStateFile', () => {
 		expect(out).toEqual({
 			active: true,
 			iteration: 5,
-			session_id: 'sess-abc',
 			max_iterations: 30,
 			completion_promise: 'COMPLETE',
 			started_at: '2026-04-28T22:00:00Z',
 		});
+	});
+
+	test('back-compat: old state file with session_id parses without that key', () => {
+		const body = [
+			'---',
+			'active: true',
+			'iteration: 2',
+			'max_iterations: 30',
+			'session_id: legacy-value',
+			'started_at: "2026-04-28T22:00:00Z"',
+			'---',
+			'',
+			'/cam-next',
+			'',
+		].join('\n');
+		const out = parseStateFile(body);
+		expect(out).not.toBeNull();
+		expect(out).not.toHaveProperty('session_id');
+		expect(out?.active).toBe(true);
+		expect(out?.iteration).toBe(2);
 	});
 
 	test('returns null when the body has no opening `---`', () => {
@@ -235,7 +253,6 @@ describe('buildStatusReport', () => {
 					'max_iterations: 30',
 					'completion_promise: "COMPLETE"',
 					'started_at: "2026-04-28T22:00:00Z"',
-					'session_id: sess-xyz',
 					'---',
 					'',
 					'/cam-next',
