@@ -61,3 +61,11 @@ Achado 1 (diagnóstico): `claude -p` buffera o stdout até o fim da sessão, ent
 Achado 2 (dois bugs reais do supervisor, mesma classe "worker no-opa silencioso"): um `claude -p` que sai instantâneo (sem transcript) faz o `readWorkerOutcome` state-primary reportar pass stale da última história. (a) CAM-36: o implement path spinava re-dispachando a mesma história passes:false até MAX_ITERATIONS (26-30 dispatches em 18s); fix = guard de no-progress (bloqueia após 2 passes sem avanço no PRD). (b) CAM-37: o review path não tinha out-log nem retry, então um reviewer no-op bloqueava o loop na hora (matou a iteração 2 do run de US-002, Blocked com tudo passando); fix = out-log durável pro reviewer + retry bounded, espelhando o implementer. Bônus: o cam-review pegou um CRITICAL de integração (o guard do CAM-36, ao mergear no CAM-28, retornava blocked sem `notifyTerminal`, deixando state file stale).
 
 Regra (local canônico): MEMORY.md detail files [[claude-p-buffers-transcript-liveness]] (diagnóstico) e [[worker-silent-noop-resilience]] (CAM-36/37 + how-to). Fixes shipados em PR #19 (CAM-36) e #21 (CAM-37); CAM-28 em #20.
+
+## 2026-06-10: wake espurio do tmux wait-for lido como sinal; supervisor bloqueou com worker vivo
+
+Situação: dogfood do CAM-16. O supervisor despachou o worker de US-001 e o `tmux wait-for` retornou 28min depois SEM ninguém ter sinalizado o canal (o claude do worker ainda estava vivo: transcript quente, commit e out-log com sentinel DONE chegaram 5 min depois). O adapter waitFor de src/commands/next.ts só checa result.signal, nunca result.status, então qualquer saída anômala do client tmux vira "sinalizado". O supervisor leu pane vazio (claude -p buffera) + handoff inexistente, deu outcome unknown e bloqueou. O trabalho da story completou perfeito depois, com o sinal real perdido (sem waiter).
+
+Achado: wake de wait-for não é prova de sinal, e outcome unknown não é prova de worker morto. Antes de bloquear, checar liveness (pane vivo / mtime do transcript) e re-armar o wait com o budget restante. A mesma lição do diagnóstico humano (pane quieto não é morte) vale pro código do supervisor.
+
+Regra (local canônico): issue CAM-39 em scripts/cam/issues.local.json (fix: waitFor com estado triplo signaled|timeout|error + re-arm em unknown com pane vivo).
