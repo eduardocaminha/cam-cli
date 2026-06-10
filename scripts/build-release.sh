@@ -50,6 +50,14 @@ echo "[build-release] compiling ${BIN}"
 # require the `bun-` prefix; see https://bun.sh/docs/bundler/executables).
 bun build --compile --target=bun-darwin-arm64 --minify ./index.ts --outfile "${BIN}"
 
+# --- Ad-hoc re-sign (US-001) -----------------------------------------------
+# bun --compile produces a binary whose codesign signature reads invalid;
+# amfid SIGKILL-kills it when installed in /usr/local/bin (a system directory).
+# Re-sign ad-hoc so the binary runs in any destination path.
+codesign --force --sign - "${BIN}"
+codesign -v "${BIN}" || { echo "[build-release] ERROR: codesign verification failed" >&2; exit 1; }
+echo "[build-release] codesign: ad-hoc re-sign ok"
+
 # --- Sanity: AC2 (size) ----------------------------------------------------
 SIZE_BYTES="$(stat -f '%z' "${BIN}")"
 SIZE_MB=$(( SIZE_BYTES / 1024 / 1024 ))
