@@ -1,23 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Ad-hoc re-sign the compiled binary in build-release.sh"
+    "id": "US-002",
+    "title": "Add --install [dest] flag to build-release.sh (user-owned default)"
   },
   "branchName": "cam/CAM-16-codesign-binary",
-  "timestamp": "2026-06-10T00:00:00Z",
+  "timestamp": "2026-06-10T12:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "scripts/build-release.sh"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added the codesign re-sign+verify block to build-release.sh. US-002 (next: add --install flag) should know the BIN variable is already defined and the script uses stat -f (darwin-only). The codesign step confirmed working ad-hoc; --install should re-sign after copying to the target path too.",
+  "nextStoryContext": "US-002 added --install to build-release.sh. The script now: (1) uses a while-loop arg parser, (2) copies dist/cam-darwin-arm64 to a user-owned dest (default ~/.local/bin/cam), (3) strips quarantine, re-signs ad-hoc, and smoke-tests --version. US-003 or later stories may need to know the script is darwin-only (uses stat -f) and the BIN variable is dist/cam-darwin-arm64.",
   "officialDocsValidated": [
     {
-      "lib": "macOS codesign",
-      "url": "https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/resolving_common_notarization_issues",
-      "fetchedAt": "2026-06-10T00:00:00Z",
-      "status": "aligned",
-      "summary": "codesign --force --sign - (ad-hoc) and codesign -v (verify) syntax confirmed correct."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-002 only modified a bash script; no TypeScript/JavaScript external library was used."
     }
   ]
 }

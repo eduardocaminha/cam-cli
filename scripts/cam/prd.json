@@ -56,7 +56,7 @@
         "Tests pass (bun test)."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File to edit: scripts/build-release.sh. The current arg loop uses `for arg in \"$@\"; do case \"$arg\" in ...`, which iterates per-arg and cannot consume the optional positional after --install. Switch to a `while [[ $# -gt 0 ]]; do case \"$1\" in ... esac; shift; done` loop so `--install` can peek `$2`, consume it with `shift`, and still keep `-h|--help` and the unknown-arg `*) exit 2` behavior. Keep the existing -h/--help grep-the-header trick; just update the comment block at the top to include the new flag and bump the `head -16` count to cover the full new Usage block (likely `head -20`; count the `#` lines after editing so the help renders the whole Usage section and nothing below it). Use `case \":${PATH}:\" in *\":${DEST_DIR}:\"*) ;; *) echo warning ;; esac` for the PATH membership check (POSIX-safe, no external tools). Background: lessons.md 2026-06-06 entry (lines 25-31). Do NOT create a `cam install` TS subcommand; operator-approved scope keeps install as a bash flag. Do NOT add Developer ID / notarytool logic; that is README-only (US-004)."
     },

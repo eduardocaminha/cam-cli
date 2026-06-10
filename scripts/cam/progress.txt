@@ -1,6 +1,32 @@
 ## Codebase Patterns
 
 - **build-release.sh codesign**: after `bun build --compile`, always re-sign ad-hoc with `codesign --force --sign - "${BIN}"` and verify with `codesign -v "${BIN}"`. Without re-sign the binary has an invalid signature and amfid SIGKILL-kills it when installed in /usr/local/bin.
+- **build-release.sh --install**: copies dist/cam-darwin-arm64 to `${HOME}/.local/bin/cam` (user-owned, no sudo), strips quarantine with `xattr -cr`, re-signs ad-hoc, smoke-tests `--version`, warns if dest dir is not on $PATH. Use `case ":${PATH}:" in *":${DIR}:"*) ...` for POSIX-safe PATH membership check. Arg parsing uses `while [[ $# -gt 0 ]]; do case "$1"` loop so `--install` can consume an optional positional `$2` via `shift`.
+
+## [2026-06-10 12:00] - US-002: Add --install [dest] flag to build-release.sh (user-owned default)
+
+### What was done
+- Switched the arg loop in scripts/build-release.sh from `for arg in "$@"` to `while [[ $# -gt 0 ]]; do case "$1"` so `--install` can optionally consume the next positional arg as the destination path.
+- Added `--install` case: sets `DO_INSTALL=true` and captures optional dest into `INSTALL_DEST`.
+- Added install block at end (before final "done"): mkdir -p dest dir, cp binary, xattr -cr (quarantine strip), codesign re-sign + verify, smoke-test --version vs `cam ${VERSION}`, PATH membership warning.
+- Default dest: `${HOME}/.local/bin/cam`.
+- Updated the Usage comment block (2 new --install example lines) and bumped `head -16` to `head -18`.
+
+### Files changed
+- scripts/build-release.sh (+31 lines net, -5 lines)
+
+### Quality gates
+- Typecheck: ok (0 errors)
+- Tests: 776 pass, 0 fail
+- Syntax: bash -n ok
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (pure bash script, no TS/JS library used)
+
+### Notes
+- PATH check uses `case ":${PATH}:" in *":${DEST_DIR}:"*)` (POSIX-safe, no grep/awk).
+- The `head -18` count gives all 16 header `#` lines + 2 buffer; preserves existing behavior of the grep-the-header help trick.
+---
 
 ## [2026-06-10 00:00] - US-001: Ad-hoc re-sign the compiled binary in build-release.sh
 
