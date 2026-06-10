@@ -1,1 +1,27 @@
 ## Codebase Patterns
+
+- **build-release.sh codesign**: after `bun build --compile`, always re-sign ad-hoc with `codesign --force --sign - "${BIN}"` and verify with `codesign -v "${BIN}"`. Without re-sign the binary has an invalid signature and amfid SIGKILL-kills it when installed in /usr/local/bin.
+
+## [2026-06-10 00:00] - US-001: Ad-hoc re-sign the compiled binary in build-release.sh
+
+### What was done
+- Inserted a re-sign + verify block in scripts/build-release.sh between the `bun build --compile` line and the AC2 (size) sanity block.
+- `codesign --force --sign - "${BIN}"` re-signs ad-hoc unconditionally.
+- `codesign -v "${BIN}"` verifies; on failure prints a clear error and exits 1.
+- On success logs `[build-release] codesign: ad-hoc re-sign ok`.
+
+### Files changed
+- scripts/build-release.sh (+8 lines)
+
+### Quality gates
+- Typecheck: ok (0 errors)
+- Tests: 776 pass, 0 fail
+- Syntax: bash -n ok
+
+### Step 5.5 docs validation
+- lib: macOS codesign (system tool), status: ok. `codesign --force --sign -` and `codesign -v` confirmed correct per Apple Developer docs.
+
+### Notes
+- No platform branching needed: the script is darwin-only already (uses `stat -f`).
+- US-002 (--install flag) is the next story that builds on this.
+---

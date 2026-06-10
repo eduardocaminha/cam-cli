@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Ad-hoc re-sign the compiled binary in build-release.sh"
+  },
+  "branchName": "cam/CAM-16-codesign-binary",
+  "timestamp": "2026-06-10T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "scripts/build-release.sh"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added the codesign re-sign+verify block to build-release.sh. US-002 (next: add --install flag) should know the BIN variable is already defined and the script uses stat -f (darwin-only). The codesign step confirmed working ad-hoc; --install should re-sign after copying to the target path too.",
+  "officialDocsValidated": [
+    {
+      "lib": "macOS codesign",
+      "url": "https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/resolving_common_notarization_issues",
+      "fetchedAt": "2026-06-10T00:00:00Z",
+      "status": "aligned",
+      "summary": "codesign --force --sign - (ad-hoc) and codesign -v (verify) syntax confirmed correct."
+    }
+  ]
+}

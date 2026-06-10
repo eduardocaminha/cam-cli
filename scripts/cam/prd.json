@@ -32,7 +32,7 @@
         "Tests pass (bun test)."
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File to edit: scripts/build-release.sh. Insert the re-sign + verify block between the existing `bun build --compile ...` line (~line 51) and the `--- Sanity: AC2 (size) ---` block (~line 53). Use the existing `${BIN}` variable. Keep `set -euo pipefail` behavior intact; prefer an explicit `|| { echo ...; exit 1; }` for a clearer error message, matching the existing error-handling style in the script. Background: lessons.md 2026-06-06 entry (lines 25-31): without re-sign, the binary's signature reads invalid and amfid kills it in /usr/local/bin. Do not add any feature beyond re-sign + verify in this story; --install lives in US-002."
     },
