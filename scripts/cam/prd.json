@@ -1,92 +1,100 @@
 {
   "project": "cam-cli",
-  "branchName": "cam/CAM-23-orchestrator-token-handoff",
-  "description": "Orchestrator performs a controlled self-handoff near a configurable token threshold (~100k) and respawns in a fresh session reading that handoff, instead of relying on Claude's silent auto-compaction.",
-  "issueNumber": 23,
+  "branchName": "cam/CAM-16-codesign-binary",
+  "description": "Re-sign the bun --compile binary ad-hoc at build/install time so it runs anywhere on macOS (fixes /usr/local/bin SIGKILL), plus a user-owned --install flag and README update.",
+  "issueNumber": 16,
   "relatedDocs": [
-    "docs/recovery-runbook.md"
+    "lessons.md (2026-06-06 entry, lines 25-31)",
+    "/Users/eduardo/.claude/CLAUDE.md (Licoes persistentes, macOS+Bun signing entry)"
   ],
-  "officialDocsConsulted": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "bun",
+      "url": "https://bun.com/docs/bundler/executables",
+      "version": "1.3.13 (local)",
+      "fetchedAt": "2026-06-10T13:16:01Z",
+      "summary": "bun build --compile has no built-in signing on macOS; docs recommend running codesign manually after compile. Ad-hoc re-sign (codesign --force --sign -) is supported on Bun >= 1.2.4 and yields a binary that codesign -v accepts. JIT entitlements are only needed under hardened runtime / Developer ID, not for ad-hoc signing. The documented target string is bun-darwin-arm64.",
+      "status": "ok"
+    }
+  ],
   "userStories": [
     {
       "id": "US-001",
-      "title": "Orchestrator token-budget check",
-      "description": "As the cam orchestrator agent, I need a deterministic way to read my own current token spend and learn whether I am at or over a configurable budget threshold, so that I can decide to write a handoff and exit before silent auto-compaction kicks in.",
+      "title": "Ad-hoc re-sign the compiled binary in build-release.sh",
+      "description": "As a cam-cli maintainer, I need scripts/build-release.sh to re-sign the freshly compiled binary ad-hoc and verify the signature so the artifact runs without amfid SIGKILL in any destination directory (including /usr/local/bin), eliminating the 'zsh: killed' failure observed during US-010 smoke.",
       "acceptanceCriteria": [
-        "A pure function reads the orchestrator transcript usage (reusing orchestratorTranscriptPath + parseTranscriptUsage from src/transcript/usage.ts) and returns { spend, threshold, overBudget } where spend is the total in-flow tokens (input + cacheCreation + cacheRead) and overBudget = spend >= threshold.",
-        "Threshold defaults to 100_000, overridable via project.toml ([orchestrator] token_budget = N) and via the CAM_ORCH_TOKEN_BUDGET env var (env wins over toml, toml wins over default).",
-        "A thin cam surface lets the orchestrator agent invoke the check from a shell (e.g. cam status --orch-budget or a small cam orch-budget subcommand) and emit a single machine-parseable line such as CAM_ORCH_BUDGET=<spend>/<threshold> over=<true|false>; exit code 0 in both cases.",
-        "Unit tests cover: under-budget, exactly-at-threshold, over-budget, missing transcript (treated as 0 spend), env-overrides-toml, toml-overrides-default.",
-        "Does not reinvent token counting: imports parseTranscriptUsage and orchestratorTranscriptPath from src/transcript/usage.ts.",
-        "Typecheck passes (bun run typecheck)",
-        "Tests pass (bun test)"
+        "After `bun build --compile` and before the size/--version checks, scripts/build-release.sh runs `codesign --force --sign - \"${BIN}\"`.",
+        "Immediately after re-signing, scripts/build-release.sh runs `codesign -v \"${BIN}\"`; on failure it prints a clear error and exits 1.",
+        "On success the script logs `[build-release] codesign: ad-hoc re-sign ok` (matching the existing `[build-release] ...` log style).",
+        "codesign is invoked unconditionally (the script is darwin-only via `stat -f`); no platform branching is added.",
+        "`bash -n scripts/build-release.sh` passes (syntax check).",
+        "Typecheck passes (bun run typecheck).",
+        "Tests pass (bun test)."
       ],
       "priority": 1,
-      "passes": true,
+      "passes": false,
       "requires": null,
-      "notes": "Files: new module src/orchestrator/budget.ts (pure function) + a tiny CLI surface (preferred: new subcommand src/commands/orch-budget.ts wired in index.ts, OR a flag on src/commands/status.ts — pick whichever requires the smaller diff). Tests under test/orchestrator/budget.test.ts. Reuse src/transcript/usage.ts (do not duplicate). Read project.toml via existing src/config/toml.ts helpers. Bun runtime: prefer Bun.file over node:fs where the surrounding code already does so. noUncheckedIndexedAccess: guard regex / array accesses. Do not register a --permission-mode flag on the new subcommand. Inject the transcript reader / env / toml reader in the pure function signature so tests don't touch real ~/.claude or process.env."
+      "notes": "File to edit: scripts/build-release.sh. Insert the re-sign + verify block between the existing `bun build --compile ...` line (~line 51) and the `--- Sanity: AC2 (size) ---` block (~line 53). Use the existing `${BIN}` variable. Keep `set -euo pipefail` behavior intact; prefer an explicit `|| { echo ...; exit 1; }` for a clearer error message, matching the existing error-handling style in the script. Background: lessons.md 2026-06-06 entry (lines 25-31): without re-sign, the binary's signature reads invalid and amfid kills it in /usr/local/bin. Do not add any feature beyond re-sign + verify in this story; --install lives in US-002."
     },
     {
       "id": "US-002",
-      "title": "Orchestrator handoff schema + read/write plumbing",
-      "description": "As the cam system, I need a stable on-disk schema for the orchestrator's self-handoff (.claude/.cam-orch-handoff.json) plus deterministic read/write helpers, so the orchestrator can serialize its long-lived project context before exiting and the respawned session can rehydrate from it.",
+      "title": "Add --install [dest] flag to build-release.sh (user-owned default)",
+      "description": "As a cam-cli operator on macOS, I need `./scripts/build-release.sh --install` to copy the freshly built binary to a user-owned destination (default ~/.local/bin/cam), strip quarantine, re-sign ad-hoc, and smoke-test --version so I get a working binary without sudo and without hitting the /usr/local/bin amfid trap.",
       "acceptanceCriteria": [
-        "New JSON schema file scripts/cam/orch-handoff.schema.json defining the orchestrator handoff shape: required { schemaVersion, writtenAt, reason } plus optional { projectContext, currentCycle, keyDecisions, openState, openQuestions, nextActions }. Mirrors the spirit of handoff.schema.json (per-story handoff) but scoped to orchestrator lifecycle, not story completion.",
-        "New module src/orchestrator/handoff.ts exports writeOrchHandoff(claudeDir, payload) and readOrchHandoff(claudeDir) → payload | null. Reader returns null when the file is absent; throws a clear error on schema mismatch (unknown schemaVersion or missing required field).",
-        "Writer is atomic-ish: write to a tmp file in the same dir then rename, so a half-written file never poisons the respawn.",
-        "Unit tests cover: round-trip write+read, missing-file → null, malformed-JSON → throws, schemaVersion mismatch → throws, additional unknown top-level keys are preserved on read (forward compat).",
-        "Typecheck passes (bun run typecheck)",
-        "Tests pass (bun test)"
+        "scripts/build-release.sh accepts `--install` and optionally a positional path immediately after it (e.g. `--install ~/.local/bin/cam`).",
+        "When --install is absent, current behavior is unchanged (build + sign + size + --version checks).",
+        "Default destination when no path is given: `${HOME}/.local/bin/cam`.",
+        "The parent directory of the destination is created with `mkdir -p` before copying.",
+        "After copy: run `xattr -cr \"${DEST}\"` (clears any quarantine attribute; inocuous on a freshly built local binary).",
+        "After xattr: run `codesign --force --sign - \"${DEST}\"` and then `codesign -v \"${DEST}\"`; on verify failure, exit 1 with a clear error.",
+        "Smoke step: invoke `\"${DEST}\" --version`, compare against `cam ${VERSION}` (same VERSION the script already parses from src/version.ts); on mismatch, exit 1 with a clear error.",
+        "If the directory containing the destination is not on `$PATH`, print a warning (warning only, do not fail).",
+        "The script's Usage header (the `#` block at the top, currently rendered by `grep '^#' \"$0\" | head -16`) is updated to document `--install [dest]`; bump the `head -N` count if needed so the new lines render under `-h`.",
+        "The arg parser still rejects unknown args with exit 2 (existing behavior preserved).",
+        "`bash -n scripts/build-release.sh` passes (syntax check).",
+        "Typecheck passes (bun run typecheck).",
+        "Tests pass (bun test)."
       ],
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "requires": null,
-      "notes": "Files: scripts/cam/orch-handoff.schema.json (new), src/orchestrator/handoff.ts (new), test/orchestrator/handoff.test.ts (new). The handoff lives at <cwd>/.claude/.cam-orch-handoff.json (matches the existing convention of .claude/.cam-orch-session and .claude/.cam-orchestrator-prompt.txt set in src/commands/run.ts:137-145). This story is plumbing only: the orchestrator agent itself is told to populate the file in US-004. Do NOT touch the unrelated setup→orchestrator handoff in src/commands/setup.ts. No em-dash in any .md emitted (schema description strings are fine; this is JSON, but keep prose clean). noUncheckedIndexedAccess: any parsed JSON access must be guarded."
+      "notes": "File to edit: scripts/build-release.sh. The current arg loop uses `for arg in \"$@\"; do case \"$arg\" in ...`, which iterates per-arg and cannot consume the optional positional after --install. Switch to a `while [[ $# -gt 0 ]]; do case \"$1\" in ... esac; shift; done` loop so `--install` can peek `$2`, consume it with `shift`, and still keep `-h|--help` and the unknown-arg `*) exit 2` behavior. Keep the existing -h/--help grep-the-header trick; just update the comment block at the top to include the new flag and bump the `head -16` count to cover the full new Usage block (likely `head -20`; count the `#` lines after editing so the help renders the whole Usage section and nothing below it). Use `case \":${PATH}:\" in *\":${DEST_DIR}:\"*) ;; *) echo warning ;; esac` for the PATH membership check (POSIX-safe, no external tools). Background: lessons.md 2026-06-06 entry (lines 25-31). Do NOT create a `cam install` TS subcommand; operator-approved scope keeps install as a bash flag. Do NOT add Developer ID / notarytool logic; that is README-only (US-004)."
     },
     {
       "id": "US-003",
-      "title": "Respawn-on-handoff in cam run",
-      "description": "As the operator who started `cam run`, I need the orchestrator pane to RESPAWN a fresh orchestrator session (new session-id, rewritten .cam-orch-session) when an orchestrator-handoff file is present at claude exit, instead of unconditionally killing the tmux session, so the long-lived orchestrator can transparently roll over context without me having to restart cam.",
+      "title": "Operator smoke: verify --install flow on a real macOS box and replace stale /usr/local/bin/cam",
+      "description": "As the cam-cli operator, I need to verify on my actual machine that `./scripts/build-release.sh --install` produces a working `~/.local/bin/cam` whose signature codesign accepts, and to retire or overwrite the stale `/usr/local/bin/cam` left over from the unsigned-binary era, so dogfooding stops hitting the amfid SIGKILL trap.",
       "acceptanceCriteria": [
-        "The orchestrator pane command in src/commands/run.ts is changed so that when claude exits, the wrapper inspects .claude/.cam-orch-handoff.json: if present, it generates a NEW session uuid, overwrites .claude/.cam-orch-session with it, and re-execs `claude --permission-mode bypassPermissions --session-id <new-uuid> \"$(cat .cam-orchestrator-prompt.txt)\"`; if absent, it falls back to the existing `tmux kill-session` teardown.",
-        "The respawn is bounded: a small respawn-counter guard (e.g. ≤ 5 consecutive respawns in the lifetime of the tmux session) prevents an infinite respawn loop if the orchestrator writes a handoff but immediately exits again; on overflow, falls through to kill-session with a clear printed reason.",
-        "--permission-mode bypassPermissions is preserved (intentional per 2026-06-06 lesson on macOS amfid; do NOT remove). No --permission-mode CLI FLAG is added to any cam subcommand (still enforced by test/no-permission-mode-flag.test.ts).",
-        "The setupOrchestratorSession function is refactored so the pane command (the respawn-aware wrapper) is built by a pure, unit-testable helper (e.g. buildOrchestratorPaneCommand({ sessionName, sessionId, promptFile, handoffMarker, maxRespawns })) returning the bash -c payload string.",
-        "Unit tests cover the builder: contains the bypassPermissions flag, contains the session-id, contains a guard reading the handoff file, contains the kill-session fallback, respects the maxRespawns cap. Spawn is injected (the existing SpawnFn pattern in run.ts) so tests assert tmux respawn-pane was called with the wrapper string, not the old direct command.",
-        "Manual end-to-end verification (operator) of a real multi-hour orchestrator respawn is captured in a separate operator story (US-004 acceptance), not here.",
-        "Typecheck passes (bun run typecheck)",
-        "Tests pass (bun test)"
+        "Run `./scripts/build-release.sh --install` on the operator's darwin-arm64 machine; it exits 0.",
+        "`~/.local/bin/cam --version` runs without hanging and prints `cam ${VERSION}` matching src/version.ts.",
+        "`codesign -v ~/.local/bin/cam` exits 0 (no 'code or signature have been modified' error).",
+        "The stale `/usr/local/bin/cam` is either deleted (operator decision A) or overwritten with the freshly signed binary via `sudo cp ~/.local/bin/cam /usr/local/bin/cam && sudo codesign --force --sign - /usr/local/bin/cam && codesign -v /usr/local/bin/cam` (operator decision B); operator records which path was taken.",
+        "Operator confirms `which cam` resolves to the intended binary (either `~/.local/bin/cam` after PATH precedence, or the rebuilt `/usr/local/bin/cam`).",
+        "Typecheck passes (bun run typecheck).",
+        "Tests pass (bun test)."
       ],
       "priority": 3,
-      "passes": true,
-      "requires": null,
-      "notes": "File: src/commands/run.ts (modify setupOrchestratorSession around lines 121-185, specifically the agentCmd at line 155 and the respawn-pane call at lines 161-165). Add a sibling helper export buildOrchestratorPaneCommand. Tests under test/run.test.ts (extend the existing run tests). Keep the existing dashboard / menu panes untouched. The handoff-marker path is <cwd>/.claude/.cam-orch-handoff.json (matches US-002). After a successful respawn-read, the wrapper should rename the handoff file (e.g. to .cam-orch-handoff.consumed.json) so the next claude exit does not trigger another respawn off the same payload; the rename is part of the wrapper string, not a separate cam command. Reuse genSessionId injection so tests are deterministic. Bun runtime: existing code uses spawnSync from node:child_process here — DO NOT change that in this story (out of scope, surgical only). F-03: the respawn wrapper mints the fresh session uuid in bash via `uuidgen` (present at /usr/bin/uuidgen on macOS arm64); the builder unit test asserts the wrapper string contains the uuid-generation token so a missing/typo'd source is caught."
+      "passes": false,
+      "requires": "operator",
+      "notes": "Real-machine verification. Cannot be automated: needs the operator's $PATH, $HOME, possibly sudo, and decision on what to do with the legacy /usr/local/bin/cam binary. References: lessons.md 2026-06-06 entry (lines 25-31) for the failure mode being verified; the stale-PATH-binary risk this also retires. Implementer should treat this story as out-of-scope and let the loop fall through to US-004."
     },
     {
       "id": "US-004",
-      "title": "Boot prompt rehydration + agent self-handoff instructions",
-      "description": "As the cam orchestrator agent, I need (a) my boot prompt to point me at the handoff file when one exists so I rehydrate from it instead of cold-starting, and (b) explicit instructions to monitor my own token budget periodically and write a handoff + exit when I approach the threshold, so a real long-running cycle transparently rolls over fresh context.",
+      "title": "README: update build/install section for re-sign + user-owned install and add Developer ID note",
+      "description": "As a new cam-cli user reading the README, I need the install instructions to reflect the re-signed binary and the user-owned `--install` flow (no sudo by default), plus a brief note on what production-grade public distribution would require, so I do not hit the /usr/local/bin amfid trap and so I understand the limits of the current ad-hoc signing.",
       "acceptanceCriteria": [
-        "buildOrchestratorPaneCommand / buildOrchestratorBootPrompt in src/commands/run.ts is updated so the boot prompt includes a directive: \"If .claude/.cam-orch-handoff.json exists, read it FIRST and rehydrate from it (it is your previous-self's serialized context); otherwise perform the cold-boot sequence in subagent-orchestrator.md.\"",
-        ".claude/agents/subagent-orchestrator.md is updated with a new section (\"Self-handoff lifecycle\") that instructs the orchestrator to: (1) periodically (e.g. after every dispatched /cam-next or worker completion) invoke the budget check from US-001; (2) when over budget, populate .claude/.cam-orch-handoff.json via the writer from US-002 with current cycle, key decisions, open state, and next actions; (3) tell the operator one line, then exit so the wrapper from US-003 respawns it fresh.",
-        ".claude/agents/subagent-orchestrator.md edits contain NO em-dash (use colon, comma, parentheses, period; per 2026-05-20 decision). Existing em-dashes already in that file are NOT touched (surgical only).",
-        "Existing unit tests for buildOrchestratorBootPrompt are updated to assert the rehydration directive is present.",
-        "Operator end-to-end verification: a real cam run session is left to accumulate context past the threshold (or the threshold is dropped via CAM_ORCH_TOKEN_BUDGET=2000 for a quick test) and the operator confirms the orchestrator wrote .cam-orch-handoff.json, exited, and respawned with the rehydrated state visible in its greeting.",
-        "templates/agents/subagent-orchestrator.md (the canonical copy embedded into the binary) gets the SAME Self-handoff lifecycle section as the .claude/ copy, then `bun run embed-vendor` regenerates src/templates/embedded.ts so `cam init` in other projects installs the updated agent (without this the feature works only in cam-cli's own repo).",
-        "Vendor drift check passes (bun run embed-vendor:check)",
-        "Typecheck passes (bun run typecheck)",
-        "Tests pass (bun test)"
+        "README.md Install section, Option A (from source), reflects that the release build now produces a re-signed binary (one short sentence is enough) and recommends `./scripts/build-release.sh --install` for the user-owned default at `~/.local/bin/cam` (no sudo).",
+        "README documents that `~/.local/bin` must be on `$PATH` (one line, e.g. mention adding it to the shell rc if missing).",
+        "The previous `sudo cp ... /usr/local/bin/cam` recipe is either removed or kept as a clearly labeled alternative that notes the destination requires the binary to be signed (which the build script now handles).",
+        "A short subsection (or note) titled around 'Public distribution' explains that wider distribution would require Developer ID signing + notarytool + stapler and an Apple Developer account, and that the current ad-hoc signing is sufficient only for the user's own machine.",
+        "No em-dash appears in the edits to README.md; use colon, comma, parens, or period instead (hard project rule).",
+        "Typecheck passes (bun run typecheck).",
+        "Tests pass (bun test)."
       ],
       "priority": 4,
       "passes": false,
-      "requires": "operator",
-      "notes": "Files: src/commands/run.ts (buildOrchestratorBootPrompt at line 87-99), .claude/agents/subagent-orchestrator.md (append a new \"Self-handoff lifecycle\" section near the bottom, before \"Failure modes\"; do NOT rewrite existing sections). Tests: extend test/run.test.ts to assert the boot prompt mentions the handoff file. The operator verification step is the reason this story is requires: \"operator\" — the deterministic CLI pieces (boot prompt string + agent doc text) are still unit-testable, but the actual multi-hour roll-over only happens in a real session. Do NOT conflate this with the setup→orchestrator handoff in src/commands/setup.ts (unrelated). Doc Maintenance: if docs/recovery-runbook.md describes the orchestrator lifecycle, add one line pointing to .cam-orch-handoff.json and the respawn behavior; otherwise leave it alone (surgical). F-01: also edit templates/agents/subagent-orchestrator.md (same section, no em-dash) and re-run `bun run embed-vendor` + `bun run embed-vendor:check`; src/templates/embedded.ts is regenerated, not hand-edited."
+      "requires": null,
+      "notes": "File to edit: README.md. The relevant section starts around line 29 (`## Install`) with `### Option A: From source` showing the current `sudo cp dist/cam-darwin-arm64 /usr/local/bin/cam` recipe. Update Option A in place; do not touch Option B (run-from-source via Bun shim). Hard project rule: NO em-dash in any persisted .md file; use colon, comma, parens, period, or cut the connector. Keep wording terse and aligned with the existing README voice. Do NOT implement notarytool/Developer ID; this story is documentation only. Background: lessons.md 2026-06-06 entry (lines 25-31) for the underlying signing failure mode."
     }
-  ],
-  "review": {
-    "roundsCompleted": 1,
-    "maxRounds": 3,
-    "lastReviewSha": "466faee1232baac9b6082250c41e25bbb8b26dcb",
-    "lastVerdict": "CLEAN"
-  }
+  ]
 }

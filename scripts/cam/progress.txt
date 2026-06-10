@@ -1,8 +1,1 @@
 ## Codebase Patterns
-
-- **Bun runtime**: always `Bun.spawn` / `Bun.$` / `Bun.file` over `node:child_process` / `node:fs`.
-- **Permission mode**: never register a `--permission-mode` CLI flag on any subcommand (enforced by `test/no-permission-mode-flag.test.ts`). The orchestrator's `bypassPermissions` is set programmatically in run.ts (intentional, 2026-06-06).
-- **noUncheckedIndexedAccess**: array indexing and regex capture groups are `T | undefined`. Guard with `?? fallback` or a justified non-null assertion.
-- **Token monitoring**: reuse `src/transcript/usage.ts` (`orchestratorTranscriptPath` + `parseTranscriptUsage`, CAM-21); never reinvent token counting.
-- **Vendor/templates drift**: when a story touches `vendor/` or `templates/`, re-run `bun run embed-vendor` and confirm `bun run embed-vendor:check` passes.
-- **Commits**: conventional commits required (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
