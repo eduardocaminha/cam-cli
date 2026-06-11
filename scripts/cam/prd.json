@@ -74,7 +74,7 @@
         "Tests pass (bun test)."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "Real-machine verification. Cannot be automated: needs the operator's $PATH, $HOME, possibly sudo, and decision on what to do with the legacy /usr/local/bin/cam binary. References: lessons.md 2026-06-06 entry (lines 25-31) for the failure mode being verified; the stale-PATH-binary risk this also retires. Implementer should treat this story as out-of-scope and let the loop fall through to US-004."
     },

@@ -78,3 +78,9 @@
 ## [2026-06-11T01:05Z] - Review round 1: CLEAN
 - subagent-reviewer: APPROVE, zero CRITICAL/WARNING acionavel. Gates: bash -n ok, typecheck ok, 776 testes pass. Ready for /cam-ship apos US-003 (operator).
 ---
+
+## [2026-06-11] - US-003 operator ceremony: PASS (decisao A)
+- build-release.sh --install: exit 0, re-sign ok, smoke ok. ~/.local/bin/cam --version = cam 0.1.2 sem travar. codesign -v: ok.
+- Stale /usr/local/bin/cam: REMOVIDO (decisao A do operador, sudo rm). which cam resolve para ~/.local/bin/cam (PATH posicao 1). Fonte unica de verdade, atualizavel sem sudo.
+- Efeito colateral observado: o soft-check do build criou tmux session cam-setup e lancou setup agent na maquina do operador (evidencia nova para CAM-15).
+---
