@@ -3,6 +3,29 @@
 - **build-release.sh codesign**: after `bun build --compile`, always re-sign ad-hoc with `codesign --force --sign - "${BIN}"` and verify with `codesign -v "${BIN}"`. Without re-sign the binary has an invalid signature and amfid SIGKILL-kills it when installed in /usr/local/bin.
 - **build-release.sh --install**: copies dist/cam-darwin-arm64 to `${HOME}/.local/bin/cam` (user-owned, no sudo), strips quarantine with `xattr -cr`, re-signs ad-hoc, smoke-tests `--version`, warns if dest dir is not on $PATH. Use `case ":${PATH}:" in *":${DIR}:"*) ...` for POSIX-safe PATH membership check. Arg parsing uses `while [[ $# -gt 0 ]]; do case "$1"` loop so `--install` can consume an optional positional `$2` via `shift`.
 
+## [2026-06-10 13:00] - US-004: README: update build/install section for re-sign + user-owned install and add Developer ID note
+
+### What was done
+- Replaced the old `sudo cp dist/cam-darwin-arm64 /usr/local/bin/cam` recipe in Option A with `./scripts/build-release.sh --install` (user-owned default at `~/.local/bin/cam`, no sudo).
+- Added one-line comment instructing users to add `~/.local/bin` to `$PATH` if missing.
+- Kept the `sudo cp` path as a clearly labeled "Alternative: system-wide install to /usr/local/bin" block, noting the build script handles re-signing.
+- Added "Public distribution note" subsection explaining that ad-hoc signing is machine-local only, and that broader distribution requires Developer ID signing + notarytool + stapler + Apple Developer account.
+- Verified no em-dashes present in the edits.
+
+### Files changed
+- README.md (+21 lines, -5 lines)
+
+### Quality gates
+- Typecheck: ok (0 errors)
+- Tests: 776 pass, 0 fail
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (documentation-only story, no TS/JS library touched)
+
+### Notes
+- Story is documentation only; no code changes. The "Public distribution" note is intentionally brief and non-prescriptive per the story notes.
+---
+
 ## [2026-06-10 12:00] - US-002: Add --install [dest] flag to build-release.sh (user-owned default)
 
 ### What was done

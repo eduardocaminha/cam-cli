@@ -1,21 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Add --install [dest] flag to build-release.sh (user-owned default)"
+    "id": "US-004",
+    "title": "README: update build/install section for re-sign + user-owned install and add Developer ID note"
   },
   "branchName": "cam/CAM-16-codesign-binary",
-  "timestamp": "2026-06-10T12:00:00Z",
+  "timestamp": "2026-06-11T00:35:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/build-release.sh"
+    "README.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added --install to build-release.sh. The script now: (1) uses a while-loop arg parser, (2) copies dist/cam-darwin-arm64 to a user-owned dest (default ~/.local/bin/cam), (3) strips quarantine, re-signs ad-hoc, and smoke-tests --version. US-003 or later stories may need to know the script is darwin-only (uses stat -f) and the BIN variable is dist/cam-darwin-arm64.",
+  "nextStoryContext": "US-004 (README) committed in 50cf583. All non-operator stories done; next is review, then US-003 (operator: run build-release.sh --install on the real machine and verify the installed binary executes from a system path).",
   "officialDocsValidated": [
     {
       "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "US-002 only modified a bash script; no TypeScript/JavaScript external library was used."
+      "status": "no_external_lib_touched"
     }
   ]
 }
