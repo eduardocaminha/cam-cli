@@ -38,16 +38,32 @@ cd cam-cli
 # 2. Install dependencies
 bun install
 
-# 3. Build the single-file binary (darwin-arm64; ~60 MB)
-bun run build:release
+# 3. Build and install (builds dist/cam-darwin-arm64, re-signs it ad-hoc, copies to ~/.local/bin/cam; no sudo)
+./scripts/build-release.sh --install
 
-# 4. Put it on PATH
-sudo cp dist/cam-darwin-arm64 /usr/local/bin/cam
-sudo chmod +x /usr/local/bin/cam
+# 4. Ensure ~/.local/bin is on $PATH (add to ~/.zshrc or ~/.bash_profile if missing):
+#    export PATH="$HOME/.local/bin:$PATH"
 
 # 5. Verify
 cam --version
 ```
+
+**Alternative: system-wide install to /usr/local/bin**
+
+If you prefer a system-wide location, build first, then copy with sudo.
+The build script handles re-signing, so the binary is valid for any destination:
+
+```bash
+./scripts/build-release.sh
+sudo cp dist/cam-darwin-arm64 /usr/local/bin/cam
+```
+
+#### Public distribution note
+
+Ad-hoc signing (used above) is sufficient for your own machine only. Distributing
+the binary to other users requires Developer ID signing, notarytool submission, and
+stapling via Apple's notarization service (Apple Developer account required). The
+current build scripts do not include those steps.
 
 ### Option B: Run from source without compiling
 

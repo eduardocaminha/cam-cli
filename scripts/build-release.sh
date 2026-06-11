@@ -5,7 +5,9 @@
 # overwrites `dist/`.
 #
 # Usage:
-#   ./scripts/build-release.sh              # builds dist/cam-darwin-arm64
+#   ./scripts/build-release.sh                          # builds dist/cam-darwin-arm64
+#   ./scripts/build-release.sh --install               # builds + installs to ~/.local/bin/cam
+#   ./scripts/build-release.sh --install ~/bin/cam     # builds + installs to given path
 #
 # Acceptance criteria mapping (US-011):
 #   AC1: produces dist/cam-darwin-arm64 via `bun build --compile`
@@ -20,17 +22,27 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 # --- Args ------------------------------------------------------------------
-for arg in "$@"; do
-	case "$arg" in
+DO_INSTALL=false
+INSTALL_DEST=""
+while [[ $# -gt 0 ]]; do
+	case "$1" in
 		-h|--help)
-			grep '^#' "$0" | head -16 | sed 's/^#//' >&2
+			grep '^#' "$0" | head -18 | sed 's/^#//' >&2
 			exit 0
 			;;
+		--install)
+			DO_INSTALL=true
+			if [[ $# -gt 1 && "$2" != -* ]]; then
+				INSTALL_DEST="$2"
+				shift
+			fi
+			;;
 		*)
-			echo "unknown arg: $arg" >&2
+			echo "unknown arg: $1" >&2
 			exit 2
 			;;
 	esac
+	shift
 done
 
 # --- Read the version literal from src/version.ts --------------------------
@@ -49,6 +61,14 @@ echo "[build-release] compiling ${BIN}"
 # `--target=bun-darwin-arm64` is the documented Bun target string (the docs
 # require the `bun-` prefix; see https://bun.sh/docs/bundler/executables).
 bun build --compile --target=bun-darwin-arm64 --minify ./index.ts --outfile "${BIN}"
+
+# --- Ad-hoc re-sign (US-001) -----------------------------------------------
+# bun --compile produces a binary whose codesign signature reads invalid;
+# amfid SIGKILL-kills it when installed in /usr/local/bin (a system directory).
+# Re-sign ad-hoc so the binary runs in any destination path.
+codesign --force --sign - "${BIN}"
+codesign -v "${BIN}" || { echo "[build-release] ERROR: codesign verification failed" >&2; exit 1; }
+echo "[build-release] codesign: ad-hoc re-sign ok"
 
 # --- Sanity: AC2 (size) ----------------------------------------------------
 SIZE_BYTES="$(stat -f '%z' "${BIN}")"
@@ -84,6 +104,40 @@ if CAM_CONFIG_PATH="${TMP_CONFIG}" "${BIN}" init; then
 else
 	rc=$?
 	echo "[build-release]   init: exit ${rc} (non-zero is acceptable on machines without claude installed)"
+fi
+
+# --- Install (--install) ---------------------------------------------------
+if [[ "${DO_INSTALL}" == "true" ]]; then
+	DEST="${INSTALL_DEST:-${HOME}/.local/bin/cam}"
+	DEST_DIR="$(dirname "${DEST}")"
+
+	echo "[build-release] installing to ${DEST}"
+	mkdir -p "${DEST_DIR}"
+	cp "${BIN}" "${DEST}"
+
+	xattr -cr "${DEST}"
+
+	codesign --force --sign - "${DEST}"
+	codesign -v "${DEST}" || { echo "[build-release] ERROR: codesign verification failed for ${DEST}" >&2; exit 1; }
+	echo "[build-release] codesign: ad-hoc re-sign ok (installed copy)"
+
+	SMOKE_ACTUAL="$("${DEST}" --version)"
+	EXPECTED_INST="cam ${VERSION}"
+	if [[ "${SMOKE_ACTUAL}" != "${EXPECTED_INST}" ]]; then
+		echo "[build-release] ERROR: --version mismatch -- expected '${EXPECTED_INST}', got '${SMOKE_ACTUAL}'" >&2
+		exit 1
+	fi
+	echo "[build-release] install smoke: ${SMOKE_ACTUAL} ok"
+
+	case ":${PATH}:" in
+		*":${DEST_DIR}:"*)
+			;;
+		*)
+			echo "[build-release] WARNING: ${DEST_DIR} is not on \$PATH -- add it to use 'cam' directly" >&2
+			;;
+	esac
+
+	echo "[build-release] installed: ${DEST}"
 fi
 
 echo "[build-release] done"
