@@ -96,5 +96,11 @@
       "requires": null,
       "notes": "File to edit: README.md. The relevant section starts around line 29 (`## Install`) with `### Option A: From source` showing the current `sudo cp dist/cam-darwin-arm64 /usr/local/bin/cam` recipe. Update Option A in place; do not touch Option B (run-from-source via Bun shim). Hard project rule: NO em-dash in any persisted .md file; use colon, comma, parens, period, or cut the connector. Keep wording terse and aligned with the existing README voice. Do NOT implement notarytool/Developer ID; this story is documentation only. Background: lessons.md 2026-06-06 entry (lines 25-31) for the underlying signing failure mode."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "1f827f00757ff4a5cd0d92ba502feaf0add76aea",
+    "lastVerdict": "CLEAN"
+  }
 }

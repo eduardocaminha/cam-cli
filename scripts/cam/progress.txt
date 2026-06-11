@@ -74,3 +74,7 @@
 - No platform branching needed: the script is darwin-only already (uses `stat -f`).
 - US-002 (--install flag) is the next story that builds on this.
 ---
+
+## [2026-06-11T01:05Z] - Review round 1: CLEAN
+- subagent-reviewer: APPROVE, zero CRITICAL/WARNING acionavel. Gates: bash -n ok, typecheck ok, 776 testes pass. Ready for /cam-ship apos US-003 (operator).
+---
