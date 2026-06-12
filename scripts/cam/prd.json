@@ -49,7 +49,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/next.ts (two capturePane adapters near lines 498 and 564), src/supervisor/sentinel.ts (parseAnySentinel is the assertion target), test/supervisor/ (new fixture asserting prompt-echo non-match). CAM-35 lesson: sentinel parse is a recurrent fragility class, so add the fixture with the exact prompt string used by US-001's implementer dispatch."
     },

@@ -495,7 +495,9 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	};
 
 	const capturePane: RunSupervisorOptions['capturePane'] = (paneId) => {
-		const result = spawnSync('tmux', ['-L', 'cam', 'capture-pane', '-p', '-t', paneId], {
+		// -S - captures the full scrollback, not just the visible region: a TUI
+		// worker's sentinel line can scroll off-screen between polls (CAM-42).
+		const result = spawnSync('tmux', ['-L', 'cam', 'capture-pane', '-p', '-S', '-', '-t', paneId], {
 			stdio: 'pipe',
 			encoding: 'utf8',
 		} as Parameters<typeof spawnSync>[2]);
@@ -561,7 +563,8 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			spawnSync('tmux', ['-L', 'cam', 'wait-for', channel]);
 		},
 		capturePane: (paneId) => {
-			const proc = spawnSync('tmux', ['-L', 'cam', 'capture-pane', '-p', '-t', paneId], {
+			// -S - captures the full scrollback (TUI sentinel can scroll away, CAM-42).
+			const proc = spawnSync('tmux', ['-L', 'cam', 'capture-pane', '-p', '-S', '-', '-t', paneId], {
 				stdio: 'pipe',
 			});
 			return proc.stdout?.toString() ?? '';

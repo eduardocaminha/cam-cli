@@ -6,3 +6,9 @@
 - Teste do scaffold que esperava tee em interactive invertido pra assertar ausencia.
 - uuid ja vem de crypto.randomUUID (lowercase), AC satisfeito sem mudanca.
 ---
+
+## [2026-06-11] - US-002: captura full-scrollback pra TUI
+- Dois adapters capturePane em next.ts agora usam capture-pane -p -S - (historico completo; sentinel pode rolar pra fora da tela entre polls).
+- 3 testes de regressao em result.test.ts: eco do DEFAULT_TASK_PROMPT nao casa sentinel; wording documentado com CAM_IMPLEMENTER_STATUS= sem valor nao casa (regex exige \S+ apos =); sentinel real apos o eco ainda casa.
+- Gates: typecheck ok, 779 pass.
+---
