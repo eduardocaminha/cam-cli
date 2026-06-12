@@ -653,6 +653,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					detail: `supervisor-finalized ${outcome.storyId} after worker truncation: ${fin.detail}`,
 				};
 				writeSessionMarker(outcome.storyId, uuid);
+				// CAM-36: a successful finalize is real progress; reset the no-op
+				// streak so the "consecutive no-progress" semantics hold (review R1).
+				noProgressStreak = 0;
 				continue;
 			}
 

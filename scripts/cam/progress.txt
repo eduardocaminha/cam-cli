@@ -88,3 +88,11 @@
 ### Notes
 - embedded.test.ts does byte-parity checks against templates/; must run embed-vendor before committing any templates edit or the test fails. Pattern documented here for future doc-only stories that touch templates/.
 ---
+
+## [2026-06-11] - Review round 1 (FIXES_PENDING:3) + fixes US-R1-001..003
+- US-R1-001: noProgressStreak reset apos finalize-success restaurado em loop.ts (continue do branch finalize); regressao em loop.test.ts validada nos 2 sentidos (falha sem o fix, passa com).
+- US-R1-002: header de tmux/session.ts nao referencia mais helpers deletados.
+- US-R1-003: agents implementer/reviewer (+templates, re-embed) agora proibem sentinel literal antes da linha final (scrollback polling leria como conclusao).
+- Ride-along: import jest morto removido de loop.test.ts (sugestao do reviewer).
+- Backlog/skip: tipo 'rate-limited' morto em events.ts; split parseAnySentinel por fonte (defesa extra, nao acionavel hoje).
+---

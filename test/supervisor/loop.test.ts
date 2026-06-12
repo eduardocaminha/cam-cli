@@ -15,7 +15,7 @@
 //  10. writeSessionMarker called with actualStoryId, not advisory storyId.
 //  11. PRD_COMPLETE sentinel (outcome.storyId undefined) -> continue, next iter complete.
 
-import { describe, expect, test, jest, beforeEach } from 'bun:test';
+import { describe, expect, test, beforeEach } from 'bun:test';
 import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
@@ -490,6 +490,92 @@ describe('runSupervisor', () => {
 
 		expect(result.status).toBe('complete');
 		expect(result.iterations).toBe(3); // 2 implement + 1 review, never blocked
+	});
+
+	test('no-progress streak resets after finalize-success (CAM-36, review R1)', async () => {
+		// A successful supervisor finalize (incomplete -> gates -> finalizeStory)
+		// is real progress and must reset the no-op streak, exactly like a
+		// regular completed story. Sequence: 2 no-ops (streak 2), finalize
+		// (reset), 1 more no-op (streak 1, NOT 3/blocked), real completion,
+		// review CLEAN, complete. Without the reset the 4th iteration blocks.
+		const prdA = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: false },
+				{ id: 'US-003', priority: 3, passes: false },
+			],
+		});
+		const prdB = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: true },
+				{ id: 'US-003', priority: 3, passes: false },
+			],
+		});
+		const prdC = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: true },
+				{ id: 'US-003', priority: 3, passes: true },
+			],
+			review: { roundsCompleted: 0, lastVerdict: null },
+		});
+		const prdClean = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: true },
+				{ id: 'US-003', priority: 3, passes: true },
+			],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+
+		// 2 reads per implement iteration (top + outcome), 2 for review, 1 complete.
+		const prds: PrdSnapshot[] = [
+			prdA, prdA, // iter 1: no-op (stale US-001 pass, streak 1)
+			prdA, prdA, // iter 2: no-op (streak 2)
+			prdA, prdA, // iter 3: incomplete US-002 -> finalize ok (streak reset)
+			prdB, prdB, // iter 4: no-op (stale US-002 pass; streak 1 with fix, 3 without)
+			prdB, prdC, // iter 5: real US-003 completion
+			prdC, prdClean, // iter 6: review -> CLEAN
+			prdClean, // iter 7 top: complete
+		];
+		let prdCall = 0;
+
+		// Per-iteration worker signals: pane (poll + outcome read = same text twice)
+		// and the handoff the outcome read sees. Iteration index advances on the
+		// poll call (even paneIdx).
+		const paneByIter = [
+			donePane('US-001'), // iter 1: stale
+			donePane('US-001'), // iter 2: stale
+			donePane('US-002'), // iter 3: worker truncated (prd still false -> incomplete)
+			donePane('US-002'), // iter 4: stale
+			donePane('US-003'), // iter 5: real
+		];
+		const handoffByIter = ['US-001', 'US-001', 'US-002', 'US-002', 'US-003'];
+		let paneIdx = 0;
+		let iter = 0;
+
+		let finalized = '';
+		const opts = makeBaseOpts({
+			readPrd: () => prds[prdCall++] ?? null,
+			readHandoff: () => makeHandoff(handoffByIter[iter - 1] ?? 'US-003'),
+			capturePane: (_paneId: string) => {
+				if (paneIdx % 2 === 0) iter += 1;
+				paneIdx += 1;
+				return paneByIter[iter - 1] ?? '';
+			},
+			runGates: () => ({ ok: true, detail: 'gates ok' }),
+			finalizeStory: (storyId) => {
+				finalized = storyId;
+				return { ok: true, detail: 'finalized' };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(finalized).toBe('US-002');
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(6); // 5 implement + 1 review, never blocked
 	});
 
 	test('review dispatch: retries a transient error then succeeds -> complete (CAM-37)', async () => {

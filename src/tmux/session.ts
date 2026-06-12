@@ -20,11 +20,10 @@
 //     to detect whether the caller is already running inside the project
 //     session (prevents double-attach).
 //
-// Worker-slot primitives (CAM-22 / US-001):
-//   - respawnPaneArgv, waitForArgv, signalWaitForArgv, capturePaneArgv: pure
-//     argv builders for the supervisor to drive a reused worker pane.
-//   - workerWaitChannel: deterministic channel name per worker invocation.
-//   - writeWorkerPaneMarker / readWorkerPaneMarker: persist/read the worker
+// Worker-slot primitives (CAM-22 / US-001; wait-for helpers deleted in CAM-42):
+//   - respawnPaneArgv, capturePaneArgv: pure argv builders for the supervisor
+//     to drive a reused worker pane.
+//   - writeWorkerPaneMarker / readWorkerPaneMarker: persist and read the worker
 //     pane id in .claude/.cam-worker-pane so supervisor and lifecycle commands
 //     can address the slot across process restarts.
 

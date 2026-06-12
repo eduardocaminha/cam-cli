@@ -20,6 +20,48 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "priority": 1,
+      "title": "Restore noProgressStreak reset on finalize-success (CAM-36 semantics)",
+      "acceptanceCriteria": [
+        "[src/supervisor/loop.ts:624-657] after a successful finalizeStory the no-progress streak resets to 0 before continue (real progress made)",
+        "Regression test: no-op pass (streak 1) then incomplete+finalize-success then no-op pass does NOT block (streak restarted)",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "passes": true,
+      "requires": null,
+      "notes": "Review round 1 WARNING. Old exit path reset the streak after finalize; unified sentinel path lost it."
+    },
+    {
+      "id": "US-R1-002",
+      "priority": 2,
+      "title": "Fix stale module-header comment in src/tmux/session.ts",
+      "acceptanceCriteria": [
+        "[src/tmux/session.ts:23-26] header no longer references deleted waitForArgv/signalWaitForArgv/workerWaitChannel",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "passes": true,
+      "requires": null,
+      "notes": "Review round 1 WARNING. Doc drift from US-004 deletion."
+    },
+    {
+      "id": "US-R1-003",
+      "priority": 3,
+      "title": "Agent files: never emit a literal sentinel before the final line",
+      "acceptanceCriteria": [
+        "[.claude/agents/subagent-implementer.md + subagent-reviewer.md + templates copies] instruct the agent to never write a literal CAM_IMPLEMENTER_STATUS=<value> (or <review> tag) in prose/examples before the final line, since the supervisor polls the scrollback",
+        "bun run embed-vendor regenerated and embed-vendor:check passes",
+        "No em-dash in the touched .md files",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "passes": true,
+      "requires": null,
+      "notes": "Review round 1 WARNING. Mid-stream quoting of an example sentinel would read as completion."
+    },
+    {
       "id": "US-001",
       "title": "Wire sentinel mode as the only implementer dispatch in cam next",
       "description": "As the cam orchestrator, I need cam next to spawn the implementer worker as an interactive TUI claude session and poll a sentinel for completion, so that no claude -p headless invocation is ever issued (subscription rule).",
@@ -126,5 +168,11 @@
       "requires": "operator",
       "notes": "Requires a real subscription claude session, a tmux server, and the operator's machine. The session transcript lives at the path derived from --session-id (lowercase UUID on macOS); use the project's known transcript path helper to read mtime. Do NOT run this against a stale PATH binary (see memory); use `bun index.ts` from the branch. CAM-39/40/41 are absorbed by this validation: confirm they no longer reproduce."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "81f658bf55f168e4efe811de00fe4e89301e319b",
+    "lastVerdict": "FIXES_PENDING"
+  }
 }

@@ -110,7 +110,7 @@ For pure docs / refactor / harness-only stories where no external lib is exercis
 
 ## Session model
 
-You run as an interactive TUI `claude` session (not `claude -p`). The supervisor detects your completion by polling the full pane scrollback (`capture-pane -p -S -`) for the sentinel line. You do NOT exit on your own after printing the sentinel; the supervisor reads the pane and then kills the session via `respawn-pane -k`. This means the sentinel MUST be the absolute last line of your final message: if you print anything after it, the supervisor may not detect completion correctly.
+You run as an interactive TUI `claude` session (not `claude -p`). The supervisor detects your completion by polling the full pane scrollback (`capture-pane -p -S -`) for the sentinel line. You do NOT exit on your own after printing the sentinel; the supervisor reads the pane and then kills the session via `respawn-pane -k`. This means the sentinel MUST be the absolute last line of your final message: if you print anything after it, the supervisor may not detect completion correctly. For the same reason, NEVER write a literal `CAM_IMPLEMENTER_STATUS=<value>` string anywhere in your prose, plans, or examples before the final line (not even in a code span): the supervisor polls the whole scrollback and would read it as your completion signal while you are still working.
 
 ## Output protocol
 
