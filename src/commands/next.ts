@@ -731,6 +731,10 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			handoffPath,
 			permissionMode,
 			taskPrompt,
+			// CAM-42: workers are interactive TUI sessions (claude -p is forbidden
+			// for subscription accounts; project rule is subscription-only).
+			// Completion is detected by polling capture-pane for the sentinel.
+			implementerMode: 'sentinel',
 			maxIterations,
 			perWorkerTimeoutMs,
 			logEvent,
@@ -743,10 +747,10 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			// Notes: (1) Bun.sleepSync blocks the thread, so a queued SIGINT during a
 			// backoff (worst case ~180s total before block) only releases the lock
 			// after the sleep returns — Ctrl-C feels laggy, same as rateLimitResume's
-			// Bun.sleepSync above. (2) This also activates the sleepFn(pollIntervalMs)
-			// in the supervisor's sentinel-poll loop; sentinel mode is not wired in
-			// production today, but if it ever is, polling will correctly wait
-			// between capture-pane reads instead of hot-spinning.
+			// Bun.sleepSync above. (2) This also drives the sleepFn(pollIntervalMs)
+			// in the supervisor's sentinel-poll loop (the production dispatch mode
+			// since CAM-42), so polling waits between capture-pane reads instead
+			// of hot-spinning.
 			sleepFn: (ms) => {
 				Bun.sleepSync(ms);
 			},

@@ -33,7 +33,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/next.ts (around lines 498, 564, 747 where mode 'exit' is hardcoded and the 'sentinel mode is not wired in production today' comment lives), src/supervisor/worker-argv.ts (buildImplementerWorkerArgv interactive branch already exists from US-012 of CAM-22), src/supervisor/loop.ts (sentinel branch). Sentinel is corroboration only: handoff+prd remain primary signals (CAM-32 lesson: state-primary). UUIDs must be lowercase on macOS (uuidgen quirk, see memory). Keep the implementer worker invocation shape identical to the scaffold tested in test/supervisor/."
     },

@@ -228,7 +228,7 @@ describe('buildImplementerWorkerArgv', () => {
 		expect(result).not.toMatch(/^claude -p/);
 	});
 
-	test('interactive mode with outFile still tees output', () => {
+	test('interactive mode ignores outFile: piping stdout would break the TUI pty', () => {
 		const outFile = '/proj/.claude/.cam-worker-out-interactive.log';
 		const result = buildImplementerWorkerArgv({
 			uuid: SAMPLE_UUID,
@@ -237,8 +237,8 @@ describe('buildImplementerWorkerArgv', () => {
 			outFile,
 			interactive: true,
 		});
-		expect(result).toContain(`2>&1 | tee '${outFile}'`);
-		// No wait-for after the tee in interactive mode
+		expect(result).not.toContain('tee');
+		expect(result).not.toContain(outFile);
 		expect(result).not.toContain('wait-for');
 	});
 });

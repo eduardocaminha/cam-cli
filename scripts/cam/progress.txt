@@ -1,1 +1,8 @@
 ## Codebase Patterns
+
+## [2026-06-11] - US-001: sentinel mode como dispatch unico do implementer
+- next.ts agora passa implementerMode 'sentinel' ao runSupervisor (claude -p proibido, regra subscription-only).
+- buildImplementerWorkerArgv interactive: alem de omitir -p/--output-format/wait-for, agora IGNORA outFile (pipe pro tee tiraria o pty da TUI; captura duravel vem de capture-pane -S - na US-002).
+- Teste do scaffold que esperava tee em interactive invertido pra assertar ausencia.
+- uuid ja vem de crypto.randomUUID (lowercase), AC satisfeito sem mudanca.
+---

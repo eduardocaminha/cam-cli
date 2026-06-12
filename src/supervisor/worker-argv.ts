@@ -103,14 +103,16 @@ export function buildImplementerWorkerArgv(opts: ImplementerWorkerArgvOptions): 
 	const teePart = opts.outFile ? ` 2>&1 | tee ${shellEscape(opts.outFile)}` : '';
 
 	if (opts.interactive) {
-		// Interactive mode: no -p, no --output-format, no wait-for chain.
+		// Interactive mode: no -p, no --output-format, no wait-for chain, and no
+		// tee. Piping stdout would strip the pty from the TUI renderer (Ink needs
+		// a TTY), so outFile is ignored here; durable capture comes from
+		// `capture-pane -S -` over the pane scrollback instead (CAM-42).
 		return (
 			`claude` +
 			` --permission-mode ${opts.permissionMode}` +
 			` --session-id ${opts.uuid}` +
 			` --agent ${agentName}` +
-			` ${escapedPrompt}` +
-			teePart
+			` ${escapedPrompt}`
 		);
 	}
 
