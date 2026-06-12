@@ -25,10 +25,7 @@ import {
 	CAM_TMUX_SOCKET,
 	tmuxArgs,
 	respawnPaneArgv,
-	waitForArgv,
-	signalWaitForArgv,
 	capturePaneArgv,
-	workerWaitChannel,
 	writeWorkerPaneMarker,
 	readWorkerPaneMarker,
 	WORKER_PANE_MARKER,
@@ -393,36 +390,6 @@ describe('respawnPaneArgv', () => {
 	});
 });
 
-describe('waitForArgv', () => {
-	test('prepends -L cam and includes wait-for <channel>', () => {
-		const argv = waitForArgv('cam-worker-US-007-a1b2c3d4');
-		expect(argv[0]).toBe('-L');
-		expect(argv[1]).toBe('cam');
-		expect(argv[2]).toBe('wait-for');
-		expect(argv).not.toContain('-S');
-		expect(argv).toContain('cam-worker-US-007-a1b2c3d4');
-	});
-});
-
-describe('signalWaitForArgv', () => {
-	test('prepends -L cam and includes wait-for -S <channel>', () => {
-		const argv = signalWaitForArgv('cam-worker-US-007-a1b2c3d4');
-		expect(argv[0]).toBe('-L');
-		expect(argv[1]).toBe('cam');
-		expect(argv[2]).toBe('wait-for');
-		expect(argv).toContain('-S');
-		expect(argv).toContain('cam-worker-US-007-a1b2c3d4');
-	});
-
-	test('-S appears before the channel name', () => {
-		const argv = signalWaitForArgv('my-channel');
-		const sIdx = argv.indexOf('-S');
-		const chanIdx = argv.indexOf('my-channel');
-		expect(sIdx).toBeGreaterThan(-1);
-		expect(chanIdx).toBeGreaterThan(sIdx);
-	});
-});
-
 describe('capturePaneArgv', () => {
 	test('prepends -L cam and includes capture-pane -p -t <paneId>', () => {
 		const argv = capturePaneArgv('%7');
@@ -432,29 +399,6 @@ describe('capturePaneArgv', () => {
 		expect(argv).toContain('-p');
 		expect(argv).toContain('-t');
 		expect(argv).toContain('%7');
-	});
-});
-
-describe('workerWaitChannel', () => {
-	test('produces cam-worker-<safeStoryId>-<shortUuid>', () => {
-		const channel = workerWaitChannel('US-007', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890');
-		expect(channel).toBe('cam-worker-US-007-a1b2c3d4');
-	});
-
-	test('sanitizes non-alphanumeric characters in storyId to dashes', () => {
-		const channel = workerWaitChannel('US 007', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890');
-		expect(channel).toMatch(/^cam-worker-US-007-[a-f0-9]{8}$/);
-	});
-
-	test('is deterministic for the same storyId and uuid', () => {
-		const uuid = 'aaaabbbb-cccc-dddd-eeee-ffffffffffff';
-		expect(workerWaitChannel('US-001', uuid)).toBe(workerWaitChannel('US-001', uuid));
-	});
-
-	test('differs for different uuids with the same storyId', () => {
-		const a = workerWaitChannel('US-001', 'aaaabbbb-cccc-dddd-eeee-000000000000');
-		const b = workerWaitChannel('US-001', 'bbbbcccc-dddd-eeee-ffff-111111111111');
-		expect(a).not.toBe(b);
 	});
 });
 
