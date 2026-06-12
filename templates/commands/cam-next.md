@@ -33,36 +33,34 @@ cam next
   └── runSupervisor(options)
         ├── decideNextAction(prd)        -- implement | review | complete | blocked
         ├── respawn-pane -k <worker-pane> <claude-argv>
-        │     worker = claude -p --permission-mode <mode>
+        │     worker = claude --permission-mode <mode>
         │               --session-id <uuid>
-        │               --output-format text
         │               --agent <name>
         │               "<task-prompt>"
-        ├── tmux wait-for <channel>      -- blocks until worker exits + signals
-        ├── capture-pane -p              -- scrape pane for CAM_*_STATUS sentinel
+        ├── poll capture-pane -p -S -    -- full scrollback, every N seconds
+        │     detect CAM_*_STATUS= / <review> sentinel
         └── loop until: complete | blocked | max-iterations
 ```
 
-Workers (implementer and reviewer) are real separate `claude -p` sessions. Each story runs in a **reused worker pane**: `respawn-pane -k` kills the previous command and starts the next one in the same pane id. The worker pane id is written by `cam plan` to `.claude/.cam-worker-pane` and read by the supervisor on every iteration.
+Workers (implementer and reviewer) run as interactive TUI `claude` sessions. Each story runs in a **reused worker pane**: `respawn-pane -k` kills the previous command and starts the next one in the same pane id. The worker pane id is written by `cam plan` to `.claude/.cam-worker-pane` and read by the supervisor on every iteration. Workers do not exit on their own; the supervisor detects completion by polling the full pane scrollback for the sentinel line.
 
-**Stop-hook driver is retired.** The old model (a vendored Stop hook injecting `/cam-next` on each assistant turn) is gone. Workers are real per-story `claude -p` sessions that exit on their own; the supervisor waits on a `tmux wait-for` channel instead of relying on a stop hook.
+**Stop-hook driver is retired.** The old model (a vendored Stop hook injecting `/cam-next` on each assistant turn) is gone. `claude -p` (print mode) is not used for workers; it is reserved for the `cam claude` retry-wrapper feature.
 
 ---
 
 ## Worker entrypoint
 
-Workers are invoked as `--agent <name>` agents, not as slash commands:
+Workers are invoked as interactive TUI sessions via `--agent <name>`, not as slash commands and not with `-p`:
 
 ```
-claude -p \
+claude \
   --permission-mode <mode> \
   --session-id <uuid> \
-  --output-format text \
   --agent subagent-implementer \
   "<task-prompt>"
 ```
 
-There is no `/cam-implement` slash command. The implementer and reviewer are agents (`subagent-implementer`, `subagent-reviewer`) defined in `.claude/agents/`.
+There is no `/cam-implement` slash command. The implementer and reviewer are agents (`subagent-implementer`, `subagent-reviewer`) defined in `.claude/agents/`. `--output-format text` and `; tmux wait-for -S <channel>` are NOT used: the session is interactive TUI, and the supervisor polls the pane instead.
 
 The task prompt for the implementer is:
 
@@ -76,7 +74,7 @@ Return with one of the CAM_IMPLEMENTER_STATUS= lines on your last line.
 
 ## Worker exit contract (CAM_IMPLEMENTER_STATUS sentinel)
 
-Every implementer worker must print exactly one of these lines as the **last line** of its output. The supervisor scrapes the worker pane with `capture-pane -p` and matches this sentinel to decide the next action.
+Every implementer worker must print exactly one of these lines as the **very last line** of its final message. The supervisor polls the worker pane with `capture-pane -p -S -` (full scrollback) and matches this sentinel to decide the next action. Because the sentinel must survive arbitrary amounts of output, placing it as the final line is critical: the supervisor scans from the bottom of the scrollback.
 
 | Status line | Meaning |
 |---|---|

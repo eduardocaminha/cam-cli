@@ -14,8 +14,7 @@ All paths are relative to the project root.
 | `.claude/cam-loop.local.md` | `cam next` | Loop state. YAML frontmatter: `active`, `iteration`, `started_at`, `pid` (the supervisor process), `max_iterations`. |
 | `.claude/.cam-worker-pane` | `cam plan` | The reused worker pane id (e.g. `%5`). The supervisor drives this single pane with `respawn-pane -k`. |
 | `.claude/.cam-worker-<US>.session` | `cam next` | Per-story worker session uuid (one file per completed story), used to resolve that story's transcript. |
-| `.claude/.cam-worker-out-<uuid>.log` | the worker | Durable per-worker stdout+stderr (survives the pane dying). |
-| `.claude/cam-worker-events.jsonl` | `cam next` | One JSON line per worker lifecycle step (`worker-start`, `worker-end`, `result`, `tokens`, `pushed`, `stale-lock`, `rate-limited`). Your primary diagnostic log. |
+| `.claude/cam-worker-events.jsonl` | `cam next` | One JSON line per worker lifecycle step (`worker-start`, `worker-end`, `result`, `tokens`, `pushed`, `stale-lock`). Your primary diagnostic log. |
 | `.claude/.cam-supervisor.lock` | `cam next` | Single-supervisor concurrency lock: `{ pid, startedAt, project }`. |
 
 Quick triage first:
@@ -185,10 +184,7 @@ Useful reads:
 # Every result outcome (pass / incomplete / fail / blocked / unknown), per story:
 grep '"kind":"result"' .claude/cam-worker-events.jsonl
 
-# Rate-limit pauses and resumes (US-016):
-grep '"kind":"rate-limited"' .claude/cam-worker-events.jsonl
-
-# Push verifications on each pass (US-002): which commits actually reached origin:
+# Push verifications on each pass: which commits actually reached origin:
 grep '"kind":"pushed"' .claude/cam-worker-events.jsonl
 
 # Supervisor takeovers of a dead lock (US-015):
@@ -202,6 +198,4 @@ the uuid:
 cat .claude/.cam-worker-US-XXX.session
 ```
 
-Cross-references: `.claude/cam-loop.local.md`, `.claude/.cam-worker-pane`,
-`.claude/.cam-worker-<US>.session`, `.claude/cam-worker-events.jsonl`,
-`.claude/.cam-supervisor.lock`.
+Cross-references: `.claude/cam-loop.local.md`, `.claude/.cam-worker-pane`, `.claude/.cam-worker-<US>.session`, `.claude/cam-worker-events.jsonl`, `.claude/.cam-supervisor.lock`.

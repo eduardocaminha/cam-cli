@@ -115,6 +115,8 @@ If there are no CRITICAL findings and the build passes, recommend APPROVE.
 
 ### `<review>` tag — required, last line, machine-parsed
 
+You run as an interactive TUI `claude` session. The supervisor detects your completion by polling the full pane scrollback (`capture-pane -p -S -`) for the `<review>` tag. The tag MUST be the absolute last line of your output: print nothing after it. If any text follows the tag, the supervisor may fail to detect the review verdict and the loop will time out.
+
 The very last line of your output MUST be a single `<review>...</review>` tag that the orchestrator (`/cam-next`, `/cam-review`) parses to drive the autonomous loop:
 
 - **`<review>CLEAN</review>`** — emit when:
