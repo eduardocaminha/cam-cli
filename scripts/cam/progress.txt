@@ -53,3 +53,38 @@
 - Sentinel mode calls capturePane TWICE per implement iteration (poll detection + outcome read). Tests written for exit mode that used pane arrays with one entry per iteration all needed to be doubled. This is a cross-cutting pattern to know for future loop test writes.
 - The no-progress guard (CAM-36) relies on outcome.kind === 'pass' with a stale storyId. In sentinel mode this requires the pane to return a DONE sentinel for an already-done story, not an empty pane (empty pane causes the poll loop to spin or timeout, not produce a 'pass' outcome).
 ---
+
+## [2026-06-12] - US-005: Update docs and embedded templates for TUI sentinel architecture
+
+### What was done
+- README.md: rewrote Architecture section to show interactive TUI dispatch + capture-pane -p -S - polling; updated Recent changes bullet from claude -p/tmux wait-for to TUI/sentinel model
+- .claude/commands/cam-next.md and templates/commands/cam-next.md: rewrote Architecture, Worker entrypoint, and Exit contract sections; removed claude -p / --output-format text / tmux wait-for; clarified capture-pane -p -S - polling
+- .claude/agents/subagent-implementer.md and templates/agents/subagent-implementer.md: added Session model section explaining TUI mode, sentinel-must-be-last-line contract, and that the session does not self-exit
+- .claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md: added TUI + sentinel-must-be-last-line context to the review tag section
+- docs/recovery-runbook.md: removed .cam-worker-out-<uuid>.log row from canonical runtime files table (TUI workers do not write durable out-logs); removed rate-limited grep example (rate-limit event kind deleted in US-004)
+- .gitignore: added .claude/cam-supervisor-out.log entry to prevent accidental re-commit
+- src/vendor/_generated.ts: regenerated via bun run embed-vendor after templates edits
+
+### Files changed
+- README.md
+- .claude/commands/cam-next.md
+- templates/commands/cam-next.md
+- .claude/agents/subagent-implementer.md
+- .claude/agents/subagent-reviewer.md
+- templates/agents/subagent-implementer.md
+- templates/agents/subagent-reviewer.md
+- docs/recovery-runbook.md
+- .gitignore
+- src/vendor/_generated.ts
+
+### Quality gates
+- Typecheck: ok
+- Tests: 757 pass, 0 fail
+- Vendor drift: ok
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (docs-only story)
+
+### Notes
+- embedded.test.ts does byte-parity checks against templates/; must run embed-vendor before committing any templates edit or the test fails. Pattern documented here for future doc-only stories that touch templates/.
+---

@@ -105,7 +105,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: README.md, .claude/commands/cam-next.md, templates/commands/cam-next.md, .claude/agents/subagent-implementer.md, .claude/agents/subagent-reviewer.md, templates/agents/subagent-implementer.md, templates/agents/subagent-reviewer.md, docs/recovery-runbook.md, .gitignore. Run `bun run embed-vendor` after editing templates/ then `bun run embed-vendor:check`. Reminder: no em-dash in persisted .md (project rule, 2026-05-20). The supervisor-out.log was committed by accident via `git add -A`; untrack with `git rm --cached`."
     },
