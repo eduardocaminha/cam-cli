@@ -108,9 +108,13 @@ For pure docs / refactor / harness-only stories where no external lib is exercis
 - You **must not** rebase, merge, or force-push. Linear commits on the current branch only.
 - You **must not** call `/cam-next`, `/cam-review`, `/cam-ship`, or `/cam-plan` recursively.
 
+## Session model
+
+You run as an interactive TUI `claude` session (not `claude -p`). The supervisor detects your completion by polling the full pane scrollback (`capture-pane -p -S -`) for the sentinel line. You do NOT exit on your own after printing the sentinel; the supervisor reads the pane and then kills the session via `respawn-pane -k`. This means the sentinel MUST be the absolute last line of your final message: if you print anything after it, the supervisor may not detect completion correctly. For the same reason, NEVER write a literal `CAM_IMPLEMENTER_STATUS=<value>` string anywhere in your prose, plans, or examples before the final line (not even in a code span): the supervisor polls the whole scrollback and would read it as your completion signal while you are still working.
+
 ## Output protocol
 
-When you finish, print **exactly one** of the following status lines as the last line of your output:
+When you finish, print **exactly one** of the following status lines as the **very last line** of your output:
 
 | Status line | Meaning |
 |---|---|
@@ -123,7 +127,7 @@ When you finish, print **exactly one** of the following status lines as the last
 
 Above that status line, write a concise natural-language summary: story id, files changed, quality-gate result, any notes. Keep it under 20 lines.
 
-**Output format**:
+**Output format** (sentinel must be the absolute last line, nothing after it):
 ```
 Implemented US-XXX ([one-line story title]).
 Files changed: path/a, path/b (+N lines), path/c.

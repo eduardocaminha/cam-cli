@@ -20,11 +20,10 @@
 //     to detect whether the caller is already running inside the project
 //     session (prevents double-attach).
 //
-// Worker-slot primitives (CAM-22 / US-001):
-//   - respawnPaneArgv, waitForArgv, signalWaitForArgv, capturePaneArgv: pure
-//     argv builders for the supervisor to drive a reused worker pane.
-//   - workerWaitChannel: deterministic channel name per worker invocation.
-//   - writeWorkerPaneMarker / readWorkerPaneMarker: persist/read the worker
+// Worker-slot primitives (CAM-22 / US-001; wait-for helpers deleted in CAM-42):
+//   - respawnPaneArgv, capturePaneArgv: pure argv builders for the supervisor
+//     to drive a reused worker pane.
+//   - writeWorkerPaneMarker / readWorkerPaneMarker: persist and read the worker
 //     pane id in .claude/.cam-worker-pane so supervisor and lifecycle commands
 //     can address the slot across process restarts.
 
@@ -272,27 +271,6 @@ export function respawnPaneArgv(paneId: string, shellCmd: string[]): string[] {
 }
 
 /**
- * Build the argv for `tmux wait-for <channel>`.
- *
- * Blocks the calling client until signalWaitForArgv fires the same channel.
- * Must be run inside the tmux session (e.g. as a chained command after the
- * worker process exits) because the call blocks until the channel is signalled.
- */
-export function waitForArgv(channel: string): string[] {
-	return tmuxArgs(['wait-for', channel]);
-}
-
-/**
- * Build the argv for `tmux wait-for -S <channel>`.
- *
- * Unblocks all clients waiting on the channel. The supervisor calls this
- * after detecting the worker has finished (via capture-pane sentinel).
- */
-export function signalWaitForArgv(channel: string): string[] {
-	return tmuxArgs(['wait-for', '-S', channel]);
-}
-
-/**
  * Build the argv for `tmux capture-pane -p -t <paneId>`.
  *
  * Prints the visible pane content to stdout. The supervisor uses the output
@@ -302,22 +280,6 @@ export function signalWaitForArgv(channel: string): string[] {
  */
 export function capturePaneArgv(paneId: string): string[] {
 	return tmuxArgs(['capture-pane', '-p', '-t', paneId]);
-}
-
-/**
- * Derive a deterministic wait-for channel name for a worker invocation.
- *
- * Format: `cam-worker-<storyId>-<shortUuid>` where shortUuid is the first 8
- * characters of a UUID (enough entropy to disambiguate parallel runs of the
- * same story). The channel name contains only tmux-safe characters.
- *
- * storyId example: `US-007`
- * shortUuid example: `a1b2c3d4`
- */
-export function workerWaitChannel(storyId: string, uuid: string): string {
-	const safeStoryId = storyId.replace(/[^a-zA-Z0-9]/g, '-');
-	const shortUuid = uuid.replace(/-/g, '').slice(0, 8);
-	return `cam-worker-${safeStoryId}-${shortUuid}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -221,14 +221,12 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 
 		const opts: RunSupervisorOptions = {
 			spawn: () => ({ stdout: '', exitCode: 0 }),
-			waitFor: () => ({ timedOut: false }),
 			capturePane: () => 'done\nCAM_IMPLEMENTER_STATUS=DONE story=US-001\n',
 			readPrd,
 			writePrd: () => {},
 			readHandoff: () => handoff,
 			clock: () => '2026-06-08T00:00:00Z',
 			genUuid: () => FIXED_UUID,
-			genChannel: (storyId, uuid) => `cam-worker-${storyId}-${uuid.slice(0, 8)}`,
 			reviewDispatch: () => ({ status: 'ok', detail: 'review ok' }),
 			writeSessionMarker: () => {},
 			isPaneAlive: () => true,
@@ -237,6 +235,8 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 			handoffPath: HANDOFF_PATH,
 			permissionMode: 'bypassPermissions',
 			taskPrompt: 'Implement the next story.',
+			sleepFn: (_ms) => {},
+			nowMs: () => 0,
 			logEvent: logger,
 			readWorkerTokens: () => ({ inputTokens: 100, outputTokens: 50, cacheReadTokens: 20 }),
 		};
@@ -272,14 +272,12 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 
 		const opts: RunSupervisorOptions = {
 			spawn: () => ({ stdout: '', exitCode: 0 }),
-			waitFor: () => ({ timedOut: false }),
 			capturePane: () => 'done\nCAM_IMPLEMENTER_STATUS=DONE story=US-001\n',
 			readPrd: () => prdReturns[prdCall++] ?? null,
 			writePrd: () => {},
 			readHandoff: () => ({ lastCompletedStory: { id: 'US-001', title: 'Story US-001' } }),
 			clock: () => '2026-06-08T00:00:00Z',
 			genUuid: () => FIXED_UUID,
-			genChannel: (storyId, uuid) => `cam-worker-${storyId}-${uuid.slice(0, 8)}`,
 			reviewDispatch: () => ({ status: 'ok', detail: 'review ok' }),
 			writeSessionMarker: () => {},
 			isPaneAlive: () => true,
@@ -288,6 +286,8 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 			handoffPath: HANDOFF_PATH,
 			permissionMode: 'bypassPermissions',
 			taskPrompt: 'Implement the next story.',
+			sleepFn: (_ms) => {},
+			nowMs: () => 0,
 		};
 
 		// Without logEvent the loop must still reach 'complete' and not throw.

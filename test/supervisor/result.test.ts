@@ -314,3 +314,43 @@ describe('readWorkerOutcome: unknown', () => {
 		expect(result.detail).toContain('No completed story');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// CAM-42 / US-002: TUI prompt-echo must never match a sentinel
+// ---------------------------------------------------------------------------
+//
+// In interactive (TUI) dispatch the worker pane echoes the initial task
+// prompt. If that echo matched parseAnySentinel, the poll loop would declare
+// completion the instant the worker STARTS. These fixtures pin the production
+// prompt wording (and the documented cam-next.md variant that names the
+// sentinel) as non-matching.
+
+describe('parseAnySentinel prompt-echo regression (CAM-42 US-002)', () => {
+	test('DEFAULT_TASK_PROMPT echo does not match any sentinel', async () => {
+		const { DEFAULT_TASK_PROMPT } = await import('../../src/commands/next.ts');
+		const { parseAnySentinel } = await import('../../src/supervisor/result.ts');
+		expect(parseAnySentinel(DEFAULT_TASK_PROMPT)).toBeNull();
+	});
+
+	test('documented prompt wording naming CAM_IMPLEMENTER_STATUS= (no value) does not match', async () => {
+		const { parseAnySentinel } = await import('../../src/supervisor/result.ts');
+		const echo = [
+			'Implement the next user story from scripts/cam/prd.json per your AGENT.md.',
+			'Branch: cam/CAM-42-interactive-workers',
+			'Return with one of the CAM_IMPLEMENTER_STATUS= lines on your last line.',
+		].join('\n');
+		expect(parseAnySentinel(echo)).toBeNull();
+	});
+
+	test('a real sentinel line still matches after the prompt echo', async () => {
+		const { parseAnySentinel } = await import('../../src/supervisor/result.ts');
+		const pane = [
+			'Return with one of the CAM_IMPLEMENTER_STATUS= lines on your last line.',
+			'...work happens...',
+			'CAM_IMPLEMENTER_STATUS=DONE story=US-001',
+		].join('\n');
+		const match = parseAnySentinel(pane);
+		expect(match).not.toBeNull();
+		expect(match?.source).toBe('implementer');
+	});
+});

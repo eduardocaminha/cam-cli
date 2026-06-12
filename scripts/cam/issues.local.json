@@ -338,6 +338,22 @@
       "state": "open",
       "createdAt": "2026-06-11T01:25:00Z",
       "priority": "P0"
+    },
+    {
+      "id": "CAM-43",
+      "title": "Worker spawn deve sanitizar env de nesting (CLAUDECODE, CLAUDE_CODE_SESSION_ID) no comando do pane",
+      "description": "PROBLEMA (descoberto na validacao US-006 do CAM-42, 2026-06-12): se o servidor tmux -L cam nasce de um processo que roda DENTRO de uma sessao claude (ex: agente dirigindo o cam, ou usuario rodando cam run de dentro do claude), o env global do server herda CLAUDECODE=1, CLAUDE_CODE_SESSION_ID, CLAUDE_CODE_ENTRYPOINT etc. O worker interativo spawnado via respawn-pane herda essas vars, detecta nesting e morre PRE-SESSAO (sem transcript, pane dead, tela vazia). Evidencia: smoke do CAM-42, worker 619aa1c9 morreu instantaneo; apos tmux set-environment -g -u CLAUDECODE (e demais), o worker subiu normal. Em producao classica (cam run de shell limpo) nao reproduz, mas o cenario agente-dirige-cam e real e recorrente. FIX: buildImplementerWorkerArgv e buildReviewerWorkerArgv devem prefixar o comando com env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION (lista canonica num const exportado), ou o supervisor deve sanear o env global do server na inicializacao (tmux set-environment -g -u). Preferir o env -u no shell string do pane: e local ao worker, nao mexe no ambiente de quem inspeciona. Testes: assertar que o shell string comeca com env -u CLAUDECODE e que claude vem depois. NOTA ADICIONAL (mesma classe, ambiente fresh): em diretorio de projeto nunca visto pelo claude, o worker TUI bloqueia no prompt interativo de confianca de pasta (Quick safety check). Em fluxo normal o cam setup ja faz o humano aceitar o trust uma vez; mas worker em dir fresh (CI, clone novo) trava ate timeout. Mitigacao possivel: documentar no runbook e/ou cam init verificar/registrar o trust antes do primeiro cam next.",
+      "state": "open",
+      "createdAt": "2026-06-12T23:10:00Z",
+      "priority": "P1"
+    },
+    {
+      "id": "CAM-44",
+      "title": "Sentinel loop: pane-died re-dispatcha imediato sem backoff (storm de ~2 dispatches/5s ate max-iterations)",
+      "description": "PROBLEMA (observado na validacao US-006 do CAM-42, 2026-06-12): no branch sentinel de loop.ts, pollOutcome pane-died seta lastOutcome blocked e da continue; decideNextAction ve a story ainda passes:false e re-dispacha IMEDIATO. Quando a causa da morte e persistente (no smoke: tmux server morto / claude morrendo pre-sessao por env de nesting, CAM-43), o loop vira storm: ~2 dispatches a cada 5s, queimando MAX_ITERATIONS (50) em ~2min, cada dispatch spawnando um claude que morre. Evidencia: cam-worker-events.jsonl do smoke, sequencias worker-start/worker-end pane-died a cada ~500ms-5s (23:02:39 a 23:03:34, ~20 ciclos). O caminho de no-progress (CAM-36/38) tem backoff escalonado, mas so cobre pass stale; pane-died e timeout nao tem. FIX: aplicar o mesmo backoff escalonado (NO_PROGRESS_BACKOFF_MS * streak) e um cap de tentativas consecutivas (3) aos outcomes pane-died e timeout do poll, com evento estruturado (pane-died-retry) antes de cada retry, espelhando no-progress-retry. Teste: injetar isPaneAlive false persistente e assertar 3 dispatches com sleeps escalonados e blocked limpo no final, nunca max-iterations.",
+      "state": "open",
+      "createdAt": "2026-06-12T23:20:00Z",
+      "priority": "P1"
     }
   ]
 }

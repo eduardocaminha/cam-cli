@@ -260,13 +260,16 @@ cam next
   └── runSupervisor()
         ├── decideNextAction(prd)     -- implement | review | complete
         ├── respawn-pane -k <pane>    -- kill old command, reuse pane id
-        │     claude -p --agent subagent-implementer "<task>"
-        ├── tmux wait-for <channel>   -- block until worker exits
-        ├── capture-pane -p           -- read CAM_IMPLEMENTER_STATUS sentinel
+        │     claude --permission-mode <mode>
+        │             --session-id <uuid>
+        │             --agent <name>
+        │             "<task-prompt>"
+        ├── poll capture-pane -p -S - -- full scrollback, every N seconds
+        │     detect CAM_IMPLEMENTER_STATUS= sentinel line
         └── loop until: complete | blocked | max-iterations
 ```
 
-Workers (implementer, reviewer) are real `claude -p` sessions invoked with `--agent <name>`. Each worker exits on its own; the supervisor unblocks via `tmux wait-for`. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired.
+Workers (implementer, reviewer) are interactive TUI `claude` sessions invoked with `--agent <name>`. Completion is detected by the supervisor polling the full pane scrollback (`capture-pane -p -S -`) for the sentinel line; the worker session does not exit on its own. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired; `claude -p` (print mode) is not used for workers.
 
 The worker pane slot is established by `cam plan` and stored in `.claude/.cam-worker-pane`. Every subsequent `cam next` call reuses the same pane id with `respawn-pane -k`, keeping the session layout stable.
 
@@ -274,7 +277,7 @@ The worker pane slot is established by `cam plan` and stored in `.claude/.cam-wo
 
 ## Recent changes
 
-- **Deterministic TS supervisor (CAM-22)**: `cam next` now calls `runSupervisor()` directly. Workers are real per-story `claude -p` sessions in a single reused tmux pane. The stop-hook re-inject loop driver is retired.
+- **Interactive TUI workers (CAM-42)**: `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`). The supervisor polls full pane scrollback (`capture-pane -p -S -`) for the sentinel line instead of blocking on `tmux wait-for`. `claude -p` is reserved for the `cam claude` retry-wrapper feature only.
 - **Single per-project session**: `cam run` now creates one tmux session per
   project with a 3-pane layout (orchestrator + permanent dashboard + interactive
   menu). The orchestrator exit tears down the session automatically.

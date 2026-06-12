@@ -3,9 +3,9 @@
 // Unit tests for src/supervisor/review.ts.
 //
 // Coverage:
-//   1. buildReviewerWorkerArgv: required flags present, no --permission-mode.
-//   2. buildReviewerWorkerArgv: channel is shell-escaped in the wait-for chain.
-//   3. buildReviewerWorkerArgv: agentName can be overridden.
+//   1. buildReviewerWorkerArgv: required flags present, no -p, no wait-for.
+//   2. buildReviewerWorkerArgv: agentName can be overridden.
+//   3. buildReviewerWorkerArgv: task prompt is shell-escaped.
 //   4. parseReviewVerdict: CLEAN -> { verdict: 'CLEAN', findingsCount: 0, newStories: [] }.
 //   5. parseReviewVerdict: FIXES_PENDING:3 -> { verdict: 'FIXES_PENDING', findingsCount: 3 }.
 //   6. parseReviewVerdict: returns null when no <review> tag found.
@@ -16,7 +16,7 @@
 //  11. makeReviewDispatch: FIXES_PENDING with newRound > maxRounds sets MAX_ROUNDS_DEBT.
 //  12. makeReviewDispatch: no verdict tag in pane returns status='error'.
 //  13. makeReviewDispatch: prd unreadable returns status='error'.
-//  14. makeReviewDispatch: spawns reviewer and waits for channel signal.
+//  14. makeReviewDispatch: spawns interactive reviewer (no -p, no wait-for).
 //  15. US-RX story IDs use the correct round number (US-R{round}-NNN format).
 
 import { describe, expect, test } from 'bun:test';
@@ -25,8 +25,9 @@ import {
 	parseReviewVerdict,
 	makeReviewDispatch,
 	DEFAULT_REVIEWER_AGENT,
+	REVIEWER_TASK_PROMPT,
 } from '../../src/supervisor/review.ts';
-import type { MakeReviewDispatchOptions, ReviewWaitForFn } from '../../src/supervisor/review.ts';
+import type { MakeReviewDispatchOptions } from '../../src/supervisor/review.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import type { SpawnFn, CapturePane, ReadPrd, WritePrd } from '../../src/supervisor/loop.ts';
 
@@ -36,61 +37,63 @@ import type { SpawnFn, CapturePane, ReadPrd, WritePrd } from '../../src/supervis
 
 describe('buildReviewerWorkerArgv', () => {
 	const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
-	const SAMPLE_CHANNEL = 'cam-worker-review-a1b2c3d4';
 
-	test('contains claude -p flag', () => {
-		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID, channel: SAMPLE_CHANNEL });
-		expect(result).toContain('claude -p');
+	test('does NOT contain standalone -p flag', () => {
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
+		// ' -p ' as a standalone flag must be absent; substring '-p' can appear
+		// in '--permission-mode' so use a regex word-boundary check.
+		expect(result).not.toMatch(/\s-p(\s|$)/);
+		expect(result).not.toContain('claude -p');
+	});
+
+	test('does NOT contain wait-for', () => {
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
+		expect(result).not.toContain('wait-for');
+		expect(result).not.toContain('tmux');
+	});
+
+	test('does NOT contain --output-format', () => {
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
+		expect(result).not.toContain('--output-format');
 	});
 
 	test('contains --session-id with the supplied uuid', () => {
-		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID, channel: SAMPLE_CHANNEL });
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
 		expect(result).toContain(`--session-id ${SAMPLE_UUID}`);
 	});
 
-	test('contains --output-format text', () => {
-		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID, channel: SAMPLE_CHANNEL });
-		expect(result).toContain('--output-format text');
-	});
-
 	test('contains --agent with the default reviewer agent name', () => {
-		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID, channel: SAMPLE_CHANNEL });
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
 		expect(result).toContain(`--agent ${DEFAULT_REVIEWER_AGENT}`);
 	});
 
-	test('does NOT contain --permission-mode flag', () => {
-		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID, channel: SAMPLE_CHANNEL });
-		expect(result).not.toContain('--permission-mode');
+	test('contains --permission-mode (defaults to bypassPermissions)', () => {
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
+		expect(result).toContain('--permission-mode bypassPermissions');
 	});
 
-	test('contains tmux -L cam wait-for -S chain after claude command', () => {
-		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID, channel: SAMPLE_CHANNEL });
-		const claudeIdx = result.indexOf('claude');
-		const waitIdx = result.indexOf('tmux -L cam wait-for -S');
-		expect(claudeIdx).toBeGreaterThanOrEqual(0);
-		expect(waitIdx).toBeGreaterThan(claudeIdx);
-	});
-
-	test('channel is present in the wait-for -S argument', () => {
-		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID, channel: SAMPLE_CHANNEL });
-		expect(result).toContain(SAMPLE_CHANNEL);
-	});
-
-	test('channel with single quotes is shell-escaped', () => {
-		const dangerousChannel = "cam-worker-review-it's'done";
+	test('contains --permission-mode and --session-id and --agent and prompt', () => {
 		const result = buildReviewerWorkerArgv({
 			uuid: SAMPLE_UUID,
-			channel: dangerousChannel,
+			taskPrompt: REVIEWER_TASK_PROMPT,
+			permissionMode: 'bypassPermissions',
 		});
-		// The channel must appear escaped (single quotes handled via '\'' technique)
-		expect(result).toContain("'\\''");
+		expect(result).toContain(`--agent ${DEFAULT_REVIEWER_AGENT}`);
+		expect(result).toContain(`--session-id ${SAMPLE_UUID}`);
+		expect(result).toContain('--permission-mode bypassPermissions');
+		expect(result).toContain('Review all changes on the current branch vs main');
+		expect(result).toContain('<review> verdict tag on the very last line');
+	});
+
+	test('starts with "claude --permission-mode" (interactive shape)', () => {
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
+		expect(result.startsWith('claude --permission-mode')).toBe(true);
 	});
 
 	test('agentName can be overridden', () => {
 		const customAgent = 'my-custom-reviewer';
 		const result = buildReviewerWorkerArgv({
 			uuid: SAMPLE_UUID,
-			channel: SAMPLE_CHANNEL,
 			agentName: customAgent,
 		});
 		expect(result).toContain(`--agent ${customAgent}`);
@@ -101,19 +104,22 @@ describe('buildReviewerWorkerArgv', () => {
 		expect(DEFAULT_REVIEWER_AGENT).toBe('subagent-reviewer');
 	});
 
-	test('outFile: tees stdout+stderr to a durable log before the wait-for (CAM-37)', () => {
+	test('task prompt is single-quote shell-escaped', () => {
 		const result = buildReviewerWorkerArgv({
 			uuid: SAMPLE_UUID,
-			channel: SAMPLE_CHANNEL,
-			outFile: '/tmp/.cam-worker-out-abc.log',
+			taskPrompt: "review what's on the branch",
+			permissionMode: 'bypassPermissions',
 		});
-		expect(result).toContain("2>&1 | tee '/tmp/.cam-worker-out-abc.log'");
-		// tee comes before the wait-for chain (pipe binds tighter than `;`).
-		expect(result.indexOf('| tee')).toBeLessThan(result.indexOf('wait-for'));
+		expect(result).toContain("'\\''");
 	});
 
-	test('outFile omitted: no tee (legacy pane-only behaviour)', () => {
-		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID, channel: SAMPLE_CHANNEL });
+	test('defaults the prompt to REVIEWER_TASK_PROMPT when omitted', () => {
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
+		expect(result).toContain('<review> verdict tag on the very last line');
+	});
+
+	test('does not contain tee (TUI keeps its pty)', () => {
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
 		expect(result).not.toContain('tee');
 	});
 });
@@ -209,17 +215,16 @@ function makePrd(opts: {
 	};
 }
 
-/** Build a MakeReviewDispatchOptions with injectable fakes. */
+/** Build a MakeReviewDispatchOptions with injectable fakes (CAM-42 polling contract). */
 function makeDispatchOpts(
 	overrides: Partial<MakeReviewDispatchOptions> & {
 		paneText?: string;
 		prd?: PrdSnapshot | null;
 		capturedWrittenPrd?: PrdSnapshot[];
 	} = {},
-): MakeReviewDispatchOptions & { capturedWrittenPrd: PrdSnapshot[]; capturedSpawnArgs: string[][]; capturedWaitChannels: string[] } {
+): MakeReviewDispatchOptions & { capturedWrittenPrd: PrdSnapshot[]; capturedSpawnArgs: string[][] } {
 	const capturedWrittenPrd: PrdSnapshot[] = overrides.capturedWrittenPrd ?? [];
 	const capturedSpawnArgs: string[][] = [];
-	const capturedWaitChannels: string[] = [];
 
 	const pane = overrides.paneText ?? '<review>CLEAN</review>';
 	const prd = 'prd' in overrides ? overrides.prd : makePrd({ stories: [] });
@@ -228,32 +233,41 @@ function makeDispatchOpts(
 		capturedSpawnArgs.push(args);
 		return { stdout: '', exitCode: 0 };
 	};
-	const waitFor: ReviewWaitForFn = (channel) => {
-		capturedWaitChannels.push(channel);
-	};
 	const capturePane: CapturePane = (_paneId) => pane;
 	const readPrd: ReadPrd = () => prd ?? null;
 	const writePrd: WritePrd = (p) => {
 		capturedWrittenPrd.push(p);
 	};
 
+	// Deterministic clock: each call advances 1s, so a small timeoutMs expires
+	// after a bounded number of polls without real sleeping.
+	let fakeNowMs = 0;
+	const now = () => {
+		fakeNowMs += 1_000;
+		return fakeNowMs;
+	};
+
 	return {
 		spawn: overrides.spawn ?? spawn,
-		waitFor: overrides.waitFor ?? waitFor,
 		capturePane: overrides.capturePane ?? capturePane,
 		readPrd: overrides.readPrd ?? readPrd,
 		writePrd: overrides.writePrd ?? writePrd,
 		workerPaneId: overrides.workerPaneId ?? '%7',
+		isPaneAlive: overrides.isPaneAlive ?? (() => true),
+		sleepFn: overrides.sleepFn ?? (() => {}),
+		permissionMode: overrides.permissionMode ?? 'bypassPermissions',
+		taskPrompt: overrides.taskPrompt,
 		agentName: overrides.agentName,
+		pollIntervalMs: overrides.pollIntervalMs ?? 1,
+		timeoutMs: overrides.timeoutMs ?? 60_000,
+		now: overrides.now ?? now,
 		capturedWrittenPrd,
 		capturedSpawnArgs,
-		capturedWaitChannels,
 	};
 }
 
 describe('makeReviewDispatch', () => {
 	const SAMPLE_UUID = '11111111-2222-3333-4444-555555555555';
-	const SAMPLE_CHANNEL = 'cam-worker-review-11111111';
 
 	test('CLEAN verdict: updates prd.review and returns status=ok', () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
@@ -267,7 +281,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+		const result = dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		expect(capturedWrittenPrd.length).toBe(1);
@@ -288,7 +302,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+		const result = dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		expect(capturedWrittenPrd.length).toBe(1);
@@ -318,7 +332,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+		dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -339,7 +353,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+		const result = dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -350,48 +364,57 @@ describe('makeReviewDispatch', () => {
 		expect(fixStories.length).toBe(0);
 	});
 
-	test('no <review> tag in pane returns status=error', () => {
+	test('no <review> tag ever: times out and returns status=error', () => {
 		const opts = makeDispatchOpts({
 			paneText: 'No verdict tag here at all.',
+			timeoutMs: 3_000, // fake clock ticks 1s per poll -> bounded loop
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+		const result = dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('error');
-		expect(result.detail).toContain('No <review>');
+		expect(result.detail).toContain('timed out');
+		// On timeout the stuck reviewer pane is respawned (killed).
+		const lastSpawn = opts.capturedSpawnArgs[opts.capturedSpawnArgs.length - 1] ?? [];
+		expect(lastSpawn).toContain('respawn-pane');
+		expect(lastSpawn[lastSpawn.length - 1]).toBe('echo review-timeout');
 	});
 
-	test('durable out-log: verdict read from out-log when pane is empty (CAM-37)', () => {
-		const capturedWrittenPrd: PrdSnapshot[] = [];
-		let capturePaneCalls = 0;
-		// Pane would be empty (reviewer pane died before capture), but the durable
-		// out-log carries the verdict -> dispatch must read the out-log and must NOT
-		// fall back to capture-pane when the durable log is non-empty.
-		const opts = {
-			...makeDispatchOpts({
-				prd: makePrd({
-					stories: [{ id: 'US-001', priority: 1, passes: true }],
-					review: { roundsCompleted: 0, maxRounds: 3 },
-				}),
-				capturedWrittenPrd,
-				capturePane: (_paneId: string) => {
-					capturePaneCalls += 1;
-					return '';
-				},
-			}),
-			workerOutFile: (uuid: string) => `/tmp/.cam-worker-out-${uuid}.log`,
-			readFile: (_path: string): string | null => '<review>CLEAN</review>',
-		};
+	test('pane dies before a verdict: returns status=error (CAM-42 polling)', () => {
+		const opts = makeDispatchOpts({
+			paneText: 'still working...',
+			isPaneAlive: () => false,
+		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('error');
+		expect(result.detail).toContain('died');
+	});
+
+	test('verdict appearing after a few polls is picked up', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		let polls = 0;
+		const opts = makeDispatchOpts({
+			prd: makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			capturePane: (_paneId: string) => {
+				polls += 1;
+				return polls < 3 ? 'TUI frame, still reviewing...' : 'done\n<review>CLEAN</review>';
+			},
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
+		expect(polls).toBeGreaterThanOrEqual(3);
 		expect(capturedWrittenPrd[0]?.review?.lastVerdict).toBe('CLEAN');
-		// Prefer-durable contract: capture-pane is not consulted when the out-log
-		// is non-empty.
-		expect(capturePaneCalls).toBe(0);
 	});
 
 	test('prd unreadable returns status=error', () => {
@@ -401,15 +424,14 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+		const result = dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('error');
 		expect(result.detail).toContain('prd.json');
 	});
 
-	test('spawns reviewer and passes channel to wait-for signal', () => {
+	test('spawns an interactive reviewer with prompt and permission mode (CAM-42)', () => {
 		const capturedSpawnArgs: string[][] = [];
-		const capturedWaitChannels: string[] = [];
 
 		const opts = makeDispatchOpts({
 			paneText: '<review>CLEAN</review>',
@@ -417,21 +439,26 @@ describe('makeReviewDispatch', () => {
 				capturedSpawnArgs.push(args);
 				return { stdout: '', exitCode: 0 };
 			},
-			waitFor: (channel) => {
-				capturedWaitChannels.push(channel);
-			},
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+		dispatch(SAMPLE_UUID);
 
 		// spawn called with respawn-pane arguments.
 		expect(capturedSpawnArgs.length).toBeGreaterThan(0);
 		const firstSpawnCall = capturedSpawnArgs[0] ?? [];
 		expect(firstSpawnCall).toContain('respawn-pane');
 
-		// waitFor called with the same channel that was passed in.
-		expect(capturedWaitChannels).toContain(SAMPLE_CHANNEL);
+		// The reviewer shell command is interactive: prompt + permission mode,
+		// no headless -p, no wait-for chain.
+		const shellCmd = firstSpawnCall[firstSpawnCall.length - 1] ?? '';
+		expect(shellCmd).toContain(`--session-id ${SAMPLE_UUID}`);
+		expect(shellCmd).toContain('--permission-mode bypassPermissions');
+		expect(shellCmd).toContain(`--agent ${DEFAULT_REVIEWER_AGENT}`);
+		expect(shellCmd).toContain('Review all changes on the current branch vs main');
+		expect(shellCmd).not.toContain('claude -p');
+		expect(shellCmd).not.toMatch(/\s-p(\s|$)/);
+		expect(shellCmd).not.toContain('wait-for');
 	});
 
 	test('FIXES_PENDING stories are prepended before existing stories', () => {
@@ -446,7 +473,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+		dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -470,7 +497,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+		dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -490,7 +517,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+		dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -512,7 +539,7 @@ describe('makeReviewDispatch', () => {
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			dispatch(SAMPLE_UUID, SAMPLE_CHANNEL);
+			dispatch(SAMPLE_UUID);
 
 			const written = capturedWrittenPrd[0];
 			expect(written?.review?.roundsCompleted).toBe(3);
