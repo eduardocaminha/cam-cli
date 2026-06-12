@@ -3,22 +3,23 @@
 // Supervisor loop that ties together the cam-cli autonomous execution primitives.
 //
 // runSupervisor picks the next action (decideNextAction), dispatches a worker,
-// waits for it to finish, reads the outcome, and repeats until the loop reaches
-// a terminal state: complete, blocked, or max-iterations.
+// polls capture-pane for the sentinel, reads the outcome, and repeats until
+// the loop reaches a terminal state: complete, blocked, or max-iterations.
 //
 // Design decisions:
-//   - All side effects injected: spawn, waitFor, capturePane, readPrd, writePrd,
+//   - All side effects injected: spawn, capturePane, readPrd, writePrd,
 //     readHandoff, clock, writeSessionMarker. The loop itself is pure over its
 //     injectable interface, making it fully unit-testable with fakes.
+//   - Workers are always interactive TUI sessions (claude -p is forbidden for
+//     subscription accounts). Completion is detected by polling capture-pane
+//     for the CAM_*_STATUS sentinel line.
 //   - The worker SELF-SELECTS its story. The supervisor calls decideNextAction
 //     only to decide implement-vs-review-vs-complete and for logging. The story
 //     id from decideNextAction is advisory; the actual completed story comes from
-//     handoff.json / the pane sentinel after the worker exits. This eliminates
-//     the two-independent-selectors mismatch without touching the proven agent.
+//     handoff.json / the pane sentinel. This eliminates the two-independent-
+//     selectors mismatch without touching the proven agent.
 //   - writeSessionMarker is keyed to the actualStoryId from the outcome, never
 //     to the advisory storyId from decideNextAction.
-//   - Review dispatch is a placeholder (reviewDispatch injected fn). Full wiring
-//     lands in US-008.
 //   - Hard max-iterations cap (default MAX_ITERATIONS = 50) prevents runaway loops.
 
 import { decideNextAction } from './decide.ts';
@@ -26,7 +27,6 @@ import type { PrdSnapshot } from './decide.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
-import { isRateLimited, findRateLimitMessage } from '../retry/patterns.ts';
 import { buildResultDetail } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail } from './events.ts';
 
@@ -43,13 +43,6 @@ export type SpawnFn = (
 	args: string[],
 	opts?: { stdio?: 'pipe' | 'ignore' | 'inherit' },
 ) => { stdout: string; exitCode: number | null };
-
-/**
- * Block until the named tmux wait-for channel is signalled, or until
- * timeoutMs elapses. Returns { timedOut: true } when the deadline fires
- * before the channel is signalled; { timedOut: false } on normal completion.
- */
-export type WaitForFn = (channel: string, timeoutMs: number) => { timedOut: boolean };
 
 /**
  * Check whether a tmux pane is still alive.
@@ -94,17 +87,11 @@ export type ClockFn = () => string;
 export type GenUuid = () => string;
 
 /**
- * Mint the wait-for channel name for a given uuid.
- * Injected so tests can produce deterministic channel names.
- */
-export type GenChannel = (storyId: string, uuid: string) => string;
-
-/**
  * Dispatch a review worker.
- * Receives a uuid for session tracking and a pre-minted wait-for channel.
+ * Receives a uuid for session tracking.
  * Returns the outcome of the review dispatch.
  */
-export type ReviewDispatch = (uuid: string, channel: string) => ReviewDispatchResult;
+export type ReviewDispatch = (uuid: string) => ReviewDispatchResult;
 
 /** Result from reviewDispatch (placeholder shape for US-008). */
 export interface ReviewDispatchResult {
@@ -119,20 +106,6 @@ export interface ReviewDispatchResult {
  * Called with the ACTUAL completed storyId (from handoff/sentinel), not advisory.
  */
 export type WriteSessionMarker = (storyId: string, uuid: string) => void;
-
-/**
- * Pause until an Anthropic rate-limit clears, then return so the supervisor can
- * resume the worker (US-016). The supervisor calls this on detecting a
- * rate-limit; the production adapter (in next.ts) reuses src/retry/* to compute
- * the wait from the rate-limit message and sleeps. Tests inject a fake that
- * returns immediately to keep runtime low. May be sync or async.
- */
-export type RateLimitResume = (info: {
-	/** The rate-limit message scraped from the pane, or null if none parsed. */
-	message: string | null;
-	/** 1-based resume attempt number. */
-	attempt: number;
-}) => void | Promise<void>;
 
 /**
  * Minimal shape of handoff.json consumed by runSupervisor.
@@ -159,8 +132,6 @@ export interface HandoffSnapshot {
 export interface RunSupervisorOptions {
 	/** Spawn a shell command (for respawn-pane etc.). */
 	spawn: SpawnFn;
-	/** Block until a tmux wait-for channel fires. */
-	waitFor: WaitForFn;
 	/** Capture the visible pane text. */
 	capturePane: CapturePane;
 	/** Read the current prd.json. */
@@ -173,8 +144,6 @@ export interface RunSupervisorOptions {
 	clock: ClockFn;
 	/** Generate a new UUID for a worker session. Defaults to crypto.randomUUID(). */
 	genUuid?: GenUuid;
-	/** Generate a wait-for channel name. Defaults to workerWaitChannel(). */
-	genChannel?: GenChannel;
 	/** Dispatch a review worker. Required for review branch. */
 	reviewDispatch: ReviewDispatch;
 	/** Persist the per-story session marker (keyed to actual completed story). */
@@ -194,14 +163,6 @@ export interface RunSupervisorOptions {
 	/** Free-text task prompt sent to the implementer. */
 	taskPrompt: string;
 	/**
-	 * Generic file reader for the durable worker output log (CAM-32 BUG 1).
-	 * When provided together with workerOutFile, the supervisor reads the worker
-	 * output from disk instead of the racy capture-pane. Optional.
-	 */
-	readFile?: (path: string) => string | null;
-	/** Returns the durable output-log path for a worker uuid. Optional. */
-	workerOutFile?: (uuid: string) => string;
-	/**
 	 * Re-run quality gates (typecheck + test) to verify before finalizing a
 	 * worker that implemented a story but did not flip prd.json (CAM-32 BUG 2).
 	 * Optional; without it, an 'incomplete' outcome becomes blocked.
@@ -215,22 +176,13 @@ export interface RunSupervisorOptions {
 	/** Hard max iterations cap. Default: MAX_ITERATIONS (50). */
 	maxIterations?: number;
 	/**
-	 * Completion detection mode for implement-branch workers.
-	 * 'exit': wait for tmux wait-for channel signal (autonomous headless workers, default).
-	 * 'sentinel': poll capture-pane for a CAM_*_STATUS or <review> sentinel
-	 *   (interactive workers that do not exit on their own).
-	 */
-	implementerMode?: 'exit' | 'sentinel';
-	/**
-	 * Polling interval in milliseconds for sentinel detection mode.
-	 * Only relevant when implementerMode === 'sentinel'.
+	 * Polling interval in milliseconds for sentinel detection.
 	 * Default: DEFAULT_POLL_INTERVAL_MS (5 seconds).
 	 */
 	pollIntervalMs?: number;
 	/**
 	 * Sleep between polling ticks. Injected so tests can use a no-op and avoid
 	 * real delays. In production, defaults to Bun.sleepSync (synchronous).
-	 * Only called when implementerMode === 'sentinel'.
 	 */
 	sleepFn?: (ms: number) => void;
 	/**
@@ -241,30 +193,16 @@ export interface RunSupervisorOptions {
 	/**
 	 * Structured observability event sink (US-013). When provided, the supervisor
 	 * emits worker-start / worker-end / result / tokens events per worker
-	 * lifecycle. Optional: absent ⇒ no events (zero behavior change).
+	 * lifecycle. Optional: absent => no events (zero behavior change).
 	 */
 	logEvent?: WorkerEventLogger;
 	/**
 	 * Resolve per-story token usage for a worker uuid (US-013). Bound by the
 	 * caller to cwd + claude config dir (see readWorkerTokens in events.ts).
 	 * Returns null when the transcript is absent; a null result skips the
-	 * 'tokens' event. Optional: absent ⇒ no 'tokens' events.
+	 * 'tokens' event. Optional: absent => no 'tokens' events.
 	 */
 	readWorkerTokens?: (uuid: string) => TokensEventDetail | null;
-	/**
-	 * Pause/resume hook for worker rate-limits (US-016). When provided, an
-	 * exit-mode worker whose output shows a rate-limit (the RATE_LIMIT sentinel
-	 * or the claude TUI rate-limit message) is paused via this hook and then
-	 * respawned with the SAME session-id (same uuid) + channel, so the story is
-	 * resumed rather than marked failed. Optional: absent ⇒ rate-limit detection
-	 * is skipped (zero behavior change).
-	 */
-	rateLimitResume?: RateLimitResume;
-	/**
-	 * Max number of rate-limit pause/resume attempts before the supervisor gives
-	 * up and blocks the story. Default: DEFAULT_MAX_RATE_LIMIT_RETRIES.
-	 */
-	maxRateLimitRetries?: number;
 	/**
 	 * Verify that the worker's pass actually landed on origin before the supervisor
 	 * continues the loop (US-001). Runs after writeSessionMarker, before continue.
@@ -351,20 +289,17 @@ export const DEFAULT_PER_WORKER_TIMEOUT_MS = 30 * 60 * 1000;
 /** Default sentinel polling interval in milliseconds (5 seconds). */
 export const DEFAULT_POLL_INTERVAL_MS = 5_000;
 
-/** Default max rate-limit pause/resume attempts before blocking the story (US-016). */
-export const DEFAULT_MAX_RATE_LIMIT_RETRIES = 5;
-
 /**
  * Max consecutive no-progress passes before the loop blocks (CAM-36). A worker
  * that no-ops (e.g. instant-exit: claude never initialises, so there is no
- * out-log / transcript, yet the trailing `tmux wait-for -S` still signals the
- * channel) leaves an empty captured pane, so readWorkerOutcome falls back to the
- * STALE handoff.json + prd.json and reports kind:'pass' for the LAST completed
- * story. Without this cap the loop re-dispatches the same still-pending advisory
- * story every iteration until MAX_ITERATIONS, burning one claude invocation per
- * turn. CAM-38 added a backoff between retries (NO_PROGRESS_BACKOFF_MS), which
- * makes a couple more attempts worthwhile, so the cap is 3 (block on the 3rd
- * consecutive no-op after two paused retries).
+ * transcript, yet the pane shows nothing) leaves an empty captured pane, so
+ * readWorkerOutcome falls back to the STALE handoff.json + prd.json and reports
+ * kind:'pass' for the LAST completed story. Without this cap the loop
+ * re-dispatches the same still-pending advisory story every iteration until
+ * MAX_ITERATIONS, burning one claude invocation per turn. CAM-38 added a backoff
+ * between retries (NO_PROGRESS_BACKOFF_MS), which makes a couple more attempts
+ * worthwhile, so the cap is 3 (block on the 3rd consecutive no-op after two
+ * paused retries).
  */
 export const MAX_NO_PROGRESS_RETRIES = 3;
 
@@ -395,33 +330,12 @@ export const NO_PROGRESS_BACKOFF_MS = 60_000;
  */
 export const MAX_REVIEW_DISPATCH_ATTEMPTS = 3;
 
-/** Matches the headless worker's rate-limit exit sentinel (US-016). */
-const RATE_LIMIT_SENTINEL_RE = /CAM_IMPLEMENTER_STATUS=RATE_LIMIT/;
-
-/**
- * Detect a worker rate-limit from its captured output: either the explicit
- * RATE_LIMIT exit sentinel or the claude TUI rate-limit message (reusing the
- * retry module's isRateLimited matcher).
- */
-function detectRateLimit(paneText: string): boolean {
-	return RATE_LIMIT_SENTINEL_RE.test(paneText) || isRateLimited(paneText);
-}
-
 // ---------------------------------------------------------------------------
 // Default injectable helpers (real-world defaults)
 // ---------------------------------------------------------------------------
 
 function defaultGenUuid(): string {
 	return crypto.randomUUID();
-}
-
-// Lazily import workerWaitChannel to avoid circular dep issues in tests.
-function defaultGenChannel(storyId: string, uuid: string): string {
-	// Inline the same logic as workerWaitChannel from session.ts to keep
-	// this module free of a hard dependency on the tmux session module.
-	const safeStoryId = storyId.replace(/[^a-zA-Z0-9]/g, '-');
-	const shortUuid = uuid.replace(/-/g, '').slice(0, 8);
-	return `cam-worker-${safeStoryId}-${shortUuid}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -446,7 +360,6 @@ function defaultGenChannel(storyId: string, uuid: string): string {
 export async function runSupervisor(opts: RunSupervisorOptions): Promise<SupervisorResult> {
 	const {
 		spawn,
-		waitFor,
 		capturePane,
 		readPrd,
 		writePrd,
@@ -463,14 +376,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	} = opts;
 
 	const genUuid = opts.genUuid ?? defaultGenUuid;
-	const genChannel = opts.genChannel ?? defaultGenChannel;
 	const maxIter = opts.maxIterations ?? MAX_ITERATIONS;
 	const perWorkerTimeoutMs = opts.perWorkerTimeoutMs ?? DEFAULT_PER_WORKER_TIMEOUT_MS;
-	const readFile = opts.readFile;
-	const workerOutFile = opts.workerOutFile;
 	const runGates = opts.runGates;
 	const finalizeStory = opts.finalizeStory;
-	const implementerMode = opts.implementerMode ?? 'exit';
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 	// Real sleep: use a no-op by default so tests never block; callers that want
 	// actual sleeping must inject Bun.sleepSync (or similar).
@@ -478,8 +387,6 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const now = opts.nowMs ?? (() => Date.now());
 	const logEvent = opts.logEvent;
 	const readWorkerTokens = opts.readWorkerTokens;
-	const rateLimitResume = opts.rateLimitResume;
-	const maxRateLimitRetries = opts.maxRateLimitRetries ?? DEFAULT_MAX_RATE_LIMIT_RETRIES;
 	const ensurePushed = opts.ensurePushed;
 	const onProgress = opts.onProgress;
 
@@ -587,301 +494,73 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 		// --- Implement branch ---
 		if (action.kind === 'implement') {
-			// Advisory storyId is used for logging and channel naming only.
+			// Advisory storyId is used for logging only.
 			// The worker self-selects which story it actually implements.
 			const advisoryStoryId = action.storyId;
 
 			// Mint a fresh uuid for this invocation.
 			const uuid = genUuid();
 
-			// Build the channel name (advisory storyId used for disambiguation).
-			const channel = genChannel(advisoryStoryId, uuid);
-
-			// Build the shell command for the worker. When a durable out-file path
-			// is available, the worker tee's its output there so the supervisor can
-			// read it after the pane dies (CAM-32 BUG 1).
-			const outFile = workerOutFile ? workerOutFile(uuid) : '';
+			// Build the shell command for the worker (always interactive TUI session).
 			const shellCmd = buildImplementerWorkerArgv({
 				uuid,
 				taskPrompt,
 				permissionMode,
-				channel,
-				interactive: implementerMode === 'sentinel',
-				...(outFile ? { outFile } : {}),
 			});
 
 			// Respawn the worker pane with the implementer command.
-			// respawn-pane argv: tmuxArgs(['respawn-pane', '-k', '-t', paneId, ...shellCmd])
-			// We accept a generic spawn fn, so call it directly with the respawn args.
 			spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
 
 			// US-013: worker-start. storyId is advisory here (the worker
 			// self-selects); later events carry the actual completed story.
-			emit('worker-start', advisoryStoryId, uuid, { channel, mode: implementerMode });
+			emit('worker-start', advisoryStoryId, uuid, { mode: 'sentinel' });
 
-			// ---------------------------------------------------------------
-			// Sentinel polling mode (US-012): interactive worker does NOT exit
-			// on its own, so we poll capture-pane until we see the sentinel.
-			// ---------------------------------------------------------------
-			if (implementerMode === 'sentinel') {
-				const startMs = now();
-				let pollOutcome: 'sentinel' | 'pane-died' | 'timeout' = 'timeout';
+			// Poll capture-pane until we see the sentinel, the pane dies, or timeout.
+			const startMs = now();
+			let pollOutcome: 'sentinel' | 'pane-died' | 'timeout' = 'timeout';
 
-				while (true) {
-					sleepFn(pollIntervalMs);
-					if (!isPaneAlive(workerPaneId)) {
-						pollOutcome = 'pane-died';
-						break;
-					}
-					const polledText = capturePane(workerPaneId);
-					if (parseAnySentinel(polledText) !== null) {
-						pollOutcome = 'sentinel';
-						break;
-					}
-					if (now() - startMs >= perWorkerTimeoutMs) {
-						break; // timeout
-					}
+			while (true) {
+				sleepFn(pollIntervalMs);
+				if (!isPaneAlive(workerPaneId)) {
+					pollOutcome = 'pane-died';
+					break;
 				}
-
-				iterations++;
-
-				// US-013: worker-end (sentinel mode). pollOutcome records how it ended.
-				emit('worker-end', advisoryStoryId, uuid, { mode: 'sentinel', pollOutcome });
-
-				if (pollOutcome === 'pane-died') {
-					lastOutcome = {
-						kind: 'blocked',
-						storyId: undefined,
-						detail: 'pane-died-pre-result',
-					};
-					continue;
+				const polledText = capturePane(workerPaneId);
+				if (parseAnySentinel(polledText) !== null) {
+					pollOutcome = 'sentinel';
+					break;
 				}
-				if (pollOutcome === 'timeout') {
-					spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
-					lastOutcome = {
-						kind: 'blocked',
-						storyId: undefined,
-						detail: 'timeout',
-					};
-					continue;
+				if (now() - startMs >= perWorkerTimeoutMs) {
+					break; // timeout
 				}
+			}
 
-				// Sentinel found: read full pane text and determine outcome.
-				const durableSentinel = outFile && readFile ? readFile(outFile) : null;
-				const sentinelPaneText =
-					durableSentinel && durableSentinel.length > 0
-						? durableSentinel
-						: capturePane(workerPaneId);
+			iterations++;
 
-				const sentinelFileReader = (path: string): string | null => {
-					if (path === prdPath) {
-						const snapshot = readPrd();
-						return snapshot !== null ? JSON.stringify(snapshot) : null;
-					}
-					if (path === handoffPath) {
-						const handoff = _readHandoff();
-						return handoff !== null ? JSON.stringify(handoff) : null;
-					}
-					return null;
+			// US-013: worker-end. pollOutcome records how it ended.
+			emit('worker-end', advisoryStoryId, uuid, { mode: 'sentinel', pollOutcome });
+
+			if (pollOutcome === 'pane-died') {
+				lastOutcome = {
+					kind: 'blocked',
+					storyId: undefined,
+					detail: 'pane-died-pre-result',
 				};
-
-				const sentinelOutcome = readWorkerOutcome({
-					prdPath,
-					handoffPath,
-					capturedPaneText: sentinelPaneText,
-					readFile: sentinelFileReader,
-				});
-
-				lastOutcome = sentinelOutcome;
-
-				// US-013: result + tokens, keyed to the ACTUAL completed story.
-				const sentinelStoryId = sentinelOutcome.storyId ?? advisoryStoryId;
-				emit('result', sentinelStoryId, uuid, buildResultDetail(sentinelOutcome, _readHandoff()));
-				emitTokens(sentinelStoryId, uuid);
-
-				if (sentinelOutcome.kind === 'pass' && sentinelOutcome.storyId !== undefined) {
-					writeSessionMarker(sentinelOutcome.storyId, uuid);
-					// US-001: verify the pass actually landed on origin before continuing.
-					if (ensurePushed) {
-						const pushCheck = ensurePushed();
-						// US-002: structured audit record of the verification, emitted
-						// whether ok or not, before any blocked return.
-						emit('pushed', sentinelOutcome.storyId, uuid, {
-							sha: pushCheck.sha,
-							pushed: pushCheck.pushed,
-							ok: pushCheck.ok,
-							detail: pushCheck.detail,
-						});
-						if (!pushCheck.ok) {
-							lastOutcome = {
-								kind: 'blocked',
-								storyId: sentinelOutcome.storyId,
-								detail: `push-verification failed: ${pushCheck.detail}`,
-							};
-							notifyTerminal('blocked');
-							return { status: 'blocked', iterations, lastOutcome };
-						}
-					}
-				}
-
-				if (
-					sentinelOutcome.kind === 'blocked' ||
-					sentinelOutcome.kind === 'fail' ||
-					sentinelOutcome.kind === 'unknown'
-				) {
-					notifyTerminal('blocked');
-					return { status: 'blocked', iterations, lastOutcome };
-				}
-
-				if (
-					sentinelOutcome.kind === 'incomplete' &&
-					sentinelOutcome.storyId !== undefined &&
-					runGates &&
-					finalizeStory
-				) {
-					const gate = runGates();
-					if (!gate.ok) {
-						lastOutcome = {
-							kind: 'blocked',
-							storyId: sentinelOutcome.storyId,
-							detail: `finalize aborted, gates failed for ${sentinelOutcome.storyId}: ${gate.detail}`,
-						};
-						notifyTerminal('blocked');
-						return { status: 'blocked', iterations, lastOutcome };
-					}
-					const fin = finalizeStory(sentinelOutcome.storyId);
-					if (!fin.ok) {
-						lastOutcome = {
-							kind: 'blocked',
-							storyId: sentinelOutcome.storyId,
-							detail: `finalize failed for ${sentinelOutcome.storyId}: ${fin.detail}`,
-						};
-						notifyTerminal('blocked');
-						return { status: 'blocked', iterations, lastOutcome };
-					}
-					lastOutcome = {
-						kind: 'pass',
-						storyId: sentinelOutcome.storyId,
-						detail: `supervisor-finalized ${sentinelOutcome.storyId} after worker truncation: ${fin.detail}`,
-					};
-					writeSessionMarker(sentinelOutcome.storyId, uuid);
-					continue;
-				}
-
-				if (sentinelOutcome.kind === 'incomplete') {
-					notifyTerminal('blocked');
-					return { status: 'blocked', iterations, lastOutcome };
-				}
-
-				// PRD_COMPLETE or pass: continue to next decideNextAction call.
+				continue;
+			}
+			if (pollOutcome === 'timeout') {
+				spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
+				lastOutcome = {
+					kind: 'blocked',
+					storyId: undefined,
+					detail: 'timeout',
+				};
 				continue;
 			}
 
-			// Block until the worker signals the channel, bounded by the per-worker deadline.
-			const waitResult = waitFor(channel, perWorkerTimeoutMs);
+			// Sentinel found: read full pane text and determine outcome.
+			const paneText = capturePane(workerPaneId);
 
-			// US-013: worker-end (exit mode). The worker has stopped (signalled or timed out).
-			emit('worker-end', advisoryStoryId, uuid, { mode: 'exit', timedOut: waitResult.timedOut });
-
-			// --- Timeout / pane-death handling ---
-			// If the deadline fired before the channel was signalled, the worker is
-			// either stuck (pane alive) or has crashed (pane dead). In both cases we
-			// mark the iteration blocked and continue to the next decideNextAction call
-			// so the loop can pick another story or reach 'complete'.
-			if (waitResult.timedOut) {
-				iterations++;
-				const alive = isPaneAlive(workerPaneId);
-				if (!alive) {
-					// Pane crashed before it could signal the channel.
-					lastOutcome = {
-						kind: 'blocked',
-						storyId: undefined,
-						detail: 'pane-died-pre-result',
-					};
-				} else {
-					// Pane is alive but stuck: kill it and mark timeout.
-					spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
-					lastOutcome = {
-						kind: 'blocked',
-						storyId: undefined,
-						detail: 'timeout',
-					};
-				}
-				// US-013: worker-end already emitted above. No 'result'/'tokens' on a
-				// timeout/pane-death: there is no canonical per-story record to log.
-				// Proceed to decideNextAction on next iteration (do not exit the loop).
-				continue;
-			}
-
-			// Capture pane output to detect the sentinel.
-			let durable = outFile && readFile ? readFile(outFile) : null;
-			let paneText = durable && durable.length > 0 ? durable : capturePane(workerPaneId);
-
-			// --- US-016: rate-limit pause/resume ---
-			// If the worker output shows a rate-limit (the RATE_LIMIT exit sentinel
-			// or the claude TUI rate-limit message), pause via the injected hook and
-			// respawn the SAME session so the story is resumed, not failed. Bounded
-			// by maxRateLimitRetries. Skipped entirely when rateLimitResume is absent.
-			if (rateLimitResume) {
-				let rlAttempts = 0;
-				while (detectRateLimit(paneText) && rlAttempts < maxRateLimitRetries) {
-					rlAttempts++;
-					const message = findRateLimitMessage(paneText);
-					emit('rate-limited', advisoryStoryId, uuid, {
-						phase: 'pause',
-						attempt: rlAttempts,
-						message,
-					});
-					await rateLimitResume({ message, attempt: rlAttempts });
-					emit('rate-limited', advisoryStoryId, uuid, { phase: 'resume', attempt: rlAttempts });
-
-					// Respawn the SAME worker command: same uuid (== --session-id) and
-					// the same channel marker preserve session continuity (US-002, AC4).
-					spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
-					emit('worker-start', advisoryStoryId, uuid, {
-						channel,
-						mode: implementerMode,
-						resumeAfterRateLimit: true,
-					});
-
-					const resumeWait = waitFor(channel, perWorkerTimeoutMs);
-					emit('worker-end', advisoryStoryId, uuid, {
-						mode: 'exit',
-						timedOut: resumeWait.timedOut,
-						resumeAfterRateLimit: true,
-					});
-
-					if (resumeWait.timedOut) {
-						iterations++;
-						const alive = isPaneAlive(workerPaneId);
-						if (!alive) {
-							lastOutcome = { kind: 'blocked', storyId: undefined, detail: 'pane-died-pre-result' };
-						} else {
-							spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
-							lastOutcome = { kind: 'blocked', storyId: undefined, detail: 'timeout' };
-						}
-						continue outer;
-					}
-
-					durable = outFile && readFile ? readFile(outFile) : null;
-					paneText = durable && durable.length > 0 ? durable : capturePane(workerPaneId);
-				}
-
-				// Still rate-limited after exhausting retries: block for the operator.
-				if (detectRateLimit(paneText)) {
-					iterations++;
-					lastOutcome = {
-						kind: 'blocked',
-						storyId: advisoryStoryId,
-						detail: `rate-limit retries exhausted after ${rlAttempts}`,
-					};
-					notifyTerminal('blocked');
-					return { status: 'blocked', iterations, lastOutcome };
-				}
-			}
-
-			// Build a file reader for readWorkerOutcome.
-			// We re-read prd/handoff fresh from disk via the injected functions.
 			const fileReader = (path: string): string | null => {
 				if (path === prdPath) {
 					const snapshot = readPrd();
@@ -894,7 +573,6 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				return null;
 			};
 
-			// Determine what the worker actually did.
 			const outcome = readWorkerOutcome({
 				prdPath,
 				handoffPath,
@@ -903,14 +581,12 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			});
 
 			lastOutcome = outcome;
-			iterations++;
 
 			// US-013: result + tokens, keyed to the ACTUAL completed story.
-			const exitStoryId = outcome.storyId ?? advisoryStoryId;
-			emit('result', exitStoryId, uuid, buildResultDetail(outcome, _readHandoff()));
-			emitTokens(exitStoryId, uuid);
+			const actualStoryId = outcome.storyId ?? advisoryStoryId;
+			emit('result', actualStoryId, uuid, buildResultDetail(outcome, _readHandoff()));
+			emitTokens(actualStoryId, uuid);
 
-			// Write session marker keyed to the ACTUAL completed story.
 			if (outcome.kind === 'pass' && outcome.storyId !== undefined) {
 				writeSessionMarker(outcome.storyId, uuid);
 				// US-001: verify the pass actually landed on origin before continuing.
@@ -936,10 +612,58 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				}
 			}
 
+			if (
+				outcome.kind === 'blocked' ||
+				outcome.kind === 'fail' ||
+				outcome.kind === 'unknown'
+			) {
+				notifyTerminal('blocked');
+				return { status: 'blocked', iterations, lastOutcome };
+			}
+
+			if (
+				outcome.kind === 'incomplete' &&
+				outcome.storyId !== undefined &&
+				runGates &&
+				finalizeStory
+			) {
+				const gate = runGates();
+				if (!gate.ok) {
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: outcome.storyId,
+						detail: `finalize aborted, gates failed for ${outcome.storyId}: ${gate.detail}`,
+					};
+					notifyTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+				const fin = finalizeStory(outcome.storyId);
+				if (!fin.ok) {
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: outcome.storyId,
+						detail: `finalize failed for ${outcome.storyId}: ${fin.detail}`,
+					};
+					notifyTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+				lastOutcome = {
+					kind: 'pass',
+					storyId: outcome.storyId,
+					detail: `supervisor-finalized ${outcome.storyId} after worker truncation: ${fin.detail}`,
+				};
+				writeSessionMarker(outcome.storyId, uuid);
+				continue;
+			}
+
+			if (outcome.kind === 'incomplete') {
+				notifyTerminal('blocked');
+				return { status: 'blocked', iterations, lastOutcome };
+			}
+
 			// CAM-36: no-progress guard. readWorkerOutcome is state-primary, so a
-			// worker that no-op'd (instant-exit: empty captured pane, no out-log /
-			// transcript, yet the trailing `tmux wait-for -S` still signals) makes
-			// it fall back to the stale handoff/prd and report 'pass' for the LAST
+			// worker that no-op'd (instant-exit: empty captured pane, no transcript)
+			// falls back to the stale handoff/prd and reports 'pass' for the LAST
 			// completed story. Detect that the reported-completed story was ALREADY
 			// passing at the top of THIS iteration (`prd`, already read): the worker
 			// advanced nothing. Tolerate one transient, then block on the second in
@@ -969,10 +693,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					}
 					// CAM-38: still under the cap, so the loop will re-dispatch the
 					// same still-pending story. Back off first (escalating by streak)
-					// so a transient startup rate-limit — the most likely cause of a
-					// pre-session instant-exit, whose message is never printed and so
-					// is invisible to US-016 + the durable out-log — can clear. A blind
-					// backoff is the only defense when the worker produced no output.
+					// so a transient startup rate-limit whose message is never printed
+					// can clear. A blind backoff is the only defense when the worker
+					// produced no output.
 					emit('no-progress-retry', advisoryStoryId, uuid, {
 						attempt: noProgressStreak,
 						backoffMs: NO_PROGRESS_BACKOFF_MS * noProgressStreak,
@@ -984,64 +707,8 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				}
 			}
 
-			// Worker blocked: exit loop.
-			if (outcome.kind === 'blocked') {
-				notifyTerminal('blocked');
-				return { status: 'blocked', iterations, lastOutcome };
-			}
-
-			// Worker failed or unknown: exit loop to let the operator inspect.
-			// This is a conservative choice: do not retry silently.
-			if (outcome.kind === 'fail' || outcome.kind === 'unknown') {
-				notifyTerminal('blocked');
-				return { status: 'blocked', iterations, lastOutcome };
-			}
-
-			// --- Incomplete: worker implemented the story but did not finalize ---
-				// (no prd flip / push, CAM-32 BUG 2). Re-run gates, then finalize.
-				if (outcome.kind === 'incomplete' && outcome.storyId !== undefined && runGates && finalizeStory) {
-					const gate = runGates();
-					if (!gate.ok) {
-						lastOutcome = {
-							kind: 'blocked',
-							storyId: outcome.storyId,
-							detail: `finalize aborted, gates failed for ${outcome.storyId}: ${gate.detail}`,
-						};
-						notifyTerminal('blocked');
-						return { status: 'blocked', iterations, lastOutcome };
-					}
-					const fin = finalizeStory(outcome.storyId);
-					if (!fin.ok) {
-						lastOutcome = {
-							kind: 'blocked',
-							storyId: outcome.storyId,
-							detail: `finalize failed for ${outcome.storyId}: ${fin.detail}`,
-						};
-						notifyTerminal('blocked');
-						return { status: 'blocked', iterations, lastOutcome };
-					}
-					lastOutcome = {
-						kind: 'pass',
-						storyId: outcome.storyId,
-						detail: `supervisor-finalized ${outcome.storyId} after worker truncation: ${fin.detail}`,
-					};
-					writeSessionMarker(outcome.storyId, uuid);
-					// CAM-36: finalize flipped a story to pass; real progress, so
-					// clear any no-progress streak accumulated by prior no-op passes.
-					noProgressStreak = 0;
-					continue;
-				}
-
-				// Incomplete but no finalize capability (or no storyId): cannot
-				// complete the tail deterministically; stop for the operator.
-				if (outcome.kind === 'incomplete') {
-					notifyTerminal('blocked');
-					return { status: 'blocked', iterations, lastOutcome };
-				}
-
-				// PRD_COMPLETE sentinel (storyId === undefined): loop will call
-			// decideNextAction next iteration which will return 'complete'.
-			// Continue iterating so the state machine picks it up naturally.
+			// PRD_COMPLETE sentinel (storyId === undefined) or pass: loop will call
+			// decideNextAction next iteration.
 			continue;
 		}
 
@@ -1050,15 +717,14 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// CAM-37: a reviewer worker can silently no-op (instant-exit /
 			// rate-limited: empty output, no `<review>` verdict) or its pane can be
 			// captured before it flushes, making reviewDispatch return 'error'.
-			// Retry with a fresh uuid/channel up to MAX_REVIEW_DISPATCH_ATTEMPTS
-			// before blocking, so one transient reviewer miss does not fail the
-			// whole loop. reviewDispatch only writes prd.json on a real verdict, so
-			// re-dispatching after 'error' is side-effect free.
+			// Retry with a fresh uuid up to MAX_REVIEW_DISPATCH_ATTEMPTS before
+			// blocking, so one transient reviewer miss does not fail the whole loop.
+			// reviewDispatch only writes prd.json on a real verdict, so retrying
+			// after 'error' is side-effect free.
 			let reviewResult: ReviewDispatchResult | null = null;
 			for (let attempt = 1; attempt <= MAX_REVIEW_DISPATCH_ATTEMPTS; attempt += 1) {
 				const uuid = genUuid();
-				const channel = genChannel('review', uuid);
-				reviewResult = reviewDispatch(uuid, channel);
+				reviewResult = reviewDispatch(uuid);
 				if (reviewResult.status !== 'error') break;
 			}
 

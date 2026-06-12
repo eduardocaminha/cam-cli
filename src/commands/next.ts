@@ -19,7 +19,7 @@
 //      started_at, pid, max_iterations) and an empty body -- no
 //      stop-hook re-inject prompt. This file is read by `cam status` and
 //      `cam dashboard` for display.
-//   4. Calls `runSupervisor()` with real I/O adapters (spawn, waitFor, capturePane,
+//   4. Calls `runSupervisor()` with real I/O adapters (spawn, capturePane,
 //      readPrd, writePrd, readHandoff, clock, reviewDispatch, writeSessionMarker).
 //      The supervisor drives the worker loop until complete, awaiting-operator,
 //      blocked, or max-iterations.
@@ -65,7 +65,6 @@ import { runSupervisor, DEFAULT_PER_WORKER_TIMEOUT_MS, type RunSupervisorOptions
 import { makeReviewDispatch } from '../supervisor/review.ts';
 import { makeFileEventLogger, readWorkerTokens } from '../supervisor/events.ts';
 import { acquireSupervisorLock, SUPERVISOR_LOCK_FILE, type AcquireLockResult } from '../supervisor/lock.ts';
-import { parseResetTime, calculateWaitMs } from '../retry/time-parser.ts';
 import type { PrdSnapshot } from '../supervisor/decide.ts';
 
 // --- Constants -------------------------------------------------------------
@@ -96,12 +95,6 @@ const HANDOFF_PATH_CANONICAL = 'scripts/cam/handoff.json';
 /** Default task prompt sent to the implementer agent. */
 export const DEFAULT_TASK_PROMPT =
 	'Implement the next user story from scripts/cam/prd.json per your AGENT.md.';
-
-/** Rate-limit resume tuning (US-016): margin + fallback fed to calculateWaitMs. */
-const RL_MARGIN_SECONDS = 60;
-const RL_FALLBACK_HOURS = 5;
-/** Cap a single synchronous rate-limit sleep so the loop cannot block forever. */
-const RL_MAX_SLEEP_MS = 6 * 60 * 60 * 1000;
 
 // --- Concurrency-guard shutdown handler (US-015) ---------------------------
 
@@ -477,16 +470,6 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		};
 	};
 
-	const waitFor: RunSupervisorOptions['waitFor'] = (channel, timeoutMs) => {
-		const result = spawnSync('tmux', ['-L', 'cam', 'wait-for', channel], {
-			stdio: 'ignore',
-			timeout: timeoutMs,
-		} as Parameters<typeof spawnSync>[2]);
-		// signal is set when the process was killed due to timeout (default killSignal = SIGTERM)
-		const timedOut = result.signal !== null && result.signal !== undefined;
-		return { timedOut };
-	};
-
 	const isPaneAlive: RunSupervisorOptions['isPaneAlive'] = (paneId) => {
 		const result = spawnSync('tmux', ['-L', 'cam', 'list-panes', '-t', paneId], {
 			stdio: 'ignore',
@@ -536,19 +519,6 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 
 	const clock: RunSupervisorOptions['clock'] = () => new Date().toISOString();
 
-	// readFile + workerOutFile: durable worker out-log reader + per-uuid path
-	// (CAM-32 BUG 1). Defined here, before reviewDispatch, so the reviewer can
-	// reuse them for its own durable out-log (CAM-37).
-	const readFileOpt: RunSupervisorOptions['readFile'] = (p) => {
-		try {
-			return readFileSync(p, 'utf8');
-		} catch {
-			return null;
-		}
-	};
-	const workerOutFile: RunSupervisorOptions['workerOutFile'] = (uuid) =>
-		join(claudeDir, `.cam-worker-out-${uuid}.log`);
-
 	// Review dispatch: wired via makeReviewDispatch (US-008). Interactive TUI
 	// reviewer with <review>-tag polling since CAM-42 (claude -p is forbidden
 	// for subscription accounts).
@@ -593,8 +563,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		writeFileSync(markerPath, uuid, 'utf8');
 	};
 
-	// --- CAM-32 wiring: durable worker output + supervisor-finalize tail ---
-	// (readFileOpt + workerOutFile are defined above, before reviewDispatch.)
+	// --- CAM-32 wiring: supervisor-finalize tail ---
 
 	// runGates: deterministic re-check before the supervisor finalizes a worker
 	// that implemented a story but did not flip prd.json (BUG 2).
@@ -699,17 +668,6 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const readWorkerTokensAdapter: RunSupervisorOptions['readWorkerTokens'] = (uuid) =>
 		readWorkerTokens(uuid, cwd, transcriptClaudeDir);
 
-	// --- US-016 wiring: pause on rate-limit, then resume (respawn same session) ---
-	// Reuse src/retry/* timing to compute how long to wait from the rate-limit
-	// message, then sleep synchronously before the supervisor respawns the worker
-	// with the same --session-id. Capped at RL_MAX_SLEEP_MS so the loop cannot
-	// block indefinitely on a garbled/unparseable reset time.
-	const rateLimitResume: RunSupervisorOptions['rateLimitResume'] = (info) => {
-		const parsed = info.message ? parseResetTime(info.message) : null;
-		const waitMs = calculateWaitMs(parsed, RL_MARGIN_SECONDS, RL_FALLBACK_HOURS, new Date());
-		if (waitMs > 0) Bun.sleepSync(Math.min(waitMs, RL_MAX_SLEEP_MS));
-	};
-
 	// 4. Dispatch to the supervisor.
 	const supervisorFn = options.supervisorFn ?? runSupervisor;
 	emitSectionHeading('Loop');
@@ -718,7 +676,6 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	try {
 		result = await supervisorFn({
 			spawn: supervisorSpawn,
-			waitFor,
 			capturePane,
 			readPrd,
 			writePrd,
@@ -726,8 +683,6 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			clock,
 			reviewDispatch,
 			writeSessionMarker,
-			readFile: readFileOpt,
-			workerOutFile,
 			runGates,
 			finalizeStory,
 			isPaneAlive,
@@ -736,26 +691,14 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			handoffPath,
 			permissionMode,
 			taskPrompt,
-			// CAM-42: workers are interactive TUI sessions (claude -p is forbidden
-			// for subscription accounts; project rule is subscription-only).
-			// Completion is detected by polling capture-pane for the sentinel.
-			implementerMode: 'sentinel',
 			maxIterations,
 			perWorkerTimeoutMs,
 			logEvent,
 			readWorkerTokens: readWorkerTokensAdapter,
-			rateLimitResume,
 			ensurePushed,
 			onProgress: progressOnProgress,
-			// CAM-38: real blocking sleep so the no-progress backoff actually waits
-			// for a transient rate-limit to clear (tests inject a no-op sleepFn).
-			// Notes: (1) Bun.sleepSync blocks the thread, so a queued SIGINT during a
-			// backoff (worst case ~180s total before block) only releases the lock
-			// after the sleep returns — Ctrl-C feels laggy, same as rateLimitResume's
-			// Bun.sleepSync above. (2) This also drives the sleepFn(pollIntervalMs)
-			// in the supervisor's sentinel-poll loop (the production dispatch mode
-			// since CAM-42), so polling waits between capture-pane reads instead
-			// of hot-spinning.
+			// Bun.sleepSync blocks the thread: drives both the no-progress backoff
+			// (CAM-38) and the sentinel-poll interval between capture-pane reads.
 			sleepFn: (ms) => {
 				Bun.sleepSync(ms);
 			},

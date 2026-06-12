@@ -20,14 +20,12 @@ import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BAC
 import type {
 	RunSupervisorOptions,
 	SpawnFn,
-	WaitForFn,
 	CapturePane,
 	ReadPrd,
 	WritePrd,
 	ReadHandoff,
 	ClockFn,
 	GenUuid,
-	GenChannel,
 	ReviewDispatch,
 	WriteSessionMarker,
 	IsPaneAlive,
@@ -98,10 +96,6 @@ function fakeGenUuid(): string {
 	return `00000000-0000-0000-0000-${String(uuidCounter).padStart(12, '0')}`;
 }
 
-function fakeGenChannel(storyId: string, uuid: string): string {
-	return `cam-worker-${storyId}-${uuid.slice(0, 8)}`;
-}
-
 // ---------------------------------------------------------------------------
 // Base options factory
 // ---------------------------------------------------------------------------
@@ -112,26 +106,23 @@ function fakeGenChannel(storyId: string, uuid: string): string {
  */
 function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervisorOptions {
 	const spawn: SpawnFn = (_cmd, _args) => ({ stdout: '', exitCode: 0 });
-	const waitFor: WaitForFn = (_channel, _timeoutMs) => ({ timedOut: false });
 	const capturePane: CapturePane = (_paneId) => '';
 	const readPrd: ReadPrd = () => null;
 	const writePrd: WritePrd = (_prd) => {};
 	const readHandoff: ReadHandoff = () => null;
 	const clock: ClockFn = () => '2026-06-08T00:00:00Z';
-	const reviewDispatch: ReviewDispatch = (_uuid, _channel) => ({ status: 'ok', detail: 'review ok' });
+	const reviewDispatch: ReviewDispatch = (_uuid) => ({ status: 'ok', detail: 'review ok' });
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 	const isPaneAlive: IsPaneAlive = (_paneId) => true;
 
 	return {
 		spawn,
-		waitFor,
 		capturePane,
 		readPrd,
 		writePrd,
 		readHandoff,
 		clock,
 		genUuid: fakeGenUuid,
-		genChannel: fakeGenChannel,
 		reviewDispatch,
 		writeSessionMarker,
 		isPaneAlive,
@@ -140,6 +131,10 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		handoffPath: HANDOFF_PATH,
 		permissionMode: 'bypassPermissions',
 		taskPrompt: 'Implement the next story from the PRD.',
+		// Use a no-op sleepFn so tests never block.
+		sleepFn: (_ms: number) => {},
+		// Use a stable nowMs so sentinel polling doesn't immediately timeout.
+		nowMs: () => 0,
 		...overrides,
 	};
 }
@@ -262,16 +257,22 @@ describe('runSupervisor', () => {
 			makeHandoff('US-002'), // iter 2 outcome check
 		];
 
+		// In sentinel mode capturePane is called twice per implement iteration:
+		// once during the poll loop (sentinel detection) and once after the
+		// sentinel is found (reading the full pane for readWorkerOutcome).
+		// Both calls for the same iteration must return the same text.
 		const paneTexts = [
-			donePane('US-001'), // iter 1
-			donePane('US-002'), // iter 2
+			donePane('US-001'), // iter 1 poll (sentinel detected)
+			donePane('US-001'), // iter 1 outcome read
+			donePane('US-002'), // iter 2 poll (sentinel detected)
+			donePane('US-002'), // iter 2 outcome read
 		];
 
 		const opts = makeBaseOpts({
 			readPrd: () => prds[prdCallCount++] ?? null,
 			readHandoff: () => handoffs[handoffIdx++] ?? null,
 			capturePane: (_paneId) => paneTexts[paneIdx++] ?? '',
-			reviewDispatch: (_uuid, _channel) => ({ status: 'ok', detail: 'review dispatched' }),
+			reviewDispatch: (_uuid) => ({ status: 'ok', detail: 'review dispatched' }),
 		});
 
 		const result = await runSupervisor(opts);
@@ -299,7 +300,10 @@ describe('runSupervisor', () => {
 	});
 
 	test('max-iterations cap fires before completion', async () => {
-		// Story never completes (unknown pane sentinel each time).
+		// Story never completes (no sentinel emitted). In sentinel mode the poll
+		// loop times out (perWorkerTimeoutMs:0 -> elapsed 0 >= 0). The timeout
+		// path sets lastOutcome=blocked and does continue (not return), so the
+		// loop keeps dispatching until maxIterations is exhausted.
 		const prd = makePrd({
 			stories: [{ id: 'US-001', priority: 1, passes: false }],
 		});
@@ -307,17 +311,14 @@ describe('runSupervisor', () => {
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
 			capturePane: (_paneId) => UNKNOWN_PANE,
+			perWorkerTimeoutMs: 0,
 			maxIterations: 3,
 		});
 
 		const result = await runSupervisor(opts);
 
-		// unknown outcome exits blocked after 1 iteration (conservative)
-		// so we expect blocked, not max-iterations in this scenario.
-		// To test max-iterations, we need a scenario where iterations keep going.
-		// Actually, unknown -> blocked exit on iteration 1. Let's test cap differently
-		// by using a scenario that naturally keeps iterating (PRD_COMPLETE -> continue).
-		expect(result.status).toBe('blocked');
+		expect(result.status).toBe('max-iterations');
+		expect(result.iterations).toBe(3);
 	});
 
 	test('max-iterations cap with PRD_COMPLETE cycling', async () => {
@@ -346,12 +347,11 @@ describe('runSupervisor', () => {
 
 	test('no-progress spin: worker re-confirms an already-done story -> blocked (CAM-36)', async () => {
 		// Regression for the dogfood spin. US-001 done, US-002 pending. The US-002
-		// worker no-op's (instant-exit): the captured pane is empty, so
-		// readWorkerOutcome is state-primary and falls back to the stale handoff
-		// (lastCompletedStory US-001) + prd (US-001 passes) -> pass/US-001. The PRD
-		// never advances (US-002 stays false), so without the guard the loop would
-		// re-dispatch US-002 every iteration up to maxIterations (50). The guard
-		// blocks after MAX_NO_PROGRESS_RETRIES consecutive no-op passes.
+		// worker no-op's: in sentinel mode the worker emits DONE story=US-001 (stale),
+		// readWorkerOutcome sees pass/US-001. The PRD never advances (US-002 stays
+		// false), so without the guard the loop would re-dispatch US-002 every
+		// iteration up to maxIterations (50). The guard blocks after
+		// MAX_NO_PROGRESS_RETRIES consecutive no-op passes.
 		const prd = makePrd({
 			stories: [
 				{ id: 'US-001', priority: 1, passes: true },
@@ -362,7 +362,9 @@ describe('runSupervisor', () => {
 		const opts = makeBaseOpts({
 			readPrd: () => prd, // never advances: US-002 stays false
 			readHandoff: () => makeHandoff('US-001'), // stale: last completed = US-001
-			capturePane: (_paneId) => '', // empty pane -> state-primary fallback
+			// In sentinel mode the stale worker emits a DONE sentinel for the already-
+			// done story; both poll call and outcome-read call return the same pane text.
+			capturePane: (_paneId) => donePane('US-001'),
 			maxIterations: 50, // would spin to 50 without the guard
 		});
 
@@ -389,10 +391,14 @@ describe('runSupervisor', () => {
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
 			readHandoff: () => makeHandoff('US-001'),
-			capturePane: (_paneId) => '',
+			// Stale worker emits DONE story=US-001 (same text for poll + outcome read).
+			capturePane: (_paneId) => donePane('US-001'),
 			maxIterations: 50,
+			// Use pollIntervalMs: 0 so the only non-zero sleepFn calls are the
+			// escalating no-progress backoffs (CAM-38), keeping the assertion exact.
+			pollIntervalMs: 0,
 			sleepFn: (ms) => {
-				sleeps.push(ms);
+				if (ms > 0) sleeps.push(ms);
 			},
 			logEvent: logger,
 		});
@@ -465,10 +471,17 @@ describe('runSupervisor', () => {
 		const opts = makeBaseOpts({
 			readPrd: () => prds[prdCallCount++] ?? null,
 			readHandoff: () => handoffs[handoffIdx++] ?? null,
-			// iter 1: empty pane (no-op). iter 2: DONE sentinel for US-002.
+			// In sentinel mode capturePane is called twice per implement iteration
+			// (poll call + outcome read). Iter 1: worker confirms US-001 done (stale
+			// no-progress). Iter 2: worker really completes US-002.
 			capturePane: (() => {
 				let paneIdx = 0;
-				const panes = ['', donePane('US-002')];
+				const panes = [
+					donePane('US-001'), // iter 1 poll
+					donePane('US-001'), // iter 1 outcome read
+					donePane('US-002'), // iter 2 poll
+					donePane('US-002'), // iter 2 outcome read
+				];
 				return (_paneId: string) => panes[paneIdx++] ?? '';
 			})(),
 		});
@@ -496,7 +509,7 @@ describe('runSupervisor', () => {
 		let reviewCalls = 0;
 		const opts = makeBaseOpts({
 			readPrd: () => prds[prdCall++] ?? prd_clean,
-			reviewDispatch: (_uuid, _channel) => {
+			reviewDispatch: (_uuid) => {
 				reviewCalls += 1;
 				return reviewCalls < 3
 					? { status: 'error', detail: 'no <review> verdict (silent no-op)' }
@@ -518,7 +531,7 @@ describe('runSupervisor', () => {
 		let reviewCalls = 0;
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
-			reviewDispatch: (_uuid, _channel) => {
+			reviewDispatch: (_uuid) => {
 				reviewCalls += 1;
 				return { status: 'error', detail: 'no <review> verdict (silent no-op)' };
 			},
@@ -551,13 +564,18 @@ describe('runSupervisor', () => {
 	});
 
 	test('worker outcome unknown -> blocked', async () => {
+		// In sentinel mode the poll loop must find a CAM_*_STATUS sentinel or it
+		// spins until timeout. Use a DONE sentinel with no story= id and no handoff
+		// so that readWorkerOutcome classifies the outcome as 'unknown' (no completed
+		// story can be determined from either source).
 		const prd = makePrd({
 			stories: [{ id: 'US-001', priority: 1, passes: false }],
 		});
 
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
-			capturePane: (_paneId) => UNKNOWN_PANE,
+			capturePane: (_paneId) => 'CAM_IMPLEMENTER_STATUS=DONE\n',
+			// No readHandoff: defaults to null, so no completed story id.
 		});
 
 		const result = await runSupervisor(opts);
@@ -639,26 +657,6 @@ describe('runSupervisor', () => {
 		expect(result.lastOutcome?.kind).toBe('incomplete');
 	});
 
-	test('durable out-file is preferred over capture-pane (CAM-32 BUG 1)', async () => {
-		// The pane reports BLOCKED (as if scraped from a half-dead pane), but the
-		// durable log holds the real DONE output. The supervisor must trust the
-		// durable log: outcome derives from DONE (-> incomplete here, since prd is
-		// not flipped and no finalize is injected), never from the blocked pane.
-		const prd = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
-		const opts = makeBaseOpts({
-			readPrd: () => prd,
-			capturePane: (_paneId) => blockedPane('US-001'),
-			readHandoff: () => makeHandoff('US-001'),
-			workerOutFile: (uuid) => `/proj/.claude/.cam-worker-out-${uuid}.log`,
-			readFile: (path) => (path.includes('.cam-worker-out-') ? donePane('US-001') : null),
-		});
-
-		const result = await runSupervisor(opts);
-
-		// If capture-pane had been used, kind would be 'blocked'.
-		expect(result.lastOutcome?.kind).toBe('incomplete');
-	});
-
 	test('review dispatch error -> blocked', async () => {
 		// All stories pass, no review done yet -> dispatch review
 		const prd = makePrd({
@@ -668,7 +666,7 @@ describe('runSupervisor', () => {
 
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
-			reviewDispatch: (_uuid, _channel) => ({ status: 'error', detail: 'dispatch failed' }),
+			reviewDispatch: (_uuid) => ({ status: 'error', detail: 'dispatch failed' }),
 		});
 
 		const result = await runSupervisor(opts);
@@ -771,225 +769,8 @@ describe('runSupervisor', () => {
 	});
 
 	// ---------------------------------------------------------------------------
-	// US-011: Worker timeout + crash detection
+	// US-011: Worker timeout + crash detection (sentinel mode)
 	// ---------------------------------------------------------------------------
-
-	test('timeout path: waitFor timedOut=true, pane alive -> blocked detail=timeout, loop continues', async () => {
-		// Iter 1: timeout fires, pane alive -> blocked 'timeout', continue.
-		// Iter 2: decideNextAction -> implement, waitFor ok, story completes.
-		// Iter 3: decideNextAction -> complete.
-		const prd_incomplete = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: false }],
-		});
-		const prd_complete = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: true }],
-			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
-		});
-
-		let prdCallCount = 0;
-		let waitForCallCount = 0;
-
-		const spawnCalls: string[][] = [];
-
-		const opts = makeBaseOpts({
-			readPrd: () => {
-				prdCallCount++;
-				// Call 1: iter1 top -> decideNextAction (timeout fires, NO fileReader call)
-				// Call 2: iter2 top -> decideNextAction -> implement
-				// Call 3: iter2 fileReader -> needs passes:true to confirm pass outcome
-				// Call 4: iter3 top -> decideNextAction -> complete
-				if (prdCallCount <= 2) return prd_incomplete;
-				return prd_complete;
-			},
-			waitFor: (_channel, _timeoutMs) => {
-				waitForCallCount++;
-				// First call: timeout; subsequent calls: normal
-				if (waitForCallCount === 1) return { timedOut: true };
-				return { timedOut: false };
-			},
-			isPaneAlive: (_paneId) => true, // pane is alive on timeout
-			capturePane: (_paneId) => donePane('US-001'),
-			readHandoff: () => makeHandoff('US-001'),
-			spawn: (_cmd, args) => {
-				spawnCalls.push(args);
-				return { stdout: '', exitCode: 0 };
-			},
-		});
-
-		const result = await runSupervisor(opts);
-
-		expect(result.status).toBe('complete');
-		// iter 1 = timeout, iter 2 = normal complete; review/complete decision = iter 3 in decideNextAction
-		expect(result.iterations).toBe(2);
-		// Timeout outcome recorded
-		expect(result.lastOutcome?.kind).toBe('pass'); // last outcome is the pass from iter 2
-		// spawn called twice: once for iter1 respawn, once for timeout kill, once for iter2 respawn
-		// iter1: respawn + echo timeout (2 calls); iter2: respawn (1 call) = 3 total
-		const respawnCalls = spawnCalls.filter((a) => a.includes('respawn-pane'));
-		expect(respawnCalls.length).toBe(3);
-		// The timeout kill call should have 'echo timeout' as the last element
-		const timeoutKillCall = spawnCalls.find((a) => a.includes('echo timeout'));
-		expect(timeoutKillCall).toBeDefined();
-	});
-
-	test('pane-died path: waitFor timedOut=true, pane dead -> blocked detail=pane-died-pre-result, loop continues', async () => {
-		// Iter 1: timeout fires, pane dead -> blocked 'pane-died-pre-result', continue.
-		// Iter 2: decideNextAction -> complete (all stories pass after pane died scenario).
-		const prd_incomplete = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: false }],
-		});
-		const prd_complete = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: true }],
-			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
-		});
-
-		let prdCallCount = 0;
-		let waitForCallCount = 0;
-
-		const spawnCalls: string[][] = [];
-
-		const opts = makeBaseOpts({
-			readPrd: () => {
-				prdCallCount++;
-				if (prdCallCount <= 2) return prd_incomplete;
-				return prd_complete;
-			},
-			waitFor: (_channel, _timeoutMs) => {
-				waitForCallCount++;
-				if (waitForCallCount === 1) return { timedOut: true };
-				return { timedOut: false };
-			},
-			isPaneAlive: (_paneId) => false, // pane is DEAD on timeout
-			capturePane: (_paneId) => donePane('US-001'),
-			readHandoff: () => makeHandoff('US-001'),
-			spawn: (_cmd, args) => {
-				spawnCalls.push(args);
-				return { stdout: '', exitCode: 0 };
-			},
-			maxIterations: 5,
-		});
-
-		const result = await runSupervisor(opts);
-
-		expect(result.status).toBe('complete');
-		// Pane-died does NOT send the 'echo timeout' kill command (pane already dead)
-		const timeoutKillCall = spawnCalls.find((a) => a.includes('echo timeout'));
-		expect(timeoutKillCall).toBeUndefined();
-		// Only the initial respawn-pane for iter1 and iter2
-		const respawnCalls = spawnCalls.filter((a) => a.includes('respawn-pane'));
-		expect(respawnCalls.length).toBe(2);
-	});
-
-	test('waitFor receives the perWorkerTimeoutMs value', async () => {
-		const prd = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: false }],
-		});
-
-		const receivedTimeouts: number[] = [];
-
-		const opts = makeBaseOpts({
-			readPrd: () => prd,
-			waitFor: (_channel, timeoutMs) => {
-				receivedTimeouts.push(timeoutMs);
-				return { timedOut: false };
-			},
-			capturePane: (_paneId) => UNKNOWN_PANE, // -> unknown -> blocked, stop
-			perWorkerTimeoutMs: 99_999,
-		});
-
-		await runSupervisor(opts);
-
-		expect(receivedTimeouts.length).toBeGreaterThan(0);
-		expect(receivedTimeouts[0]).toBe(99_999);
-	});
-
-	test('timeout followed by story completion: recovery to next story', async () => {
-		// Simulates: iter1 times out (pane alive), iter2 story completes, iter3 complete.
-		// This is the "recovery" scenario from the US-011 acceptance criteria.
-		const prd_incomplete = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: false }],
-		});
-		const prd_done = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: true }],
-			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
-		});
-
-		let prdCallCount = 0;
-		let waitForCallCount = 0;
-
-		const opts = makeBaseOpts({
-			readPrd: () => {
-				prdCallCount++;
-				// Call 1: iter1 top -> timeout (no fileReader call in timeout path)
-				// Call 2: iter2 top -> implement
-				// Call 3: iter2 fileReader -> needs passes:true
-				// Call 4: iter3 top -> complete
-				if (prdCallCount <= 2) return prd_incomplete;
-				return prd_done;
-			},
-			waitFor: (_channel, _timeoutMs) => {
-				waitForCallCount++;
-				return waitForCallCount === 1 ? { timedOut: true } : { timedOut: false };
-			},
-			isPaneAlive: (_paneId) => true,
-			capturePane: (_paneId) => donePane('US-001'),
-			readHandoff: () => makeHandoff('US-001'),
-		});
-
-		const result = await runSupervisor(opts);
-
-		expect(result.status).toBe('complete');
-		expect(result.iterations).toBe(2); // 1 timeout iter + 1 pass iter
-	});
-
-	test('timeout outcome is blocked kind with correct detail', async () => {
-		const prd = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: false }],
-		});
-
-		let waitForCallCount = 0;
-
-		const opts = makeBaseOpts({
-			readPrd: () => prd,
-			waitFor: (_channel, _timeoutMs) => {
-				waitForCallCount++;
-				// Only timeout once; second call returns blocked (so loop exits)
-				if (waitForCallCount === 1) return { timedOut: true };
-				return { timedOut: false };
-			},
-			isPaneAlive: (_paneId) => true, // pane alive -> 'timeout' detail
-			capturePane: (_paneId) => blockedPane('US-001'), // after timeout recovery, worker blocked
-			maxIterations: 2,
-		});
-
-		const result = await runSupervisor(opts);
-
-		// The last outcome (from iter 2) should be 'blocked' from the worker sentinel
-		expect(result.lastOutcome?.kind).toBe('blocked');
-		// Check that we went through the timeout iteration (iterations = 2)
-		expect(result.iterations).toBe(2);
-	});
-
-	test('pane-died lastOutcome has correct detail after only one timeout iter', async () => {
-		// maxIterations=1: only the timeout iter runs, no second iter.
-		const prd = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: false }],
-		});
-
-		const opts = makeBaseOpts({
-			readPrd: () => prd,
-			waitFor: (_channel, _timeoutMs) => ({ timedOut: true }),
-			isPaneAlive: (_paneId) => false, // pane dead
-			maxIterations: 1,
-		});
-
-		const result = await runSupervisor(opts);
-
-		// 1 iteration (timeout), then max-iterations cap fires
-		expect(result.status).toBe('max-iterations');
-		expect(result.iterations).toBe(1);
-		expect(result.lastOutcome?.detail).toBe('pane-died-pre-result');
-	});
 
 	// ---------------------------------------------------------------------------
 	// US-012: Sentinel polling mode (detectCompletionBy: 'sentinel')
@@ -1014,10 +795,8 @@ describe('runSupervisor', () => {
 		const sleepCalls: number[] = [];
 
 		const opts = makeBaseOpts({
-			implementerMode: 'sentinel',
 			pollIntervalMs: 0,
 			sleepFn: (ms) => { sleepCalls.push(ms); },
-			nowMs: () => 0, // time never advances -> no timeout
 			perWorkerTimeoutMs: 99_999,
 			readPrd: () => {
 				prdCallCount++;
@@ -1063,11 +842,8 @@ describe('runSupervisor', () => {
 		const spawnCalls: string[][] = [];
 
 		const opts = makeBaseOpts({
-			implementerMode: 'sentinel',
 			pollIntervalMs: 0,
-			sleepFn: (_ms) => {},
-			nowMs: () => 0, // elapsed = 0 - 0 = 0 >= 0 -> immediate timeout
-			perWorkerTimeoutMs: 0,
+			perWorkerTimeoutMs: 0, // elapsed = 0 - 0 = 0 >= 0 -> immediate timeout
 			readPrd: () => {
 				prdCallCount++;
 				// call 1: iter1 top -> implement
@@ -1107,10 +883,7 @@ describe('runSupervisor', () => {
 		const spawnCalls: string[][] = [];
 
 		const opts = makeBaseOpts({
-			implementerMode: 'sentinel',
 			pollIntervalMs: 0,
-			sleepFn: (_ms) => {},
-			nowMs: () => 0,
 			perWorkerTimeoutMs: 99_999,
 			readPrd: () => {
 				prdCallCount++;
@@ -1182,171 +955,22 @@ describe('runSupervisor', () => {
 });
 
 // ---------------------------------------------------------------------------
-// US-016: rate-limit pause/resume
+// US-001: ensurePushed -- origin-sync backstop on every pass (placeholder)
 // ---------------------------------------------------------------------------
 
-/** Pane text with the headless worker's RATE_LIMIT exit sentinel. */
+// Note: RATE_LIMIT sentinel is still a valid CAM_IMPLEMENTER_STATUS value
+// that workers can emit. In sentinel mode it flows through readWorkerOutcome.
+/** Pane text with the RATE_LIMIT exit sentinel (emitted by workers on rate-limit). */
 const RATE_LIMIT_SENTINEL_PANE = `Working hard\nCAM_IMPLEMENTER_STATUS=RATE_LIMIT\n`;
-/** Pane text with the claude TUI rate-limit message (matched by isRateLimited). */
-const TUI_RATE_LIMIT_PANE = `Hit your usage limit\nresets 3pm\n`;
 
-describe('runSupervisor rate-limit handling (US-016)', () => {
-	test('RATE_LIMIT sentinel: pauses, resumes the same session, then completes', async () => {
-		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
-		const prdTrue = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
-		const prdDone = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: true }],
-			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
-		});
-
-		let prdCall = 0;
-		const readPrd = () => {
-			prdCall++;
-			if (prdCall === 1) return prdFalse; // decideNextAction iter 1 -> implement
-			if (prdCall === 2) return prdTrue; // readWorkerOutcome fileReader -> pass
-			return prdDone; // decideNextAction iter 2 -> complete
-		};
-
-		let capCall = 0;
-		const capturePane = (_paneId: string) => {
-			capCall++;
-			return capCall === 1 ? RATE_LIMIT_SENTINEL_PANE : donePane('US-001');
-		};
-
-		const spawnCalls: string[][] = [];
-		let rlCalls = 0;
-		const { logger, events } = makeInMemoryEventLogger();
-
-		const opts = makeBaseOpts({
-			readPrd,
-			readHandoff: () => makeHandoff('US-001'),
-			capturePane,
-			spawn: (_cmd, args) => {
-				spawnCalls.push(args);
-				return { stdout: '', exitCode: 0 };
-			},
-			rateLimitResume: () => {
-				rlCalls++;
-			},
-			logEvent: logger,
-		});
-
-		const result = await runSupervisor(opts);
-
-		expect(result.status).toBe('complete');
-		// The pause hook fired exactly once.
-		expect(rlCalls).toBe(1);
-		// Pause + resume events were recorded.
-		const rl = events.filter((e) => e.kind === 'rate-limited');
-		expect(rl.map((e) => (e.detail as Record<string, unknown>)['phase'])).toEqual(['pause', 'resume']);
-		// The worker was respawned twice with the SAME session-id (continuity).
-		const workerRespawns = spawnCalls.filter(
-			(a) => a[2] === 'respawn-pane' && a[6] !== undefined && a[6] !== 'echo timeout',
-		);
-		expect(workerRespawns).toHaveLength(2);
-		const uuid = '00000000-0000-0000-0000-000000000001';
-		expect(workerRespawns[0]![6]).toContain(`--session-id ${uuid}`);
-		expect(workerRespawns[1]![6]).toContain(`--session-id ${uuid}`);
-	});
-
-	test('claude TUI rate-limit message also triggers the resume flow', async () => {
-		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
-		const prdTrue = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
-		const prdDone = makePrd({
-			stories: [{ id: 'US-001', priority: 1, passes: true }],
-			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
-		});
-
-		let prdCall = 0;
-		const readPrd = () => {
-			prdCall++;
-			if (prdCall === 1) return prdFalse;
-			if (prdCall === 2) return prdTrue;
-			return prdDone;
-		};
-
-		let capCall = 0;
-		const capturePane = (_paneId: string) => {
-			capCall++;
-			return capCall === 1 ? TUI_RATE_LIMIT_PANE : donePane('US-001');
-		};
-
-		let rlCalls = 0;
-		const opts = makeBaseOpts({
-			readPrd,
-			readHandoff: () => makeHandoff('US-001'),
-			capturePane,
-			rateLimitResume: (info) => {
-				rlCalls++;
-				// The parsed rate-limit message is forwarded to the hook.
-				expect(info.message).toContain('resets');
-			},
-		});
-
-		const result = await runSupervisor(opts);
-
-		expect(result.status).toBe('complete');
-		expect(rlCalls).toBe(1);
-	});
-
-	test('blocks when rate-limit persists beyond maxRateLimitRetries', async () => {
-		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
-
-		let rlCalls = 0;
-		const opts = makeBaseOpts({
-			readPrd: () => prdFalse,
-			readHandoff: () => makeHandoff('US-001'),
-			// Always rate-limited.
-			capturePane: (_paneId) => RATE_LIMIT_SENTINEL_PANE,
-			rateLimitResume: () => {
-				rlCalls++;
-			},
-			maxRateLimitRetries: 2,
-		});
-
-		const result = await runSupervisor(opts);
-
-		expect(result.status).toBe('blocked');
-		expect(rlCalls).toBe(2);
-		expect(result.lastOutcome?.detail).toContain('rate-limit retries exhausted');
-	});
-
-	test('a timeout during a resume attempt is handled like any worker timeout', async () => {
-		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
-
-		// First wait succeeds (worker emits rate-limit), the resume wait times out.
-		let waitCall = 0;
-		const waitFor = (_channel: string, _timeoutMs: number) => {
-			waitCall++;
-			return { timedOut: waitCall >= 2 };
-		};
-
-		const opts = makeBaseOpts({
-			readPrd: () => prdFalse,
-			readHandoff: () => makeHandoff('US-001'),
-			capturePane: (_paneId) => RATE_LIMIT_SENTINEL_PANE,
-			waitFor,
-			rateLimitResume: () => {},
-			maxIterations: 1,
-		});
-
-		const result = await runSupervisor(opts);
-
-		// Resume timed out -> blocked outcome, loop hit the iteration cap.
-		expect(result.status).toBe('max-iterations');
-		expect(result.lastOutcome?.detail).toBe('timeout');
-	});
-
-	test('no rateLimitResume injected: rate-limit is not specially handled (zero behavior change)', async () => {
-		// Without the hook, a RATE_LIMIT pane flows through readWorkerOutcome as
-		// 'unknown' -> blocked, exactly as before US-016.
+describe('runSupervisor rate-limit sentinel in sentinel mode', () => {
+	test('RATE_LIMIT sentinel -> blocked (no retry logic in sentinel path)', async () => {
 		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
 
 		const opts = makeBaseOpts({
 			readPrd: () => prdFalse,
 			readHandoff: () => null,
 			capturePane: (_paneId) => RATE_LIMIT_SENTINEL_PANE,
-			// rateLimitResume intentionally omitted.
 		});
 
 		const result = await runSupervisor(opts);
@@ -1641,7 +1265,14 @@ describe('runSupervisor onProgress callback (US-001)', () => {
 		let handoffIdx = 0;
 		let paneIdx = 0;
 		const handoffs = [makeHandoff('US-001'), makeHandoff('US-002')];
-		const panes = [donePane('US-001'), donePane('US-002')];
+		// In sentinel mode capturePane is called twice per implement iteration:
+		// once during poll (sentinel detection) and once for outcome reading.
+		const panes = [
+			donePane('US-001'), // iter 1 poll
+			donePane('US-001'), // iter 1 outcome read
+			donePane('US-002'), // iter 2 poll
+			donePane('US-002'), // iter 2 outcome read
+		];
 
 		const progressCalls: ProgressPayload[] = [];
 
@@ -1665,7 +1296,7 @@ describe('runSupervisor onProgress callback (US-001)', () => {
 			},
 			readHandoff: () => handoffs[handoffIdx++] ?? null,
 			capturePane: (_paneId) => panes[paneIdx++] ?? '',
-			reviewDispatch: (_uuid, _channel) => ({ status: 'ok', detail: 'review ok' }),
+			reviewDispatch: (_uuid) => ({ status: 'ok', detail: 'review ok' }),
 			onProgress: (p) => { progressCalls.push({ ...p }); },
 		});
 
@@ -1786,7 +1417,8 @@ describe('runSupervisor onProgress callback (US-001)', () => {
 		const opts = makeBaseOpts({
 			readPrd: () => prd, // never advances: US-002 stays false
 			readHandoff: () => makeHandoff('US-001'), // stale completed story
-			capturePane: (_paneId) => '', // empty pane -> state-primary -> pass US-001
+			// In sentinel mode, stale worker emits DONE story=US-001 -> state-primary pass US-001.
+			capturePane: (_paneId) => donePane('US-001'),
 			maxIterations: 50,
 			onProgress: (p) => {
 				progressCalls.push({ ...p });

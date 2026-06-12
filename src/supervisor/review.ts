@@ -28,8 +28,7 @@
 //   - The reviewer runs as an interactive TUI session (CAM-42: claude -p is
 //     forbidden for subscription accounts) and does NOT exit on its own; the
 //     dispatch polls for the <review> tag, mirroring the implementer's
-//     sentinel branch in loop.ts. The legacy headless (-p + wait-for) builder
-//     branch remains only until US-004 deletes it.
+//     sentinel polling in loop.ts.
 
 import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPrd, WritePrd } from './loop.ts';
 import type { PrdSnapshot } from './decide.ts';
@@ -43,42 +42,20 @@ export interface ReviewerWorkerArgvOptions {
 	/** UUID for this reviewer invocation; passed as --session-id. */
 	uuid: string;
 	/**
-	 * tmux wait-for channel name; will be shell-escaped. Only used by the
-	 * legacy headless (exit) path. Ignored when interactive: true.
-	 */
-	channel?: string;
-	/**
 	 * Agent name matching the .claude/agents/<name>.md frontmatter.
 	 * Defaults to 'subagent-reviewer'.
 	 */
 	agentName?: string;
 	/**
-	 * Durable output-log path. When set, the reviewer's stdout+stderr is tee'd to
-	 * this file so the verdict (and any instant-exit / rate-limit message) can be
-	 * read AFTER the ephemeral pane dies (CAM-37, mirrors CAM-32 BUG 1 for the
-	 * implementer). Will be shell-escaped. When omitted, output goes only to the
-	 * pane (legacy behaviour). Ignored when interactive: true (piping stdout
-	 * would strip the pty from the TUI renderer).
-	 */
-	outFile?: string;
-	/**
-	 * When true, launch claude as an interactive TUI session: omit -p and
-	 * --output-format, pass the task prompt as the initial-prompt argument, and
-	 * omit the tmux wait-for chain. Completion is detected by polling
-	 * capture-pane for the <review> verdict tag (CAM-42; claude -p is forbidden
-	 * for subscription accounts).
-	 */
-	interactive?: boolean;
-	/**
-	 * Free-text task prompt for the reviewer session. Required in interactive
-	 * mode (the TUI needs an initial prompt; CAM-41 root cause was launching the
-	 * reviewer with no prompt at all). Will be shell-escaped.
+	 * Free-text task prompt for the reviewer session. The TUI needs an initial
+	 * prompt (CAM-41: a promptless reviewer dies instantly). Will be shell-escaped.
+	 * Defaults to REVIEWER_TASK_PROMPT.
 	 */
 	taskPrompt?: string;
 	/**
 	 * Claude permission mode forwarded to the spawned claude process (NEVER a
-	 * cam CLI flag). Required in interactive mode so the reviewer can run the
-	 * quality gates without interactive permission prompts.
+	 * cam CLI flag). Required so the reviewer can run quality gates without
+	 * interactive permission prompts. Defaults to 'bypassPermissions'.
 	 */
 	permissionMode?: string;
 }
@@ -103,51 +80,31 @@ function shellEscape(s: string): string {
 }
 
 /**
- * Build the shell string passed to `respawn-pane` to launch a headless
- * reviewer worker.
+ * Build the shell string passed to `respawn-pane` to launch an interactive
+ * TUI reviewer worker.
  *
  * Returns a shell string with the shape:
  *
- *   claude -p --session-id <uuid> \
- *     --output-format text --agent <agentName> \
- *     ; tmux -L cam wait-for -S '<channel>'
+ *   claude --permission-mode <mode> --session-id <uuid> \
+ *     --agent <agentName> '<taskPrompt>'
  *
- * Note: no --permission-mode flag; the reviewer agent only reads and does not
- * modify files, so no special permission mode is needed. The channel is
- * single-quote-escaped to prevent shell injection.
+ * -p and --output-format are omitted so the process stays open for interaction.
+ * The tmux wait-for chain is also omitted; the supervisor detects completion
+ * by polling capture-pane for the <review> verdict tag.
+ *
+ * The task prompt is the initial-prompt argument (CAM-41: a promptless reviewer
+ * dies instantly) and --permission-mode lets quality gates run unprompted.
  */
 export function buildReviewerWorkerArgv(opts: ReviewerWorkerArgvOptions): string {
 	const agentName = opts.agentName ?? DEFAULT_REVIEWER_AGENT;
-
-	if (opts.interactive) {
-		// Interactive TUI reviewer (CAM-42): no -p, no --output-format, no tee,
-		// no wait-for chain. The task prompt is the initial-prompt argument
-		// (CAM-41: a promptless reviewer dies instantly under -p) and
-		// --permission-mode lets the gates run unprompted.
-		const escapedPrompt = shellEscape(opts.taskPrompt ?? REVIEWER_TASK_PROMPT);
-		const permissionMode = opts.permissionMode ?? 'bypassPermissions';
-		return (
-			`claude` +
-			` --permission-mode ${permissionMode}` +
-			` --session-id ${opts.uuid}` +
-			` --agent ${agentName}` +
-			` ${escapedPrompt}`
-		);
-	}
-
-	const escapedChannel = shellEscape(opts.channel ?? '');
-	// When outFile is set, tee stdout+stderr to a durable log so the verdict can
-	// be read even if the pane dies before capture-pane (CAM-32 BUG 1 class). The
-	// pipe binds tighter than `;`, so it is (claude ... | tee file) ; (tmux ...).
-	const teePart = opts.outFile ? ` 2>&1 | tee ${shellEscape(opts.outFile)}` : '';
-
+	const escapedPrompt = shellEscape(opts.taskPrompt ?? REVIEWER_TASK_PROMPT);
+	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
 	return (
-		`claude -p` +
+		`claude` +
+		` --permission-mode ${permissionMode}` +
 		` --session-id ${opts.uuid}` +
-		` --output-format text` +
 		` --agent ${agentName}` +
-		teePart +
-		` ; tmux -L cam wait-for -S ${escapedChannel}`
+		` ${escapedPrompt}`
 	);
 }
 
@@ -272,8 +229,7 @@ export const DEFAULT_REVIEW_TIMEOUT_MS = 30 * 60 * 1000;
  *   4. Update prd.json (roundsCompleted, lastVerdict, new US-RX-NNN stories).
  *
  * The returned function matches the ReviewDispatch type from loop.ts:
- *   (uuid: string, channel: string) => ReviewDispatchResult
- * (the channel argument is a legacy leftover and is ignored).
+ *   (uuid: string) => ReviewDispatchResult
  *
  * PRD update rules:
  *   - Always increments roundsCompleted.
@@ -301,13 +257,12 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	const timeoutMs = opts.timeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS;
 	const now = opts.now ?? (() => Date.now());
 
-	return function reviewDispatch(uuid: string, _channel: string): ReviewDispatchResult {
+	return function reviewDispatch(uuid: string): ReviewDispatchResult {
 		// Build and respawn the interactive reviewer (CAM-41: the prompt is
 		// mandatory; a promptless claude dies instantly).
 		const shellCmd = buildReviewerWorkerArgv({
 			uuid,
 			agentName,
-			interactive: true,
 			taskPrompt,
 			permissionMode,
 		});
