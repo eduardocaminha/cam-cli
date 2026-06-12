@@ -471,10 +471,17 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	};
 
 	const isPaneAlive: RunSupervisorOptions['isPaneAlive'] = (paneId) => {
-		const result = spawnSync('tmux', ['-L', 'cam', 'list-panes', '-t', paneId], {
-			stdio: 'ignore',
-		});
-		return result.status === 0;
+		// A pane whose process died can linger with remain-on-exit (pane_dead=1)
+		// and still satisfy list-panes. Query #{pane_dead} so a dead worker is
+		// reported as such instead of spinning the sentinel poll to its timeout
+		// (found in CAM-42 US-006 validation).
+		const result = spawnSync('tmux', ['-L', 'cam', 'display-message', '-p', '-t', paneId, '#{pane_dead}'], {
+			stdio: 'pipe',
+			encoding: 'utf8',
+		} as Parameters<typeof spawnSync>[2]);
+		if (result.status !== 0) return false;
+		const out = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+		return out === '0';
 	};
 
 	const capturePane: RunSupervisorOptions['capturePane'] = (paneId) => {
