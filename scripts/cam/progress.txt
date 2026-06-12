@@ -12,3 +12,11 @@
 - 3 testes de regressao em result.test.ts: eco do DEFAULT_TASK_PROMPT nao casa sentinel; wording documentado com CAM_IMPLEMENTER_STATUS= sem valor nao casa (regex exige \S+ apos =); sentinel real apos o eco ainda casa.
 - Gates: typecheck ok, 779 pass.
 ---
+
+## [2026-06-11] - US-003: reviewer interativo com prompt + polling do <review>
+- buildReviewerWorkerArgv ganhou branch interactive: prompt inicial (REVIEWER_TASK_PROMPT exportado) + --permission-mode, sem -p/--output-format/wait-for/tee.
+- makeReviewDispatch reescrito: respawn interativo + poll de capture-pane (pane-died, timeout com respawn echo review-timeout), espelhando o branch sentinel do loop. waitFor/workerOutFile/readFile sairam das options (tee morre com o headless).
+- next.ts wiring atualizado: isPaneAlive + sleepFn + permissionMode + timeoutMs=perWorkerTimeoutMs.
+- review.test.ts: helper novo com clock fake deterministico; testes de timeout/pane-died/verdict-tardio; bloco de testes do builder interativo (cuidado: '-p' substring casa '--permission-mode', asserts usam token-level).
+- Gates: typecheck ok, 786 pass.
+---

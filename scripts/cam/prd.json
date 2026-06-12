@@ -66,7 +66,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/review.ts (buildReviewerWorkerArgv + makeReviewDispatch), src/supervisor/loop.ts (sentinel branch is the polling reference), test/supervisor/review.test.ts (or equivalent). CAM-41 root cause: the -p reviewer path passed neither prompt nor permission-mode, so the review never worked headless. The poll target is the literal '<review>' tag, distinct from CAM_*_STATUS sentinels."
     },

@@ -549,8 +549,9 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const workerOutFile: RunSupervisorOptions['workerOutFile'] = (uuid) =>
 		join(claudeDir, `.cam-worker-out-${uuid}.log`);
 
-	// Review dispatch: wired via makeReviewDispatch (US-008). Gets the same
-	// durable out-log treatment as the implementer (CAM-37).
+	// Review dispatch: wired via makeReviewDispatch (US-008). Interactive TUI
+	// reviewer with <review>-tag polling since CAM-42 (claude -p is forbidden
+	// for subscription accounts).
 	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
 		spawn: (cmd, args) => {
 			const proc = spawnSync(cmd, args, { stdio: 'pipe' });
@@ -559,9 +560,6 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 				exitCode: proc.status ?? null,
 			};
 		},
-		waitFor: (channel) => {
-			spawnSync('tmux', ['-L', 'cam', 'wait-for', channel]);
-		},
 		capturePane: (paneId) => {
 			// -S - captures the full scrollback (TUI sentinel can scroll away, CAM-42).
 			const proc = spawnSync('tmux', ['-L', 'cam', 'capture-pane', '-p', '-S', '-', '-t', paneId], {
@@ -569,6 +567,12 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			});
 			return proc.stdout?.toString() ?? '';
 		},
+		isPaneAlive,
+		sleepFn: (ms) => {
+			Bun.sleepSync(ms);
+		},
+		permissionMode,
+		timeoutMs: perWorkerTimeoutMs,
 		readPrd: (): PrdSnapshot | null => {
 			try {
 				const text = readFileSync(prdPath, 'utf8');
@@ -581,8 +585,6 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\n', 'utf8');
 		},
 		workerPaneId,
-		workerOutFile,
-		readFile: readFileOpt,
 	});
 
 	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {
