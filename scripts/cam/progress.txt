@@ -20,3 +20,36 @@
 - review.test.ts: helper novo com clock fake deterministico; testes de timeout/pane-died/verdict-tardio; bloco de testes do builder interativo (cuidado: '-p' substring casa '--permission-mode', asserts usam token-level).
 - Gates: typecheck ok, 786 pass.
 ---
+
+## [2026-06-12] - US-004: Delete the exit/wait-for dispatch path end to end
+
+### What was done
+- worker-argv.ts: removed channel, outFile, interactive options from buildImplementerWorkerArgv; always produces interactive TUI argv
+- review.ts: removed channel, outFile, interactive from ReviewerWorkerArgvOptions and buildReviewerWorkerArgv; ReviewDispatch signature changed from (uuid, channel) to (uuid)
+- loop.ts: removed WaitForFn, GenChannel, RateLimitResume types; removed waitFor, genChannel, implementerMode, workerOutFile, readFile, rateLimitResume, maxRateLimitRetries from RunSupervisorOptions; removed rate-limit detection functions; sentinel polling is now the only completion path
+- next.ts: removed waitFor adapter, readFileOpt/workerOutFile adapters, rateLimitResume adapter, rate-limit constants (RL_MARGIN_SECONDS etc.), parseResetTime/calculateWaitMs imports
+- worker-argv.test.ts, review.test.ts: rewritten for interactive-only argv shape; assert absence of -p and wait-for
+- loop.test.ts: capturePane arrays doubled (sentinel mode calls capturePane twice per iteration: once for poll detection, once for outcome read); no-progress tests updated to use DONE-stale-story sentinel instead of empty pane; US-016 rate-limit block replaced with single blocked-sentinel test; exit-mode unknown/max-iterations tests updated for sentinel timeout behavior
+- events.test.ts: removed waitFor/genChannel from RunSupervisorOptions literals, added sleepFn/nowMs
+
+### Files changed
+- src/supervisor/worker-argv.ts
+- src/supervisor/review.ts
+- src/supervisor/loop.ts
+- src/commands/next.ts
+- test/supervisor/worker-argv.test.ts
+- test/supervisor/review.test.ts
+- test/supervisor/loop.test.ts
+- test/supervisor/events.test.ts
+
+### Quality gates
+- Typecheck: ok
+- Tests: 764 pass, 0 fail
+
+### Step 5.5 docs validation
+- lib: none, status: no_external_lib_touched (deletion-only story, no external library API changed)
+
+### Notes
+- Sentinel mode calls capturePane TWICE per implement iteration (poll detection + outcome read). Tests written for exit mode that used pane arrays with one entry per iteration all needed to be doubled. This is a cross-cutting pattern to know for future loop test writes.
+- The no-progress guard (CAM-36) relies on outcome.kind === 'pass' with a stale storyId. In sentinel mode this requires the pane to return a DONE sentinel for an already-done story, not an empty pane (empty pane causes the poll loop to spin or timeout, not produce a 'pass' outcome).
+---

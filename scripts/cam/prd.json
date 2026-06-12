@@ -85,7 +85,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/worker-argv.ts, src/supervisor/review.ts, src/supervisor/loop.ts, src/commands/next.ts, test/supervisor/*.test.ts. This is a deletion-only story; do not deprecate, do not leave a feature flag. Watch for callers of waitFor across the supervisor module graph. Keep MIT headers in src/retry/* untouched (none of these files are ported retry code, but verify before deleting adjacent shared helpers)."
     },
