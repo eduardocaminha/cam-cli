@@ -170,9 +170,9 @@
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastReviewSha": "81f658bf55f168e4efe811de00fe4e89301e319b",
-    "lastVerdict": "FIXES_PENDING"
+    "lastReviewSha": "f0277da1ee56babae240c49d7c92cadff8d8a1db",
+    "lastVerdict": "CLEAN"
   }
 }

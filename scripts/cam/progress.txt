@@ -96,3 +96,7 @@
 - Ride-along: import jest morto removido de loop.test.ts (sugestao do reviewer).
 - Backlog/skip: tipo 'rate-limited' morto em events.ts; split parseAnySentinel por fonte (defesa extra, nao acionavel hoje).
 ---
+
+## [2026-06-11] - Review round 2: CLEAN
+- Delta-diff f0277da auditado: 3 fixes do round 1 confirmados, gates verdes (758 pass, embed ok). APPROVE.
+---
