@@ -164,7 +164,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "Requires a real subscription claude session, a tmux server, and the operator's machine. The session transcript lives at the path derived from --session-id (lowercase UUID on macOS); use the project's known transcript path helper to read mtime. Do NOT run this against a stale PATH binary (see memory); use `bun index.ts` from the branch. CAM-39/40/41 are absorbed by this validation: confirm they no longer reproduce."
     }

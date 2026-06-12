@@ -100,3 +100,11 @@
 ## [2026-06-11] - Review round 2: CLEAN
 - Delta-diff f0277da auditado: 3 fixes do round 1 confirmados, gates verdes (758 pass, embed ok). APPROVE.
 ---
+
+## [2026-06-12] - US-006: validacao real do loop TUI (operator ceremony, executada pelo orquestrador na maquina do operador)
+- Run hermetico: clone em /tmp + bare origin local + sessao tmux descartavel; story smoke trivial.
+- RESULTADO: implementer TUI -> sentinel detectado por polling -> commit+push verificados -> reviewer TUI (com prompt, CAM-41 path) -> <review>CLEAN</review> -> supervisor complete exit 0.
+- ps audit: 132 amostras, 0 processos claude com -p/--print. Transcript do worker idle pos-sentinel (mtime parado 5min).
+- Achados da validacao: CAM-43 (env nesting mata worker; + nota trust prompt), CAM-44 (pane-died sem backoff), fix in-branch do isPaneAlive via #{pane_dead} (0a629b4).
+- Evidencia consolidada em /tmp/cam42-us006-evidence.md (vai pro PR).
+---
