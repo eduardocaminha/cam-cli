@@ -11,3 +11,9 @@
 - Preservado: flags --completion-promise/--max-iter (ainda parseadas; promise e so display). README ja estava correto (256/272/280), intocado. Sem em-dash.
 - Gates: typecheck ok, 759 pass.
 ---
+
+## [2026-06-13] - Review round 1 FIXES_PENDING:2 -> fixes -> round 2 CLEAN
+- Round 1 (2 WARNINGs, ambos em regiao reescrita): heading da secao 4 ("lancador de pane") contradizia o body; state machine da secao 8 roteava max_iterations pra Complete (na real -> Paused, so 'complete' remove o state file). Corrigidos + reconciliado o mermaid da secao 7 (NEXTC/DEC/COMPLETE) que a prose nova ja contradizia.
+- Out-of-scope (secao 1 mermaid, secao 2.5 + README orchestrator pane dizendo /cam-next) filados como CAM-45 (P3).
+- Round 2: APPROVE/CLEAN. 2 sugestoes cosmeticas (underscore vs hyphen no label; absorvidas no CAM-45).
+---

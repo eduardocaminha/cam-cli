@@ -47,5 +47,11 @@
       "requires": null,
       "notes": "Files: FLOW.md (repo ROOT, not docs/) sections 7 (~lines 363-413) and 8 (~lines 417-447), plus the section-4 line ~220 ('materializa stop hook'). README.md only if it has a matching stale section. The stop-hook + <promise> + /cam-next re-injection model was retired in CAM-22/CAM-42; the live model is runSupervisor (src/supervisor/loop.ts) + decideNextAction (reads prd.json) + TUI workers + capture-pane sentinel that is corroboration-only (src/supervisor/result.ts, CAM-32). KEEP the --completion-promise / --max-iter flags (still parsed in index.ts); only fix the false mechanism claims. NO em-dash in persisted md. This is the honest closing record for CAM-4, factual not new design."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 2,
+    "maxRounds": 3,
+    "lastReviewSha": "13b3a3e6a50509201eeeba11daf2ec0bdf946e62",
+    "lastVerdict": "CLEAN"
+  }
 }
