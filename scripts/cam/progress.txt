@@ -13,3 +13,8 @@
 - FLOW.md secao 4: nota de guardrails por-worker (wall-clock + token ceiling + maxIterations; max-turns/budget-usd print-mode-only fora; USD N/A subscricao). recovery-runbook: evento worker-token-ceiling + nota de guardrails. Sem em-dash.
 - Gates: typecheck ok, 763 pass.
 ---
+
+## [2026-06-13] - Review round 1: CLEAN
+- subagent-reviewer APPROVE, zero CRITICAL/WARNING. Validou: spend formula == computeOrchBudget; token-ceiling branch retorna antes do backoff do dead-worker (terminal, nao retry); extensao do TokensEventDetail aditiva, todos os consumidores atualizados; disabled path gated estruturalmente. 3 sugestoes out-of-scope/cosmeticas (inconsistencia pre-existente do perWorkerTimeoutMs env: nao tocar por Surgical Changes; call-count assert: reviewer rateou functionally sufficient). Nada aplicado.
+- Sem operator story: condicao (spend cruzando teto) 100% simulavel com fakes injetados.
+---
