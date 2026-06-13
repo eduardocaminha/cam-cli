@@ -6,3 +6,8 @@
 - Implementado direto pelo orquestrador (Task/Edit), nao via loop TUI: os workers TUI morreriam do proprio bug que esta issue conserta (circular).
 - Gates: typecheck ok, 761 pass.
 ---
+
+## [2026-06-13] - US-003: doc do trust-prompt no runbook
+- docs/recovery-runbook.md ganhou cenario (e) "Worker pane stuck on the folder-trust prompt"; antigo (e) Diagnosing virou (f). Sintoma, causa (dir nunca vista pelo claude), e mitigacao (send-keys Enter / pre-trust em CI). Sem em-dash.
+- Gates: typecheck ok, 761 pass.
+---

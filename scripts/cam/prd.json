@@ -55,7 +55,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: docs/recovery-runbook.md. Pure docs story, no source change; typecheck/tests must still pass (sanity gate). Hard project rule (CLAUDE.md): no em-dash in persisted .md files. Place the new scenario alongside the existing scenarios; keep the existing structure (symptom / cause / fix) consistent with the rest of the runbook. Cross-link from the new scenario to the CAM-42 / CAM-43 context if the runbook already has a related section, but do not announce absence of unrelated content."
     },
