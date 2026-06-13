@@ -91,16 +91,29 @@ echo "[build-release]   ${ACTUAL}"
 
 # --- Sanity: AC4 (init runs, soft-checks) ----------------------------------
 # `cam init` validates PATH for claude + runs vendored smokes. On the dev
-# machine these pass; on a CI box they may fail (no claude binary). We invoke
-# it with a tmp config so we don't clobber the operator's real ~/.config,
-# and we log but DON'T abort on non-zero — the acceptance criterion is "runs
-# the validator without erroring", which we interpret as "the binary executes
-# and exits cleanly with structured diagnostics", not "every check passes on
-# every machine".
-echo "[build-release] invoking init (soft-check)"
-TMP_CONFIG="$(mktemp -d)/config.toml"
-if CAM_CONFIG_PATH="${TMP_CONFIG}" "${BIN}" init; then
-	echo "[build-release]   init: ok"
+# machine these pass; on a CI box they may fail (no claude binary). We log but
+# DON'T abort on non-zero — the acceptance criterion is "runs the validator
+# without erroring", which we interpret as "the binary executes and exits
+# cleanly with structured diagnostics", not "every check passes on every
+# machine".
+#
+# CAM-15: the soft-check MUST be hermetic. `cam init` chains `runSetup`, which
+# copies templates over the cwd's versioned files and (without --no-tmux)
+# spawns a tmux session + a live claude agent. Running it against REPO_ROOT
+# clobbered 10 versioned files and left a cam-setup session twice. We isolate
+# it on every axis: a throwaway tmpdir as cwd (file writes land there, not the
+# repo), --no-tmux (no tmux/agent), --existing --issue-system none (skip the
+# interactive setup wizard so it never blocks), </dev/null (belt-and-braces on
+# stdin), and a tmp config. The binary is referenced by an absolute path so the
+# cd does not break resolution. Canonical rule: lessons.md 2026-06-06 (no
+# mutating command in a build smoke); the 2026-06-13 entry records this fix.
+echo "[build-release] invoking init (soft-check, hermetic)"
+SMOKE_DIR="$(mktemp -d)"
+# Clean up the tmpdir on any exit (success OR an earlier abort), so it never leaks.
+trap 'rm -rf "${SMOKE_DIR:-}"' EXIT
+BIN_ABS="${REPO_ROOT}/${BIN}"
+if (cd "${SMOKE_DIR}" && CAM_CONFIG_PATH="${SMOKE_DIR}/config.toml" "${BIN_ABS}" init --no-tmux --existing --issue-system none </dev/null); then
+	echo "[build-release]   init: ok (hermetic tmpdir, no tmux)"
 else
 	rc=$?
 	echo "[build-release]   init: exit ${rc} (non-zero is acceptable on machines without claude installed)"
