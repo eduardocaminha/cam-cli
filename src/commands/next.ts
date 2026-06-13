@@ -304,6 +304,19 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		return DEFAULT_PER_WORKER_TIMEOUT_MS;
 	})();
 
+	// Per-worker token ceiling (CAM-5): opt-in via CAM_WORKER_MAX_TOKENS. 0 / unset
+	// means disabled (the wall-clock timeout + subscription rate-limit are the only
+	// bounds). A positive value kills a worker once its cumulative token spend
+	// (input + cacheCreation + cacheRead) crosses it.
+	const maxWorkerTokens = (() => {
+		const envVal = env['CAM_WORKER_MAX_TOKENS'];
+		if (envVal !== undefined) {
+			const parsed = parseInt(envVal, 10);
+			if (!isNaN(parsed) && parsed > 0) return parsed;
+		}
+		return 0;
+	})();
+
 	const claudeDir = join(cwd, '.claude');
 
 	// Compute session name for attach hint.
@@ -700,6 +713,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			taskPrompt,
 			maxIterations,
 			perWorkerTimeoutMs,
+			maxWorkerTokens,
 			logEvent,
 			readWorkerTokens: readWorkerTokensAdapter,
 			ensurePushed,

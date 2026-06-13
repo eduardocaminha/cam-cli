@@ -161,7 +161,7 @@ describe('readWorkerTokens', () => {
 
 	test('sums usage from the resolved transcript', () => {
 		const tokens = readWorkerTokens('u1', '/proj', '/home/.claude', () => JSONL);
-		expect(tokens).toEqual({ inputTokens: 100, outputTokens: 50, cacheReadTokens: 20 });
+		expect(tokens).toEqual({ inputTokens: 100, outputTokens: 50, cacheReadTokens: 20, cacheCreationTokens: 10 });
 	});
 
 	test('passes the resolved transcript path to readFile', () => {
@@ -238,7 +238,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 			sleepFn: (_ms) => {},
 			nowMs: () => 0,
 			logEvent: logger,
-			readWorkerTokens: () => ({ inputTokens: 100, outputTokens: 50, cacheReadTokens: 20 }),
+			readWorkerTokens: () => ({ inputTokens: 100, outputTokens: 50, cacheReadTokens: 20, cacheCreationTokens: 10 }),
 		};
 
 		const result = await runSupervisor(opts);
@@ -259,7 +259,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 		});
 
 		const tokensEvent = events.find((e) => e.kind === 'tokens');
-		expect(tokensEvent?.detail).toEqual({ inputTokens: 100, outputTokens: 50, cacheReadTokens: 20 });
+		expect(tokensEvent?.detail).toEqual({ inputTokens: 100, outputTokens: 50, cacheReadTokens: 20, cacheCreationTokens: 10 });
 	});
 
 	test('no events emitted when logEvent is absent (zero behavior change)', async () => {

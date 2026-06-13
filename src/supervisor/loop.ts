@@ -152,6 +152,15 @@ export interface RunSupervisorOptions {
 	isPaneAlive: IsPaneAlive;
 	/** Per-worker deadline in milliseconds. Default: DEFAULT_PER_WORKER_TIMEOUT_MS (30 min). */
 	perWorkerTimeoutMs?: number;
+	/**
+	 * Per-worker cumulative token ceiling (CAM-5). When > 0 and readWorkerTokens
+	 * is available, the sentinel poll loop reads the worker's spend each tick and
+	 * kills the worker (terminal 'blocked') once spend >= this value. Default 0
+	 * means DISABLED (no ceiling): the wall-clock timeout + the subscription
+	 * rate-limit are the only bounds. Spend = input + cacheCreation + cacheRead,
+	 * the same formula as the orchestrator budget (src/orchestrator/budget.ts).
+	 */
+	maxWorkerTokens?: number;
 	/** Pane id of the worker slot. Must be pre-allocated by the caller. */
 	workerPaneId: string;
 	/** Absolute path to prd.json (for readWorkerOutcome). */
@@ -391,6 +400,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const genUuid = opts.genUuid ?? defaultGenUuid;
 	const maxIter = opts.maxIterations ?? MAX_ITERATIONS;
 	const perWorkerTimeoutMs = opts.perWorkerTimeoutMs ?? DEFAULT_PER_WORKER_TIMEOUT_MS;
+	const maxWorkerTokens = opts.maxWorkerTokens ?? 0;
 	const runGates = opts.runGates;
 	const finalizeStory = opts.finalizeStory;
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
@@ -534,9 +544,11 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// self-selects); later events carry the actual completed story.
 			emit('worker-start', advisoryStoryId, uuid, { mode: 'sentinel' });
 
-			// Poll capture-pane until we see the sentinel, the pane dies, or timeout.
+			// Poll capture-pane until we see the sentinel, the pane dies, the token
+			// ceiling is crossed (CAM-5), or timeout.
 			const startMs = now();
-			let pollOutcome: 'sentinel' | 'pane-died' | 'timeout' = 'timeout';
+			let pollOutcome: 'sentinel' | 'pane-died' | 'timeout' | 'token-ceiling' = 'timeout';
+			let tokenSpendAtBreach = 0;
 
 			while (true) {
 				sleepFn(pollIntervalMs);
@@ -549,6 +561,20 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					pollOutcome = 'sentinel';
 					break;
 				}
+				// CAM-5: opt-in per-worker token ceiling. Spend = input + cacheCreation
+				// + cacheRead (same as computeOrchBudget). Disabled when maxWorkerTokens
+				// is 0 or no token reader is wired.
+				if (maxWorkerTokens > 0 && readWorkerTokens) {
+					const tk = readWorkerTokens(uuid);
+					if (tk) {
+						const spend = tk.inputTokens + tk.cacheCreationTokens + tk.cacheReadTokens;
+						if (spend >= maxWorkerTokens) {
+							pollOutcome = 'token-ceiling';
+							tokenSpendAtBreach = spend;
+							break;
+						}
+					}
+				}
 				if (now() - startMs >= perWorkerTimeoutMs) {
 					break; // timeout
 				}
@@ -558,6 +584,24 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 			// US-013: worker-end. pollOutcome records how it ended.
 			emit('worker-end', advisoryStoryId, uuid, { mode: 'sentinel', pollOutcome });
+
+			// CAM-5: token ceiling crossed. Kill the worker and stop terminally
+			// (re-dispatching would only burn more tokens), bypassing the dead-worker
+			// backoff path. Emitted before the pane-died/timeout handling below.
+			if (pollOutcome === 'token-ceiling') {
+				spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo token-ceiling']);
+				emit('worker-token-ceiling', advisoryStoryId, uuid, {
+					spend: tokenSpendAtBreach,
+					ceiling: maxWorkerTokens,
+				});
+				lastOutcome = {
+					kind: 'blocked',
+					storyId: undefined,
+					detail: `worker-token-ceiling: spend ${tokenSpendAtBreach} >= ceiling ${maxWorkerTokens} (advisory ${advisoryStoryId ?? 'unknown'})`,
+				};
+				notifyTerminal('blocked');
+				return { status: 'blocked', iterations, lastOutcome };
+			}
 
 			// CAM-44: a dead pane (worker died pre-result) or a timeout (no sentinel
 			// within the deadline) leaves the story unadvanced, so the next

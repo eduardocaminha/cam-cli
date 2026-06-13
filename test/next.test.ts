@@ -185,6 +185,67 @@ describe('runNext', () => {
 		}
 	});
 
+	test('CAM-5: forwards parsed maxWorkerTokens + readWorkerTokens to the supervisor', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-tokceil-'));
+		try {
+			const { supervisorFn, calls } = makeFakeSupervisor({
+				status: 'complete',
+				iterations: 1,
+				lastOutcome: null,
+			});
+
+			const code = await runNext({
+				cwd: dir,
+				permissionMode: 'bypassPermissions',
+				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
+				workerPaneReader: (_claudeDir) => '%5',
+				supervisorFn,
+				env: { ...process.env, CAM_WORKER_MAX_TOKENS: '50000' },
+				startedAt: '2026-06-08T12:00:00Z',
+				pid: 1234,
+				prdPath: join(dir, 'scripts/cam/prd.json'),
+				handoffPath: join(dir, 'scripts/cam/handoff.json'),
+			});
+
+			expect(code).toBe(0);
+			expect(calls).toHaveLength(1);
+			// The opt-in env knob is parsed and forwarded.
+			expect(calls[0]!.opts.maxWorkerTokens).toBe(50000);
+			// The token reader the ceiling depends on reaches the supervisor.
+			expect(typeof calls[0]!.opts.readWorkerTokens).toBe('function');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('CAM-5: maxWorkerTokens defaults to 0 (disabled) when the env knob is unset', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-tokceil-off-'));
+		try {
+			const { supervisorFn, calls } = makeFakeSupervisor({
+				status: 'complete',
+				iterations: 1,
+				lastOutcome: null,
+			});
+			const envNoKnob = { ...process.env };
+			delete envNoKnob['CAM_WORKER_MAX_TOKENS'];
+
+			await runNext({
+				cwd: dir,
+				permissionMode: 'bypassPermissions',
+				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
+				workerPaneReader: (_claudeDir) => '%5',
+				supervisorFn,
+				env: envNoKnob,
+				startedAt: '2026-06-08T12:00:00Z',
+				pid: 1234,
+			});
+
+			expect(calls[0]!.opts.maxWorkerTokens).toBe(0);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test('state-file shape contract: written fields match parseStateFile expectations', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-next-state-'));
 		try {

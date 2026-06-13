@@ -17,6 +17,8 @@
 //  12. CAM-44: persistent timeout blocks at the dead-worker cap (escalating backoff), not max-iterations.
 //  13. CAM-44: persistent pane-death blocks at the dead-worker cap.
 //  14. CAM-44: transient pane-death then a real completion does not block (streak resets).
+//  15. CAM-5: worker token ceiling kills + blocks terminally once spend crosses the cap.
+//  16. CAM-5: ceiling disabled (maxWorkerTokens 0) -> no poll-loop token check, no kill.
 
 import { describe, expect, test, beforeEach } from 'bun:test';
 import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
@@ -405,6 +407,82 @@ describe('runSupervisor', () => {
 		expect(result.status).toBe('complete');
 		// 1 dead iteration + 1 implement + 1 review = 3, never blocked.
 		expect(result.iterations).toBe(3);
+	});
+
+	test('worker token ceiling: kills the worker and blocks terminally once spend crosses the cap (CAM-5)', async () => {
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+		const { logger, events } = makeInMemoryEventLogger();
+		const spawnArgs: string[][] = [];
+		// readWorkerTokens returns escalating spend: 40k, 80k, 120k. With a 100k
+		// ceiling, the 3rd poll crosses it. Spend = input + cacheCreation + cacheRead.
+		let call = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			capturePane: (_paneId) => UNKNOWN_PANE, // never a sentinel; keep polling
+			pollIntervalMs: 0,
+			maxWorkerTokens: 100_000,
+			readWorkerTokens: (_uuid) => {
+				call += 1;
+				const spend = call * 40_000; // 40k, 80k, 120k
+				return { inputTokens: spend, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
+			},
+			spawn: (_cmd, args) => {
+				spawnArgs.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.lastOutcome?.detail).toContain('worker-token-ceiling');
+		const ceilingEvents = events.filter((e) => e.kind === 'worker-token-ceiling');
+		expect(ceilingEvents).toHaveLength(1);
+		expect(ceilingEvents[0]?.detail).toMatchObject({ spend: 120_000, ceiling: 100_000 });
+		// The worker pane was killed (respawn-pane -k ... echo token-ceiling).
+		const killed = spawnArgs.some(
+			(a) => a.includes('respawn-pane') && a[a.length - 1] === 'echo token-ceiling',
+		);
+		expect(killed).toBe(true);
+	});
+
+	test('worker token ceiling disabled (maxWorkerTokens 0): readWorkerTokens never consulted, no kill (CAM-5)', async () => {
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 0, lastVerdict: null },
+		});
+		const prd_clean = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		// reads: iter1 top, iter1 outcome (US-001 now true -> pass), iter2 top (review),
+		// review re-read, iter3 top (complete).
+		const prds: PrdSnapshot[] = [prd_impl, prd_done, prd_done, prd_done, prd_clean];
+		let prdCall = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => prds[prdCall++] ?? prd_clean,
+			readHandoff: () => makeHandoff('US-001'),
+			capturePane: (_paneId) => donePane('US-001'),
+			maxWorkerTokens: 0, // disabled
+			readWorkerTokens: (_uuid) => ({
+				inputTokens: 999_999,
+				outputTokens: 0,
+				cacheReadTokens: 0,
+				cacheCreationTokens: 0,
+			}),
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		// readWorkerTokens may be called by emitTokens at worker-end, but the POLL
+		// loop must not consult it when the ceiling is disabled: a 999999 spend with
+		// a 0 ceiling never kills. The run completes normally.
+		expect(result.lastOutcome?.detail ?? '').not.toContain('worker-token-ceiling');
 	});
 
 	test('max-iterations cap with PRD_COMPLETE cycling', async () => {
