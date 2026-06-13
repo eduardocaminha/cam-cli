@@ -47,5 +47,11 @@
       "notes": "Files: docs/recovery-runbook.md. The event-log diagnostics section already enumerates emitted event kinds (worker-start, worker-end, result, tokens, pushed, stale-lock); add 'pane-died-retry'. Depends on US-001 having added the event. No source change in this story."
     }
   ],
-  "docsConsultedRationale": "No external library touched: internal supervisor state-machine guard + existing WorkerEventKind union (closed) + markdown doc only."
+  "docsConsultedRationale": "No external library touched: internal supervisor state-machine guard + existing WorkerEventKind union (closed) + markdown doc only.",
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "c661ac338d49a7a92c21ad88b1b6921a78bf3e3d",
+    "lastVerdict": "CLEAN"
+  }
 }

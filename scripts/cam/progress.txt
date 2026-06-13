@@ -12,3 +12,8 @@
 - recovery-runbook.md: cenario (a) ganha nota sobre o re-dispatch limitado (backoff escalonado + cap MAX_DEAD_WORKER_RETRIES, block limpo, aponta pro (e) trust); cenario (f) lista o evento 'pane-died-retry'. Sem em-dash.
 - Gates: typecheck ok, 763 pass.
 ---
+
+## [2026-06-13] - Review round 1: CLEAN (+ 3 sugestoes aplicadas)
+- subagent-reviewer APPROVE, zero CRITICAL/WARNING, validou a ortogonalidade dos dois caps (dead-worker x no-progress: nenhum evade o outro). Sugestoes aplicadas: colapsado a atribuicao dupla de lastOutcome (intermediaria era dead code no branch do cap); advisoryStoryId ?? 'unknown' defensivo; lista de cobertura do teste atualizada (itens 12-14).
+- Gates: typecheck ok, loop tests pass.
+---

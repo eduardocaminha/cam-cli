@@ -14,6 +14,9 @@
 //   9. Review dispatch error -> 'blocked'.
 //  10. writeSessionMarker called with actualStoryId, not advisory storyId.
 //  11. PRD_COMPLETE sentinel (outcome.storyId undefined) -> continue, next iter complete.
+//  12. CAM-44: persistent timeout blocks at the dead-worker cap (escalating backoff), not max-iterations.
+//  13. CAM-44: persistent pane-death blocks at the dead-worker cap.
+//  14. CAM-44: transient pane-death then a real completion does not block (streak resets).
 
 import { describe, expect, test, beforeEach } from 'bun:test';
 import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';

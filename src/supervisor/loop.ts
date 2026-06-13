@@ -570,21 +570,21 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					// Kill the stuck worker so the next dispatch starts from a clean pane.
 					spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
 				}
-				lastOutcome = {
-					kind: 'blocked',
-					storyId: undefined,
-					detail: pollOutcome === 'pane-died' ? 'pane-died-pre-result' : 'timeout',
-				};
 				deadWorkerStreak += 1;
 				if (deadWorkerStreak >= MAX_DEAD_WORKER_RETRIES) {
 					lastOutcome = {
 						kind: 'blocked',
 						storyId: undefined,
-						detail: `dead-worker: ${deadWorkerStreak} consecutive ${pollOutcome} outcomes (advisory ${advisoryStoryId})`,
+						detail: `dead-worker: ${deadWorkerStreak} consecutive ${pollOutcome} outcomes (advisory ${advisoryStoryId ?? 'unknown'})`,
 					};
 					notifyTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
+				lastOutcome = {
+					kind: 'blocked',
+					storyId: undefined,
+					detail: pollOutcome === 'pane-died' ? 'pane-died-pre-result' : 'timeout',
+				};
 				emit('pane-died-retry', advisoryStoryId, uuid, {
 					attempt: deadWorkerStreak,
 					backoffMs: NO_PROGRESS_BACKOFF_MS * deadWorkerStreak,
