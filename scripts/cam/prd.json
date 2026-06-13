@@ -23,7 +23,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/plan.ts (remove the two functions + their section comment at ~lines 66-90), test/plan.test.ts (remove the two describe blocks ~lines 79-122 and the two names from the import at lines 28-29; also the coverage-comment lines 6-7). Only these two functions are dead; buildPlanArgv/parsePlanArgs/runPlan stay. Grep `isApproveLine\\|findApproveLine` after editing to confirm zero hits remain."
     },

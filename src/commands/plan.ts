@@ -63,32 +63,6 @@ export interface PlanOptions {
 	env?: Env;
 }
 
-// --- Verdict detection helpers (kept for future APPROVE-in-pane detection) --
-
-/**
- * Test whether a line carries the prd-auditor's APPROVE verdict.
- *
- * The contract: a line contains both `verdict` (case-insensitive) AND the
- * literal substring `APPROVE` (uppercase). Tolerates surrounding markup:
- * JSON (`"verdict": "APPROVE"`), YAML (`verdict: APPROVE`), prose
- * ("the verdict is APPROVE"), and any whitespace are all fine.
- */
-export function isApproveLine(line: string): boolean {
-	if (!/verdict/i.test(line)) return false;
-	return line.includes('APPROVE');
-}
-
-/**
- * Scan a multi-line buffer for the first APPROVE verdict line.
- * Returns the matching line, or null when none is found yet.
- */
-export function findApproveLine(buffer: string): string | null {
-	for (const line of buffer.split('\n')) {
-		if (isApproveLine(line)) return line;
-	}
-	return null;
-}
-
 // --- argv builder ----------------------------------------------------------
 
 /**
