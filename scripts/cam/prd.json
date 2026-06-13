@@ -60,7 +60,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "Real-build verification of the side-effect removal. Needs a real machine with claude logged in so runSetup's claude check passes and the (now hermetic) template install + skipped-tmux path actually runs. Evidence: git status before == after == clean. Reference: lessons.md 2026-06-06; the CAM-16 US-003 ceremony log is where this side effect was last observed (10 files clobbered + cam-setup session)."
     }
