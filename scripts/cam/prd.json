@@ -71,7 +71,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "Files: none (validation only). Mirrors the CAM-42 US-006 ceremony. Requires real subscription claude + tmux + operator machine; cannot be automated. Pre-flight: ensure the cam binary is rebuilt (or `bun index.ts next` is used) so the new argv with env-prefix is actually exercised; lessons.md warns that a stale ~/.local/bin/cam can mask the fix. If the worker still dies pre-session, capture the pane history + the ps argv and reopen CAM-43 with the gap."
     }
