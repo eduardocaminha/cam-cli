@@ -14,9 +14,12 @@
 //   9. Review dispatch error -> 'blocked'.
 //  10. writeSessionMarker called with actualStoryId, not advisory storyId.
 //  11. PRD_COMPLETE sentinel (outcome.storyId undefined) -> continue, next iter complete.
+//  12. CAM-44: persistent timeout blocks at the dead-worker cap (escalating backoff), not max-iterations.
+//  13. CAM-44: persistent pane-death blocks at the dead-worker cap.
+//  14. CAM-44: transient pane-death then a real completion does not block (streak resets).
 
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
+import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
 	SpawnFn,
@@ -299,25 +302,108 @@ describe('runSupervisor', () => {
 		expect(result.lastOutcome?.kind).toBe('blocked');
 	});
 
-	test('max-iterations cap fires before completion', async () => {
-		// Story never completes (no sentinel emitted). In sentinel mode the poll
-		// loop times out (perWorkerTimeoutMs:0 -> elapsed 0 >= 0). The timeout
-		// path sets lastOutcome=blocked and does continue (not return), so the
-		// loop keeps dispatching until maxIterations is exhausted.
+	test('persistent timeout blocks at the dead-worker cap, never reaching max-iterations (CAM-44)', async () => {
+		// Story never emits a sentinel: the poll loop times out every iteration
+		// (perWorkerTimeoutMs:0 -> elapsed 0 >= 0). Before CAM-44 this spun to
+		// maxIterations; now the dead-worker guard blocks cleanly after
+		// MAX_DEAD_WORKER_RETRIES consecutive timeouts. maxIterations is set high
+		// so the cap (not the iteration ceiling) is what fires.
 		const prd = makePrd({
 			stories: [{ id: 'US-001', priority: 1, passes: false }],
 		});
-
+		const sleeps: number[] = [];
+		const { logger, events } = makeInMemoryEventLogger();
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
 			capturePane: (_paneId) => UNKNOWN_PANE,
 			perWorkerTimeoutMs: 0,
-			maxIterations: 3,
+			pollIntervalMs: 0,
+			maxIterations: 50,
+			sleepFn: (ms) => {
+				if (ms > 0) sleeps.push(ms);
+			},
+			logEvent: logger,
 		});
 
 		const result = await runSupervisor(opts);
 
-		expect(result.status).toBe('max-iterations');
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(MAX_DEAD_WORKER_RETRIES);
+		// Two escalating backoffs before the 3rd timeout blocks.
+		expect(sleeps).toEqual([NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2]);
+		const retryEvents = events.filter((e) => e.kind === 'pane-died-retry');
+		expect(retryEvents).toHaveLength(MAX_DEAD_WORKER_RETRIES - 1);
+		expect(retryEvents[0]?.detail).toMatchObject({
+			attempt: 1,
+			backoffMs: NO_PROGRESS_BACKOFF_MS,
+			pollOutcome: 'timeout',
+		});
+		expect(result.lastOutcome?.detail).toContain('dead-worker');
+	});
+
+	test('persistent pane-death blocks at the dead-worker cap (CAM-44)', async () => {
+		// The pane is dead every poll (isPaneAlive false). The dead-worker guard
+		// must block after MAX_DEAD_WORKER_RETRIES, not spin to maxIterations.
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+		const sleeps: number[] = [];
+		const { logger, events } = makeInMemoryEventLogger();
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			isPaneAlive: (_paneId) => false,
+			pollIntervalMs: 0,
+			maxIterations: 50,
+			sleepFn: (ms) => {
+				if (ms > 0) sleeps.push(ms);
+			},
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(MAX_DEAD_WORKER_RETRIES);
+		expect(sleeps).toEqual([NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2]);
+		const retryEvents = events.filter((e) => e.kind === 'pane-died-retry');
+		expect(retryEvents).toHaveLength(MAX_DEAD_WORKER_RETRIES - 1);
+		expect(retryEvents[0]?.detail).toMatchObject({ pollOutcome: 'pane-died' });
+	});
+
+	test('transient pane-death then a real completion does NOT block (streak resets) (CAM-44)', async () => {
+		// Iter 1: pane dead (streak 1). Iter 2: live pane yields a DONE sentinel
+		// for the only story -> streak resets, story passes, loop reviews + completes.
+		const prdBefore = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+		});
+		const prdDone = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 0, lastVerdict: null },
+		});
+		const prdClean = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		// reads: iter1 top, iter2 top, iter2 outcome, iter3 (review) top, post, iter4 complete
+		const prds: PrdSnapshot[] = [prdBefore, prdBefore, prdDone, prdDone, prdDone, prdClean];
+		let prdCall = 0;
+		let aliveCall = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => prds[prdCall++] ?? prdClean,
+			readHandoff: () => makeHandoff('US-001'),
+			// First poll: pane dead. After that: alive.
+			isPaneAlive: (_paneId) => {
+				aliveCall += 1;
+				return aliveCall > 1;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			maxIterations: 50,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		// 1 dead iteration + 1 implement + 1 review = 3, never blocked.
 		expect(result.iterations).toBe(3);
 	});
 

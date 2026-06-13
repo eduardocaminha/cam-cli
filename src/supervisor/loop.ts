@@ -319,6 +319,19 @@ export const MAX_NO_PROGRESS_RETRIES = 3;
 export const NO_PROGRESS_BACKOFF_MS = 60_000;
 
 /**
+ * Max consecutive dead-pane / timeout outcomes before the loop blocks (CAM-44).
+ * A worker that dies pre-result (pane-died) or never emits a sentinel (timeout)
+ * leaves the story still passes:false, so decideNextAction re-dispatches it. When
+ * the cause is persistent (a dead tmux server, a worker dying pre-session), the
+ * loop would otherwise storm: re-dispatch every poll interval, burning
+ * MAX_ITERATIONS in minutes with each spawn dying the same way. Mirroring the
+ * CAM-36/38 no-progress guard, dead-pane outcomes get the same escalating
+ * NO_PROGRESS_BACKOFF_MS * streak backoff and block after this many consecutive
+ * failures instead of spinning to the iteration cap.
+ */
+export const MAX_DEAD_WORKER_RETRIES = 3;
+
+/**
  * Max review-dispatch attempts before the loop blocks (CAM-37). A reviewer
  * worker can silently no-op (claude instant-exit / rate-limited: empty output,
  * no `<review>` verdict) or its pane can be captured empty before it flushes,
@@ -444,6 +457,12 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// already-done story (zero PRD progress). See MAX_NO_PROGRESS_RETRIES.
 	let noProgressStreak = 0;
 
+	// CAM-44: counts consecutive dead-pane / timeout outcomes (a worker that
+	// died pre-result or never emitted a sentinel). Without a backoff the loop
+	// re-dispatches immediately and, when the cause is persistent, storms to
+	// MAX_ITERATIONS in minutes. See MAX_DEAD_WORKER_RETRIES.
+	let deadWorkerStreak = 0;
+
 	outer: while (iterations < maxIter) {
 		// --- Read current PRD state ---
 		const prd = readPrd();
@@ -540,23 +559,45 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// US-013: worker-end. pollOutcome records how it ended.
 			emit('worker-end', advisoryStoryId, uuid, { mode: 'sentinel', pollOutcome });
 
-			if (pollOutcome === 'pane-died') {
+			// CAM-44: a dead pane (worker died pre-result) or a timeout (no sentinel
+			// within the deadline) leaves the story unadvanced, so the next
+			// decideNextAction re-dispatches it. When the cause is persistent this
+			// storms to MAX_ITERATIONS. Apply the same escalating backoff + cap as
+			// the no-progress guard: block cleanly after MAX_DEAD_WORKER_RETRIES
+			// consecutive failures instead of spinning.
+			if (pollOutcome === 'pane-died' || pollOutcome === 'timeout') {
+				if (pollOutcome === 'timeout') {
+					// Kill the stuck worker so the next dispatch starts from a clean pane.
+					spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
+				}
+				deadWorkerStreak += 1;
+				if (deadWorkerStreak >= MAX_DEAD_WORKER_RETRIES) {
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: undefined,
+						detail: `dead-worker: ${deadWorkerStreak} consecutive ${pollOutcome} outcomes (advisory ${advisoryStoryId ?? 'unknown'})`,
+					};
+					notifyTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
 				lastOutcome = {
 					kind: 'blocked',
 					storyId: undefined,
-					detail: 'pane-died-pre-result',
+					detail: pollOutcome === 'pane-died' ? 'pane-died-pre-result' : 'timeout',
 				};
+				emit('pane-died-retry', advisoryStoryId, uuid, {
+					attempt: deadWorkerStreak,
+					backoffMs: NO_PROGRESS_BACKOFF_MS * deadWorkerStreak,
+					pollOutcome,
+				});
+				sleepFn(NO_PROGRESS_BACKOFF_MS * deadWorkerStreak);
 				continue;
 			}
-			if (pollOutcome === 'timeout') {
-				spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
-				lastOutcome = {
-					kind: 'blocked',
-					storyId: undefined,
-					detail: 'timeout',
-				};
-				continue;
-			}
+
+			// Sentinel found: the worker ran to a sentinel (it did not die or time
+			// out), so any prior dead-pane streak is broken regardless of the
+			// outcome that follows (CAM-44).
+			deadWorkerStreak = 0;
 
 			// Sentinel found: read full pane text and determine outcome.
 			const paneText = capturePane(workerPaneId);
@@ -749,7 +790,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// breaks any run of consecutive no-progress implement passes. Reset the
 			// streak here so the "consecutive" semantics hold across a review (e.g.
 			// no-op pass -> review FIXES_PENDING -> fresh implement starts at 0).
+			// CAM-44: likewise breaks any dead-worker streak.
 			noProgressStreak = 0;
+			deadWorkerStreak = 0;
 
 			// Continue: next iteration's decideNextAction will evaluate the verdict.
 			continue;

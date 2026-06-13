@@ -65,6 +65,15 @@ kill <pid>        # SIGTERM; the loop releases its lock on the way out
 The supervisor releases `.claude/.cam-supervisor.lock` on a clean SIGTERM. If
 it was hard-killed, see scenario (d).
 
+Note: if the symptom is the opposite (the worker keeps dying and the supervisor
+keeps re-spawning it), the loop does NOT spin forever. A worker that dies
+pre-result or never emits a sentinel is bounded: the supervisor backs off with
+an escalating delay and, after `MAX_DEAD_WORKER_RETRIES` consecutive dead-pane
+or timeout outcomes, blocks cleanly (it does not burn the whole iteration cap).
+Each backoff is recorded as a `pane-died-retry` event (see scenario (f)). A
+persistent dead worker usually means the environment is wrong, not the loop:
+check scenario (e) for the folder-trust block.
+
 ## (b) Orphaned worker pane
 
 Symptom: the tmux session or worker pane is in a bad state (a dead command, a
@@ -222,6 +231,10 @@ grep '"kind":"pushed"' .claude/cam-worker-events.jsonl
 
 # Supervisor takeovers of a dead lock (US-015):
 grep '"kind":"stale-lock"' .claude/cam-worker-events.jsonl
+
+# Bounded dead-worker backoff: each retry before the supervisor blocks on a
+# persistently dying worker (CAM-44). detail carries attempt, backoffMs, pollOutcome:
+grep '"kind":"pane-died-retry"' .claude/cam-worker-events.jsonl
 ```
 
 To correlate a story with its transcript, read its session marker and resolve
