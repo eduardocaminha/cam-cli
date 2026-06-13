@@ -3,8 +3,6 @@
 // Unit tests for `cam plan` (US-006: thin pane launcher).
 //
 // What we cover:
-//   - isApproveLine: JSON/YAML/case-insensitive detection; negative cases.
-//   - findApproveLine: first-match, no-match, empty-input.
 //   - parsePlanArgs: positional integer, leading-# tolerance, bare (no arg),
 //     and standardized error on any present-but-non-integer token.
 //   - buildPlanArgv: bare /cam-plan and /cam-plan N with permission mode.
@@ -25,8 +23,6 @@ import type { SpawnSyncReturns } from 'node:child_process';
 
 import {
 	buildPlanArgv,
-	findApproveLine,
-	isApproveLine,
 	runPlan,
 } from '../src/commands/plan.ts';
 import { parsePlanArgs } from '../index.ts';
@@ -75,50 +71,6 @@ function makeFakeTmuxSpawn(sessionExists = false): TmuxSpawnFn & { calls: TmuxCa
 	fn.calls = calls;
 	return fn;
 }
-
-// --- isApproveLine / findApproveLine ----------------------------------------
-
-describe('isApproveLine', () => {
-	test('matches JSON-shaped verdict line', () => {
-		expect(isApproveLine('"verdict": "APPROVE",')).toBe(true);
-	});
-
-	test('matches YAML-shaped verdict line', () => {
-		expect(isApproveLine('verdict: APPROVE')).toBe(true);
-	});
-
-	test('matches case-insensitive on `verdict` keyword', () => {
-		expect(isApproveLine('Verdict: APPROVE')).toBe(true);
-		expect(isApproveLine('VERDICT = APPROVE')).toBe(true);
-	});
-
-	test('requires literal uppercase APPROVE -- `approve` alone does not match', () => {
-		expect(isApproveLine('verdict: approve')).toBe(false);
-	});
-
-	test('does not match a line missing verdict keyword', () => {
-		expect(isApproveLine('the answer is APPROVE')).toBe(false);
-	});
-
-	test('does not match a line missing APPROVE token', () => {
-		expect(isApproveLine('verdict: BLOCK')).toBe(false);
-	});
-});
-
-describe('findApproveLine', () => {
-	test('returns the first APPROVE line in a multi-line buffer', () => {
-		const buf = ['line one', 'line two', 'verdict: APPROVE', 'line four'].join('\n');
-		expect(findApproveLine(buf)).toBe('verdict: APPROVE');
-	});
-
-	test('returns null when no line carries the verdict', () => {
-		expect(findApproveLine('hello\nworld\n')).toBeNull();
-	});
-
-	test('returns null on empty input', () => {
-		expect(findApproveLine('')).toBeNull();
-	});
-});
 
 // --- buildPlanArgv ----------------------------------------------------------
 
