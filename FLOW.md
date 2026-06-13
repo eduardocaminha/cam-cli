@@ -210,40 +210,38 @@ Sem `--issue`, o planner pick o issue de maior prioridade pendente por conta pro
 
 ## 4. cam next (lancador de pane: abre /cam-next na sessao)
 
-`cam next` é um lançador fino: arma o state file, garante que a sessão do projeto
-existe, e abre um pane novo nela com `claude --permission-mode <mode> "/cam-next"`.
-Retorna 0 imediatamente. O loop autônomo corre dentro do pane. Se o operador rodar
-`cam next` de fora da sessão, um hint imprime o comando `cam run` para se anexar.
+`cam next` roda o supervisor determinístico (`runSupervisor`, `src/supervisor/loop.ts`)
+no próprio processo. Ele lê o pane de worker alocado por `cam plan`, arma o state file,
+adquire o lock de supervisor único e entra no loop implement-review-complete. NÃO há
+stop hook, NÃO registra nada em `settings.local.json`, e NÃO abre um pane `/cam-next`:
+o supervisor despacha cada worker (claude TUI interativo) no pane de worker reusado via
+`respawn-pane` e detecta conclusão pollando `capture-pane` atrás do sentinel. Retorna ao
+chegar num estado terminal. As flags `--max-iter N` e `--completion-promise S` continuam
+aceitas (a promise é só registrada no state file para display via `cam status`, não
+dirige a terminação).
 
 ```mermaid
 flowchart TD
-    A["cam next [--max-iter N] [--completion-promise S]"] --> H1["materializa stop hook"]
-    H1 --> H1OK{ok?}
-    H1OK -->|nao| F1["erro stderr"] --> E1(["exit 1"])
-    H1OK -->|sim| H2["registra Stop hook em settings.local.json"]
-    H2 --> H2OK{ok?}
-    H2OK -->|nao| F2["erro stderr"] --> E2(["exit 1"])
-    H2OK -->|sim| H3["escreve state file cam-loop.local.md"]
+    A["cam next [--max-iter N] [--completion-promise S]"] --> WP["le worker pane (.claude/.cam-worker-pane)"]
+    WP --> WPOK{"alocado?"}
+    WPOK -->|nao| F1["erro: rode cam plan primeiro"] --> E1(["exit 1"])
+    WPOK -->|sim| H3["arma state file cam-loop.local.md"]
     H3 --> H3OK{"ok? (recusa sobrescrever<br/>state file existente)"}
-    H3OK -->|nao| F3["erro: state file ja existe,<br/>rode /cancel-cam ou rm"] --> E3(["exit 1"])
-
-    H3OK -->|sim| SESSION["ensureProjectSession<br/>(cria sessao 3-panes se nao existe)"]
-    SESSION --> TMUXOK{"tmux ok?"}
-    TMUXOK -->|nao| FERR["erro: tmux unavailable"] --> EERR(["exit 1"])
-    TMUXOK -->|sim| PANE["openPaneInSession<br/>split-window: claude /cam-next"]
-    PANE --> PANEOK{"pane abriu?"}
-    PANEOK -->|nao| FERR2["erro: failed to open pane"] --> EERR2(["exit 1"])
-
-    PANEOK -->|sim| INSIDE{"dentro da<br/>sessao?"}
-    INSIDE -->|nao| HINT["emite hint:<br/>Run cam run to open the project session"]
-    INSIDE -->|sim| E0
-    HINT --> E0(["exit 0"])
+    H3OK -->|nao| F3["erro: state file ja existe,<br/>rode cam stop"] --> E3(["exit 1"])
+    H3OK -->|sim| LOCK["adquire .cam-supervisor.lock<br/>(supervisor unico por projeto)"]
+    LOCK --> LOCKOK{"livre?"}
+    LOCKOK -->|nao| F4["erro: outro supervisor ativo"] --> E4(["exit 1"])
+    LOCKOK -->|sim| SUP["runSupervisor: loop decideNextAction<br/>implement / review / complete"]
+    SUP --> TERM{"estado terminal"}
+    TERM -->|"complete / awaiting-operator"| E0(["exit 0"])
+    TERM -->|"blocked / max-iterations"| E5(["exit 1"])
 ```
 
-Decisao chave: `cam next` retorna 0 imediatamente. O loop corre dentro do pane; a
-sessao ja tem pane 0.1 (`cam dashboard`) permanente e pane 0.2 (menu). Nao ha mais
-deteccao de host (`TERM_PROGRAM=vscode`, Ghostty, etc.): a sessao unica por projeto
-e a fonte de verdade, independente do terminal do operador.
+Decisao chave: o loop corre IN-PROCESS no `cam next`, não num pane separado nem via
+re-injeção de slash command. O pane de worker (alocado por `cam plan`) é reusado a cada
+história via `respawn-pane`. A sessão do projeto já tem pane 0.1 (`cam dashboard`)
+permanente e pane 0.2 (menu). Nao ha deteccao de host: a sessao unica por projeto e a
+fonte de verdade, independente do terminal do operador.
 
 ---
 
@@ -362,10 +360,15 @@ flowchart TD
 
 ## 7. O loop autonomo (slash commands dentro do claude)
 
-Isto é o que roda DENTRO da sessão claude que `cam next` spawna (e que o orchestrator
-de `cam run` dispara sob demanda). O stop hook re-injeta `/cam-next` a cada turno,
-formando o loop, até o assistente emitir `<promise>COMPLETE</promise>` ou bater o
-teto de iterações.
+Isto é o ciclo de vida que o supervisor de `cam next` dirige (e que o orchestrator de
+`cam run` dispara sob demanda). O supervisor determinístico (`runSupervisor`) chama
+`decideNextAction`, que lê `prd.json` + o veredito de review para decidir implement /
+review / complete, despacha um worker por história, e repete in-process até o estado
+terminal. Não há stop hook nem `<promise>COMPLETE</promise>` dirigindo a terminação: o
+loop termina quando todas as histórias non-operator passam E o review é terminal (CLEAN
+ou MAX_ROUNDS_DEBT). Os passos `/cam-issue`, `/cam-plan`, `/cam-review`, `/cam-ship`,
+`/cam-prune` abaixo são as cerimônias slash que o operador (ou o orchestrator) roda em
+volta do loop de implement/review que o supervisor automatiza.
 
 ```mermaid
 flowchart TD
@@ -395,8 +398,8 @@ flowchart TD
     REVAGENT --> RV{"review tag"}
     RV -->|"CLEAN"| RCLEAN["pronto pro /cam-ship"]
     RV -->|"N findings"| RFIX["cria historias US-RX-NNN (passes:false),<br/>atualiza prd.review, rounds limitados (3)"]
-    RFIX -. "proxima iteracao re-entra no /cam-next" .-> NEXTC
-    DONE -. "stop hook re-injeta /cam-next" .-> NEXTC
+    RFIX -. "proxima iteracao do supervisor" .-> NEXTC
+    DONE -. "supervisor despacha o proximo worker" .-> NEXTC
     REEVAL -. "re-entra" .-> DEC
 
     COMPLETE --> SHIPC["/cam-ship<br/>verifica PRD completo, quality gates, push, PR"]
@@ -406,11 +409,16 @@ flowchart TD
     PR --> PRUNEC["/cam-prune<br/>volta pra main, deleta branch"]
 ```
 
-Como o loop "anda" sozinho: o stop hook (registrado
-em `settings.local.json` por `cam next`) dispara no evento Stop de cada turno. Ele lê
-o state file: se ainda não viu `<promise>COMPLETE</promise>` e não bateu o teto, re-injeta
-`/cam-next`, e o loop re-entra na matriz de decisão. Quando vê COMPLETE ou estoura
-`max_iterations`, remove o state file e o loop para.
+Como o loop "anda" sozinho: o supervisor (`runSupervisor`, in-process no `cam next`)
+itera internamente. A cada volta chama `decideNextAction(prd)`, despacha o worker certo
+(implementer ou reviewer, sessão claude TUI no pane reusado), espera o sentinel via
+`capture-pane`, lê o desfecho e repete, até o estado terminal ou o teto `max_iterations`.
+O desfecho é state-primary (CAM-32): `handoff.json` (qual história) + `prd.json`
+`passes:true` (feito) são autoritativos; o sentinel `CAM_*_STATUS` / `<review>` no pane é
+só corroboração, nunca gate. A alternativa de eventos estruturados via
+`-p --output-format stream-json --include-hook-events` é deliberadamente NÃO usada, porque
+`claude -p` é proibido em contas de subscrição (CAM-42): o sinal estruturado vive nos
+arquivos de estado em disco (`handoff.json` / `prd.json`), não num stream de eventos.
 
 ---
 
@@ -424,15 +432,15 @@ retry-monitor define o que `cam resume` decide.
 stateDiagram-v2
     [*] --> Idle: sem state file
     Idle --> Active: cam next (arma o state file)
-    Active --> Active: stop hook re-injeta /cam-next
-    Active --> Paused: plugin seta active:false (completou/cancelou)
-    Active --> Complete: emite COMPLETE ou bate max_iterations
+    Active --> Active: supervisor despacha o proximo worker (loop in-process)
+    Active --> Paused: terminal nao-sucesso (active:false)
+    Active --> Complete: supervisor terminal (complete) ou bate max_iterations
 
     Active --> Orphan: terminal fecha / reboot / hard-kill (PID morre)
 
     Paused --> Idle: cam stop (remove state file)
     Paused --> Active: cam next (reinicia)
-    Complete --> Idle: stop hook remove o state file
+    Complete --> Idle: cam next remove o state file no terminal
 
     Orphan --> Active: cam resume -> respawn / Y
     Orphan --> Idle: cam resume -> reset
@@ -443,8 +451,9 @@ stateDiagram-v2
 
 Quem mexe em quê:
 
-- **`cam next`** cria o state file (Idle para Active) e grava o PID do processo dono.
-- **stop hook** mantém Active vivo (re-injeta) ou leva a Complete e remove o file.
+- **`cam next`** cria o state file (Idle para Active), grava o PID do processo dono, e
+  roda o supervisor in-process: mantém Active vivo (itera, despachando workers) ou chega a
+  Complete e remove o file no estado terminal.
 - **`cam status`** só lê: presença do file e `active` decidem idle / active / paused.
 - **`cam stop`** remove o state file e mata a sessão tmux `cam` (Active/Paused para Idle); idempotente.
 - **`cam resume`** age sobre o Orphan (PID morto + file presente), escolhendo respawn,

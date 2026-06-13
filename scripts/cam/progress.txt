@@ -5,3 +5,9 @@
 - grep isApproveLine/findApproveLine: ZERO hits no repo. runPlan/buildPlanArgv/parsePlanArgs intactos.
 - Gates: typecheck ok, plan.test 19 pass, suite cheia ok.
 ---
+
+## [2026-06-13] - US-002: reconciliar FLOW.md ao modelo supervisor
+- FLOW.md secao 4 (flowchart+prose de cam next): reescrita pro runNext real (le worker pane -> arma state -> lock -> runSupervisor in-process; sem stop hook, sem settings.local.json, sem pane /cam-next). Secao 7 (prose+1 edge): supervisor dirige o loop via decideNextAction(prd)+review verdict, nao <promise>/stop-hook; +state-primary (CAM-32) + stream-json descartado por -p banido (CAM-42). Secao 8 (state machine edges+prose): "stop hook re-injeta" -> "supervisor despacha proximo worker (in-process)".
+- Preservado: flags --completion-promise/--max-iter (ainda parseadas; promise e so display). README ja estava correto (256/272/280), intocado. Sem em-dash.
+- Gates: typecheck ok, 759 pass.
+---
