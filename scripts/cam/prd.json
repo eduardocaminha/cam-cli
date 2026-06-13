@@ -26,7 +26,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: scripts/build-release.sh (the AC4 block at lines ~92-107). The cam binary already chains init -> runInit (read-only machine validation) -> runSetup({cwd, noTmux}); runSetup writes project.toml + copyTemplates relative to cwd and, unless noTmux, spawns tmux + a setup agent (src/commands/setup.ts). runSetup also runs collectSetupAnswers (src/commands/setup.ts ~96): it prompts for project mode, issue system, and (for 'new') a description UNLESS pre-filled by flags. So the hermetic invocation must be `init --no-tmux --existing --issue-system none </dev/null` (--existing => projectMode set + no description needed; --issue-system none => no issue prompt; --no-tmux => no tmux/agent). cd into a mktemp -d isolates the file writes. BIN is currently the relative path dist/cam-darwin-arm64; compute an absolute path for the subshell. Canonical rule: lessons.md 2026-06-06 entry ('build smoke must never run a mutating command against the repo; use a temp cwd'). Do NOT change the compile/codesign/version steps."
     },
@@ -43,7 +43,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: test/build-release-smoke.test.ts (new). Read scripts/build-release.sh via Bun.file. Assert: includes 'mktemp -d', includes 'init --no-tmux', and that the only `${BIN...} init` / `cam init`-style invocation is the hermetic one (guard against a future plain `init` against REPO_ROOT). Keep assertions resilient to minor formatting (match on the meaningful tokens, not exact whitespace)."
     },

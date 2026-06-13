@@ -1,1 +1,8 @@
 ## Codebase Patterns
+
+## [2026-06-13] - US-001 + US-002: build smoke hermetico + guard estatico
+- build-release.sh AC4: smoke roda em SMOKE_DIR=$(mktemp -d) como cwd, com BIN_ABS absoluto, `init --no-tmux --existing --issue-system none </dev/null`, rm -rf no fim. As flags zeram o wizard (catch do auditor F-01: --no-tmux sozinho ainda bloquearia no collectSetupAnswers). Mutacoes caem no tmpdir, nunca no repo.
+- test/build-release-smoke.test.ts (novo): guard estatico (estilo no-permission-mode-flag.test.ts). Assere mktemp -d, o flag set completo + </dev/null, e que TODA invocacao `init` do binario e hermetica (cd SMOKE_DIR + --no-tmux + ${BIN_ABS}, nunca ${BIN} relativo), + cleanup + semantica non-zero-aceitavel.
+- Validacao runtime ja feita pelo orquestrador (efetivamente a US-003): rodei ./scripts/build-release.sh no repo real, git status antes==depois (so a edicao do proprio build-release.sh), 10 arquivos clobberaveis intactos, zero sessao cam-setup, zero menu orfao.
+- Gates: typecheck ok, 768 pass.
+---
