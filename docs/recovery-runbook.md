@@ -167,7 +167,40 @@ If you want to verify or force it:
 Never remove the lock while the recorded pid is still alive: that is the exact
 double-driver situation the guard exists to prevent.
 
-## (e) Diagnosing with the event log
+## (e) Worker pane stuck on the folder-trust prompt
+
+Symptom: a freshly spawned worker never reaches a sentinel. The supervisor poll
+keeps timing out (or you see a `pane-died` retry loop), and when you look at the
+pane it is sitting on claude's folder-trust prompt:
+
+```
+Quick safety check: Is this a project you created or one you trust?
+> 1. Yes, I trust this folder
+  2. No, exit
+```
+
+Cause: the `claude` binary has never seen this project directory, so on first
+launch it asks the human to confirm trust before doing anything. The supervisor
+detects completion by polling capture-pane for a sentinel; it cannot answer an
+interactive prompt, so the worker waits there until the per-worker deadline.
+
+When it happens: a fresh clone, a CI checkout, or any brand-new project path.
+The normal `cam setup` flow has the human accept trust once when the interactive
+session first opens, so day-to-day runs never hit this.
+
+Recovery: confirm the prompt is what is blocking, then accept it once.
+
+```bash
+cat .claude/.cam-worker-pane                       # e.g. %5
+tmux -L cam capture-pane -p -t <pane>              # look for "Quick safety check"
+tmux -L cam send-keys -t <pane> 1 Enter            # explicitly pick "1. Yes, I trust this folder"
+```
+
+After the folder is trusted once, subsequent workers in the same directory boot
+without the prompt. For an unattended environment (CI, a scripted fresh clone),
+pre-trust the folder before the first `cam next` so no worker ever blocks here.
+
+## (f) Diagnosing with the event log
 
 `.claude/cam-worker-events.jsonl` is the per-story flight recorder. Each line is
 one JSON object with `ts`, `storyId`, `uuid`, `kind`, and `detail`.

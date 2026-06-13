@@ -32,6 +32,7 @@
 
 import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPrd, WritePrd } from './loop.ts';
 import type { PrdSnapshot } from './decide.ts';
+import { workerEnvPrefix } from './worker-argv.ts';
 
 // ---------------------------------------------------------------------------
 // buildReviewerWorkerArgv
@@ -85,12 +86,15 @@ function shellEscape(s: string): string {
  *
  * Returns a shell string with the shape:
  *
- *   claude --permission-mode <mode> --session-id <uuid> \
+ *   env -u CLAUDECODE -u ... claude --permission-mode <mode> --session-id <uuid> \
  *     --agent <agentName> '<taskPrompt>'
  *
- * -p and --output-format are omitted so the process stays open for interaction.
- * The tmux wait-for chain is also omitted; the supervisor detects completion
- * by polling capture-pane for the <review> verdict tag.
+ * The `env -u ...` prefix (shared with the implementer via workerEnvPrefix)
+ * strips nesting-detection env vars so the reviewer boots from a tmux server
+ * bootstrapped inside a claude session (CAM-43). -p and --output-format are
+ * omitted so the process stays open for interaction. The tmux wait-for chain
+ * is also omitted; the supervisor detects completion by polling capture-pane
+ * for the <review> verdict tag.
  *
  * The task prompt is the initial-prompt argument (CAM-41: a promptless reviewer
  * dies instantly) and --permission-mode lets quality gates run unprompted.
@@ -100,6 +104,7 @@ export function buildReviewerWorkerArgv(opts: ReviewerWorkerArgvOptions): string
 	const escapedPrompt = shellEscape(opts.taskPrompt ?? REVIEWER_TASK_PROMPT);
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
 	return (
+		workerEnvPrefix() +
 		`claude` +
 		` --permission-mode ${permissionMode}` +
 		` --session-id ${opts.uuid}` +

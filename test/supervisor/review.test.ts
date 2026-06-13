@@ -85,9 +85,26 @@ describe('buildReviewerWorkerArgv', () => {
 		expect(result).toContain('<review> verdict tag on the very last line');
 	});
 
-	test('starts with "claude --permission-mode" (interactive shape)', () => {
+	test('starts with the env -u prefix, then claude --permission-mode (CAM-43)', () => {
 		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
-		expect(result.startsWith('claude --permission-mode')).toBe(true);
+		expect(result.startsWith('env -u CLAUDECODE')).toBe(true);
+		const envIdx = result.indexOf('env -u CLAUDECODE');
+		const claudeIdx = result.indexOf('claude --permission-mode');
+		expect(claudeIdx).toBeGreaterThan(envIdx);
+	});
+
+	test('reuses the shared WORKER_ENV_UNSET list (no duplicated literal in review.ts) (CAM-43)', async () => {
+		const { WORKER_ENV_UNSET } = await import('../../src/supervisor/worker-argv.ts');
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
+		for (const v of WORKER_ENV_UNSET) {
+			expect(result).toContain(`-u ${v}`);
+		}
+		// Single source of truth: review.ts must not hardcode its own list.
+		const reviewSrc = await Bun.file(
+			new URL('../../src/supervisor/review.ts', import.meta.url),
+		).text();
+		expect(reviewSrc).not.toContain("'CLAUDECODE'");
+		expect(reviewSrc).toContain('workerEnvPrefix');
 	});
 
 	test('agentName can be overridden', () => {

@@ -14,6 +14,14 @@
 //
 // Design decisions:
 //   - Pure function; no spawning, no file I/O.
+//   - The shell string is prefixed with `env -u <var> ...` to strip the
+//     nesting-detection env vars (CLAUDECODE etc) from the worker process.
+//     When the tmux `-L cam` server is bootstrapped from inside a claude
+//     session, its global env carries these vars, the respawn-pane worker
+//     inherits them, claude detects nesting and dies pre-session (no
+//     transcript, empty pane). Stripping them locally in the worker command
+//     fixes this without perturbing the env of whoever inspects the session
+//     (CAM-43, found in CAM-42 US-006 validation).
 //   - Task prompt is single-quote-escaped so any embedded quotes,
 //     dollar signs, or backticks cannot escape the shell argument boundary.
 //   - agentName defaults to 'subagent-implementer' (matches .claude/agents/
@@ -40,6 +48,40 @@ export interface ImplementerWorkerArgvOptions {
 export const DEFAULT_IMPLEMENTER_AGENT = 'subagent-implementer';
 
 /**
+ * Canonical list of environment variables stripped from a spawned worker so it
+ * does not inherit the parent claude session's identity. `CLAUDECODE=1` is the
+ * one documented nesting gate: when set, a freshly spawned `claude` detects
+ * nesting and exits before its session initializes. The rest are set by the SDK
+ * (session id, entrypoint, exec path, sse port, sdk version) and are stripped
+ * defensively so no stale parent-session identity leaks into the worker. The
+ * worker command removes these via `env -u` so a worker spawned from a tmux
+ * server that was bootstrapped inside a claude session still boots (CAM-43).
+ *
+ * Deliberately does NOT include CLAUDE_CONFIG_DIR or PATH: the worker must keep
+ * the same config dir (subscription auth lives there) and the same PATH (so the
+ * `claude` / `cam` binaries resolve).
+ */
+export const WORKER_ENV_UNSET: readonly string[] = [
+	'CLAUDECODE',
+	'CLAUDE_CODE_ENTRYPOINT',
+	'CLAUDE_CODE_SESSION_ID',
+	'CLAUDE_CODE_SSE_PORT',
+	'CLAUDE_CODE_EXECPATH',
+	'CLAUDE_AGENT_SDK_VERSION',
+];
+
+/**
+ * Render the `env -u VAR1 -u VAR2 ... ` prefix (with a trailing space) that
+ * strips WORKER_ENV_UNSET from a spawned worker. Prepended to every worker
+ * shell string so the worker does not inherit nesting-detection env vars from
+ * the tmux server (CAM-43). The var names are fixed identifiers, so no escaping
+ * is needed.
+ */
+export function workerEnvPrefix(): string {
+	return `env ${WORKER_ENV_UNSET.map((v) => `-u ${v}`).join(' ')} `;
+}
+
+/**
  * Escape a string for safe embedding inside a POSIX single-quoted shell argument.
  *
  * Single-quoting is the safest general-purpose shell escape: no characters
@@ -59,10 +101,11 @@ function shellEscape(s: string): string {
  *
  * Returns:
  *
- *   claude --permission-mode <mode> --session-id <uuid> \
+ *   env -u CLAUDECODE -u ... claude --permission-mode <mode> --session-id <uuid> \
  *     --agent <agentName> '<task>'
  *
- * -p and --output-format are omitted so the process stays open for operator
+ * The `env -u ...` prefix strips nesting-detection env vars (CAM-43). -p and
+ * --output-format are omitted so the process stays open for operator
  * interaction. The tmux wait-for chain is also omitted; the supervisor detects
  * completion by polling capture-pane for the sentinel text.
  *
@@ -75,6 +118,7 @@ export function buildImplementerWorkerArgv(opts: ImplementerWorkerArgvOptions): 
 	const agentName = opts.agentName ?? DEFAULT_IMPLEMENTER_AGENT;
 	const escapedPrompt = shellEscape(opts.taskPrompt);
 	return (
+		workerEnvPrefix() +
 		`claude` +
 		` --permission-mode ${opts.permissionMode}` +
 		` --session-id ${opts.uuid}` +

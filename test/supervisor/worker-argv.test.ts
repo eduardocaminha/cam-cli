@@ -12,6 +12,8 @@ import { describe, expect, test } from 'bun:test';
 import {
 	buildImplementerWorkerArgv,
 	DEFAULT_IMPLEMENTER_AGENT,
+	WORKER_ENV_UNSET,
+	workerEnvPrefix,
 } from '../../src/supervisor/worker-argv.ts';
 
 const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
@@ -77,14 +79,42 @@ describe('buildImplementerWorkerArgv', () => {
 		expect(result).toContain(`--agent ${DEFAULT_IMPLEMENTER_AGENT}`);
 	});
 
-	test('starts with "claude " (no -p)', () => {
+	test('starts with the env -u prefix, then claude (no -p) (CAM-43)', () => {
 		const result = buildImplementerWorkerArgv({
 			uuid: SAMPLE_UUID,
 			taskPrompt: SAMPLE_PROMPT,
 			permissionMode: SAMPLE_MODE,
 		});
-		expect(result.startsWith('claude ')).toBe(true);
-		expect(result).not.toMatch(/^claude -p/);
+		// The env -u prefix strips nesting-detection vars; claude follows it.
+		expect(result.startsWith('env -u CLAUDECODE')).toBe(true);
+		const claudeIdx = result.indexOf('claude --permission-mode');
+		const envIdx = result.indexOf('env -u CLAUDECODE');
+		expect(claudeIdx).toBeGreaterThan(envIdx);
+		expect(result).not.toMatch(/\s-p(\s|$)/);
+		expect(result).not.toContain('claude -p');
+	});
+
+	test('env -u prefix strips each WORKER_ENV_UNSET var, but never CLAUDE_CONFIG_DIR or PATH (CAM-43)', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+		});
+		for (const v of WORKER_ENV_UNSET) {
+			expect(result).toContain(`-u ${v}`);
+		}
+		// The worker must keep its config dir (subscription auth) and PATH.
+		expect(WORKER_ENV_UNSET).not.toContain('CLAUDE_CONFIG_DIR');
+		expect(WORKER_ENV_UNSET).not.toContain('PATH');
+		expect(result).not.toContain('-u CLAUDE_CONFIG_DIR');
+		expect(result).not.toContain('-u PATH');
+	});
+
+	test('workerEnvPrefix renders "env -u ... " with a trailing space', () => {
+		const prefix = workerEnvPrefix();
+		expect(prefix.startsWith('env -u CLAUDECODE')).toBe(true);
+		expect(prefix.endsWith(' ')).toBe(true);
+		expect(prefix).toContain('-u CLAUDE_CODE_SESSION_ID');
 	});
 
 	test('task prompt with embedded single quotes is shell-escaped', () => {
