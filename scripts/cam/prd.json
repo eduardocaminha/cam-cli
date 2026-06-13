@@ -1,0 +1,51 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-4-retire-text-scraping",
+  "description": "Re-scoped CAM-4 (filed pre-CAM-42). Two of its three text-scraping points are already gone: loop termination is state-driven via decideNextAction reading prd.json (CAM-22), and the cam-plan PTY APPROVE byte-scan path was removed (the isApproveLine/findApproveLine helpers are now dead vestigial code). The third point (capture-pane sentinel) is the deliberate CAM-42 design and is already corroboration-only behind state-primary handoff.json/prd.json (CAM-32); the stream-json alternative the issue proposed is ruled out because claude -p is forbidden (subscription rule, CAM-42). This issue therefore reduces to removing the dead byte-scan surface and recording the architecture reality honestly.",
+  "issueNumber": 4,
+  "relatedDocs": [
+    "FLOW.md",
+    "README.md"
+  ],
+  "officialDocsConsulted": [],
+  "docsConsultedRationale": "No external library touched: deletion of dead in-repo helpers + their tests, plus a markdown architecture note. No npm API exercised. The stream-json path the original issue referenced is intentionally NOT pursued (claude -p forbidden, CAM-42).",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Delete the dead cam-plan APPROVE byte-scan helpers",
+      "description": "As a maintainer, I want the vestigial PTY APPROVE-detection helpers removed so no one can re-wire a fragile text-scraping gate that the issue flagged; the live runPlan path already does not use them.",
+      "acceptanceCriteria": [
+        "isApproveLine and findApproveLine are removed from src/commands/plan.ts (the live runPlan path does not call them: the PTY/foreground inherit path was removed and APPROVE happens inside the pane).",
+        "The corresponding test blocks for isApproveLine and findApproveLine are removed from test/plan.test.ts, along with their imports; the remaining plan tests (buildPlanArgv, parsePlanArgs, runPlan) still pass.",
+        "No other file in src/ or test/ imports isApproveLine or findApproveLine (verified by grep returning nothing after the change).",
+        "The '// --- Verdict detection helpers (kept for future APPROVE-in-pane detection) ---' section header in plan.ts is removed with the functions.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/plan.ts (remove the two functions + their section comment at ~lines 66-90), test/plan.test.ts (remove the two describe blocks ~lines 79-122 and the two names from the import at lines 28-29; also the coverage-comment lines 6-7). Only these two functions are dead; buildPlanArgv/parsePlanArgs/runPlan stay. Grep `isApproveLine\\|findApproveLine` after editing to confirm zero hits remain."
+    },
+    {
+      "id": "US-002",
+      "title": "Reconcile FLOW.md to the supervisor model and record the state-driven architecture",
+      "description": "As a future maintainer reading CAM-4, I want FLOW.md to stop describing the retired stop-hook + <promise> loop as live and instead reflect the supervisor model, so the doc matches the code and the structured-signal reality is recorded honestly.",
+      "acceptanceCriteria": [
+        "FLOW.md section 7 ('O loop autonomo') and section 8 ('State machine do loop') no longer describe the stop hook re-injecting /cam-next each turn, nor <promise>COMPLETE</promise> as the termination signal: they describe the deterministic TS supervisor (runSupervisor) driving the loop, with decideNextAction reading prd.json + the review verdict to decide implement / review / complete (CAM-22).",
+        "The section-4 flowchart line that says cam next 'materializa stop hook' (around line 220) is corrected: cam next runs the supervisor, which dispatches TUI worker sessions and polls capture-pane for the sentinel (CAM-42); no stop hook is materialized.",
+        "The doc states the worker outcome is state-primary: handoff.json (which story) + prd.json passes:true (done) are authoritative, and the capture-pane sentinel (CAM_*_STATUS / <review>) is corroboration only, never a gate (CAM-32).",
+        "The doc states the stream-json / --include-hook-events approach is intentionally NOT used because claude -p is forbidden for subscription accounts (CAM-42), so the structured signal lives in on-disk state files (handoff.json / prd.json), not an event stream.",
+        "Still-true facts are preserved: the --completion-promise and --max-iter flags of cam next still exist (the completion promise is recorded in the state file for display via cam status, it just does not drive termination).",
+        "README.md is checked and, if it carries a matching stop-hook / <promise> description of the worker model, it is corrected to the same supervisor + sentinel reality; if it is already accurate, it is left untouched.",
+        "No em-dash appears in the edited markdown (use colon, comma, parens, or period).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: FLOW.md (repo ROOT, not docs/) sections 7 (~lines 363-413) and 8 (~lines 417-447), plus the section-4 line ~220 ('materializa stop hook'). README.md only if it has a matching stale section. The stop-hook + <promise> + /cam-next re-injection model was retired in CAM-22/CAM-42; the live model is runSupervisor (src/supervisor/loop.ts) + decideNextAction (reads prd.json) + TUI workers + capture-pane sentinel that is corroboration-only (src/supervisor/result.ts, CAM-32). KEEP the --completion-promise / --max-iter flags (still parsed in index.ts); only fix the false mechanism claims. NO em-dash in persisted md. This is the honest closing record for CAM-4, factual not new design."
+    }
+  ]
+}
