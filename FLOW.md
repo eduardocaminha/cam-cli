@@ -243,6 +243,16 @@ história via `respawn-pane`. A sessão do projeto já tem pane 0.1 (`cam dashbo
 permanente e pane 0.2 (menu). Nao ha deteccao de host: a sessao unica por projeto e a
 fonte de verdade, independente do terminal do operador.
 
+Guardrails por worker: cada despacho tem dois tetos. (1) Wall-clock: `perWorkerTimeoutMs`
+(default 30min, env `CAM_WORKER_TIMEOUT_MS`); ao estourar, o pane é morto e a iteração
+bloqueia. (2) Tokens (opt-in, CAM-5): `CAM_WORKER_MAX_TOKENS` (default 0 = desligado); o
+loop de sentinel lê o gasto do worker no transcript a cada tick (spend = input +
+cacheCreation + cacheRead, a mesma fórmula do `cam orch-budget`) e, ao cruzar o teto, mata
+o pane e bloqueia terminalmente (evento `worker-token-ceiling`). O cap de turns é o
+`maxIterations` do supervisor (`--max-iter`, default 50). Os flags `claude --max-turns` e
+`--max-budget-usd` NÃO são usados: são print-mode-only (exigem `-p`, proibido em
+subscrição, CAM-42), e budget em USD é N/A em subscrição (sem billing por chamada).
+
 ---
 
 ## 4.5. cam issue (lancador de pane: abre /cam-issue create na sessao)

@@ -53,7 +53,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/next.ts (CAM_WORKER_TIMEOUT_MS parsing is at ~lines 297-305; mirror it for CAM_WORKER_MAX_TOKENS, default 0; pass maxWorkerTokens into the runSupervisor options object ~line 714). Docs: FLOW.md (the cam next / supervisor section) and docs/recovery-runbook.md (event-log diagnostics section + a per-worker-guardrails note). Depends on US-001 having added the maxWorkerTokens option + the 'worker-token-ceiling' event. NO em-dash in persisted md."
     }

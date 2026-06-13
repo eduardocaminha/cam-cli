@@ -6,3 +6,10 @@
 - Testes events.test.ts ajustados (shape +cacheCreationTokens). loop.test.ts +2: teto cruzado mata+bloqueia; off nao consulta no poll.
 - Gates: typecheck ok, 761 pass.
 ---
+
+## [2026-06-13] - US-002: knob CAM_WORKER_MAX_TOKENS + docs
+- next.ts: parse de CAM_WORKER_MAX_TOKENS (do env injetado, default 0) espelhando CAM_WORKER_TIMEOUT_MS; passa maxWorkerTokens ao runSupervisor. Li do `env` (nao process.env) pra testabilidade hermetica.
+- next.test.ts +2: forward de maxWorkerTokens+readWorkerTokens ao supervisor (env knob=50000); default 0 sem knob.
+- FLOW.md secao 4: nota de guardrails por-worker (wall-clock + token ceiling + maxIterations; max-turns/budget-usd print-mode-only fora; USD N/A subscricao). recovery-runbook: evento worker-token-ceiling + nota de guardrails. Sem em-dash.
+- Gates: typecheck ok, 763 pass.
+---

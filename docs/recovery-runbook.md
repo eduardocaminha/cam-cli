@@ -235,7 +235,19 @@ grep '"kind":"stale-lock"' .claude/cam-worker-events.jsonl
 # Bounded dead-worker backoff: each retry before the supervisor blocks on a
 # persistently dying worker (CAM-44). detail carries attempt, backoffMs, pollOutcome:
 grep '"kind":"pane-died-retry"' .claude/cam-worker-events.jsonl
+
+# Per-worker token ceiling breach (CAM-5, opt-in via CAM_WORKER_MAX_TOKENS). The
+# worker was killed because its spend crossed the cap. detail carries spend, ceiling:
+grep '"kind":"worker-token-ceiling"' .claude/cam-worker-events.jsonl
 ```
+
+Per-worker guardrails: a worker is bounded by a wall-clock deadline
+(`CAM_WORKER_TIMEOUT_MS`, default 30 min) and, when opted in, a cumulative token
+ceiling (`CAM_WORKER_MAX_TOKENS`, default 0 = disabled). The turns cap is the
+supervisor `maxIterations` (`--max-iter`, default 50). The `claude --max-turns` and
+`--max-budget-usd` flags are not used: both are print-mode-only (they need `-p`, which
+is forbidden for subscription accounts, CAM-42), and a USD budget is not meaningful on a
+subscription.
 
 To correlate a story with its transcript, read its session marker and resolve
 the uuid:
