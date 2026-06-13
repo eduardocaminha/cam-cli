@@ -23,7 +23,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/worker-argv.ts, test/supervisor/worker-argv.test.ts. The file is a pure string builder, no I/O. Keep the existing private shellEscape helper as-is; only prepend the env -u prefix to the returned argv string. The helper should be exported so review.ts can import it in US-002 without duplicating the list. Gotcha (lessons.md, 2026-06-12 CAM-42): respawn-pane inherits the tmux server's global env, so any nesting env left there poisons the worker pre-session; the fix is local to the worker shell string, not a mutation of the tmux server env. Repo invariant: NEVER add a --permission-mode flag on a cam subcommand (test/no-permission-mode-flag.test.ts); --permission-mode is only forwarded to the spawned claude inside the worker argv string."
     },
@@ -40,7 +40,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-001 having exported WORKER_ENV_UNSET and the env-prefix helper from src/supervisor/worker-argv.ts; do not start until US-001 passes:true. Files: src/supervisor/review.ts, test/supervisor/review.test.ts. review.ts currently has its own private shellEscape helper, keep that (the shared helper is the env-prefix one, not shellEscape). Confirm no other call sites build a claude worker argv string outside these two files; if a third one exists, flag it but do NOT fix in this story (out of scope). Gotcha: the reviewer is dispatched the same way as the implementer (interactive TUI via respawn-pane after CAM-42), so it has the same nesting-poison failure mode and needs the same fix."
     },

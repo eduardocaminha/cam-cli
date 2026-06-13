@@ -1,1 +1,8 @@
 ## Codebase Patterns
+
+## [2026-06-13] - US-001 + US-002: env -u prefix nos worker argv builders
+- worker-argv.ts: const exportado WORKER_ENV_UNSET (7 vars de nesting: CLAUDECODE, CLAUDECODE_ENTRYPOINT, CLAUDE_CODE_ENTRYPOINT, CLAUDE_CODE_SESSION_ID, CLAUDE_CODE_SSE_PORT, CLAUDE_CODE_EXECPATH, CLAUDE_AGENT_SDK_VERSION) + helper workerEnvPrefix(). NUNCA inclui CLAUDE_CONFIG_DIR nem PATH (worker perderia auth de subscricao e os binarios).
+- buildImplementerWorkerArgv e buildReviewerWorkerArgv prefixam com `env -u ... `. review.ts importa o helper de worker-argv.ts (sem duplicar a lista; teste assere ausencia do literal 'CLAUDECODE' em review.ts).
+- Implementado direto pelo orquestrador (Task/Edit), nao via loop TUI: os workers TUI morreriam do proprio bug que esta issue conserta (circular).
+- Gates: typecheck ok, 761 pass.
+---
