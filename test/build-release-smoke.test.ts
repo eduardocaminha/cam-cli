@@ -27,6 +27,11 @@ const script = readFileSync(SCRIPT_PATH, 'utf8');
  * a regression might use the bare relative `${BIN}` or a literal. We match any
  * line that runs something ending in a binary reference immediately followed by
  * `init`, ignoring comments.
+ *
+ * Targets the real hermetic line, e.g.:
+ *   if (cd "${SMOKE_DIR}" && CAM_CONFIG_PATH=... "${BIN_ABS}" init --no-tmux --existing --issue-system none </dev/null); then
+ * The `\}"? \s+init` arm matches `${BIN_ABS}" init`; the `/cam"? \s+init` arm
+ * catches a regression that hardcodes a `.../cam init` path.
  */
 function binInitInvocations(): string[] {
 	return script
@@ -66,8 +71,10 @@ describe('build-release.sh AC4 soft-check is hermetic (CAM-15)', () => {
 		}
 	});
 
-	test('the tmpdir is cleaned up after the smoke', () => {
-		expect(script).toMatch(/rm\s+-rf\s+"?\$\{?SMOKE_DIR\}?"?/);
+	test('the tmpdir is cleaned up on exit (trap, survives abort paths)', () => {
+		expect(script).toMatch(/rm\s+-rf\s+"?\$\{?SMOKE_DIR/);
+		// A trap on EXIT cleans up even if an earlier build step aborts.
+		expect(script).toMatch(/trap\s+'rm -rf "\$\{SMOKE_DIR:-\}"'\s+EXIT/);
 	});
 
 	test('a non-zero soft-check exit does not abort the build (AC4 semantics preserved)', () => {

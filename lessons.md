@@ -77,3 +77,11 @@ Situacao: no ciclo CAM-42 fechei CAM-39/40/41 (superseded) + CAM-42 (shipped) nu
 Achado: edits de scripts/cam/issues.local.json espalhados por varios commits do MESMO branch se atropelam quando um rewrite python posterior carrega um snapshot anterior ao close (load-modify-write nao-atomico, sem rebase do estado intermediario). A etapa de close do cam-ship cobre/testa so a issue PRIMARIA do PRD; closes de issues IRMAS (superseded) sao manuais e nao tem gate.
 
 Regra (acionavel): (1) fazer todos os edits de issues.local.json (close primario + closes de irmas + appends de follow-ups) num UNICO commit por ciclo, nunca espalhados; (2) apos merge de um PR cam, VERIFICAR no main que as issues que deviam fechar estao closed (jq filter), nao confiar que o commit pegou. Local canonico: este lessons.md (workflow do projeto).
+
+## 2026-06-13: build smoke hermetico (CAM-15) implementa a regra do 2026-06-06
+
+Situacao: o AC4 do scripts/build-release.sh rodava `cam init` com cwd no REPO_ROOT como soft-check de build. `cam init` encadeia runSetup, que copia templates por cima dos arquivos versionados (relativo ao cwd) e, sem --no-tmux, spawna sessao tmux + agente claude. Mordeu o operador 2x (clobber de 10 arquivos versionados + sessao cam-setup com claudes vivos; recovery via git restore + kill).
+
+Achado: a regra ja estava registrada no 2026-06-06 ("smoke nunca roda comando mutante contra o repo; usar cwd temporario"), mas o AC4 nunca foi consertado. Fix (CAM-15): rodar o smoke num mktemp -d como cwd, com binario por path absoluto, `init --no-tmux --existing --issue-system none </dev/null` (as flags zeram o wizard interativo do collectSetupAnswers; so --no-tmux nao basta, ele ainda bloquearia nas perguntas), trap de rm -rf no EXIT. Guard estatico em test/build-release-smoke.test.ts assere a hermeticidade pra travar regressao. Validado em runtime: ./scripts/build-release.sh deixa git status intacto.
+
+Regra (local canonico): a regra-mae vive no ~/.claude/CLAUDE.md "Licoes persistentes" / lessons.md 2026-06-06. Esta entrada so confirma que o cam-cli agora a cumpre, e que --no-tmux sozinho e insuficiente (precisa das flags de modo+issue pra nao-interatividade).

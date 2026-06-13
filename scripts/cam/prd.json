@@ -64,5 +64,11 @@
       "requires": "operator",
       "notes": "Real-build verification of the side-effect removal. Needs a real machine with claude logged in so runSetup's claude check passes and the (now hermetic) template install + skipped-tmux path actually runs. Evidence: git status before == after == clean. Reference: lessons.md 2026-06-06; the CAM-16 US-003 ceremony log is where this side effect was last observed (10 files clobbered + cam-setup session)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "8f56edcfa15bede61af41d973a1a0bc042d542d0",
+    "lastVerdict": "CLEAN"
+  }
 }

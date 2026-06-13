@@ -6,3 +6,9 @@
 - Validacao runtime ja feita pelo orquestrador (efetivamente a US-003): rodei ./scripts/build-release.sh no repo real, git status antes==depois (so a edicao do proprio build-release.sh), 10 arquivos clobberaveis intactos, zero sessao cam-setup, zero menu orfao.
 - Gates: typecheck ok, 768 pass.
 ---
+
+## [2026-06-13] - Review round 1: CLEAN (+ 3 sugestoes aplicadas)
+- subagent-reviewer APPROVE, zero CRITICAL/WARNING, validou hermeticidade (flags zeram o wizard, set -e preservado, regex do guard pega regressao). Sugestoes aplicadas: trap rm -rf no EXIT (nao vaza tmpdir em abort); comentario no regex do teste mostrando a linha-alvo; entrada lessons.md 2026-06-13 (pointer fiel) + comentario do script atualizado.
+- Re-rodei o build real apos o trap: working tree intacto, 0 tmpdirs vazados.
+- Gates: typecheck ok, 768 pass.
+---
