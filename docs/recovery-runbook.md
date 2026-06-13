@@ -193,7 +193,7 @@ Recovery: confirm the prompt is what is blocking, then accept it once.
 ```bash
 cat .claude/.cam-worker-pane                       # e.g. %5
 tmux -L cam capture-pane -p -t <pane>              # look for "Quick safety check"
-tmux -L cam send-keys -t <pane> Enter              # accept "1. Yes, I trust this folder"
+tmux -L cam send-keys -t <pane> 1 Enter            # explicitly pick "1. Yes, I trust this folder"
 ```
 
 After the folder is trusted once, subsequent workers in the same directory boot

@@ -48,11 +48,14 @@ export interface ImplementerWorkerArgvOptions {
 export const DEFAULT_IMPLEMENTER_AGENT = 'subagent-implementer';
 
 /**
- * Canonical list of environment variables that signal a claude session is
- * already running, which makes a freshly spawned `claude` detect nesting and
- * exit before its session initializes. The worker command strips these via
- * `env -u` so a worker spawned from a tmux server that was bootstrapped inside
- * a claude session still boots (CAM-43).
+ * Canonical list of environment variables stripped from a spawned worker so it
+ * does not inherit the parent claude session's identity. `CLAUDECODE=1` is the
+ * one documented nesting gate: when set, a freshly spawned `claude` detects
+ * nesting and exits before its session initializes. The rest are set by the SDK
+ * (session id, entrypoint, exec path, sse port, sdk version) and are stripped
+ * defensively so no stale parent-session identity leaks into the worker. The
+ * worker command removes these via `env -u` so a worker spawned from a tmux
+ * server that was bootstrapped inside a claude session still boots (CAM-43).
  *
  * Deliberately does NOT include CLAUDE_CONFIG_DIR or PATH: the worker must keep
  * the same config dir (subscription auth lives there) and the same PATH (so the
@@ -60,7 +63,6 @@ export const DEFAULT_IMPLEMENTER_AGENT = 'subagent-implementer';
  */
 export const WORKER_ENV_UNSET: readonly string[] = [
 	'CLAUDECODE',
-	'CLAUDECODE_ENTRYPOINT',
 	'CLAUDE_CODE_ENTRYPOINT',
 	'CLAUDE_CODE_SESSION_ID',
 	'CLAUDE_CODE_SSE_PORT',

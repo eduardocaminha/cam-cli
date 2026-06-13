@@ -11,3 +11,8 @@
 - docs/recovery-runbook.md ganhou cenario (e) "Worker pane stuck on the folder-trust prompt"; antigo (e) Diagnosing virou (f). Sintoma, causa (dir nunca vista pelo claude), e mitigacao (send-keys Enter / pre-trust em CI). Sem em-dash.
 - Gates: typecheck ok, 761 pass.
 ---
+
+## [2026-06-13] - Review round 1: CLEAN (+ 3 sugestoes aplicadas)
+- subagent-reviewer APPROVE, zero CRITICAL/WARNING. Sugestoes aplicadas: dropado CLAUDECODE_ENTRYPOINT (var inexistente, dead tokens); docstring de WORKER_ENV_UNSET honesta (CLAUDECODE e o unico gate documentado, resto e defensivo); runbook usa `send-keys 1 Enter` (escolha explicita da opcao 1).
+- Gates: typecheck ok, builder tests pass.
+---
