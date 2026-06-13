@@ -69,3 +69,11 @@ Situação: dogfood do CAM-16. O supervisor despachou o worker de US-001 e o `tm
 Achado: wake de wait-for não é prova de sinal, e outcome unknown não é prova de worker morto. Antes de bloquear, checar liveness (pane vivo / mtime do transcript) e re-armar o wait com o budget restante. A mesma lição do diagnóstico humano (pane quieto não é morte) vale pro código do supervisor.
 
 Regra (local canônico): issue CAM-39 em scripts/cam/issues.local.json (fix: waitFor com estado triplo signaled|timeout|error + re-arm em unknown com pane vivo).
+
+## 2026-06-13: close de issues irmas no issues.local.json nao landou (atropelo entre commits)
+
+Situacao: no ciclo CAM-42 fechei CAM-39/40/41 (superseded) + CAM-42 (shipped) num passo python, e tambem appendei CAM-43/44 em outros commits do mesmo branch. Apos o merge (PR #31), os appends landaram mas os closes NAO: CAM-39/40/41/42 voltaram a aparecer como open no main. O commit de close nao existe no historico squashado.
+
+Achado: edits de scripts/cam/issues.local.json espalhados por varios commits do MESMO branch se atropelam quando um rewrite python posterior carrega um snapshot anterior ao close (load-modify-write nao-atomico, sem rebase do estado intermediario). A etapa de close do cam-ship cobre/testa so a issue PRIMARIA do PRD; closes de issues IRMAS (superseded) sao manuais e nao tem gate.
+
+Regra (acionavel): (1) fazer todos os edits de issues.local.json (close primario + closes de irmas + appends de follow-ups) num UNICO commit por ciclo, nunca espalhados; (2) apos merge de um PR cam, VERIFICAR no main que as issues que deviam fechar estao closed (jq filter), nao confiar que o commit pegou. Local canonico: este lessons.md (workflow do projeto).
