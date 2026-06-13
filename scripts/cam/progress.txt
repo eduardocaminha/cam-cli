@@ -1,1 +1,8 @@
 ## Codebase Patterns
+
+## [2026-06-13] - US-001: teto de tokens por worker no loop de sentinel
+- events.ts: TokensEventDetail ganhou cacheCreationTokens (o mapping dropava; parseTranscriptUsage ja computa); 'worker-token-ceiling' add a uniao WorkerEventKind.
+- loop.ts: option maxWorkerTokens (default 0 = off). No poll loop, apos pane/sentinel, se >0 e readWorkerTokens: spend = input+cacheCreation+cacheRead (== computeOrchBudget); se >= teto, mata o pane (echo token-ceiling), emite 'worker-token-ceiling' {spend,ceiling}, notifyTerminal('blocked')+return. Terminal, NAO passa pelo backoff do dead-worker. Off = zero mudanca.
+- Testes events.test.ts ajustados (shape +cacheCreationTokens). loop.test.ts +2: teto cruzado mata+bloqueia; off nao consulta no poll.
+- Gates: typecheck ok, 761 pass.
+---

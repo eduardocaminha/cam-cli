@@ -57,7 +57,8 @@ export type WorkerEventKind =
 	| 'stale-lock'
 	| 'rate-limited'
 	| 'no-progress-retry'
-	| 'pane-died-retry';
+	| 'pane-died-retry'
+	| 'worker-token-ceiling';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -86,6 +87,12 @@ export interface TokensEventDetail {
 	inputTokens: number;
 	outputTokens: number;
 	cacheReadTokens: number;
+	/**
+	 * Cache-creation tokens. Carried so the per-worker token ceiling (CAM-5) can
+	 * compute spend with the same formula as the orchestrator budget
+	 * (input + cacheCreation + cacheRead, src/orchestrator/budget.ts).
+	 */
+	cacheCreationTokens: number;
 }
 
 /**
@@ -224,6 +231,7 @@ export function readWorkerTokens(
 		inputTokens: usage.input,
 		outputTokens: usage.output,
 		cacheReadTokens: usage.cacheRead,
+		cacheCreationTokens: usage.cacheCreation,
 	};
 }
 

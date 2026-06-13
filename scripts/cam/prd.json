@@ -35,7 +35,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (sentinel poll loop ~lines 545-553; readWorkerTokens injected ~line 402), src/supervisor/events.ts (TokensEventDetail ~85 + readWorkerTokens mapping ~213 + WorkerEventKind union ~51), test/supervisor/loop.test.ts (+ test/supervisor/events.test.ts if it asserts the tokens detail shape). computeOrchBudget (src/orchestrator/budget.ts) spend = input + cacheCreation + cacheRead is the canonical definition to mirror; the worker ceiling must match it, which is WHY TokensEventDetail must carry cacheCreation (it currently drops it). parseTranscriptUsage already returns usage.cacheCreation. Default 0 = disabled is deliberate (opt-in hard brake; rate-limit is the natural backstop). The transcript grows during the session so polling readWorkerTokens(uuid) gives cumulative-so-far."
     },
