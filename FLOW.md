@@ -208,7 +208,7 @@ Sem `--issue`, o planner pick o issue de maior prioridade pendente por conta pro
 
 ---
 
-## 4. cam next (lancador de pane: abre /cam-next na sessao)
+## 4. cam next (supervisor in-process)
 
 `cam next` roda o supervisor determinístico (`runSupervisor`, `src/supervisor/loop.ts`)
 no próprio processo. Ele lê o pane de worker alocado por `cam plan`, arma o state file,
@@ -379,9 +379,9 @@ flowchart TD
     FIX --> AUDIT
     VERD -->|"APPROVE"| BRANCH["cria branch + commit + push"]
 
-    BRANCH --> NEXTC["/cam-next (1 iteracao)"]
+    BRANCH --> NEXTC["cam next: supervisor (1 iteracao)"]
     NEXTC --> PRE["preflight: sync remote,<br/>working tree, typecheck, tests"]
-    PRE --> DEC{"branch decision<br/>(le prd.json)"}
+    PRE --> DEC{"decideNextAction<br/>(le prd.json + review)"}
 
     DEC -->|"alguma historia passes:false"| IMPL["subagent-implementer<br/>(uma historia, contexto fresco)"]
     IMPL --> ST{"CAM_IMPLEMENTER_STATUS"}
@@ -392,7 +392,7 @@ flowchart TD
     ST -->|"RATE_LIMIT"| RL["espera reset, retry"]
 
     DEC -->|"tudo passes:true + nao revisado<br/>ou FIXES_PENDING com fixes prontos"| REVIEWC["/cam-review"]
-    DEC -->|"tudo passes:true + CLEAN<br/>ou MAX_ROUNDS_DEBT ou teto"| COMPLETE["emite COMPLETE<br/>loop termina"]
+    DEC -->|"tudo passes:true + CLEAN<br/>ou MAX_ROUNDS_DEBT ou teto"| COMPLETE["estado terminal<br/>supervisor sai"]
 
     REVIEWC --> REVAGENT["subagent-reviewer<br/>(contexto separado, so o diff)"]
     REVAGENT --> RV{"review tag"}
@@ -433,8 +433,8 @@ stateDiagram-v2
     [*] --> Idle: sem state file
     Idle --> Active: cam next (arma o state file)
     Active --> Active: supervisor despacha o proximo worker (loop in-process)
-    Active --> Paused: terminal nao-sucesso (active:false)
-    Active --> Complete: supervisor terminal (complete) ou bate max_iterations
+    Active --> Paused: terminal nao-sucesso (blocked / awaiting-operator / max_iterations -> active:false)
+    Active --> Complete: supervisor terminal complete (todas non-operator passam + review terminal)
 
     Active --> Orphan: terminal fecha / reboot / hard-kill (PID morre)
 
