@@ -56,7 +56,8 @@ export type WorkerEventKind =
 	| 'pushed'
 	| 'stale-lock'
 	| 'rate-limited'
-	| 'no-progress-retry';
+	| 'no-progress-retry'
+	| 'pane-died-retry';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';

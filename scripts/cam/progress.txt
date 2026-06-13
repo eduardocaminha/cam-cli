@@ -1,1 +1,9 @@
 ## Codebase Patterns
+
+## [2026-06-13] - US-001: dead-worker backoff guard no branch sentinel
+- loop.ts: const MAX_DEAD_WORKER_RETRIES=3, deadWorkerStreak. pane-died E timeout agora compartilham um guard: incrementa streak, no cap -> notifyTerminal('blocked')+return (nunca max-iterations); abaixo do cap -> emit 'pane-died-retry' {attempt,backoffMs,pollOutcome} + sleepFn(NO_PROGRESS_BACKOFF_MS*streak). Reset em "Sentinel found" (worker rodou vivo) e no branch de review.
+- events.ts: 'pane-died-retry' adicionado a uniao fechada WorkerEventKind.
+- Teste 'max-iterations cap fires' antigo (timeout spin) reescrito: agora prova o block no cap de dead-worker (o comportamento que o CAM-44 introduz). max-iterations segue coberto pelo teste PRD_COMPLETE cycling. +2 testes: pane-died persistente e transiente-recupera.
+- Implementado direto pelo orquestrador (Edit), nao via loop TUI.
+- Gates: typecheck ok, 763 pass.
+---

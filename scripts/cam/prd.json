@@ -26,7 +26,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (sentinel branch around lines 518-559: the pane-died branch ~543 and the timeout branch ~551), src/supervisor/events.ts (WorkerEventKind union ~51), test/supervisor/loop.test.ts (makeBaseOpts injects isPaneAlive/sleepFn/nowMs; donePane(storyId) yields the sentinel pane text). Mirror the existing CAM-36/38 no-progress guard pattern (streak increment, cap -> notifyTerminal('blocked')+return, else emit retry event + sleepFn). Reuse NO_PROGRESS_BACKOFF_MS; do NOT add a separate backoff const. Reset deadWorkerStreak on the successful-sentinel path (where readWorkerOutcome runs), next to where noProgressStreak semantics live."
     },
