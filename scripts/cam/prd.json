@@ -42,7 +42,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: docs/recovery-runbook.md. The event-log diagnostics section already enumerates emitted event kinds (worker-start, worker-end, result, tokens, pushed, stale-lock); add 'pane-died-retry'. Depends on US-001 having added the event. No source change in this story."
     }

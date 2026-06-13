@@ -7,3 +7,8 @@
 - Implementado direto pelo orquestrador (Edit), nao via loop TUI.
 - Gates: typecheck ok, 763 pass.
 ---
+
+## [2026-06-13] - US-002: doc-sync do dead-worker backoff no runbook
+- recovery-runbook.md: cenario (a) ganha nota sobre o re-dispatch limitado (backoff escalonado + cap MAX_DEAD_WORKER_RETRIES, block limpo, aponta pro (e) trust); cenario (f) lista o evento 'pane-died-retry'. Sem em-dash.
+- Gates: typecheck ok, 763 pass.
+---
