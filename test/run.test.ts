@@ -44,10 +44,20 @@ function makeFakeSpawn(opts: {
 	tmuxAvailable?: boolean;
 	/** Return 0 for has-session (session exists). Default: false. */
 	sessionExists?: boolean;
+	/**
+	 * stdout for `list-panes` when the session exists (CAM-47 staleness check).
+	 * Default is the HEALTHY shape (3 panes, none `cat`) so the re-attach test
+	 * keeps exercising the no-reset branch. A stale-path test passes a malformed
+	 * value (a `cat` pane or wrong pane count).
+	 */
+	listPanes?: string;
 } = {}): SpawnFn & { calls: SpawnRecord[] } {
-	const { tmuxAvailable = true, sessionExists = false } = opts;
+	const { tmuxAvailable = true, sessionExists = false, listPanes = 'claude\ncam\ncam\n' } = opts;
 	const calls: SpawnRecord[] = [];
 	let paneCounter = 0;
+	// kill-session flips this so a stale-path recreate (ensureProjectSession ->
+	// hasSession) sees the session as gone and rebuilds it.
+	let exists = sessionExists;
 
 	const fn: SpawnFn = (cmd, args, options?) => {
 		calls.push({ cmd, args: [...args] });
@@ -68,7 +78,11 @@ function makeFakeSpawn(opts: {
 			if (subcommand === '-V') {
 				result.status = tmuxAvailable ? 0 : 1;
 			} else if (subcommand === 'has-session') {
-				result.status = sessionExists ? 0 : 1;
+				result.status = exists ? 0 : 1;
+			} else if (subcommand === 'kill-session') {
+				exists = false;
+			} else if (subcommand === 'list-panes' && options?.stdio === 'pipe') {
+				result.stdout = Buffer.from(listPanes);
 			} else if (
 				(subcommand === 'new-session' || subcommand === 'split-window') &&
 				options?.stdio === 'pipe'
@@ -432,6 +446,37 @@ describe('runRun session-id and marker file (US-002)', () => {
 		// Marker must still contain the original uuid, not the new one.
 		const markerPath = join(cwd, '.claude', '.cam-orch-session');
 		expect(readFileSync(markerPath, 'utf8')).toBe(originalUuid);
+	});
+
+	it('CAM-47: healthy existing session is NOT reset (no kill-session, attach)', () => {
+		const cwd = makeTmpProject();
+		// Existing session, healthy list-panes (3 panes, none cat).
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: true });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+
+		// A healthy re-attach must NOT kill the session (would nuke a live loop).
+		const killed = spawn.calls.some((c) => c.args.includes('kill-session'));
+		expect(killed).toBe(false);
+	});
+
+	it('CAM-47: stale existing session (cat pane) is killed + recreated', () => {
+		const cwd = makeTmpProject();
+		// Existing session but a pane is still the `cat` placeholder -> stale.
+		const spawn = makeFakeSpawn({
+			tmuxAvailable: true,
+			sessionExists: true,
+			listPanes: 'cat\ncam\ncam\n',
+		});
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+
+		// Stale path: the session is killed, then recreated + panes set up.
+		const killed = spawn.calls.some((c) => c.args.includes('kill-session'));
+		expect(killed).toBe(true);
+		// Recreate path runs the orchestrator respawn into a pane (respawn-pane -k).
+		const respawned = spawn.calls.some((c) => c.args.includes('respawn-pane'));
+		expect(respawned).toBe(true);
 	});
 
 	it('clears a stale .cam-orch-handoff.json on a newly created session (CAM-23)', () => {

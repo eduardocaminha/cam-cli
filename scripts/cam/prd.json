@@ -26,7 +26,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (new isSessionStale helper near hasSession/ensureProjectSession; use tmuxArgs + spawnFn, parse stdout lines of pane_current_command), src/commands/run.ts (setupOrchestratorSession early-return at ~198-201: replace the blind `if (!panes) return {created:false}` with the stale-check + kill+recreate-or-attach; the recreate path must reuse the SAME pane-setup code that runs for a fresh create, so extract/share it rather than duplicating). test/run.test.ts (the fake spawn already mirrors tmux; add list-panes responses for healthy vs stale). The cat placeholder is what ensureProjectSession seeds each pane with before respawn (src/tmux/session.ts); a fully set-up session has orchestrator=claude/bash, dashboard+menu=cam, none cat. Conservative signal avoids the false-positive that would kill a live loop. Consider a `created` vs `reset` distinction in the return so runRun can print the notice; the existing test at run.test.ts:418 ('does NOT rewrite .cam-orch-session on re-attach, created:false') must still hold for the HEALTHY case."
     },
