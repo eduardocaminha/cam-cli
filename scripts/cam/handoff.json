@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Make /cam-ship Step 4b git rm robust to missing paths"
+  },
+  "branchName": "cam/CAM-49-cam-ship-hygiene-ignore-unmatch",
+  "timestamp": "2026-06-14T12:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "templates/commands/cam-ship.md",
+    ".claude/commands/cam-ship.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 landed: both cam-ship.md copies and the embedded vendor now use `git rm -q --ignore-unmatch` (dropping the 2>/dev/null || true mask). US-002 adds a regression test against the embedded artifact in src/vendor/_generated.ts. The export shape is `templatesContents: Readonly<Record<string, string>>` keyed by relative path like `commands/cam-ship.md`. The test should live at test/vendor/cam-ship-hygiene.test.ts.",
+  "officialDocsValidated": [
+    {
+      "lib": "git",
+      "url": "https://git-scm.com/docs/git-rm",
+      "fetchedAt": "2026-06-14T12:00:00Z",
+      "status": "aligned",
+      "summary": "`--ignore-unmatch` exits 0 when no files match; real errors (non-pathspec issues) still propagate non-zero. Implementation matches docs exactly."
+    }
+  ]
+}
