@@ -4,7 +4,10 @@
 //
 // Behaviour (per project decision: always tmux, single session per project):
 //   1. Compute the session name from the project (cwd basename + short hash).
-//   2. If `tmux has-session -t <name>` succeeds → attach the user to it.
+//   2. If `tmux has-session -t <name>` succeeds → attach IF the session is
+//      healthy; if it is stale/malformed (cat-placeholder panes, wrong pane
+//      count) kill + recreate it fresh first (CAM-47, isSessionStale). A healthy
+//      running session is never reset, so an active loop is not killed.
 //   3. Otherwise → create a new session with three panes via ensureProjectSession:
 //        Pane 0 (left):         claude orchestrator with boot prompt (US-001).
 //        Pane 1 (top-right):    cam dashboard — permanent pane (US-002, US-010).
