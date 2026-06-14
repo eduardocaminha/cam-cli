@@ -97,6 +97,37 @@ export function hasSession(sessionName: string, spawnFn: SpawnFn): boolean {
 	return (r.status ?? 1) === 0;
 }
 
+/**
+ * Return true if an EXISTING session is stale / malformed and should be
+ * recreated rather than attached to (CAM-47). A healthy cam session has exactly
+ * 3 panes and none running the `cat` placeholder (every pane is respawned with
+ * a real command: orchestrator, dashboard, menu). So a session is stale when:
+ *   - `tmux list-panes` fails or returns nothing (unknown state), OR
+ *   - the pane count is not 3, OR
+ *   - any pane is still running the `cat` placeholder (setup never completed).
+ *
+ * The signal is deliberately CONSERVATIVE: a healthy, running orchestrator
+ * session never exhibits these, so this never resets (and never kills) a live
+ * loop. When in doubt (list-panes failure), prefer stale=true so `cam run`
+ * recreates a clean session rather than attaching to an unknown one.
+ */
+export function isSessionStale(sessionName: string, spawnFn: SpawnFn): boolean {
+	const r = spawnFn(
+		'tmux',
+		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{pane_current_command}']),
+		{ stdio: 'pipe' },
+	);
+	if ((r.status ?? 1) !== 0) return true; // list-panes failed: conservative
+	const out = typeof r.stdout === 'string' ? r.stdout : (r.stdout?.toString() ?? '');
+	const commands = out
+		.split('\n')
+		.map((l) => l.trim())
+		.filter((l) => l.length > 0);
+	if (commands.length !== 3) return true; // not the canonical 3-pane layout
+	if (commands.some((c) => c === 'cat')) return true; // a placeholder never respawned
+	return false;
+}
+
 // ---------------------------------------------------------------------------
 // Session creation
 // ---------------------------------------------------------------------------

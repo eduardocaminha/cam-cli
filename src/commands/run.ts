@@ -4,7 +4,10 @@
 //
 // Behaviour (per project decision: always tmux, single session per project):
 //   1. Compute the session name from the project (cwd basename + short hash).
-//   2. If `tmux has-session -t <name>` succeeds → attach the user to it.
+//   2. If `tmux has-session -t <name>` succeeds → attach IF the session is
+//      healthy; if it is stale/malformed (cat-placeholder panes, wrong pane
+//      count) kill + recreate it fresh first (CAM-47, isSessionStale). A healthy
+//      running session is never reset, so an active loop is not killed.
 //   3. Otherwise → create a new session with three panes via ensureProjectSession:
 //        Pane 0 (left):         claude orchestrator with boot prompt (US-001).
 //        Pane 1 (top-right):    cam dashboard — permanent pane (US-002, US-010).
@@ -38,6 +41,7 @@ import {
 import {
 	projectSessionName,
 	ensureProjectSession,
+	isSessionStale,
 	tmuxArgs,
 	type SpawnFn,
 	type CreatedPaneIds,
@@ -187,19 +191,54 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
  * Returns { sessionName, created: true } when a new session was built,
  * { sessionName, created: false } when it already existed (just attach).
  */
-function setupOrchestratorSession(opts: {
+interface SetupOpts {
 	cwd: string;
 	sessionName: string;
 	spawnFn: SpawnFn;
 	genSessionId: () => string;
-}): { sessionName: string; created: boolean } {
-	const { cwd, sessionName, spawnFn, genSessionId } = opts;
+}
 
-	const panes: CreatedPaneIds | false = ensureProjectSession(sessionName, spawnFn);
+/**
+ * Open or reconcile the orchestrator session (CAM-47):
+ *   - new session             -> build + set up the 3 panes. created: true.
+ *   - existing + healthy       -> attach untouched. created: false.
+ *   - existing + stale/broken  -> kill + recreate fresh. created: true, reset: true.
+ *
+ * A healthy running session is NEVER reset (isSessionStale is conservative), so
+ * `cam run` re-attach does not kill an active orchestrator/loop.
+ */
+function setupOrchestratorSession(opts: SetupOpts): {
+	sessionName: string;
+	created: boolean;
+	reset: boolean;
+} {
+	const { sessionName, spawnFn } = opts;
+
+	let panes: CreatedPaneIds | false = ensureProjectSession(sessionName, spawnFn);
+	let reset = false;
 	if (!panes) {
-		return { sessionName, created: false };
+		// Session already exists. Attach only if healthy; a stale/half-setup
+		// session (cat-placeholder panes, wrong pane count) is recreated so the
+		// operator does not inherit a broken layout instead of being reconciled.
+		if (!isSessionStale(sessionName, spawnFn)) {
+			return { sessionName, created: false, reset: false };
+		}
+		spawnFn('tmux', tmuxArgs(['kill-session', '-t', sessionName]), { stdio: 'ignore' });
+		panes = ensureProjectSession(sessionName, spawnFn);
+		if (!panes) {
+			// Recreate failed right after kill (should not happen): fall back to attach.
+			return { sessionName, created: false, reset: false };
+		}
+		reset = true;
 	}
 
+	setupPanes(opts, panes);
+	return { sessionName, created: true, reset };
+}
+
+/** Respawn the real commands into the 3 panes and apply the workspace chrome. */
+function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
+	const { cwd, sessionName, spawnFn, genSessionId } = opts;
 	const { orchPaneId, dashboardPaneId, menuPaneId } = panes;
 
 	// CAM-23: a freshly created session must not inherit a stale handoff. If a
@@ -320,8 +359,6 @@ function setupOrchestratorSession(opts: {
 
 	// Make sure focus is on the orchestrator pane.
 	spawnFn('tmux', tmuxArgs(['select-pane', '-t', orchPaneId]), { stdio: 'ignore' });
-
-	return { sessionName, created: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -374,10 +411,12 @@ export function runRun(options: RunOptions = {}): number {
 		return 0;
 	}
 
-	let result: { sessionName: string; created: boolean };
+	let result: { sessionName: string; created: boolean; reset: boolean };
 	try {
 		result = setupOrchestratorSession({ cwd, sessionName, spawnFn, genSessionId });
-		if (result.created) {
+		if (result.reset) {
+			emitOk(`stale tmux session "${sessionName}" detected, recreated clean`);
+		} else if (result.created) {
 			emitOk(`tmux session "${sessionName}" created`);
 		} else {
 			emitOk(`tmux session "${sessionName}" already exists — attaching`);

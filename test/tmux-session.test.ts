@@ -22,6 +22,7 @@ import {
 	ensureProjectSession,
 	openPaneInSession,
 	isInsideProjectSession,
+	isSessionStale,
 	CAM_TMUX_SOCKET,
 	tmuxArgs,
 	respawnPaneArgv,
@@ -476,5 +477,53 @@ describe('isInsideProjectSession', () => {
 	test('returns false when inside tmux but CAM_SESSION is absent', () => {
 		const env: Env = { TMUX: '/tmp/tmux-1000/default,12345,0' };
 		expect(isInsideProjectSession('cam-orch-myproj-abc123', env)).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// isSessionStale (CAM-47)
+// ---------------------------------------------------------------------------
+
+/** Minimal fake: list-panes returns the given stdout + status. */
+function staleSpawn(listPanesStdout: string, listPanesStatus = 0): SpawnFn {
+	return ((cmd, args, opts) => {
+		const sub = args[0] === '-L' ? args[2] : args[0];
+		if (cmd === 'tmux' && sub === 'list-panes' && opts?.stdio === 'pipe') {
+			return {
+				pid: 1, output: [null, Buffer.from(listPanesStdout), Buffer.from('')],
+				stdout: Buffer.from(listPanesStdout), stderr: Buffer.from(''),
+				status: listPanesStatus, signal: null,
+			} as ReturnType<SpawnFn>;
+		}
+		return {
+			pid: 1, output: [null, Buffer.from(''), Buffer.from('')],
+			stdout: Buffer.from(''), stderr: Buffer.from(''), status: 0, signal: null,
+		} as ReturnType<SpawnFn>;
+	}) as SpawnFn;
+}
+
+describe('isSessionStale', () => {
+	test('healthy: 3 panes, none cat -> false', () => {
+		expect(isSessionStale('s', staleSpawn('claude\ncam\ncam\n'))).toBe(false);
+	});
+
+	test('a cat placeholder pane -> true', () => {
+		expect(isSessionStale('s', staleSpawn('cat\ncam\ncam\n'))).toBe(true);
+	});
+
+	test('wrong pane count (4) -> true', () => {
+		expect(isSessionStale('s', staleSpawn('claude\ncam\ncam\nzsh\n'))).toBe(true);
+	});
+
+	test('wrong pane count (1) -> true', () => {
+		expect(isSessionStale('s', staleSpawn('claude\n'))).toBe(true);
+	});
+
+	test('empty list-panes output -> true (conservative)', () => {
+		expect(isSessionStale('s', staleSpawn(''))).toBe(true);
+	});
+
+	test('list-panes non-zero exit -> true (conservative)', () => {
+		expect(isSessionStale('s', staleSpawn('', 1))).toBe(true);
 	});
 });
