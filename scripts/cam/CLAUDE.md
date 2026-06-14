@@ -4,18 +4,17 @@
 
 1. Read the PRD at `prd.json` (in the same directory as this file).
 2. Read `handoff.json` (if it exists) for context from the previous story iteration.
-3. Read the progress log at `progress.txt` (check the `## Codebase Patterns` section first).
+3. Read `scripts/cam/patterns.md` for durable project conventions (codebase patterns, gotchas, invariants).
 4. Check you are on the correct branch from PRD `branchName`. If not, check it out or create from main.
 5. Pick the **highest priority** user story where `passes: false` and `requires != "operator"`.
 6. Implement that single user story.
 7. Run quality checks (typecheck, lint, test).
 8. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`.
 9. Update the PRD to set `passes: true` for the completed story.
-10. Append your progress to `progress.txt`.
-11. Validate against official library docs (Step 5.5 in the agent SYSTEM PROMPT): one targeted fetch against the lib the story touched.
-12. Write `handoff.json` for the next iteration (schema: `handoff.schema.json`). Include the Step 5.5 validation entries in `officialDocsValidated`.
-13. Push: `git push origin $(git branch --show-current)`.
-14. Print your status line: `CAM_IMPLEMENTER_STATUS=DONE story=US-XXX`.
+10. Validate against official library docs (Step 5.5 in the agent SYSTEM PROMPT): one targeted fetch against the lib the story touched.
+11. Write `handoff.json` for the next iteration (schema: `handoff.schema.json`). Include the Step 5.5 validation entries in `officialDocsValidated`.
+12. Push: `git push origin $(git branch --show-current)`.
+13. Print your status line: `CAM_IMPLEMENTER_STATUS=DONE story=US-XXX`.
 
 ## Stop Condition
 
@@ -45,50 +44,27 @@ Run these before committing. Fix failures before proceeding:
 
 Do NOT use `--no-verify` to bypass pre-commit hooks. If a hook step is wrong, file a follow-up to fix it. Never skip it for the current story.
 
-## Progress Report Format
+## Per-Story Record (event log, harness-written)
 
-Append to `progress.txt` after each story:
+The per-story factual record is written by the harness supervisor, NOT by the agent. The harness appends structured JSON lines to `.claude/cam-worker-events.jsonl`:
 
-```
-## [YYYY-MM-DD HH:MM] - [Story ID]: [Story Title]
+- `kind: "result"` carries `{ outcome, filesChanged, gates, docsValidated }` for each completed story.
+- `kind: "tokens"` carries token spend.
+- `kind: "worker-start"` / `kind: "worker-end"` carry lifecycle timestamps.
 
-### What was done
-- [bullet list of changes]
+The agent does NOT hand-write a prose progress record. The event log is supervisor-owned and not writable by the agent session.
 
-### Files changed
-- [file paths]
+## Codebase Patterns (durable wisdom)
 
-### Quality gates
-- Typecheck: ok
-- Lint: ok
-- Tests: <count> pass
+Reusable patterns, project conventions, library quirks, and gotchas live in `scripts/cam/patterns.md` (durable, versioned on main, never truncated). This replaces the old `## Codebase Patterns` block that used to sit at the top of `progress.txt`.
 
-### Step 5.5 docs validation
-- lib: <name>, status: <ok|corrected|no_external_lib_touched|fetch_failed>
+When a story reveals a new reusable insight, append a bullet to `scripts/cam/patterns.md`. Example patterns already documented there:
 
-### Notes
-- [any patterns, gotchas, or next-story context worth preserving]
----
-```
+- Bun runtime: always `Bun.spawn` / `Bun.$` / `Bun.file` over Node.js equivalents.
+- `noUncheckedIndexedAccess`: array indexing and regex capture groups are `T | undefined`.
+- Ink screens: signal success/failure with the glyph (accent/destructive), never by divider color.
 
-If you discovered a reusable pattern (a project convention, a quirk of a library, a gotcha in the codebase), **add it to the `## Codebase Patterns` block at the top of `progress.txt`**. This is the fastest way to propagate learnings across stories without re-reading the whole codebase.
-
-## Codebase Patterns Block
-
-The `## Codebase Patterns` block lives at the very top of `progress.txt`. Example:
-
-```
-## Codebase Patterns
-
-- **Bun runtime**: always `Bun.spawn` / `Bun.$` / `Bun.file` over `node:child_process` / `node:fs`.
-- **Permission mode**: never register a `--permission-mode` CLI flag on any subcommand (enforced by `test/no-permission-mode-flag.test.ts`).
-- **noUncheckedIndexedAccess**: array indexing and regex capture groups are `T | undefined`. Guard with `?? fallback` or a justified non-null assertion.
-- **Ink screens**: success/failure is signalled by the glyph (✓ accent / ✗ destructive), never by divider color. Render and look at the real output; do not trust header comments (see `lessons.md` 2026-06-05).
-- **Tests**: `bun test` from repo root; test files live under `test/`, mirroring source. Inject fake reader/writer shapes instead of touching real stdin/stdout.
-- **Commits**: conventional commits required (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
-```
-
-Update this block whenever a story reveals a new reusable insight.
+Read `scripts/cam/patterns.md` at story start (step 3 above) so the patterns are in context before you touch files.
 
 ## Cross-Repo PRDs (optional)
 
@@ -101,4 +77,4 @@ Some PRDs span multiple repos. A PRD may declare a top-level `crossRepoLayout` b
 }
 ```
 
-Per-story routing is driven by the optional `repo` field on each `userStories[]` entry (default `"main-repo"`). When the implementer picks a story whose `repo` is not the default, it `cd`s into the corresponding path BEFORE reading the story's files or running `git` commands. The harness state files (`prd.json`, `progress.txt`, `handoff.json`) always live in the main repo. Only the story's source edits move cwd.
+Per-story routing is driven by the optional `repo` field on each `userStories[]` entry (default `"main-repo"`). When the implementer picks a story whose `repo` is not the default, it `cd`s into the corresponding path BEFORE reading the story's files or running `git` commands. The harness state files (`prd.json`, `handoff.json`) always live in the main repo; `patterns.md` is durable and versioned on main; the event log (`.claude/cam-worker-events.jsonl`) is per-project but supervisor-owned. Only the story's source edits move cwd.
