@@ -1,5 +1,5 @@
 {
-  "next_id": 40,
+  "next_id": 48,
   "issues": [
     {
       "id": "CAM-1",
@@ -384,14 +384,6 @@
       "createdAt": "2026-06-14T06:00:00Z",
       "priority": "P3",
       "closedAt": "2026-06-14T06:20:00Z"
-    },
-    {
-      "id": "CAM-39",
-      "title": "adicione um comentario TODO no topo do README de teste",
-      "description": "Issue de teste do fluxo /cam-issue create: adicionar um comentario TODO no topo de um README de teste. Trabalho trivial usado para exercitar o pipeline cam (issue -> plan -> next -> review -> ship).",
-      "state": "open",
-      "createdAt": "2026-06-14T12:36:47Z",
-      "priority": "P3"
     },
     {
       "id": "CAM-47",
