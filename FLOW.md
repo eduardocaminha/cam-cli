@@ -20,7 +20,7 @@ Inventário rápido de quem renderiza o quê:
 | `cam init` | Ink (`Splash` + `InitScreen`, `SetupScreen`) com fallback linear em CI | validação de máquina, wizard, tmux |
 | `cam run` | print path + tmux | sessão orchestrator (3 panes: orquestrador + dashboard + menu) |
 | `cam plan` | print path + tmux (pane launcher) | abre pane na sessão, retorna 0 imediatamente |
-| `cam next` | print path + tmux (pane launcher) | abre pane na sessão, retorna 0 imediatamente |
+| `cam next` | print path + supervisor in-process | dirige o loop implement-review-complete, sai no estado terminal |
 | `cam issue` | print path + tmux (pane launcher) | abre pane na sessão, retorna 0 imediatamente |
 | `cam dashboard` | Ink (alt-screen) | TUI read-only; pane 0.1 permanente na sessão |
 | `cam status` | print path | idle / active / paused |
@@ -43,7 +43,7 @@ flowchart TD
     INIT --> RUN["cam run<br/>sessao unica por projeto<br/>3 panes: orquestrador + dashboard + menu"]
 
     RUN -. "lançador de pane" .-> PLAN["cam plan<br/>abre pane: /cam-plan"]
-    RUN -. "lançador de pane" .-> NEXT["cam next<br/>abre pane: /cam-next"]
+    RUN -. "lançador de pane" .-> NEXT["cam next<br/>supervisor in-process"]
     RUN -. "lançador de pane" .-> ISSUE["cam issue 'texto'<br/>abre pane: /cam-issue create"]
 
     PLAN -. "volta pra sessao" .-> RUN
@@ -159,7 +159,7 @@ flowchart TD
     ATTACH --> EXIT0a(["exit 0"])
 
     EXISTS -->|nao| CREATE["new-session -d (3 panes):"]
-    CREATE --> P0["pane 0.0: orchestrator<br/>(claude /cam-next; ao sair: kill-session)"]
+    CREATE --> P0["pane 0.0: orchestrator<br/>(claude + subagent-orchestrator prompt;<br/>ao sair: respawn no handoff, senao kill-session)"]
     CREATE --> P1["pane 0.1: cam dashboard<br/>(permanente, read-only)"]
     CREATE --> P2["pane 0.2: menu interativo<br/>(n, p, i, s, r, d, q)"]
 

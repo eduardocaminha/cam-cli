@@ -155,7 +155,7 @@ security context for the current login session.
 
 The session layout has three panes:
 
-- **Pane 0.0 (left):** orchestrator claude process running `/cam-next`.
+- **Pane 0.0 (left):** orchestrator claude process (boots the `subagent-orchestrator` agent, which drives `/cam-plan`, `/cam-next`, `/cam-review`, `/cam-ship`).
 - **Pane 0.1 (top right):** `cam dashboard`, a permanent read-only monitor. Always visible.
 - **Pane 0.2 (bottom right):** interactive menu. Press `n`, `p`, `i`, `s`, or `q` to inject commands into the orchestrator pane.
 
