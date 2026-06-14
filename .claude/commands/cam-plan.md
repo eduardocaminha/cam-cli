@@ -51,12 +51,20 @@ Look for ANY of these signals of existing in-progress work:
 Options:
 1. Continue working on this issue (run /cam-next)
 2. Ship this issue first (run /cam-ship)
-3. Abandon this issue and start a new one (will overwrite PRD)
+3. Abandon this issue and start a new one (clean re-plan)
 
 Which option?
 ```
 
 **Do NOT proceed to Step 2 until the user explicitly chooses option 3.**
+
+**On option 3 (clean re-plan) ONLY**, discard the prior cycle's state before proceeding so a stale handoff cannot mislead the new plan's loop:
+
+```bash
+rm -f scripts/cam/handoff.json
+```
+
+`handoff.json` is the state-primary outcome signal (CAM-32): a leftover from the abandoned issue would name its old `lastCompletedStory` and derail the next `/cam-next`. `prd.json` needs no separate wipe here, Step 9 overwrites it with the new plan. `progress.txt` was retired (CAM-31), so there is nothing else to clear. Do NOT touch `scripts/cam/issues.local.json` (the persistent backlog) or `scripts/cam/patterns.md` (durable). Run this cleanup ONLY on the explicit option-3 choice, never on options 1 or 2.
 
 ### Step 2: Pick the issue
 
