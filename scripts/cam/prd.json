@@ -40,9 +40,15 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "Real /cam-plan ceremony in a TUI session; the cleanup is an instruction followed by the planning agent, not testable code, so a real run is the proof. Verify handoff.json present before, absent after choosing option 3."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "2c91840b06fbe734b96178b0cd81bc2bd6134795",
+    "lastVerdict": "CLEAN"
+  }
 }
