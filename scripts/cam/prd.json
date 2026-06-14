@@ -60,7 +60,7 @@
         "Tests pass (bun test)."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (extend ensureProjectSession after menuSplitResult), test/tmux-session.test.ts (add new assertion + update any existing call-index assertions). Depends on US-002. Hard constraint #1: resize-pane -x does NOT expand #{...} format expressions, so the clamp value MUST be a literal integer produced by shell $(()) before resize-pane runs. Hard constraint #2: tmux comparison format modifiers are lexical, not numeric, so the min/max cannot be expressed in pure tmux format. Hard constraint #5: the menu pane shares the dashboard column width, so one resize-pane on the dashboard pane id re-clamps both. Hard constraint #6: build the hook string and verify it locally against tmux 3.6a (attach a narrow client, confirm resize-pane runs with the clamped literal) before committing. The set-hook call is emitted via the injected SpawnFn, with the argv built by tmuxArgs([...]) so the -L cam socket is set. noUncheckedIndexedAccess: guard any captured stdout split. No em-dash in inline comments persisted in source."
     },

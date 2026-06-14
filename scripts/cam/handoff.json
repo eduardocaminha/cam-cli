@@ -1,7 +1,7 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Use clamped born width in ensureProjectSession split-window"
+    "id": "US-003",
+    "title": "Install per-session window-resized hook that re-clamps dashboard width"
   },
   "branchName": "cam/CAM-48-responsive-dashboard-pane",
   "timestamp": "2026-06-14T00:00:00Z",
@@ -12,12 +12,15 @@
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 replaced hardcoded '-l', '36' in dashSplitResult split-window with String(clampDashboardWidth(220)) = '44'. clampDashboardWidth is defined and exported in src/tmux/session.ts. Test renamed and updated to assert '44'. US-003 (if any) should look at remaining stories in prd.json.",
+  "nextStoryContext": "US-003 adds a set-hook call at the end of ensureProjectSession (5th spawn, index 4). Hook uses run-shell with #{window_width} expanded by tmux to a literal int before sh -c receives it; shell $((w*20/100)) and $((t<34?34:t>52?52:t)) produce the clamped literal for resize-pane -x. Empirically verified on tmux 3.6a (probe socket cam48probe): w=100 -> 34, w=300 -> 52, w=220 -> 44. Only remaining story is US-004 which requires operator ceremony.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Change is a string substitution in tmux argv using clampDashboardWidth (JS built-ins only). No external npm library touched."
+      "lib": "tmux",
+      "version": "3.6a",
+      "url": "https://man.openbsd.org/tmux",
+      "fetchedAt": "2026-06-14T00:00:00Z",
+      "status": "verified_empirically",
+      "summary": "set-hook -t <session> window-resized 'run-shell ...' confirmed working on tmux 3.6a. resize-pane -x rejects #{...} format expressions (width invalid) - constraint #1 verified. run-shell expands #{window_width} to a numeric literal before passing to sh -c, enabling shell $((  )) arithmetic for the clamp. Probe session on socket cam48probe confirmed: w=100->pane 34, w=300->pane 52, w=220->pane 44."
     }
   ]
 }
