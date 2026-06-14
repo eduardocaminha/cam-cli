@@ -126,6 +126,9 @@ export interface OrchestratorPaneCommandOptions {
 	sessionIdMarker: string;
 	/** Path to .cam-orch-handoff.json; its presence on claude exit triggers a respawn. */
 	handoffMarker: string;
+	/** Path to the loop state file (.claude/cam-loop.local.md); removed on teardown so an
+	 * `/exit` leaves no stale state (matches `cam stop`, which `kill-session` alone did not). */
+	stateFile: string;
 	/** Max consecutive respawns (default DEFAULT_MAX_ORCH_RESPAWNS). */
 	maxRespawns?: number;
 }
@@ -138,7 +141,8 @@ export interface OrchestratorPaneCommandOptions {
  * (rename to .consumed.json so the same payload cannot re-trigger), mints a FRESH
  * session uuid via `uuidgen`, rewrites .cam-orch-session, and re-execs claude so
  * the new session rehydrates from the handoff (US-004). Otherwise it tears the
- * tmux session down via kill-session (the pre-CAM-23 behavior). `bypassPermissions`
+ * tmux session down: removes the loop state file (so a clean `/exit` leaves no
+ * stale `cam-loop.local.md`, matching `cam stop`) then kill-session. `bypassPermissions`
  * is preserved (intentional, 2026-06-06 lesson on macOS amfid). Pure string
  * assembly, no I/O, so it is unit-testable.
  */
@@ -163,6 +167,9 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		`n=$((n + 1)); ` +
 		`else ` +
 		`if [ "$n" -ge "$max" ]; then echo "cam: orchestrator respawn cap ($max) reached, tearing down"; fi; ` +
+		// Clear the loop state file before kill-session so a clean `/exit` leaves no
+		// stale `cam-loop.local.md` (kill-session alone left it; `cam stop` removes it).
+		`rm -f ${q(opts.stateFile)}; ` +
 		// sessionName is a sanitized identifier (projectSessionName); unquoted to
 		// match the pre-CAM-23 command + the kill-session assertion in run.test.ts.
 		`tmux -L cam kill-session -t ${opts.sessionName}; break; ` +
@@ -280,6 +287,7 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 		promptFile,
 		sessionIdMarker: join(dotClaude, '.cam-orch-session'),
 		handoffMarker: join(dotClaude, '.cam-orch-handoff.json'),
+		stateFile: join(dotClaude, 'cam-loop.local.md'),
 	});
 	// respawn-pane -k runs the command DIRECTLY in the pane, replacing the silent
 	// `cat` placeholder. No interactive bash means no macOS zsh notice / prompt /

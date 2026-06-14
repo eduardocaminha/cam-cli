@@ -501,6 +501,7 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		promptFile: '/project/.claude/.cam-orchestrator-prompt.txt',
 		sessionIdMarker: '/project/.claude/.cam-orch-session',
 		handoffMarker: '/project/.claude/.cam-orch-handoff.json',
+		stateFile: '/project/.claude/cam-loop.local.md',
 	};
 
 	it('preserves --permission-mode bypassPermissions and the initial session-id', () => {
@@ -528,6 +529,16 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 	it('falls back to kill-session for the tmux session', () => {
 		expect(buildOrchestratorPaneCommand(base)).toContain(
 			`tmux -L cam kill-session -t ${base.sessionName}`,
+		);
+	});
+
+	it('removes the loop state file on teardown, before kill-session (clean /exit)', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain(`rm -f '${base.stateFile}'`);
+		// The rm must run BEFORE kill-session: once the session dies the wrapper
+		// stops, so a rm queued after kill-session would never execute.
+		expect(cmd.indexOf(`rm -f '${base.stateFile}'`)).toBeLessThan(
+			cmd.indexOf(`kill-session -t ${base.sessionName}`),
 		);
 	});
 
