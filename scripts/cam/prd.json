@@ -38,7 +38,7 @@
         "bun test passes."
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/status.ts (PrdStory at ~:130, PrdShape at ~:137), src/commands/dashboard.ts (readSnapshot, DashboardData), test/dashboard.test.ts. Pure type widening plus snapshot plumbing, no UI yet. Honor noUncheckedIndexedAccess (patterns.md): every new field stays optional and guarded at the read site. No em-dash anywhere in source or fixture strings (patterns.md, project rule 2026-05-20)."
     },

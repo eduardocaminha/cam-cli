@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Extend PrdStory/PrdShape with acceptanceCriteria, notes, requires, review.lastVerdict and thread into DashboardData"
+  },
+  "branchName": "cam/CAM-50-navigable-dashboard",
+  "timestamp": "2026-06-14T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/status.ts",
+    "src/commands/dashboard.ts",
+    "test/dashboard.test.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 was pure type widening. PrdStory now carries acceptanceCriteria, notes, requires; PrdShape carries review.lastVerdict. These flow into DashboardData.stories (per-story fields) and DashboardData.reviewLastVerdict. No UI renders them yet -- that is left for later stories. The readSnapshot pipeline passes them through transparently: prd.json is JSON-parsed and cast as PrdShape, so the new fields land in snap.stories[] without any extra parsing code.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
