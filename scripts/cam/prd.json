@@ -1,0 +1,83 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-48-responsive-dashboard-pane",
+  "description": "Make the dashboard/menu right column responsive with a legible floor so it does not collapse on narrow terminals.",
+  "issueNumber": 48,
+  "relatedDocs": ["scripts/cam/patterns.md", "scripts/cam/CLAUDE.md"],
+  "officialDocsConsulted": [
+    {
+      "lib": "tmux",
+      "url": "https://man.openbsd.org/tmux",
+      "version": "3.6a (local system tmux; cam shells out to it)",
+      "fetchedAt": "2026-06-14",
+      "summary": "split-window -l and resize-pane -x accept literal N or N% (percentage). window-resized hook exists, settable per-session via set-hook -t <session>. resize-pane -x does NOT expand #{...} format expressions (rejects with 'width invalid'). tmux comparison modifiers #{>:a,b}/#{<:a,b} are lexical/string, not numeric, so a numeric clamp must use shell $(()) arithmetic, not pure tmux format.",
+      "status": "verified_empirically"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add clampDashboardWidth helper with unit tests",
+      "description": "As a developer, I need a pure helper that clamps the dashboard column width to a legible band so the split-window call and the resize hook share one source of truth.",
+      "acceptanceCriteria": [
+        "src/tmux/session.ts exports clampDashboardWidth(windowWidth: number): number implementing clamp(round(windowWidth * 0.20), 34, 52).",
+        "test/tmux-session.test.ts covers clampDashboardWidth(220) === 44, clampDashboardWidth(100) === 34 (floor), clampDashboardWidth(400) === 52 (ceiling), clampDashboardWidth(188) === 38.",
+        "Typecheck passes (bun run typecheck).",
+        "Tests pass (bun test)."
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/tmux/session.ts (add helper near the existing exports, keep the file's existing comment style), test/tmux-session.test.ts (add a focused describe block). Pure function, no spawn. Use Math.round and Math.min/Math.max for clamp(round(w * 0.20), 34, 52). Respect noUncheckedIndexedAccess (no array indexing here, just arithmetic). No em-dash in any comment that lands in the file."
+    },
+    {
+      "id": "US-002",
+      "title": "Use clamped born width in ensureProjectSession split-window",
+      "description": "As an operator on a 220-virtual-width session, I need the dashboard column to be born at the clamped width (44) instead of the hardcoded 36 so it matches the responsive band from the start.",
+      "acceptanceCriteria": [
+        "ensureProjectSession in src/tmux/session.ts replaces the literal '-l', '36' on the dashboard split-window with the value returned by clampDashboardWidth(220) (= 44), passed as a string to tmux argv.",
+        "The existing test 'split-window for dashboard uses -l 36 right pane' in test/tmux-session.test.ts is updated to assert the clamped born width (44) instead of 36 (rename the test title accordingly).",
+        "Typecheck passes (bun run typecheck).",
+        "Tests pass (bun test)."
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/tmux/session.ts (the dashSplitResult split-window call near line 206), test/tmux-session.test.ts (line ~274). Depends on US-001. Hard constraint #3: split-window -l accepts a literal integer; pass String(clampDashboardWidth(220)). Hard constraint #4: born width for the canonical 220 virtual session is 44. Do not touch the menu split (pane 2 inherits the column width from the vertical split)."
+    },
+    {
+      "id": "US-003",
+      "title": "Install per-session window-resized hook that re-clamps dashboard width",
+      "description": "As an operator who attaches with a narrower client or resizes the terminal, I need the dashboard pane width to re-clamp on every resize so the legible floor (34) is preserved live.",
+      "acceptanceCriteria": [
+        "ensureProjectSession, after creating the three panes, emits a tmux set-hook call binding window-resized on the freshly created session to a command that re-clamps the dashboard pane width.",
+        "The hook command MUST use shell arithmetic $(()) to compute the clamped literal at runtime (read the live window width, apply clamp(round(w*0.20), 34, 52) via shell math, then invoke resize-pane -t <dashboardPaneId> -x <literal>).",
+        "The hook embeds the captured dashboardPaneId (from the dashSplitResult stdout, e.g. %2) and the -L cam socket so it works from inside the tmux server context.",
+        "The hook is best-effort: a failed resize-pane inside the hook never crashes the session (use shell || true or run-shell semantics that ignore the child exit).",
+        "A new unit test in test/tmux-session.test.ts asserts that the emitted set-hook argv includes 'set-hook', 'window-resized', the target session name, the captured dashboard pane id, and a 'resize-pane' substring with '-x'.",
+        "Any test in test/tmux-session.test.ts that asserts call indices or call counts on ensureProjectSession's spawn is updated for the additional set-hook spawn.",
+        "Typecheck passes (bun run typecheck).",
+        "Tests pass (bun test)."
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/tmux/session.ts (extend ensureProjectSession after menuSplitResult), test/tmux-session.test.ts (add new assertion + update any existing call-index assertions). Depends on US-002. Hard constraint #1: resize-pane -x does NOT expand #{...} format expressions, so the clamp value MUST be a literal integer produced by shell $(()) before resize-pane runs. Hard constraint #2: tmux comparison format modifiers are lexical, not numeric, so the min/max cannot be expressed in pure tmux format. Hard constraint #5: the menu pane shares the dashboard column width, so one resize-pane on the dashboard pane id re-clamps both. Hard constraint #6: build the hook string and verify it locally against tmux 3.6a (attach a narrow client, confirm resize-pane runs with the clamped literal) before committing. The set-hook call is emitted via the injected SpawnFn, with the argv built by tmuxArgs([...]) so the -L cam socket is set. noUncheckedIndexedAccess: guard any captured stdout split. No em-dash in inline comments persisted in source."
+    },
+    {
+      "id": "US-004",
+      "title": "Operator visual verification on a narrow client",
+      "description": "As the operator, I need to confirm visually that the dashboard column stays legible and re-clamps on resize, because the bug is purely visual and unit tests only assert argv.",
+      "acceptanceCriteria": [
+        "From a terminal narrower than 220 cols (target ~188 cols), run `cam run` (or `tmux -L cam attach` against the project session) and visually confirm the right column holds >= 34 cols.",
+        "Neither the dashboard pane nor the menu pane wraps text at the narrow width.",
+        "Resize the host terminal narrower and wider and confirm the right column re-clamps within the 34..52 band (never collapses below 34, never balloons above 52).",
+        "Operator flips this story to passes: true after the ceremony."
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": "operator",
+      "notes": "Operator ceremony only: no code edits. The bug is visual; unit tests in US-001..US-003 only assert argv. Reproduce on a ~188-col terminal that historically showed the collapse. If the right column does not re-clamp on resize, the window-resized hook from US-003 is mis-emitted (revisit hard constraints #1, #2, #6). No typecheck/test gates apply to this story."
+    }
+  ]
+}
