@@ -1,0 +1,173 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-50-navigable-dashboard",
+  "description": "Merge cam run menu into the dashboard as a single right-column pane, make Stories navigable with an Enter/Esc detail subview, widen the column clamp, and add a green active-pane pill.",
+  "issueNumber": 50,
+  "relatedDocs": [
+    "scripts/cam/patterns.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "ink",
+      "url": "https://github.com/vadimdemedes/ink#readme",
+      "version": "7.0.3",
+      "fetchedAt": "2026-06-14",
+      "summary": "useInput key flags (upArrow/downArrow/return/escape), Text color/backgroundColor/bold props, ink-testing-library render().stdin.write + lastFrame for keypress/ANSI assertions, all current in v7, no deprecation",
+      "status": "validated_local_types"
+    },
+    {
+      "lib": "ink-testing-library",
+      "url": "https://github.com/vadimdemedes/ink/tree/master/packages/ink-testing-library",
+      "version": "4.0.0",
+      "fetchedAt": "2026-06-14",
+      "summary": "render() returns { lastFrame, frames, stdin }; stdin.write(data) injects keypresses (arrow escapes, j/k, Enter, Esc) and lastFrame() returns the ANSI-encoded frame string for asserting the green background escape on the selected row. Current in v4, no deprecation.",
+      "status": "validated_local_types"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Extend PrdStory/PrdShape with acceptanceCriteria, notes, requires, review.lastVerdict and thread into DashboardData",
+      "description": "As the dashboard, I need the real prd.json shape (per-story acceptanceCriteria, notes, requires; top-level review.lastVerdict) modeled in the snapshot types so later stories can render the story detail subview and the review verdict without re-reading prd.json.",
+      "acceptanceCriteria": [
+        "PrdStory in src/commands/status.ts gains optional acceptanceCriteria (string[]), notes (string), and requires (string).",
+        "PrdShape in src/commands/status.ts gains optional review with optional lastVerdict (string).",
+        "DashboardData (and the readSnapshot pipeline) in src/commands/dashboard.ts surfaces the new per-story fields and review.lastVerdict, with no breaking change to existing consumers.",
+        "test/dashboard.test.ts covers readSnapshot against a tmpdir prd.json fixture that includes acceptanceCriteria, notes, requires, and review.lastVerdict, asserting they reach DashboardData.",
+        "bun run typecheck passes (zero errors).",
+        "bun test passes."
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/status.ts (PrdStory at ~:130, PrdShape at ~:137), src/commands/dashboard.ts (readSnapshot, DashboardData), test/dashboard.test.ts. Pure type widening plus snapshot plumbing, no UI yet. Honor noUncheckedIndexedAccess (patterns.md): every new field stays optional and guarded at the read site. No em-dash anywhere in source or fixture strings (patterns.md, project rule 2026-05-20)."
+    },
+    {
+      "id": "US-002",
+      "title": "Collapse tmux layout to 2 panes (orchestrator + dashboard) and widen the dashboard clamp",
+      "description": "As cam run, I need a single right-column pane (the dashboard) so the menu pane disappears, and the column must be wide enough that the realistic tokens row (about 49 cols) does not wrap on a typical operator terminal while staying bounded.",
+      "acceptanceCriteria": [
+        "src/tmux/session.ts ensureProjectSession issues exactly one split-window call (orchestrator + dashboard); CreatedPaneIds no longer carries menuPaneId.",
+        "isSessionStale checks commands.length !== 2 (true for 1 and 3 panes, false for 2).",
+        "clampDashboardWidth and the duplicated shell-side clamp in the window-resized hook stay in lock step (single source of truth, CAM-48 pattern); the new bounds let a 188-col terminal yield a column wide enough to fit the realistic tokens row (at least 49 cols) without wrapping, still bounded by a sane max so it never starves the orchestrator pane.",
+        "Module-level doc comments that referenced three panes are updated to two panes.",
+        "scripts/cam/patterns.md CAM-48 bullet is updated with the new clamp constants and verified widths, and the now-false clause about the menu pane sharing the column is removed.",
+        "test/tmux-session.test.ts asserts the 2-pane creation argv (one split-window call), isSessionStale truthy for 1 and 3 panes and falsy for 2, and clamp assertions including the 188-col tokens-row-fits case and the lower/upper bounds.",
+        "bun run typecheck passes (zero errors).",
+        "bun test passes."
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/tmux/session.ts (clampDashboardWidth at ~:51, isSessionStale at ~:134, window-resized hook at ~:273), scripts/cam/patterns.md, test/tmux-session.test.ts. Keep the shell clamp formula a literal mirror of the JS helper (CAM-48: (w*P+50)/100 round-half-up; pure tmux format cannot do numeric clamps, hence the run-shell trick). Interpolate CAM_TMUX_SOCKET, never hardcode. No em-dash in the patterns.md update (patterns.md project rule)."
+    },
+    {
+      "id": "US-003",
+      "title": "Dashboard accepts orchPane, renders a command keybar, and dispatches n/r/s/p/i + d via injectable runTmux",
+      "description": "As the operator inside the dashboard pane, I need the menu actions (n/r/s/p/i to send /cam-* into the orchestrator, d to focus the orchestrator, q to quit) reachable from the same pane, so the right column is a single navigable surface and the menu pane can be retired.",
+      "acceptanceCriteria": [
+        "src/ui/Dashboard.tsx DashboardApp gains an optional orchPane prop and renders a footer keybar listing n, r, s, p, i, d, q with their labels (d's label is 'focus orchestrator', not 'switch pane').",
+        "useInput dispatches /cam-next, /cam-review, /cam-ship, /cam-plan, /cam-issue to orchPane via tmux send-keys, and d via runTmux(['select-pane', '-t', orchPane]) (focus orchestrator), through an injectable runTmux (ported from src/ui/Menu.tsx) that defaults to spawnSync('tmux', tmuxArgs(args)).",
+        "When orchPane is undefined (standalone cam dashboard), the keybar still renders but the dispatch keys are inert no-ops (no throw, no crash).",
+        "src/commands/dashboard.ts runDashboardInk accepts an optional orchPane and threads it into DashboardApp.",
+        "index.ts case 'dashboard' parses an optional positional orchPane argv and passes it through; help/usage text is updated.",
+        "test/dashboard.test.ts uses ink-testing-library to render the keybar and assert it via lastFrame; injects a fake runTmux and asserts it receives the correct send-keys argv for n/r/s/p/i (with the matching /cam-* literal and Enter) and select-pane argv for d of the form ['select-pane', '-t', '<orchPane>'] (focus orchestrator); asserts standalone mode is a no-op for the dispatch keys.",
+        "bun run typecheck passes (zero errors).",
+        "bun test passes."
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/ui/Dashboard.tsx, src/commands/dashboard.ts, index.ts (case 'dashboard' at ~:708). Port the runTmux injection pattern from src/ui/Menu.tsx + src/commands/menu.ts so the deletion in US-007 is a straight cut. d focuses the orchestrator pane explicitly via runTmux(['select-pane', '-t', orchPane]) (not select-pane -l); when orchPane is undefined (standalone cam dashboard), d stays inert. Use Ink 7 useInput((input, key) => ...) with key.return / key.escape only when needed here; the keybar itself is just <Text> rows. Honor the Ink-glyph-not-divider rule (patterns.md) for any status hints; do not signal anything by divider color. No em-dash in any rendered label or help text (patterns.md, project rule 2026-05-20)."
+    },
+    {
+      "id": "US-004",
+      "title": "cam run setupPanes drops the menu pane, passes orchPane to cam dashboard, and renders a green status-left active-pane pill",
+      "description": "As cam run orchestrating the tmux session, I need to stop spawning the menu pane (now folded into the dashboard) and tag the active pane with a green-background pill in status-left so the operator can see at a glance which pane has focus.",
+      "acceptanceCriteria": [
+        "setupPanes in src/commands/run.ts respawns exactly 2 panes (orchestrator + dashboard); no cam menu spawn remains.",
+        "The dashboard pane is launched with cam dashboard <orchPaneId> so the dashboard dispatch wiring is bound to the real orchestrator pane id.",
+        "status-left is rewritten as a green-background pill for the active pane label: bg=#4EBE7D, dark fg, bold, prefixed by 'active:' (e.g. #[fg=<MUTED>]active: #[bg=#4EBE7D fg=<dark> bold] #{@cam_label} #[default]).",
+        "The menu paneLabel and any menu-pane comments in run.ts are removed; header/doc comments that referenced 3 panes are updated to 2 panes.",
+        "test/run.test.ts asserts the setupPanes tmux argv shows only 2 panes, that the dashboard pane respawn command argv contains 'cam', 'dashboard', and the orch pane id, that no 'cam menu' command appears anywhere in the spawned argvs, and that the status-left string contains the green bg pill literal.",
+        "bun run typecheck passes (zero errors).",
+        "bun test passes."
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/run.ts (setupPanes at ~:247, status-left at ~:355). Depends on US-002 (CreatedPaneIds no longer carries menuPaneId) and US-003 (cam dashboard accepts the orchPane positional). ACCENT='#4EBE7D' and MUTED='#808080' already exist; reuse them, do not redefine. Pick a dark fg constant readable on the accent bg. No em-dash in any pane label or status-left literal (patterns.md, project rule 2026-05-20)."
+    },
+    {
+      "id": "US-005",
+      "title": "Navigable Stories section with a pure selection reducer and green-highlighted selected row",
+      "description": "As the operator viewing the dashboard, I need to move a selection up and down the Stories list with j/k and arrow keys, with the selected row painted on a green background, so the dashboard becomes navigable without a separate menu pane.",
+      "acceptanceCriteria": [
+        "A pure selection reducer exported from src/ui/Dashboard.tsx (or a co-located helper) holds the selected index, accepts up/down/j/k inputs, clamps to [0, storyCount-1], and no-ops on an empty story list (returns the same state).",
+        "The reducer is unit-testable without Ink: test/dashboard.test.ts asserts up/down transitions, clamping at both ends, and the empty-list no-op.",
+        "Dashboard wires the reducer via useInput (key.upArrow, key.downArrow, and the literal 'j' / 'k' inputs) when in list mode.",
+        "The selected StoryRow renders with backgroundColor={colors.accent} and a dark fg via <Text backgroundColor color>; non-selected rows render unchanged.",
+        "An ink-testing-library test uses render().stdin.write('j') / write('\\u001B[B') and asserts lastFrame() contains the accent-bg ANSI escape on the expected row (green = selected, matching the active-pane pill).",
+        "bun run typecheck passes (zero errors).",
+        "bun test passes."
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/ui/Dashboard.tsx, test/dashboard.test.ts. Keep the reducer pure (input: state + key, output: state) so the unit test does not need Ink. Use colors.accent from src/design/tokens.ts (#4EBE7D). Respect the Ink-glyph-not-divider rule (patterns.md): the row glyph still drives success/failure semantics; the bg color signals selection only, not pass-state. No em-dash in any rendered string (patterns.md, project rule 2026-05-20)."
+    },
+    {
+      "id": "US-006",
+      "title": "Story detail subview on Enter, back on Esc, with contextual keybar",
+      "description": "As the operator with a story selected, I need Enter to open a detail subview (id, title, status glyph, acceptanceCriteria checklist, notes, review verdict) and Esc to return to the list, so I can inspect a story without leaving the dashboard pane.",
+      "acceptanceCriteria": [
+        "The selection reducer gains a mode field (list | detail); Enter in list mode with at least one story transitions to detail; Esc in detail mode transitions back to list; both are unit-tested.",
+        "Detail subview renders: story id and title; the story-level status using the existing glyph vocabulary (check accent for passes, arrow current for in-progress, ring muted for pending); acceptanceCriteria as a checklist (one neutral structural checkbox glyph per criterion, no per-criterion pass-state); a notes block when notes is non-empty; the review verdict from review.lastVerdict when present.",
+        "The footer keybar is contextual: list mode shows the n/r/s/p/i/d/q row; detail mode shows Esc back, q quit.",
+        "An ink-testing-library render test enters detail mode (write '\\r') and asserts the detail content (id, title, at least one acceptanceCriteria line, the notes block, and the review verdict if the fixture sets it); a follow-up write('\\u001B') returns to the list and the list-mode keybar is back.",
+        "bun run typecheck passes (zero errors).",
+        "bun test passes."
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/ui/Dashboard.tsx, test/dashboard.test.ts. The structural checkbox glyph is purely visual scaffolding (each AC is a string; prd.json carries no per-criterion pass-state). Story-level pass/fail keeps the Ink glyph vocabulary (accent check / current arrow / muted ring) per patterns.md; never reach for divider color. No em-dash anywhere in the rendered detail strings (patterns.md, project rule 2026-05-20)."
+    },
+    {
+      "id": "US-007",
+      "title": "Delete the now-dead menu (src/commands/menu.ts, src/ui/Menu.tsx, test/menu.test.ts) and update index.ts",
+      "description": "As the cam-cli codebase, I need the standalone menu command removed now that its dispatch lives in the dashboard, so there is one navigable surface and no dead code.",
+      "acceptanceCriteria": [
+        "src/commands/menu.ts, src/ui/Menu.tsx, and test/menu.test.ts are deleted.",
+        "The case 'menu' branch and the runMenuInk import are removed from index.ts.",
+        "No occurrence of the strings '3-pane', 'three panes', 'menu pane', or 'runMenuInk' remains anywhere in index.ts.",
+        "The help blocks RUN_HELP, PLAN_HELP, ISSUE_HELP, and NEXT_HELP in index.ts all describe the 2-pane layout (orchestrator + dashboard) consistently.",
+        "test/setup-menu.test.ts (which targets buildSetupMenuScript in the cam init flow) is left untouched; the deletion does not break it.",
+        "bun run typecheck passes (zero errors).",
+        "bun test passes (no orphan import or broken reference)."
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: index.ts (case 'menu' at ~:724, runMenuInk import), plus the three deletions. Depends on US-003 (dispatch already in the dashboard) and US-004 (run no longer spawns cam menu). Do not touch test/setup-menu.test.ts: it covers the unrelated buildSetupMenuScript helper in the cam init flow. Implementer pointers: update the four help blocks RUN_HELP, PLAN_HELP, ISSUE_HELP, and NEXT_HELP in index.ts; the menu case lives around index.ts:721-726 and the runMenuInk import around index.ts:22. No em-dash in the updated help/usage text (patterns.md, project rule 2026-05-20)."
+    },
+    {
+      "id": "US-008",
+      "title": "Operator smoke: live cam run verifies the 2-pane navigable dashboard end-to-end",
+      "description": "As the operator, I need to attach a live cam run session and confirm the merged dashboard behaves as designed: 2 panes, green active-pane pill, navigable Stories with green selection, Enter/Esc detail subview, n/r/s/p/i dispatch, d focus toggle, q quit.",
+      "acceptanceCriteria": [
+        "Operator attaches the cam run tmux session and confirms exactly 2 panes are present (orchestrator + dashboard); no third menu pane is visible.",
+        "The tmux status-left shows the green-background active-pane pill that updates when focus changes.",
+        "j and k (and the arrow keys) move the Stories selection in the dashboard; the selected row is highlighted on the green accent background.",
+        "Enter on a selected story opens the detail subview (id, title, AC checklist, notes, review verdict when present); Esc returns to the list and the list-mode keybar is back.",
+        "Pressing n in the dashboard pane dispatches /cam-next into the orchestrator pane (visible in the orch pane scrollback).",
+        "Pressing d in the dashboard pane switches tmux focus to the orchestrator pane; returning to the dashboard via click or Ctrl+b works as documented in the navHint (the orchestrator pane runs claude and cannot bind d).",
+        "Pressing q closes the dashboard pane cleanly."
+      ],
+      "priority": 8,
+      "passes": false,
+      "requires": "operator",
+      "notes": "Operator-only ceremony: live tmux session, real keypresses, visual confirmation of the green pill and selection highlight. No autonomous gate. Files touched: none (verification only). Reference scripts/cam/patterns.md for the active-pane pill format (US-004) and the clamp constants (US-002) when sanity-checking widths. No em-dash in any operator note added back to the PRD (patterns.md, project rule 2026-05-20)."
+    }
+  ]
+}
