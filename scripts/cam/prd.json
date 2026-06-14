@@ -42,9 +42,15 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "Real tmux + cam run on the operator machine. The healthy-path check is the load-bearing safety proof: a false positive in isSessionStale would kill an active loop, so confirming a healthy session is NOT reset matters as much as confirming a stale one IS. Use `tmux -L cam list-panes -a -F '#{pane_id} #{pane_current_command}'` for evidence."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "4a6694dc57aebea4bcb3f2edf380c66d5fd72d17",
+    "lastVerdict": "CLEAN"
+  }
 }
