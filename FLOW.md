@@ -20,7 +20,7 @@ Inventário rápido de quem renderiza o quê:
 | `cam init` | Ink (`Splash` + `InitScreen`, `SetupScreen`) com fallback linear em CI | validação de máquina, wizard, tmux |
 | `cam run` | print path + tmux | sessão orchestrator (3 panes: orquestrador + dashboard + menu) |
 | `cam plan` | print path + tmux (pane launcher) | abre pane na sessão, retorna 0 imediatamente |
-| `cam next` | print path + tmux (pane launcher) | abre pane na sessão, retorna 0 imediatamente |
+| `cam next` | print path + supervisor in-process | dirige o loop implement-review-complete, sai no estado terminal |
 | `cam issue` | print path + tmux (pane launcher) | abre pane na sessão, retorna 0 imediatamente |
 | `cam dashboard` | Ink (alt-screen) | TUI read-only; pane 0.1 permanente na sessão |
 | `cam status` | print path | idle / active / paused |
@@ -43,7 +43,7 @@ flowchart TD
     INIT --> RUN["cam run<br/>sessao unica por projeto<br/>3 panes: orquestrador + dashboard + menu"]
 
     RUN -. "lançador de pane" .-> PLAN["cam plan<br/>abre pane: /cam-plan"]
-    RUN -. "lançador de pane" .-> NEXT["cam next<br/>abre pane: /cam-next"]
+    RUN -. "supervisor in-process" .-> NEXT["cam next<br/>dirige o loop, sai no terminal"]
     RUN -. "lançador de pane" .-> ISSUE["cam issue 'texto'<br/>abre pane: /cam-issue create"]
 
     PLAN -. "volta pra sessao" .-> RUN
@@ -64,16 +64,19 @@ flowchart TD
     SHIP --> PRUNE["/cam-prune<br/>volta pra main"]
     PRUNE -. "proximo issue" .-> PLAN
 
-    RUN -. "orquestrador sai" .-> TEARDOWN["sessao destruida<br/>tmux kill-session"]
+    RUN -. "orq. sai com handoff" .-> RESPAWN["respawn orquestrador<br/>(rehidrata, ate o cap)"]
+    RUN -. "orq. sai sem handoff" .-> TEARDOWN["sessao destruida<br/>tmux kill-session"]
 ```
 
 Resumo da espinha dorsal: `init` (uma vez) prepara a máquina e instala templates.
 `run` abre a sessão única por projeto com 3 panes: pane 0.0 é o orquestrador, pane 0.1
-é o `cam dashboard` permanente (sempre visível), pane 0.2 é o menu interativo. `plan`,
-`next` e `issue` são lançadores de pane: abrem um pane novo na sessão e retornam 0
-imediatamente. Quando o orquestrador (pane 0.0) sai, a sessão inteira é destruída
-automaticamente. Quando o PRD fecha com review limpo, o loop emite `COMPLETE`, abre o
-PR via `/cam-ship` e `/cam-prune` limpa a branch.
+é o `cam dashboard` permanente (sempre visível), pane 0.2 é o menu interativo. `plan`
+e `issue` são lançadores de pane: abrem um pane novo na sessão e retornam 0
+imediatamente; `next` é diferente, roda o supervisor in-process (não abre pane) e sai
+no estado terminal. Quando o orquestrador (pane 0.0) sai, o wrapper respawna se houver
+um handoff de token-budget pendente, senão destrói a sessão. Quando o PRD fecha com
+review limpo, o supervisor chega ao terminal, o PR vai via `/cam-ship` e `/cam-prune`
+limpa a branch.
 
 ---
 
@@ -159,7 +162,7 @@ flowchart TD
     ATTACH --> EXIT0a(["exit 0"])
 
     EXISTS -->|nao| CREATE["new-session -d (3 panes):"]
-    CREATE --> P0["pane 0.0: orchestrator<br/>(claude /cam-next; ao sair: kill-session)"]
+    CREATE --> P0["pane 0.0: orchestrator<br/>(claude + subagent-orchestrator prompt;<br/>ao sair: respawn no handoff, senao kill-session)"]
     CREATE --> P1["pane 0.1: cam dashboard<br/>(permanente, read-only)"]
     CREATE --> P2["pane 0.2: menu interativo<br/>(n, p, i, s, r, d, q)"]
 
@@ -171,9 +174,10 @@ flowchart TD
     ATTACH2 --> EXIT0c(["exit 0"])
 ```
 
-O pane 0.0 encadeia `; tmux kill-session -t <sessao>` após o `claude` sair, portanto
-quando o orquestrador termina (por qualquer motivo), os 3 panes somem. O dashboard
-(pane 0.1) é sempre visivel enquanto a sessao existe.
+Quando o `claude` do pane 0.0 sai, o wrapper do `cam run` respawna o orquestrador
+(rehidratando de um handoff de token-budget) se houver um pendente e dentro do cap
+de respawns; senao encadeia `; tmux kill-session -t <sessao>` e os 3 panes somem. O
+dashboard (pane 0.1) é sempre visivel enquanto a sessao existe.
 
 ---
 
@@ -277,8 +281,9 @@ flowchart TD
     HINT --> EXIT0(["exit 0"])
 ```
 
-O mesmo padrao de pane launcher de `cam plan` e `cam next`. A diferença: o comando
-injetado no pane é `/cam-issue create <texto>`, nao um loop ou planner.
+O mesmo padrao de pane launcher de `cam plan`. A diferença: o comando injetado no
+pane é `/cam-issue create <texto>`, nao um planner. (`cam next` nao e um lançador de
+pane: roda o supervisor in-process.)
 
 ---
 
