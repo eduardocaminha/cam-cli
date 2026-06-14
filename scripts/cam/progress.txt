@@ -11,3 +11,15 @@
 - Sem em-dash.
 - Gates: typecheck ok, 763 pass.
 ---
+
+## [2026-06-14] - US-003: Retire progress.txt across agent + slash instructions, re-embed (CAM-31)
+- scripts/cam/CLAUDE.md + templates copy: step 3 repointed to patterns.md; step 10 (append progress.txt) removed (renumbered); Progress Report Format section rewritten to describe harness-owned event log; Codebase Patterns Block section rewritten to point at patterns.md; cross-repo note updated.
+- .claude/commands/cam-plan.md + template: Step 9 no longer creates progress.txt; commit only prd.json.
+- .claude/commands/cam-review.md + template: Steps 5.3/5.4 append blocks dropped; Step 5.6 drops progress.txt; "Do NOT pass" line drops progress.txt.
+- .claude/commands/cam-ship.md + template: prose around git rm updated to label progress.txt as legacy/retired; patterns.md noted as durable (do not remove).
+- .claude/agents/subagent-implementer.md + template: intro, inputs list, read order step 5, and "What you do" step 5 all repointed to patterns.md + event log.
+- .claude/agents/subagent-reviewer.md + template: constraints updated (progress.txt ref dropped); security checklist item updated.
+- .claude/agents/subagent-auditor.md + template: constraints and "DO NOT" section updated.
+- src/vendor/_generated.ts: re-embedded after template edits.
+- Gates: typecheck ok, 763 pass, embed-vendor:check ok.
+---

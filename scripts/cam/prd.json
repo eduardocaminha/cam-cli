@@ -61,7 +61,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/cam/CLAUDE.md, .claude/commands/cam-plan.md, .claude/commands/cam-review.md, .claude/commands/cam-ship.md, templates/commands/cam-plan.md, templates/commands/cam-review.md, templates/commands/cam-ship.md, .claude/agents/subagent-implementer.md, subagent-reviewer.md, subagent-auditor.md, templates/agents/subagent-implementer.md, templates/agents/subagent-reviewer.md, templates/agents/subagent-auditor.md, templates/scripts/cam/CLAUDE.md (5+ live write-instructions), docs/recovery-runbook.md. Depends on US-002 (patterns.md must exist before instructions point at it). cam-review.md currently appends a round record to progress.txt (Step 5.3/5.4); repoint to the PRD review block + event log. cam-ship.md Step 4b git rm includes progress.txt; keep the 2>/dev/null tolerant form so old branches still clean up. Run `bun run embed-vendor` after editing templates/. NO em-dash."
     },
