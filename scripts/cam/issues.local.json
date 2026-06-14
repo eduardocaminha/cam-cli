@@ -1,5 +1,5 @@
 {
-  "next_id": 39,
+  "next_id": 40,
   "issues": [
     {
       "id": "CAM-1",
@@ -384,6 +384,22 @@
       "createdAt": "2026-06-14T06:00:00Z",
       "priority": "P3",
       "closedAt": "2026-06-14T06:20:00Z"
+    },
+    {
+      "id": "CAM-39",
+      "title": "adicione um comentario TODO no topo do README de teste",
+      "description": "Issue de teste do fluxo /cam-issue create: adicionar um comentario TODO no topo de um README de teste. Trabalho trivial usado para exercitar o pipeline cam (issue -> plan -> next -> review -> ship).",
+      "state": "open",
+      "createdAt": "2026-06-14T12:36:47Z",
+      "priority": "P3"
+    },
+    {
+      "id": "CAM-47",
+      "title": "cam run anexa numa sessao existente sem reconciliar os panes (herda layout quebrado)",
+      "description": "DESCOBERTO no dogfood (2026-06-14): rodar `cam run` quando ja existe uma sessao `cam-orch-<proj>-<hash>` no socket -L cam anexa nela SEM reconciliar os panes. Em src/commands/run.ts:198-201, ensureProjectSession retorna false quando a sessao ja existe (hasSession true), e runRun faz `return { created: false }` imediato: nunca re-respawna o orquestrador (pane 0), o dashboard (pane 1) nem o menu (pane 2). Se a sessao existente estiver num estado parcial/quebrado (panes rodando o placeholder `cat`, um claude solto num pane extra, um orquestrador morto), o `cam run` HERDA esse estado em vez de resetar. Sintoma observado: 4 panes em vez de 3, com %0 (orchestrator slot) rodando `cat` vazio e ATIVO, o claude num %3 extra, e dashboard/menu (%1/%2) `cat` vazios; o operador ve um blocao preto no topo e o orquestrador espremido. Causa da instancia: sessao stale deixada por dogfood anterior (mesmo nome determinístico). FIX (cuidado): distinguir sessao SAUDAVEL (orquestrador vivo nos panes certos -> so anexar, NAO resetar um loop em andamento) de sessao STALE/MALFORMADA (pane count != 3, panes rodando cat, orquestrador morto -> reconciliar: respawnar orchestrator/dashboard/menu nos panes, ou kill+recreate). Opcoes: (a) `cam run` checa saude da sessao existente e reseta se malformada; (b) flag `cam run --fresh` que mata e recria; (c) `cam stop` automatico quando detecta sessao malformada. Arquivos: src/commands/run.ts (o early-return ~199), src/tmux/session.ts (helper de health-check de sessao), test/run.test.ts. Relaciona: CAM-27 (cam-ship hygiene), o stale-session e parente do leak. Prioridade P2 (papercut real de UX no comando de entrada, mas tem workaround: cam stop antes).",
+      "state": "open",
+      "createdAt": "2026-06-14T09:45:00Z",
+      "priority": "P2"
     }
   ]
 }

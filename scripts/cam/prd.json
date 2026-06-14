@@ -1,0 +1,50 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-47-run-reconcile-stale-session",
+  "description": "cam run attaches to an existing tmux session without reconciling its panes (src/commands/run.ts setupOrchestratorSession early-returns created:false when the session exists), so a stale/half-setup session (panes running the cat placeholder, wrong pane count, dead orchestrator) is inherited instead of reset. Fix: on the existing-session path, detect a stale session with a CONSERVATIVE signal (a healthy cam session has exactly 3 panes and NONE running cat) and kill+recreate it fresh; a healthy running session is still just attached (never reset, so an active loop is not nuked). A false positive would kill a live loop, so the staleness signal must be the cat-placeholder / wrong-pane-count tell, which a healthy session never exhibits.",
+  "issueNumber": 47,
+  "relatedDocs": [
+    "FLOW.md"
+  ],
+  "officialDocsConsulted": [],
+  "docsConsultedRationale": "No external library touched: internal tmux-shelling logic (list-panes / kill-session) + its test. tmux is a shelled process, not an npm lib.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "cam run resets a stale existing session instead of attaching to broken panes",
+      "description": "As an operator, when I run cam run and a stale/half-setup session already exists, I want it recreated fresh (clean 3-pane layout) rather than inheriting the broken state, while a healthy running session is still re-attached untouched.",
+      "acceptanceCriteria": [
+        "A new exported helper in src/tmux/session.ts (e.g. isSessionStale(sessionName, spawnFn): boolean) returns true when the session is malformed: pane count != 3 OR any pane's current command is the cat placeholder (a healthy cam session has exactly 3 panes and none running cat). It queries via tmux list-panes -t <session> -F (e.g. '#{pane_current_command}').",
+        "If `tmux list-panes` exits non-zero or returns no output, isSessionStale returns true (conservative: prefer kill+recreate over inheriting an unknown state, never attach to nothing).",
+        "In src/commands/run.ts setupOrchestratorSession, the existing-session path (ensureProjectSession returned false) now: if isSessionStale -> kill-session the stale session, recreate it fresh via ensureProjectSession, and run the full pane setup (orchestrator + dashboard + menu respawn) as if newly created; if NOT stale -> attach as today (return created:false, no reset).",
+        "When a stale session is detected and reset, an operator-visible notice is printed (e.g. 'stale session detected, recreating'), so the reset is not silent.",
+        "A healthy running session is NEVER reset by this path (the conservative signal protects an active orchestrator/loop from being killed).",
+        "Tests in test/run.test.ts using the existing fake tmux spawn: (a) existing session with 3 panes and no cat -> NOT reset (no kill-session spawned, returns created:false); (b) existing session with a cat pane (or pane count != 3) -> kill-session spawned + the orchestrator/dashboard/menu respawns run (treated as recreated).",
+        "The fake tmux spawn's DEFAULT list-panes response is the healthy shape (3 panes, none cat), so the existing re-attach test at test/run.test.ts:418 keeps exercising the no-reset branch; only the stale-path test opts into a malformed list-panes payload.",
+        "The recreate-on-stale path REUSES the same pane-setup code that runs for a fresh create (orchestrator + dashboard + menu respawn), extracted into a shared helper rather than duplicated, so pane setup has one source of truth.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/tmux/session.ts (new isSessionStale helper near hasSession/ensureProjectSession; use tmuxArgs + spawnFn, parse stdout lines of pane_current_command), src/commands/run.ts (setupOrchestratorSession early-return at ~198-201: replace the blind `if (!panes) return {created:false}` with the stale-check + kill+recreate-or-attach; the recreate path must reuse the SAME pane-setup code that runs for a fresh create, so extract/share it rather than duplicating). test/run.test.ts (the fake spawn already mirrors tmux; add list-panes responses for healthy vs stale). The cat placeholder is what ensureProjectSession seeds each pane with before respawn (src/tmux/session.ts); a fully set-up session has orchestrator=claude/bash, dashboard+menu=cam, none cat. Conservative signal avoids the false-positive that would kill a live loop. Consider a `created` vs `reset` distinction in the return so runRun can print the notice; the existing test at run.test.ts:418 ('does NOT rewrite .cam-orch-session on re-attach, created:false') must still hold for the HEALTHY case."
+    },
+    {
+      "id": "US-002",
+      "title": "Operator validation: stale session reset vs healthy session re-attach",
+      "description": "As the operator, I want to confirm in a real tmux run that cam run resets a stale session to a clean layout AND does not reset a healthy running session.",
+      "acceptanceCriteria": [
+        "Stale path: with a malformed session present (e.g. a leftover cam-orch-<proj>-<hash> with cat placeholder panes, like the one observed in the dogfood), run cam run and confirm it recreates a clean 3-pane layout (orchestrator + dashboard + menu, no leftover cat panes, no orphan 4th pane) and prints the stale-detected notice.",
+        "Healthy path: with a healthy running session (orchestrator alive, 3 panes), run cam run again and confirm it RE-ATTACHES without killing the session (the orchestrator process keeps its pid; .cam-orch-session is not rewritten).",
+        "Operator captures evidence (tmux list-panes before/after for both paths).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "operator",
+      "notes": "Real tmux + cam run on the operator machine. The healthy-path check is the load-bearing safety proof: a false positive in isSessionStale would kill an active loop, so confirming a healthy session is NOT reset matters as much as confirming a stale one IS. Use `tmux -L cam list-panes -a -F '#{pane_id} #{pane_current_command}'` for evidence."
+    }
+  ]
+}
