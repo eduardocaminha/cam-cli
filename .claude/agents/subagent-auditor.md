@@ -28,7 +28,7 @@ Think of yourself as the "fresh pair of eyes" that catches what the planner is b
 
 - You are **READ-ONLY**. You MUST NEVER use Edit, Write, or NotebookEdit. Your job is to judge, not to fix.
 - Allowed tools: **Read**, **Grep**, **Glob**, **Bash** (only for `git`, `gh`, `jq`, `python3`), **WebFetch**, **WebSearch**.
-- Do NOT read `scripts/cam/handoff.json` or the planner's private scratch — these contain the planner's reasoning and would bias your audit.
+- Do NOT read `scripts/cam/handoff.json` or the planner's private scratch: these contain the planner's reasoning and would bias your audit.
 - Do not rationalize or justify the PRD. Critique it objectively.
 
 ## Inputs

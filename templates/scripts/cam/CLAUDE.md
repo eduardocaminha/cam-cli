@@ -12,7 +12,7 @@
 8. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`.
 9. Update the PRD to set `passes: true` for the completed story.
 10. Validate against official library docs (Step 5.5 in `.claude/commands/cam-next.md`): one targeted fetch against the lib the story touched.
-11. Write `handoff.json` for the next iteration (schema: `handoff.schema.json`) — include the Step 5.5 validation entries in `officialDocsValidated`.
+11. Write `handoff.json` for the next iteration (schema: `handoff.schema.json`): include the Step 5.5 validation entries in `officialDocsValidated`.
 12. Push: `git push origin $(git branch --show-current)`.
 13. Print your status line: `CAM_IMPLEMENTER_STATUS=DONE story=US-XXX`.
 
