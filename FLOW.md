@@ -171,9 +171,10 @@ flowchart TD
     ATTACH2 --> EXIT0c(["exit 0"])
 ```
 
-O pane 0.0 encadeia `; tmux kill-session -t <sessao>` após o `claude` sair, portanto
-quando o orquestrador termina (por qualquer motivo), os 3 panes somem. O dashboard
-(pane 0.1) é sempre visivel enquanto a sessao existe.
+Quando o `claude` do pane 0.0 sai, o wrapper do `cam run` respawna o orquestrador
+(rehidratando de um handoff de token-budget) se houver um pendente e dentro do cap
+de respawns; senao encadeia `; tmux kill-session -t <sessao>` e os 3 panes somem. O
+dashboard (pane 0.1) é sempre visivel enquanto a sessao existe.
 
 ---
 
