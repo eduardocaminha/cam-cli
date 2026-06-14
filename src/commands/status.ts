@@ -132,11 +132,21 @@ export interface PrdStory {
 	title: string;
 	priority?: number;
 	passes?: boolean;
+	/** Acceptance criteria bullets from prd.json (US-001). */
+	acceptanceCriteria?: string[];
+	/** Implementation notes string from prd.json (US-001). */
+	notes?: string;
+	/** Operator-gate tag, e.g. "operator" (US-001). Null means no gate. */
+	requires?: string | null;
 }
 
 export interface PrdShape {
 	userStories?: PrdStory[];
 	branchName?: string;
+	/** Top-level review block written by /cam-review (US-001). */
+	review?: {
+		lastVerdict?: string;
+	};
 }
 
 export type StatusState = 'idle' | 'active' | 'paused';

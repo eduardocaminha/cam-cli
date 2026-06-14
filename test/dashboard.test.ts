@@ -507,6 +507,61 @@ describe('readSnapshot', () => {
 			rmSync(base, { recursive: true, force: true });
 		}
 	});
+
+	test('acceptanceCriteria, notes, requires and review.lastVerdict surface in DashboardData (US-001)', () => {
+		const base = mkdtempSync(join(tmpdir(), 'cam-dash-us001-'));
+		try {
+			const cwd = join(base, 'project');
+			mkdirSync(join(cwd, '.claude'), { recursive: true });
+			writeFileSync(
+				join(cwd, 'prd.json'),
+				JSON.stringify({
+					branchName: 'cam/us-001',
+					review: { lastVerdict: 'CLEAN' },
+					userStories: [
+						{
+							id: 'US-001',
+							title: 'first story',
+							priority: 1,
+							passes: false,
+							acceptanceCriteria: ['AC one', 'AC two'],
+							notes: 'Some implementation notes',
+							requires: null,
+						},
+						{
+							id: 'US-002',
+							title: 'operator story',
+							priority: 2,
+							passes: false,
+							acceptanceCriteria: ['AC three'],
+							notes: 'Operator ceremony',
+							requires: 'operator',
+						},
+					],
+				}),
+			);
+			const claudeDir = join(base, 'claude-dir');
+			mkdirSync(claudeDir, { recursive: true });
+
+			const snap = readSnapshot({ cwd, nowMs: 0, claudeDir });
+
+			// review.lastVerdict threads into reviewLastVerdict
+			expect(snap.reviewLastVerdict).toBe('CLEAN');
+
+			// Per-story fields land in snap.stories
+			const s1 = snap.stories?.find((s) => s.id === 'US-001');
+			expect(s1?.acceptanceCriteria).toEqual(['AC one', 'AC two']);
+			expect(s1?.notes).toBe('Some implementation notes');
+			expect(s1?.requires).toBeNull();
+
+			const s2 = snap.stories?.find((s) => s.id === 'US-002');
+			expect(s2?.acceptanceCriteria).toEqual(['AC three']);
+			expect(s2?.notes).toBe('Operator ceremony');
+			expect(s2?.requires).toBe('operator');
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
 });
 
 // --- runDashboard (integration) -------------------------------------------

@@ -196,6 +196,11 @@ export interface DashboardData {
 	 * stalled loop.
 	 */
 	lastActivity?: string;
+	/**
+	 * Top-level review verdict from prd.json's `review.lastVerdict` field
+	 * (US-001). Undefined when absent (no review run yet or old prd.json).
+	 */
+	reviewLastVerdict?: string;
 }
 
 /**
@@ -408,6 +413,10 @@ export function readSnapshot(options: { cwd: string; nowMs: number; claudeDir?: 
 		if (story) {
 			data.currentStoryId = story.id;
 			data.currentStoryTitle = story.title;
+		}
+		// US-001: surface the top-level review verdict when present.
+		if (typeof prd.review?.lastVerdict === "string" && prd.review.lastVerdict.length > 0) {
+			data.reviewLastVerdict = prd.review.lastVerdict;
 		}
 	}
 
