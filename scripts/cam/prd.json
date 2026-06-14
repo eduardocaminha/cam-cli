@@ -46,7 +46,7 @@
         "Tests pass (bun test), with the new test included."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: test/<descriptive-name>.test.ts (mirror source layout under test/; suggest test/vendor/cam-ship-hygiene.test.ts to mirror src/vendor/). Use `bun:test` (`import { test, expect } from \"bun:test\"`). Read src/vendor/_generated.ts to confirm the export shape — it exports `templatesContents: Readonly<Record<string, string>>` (a frozen map keyed by relative path like `commands/cam-ship.md`). The test guards the actually-shipped artifact (what `cam init` copies into user projects), which is the only automated protection given the LLM-executed nature of the command. Depends on US-001 having landed the fix in templates/commands/cam-ship.md AND regenerated src/vendor/_generated.ts."
     }

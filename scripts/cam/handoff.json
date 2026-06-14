@@ -1,26 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Make /cam-ship Step 4b git rm robust to missing paths"
+    "id": "US-002",
+    "title": "Regression test on the embedded cam-ship.md artifact"
   },
   "branchName": "cam/CAM-49-cam-ship-hygiene-ignore-unmatch",
-  "timestamp": "2026-06-14T12:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-14T13:00:00Z",
+  "createdFiles": [
+    "test/vendor/cam-ship-hygiene.test.ts"
+  ],
   "modifiedFiles": [
-    "templates/commands/cam-ship.md",
-    ".claude/commands/cam-ship.md",
-    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 landed: both cam-ship.md copies and the embedded vendor now use `git rm -q --ignore-unmatch` (dropping the 2>/dev/null || true mask). US-002 adds a regression test against the embedded artifact in src/vendor/_generated.ts. The export shape is `templatesContents: Readonly<Record<string, string>>` keyed by relative path like `commands/cam-ship.md`. The test should live at test/vendor/cam-ship-hygiene.test.ts.",
+  "nextStoryContext": "US-001 and US-002 are done. The regression test at test/vendor/cam-ship-hygiene.test.ts guards the embedded cam-ship.md artifact against silent reintroduction of the masked-atomic git rm pattern. All stories in the PRD should now be complete; check if any remain with passes:false.",
   "officialDocsValidated": [
     {
-      "lib": "git",
-      "url": "https://git-scm.com/docs/git-rm",
-      "fetchedAt": "2026-06-14T12:00:00Z",
-      "status": "aligned",
-      "summary": "`--ignore-unmatch` exits 0 when no files match; real errors (non-pathspec issues) still propagate non-zero. Implementation matches docs exactly."
+      "lib": "bun:test",
+      "version": "1.3.x",
+      "url": "https://bun.sh/docs/cli/test",
+      "fetchedAt": "2026-06-14T13:00:00Z",
+      "status": "ok",
+      "summary": "bun:test API confirmed: import { test, expect } from 'bun:test'; expect().toContain() and expect().not.toContain() are the correct assertions for substring presence/absence. Implementation matches docs."
     }
   ]
 }
