@@ -52,7 +52,13 @@ import yaml from 'js-yaml';
 
 let repoRoot: string;
 try {
-  repoRoot = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
+  // Ignore git's own stderr: outside a git repo it writes a raw
+  // "fatal: not a git repository" line that would otherwise surface as the
+  // skip diagnostic in `cam init` (CAM-46). We emit our own clean message below.
+  repoRoot = execSync('git rev-parse --show-toplevel', {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
 } catch {
   console.error('check-agent-frontmatter: not inside a git repo.');
   process.exit(2);
