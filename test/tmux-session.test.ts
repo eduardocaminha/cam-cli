@@ -23,6 +23,7 @@ import {
 	openPaneInSession,
 	isInsideProjectSession,
 	isSessionStale,
+	clampDashboardWidth,
 	CAM_TMUX_SOCKET,
 	tmuxArgs,
 	respawnPaneArgv,
@@ -525,5 +526,27 @@ describe('isSessionStale', () => {
 
 	test('list-panes non-zero exit -> true (conservative)', () => {
 		expect(isSessionStale('s', staleSpawn('', 1))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// clampDashboardWidth (US-001)
+// ---------------------------------------------------------------------------
+
+describe('clampDashboardWidth', () => {
+	test('220 cols -> 44 (20% proportion, within band)', () => {
+		expect(clampDashboardWidth(220)).toBe(44);
+	});
+
+	test('100 cols -> 34 (floor: 20% = 20, clamped to 34)', () => {
+		expect(clampDashboardWidth(100)).toBe(34);
+	});
+
+	test('400 cols -> 52 (ceiling: 20% = 80, clamped to 52)', () => {
+		expect(clampDashboardWidth(400)).toBe(52);
+	});
+
+	test('188 cols -> 38 (20% = 37.6, rounds to 38, within band)', () => {
+		expect(clampDashboardWidth(188)).toBe(38);
 	});
 });

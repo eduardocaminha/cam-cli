@@ -26,7 +26,7 @@
         "Tests pass (bun test)."
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (add helper near the existing exports, keep the file's existing comment style), test/tmux-session.test.ts (add a focused describe block). Pure function, no spawn. Use Math.round and Math.min/Math.max for clamp(round(w * 0.20), 34, 52). Respect noUncheckedIndexedAccess (no array indexing here, just arithmetic). No em-dash in any comment that lands in the file."
     },

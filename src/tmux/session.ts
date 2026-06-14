@@ -33,6 +33,26 @@ import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 // ---------------------------------------------------------------------------
+// Dashboard width helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Clamp the dashboard column width to a legible band.
+ *
+ * Formula: clamp(round(windowWidth * 0.20), 34, 52)
+ *
+ * - Minimum 34 cols: keeps the dashboard readable on narrow terminals.
+ * - Maximum 52 cols: prevents the column from ballooning on very wide ones.
+ * - 20% of the window is the target proportion for the right column.
+ *
+ * Used by ensureProjectSession (born width) and the window-resized hook
+ * (live resize). Single source of truth so both paths stay in sync.
+ */
+export function clampDashboardWidth(windowWidth: number): number {
+	return Math.min(52, Math.max(34, Math.round(windowWidth * 0.20)));
+}
+
+// ---------------------------------------------------------------------------
 // Socket / arg builder
 // ---------------------------------------------------------------------------
 

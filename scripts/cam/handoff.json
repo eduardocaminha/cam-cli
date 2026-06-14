@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add clampDashboardWidth helper with unit tests"
+  },
+  "branchName": "cam/CAM-48-responsive-dashboard-pane",
+  "timestamp": "2026-06-14T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/tmux/session.ts",
+    "test/tmux-session.test.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "clampDashboardWidth(windowWidth) is exported from src/tmux/session.ts. Formula: Math.min(52, Math.max(34, Math.round(windowWidth * 0.20))). US-002 must replace the hardcoded '-l', '36' in ensureProjectSession's dashSplitResult split-window call with String(clampDashboardWidth(220)) = '44'. The existing test 'split-window for dashboard uses -l 36 right pane' (test/tmux-session.test.ts line ~274) must be updated to assert '44' instead of '36'.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure arithmetic helper using Math.round/min/max (JS built-ins). No external library touched."
+    }
+  ]
+}
