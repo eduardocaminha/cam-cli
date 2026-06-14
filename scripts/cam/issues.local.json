@@ -93,10 +93,11 @@
     {
       "id": "CAM-12",
       "title": "Approve gate via sinal em arquivo (decisões concentradas no orquestrador)",
-      "description": "Pós-MVP, a versão mais elegante. Em vez de trocar o foco pro pane do plan pra responder o APPROVE, o gate sai do pane do worker: o plan worker emite o veredito, o orquestrador (onde você já está) pergunta 'aprovar PRD do CAM-N?', e ao confirmar escreve um flag em arquivo (ex: .claude/.cam-approve-<id>) que o worker lê pra destravar. Sem trocar de pane, sem send-keys/scraping (parente do CAM-4). Decisões num lugar só.",
-      "state": "open",
+      "description": "Pós-MVP, a versão mais elegante. Em vez de trocar o foco pro pane do plan pra responder o APPROVE, o gate sai do pane do worker: o plan worker emite o veredito, o orquestrador (onde você já está) pergunta 'aprovar PRD do CAM-N?', e ao confirmar escreve um flag em arquivo (ex: .claude/.cam-approve-<id>) que o worker lê pra destravar. Sem trocar de pane, sem send-keys/scraping (parente do CAM-4). Decisões num lugar só. FECHADA COMO SUPERSEDED (2026-06-14): o objetivo (decisoes de approve concentradas no orquestrador, sem pane-switch nem send-keys) ja e atendido pelo modelo de dispatch do subagent-orchestrator, que roda /cam-plan via a tool SlashCommand IN-SESSION. No fluxo orchestrator-driven (cam run, ou conversa direta) o Step 6 (scope proposal) surge no proprio pane do orquestrador e o operador responde ali, sem trocar de pane. O flag-file proposto (.cam-approve-<id>) seria maquinaria de coordenacao por polling entre duas sessoes que (a) nao e necessaria nesse fluxo e (b) regrediria a interacao rica de escopo (a/b/c/custom-mix iteravel) a um sim/nao binario. O pane separado so existe quando um humano roda `cam plan` direto do shell, onde nao ha 'orquestrador onde voce ja esta'. Mesmo padrao do CAM-4: issue pre-CAM-42 cujo mecanismo a arquitetura posterior tornou desnecessario. plan.ts:10 ja marcava CAM-12 como out-of-scope; a razao dele evaporou.",
+      "state": "closed",
       "createdAt": "2026-06-05T16:24:46Z",
-      "priority": "P3"
+      "priority": "P3",
+      "closedAt": "2026-06-14T05:30:00Z"
     },
     {
       "id": "CAM-13",
