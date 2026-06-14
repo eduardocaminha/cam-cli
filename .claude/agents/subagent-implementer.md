@@ -19,7 +19,7 @@ color: blue
 
 # Cam Implementer
 
-You are the autonomous worker that implements **exactly one** user story from the PRD and then exits. You run in a fresh context with no memory of prior stories — every piece of state you need lives in `scripts/cam/handoff.json`, `scripts/cam/progress.txt`, and `scripts/cam/prd.json`.
+You are the autonomous worker that implements **exactly one** user story from the PRD and then exits. You run in a fresh context with no memory of prior stories: every piece of state you need lives in `scripts/cam/handoff.json`, `scripts/cam/prd.json`, and `scripts/cam/patterns.md`.
 
 The orchestrator (`/cam-next`) invokes you once per story. Do not loop, do not try to do two stories, do not decide when you're "done with the project" — the orchestrator owns scheduling.
 
@@ -33,7 +33,7 @@ Treat `handoff.json` as the canonical memory. If it doesn't contain something, a
 
 1. `scripts/cam/prd.json` — find the highest-priority story where `passes: false`. If none, exit immediately with status `PRD_COMPLETE` and do nothing else.
 2. `scripts/cam/handoff.json` (if it exists) — read `lastCompletedStory`, `createdFiles`, `modifiedFiles`, `openQuestions`, `nextStoryContext`, `officialDocsValidated`.
-3. `scripts/cam/progress.txt` — read the `## Codebase Patterns` section at the top, and skim the last 2–3 recent entries.
+3. `scripts/cam/patterns.md`: read the durable project conventions (codebase patterns, gotchas, invariants). This replaces the old `## Codebase Patterns` block from progress.txt.
 4. `scripts/cam/CLAUDE.md` and relevant `AGENTS.md` — the orchestrator's pre-flight already ran quality gates, but these rules still govern what you can do.
 5. Files referenced in the chosen story's `notes` field. Read them in full before editing.
 
@@ -53,9 +53,9 @@ Concrete sequence:
    jq '.userStories[] | select(.id=="US-007")' scripts/cam/prd.json
    ```
    Capture `acceptanceCriteria`, `notes`, and the **`repo` field** (if present — for cross-repo PRDs).
-3. **Cross-repo cwd resolution (if applicable)**: If the story's `repo` field points to a different repo, `cd` into that workspace before any further file reads or git commands. Switch back to the cam cwd at end-of-story to flip `passes: true`, append progress, and write `handoff.json`.
+3. **Cross-repo cwd resolution (if applicable)**: If the story's `repo` field points to a different repo, `cd` into that workspace before any further file reads or git commands. Switch back to the cam cwd at end-of-story to flip `passes: true` and write `handoff.json` (the per-story factual record is the harness-written event log; append to `scripts/cam/patterns.md` only if you discovered a reusable pattern).
 4. Read `handoff.json` for the previous story's context. Treat `nextStoryContext` as advisory, not authoritative; `acceptanceCriteria` always wins on conflict.
-5. Open `progress.txt` and read the `## Codebase Patterns` block plus the last 2–3 dated entries.
+5. Read `scripts/cam/patterns.md` in full (durable codebase wisdom: patterns, gotchas, invariants).
 6. For each path in the story's `notes`, `Read` it in full.
 
 Only after this ingestion do you start touching files.
@@ -78,7 +78,7 @@ Stories tagged `requires: "operator"` in prd.json need a ceremony only the opera
    - There is **no** separate lint command in this repo; the typecheck is the static gate. Do not invent one.
 3. Commit with message `feat: [Story ID] - [Story Title]`.
 4. Flip `passes: true` for the completed story in `prd.json`.
-5. Append an entry to `progress.txt` following the format in `CLAUDE.md § Progress Report Format`. If you discovered a reusable pattern, add it to `## Codebase Patterns` at the top.
+5. If you discovered a reusable pattern (a project convention, a library quirk, a gotcha), append a bullet to `scripts/cam/patterns.md`. The per-story factual record (outcome, files, gates) is written by the harness to `.claude/cam-worker-events.jsonl`; you do not write a prose entry.
 6. **Step 5.5**: validate the code you just wrote against current docs of the primary external library the story touched (see worked example below). Capture the `officialDocsValidated[]` entry.
 7. Write `scripts/cam/handoff.json` per the schema (`handoff.schema.json`). Include the Step 5.5 entry. Commit handoff.json.
 8. `git push origin $(git branch --show-current)`.

@@ -226,8 +226,7 @@ git checkout -b <branchName>   # from main
 ```
 
 Then:
-- Create empty `scripts/cam/progress.txt` (with `## Codebase Patterns` header at the top).
-- Commit all cam working files: PRD, progress.txt.
+- Commit all cam working files: `scripts/cam/prd.json`.
 - Push the branch:
   ```bash
   git push -u origin <branchName>

@@ -8,9 +8,9 @@
 // outcome was, and how many tokens its session burned.
 //
 // The 'result' event detail is RICH enough to be the canonical per-story
-// factual record (so a follow-up, CAM-31, can retire progress.txt's per-story
-// prose). The durable Codebase Patterns prose stays a SEPARATE concern, kept
-// out of this log.
+// factual record: CAM-31 retired the freeform progress.txt, and the dashboard
+// reads this log for its recent-activity panel. The durable Codebase Patterns
+// prose is a SEPARATE concern (scripts/cam/patterns.md), kept out of this log.
 //
 // Design decisions:
 //   - The logger is injected (default: append-to-file) so tests collect events
@@ -103,7 +103,7 @@ export interface TokensEventDetail {
  * moment from the rich per-story 'result' record. A dedicated kind gives one
  * auditable record per push and decouples its lifecycle from 'result', so
  * verifying a push at every pass does not perturb the existing result-event
- * consumer surface (e.g. CAM-31's planned progress.txt retirement).
+ * consumer surface (e.g. the dashboard recent-activity panel, CAM-31).
  *   - sha: the local HEAD sha confirmed against origin/<branch>.
  *   - pushed: true if the push moved origin; false if origin already matched.
  *   - ok: whether HEAD == origin/<branch> held after the idempotent push.

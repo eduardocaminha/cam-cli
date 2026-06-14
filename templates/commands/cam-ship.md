@@ -40,11 +40,11 @@ Steps:
 
    a. **Close the `none` (local) backend issue now (CAM-30).** When `issue_system = "none"`, the issue lives in `scripts/cam/issues.local.json` and must be flipped HERE, in a commit, so the closure propagates to `main` on merge. Read the PRD `issueNumber`, find the entry whose `id == "<issue_prefix>-<issueNumber>"`, and set its `state` to `"closed"` with a `closedAt` ISO timestamp. (For `github` / `linear` the close is a no-commit API call done in Step 7 after the PR exists; skip this sub-step for those backends.)
 
-   b. **Reset the per-branch harness working state (CAM-27).** `prd.json`, `handoff.json`, and `progress.txt` are per-branch artifacts. Left in the branch they leak into `main` on merge and make `/cam-plan` Step 1 report a FALSE 'in-progress' (it reads a stale `prd.json` in `main`). Remove them so `main` stays clean:
+   b. **Reset the per-branch harness working state (CAM-27).** `prd.json` and `handoff.json` are per-branch artifacts. Left in the branch they leak into `main` on merge and make `/cam-plan` Step 1 report a FALSE 'in-progress' (it reads a stale `prd.json` in `main`). Remove them so `main` stays clean. `progress.txt` is legacy (retired in CAM-31): dropped if present.
    ```bash
    git rm -q scripts/cam/prd.json scripts/cam/handoff.json scripts/cam/progress.txt 2>/dev/null || true
    ```
-   `issues.local.json` is the persistent backlog, NOT per-branch state: do NOT remove it.
+   `issues.local.json` is the persistent backlog, NOT per-branch state: do NOT remove it. `scripts/cam/patterns.md` is durable, versioned wisdom: do NOT remove it.
 
    c. Stage the issues.local.json edit (if `none`) + the removals and commit them together:
    ```bash

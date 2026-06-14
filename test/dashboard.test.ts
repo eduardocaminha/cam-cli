@@ -102,7 +102,7 @@ describe('composeDashboard', () => {
 		nowMs: Date.parse('2026-04-28T22:30:00Z'),
 		paused: false,
 		idle: false,
-		recent: ['2026-04-28 - US-008', '2026-04-28 - US-007'],
+		recent: ['04-28 22:10 US-008 pass', '04-28 22:05 US-007 pass'],
 	};
 
 	test('first render uses CURSOR.clear; subsequent uses CURSOR.home', () => {
@@ -126,8 +126,8 @@ describe('composeDashboard', () => {
 
 	test('frame surfaces the recent entries (newest first)', () => {
 		const frame = composeDashboard(baseData, 2000, true);
-		expect(frame).toContain('2026-04-28 - US-008');
-		expect(frame).toContain('2026-04-28 - US-007');
+		expect(frame).toContain('04-28 22:10 US-008 pass');
+		expect(frame).toContain('04-28 22:05 US-007 pass');
 	});
 
 	test('paused state renders the sleep banner', () => {
@@ -199,71 +199,51 @@ describe('composeDashboard', () => {
 
 // --- parseRecentProgress ---------------------------------------------------
 
-describe('parseRecentProgress', () => {
-	test('extracts the `## ...` header line of each section, newest first', () => {
-		const body = [
-			'## Codebase Patterns',
-			'',
-			'- some pattern.',
-			'',
-			'---',
-			'',
-			'## 2026-04-28 - US-001',
-			'- did the thing',
-			'---',
-			'',
-			'## 2026-04-28 - US-002',
-			'- did another thing',
-			'---',
-			'',
+describe('parseRecentProgress (event log)', () => {
+	// One JSON object per line; only 'result' events surface, newest first.
+	function resultLine(ts: string, storyId: string, outcome: string): string {
+		return JSON.stringify({ ts, storyId, uuid: 'u', kind: 'result', detail: { outcome } });
+	}
+
+	test('summarizes the last result events, newest first', () => {
+		const jsonl = [
+			JSON.stringify({ ts: '2026-04-28T10:00:00Z', storyId: 'US-001', kind: 'worker-start', detail: {} }),
+			resultLine('2026-04-28T10:05:00Z', 'US-001', 'pass'),
+			JSON.stringify({ ts: '2026-04-28T10:05:01Z', storyId: 'US-001', kind: 'tokens', detail: {} }),
+			resultLine('2026-04-28T10:20:00Z', 'US-002', 'blocked'),
 		].join('\n');
-		const out = parseRecentProgress(body);
-		// Newest entries first: US-002 then US-001.
-		expect(out).toEqual(['2026-04-28 - US-002', '2026-04-28 - US-001']);
+		const out = parseRecentProgress(jsonl);
+		// Only result events; newest first; format `MM-DD HH:MM US-XXX <outcome>`.
+		expect(out).toEqual(['04-28 10:20 US-002 blocked', '04-28 10:05 US-001 pass']);
 	});
 
-	test('caps at RECENT_ENTRIES_COUNT entries', () => {
-		const sections: string[] = [];
+	test('caps at RECENT_ENTRIES_COUNT events', () => {
+		const lines: string[] = [];
 		for (let i = 1; i <= 8; i += 1) {
-			sections.push(`## 2026-04-28 - US-${String(i).padStart(3, '0')}`);
-			sections.push('---');
+			lines.push(resultLine('2026-04-28T10:00:00Z', `US-${String(i).padStart(3, '0')}`, 'pass'));
 		}
-		const out = parseRecentProgress(sections.join('\n'));
+		const out = parseRecentProgress(lines.join('\n'));
 		expect(out).toHaveLength(RECENT_ENTRIES_COUNT);
 		// Newest (US-008) first.
-		expect(out[0]).toBe('2026-04-28 - US-008');
+		expect(out[0]).toBe('04-28 10:00 US-008 pass');
 	});
 
-	test('skips non-entry sections (e.g. ## Codebase Patterns)', () => {
-		const body = [
-			'## Codebase Patterns',
-			'',
-			'- some pattern.',
-			'',
-			'---',
-			'',
-			'## 2026-04-28 - US-001',
-			'- the deed',
-			'---',
-			'',
+	test('skips non-result events (worker-start, tokens, pushed)', () => {
+		const jsonl = [
+			JSON.stringify({ ts: '2026-04-28T10:00:00Z', storyId: 'US-001', kind: 'worker-start', detail: {} }),
+			JSON.stringify({ ts: '2026-04-28T10:01:00Z', storyId: 'US-001', kind: 'pushed', detail: {} }),
+			resultLine('2026-04-28T10:05:00Z', 'US-001', 'pass'),
 		].join('\n');
-		const out = parseRecentProgress(body);
-		// Codebase Patterns header is dropped because it doesn't match the
-		// dated-entry pattern; only US-001 surfaces.
-		expect(out).toEqual(['2026-04-28 - US-001']);
+		expect(parseRecentProgress(jsonl)).toEqual(['04-28 10:05 US-001 pass']);
 	});
 
-	test('handles a missing trailing `---` (in-flight entry)', () => {
-		const body = [
-			'## 2026-04-28 - US-001',
-			'- done',
-			'---',
+	test('skips a malformed jsonl line, never crashes', () => {
+		const jsonl = [
+			'{ this is not valid json',
+			resultLine('2026-04-28T10:05:00Z', 'US-001', 'pass'),
 			'',
-			'## 2026-04-28 - US-002',
-			'- in flight, no closing fence yet',
 		].join('\n');
-		const out = parseRecentProgress(body);
-		expect(out).toEqual(['2026-04-28 - US-002', '2026-04-28 - US-001']);
+		expect(parseRecentProgress(jsonl)).toEqual(['04-28 10:05 US-001 pass']);
 	});
 
 	test('returns [] on an empty body', () => {
@@ -274,8 +254,8 @@ describe('parseRecentProgress', () => {
 // --- readRecentProgress + readSnapshot (filesystem) -----------------------
 
 describe('readRecentProgress (IO)', () => {
-	test('returns [] when scripts/cam/progress.txt is absent', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-no-progress-'));
+	test('returns [] when the event log is absent', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-no-events-'));
 		try {
 			expect(readRecentProgress(dir)).toEqual([]);
 		} finally {
@@ -283,16 +263,21 @@ describe('readRecentProgress (IO)', () => {
 		}
 	});
 
-	test('reads from scripts/cam/progress.txt under cwd', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-progress-'));
+	test('reads result events from .claude/cam-worker-events.jsonl under cwd', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-events-'));
 		try {
-			mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
+			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
-				join(dir, 'scripts', 'cam', 'progress.txt'),
-				['## 2026-04-28 - US-Z', '- the deed', '---', ''].join('\n'),
+				join(dir, '.claude', 'cam-worker-events.jsonl'),
+				JSON.stringify({
+					ts: '2026-04-28T11:00:00Z',
+					storyId: 'US-Z',
+					kind: 'result',
+					detail: { outcome: 'pass' },
+				}) + '\n',
 			);
 			const out = readRecentProgress(dir);
-			expect(out).toEqual(['2026-04-28 - US-Z']);
+			expect(out).toEqual(['04-28 11:00 US-Z pass']);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

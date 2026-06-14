@@ -79,7 +79,7 @@ Review these changes against your checklist. Read changed files in full for cont
 )
 ```
 
-Do NOT pass: `scripts/cam/progress.txt`, `scripts/cam/handoff.json`, or any generator reasoning.
+Do NOT pass: `scripts/cam/handoff.json` or any generator reasoning.
 
 ---
 
@@ -150,13 +150,6 @@ Update `prd.json`:
 }
 ```
 
-Append to `scripts/cam/progress.txt`:
-```
-## [timestamp] - Review round N — CLEAN
-- All findings resolved or rated cosmetic. Ready for /cam-ship.
----
-```
-
 Print to operator:
 ```
 ✅ Review round N: CLEAN. Ready for /cam-ship.
@@ -181,13 +174,6 @@ Update `prd.json.review`:
 }
 ```
 
-Append to `scripts/cam/progress.txt`:
-```
-## [timestamp] - Review round N — FIXES_PENDING:K
-- Created K stories US-R{N}-001..US-R{N}-NNN from review findings
----
-```
-
 Print to operator:
 ```
 ⚠ Review round N: FIXES_PENDING:K
@@ -209,4 +195,4 @@ The orchestrator treats `MAX_ROUNDS_DEBT` like `CLEAN` for loop-termination — 
 
 ### Step 5.6 — Don't commit yet
 
-This step ONLY mutates `prd.json` + `progress.txt`. **Do not commit.** Exception: when `lastVerdict === "CLEAN"`, you MAY commit with message `chore(cam): mark review round N CLEAN`.
+This step ONLY mutates `prd.json`. **Do not commit.** Exception: when `lastVerdict === "CLEAN"`, you MAY commit with message `chore(cam): mark review round N CLEAN`.
