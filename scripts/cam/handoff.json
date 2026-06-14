@@ -1,7 +1,7 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add clampDashboardWidth helper with unit tests"
+    "id": "US-002",
+    "title": "Use clamped born width in ensureProjectSession split-window"
   },
   "branchName": "cam/CAM-48-responsive-dashboard-pane",
   "timestamp": "2026-06-14T00:00:00Z",
@@ -12,12 +12,12 @@
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "clampDashboardWidth(windowWidth) is exported from src/tmux/session.ts. Formula: Math.min(52, Math.max(34, Math.round(windowWidth * 0.20))). US-002 must replace the hardcoded '-l', '36' in ensureProjectSession's dashSplitResult split-window call with String(clampDashboardWidth(220)) = '44'. The existing test 'split-window for dashboard uses -l 36 right pane' (test/tmux-session.test.ts line ~274) must be updated to assert '44' instead of '36'.",
+  "nextStoryContext": "US-002 replaced hardcoded '-l', '36' in dashSplitResult split-window with String(clampDashboardWidth(220)) = '44'. clampDashboardWidth is defined and exported in src/tmux/session.ts. Test renamed and updated to assert '44'. US-003 (if any) should look at remaining stories in prd.json.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure arithmetic helper using Math.round/min/max (JS built-ins). No external library touched."
+      "summary": "Change is a string substitution in tmux argv using clampDashboardWidth (JS built-ins only). No external npm library touched."
     }
   ]
 }

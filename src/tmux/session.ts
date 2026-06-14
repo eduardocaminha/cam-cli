@@ -221,7 +221,7 @@ export function ensureProjectSession(
 	);
 	const orchPaneId = newSessResult.stdout.toString().trim();
 
-	// Split horizontally to add pane 1 (dashboard slot, 36-column right pane).
+	// Split horizontally to add pane 1 (dashboard slot, clamped-width right pane).
 	// Target the orchestrator pane by its stable id, not a positional index.
 	const dashSplitResult = spawnFn(
 		'tmux',
@@ -229,7 +229,7 @@ export function ensureProjectSession(
 			'split-window',
 			'-t', orchPaneId,
 			'-h',
-			'-l', '36',
+			'-l', String(clampDashboardWidth(220)),
 			'-d',
 			'-P', '-F', '#{pane_id}',
 			'cat',

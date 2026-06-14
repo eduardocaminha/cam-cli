@@ -41,7 +41,7 @@
         "Tests pass (bun test)."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (the dashSplitResult split-window call near line 206), test/tmux-session.test.ts (line ~274). Depends on US-001. Hard constraint #3: split-window -l accepts a literal integer; pass String(clampDashboardWidth(220)). Hard constraint #4: born width for the canonical 220 virtual session is 44. Do not touch the menu split (pane 2 inherits the column width from the vertical split)."
     },

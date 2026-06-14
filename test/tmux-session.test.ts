@@ -272,13 +272,13 @@ describe('ensureProjectSession — new session', () => {
 		}
 	});
 
-	test('split-window for dashboard uses -l 36 right pane', () => {
+	test('split-window for dashboard uses clamped born width (44) right pane', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		ensureProjectSession('cam-orch-test-000000', spawn);
 
 		const split = spawn.calls[2];
 		expect(split?.args).toContain('-l');
-		expect(split?.args).toContain('36');
+		expect(split?.args).toContain('44');
 	});
 
 	test('returns false and calls only has-session when session already exists', () => {
