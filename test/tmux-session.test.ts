@@ -23,6 +23,7 @@ import {
 	openPaneInSession,
 	isInsideProjectSession,
 	isSessionStale,
+	clampDashboardWidth,
 	CAM_TMUX_SOCKET,
 	tmuxArgs,
 	respawnPaneArgv,
@@ -159,7 +160,7 @@ describe('projectSessionName', () => {
 // ---------------------------------------------------------------------------
 
 describe('ensureProjectSession — new session', () => {
-	test('calls has-session first, then new-session and two split-window calls when session absent', () => {
+	test('calls has-session first, then new-session, two split-window calls, and set-hook when session absent', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		const result = ensureProjectSession('cam-orch-myproj-abc123', spawn);
 
@@ -212,6 +213,21 @@ describe('ensureProjectSession — new session', () => {
 		expect(secondSplit?.args).not.toContain('cam-orch-myproj-abc123:0.1');
 		expect(secondSplit?.args).toContain('-v');
 		expect(secondSplit?.args).toContain('-d');
+
+		// Fifth call: set-hook installs the window-resized re-clamp hook.
+		const setHook = spawn.calls[4];
+		expect(setHook).toBeDefined();
+		expect(setHook?.cmd).toBe('tmux');
+		expect(setHook?.args[0]).toBe('-L');
+		expect(setHook?.args[1]).toBe('cam');
+		expect(setHook?.args[2]).toBe('set-hook');
+		expect(setHook?.args).toContain('window-resized');
+		expect(setHook?.args).toContain('cam-orch-myproj-abc123');
+		// Hook body must embed the captured dashboard pane id (%2) and resize-pane -x.
+		const hookBody = setHook?.args[setHook.args.length - 1] ?? '';
+		expect(hookBody).toContain('%2');
+		expect(hookBody).toContain('resize-pane');
+		expect(hookBody).toContain('-x');
 	});
 
 	test('new-session argv includes -x 220 and -y 50', () => {
@@ -244,6 +260,44 @@ describe('ensureProjectSession — new session', () => {
 		expect(newSess?.args).toContain('CAM_SESSION=cam-orch-test-000000');
 	});
 
+	test('emits set-hook call with window-resized bound to resize-pane shell arithmetic (US-003 + US-R1-001)', () => {
+		const spawn = makeFakeSpawn({ sessionExists: false });
+		const result = ensureProjectSession('cam-orch-test-000000', spawn);
+
+		expect(result).not.toBe(false);
+		if (result === false) return;
+
+		// The hook call is the 5th overall (index 4): has-session, new-session,
+		// split-window x2, set-hook.
+		const hookCall = spawn.calls[4];
+		expect(hookCall).toBeDefined();
+		expect(hookCall?.cmd).toBe('tmux');
+		// Must use -L cam socket.
+		expect(hookCall?.args[0]).toBe('-L');
+		expect(hookCall?.args[1]).toBe('cam');
+		expect(hookCall?.args[2]).toBe('set-hook');
+		// Must target the session.
+		expect(hookCall?.args).toContain('-t');
+		expect(hookCall?.args).toContain('cam-orch-test-000000');
+		// Must bind window-resized event.
+		expect(hookCall?.args).toContain('window-resized');
+		// The hook body (last arg) must embed the dashboard pane id (%2)
+		// and contain resize-pane -x.
+		const hookBody = hookCall?.args[hookCall.args.length - 1] ?? '';
+		expect(hookBody).toContain(result.dashboardPaneId); // e.g. '%2'
+		expect(hookBody).toContain('resize-pane');
+		expect(hookBody).toContain('-x');
+		// Must use run-shell so tmux expands #{window_width} before sh -c.
+		expect(hookBody).toContain('run-shell');
+		// Shell arithmetic clamp boundaries must appear in the hook body.
+		expect(hookBody).toContain('34');
+		expect(hookBody).toContain('52');
+		// US-R1-001: hook shell clamp must use round-half-up (+50) not truncation.
+		expect(hookBody).toContain('(w*20+50)/100');
+		// US-R1-001: hook must reference the CAM_TMUX_SOCKET constant value, not a hardcoded literal.
+		expect(hookBody).toContain(`-L ${CAM_TMUX_SOCKET}`);
+	});
+
 	test('split-window calls include -P -F #{pane_id} for stable pane capture', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		ensureProjectSession('cam-orch-test-000000', spawn);
@@ -271,13 +325,13 @@ describe('ensureProjectSession — new session', () => {
 		}
 	});
 
-	test('split-window for dashboard uses -l 36 right pane', () => {
+	test('split-window for dashboard uses clamped born width (44) right pane', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		ensureProjectSession('cam-orch-test-000000', spawn);
 
 		const split = spawn.calls[2];
 		expect(split?.args).toContain('-l');
-		expect(split?.args).toContain('36');
+		expect(split?.args).toContain('44');
 	});
 
 	test('returns false and calls only has-session when session already exists', () => {
@@ -525,5 +579,27 @@ describe('isSessionStale', () => {
 
 	test('list-panes non-zero exit -> true (conservative)', () => {
 		expect(isSessionStale('s', staleSpawn('', 1))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// clampDashboardWidth (US-001)
+// ---------------------------------------------------------------------------
+
+describe('clampDashboardWidth', () => {
+	test('220 cols -> 44 (20% proportion, within band)', () => {
+		expect(clampDashboardWidth(220)).toBe(44);
+	});
+
+	test('100 cols -> 34 (floor: 20% = 20, clamped to 34)', () => {
+		expect(clampDashboardWidth(100)).toBe(34);
+	});
+
+	test('400 cols -> 52 (ceiling: 20% = 80, clamped to 52)', () => {
+		expect(clampDashboardWidth(400)).toBe(52);
+	});
+
+	test('188 cols -> 38 (20% = 37.6, rounds to 38, within band)', () => {
+		expect(clampDashboardWidth(188)).toBe(38);
 	});
 });
