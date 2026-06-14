@@ -160,7 +160,7 @@ describe('projectSessionName', () => {
 // ---------------------------------------------------------------------------
 
 describe('ensureProjectSession — new session', () => {
-	test('calls has-session first, then new-session and two split-window calls when session absent', () => {
+	test('calls has-session first, then new-session, two split-window calls, and set-hook when session absent', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		const result = ensureProjectSession('cam-orch-myproj-abc123', spawn);
 
@@ -213,6 +213,21 @@ describe('ensureProjectSession — new session', () => {
 		expect(secondSplit?.args).not.toContain('cam-orch-myproj-abc123:0.1');
 		expect(secondSplit?.args).toContain('-v');
 		expect(secondSplit?.args).toContain('-d');
+
+		// Fifth call: set-hook installs the window-resized re-clamp hook.
+		const setHook = spawn.calls[4];
+		expect(setHook).toBeDefined();
+		expect(setHook?.cmd).toBe('tmux');
+		expect(setHook?.args[0]).toBe('-L');
+		expect(setHook?.args[1]).toBe('cam');
+		expect(setHook?.args[2]).toBe('set-hook');
+		expect(setHook?.args).toContain('window-resized');
+		expect(setHook?.args).toContain('cam-orch-myproj-abc123');
+		// Hook body must embed the captured dashboard pane id (%2) and resize-pane -x.
+		const hookBody = setHook?.args[setHook.args.length - 1] ?? '';
+		expect(hookBody).toContain('%2');
+		expect(hookBody).toContain('resize-pane');
+		expect(hookBody).toContain('-x');
 	});
 
 	test('new-session argv includes -x 220 and -y 50', () => {
@@ -243,6 +258,40 @@ describe('ensureProjectSession — new session', () => {
 		const newSess = spawn.calls[1];
 		expect(newSess?.args).toContain('-e');
 		expect(newSess?.args).toContain('CAM_SESSION=cam-orch-test-000000');
+	});
+
+	test('emits set-hook call with window-resized bound to resize-pane shell arithmetic (US-003)', () => {
+		const spawn = makeFakeSpawn({ sessionExists: false });
+		const result = ensureProjectSession('cam-orch-test-000000', spawn);
+
+		expect(result).not.toBe(false);
+		if (result === false) return;
+
+		// The hook call is the 5th overall (index 4): has-session, new-session,
+		// split-window x2, set-hook.
+		const hookCall = spawn.calls[4];
+		expect(hookCall).toBeDefined();
+		expect(hookCall?.cmd).toBe('tmux');
+		// Must use -L cam socket.
+		expect(hookCall?.args[0]).toBe('-L');
+		expect(hookCall?.args[1]).toBe('cam');
+		expect(hookCall?.args[2]).toBe('set-hook');
+		// Must target the session.
+		expect(hookCall?.args).toContain('-t');
+		expect(hookCall?.args).toContain('cam-orch-test-000000');
+		// Must bind window-resized event.
+		expect(hookCall?.args).toContain('window-resized');
+		// The hook body (last arg) must embed the dashboard pane id (%2)
+		// and contain resize-pane -x.
+		const hookBody = hookCall?.args[hookCall.args.length - 1] ?? '';
+		expect(hookBody).toContain(result.dashboardPaneId); // e.g. '%2'
+		expect(hookBody).toContain('resize-pane');
+		expect(hookBody).toContain('-x');
+		// Must use run-shell so tmux expands #{window_width} before sh -c.
+		expect(hookBody).toContain('run-shell');
+		// Shell arithmetic clamp boundaries must appear in the hook body.
+		expect(hookBody).toContain('34');
+		expect(hookBody).toContain('52');
 	});
 
 	test('split-window calls include -P -F #{pane_id} for stable pane capture', () => {

@@ -254,6 +254,37 @@ export function ensureProjectSession(
 	);
 	const menuPaneId = menuSplitResult.stdout.toString().trim();
 
+	// Install a window-resized hook so the dashboard column re-clamps on every
+	// terminal resize or client attach. The hook fires inside the tmux server
+	// context, so it must call tmux on the same -L cam socket.
+	//
+	// Hook body uses run-shell: tmux expands #{window_width} to the live window
+	// width (a numeric literal) before passing the string to sh -c. Shell $(())
+	// arithmetic then computes the clamped value as a literal integer for -x.
+	// Both tmux format comparisons (constraint #2: lexical, not numeric) and
+	// resize-pane format expansion (constraint #1: -x rejects #{...}) are
+	// avoided this way.
+	//
+	// The menu pane shares the dashboard column, so one resize-pane on the
+	// dashboard pane id re-clamps both panes (constraint #5).
+	//
+	// || true makes the hook best-effort: a failed resize-pane never crashes
+	// the session.
+	const hookShell = [
+		`w=#{window_width}`,
+		`t=$(( w*20/100 ))`,
+		`t=$(( t<34?34:t>52?52:t ))`,
+		`tmux -L cam resize-pane -t ${dashboardPaneId} -x $t || true`,
+	].join('; ');
+	const hookCmd = `run-shell '${hookShell}'`;
+
+	// best-effort: ignore exit status of set-hook itself
+	spawnFn(
+		'tmux',
+		tmuxArgs(['set-hook', '-t', sessionName, 'window-resized', hookCmd]),
+		{ stdio: 'ignore' },
+	);
+
 	return { orchPaneId, dashboardPaneId, menuPaneId };
 }
 
