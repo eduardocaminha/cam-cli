@@ -25,7 +25,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/dashboard.ts (readRecentProgress ~517, parseRecentProgress ~535, PROGRESS_PATH ~47, the Recent panel render ~268-282, the DashboardData.recent field ~163, runDashboard's read at ~370), test/dashboard*.test.ts. The event log line shape is one JSON object per line with { ts, storyId, uuid, kind, detail }; a 'result' event has detail { outcome, filesChanged, gates, docsValidated } (src/supervisor/events.ts buildResultDetail). Filter kind==='result' for the per-story summary; ts is an ISO string. The file is .claude/cam-worker-events.jsonl (already gitignored). Keep DashboardData.recent: string[] to minimize churn; only the source + parser change. ALSO src/ui/Dashboard.tsx (the Ink RecentSection empty-state copy at ~347 says '(no progress.txt entries yet)'; update it to match). The Ink dashboard receives DashboardData; only the empty-state string + any 'progress' label need updating there, the data still flows through DashboardData.recent."
     },

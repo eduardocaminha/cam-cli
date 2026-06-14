@@ -9,7 +9,7 @@
 //   - Alt-screen lifecycle is wrapped in try/finally so a panic during render
 //     does NOT strand the operator's terminal in the alternate buffer (the
 //     story note flagged this as load-bearing).
-//   - The last 5 progress.txt entries (delimited by `---` lines) are
+//   - The last 5 worker 'result' events from the structured event log are
 //     surfaced in a "recent" panel. Each entry is truncated to a single line
 //     so the panel stays width-stable across resizes.
 //   - SIGWINCH triggers a re-render; the next render reuses `isFirstRender:
@@ -44,12 +44,15 @@ import {
 // --- Constants -------------------------------------------------------------
 
 const STATE_FILE_PATH = ".claude/cam-loop.local.md";
-const PROGRESS_PATH = "scripts/cam/progress.txt";
+// CAM-31: the recent-activity panel reads the structured event log, not the
+// retired freeform progress.txt. The supervisor writes one JSON line per worker
+// lifecycle step here.
+const EVENT_LOG_PATH = ".claude/cam-worker-events.jsonl";
 
 /** How often the render loop polls cwd for state changes. 2 s per US-009 AC4. */
 export const DEFAULT_POLL_INTERVAL_MS = 2000;
 
-/** How many recent progress.txt entries to surface in the dashboard panel. */
+/** How many recent worker 'result' events to surface in the dashboard panel. */
 export const RECENT_ENTRIES_COUNT = 5;
 
 /**
@@ -138,7 +141,7 @@ export function dimHorizontalLine(width: number, left: string, right: string): s
 /**
  * Snapshot of TUI state assembled by the caller and handed to `renderDashboard`.
  * `runDashboard` populates this from `prd.json`, the loop's state file, and
- * `progress.txt`; tests can populate it by hand to exercise the composition
+ * the event log; tests can populate it by hand to exercise the composition
  * primitive in isolation.
  */
 export interface DashboardData {
@@ -160,7 +163,7 @@ export interface DashboardData {
 	paused: boolean;
 	/** True when no state file is present (idle). */
 	idle: boolean;
-	/** Last N entries from progress.txt, newest first, single-line summaries. */
+	/** Last N worker 'result' events, newest first, single-line summaries. */
 	recent: string[];
 	/**
 	 * Full ordered story queue from `prd.json` (priority order). Used by the
@@ -265,13 +268,13 @@ export function composeDashboard(
 		output += `\n${warning("!")} ${banner}\n`;
 	}
 
-	// --- Recent progress.txt entries -------------------------------------
+	// --- Recent worker events --------------------------------------------
 	// Styled as a Section: bold heading + muted divisor, matching Ink screens.
 	output += "\n";
 	output += `${chalk.bold("Recent")}\n`;
 	output += `${muted(separator(width))}\n`;
 	if (data.recent.length === 0) {
-		output += `${muted("  (no progress.txt entries yet)")}\n`;
+		output += `${muted("  (no activity yet)")}\n`;
 	} else {
 		for (const entry of data.recent) {
 			// Reserve 2 chars for the bullet, account for ANSI overhead by
@@ -355,7 +358,7 @@ export function installQuitHandlers(cleanup: () => void): void {
  *
  * - `prd.json` → branch name + current story (highest-priority `passes:false`)
  * - `.claude/cam-loop.local.md` → iteration / max / started_at / paused state
- * - `scripts/cam/progress.txt` → last RECENT_ENTRIES_COUNT entries
+ * - `.claude/cam-worker-events.jsonl` → last RECENT_ENTRIES_COUNT 'result' events
  *
  * Each source is best-effort: a missing/corrupt file falls back to defaults
  * rather than throwing, because the dashboard is read-only and a render
@@ -508,14 +511,14 @@ function readStoryTokens(
 }
 
 /**
- * Slice the last `RECENT_ENTRIES_COUNT` entries out of progress.txt. Entries
+ * Slice the last `RECENT_ENTRIES_COUNT` 'result' events out of the event log. Entries
  * are delimited by `---` lines (per the format documented in
  * `scripts/cam/CLAUDE.md § Progress Report Format`). We surface each
  * entry's first non-empty line as the panel's bullet text — usually a
  * `## YYYY-MM-DD - US-NNN` header — which keeps the panel width-stable.
  */
 export function readRecentProgress(cwd: string): string[] {
-	const path = join(cwd, PROGRESS_PATH);
+	const path = join(cwd, EVENT_LOG_PATH);
 	if (!existsSync(path)) return [];
 	let body: string;
 	try {
@@ -527,45 +530,46 @@ export function readRecentProgress(cwd: string): string[] {
 }
 
 /**
- * Pure parser exposed for tests: split on `---` (own-line) delimiters, then
- * pick the first dated `## YYYY-MM-DD - US-...` heading of each section.
- * Sections without such a heading are skipped — that drops the leading
- * `## Codebase Patterns` block (general guidance, not a story entry) and
- * any other non-entry section without rewriting the format.
+ * Pure parser exposed for tests (CAM-31): read the worker event log (one JSON
+ * object per line) and surface the last N 'result' events as single-line
+ * summaries, newest first. Each line is `{ ts, storyId, uuid, kind, detail }`;
+ * a 'result' event carries `detail.outcome`. Malformed lines are skipped, not
+ * fatal. Format: `<MM-DD HH:MM> US-XXX <outcome>` (the structured event log
+ * replaces the old progress.txt markdown scrape).
  */
-export function parseRecentProgress(body: string): string[] {
-	const lines = body.split("\n");
-	const sections: string[][] = [];
-	let cur: string[] = [];
-	for (const line of lines) {
-		if (line.trim() === "---") {
-			if (cur.length > 0) sections.push(cur);
-			cur = [];
-		} else {
-			cur.push(line);
+export function parseRecentProgress(jsonl: string): string[] {
+	const summaries: string[] = [];
+	for (const line of jsonl.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed.length === 0) continue;
+		let event: unknown;
+		try {
+			event = JSON.parse(trimmed);
+		} catch {
+			continue; // skip a malformed line, never crash the dashboard
 		}
+		if (typeof event !== "object" || event === null) continue;
+		const e = event as { ts?: unknown; storyId?: unknown; kind?: unknown; detail?: unknown };
+		if (e.kind !== "result") continue;
+		const story = typeof e.storyId === "string" && e.storyId.length > 0 ? e.storyId : "?";
+		const outcome =
+			typeof e.detail === "object" && e.detail !== null &&
+			typeof (e.detail as { outcome?: unknown }).outcome === "string"
+				? (e.detail as { outcome: string }).outcome
+				: "?";
+		const when = typeof e.ts === "string" ? shortTimestamp(e.ts) : "";
+		summaries.push(`${when ? when + " " : ""}${story} ${outcome}`);
 	}
-	// The pattern in progress.txt is `... entry text ...` then `---`, so a
-	// trailing partial section without a closing `---` is the in-flight
-	// addition; include it only if it's non-trivial.
-	if (cur.length > 0 && cur.some((l) => l.trim().length > 0)) {
-		sections.push(cur);
-	}
+	// Newest events are at the bottom of the log; surface those first.
+	return summaries.slice(-RECENT_ENTRIES_COUNT).reverse();
+}
 
-	// Recognise a dated-entry header. Examples:
-	//   `## 2026-04-28 - US-001`
-	//   `## 2026-04-28 - US-R1-001`
-	//   `## 2026-04-28T10:00 - US-009`
-	const ENTRY_HEADER = /^##\s+\d{4}-\d{2}-\d{2}.*-\s*US-/;
-	const headers: string[] = [];
-	for (const section of sections) {
-		const heading = section.find((l) => ENTRY_HEADER.test(l.trim()));
-		if (heading) {
-			headers.push(heading.trim().replace(/^#+\s*/, ""));
-		}
-	}
-	// Newest entries are at the bottom of progress.txt — surface those first.
-	return headers.slice(-RECENT_ENTRIES_COUNT).reverse();
+/** Render an ISO timestamp as `MM-DD HH:MM` for the compact recent panel. */
+function shortTimestamp(iso: string): string {
+	// ISO shape: 2026-06-14T03:12:45.678Z -> "06-14 03:12". Pure string slice so
+	// it is timezone-stable and needs no Date parsing.
+	const m = iso.match(/^\d{4}-(\d{2}-\d{2})T(\d{2}:\d{2})/);
+	return m ? `${m[1]} ${m[2]}` : "";
 }
 
 // === runDashboard ==========================================================
@@ -594,7 +598,7 @@ export interface DashboardReader {
 }
 
 export interface RunDashboardOptions {
-	/** cwd for state-file / prd.json / progress.txt lookups. */
+	/** cwd for state-file / prd.json / event-log lookups. */
 	cwd?: string;
 	/** Override poll interval (default 2000ms). */
 	pollIntervalMs?: number;

@@ -344,7 +344,7 @@ function RecentSection({ recent, dividerWidth }: { recent: readonly string[]; di
 	if (recent.length === 0) {
 		return (
 			<Section heading="Recent" dividerWidth={dividerWidth}>
-				<Text color={colors.muted}>(no progress.txt entries yet)</Text>
+				<Text color={colors.muted}>(no activity yet)</Text>
 			</Section>
 		);
 	}
