@@ -5,3 +5,9 @@
 - dashboard.test.ts: describe parseRecentProgress reescrito pra fixtures de event log (result/worker-start/tokens/malformed); IO test le .claude/cam-worker-events.jsonl; fixtures de composeDashboard no formato novo.
 - Gates: typecheck ok, 763 pass.
 ---
+
+## [2026-06-14] - US-002: Codebase Patterns durável em scripts/cam/patterns.md
+- Novo scripts/cam/patterns.md: bloco Codebase Patterns canonico migrado (Bun, permission-mode tripwire, claude -p proibido, noUncheckedIndexedAccess, Ink glyph, tests, conventional commits, no-em-dash) + header explicando que e o lar duravel nunca-truncado. Versionado na main, nao gitignored, nao no git rm do cam-ship.
+- Sem em-dash.
+- Gates: typecheck ok, 763 pass.
+---

@@ -41,7 +41,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/cam/patterns.md (new). Source content: the '## Codebase Patterns' example block in scripts/cam/CLAUDE.md (Bun runtime, permission-mode tripwire, noUncheckedIndexedAccess, Ink glyph signalling, tests, conventional commits) plus any real accumulated patterns. This doc is durable: it must NOT be added to the cam-ship git rm list and NOT gitignored. It is the (a) destination from the issue. NO em-dash."
     },
