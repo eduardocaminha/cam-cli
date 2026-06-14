@@ -77,7 +77,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "Real-run verification that the dashboard reads the event log and the freeform progress.txt is gone from the loop. Needs a real claude session + tmux. The dashboard is a runtime Ink/print surface, so the unit parser test does not prove the panel renders correctly: this is the runtime proof. Reference: CAM-28 (dashboard liveness) is the related prior work."
     }

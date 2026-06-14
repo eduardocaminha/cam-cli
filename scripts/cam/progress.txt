@@ -28,3 +28,7 @@
 - subagent-reviewer pegou 2 WARNINGs em escopo (sweep deixou passar): (1) implementer.md:56 (+template) "append progress" leftover contradizendo o Step 5 -> reescrito pra patterns.md/handoff + re-embed; (2) dashboard.ts readRecentProgress docstring descrevia o formato `---` antigo -> reescrita pro fluxo jsonl. Suggestion (UTC no timestamp) fica como follow-up.
 - Sem em-dash novo, gates verdes, embed ok.
 ---
+
+## [2026-06-14] - US-004: validacao operator do dashboard event-based (orquestrador)
+- Render real do dashboard (readSnapshot + composeDashboard) contra event log realista (shape do buildResultDetail). Recent panel renderizou 3 result events do .claude/cam-worker-events.jsonl (06-14 03:33 US-R1-001 blocked / 03:21 US-002 pass / 03:14 US-001 pass), timestamps reais, newest-first. Dir sem progress.txt (so prd.json). Evidencia em /tmp/cam31-us004-evidence.md.
+---
