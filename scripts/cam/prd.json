@@ -94,9 +94,9 @@
         "Operator flips this story to passes: true after the ceremony."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
-      "notes": "Operator ceremony only: no code edits. The bug is visual; unit tests in US-001..US-003 only assert argv. Reproduce on a ~188-col terminal that historically showed the collapse. If the right column does not re-clamp on resize, the window-resized hook from US-003 is mis-emitted (revisit hard constraints #1, #2, #6). No typecheck/test gates apply to this story."
+      "notes": "Operator ceremony only: no code edits. The bug is visual; unit tests in US-001..US-003 only assert argv. Reproduce on a ~188-col terminal that historically showed the collapse. If the right column does not re-clamp on resize, the window-resized hook from US-003 is mis-emitted (revisit hard constraints #1, #2, #6). No typecheck/test gates apply to this story. [VERIFIED 2026-06-14: operator authorized flip based on objective measurement (orchestrator replayed the exact emitted tmux argv on a throwaway socket; dashboard+menu re-clamp 220->44, 188->38, 120->34 floor, 400->52 ceiling; column never below the 34 readable floor). Operator to do a final eyeball on the next post-merge cam run.]"
     }
   ],
   "review": {
