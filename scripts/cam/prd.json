@@ -3,7 +3,10 @@
   "branchName": "cam/CAM-48-responsive-dashboard-pane",
   "description": "Make the dashboard/menu right column responsive with a legible floor so it does not collapse on narrow terminals.",
   "issueNumber": 48,
-  "relatedDocs": ["scripts/cam/patterns.md", "scripts/cam/CLAUDE.md"],
+  "relatedDocs": [
+    "scripts/cam/patterns.md",
+    "scripts/cam/CLAUDE.md"
+  ],
   "officialDocsConsulted": [
     {
       "lib": "tmux",
@@ -15,6 +18,22 @@
     }
   ],
   "userStories": [
+    {
+      "id": "US-R1-001",
+      "title": "Hook clamp: round-half-up + use CAM_TMUX_SOCKET",
+      "description": "Round-1 review fix. Make the window-resized hook shell clamp match clampDashboardWidth exactly (round, not truncate) and remove the hardcoded socket literal.",
+      "acceptanceCriteria": [
+        "[src/tmux/session.ts] The window-resized hook shell clamp rounds half-up to match clampDashboardWidth Math.round: change the truncating $(( w*20/100 )) to $(( (w*20+50)/100 )) so the live re-clamp matches the JS source of truth (window_width=188 -> 38, not 37).",
+        "[src/tmux/session.ts] The hook body interpolates the CAM_TMUX_SOCKET constant instead of the hardcoded literal cam, so the socket name has one source of truth.",
+        "Re-verify the emitted hook string empirically on a THROWAWAY tmux socket (never the live -L cam socket): window_width 188 -> pane width 38, 100 -> 34, 400 -> 52.",
+        "Typecheck passes (bun run typecheck).",
+        "Tests pass (bun test). Adjust/add a unit test asserting the hook body uses round-half-up arithmetic and references the socket constant."
+      ],
+      "priority": 0,
+      "passes": true,
+      "requires": null,
+      "notes": "Files: src/tmux/session.ts (hook string in ensureProjectSession), test/tmux-session.test.ts. Band edges (34/52) unaffected; only boundary rounding differs. Same hunk as the existing hook; surgical 1-2 line change."
+    },
     {
       "id": "US-001",
       "title": "Add clampDashboardWidth helper with unit tests",
@@ -79,5 +98,11 @@
       "requires": "operator",
       "notes": "Operator ceremony only: no code edits. The bug is visual; unit tests in US-001..US-003 only assert argv. Reproduce on a ~188-col terminal that historically showed the collapse. If the right column does not re-clamp on resize, the window-resized hook from US-003 is mis-emitted (revisit hard constraints #1, #2, #6). No typecheck/test gates apply to this story."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "211b5812d853a4a6cc90fff8af19e3b84e8d0409",
+    "lastVerdict": "FIXES_PENDING"
+  }
 }

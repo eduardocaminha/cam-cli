@@ -260,7 +260,7 @@ describe('ensureProjectSession — new session', () => {
 		expect(newSess?.args).toContain('CAM_SESSION=cam-orch-test-000000');
 	});
 
-	test('emits set-hook call with window-resized bound to resize-pane shell arithmetic (US-003)', () => {
+	test('emits set-hook call with window-resized bound to resize-pane shell arithmetic (US-003 + US-R1-001)', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		const result = ensureProjectSession('cam-orch-test-000000', spawn);
 
@@ -292,6 +292,10 @@ describe('ensureProjectSession — new session', () => {
 		// Shell arithmetic clamp boundaries must appear in the hook body.
 		expect(hookBody).toContain('34');
 		expect(hookBody).toContain('52');
+		// US-R1-001: hook shell clamp must use round-half-up (+50) not truncation.
+		expect(hookBody).toContain('(w*20+50)/100');
+		// US-R1-001: hook must reference the CAM_TMUX_SOCKET constant value, not a hardcoded literal.
+		expect(hookBody).toContain(`-L ${CAM_TMUX_SOCKET}`);
 	});
 
 	test('split-window calls include -P -F #{pane_id} for stable pane capture', () => {

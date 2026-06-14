@@ -272,9 +272,9 @@ export function ensureProjectSession(
 	// the session.
 	const hookShell = [
 		`w=#{window_width}`,
-		`t=$(( w*20/100 ))`,
+		`t=$(( (w*20+50)/100 ))`,
 		`t=$(( t<34?34:t>52?52:t ))`,
-		`tmux -L cam resize-pane -t ${dashboardPaneId} -x $t || true`,
+		`tmux -L ${CAM_TMUX_SOCKET} resize-pane -t ${dashboardPaneId} -x $t || true`,
 	].join('; ');
 	const hookCmd = `run-shell '${hookShell}'`;
 

@@ -1,7 +1,7 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Install per-session window-resized hook that re-clamps dashboard width"
+    "id": "US-R1-001",
+    "title": "Hook clamp: round-half-up + use CAM_TMUX_SOCKET"
   },
   "branchName": "cam/CAM-48-responsive-dashboard-pane",
   "timestamp": "2026-06-14T00:00:00Z",
@@ -9,10 +9,11 @@
   "modifiedFiles": [
     "src/tmux/session.ts",
     "test/tmux-session.test.ts",
-    "scripts/cam/prd.json"
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 adds a set-hook call at the end of ensureProjectSession (5th spawn, index 4). Hook uses run-shell with #{window_width} expanded by tmux to a literal int before sh -c receives it; shell $((w*20/100)) and $((t<34?34:t>52?52:t)) produce the clamped literal for resize-pane -x. Empirically verified on tmux 3.6a (probe socket cam48probe): w=100 -> 34, w=300 -> 52, w=220 -> 44. Only remaining story is US-004 which requires operator ceremony.",
+  "nextStoryContext": "US-R1-001 fixed the window-resized hook in ensureProjectSession (src/tmux/session.ts): (1) changed truncating w*20/100 to round-half-up (w*20+50)/100 so the live hook matches clampDashboardWidth Math.round, and (2) replaced hardcoded socket literal 'cam' with interpolated CAM_TMUX_SOCKET constant. Empirically verified on throwaway socket cam48fix: w=188->38, w=100->34, w=400->52. All non-operator stories now pass. Only US-004 (operator ceremony) remains.",
   "officialDocsValidated": [
     {
       "lib": "tmux",
@@ -20,7 +21,7 @@
       "url": "https://man.openbsd.org/tmux",
       "fetchedAt": "2026-06-14T00:00:00Z",
       "status": "verified_empirically",
-      "summary": "set-hook -t <session> window-resized 'run-shell ...' confirmed working on tmux 3.6a. resize-pane -x rejects #{...} format expressions (width invalid) - constraint #1 verified. run-shell expands #{window_width} to a numeric literal before passing to sh -c, enabling shell $((  )) arithmetic for the clamp. Probe session on socket cam48probe confirmed: w=100->pane 34, w=300->pane 52, w=220->pane 44."
+      "summary": "Round-half-up formula (w*20+50)/100 confirmed on tmux 3.6a probe socket cam48fix: w=188->38 (was 37 with truncation), w=100->34, w=400->52. Socket constant interpolation: CAM_TMUX_SOCKET='cam' embedded in hook string via TS template literal. All values match clampDashboardWidth(Math.round) exactly."
     }
   ]
 }
