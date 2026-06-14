@@ -44,7 +44,7 @@ Steps:
 
    b. **Reset the per-branch harness working state (CAM-27).** `prd.json` and `handoff.json` are per-branch artifacts. Left in the branch they leak into `main` on merge and make `/cam-plan` Step 1 report a FALSE 'in-progress' (it reads a stale `prd.json` in `main`). Remove them so `main` stays clean. `progress.txt` is legacy (retired in CAM-31): dropped if present.
    ```bash
-   git rm -q scripts/cam/prd.json scripts/cam/handoff.json scripts/cam/progress.txt 2>/dev/null || true
+   git rm -q --ignore-unmatch scripts/cam/prd.json scripts/cam/handoff.json scripts/cam/progress.txt
    ```
    `issues.local.json` is the persistent backlog, NOT per-branch state: do NOT remove it. `scripts/cam/patterns.md` is durable, versioned wisdom: do NOT remove it.
 
