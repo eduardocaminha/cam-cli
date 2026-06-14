@@ -43,7 +43,7 @@ flowchart TD
     INIT --> RUN["cam run<br/>sessao unica por projeto<br/>3 panes: orquestrador + dashboard + menu"]
 
     RUN -. "lançador de pane" .-> PLAN["cam plan<br/>abre pane: /cam-plan"]
-    RUN -. "lançador de pane" .-> NEXT["cam next<br/>supervisor in-process"]
+    RUN -. "supervisor in-process" .-> NEXT["cam next<br/>dirige o loop, sai no terminal"]
     RUN -. "lançador de pane" .-> ISSUE["cam issue 'texto'<br/>abre pane: /cam-issue create"]
 
     PLAN -. "volta pra sessao" .-> RUN
@@ -64,16 +64,19 @@ flowchart TD
     SHIP --> PRUNE["/cam-prune<br/>volta pra main"]
     PRUNE -. "proximo issue" .-> PLAN
 
-    RUN -. "orquestrador sai" .-> TEARDOWN["sessao destruida<br/>tmux kill-session"]
+    RUN -. "orq. sai com handoff" .-> RESPAWN["respawn orquestrador<br/>(rehidrata, ate o cap)"]
+    RUN -. "orq. sai sem handoff" .-> TEARDOWN["sessao destruida<br/>tmux kill-session"]
 ```
 
 Resumo da espinha dorsal: `init` (uma vez) prepara a máquina e instala templates.
 `run` abre a sessão única por projeto com 3 panes: pane 0.0 é o orquestrador, pane 0.1
-é o `cam dashboard` permanente (sempre visível), pane 0.2 é o menu interativo. `plan`,
-`next` e `issue` são lançadores de pane: abrem um pane novo na sessão e retornam 0
-imediatamente. Quando o orquestrador (pane 0.0) sai, a sessão inteira é destruída
-automaticamente. Quando o PRD fecha com review limpo, o loop emite `COMPLETE`, abre o
-PR via `/cam-ship` e `/cam-prune` limpa a branch.
+é o `cam dashboard` permanente (sempre visível), pane 0.2 é o menu interativo. `plan`
+e `issue` são lançadores de pane: abrem um pane novo na sessão e retornam 0
+imediatamente; `next` é diferente, roda o supervisor in-process (não abre pane) e sai
+no estado terminal. Quando o orquestrador (pane 0.0) sai, o wrapper respawna se houver
+um handoff de token-budget pendente, senão destrói a sessão. Quando o PRD fecha com
+review limpo, o supervisor chega ao terminal, o PR vai via `/cam-ship` e `/cam-prune`
+limpa a branch.
 
 ---
 
@@ -278,8 +281,9 @@ flowchart TD
     HINT --> EXIT0(["exit 0"])
 ```
 
-O mesmo padrao de pane launcher de `cam plan` e `cam next`. A diferença: o comando
-injetado no pane é `/cam-issue create <texto>`, nao um loop ou planner.
+O mesmo padrao de pane launcher de `cam plan`. A diferença: o comando injetado no
+pane é `/cam-issue create <texto>`, nao um planner. (`cam next` nao e um lançador de
+pane: roda o supervisor in-process.)
 
 ---
 

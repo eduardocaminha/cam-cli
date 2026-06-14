@@ -116,9 +116,10 @@ cam issue "add dark mode toggle to settings page"
 ```
 
 The orchestrator persists between sessions and accumulates project memory
-in `scripts/cam/journal.md`. When the orchestrator exits, the session is
-torn down automatically. See `.claude/agents/subagent-orchestrator.md`
-for its full system prompt.
+in `scripts/cam/journal.md`. When the orchestrator exits, the `cam run` wrapper
+respawns it from a token-budget handoff when one is pending, otherwise it tears
+down the session. See `.claude/agents/subagent-orchestrator.md` for its full
+system prompt.
 
 ---
 
