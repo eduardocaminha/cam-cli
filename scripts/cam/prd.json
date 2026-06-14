@@ -81,5 +81,11 @@
       "requires": "operator",
       "notes": "Real-run verification that the dashboard reads the event log and the freeform progress.txt is gone from the loop. Needs a real claude session + tmux. The dashboard is a runtime Ink/print surface, so the unit parser test does not prove the panel renders correctly: this is the runtime proof. Reference: CAM-28 (dashboard liveness) is the related prior work."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "00646e7f76293bee3652a84a6e87e6c4e3ba9a5e",
+    "lastVerdict": "CLEAN"
+  }
 }

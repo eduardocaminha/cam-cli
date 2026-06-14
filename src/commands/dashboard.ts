@@ -511,11 +511,11 @@ function readStoryTokens(
 }
 
 /**
- * Slice the last `RECENT_ENTRIES_COUNT` 'result' events out of the event log. Entries
- * are delimited by `---` lines (per the format documented in
- * `scripts/cam/CLAUDE.md § Progress Report Format`). We surface each
- * entry's first non-empty line as the panel's bullet text — usually a
- * `## YYYY-MM-DD - US-NNN` header — which keeps the panel width-stable.
+ * Read the worker event log (.claude/cam-worker-events.jsonl) under cwd and
+ * surface the last `RECENT_ENTRIES_COUNT` 'result' events as single-line bullets
+ * via parseRecentProgress (CAM-31). One JSON object per line; a missing file
+ * yields []. Each bullet is a fixed `MM-DD HH:MM US-XXX outcome` string, which
+ * keeps the panel width-stable.
  */
 export function readRecentProgress(cwd: string): string[] {
 	const path = join(cwd, EVENT_LOG_PATH);

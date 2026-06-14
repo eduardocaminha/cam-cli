@@ -53,7 +53,7 @@ Concrete sequence:
    jq '.userStories[] | select(.id=="US-007")' scripts/cam/prd.json
    ```
    Capture `acceptanceCriteria`, `notes`, and the **`repo` field** (if present — for cross-repo PRDs).
-3. **Cross-repo cwd resolution (if applicable)**: If the story's `repo` field points to a different repo, `cd` into that workspace before any further file reads or git commands. Switch back to the cam cwd at end-of-story to flip `passes: true`, append progress, and write `handoff.json`.
+3. **Cross-repo cwd resolution (if applicable)**: If the story's `repo` field points to a different repo, `cd` into that workspace before any further file reads or git commands. Switch back to the cam cwd at end-of-story to flip `passes: true` and write `handoff.json` (the per-story factual record is the harness-written event log; append to `scripts/cam/patterns.md` only if you discovered a reusable pattern).
 4. Read `handoff.json` for the previous story's context. Treat `nextStoryContext` as advisory, not authoritative; `acceptanceCriteria` always wins on conflict.
 5. Read `scripts/cam/patterns.md` in full (durable codebase wisdom: patterns, gotchas, invariants).
 6. For each path in the story's `notes`, `Read` it in full.

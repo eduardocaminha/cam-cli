@@ -23,3 +23,8 @@
 - src/vendor/_generated.ts: re-embedded after template edits.
 - Gates: typecheck ok, 763 pass, embed-vendor:check ok.
 ---
+
+## [2026-06-14] - Review round 1: FIXES_PENDING:2 -> corrigido -> CLEAN
+- subagent-reviewer pegou 2 WARNINGs em escopo (sweep deixou passar): (1) implementer.md:56 (+template) "append progress" leftover contradizendo o Step 5 -> reescrito pra patterns.md/handoff + re-embed; (2) dashboard.ts readRecentProgress docstring descrevia o formato `---` antigo -> reescrita pro fluxo jsonl. Suggestion (UTC no timestamp) fica como follow-up.
+- Sem em-dash novo, gates verdes, embed ok.
+---
