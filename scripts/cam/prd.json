@@ -1,0 +1,54 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-49-cam-ship-hygiene-ignore-unmatch",
+  "description": "Fix /cam-ship Step 4b: replace fragile atomic `git rm` (silenced by `2>/dev/null || true`) with `--ignore-unmatch` so prd.json/handoff.json never leak to main; add regression test on the embedded artifact.",
+  "issueNumber": 49,
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "git",
+      "url": "https://git-scm.com/docs/git-rm",
+      "version": "current",
+      "fetchedAt": "2026-06-14T00:00:00Z",
+      "summary": "`git rm` is atomic over its pathspec list: if any pathspec matches no tracked file, the whole removal aborts (touches nothing) and exits non-zero. The `--ignore-unmatch` flag downgrades that condition to exit 0 and proceeds removing the pathspecs that DO match. Combined with dropping the `2>/dev/null || true` mask, this restores loud failure on genuine errors while making the missing-`progress.txt` case (retired in CAM-31) benign.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Make /cam-ship Step 4b git rm robust to missing paths",
+      "description": "As a cam operator running /cam-ship, I need Step 4b's hygiene `git rm` to tolerate already-deleted paths (e.g. `progress.txt`, retired in CAM-31) so that prd.json/handoff.json are reliably removed from the ship commit and never leak onto main, while genuine git failures still surface loudly.",
+      "acceptanceCriteria": [
+        "templates/commands/cam-ship.md Step 4b uses `git rm -q --ignore-unmatch scripts/cam/prd.json scripts/cam/handoff.json scripts/cam/progress.txt` (progress.txt kept defensively for ancient branches).",
+        "templates/commands/cam-ship.md Step 4b no longer contains the `2>/dev/null || true` mask on the hygiene line, so real errors fail loud.",
+        ".claude/commands/cam-ship.md Step 4b has the identical fix (so this repo dogfoods its own ship).",
+        "src/vendor/_generated.ts is regenerated via `bun run embed-vendor` and reflects the new template (no hand edits to _generated.ts).",
+        "Vendor drift check passes (bun run embed-vendor:check).",
+        "Typecheck passes (bun run typecheck).",
+        "Tests pass (bun test)."
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: templates/commands/cam-ship.md (embed source, uses placeholders), .claude/commands/cam-ship.md (this repo's active dogfood copy, uses real `bun run typecheck`), src/vendor/_generated.ts (regenerated only — do NOT hand-edit; regen via `bun run embed-vendor`, which runs scripts/generate-embedded-vendor.ts). Root cause (from CAM-49): `git rm` is atomic — if any pathspec is missing it aborts the whole removal touching nothing; `progress.txt` was retired in CAM-31 so every ship since has silently aborted with `prd.json`/`handoff.json` left tracked. The mask `2>/dev/null || true` hides this — drop it together with the flag change so genuine errors fail loud again. Vendor-drift gate (`bun run embed-vendor:check`) is MANDATORY here because the story touches templates/. No `src/commands/ship.ts` exists; cam-ship is markdown executed by a claude session, so there is no TS unit-test path — the regression guard lives in US-002 against the embedded artifact."
+    },
+    {
+      "id": "US-002",
+      "title": "Regression test on the embedded cam-ship.md artifact",
+      "description": "As a maintainer, I need an automated regression guard against the actually-shipped cam-ship.md text (what `cam init` writes into user projects) so that silent reintroduction of the masked-atomic `git rm` pattern is caught by `bun test`, since the command is LLM-executed and has no TS code path to unit-test directly.",
+      "acceptanceCriteria": [
+        "A new test under `test/` imports the embedded template map from `src/vendor/_generated.ts` (the frozen `templatesContents` record keyed by relative path) and reads the `commands/cam-ship.md` entry.",
+        "The test asserts the entry CONTAINS the robust hygiene command `git rm -q --ignore-unmatch`.",
+        "The test asserts the entry does NOT contain the masked-atomic pattern `git rm -q scripts/cam/prd.json scripts/cam/handoff.json scripts/cam/progress.txt 2>/dev/null || true`.",
+        "The test would FAIL against the pre-fix embedded text (verifiable by mental diff against the masked-atomic line removed in US-001).",
+        "Typecheck passes (bun run typecheck).",
+        "Tests pass (bun test), with the new test included."
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "File: test/<descriptive-name>.test.ts (mirror source layout under test/; suggest test/vendor/cam-ship-hygiene.test.ts to mirror src/vendor/). Use `bun:test` (`import { test, expect } from \"bun:test\"`). Read src/vendor/_generated.ts to confirm the export shape — it exports `templatesContents: Readonly<Record<string, string>>` (a frozen map keyed by relative path like `commands/cam-ship.md`). The test guards the actually-shipped artifact (what `cam init` copies into user projects), which is the only automated protection given the LLM-executed nature of the command. Depends on US-001 having landed the fix in templates/commands/cam-ship.md AND regenerated src/vendor/_generated.ts."
+    }
+  ]
+}

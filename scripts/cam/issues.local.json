@@ -1,5 +1,5 @@
 {
-  "next_id": 49,
+  "next_id": 50,
   "issues": [
     {
       "id": "CAM-1",
@@ -402,6 +402,14 @@
       "createdAt": "2026-06-14T14:48:39.563Z",
       "priority": "P2",
       "closedAt": "2026-06-14T16:10:14.907Z"
+    },
+    {
+      "id": "CAM-49",
+      "title": "cam-ship Step 4b: git rm atomico aborta em silencio e vaza prd.json/handoff.json pro main",
+      "description": "O passo de hygiene do /cam-ship (Step 4b em .claude/commands/cam-ship.md) roda `git rm -q scripts/cam/prd.json scripts/cam/handoff.json scripts/cam/progress.txt 2>/dev/null || true`. `git rm` e atomico: se QUALQUER pathspec da lista nao existe, ele aborta a remocao inteira sem tocar em nenhum arquivo. `progress.txt` foi aposentado no CAM-31 e nao existe mais, entao desde o CAM-31 TODO ship aborta a remocao, e o `2>/dev/null` + `|| true` mascaram o erro. Efeito: prd.json e handoff.json (estado per-branch do harness) NAO sao dropados e vazam pro main no merge, derrotando o CAM-27. Depois o /cam-plan Step 1 le o prd.json stale no main e reporta um FALSO 'in-progress', cutucando o operador a cada plan. Pego no dogfood do CAM-48 via `git show --stat HEAD` (e amendado a mao), mas a falha e invisivel sem essa verificacao manual. FIX (preferir robusto a qualquer subconjunto presente): (a) tirar progress.txt do pathspec (esta aposentado); (b) `git rm --ignore-unmatch -q scripts/cam/prd.json scripts/cam/handoff.json scripts/cam/progress.txt`; (c) loop por arquivo. Opcao (b) e a mais limpa. Atualizar .claude/commands/cam-ship.md Step 4b; se a logica de ship estiver espelhada em src/, espelhar la e cobrir com teste. Relaciona: CAM-27 (a hygiene que isso derrota), CAM-31 (aposentou progress.txt). Detectado no dogfood do CAM-48 (PR #45). Prioridade P1: falha silenciosa, recorrente (todo ship desde CAM-31) e derrota um invariante ja shipado; existe workaround manual (orquestrador verifica + amenda) mas e invisivel sem ele.",
+      "state": "open",
+      "createdAt": "2026-06-14T19:20:00Z",
+      "priority": "P1"
     }
   ]
 }
