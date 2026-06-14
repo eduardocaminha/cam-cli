@@ -1,0 +1,48 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-24-clean-replan",
+  "description": "Make /cam-plan option 3 (abandon + start a new issue) a true clean re-plan. Today it only overwrites prd.json; the previous cycle's handoff.json survives, and since handoff.json is the state-primary outcome signal (CAM-32), a stale handoff naming the abandoned story would mislead the next loop. The fix adds a cleanup step to the option-3 path that removes handoff.json before generating the new PRD. (progress.txt was retired in CAM-31, so it is intentionally not mentioned; the menu's plan/re-plan label was already corrected inline.) No CLI flag: the cam plan CLI is a thin pane launcher; the file cleanup is a /cam-plan slash-command concern.",
+  "issueNumber": 24,
+  "relatedDocs": [
+    ".claude/commands/cam-plan.md"
+  ],
+  "officialDocsConsulted": [],
+  "docsConsultedRationale": "No external library touched: a /cam-plan slash-command instruction edit (+ template) and re-embed. No npm API exercised.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Clean the prior cycle state on a /cam-plan re-plan (option 3)",
+      "description": "As an operator re-planning (abandoning the current issue to start a new one), I want the previous cycle's handoff.json discarded so a stale handoff cannot mislead the new plan's loop.",
+      "acceptanceCriteria": [
+        ".claude/commands/cam-plan.md Step 1: when the operator explicitly chooses option 3 (abandon + start a new one), a cleanup step runs BEFORE proceeding to Step 2 that removes scripts/cam/handoff.json (rm -f, tolerant if absent), so the new plan starts from a clean cycle state.",
+        "The instruction makes explicit that prd.json will be overwritten by the new plan (Step 9) and that progress.txt is retired (CAM-31), so the only stale per-cycle artifact to clear is handoff.json.",
+        "The cleanup runs ONLY on the explicit option-3 choice, never on options 1 (continue) or 2 (ship); it does not touch issues.local.json (the persistent backlog) or patterns.md (durable).",
+        "templates/commands/cam-plan.md gets the same edit (kept in sync).",
+        "bun run embed-vendor regenerated and bun run embed-vendor:check passes.",
+        "No em-dash in the edited markdown (use colon, comma, parens, period).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/commands/cam-plan.md (Step 1, the option-3 path around the 'Abandon this issue and start a new one' option), templates/commands/cam-plan.md (sync), then `bun run embed-vendor`. handoff.json is written by the implementer during the loop (cam-next); a stale one from an abandoned issue would name the old lastCompletedStory and is state-primary (CAM-32), hence the harm. progress.txt is gone (CAM-31): do NOT reintroduce a reference to it. Do NOT add a CLI flag (cam plan is a thin pane launcher; the slash does the file ops). NO em-dash."
+    },
+    {
+      "id": "US-002",
+      "title": "Operator validation: re-plan clears a stale handoff.json",
+      "description": "As the operator, I want to confirm in a real re-plan that a pre-existing stale handoff.json is cleared before the new PRD is generated.",
+      "acceptanceCriteria": [
+        "With a stale scripts/cam/handoff.json present (e.g. from a prior loop naming an old story) and in-progress work detected, run /cam-plan <N> and choose option 3.",
+        "Confirm scripts/cam/handoff.json is removed by the cleanup step before the new PRD is generated, and the new plan proceeds from a clean cycle state (the new prd.json is written, no stale handoff remains).",
+        "Operator captures evidence (handoff.json present before, absent after the option-3 cleanup).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "operator",
+      "notes": "Real /cam-plan ceremony in a TUI session; the cleanup is an instruction followed by the planning agent, not testable code, so a real run is the proof. Verify handoff.json present before, absent after choosing option 3."
+    }
+  ]
+}
