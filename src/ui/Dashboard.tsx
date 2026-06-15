@@ -216,7 +216,7 @@ export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }
 						storyTokens={data.storyTokens ?? {}}
 					/>
 					<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
-					<Keybar />
+					<Keybar dividerWidth={dividerWidth} />
 				</>
 			) : (
 				<>
@@ -233,10 +233,11 @@ export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }
 	);
 }
 
-/** Full keybar footer: slash-command keys + d (focus orchestrator) + q (quit). */
-function Keybar(): ReactElement {
+/** Full keybar footer: a "Commands" section (heading + divider, matching Loop/
+ * Stories/Recent) wrapping the slash-command keys + d (focus orchestrator) + q. */
+function Keybar({ dividerWidth }: { dividerWidth: number }): ReactElement {
 	return (
-		<Box marginTop={1} flexDirection="column" paddingLeft={layout.headingIndent}>
+		<Section heading="Commands" dividerWidth={dividerWidth}>
 			{KEYBAR_COMMANDS.map((c) => (
 				<Box key={c.key} flexDirection="row">
 					<Text bold>{c.key}</Text>
@@ -256,7 +257,7 @@ function Keybar(): ReactElement {
 				<Text bold>q</Text>
 				<Text color={colors.muted}>{'  '}close pane</Text>
 			</Box>
-		</Box>
+		</Section>
 	);
 }
 

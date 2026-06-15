@@ -834,10 +834,29 @@ export async function runDashboardInk(options: RunDashboardInkOptions = {}): Pro
 	process.stdout.write(CURSOR.enterAltScreen);
 	process.stdout.write(CURSOR.hideCursor);
 
+	// On terminal resize, fully clear the alt screen before Ink repaints. Ink's
+	// in-place update tracks the previous frame's line count at the OLD width;
+	// when the cam-run window-resized hook reflows the column, that count is wrong
+	// and the old top (e.g. the "Loop" header) ghosts. Registering BEFORE render()
+	// so this runs ahead of Ink's own resize rerender gives it a blank canvas.
+	const onResize = (): void => {
+		try {
+			process.stdout.write(CURSOR.clear);
+		} catch {
+			// A failed clear only risks a transient ghost, never a crash.
+		}
+	};
+	process.stdout.on('resize', onResize);
+
 	let cleaned = false;
 	const cleanup = () => {
 		if (cleaned) return;
 		cleaned = true;
+		try {
+			process.stdout.removeListener('resize', onResize);
+		} catch {
+			// listener may already be gone; nothing to do.
+		}
 		try {
 			process.stdout.write(CURSOR.showCursor);
 		} catch {

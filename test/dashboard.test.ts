@@ -739,6 +739,8 @@ describe('DashboardApp keybar (US-003)', () => {
 		expect(frame).toContain('/cam-ship');
 		expect(frame).toContain('/cam-plan');
 		expect(frame).toContain('/cam-issue');
+		// The keybar is a "Commands" section now (heading + divider), matching Loop/Stories/Recent.
+		expect(frame).toContain('Commands');
 		// d and q navigation rows.
 		expect(frame).toContain('focus orchestrator');
 		expect(frame).toContain('close pane');
