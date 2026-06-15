@@ -76,7 +76,7 @@
         "bun test passes."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/ui/Dashboard.tsx, src/commands/dashboard.ts, index.ts (case 'dashboard' at ~:708). Port the runTmux injection pattern from src/ui/Menu.tsx + src/commands/menu.ts so the deletion in US-007 is a straight cut. d focuses the orchestrator pane explicitly via runTmux(['select-pane', '-t', orchPane]) (not select-pane -l); when orchPane is undefined (standalone cam dashboard), d stays inert. Use Ink 7 useInput((input, key) => ...) with key.return / key.escape only when needed here; the keybar itself is just <Text> rows. Honor the Ink-glyph-not-divider rule (patterns.md) for any status hints; do not signal anything by divider color. No em-dash in any rendered label or help text (patterns.md, project rule 2026-05-20)."
     },

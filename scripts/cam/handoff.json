@@ -1,27 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Collapse tmux layout to 2 panes (orchestrator + dashboard) and widen the dashboard clamp"
+    "id": "US-003",
+    "title": "Dashboard accepts orchPane, renders a command keybar, and dispatches n/r/s/p/i + d via injectable runTmux"
   },
   "branchName": "cam/CAM-50-navigable-dashboard",
-  "timestamp": "2026-06-14T01:00:00Z",
+  "timestamp": "2026-06-14T02:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/tmux/session.ts",
-    "src/commands/run.ts",
-    "test/tmux-session.test.ts",
-    "test/run.test.ts",
-    "test/issue.test.ts",
-    "test/plan.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "src/ui/Dashboard.tsx",
+    "src/commands/dashboard.ts",
+    "index.ts",
+    "test/dashboard.test.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 collapsed the session from 3 panes to 2 panes (orchestrator + dashboard). CreatedPaneIds.menuPaneId is gone. isSessionStale now checks commands.length !== 2. clampDashboardWidth uses 26% proportion with bounds 34-80; at 188 cols yields 49 cols (fits tokens row). The hook shell formula is (w*26+50)/100 with t<34?34:t>80?80:t. run.ts setupPanes no longer respawns or labels the menu pane. All 781 tests pass.",
+  "nextStoryContext": "US-003 added orchPane + runTmux props to DashboardApp (src/ui/Dashboard.tsx). KEYBAR_COMMANDS constant (n/r/s/p/i) lives in Dashboard.tsx, mirroring Menu.tsx's COMMANDS. useInput now handles n/r/s/p/i (send-keys to orchPane), d (select-pane to orchPane), q/Ctrl+C (exit). Standalone mode (orchPane undefined) makes dispatch keys inert no-ops. runDashboardInk in src/commands/dashboard.ts accepts orchPane and threads it through. index.ts parses an optional positional orchPane from argv[3]. 9 new tests added to test/dashboard.test.ts using stdin.write() from ink-testing-library to simulate keypresses and assert runTmux call args. All 790 tests pass.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "ink",
+      "version": "7.x",
+      "url": "https://raw.githubusercontent.com/vadimdemedes/ink/master/readme.md",
+      "fetchedAt": "2026-06-14T02:00:00Z",
+      "status": "ok",
+      "summary": "useInput(input, key) signature confirmed: key.ctrl, key.return, key.escape flags present. Implementation matches. ink-testing-library stdin.write emits data events that trigger useInput; confirmed via passing tests."
     }
   ]
 }
