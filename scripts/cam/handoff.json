@@ -1,28 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Supervisor reads the report file (replaces scrollback-poll completion-detection)"
+    "id": "US-005",
+    "title": "isSessionStale + orchestrator-alive + pane-count mutex predicate"
   },
   "branchName": "cam/CAM-55-single-hub-dispatch",
-  "timestamp": "2026-06-15T22:00:00Z",
+  "timestamp": "2026-06-15T23:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/commands/next.ts",
-    "test/supervisor/loop.test.ts",
+    "src/tmux/session.ts",
+    "test/tmux-session.test.ts",
     "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 is the next story to implement. It extends isSessionStale / pane-count mutex in src/tmux/session.ts. Check prd.json for the current state.",
+  "nextStoryContext": "US-006 or later story is next. Check prd.json for the current highest-priority passes=false story. All predicates (isSessionStale, orchestratorAlive, paneCountMutex) are exported from src/tmux/session.ts for thin-proxy use.",
   "officialDocsValidated": [
     {
-      "lib": "node:fs existsSync/unlinkSync",
-      "version": "Node.js 26.x",
-      "url": "https://nodejs.org/api/fs.html#fsexistssyncpath",
-      "fetchedAt": "2026-06-15T22:00:00Z",
+      "lib": "tmux pane-scoped user options (@cam_label / set-option -p)",
+      "version": "tmux 3.x",
+      "url": "https://man.openbsd.org/tmux.1#FORMATS",
+      "fetchedAt": "2026-06-15T23:00:00Z",
       "status": "ok",
-      "summary": "existsSync returns false for missing files (no throw). unlinkSync throws ENOENT if file absent. clearWorkerReport uses existsSync guard + try-catch: correct for best-effort deletion."
+      "summary": "pane-scoped @-prefixed user options validated in US-002 (patterns.md). #{@cam_label} in list-panes -F format strings reads the per-pane user option. set-option -p sets it. Web docs confirmed user options with @ prefix are supported; pane scope (-p) was already verified in US-002 dogfood."
     }
   ]
 }

@@ -121,33 +121,117 @@ export function hasSession(sessionName: string, spawnFn: SpawnFn): boolean {
 
 /**
  * Return true if an EXISTING session is stale / malformed and should be
- * recreated rather than attached to (CAM-47). A healthy cam session has exactly
- * 2 panes and none running the `cat` placeholder (every pane is respawned with
- * a real command: orchestrator, dashboard). So a session is stale when:
- *   - `tmux list-panes` fails or returns nothing (unknown state), OR
- *   - the pane count is not 2, OR
- *   - any pane is still running the `cat` placeholder (setup never completed).
+ * recreated rather than attached to (CAM-47). A healthy cam session has 2 or 3
+ * panes: the canonical 2-pane layout (orchestrator + dashboard) is always alive,
+ * and a 3rd pane is alive iff it is the titled worker-pane (identifiable by a
+ * non-empty `@cam_label` user option set via `tmux set-option -p`). Any other
+ * pane count, a `cat` placeholder pane, or a 3rd pane without `@cam_label`
+ * (stray shell / leftover process) marks the session as stale.
  *
- * The signal is deliberately CONSERVATIVE: a healthy, running orchestrator
- * session never exhibits these, so this never resets (and never kills) a live
- * loop. When in doubt (list-panes failure), prefer stale=true so `cam run`
- * recreates a clean session rather than attaching to an unknown one.
+ * The signal is deliberately CONSERVATIVE: when in doubt (list-panes failure),
+ * prefer stale=true so `cam run` recreates a clean session rather than attaching
+ * to an unknown one.
+ *
+ * Format: `#{pane_current_command}\t#{@cam_label}` - tab-separated so command
+ * and label are unambiguously parsed even when labels contain spaces.
  */
 export function isSessionStale(sessionName: string, spawnFn: SpawnFn): boolean {
 	const r = spawnFn(
 		'tmux',
-		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{pane_current_command}']),
+		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{pane_current_command}\t#{@cam_label}']),
 		{ stdio: 'pipe' },
 	);
 	if ((r.status ?? 1) !== 0) return true; // list-panes failed: conservative
 	const out = typeof r.stdout === 'string' ? r.stdout : (r.stdout?.toString() ?? '');
-	const commands = out
+	const panes = out
 		.split('\n')
 		.map((l) => l.trim())
-		.filter((l) => l.length > 0);
-	if (commands.length !== 2) return true; // not the canonical 2-pane layout
-	if (commands.some((c) => c === 'cat')) return true; // a placeholder never respawned
-	return false;
+		.filter((l) => l.length > 0)
+		.map((l) => {
+			const tabIdx = l.indexOf('\t');
+			const cmd = tabIdx === -1 ? l : l.slice(0, tabIdx);
+			const label = tabIdx === -1 ? '' : l.slice(tabIdx + 1);
+			return { cmd, label };
+		});
+	if (panes.length < 2) return true; // too few panes
+	if (panes.some((p) => p.cmd === 'cat')) return true; // a placeholder never respawned
+	if (panes.length === 2) return false; // canonical 2-pane layout: alive
+	if (panes.length === 3) {
+		// Alive only if the extra pane carries the @cam_label (titled worker-pane).
+		// A pane without the label is a stray shell / leftover process.
+		return !panes.some((p) => p.label.length > 0);
+	}
+	return true; // 4+ panes: stale
+}
+
+// ---------------------------------------------------------------------------
+// Orchestrator-alive predicate
+// ---------------------------------------------------------------------------
+
+/**
+ * Return true if the orchestrator pane (pane index 0) in the given session is
+ * currently running the `claude` process.
+ *
+ * Thin-proxies call this before injecting a `/cam-*` command via send-keys to
+ * confirm the orchestrator is running and listening, not sitting in a dead pane
+ * or a shell prompt.
+ *
+ * Returns false on any list-panes failure (conservative: treat unknown state
+ * as not-alive so proxies fall back to bootstrapping).
+ */
+export function orchestratorAlive(sessionName: string, spawnFn: SpawnFn): boolean {
+	const r = spawnFn(
+		'tmux',
+		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{pane_index}\t#{pane_current_command}']),
+		{ stdio: 'pipe' },
+	);
+	if ((r.status ?? 1) !== 0) return false;
+	const out = typeof r.stdout === 'string' ? r.stdout : (r.stdout?.toString() ?? '');
+	const orchLine = out
+		.split('\n')
+		.map((l) => l.trim())
+		.filter((l) => l.length > 0)
+		.find((l) => l.startsWith('0\t'));
+	if (!orchLine) return false;
+	const cmd = orchLine.slice(2); // everything after '0\t'
+	return cmd === 'claude';
+}
+
+// ---------------------------------------------------------------------------
+// Pane-count mutex predicate
+// ---------------------------------------------------------------------------
+
+/**
+ * States returned by `paneCountMutex`.
+ *
+ * - `'available'` - exactly 2 panes exist; a dispatch MAY spawn the 3rd (worker) pane.
+ * - `'busy'`      - 1, 3, or more panes exist; a dispatch MUST NOT spawn a new pane.
+ */
+export type PaneMutexState = 'available' | 'busy';
+
+/**
+ * Return the mutex state for the worker-pane slot.
+ *
+ * A dispatch is only permitted to spawn the 3rd (worker) pane when exactly 2
+ * panes currently exist (the canonical orchestrator + dashboard layout). Any
+ * other count means a worker is already running or the session is malformed:
+ * in both cases callers must not dispatch.
+ *
+ * Returns `'busy'` on list-panes failure (conservative).
+ */
+export function paneCountMutex(sessionName: string, spawnFn: SpawnFn): PaneMutexState {
+	const r = spawnFn(
+		'tmux',
+		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{pane_id}']),
+		{ stdio: 'pipe' },
+	);
+	if ((r.status ?? 1) !== 0) return 'busy'; // conservative: treat failure as busy
+	const out = typeof r.stdout === 'string' ? r.stdout : (r.stdout?.toString() ?? '');
+	const count = out
+		.split('\n')
+		.map((l) => l.trim())
+		.filter((l) => l.length > 0).length;
+	return count === 2 ? 'available' : 'busy';
 }
 
 // ---------------------------------------------------------------------------

@@ -23,6 +23,8 @@ import {
 	openPaneInSession,
 	isInsideProjectSession,
 	isSessionStale,
+	orchestratorAlive,
+	paneCountMutex,
 	clampDashboardWidth,
 	CAM_TMUX_SOCKET,
 	tmuxArgs,
@@ -33,6 +35,7 @@ import {
 	WORKER_PANE_MARKER,
 	type SpawnFn,
 	type Env,
+	type PaneMutexState,
 } from '../src/tmux/session.ts';
 
 // ---------------------------------------------------------------------------
@@ -551,8 +554,23 @@ describe('isSessionStale', () => {
 		expect(isSessionStale('s', staleSpawn('cat\ncam\n'))).toBe(true);
 	});
 
-	test('wrong pane count (3) -> true', () => {
+	test('3 panes, none labeled -> true (stray pane, not a titled worker-pane)', () => {
 		expect(isSessionStale('s', staleSpawn('claude\ncam\ncam\n'))).toBe(true);
+	});
+
+	test('3 panes with @cam_label on worker pane -> false (alive: titled worker-pane)', () => {
+		// tab-separated format: #{pane_current_command}\t#{@cam_label}
+		// 3rd pane carries @cam_label 'phase:implement' -> worker-pane -> alive
+		expect(isSessionStale('s', staleSpawn('claude\t\ncam\t\nclaude\tphase:implement\n'))).toBe(false);
+	});
+
+	test('3 panes but @cam_label missing on all panes -> true (stray pane)', () => {
+		// All panes have empty labels: extra pane is a stray shell
+		expect(isSessionStale('s', staleSpawn('claude\t\ncam\t\nbash\t\n'))).toBe(true);
+	});
+
+	test('4 panes -> true (too many, regardless of labels)', () => {
+		expect(isSessionStale('s', staleSpawn('claude\t\ncam\t\nclaude\tworker\nbash\t\n'))).toBe(true);
 	});
 
 	test('wrong pane count (1) -> true', () => {
@@ -565,6 +583,114 @@ describe('isSessionStale', () => {
 
 	test('list-panes non-zero exit -> true (conservative)', () => {
 		expect(isSessionStale('s', staleSpawn('', 1))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// orchestratorAlive
+// ---------------------------------------------------------------------------
+
+/** Fake spawn: list-panes returns panes as 'index\tcommand' lines. */
+function orchSpawn(listPanesStdout: string, status = 0): SpawnFn {
+	return ((cmd, args, opts) => {
+		const sub = args[0] === '-L' ? args[2] : args[0];
+		if (cmd === 'tmux' && sub === 'list-panes' && opts?.stdio === 'pipe') {
+			return {
+				pid: 1, output: [null, Buffer.from(listPanesStdout), Buffer.from('')],
+				stdout: Buffer.from(listPanesStdout), stderr: Buffer.from(''),
+				status, signal: null,
+			} as ReturnType<SpawnFn>;
+		}
+		return {
+			pid: 1, output: [null, Buffer.from(''), Buffer.from('')],
+			stdout: Buffer.from(''), stderr: Buffer.from(''), status: 0, signal: null,
+		} as ReturnType<SpawnFn>;
+	}) as SpawnFn;
+}
+
+describe('orchestratorAlive', () => {
+	test('pane 0 running claude -> true', () => {
+		expect(orchestratorAlive('s', orchSpawn('0\tclaude\n1\tcam\n'))).toBe(true);
+	});
+
+	test('pane 0 running bash (not claude) -> false', () => {
+		expect(orchestratorAlive('s', orchSpawn('0\tbash\n1\tcam\n'))).toBe(false);
+	});
+
+	test('pane 0 running cat placeholder -> false', () => {
+		expect(orchestratorAlive('s', orchSpawn('0\tcat\n1\tcam\n'))).toBe(false);
+	});
+
+	test('no pane with index 0 in output -> false', () => {
+		// Only pane 1 listed (corrupted state)
+		expect(orchestratorAlive('s', orchSpawn('1\tclaude\n'))).toBe(false);
+	});
+
+	test('list-panes fails (non-zero exit) -> false (conservative)', () => {
+		expect(orchestratorAlive('s', orchSpawn('', 1))).toBe(false);
+	});
+
+	test('empty list-panes output -> false', () => {
+		expect(orchestratorAlive('s', orchSpawn(''))).toBe(false);
+	});
+
+	test('3-pane session with orchestrator alive -> true', () => {
+		expect(orchestratorAlive('s', orchSpawn('0\tclaude\n1\tcam\n2\tclaude\n'))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// paneCountMutex
+// ---------------------------------------------------------------------------
+
+/** Fake spawn: list-panes returns pane-id lines. */
+function mutexSpawn(paneIds: string[], status = 0): SpawnFn {
+	const stdout = paneIds.join('\n') + (paneIds.length > 0 ? '\n' : '');
+	return ((cmd, args, opts) => {
+		const sub = args[0] === '-L' ? args[2] : args[0];
+		if (cmd === 'tmux' && sub === 'list-panes' && opts?.stdio === 'pipe') {
+			return {
+				pid: 1, output: [null, Buffer.from(stdout), Buffer.from('')],
+				stdout: Buffer.from(stdout), stderr: Buffer.from(''),
+				status, signal: null,
+			} as ReturnType<SpawnFn>;
+		}
+		return {
+			pid: 1, output: [null, Buffer.from(''), Buffer.from('')],
+			stdout: Buffer.from(''), stderr: Buffer.from(''), status: 0, signal: null,
+		} as ReturnType<SpawnFn>;
+	}) as SpawnFn;
+}
+
+describe('paneCountMutex', () => {
+	test('exactly 2 panes -> "available" (dispatch may spawn worker pane)', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn(['%1', '%2']));
+		expect(result).toBe('available');
+	});
+
+	test('3 panes -> "busy" (worker already running)', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn(['%1', '%2', '%3']));
+		expect(result).toBe('busy');
+	});
+
+	test('1 pane -> "busy" (session malformed)', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn(['%1']));
+		expect(result).toBe('busy');
+	});
+
+	test('0 panes (empty output) -> "busy" (conservative)', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn([]));
+		expect(result).toBe('busy');
+	});
+
+	test('list-panes fails (non-zero exit) -> "busy" (conservative)', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn(['%1', '%2'], 1));
+		expect(result).toBe('busy');
+	});
+
+	test('4 panes -> "busy"', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn(['%1', '%2', '%3', '%4']));
+		expect(result).toBe('busy');
 	});
 });
 

@@ -103,7 +103,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files likely touched: src/tmux/session.ts (isSessionStale lives at line 136). Patterns.md invariants to re-check: Bun runtime (runTmux helper uses Bun.$ or Bun.spawn); noUncheckedIndexedAccess on the parsed pane list (split() returns string[], each index is T | undefined); inject runTmux for unit tests, do not call real tmux; no em-dash in persisted .md. Identify the titled worker-pane by querying #{@cam_label} per pane (tmux display-message -p or show-options -pv @cam_label); treat absence of @cam_label as a stray/non-worker pane."
     },
