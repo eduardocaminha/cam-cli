@@ -1,30 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-FIX-002",
-    "title": "Wire the sidecar supervisor (fixes C2: runSupervisor production caller restored)"
+    "id": "US-FIX-004",
+    "title": "Fix isSessionStale 3-pane logic (fixes C3: stray pane is stale; labeled worker-pane is alive)"
   },
   "branchName": "cam/CAM-55-single-hub-dispatch",
-  "timestamp": "2026-06-15T16:00:00Z",
-  "createdFiles": [
-    "src/supervisor/host.ts",
-    "src/commands/sidecar.ts",
-    "test/supervisor/sidecar-loop.test.ts"
-  ],
+  "timestamp": "2026-06-15T18:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/commands/run.ts",
-    "src/commands/next.ts",
-    "index.ts",
-    "scripts/cam/patterns.md",
-    "test/run.test.ts"
+    "src/tmux/session.ts",
+    "test/tmux-session.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-FIX-002 is done. The sidecar is wired: cam run spawns it as a detached Bun.spawn process logging to .claude/cam-supervisor.log; cam next flips active:true; runSidecarLoop polls the flag and calls runSupervisor when active. All existing supervisor guards (CAM-36, CAM-44, MAX_ITERATIONS, supervisor lock, event log) are intact. Tests: 911 pass / 0 fail. Next: check prd.json for the next pending story.",
+  "nextStoryContext": "US-FIX-004 done. isSessionStale now identifies the 3rd pane by finding the pane whose label is NOT 'orchestrator' or 'dashboard', then checks if its label is in WORKER_LABELS ('implementer' or 'reviewer'). Stray/unlabeled 3rd panes correctly return stale=true. Tests rewritten to production-realistic fixtures (orchestrator + dashboard always labeled). 912 tests pass. Check prd.json for the next pending story.",
   "officialDocsValidated": [
     {
-      "lib": "Bun.spawn",
+      "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Bun.spawn API used as documented (cmd array, stdio, cwd). No external HTTP lib touched."
+      "summary": "Only tmux CLI commands touched (list-panes with @cam_label user option). No external JS library. Tmux @cam_label pane option is validated in patterns.md (US-002 bullet)."
     }
   ]
 }

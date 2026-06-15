@@ -91,7 +91,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (isSessionStale ~line 136-165), test/tmux-session.test.ts. The @cam_label value for the orchestrator and dashboard is set in src/commands/run.ts setupPanes; cross-reference those literal values in the test fixture. Patterns.md invariants to re-check: noUncheckedIndexedAccess on the split('\\t') results (label may be missing entirely); inject runTmux fake for unit tests, do not call real tmux; Bun runtime; the @cam_label pane-labeling pattern bullet in patterns.md (US-002) is the canonical reference."
     },
