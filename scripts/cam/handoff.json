@@ -1,38 +1,30 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "cam plan / next / issue thin-proxies + .claude/.cam-orch-ready bootstrap-wait"
+    "id": "US-007",
+    "title": "cam review and cam ship CLI thin-proxies"
   },
   "branchName": "cam/CAM-55-single-hub-dispatch",
-  "timestamp": "2026-06-15T20:00:00Z",
+  "timestamp": "2026-06-15T21:00:00Z",
   "createdFiles": [
-    "src/tmux/bootstrap-wait.ts",
-    "test/bootstrap-wait.test.ts"
+    "src/commands/review.ts",
+    "src/commands/ship.ts",
+    "test/review.test.ts",
+    "test/ship.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/plan.ts",
-    "src/commands/next.ts",
-    "src/commands/issue.ts",
-    "src/commands/run.ts",
-    "src/tmux/session.ts",
-    "test/plan.test.ts",
-    "test/next.test.ts",
-    "test/issue.test.ts",
-    "test/attach-hint.test.ts",
-    "test/run.test.ts",
-    "scripts/preview-screens.ts",
+    "index.ts",
     "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 complete. cam plan, cam next, cam issue are now thin-proxies routing to the live orchestrator via atomic send-keys. bootstrap-wait.ts provides waitForOrchestrator (two-condition: marker + liveness re-check). cam run writes .claude/.cam-orch-ready after session creation and cleans it on exit (SIGINT/SIGTERM + bash wrapper rm). getOrchPaneId exported from session.ts. All 850 tests pass, typecheck clean. Next story on this branch: check prd.json for highest-priority passes=false non-operator story.",
+  "nextStoryContext": "US-007 complete. cam review and cam ship are now thin-proxies routing to the live orchestrator via atomic send-keys, following the exact same pattern as cam plan (US-006). Both commands: detect live orchestrator via hasSession+orchestratorAlive; on hit, atomic send-keys with -l; on miss, bootstrap cam run --no-attach, waitForOrchestrator, then send-keys. parseReviewArgs and parseShipArgs exported from index.ts (no-args parsers: only --help/-h accepted). 28 new tests pass (review + ship), 878 total pass, typecheck clean. no-permission-mode-flag.test.ts still passes. Next story on this branch: check prd.json for highest-priority passes=false non-operator story.",
   "officialDocsValidated": [
     {
-      "lib": "Bun.sleepSync",
-      "url": "https://bun.sh/docs/api/utils",
-      "fetchedAt": "2026-06-15T20:00:00Z",
-      "status": "aligned",
-      "summary": "Bun.sleepSync(ms: number) confirmed as blocking synchronous sleep taking milliseconds. Usage in bootstrap-wait.ts default sleepFn matches exactly."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "url": "",
+      "fetchedAt": "2026-06-15T21:00:00Z",
+      "summary": "US-007 reuses the same tmux send-keys and Bun runtime patterns as US-006. No new external library was introduced."
     }
   ]
 }

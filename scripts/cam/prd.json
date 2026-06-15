@@ -137,7 +137,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files likely touched: src/commands/review.ts (new), src/commands/ship.ts (new), CLI router (src/index.ts or src/cli.ts) for dispatch wiring. Patterns.md invariants to re-check: never register a --permission-mode flag on these subcommands; send-keys atomic text+Enter; -l for literal payloads; noUncheckedIndexedAccess on argv parsing; Bun runtime everywhere; conventional commits."
     },
