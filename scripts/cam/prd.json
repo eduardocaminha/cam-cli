@@ -171,14 +171,14 @@
         "Pressing q closes the dashboard pane cleanly."
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "Operator-only ceremony: live tmux session, real keypresses, visual confirmation of the green pill and selection highlight. No autonomous gate. Files touched: none (verification only). Reference scripts/cam/patterns.md for the active-pane pill format (US-004) and the clamp constants (US-002) when sanity-checking widths. No em-dash in any operator note added back to the PRD (patterns.md, project rule 2026-05-20)."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING"
+    "lastVerdict": "CLEAN"
   }
 }
