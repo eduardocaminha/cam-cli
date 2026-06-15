@@ -1,27 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Story detail subview on Enter, back on Esc, with contextual keybar"
+    "id": "US-007",
+    "title": "Delete the now-dead menu (src/commands/menu.ts, src/ui/Menu.tsx, test/menu.test.ts) and update index.ts"
   },
   "branchName": "cam/CAM-50-navigable-dashboard",
-  "timestamp": "2026-06-14T05:00:00Z",
+  "timestamp": "2026-06-14T06:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/ui/Dashboard.tsx",
-    "test/dashboard.test.ts",
+    "index.ts",
     "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 added story detail subview and contextual keybar to Dashboard.tsx: (1) renamed selectionReducer to take SelectionState {selected: number, mode: 'list'|'detail'} instead of bare number; added 'enter' and 'esc' actions; (2) DashboardApp state is now sel: SelectionState = {selected:0, mode:'list'}; (3) useInput handles key.return (Enter opens detail), key.escape (Esc returns to list); nav/dispatch keys are guarded by `if (sel.mode === 'detail') return`; (4) render is conditional: list mode renders StoriesSection+RecentSection+Keybar; detail mode renders StoryDetailView+DetailKeybar; (5) StoryDetailView shows: icon+id+title row, acceptanceCriteria checklist with square checkbox (U+25A1), Notes: block when non-empty, Review: row when reviewLastVerdict is set; (6) DetailKeybar shows only 'Esc back to list' + 'q close pane'; (7) orderedForDetail sorted inside DashboardApp for detail view lookup (same sort as StoriesSection uses). Key gotcha: lone ESC byte triggers Ink's pending-escape 20ms buffer (createInputParser), so tests using stdin.write('\\x1b') need `await new Promise((r) => setTimeout(r, 50))` not the 0ms tick(). US-005 reducer tests updated from selectionReducer(0,'down',5) to selectionReducer({selected:0,mode:'list'},'down',5). 815 tests pass.",
+  "nextStoryContext": "US-007 deleted the three menu files (src/commands/menu.ts, src/ui/Menu.tsx, test/menu.test.ts) and cleaned up index.ts: removed the `import { runMenuInk }` line and the `case 'menu'` branch (~lines 22 and 741-743 in the pre-edit file). Updated 4 help blocks to reflect 2-pane layout: RUN_HELP (removed Pane 0.2 row, changed 'three panes' to 'two panes'), PLAN_HELP (changed '3-pane layout' to '2-pane layout: orchestrator + dashboard'), ISSUE_HELP (same), NEXT_HELP (changed '3-pane layout: orchestrator + dashboard + menu' to '2-pane layout: orchestrator + dashboard'). test/setup-menu.test.ts was left untouched (7 tests, targets buildSetupMenuScript in init flow, unrelated). 812 tests pass, 0 fail.",
   "officialDocsValidated": [
     {
-      "lib": "ink",
-      "version": "7.x",
-      "url": "https://raw.githubusercontent.com/vadimdemedes/ink/master/readme.md",
-      "fetchedAt": "2026-06-14T05:00:00Z",
-      "status": "ok",
-      "summary": "Ink docs confirm: key.escape (boolean, Escape key pressed) and key.return (boolean, Return/Enter key pressed) exist in the Key object returned to useInput callbacks. Implementation using `if (key.escape)` and `if (key.return)` matches the documented API."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }

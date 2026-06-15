@@ -147,7 +147,7 @@
         "bun test passes (no orphan import or broken reference)."
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (case 'menu' at ~:724, runMenuInk import), plus the three deletions. Depends on US-003 (dispatch already in the dashboard) and US-004 (run no longer spawns cam menu). Do not touch test/setup-menu.test.ts: it covers the unrelated buildSetupMenuScript helper in the cam init flow. Implementer pointers: update the four help blocks RUN_HELP, PLAN_HELP, ISSUE_HELP, and NEXT_HELP in index.ts; the menu case lives around index.ts:721-726 and the runMenuInk import around index.ts:22. No em-dash in the updated help/usage text (patterns.md, project rule 2026-05-20)."
     },
