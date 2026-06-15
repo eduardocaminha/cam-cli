@@ -537,7 +537,14 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				permissionMode,
 			});
 
+			// US-002: set the worker pane label for this phase before respawning.
+			// The pane-border-format #{@cam_label} at the session level picks this up,
+			// rendering the same green pill that the orchestrator and dashboard panes use.
+			// Best-effort: set-option -p is a no-op when the pane is not yet visible.
+			spawn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', workerPaneId, '@cam_label', 'implementer']);
+
 			// Respawn the worker pane with the implementer command.
+			// respawn-pane -k reuses the existing pane (no new split-window spawned).
 			spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
 
 			// US-013: worker-start. storyId is advisory here (the worker
@@ -802,6 +809,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 		// --- Review branch ---
 		if (action.kind === 'review') {
+			// US-002: label the worker pane for the review phase.
+			// Same pattern as the implement branch: set-option -p is best-effort.
+			spawn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', workerPaneId, '@cam_label', 'reviewer']);
+
 			// CAM-37: a reviewer worker can silently no-op (instant-exit /
 			// rate-limited: empty output, no `<review>` verdict) or its pane can be
 			// captured before it flushes, making reviewDispatch return 'error'.

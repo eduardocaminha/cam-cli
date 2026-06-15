@@ -1167,7 +1167,7 @@ describe('runSupervisor', () => {
 		expect(DEFAULT_POLL_INTERVAL_MS).toBe(5_000);
 	});
 
-	test('spawn is called once per implement iteration', async () => {
+	test('spawn is called twice per implement iteration: set-option then respawn-pane (US-002)', async () => {
 		const prd1 = makePrd({
 			stories: [{ id: 'US-001', priority: 1, passes: false }],
 		});
@@ -1195,12 +1195,20 @@ describe('runSupervisor', () => {
 
 		await runSupervisor(opts);
 
-		// One spawn call for the single implement iteration.
-		expect(spawnCalls.length).toBe(1);
-		// The spawn call should include respawn-pane and the worker pane id.
-		const firstCall = spawnCalls[0] ?? [];
-		expect(firstCall).toContain('respawn-pane');
-		expect(firstCall).toContain(WORKER_PANE_ID);
+		// US-002: two spawn calls per implement iteration:
+		//   1. set-option -p -t <paneId> @cam_label implementer
+		//   2. respawn-pane -k -t <paneId> <shellCmd>
+		expect(spawnCalls.length).toBe(2);
+		// First call sets the @cam_label.
+		const labelCall = spawnCalls[0] ?? [];
+		expect(labelCall).toContain('set-option');
+		expect(labelCall).toContain('@cam_label');
+		expect(labelCall).toContain('implementer');
+		expect(labelCall).toContain(WORKER_PANE_ID);
+		// Second call does the respawn.
+		const respawnCall = spawnCalls[1] ?? [];
+		expect(respawnCall).toContain('respawn-pane');
+		expect(respawnCall).toContain(WORKER_PANE_ID);
 	});
 });
 
@@ -1701,5 +1709,200 @@ describe('runSupervisor onProgress callback (US-001)', () => {
 		for (const p of progressCalls) {
 			expect(p.lastActivity).toBe('2026-06-09T12:34:56Z');
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-002: @cam_label on worker pane (uniform titled worker-pane)
+// ---------------------------------------------------------------------------
+
+describe('runSupervisor @cam_label pane labeling (US-002)', () => {
+	// Helper to build the pass scenario (1 story -> implement -> review -> complete).
+	function makeOneStoryPrds() {
+		const prdFalse = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdTrue = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		return { prdFalse, prdTrue };
+	}
+
+	test('implement dispatch: set-option @cam_label implementer is called before respawn-pane (AC1)', async () => {
+		const { prdFalse, prdTrue } = makeOneStoryPrds();
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 2 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			spawn: (_cmd, args) => {
+				spawnCalls.push([...args]);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		await runSupervisor(opts);
+
+		// Find the set-option call that sets @cam_label to 'implementer'.
+		const labelCall = spawnCalls.find(
+			(a) => a.includes('set-option') && a.includes('@cam_label') && a.includes('implementer'),
+		);
+		expect(labelCall).toBeDefined();
+		expect(labelCall).toContain('-p'); // pane-scoped option
+		expect(labelCall).toContain('-t');
+		expect(labelCall).toContain(WORKER_PANE_ID);
+
+		// The label call must precede the respawn-pane call in the same iteration.
+		const labelIdx = spawnCalls.findIndex(
+			(a) => a.includes('set-option') && a.includes('@cam_label') && a.includes('implementer'),
+		);
+		const respawnIdx = spawnCalls.findIndex((a) => a.includes('respawn-pane'));
+		expect(labelIdx).toBeGreaterThanOrEqual(0);
+		expect(respawnIdx).toBeGreaterThanOrEqual(0);
+		expect(labelIdx).toBeLessThan(respawnIdx);
+	});
+
+	test('review dispatch: set-option @cam_label reviewer is called before review respawn-pane (AC1)', async () => {
+		// All stories done; decideNextAction -> review. We need to verify a
+		// set-option @cam_label reviewer call goes out before reviewDispatch runs.
+		const prd_noReview = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 0, lastVerdict: null },
+		});
+		const prd_clean = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		const prds = [prd_noReview, prd_noReview, prd_clean];
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+		let reviewDispatchCalled = false;
+		let reviewerLabelCallIdx = -1;
+		let reviewDispatchCallCount = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => prds[prdCall++] ?? prd_clean,
+			spawn: (_cmd, args) => {
+				const idx = spawnCalls.push([...args]) - 1;
+				// Track when the reviewer label is set.
+				if (args.includes('set-option') && args.includes('@cam_label') && args.includes('reviewer')) {
+					reviewerLabelCallIdx = idx;
+				}
+				return { stdout: '', exitCode: 0 };
+			},
+			reviewDispatch: (_uuid) => {
+				reviewDispatchCalled = true;
+				reviewDispatchCallCount += 1;
+				// Assert label was set before dispatch runs.
+				expect(reviewerLabelCallIdx).toBeGreaterThanOrEqual(0);
+				return { status: 'ok', detail: 'CLEAN' };
+			},
+		});
+
+		await runSupervisor(opts);
+
+		expect(reviewDispatchCalled).toBe(true);
+		// @cam_label reviewer was set.
+		const labelCall = spawnCalls.find(
+			(a) => a.includes('set-option') && a.includes('@cam_label') && a.includes('reviewer'),
+		);
+		expect(labelCall).toBeDefined();
+		expect(labelCall).toContain('-p');
+		expect(labelCall).toContain(WORKER_PANE_ID);
+	});
+
+	test('worker respawn-pane does not include kill-session wrapper (AC3)', async () => {
+		// The orchestrator wraps claude in a kill-session shell; the worker must NOT.
+		// AC3: /exit closes only the worker-pane (no session teardown from worker).
+		const { prdFalse, prdTrue } = makeOneStoryPrds();
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 2 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			spawn: (_cmd, args) => {
+				spawnCalls.push([...args]);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		await runSupervisor(opts);
+
+		// The respawn-pane call for the worker must not contain kill-session.
+		const respawnCall = spawnCalls.find((a) => a.includes('respawn-pane'));
+		expect(respawnCall).toBeDefined();
+		// None of the spawn args should contain kill-session.
+		const hasKillSession = respawnCall?.some((a) => a.includes('kill-session'));
+		expect(hasKillSession).toBe(false);
+	});
+
+	test('worker respawn-pane does not contain -p (AC4: claude -p forbidden)', async () => {
+		// AC4: claude -p must not appear in any worker argv (CAM-42 rule).
+		const { prdFalse, prdTrue } = makeOneStoryPrds();
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 2 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			spawn: (_cmd, args) => {
+				spawnCalls.push([...args]);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		await runSupervisor(opts);
+
+		// The shell command string passed to respawn-pane must not contain ' -p '.
+		const respawnCall = spawnCalls.find((a) => a.includes('respawn-pane'));
+		expect(respawnCall).toBeDefined();
+		const shellCmdArg = respawnCall?.find((a) => a.includes('claude'));
+		expect(shellCmdArg).toBeDefined();
+		// '-p' as a standalone flag must be absent.
+		expect(shellCmdArg).not.toMatch(/\s-p(\s|$)/);
+		expect(shellCmdArg).not.toContain('claude -p');
+	});
+
+	test('@cam_label set-option targets the correct worker pane id', async () => {
+		const customPaneId = '%99';
+		const { prdFalse, prdTrue } = makeOneStoryPrds();
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			workerPaneId: customPaneId,
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 2 ? prdFalse : prdTrue;
+			},
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			spawn: (_cmd, args) => {
+				spawnCalls.push([...args]);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		await runSupervisor(opts);
+
+		const labelCall = spawnCalls.find(
+			(a) => a.includes('set-option') && a.includes('@cam_label'),
+		);
+		expect(labelCall).toBeDefined();
+		// Must target the custom pane id.
+		expect(labelCall).toContain(customPaneId);
 	});
 });
