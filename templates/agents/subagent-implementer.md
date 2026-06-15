@@ -78,6 +78,7 @@ Stories tagged `requires: "operator"` in prd.json need a ceremony only the opera
 6. **Step 5.5**: validate the code you just wrote against current docs of the primary external library the story touched (see worked example below). Capture the `officialDocsValidated[]` entry.
 7. Write `scripts/cam/handoff.json` per the schema (`handoff.schema.json`). Include the Step 5.5 entry. Commit handoff.json.
 8. `git push origin $(git branch --show-current)`.
+9. **Exit report (US-003)**: immediately before printing the sentinel, write `scripts/cam/worker-report.json` and push a one-line summary to the orchestrator pane. See "Exit report protocol" below.
 
 ## Step 5.5 worked example
 
@@ -97,6 +98,54 @@ For a story that touches an external library (e.g. `js-yaml`):
 
 For pure docs / refactor / harness-only stories where no external lib is exercised, record `{ "lib": "none", "status": "no_external_lib_touched" }`. For network failures, record `status: "fetch_failed"` and move on.
 
+## Exit report protocol (US-003)
+
+Before printing the sentinel, always:
+
+**Step A: write the structured report file.**
+
+Use the `Write` tool to create `scripts/cam/worker-report.json` with this shape:
+
+```json
+{
+  "outcome": "DONE",
+  "story": "US-003",
+  "gates": {
+    "typecheck": "ok",
+    "tests": "42 pass / 0 fail"
+  },
+  "notes": "none"
+}
+```
+
+- `outcome`: the CAM_IMPLEMENTER_STATUS token you are about to emit (e.g. `DONE`, `BLOCKED_QUALITY`, `PRD_COMPLETE`).
+- `story`: the story ID implemented (e.g. `US-003`). Use `"none"` for `PRD_COMPLETE`.
+- `gates.typecheck`: `"ok"` or `"fail: <detail>"`.
+- `gates.tests`: `"<N> pass / <M> fail"` or `"n/a"` when no tests were run.
+- `notes`: one-line human note, or `"none"`.
+
+Do NOT commit this file; it is ephemeral per-invocation state read by the supervisor.
+
+**Step B: push a one-line summary to the orchestrator pane.**
+
+Run this Bash command (atomic, one call, NO `-l`):
+
+```bash
+tmux -L cam send-keys -t %0 '[cam] <story> <outcome>: typecheck <tc>, <tests>' Enter
+```
+
+Invariants (memory: sendkeys-literal-enter-gotcha):
+- Do NOT use `-l`. It makes EVERY argument literal, so "Enter" is typed as the text "Enter" and the summary never submits (empirically: `send-keys -l X Enter` lands the string "XEnter" in the pane, never a carriage return).
+- The summary is a SINGLE quoted argv element, so tmux already sends its characters literally: `{`, `}`, `"`, `:`, spaces all land verbatim without `-l`.
+- `Enter` is a SEPARATE argument after the summary, in the SAME `send-keys` call (atomic), so it stays a recognised key and actually submits.
+
+Example for a DONE story:
+```bash
+tmux -L cam send-keys -t %0 '[cam] US-003 DONE: typecheck ok, 42 pass / 0 fail' Enter
+```
+
+If the tmux call fails (e.g. no session), log the error and continue to the sentinel. The report file is the primary push signal; the send-keys is a best-effort human notification.
+
 ## Constraints
 
 - You **must** use the allowlisted tools only.
@@ -106,7 +155,13 @@ For pure docs / refactor / harness-only stories where no external lib is exercis
 
 ## Session model
 
-You run as an interactive TUI `claude` session (not `claude -p`). The supervisor detects your completion by polling the full pane scrollback (`capture-pane -p -S -`) for the sentinel line. You do NOT exit on your own after printing the sentinel; the supervisor reads the pane and then kills the session via `respawn-pane -k`. This means the sentinel MUST be the absolute last line of your final message: if you print anything after it, the supervisor may not detect completion correctly. For the same reason, NEVER write a literal `CAM_IMPLEMENTER_STATUS=<value>` string anywhere in your prose, plans, or examples before the final line (not even in a code span): the supervisor polls the whole scrollback and would read it as your completion signal while you are still working.
+You run as an interactive TUI `claude` session (not `claude -p`). The supervisor detects your completion by polling the full pane scrollback (`capture-pane -p -S -`) for the sentinel line AND by detecting the presence of `scripts/cam/worker-report.json` (push signal, US-003). You do NOT exit on your own after printing the sentinel; the supervisor reads the pane and then kills the session via `respawn-pane -k`. This means the sentinel MUST be the absolute last line of your final message: if you print anything after it, the supervisor may not detect completion correctly. For the same reason, NEVER write a literal `CAM_IMPLEMENTER_STATUS=<value>` string anywhere in your prose, plans, or examples before the final line (not even in a code span): the supervisor polls the whole scrollback and would read it as your completion signal while you are still working.
+
+The correct exit sequence is:
+1. Run steps 1-8 (implement, gates, commit, push).
+2. Write `scripts/cam/worker-report.json` (Step A of exit report protocol).
+3. Run `tmux -L cam send-keys -t %0 '...' Enter` (Step B, push summary to orchestrator; NO `-l`).
+4. Print the sentinel as the ABSOLUTE LAST LINE of your output.
 
 ## Output protocol
 
@@ -123,7 +178,7 @@ When you finish, print **exactly one** of the following status lines as the **ve
 
 Above that status line, write a concise natural-language summary: story id, files changed, quality-gate result, any notes. Keep it under 20 lines.
 
-**Output format** (sentinel must be the absolute last line, nothing after it):
+**Output format** (report file write + tmux push happen BEFORE printing; sentinel must be the absolute last line, nothing after it):
 ```
 Implemented US-XXX ([one-line story title]).
 Files changed: path/a, path/b (+N lines), path/c.
