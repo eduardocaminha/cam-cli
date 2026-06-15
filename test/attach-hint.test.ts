@@ -75,6 +75,11 @@ function makeFakeTmuxSpawn(orchAlive = true): TmuxSpawnFn {
 			return { ...base, stdout: Buffer.from('') };
 		}
 
+		if (subcommand === 'capture-pane') {
+			// Return idle pane content so the idle-check (US-008) passes immediately.
+			return { ...base, stdout: Buffer.from('> ') };
+		}
+
 		return base;
 	}) as TmuxSpawnFn;
 }

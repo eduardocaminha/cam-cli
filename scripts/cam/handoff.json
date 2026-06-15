@@ -1,30 +1,39 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "cam review and cam ship CLI thin-proxies"
+    "id": "US-008",
+    "title": "Idle-guarantee before pushing into the orchestrator pane"
   },
   "branchName": "cam/CAM-55-single-hub-dispatch",
-  "timestamp": "2026-06-15T21:00:00Z",
+  "timestamp": "2026-06-15T22:00:00Z",
   "createdFiles": [
-    "src/commands/review.ts",
-    "src/commands/ship.ts",
-    "test/review.test.ts",
-    "test/ship.test.ts"
+    "src/tmux/dispatch.ts",
+    "test/dispatch.test.ts"
   ],
   "modifiedFiles": [
-    "index.ts",
+    "src/commands/issue.ts",
+    "src/commands/next.ts",
+    "src/commands/plan.ts",
+    "src/commands/review.ts",
+    "src/commands/ship.ts",
+    "test/attach-hint.test.ts",
+    "test/issue.test.ts",
+    "test/next.test.ts",
+    "test/plan.test.ts",
+    "test/review.test.ts",
+    "test/ship.test.ts",
     "scripts/cam/prd.json",
+    "scripts/cam/patterns.md",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 complete. cam review and cam ship are now thin-proxies routing to the live orchestrator via atomic send-keys, following the exact same pattern as cam plan (US-006). Both commands: detect live orchestrator via hasSession+orchestratorAlive; on hit, atomic send-keys with -l; on miss, bootstrap cam run --no-attach, waitForOrchestrator, then send-keys. parseReviewArgs and parseShipArgs exported from index.ts (no-args parsers: only --help/-h accepted). 28 new tests pass (review + ship), 878 total pass, typecheck clean. no-permission-mode-flag.test.ts still passes. Next story on this branch: check prd.json for highest-priority passes=false non-operator story.",
+  "nextStoryContext": "US-008 complete. src/tmux/dispatch.ts introduces sendKeysWhenIdle (idle-check via capture-pane polling before send-keys) and isOrchPaneIdle (exported for testing). All thin-proxy commands (plan, next, issue, review, ship) now use sendKeysWhenIdle instead of bare tmuxSpawnFn send-keys. Key invariants: idle detection checks last 5 lines for spinner glyphs (braille set) or active tool-call glyph (◆), then confirms a prompt line ending with > or ❯; timeout fallback logs to stderr and still sends. All test fake spawn fns updated to handle capture-pane subcommand (returning '> ') so idle check passes immediately. 893 tests pass, 0 fail. Check prd.json for next highest-priority passes=false non-operator story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
       "url": "",
-      "fetchedAt": "2026-06-15T21:00:00Z",
-      "summary": "US-007 reuses the same tmux send-keys and Bun runtime patterns as US-006. No new external library was introduced."
+      "fetchedAt": "2026-06-15T22:00:00Z",
+      "summary": "US-008 is a pure internal feature (capture-pane polling + idle-check logic). No new external JS library was introduced. tmux capture-pane is a well-known system command; the -p -t <paneId> flags are stable across all tmux 3.x versions."
     }
   ]
 }

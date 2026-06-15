@@ -153,7 +153,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files likely touched: the send-keys helper introduced/used by US-003 and US-006 (probably src/tmux/dispatch.ts or src/tmux/send-keys.ts). Patterns.md invariants to re-check: send-keys atomic text+Enter; capture-pane reads are best-effort and have lag (memory tmux-drive-orchestrator-atomic-enter); noUncheckedIndexedAccess on the captured-pane split lines; Bun runtime; inject the capture-pane reader for tests instead of calling real tmux."
     },

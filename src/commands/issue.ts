@@ -31,11 +31,11 @@ import {
 	orchestratorAlive,
 	getOrchPaneId,
 	projectSessionName,
-	tmuxArgs,
 	type Env,
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
 import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
+import { sendKeysWhenIdle, type CapturePaneFn } from '../tmux/dispatch.ts';
 
 // --- Types -----------------------------------------------------------------
 
@@ -65,12 +65,22 @@ export interface IssueOptions {
 	 */
 	statFn?: (path: string) => boolean;
 	/**
-	 * Sleep function for the ready-poll. Defaults to `Bun.sleepSync`.
+	 * Sleep function for the ready-poll and idle-poll. Defaults to `Bun.sleepSync`.
 	 * Tests inject a no-op to avoid real waits.
 	 */
 	sleepFn?: (ms: number) => void;
 	/** Total poll budget for waitForOrchestrator (ms). Default 60 000. */
 	waitTimeoutMs?: number;
+	/**
+	 * Override the capture-pane reader used by the idle-check before send-keys.
+	 * Tests inject a fake that returns controlled pane content strings.
+	 */
+	capturePaneFn?: CapturePaneFn;
+	/**
+	 * Maximum ms to wait for the orchestrator pane to go idle before sending
+	 * anyway (fallback: log + still send). Default: 5 000.
+	 */
+	idleTimeoutMs?: number;
 }
 
 // --- Internal helpers -------------------------------------------------------
@@ -157,14 +167,18 @@ export async function runIssue(options: IssueOptions): Promise<number> {
 		return 1;
 	}
 
-	// Atomic text + Enter in one send-keys call; -l for literal payload so
-	// free text with special characters is not interpreted as key sequences
-	// (patterns.md: send-keys atomic text+Enter, -l for literal).
-	tmuxSpawnFn(
-		'tmux',
-		tmuxArgs(['send-keys', '-t', orchPaneId, '-l', request, 'Enter']),
-		{ stdio: 'ignore' },
-	);
+	// Wait for the orchestrator pane to be idle, then issue atomic send-keys.
+	// sendKeysWhenIdle polls capture-pane until the prompt is stable (no
+	// spinner / tool-call glyph), then sends text + Enter in one call with -l
+	// (patterns.md: send-keys atomic text+Enter, -l for literal; US-008).
+	sendKeysWhenIdle({
+		paneId: orchPaneId,
+		text: request,
+		tmuxSpawnFn,
+		capturePaneFn: options.capturePaneFn,
+		sleepFn: options.sleepFn,
+		idleTimeoutMs: options.idleTimeoutMs,
+	});
 
 	emitOk(`Sent "/cam-issue create" to orchestrator pane ${orchPaneId}`);
 	emitAttachHint(sessionName, env);

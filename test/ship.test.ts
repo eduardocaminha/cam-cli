@@ -74,6 +74,11 @@ function makeFakeTmuxSpawn(opts: {
 			return { ...base, stdout: Buffer.from('') };
 		}
 
+		if (subcommand === 'capture-pane') {
+			// Return idle pane content so the idle-check (US-008) passes immediately.
+			return { ...base, stdout: Buffer.from('> ') };
+		}
+
 		if (subcommand === 'send-keys') {
 			return base;
 		}
@@ -217,6 +222,10 @@ describe('runShip (thin-proxy, miss path)', () => {
 					if (fmt === '#{pane_index}\t#{pane_id}') {
 						return { ...base, stdout: Buffer.from('0\t%0\n') };
 					}
+				}
+				if (subcommand === 'capture-pane') {
+					// Return idle pane content so the idle-check (US-008) passes immediately.
+					return { ...base, stdout: Buffer.from('> ') };
 				}
 				return base;
 			},
