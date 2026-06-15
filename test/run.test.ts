@@ -623,7 +623,9 @@ describe('buildOrchestratorBootPrompt (CAM-23 rehydration directive)', () => {
 		// — NO Write/Edit. Telling it to "use the Write tool" would silently fail and
 		// the marker would never appear, deadlocking the thin-proxy bootstrap-wait.
 		const prompt = buildOrchestratorBootPrompt();
-		expect(prompt).not.toContain('Write tool');
+		// Must not INSTRUCT using the Write tool (the bug). Clarifying that the
+		// agent does NOT have Write is fine, so match the buggy directive phrasing.
+		expect(prompt).not.toContain('use the Write tool');
 		expect(prompt).toContain('Bash');
 	});
 });
