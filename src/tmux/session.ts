@@ -198,6 +198,35 @@ export function orchestratorAlive(sessionName: string, spawnFn: SpawnFn): boolea
 }
 
 // ---------------------------------------------------------------------------
+// Orchestrator pane-id lookup
+// ---------------------------------------------------------------------------
+
+/**
+ * Return the tmux pane ID (e.g. `%3`) for the orchestrator pane (pane index 0)
+ * in the given session.
+ *
+ * Used by thin-proxy commands to target `send-keys` at the orchestrator pane.
+ * Returns null on list-panes failure or if pane index 0 is not found.
+ */
+export function getOrchPaneId(sessionName: string, spawnFn: SpawnFn): string | null {
+	const r = spawnFn(
+		'tmux',
+		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{pane_index}\t#{pane_id}']),
+		{ stdio: 'pipe' },
+	);
+	if ((r.status ?? 1) !== 0) return null;
+	const out = typeof r.stdout === 'string' ? r.stdout : (r.stdout?.toString() ?? '');
+	const line = out
+		.split('\n')
+		.find((l) => l.trim().startsWith('0\t'));
+	if (!line) return null;
+	const tabIdx = line.indexOf('\t');
+	if (tabIdx === -1) return null;
+	const paneId = line.slice(tabIdx + 1).trim();
+	return paneId.length > 0 ? paneId : null;
+}
+
+// ---------------------------------------------------------------------------
 // Pane-count mutex predicate
 // ---------------------------------------------------------------------------
 

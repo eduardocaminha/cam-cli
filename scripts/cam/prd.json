@@ -120,7 +120,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files likely touched: src/commands/plan.ts, src/commands/next.ts, src/commands/issue.ts, src/commands/run.ts (marker write/clear), plus a new bootstrap-wait helper (e.g. src/tmux/bootstrap-wait.ts). Mirror the existing setup.ts sentinel-poll for the marker polling. Patterns.md invariants to re-check: send-keys atomic text+Enter; -l for literal payloads; Bun.file for the marker; never register a --permission-mode flag on these subcommands (CAM-42 + test/no-permission-mode-flag.test.ts); noUncheckedIndexedAccess; no claude -p in any spawned worker argv; conventional commits. The .claude/.cam-orch-ready marker cleanup must be wired into an exit/finally handler in src/commands/run.ts that also fires on SIGINT/SIGTERM (a crash otherwise leaves a stale marker); the thin-proxy bootstrap-wait must additionally re-validate liveness via the US-005 orchestrator-alive predicate before trusting the marker."
     },

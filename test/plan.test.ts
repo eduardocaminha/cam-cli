@@ -1,34 +1,27 @@
 // test/plan.test.ts
 //
-// Unit tests for `cam plan` (US-006: thin pane launcher).
+// Unit tests for `cam plan` (US-006: thin-proxy to orchestrator).
 //
 // What we cover:
 //   - parsePlanArgs: positional integer, leading-# tolerance, bare (no arg),
 //     and standardized error on any present-but-non-integer token.
-//   - buildPlanArgv: bare /cam-plan and /cam-plan N with permission mode.
-//   - runPlan (tmux path): asserts ensureProjectSession + openPaneInSession
-//     tmux argv via injectable tmuxSpawnFn; returns 0 immediately (thin launcher).
-//   - runPlan with an issue number: slash command includes N (no `#`).
-//   - runPlan with no tmuxSpawnFn failures: error path returns 1.
-//
-// The old PTY/APPROVE foreground tests are removed per US-006 acceptance
-// criteria: APPROVE happens inside the pane; the parent process does not
-// interact with the child.
+//   - runPlan (hit path): orchestrator alive → send-keys /cam-plan [N] and return 0.
+//   - runPlan (miss path): bootstraps cam run, waits for marker, then send-keys.
+//   - runPlan: bootstrap failure returns 1.
+//   - runPlan: marker timeout returns 1.
+//   - runPlan: missing orch pane returns 1.
+//   - send-keys is atomic (-l flag, text + Enter in same call).
 
 import { describe, expect, test } from 'bun:test';
 import { tmpdir } from 'node:os';
-import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import {
-	buildPlanArgv,
-	runPlan,
-} from '../src/commands/plan.ts';
+import { runPlan } from '../src/commands/plan.ts';
 import { parsePlanArgs } from '../index.ts';
 import {
 	projectSessionName,
-	WORKER_PANE_MARKER,
 	type SpawnFn as TmuxSpawnFn,
 } from '../src/tmux/session.ts';
 
@@ -39,10 +32,22 @@ interface TmuxCall {
 	args: string[];
 }
 
-function makeFakeTmuxSpawn(sessionExists = false): TmuxSpawnFn & { calls: TmuxCall[] } {
+/**
+ * Build a fake TmuxSpawnFn that simulates a session with an orchestrator pane.
+ *
+ * @param sessionExists  Whether has-session returns 0 (session exists).
+ * @param orchAlive      Whether pane index 0 is running 'claude'.
+ * @param orchPaneId     Pane ID returned by list-panes for index 0.
+ */
+function makeFakeTmuxSpawn(opts: {
+	sessionExists?: boolean;
+	orchAlive?: boolean;
+	orchPaneId?: string;
+} = {}): TmuxSpawnFn & { calls: TmuxCall[] } {
+	const { sessionExists = true, orchAlive = true, orchPaneId = '%0' } = opts;
 	const calls: TmuxCall[] = [];
-	let paneCounter = 0;
-	const fn = ((cmd: string, args: string[], opts?: { stdio?: string }) => {
+
+	const fn = ((cmd: string, args: string[]) => {
 		calls.push({ cmd, args: [...args] });
 		const base: SpawnSyncReturns<Buffer> = {
 			pid: 1,
@@ -54,50 +59,38 @@ function makeFakeTmuxSpawn(sessionExists = false): TmuxSpawnFn & { calls: TmuxCa
 		};
 		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
 		const subcommand = args[0] === '-L' ? args[2] : args[0];
-		// has-session returns exit 0 when sessionExists, 1 otherwise.
+
 		if (subcommand === 'has-session') {
 			return { ...base, status: sessionExists ? 0 : 1 };
 		}
-		// Return a stable pane id for calls that capture it (-P -F #{pane_id}).
-		if (
-			(subcommand === 'new-session' || subcommand === 'split-window') &&
-			opts?.stdio === 'pipe'
-		) {
-			paneCounter += 1;
-			return { ...base, stdout: Buffer.from(`%${paneCounter}\n`) };
+
+		if (subcommand === 'list-panes') {
+			if (!sessionExists) return { ...base, status: 1 };
+			const fIdx = args.indexOf('-F');
+			const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
+			if (fmt === '#{pane_index}\t#{pane_current_command}') {
+				// For orchestratorAlive: return pane 0 running claude (or not).
+				return {
+					...base,
+					stdout: Buffer.from(orchAlive ? `0\tclaude\n` : `0\tsh\n`),
+				};
+			}
+			if (fmt === '#{pane_index}\t#{pane_id}') {
+				// For getOrchPaneId: return pane 0 with orchPaneId.
+				return { ...base, stdout: Buffer.from(`0\t${orchPaneId}\n`) };
+			}
+			return { ...base, stdout: Buffer.from('') };
 		}
+
+		if (subcommand === 'send-keys') {
+			return base;
+		}
+
 		return base;
 	}) as TmuxSpawnFn & { calls: TmuxCall[] };
 	fn.calls = calls;
 	return fn;
 }
-
-// --- buildPlanArgv ----------------------------------------------------------
-
-describe('buildPlanArgv', () => {
-	test('builds bare /cam-plan when no issue is provided', () => {
-		expect(buildPlanArgv('bypassPermissions')).toEqual([
-			'claude',
-			'--permission-mode',
-			'bypassPermissions',
-			'/cam-plan',
-		]);
-	});
-
-	test('builds /cam-plan N when issue is provided', () => {
-		expect(buildPlanArgv('bypassPermissions', 42)).toEqual([
-			'claude',
-			'--permission-mode',
-			'bypassPermissions',
-			'/cam-plan 42',
-		]);
-	});
-
-	test('uses the supplied permission mode verbatim', () => {
-		const argv = buildPlanArgv('default');
-		expect(argv[2]).toBe('default');
-	});
-});
 
 // --- parsePlanArgs (strict, number-only CLI contract) ----------------------
 
@@ -143,167 +136,237 @@ describe('parsePlanArgs', () => {
 	});
 });
 
-// --- runPlan (thin pane launcher) ------------------------------------------
+// --- runPlan (thin-proxy): hit path ----------------------------------------
 
-describe('runPlan (tmux pane launcher)', () => {
-	test('calls has-session, new-session (x1 split-window), then split-window for the plan pane', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
-		const tmuxSpawnFn = makeFakeTmuxSpawn(false);
+describe('runPlan (thin-proxy, hit path)', () => {
+	test('sends /cam-plan to orchestrator pane and returns 0', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-hit-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%2' });
 
 		const code = await runPlan({
 			cwd: tmpDir,
-			permissionMode: 'bypassPermissions',
-			tmuxSpawnFn,
+			tmuxSpawnFn: spawnFn,
 		});
 
 		expect(code).toBe(0);
 
-		// Verify has-session was called with the project session name.
-		const sessionName = projectSessionName(tmpDir);
-		const hasSessionCall = tmuxSpawnFn.calls.find(
-			(c) => c.args[2] === 'has-session' && c.args.includes(sessionName),
+		// Verify send-keys was called with /cam-plan.
+		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+		expect(sendKeys).toBeDefined();
+		expect(sendKeys?.args).toContain('-l');
+		expect(sendKeys?.args).toContain('/cam-plan');
+		expect(sendKeys?.args).toContain('Enter');
+		expect(sendKeys?.args).toContain('%2');
+	});
+
+	test('sends /cam-plan N when issue is provided', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-hit-issue-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%3' });
+
+		const code = await runPlan({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			issue: 42,
+		});
+
+		expect(code).toBe(0);
+		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+		expect(sendKeys?.args).toContain('/cam-plan 42');
+		expect(sendKeys?.args).toContain('-l');
+		expect(sendKeys?.args).toContain('Enter');
+	});
+
+	test('send-keys is atomic: text and Enter are in the same send-keys call', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-atomic-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+
+		await runPlan({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+
+		// One send-keys call with both the text and 'Enter' as separate args.
+		const sendKeys = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeys).toHaveLength(1);
+		const call = sendKeys[0];
+		// 'Enter' must be a discrete argument (not concatenated with the text).
+		const enterIdx = call?.args.lastIndexOf('Enter') ?? -1;
+		const textIdx = call?.args.findIndex((a) => a.startsWith('/cam-plan')) ?? -1;
+		expect(enterIdx).toBeGreaterThan(textIdx);
+	});
+
+	test('uses -l flag for literal send-keys (metachar safety)', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-literal-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+
+		await runPlan({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+
+		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+		expect(sendKeys?.args).toContain('-l');
+	});
+
+	test('skips bootstrap when orchestrator is already alive', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-no-bootstrap-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		let bootstrapCalled = false;
+
+		await runPlan({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			bootstrapFn: async () => { bootstrapCalled = true; return true; },
+		});
+
+		expect(bootstrapCalled).toBe(false);
+	});
+});
+
+// --- runPlan (thin-proxy): miss path ----------------------------------------
+
+describe('runPlan (thin-proxy, miss path)', () => {
+	test('bootstraps + waits for marker + sends keys when orch not alive', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-miss-'));
+
+		let bootstrapCalled = false;
+		let markerPresent = false;
+		let orchReady = false; // transitions to true when bootstrapFn fires
+
+		// Stateful spawn fn: session/orch not alive until bootstrapFn sets orchReady.
+		const calls: TmuxCall[] = [];
+		const statefulSpawnFn: TmuxSpawnFn & { calls: TmuxCall[] } = Object.assign(
+			(cmd: string, args: string[]) => {
+				calls.push({ cmd, args: [...args] });
+				const base: SpawnSyncReturns<Buffer> = {
+					pid: 1,
+					output: [null, Buffer.from(''), Buffer.from('')],
+					stdout: Buffer.from(''),
+					stderr: Buffer.from(''),
+					status: 0,
+					signal: null,
+				};
+				const subcommand = args[0] === '-L' ? args[2] : args[0];
+				if (subcommand === 'has-session') {
+					return { ...base, status: orchReady ? 0 : 1 };
+				}
+				if (subcommand === 'list-panes') {
+					if (!orchReady) return { ...base, status: 1 };
+					const fIdx = args.indexOf('-F');
+					const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
+					if (fmt === '#{pane_index}\t#{pane_current_command}') {
+						return { ...base, stdout: Buffer.from('0\tclaude\n') };
+					}
+					if (fmt === '#{pane_index}\t#{pane_id}') {
+						return { ...base, stdout: Buffer.from('0\t%0\n') };
+					}
+				}
+				return base;
+			},
+			{ calls },
 		);
-		expect(hasSessionCall).toBeDefined();
 
-		// Verify new-session was called (session didn't exist).
-		const newSessionCall = tmuxSpawnFn.calls.find((c) => c.args[2] === 'new-session');
-		expect(newSessionCall).toBeDefined();
-		expect(newSessionCall?.args).toContain(sessionName);
-
-		// Verify openPaneInSession was called with split-window.
-		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[2] === 'split-window');
-		// ensureProjectSession makes 1 split-window call (pane 1 dashboard),
-		// openPaneInSession makes 1 more (the plan pane).
-		expect(splitCalls.length).toBeGreaterThanOrEqual(2);
-	});
-
-	test('the plan pane split-window includes the claude /cam-plan command as separate argv elements', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
-		const tmuxSpawnFn = makeFakeTmuxSpawn(false);
-
-		await runPlan({
-			cwd: tmpDir,
-			permissionMode: 'bypassPermissions',
-			tmuxSpawnFn,
-		});
-
-		// The last split-window call is openPaneInSession; it must contain each
-		// claude argv element as a discrete arg (not one joined shell string).
-		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[2] === 'split-window');
-		const lastSplit = splitCalls[splitCalls.length - 1];
-		expect(lastSplit?.args).toContain('claude');
-		expect(lastSplit?.args).toContain('--permission-mode');
-		expect(lastSplit?.args).toContain('bypassPermissions');
-		expect(lastSplit?.args).toContain('/cam-plan');
-		// No issue number, so no '#' in the slash arg.
-		const slashArg = lastSplit?.args.find((a) => a.startsWith('/cam-plan'));
-		expect(slashArg).toBe('/cam-plan');
-	});
-
-	test('includes N (no `#`) in the plan pane command when issue is provided', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
-		const tmuxSpawnFn = makeFakeTmuxSpawn(false);
-
-		await runPlan({
-			cwd: tmpDir,
-			permissionMode: 'bypassPermissions',
-			issue: 99,
-			tmuxSpawnFn,
-		});
-
-		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[2] === 'split-window');
-		const lastSplit = splitCalls[splitCalls.length - 1];
-		// The slash command element must include the issue number.
-		const slashArg = lastSplit?.args.find((a) => a.startsWith('/cam-plan'));
-		expect(slashArg).toContain('/cam-plan 99');
-	});
-
-	test('skips new-session when session already exists (has-session returns 0)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
-		const tmuxSpawnFn = makeFakeTmuxSpawn(true); // session already exists
+		const bootstrapFn = async () => {
+			bootstrapCalled = true;
+			orchReady = true;
+			markerPresent = true;
+			return true;
+		};
 
 		const code = await runPlan({
 			cwd: tmpDir,
-			permissionMode: 'bypassPermissions',
-			tmuxSpawnFn,
+			tmuxSpawnFn: statefulSpawnFn,
+			bootstrapFn,
+			statFn: () => markerPresent,
+			sleepFn: () => {},
+			waitTimeoutMs: 5_000,
 		});
 
 		expect(code).toBe(0);
-		const newSessionCall = tmuxSpawnFn.calls.find((c) => c.args[2] === 'new-session');
-		expect(newSessionCall).toBeUndefined();
+		expect(bootstrapCalled).toBe(true);
 
-		// openPaneInSession still runs (1 split-window call for the plan pane).
-		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[2] === 'split-window');
-		expect(splitCalls.length).toBe(1);
+		// send-keys should have fired.
+		const sendKeys = statefulSpawnFn.calls.find((c) => c.args[2] === 'send-keys');
+		expect(sendKeys).toBeDefined();
+		expect(sendKeys?.args).toContain('/cam-plan');
 	});
 
-	test('returns 1 when tmux throws', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
-		const throwingSpawn: TmuxSpawnFn = ((_cmd: string, args: string[]) => {
-			// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
-			const subcommand = args[0] === '-L' ? args[2] : args[0];
-			if (subcommand === 'has-session' || subcommand === 'new-session') {
-				throw new Error('tmux not found');
-			}
-			return { status: 0 } as SpawnSyncReturns<Buffer>;
-		}) as TmuxSpawnFn;
+	test('returns 1 when bootstrap fails', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-boot-fail-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
 		const code = await runPlan({
 			cwd: tmpDir,
-			permissionMode: 'bypassPermissions',
-			tmuxSpawnFn: throwingSpawn,
+			tmuxSpawnFn: spawnFn,
+			bootstrapFn: async () => false, // bootstrap fails
 		});
 
 		expect(code).toBe(1);
 	});
 
-	test('plan pane split-window targets the project session', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
-		const tmuxSpawnFn = makeFakeTmuxSpawn(true); // session exists; skip new-session
+	test('returns 1 when marker never appears (timeout)', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-timeout-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
+
+		const code = await runPlan({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			bootstrapFn: async () => true, // bootstrap succeeds
+			statFn: () => false, // marker never appears
+			sleepFn: () => {},
+			waitTimeoutMs: 5, // tiny budget
+		});
+
+		expect(code).toBe(1);
+	});
+});
+
+// --- runPlan (thin-proxy): pane-not-found path ------------------------------
+
+describe('runPlan (thin-proxy, pane lookup)', () => {
+	test('returns 1 when getOrchPaneId returns null (list-panes fails)', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-nopane-'));
+		// Session exists, orch alive, but list-panes returns empty for pane-id lookup.
+		const spawnFn: TmuxSpawnFn & { calls: TmuxCall[] } = (() => {
+			const calls: TmuxCall[] = [];
+			const fn = ((cmd: string, args: string[]) => {
+				calls.push({ cmd, args: [...args] });
+				const base: SpawnSyncReturns<Buffer> = {
+					pid: 1,
+					output: [null, Buffer.from(''), Buffer.from('')],
+					stdout: Buffer.from(''),
+					stderr: Buffer.from(''),
+					status: 0,
+					signal: null,
+				};
+				const subcommand = args[0] === '-L' ? args[2] : args[0];
+				if (subcommand === 'has-session') return base; // session exists (status 0)
+				if (subcommand === 'list-panes') {
+					const fIdx = args.indexOf('-F');
+					const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
+					if (fmt === '#{pane_index}\t#{pane_current_command}') {
+						// orchestratorAlive: pane 0 running claude
+						return { ...base, stdout: Buffer.from('0\tclaude\n') };
+					}
+					// getOrchPaneId: return empty (no pane found)
+					return { ...base, stdout: Buffer.from('') };
+				}
+				return base;
+			}) as TmuxSpawnFn & { calls: TmuxCall[] };
+			fn.calls = calls;
+			return fn;
+		})();
+
+		const code = await runPlan({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		expect(code).toBe(1);
+	});
+});
+
+// --- runPlan: session name used in all tmux calls ---------------------------
+
+describe('runPlan: session name', () => {
+	test('all tmux calls include the project session name', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-sessname-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 		const sessionName = projectSessionName(tmpDir);
 
-		await runPlan({
-			cwd: tmpDir,
-			permissionMode: 'bypassPermissions',
-			tmuxSpawnFn,
-		});
+		await runPlan({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
 
-		// With existing session, only openPaneInSession's split-window fires.
-		const splitCall = tmuxSpawnFn.calls.find((c) => c.args[2] === 'split-window');
-		expect(splitCall?.args).toContain(`${sessionName}:0`);
-	});
-
-	test('writes a non-empty .claude/.cam-worker-pane after launching the plan pane', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
-		const tmuxSpawnFn = makeFakeTmuxSpawn(false); // session does not exist
-
-		await runPlan({
-			cwd: tmpDir,
-			permissionMode: 'bypassPermissions',
-			tmuxSpawnFn,
-		});
-
-		const markerPath = join(tmpDir, '.claude', WORKER_PANE_MARKER);
-		expect(existsSync(markerPath)).toBe(true);
-		const content = readFileSync(markerPath, 'utf8').trim();
-		expect(content.length).toBeGreaterThan(0);
-		// The pane id should match tmux format (%<n>).
-		expect(content).toMatch(/^%\d+$/);
-	});
-
-	test('writes the captured pane id (not empty) when session already exists', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
-		const tmuxSpawnFn = makeFakeTmuxSpawn(true); // session already exists
-
-		await runPlan({
-			cwd: tmpDir,
-			permissionMode: 'bypassPermissions',
-			tmuxSpawnFn,
-		});
-
-		const markerPath = join(tmpDir, '.claude', WORKER_PANE_MARKER);
-		expect(existsSync(markerPath)).toBe(true);
-		const content = readFileSync(markerPath, 'utf8').trim();
-		expect(content.length).toBeGreaterThan(0);
+		const callsWithSession = spawnFn.calls.filter((c) => c.args.includes(sessionName));
+		expect(callsWithSession.length).toBeGreaterThan(0);
 	});
 });

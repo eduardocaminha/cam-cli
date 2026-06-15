@@ -543,6 +543,7 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		sessionIdMarker: '/project/.claude/.cam-orch-session',
 		handoffMarker: '/project/.claude/.cam-orch-handoff.json',
 		stateFile: '/project/.claude/cam-loop.local.md',
+		readyMarker: '/project/.claude/.cam-orch-ready',
 	};
 
 	it('preserves --permission-mode bypassPermissions and the initial session-id', () => {

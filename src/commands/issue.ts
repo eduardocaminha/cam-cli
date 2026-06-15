@@ -1,27 +1,22 @@
 // src/commands/issue.ts
 //
-// Implementation of `cam issue "<free text>"` — opens the /cam-issue create
-// invocation as a pane in the project session (thin pane launcher, US-007).
+// Implementation of `cam issue "<free text>"` -- thin-proxy that routes
+// /cam-issue create to the live orchestrator pane via send-keys (US-006).
 //
-// Acceptance criteria (US-007):
-//   1. index.ts dispatches a new `issue` subcommand to this file.
-//   2. Reads permission_mode from project config via readPermissionMode().
-//   3. Ensures the project session via ensureProjectSession + openPaneInSession
-//      from src/tmux/session.ts.
-//   4. Opens a pane with claude receiving the free-text argument (which expands
-//      to title + description and runs /cam-issue create).
-//   5. A help block is registered in src/logging/help.ts.
-//   6. No --permission-mode CLI flag is registered (enforced by
-//      test/no-permission-mode-flag.test.ts).
-//   7. Typecheck passes (bun run typecheck).
-//   8. Tests pass (bun test).
-//
-// Pattern: identical to cam plan (US-006) and cam next tmux-split path (US-005).
-// The thin-launcher pattern: ensureProjectSession -> openPaneInSession -> return 0.
+// Acceptance criteria (US-006):
+//   1. Detect a live orchestrator via orchestratorAlive (US-005 predicate).
+//   2. On hit: atomic send-keys /cam-issue create <text> to the orchestrator
+//      pane and return 0 immediately (fire-and-forget).
+//   3. On miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
+//      (with orchestratorAlive re-check), then send-keys.
+//   4. send-keys is atomic (text + Enter in one call) and uses -l for literal.
+//   5. No --permission-mode CLI flag (enforced by no-permission-mode-flag.test.ts).
+//   6. Typecheck passes (bun run typecheck).
+//   7. Tests pass (bun test).
 
+import { join } from 'node:path';
 import process from 'node:process';
 
-import { readPermissionMode } from '../config/permission-mode.ts';
 import { printError } from '../logging/color.ts';
 import {
 	emitAttachHint,
@@ -32,12 +27,15 @@ import {
 	emitTrailingBlank,
 } from '../logging/screen.ts';
 import {
-	ensureProjectSession,
-	openPaneInSession,
+	hasSession,
+	orchestratorAlive,
+	getOrchPaneId,
 	projectSessionName,
+	tmuxArgs,
 	type Env,
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
+import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
 
 // --- Types -----------------------------------------------------------------
 
@@ -47,73 +45,128 @@ export interface IssueOptions {
 	/** Override the working directory; default `process.cwd()`. */
 	cwd?: string;
 	/**
-	 * Override the synchronous spawn function used for tmux session management
-	 * (ensureProjectSession, openPaneInSession). Tests inject a fake so they
-	 * never call a real tmux binary. Defaults to a spawnSync wrapper.
+	 * Override the synchronous spawn function used for tmux calls.
+	 * Tests inject a fake so they never call a real tmux binary.
 	 */
 	tmuxSpawnFn?: TmuxSpawnFn;
-	/** Permission-mode override (purely for tests; production reads config). */
-	permissionMode?: string;
 	/**
-	 * Override process.env for attach-hint detection. Tests inject a fake env
-	 * to assert hint printed/suppressed without touching process.env.
+	 * Override process.env for attach-hint detection.
 	 */
 	env?: Env;
+	/**
+	 * Bootstrap the orchestrator when not alive.
+	 * Defaults to `spawnSync('cam', ['run', '--no-attach'])`.
+	 * Tests inject a no-op that returns true immediately.
+	 */
+	bootstrapFn?: () => Promise<boolean>;
+	/**
+	 * File-existence check injected for tests (avoids real fs access
+	 * in the .cam-orch-ready poll). Defaults to `fs.existsSync`.
+	 */
+	statFn?: (path: string) => boolean;
+	/**
+	 * Sleep function for the ready-poll. Defaults to `Bun.sleepSync`.
+	 * Tests inject a no-op to avoid real waits.
+	 */
+	sleepFn?: (ms: number) => void;
+	/** Total poll budget for waitForOrchestrator (ms). Default 60 000. */
+	waitTimeoutMs?: number;
 }
 
-// --- argv builder ----------------------------------------------------------
+// --- Internal helpers -------------------------------------------------------
 
-/**
- * Build the argv for the claude invocation inside the issue pane.
- * The free text is passed as the argument to /cam-issue create so that claude
- * can expand it into a title + description before filing the issue.
- */
-export function buildIssueArgv(permissionMode: string, text: string): string[] {
-	const slash = `/cam-issue create ${text}`;
-	return ['claude', '--permission-mode', permissionMode, slash];
+async function doBootstrap(cwd: string, bootstrapFn?: () => Promise<boolean>): Promise<boolean> {
+	if (bootstrapFn) return bootstrapFn();
+	const { spawnSync } = await import('node:child_process');
+	const result = spawnSync('cam', ['run', '--no-attach'], { cwd, stdio: 'ignore' });
+	return (result.status ?? 1) === 0;
 }
 
 // --- Public entrypoint -----------------------------------------------------
 
 /**
- * Run the `cam issue` flow: thin pane launcher.
+ * Run the `cam issue` flow: thin-proxy to the live orchestrator (US-006).
  *
- * Calls ensureProjectSession then openPaneInSession and returns 0 immediately.
- * The /cam-issue create invocation runs inside the session pane. No PTY
- * forwarding in the parent process.
+ * If the orchestrator is already running (hasSession + orchestratorAlive):
+ *   - Sends `/cam-issue create <text>` to the orchestrator pane via send-keys.
+ *
+ * If the orchestrator is not running:
+ *   - Bootstraps it via `cam run --no-attach` (or injected bootstrapFn).
+ *   - Polls `.claude/.cam-orch-ready` + orchestratorAlive until ready.
+ *   - Then sends the request.
+ *
+ * Returns 0 on success, 1 on bootstrap/liveness failure.
  */
 export async function runIssue(options: IssueOptions): Promise<number> {
 	const cwd = options.cwd ?? process.cwd();
-	const permissionMode = options.permissionMode ?? readPermissionMode();
-	const text = options.text;
 	const env = options.env ?? process.env;
+	const text = options.text;
+	const request = `/cam-issue create ${text}`;
 
-	// Default synchronous spawn for tmux session management calls.
 	const { spawnSync } = await import('node:child_process');
 	const tmuxSpawnFn: TmuxSpawnFn =
 		options.tmuxSpawnFn ??
 		((cmd, args, opts) => spawnSync(cmd, args, { stdio: opts?.stdio ?? 'ignore' }));
 
 	emitTitle('cam issue');
-	emitSectionHeading('Session');
+	emitSectionHeading('Orchestrator');
 
 	const sessionName = projectSessionName(cwd);
-	const claudeArgv = buildIssueArgv(permissionMode, text);
+	const claudeDir = join(cwd, '.claude');
 
-	try {
-		ensureProjectSession(sessionName, tmuxSpawnFn);
-		openPaneInSession(sessionName, claudeArgv, tmuxSpawnFn);
-	} catch (err) {
+	// --- Liveness check -------------------------------------------------------
+	const alive = hasSession(sessionName, tmuxSpawnFn) && orchestratorAlive(sessionName, tmuxSpawnFn);
+
+	if (!alive) {
+		emitMutedHint('No live orchestrator detected, bootstrapping cam run...');
+		const bootstrapped = await doBootstrap(cwd, options.bootstrapFn);
+		if (!bootstrapped) {
+			printError(
+				'Failed to bootstrap orchestrator',
+				'Run `cam run` manually, then retry `cam issue`.',
+			);
+			emitTrailingBlank();
+			return 1;
+		}
+		const ready = waitForOrchestrator({
+			claudeDir,
+			sessionName,
+			spawnFn: tmuxSpawnFn,
+			statFn: options.statFn,
+			sleepFn: options.sleepFn,
+			timeoutMs: options.waitTimeoutMs,
+		});
+		if (!ready) {
+			printError(
+				'Orchestrator did not become ready in time',
+				'Run `cam run` manually and retry.',
+			);
+			emitTrailingBlank();
+			return 1;
+		}
+	}
+
+	// --- Send request ---------------------------------------------------------
+	const orchPaneId = getOrchPaneId(sessionName, tmuxSpawnFn);
+	if (!orchPaneId) {
 		printError(
-			'Failed to launch /cam-issue pane',
-			err instanceof Error ? err.message : String(err),
+			'Could not find orchestrator pane',
+			'The session exists but pane index 0 is missing.',
 		);
 		emitTrailingBlank();
 		return 1;
 	}
 
-	emitOk(`Launched /cam-issue create in project session "${sessionName}"`);
-	emitMutedHint('Issue title and description are expanded inside the pane');
+	// Atomic text + Enter in one send-keys call; -l for literal payload so
+	// free text with special characters is not interpreted as key sequences
+	// (patterns.md: send-keys atomic text+Enter, -l for literal).
+	tmuxSpawnFn(
+		'tmux',
+		tmuxArgs(['send-keys', '-t', orchPaneId, '-l', request, 'Enter']),
+		{ stdio: 'ignore' },
+	);
+
+	emitOk(`Sent "/cam-issue create" to orchestrator pane ${orchPaneId}`);
 	emitAttachHint(sessionName, env);
 	emitTrailingBlank();
 	return 0;

@@ -306,104 +306,65 @@ function previewRun(): void {
 
 // --- cam next ---------------------------------------------------------------
 
-/** Fake supervisor: completes immediately with 0 iterations. */
-const fakeSupervisor = async () => ({
-	status: 'complete' as const,
-	iterations: 0,
-	lastOutcome: null,
-});
-
-/** Common non-destructive `runNext` deps: fake supervisor + writer that
- *  returns a path without touching disk, fixed permission mode + frontmatter. */
-function nextPreviewOptions() {
-	return {
-		permissionMode: 'bypassPermissions',
-		writer: (_cwd: string, _body: string) => '/project/.claude/cam-loop.local.md',
-		workerPaneReader: (_claudeDir: string) => '%3',
-		supervisorFn: fakeSupervisor,
-		startedAt: '2026-06-05T13:30:00Z',
-		cwd: '/project',
-	};
-}
-
-/** Run `fn` with `process.env[key]` temporarily set (or deleted when value is
- *  undefined), restoring the prior value afterward. */
-async function withEnv(key: string, value: string | undefined, fn: () => Promise<unknown>): Promise<void> {
-	const saved = process.env[key];
-	if (value === undefined) delete process.env[key];
-	else process.env[key] = value;
-	try {
-		await fn();
-	} finally {
-		if (saved === undefined) delete process.env[key];
-		else process.env[key] = saved;
-	}
+/**
+ * Fake tmux spawn for next/plan previews: simulates a live orchestrator
+ * so the thin-proxy hit path fires (session exists, pane 0 = claude).
+ */
+function makeOrchFakeTmux(orchAlive = true): TmuxSpawnFnType {
+	return ((cmd: string, args: string[]) => {
+		const base = { status: 0, stdout: Buffer.from('') } as SpawnSyncReturns<Buffer>;
+		const subcommand = args[0] === '-L' ? args[2] : args[0];
+		if (subcommand === 'has-session') return base;
+		if (subcommand === 'list-panes') {
+			const fIdx = args.indexOf('-F');
+			const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
+			if (fmt === '#{pane_index}\t#{pane_current_command}') {
+				return { ...base, stdout: Buffer.from(orchAlive ? '0\tclaude\n' : '0\tsh\n') };
+			}
+			if (fmt === '#{pane_index}\t#{pane_id}') {
+				return { ...base, stdout: Buffer.from('0\t%0\n') };
+			}
+		}
+		return base;
+	}) as TmuxSpawnFnType;
 }
 
 async function previewNext(): Promise<void> {
-	section('cam next — dispatches to supervisor (complete)');
-	await runNext(nextPreviewOptions());
-
-	section('cam next — no worker pane (run cam plan first)');
+	section('cam next — thin-proxy sends task prompt to live orchestrator');
 	await runNext({
-		permissionMode: 'bypassPermissions',
-		workerPaneReader: (_claudeDir: string) => null,
-		cwd: '/project',
+		cwd: '/tmp/my-project',
+		tmuxSpawnFn: makeOrchFakeTmux(true),
 	});
 
-	section('cam next — supervisor blocked after 2 iterations');
+	section('cam next — bootstrap fails (no orchestrator, bootstrap returns false)');
 	await runNext({
-		...nextPreviewOptions(),
-		supervisorFn: async () => ({
-			status: 'blocked' as const,
-			iterations: 2,
-			lastOutcome: { kind: 'blocked' as const, storyId: undefined, detail: 'Quality gate failed' },
-		}),
+		cwd: '/tmp/my-project',
+		tmuxSpawnFn: makeOrchFakeTmux(false),
+		bootstrapFn: async () => false,
 	});
 }
 
 // --- cam plan ---------------------------------------------------------------
 
-/** Fake tmux spawn for plan preview: session doesn't exist, all calls succeed. */
-function makePlanFakeTmux(sessionExists: boolean): TmuxSpawnFnType {
-	return ((cmd: string, args: string[], _opts?: { stdio?: string }) => {
-		if (args[0] === 'has-session') {
-			return { status: sessionExists ? 0 : 1 } as SpawnSyncReturns<Buffer>;
-		}
-		return { status: 0 } as SpawnSyncReturns<Buffer>;
-	}) as TmuxSpawnFnType;
-}
-
 async function previewPlan(): Promise<void> {
-	section('cam plan — thin pane launcher (session created fresh)');
+	section('cam plan — thin-proxy sends /cam-plan to live orchestrator');
 	await runPlan({
 		cwd: '/tmp/my-project',
-		permissionMode: 'bypassPermissions',
-		tmuxSpawnFn: makePlanFakeTmux(false),
+		tmuxSpawnFn: makeOrchFakeTmux(true),
 	});
 
-	section('cam plan — thin pane launcher (session already exists)');
-	await runPlan({
-		cwd: '/tmp/my-project',
-		permissionMode: 'bypassPermissions',
-		tmuxSpawnFn: makePlanFakeTmux(true),
-	});
-
-	section('cam plan — with --issue flag');
+	section('cam plan — with issue number');
 	await runPlan({
 		cwd: '/tmp/my-project',
 		issue: 42,
-		permissionMode: 'bypassPermissions',
-		tmuxSpawnFn: makePlanFakeTmux(false),
+		tmuxSpawnFn: makeOrchFakeTmux(true),
 	});
 
-	section('cam plan — tmux failure (returns 1)');
+	section('cam plan — bootstrap fails (no orchestrator, bootstrap returns false)');
 	await runPlan({
 		cwd: '/tmp/my-project',
-		permissionMode: 'bypassPermissions',
-		tmuxSpawnFn: ((_cmd: string, args: string[]) => {
-			throw new Error('tmux not found');
-		}) as TmuxSpawnFnType,
+		tmuxSpawnFn: makeOrchFakeTmux(false),
+		bootstrapFn: async () => false,
 	});
 }
 

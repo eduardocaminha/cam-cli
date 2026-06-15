@@ -22,7 +22,7 @@
 // CLI contract:
 //   cam run [--no-attach]         (don't attach, just create the session)
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -45,6 +45,7 @@ import {
 	type SpawnFn,
 	type CreatedPaneIds,
 } from '../tmux/session.ts';
+import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -128,6 +129,8 @@ export interface OrchestratorPaneCommandOptions {
 	/** Path to the loop state file (.claude/cam-loop.local.md); removed on teardown so an
 	 * `/exit` leaves no stale state (matches `cam stop`, which `kill-session` alone did not). */
 	stateFile: string;
+	/** Path to .claude/.cam-orch-ready; removed when the orchestrator tears down (US-006). */
+	readyMarker: string;
 	/** Max consecutive respawns (default DEFAULT_MAX_ORCH_RESPAWNS). */
 	maxRespawns?: number;
 }
@@ -169,6 +172,9 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		// Clear the loop state file before kill-session so a clean `/exit` leaves no
 		// stale `cam-loop.local.md` (kill-session alone left it; `cam stop` removes it).
 		`rm -f ${q(opts.stateFile)}; ` +
+		// Clear the ready marker so stale markers don't deceive thin-proxy commands
+		// after the orchestrator has exited (US-006).
+		`rm -f ${q(opts.readyMarker)}; ` +
 		// sessionName is a sanitized identifier (projectSessionName); unquoted to
 		// match the pre-CAM-23 command + the kill-session assertion in run.test.ts.
 		`tmux -L cam kill-session -t ${opts.sessionName}; break; ` +
@@ -272,6 +278,12 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	const sessionId = genSessionId();
 	writeFileSync(join(dotClaude, '.cam-orch-session'), sessionId, 'utf8');
 
+	// Write the ready marker so thin-proxy commands know the orchestrator is
+	// starting up (US-006). Cleared by the bash wrapper on orchestrator exit
+	// and by the SIGINT/SIGTERM handler in runRun.
+	const readyMarkerPath = join(dotClaude, ORCH_READY_MARKER);
+	writeFileSync(readyMarkerPath, '', 'utf8');
+
 	// Pane 0: orchestrator (claude), wrapped in the CAM-23 bounded self-handoff
 	// loop. --permission-mode bypassPermissions is INTENTIONAL (2026-06-06): the
 	// orchestrator runs unattended and must bypass; do NOT change to
@@ -287,6 +299,7 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 		sessionIdMarker: join(dotClaude, '.cam-orch-session'),
 		handoffMarker: join(dotClaude, '.cam-orch-handoff.json'),
 		stateFile: join(dotClaude, 'cam-loop.local.md'),
+		readyMarker: readyMarkerPath,
 	});
 	// respawn-pane -k runs the command DIRECTLY in the pane, replacing the silent
 	// `cat` placeholder. No interactive bash means no macOS zsh notice / prompt /
@@ -433,6 +446,34 @@ export function runRun(options: RunOptions = {}): number {
 		);
 		emitTrailingBlank();
 		return 1;
+	}
+
+	// US-006: Register SIGINT/SIGTERM cleanup for the orch-ready marker.
+	// When cam run is killed before the orchestrator bash wrapper fires, the
+	// marker would otherwise be left stale. The bash wrapper also clears it on
+	// normal orchestrator exit; this handler covers the abnormal-exit path.
+	// Only registered when a new session was just created (the marker was just
+	// written); an attach-to-existing path has no newly written marker to clear.
+	if (result.created) {
+		const orchReadyPath = join(cwd, '.claude', ORCH_READY_MARKER);
+		let markerCleaned = false;
+		const cleanupMarker = () => {
+			if (markerCleaned) return;
+			markerCleaned = true;
+			try {
+				unlinkSync(orchReadyPath);
+			} catch {
+				// already gone or never written
+			}
+		};
+		process.once('SIGINT', () => {
+			cleanupMarker();
+			process.exit(130);
+		});
+		process.once('SIGTERM', () => {
+			cleanupMarker();
+			process.exit(143);
+		});
 	}
 
 	// 4. Attach (unless --no-attach).
