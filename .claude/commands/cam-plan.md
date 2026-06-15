@@ -1,5 +1,7 @@
 Plan the next issue (or a specific one) by reading the spec and generating a PRD.
 
+**CLI thin-proxy invocation**: `cam plan [N]` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-plan [N]` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
+
 ## Process
 
 ### Step 0: Pre-flight Checks

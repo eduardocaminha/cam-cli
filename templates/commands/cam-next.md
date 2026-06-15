@@ -24,25 +24,26 @@ Only proceed once all pre-flight checks pass.
 
 ---
 
-## Architecture: deterministic TS supervisor
+## Architecture: single-hub dispatch (thin-proxy)
 
-`cam next` does NOT dispatch a Task subagent. It calls `runSupervisor()` directly in the current TypeScript process. The supervisor owns the full implement-review-complete loop:
+`cam next` is a **thin-proxy** (same model as `cam plan`, `cam issue`, `cam review`, `cam ship`): it detects the live orchestrator session and injects the task prompt into the orchestrator pane via atomic `send-keys`. The orchestrator (Claude agent) then schedules and dispatches workers.
+
+Dispatch flow:
 
 ```
 cam next
-  └── runSupervisor(options)
-        ├── decideNextAction(prd)        -- implement | review | complete | blocked
-        ├── respawn-pane -k <worker-pane> <claude-argv>
-        │     worker = claude --permission-mode <mode>
-        │               --session-id <uuid>
-        │               --agent <name>
-        │               "<task-prompt>"
-        ├── poll capture-pane -p -S -    -- full scrollback, every N seconds
-        │     detect CAM_*_STATUS= / <review> sentinel
-        └── loop until: complete | blocked | max-iterations
+  └── detect live orchestrator (hasSession + orchestratorAlive)
+        ├── on miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
+        ├── mutex check: refuse if worker-pane already running (3 panes = busy)
+        ├── idle check: wait for orchestrator pane to be idle (sendKeysWhenIdle)
+        └── atomic send-keys: inject task prompt + Enter (one call, -l literal flag)
 ```
 
-Workers (implementer and reviewer) run as interactive TUI `claude` sessions. Each story runs in a **reused worker pane**: `respawn-pane -k` kills the previous command and starts the next one in the same pane id. The worker pane id is written by `cam plan` to `.claude/.cam-worker-pane` and read by the supervisor on every iteration. Workers do not exit on their own; the supervisor detects completion by polling the full pane scrollback for the sentinel line.
+Workers (implementer and reviewer) run as interactive TUI `claude` sessions. Each story runs in the **titled 3rd pane** (reused across stories via `respawn-pane -k`). On completion, the worker:
+1. Writes `scripts/cam/worker-report.json` (push report) with outcome, quality-gate results, and notes.
+2. Sends a one-line summary to the orchestrator pane via `tmux send-keys` (e.g. `[cam] US-003 DONE: typecheck ok, 42 pass / 0 fail`).
+
+The orchestrator receives the pushed summary line and reads the report file to determine the next action. Scrollback polling is **not** used for completion detection.
 
 **Stop-hook driver is retired.** The old model (a vendored Stop hook injecting `/cam-next` on each assistant turn) is gone. `claude -p` (print mode) is not used for workers; it is reserved for the `cam claude` retry-wrapper feature.
 
@@ -60,7 +61,7 @@ claude \
   "<task-prompt>"
 ```
 
-There is no `/cam-implement` slash command. The implementer and reviewer are agents (`subagent-implementer`, `subagent-reviewer`) defined in `.claude/agents/`. `--output-format text` and `; tmux wait-for -S <channel>` are NOT used: the session is interactive TUI, and the supervisor polls the pane instead.
+There is no `/cam-implement` slash command. The implementer and reviewer are agents (`subagent-implementer`, `subagent-reviewer`) defined in `.claude/agents/`. `--output-format text` and `; tmux wait-for -S <channel>` are NOT used: the session is interactive TUI, and completion is detected via the pushed report file (`scripts/cam/worker-report.json`).
 
 The task prompt for the implementer is:
 
@@ -72,9 +73,14 @@ Return with one of the CAM_IMPLEMENTER_STATUS= lines on your last line.
 
 ---
 
-## Worker exit contract (CAM_IMPLEMENTER_STATUS sentinel)
+## Worker exit contract (push report + CAM_IMPLEMENTER_STATUS sentinel)
 
-Every implementer worker must print exactly one of these lines as the **very last line** of its final message. The supervisor polls the worker pane with `capture-pane -p -S -` (full scrollback) and matches this sentinel to decide the next action. Because the sentinel must survive arbitrary amounts of output, placing it as the final line is critical: the supervisor scans from the bottom of the scrollback.
+Every implementer worker exits via a two-step push protocol:
+
+1. **Report file**: write `scripts/cam/worker-report.json` with `{ outcome, story, gates, notes }`.
+2. **Orchestrator notification**: send a one-line summary to the orchestrator pane via `tmux -L cam send-keys -t %0 -l '[cam] <story> <outcome>: ...' Enter`.
+
+After pushing, the worker prints exactly one of these sentinel lines as the **very last line** of its final message. The orchestrator reads this line (received via send-keys) and the report file to determine the next action. The sentinel is also available as a fallback in the pane scrollback.
 
 | Status line | Meaning |
 |---|---|
@@ -85,7 +91,7 @@ Every implementer worker must print exactly one of these lines as the **very las
 | `CAM_IMPLEMENTER_STATUS=BLOCKED_OPERATOR_REQUIRED story=US-XXX reason=<short>` | Story has `requires: "operator"`. Worker exits without touching files. |
 | `CAM_IMPLEMENTER_STATUS=RATE_LIMIT` | Hit Anthropic rate-limit mid-story; partial work left uncommitted. |
 
-The sentinel is consumed by the TS supervisor (`src/supervisor/result.ts`). It is NOT consumed by a stop-hook script.
+The sentinel is the primary output the orchestrator parses (received via the pushed send-keys line). It is NOT consumed by a stop-hook script. The report file is the structured machine-readable record; the sentinel is the human-readable summary line pushed to the orchestrator pane.
 
 ---
 
@@ -102,12 +108,12 @@ Decision order (operator-required stories do **not** block the review cycle: rev
 | All non-operator stories `passes: true` AND review terminal (`"CLEAN"` / `"MAX_ROUNDS_DEBT"` / cap reached) AND an operator-required story is still `passes: false` | **Await operator** (`await-operator`, status `awaiting-operator`). Autonomous work is done and reviewed clean; the supervisor exits **0** and hands the ceremony to the operator. The operator runs it, flips the story to `passes: true`, and re-runs `cam next` to complete the PRD. |
 | All stories `passes: true` (incl. operator) AND review terminal (`"CLEAN"` / `"MAX_ROUNDS_DEBT"` / cap reached) | Complete. Supervisor exits 0. |
 
-The supervisor loops internally until it reaches a terminal state. The orchestrator process running `cam next` does not need to re-invoke itself.
+The orchestrator loops across worker invocations until it reaches a terminal state. The CLI thin-proxy (`cam next`) does not re-invoke itself; it is the orchestrator (Claude agent) that decides when to dispatch the next worker.
 
 ---
 
 ## IMPORTANT
 
-The supervisor drives **one story per worker invocation**. After each worker exits, it reads the outcome, updates state, and dispatches the next worker. It does not return control to an external orchestrator between stories.
+The orchestrator drives **one story per worker invocation**. After each worker pushes its report, the orchestrator reads the outcome, updates state, and dispatches the next worker. Workers run in the single titled 3rd pane (mutex prevents concurrent dispatches).
 
-The parent `cam next` process context stays shallow on purpose: pre-flight output, supervisor call, a terminal status, and a summary. The supervisor itself is fully injectable and unit-tested in `test/supervisor/`.
+`cam next` (the CLI thin-proxy) exits immediately after sending the task prompt. Pre-flight checks (sync, typecheck, tests) still run in the `cam next` session before the send-keys call.

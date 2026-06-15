@@ -12,6 +12,8 @@ discover the system, then execute the matching path below.
 The orchestrator typically calls this command before `/cam-plan` to ensure
 the work item exists in the canonical place.
 
+**CLI thin-proxy invocation**: `cam issue "<text>"` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-issue create <text>` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
+
 ---
 
 ## Step 1: Read the project's issue system

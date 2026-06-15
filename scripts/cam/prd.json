@@ -190,7 +190,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files touched: .claude/agents/subagent-orchestrator.md, .claude/commands/cam-next.md (and cam-plan.md, cam-issue.md, cam-review.md, cam-ship.md as applicable), README.md, templates/** (mirror), src/vendor/_generated.ts (regenerated). Patterns.md invariants to re-check: no em-dash in persisted .md; templates/ and .claude/ must stay in lockstep, then embed-vendor regenerates src/vendor/_generated.ts; conventional commits."
     },
