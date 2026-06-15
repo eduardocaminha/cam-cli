@@ -691,6 +691,186 @@ describe('runDashboard', () => {
 	});
 });
 
+// --- DashboardApp keybar (US-003) ------------------------------------------
+//
+// Rendered with ink-testing-library so we assert against the ACTUAL screen.
+// Dispatch tests inject a fake runTmux and simulate keypresses via stdin.write
+// (ink-testing-library exposes stdin.write which emits 'data' and fires useInput).
+
+describe('DashboardApp keybar (US-003)', () => {
+	function makeData(overrides: Partial<DashboardData> = {}): DashboardData {
+		return {
+			branchName: 'cam/test',
+			currentStoryId: '',
+			currentStoryTitle: '',
+			iteration: 0,
+			maxIterations: 30,
+			startedAtMs: 0,
+			nowMs: 0,
+			paused: false,
+			idle: false,
+			recent: [],
+			stories: [],
+			storyTokens: {},
+			...overrides,
+		};
+	}
+
+	it('keybar renders slash-command keys and d/q labels', () => {
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%1',
+				runTmux: () => undefined,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		// Slash-command keys.
+		expect(frame).toContain('n');
+		expect(frame).toContain('r');
+		expect(frame).toContain('s');
+		expect(frame).toContain('p');
+		expect(frame).toContain('i');
+		// Slash-command labels.
+		expect(frame).toContain('/cam-next');
+		expect(frame).toContain('/cam-review');
+		expect(frame).toContain('/cam-ship');
+		expect(frame).toContain('/cam-plan');
+		expect(frame).toContain('/cam-issue');
+		// d and q navigation rows.
+		expect(frame).toContain('focus orchestrator');
+		expect(frame).toContain('close pane');
+		unmount();
+	});
+
+	it('keybar renders even when orchPane is undefined (standalone mode)', () => {
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				// no orchPane
+				runTmux: () => undefined,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		expect(frame).toContain('/cam-next');
+		expect(frame).toContain('focus orchestrator');
+		unmount();
+	});
+
+	it('n keypress dispatches send-keys /cam-next to orchPane', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%1',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('n');
+		expect(calls).toEqual([['send-keys', '-t', '%1', '/cam-next', 'Enter']]);
+		unmount();
+	});
+
+	it('r keypress dispatches send-keys /cam-review to orchPane', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%2',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('r');
+		expect(calls).toEqual([['send-keys', '-t', '%2', '/cam-review', 'Enter']]);
+		unmount();
+	});
+
+	it('s keypress dispatches send-keys /cam-ship to orchPane', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%3',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('s');
+		expect(calls).toEqual([['send-keys', '-t', '%3', '/cam-ship', 'Enter']]);
+		unmount();
+	});
+
+	it('p keypress dispatches send-keys /cam-plan to orchPane', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%4',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('p');
+		expect(calls).toEqual([['send-keys', '-t', '%4', '/cam-plan', 'Enter']]);
+		unmount();
+	});
+
+	it('i keypress dispatches send-keys /cam-issue to orchPane', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%5',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('i');
+		expect(calls).toEqual([['send-keys', '-t', '%5', '/cam-issue', 'Enter']]);
+		unmount();
+	});
+
+	it('d keypress dispatches select-pane to orchPane (focus orchestrator)', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%6',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('d');
+		expect(calls).toEqual([['select-pane', '-t', '%6']]);
+		unmount();
+	});
+
+	it('standalone mode (orchPane undefined): dispatch keys are inert no-ops', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				// no orchPane
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('n');
+		stdin.write('r');
+		stdin.write('s');
+		stdin.write('p');
+		stdin.write('i');
+		stdin.write('d');
+		// None of the dispatch keys should trigger runTmux when orchPane is absent.
+		expect(calls).toEqual([]);
+		unmount();
+	});
+});
+
 // --- DashboardApp Ink render: Loop section (US-002) ------------------------
 //
 // Three fixtures per AC4: idle (no state file), running mid-run, paused/done.

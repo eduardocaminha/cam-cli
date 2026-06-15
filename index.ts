@@ -286,17 +286,26 @@ const STATUS_HELP = renderHelp({
 const DASHBOARD_HELP = renderHelp({
 	title: 'cam dashboard',
 	tagline: 'Read-only TUI for monitoring a running loop',
-	usage: 'cam dashboard',
+	usage: 'cam dashboard [orchPane]',
 	sections: [
+		{
+			heading: 'Arguments',
+			body:
+				'  orchPane   Optional tmux pane id of the orchestrator (e.g. %5).\n' +
+				'             When provided, the keybar keys (n/r/s/p/i/d) dispatch\n' +
+				'             commands to that pane. Omit for standalone monitoring.',
+		},
 		{
 			heading: 'Behaviour',
 			body:
 				'1. Enters the alternate screen buffer (vim/htop style), hides the cursor.\n' +
 				'2. Polls the cwd\'s prd.json + .claude/cam-loop.local.md every 2s and\n' +
 				'   redraws on change.\n' +
-				'3. Surfaces: branch, current story (id + title), iteration N/M, wall-clock,\n' +
-				'   last 5 progress.txt entries, sleep banner if active:false.\n' +
-				'4. Exits cleanly on `q` or Ctrl+C — restores the cursor + leaves alt-screen.',
+				'3. Surfaces: branch, current story (id + title), wall-clock,\n' +
+				'   last 5 progress events, story list with token counts.\n' +
+				'4. Keybar: n=/cam-next  r=/cam-review  s=/cam-ship  p=/cam-plan\n' +
+				'           i=/cam-issue  d=focus orchestrator  q=close pane.\n' +
+				'5. Exits cleanly on q or Ctrl+C, restores the cursor + leaves alt-screen.',
 		},
 	],
 	footer:
@@ -711,12 +720,20 @@ async function main(argv: string[]): Promise<number> {
 				process.stdout.write(DASHBOARD_HELP);
 				return 0;
 			}
-			if (tail.length > 0) {
-				printError(`unknown dashboard option: ${tail[0]}`);
+			// Optional positional: orchPane (tmux pane id, e.g. %5). Injected by
+			// `cam run` so the keybar can dispatch to the orchestrator. Omitted
+			// when the dashboard is run standalone.
+			const remaining = [...tail];
+			let orchPane: string | undefined;
+			if (remaining.length > 0 && !remaining[0]!.startsWith('-')) {
+				orchPane = remaining.shift();
+			}
+			if (remaining.length > 0) {
+				printError(`unknown dashboard option: ${remaining[0]}`);
 				printFatalHint('run `cam dashboard --help` for usage');
 				return 1;
 			}
-			return runDashboardInk();
+			return runDashboardInk({ ...(orchPane !== undefined ? { orchPane } : {}) });
 		}
 		// Internal: spawned by `cam run` as the workspace menu pane. Not listed in
 		// the top-level help. Args are the orchestrator + dashboard pane ids so the

@@ -24,6 +24,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
+import { spawnSync } from 'node:child_process';
 
 import { colors } from './theme.ts';
 import { layout } from '../design/tokens.ts';
@@ -32,6 +33,7 @@ import type { DashboardData } from '../commands/dashboard.ts';
 import type { PrdStory } from '../commands/status.ts';
 import { formatWallClock } from '../commands/status.ts';
 import { renderTokensLine, type TranscriptUsage } from '../transcript/usage.ts';
+import { tmuxArgs } from '../tmux/session.ts';
 
 /** Max width of the iteration progress bar (cells). Shrinks to fit narrow
  *  panes; this is the cap for a wide standalone terminal. */
@@ -47,13 +49,36 @@ const STORIES_WINDOW = 8;
  */
 export const STORY_TOKENS_PLACEHOLDER = '·';
 
+/** A single dispatch command wired to the keybar. */
+interface KeybarCommand {
+	key: string;
+	label: string;
+	desc: string;
+	slash: string;
+}
+
+const KEYBAR_COMMANDS: readonly KeybarCommand[] = [
+	{ key: 'n', label: '/cam-next', desc: 'run next story', slash: '/cam-next' },
+	{ key: 'r', label: '/cam-review', desc: 'review PRD', slash: '/cam-review' },
+	{ key: 's', label: '/cam-ship', desc: 'ship iteration', slash: '/cam-ship' },
+	{ key: 'p', label: '/cam-plan', desc: 'plan an issue', slash: '/cam-plan' },
+	{ key: 'i', label: '/cam-issue', desc: 'create issue', slash: '/cam-issue' },
+];
+
 export interface DashboardAppProps {
 	/** Called every `pollIntervalMs` to refresh the data snapshot. */
 	readSnapshot: () => DashboardData;
 	pollIntervalMs: number;
+	/**
+	 * tmux pane id of the orchestrator (target for send-keys).
+	 * When undefined (standalone `cam dashboard`), dispatch keys are inert no-ops.
+	 */
+	orchPane?: string;
+	/** Injectable tmux runner for tests. Defaults to a real spawnSync. */
+	runTmux?: (args: string[]) => void;
 }
 
-export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps): ReactElement {
+export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }: DashboardAppProps): ReactElement {
 	const [data, setData] = useState<DashboardData>(() => readSnapshot());
 	const { exit } = useApp();
 	const { stdout } = useStdout();
@@ -66,6 +91,11 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 	// `iter` key column, and the ` N/M` counter that follows the bar.
 	const barWidth = Math.max(6, Math.min(PROGRESS_BAR_WIDTH, cols - 22));
 
+	// Resolve the tmux runner the same way Menu.tsx does: injectable for tests,
+	// real spawnSync as the default. The -L socket flag is applied by tmuxArgs().
+	const tmux =
+		runTmux ?? ((args: string[]) => void spawnSync('tmux', tmuxArgs(args), { stdio: 'ignore' }));
+
 	useEffect(() => {
 		const id = setInterval(() => {
 			setData(readSnapshot());
@@ -76,6 +106,22 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 	useInput((input, key) => {
 		if (input === 'q' || (key.ctrl && input === 'c')) {
 			exit();
+			return;
+		}
+		const lower = input.toLowerCase();
+		if (lower === 'd') {
+			// Focus the orchestrator pane; inert when orchPane is undefined.
+			if (orchPane !== undefined) {
+				tmux(['select-pane', '-t', orchPane]);
+			}
+			return;
+		}
+		const cmd = KEYBAR_COMMANDS.find((c) => c.key === lower);
+		if (cmd) {
+			// Send the slash command to the orchestrator; inert when orchPane is undefined.
+			if (orchPane !== undefined) {
+				tmux(['send-keys', '-t', orchPane, cmd.slash, 'Enter']);
+			}
 		}
 	});
 
@@ -89,9 +135,33 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 				storyTokens={data.storyTokens ?? {}}
 			/>
 			<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
-			<Box marginTop={1} paddingLeft={2}>
+			<Keybar />
+		</Box>
+	);
+}
+
+/** Full keybar footer: slash-command keys + d (focus orchestrator) + q (quit). */
+function Keybar(): ReactElement {
+	return (
+		<Box marginTop={1} flexDirection="column" paddingLeft={layout.headingIndent}>
+			{KEYBAR_COMMANDS.map((c) => (
+				<Box key={c.key} flexDirection="row">
+					<Text bold>{c.key}</Text>
+					<Text>{'  '}</Text>
+					<Box width={11}>
+						<Text bold>{c.label}</Text>
+					</Box>
+					<Text>{'  '}</Text>
+					<Text color={colors.muted}>{c.desc}</Text>
+				</Box>
+			))}
+			<Box flexDirection="row">
+				<Text bold>d</Text>
+				<Text color={colors.muted}>{'  '}focus orchestrator</Text>
+			</Box>
+			<Box flexDirection="row">
 				<Text bold>q</Text>
-				<Text color={colors.muted}> close pane</Text>
+				<Text color={colors.muted}>{'  '}close pane</Text>
 			</Box>
 		</Box>
 	);
