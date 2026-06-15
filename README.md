@@ -127,7 +127,7 @@ system prompt.
 cam init [options]          Validate the machine, then run the project-setup wizard
 cam run  [options]          Open or attach the single per-project session (2-pane layout)
 cam plan [<N>]              Open a planning pane in the project session (thin launcher)
-cam next [options]          Drive the implement-review-complete loop (in-process supervisor)
+cam next [options]          Trigger the sidecar loop (flips active:true, thin-proxy)
 cam issue "<text>"          Open an issue-creation pane in the project session (thin launcher)
 cam claude [args...]        Run claude with built-in auto-retry on rate limits
 cam dashboard               Navigable TUI: browse stories, dispatch /cam-* commands (pane 0.1; also standalone)
@@ -153,10 +153,11 @@ a stale tmux server left over from a dead security session denies TCC access to
 By using `tmux -L cam`, cam always starts from a fresh server with the correct
 security context for the current login session.
 
-The session layout has two panes:
+The session layout has two permanent panes plus an optional worker pane:
 
-- **Pane 0.0 (left):** orchestrator claude process (boots the `subagent-orchestrator` agent, which drives `/cam-plan`, `/cam-next`, `/cam-review`, `/cam-ship`).
+- **Pane 0.0 (left):** orchestrator claude process (boots the `subagent-orchestrator` agent). The orchestrator is the human-facing interface: it narrates sidecar reports, routes `/cam-plan`, `/cam-review`, `/cam-ship`, `/cam-issue`, and surfaces blockers. The implement-review loop is driven by the SIDECAR (background process), not by the orchestrator.
 - **Pane 0.1 (right):** `cam dashboard`, a permanent navigable monitor. Browse stories with j/k or arrow keys, Enter to open a story detail view, Esc to go back. Press `n/r/s/p/i` to dispatch `/cam-*` commands to the orchestrator, `d` to focus the orchestrator pane, `q` to close the dashboard.
+- **Pane 0.2 (worker, ephemeral):** created on first worker dispatch, reused across stories via `respawn-pane -k`. Present only while a worker is active; the mutex check refuses new dispatches when this pane exists (3 panes = busy).
 
 `cam plan`, `cam issue`, `cam next`, `cam review`, and `cam ship` are thin-proxies: they detect the active cam session, ensure the orchestrator is idle (`sendKeysWhenIdle`), and inject the corresponding slash command into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `cam run --no-attach` first. If a worker is already running (mutex: 3 panes present), the proxy refuses the dispatch and exits with code 1. From outside the session the proxy prints a contextual hint with the `cam run` attach command (suppressed inside the session).
 
@@ -257,10 +258,10 @@ cam next  (thin-proxy)
         ├── on miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
         ├── mutex check: refuse if worker-pane is already running (3 panes = busy)
         ├── idle check: wait for orchestrator pane idle (sendKeysWhenIdle)
-        └── atomic send-keys: inject task prompt + Enter (-l literal flag)
+        └── atomic send-keys: inject task prompt + Enter (NO -l: -l makes "Enter" literal and never submits)
 
-orchestrator (cam run context)
-  └── receives task prompt, dispatches workers in the titled 3rd pane
+sidecar (background process, spawned by cam run)
+  └── receives active:true flag, dispatches workers in the titled 3rd pane
         ├── respawn-pane -k <worker-pane>   -- reuse titled pane id
         │     claude --permission-mode <mode>
         │             --session-id <uuid>
@@ -289,7 +290,8 @@ Workers always run in the **titled 3rd pane** (created on first dispatch, reused
   down the session.
 - **Thin pane launchers**: `cam plan` and `cam issue` open a pane inside the
   project session and return 0 immediately (suppressing the attach hint when
-  already inside the session). `cam next` instead runs the supervisor in-process.
+  already inside the session). `cam next` is also a thin-proxy: it flips
+  `active:true` to trigger the sidecar and returns 0 immediately.
 - **`cam issue` subcommand**: file an issue from free text without entering
   the session. The pane agent runs `/cam-issue create <text>`.
 - **Auto-retry internalized**: rate-limit retry is now built into `cam` (no

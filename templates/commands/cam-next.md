@@ -108,12 +108,12 @@ Decision order (operator-required stories do **not** block the review cycle: rev
 | All non-operator stories `passes: true` AND review terminal (`"CLEAN"` / `"MAX_ROUNDS_DEBT"` / cap reached) AND an operator-required story is still `passes: false` | **Await operator** (`await-operator`, status `awaiting-operator`). Autonomous work is done and reviewed clean; the supervisor exits **0** and hands the ceremony to the operator. The operator runs it, flips the story to `passes: true`, and re-runs `cam next` to complete the PRD. |
 | All stories `passes: true` (incl. operator) AND review terminal (`"CLEAN"` / `"MAX_ROUNDS_DEBT"` / cap reached) | Complete. Supervisor exits 0. |
 
-The orchestrator loops across worker invocations until it reaches a terminal state. The CLI thin-proxy (`cam next`) does not re-invoke itself; it is the orchestrator (Claude agent) that decides when to dispatch the next worker.
+The SIDECAR loops across worker invocations until it reaches a terminal state. The CLI thin-proxy (`cam next`) flips `active:true` and returns immediately; it does NOT drive the loop in-process. The sidecar (background process spawned by `cam run`) reads `active:true` and dispatches workers one at a time until a terminal state.
 
 ---
 
 ## IMPORTANT
 
-The orchestrator drives **one story per worker invocation**. After each worker pushes its report, the orchestrator reads the outcome, updates state, and dispatches the next worker. Workers run in the single titled 3rd pane (mutex prevents concurrent dispatches).
+The SIDECAR drives **one story per worker invocation**. After each worker pushes its report file (`scripts/cam/worker-report.json`), the sidecar reads the outcome, updates state, and dispatches the next worker. Workers run in the single titled 3rd pane (mutex prevents concurrent dispatches).
 
-`cam next` (the CLI thin-proxy) exits immediately after sending the task prompt. Pre-flight checks (sync, typecheck, tests) still run in the `cam next` session before the send-keys call.
+`cam next` (the CLI thin-proxy) exits immediately after flipping `active:true` and sending the optional narration prompt to the orchestrator pane. Pre-flight checks (sync, typecheck, tests) still run in the `cam next` session before the send-keys call.

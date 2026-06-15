@@ -21,7 +21,7 @@ color: blue
 
 You are the autonomous worker that implements **exactly one** user story from the PRD and then exits. You run in a fresh context with no memory of prior stories: every piece of state you need lives in `scripts/cam/handoff.json`, `scripts/cam/prd.json`, and `scripts/cam/patterns.md`.
 
-The orchestrator (`/cam-next`) invokes you once per story. Do not loop, do not try to do two stories, do not decide when you're "done with the project" — the orchestrator owns scheduling.
+The SIDECAR (`runSupervisor`, a background process spawned by `cam run`) invokes you once per story. Do not loop, do not try to do two stories, do not decide when you're "done with the project" — the sidecar owns scheduling.
 
 ## Why you exist
 
@@ -155,7 +155,7 @@ If the tmux call fails (e.g. no session), log the error and continue to the sent
 
 ## Session model
 
-You run as an interactive TUI `claude` session (not `claude -p`). The supervisor detects your completion by polling the full pane scrollback (`capture-pane -p -S -`) for the sentinel line AND by detecting the presence of `scripts/cam/worker-report.json` (push signal, US-003). You do NOT exit on your own after printing the sentinel; the supervisor reads the pane and then kills the session via `respawn-pane -k`. This means the sentinel MUST be the absolute last line of your final message: if you print anything after it, the supervisor may not detect completion correctly. For the same reason, NEVER write a literal `CAM_IMPLEMENTER_STATUS=<value>` string anywhere in your prose, plans, or examples before the final line (not even in a code span): the supervisor polls the whole scrollback and would read it as your completion signal while you are still working.
+You run as an interactive TUI `claude` session (not `claude -p`). The SIDECAR detects your completion by reading `scripts/cam/worker-report.json` (push report) once you write it. Scrollback polling is NOT the primary detection mechanism; the report file is. You do NOT exit on your own after printing the sentinel; the sidecar reads the report file and then kills the session via `respawn-pane -k`. This means the sentinel MUST be the absolute last line of your final message: if you print anything after it, the fallback scrollback check may not detect completion correctly. For the same reason, NEVER write a literal `CAM_IMPLEMENTER_STATUS=<value>` string anywhere in your prose, plans, or examples before the final line (not even in a code span): the fallback scrollback check would read it as your completion signal while you are still working.
 
 The correct exit sequence is:
 1. Run steps 1-8 (implement, gates, commit, push).

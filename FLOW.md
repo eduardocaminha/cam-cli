@@ -291,7 +291,7 @@ flowchart TD
 
 O mesmo padrao de pane launcher de `cam plan`. A diferença: o comando injetado no
 pane é `/cam-issue create <texto>`, nao um planner. (`cam next` nao e um lançador de
-pane: roda o supervisor in-process.)
+pane: e um thin-proxy que liga `active:true` para disparar o SIDECAR.)
 
 ---
 
@@ -383,15 +383,16 @@ flowchart TD
 
 ## 7. O loop autonomo (slash commands dentro do claude)
 
-Isto é o ciclo de vida que o supervisor de `cam next` dirige (e que o orchestrator de
-`cam run` dispara sob demanda). O supervisor determinístico (`runSupervisor`) chama
-`decideNextAction`, que lê `prd.json` + o veredito de review para decidir implement /
-review / complete, despacha um worker por história, e repete in-process até o estado
-terminal. Não há stop hook nem `<promise>COMPLETE</promise>` dirigindo a terminação: o
-loop termina quando todas as histórias non-operator passam E o review é terminal (CLEAN
-ou MAX_ROUNDS_DEBT). Os passos `/cam-issue`, `/cam-plan`, `/cam-review`, `/cam-ship`,
-`/cam-prune` abaixo são as cerimônias slash que o operador (ou o orchestrator) roda em
-volta do loop de implement/review que o supervisor automatiza.
+Isto é o ciclo de vida que o SIDECAR dirige (processo background detached, spawnado pelo
+`cam run`). O sidecar (`runSupervisor`, `src/supervisor/loop.ts`) fica gateado no flag
+`active` do state file; quando `cam next` liga `active:true`, o sidecar adquire o lock e
+chama `decideNextAction`, que lê `prd.json` + o veredito de review para decidir implement /
+review / complete, despacha um worker por história, e repete até o estado terminal. Nao ha
+stop hook nem `<promise>COMPLETE</promise>` dirigindo a terminacao: o loop termina quando
+todas as historias non-operator passam E o review e terminal (CLEAN ou MAX_ROUNDS_DEBT).
+O orchestrator LLM (pane 0.0) NARRA o report terminal do sidecar e roteia os
+slash-commands de cerimonia (/cam-plan, /cam-review, /cam-ship, /cam-issue, /cam-prune)
+como interface humana -- ele NAO dirige o loop de implement/review.
 
 ```mermaid
 flowchart TD
@@ -432,16 +433,18 @@ flowchart TD
     PR --> PRUNEC["/cam-prune<br/>volta pra main, deleta branch"]
 ```
 
-Como o loop "anda" sozinho: o supervisor (`runSupervisor`, in-process no `cam next`)
-itera internamente. A cada volta chama `decideNextAction(prd)`, despacha o worker certo
-(implementer ou reviewer, sessão claude TUI no pane reusado), espera o sentinel via
-`capture-pane`, lê o desfecho e repete, até o estado terminal ou o teto `max_iterations`.
-O desfecho é state-primary (CAM-32): `handoff.json` (qual história) + `prd.json`
-`passes:true` (feito) são autoritativos; o sentinel `CAM_*_STATUS` / `<review>` no pane é
-só corroboração, nunca gate. A alternativa de eventos estruturados via
-`-p --output-format stream-json --include-hook-events` é deliberadamente NÃO usada, porque
-`claude -p` é proibido em contas de subscrição (CAM-42): o sinal estruturado vive nos
-arquivos de estado em disco (`handoff.json` / `prd.json`), não num stream de eventos.
+Como o loop "anda" sozinho: o SIDECAR (`runSupervisor`, processo background detached
+spawnado pelo `cam run`) itera internamente. A cada volta chama `decideNextAction(prd)`,
+despacha o worker certo (implementer ou reviewer, sessao claude TUI no pane reusado),
+aguarda o push-report-file (`scripts/cam/worker-report.json`) que o worker escreve ao
+terminar, le o desfecho e repete, ate o estado terminal ou o teto `max_iterations`.
+O desfecho e state-primary (CAM-32): `handoff.json` (qual historia) + `prd.json`
+`passes:true` (feito) sao autoritativos; o sentinel `CAM_*_STATUS` no scrollback e
+so corroboracao/fallback, nunca gate primario -- o gate primario e o report-file.
+A alternativa de eventos estruturados via `-p --output-format stream-json
+--include-hook-events` e deliberadamente NAO usada, porque `claude -p` e proibido em
+contas de subscricao (CAM-42): o sinal estruturado vive nos arquivos de estado em disco
+(`handoff.json` / `prd.json`), nao num stream de eventos.
 
 ---
 
@@ -455,7 +458,7 @@ retry-monitor define o que `cam resume` decide.
 stateDiagram-v2
     [*] --> Idle: sem state file
     Idle --> Active: cam next (arma o state file)
-    Active --> Active: supervisor despacha o proximo worker (loop in-process)
+    Active --> Active: sidecar despacha o proximo worker (loop background detached)
     Active --> Paused: terminal nao-sucesso (blocked / awaiting-operator / max_iterations -> active:false)
     Active --> Complete: supervisor terminal complete (todas non-operator passam + review terminal)
 
@@ -474,9 +477,10 @@ stateDiagram-v2
 
 Quem mexe em quê:
 
-- **`cam next`** cria o state file (Idle para Active), grava o PID do processo dono, e
-  roda o supervisor in-process: mantém Active vivo (itera, despachando workers) ou chega a
-  Complete e remove o file no estado terminal.
+- **`cam next`** liga `active:true` no state file (Idle para Active), injetando a narração
+  no pane do orquestrador via send-keys atômico. O SIDECAR (já rodando em background desde
+  o `cam run`) detecta `active:true`, adquire o lock, itera despachando workers, e chega a
+  Complete removendo o file no estado terminal.
 - **`cam status`** só lê: presença do file e `active` decidem idle / active / paused.
 - **`cam stop`** remove o state file e mata a sessão tmux `cam` (Active/Paused para Idle); idempotente.
 - **`cam resume`** age sobre o Orphan (PID morto + file presente), escolhendo respawn,

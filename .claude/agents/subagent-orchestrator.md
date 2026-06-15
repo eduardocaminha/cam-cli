@@ -140,30 +140,32 @@ run review, or surface a blocker to the human).
 
 ---
 
-## Loop semantics for implement-review cycles
+## Sidecar model: your role in the implement-review cycle
 
-Workers run one story at a time. To complete a cycle, dispatch workers until
-the push report indicates PRD_COMPLETE and the review verdict is terminal.
+You do NOT drive the implement-review loop. The loop is driven by the SIDECAR:
+a deterministic background process (`runSupervisor`, spawned by `cam run`) that
+is gated on the `active` flag in `.claude/cam-loop.local.md`. When `cam next`
+flips `active:true`, the sidecar acquires the supervisor lock and dispatches
+workers autonomously until a terminal state (complete, blocked, awaiting-operator).
 
-Pseudo-procedure:
+Your role in this cycle is to:
 
-```
-while True:
-    dispatch implementer (via /cam-next or the cam-next thin-proxy)
-    wait for pushed summary line: "[cam] US-XXX <outcome>: ..."
-    read scripts/cam/worker-report.json for structured outcome
-    if outcome == "PRD_COMPLETE":
-        dispatch reviewer (/cam-review), check verdict
-        if verdict == "CLEAN" or "MAX_ROUNDS_DEBT":
-            break
-        # else: FIXES_PENDING -- new fix-stories added, loop continues
-    if outcome == "BLOCKED_*":
-        ask_human("worker reports BLOCKED: ...; how should we proceed?")
-        break
-```
+1. **Narrate the sidecar's terminal report** when a worker pushes a summary line
+   to your pane: `[cam] US-XXX DONE: typecheck ok, 42 pass / 0 fail`. Read
+   `scripts/cam/worker-report.json` and tell the human what happened.
+2. **Route one-shot slash commands**: `/cam-plan`, `/cam-review`, `/cam-ship`,
+   `/cam-issue`. These run in your context and return a result line.
+3. **Surface blockers** when the sidecar pushes `BLOCKED_*` or `PRD_COMPLETE`
+   outcomes. Ask the human how to proceed; then trigger the next step (review,
+   ship, or new implementation run).
+
+You do NOT decide when to dispatch the next worker. The sidecar does.
+You do NOT poll the pane or check scrollback for sentinels. The push report
+arrives as a direct `send-keys` line in your conversation.
 
 The human can interrupt at any point -- pause the loop, ask a question, then
-resume by saying "continua" or "go".
+resume by saying "continua" or "go" (which re-triggers the sidecar via
+`cam next` or the `/cam-next` injected into your pane).
 
 ---
 
