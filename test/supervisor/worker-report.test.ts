@@ -6,10 +6,10 @@
 //   1. WORKER_REPORT_FILENAME is the expected path.
 //   2. formatWorkerReportSummary renders one-liners for DONE and BLOCKED cases.
 //   3. buildWorkerReportSendKeysArgv produces the correct argv shape:
-//        tmux -L cam send-keys -t <pane> -l <summary> Enter
-//      with -l flag, Enter as a separate arg, all in one call (atomic).
+//        tmux -L cam send-keys -t <pane> <summary> Enter
+//      NO -l (it would make Enter literal), Enter as a separate trailing key, one atomic call.
 //   4. Metacharacter safety: a payload containing {, }, ", and ; is kept verbatim
-//      in the argv (the -l flag delegates literal handling to tmux).
+//      in the argv as a single element (NO -l: tmux sends a single non-key arg literally).
 
 import { describe, expect, test } from 'bun:test';
 import {
@@ -79,9 +79,9 @@ describe('buildWorkerReportSendKeysArgv', () => {
 	const ORCH_PANE = '%0';
 	const SUMMARY = '[cam] US-003 DONE: typecheck ok, 5 pass / 0 fail';
 
-	test('argv has exactly 8 elements', () => {
+	test('argv has exactly 7 elements (no -l)', () => {
 		const argv = buildWorkerReportSendKeysArgv(ORCH_PANE, SUMMARY);
-		expect(argv).toHaveLength(8);
+		expect(argv).toHaveLength(7);
 	});
 
 	test('starts with -L cam send-keys', () => {
@@ -97,22 +97,23 @@ describe('buildWorkerReportSendKeysArgv', () => {
 		expect(argv[4]).toBe(ORCH_PANE);
 	});
 
-	test('-l flag is at position 5 (literal mode)', () => {
+	test('does NOT use -l (regression: -l would make "Enter" literal and never submit)', () => {
+		// memory: sendkeys-literal-enter-gotcha. `-l` makes EVERY arg literal, so
+		// "Enter" would be typed as the text "Enter" and the summary never submits.
 		const argv = buildWorkerReportSendKeysArgv(ORCH_PANE, SUMMARY);
-		expect(argv[5]).toBe('-l');
+		expect(argv).not.toContain('-l');
 	});
 
-	test('summary is at position 6, verbatim', () => {
+	test('summary is at position 5, verbatim', () => {
 		const argv = buildWorkerReportSendKeysArgv(ORCH_PANE, SUMMARY);
-		expect(argv[6]).toBe(SUMMARY);
+		expect(argv[5]).toBe(SUMMARY);
 	});
 
-	test('Enter is the last element (separate arg, not in summary)', () => {
+	test('Enter is the last element (separate recognised key, not in summary)', () => {
 		const argv = buildWorkerReportSendKeysArgv(ORCH_PANE, SUMMARY);
-		const lastArg = argv[argv.length - 1];
-		expect(lastArg).toBe('Enter');
+		expect(argv.at(-1)).toBe('Enter');
 		// Enter must NOT be concatenated to the summary string (atomicity invariant).
-		const summaryArg = argv[6] ?? '';
+		const summaryArg = argv[5] ?? '';
 		expect(summaryArg).not.toContain('Enter');
 	});
 
@@ -121,20 +122,19 @@ describe('buildWorkerReportSendKeysArgv', () => {
 		expect(argv[4]).toBe('%3');
 	});
 
-	test('metachar safety: payload with {, }, ", ; is kept verbatim in argv (US-003 AC)', () => {
-		// Empirical verify: a report payload with JSON metacharacters must not be
-		// modified by this function. The -l flag in the actual tmux call handles
-		// literal mode; this fn just places the string as-is.
+	test('metachar safety: payload with {, }, ", ; is kept verbatim as a single argv element (US-003 AC)', () => {
+		// A report payload with JSON metacharacters must land verbatim. Without -l,
+		// the summary is a SINGLE non-key-name argv element, so tmux sends its
+		// characters literally (no -l needed; -l would break Enter submission).
 		const dangerousPayload = '[cam] US-003 DONE: {"outcome":"DONE"}; ok';
 		const argv = buildWorkerReportSendKeysArgv('%0', dangerousPayload);
-		const summaryArg = argv[6] ?? '';
+		const summaryArg = argv[5] ?? '';
 		expect(summaryArg).toBe(dangerousPayload);
 		expect(summaryArg).toContain('{');
 		expect(summaryArg).toContain('}');
 		expect(summaryArg).toContain('"');
 		expect(summaryArg).toContain(';');
-		// -l flag is present (literal mode ensures metacharacters pass verbatim to tmux)
-		expect(argv[5]).toBe('-l');
+		expect(argv).not.toContain('-l');
 	});
 
 	test('text and Enter are in the SAME argv array (one atomic tmux call)', () => {

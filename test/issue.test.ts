@@ -8,7 +8,7 @@
 //   - runIssue (miss path): bootstrap + wait + send-keys.
 //   - runIssue: bootstrap failure returns 1.
 //   - runIssue: marker timeout returns 1.
-//   - send-keys is atomic (-l flag, text + Enter in same call).
+//   - send-keys is atomic (NO -l; -l would make "Enter" literal; text + Enter same call).
 //   - Free text is forwarded verbatim (including metacharacters).
 //   - Help block exists and contains key terms.
 
@@ -146,7 +146,7 @@ describe('runIssue (thin-proxy, hit path)', () => {
 		expect(code).toBe(0);
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
 		expect(sendKeys).toBeDefined();
-		expect(sendKeys?.args).toContain('-l');
+		expect(sendKeys?.args).not.toContain('-l');
 		expect(sendKeys?.args).toContain('/cam-issue create Add dark mode support');
 		expect(sendKeys?.args).toContain('Enter');
 		expect(sendKeys?.args).toContain('%1');
@@ -169,14 +169,14 @@ describe('runIssue (thin-proxy, hit path)', () => {
 		expect(slashArg).toContain(metacharText);
 	});
 
-	test('send-keys uses -l flag for literal payload', async () => {
+	test('send-keys does NOT use -l (regression: -l makes "Enter" literal)', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-literal-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
 		await runIssue({ text: 'some text', cwd: tmpDir, tmuxSpawnFn: spawnFn });
 
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-		expect(sendKeys?.args).toContain('-l');
+		expect(sendKeys?.args).not.toContain('-l');
 	});
 
 	test('Enter is a separate argument in the send-keys call (atomic)', async () => {

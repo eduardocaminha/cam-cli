@@ -65,10 +65,11 @@ export function formatWorkerReportSummary(report: WorkerReport): string {
  * @param summary   The one-line text to send (no newline; Enter is added here).
  */
 export function buildWorkerReportSendKeysArgv(orchPane: string, summary: string): string[] {
-	// Empirical verification: with -l, tmux sends each character literally,
-	// bypassing key-name lookup. A payload containing {, }, ", or ; lands
-	// verbatim in the pane, not as shell metacharacters. Enter as a separate
-	// argument appends a carriage return after the literal text. Both arrive
-	// in one tmux protocol round-trip, satisfying the atomicity requirement.
-	return ['-L', 'cam', 'send-keys', '-t', orchPane, '-l', summary, 'Enter'];
+	// Atomic: summary + Enter in ONE send-keys call, WITHOUT -l. A `-l` flag makes
+	// EVERY argument literal, so "Enter" would be TYPED as the text "Enter" instead
+	// of submitting (empirically verified, CAM-55: `send-keys -l X Enter` lands the
+	// string "XEnter" in the pane, never a carriage return). `summary` is a single
+	// non-key-name argv element, so tmux already sends its characters literally
+	// (incl. {, }, ", :, spaces); only "Enter" must stay a recognised key.
+	return ['-L', 'cam', 'send-keys', '-t', orchPane, summary, 'Enter'];
 }

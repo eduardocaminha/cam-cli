@@ -185,10 +185,14 @@ export function sendKeysWhenIdle(opts: SendKeysWhenIdleOptions): void {
 		);
 	}
 
-	// Atomic send-keys: text + Enter in one call, -l for literal payload.
+	// Atomic send-keys: text + Enter in ONE call, WITHOUT -l. A `-l` flag makes
+	// EVERY argument literal, so "Enter" would be TYPED as the text "Enter" rather
+	// than submitting the command (empirically verified, CAM-55). `text` is a single
+	// non-key-name argv element, so tmux already sends its characters literally;
+	// only "Enter" must remain a recognised key so the command actually submits.
 	tmuxSpawnFn(
 		'tmux',
-		tmuxArgs(['send-keys', '-t', paneId, '-l', text, 'Enter']),
+		tmuxArgs(['send-keys', '-t', paneId, text, 'Enter']),
 		{ stdio: 'ignore' },
 	);
 }

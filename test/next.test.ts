@@ -12,7 +12,7 @@
 //   - runNext: missing pane returns 1.
 //   - runNext: uses DEFAULT_TASK_PROMPT by default.
 //   - runNext: custom taskPrompt forwarded to orchestrator.
-//   - send-keys is atomic (-l flag, text + Enter in same call).
+//   - send-keys is atomic (NO -l; -l would make "Enter" literal; text + Enter same call).
 
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
@@ -215,7 +215,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 
 			const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
 			expect(sendKeys).toBeDefined();
-			expect(sendKeys?.args).toContain('-l');
+			expect(sendKeys?.args).not.toContain('-l');
 			expect(sendKeys?.args).toContain(DEFAULT_TASK_PROMPT);
 			expect(sendKeys?.args).toContain('Enter');
 			expect(sendKeys?.args).toContain('%3');
@@ -239,7 +239,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 		}
 	});
 
-	test('send-keys uses -l flag for literal payload', async () => {
+	test('send-keys does NOT use -l (regression: -l makes "Enter" literal)', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-next-literal-'));
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
@@ -247,7 +247,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
 
 			const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-			expect(sendKeys?.args).toContain('-l');
+			expect(sendKeys?.args).not.toContain('-l');
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

@@ -36,7 +36,7 @@ cam next
         ├── on miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
         ├── mutex check: refuse if worker-pane already running (3 panes = busy)
         ├── idle check: wait for orchestrator pane to be idle (sendKeysWhenIdle)
-        └── atomic send-keys: inject task prompt + Enter (one call, -l literal flag)
+        └── atomic send-keys: inject task prompt + Enter (one call, NO -l: -l would make "Enter" literal and never submit)
 ```
 
 Workers (implementer and reviewer) run as interactive TUI `claude` sessions. Each story runs in the **titled 3rd pane** (reused across stories via `respawn-pane -k`). On completion, the worker:
@@ -78,7 +78,7 @@ Return with one of the CAM_IMPLEMENTER_STATUS= lines on your last line.
 Every implementer worker exits via a two-step push protocol:
 
 1. **Report file**: write `scripts/cam/worker-report.json` with `{ outcome, story, gates, notes }`.
-2. **Orchestrator notification**: send a one-line summary to the orchestrator pane via `tmux -L cam send-keys -t %0 -l '[cam] <story> <outcome>: ...' Enter`.
+2. **Orchestrator notification**: send a one-line summary to the orchestrator pane via `tmux -L cam send-keys -t %0 '[cam] <story> <outcome>: ...' Enter` (NO `-l`: it would make "Enter" literal and the summary would never submit).
 
 After pushing, the worker prints exactly one of these sentinel lines as the **very last line** of its final message. The orchestrator reads this line (received via send-keys) and the report file to determine the next action. The sentinel is also available as a fallback in the pane scrollback.
 

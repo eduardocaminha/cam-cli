@@ -9,7 +9,7 @@
 //   - runShip: bootstrap failure returns 1.
 //   - runShip: marker timeout returns 1.
 //   - runShip: missing orch pane returns 1.
-//   - send-keys is atomic (-l flag, text + Enter in same call).
+//   - send-keys is atomic (NO -l; -l would make "Enter" literal; text + Enter same call).
 
 import { describe, expect, test } from 'bun:test';
 import { tmpdir } from 'node:os';
@@ -148,7 +148,7 @@ describe('runShip (thin-proxy, hit path)', () => {
 
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
 		expect(sendKeys).toBeDefined();
-		expect(sendKeys?.args).toContain('-l');
+		expect(sendKeys?.args).not.toContain('-l');
 		expect(sendKeys?.args).toContain('/cam-ship');
 		expect(sendKeys?.args).toContain('Enter');
 		expect(sendKeys?.args).toContain('%3');
@@ -168,14 +168,14 @@ describe('runShip (thin-proxy, hit path)', () => {
 		expect(enterIdx).toBeGreaterThan(textIdx);
 	});
 
-	test('uses -l flag for literal send-keys (metachar safety)', async () => {
+	test('does NOT use -l (regression: -l makes "Enter" literal, never submits)', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-literal-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
 		await runShip({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
 
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-		expect(sendKeys?.args).toContain('-l');
+		expect(sendKeys?.args).not.toContain('-l');
 	});
 
 	test('skips bootstrap when orchestrator is already alive', async () => {

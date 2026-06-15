@@ -14,7 +14,7 @@
 //     - idle on first capture: send-keys called, no sleep
 //     - idle after one busy poll: send-keys called after one sleep
 //     - timeout (always busy): fallback sends anyway, no indefinite block
-//     - send-keys uses -l flag and 'Enter' as separate args (atomic)
+//     - send-keys does NOT use -l (would make Enter literal); Enter is a separate trailing key (atomic)
 //     - send-keys targets the correct pane ID
 
 import { describe, expect, test } from 'bun:test';
@@ -180,7 +180,7 @@ describe('sendKeysWhenIdle', () => {
 		expect(sendKeys).toBeDefined();
 	});
 
-	test('send-keys uses -l flag (literal)', () => {
+	test('send-keys does NOT use -l (regression: -l makes "Enter" literal and never submits)', () => {
 		const spawnFn = makeSpawnFn();
 
 		sendKeysWhenIdle({
@@ -193,7 +193,13 @@ describe('sendKeysWhenIdle', () => {
 		});
 
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-		expect(sendKeys?.args).toContain('-l');
+		// Regression guard (memory: sendkeys-literal-enter-gotcha). `-l` makes EVERY
+		// arg literal, so "Enter" would be typed as the text "Enter" and the command
+		// would never submit. The text is a single non-key-name arg, already literal.
+		expect(sendKeys?.args).not.toContain('-l');
+		// Enter must remain the LAST arg and a recognised key so it submits.
+		expect(sendKeys?.args.at(-1)).toBe('Enter');
+		expect(sendKeys?.args).toContain('/cam-plan 42');
 	});
 
 	test('send-keys passes text and Enter as separate args in one call', () => {

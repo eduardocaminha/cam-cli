@@ -132,20 +132,20 @@ Do NOT commit this file; it is ephemeral per-invocation state read by the superv
 
 **Step B: push a one-line summary to the orchestrator pane.**
 
-Run this Bash command (literal payload, atomic, one call):
+Run this Bash command (atomic, one call, NO `-l`):
 
 ```bash
-tmux -L cam send-keys -t %0 -l '[cam] <story> <outcome>: typecheck <tc>, <tests>' Enter
+tmux -L cam send-keys -t %0 '[cam] <story> <outcome>: typecheck <tc>, <tests>' Enter
 ```
 
-Invariants (memory: tmux-drive-orchestrator-atomic-enter):
-- Use `-l` (literal) so `{`, `}`, `"`, `;` in the payload are not interpreted as key sequences.
-- `Enter` is a SEPARATE argument after the summary string (NOT concatenated to it).
-- Text and Enter must be in the SAME `send-keys` call (atomic: one shell invocation).
+Invariants (memory: sendkeys-literal-enter-gotcha):
+- Do NOT use `-l`. It makes EVERY argument literal, so "Enter" is typed as the text "Enter" and the summary never submits (empirically: `send-keys -l X Enter` lands the string "XEnter" in the pane, never a carriage return).
+- The summary is a SINGLE quoted argv element, so tmux already sends its characters literally: `{`, `}`, `"`, `:`, spaces all land verbatim without `-l`.
+- `Enter` is a SEPARATE argument after the summary, in the SAME `send-keys` call (atomic), so it stays a recognised key and actually submits.
 
 Example for a DONE story:
 ```bash
-tmux -L cam send-keys -t %0 -l '[cam] US-003 DONE: typecheck ok, 42 pass / 0 fail' Enter
+tmux -L cam send-keys -t %0 '[cam] US-003 DONE: typecheck ok, 42 pass / 0 fail' Enter
 ```
 
 If the tmux call fails (e.g. no session), log the error and continue to the sentinel. The report file is the primary push signal; the send-keys is a best-effort human notification.
@@ -164,7 +164,7 @@ You run as an interactive TUI `claude` session (not `claude -p`). The supervisor
 The correct exit sequence is:
 1. Run steps 1-8 (implement, gates, commit, push).
 2. Write `scripts/cam/worker-report.json` (Step A of exit report protocol).
-3. Run `tmux -L cam send-keys -t %0 -l '...' Enter` (Step B, push summary to orchestrator).
+3. Run `tmux -L cam send-keys -t %0 '...' Enter` (Step B, push summary to orchestrator; NO `-l`).
 4. Print the sentinel as the ABSOLUTE LAST LINE of your output.
 
 ## Output protocol
