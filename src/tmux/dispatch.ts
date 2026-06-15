@@ -143,9 +143,11 @@ function defaultCapturePaneFn(paneId: string, spawnFn: TmuxSpawnFn): string {
  * blocked indefinitely.
  *
  * The send-keys call is atomic: text and 'Enter' are passed as discrete argv
- * elements in a single `send-keys` invocation with `-l` (literal, prevents
- * tmux from interpreting special chars). This matches the invariant documented
- * in patterns.md ("send-keys atomic text+Enter, -l for literal").
+ * elements in a single `send-keys` invocation, WITHOUT `-l`. With `-l` every
+ * arg is literal, so 'Enter' would be typed as the text "Enter" and never
+ * submit (sendkeys-literal-enter-gotcha). The text is a single non-key-name
+ * arg, so tmux already sends its characters literally; only 'Enter' must stay
+ * a recognised key.
  */
 export function sendKeysWhenIdle(opts: SendKeysWhenIdleOptions): void {
 	const {

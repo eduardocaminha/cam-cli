@@ -9,7 +9,7 @@
 //      return 0 immediately (fire-and-forget).
 //   3. On miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
 //      (with orchestratorAlive re-check), then send-keys.
-//   4. send-keys is atomic (text + Enter in one call) and uses -l for literal.
+//   4. send-keys is atomic (text + Enter in one call), NO -l (it would make "Enter" literal).
 //   5. No --permission-mode CLI flag (enforced by no-permission-mode-flag.test.ts).
 //   6. Typecheck passes (bun run typecheck).
 //   7. Tests pass (bun test).
@@ -178,8 +178,8 @@ export async function runShip(options: ShipOptions = {}): Promise<number> {
 
 	// Wait for the orchestrator pane to be idle, then issue atomic send-keys.
 	// sendKeysWhenIdle polls capture-pane until the prompt is stable (no
-	// spinner / tool-call glyph), then sends text + Enter in one call with -l
-	// (patterns.md: send-keys atomic text+Enter, -l for literal; US-008).
+	// spinner / tool-call glyph), then sends text + Enter in one call WITHOUT -l
+	// (sendkeys-literal-enter-gotcha: -l would make "Enter" literal and never submit; US-008).
 	sendKeysWhenIdle({
 		paneId: orchPaneId,
 		text: request,
