@@ -60,7 +60,7 @@ export { projectSessionName } from '../tmux/session.ts';
 // ---------------------------------------------------------------------------
 
 /**
- * Shape of the detached sidecar process handle. The real implementation uses
+ * Shape of the sidecar process handle. The real implementation uses
  * Bun.spawn; tests inject a fake via spawnSidecarFn.
  */
 export interface SidecarProcess {
