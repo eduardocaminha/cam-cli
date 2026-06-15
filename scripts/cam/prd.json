@@ -168,9 +168,9 @@
         "Tests pass (bun test)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
-      "notes": "Operator-only story (real tmux + real claude + real keypresses); the autonomous implementer must exit BLOCKED_OPERATOR_REQUIRED. Patterns.md invariants to re-check (operator runbook side): never run a mutating command (cam init, cam plan) against an unrelated working tree; this smoke runs on this repo's branch on purpose. Capture worker-report.json and .claude/cam-supervisor.log (or equivalent) artifacts for the journal. The 5 checks map 1:1 to C1/C2/C3/C4 plus the mutex/single-pane invariant from the original CAM-55."
+      "notes": "Operator-only story (real tmux + real claude + real keypresses); the autonomous implementer must exit BLOCKED_OPERATOR_REQUIRED. Patterns.md invariants to re-check (operator runbook side): never run a mutating command (cam init, cam plan) against an unrelated working tree; this smoke runs on this repo's branch on purpose. Capture worker-report.json and .claude/cam-supervisor.log (or equivalent) artifacts for the journal. The 5 checks map 1:1 to C1/C2/C3/C4 plus the mutex/single-pane invariant from the original CAM-55. SMOKE OUTCOME (2026-06-15): ran live against real tmux + real claude. PROVEN: C1 (thin-proxy submits: 'cam next' showed 'Sent task prompt to orchestrator pane %0' and the prompt landed submitted at the orchestrator prompt), C2 (sidecar process spawned + alive), C3 (isSessionStale alive on 2-pane, stale on injected stray pane), C4 (.cam-orch-ready absent at boot, appears after orchestrator boot), plus orchestrator detection + getOrchPaneId. The smoke FOUND and FIXED two ship-blocker criticals the 3 CLEAN review rounds missed: (1) orchestratorAlive keyed on pane_current_command (orchestrator runs under a bash wrapper) -> fixed to @cam_label; (2) tmux converts TAB to '_' in -F output, breaking getOrchPaneId AND isSessionStale -> fixed to ';' separator. A real-tmux integration test now guards this class. DEFERRED by operator decision: the full worker-dispatch E2E (sidecar dispatching a real claude worker + worker-report across a story + mutex) was not exercised live (needs a scratch-branch dummy story); the introspection layer it depends on is now covered by the integration test."
     }
   ],
   "review": {
