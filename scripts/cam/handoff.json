@@ -1,29 +1,30 @@
 {
   "lastCompletedStory": {
-    "id": "US-FIX-006",
-    "title": "Warnings sweep (W2/W3/W4/W5)"
+    "id": "US-FIX-007",
+    "title": "Docs + templates + embed-vendor re-sync"
   },
   "branchName": "cam/CAM-55-single-hub-dispatch",
-  "timestamp": "2026-06-15T21:00:00Z",
-  "createdFiles": [
-    "templates/.gitignore"
-  ],
+  "timestamp": "2026-06-15T22:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    ".gitignore",
+    ".claude/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-implementer.md",
+    ".claude/commands/cam-next.md",
+    "FLOW.md",
+    "README.md",
     "scripts/cam/prd.json",
-    "src/supervisor/loop.ts",
-    "src/tmux/dispatch.ts",
     "src/vendor/_generated.ts",
-    "test/no-permission-mode-flag.test.ts",
-    "test/supervisor/loop.test.ts"
+    "templates/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-implementer.md",
+    "templates/commands/cam-next.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-FIX-006 done. W2: worker-report.json now gitignored in .gitignore and templates/.gitignore (new file, materialized to project root by cam init). W3: BUSY_GLYPHS widened from 10 specific braille chars to full range [U+2800-U+28FF] using [⠀-⣿◆] regex. W4: parseReviewArgs and parseShipArgs behavioral tests added to test/no-permission-mode-flag.test.ts (7 tests now, was 5). W5: scrollback-poll fallback guarded to scan only last 10 lines of pane, preventing false-trips from doc content; unit test added to loop.test.ts. 921 tests pass, typecheck clean, embed-vendor:check clean. Check prd.json for the next pending story.",
+  "nextStoryContext": "US-FIX-007 done. Doc + template sync for sidecar model: subagent-orchestrator (loop semantics -> narrate sidecar report), subagent-implementer (invoker: sidecar not orchestrator; session model: report-file primary), cam-next.md (sidecar drives loop, not orchestrator). FLOW.md sections 4.5/7/8 updated (stale in-process refs removed). README.md fixed (-l flag comment, cam next description, 3-pane layout). All mirrors updated in templates/. src/vendor/_generated.ts regenerated via embed-vendor. 921 tests pass, typecheck clean, embed-vendor:check clean. US-FIX-008 is operator-only (requires: operator) -- the autonomous implementer must skip it and emit PRD_COMPLETE.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal sweep: gitignore, regex character class, test assertions, loop guard. No external JS library touched."
+      "summary": "Pure doc-sync story: .md files and _generated.ts (from templates). No external JS library touched."
     }
   ]
 }
