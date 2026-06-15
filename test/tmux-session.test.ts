@@ -546,35 +546,56 @@ function staleSpawn(listPanesStdout: string, listPanesStatus = 0): SpawnFn {
 }
 
 describe('isSessionStale', () => {
-	test('healthy: 2 panes, none cat -> false', () => {
-		expect(isSessionStale('s', staleSpawn('claude\ncam\n'))).toBe(false);
+	// Production-realistic fixtures: orchestrator + dashboard are ALWAYS labeled.
+	// Format: #{pane_current_command}\t#{@cam_label}
+
+	test('2-pane canonical layout (orchestrator + dashboard, both labeled) -> false (alive)', () => {
+		// The healthy idle state: only the two permanent panes exist.
+		expect(isSessionStale('s', staleSpawn('claude\torchestrator\ncam\tdashboard\n'))).toBe(false);
 	});
 
-	test('a cat placeholder pane -> true', () => {
-		expect(isSessionStale('s', staleSpawn('cat\ncam\n'))).toBe(true);
+	test('3-pane: worker-pane labeled "implementer" -> false (alive)', () => {
+		// Supervisor has respawned the worker slot for the implement phase.
+		expect(isSessionStale('s', staleSpawn(
+			'claude\torchestrator\ncam\tdashboard\nclaude\timplementer\n',
+		))).toBe(false);
 	});
 
-	test('3 panes, none labeled -> true (stray pane, not a titled worker-pane)', () => {
-		expect(isSessionStale('s', staleSpawn('claude\ncam\ncam\n'))).toBe(true);
+	test('3-pane: worker-pane labeled "reviewer" -> false (alive)', () => {
+		// Supervisor has respawned the worker slot for the review phase.
+		expect(isSessionStale('s', staleSpawn(
+			'claude\torchestrator\ncam\tdashboard\nclaude\treviewer\n',
+		))).toBe(false);
 	});
 
-	test('3 panes with @cam_label on worker pane -> false (alive: titled worker-pane)', () => {
-		// tab-separated format: #{pane_current_command}\t#{@cam_label}
-		// 3rd pane carries @cam_label 'phase:implement' -> worker-pane -> alive
-		expect(isSessionStale('s', staleSpawn('claude\t\ncam\t\nclaude\tphase:implement\n'))).toBe(false);
+	test('3-pane: stray unlabeled 3rd pane -> true (stale)', () => {
+		// A leftover bash shell with no @cam_label is NOT a legitimate worker-pane.
+		expect(isSessionStale('s', staleSpawn(
+			'claude\torchestrator\ncam\tdashboard\nbash\t\n',
+		))).toBe(true);
 	});
 
-	test('3 panes but @cam_label missing on all panes -> true (stray pane)', () => {
-		// All panes have empty labels: extra pane is a stray shell
-		expect(isSessionStale('s', staleSpawn('claude\t\ncam\t\nbash\t\n'))).toBe(true);
+	test('3-pane: 3rd pane has unknown (non-worker) label -> true (stale)', () => {
+		// A pane labeled something unrecognised is not a valid worker-pane.
+		expect(isSessionStale('s', staleSpawn(
+			'claude\torchestrator\ncam\tdashboard\nbash\tunknown-label\n',
+		))).toBe(true);
 	});
 
-	test('4 panes -> true (too many, regardless of labels)', () => {
-		expect(isSessionStale('s', staleSpawn('claude\t\ncam\t\nclaude\tworker\nbash\t\n'))).toBe(true);
+	test('4-pane session -> true (too many panes, stale)', () => {
+		// 4+ panes: always stale regardless of labels.
+		expect(isSessionStale('s', staleSpawn(
+			'claude\torchestrator\ncam\tdashboard\nclaude\timplementer\nbash\t\n',
+		))).toBe(true);
 	});
 
-	test('wrong pane count (1) -> true', () => {
-		expect(isSessionStale('s', staleSpawn('claude\n'))).toBe(true);
+	test('a cat placeholder pane -> true (placeholder never respawned)', () => {
+		// cat is the session-creation placeholder; if still running, session is stale.
+		expect(isSessionStale('s', staleSpawn('cat\torchestrator\ncam\tdashboard\n'))).toBe(true);
+	});
+
+	test('wrong pane count (1 pane) -> true', () => {
+		expect(isSessionStale('s', staleSpawn('claude\torchestrator\n'))).toBe(true);
 	});
 
 	test('empty list-panes output -> true (conservative)', () => {

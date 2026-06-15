@@ -157,9 +157,18 @@ export function isSessionStale(sessionName: string, spawnFn: SpawnFn): boolean {
 	if (panes.some((p) => p.cmd === 'cat')) return true; // a placeholder never respawned
 	if (panes.length === 2) return false; // canonical 2-pane layout: alive
 	if (panes.length === 3) {
-		// Alive only if the extra pane carries the @cam_label (titled worker-pane).
-		// A pane without the label is a stray shell / leftover process.
-		return !panes.some((p) => p.label.length > 0);
+		// The orchestrator and dashboard panes are ALWAYS labeled ('orchestrator' and
+		// 'dashboard' respectively, set in run.ts setupPanes). The remaining 3rd pane
+		// is the worker-pane slot. It is alive only when it carries a known worker
+		// @cam_label ('implementer' or 'reviewer', set in loop.ts before respawn-pane).
+		// A stray/dead pane (leftover bash shell, unlabeled process) has no label or
+		// an unknown label and must be treated as stale.
+		const WORKER_LABELS = new Set(['implementer', 'reviewer']);
+		const workerPane = panes.find(
+			(p) => p.label !== 'orchestrator' && p.label !== 'dashboard',
+		);
+		if (!workerPane) return true; // no 3rd pane identifiable: stale
+		return !WORKER_LABELS.has(workerPane.label);
 	}
 	return true; // 4+ panes: stale
 }
