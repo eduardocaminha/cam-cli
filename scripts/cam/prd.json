@@ -172,5 +172,11 @@
       "requires": "operator",
       "notes": "Operator-only story (real tmux + real claude + real keypresses); the autonomous implementer must exit BLOCKED_OPERATOR_REQUIRED. Patterns.md invariants to re-check (operator runbook side): never run a mutating command (cam init, cam plan) against an unrelated working tree; this smoke runs on this repo's branch on purpose. Capture worker-report.json and .claude/cam-supervisor.log (or equivalent) artifacts for the journal. The 5 checks map 1:1 to C1/C2/C3/C4 plus the mutex/single-pane invariant from the original CAM-55."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastReviewSha": "023e533611bb48f88a9bc04910e2295cc29762ea",
+    "lastVerdict": "FIXES_PENDING"
+  }
 }

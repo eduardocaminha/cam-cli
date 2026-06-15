@@ -51,11 +51,13 @@ export function formatWorkerReportSummary(report: WorkerReport): string {
  * Build the tmux argv for pushing the worker's one-line summary to the
  * orchestrator pane via send-keys.
  *
- * Invariants (memory: tmux-drive-orchestrator-atomic-enter):
- *   - `-l` (literal) ensures JSON metacharacters ({, }, ", ;) are not
- *     interpreted as key sequences by tmux.
+ * Invariants (memory: sendkeys-literal-enter-gotcha):
+ *   - NO `-l`. With `-l` every argument is literal, so "Enter" is typed as the
+ *     text "Enter" and the summary never submits. The summary is a single
+ *     non-key-name argv element, so tmux already sends its characters literally
+ *     ({, }, ", ;, spaces all land verbatim) without `-l`.
  *   - `Enter` is a SEPARATE key argument, never concatenated to the summary
- *     string (atomic: both are issued in the same send-keys call).
+ *     string, and stays a recognised key so the line submits.
  *   - Both summary and Enter are in the SAME send-keys call (one round-trip).
  *
  * The returned array is the full argv after "tmux" (pass as args to

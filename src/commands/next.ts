@@ -286,8 +286,9 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 
 	// Wait for the orchestrator pane to be idle, then issue atomic send-keys.
 	// sendKeysWhenIdle polls capture-pane until the prompt is stable (no
-	// spinner / tool-call glyph), then sends text + Enter in one call with -l
-	// (patterns.md: send-keys atomic text+Enter, -l for literal; US-008).
+	// spinner / tool-call glyph), then sends text + Enter in one call WITHOUT -l
+	// (sendkeys-literal-enter-gotcha: -l would make "Enter" literal and never
+	// submit; the text is a single non-key-name arg, already literal; US-008).
 	sendKeysWhenIdle({
 		paneId: orchPaneId,
 		text: taskPrompt,
