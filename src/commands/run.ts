@@ -335,8 +335,13 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	// (bg=accent fg=dark), so "green pill = active" reads the same top and bottom.
 	// Inactive panes stay muted text.
 	opt('pane-border-format', `#{?pane_active,#[bg=${ACCENT} fg=${DARK} bold] #{@cam_label} ,#[fg=${MUTED}] #{@cam_label} }#[default]`);
+	// Both border styles are ACCENT so the SHARED divider is uniformly green
+	// regardless of focus. tmux colors each side of a shared border with that
+	// pane's own style; a muted inactive style left the divider half-green and
+	// flipping with focus. The active pane is signalled by the green title pill,
+	// not the border, so uniform-green borders lose no information.
 	opt('pane-active-border-style', `fg=${ACCENT}`);
-	opt('pane-border-style', `fg=${MUTED}`);
+	opt('pane-border-style', `fg=${ACCENT}`);
 	opt('status', 'on');
 	// absolute-centre keeps the nav hint pinned to the middle of the FULL bar
 	// regardless of the status-left/right widths, so it does not drift when the
