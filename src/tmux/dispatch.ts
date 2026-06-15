@@ -73,12 +73,16 @@ export interface SendKeysWhenIdleOptions {
 
 /**
  * Glyphs that indicate the claude TUI is mid-turn (busy):
- * - Braille spinner set: ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏
- * - Active tool-call glyph used by claude CLI: ◆
+ * - Full braille block U+2800-U+28FF (covers every glyph claude renders during
+ *   a spinner half-cycle; previously only ~10 specific chars were listed, which
+ *   caused isOrchPaneIdle to return true mid-spin ~half the time, defeating the
+ *   US-008 idle-guarantee). The range includes the null braille char U+2800 and
+ *   runs through U+28FF which encompasses all 256 braille patterns.
+ * - Active tool-call glyph used by claude CLI: ◆ (U+25C6)
  *
  * Any of these in the last 5 lines of the pane means we must wait.
  */
-const BUSY_GLYPHS = /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏◆]/u;
+const BUSY_GLYPHS = /[⠀-⣿◆]/u;
 
 /**
  * Prompt pattern that indicates the claude TUI is idle (waiting for input).

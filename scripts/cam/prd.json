@@ -127,7 +127,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .gitignore, templates/.gitignore, src/tmux/dispatch.ts (BUSY_GLYPHS regex line ~81), src/supervisor/loop.ts (scrollback fallback ~618-624), test/<new test files for parseShipArgs/parseReviewArgs behavioral checks>. The W3 braille widening should ALSO be reflected in the patterns.md bullet on idle-guarantee (US-008) if the character class is documented there; if not, no doc change required. Patterns.md invariants to re-check: noUncheckedIndexedAccess on regex captures; never register --permission-mode on a subcommand (the behavioral test is what enforces this); Bun runtime; conventional commits. Extract `parseShipArgs` and `parseReviewArgs` as named exports in src/commands/ship.ts and src/commands/review.ts (mirroring the existing `parseNextArgs`/`parsePlanArgs`/`parseIssueArgs` pattern), then add behavioral assertions to test/no-permission-mode-flag.test.ts that each parser rejects `--permission-mode` at the parse layer (same shape as the existing parser assertions). If ship/review legitimately take no flags worth a parser, instead assert at the command entry that `--permission-mode` is not accepted; pick the parse-layer path by default. templates/.gitignore does not exist yet; create it (so `cam init` mirrors the ignore into downstream projects) and ensure it is picked up by embed-vendor if templates/ is vendored."
     },

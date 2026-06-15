@@ -1,0 +1,3 @@
+# Ephemeral per-invocation worker exit report written by the cam agent (US-003).
+# Never commit this file: it is overwritten on each worker invocation.
+scripts/cam/worker-report.json

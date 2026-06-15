@@ -1291,6 +1291,56 @@ describe('runSupervisor', () => {
 		expect(spawnCalls.some((a) => a.includes('echo timeout'))).toBe(true);
 	});
 
+	test('W5: scrollback-fallback only scans tail (literal sentinel in history does not false-trip)', async () => {
+		// Scrollback guard (US-FIX-006): the capturePane fallback now only scans
+		// the last 10 lines. A doc or template containing the literal sentinel
+		// string earlier in the pane history must NOT fire pollOutcome='sentinel'.
+		// Here, the sentinel appears in the first half of the pane text (simulating
+		// a CLAUDE.md read-out), and the last 10 lines contain no sentinel.
+		// The poll must NOT advance; the timeout (perWorkerTimeoutMs:0) fires instead.
+		const docWithLiteralSentinel =
+			// 20 lines of "history" containing the forbidden literal
+			Array.from({ length: 20 }, (_, i) =>
+				i === 5
+					? 'CAM_IMPLEMENTER_STATUS=DONE story=US-001' // literal in scrollback
+					: `history line ${i}`,
+			).join('\n') +
+			'\n' +
+			// 3 lines of actual current pane output (no sentinel here)
+			'> current prompt output\n> more output\n> idle\n';
+
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			capturePane: (_paneId) => docWithLiteralSentinel,
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 0, // forces timeout (not sentinel) on this iteration
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Timeout fires (dead-worker streak 1, under cap) because the sentinel in
+		// the scrollback history was NOT in the tail -- so it was ignored.
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		// The timeout kill was issued (not a sentinel exit)
+		expect(spawnCalls.some((a) => a.includes('echo timeout'))).toBe(true);
+	});
+
 	test('US-004: clearWorkerReport called once per implement dispatch', async () => {
 		// clearWorkerReport must be called exactly once before respawn-pane -k so
 		// a stale report from the previous run does not trigger a false positive.

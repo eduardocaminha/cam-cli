@@ -616,8 +616,16 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						break;
 					}
 				} else {
+					// W5 guard (US-FIX-006): only scan the LAST 10 lines of the pane.
+					// The agent sentinel is always the final line of its output. Scanning
+					// the full scrollback risks a false-positive if docs or templates
+					// that contain a literal 'CAM_IMPLEMENTER_STATUS=DONE' string appear
+					// anywhere earlier in the pane history (e.g. from CLAUDE.md displayed
+					// in context or a template file being cat'd). Restricting to the tail
+					// makes the guard exact: a sentinel in old scroll-history cannot fire.
 					const polledText = capturePane(workerPaneId);
-					if (parseAnySentinel(polledText) !== null) {
+					const tail = polledText.split('\n').slice(-10).join('\n');
+					if (parseAnySentinel(tail) !== null) {
 						pollOutcome = 'sentinel';
 						break;
 					}
