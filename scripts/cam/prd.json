@@ -1,0 +1,217 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-55-single-hub-dispatch",
+  "description": "Make cam run the single hub: CLI subcommands become thin-proxies that push natural-language requests to the orchestrator pane via tmux send-keys, and all worker dispatch flows through a single reused titled worker-pane that reports on /exit (push) instead of being polled (pull).",
+  "issueNumber": 55,
+  "relatedDocs": [
+    "FLOW.md",
+    "README.md",
+    "lessons.md",
+    "scripts/cam/CLAUDE.md",
+    "scripts/cam/patterns.md",
+    ".claude/agents/subagent-orchestrator.md",
+    ".claude/commands/cam-next.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "tmux",
+      "url": "https://man.openbsd.org/tmux.1",
+      "version": "man (openbsd)",
+      "fetchedAt": "2026-06-15",
+      "summary": "send-keys -l sends literal UTF-8 and disables key-name lookup; arbitrary text (JSON braces/quotes/semicolons) is otherwise parsed as key names; Enter is a distinct key from literal text; set -p @user-option + pane-border-format #{@option} for the titled pill. Per-pane user options are set with the set -p form (e.g. tmux set -p @cam_label <value>), not set -g.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Spike design doc for single-hub dispatch",
+      "description": "As an operator and future implementer, I need the decided architecture of CAM-55 written down so that subsequent stories can encode it without re-deciding: (1) supervisor survives unchanged except for completion-detection (push report file replaces scrollback polling), (2) thin-proxies wait for a .claude/.cam-orch-ready marker after bootstrapping cam run, (3) idle-guarantee before push is its own story (US-008), not folded into the proxy.",
+      "acceptanceCriteria": [
+        "FLOW.md gains a section (supervisor/dispatch) describing the 3 decided answers: supervisor-survives + push-report-file (Q1), bootstrap-wait via .claude/.cam-orch-ready marker (Q2), idle-guarantee as separate story (Q3).",
+        "scripts/cam/patterns.md gains a durable bullet capturing the single-hub invariant (cam run is the only dispatch hub; CLI commands are thin-proxies that send-keys into %0; worker dispatch is a single reused titled pane; completion is push, not pull).",
+        "No em-dash in the persisted .md edits (project rule, 2026-05-20).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Doc-only story. Files to edit: FLOW.md, scripts/cam/patterns.md. Do NOT touch any source files. Patterns.md invariants to re-check while editing: no em-dash in persisted .md; the bullet must be actionable (not generality). Read scripts/cam/patterns.md before writing so the new bullet matches the existing voice and format."
+    },
+    {
+      "id": "US-002",
+      "title": "Uniform titled worker-pane (single reused pane, label per phase)",
+      "description": "As the orchestrator, I need worker dispatches to reuse ONE titled worker-pane (not spawn a fresh pane per dispatch) so that the tmux session has 2 panes at rest and 3 panes when a worker is active. The pane's pane-border-format pulls the green pill already used by the orchestrator/dashboard, and the worker process runs claude --agent X WITHOUT the orchestrator's kill-session wrapper so that /exit closes only the pane (session survives).",
+      "acceptanceCriteria": [
+        "A worker dispatch sets @cam_label per phase and reuses the existing worker-pane if one is present (no second worker-pane spawned).",
+        "The worker-pane pane-border-format renders the same green pill (pane-border-status top / pane-border-format #{@cam_label}) the orchestrator and dashboard already use.",
+        "The worker argv does NOT wrap claude in a kill-session shell wrapper; /exit closes only the worker-pane and the tmux session keeps running.",
+        "claude -p is not present in the worker argv (CAM-42 rule; existing test asserts this).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files likely touched: src/commands/run.ts, src/tmux/session.ts (look for the pane-spawn helper and the existing pane-border-format wiring for the orchestrator/dashboard). Patterns.md invariants to re-check: Bun runtime (Bun.spawn for tmux calls or Bun.$ via runTmux helper); never reintroduce claude -p in a worker argv (test/no-claude-p-in-worker.* asserts this); never register a --permission-mode flag on a subcommand; noUncheckedIndexedAccess (guard array/regex captures); Ink screens are not changed by this story, but if you touch any divider, success/failure is the glyph not the divider color. Do not reference a single test/no-claude-p-in-worker.* file (it does not exist); the claude -p absence is asserted via worker-argv inspection in the existing run/plan/issue command tests under test/, so add or extend those argv assertions."
+    },
+    {
+      "id": "US-003",
+      "title": "Worker writes a structured report on /exit and pushes a one-line summary to %0",
+      "description": "As the supervisor, I need the worker to write a structured report file on /exit AND push a one-line human summary into the orchestrator pane via tmux send-keys, so that completion detection becomes a push event (report file presence) instead of polling scrollback for a sentinel.",
+      "acceptanceCriteria": [
+        "On /exit the worker writes a structured report file (documented JSON shape: outcome, story, gates, notes; same shape as the CAM-52 verdict for future structured-outputs work).",
+        "The worker also pushes a one-line human summary to the orchestrator pane %0 via tmux -L cam send-keys.",
+        "Literal payload safety: a report payload containing JSON braces/quotes/semicolons is sent with send-keys -l (literal), Enter is appended as a separate key argument, and text+Enter are issued in the SAME tmux call (atomic, per memory tmux-drive-orchestrator-atomic-enter). The implementer empirically verifies the chosen send-keys form (a payload with {, }, \", and ; lands in the orchestrator pane verbatim).",
+        "claude -p is not present in the worker argv.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files likely touched: src/supervisor/worker-argv.ts (worker wrapper) and the worker exit path. JSON shape should mirror the CAM-52 verdict (outcome, story, gates, notes) so future structured-outputs work reuses it. Patterns.md invariants to re-check: send-keys atomic text+Enter (memory tmux-drive-orchestrator-atomic-enter); -l for literal payloads with shell-metachar content; Bun.spawn/Bun.$ over node:child_process for tmux calls; Bun.file for writing the report file; noUncheckedIndexedAccess on any regex/JSON-parse step; no em-dash in any persisted .md the implementer touches."
+    },
+    {
+      "id": "US-004",
+      "title": "Supervisor reads the report file (replaces scrollback-poll completion-detection)",
+      "description": "As the supervisor, I need to detect worker completion by reading the US-003 report file via an injected reader dependency, replacing the current scrollback-poll path (capturePane + parseAnySentinel around src/supervisor/loop.ts:553-581). All existing hardened guards stay intact (iteration counter, no-progress streak CAM-36, dead-worker backoff CAM-44, max-iterations cap, decideNextAction sequencing). prd.json passes: + handoff.json remain the source of truth; the report corroborates, never sole-gates.",
+      "acceptanceCriteria": [
+        "src/supervisor/loop.ts completion-detection no longer calls capturePane / parseAnySentinel; instead it reads the report file via a new injected reader dependency.",
+        "Every existing supervisor guard remains untouched: iteration counter, no-progress streak (CAM-36), dead-worker backoff (CAM-44), max-iterations cap, decideNextAction sequencing.",
+        "State-primary invariant: the dispatch loop still consults prd.json (passes:) and handoff.json as the source of truth; the report file corroborates and never sole-gates.",
+        "A unit test injects a fake report reader and asserts the supervisor advances on a report event and reuses the existing guards on a stale/absent report.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files likely touched: src/supervisor/loop.ts, src/supervisor/result.ts. Re-read loop.ts:553-581 (capturePane + parseAnySentinel block) before refactoring; that is the exact code being replaced. Patterns.md invariants to re-check: Bun.file for reading the report; noUncheckedIndexedAccess (JSON.parse result is unknown, guard each field); never reintroduce sentinel-polling-as-sole-gate (memory supervisor-sentinel-parse-fragility); tests under test/ mirror src/, inject fake reader instead of touching the real fs; no claude -p anywhere."
+    },
+    {
+      "id": "US-005",
+      "title": "isSessionStale + orchestrator-alive + pane-count mutex predicate",
+      "description": "As the dispatch layer, I need isSessionStale (src/tmux/session.ts:136) to treat 2 OR 3 panes as alive (the 3rd being the titled worker-pane, not a stray cat/process), an orchestrator-alive predicate, and a pane-count mutex predicate (a dispatch may spawn the 3rd pane only if exactly 2 panes currently exist). This closes the CAM-47 false-positive where a stale-check killed a session with a legitimate worker-pane.",
+      "acceptanceCriteria": [
+        "isSessionStale returns 'alive' for both 2-pane and 3-pane states where the 3rd pane is the titled worker-pane (identifiable by @cam_label), and returns 'stale' for stray panes (cat, leftover shell) as before.",
+        "An orchestrator-alive predicate exists (e.g. is %0 the orchestrator pane and is it running the orchestrator process) and is exported for thin-proxies to call.",
+        "A pane-count mutex predicate exists: returns 'available' iff exactly 2 panes currently exist, 'busy' otherwise. Thin-proxies use this to decide whether to dispatch a 3rd pane.",
+        "Unit tests cover the 2-pane / 3-pane / stray-pane / dead-orchestrator cases via an injected runTmux fake.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files likely touched: src/tmux/session.ts (isSessionStale lives at line 136). Patterns.md invariants to re-check: Bun runtime (runTmux helper uses Bun.$ or Bun.spawn); noUncheckedIndexedAccess on the parsed pane list (split() returns string[], each index is T | undefined); inject runTmux for unit tests, do not call real tmux; no em-dash in persisted .md. Identify the titled worker-pane by querying #{@cam_label} per pane (tmux display-message -p or show-options -pv @cam_label); treat absence of @cam_label as a stray/non-worker pane."
+    },
+    {
+      "id": "US-006",
+      "title": "cam plan / next / issue thin-proxies + .claude/.cam-orch-ready bootstrap-wait",
+      "description": "As an operator, I need cam plan, cam next, and cam issue to become thin-proxies: if a live orchestrator is detected, atomic send-keys a natural-language request into %0 and return (fire-and-forget); if not, bootstrap cam run, poll the .claude/.cam-orch-ready marker until ready, then send-keys. The orchestrator writes the marker after its own boot completes.",
+      "acceptanceCriteria": [
+        "cam plan, cam next, cam issue detect a live orchestrator (via the US-005 predicate); on hit they send-keys a natural-language request to %0 (atomic text+Enter, -l for literal payloads) and return.",
+        "On miss they bootstrap cam run, then poll for .claude/.cam-orch-ready (a fresh marker written by the orchestrator after boot) before pushing send-keys.",
+        "cam run writes .claude/.cam-orch-ready after orchestrator boot completes; the marker is cleared on orchestrator exit.",
+        "A bootstrap-wait helper exists (mirror the existing setup.ts sentinel-poll pattern) and is unit-tested with an injected file-stat fake.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Files likely touched: src/commands/plan.ts, src/commands/next.ts, src/commands/issue.ts, src/commands/run.ts (marker write/clear), plus a new bootstrap-wait helper (e.g. src/tmux/bootstrap-wait.ts). Mirror the existing setup.ts sentinel-poll for the marker polling. Patterns.md invariants to re-check: send-keys atomic text+Enter; -l for literal payloads; Bun.file for the marker; never register a --permission-mode flag on these subcommands (CAM-42 + test/no-permission-mode-flag.test.ts); noUncheckedIndexedAccess; no claude -p in any spawned worker argv; conventional commits. The .claude/.cam-orch-ready marker cleanup must be wired into an exit/finally handler in src/commands/run.ts that also fires on SIGINT/SIGTERM (a crash otherwise leaves a stale marker); the thin-proxy bootstrap-wait must additionally re-validate liveness via the US-005 orchestrator-alive predicate before trusting the marker."
+    },
+    {
+      "id": "US-007",
+      "title": "cam review and cam ship CLI thin-proxies",
+      "description": "As an operator, I need cam review and cam ship CLI subcommands that do not exist today, implemented as thin-proxies routing requests to the orchestrator, same pattern as US-006. They are wired into the CLI entry/dispatch.",
+      "acceptanceCriteria": [
+        "cam review and cam ship subcommands exist and are registered in the CLI dispatch.",
+        "Both follow the same thin-proxy pattern as US-006 (detect live orchestrator -> send-keys; else bootstrap + wait for marker -> send-keys).",
+        "Neither registers a --permission-mode CLI flag (test/no-permission-mode-flag.test.ts must still pass after wiring).",
+        "Unit tests cover both subcommands with an injected runTmux + bootstrap-wait fake.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "Files likely touched: src/commands/review.ts (new), src/commands/ship.ts (new), CLI router (src/index.ts or src/cli.ts) for dispatch wiring. Patterns.md invariants to re-check: never register a --permission-mode flag on these subcommands; send-keys atomic text+Enter; -l for literal payloads; noUncheckedIndexedAccess on argv parsing; Bun runtime everywhere; conventional commits."
+    },
+    {
+      "id": "US-008",
+      "title": "Idle-guarantee before pushing into the orchestrator pane",
+      "description": "As a thin-proxy or worker, I need to verify the orchestrator pane is idle and ready-for-input before send-keys, so that a pushed request or report never lands mid-turn. The check polls captured pane content until the prompt is stable (no progress glyph, no in-flight tool call) and only then issues send-keys.",
+      "acceptanceCriteria": [
+        "The send-keys helper used by US-003 and US-006 first calls an idle-check that polls capture-pane until the prompt is stable, then issues send-keys.",
+        "The idle-check has a documented timeout and a defined fallback (e.g. log + still send, or block and surface a clear UX) so it never hangs indefinitely.",
+        "Unit tests cover the idle / busy / timeout cases via an injected capture-pane fake.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 8,
+      "passes": false,
+      "requires": null,
+      "notes": "Files likely touched: the send-keys helper introduced/used by US-003 and US-006 (probably src/tmux/dispatch.ts or src/tmux/send-keys.ts). Patterns.md invariants to re-check: send-keys atomic text+Enter; capture-pane reads are best-effort and have lag (memory tmux-drive-orchestrator-atomic-enter); noUncheckedIndexedAccess on the captured-pane split lines; Bun runtime; inject the capture-pane reader for tests instead of calling real tmux."
+    },
+    {
+      "id": "US-009",
+      "title": "Mutex failure-mode UX when a 2nd dispatch is attempted with a worker active",
+      "description": "As an operator who runs cam next while a worker is already active (3 panes already), I need a clear 'worker busy, blocked until the worker-pane closes' message and a defined exit/queue behavior so that the 2nd dispatch never silently spawns a 4th pane or stomps on the active worker.",
+      "acceptanceCriteria": [
+        "When the pane-count mutex predicate (US-005) returns 'busy', the dispatch sites refuse to spawn and surface a clear, single-line message: 'worker busy, blocked until the worker-pane closes' (or operator-approved wording).",
+        "A defined exit/queue behavior: thin-proxies exit with a non-zero status, the orchestrator declines and narrates the block; no 4th pane is ever spawned.",
+        "Unit tests assert the 'busy' path returns the documented exit/queue behavior on every dispatch site.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 9,
+      "passes": false,
+      "requires": null,
+      "notes": "Files likely touched: the dispatch sites (src/commands/plan.ts, src/commands/next.ts, src/commands/issue.ts, src/commands/review.ts, src/commands/ship.ts) and src/tmux/session.ts (mutex predicate from US-005). Patterns.md invariants to re-check: never register a --permission-mode flag; send-keys atomic text+Enter; noUncheckedIndexedAccess; Bun runtime; no em-dash in any persisted .md (the UX message lands in code, not .md, but any doc updated by this story follows the rule)."
+    },
+    {
+      "id": "US-010",
+      "title": "Docs + templates + embed-vendor sync",
+      "description": "As the next operator (or implementer) coming into the repo cold, I need .claude/agents/subagent-orchestrator.md, .claude/commands/cam-*.md, and README.md to describe the new dispatch model (orchestrator receives pushed reports + uniform dispatch; thin-proxy behavior; cam-next.md no longer describes scrollback-poll); these changes are mirrored into templates/ and the embedded vendor is regenerated.",
+      "acceptanceCriteria": [
+        ".claude/agents/subagent-orchestrator.md describes receiving pushed reports from the worker-pane and uniform dispatch via the titled worker-pane.",
+        ".claude/commands/cam-next.md no longer describes scrollback-poll completion-detection; it describes the report-file push path.",
+        ".claude/commands/cam-plan.md, cam-issue.md, cam-review.md, cam-ship.md (any that exist or are added by US-007) describe the thin-proxy behavior.",
+        "README.md is updated to reflect the single-hub dispatch model.",
+        "All changes are mirrored into templates/ (agents, commands, scripts/cam where applicable).",
+        "bun run embed-vendor regenerates src/vendor/_generated.ts.",
+        "Vendor drift check passes (bun run embed-vendor:check).",
+        "No em-dash in any persisted .md edit (project rule, 2026-05-20).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 10,
+      "passes": false,
+      "requires": null,
+      "notes": "Files touched: .claude/agents/subagent-orchestrator.md, .claude/commands/cam-next.md (and cam-plan.md, cam-issue.md, cam-review.md, cam-ship.md as applicable), README.md, templates/** (mirror), src/vendor/_generated.ts (regenerated). Patterns.md invariants to re-check: no em-dash in persisted .md; templates/ and .claude/ must stay in lockstep, then embed-vendor regenerates src/vendor/_generated.ts; conventional commits."
+    },
+    {
+      "id": "US-011",
+      "title": "Operator smoke: reproduce the CAM-55 repro end-to-end",
+      "description": "As the operator, I need to hand-run the exact CAM-55 repro (real cam plan 52 followed by real cam run) and verify: a single titled worker-pane is reused (no stray 3rd pane spawned per dispatch), the mutex blocks a concurrent cam next attempt with the documented UX, /exit pushes a structured report to the orchestrator pane (orchestrator narrates it), and isSessionStale shows no false-positive while a worker is active.",
+      "acceptanceCriteria": [
+        "Real cam plan 52 followed by cam run reproduces the original CAM-55 scenario.",
+        "Exactly one titled worker-pane is observed across the run (reused, not a fresh pane per dispatch).",
+        "Attempting a concurrent cam next while the worker is active surfaces the US-009 mutex UX (no 4th pane spawned).",
+        "On /exit the worker pushes a structured report to the orchestrator pane (orchestrator narrates the one-line summary).",
+        "isSessionStale returns 'alive' throughout the worker's lifetime (no false-positive kill).",
+        "Operator records the run (terminal recording or screencaps of the 4 checks above) and flips this story passes: true manually.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 11,
+      "passes": false,
+      "requires": "operator",
+      "notes": "Operator-only story (real tmux + real claude + real keypresses); the autonomous implementer must NOT attempt this story (it exits BLOCKED_OPERATOR_REQUIRED and the loop moves on). Patterns.md invariants to re-check (operator runbook side): never run a mutating command (cam init, cam plan) against the repo working tree without thinking; this smoke runs cam run against this repo on purpose. Capture the report file artifact for the journal."
+    }
+  ]
+}
