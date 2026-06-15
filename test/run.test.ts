@@ -388,6 +388,24 @@ describe('runRun tmux argv — new session', () => {
 		expect(value).toBeDefined();
 		expect(value).toContain('bg=#4EBE7D');
 	});
+
+	it('pane-border-format active title uses the same green bg pill as the status indicator', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		const call = spawn.calls.find(
+			c => c.args[2] === 'set-option' && c.args.some(a => a === 'pane-border-format'),
+		);
+		expect(call).toBeDefined();
+		const idx = call!.args.indexOf('pane-border-format');
+		const value = call!.args[idx + 1];
+		// Active pane title is a filled green pill (bg=), matching the status-left
+		// active indicator, so "green pill = active" reads the same top and bottom.
+		expect(value).toBeDefined();
+		expect(value).toContain('bg=#4EBE7D');
+	});
 });
 
 // The 2-pane layout (US-002/US-004) has exactly orchestrator (pane 0) and

@@ -331,7 +331,10 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	paneLabel(dashboardPaneId, 'dashboard');
 	const navHint = `#[fg=${MUTED}]click / Ctrl+b ←→ switch · exit orchestrator quits`;
 	opt('pane-border-status', 'top');
-	opt('pane-border-format', `#{?pane_active,#[fg=${ACCENT} bold],#[fg=${MUTED}]} #{@cam_label} #[default]`);
+	// Active pane title: same green pill as the status-left active indicator
+	// (bg=accent fg=dark), so "green pill = active" reads the same top and bottom.
+	// Inactive panes stay muted text.
+	opt('pane-border-format', `#{?pane_active,#[bg=${ACCENT} fg=${DARK} bold] #{@cam_label} ,#[fg=${MUTED}] #{@cam_label} }#[default]`);
 	opt('pane-active-border-style', `fg=${ACCENT}`);
 	opt('pane-border-style', `fg=${MUTED}`);
 	opt('status', 'on');
