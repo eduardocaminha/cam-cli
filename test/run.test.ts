@@ -46,13 +46,13 @@ function makeFakeSpawn(opts: {
 	sessionExists?: boolean;
 	/**
 	 * stdout for `list-panes` when the session exists (CAM-47 staleness check).
-	 * Default is the HEALTHY shape (3 panes, none `cat`) so the re-attach test
+	 * Default is the HEALTHY shape (2 panes, none `cat`) so the re-attach test
 	 * keeps exercising the no-reset branch. A stale-path test passes a malformed
 	 * value (a `cat` pane or wrong pane count).
 	 */
 	listPanes?: string;
 } = {}): SpawnFn & { calls: SpawnRecord[] } {
-	const { tmuxAvailable = true, sessionExists = false, listPanes = 'claude\ncam\ncam\n' } = opts;
+	const { tmuxAvailable = true, sessionExists = false, listPanes = 'claude\ncam\n' } = opts;
 	const calls: SpawnRecord[] = [];
 	let paneCounter = 0;
 	// kill-session flips this so a stale-path recreate (ensureProjectSession ->
@@ -255,34 +255,24 @@ describe('runRun tmux argv — new session', () => {
 		expect(newSess?.args).toContain(`CAM_SESSION=${sessionName}`);
 	});
 
-	it('calls tmux split-window twice to create pane 1 (dashboard) and pane 2 (menu)', () => {
+	it('calls tmux split-window once to create pane 1 (dashboard)', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
 		const splits = spawn.calls.filter(c => c.args[2] === 'split-window');
-		expect(splits.length).toBe(2);
+		expect(splits.length).toBe(1);
 
-		// First split-window: horizontal split targeting the captured orch pane id (%1).
+		// The single split-window: horizontal split targeting the captured orch pane id (%1).
 		// Must NOT use a positional index like :0.0 (breaks with pane-base-index 1).
-		const firstSplit = splits[0];
-		expect(firstSplit?.cmd).toBe('tmux');
-		expect(firstSplit?.args).toContain('-t');
-		expect(firstSplit?.args).toContain('%1');
-		expect(firstSplit?.args).not.toContain('0.0');
-		expect(firstSplit?.args).toContain('-h');
-		expect(firstSplit?.args).toContain('-d');
-
-		// Second split-window: vertical split targeting the captured dashboard pane id (%2).
-		// Must NOT use a positional index like :0.1 (breaks with pane-base-index 1).
-		const secondSplit = splits[1];
-		expect(secondSplit?.cmd).toBe('tmux');
-		expect(secondSplit?.args).toContain('-t');
-		expect(secondSplit?.args).toContain('%2');
-		expect(secondSplit?.args).not.toContain('0.1');
-		expect(secondSplit?.args).toContain('-v');
-		expect(secondSplit?.args).toContain('-d');
+		const dashSplit = splits[0];
+		expect(dashSplit?.cmd).toBe('tmux');
+		expect(dashSplit?.args).toContain('-t');
+		expect(dashSplit?.args).toContain('%1');
+		expect(dashSplit?.args).not.toContain('0.0');
+		expect(dashSplit?.args).toContain('-h');
+		expect(dashSplit?.args).toContain('-d');
 	});
 
 	it('respawns cam dashboard in pane 1 (US-002)', () => {
@@ -303,28 +293,6 @@ describe('runRun tmux argv — new session', () => {
 		expect(dashboardRespawn?.args).toContain('%2');
 		expect(dashboardRespawn?.args).toContain('cam');
 		expect(dashboardRespawn?.args).toContain('dashboard');
-	});
-
-	it('respawns the cam menu Ink app in pane 2 (US-004)', () => {
-		const cwd = makeTmpProject();
-		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
-
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
-
-		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]='respawn-pane'.
-		const menuRespawn = spawn.calls.find(
-			c => c.args[2] === 'respawn-pane' && c.args.some(a => a === '%3'),
-		);
-		expect(menuRespawn).toBeDefined();
-		expect(menuRespawn?.args[0]).toBe('-L');
-		expect(menuRespawn?.args[1]).toBe('cam');
-		expect(menuRespawn?.args).toContain('%3');
-		// Runs `cam menu <orchPane> <dashboardPane>` as discrete argv elements.
-		expect(menuRespawn?.args).toContain('cam');
-		expect(menuRespawn?.args).toContain('menu');
-		// The orchestrator (%1) and dashboard (%2) pane ids are passed as args.
-		expect(menuRespawn?.args).toContain('%1');
-		expect(menuRespawn?.args).toContain('%2');
 	});
 
 	it('respawns the claude command in pane 0', () => {
@@ -386,9 +354,8 @@ describe('runRun tmux argv — new session', () => {
 	});
 });
 
-// The interactive menu is now the `cam menu` Ink app (src/ui/Menu.tsx); its
-// pane wiring is covered by the "respawns the cam menu Ink app in pane 2" test
-// above. The old bash buildRunMenuScript was removed.
+// The 2-pane layout (US-002) removed the menu pane. Only orchestrator (pane 0)
+// and dashboard (pane 1) are created by ensureProjectSession.
 
 // ---------------------------------------------------------------------------
 // runRun session-id + marker file (US-002)
@@ -462,11 +429,11 @@ describe('runRun session-id and marker file (US-002)', () => {
 
 	it('CAM-47: stale existing session (cat pane) is killed + recreated', () => {
 		const cwd = makeTmpProject();
-		// Existing session but a pane is still the `cat` placeholder -> stale.
+		// Existing 2-pane session but one pane is still the `cat` placeholder -> stale.
 		const spawn = makeFakeSpawn({
 			tmuxAvailable: true,
 			sessionExists: true,
-			listPanes: 'cat\ncam\ncam\n',
+			listPanes: 'cat\ncam\n',
 		});
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });

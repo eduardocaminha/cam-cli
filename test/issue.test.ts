@@ -90,7 +90,7 @@ describe('buildIssueArgv', () => {
 // --- runIssue (thin pane launcher) ------------------------------------------
 
 describe('runIssue (tmux pane launcher)', () => {
-	test('calls has-session, new-session (3-pane), then split-window for the issue pane', async () => {
+	test('calls has-session, new-session (2-pane), then split-window for the issue pane', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-test-'));
 		const tmuxSpawnFn = makeFakeTmuxSpawn(false);
 
@@ -117,9 +117,9 @@ describe('runIssue (tmux pane launcher)', () => {
 
 		// Verify openPaneInSession was called with split-window.
 		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[2] === 'split-window');
-		// ensureProjectSession makes 2 split-window calls (pane 1 + pane 2),
+		// ensureProjectSession makes 1 split-window call (pane 1 dashboard),
 		// openPaneInSession makes 1 more (the issue pane).
-		expect(splitCalls.length).toBeGreaterThanOrEqual(3);
+		expect(splitCalls.length).toBeGreaterThanOrEqual(2);
 	});
 
 	test('the issue pane split-window includes the claude /cam-issue create command as separate argv elements', async () => {

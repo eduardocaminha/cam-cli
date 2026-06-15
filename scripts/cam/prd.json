@@ -57,7 +57,7 @@
         "bun test passes."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (clampDashboardWidth at ~:51, isSessionStale at ~:134, window-resized hook at ~:273), scripts/cam/patterns.md, test/tmux-session.test.ts. Keep the shell clamp formula a literal mirror of the JS helper (CAM-48: (w*P+50)/100 round-half-up; pure tmux format cannot do numeric clamps, hence the run-shell trick). Interpolate CAM_TMUX_SOCKET, never hardcode. No em-dash in the patterns.md update (patterns.md project rule)."
     },

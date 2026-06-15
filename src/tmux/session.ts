@@ -9,11 +9,10 @@
 //
 // Design decisions (cam-run-workspace cycle):
 //   - One tmux session per project, named by projectSessionName().
-//   - The full session layout has three panes (US-011):
-//       Pane 0 (left):         orchestrator (claude)
-//       Pane 1 (top-right):    cam dashboard (permanent)
-//       Pane 2 (bottom-right): interactive menu
-//     ensureProjectSession creates it lazily with two split-window calls.
+//   - The full session layout has two panes (US-002):
+//       Pane 0 (left):      orchestrator (claude)
+//       Pane 1 (right):     cam dashboard (permanent)
+//     ensureProjectSession creates it lazily with one split-window call.
 //   - openPaneInSession opens a new pane via split-window -t into an existing
 //     session; loop commands use this to host their claude invocations.
 //   - isInsideProjectSession checks the $TMUX_PANE and $CAM_SESSION env vars
@@ -39,17 +38,20 @@ import type { SpawnSyncReturns } from 'node:child_process';
 /**
  * Clamp the dashboard column width to a legible band.
  *
- * Formula: clamp(round(windowWidth * 0.20), 34, 52)
+ * Formula: clamp(round(windowWidth * 0.26), 34, 80)
  *
  * - Minimum 34 cols: keeps the dashboard readable on narrow terminals.
- * - Maximum 52 cols: prevents the column from ballooning on very wide ones.
- * - 20% of the window is the target proportion for the right column.
+ * - Maximum 80 cols: prevents the column from starving the orchestrator pane
+ *   on very wide terminals.
+ * - 26% of the window is the target proportion for the right column.
+ *   At 188 cols (a common operator terminal), 26% yields 49 cols, which is
+ *   wide enough to fit the realistic tokens status row without wrapping.
  *
  * Used by ensureProjectSession (born width) and the window-resized hook
  * (live resize). Single source of truth so both paths stay in sync.
  */
 export function clampDashboardWidth(windowWidth: number): number {
-	return Math.min(52, Math.max(34, Math.round(windowWidth * 0.20)));
+	return Math.min(80, Math.max(34, Math.round(windowWidth * 0.26)));
 }
 
 // ---------------------------------------------------------------------------
@@ -120,10 +122,10 @@ export function hasSession(sessionName: string, spawnFn: SpawnFn): boolean {
 /**
  * Return true if an EXISTING session is stale / malformed and should be
  * recreated rather than attached to (CAM-47). A healthy cam session has exactly
- * 3 panes and none running the `cat` placeholder (every pane is respawned with
- * a real command: orchestrator, dashboard, menu). So a session is stale when:
+ * 2 panes and none running the `cat` placeholder (every pane is respawned with
+ * a real command: orchestrator, dashboard). So a session is stale when:
  *   - `tmux list-panes` fails or returns nothing (unknown state), OR
- *   - the pane count is not 3, OR
+ *   - the pane count is not 2, OR
  *   - any pane is still running the `cat` placeholder (setup never completed).
  *
  * The signal is deliberately CONSERVATIVE: a healthy, running orchestrator
@@ -143,7 +145,7 @@ export function isSessionStale(sessionName: string, spawnFn: SpawnFn): boolean {
 		.split('\n')
 		.map((l) => l.trim())
 		.filter((l) => l.length > 0);
-	if (commands.length !== 3) return true; // not the canonical 3-pane layout
+	if (commands.length !== 2) return true; // not the canonical 2-pane layout
 	if (commands.some((c) => c === 'cat')) return true; // a placeholder never respawned
 	return false;
 }
@@ -156,28 +158,24 @@ export function isSessionStale(sessionName: string, spawnFn: SpawnFn): boolean {
 export interface CreatedPaneIds {
 	orchPaneId: string;
 	dashboardPaneId: string;
-	menuPaneId: string;
 }
 
 /**
  * Lazily create the full project tmux session if it does not already exist.
  *
- * Layout (3-pane, US-011):
- *   Pane 0 (left):         orchestrator. Created with a silent `cat`
- *                          placeholder; the caller respawn-panes claude in.
- *   Pane 1 (top-right):    cam dashboard (permanent). Caller respawn-panes
- *                          `cam dashboard` in after creation.
- *   Pane 2 (bottom-right): interactive menu. Caller respawn-panes the menu
- *                          script in.
+ * Layout (2-pane, US-002):
+ *   Pane 0 (left):   orchestrator. Created with a silent `cat` placeholder;
+ *                    the caller respawn-panes claude in.
+ *   Pane 1 (right):  cam dashboard (permanent). Caller respawn-panes
+ *                    `cam dashboard` in after creation.
  *
  * Panes start with `cat` (silent, no interactive shell) so the real command,
  * respawned directly by the caller, paints with no macOS shell notice / prompt
- * / command echo flashing first. A pane closes when its command exits (e.g. the
- * menu/dashboard `q`); tmux reflows the survivors to fill the column.
+ * / command echo flashing first. A pane closes when its command exits (e.g.
+ * the dashboard `q`); tmux reflows the survivor to fill the window.
  *
- * Two split-window calls build the right column: the first creates pane 1
- * (horizontal split of the full window), the second splits pane 1 vertically
- * to produce pane 2.
+ * One split-window call builds the right column (horizontal split of the full
+ * window).
  *
  * Pane IDs are captured via `-P -F '#{pane_id}'` on each tmux call so that
  * pane addressing is stable regardless of the user's `pane-base-index`
@@ -238,22 +236,6 @@ export function ensureProjectSession(
 	);
 	const dashboardPaneId = dashSplitResult.stdout.toString().trim();
 
-	// Split pane 1 vertically to add pane 2 (menu slot, bottom of right column).
-	// Target the dashboard pane by its stable id.
-	const menuSplitResult = spawnFn(
-		'tmux',
-		tmuxArgs([
-			'split-window',
-			'-t', dashboardPaneId,
-			'-v',
-			'-d',
-			'-P', '-F', '#{pane_id}',
-			'cat',
-		]),
-		{ stdio: 'pipe' },
-	);
-	const menuPaneId = menuSplitResult.stdout.toString().trim();
-
 	// Install a window-resized hook so the dashboard column re-clamps on every
 	// terminal resize or client attach. The hook fires inside the tmux server
 	// context, so it must call tmux on the same -L cam socket.
@@ -261,19 +243,18 @@ export function ensureProjectSession(
 	// Hook body uses run-shell: tmux expands #{window_width} to the live window
 	// width (a numeric literal) before passing the string to sh -c. Shell $(())
 	// arithmetic then computes the clamped value as a literal integer for -x.
-	// Both tmux format comparisons (constraint #2: lexical, not numeric) and
-	// resize-pane format expansion (constraint #1: -x rejects #{...}) are
-	// avoided this way.
+	// Both tmux format comparisons (lexical, not numeric) and resize-pane format
+	// expansion (-x rejects #{...}) are avoided this way.
 	//
-	// The menu pane shares the dashboard column, so one resize-pane on the
-	// dashboard pane id re-clamps both panes (constraint #5).
+	// Formula: (w*26+50)/100 mirrors Math.round(w*0.26) in the JS helper
+	// (round-half-up, not truncation). Bounds 34-80 match clampDashboardWidth.
 	//
 	// || true makes the hook best-effort: a failed resize-pane never crashes
 	// the session.
 	const hookShell = [
 		`w=#{window_width}`,
-		`t=$(( (w*20+50)/100 ))`,
-		`t=$(( t<34?34:t>52?52:t ))`,
+		`t=$(( (w*26+50)/100 ))`,
+		`t=$(( t<34?34:t>80?80:t ))`,
 		`tmux -L ${CAM_TMUX_SOCKET} resize-pane -t ${dashboardPaneId} -x $t || true`,
 	].join('; ');
 	const hookCmd = `run-shell '${hookShell}'`;
@@ -285,7 +266,7 @@ export function ensureProjectSession(
 		{ stdio: 'ignore' },
 	);
 
-	return { orchPaneId, dashboardPaneId, menuPaneId };
+	return { orchPaneId, dashboardPaneId };
 }
 
 // ---------------------------------------------------------------------------

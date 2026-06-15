@@ -160,7 +160,7 @@ describe('projectSessionName', () => {
 // ---------------------------------------------------------------------------
 
 describe('ensureProjectSession — new session', () => {
-	test('calls has-session first, then new-session, two split-window calls, and set-hook when session absent', () => {
+	test('calls has-session first, then new-session, one split-window call, and set-hook when session absent', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		const result = ensureProjectSession('cam-orch-myproj-abc123', spawn);
 
@@ -186,7 +186,7 @@ describe('ensureProjectSession — new session', () => {
 		expect(newSess?.args).toContain('-s');
 		expect(newSess?.args).toContain('cam-orch-myproj-abc123');
 
-		// Third call: first split-window creates dashboard pane (horizontal split).
+		// Third call: the only split-window creates dashboard pane (horizontal split).
 		// Target must be the captured orchPaneId (%1), NOT a positional index.
 		const firstSplit = spawn.calls[2];
 		expect(firstSplit).toBeDefined();
@@ -200,22 +200,10 @@ describe('ensureProjectSession — new session', () => {
 		expect(firstSplit?.args).toContain('-h');
 		expect(firstSplit?.args).toContain('-d');
 
-		// Fourth call: second split-window creates menu pane (vertical split of pane 1).
-		// Target must be the captured dashboardPaneId (%2), NOT a positional index.
-		const secondSplit = spawn.calls[3];
-		expect(secondSplit).toBeDefined();
-		expect(secondSplit?.cmd).toBe('tmux');
-		expect(secondSplit?.args[0]).toBe('-L');
-		expect(secondSplit?.args[1]).toBe('cam');
-		expect(secondSplit?.args[2]).toBe('split-window');
-		expect(secondSplit?.args).toContain('-t');
-		expect(secondSplit?.args).toContain('%2');
-		expect(secondSplit?.args).not.toContain('cam-orch-myproj-abc123:0.1');
-		expect(secondSplit?.args).toContain('-v');
-		expect(secondSplit?.args).toContain('-d');
+		// No second split-window call (menu pane is removed in 2-pane layout).
 
-		// Fifth call: set-hook installs the window-resized re-clamp hook.
-		const setHook = spawn.calls[4];
+		// Fourth call: set-hook installs the window-resized re-clamp hook.
+		const setHook = spawn.calls[3];
 		expect(setHook).toBeDefined();
 		expect(setHook?.cmd).toBe('tmux');
 		expect(setHook?.args[0]).toBe('-L');
@@ -260,16 +248,16 @@ describe('ensureProjectSession — new session', () => {
 		expect(newSess?.args).toContain('CAM_SESSION=cam-orch-test-000000');
 	});
 
-	test('emits set-hook call with window-resized bound to resize-pane shell arithmetic (US-003 + US-R1-001)', () => {
+	test('emits set-hook call with window-resized bound to resize-pane shell arithmetic (US-002)', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		const result = ensureProjectSession('cam-orch-test-000000', spawn);
 
 		expect(result).not.toBe(false);
 		if (result === false) return;
 
-		// The hook call is the 5th overall (index 4): has-session, new-session,
-		// split-window x2, set-hook.
-		const hookCall = spawn.calls[4];
+		// The hook call is the 4th overall (index 3): has-session, new-session,
+		// split-window x1, set-hook.
+		const hookCall = spawn.calls[3];
 		expect(hookCall).toBeDefined();
 		expect(hookCall?.cmd).toBe('tmux');
 		// Must use -L cam socket.
@@ -289,28 +277,26 @@ describe('ensureProjectSession — new session', () => {
 		expect(hookBody).toContain('-x');
 		// Must use run-shell so tmux expands #{window_width} before sh -c.
 		expect(hookBody).toContain('run-shell');
-		// Shell arithmetic clamp boundaries must appear in the hook body.
+		// Shell arithmetic clamp boundaries must appear in the hook body (34-80).
 		expect(hookBody).toContain('34');
-		expect(hookBody).toContain('52');
-		// US-R1-001: hook shell clamp must use round-half-up (+50) not truncation.
-		expect(hookBody).toContain('(w*20+50)/100');
-		// US-R1-001: hook must reference the CAM_TMUX_SOCKET constant value, not a hardcoded literal.
+		expect(hookBody).toContain('80');
+		// Hook shell clamp must use round-half-up (+50) not truncation, proportion 26%.
+		expect(hookBody).toContain('(w*26+50)/100');
+		// Hook must reference the CAM_TMUX_SOCKET constant value, not a hardcoded literal.
 		expect(hookBody).toContain(`-L ${CAM_TMUX_SOCKET}`);
 	});
 
-	test('split-window calls include -P -F #{pane_id} for stable pane capture', () => {
+	test('the single split-window call includes -P -F #{pane_id} for stable pane capture', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		ensureProjectSession('cam-orch-test-000000', spawn);
 
-		const firstSplit = spawn.calls[2];
-		expect(firstSplit?.args).toContain('-P');
-		expect(firstSplit?.args).toContain('-F');
-		expect(firstSplit?.args).toContain('#{pane_id}');
+		const dashSplit = spawn.calls[2];
+		expect(dashSplit?.args).toContain('-P');
+		expect(dashSplit?.args).toContain('-F');
+		expect(dashSplit?.args).toContain('#{pane_id}');
 
-		const secondSplit = spawn.calls[3];
-		expect(secondSplit?.args).toContain('-P');
-		expect(secondSplit?.args).toContain('-F');
-		expect(secondSplit?.args).toContain('#{pane_id}');
+		// Only 4 calls total: has-session, new-session, split-window, set-hook.
+		expect(spawn.calls).toHaveLength(4);
 	});
 
 	test('returns CreatedPaneIds with captured %n ids when session is created', () => {
@@ -321,17 +307,17 @@ describe('ensureProjectSession — new session', () => {
 		if (result !== false) {
 			expect(result.orchPaneId).toBe('%1');
 			expect(result.dashboardPaneId).toBe('%2');
-			expect(result.menuPaneId).toBe('%3');
 		}
 	});
 
-	test('split-window for dashboard uses clamped born width (44) right pane', () => {
+	test('split-window for dashboard uses clamped born width (57) right pane', () => {
 		const spawn = makeFakeSpawn({ sessionExists: false });
 		ensureProjectSession('cam-orch-test-000000', spawn);
 
+		// born width: clampDashboardWidth(220) = Math.round(220 * 0.26) = 57
 		const split = spawn.calls[2];
 		expect(split?.args).toContain('-l');
-		expect(split?.args).toContain('44');
+		expect(split?.args).toContain('57');
 	});
 
 	test('returns false and calls only has-session when session already exists', () => {
@@ -557,16 +543,16 @@ function staleSpawn(listPanesStdout: string, listPanesStatus = 0): SpawnFn {
 }
 
 describe('isSessionStale', () => {
-	test('healthy: 3 panes, none cat -> false', () => {
-		expect(isSessionStale('s', staleSpawn('claude\ncam\ncam\n'))).toBe(false);
+	test('healthy: 2 panes, none cat -> false', () => {
+		expect(isSessionStale('s', staleSpawn('claude\ncam\n'))).toBe(false);
 	});
 
 	test('a cat placeholder pane -> true', () => {
-		expect(isSessionStale('s', staleSpawn('cat\ncam\ncam\n'))).toBe(true);
+		expect(isSessionStale('s', staleSpawn('cat\ncam\n'))).toBe(true);
 	});
 
-	test('wrong pane count (4) -> true', () => {
-		expect(isSessionStale('s', staleSpawn('claude\ncam\ncam\nzsh\n'))).toBe(true);
+	test('wrong pane count (3) -> true', () => {
+		expect(isSessionStale('s', staleSpawn('claude\ncam\ncam\n'))).toBe(true);
 	});
 
 	test('wrong pane count (1) -> true', () => {
@@ -583,23 +569,31 @@ describe('isSessionStale', () => {
 });
 
 // ---------------------------------------------------------------------------
-// clampDashboardWidth (US-001)
+// clampDashboardWidth (US-002)
 // ---------------------------------------------------------------------------
 
 describe('clampDashboardWidth', () => {
-	test('220 cols -> 44 (20% proportion, within band)', () => {
-		expect(clampDashboardWidth(220)).toBe(44);
+	test('220 cols -> 57 (26% proportion, within band)', () => {
+		expect(clampDashboardWidth(220)).toBe(57);
 	});
 
-	test('100 cols -> 34 (floor: 20% = 20, clamped to 34)', () => {
+	test('100 cols -> 34 (floor: 26% = 26, clamped to min 34)', () => {
 		expect(clampDashboardWidth(100)).toBe(34);
 	});
 
-	test('400 cols -> 52 (ceiling: 20% = 80, clamped to 52)', () => {
-		expect(clampDashboardWidth(400)).toBe(52);
+	test('400 cols -> 80 (ceiling: 26% = 104, clamped to max 80)', () => {
+		expect(clampDashboardWidth(400)).toBe(80);
 	});
 
-	test('188 cols -> 38 (20% = 37.6, rounds to 38, within band)', () => {
-		expect(clampDashboardWidth(188)).toBe(38);
+	test('188 cols -> 49 (26% = 48.88, rounds to 49, tokens row fits without wrapping)', () => {
+		expect(clampDashboardWidth(188)).toBe(49);
+	});
+
+	test('131 cols -> 34 (26% = 34.06, rounds to 34, at minimum boundary)', () => {
+		expect(clampDashboardWidth(131)).toBe(34);
+	});
+
+	test('308 cols -> 80 (26% = 80.08, rounds to 80, at maximum boundary)', () => {
+		expect(clampDashboardWidth(308)).toBe(80);
 	});
 });

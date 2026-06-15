@@ -243,10 +243,10 @@ function setupOrchestratorSession(opts: SetupOpts): {
 	return { sessionName, created: true, reset };
 }
 
-/** Respawn the real commands into the 3 panes and apply the workspace chrome. */
+/** Respawn the real commands into the 2 panes and apply the workspace chrome. */
 function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	const { cwd, sessionName, spawnFn, genSessionId } = opts;
-	const { orchPaneId, dashboardPaneId, menuPaneId } = panes;
+	const { orchPaneId, dashboardPaneId } = panes;
 
 	// CAM-23: a freshly created session must not inherit a stale handoff. If a
 	// previous session was killed (cam stop, tmux kill-server, reboot) AFTER its
@@ -308,17 +308,6 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 		{ stdio: 'ignore' },
 	);
 
-	// Pane 2: interactive menu (US-004) — the `cam menu` Ink app, which reads its
-	// own pane width (no fragile bash width detection) and reuses the dashboard's
-	// Section so the heading + rule line up. The orchestrator + dashboard pane ids
-	// are passed as args so the menu's keys can target them. `q` exits, closing
-	// the pane.
-	spawnFn(
-		'tmux',
-		tmuxArgs(['respawn-pane', '-k', '-t', menuPaneId, 'cam', 'menu', orchPaneId, dashboardPaneId]),
-		{ stdio: 'ignore' },
-	);
-
 	// --- Workspace chrome (CAM-19) ------------------------------------------
 	// Label each pane with a thin tmux border title, recolor to the cam design
 	// tokens, highlight the active pane, and render a single status bar
@@ -339,7 +328,6 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	};
 	paneLabel(orchPaneId, 'orchestrator');
 	paneLabel(dashboardPaneId, 'dashboard');
-	paneLabel(menuPaneId, 'menu');
 	const navHint = `#[fg=${MUTED}]click / Ctrl+b ←→ switch · exit orchestrator quits`;
 	opt('pane-border-status', 'top');
 	opt('pane-border-format', `#{?pane_active,#[fg=${ACCENT} bold],#[fg=${MUTED}]} #{@cam_label} #[default]`);
