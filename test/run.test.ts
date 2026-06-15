@@ -617,6 +617,15 @@ describe('buildOrchestratorBootPrompt (CAM-23 rehydration directive)', () => {
 			prompt.indexOf('subagent-orchestrator.md'),
 		);
 	});
+
+	it('US-FIX-005: marker instruction uses Bash, not the Write tool (orchestrator lacks Write)', () => {
+		// subagent-orchestrator's tools are Read/Glob/Grep/Bash/WebFetch/SlashCommand
+		// — NO Write/Edit. Telling it to "use the Write tool" would silently fail and
+		// the marker would never appear, deadlocking the thin-proxy bootstrap-wait.
+		const prompt = buildOrchestratorBootPrompt();
+		expect(prompt).not.toContain('Write tool');
+		expect(prompt).toContain('Bash');
+	});
 });
 
 // ---------------------------------------------------------------------------
