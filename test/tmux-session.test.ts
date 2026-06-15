@@ -611,7 +611,7 @@ describe('isSessionStale', () => {
 // orchestratorAlive
 // ---------------------------------------------------------------------------
 
-/** Fake spawn: list-panes returns panes as 'index\tcommand' lines. */
+/** Fake spawn: list-panes returns one @cam_label per line. */
 function orchSpawn(listPanesStdout: string, status = 0): SpawnFn {
 	return ((cmd, args, opts) => {
 		const sub = args[0] === '-L' ? args[2] : args[0];
@@ -630,21 +630,26 @@ function orchSpawn(listPanesStdout: string, status = 0): SpawnFn {
 }
 
 describe('orchestratorAlive', () => {
-	test('pane 0 running claude -> true', () => {
-		expect(orchestratorAlive('s', orchSpawn('0\tclaude\n1\tcam\n'))).toBe(true);
+	// REGRESSION (US-FIX-008 operator smoke): the orchestrator pane runs claude
+	// UNDER a bash respawn-wrapper (CAM-23), so pane_current_command is 'bash',
+	// never 'claude'. Liveness is keyed on @cam_label, not the command. The old
+	// implementation checked `cmd === 'claude'` and returned false for every real
+	// orchestrator pane, breaking all thin-proxy detection. These fixtures are
+	// one @cam_label per line (the new list-panes -F format).
+	test('pane labeled orchestrator (real: claude under bash wrapper) -> true', () => {
+		expect(orchestratorAlive('s', orchSpawn('orchestrator\ndashboard\n'))).toBe(true);
 	});
 
-	test('pane 0 running bash (not claude) -> false', () => {
-		expect(orchestratorAlive('s', orchSpawn('0\tbash\n1\tcam\n'))).toBe(false);
+	test('3-pane session (orchestrator + dashboard + worker) -> true', () => {
+		expect(orchestratorAlive('s', orchSpawn('orchestrator\ndashboard\nimplementer\n'))).toBe(true);
 	});
 
-	test('pane 0 running cat placeholder -> false', () => {
-		expect(orchestratorAlive('s', orchSpawn('0\tcat\n1\tcam\n'))).toBe(false);
+	test('no pane labeled orchestrator -> false', () => {
+		expect(orchestratorAlive('s', orchSpawn('dashboard\nimplementer\n'))).toBe(false);
 	});
 
-	test('no pane with index 0 in output -> false', () => {
-		// Only pane 1 listed (corrupted state)
-		expect(orchestratorAlive('s', orchSpawn('1\tclaude\n'))).toBe(false);
+	test('unlabeled panes only (foreign/corrupted session) -> false', () => {
+		expect(orchestratorAlive('s', orchSpawn('\n\n'))).toBe(false);
 	});
 
 	test('list-panes fails (non-zero exit) -> false (conservative)', () => {
@@ -653,10 +658,6 @@ describe('orchestratorAlive', () => {
 
 	test('empty list-panes output -> false', () => {
 		expect(orchestratorAlive('s', orchSpawn(''))).toBe(false);
-	});
-
-	test('3-pane session with orchestrator alive -> true', () => {
-		expect(orchestratorAlive('s', orchSpawn('0\tclaude\n1\tcam\n2\tclaude\n'))).toBe(true);
 	});
 });
 

@@ -29,10 +29,11 @@ function makeOrchSpawnFn(orchAlive: boolean): SpawnFn {
 			signal: null,
 		};
 		if (subcommand === 'list-panes') {
-			// orchestratorAlive queries #{pane_index}\t#{pane_current_command}
+			// orchestratorAlive queries #{@cam_label}; alive iff a pane labeled
+			// 'orchestrator' exists (claude runs under a bash respawn-wrapper).
 			return {
 				...base,
-				stdout: orchAlive ? Buffer.from('0\tclaude\n') : Buffer.from('0\tsh\n'),
+				stdout: orchAlive ? Buffer.from('orchestrator\ndashboard\n') : Buffer.from('dashboard\n'),
 			};
 		}
 		return base;

@@ -26,6 +26,15 @@ import {
 } from '../src/commands/run.ts';
 import type { SpawnFn } from '../src/tmux/session.ts';
 
+/**
+ * No-op sidecar handle. runRun spawns the sidecar via spawnSidecarFn, whose
+ * production default runs a REAL `cam sidecar` process. Once a current cam
+ * binary is on PATH that process idles forever and keeps its stdio pipe open,
+ * which hangs `bun test`. Every runRun test must inject this so no real
+ * sidecar is spawned (US-FIX-002 test-hygiene fix, CAM-55 operator smoke).
+ */
+const noopSidecar: SpawnSidecarFn = () => ({ kill: () => {} });
+
 // ---------------------------------------------------------------------------
 // Fake spawn helper for argv tests
 // ---------------------------------------------------------------------------
@@ -185,7 +194,7 @@ describe('runRun pre-flight', () => {
 	it('returns non-zero when subagent-orchestrator.md is missing', () => {
 		const cwd = mkdtempSync(join(tmpdir(), 'cam-run-'));
 		// No .claude/agents/subagent-orchestrator.md created.
-		const code = runRun({ cwd, noAttach: true });
+		const code = runRun({ cwd, noAttach: true, spawnSidecarFn: noopSidecar });
 		// May fail on tmux check first (exit 1) or on orchestrator check (exit 1).
 		// Either way, non-zero is the correct contract.
 		expect(code).not.toBe(0);
@@ -196,7 +205,7 @@ describe('runRun pre-flight', () => {
 		const prev = process.env['CAM_RUN_DRY_RUN'];
 		process.env['CAM_RUN_DRY_RUN'] = '1';
 		try {
-			const code = runRun({ cwd, noAttach: true });
+			const code = runRun({ cwd, noAttach: true, spawnSidecarFn: noopSidecar });
 			// On machines without tmux on PATH, the pre-flight check fails
 			// before dry-run kicks in. Either case is acceptable contract:
 			//   - 0 means dry-run succeeded.
@@ -218,7 +227,7 @@ describe('runRun tmux argv — new session', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		const newSess = spawn.calls.find(c => c.args[2] === 'new-session');
 		expect(newSess).toBeDefined();
@@ -236,7 +245,7 @@ describe('runRun tmux argv — new session', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		const newSess = spawn.calls.find(c => c.args[2] === 'new-session');
 		expect(newSess?.args).toContain('-P');
@@ -249,7 +258,7 @@ describe('runRun tmux argv — new session', () => {
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 		const sessionName = projectSessionName(cwd);
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		const newSess = spawn.calls.find(c => c.args[2] === 'new-session');
 		expect(newSess?.args).toContain('-e');
@@ -260,7 +269,7 @@ describe('runRun tmux argv — new session', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		const splits = spawn.calls.filter(c => c.args[2] === 'split-window');
 		expect(splits.length).toBe(1);
@@ -280,7 +289,7 @@ describe('runRun tmux argv — new session', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		// The dashboard runs via respawn-pane (direct command, no interactive
 		// shell) targeting the captured pane id (%2). The orchPaneId (%1) is
@@ -305,7 +314,7 @@ describe('runRun tmux argv — new session', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		// The orch pane runs via respawn-pane targeting the captured pane id (%1).
 		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]='respawn-pane'.
@@ -325,7 +334,7 @@ describe('runRun tmux argv — new session', () => {
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 		const sessionName = projectSessionName(cwd);
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]='respawn-pane'.
 		const orchRespawn = spawn.calls.find(
@@ -342,7 +351,7 @@ describe('runRun tmux argv — new session', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: true });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		// When session already exists, no new-session or split-window calls.
 		const newSess = spawn.calls.find(c => c.args[2] === 'new-session');
@@ -355,7 +364,7 @@ describe('runRun tmux argv — new session', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: false, sessionExists: false });
 
-		const code = runRun({ cwd, noAttach: true, spawnFn: spawn });
+		const code = runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 		expect(code).toBe(1);
 	});
 
@@ -363,7 +372,7 @@ describe('runRun tmux argv — new session', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		// The menu pane was removed in US-004; no spawn should reference 'menu'.
 		const menuCmd = spawn.calls.find(c => c.args.some(a => a === 'menu'));
@@ -374,7 +383,7 @@ describe('runRun tmux argv — new session', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		// Find the set-option call for status-left.
 		// argv shape: ['-L', 'cam', 'set-option', '-t', sessionName, 'status-left', value]
@@ -394,7 +403,7 @@ describe('runRun tmux argv — new session', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		const call = spawn.calls.find(
 			c => c.args[2] === 'set-option' && c.args.some(a => a === 'pane-border-format'),
@@ -412,7 +421,7 @@ describe('runRun tmux argv — new session', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		const styleFor = (name: string): string | undefined => {
 			const call = spawn.calls.find(
@@ -443,7 +452,7 @@ describe('runRun session-id and marker file (US-002)', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID, spawnSidecarFn: noopSidecar });
 
 		// The orchestrator pane targets %1.
 		const orchRespawn = spawn.calls.find(
@@ -464,7 +473,7 @@ describe('runRun session-id and marker file (US-002)', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID, spawnSidecarFn: noopSidecar });
 
 		const markerPath = join(cwd, '.claude', '.cam-orch-session');
 		expect(existsSync(markerPath)).toBe(true);
@@ -483,7 +492,7 @@ describe('runRun session-id and marker file (US-002)', () => {
 		// Simulate session already exists (re-attach path).
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: true });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID, spawnSidecarFn: noopSidecar });
 
 		// Marker must still contain the original uuid, not the new one.
 		const markerPath = join(cwd, '.claude', '.cam-orch-session');
@@ -495,7 +504,7 @@ describe('runRun session-id and marker file (US-002)', () => {
 		// Existing session, healthy list-panes (3 panes, none cat).
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: true });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID, spawnSidecarFn: noopSidecar });
 
 		// A healthy re-attach must NOT kill the session (would nuke a live loop).
 		const killed = spawn.calls.some((c) => c.args.includes('kill-session'));
@@ -511,7 +520,7 @@ describe('runRun session-id and marker file (US-002)', () => {
 			listPanes: 'cat\ncam\n',
 		});
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID, spawnSidecarFn: noopSidecar });
 
 		// Stale path: the session is killed, then recreated + panes set up.
 		const killed = spawn.calls.some((c) => c.args.includes('kill-session'));
@@ -529,7 +538,7 @@ describe('runRun session-id and marker file (US-002)', () => {
 		writeFileSync(handoff, '{"schemaVersion":1,"writtenAt":"x","reason":"stale"}', 'utf8');
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, genSessionId: () => FIXED_UUID, spawnSidecarFn: noopSidecar });
 
 		// A fresh session must not inherit the leftover handoff.
 		expect(existsSync(handoff)).toBe(false);
@@ -653,7 +662,7 @@ describe('runRun orch-ready marker (US-FIX-005)', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: true });
 
-		runRun({ cwd, noAttach: true, spawnFn: spawn });
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
 
 		const markerPath = join(cwd, '.claude', '.cam-orch-ready');
 		expect(existsSync(markerPath)).toBe(false);

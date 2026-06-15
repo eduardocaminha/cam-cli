@@ -64,10 +64,12 @@ function makeFakeTmuxSpawn(opts: {
 			if (!sessionExists) return { ...base, status: 1 };
 			const fIdx = args.indexOf('-F');
 			const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
-			if (fmt === '#{pane_index}\t#{pane_current_command}') {
+			if (fmt === '#{@cam_label}') {
+				// orchestratorAlive keys on @cam_label (the orchestrator runs claude
+				// under a bash respawn-wrapper, so pane_current_command is never claude).
 				return {
 					...base,
-					stdout: Buffer.from(orchAlive ? `0\tclaude\n` : `0\tsh\n`),
+					stdout: Buffer.from(orchAlive ? `orchestrator\ndashboard\n` : `dashboard\n`),
 				};
 			}
 			if (fmt === '#{pane_index}\t#{pane_id}') {
@@ -239,8 +241,8 @@ describe('runShip (thin-proxy, miss path)', () => {
 					if (!orchReady) return { ...base, status: 1 };
 					const fIdx = args.indexOf('-F');
 					const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
-					if (fmt === '#{pane_index}\t#{pane_current_command}') {
-						return { ...base, stdout: Buffer.from('0\tclaude\n') };
+					if (fmt === '#{@cam_label}') {
+						return { ...base, stdout: Buffer.from('orchestrator\ndashboard\n') };
 					}
 					if (fmt === '#{pane_index}\t#{pane_id}') {
 						return { ...base, stdout: Buffer.from('0\t%0\n') };
@@ -336,8 +338,8 @@ describe('runShip (thin-proxy, pane lookup)', () => {
 				if (subcommand === 'list-panes') {
 					const fIdx = args.indexOf('-F');
 					const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
-					if (fmt === '#{pane_index}\t#{pane_current_command}') {
-						return { ...base, stdout: Buffer.from('0\tclaude\n') };
+					if (fmt === '#{@cam_label}') {
+						return { ...base, stdout: Buffer.from('orchestrator\ndashboard\n') };
 					}
 					return { ...base, stdout: Buffer.from('') };
 				}

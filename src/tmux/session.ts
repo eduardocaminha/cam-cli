@@ -178,12 +178,22 @@ export function isSessionStale(sessionName: string, spawnFn: SpawnFn): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Return true if the orchestrator pane (pane index 0) in the given session is
- * currently running the `claude` process.
+ * Return true if the given session has a live orchestrator pane.
+ *
+ * Identity is keyed on the pane's `@cam_label` (set to `orchestrator` by
+ * `cam run` setupPanes), NOT on `pane_current_command`. The orchestrator pane
+ * runs `claude` UNDER a bash respawn-wrapper (CAM-23 bounded self-handoff), so
+ * its `pane_current_command` is `bash`, never `claude`. The old check
+ * (`cmd === 'claude'`) therefore returned false for every real orchestrator
+ * pane, breaking every thin-proxy's live-orchestrator detection (each one
+ * fell through to bootstrapping a duplicate that also failed the re-check).
+ * Caught by the US-FIX-008 operator smoke; this is the same lesson as
+ * isSessionStale (identify panes by label, not by transient command/count).
  *
  * Thin-proxies call this before injecting a `/cam-*` command via send-keys to
- * confirm the orchestrator is running and listening, not sitting in a dead pane
- * or a shell prompt.
+ * confirm the session is actually a cam orchestrator session. `sendKeysWhenIdle`
+ * separately waits for the claude prompt to be idle, so a pane mid-respawn is
+ * handled there, not here.
  *
  * Returns false on any list-panes failure (conservative: treat unknown state
  * as not-alive so proxies fall back to bootstrapping).
@@ -191,19 +201,15 @@ export function isSessionStale(sessionName: string, spawnFn: SpawnFn): boolean {
 export function orchestratorAlive(sessionName: string, spawnFn: SpawnFn): boolean {
 	const r = spawnFn(
 		'tmux',
-		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{pane_index}\t#{pane_current_command}']),
+		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{@cam_label}']),
 		{ stdio: 'pipe' },
 	);
 	if ((r.status ?? 1) !== 0) return false;
 	const out = typeof r.stdout === 'string' ? r.stdout : (r.stdout?.toString() ?? '');
-	const orchLine = out
+	return out
 		.split('\n')
 		.map((l) => l.trim())
-		.filter((l) => l.length > 0)
-		.find((l) => l.startsWith('0\t'));
-	if (!orchLine) return false;
-	const cmd = orchLine.slice(2); // everything after '0\t'
-	return cmd === 'claude';
+		.some((l) => l === 'orchestrator');
 }
 
 // ---------------------------------------------------------------------------

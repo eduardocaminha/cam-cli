@@ -70,11 +70,13 @@ function makeFakeTmuxSpawn(opts: {
 			if (!sessionExists) return { ...base, status: 1 };
 			const fIdx = args.indexOf('-F');
 			const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
-			if (fmt === '#{pane_index}\t#{pane_current_command}') {
-				// For orchestratorAlive: return pane 0 running claude (or not).
+			if (fmt === '#{@cam_label}') {
+				// For orchestratorAlive: return a pane labeled 'orchestrator' (or not).
+				// The orchestrator runs claude under a bash respawn-wrapper, so liveness
+				// is keyed on @cam_label, not pane_current_command.
 				return {
 					...base,
-					stdout: Buffer.from(orchAlive ? `0\tclaude\n` : `0\tsh\n`),
+					stdout: Buffer.from(orchAlive ? `orchestrator\ndashboard\n` : `dashboard\n`),
 				};
 			}
 			if (fmt === '#{pane_index}\t#{pane_id}') {
@@ -276,8 +278,8 @@ describe('runPlan (thin-proxy, miss path)', () => {
 					if (!orchReady) return { ...base, status: 1 };
 					const fIdx = args.indexOf('-F');
 					const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
-					if (fmt === '#{pane_index}\t#{pane_current_command}') {
-						return { ...base, stdout: Buffer.from('0\tclaude\n') };
+					if (fmt === '#{@cam_label}') {
+						return { ...base, stdout: Buffer.from('orchestrator\ndashboard\n') };
 					}
 					if (fmt === '#{pane_index}\t#{pane_id}') {
 						return { ...base, stdout: Buffer.from('0\t%0\n') };
@@ -375,9 +377,9 @@ describe('runPlan (thin-proxy, pane lookup)', () => {
 				if (subcommand === 'list-panes') {
 					const fIdx = args.indexOf('-F');
 					const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
-					if (fmt === '#{pane_index}\t#{pane_current_command}') {
-						// orchestratorAlive: pane 0 running claude
-						return { ...base, stdout: Buffer.from('0\tclaude\n') };
+					if (fmt === '#{@cam_label}') {
+						// orchestratorAlive: a pane labeled 'orchestrator' exists
+						return { ...base, stdout: Buffer.from('orchestrator\ndashboard\n') };
 					}
 					// getOrchPaneId: return empty (no pane found)
 					return { ...base, stdout: Buffer.from('') };
