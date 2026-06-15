@@ -26,6 +26,12 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true
+    },
+    {
       "id": "US-001",
       "title": "Extend PrdStory/PrdShape with acceptanceCriteria, notes, requires, review.lastVerdict and thread into DashboardData",
       "description": "As the dashboard, I need the real prd.json shape (per-story acceptanceCriteria, notes, requires; top-level review.lastVerdict) modeled in the snapshot types so later stories can render the story detail subview and the review verdict without re-reading prd.json.",
@@ -37,7 +43,7 @@
         "bun run typecheck passes (zero errors).",
         "bun test passes."
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/status.ts (PrdStory at ~:130, PrdShape at ~:137), src/commands/dashboard.ts (readSnapshot, DashboardData), test/dashboard.test.ts. Pure type widening plus snapshot plumbing, no UI yet. Honor noUncheckedIndexedAccess (patterns.md): every new field stays optional and guarded at the read site. No em-dash anywhere in source or fixture strings (patterns.md, project rule 2026-05-20)."
@@ -56,7 +62,7 @@
         "bun run typecheck passes (zero errors).",
         "bun test passes."
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (clampDashboardWidth at ~:51, isSessionStale at ~:134, window-resized hook at ~:273), scripts/cam/patterns.md, test/tmux-session.test.ts. Keep the shell clamp formula a literal mirror of the JS helper (CAM-48: (w*P+50)/100 round-half-up; pure tmux format cannot do numeric clamps, hence the run-shell trick). Interpolate CAM_TMUX_SOCKET, never hardcode. No em-dash in the patterns.md update (patterns.md project rule)."
@@ -75,7 +81,7 @@
         "bun run typecheck passes (zero errors).",
         "bun test passes."
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/ui/Dashboard.tsx, src/commands/dashboard.ts, index.ts (case 'dashboard' at ~:708). Port the runTmux injection pattern from src/ui/Menu.tsx + src/commands/menu.ts so the deletion in US-007 is a straight cut. d focuses the orchestrator pane explicitly via runTmux(['select-pane', '-t', orchPane]) (not select-pane -l); when orchPane is undefined (standalone cam dashboard), d stays inert. Use Ink 7 useInput((input, key) => ...) with key.return / key.escape only when needed here; the keybar itself is just <Text> rows. Honor the Ink-glyph-not-divider rule (patterns.md) for any status hints; do not signal anything by divider color. No em-dash in any rendered label or help text (patterns.md, project rule 2026-05-20)."
@@ -93,7 +99,7 @@
         "bun run typecheck passes (zero errors).",
         "bun test passes."
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (setupPanes at ~:247, status-left at ~:355). Depends on US-002 (CreatedPaneIds no longer carries menuPaneId) and US-003 (cam dashboard accepts the orchPane positional). ACCENT='#4EBE7D' and MUTED='#808080' already exist; reuse them, do not redefine. Pick a dark fg constant readable on the accent bg. No em-dash in any pane label or status-left literal (patterns.md, project rule 2026-05-20)."
@@ -111,7 +117,7 @@
         "bun run typecheck passes (zero errors).",
         "bun test passes."
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: src/ui/Dashboard.tsx, test/dashboard.test.ts. Keep the reducer pure (input: state + key, output: state) so the unit test does not need Ink. Use colors.accent from src/design/tokens.ts (#4EBE7D). Respect the Ink-glyph-not-divider rule (patterns.md): the row glyph still drives success/failure semantics; the bg color signals selection only, not pass-state. No em-dash in any rendered string (patterns.md, project rule 2026-05-20)."
@@ -128,7 +134,7 @@
         "bun run typecheck passes (zero errors).",
         "bun test passes."
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: src/ui/Dashboard.tsx, test/dashboard.test.ts. The structural checkbox glyph is purely visual scaffolding (each AC is a string; prd.json carries no per-criterion pass-state). Story-level pass/fail keeps the Ink glyph vocabulary (accent check / current arrow / muted ring) per patterns.md; never reach for divider color. No em-dash anywhere in the rendered detail strings (patterns.md, project rule 2026-05-20)."
@@ -146,7 +152,7 @@
         "bun run typecheck passes (zero errors).",
         "bun test passes (no orphan import or broken reference)."
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "Files: index.ts (case 'menu' at ~:724, runMenuInk import), plus the three deletions. Depends on US-003 (dispatch already in the dashboard) and US-004 (run no longer spawns cam menu). Do not touch test/setup-menu.test.ts: it covers the unrelated buildSetupMenuScript helper in the cam init flow. Implementer pointers: update the four help blocks RUN_HELP, PLAN_HELP, ISSUE_HELP, and NEXT_HELP in index.ts; the menu case lives around index.ts:721-726 and the runMenuInk import around index.ts:22. No em-dash in the updated help/usage text (patterns.md, project rule 2026-05-20)."
@@ -164,10 +170,15 @@
         "Pressing d in the dashboard pane switches tmux focus to the orchestrator pane; returning to the dashboard via click or Ctrl+b works as documented in the navHint (the orchestrator pane runs claude and cannot bind d).",
         "Pressing q closes the dashboard pane cleanly."
       ],
-      "priority": 8,
+      "priority": 9,
       "passes": false,
       "requires": "operator",
       "notes": "Operator-only ceremony: live tmux session, real keypresses, visual confirmation of the green pill and selection highlight. No autonomous gate. Files touched: none (verification only). Reference scripts/cam/patterns.md for the active-pane pill format (US-004) and the clamp constants (US-002) when sanity-checking widths. No em-dash in any operator note added back to the PRD (patterns.md, project rule 2026-05-20)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING"
+  }
 }

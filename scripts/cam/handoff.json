@@ -1,18 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Delete the now-dead menu (src/commands/menu.ts, src/ui/Menu.tsx, test/menu.test.ts) and update index.ts"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-50-navigable-dashboard",
-  "timestamp": "2026-06-14T06:00:00Z",
+  "timestamp": "2026-06-15T01:20:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
+    "README.md",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 deleted the three menu files (src/commands/menu.ts, src/ui/Menu.tsx, test/menu.test.ts) and cleaned up index.ts: removed the `import { runMenuInk }` line and the `case 'menu'` branch (~lines 22 and 741-743 in the pre-edit file). Updated 4 help blocks to reflect 2-pane layout: RUN_HELP (removed Pane 0.2 row, changed 'three panes' to 'two panes'), PLAN_HELP (changed '3-pane layout' to '2-pane layout: orchestrator + dashboard'), ISSUE_HELP (same), NEXT_HELP (changed '3-pane layout: orchestrator + dashboard + menu' to '2-pane layout: orchestrator + dashboard'). test/setup-menu.test.ts was left untouched (7 tests, targets buildSetupMenuScript in init flow, unrelated). 812 tests pass, 0 fail.",
+  "nextStoryContext": "US-R1-001 fixed the README: updated all 3-pane references to 2-pane throughout (status badge, quick start, commands table, session layout section, recent changes). The finding was purely a documentation sync gap - the code was correct (US-002 through US-007 already implemented 2-pane layout), only README.md was stale. No code or test changes were needed. 812 tests pass, 0 fail. Only remaining story is US-008 (operator smoke, requires: operator) - so the next step after this is another review round or cam-ship.",
   "officialDocsValidated": [
     {
       "lib": "none",
