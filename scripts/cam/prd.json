@@ -129,7 +129,7 @@
         "bun test passes."
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/ui/Dashboard.tsx, test/dashboard.test.ts. The structural checkbox glyph is purely visual scaffolding (each AC is a string; prd.json carries no per-criterion pass-state). Story-level pass/fail keeps the Ink glyph vocabulary (accent check / current arrow / muted ring) per patterns.md; never reach for divider color. No em-dash anywhere in the rendered detail strings (patterns.md, project rule 2026-05-20)."
     },

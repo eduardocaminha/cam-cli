@@ -1,10 +1,10 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Navigable Stories section with a pure selection reducer and green-highlighted selected row"
+    "id": "US-006",
+    "title": "Story detail subview on Enter, back on Esc, with contextual keybar"
   },
   "branchName": "cam/CAM-50-navigable-dashboard",
-  "timestamp": "2026-06-14T04:00:00Z",
+  "timestamp": "2026-06-14T05:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "src/ui/Dashboard.tsx",
@@ -13,15 +13,15 @@
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 added j/k/arrow navigation to the Stories section in Dashboard.tsx: (1) exported `selectionReducer(selected, dir, storyCount)` - pure reducer, clamps to [0,storyCount-1], no-ops on empty list; (2) added `selectedIdx` useState(0) and `stories` variable in DashboardApp; (3) wired useInput for j/downArrow (down) and k/upArrow (up) before the KEYBAR_COMMANDS dispatch block; (4) StoriesSection now accepts `selectedIdx` and computes the window around it (instead of currentId); (5) StoryRow accepts `isSelected` and renders a single <Text backgroundColor={colors.accent} color='#000000'>{line}</Text> when selected, preserving the glyph for pass-state semantics; (6) DARK constant (#000000) added locally in Dashboard.tsx. Tests: 6 pure reducer unit tests + 8 ink-testing-library navigation tests (initial render ANSI assertion, j/k/arrow keypresses with per-line ACCENT_BG checks, clamping, empty-list). Key gotcha: React 19 state updates from useInput are async; navigation tests need `await new Promise(r => setTimeout(r, 0))` after each stdin.write to let React flush before calling lastFrame(). chalk.level=3 forced in beforeAll for ANSI assertions. 806 tests pass.",
+  "nextStoryContext": "US-006 added story detail subview and contextual keybar to Dashboard.tsx: (1) renamed selectionReducer to take SelectionState {selected: number, mode: 'list'|'detail'} instead of bare number; added 'enter' and 'esc' actions; (2) DashboardApp state is now sel: SelectionState = {selected:0, mode:'list'}; (3) useInput handles key.return (Enter opens detail), key.escape (Esc returns to list); nav/dispatch keys are guarded by `if (sel.mode === 'detail') return`; (4) render is conditional: list mode renders StoriesSection+RecentSection+Keybar; detail mode renders StoryDetailView+DetailKeybar; (5) StoryDetailView shows: icon+id+title row, acceptanceCriteria checklist with square checkbox (U+25A1), Notes: block when non-empty, Review: row when reviewLastVerdict is set; (6) DetailKeybar shows only 'Esc back to list' + 'q close pane'; (7) orderedForDetail sorted inside DashboardApp for detail view lookup (same sort as StoriesSection uses). Key gotcha: lone ESC byte triggers Ink's pending-escape 20ms buffer (createInputParser), so tests using stdin.write('\\x1b') need `await new Promise((r) => setTimeout(r, 50))` not the 0ms tick(). US-005 reducer tests updated from selectionReducer(0,'down',5) to selectionReducer({selected:0,mode:'list'},'down',5). 815 tests pass.",
   "officialDocsValidated": [
     {
       "lib": "ink",
       "version": "7.x",
-      "url": "https://github.com/vadimdemedes/ink/blob/master/readme.md",
-      "fetchedAt": "2026-06-14T04:00:00Z",
+      "url": "https://raw.githubusercontent.com/vadimdemedes/ink/master/readme.md",
+      "fetchedAt": "2026-06-14T05:00:00Z",
       "status": "ok",
-      "summary": "Ink 7 docs confirmed: (1) useInput key object supports key.upArrow and key.downArrow for all arrow directions; (2) <Text backgroundColor> accepts hex values and is inherited by child <Text> components, same formats as color prop. Implementation matches."
+      "summary": "Ink docs confirm: key.escape (boolean, Escape key pressed) and key.return (boolean, Return/Enter key pressed) exist in the Key object returned to useInput callbacks. Implementation using `if (key.escape)` and `if (key.return)` matches the documented API."
     }
   ]
 }
