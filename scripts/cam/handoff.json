@@ -1,23 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-FIX-005",
-    "title": "Fix .cam-orch-ready timing race (fixes C4: marker written by orchestrator, not by parent)"
+    "id": "US-FIX-006",
+    "title": "Warnings sweep (W2/W3/W4/W5)"
   },
   "branchName": "cam/CAM-55-single-hub-dispatch",
-  "timestamp": "2026-06-15T20:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-15T21:00:00Z",
+  "createdFiles": [
+    "templates/.gitignore"
+  ],
   "modifiedFiles": [
-    "src/commands/run.ts",
-    "test/run.test.ts",
-    "test/bootstrap-wait.test.ts"
+    ".gitignore",
+    "scripts/cam/prd.json",
+    "src/supervisor/loop.ts",
+    "src/tmux/dispatch.ts",
+    "src/vendor/_generated.ts",
+    "test/no-permission-mode-flag.test.ts",
+    "test/supervisor/loop.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-FIX-005 done. The .cam-orch-ready marker is no longer written by the parent process in setupPanes(); it is now written by the orchestrator agent as its FIRST action (instructed in buildOrchestratorBootPrompt). The SIGINT/SIGTERM cleanup in runRun still removes the marker on abnormal parent exit (idempotent: already-gone is a no-op). The bootstrap-wait helper (waitForOrchestrator) already re-validates liveness after seeing the marker, no change needed there. 917 tests pass. Check prd.json for the next pending story.",
+  "nextStoryContext": "US-FIX-006 done. W2: worker-report.json now gitignored in .gitignore and templates/.gitignore (new file, materialized to project root by cam init). W3: BUSY_GLYPHS widened from 10 specific braille chars to full range [U+2800-U+28FF] using [⠀-⣿◆] regex. W4: parseReviewArgs and parseShipArgs behavioral tests added to test/no-permission-mode-flag.test.ts (7 tests now, was 5). W5: scrollback-poll fallback guarded to scan only last 10 lines of pane, preventing false-trips from doc content; unit test added to loop.test.ts. 921 tests pass, typecheck clean, embed-vendor:check clean. Check prd.json for the next pending story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure behavioral fix in run.ts (removed premature writeFileSync, updated boot prompt text). No external JS library touched."
+      "summary": "Pure internal sweep: gitignore, regex character class, test assertions, loop guard. No external JS library touched."
     }
   ]
 }
