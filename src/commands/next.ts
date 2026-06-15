@@ -16,7 +16,7 @@
 //   renderStateFile, writeStateFile, DEFAULT_MAX_ITERATIONS,
 //   DEFAULT_COMPLETION_PROMISE, DEFAULT_TASK_PROMPT.
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 
@@ -41,6 +41,7 @@ import {
 } from '../tmux/session.ts';
 import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
 import { sendKeysWhenIdle, type CapturePaneFn } from '../tmux/dispatch.ts';
+import { parseStateFile } from './status.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -282,6 +283,48 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		);
 		emitTrailingBlank();
 		return 1;
+	}
+
+	// --- Flip active:true to trigger the sidecar (US-FIX-002) ----------------
+	// The sidecar (spawned by cam run) polls .claude/cam-loop.local.md for the
+	// active flag. Setting it to true here is the trigger that makes the sidecar
+	// acquire the supervisor lock and start the deterministic loop. If the state
+	// file does not exist yet, we create it with sensible defaults. If it already
+	// exists (e.g. from a previous `cam next`), we overwrite only the active flag
+	// while preserving the other fields.
+	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
+	try {
+		const now = new Date().toISOString();
+		let newBody: string;
+		if (existsSync(stateFilePath)) {
+			const contents = readFileSync(stateFilePath, 'utf8');
+			const parsed = parseStateFile(contents);
+			newBody = renderStateFile({
+				maxIterations: parsed?.max_iterations ?? DEFAULT_MAX_ITERATIONS,
+				completionPromise: parsed?.completion_promise ?? DEFAULT_COMPLETION_PROMISE,
+				startedAt: parsed?.started_at ?? now,
+				pid: parsed?.pid ?? process.pid,
+				active: true,
+				iteration: parsed?.iteration,
+				currentStory: parsed?.current_story,
+				storiesDone: parsed?.stories_done,
+				storiesTotal: parsed?.stories_total,
+				lastActivity: now,
+			});
+		} else {
+			newBody = renderStateFile({
+				maxIterations: DEFAULT_MAX_ITERATIONS,
+				completionPromise: DEFAULT_COMPLETION_PROMISE,
+				startedAt: now,
+				pid: process.pid,
+				active: true,
+				lastActivity: now,
+			});
+		}
+		writeStateFile(cwd, newBody, { force: true });
+		emitMutedHint('Sidecar trigger: active:true written to .claude/cam-loop.local.md');
+	} catch {
+		// Non-fatal: the sidecar will still pick up the next active flag write.
 	}
 
 	// Wait for the orchestrator pane to be idle, then issue atomic send-keys.

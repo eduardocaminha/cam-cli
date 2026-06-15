@@ -33,6 +33,7 @@ import { runOrchBudget } from './src/commands/orch-budget.ts';
 import { runStop } from './src/commands/stop.ts';
 import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
+import { runSidecar } from './src/commands/sidecar.ts';
 import { printError, printFatalHint, printHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { CAM_VERSION } from './src/version.ts';
@@ -903,6 +904,14 @@ async function main(argv: string[]): Promise<number> {
 				return 0;
 			}
 			return runClaude({ args: parsed.forwardedArgs });
+		}
+		// Internal subcommand — not listed in top-level HELP.
+		// Spawned as a detached background process by cam run (US-FIX-002).
+		// Polls the active flag in .claude/cam-loop.local.md and calls
+		// runSupervisor when active:true with non-operator stories pending.
+		case 'sidecar': {
+			await runSidecar();
+			return 0;
 		}
 		// Internal subcommand — not listed in top-level HELP.
 		// Forked as a detached background process by forkMonitor() when running

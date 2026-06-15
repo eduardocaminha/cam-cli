@@ -12,6 +12,9 @@
 //        Pane 0 (left):   claude orchestrator with boot prompt (US-001).
 //        Pane 1 (right):  cam dashboard, permanent pane (US-002, US-010).
 //      Then attach.
+//   4. After session creation (new sessions only): spawn the sidecar supervisor
+//      as a detached background process. Logs go to .claude/cam-supervisor.log.
+//      The sidecar is killed on cam run exit (SIGINT/SIGTERM cleanup).
 //
 // Dependencies:
 //   - tmux on PATH (verified by `cam init`).
@@ -22,7 +25,7 @@
 // CLI contract:
 //   cam run [--no-attach]         (don't attach, just create the session)
 
-import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -55,6 +58,22 @@ export { projectSessionName } from '../tmux/session.ts';
 // Public types
 // ---------------------------------------------------------------------------
 
+/**
+ * Shape of the detached sidecar process handle. The real implementation uses
+ * Bun.spawn; tests inject a fake via spawnSidecarFn.
+ */
+export interface SidecarProcess {
+	/** Kill the sidecar process. Best-effort (no-throw). */
+	kill: () => void;
+}
+
+/**
+ * Factory that spawns the sidecar as a detached background process.
+ * The real default redirects stdout+stderr to .claude/cam-supervisor.log.
+ * Tests inject a fake that records the invocation and returns a no-op handle.
+ */
+export type SpawnSidecarFn = (cwd: string, logPath: string) => SidecarProcess;
+
 export interface RunOptions {
 	noAttach?: boolean;
 	cwd?: string;
@@ -62,6 +81,12 @@ export interface RunOptions {
 	spawnFn?: SpawnFn;
 	/** Injectable session-id generator for unit tests. Defaults to randomUUID. */
 	genSessionId?: () => string;
+	/**
+	 * Injectable sidecar spawn function for unit tests.
+	 * Default: spawn `cam sidecar` as a detached Bun child process with
+	 * stdout+stderr redirected to .claude/cam-supervisor.log.
+	 */
+	spawnSidecarFn?: SpawnSidecarFn;
 }
 
 export interface ParsedRunArgs {
@@ -380,6 +405,40 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 }
 
 // ---------------------------------------------------------------------------
+// Sidecar spawn (real production implementation)
+// ---------------------------------------------------------------------------
+
+/**
+ * Real production implementation of SpawnSidecarFn.
+ *
+ * Spawns `cam sidecar` as a detached Bun child process with stdout+stderr
+ * redirected to `logPath` (.claude/cam-supervisor.log). The sidecar runs for
+ * the lifetime of the cam session; cam run kills it on SIGINT/SIGTERM.
+ *
+ * We use Bun.spawn (not node:child_process.spawn) per the Bun-runtime pattern.
+ * `detached:true` ensures the sidecar is not in the same process group as cam
+ * run, so it survives a terminal detach; cam run's cleanup handler explicitly
+ * kills it on exit.
+ */
+function spawnSidecarDefault(cwd: string, logPath: string): SidecarProcess {
+	// Open the log file for append (create if absent).
+	const logFd = openSync(logPath, 'a');
+	const proc = Bun.spawn(['cam', 'sidecar'], {
+		cwd,
+		stdio: ['ignore', logFd, logFd],
+	});
+	return {
+		kill: () => {
+			try {
+				proc.kill();
+			} catch {
+				// best-effort
+			}
+		},
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
@@ -454,24 +513,38 @@ export function runRun(options: RunOptions = {}): number {
 	// normal orchestrator exit; this handler covers the abnormal-exit path.
 	// Only registered when a new session was just created (the marker was just
 	// written); an attach-to-existing path has no newly written marker to clear.
+	//
+	// US-FIX-002: also spawn the sidecar supervisor and kill it on exit.
+	// The sidecar runs for the lifetime of the cam session, polling the active
+	// flag and calling runSupervisor when triggered by `cam next`. It must NOT
+	// outlive cam run: the cleanup handler kills it on SIGINT/SIGTERM.
 	if (result.created) {
 		const orchReadyPath = join(cwd, '.claude', ORCH_READY_MARKER);
-		let markerCleaned = false;
-		const cleanupMarker = () => {
-			if (markerCleaned) return;
-			markerCleaned = true;
+
+		// Ensure .claude/ exists before opening the log file.
+		mkdirSync(join(cwd, '.claude'), { recursive: true });
+		const sidecarLogPath = join(cwd, '.claude', 'cam-supervisor.log');
+		const spawnSidecarFn = options.spawnSidecarFn ?? spawnSidecarDefault;
+		const sidecarProc = spawnSidecarFn(cwd, sidecarLogPath);
+		emitMutedHint(`Sidecar supervisor started (log: .claude/cam-supervisor.log)`);
+
+		let cleaned = false;
+		const cleanup = () => {
+			if (cleaned) return;
+			cleaned = true;
 			try {
 				unlinkSync(orchReadyPath);
 			} catch {
 				// already gone or never written
 			}
+			sidecarProc.kill();
 		};
 		process.once('SIGINT', () => {
-			cleanupMarker();
+			cleanup();
 			process.exit(130);
 		});
 		process.once('SIGTERM', () => {
-			cleanupMarker();
+			cleanup();
 			process.exit(143);
 		});
 	}

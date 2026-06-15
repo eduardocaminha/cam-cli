@@ -55,7 +55,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files likely touched: src/commands/run.ts (spawn sidecar; cleanup on SIGINT/SIGTERM), src/commands/next.ts (thin-proxy flips active:true), src/supervisor/loop.ts (active-flag gate; reuse the US-004 ReadWorkerReport injected reader). Patterns.md invariants to re-check: Bun runtime (use Bun.spawn for the detached sidecar; pass {stdio:'ignore'} or redirect to a Bun.file write stream); noUncheckedIndexedAccess on the parsed cam-loop.local.md frontmatter; never reintroduce claude -p in any worker argv (CAM-42); never register a --permission-mode flag on cam next or cam run; conventional commits. Re-check the existing state-primary invariant: prd.json passes: + handoff.json remain the source of truth; the report file corroborates."
     },

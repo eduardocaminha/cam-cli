@@ -912,3 +912,123 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	notifyTerminal('max-iterations');
 	return { status: 'max-iterations', iterations, lastOutcome };
 }
+
+// ---------------------------------------------------------------------------
+// runSidecarLoop — outer active-flag gate (US-FIX-002 sidecar model)
+// ---------------------------------------------------------------------------
+
+/**
+ * Options for the outer sidecar loop that gates on the active flag.
+ * All dependencies are injectable for unit tests.
+ */
+export interface RunSidecarLoopOptions {
+	/**
+	 * Return the RunSupervisorOptions bag to use when active. Called once per
+	 * sidecar cycle so the wiring can be rebuilt with a fresh onProgress closure.
+	 */
+	buildOpts: () => RunSupervisorOptions;
+	/**
+	 * Read the `active` flag from .claude/cam-loop.local.md.
+	 * Returns undefined when the file is absent or unparseable.
+	 */
+	readActive: () => boolean | undefined;
+	/**
+	 * Set active:false in .claude/cam-loop.local.md after the supervisor
+	 * reaches a terminal state.
+	 */
+	clearActive: () => void;
+	/**
+	 * Sleep between polls when inactive (ms).
+	 * Injected so tests can use a no-op.
+	 */
+	sleep: (ms: number) => void;
+	/**
+	 * Poll interval when idle (no active flag set).
+	 * Default: SIDECAR_IDLE_POLL_MS (2 000 ms).
+	 */
+	idlePollMs?: number;
+	/**
+	 * Check whether there are any non-operator stories with passes:false before
+	 * calling runSupervisor. When this function returns false, the sidecar stays
+	 * idle even if active:true (PRD is already done or empty). When absent,
+	 * always defers to runSupervisor (which will return 'complete' quickly).
+	 */
+	hasPendingStories?: () => boolean;
+	/**
+	 * Acquire the single-supervisor lock. Returns { acquired:true } on success.
+	 * Injected so tests never touch the filesystem.
+	 */
+	acquireLock: () => { acquired: true; release: () => void } | { acquired: false; holderPid: number };
+	/**
+	 * Run the supervisor inner loop. Injected for tests (default: runSupervisor).
+	 */
+	runSupervisorFn?: (opts: RunSupervisorOptions) => Promise<SupervisorResult>;
+}
+
+/** Idle polling interval for the sidecar outer loop (2 seconds). */
+export const SIDECAR_IDLE_POLL_MS = 2_000;
+
+/**
+ * The outer sidecar loop: gated on the `active` flag in cam-loop.local.md.
+ *
+ * When active:false (or absent): idle — poll via sleep.
+ * When active:true AND pending non-operator stories: acquire lock + call runSupervisor.
+ * On terminal SupervisorResult: call clearActive() to set active:false.
+ *
+ * This function runs forever (until the process is killed by cam run's cleanup
+ * handler). All I/O is injectable for unit tests.
+ */
+export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void> {
+	const idlePollMs = opts.idlePollMs ?? SIDECAR_IDLE_POLL_MS;
+	const runSupervisorFn = opts.runSupervisorFn ?? runSupervisor;
+
+	while (true) {
+		const active = opts.readActive();
+
+		if (active !== true) {
+			// Idle: sleep and re-poll.
+			opts.sleep(idlePollMs);
+			continue;
+		}
+
+		// active:true: check if there is work to do.
+		const hasPending = opts.hasPendingStories ? opts.hasPendingStories() : true;
+		if (!hasPending) {
+			// Nothing pending even though active was set. Clear the flag and idle.
+			opts.clearActive();
+			opts.sleep(idlePollMs);
+			continue;
+		}
+
+		// Acquire the supervisor lock before running.
+		const lockResult = opts.acquireLock();
+		if (!lockResult.acquired) {
+			// Another supervisor is already running (e.g. a concurrent cam next).
+			// Idle and retry.
+			opts.sleep(idlePollMs);
+			continue;
+		}
+
+		// Run the deterministic loop. Guards (CAM-36, CAM-44, MAX_ITERATIONS,
+		// event log) all live inside runSupervisor — unchanged.
+		let result: SupervisorResult;
+		try {
+			const supervisorOpts = opts.buildOpts();
+			result = await runSupervisorFn(supervisorOpts);
+		} finally {
+			// Release the lock whether the run succeeded or threw.
+			lockResult.release();
+		}
+
+		// Terminal state reached: set active:false so cam status shows 'paused'.
+		// The onProgress callback inside buildOpts() may have already updated the
+		// state file; clearActive() is the safety net that ensures active:false
+		// even when onProgress was absent or failed.
+		opts.clearActive();
+
+		// Prevent busy-spin on rapid complete/blocked cycles (e.g. empty PRD).
+		// A short sleep lets the sidecar settle before the next poll.
+		void result; // result is available for logging if needed
+		opts.sleep(idlePollMs);
+	}
+}

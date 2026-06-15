@@ -22,6 +22,7 @@ import {
 	buildOrchestratorPaneCommand,
 	buildOrchestratorBootPrompt,
 	DEFAULT_MAX_ORCH_RESPAWNS,
+	type SpawnSidecarFn,
 } from '../src/commands/run.ts';
 import type { SpawnFn } from '../src/tmux/session.ts';
 
@@ -603,5 +604,47 @@ describe('buildOrchestratorBootPrompt (CAM-23 rehydration directive)', () => {
 		expect(prompt.toLowerCase()).toContain('rehydrate');
 		// Still tells it to read its agent system prompt.
 		expect(prompt).toContain('subagent-orchestrator.md');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// runRun: sidecar spawn (US-FIX-002)
+// ---------------------------------------------------------------------------
+
+describe('runRun sidecar spawn (US-FIX-002)', () => {
+	it('spawns the sidecar when a new session is created and --no-attach is passed', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		let sidecarCwd: string | undefined;
+		let sidecarLogPath: string | undefined;
+		const fakeSidecar = { kill: () => {} };
+		const spawnSidecarFn = (c: string, l: string) => {
+			sidecarCwd = c;
+			sidecarLogPath = l;
+			return fakeSidecar;
+		};
+
+		const code = runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn });
+
+		expect(code).toBe(0);
+		expect(sidecarCwd).toBe(cwd);
+		expect(sidecarLogPath).toContain('.claude');
+		expect(sidecarLogPath).toContain('cam-supervisor.log');
+	});
+
+	it('does NOT spawn the sidecar when an existing session is attached', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: true });
+
+		let sidecarSpawnCalled = false;
+		const spawnSidecarFn = (_c: string, _l: string) => {
+			sidecarSpawnCalled = true;
+			return { kill: () => {} };
+		};
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn });
+
+		expect(sidecarSpawnCalled).toBe(false);
 	});
 });
