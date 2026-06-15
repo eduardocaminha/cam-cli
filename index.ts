@@ -24,6 +24,8 @@ import { runIssue } from './src/commands/issue.ts';
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
+import { runReview } from './src/commands/review.ts';
+import { runShip } from './src/commands/ship.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
@@ -47,6 +49,8 @@ const HELP = renderHelp({
 				{ name: 'run [options]', description: 'Open or attach the long-lived orchestrator (tmux session)' },
 				{ name: 'plan [--issue <N>]', description: 'Spawn claude + dispatch /cam-plan; APPROVE happens inside the pane' },
 				{ name: 'next [options]', description: 'Launch the autonomous loop as a tmux pane in the project session' },
+				{ name: 'review', description: 'Dispatch /cam-review to the live orchestrator (or bootstrap first)' },
+				{ name: 'ship', description: 'Dispatch /cam-ship to the live orchestrator (or bootstrap first)' },
 				{ name: 'issue "<text>"', description: 'File an issue from free text; opens /cam-issue create in a pane' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
@@ -252,6 +256,50 @@ const NEXT_HELP = renderHelp({
 				'rm .claude/cam-loop.local.md  (kill switch — loop ends after current turn)',
 		},
 	],
+});
+
+const REVIEW_HELP = renderHelp({
+	title: 'cam review',
+	tagline: 'Dispatch /cam-review to the live orchestrator',
+	usage: 'cam review',
+	sections: [
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Checks whether a live orchestrator session exists\n' +
+				'   (cam-orch-<basename>-<hash>).\n' +
+				'2. On hit: sends /cam-review to the orchestrator pane via\n' +
+				'   atomic tmux send-keys and returns immediately.\n' +
+				'3. On miss: bootstraps the orchestrator via `cam run --no-attach`,\n' +
+				'   waits for .claude/.cam-orch-ready + liveness re-check, then\n' +
+				'   sends /cam-review.\n' +
+				'4. If not already inside the session, prints a hint:\n' +
+				'     Run `cam run` to open the project session.',
+		},
+	],
+	footer: 'cam review accepts no arguments. cam does NOT accept a --permission-mode flag.',
+});
+
+const SHIP_HELP = renderHelp({
+	title: 'cam ship',
+	tagline: 'Dispatch /cam-ship to the live orchestrator',
+	usage: 'cam ship',
+	sections: [
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Checks whether a live orchestrator session exists\n' +
+				'   (cam-orch-<basename>-<hash>).\n' +
+				'2. On hit: sends /cam-ship to the orchestrator pane via\n' +
+				'   atomic tmux send-keys and returns immediately.\n' +
+				'3. On miss: bootstraps the orchestrator via `cam run --no-attach`,\n' +
+				'   waits for .claude/.cam-orch-ready + liveness re-check, then\n' +
+				'   sends /cam-ship.\n' +
+				'4. If not already inside the session, prints a hint:\n' +
+				'     Run `cam run` to open the project session.',
+		},
+	],
+	footer: 'cam ship accepts no arguments. cam does NOT accept a --permission-mode flag.',
 });
 
 const STATUS_HELP = renderHelp({
@@ -602,6 +650,50 @@ export function parseResumeArgs(
 	return result;
 }
 
+/**
+ * Parse `cam review` args. The command accepts no positional arguments and
+ * only the standard --help / -h flag. Any other argument is an error.
+ *
+ * NOTE: This parser does NOT accept `--permission-mode` -- that is the
+ * US-007 acceptance criterion 7 invariant. `test/no-permission-mode-flag.test.ts`
+ * greps this file for the literal `--permission-mode` and fails the build
+ * if a parser registers it.
+ */
+export function parseReviewArgs(args: string[]): { help: boolean } | null {
+	const result = { help: false };
+	for (const arg of args) {
+		if (arg === '--help' || arg === '-h') {
+			result.help = true;
+			continue;
+		}
+		printError(`unknown review option: ${arg}`);
+		return null;
+	}
+	return result;
+}
+
+/**
+ * Parse `cam ship` args. The command accepts no positional arguments and
+ * only the standard --help / -h flag. Any other argument is an error.
+ *
+ * NOTE: This parser does NOT accept `--permission-mode` -- that is the
+ * US-007 acceptance criterion 7 invariant. `test/no-permission-mode-flag.test.ts`
+ * greps this file for the literal `--permission-mode` and fails the build
+ * if a parser registers it.
+ */
+export function parseShipArgs(args: string[]): { help: boolean } | null {
+	const result = { help: false };
+	for (const arg of args) {
+		if (arg === '--help' || arg === '-h') {
+			result.help = true;
+			continue;
+		}
+		printError(`unknown ship option: ${arg}`);
+		return null;
+	}
+	return result;
+}
+
 async function main(argv: string[]): Promise<number> {
 	const command = argv[2];
 	if (!command || command === 'help' || command === '--help' || command === '-h') {
@@ -711,6 +803,30 @@ async function main(argv: string[]): Promise<number> {
 				maxIterations: parsed.maxIterations,
 				completionPromise: parsed.completionPromise,
 			});
+		}
+		case 'review': {
+			const parsed = parseReviewArgs(argv.slice(3));
+			if (parsed === null) {
+				printFatalHint('run `cam review --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(REVIEW_HELP);
+				return 0;
+			}
+			return runReview({});
+		}
+		case 'ship': {
+			const parsed = parseShipArgs(argv.slice(3));
+			if (parsed === null) {
+				printFatalHint('run `cam ship --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(SHIP_HELP);
+				return 0;
+			}
+			return runShip({});
 		}
 		case 'dashboard': {
 			const tail = argv.slice(3);
