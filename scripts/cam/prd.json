@@ -73,7 +73,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/dispatch.ts (line ~189-193 the submit call), src/supervisor/worker-report.ts (worker-exit push), .claude/agents/subagent-implementer.md (and any other agent doc that documents the send-keys form), templates/.claude/agents/subagent-implementer.md mirror. Empirical test pattern: spawn tmux with a private socket via tmux -L <unique>, new-session -d, run a tiny `cat > /tmp/foo` in the pane, send payload via the helper, then read /tmp/foo to confirm a trailing newline (proving Enter was submitted). Clean up the tmux server with `tmux -L <unique> kill-server` in afterAll. Patterns.md invariants to re-check: send-keys submit has NO -l before Enter (this story is what creates that invariant; the existing patterns.md bullet that says '-l for literal payloads' must be updated to call out the Enter-arg pitfall); no em-dash in any persisted .md edit; Bun runtime (use Bun.spawnSync for the test tmux calls)."
     },
