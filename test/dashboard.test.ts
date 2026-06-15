@@ -14,12 +14,13 @@
 // The runtime loop polls every `pollIntervalMs`; we set it to 1 ms in
 // tests so a `maxTicks: 2` run completes in a couple of milliseconds.
 
-import { describe, expect, it, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { render } from 'ink-testing-library';
 import React from 'react';
+import chalk, { type ColorSupportLevel } from 'chalk';
 
 import {
 	CURSOR,
@@ -34,7 +35,7 @@ import {
 	type DashboardReader,
 	type DashboardWriter,
 } from '../src/commands/dashboard.ts';
-import { DashboardApp, STORY_TOKENS_PLACEHOLDER } from '../src/ui/Dashboard.tsx';
+import { DashboardApp, STORY_TOKENS_PLACEHOLDER, selectionReducer } from '../src/ui/Dashboard.tsx';
 import type { TranscriptUsage } from '../src/transcript/usage.ts';
 
 // --- Fakes -----------------------------------------------------------------
@@ -1046,6 +1047,245 @@ describe('DashboardApp per-story tokens (US-014)', () => {
 		expect(frame).toContain('US-001');
 		expect(frame).toContain('US-002');
 		expect(frame).toContain(STORY_TOKENS_PLACEHOLDER);
+		unmount();
+	});
+});
+
+// --- selectionReducer (US-005) -------------------------------------------
+//
+// Pure unit tests: no Ink, no render, no IO.
+// Input: (selected index, direction, storyCount). Output: clamped index.
+
+describe('selectionReducer (US-005)', () => {
+	it('moves down by one with dir=down', () => {
+		expect(selectionReducer(0, 'down', 5)).toBe(1);
+		expect(selectionReducer(2, 'down', 5)).toBe(3);
+	});
+
+	it('moves up by one with dir=up', () => {
+		expect(selectionReducer(3, 'up', 5)).toBe(2);
+		expect(selectionReducer(1, 'up', 5)).toBe(0);
+	});
+
+	it('clamps at bottom: down from last index stays at last', () => {
+		expect(selectionReducer(4, 'down', 5)).toBe(4);
+	});
+
+	it('clamps at top: up from index 0 stays at 0', () => {
+		expect(selectionReducer(0, 'up', 5)).toBe(0);
+	});
+
+	it('no-ops on empty list (returns same state, never crashes)', () => {
+		expect(selectionReducer(0, 'up', 0)).toBe(0);
+		expect(selectionReducer(0, 'down', 0)).toBe(0);
+	});
+
+	it('single-element list: both directions clamp to 0', () => {
+		expect(selectionReducer(0, 'up', 1)).toBe(0);
+		expect(selectionReducer(0, 'down', 1)).toBe(0);
+	});
+});
+
+// --- DashboardApp Stories navigation (US-005) ----------------------------
+//
+// ink-testing-library tests that assert the accent-bg ANSI escape appears on
+// the selected row after j/k/arrow keypresses.
+//
+// chalk.level is forced to 3 (TrueColor) for this describe block so the
+// ANSI codes are emitted regardless of whether the test runner is a TTY.
+
+describe('DashboardApp Stories navigation (US-005)', () => {
+	// ANSI 24-bit background for #4EBE7D: R=78 G=190 B=125.
+	const ACCENT_BG = '[48;2;78;190;125m';
+
+	let savedChalkLevel: ColorSupportLevel;
+
+	beforeAll(() => {
+		savedChalkLevel = chalk.level;
+		chalk.level = 3;
+	});
+
+	afterAll(() => {
+		chalk.level = savedChalkLevel;
+	});
+
+	function makeNavData(): DashboardData {
+		return {
+			branchName: 'cam/test',
+			currentStoryId: 'US-002',
+			currentStoryTitle: 'second',
+			iteration: 1,
+			maxIterations: 30,
+			startedAtMs: 0,
+			nowMs: 0,
+			paused: false,
+			idle: false,
+			recent: [],
+			stories: [
+				{ id: 'US-001', title: 'first', priority: 1, passes: true },
+				{ id: 'US-002', title: 'second', priority: 2, passes: false },
+				{ id: 'US-003', title: 'third', priority: 3, passes: false },
+			],
+			storyTokens: {},
+		};
+	}
+
+	/** Wait one macrotask so React can flush state updates and re-render. */
+	const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+	it('initial render: first row (index 0) is selected with accent background', () => {
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		// Accent-bg escape must appear on the first row (index 0).
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-001');
+		unmount();
+	});
+
+	it('j keypress moves selection down: second row gets accent background', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		stdin.write('j');
+		await tick();
+		const frame = lastFrame() ?? '';
+		// The line carrying the accent-bg escape must be the US-002 row.
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-002');
+		unmount();
+	});
+
+	it('down arrow (\\u001B[B) moves selection down', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		// Full ANSI escape for downArrow: ESC (U+001B) + "[B".
+		stdin.write('[B');
+		await tick();
+		const frame = lastFrame() ?? '';
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-002');
+		unmount();
+	});
+
+	it('k after j returns to first row', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		stdin.write('j'); // down to index 1
+		await tick();
+		stdin.write('k'); // back up to index 0
+		await tick();
+		const frame = lastFrame() ?? '';
+		// US-001 should now be highlighted (index 0).
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-001');
+		unmount();
+	});
+
+	it('up arrow (\\u001B[A) moves selection up', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		stdin.write('j'); // down to index 1
+		await tick();
+		stdin.write('[A'); // up arrow: ESC + "[A"
+		await tick();
+		const frame = lastFrame() ?? '';
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-001');
+		unmount();
+	});
+
+	it('j past last row clamps: last row stays highlighted', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		// Move to last (index 2) then try to go further.
+		stdin.write('j');
+		await tick();
+		stdin.write('j');
+		await tick();
+		stdin.write('j'); // clamps at 2
+		await tick();
+		const frame = lastFrame() ?? '';
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-003');
+		unmount();
+	});
+
+	it('k at first row clamps: first row stays highlighted', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		stdin.write('k'); // clamps at 0
+		await tick();
+		stdin.write('k'); // still 0
+		await tick();
+		const frame = lastFrame() ?? '';
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-001');
+		unmount();
+	});
+
+	it('empty story list: no accent bg and no crash', async () => {
+		const emptyData: DashboardData = {
+			...makeNavData(),
+			stories: [],
+		};
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => emptyData,
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		// j and k on empty list must not crash.
+		stdin.write('j');
+		await tick();
+		stdin.write('k');
+		await tick();
+		const frame = lastFrame() ?? '';
+		// Empty list shows the "(no prd.json found)" placeholder, no accent bg.
+		expect(frame).toContain('no prd.json found');
+		expect(frame).not.toContain(ACCENT_BG);
 		unmount();
 	});
 });

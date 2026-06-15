@@ -43,6 +43,18 @@ const PROGRESS_BAR_WIDTH = 22;
 const STORIES_WINDOW = 8;
 
 /**
+ * Pure reducer for the Stories list selection cursor.
+ * Input: current selected index, direction, total story count.
+ * Output: new selected index clamped to [0, storyCount-1].
+ * No-ops on an empty list (returns the same state).
+ */
+export function selectionReducer(selected: number, dir: 'up' | 'down', storyCount: number): number {
+	if (storyCount === 0) return selected;
+	if (dir === 'up') return Math.max(0, selected - 1);
+	return Math.min(storyCount - 1, selected + 1);
+}
+
+/**
  * Shown in the Stories panel next to a story that has no worker session marker
  * yet (US-014). A muted middot keeps the row visually quiet for the pending
  * queue while still signalling "no token data" rather than crashing.
@@ -82,6 +94,8 @@ export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }
 	const [data, setData] = useState<DashboardData>(() => readSnapshot());
 	const { exit } = useApp();
 	const { stdout } = useStdout();
+	const stories = data.stories ?? [];
+	const [selectedIdx, setSelectedIdx] = useState(0);
 	// Fit the section rule to the host pane: full width minus a symmetric margin
 	// (the heading indent on each side), so the rule spans the pane instead of
 	// stopping at a fixed 50-col cap. Recomputed on SIGWINCH (Ink re-renders).
@@ -108,6 +122,16 @@ export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }
 			exit();
 			return;
 		}
+		// j / downArrow: move selection cursor down.
+		if (input === 'j' || key.downArrow) {
+			setSelectedIdx((i) => selectionReducer(i, 'down', stories.length));
+			return;
+		}
+		// k / upArrow: move selection cursor up.
+		if (input === 'k' || key.upArrow) {
+			setSelectedIdx((i) => selectionReducer(i, 'up', stories.length));
+			return;
+		}
 		const lower = input.toLowerCase();
 		if (lower === 'd') {
 			// Focus the orchestrator pane; inert when orchPane is undefined.
@@ -129,8 +153,9 @@ export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }
 		<Box flexDirection="column">
 			<SummaryPanel data={data} dividerWidth={dividerWidth} barWidth={barWidth} />
 			<StoriesSection
-				stories={data.stories ?? []}
+				stories={stories}
 				currentId={data.currentStoryId}
+				selectedIdx={selectedIdx}
 				dividerWidth={dividerWidth}
 				storyTokens={data.storyTokens ?? {}}
 			/>
@@ -314,11 +339,13 @@ function StatusIndicator({
 function StoriesSection({
 	stories,
 	currentId,
+	selectedIdx,
 	dividerWidth,
 	storyTokens,
 }: {
 	stories: readonly PrdStory[];
 	currentId: string;
+	selectedIdx: number;
 	dividerWidth: number;
 	storyTokens: Record<string, TranscriptUsage>;
 }): ReactElement {
@@ -337,16 +364,20 @@ function StoriesSection({
 		return pa - pb;
 	});
 
-	// Window around the current story so the panel stays a fixed height even
-	// when the PRD has 30+ stories. Falls back to "first N" when nothing is
-	// current (idle / booting).
-	const currentIdx = ordered.findIndex((s) => s.id === currentId);
-	const window = computeWindow(ordered.length, currentIdx, STORIES_WINDOW);
+	// Window follows the selection cursor so the highlighted row is always
+	// visible even when the PRD has 30+ stories.
+	const window = computeWindow(ordered.length, selectedIdx, STORIES_WINDOW);
 
 	return (
 		<Section heading="Stories" dividerWidth={dividerWidth}>
-			{ordered.slice(window.start, window.end).map((s) => (
-				<StoryRow key={s.id} story={s} isCurrent={s.id === currentId} tokens={storyTokens[s.id]} />
+			{ordered.slice(window.start, window.end).map((s, i) => (
+				<StoryRow
+					key={s.id}
+					story={s}
+					isCurrent={s.id === currentId}
+					tokens={storyTokens[s.id]}
+					isSelected={window.start + i === selectedIdx}
+				/>
 			))}
 			{window.end < ordered.length ? (
 				<Text color={colors.muted}>
@@ -357,20 +388,33 @@ function StoriesSection({
 	);
 }
 
+/** Dark foreground for use on the accent-green selected-row background. */
+const DARK = '#000000';
+
 function StoryRow({
 	story,
 	isCurrent,
 	tokens,
+	isSelected,
 }: {
 	story: PrdStory;
 	isCurrent: boolean;
 	tokens: TranscriptUsage | undefined;
+	isSelected: boolean;
 }): ReactElement {
 	const { icon, iconColor, titleColor } = storyVisual(story, isCurrent);
 	// Per-story tokens sit next to the row (US-014). Reuse renderTokensLine so the
 	// wording matches the Loop panel's `tokens` row; a missing marker shows a muted
 	// placeholder instead of crashing. State stays signalled by the glyph (✓/→/◌),
 	// never the Section divider color.
+	if (isSelected) {
+		// Selected row: accent background, dark fg. The glyph still encodes pass-state
+		// (✓/→/◌); the background color signals selection only.
+		const line = `${icon} ${story.id.padEnd(9)} ${story.title}  ${tokens ? renderTokensLine(tokens) : STORY_TOKENS_PLACEHOLDER}`;
+		return (
+			<Text backgroundColor={colors.accent} color={DARK}>{line}</Text>
+		);
+	}
 	return (
 		<Box flexDirection="row">
 			<Text color={iconColor}>{icon} </Text>
