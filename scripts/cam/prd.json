@@ -169,7 +169,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files likely touched: the dispatch sites (src/commands/plan.ts, src/commands/next.ts, src/commands/issue.ts, src/commands/review.ts, src/commands/ship.ts) and src/tmux/session.ts (mutex predicate from US-005). Patterns.md invariants to re-check: never register a --permission-mode flag; send-keys atomic text+Enter; noUncheckedIndexedAccess; Bun runtime; no em-dash in any persisted .md (the UX message lands in code, not .md, but any doc updated by this story follows the rule)."
     },

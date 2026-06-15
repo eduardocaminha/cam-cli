@@ -1,39 +1,35 @@
 {
   "lastCompletedStory": {
-    "id": "US-008",
-    "title": "Idle-guarantee before pushing into the orchestrator pane"
+    "id": "US-009",
+    "title": "Mutex failure-mode UX when a 2nd dispatch is attempted with a worker active"
   },
   "branchName": "cam/CAM-55-single-hub-dispatch",
-  "timestamp": "2026-06-15T22:00:00Z",
-  "createdFiles": [
-    "src/tmux/dispatch.ts",
-    "test/dispatch.test.ts"
-  ],
+  "timestamp": "2026-06-15T23:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/issue.ts",
-    "src/commands/next.ts",
     "src/commands/plan.ts",
+    "src/commands/next.ts",
+    "src/commands/issue.ts",
     "src/commands/review.ts",
     "src/commands/ship.ts",
-    "test/attach-hint.test.ts",
-    "test/issue.test.ts",
-    "test/next.test.ts",
     "test/plan.test.ts",
+    "test/next.test.ts",
+    "test/issue.test.ts",
     "test/review.test.ts",
     "test/ship.test.ts",
+    "test/attach-hint.test.ts",
     "scripts/cam/prd.json",
-    "scripts/cam/patterns.md",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-008 complete. src/tmux/dispatch.ts introduces sendKeysWhenIdle (idle-check via capture-pane polling before send-keys) and isOrchPaneIdle (exported for testing). All thin-proxy commands (plan, next, issue, review, ship) now use sendKeysWhenIdle instead of bare tmuxSpawnFn send-keys. Key invariants: idle detection checks last 5 lines for spinner glyphs (braille set) or active tool-call glyph (◆), then confirms a prompt line ending with > or ❯; timeout fallback logs to stderr and still sends. All test fake spawn fns updated to handle capture-pane subcommand (returning '> ') so idle check passes immediately. 893 tests pass, 0 fail. Check prd.json for next highest-priority passes=false non-operator story.",
+  "nextStoryContext": "US-009 complete. All 5 dispatch sites (plan, next, issue, review, ship) now call paneCountMutex(sessionName, tmuxSpawnFn) after the alive/bootstrap check and before sendKeysWhenIdle. If the mutex returns 'busy' (3 panes = worker running), the command prints 'worker busy - blocked until the worker-pane closes' via printError and returns exit code 1. No 4th pane is ever spawned. Each test file's makeFakeTmuxSpawn now handles the #{pane_id} list-panes format (used by paneCountMutex) and accepts a paneMutexBusy option that returns 3 pane IDs when true. Stateful spawn fns in miss-path tests were also updated to handle #{pane_id}. 5 new busy-path unit tests added (one per command). 898 tests pass, 0 fail. Check prd.json for next highest-priority passes=false non-operator story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
       "url": "",
-      "fetchedAt": "2026-06-15T22:00:00Z",
-      "summary": "US-008 is a pure internal feature (capture-pane polling + idle-check logic). No new external JS library was introduced. tmux capture-pane is a well-known system command; the -p -t <paneId> flags are stable across all tmux 3.x versions."
+      "fetchedAt": "2026-06-15T23:00:00Z",
+      "summary": "US-009 is a pure internal change: adds paneCountMutex calls to 5 dispatch sites and updates test helpers. No new external JS library was introduced."
     }
   ]
 }
