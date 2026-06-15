@@ -72,6 +72,10 @@ function makeFakeTmuxSpawn(orchAlive = true): TmuxSpawnFn {
 			if (fmt === '#{pane_index}\t#{pane_id}') {
 				return { ...base, stdout: Buffer.from('0\t%0\n') };
 			}
+			if (fmt === '#{pane_id}') {
+				// For paneCountMutex: return 2 pane IDs (available).
+				return { ...base, stdout: Buffer.from('%0\n%1\n') };
+			}
 			return { ...base, stdout: Buffer.from('') };
 		}
 

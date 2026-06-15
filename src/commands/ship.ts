@@ -30,6 +30,7 @@ import {
 	hasSession,
 	orchestratorAlive,
 	getOrchPaneId,
+	paneCountMutex,
 	projectSessionName,
 	type Env,
 	type SpawnFn as TmuxSpawnFn,
@@ -152,6 +153,16 @@ export async function runShip(options: ShipOptions = {}): Promise<number> {
 			emitTrailingBlank();
 			return 1;
 		}
+	}
+
+	// --- Mutex check (US-009) ------------------------------------------------
+	// Refuse to dispatch if a worker pane is already running (3 panes = busy).
+	// A 4th pane must never be spawned; exit with non-zero so the caller knows.
+	const mutexState = paneCountMutex(sessionName, tmuxSpawnFn);
+	if (mutexState === 'busy') {
+		printError('worker busy', 'blocked until the worker-pane closes');
+		emitTrailingBlank();
+		return 1;
 	}
 
 	// --- Send request ---------------------------------------------------------

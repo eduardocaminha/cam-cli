@@ -33,8 +33,10 @@ function makeFakeTmuxSpawn(opts: {
 	sessionExists?: boolean;
 	orchAlive?: boolean;
 	orchPaneId?: string;
+	/** When true, paneCountMutex returns 'busy' (3 panes instead of 2). */
+	paneMutexBusy?: boolean;
 } = {}): TmuxSpawnFn & { calls: TmuxCall[] } {
-	const { sessionExists = true, orchAlive = true, orchPaneId = '%0' } = opts;
+	const { sessionExists = true, orchAlive = true, orchPaneId = '%0', paneMutexBusy = false } = opts;
 	const calls: TmuxCall[] = [];
 
 	const fn = ((cmd: string, args: string[]) => {
@@ -65,6 +67,11 @@ function makeFakeTmuxSpawn(opts: {
 			}
 			if (fmt === '#{pane_index}\t#{pane_id}') {
 				return { ...base, stdout: Buffer.from(`0\t${orchPaneId}\n`) };
+			}
+			if (fmt === '#{pane_id}') {
+				// For paneCountMutex: return 2 pane IDs (available) or 3 (busy).
+				const panes = paneMutexBusy ? '%0\n%1\n%2\n' : '%0\n%1\n';
+				return { ...base, stdout: Buffer.from(panes) };
 			}
 			return { ...base, stdout: Buffer.from('') };
 		}
@@ -197,6 +204,22 @@ describe('runIssue (thin-proxy, hit path)', () => {
 		});
 
 		expect(bootstrapCalled).toBe(false);
+	});
+
+	test('returns 1 and does not send-keys when pane mutex is busy', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-busy-'));
+		const spawnFn = makeFakeTmuxSpawn({
+			sessionExists: true,
+			orchAlive: true,
+			paneMutexBusy: true,
+		});
+
+		const code = await runIssue({ text: 'Fix bug', cwd: tmpDir, tmuxSpawnFn: spawnFn });
+
+		expect(code).toBe(1);
+		// send-keys must NOT have been called (worker is still running)
+		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+		expect(sendKeys).toBeUndefined();
 	});
 });
 
