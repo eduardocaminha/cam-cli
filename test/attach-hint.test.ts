@@ -71,8 +71,8 @@ function makeFakeTmuxSpawn(orchAlive = true): TmuxSpawnFn {
 					stdout: Buffer.from(orchAlive ? 'orchestrator\ndashboard\n' : 'dashboard\n'),
 				};
 			}
-			if (fmt === '#{pane_index}\t#{pane_id}') {
-				return { ...base, stdout: Buffer.from('0\t%0\n') };
+			if (fmt === '#{pane_index};#{pane_id}') {
+				return { ...base, stdout: Buffer.from('0;%0\n') };
 			}
 			if (fmt === '#{pane_id}') {
 				// For paneCountMutex: return 2 pane IDs (available).

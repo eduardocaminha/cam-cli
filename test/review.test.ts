@@ -72,8 +72,8 @@ function makeFakeTmuxSpawn(opts: {
 					stdout: Buffer.from(orchAlive ? `orchestrator\ndashboard\n` : `dashboard\n`),
 				};
 			}
-			if (fmt === '#{pane_index}\t#{pane_id}') {
-				return { ...base, stdout: Buffer.from(`0\t${orchPaneId}\n`) };
+			if (fmt === '#{pane_index};#{pane_id}') {
+				return { ...base, stdout: Buffer.from(`0;${orchPaneId}\n`) };
 			}
 			if (fmt === '#{pane_id}') {
 				// For paneCountMutex: return 2 pane IDs (available) or 3 (busy).
@@ -244,8 +244,8 @@ describe('runReview (thin-proxy, miss path)', () => {
 					if (fmt === '#{@cam_label}') {
 						return { ...base, stdout: Buffer.from('orchestrator\ndashboard\n') };
 					}
-					if (fmt === '#{pane_index}\t#{pane_id}') {
-						return { ...base, stdout: Buffer.from('0\t%0\n') };
+					if (fmt === '#{pane_index};#{pane_id}') {
+						return { ...base, stdout: Buffer.from('0;%0\n') };
 					}
 					if (fmt === '#{pane_id}') {
 						// paneCountMutex: 2 panes = available (fresh session).

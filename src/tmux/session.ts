@@ -132,13 +132,16 @@ export function hasSession(sessionName: string, spawnFn: SpawnFn): boolean {
  * prefer stale=true so `cam run` recreates a clean session rather than attaching
  * to an unknown one.
  *
- * Format: `#{pane_current_command}\t#{@cam_label}` - tab-separated so command
- * and label are unambiguously parsed even when labels contain spaces.
+ * Format: `#{pane_current_command};#{@cam_label}` - semicolon-separated. A literal
+ * TAB cannot be used: tmux converts a TAB in a `-F` format string to `_` in the
+ * output (verified against real tmux, CAM-55 operator smoke), which silently
+ * broke the old tab-separated parse. Command names and cam labels never contain
+ * a semicolon, so it is an unambiguous separator.
  */
 export function isSessionStale(sessionName: string, spawnFn: SpawnFn): boolean {
 	const r = spawnFn(
 		'tmux',
-		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{pane_current_command}\t#{@cam_label}']),
+		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{pane_current_command};#{@cam_label}']),
 		{ stdio: 'pipe' },
 	);
 	if ((r.status ?? 1) !== 0) return true; // list-panes failed: conservative
@@ -148,9 +151,9 @@ export function isSessionStale(sessionName: string, spawnFn: SpawnFn): boolean {
 		.map((l) => l.trim())
 		.filter((l) => l.length > 0)
 		.map((l) => {
-			const tabIdx = l.indexOf('\t');
-			const cmd = tabIdx === -1 ? l : l.slice(0, tabIdx);
-			const label = tabIdx === -1 ? '' : l.slice(tabIdx + 1);
+			const sepIdx = l.indexOf(';');
+			const cmd = sepIdx === -1 ? l : l.slice(0, sepIdx);
+			const label = sepIdx === -1 ? '' : l.slice(sepIdx + 1);
 			return { cmd, label };
 		});
 	if (panes.length < 2) return true; // too few panes
@@ -224,20 +227,24 @@ export function orchestratorAlive(sessionName: string, spawnFn: SpawnFn): boolea
  * Returns null on list-panes failure or if pane index 0 is not found.
  */
 export function getOrchPaneId(sessionName: string, spawnFn: SpawnFn): string | null {
+	// Semicolon separator, NOT a tab: tmux converts a TAB in a `-F` format string
+	// to `_` in the output (CAM-55 operator smoke), so a tab-separated parse never
+	// matched and getOrchPaneId always returned null. Pane indices and pane ids
+	// never contain a semicolon.
 	const r = spawnFn(
 		'tmux',
-		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{pane_index}\t#{pane_id}']),
+		tmuxArgs(['list-panes', '-t', sessionName, '-F', '#{pane_index};#{pane_id}']),
 		{ stdio: 'pipe' },
 	);
 	if ((r.status ?? 1) !== 0) return null;
 	const out = typeof r.stdout === 'string' ? r.stdout : (r.stdout?.toString() ?? '');
 	const line = out
 		.split('\n')
-		.find((l) => l.trim().startsWith('0\t'));
+		.find((l) => l.trim().startsWith('0;'));
 	if (!line) return null;
-	const tabIdx = line.indexOf('\t');
-	if (tabIdx === -1) return null;
-	const paneId = line.slice(tabIdx + 1).trim();
+	const sepIdx = line.indexOf(';');
+	if (sepIdx === -1) return null;
+	const paneId = line.slice(sepIdx + 1).trim();
 	return paneId.length > 0 ? paneId : null;
 }
 
