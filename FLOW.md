@@ -476,3 +476,36 @@ Quem mexe em quê:
 - **`cam claude` / retry-monitor** registra seu PID em `~/.cam/retry.pid`; é isso que
   faz `cam resume` cair em `noop` (o monitor respawna o loop quando a janela de
   rate-limit fecha).
+
+---
+
+## 9. supervisor/dispatch (CAM-55: tres decisoes arquiteturais)
+
+CAM-55 fixa tres perguntas abertas de design sobre como os subcomandos CLI e o supervisor
+interagem com o orquestrador. As respostas abaixo estao decididas e congeladas; as historias
+seguintes codificam a implementacao sem precisar re-decidir.
+
+**Q1: supervisor e completion-detection.**
+O supervisor (`cam next`, `runSupervisor`) sobrevive sem mudancas estruturais. A unica
+alteracao e no mecanismo de completion-detection: o polling de scrollback (`capture-pane`
+atras do sentinel `CAM_*_STATUS`) e substituido por um push-report-file. O worker escreve
+o resultado num arquivo estruturado ao terminar; o supervisor le esse arquivo. Isso
+elimina a classe de fragilidade documentada em `supervisor-sentinel-parse-fragility.md`
+(falsos positivos de sentinel no scrollback, sentinel em markdown, pane morto).
+
+**Q2: thin-proxies e o marker `.claude/.cam-orch-ready`.**
+Os subcomandos CLI (`cam plan`, `cam issue`) sao thin-proxies. Fluxo:
+(a) detecta a sessao do orquestrador via `tmux -L cam ls`;
+(b) se ausente, bootstrapa `cam run --no-attach`;
+(c) aguarda o marker `.claude/.cam-orch-ready` no disco (arquivo criado pelo orquestrador
+    ao terminar a inicializacao do TUI e estar pronto para receber comandos);
+(d) injeta o pedido via `send-keys` atomico no pane 0.0 (texto + Enter na mesma chamada).
+Sem o marker, o proxy nao tem garantia de que o TUI do orquestrador esta pronto e pode
+injetar antes que o Ink inicialize, perdendo o comando silenciosamente.
+
+**Q3: idle-guarantee e historia separada.**
+A garantia de que o orquestrador esta idle (nao no meio de uma tarefa) antes de o worker
+fazer o push-report nao e incluida no proxy. E a historia US-008, implementada
+em separado. A separacao evita acoplamento prematuro: Q2 (bootstrap + wait-marker) e Q3
+(idle-check antes do push) sao camadas com razoes de mudanca diferentes e podem ser
+testadas e revertidas de forma independente.
