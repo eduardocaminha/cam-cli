@@ -42,16 +42,47 @@ const PROGRESS_BAR_WIDTH = 22;
 /** How many stories the panel shows around the current one. */
 const STORIES_WINDOW = 8;
 
+/** View mode for the Stories panel: list cursor or story detail. */
+export type SelectionMode = 'list' | 'detail';
+
+/** State managed by the selection reducer: cursor index + view mode. */
+export interface SelectionState {
+	selected: number;
+	mode: SelectionMode;
+}
+
 /**
- * Pure reducer for the Stories list selection cursor.
- * Input: current selected index, direction, total story count.
- * Output: new selected index clamped to [0, storyCount-1].
- * No-ops on an empty list (returns the same state).
+ * Pure reducer for the Stories panel.
+ * Handles navigation (up/down) and view transitions (enter/esc).
+ * - enter in list mode (storyCount > 0): open detail view.
+ * - esc in detail mode: return to list.
+ * - up/down: clamp cursor to [0, storyCount-1], only in list mode.
+ * - No-ops when the action does not apply to the current mode.
  */
-export function selectionReducer(selected: number, dir: 'up' | 'down', storyCount: number): number {
-	if (storyCount === 0) return selected;
-	if (dir === 'up') return Math.max(0, selected - 1);
-	return Math.min(storyCount - 1, selected + 1);
+export function selectionReducer(
+	state: SelectionState,
+	action: 'up' | 'down' | 'enter' | 'esc',
+	storyCount: number,
+): SelectionState {
+	if (action === 'enter') {
+		if (state.mode === 'list' && storyCount > 0) {
+			return { ...state, mode: 'detail' };
+		}
+		return state;
+	}
+	if (action === 'esc') {
+		if (state.mode === 'detail') {
+			return { ...state, mode: 'list' };
+		}
+		return state;
+	}
+	// up/down only apply in list mode
+	if (state.mode !== 'list') return state;
+	if (storyCount === 0) return state;
+	if (action === 'up') {
+		return { ...state, selected: Math.max(0, state.selected - 1) };
+	}
+	return { ...state, selected: Math.min(storyCount - 1, state.selected + 1) };
 }
 
 /**
@@ -95,7 +126,7 @@ export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }
 	const { exit } = useApp();
 	const { stdout } = useStdout();
 	const stories = data.stories ?? [];
-	const [selectedIdx, setSelectedIdx] = useState(0);
+	const [sel, setSel] = useState<SelectionState>({ selected: 0, mode: 'list' });
 	// Fit the section rule to the host pane: full width minus a symmetric margin
 	// (the heading indent on each side), so the rule spans the pane instead of
 	// stopping at a fixed 50-col cap. Recomputed on SIGWINCH (Ink re-renders).
@@ -122,14 +153,26 @@ export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }
 			exit();
 			return;
 		}
+		// Esc: return to list from detail mode (no-op in list mode).
+		if (key.escape) {
+			setSel((s) => selectionReducer(s, 'esc', stories.length));
+			return;
+		}
+		// Enter: open detail for the selected story (no-op in detail mode or empty list).
+		if (key.return) {
+			setSel((s) => selectionReducer(s, 'enter', stories.length));
+			return;
+		}
+		// Navigation and dispatch keys are only active in list mode.
+		if (sel.mode === 'detail') return;
 		// j / downArrow: move selection cursor down.
 		if (input === 'j' || key.downArrow) {
-			setSelectedIdx((i) => selectionReducer(i, 'down', stories.length));
+			setSel((s) => selectionReducer(s, 'down', stories.length));
 			return;
 		}
 		// k / upArrow: move selection cursor up.
 		if (input === 'k' || key.upArrow) {
-			setSelectedIdx((i) => selectionReducer(i, 'up', stories.length));
+			setSel((s) => selectionReducer(s, 'up', stories.length));
 			return;
 		}
 		const lower = input.toLowerCase();
@@ -149,18 +192,43 @@ export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }
 		}
 	});
 
+	// Compute the sorted story order for the detail view (same sort as StoriesSection uses).
+	const orderedForDetail: readonly PrdStory[] =
+		stories.length === 0
+			? []
+			: [...stories].sort((a, b) => {
+					const pa = a.priority ?? Number.POSITIVE_INFINITY;
+					const pb = b.priority ?? Number.POSITIVE_INFINITY;
+					return pa - pb;
+				});
+	const selectedStory: PrdStory | undefined = orderedForDetail[sel.selected];
+
 	return (
 		<Box flexDirection="column">
 			<SummaryPanel data={data} dividerWidth={dividerWidth} barWidth={barWidth} />
-			<StoriesSection
-				stories={stories}
-				currentId={data.currentStoryId}
-				selectedIdx={selectedIdx}
-				dividerWidth={dividerWidth}
-				storyTokens={data.storyTokens ?? {}}
-			/>
-			<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
-			<Keybar />
+			{sel.mode === 'list' ? (
+				<>
+					<StoriesSection
+						stories={stories}
+						currentId={data.currentStoryId}
+						selectedIdx={sel.selected}
+						dividerWidth={dividerWidth}
+						storyTokens={data.storyTokens ?? {}}
+					/>
+					<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
+					<Keybar />
+				</>
+			) : (
+				<>
+					<StoryDetailView
+						story={selectedStory}
+						currentId={data.currentStoryId}
+						reviewLastVerdict={data.reviewLastVerdict}
+						dividerWidth={dividerWidth}
+					/>
+					<DetailKeybar />
+				</>
+			)}
 		</Box>
 	);
 }
@@ -189,6 +257,86 @@ function Keybar(): ReactElement {
 				<Text color={colors.muted}>{'  '}close pane</Text>
 			</Box>
 		</Box>
+	);
+}
+
+/** Contextual keybar for detail mode: Esc to go back, q to quit. */
+function DetailKeybar(): ReactElement {
+	return (
+		<Box marginTop={1} flexDirection="column" paddingLeft={layout.headingIndent}>
+			<Box flexDirection="row">
+				<Text bold>Esc</Text>
+				<Text color={colors.muted}>{'  '}back to list</Text>
+			</Box>
+			<Box flexDirection="row">
+				<Text bold>q</Text>
+				<Text color={colors.muted}>{'  '}close pane</Text>
+			</Box>
+		</Box>
+	);
+}
+
+/** Structural checkbox glyph for acceptanceCriteria items: purely visual scaffolding. */
+const AC_CHECKBOX = '□';
+
+/**
+ * Detail subview for a single story: id, title, status glyph, acceptanceCriteria
+ * checklist, notes block (when non-empty), and the review verdict when present.
+ * Status stays signalled by the glyph (accent check / accent arrow / muted ring),
+ * never by divider color.
+ */
+function StoryDetailView({
+	story,
+	currentId,
+	reviewLastVerdict,
+	dividerWidth,
+}: {
+	story: PrdStory | undefined;
+	currentId: string;
+	reviewLastVerdict: string | undefined;
+	dividerWidth: number;
+}): ReactElement {
+	if (story === undefined) {
+		return (
+			<Section heading="Story" dividerWidth={dividerWidth}>
+				<Text color={colors.muted}>(no story selected)</Text>
+			</Section>
+		);
+	}
+	const { icon, iconColor } = storyVisual(story, story.id === currentId);
+	const criteria = story.acceptanceCriteria ?? [];
+	return (
+		<Section heading="Story" dividerWidth={dividerWidth}>
+			<Box flexDirection="row">
+				<Text color={iconColor}>{icon} </Text>
+				<Text bold>{story.id}</Text>
+				<Text>{'  '}{story.title}</Text>
+			</Box>
+			{criteria.length > 0 ? (
+				<Box flexDirection="column" marginTop={1}>
+					{criteria.map((ac, i) => (
+						<Box key={i} flexDirection="row">
+							<Text color={colors.muted}>{AC_CHECKBOX} </Text>
+							<Text>{ac}</Text>
+						</Box>
+					))}
+				</Box>
+			) : null}
+			{story.notes ? (
+				<Box flexDirection="column" marginTop={1}>
+					<Text color={colors.muted}>Notes:</Text>
+					<Box paddingLeft={2}>
+						<Text>{story.notes}</Text>
+					</Box>
+				</Box>
+			) : null}
+			{reviewLastVerdict !== undefined ? (
+				<Box flexDirection="row" marginTop={1}>
+					<Text color={colors.muted}>Review: </Text>
+					<Text>{reviewLastVerdict}</Text>
+				</Box>
+			) : null}
+		</Section>
 	);
 }
 

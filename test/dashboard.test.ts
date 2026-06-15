@@ -35,7 +35,7 @@ import {
 	type DashboardReader,
 	type DashboardWriter,
 } from '../src/commands/dashboard.ts';
-import { DashboardApp, STORY_TOKENS_PLACEHOLDER, selectionReducer } from '../src/ui/Dashboard.tsx';
+import { DashboardApp, STORY_TOKENS_PLACEHOLDER, selectionReducer, type SelectionState } from '../src/ui/Dashboard.tsx';
 import type { TranscriptUsage } from '../src/transcript/usage.ts';
 
 // --- Fakes -----------------------------------------------------------------
@@ -1057,32 +1057,34 @@ describe('DashboardApp per-story tokens (US-014)', () => {
 // Input: (selected index, direction, storyCount). Output: clamped index.
 
 describe('selectionReducer (US-005)', () => {
-	it('moves down by one with dir=down', () => {
-		expect(selectionReducer(0, 'down', 5)).toBe(1);
-		expect(selectionReducer(2, 'down', 5)).toBe(3);
+	const list = (selected: number): SelectionState => ({ selected, mode: 'list' });
+
+	it('moves down by one with action=down', () => {
+		expect(selectionReducer(list(0), 'down', 5)).toEqual(list(1));
+		expect(selectionReducer(list(2), 'down', 5)).toEqual(list(3));
 	});
 
-	it('moves up by one with dir=up', () => {
-		expect(selectionReducer(3, 'up', 5)).toBe(2);
-		expect(selectionReducer(1, 'up', 5)).toBe(0);
+	it('moves up by one with action=up', () => {
+		expect(selectionReducer(list(3), 'up', 5)).toEqual(list(2));
+		expect(selectionReducer(list(1), 'up', 5)).toEqual(list(0));
 	});
 
 	it('clamps at bottom: down from last index stays at last', () => {
-		expect(selectionReducer(4, 'down', 5)).toBe(4);
+		expect(selectionReducer(list(4), 'down', 5)).toEqual(list(4));
 	});
 
 	it('clamps at top: up from index 0 stays at 0', () => {
-		expect(selectionReducer(0, 'up', 5)).toBe(0);
+		expect(selectionReducer(list(0), 'up', 5)).toEqual(list(0));
 	});
 
 	it('no-ops on empty list (returns same state, never crashes)', () => {
-		expect(selectionReducer(0, 'up', 0)).toBe(0);
-		expect(selectionReducer(0, 'down', 0)).toBe(0);
+		expect(selectionReducer(list(0), 'up', 0)).toEqual(list(0));
+		expect(selectionReducer(list(0), 'down', 0)).toEqual(list(0));
 	});
 
 	it('single-element list: both directions clamp to 0', () => {
-		expect(selectionReducer(0, 'up', 1)).toBe(0);
-		expect(selectionReducer(0, 'down', 1)).toBe(0);
+		expect(selectionReducer(list(0), 'up', 1)).toEqual(list(0));
+		expect(selectionReducer(list(0), 'down', 1)).toEqual(list(0));
 	});
 });
 
@@ -1286,6 +1288,150 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 		// Empty list shows the "(no prd.json found)" placeholder, no accent bg.
 		expect(frame).toContain('no prd.json found');
 		expect(frame).not.toContain(ACCENT_BG);
+		unmount();
+	});
+});
+
+// --- selectionReducer mode transitions (US-006) ---------------------------
+//
+// Pure unit tests for the enter/esc actions on the new mode field.
+
+describe('selectionReducer mode transitions (US-006)', () => {
+	const list = (selected: number): SelectionState => ({ selected, mode: 'list' });
+	const detail = (selected: number): SelectionState => ({ selected, mode: 'detail' });
+
+	it('enter in list mode with stories transitions to detail', () => {
+		expect(selectionReducer(list(1), 'enter', 3)).toEqual(detail(1));
+	});
+
+	it('enter in list mode with 0 stories is a no-op', () => {
+		expect(selectionReducer(list(0), 'enter', 0)).toEqual(list(0));
+	});
+
+	it('enter in detail mode is a no-op', () => {
+		expect(selectionReducer(detail(0), 'enter', 3)).toEqual(detail(0));
+	});
+
+	it('esc in detail mode transitions back to list', () => {
+		expect(selectionReducer(detail(1), 'esc', 3)).toEqual(list(1));
+	});
+
+	it('esc in list mode is a no-op', () => {
+		expect(selectionReducer(list(0), 'esc', 3)).toEqual(list(0));
+	});
+
+	it('up/down in list mode move selection and keep mode=list', () => {
+		expect(selectionReducer(list(0), 'down', 5)).toEqual(list(1));
+		expect(selectionReducer(list(2), 'up', 5)).toEqual(list(1));
+	});
+
+	it('up/down in detail mode are no-ops (selection and mode unchanged)', () => {
+		expect(selectionReducer(detail(1), 'down', 5)).toEqual(detail(1));
+		expect(selectionReducer(detail(1), 'up', 5)).toEqual(detail(1));
+	});
+});
+
+// --- DashboardApp detail view (US-006) ------------------------------------
+//
+// ink-testing-library tests: Enter opens the detail subview, Esc returns to list.
+// Uses the same chalk.level=3 trick as US-005 for consistent rendering.
+
+describe('DashboardApp detail view (US-006)', () => {
+	let savedChalkLevel: ColorSupportLevel;
+
+	beforeAll(() => {
+		savedChalkLevel = chalk.level;
+		chalk.level = 3;
+	});
+
+	afterAll(() => {
+		chalk.level = savedChalkLevel;
+	});
+
+	/** Wait one macrotask for React to flush state updates. */
+	const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+	function makeDetailData(): DashboardData {
+		return {
+			branchName: 'cam/test-detail',
+			currentStoryId: 'US-002',
+			currentStoryTitle: 'second',
+			iteration: 1,
+			maxIterations: 30,
+			startedAtMs: 0,
+			nowMs: 0,
+			paused: false,
+			idle: false,
+			recent: [],
+			stories: [
+				{
+					id: 'US-001',
+					title: 'first story',
+					priority: 1,
+					passes: true,
+					acceptanceCriteria: ['Criterion A', 'Criterion B'],
+					notes: 'Implementation notes here',
+				},
+				{
+					id: 'US-002',
+					title: 'second story',
+					priority: 2,
+					passes: false,
+					acceptanceCriteria: ['AC for second'],
+					notes: '',
+				},
+			],
+			storyTokens: {},
+			reviewLastVerdict: 'CLEAN',
+		};
+	}
+
+	it('Enter (\\r) opens detail view showing id, title, AC, notes, and review verdict', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeDetailData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		// First row (US-001, priority 1) is selected initially.
+		stdin.write('\r'); // Enter
+		await tick();
+		const frame = lastFrame() ?? '';
+		// Story id and title
+		expect(frame).toContain('US-001');
+		expect(frame).toContain('first story');
+		// At least one acceptanceCriteria line
+		expect(frame).toContain('Criterion A');
+		// Notes block (non-empty for US-001)
+		expect(frame).toContain('Implementation notes here');
+		// Review verdict from reviewLastVerdict
+		expect(frame).toContain('CLEAN');
+		// Detail keybar shown, not the list keybar
+		expect(frame).toContain('back to list');
+		expect(frame).not.toContain('/cam-next');
+		unmount();
+	});
+
+	it('Esc (\\u001B) returns from detail to list and shows list-mode keybar', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeDetailData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		stdin.write('\r'); // Enter detail
+		await tick();
+		stdin.write(''); // Esc back to list
+		// Ink buffers lone ESC for 20ms (pending escape) before flush; wait > 20ms.
+		await new Promise((r) => setTimeout(r, 50));
+		const frame = lastFrame() ?? '';
+		// List-mode keybar is back
+		expect(frame).toContain('/cam-next');
+		expect(frame).toContain('close pane');
+		// Detail keybar is gone
+		expect(frame).not.toContain('back to list');
 		unmount();
 	});
 });
