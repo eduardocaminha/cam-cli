@@ -19,7 +19,6 @@
 import process from 'node:process';
 
 import { runDashboardInk } from './src/commands/dashboard.ts';
-import { runMenuInk } from './src/commands/menu.ts';
 import { runInit } from './src/commands/init.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runNext } from './src/commands/next.ts';
@@ -133,10 +132,9 @@ const RUN_HELP = renderHelp({
 				'1. Verifies tmux and `.claude/agents/subagent-orchestrator.md` exist\n' +
 				'   (run `cam init` first if not).\n' +
 				'2. Computes a stable session name per project (cam-orch-<basename>-<hash>).\n' +
-				'3. If the session does not exist: creates it with three panes.\n' +
+				'3. If the session does not exist: creates it with two panes.\n' +
 				'     Pane 0.0 (left):  orchestrator (claude /cam-next loop).\n' +
-				'     Pane 0.1 (top right): cam dashboard (permanent, read-only).\n' +
-				'     Pane 0.2 (bottom right): interactive menu (injects commands into pane 0.0).\n' +
+				'     Pane 0.1 (right): cam dashboard (permanent, navigable TUI).\n' +
 				'   When the orchestrator exits, the session is torn down automatically.\n' +
 				'4. If the session already exists: attach (or switch-client inside tmux).\n' +
 				'5. plan, next, and issue are thin pane launchers: they open a new pane\n' +
@@ -169,7 +167,7 @@ const PLAN_HELP = renderHelp({
 				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
 				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
-				'   creates it (with 3-pane layout) if needed.\n' +
+				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Opens a new pane inside the session running:\n' +
 				'     claude --permission-mode <mode> "/cam-plan" (or "/cam-plan N")\n' +
 				'4. Returns 0 immediately. The planning flow runs inside the pane.\n' +
@@ -203,7 +201,7 @@ const ISSUE_HELP = renderHelp({
 				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
 				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
-				'   creates it (with 3-pane layout) if needed.\n' +
+				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Opens a new pane inside the session running:\n' +
 				'     claude --permission-mode <mode> "/cam-issue create <text>"\n' +
 				'4. Returns 0 immediately. The issue-creation flow runs inside the pane.\n' +
@@ -240,7 +238,7 @@ const NEXT_HELP = renderHelp({
 				'   .claude/cam-loop.local.md (vendored template at\n' +
 				'   vendor/cam-loop.local.md.tmpl).\n' +
 				'3. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
-				'   creates it (with 3-pane layout: orchestrator + dashboard + menu) if needed.\n' +
+				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'4. Opens a new pane inside the session running:\n' +
 				'     claude --permission-mode <mode> "/cam-next"\n' +
 				'5. Returns 0 immediately. The loop runs inside the pane.\n' +
@@ -734,12 +732,6 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			return runDashboardInk({ ...(orchPane !== undefined ? { orchPane } : {}) });
-		}
-		// Internal: spawned by `cam run` as the workspace menu pane. Not listed in
-		// the top-level help. Args are the orchestrator + dashboard pane ids so the
-		// menu's keys can target them.
-		case 'menu': {
-			return runMenuInk({ orchPane: argv[3] ?? '', dashboardPane: argv[4] ?? '' });
 		}
 		case 'status': {
 			const tail = argv.slice(3);
