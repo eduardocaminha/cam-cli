@@ -13,8 +13,9 @@
 //        Pane 1 (right):  cam dashboard, permanent pane (US-002, US-010).
 //      Then attach.
 //   4. After session creation (new sessions only): spawn the sidecar supervisor
-//      as a detached background process. Logs go to .claude/cam-supervisor.log.
-//      The sidecar is killed on cam run exit (SIGINT/SIGTERM cleanup).
+//      as a background child process (NOT detached). Logs go to
+//      .claude/cam-supervisor.log. The sidecar shares cam run's process group
+//      and is killed on cam run exit (SIGINT/SIGTERM cleanup).
 //
 // Dependencies:
 //   - tmux on PATH (verified by `cam init`).
@@ -68,7 +69,8 @@ export interface SidecarProcess {
 }
 
 /**
- * Factory that spawns the sidecar as a detached background process.
+ * Factory that spawns the sidecar as a background child process (NOT detached:
+ * it shares cam run's process group and dies with it).
  * The real default redirects stdout+stderr to .claude/cam-supervisor.log.
  * Tests inject a fake that records the invocation and returns a no-op handle.
  */
@@ -83,7 +85,8 @@ export interface RunOptions {
 	genSessionId?: () => string;
 	/**
 	 * Injectable sidecar spawn function for unit tests.
-	 * Default: spawn `cam sidecar` as a detached Bun child process with
+	 * Default: spawn `cam sidecar` as a background Bun child process (NOT
+	 * detached: shares cam run's process group, killed on exit) with
 	 * stdout+stderr redirected to .claude/cam-supervisor.log.
 	 */
 	spawnSidecarFn?: SpawnSidecarFn;
