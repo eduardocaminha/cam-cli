@@ -53,6 +53,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .claude/.cam-supervisor.lock
 # Supervisor console output log (runtime artifact; gitignored to prevent accidental commit)
 .claude/cam-supervisor-out.log
+# Sidecar supervisor log + cam next run log (runtime artifacts written by `cam run` / `cam next`, CAM-55)
+.claude/cam-supervisor.log
+.claude/cam-next-run.log
 # Ephemeral per-invocation worker exit report (US-003/US-FIX-006; read by supervisor, never committed)
 scripts/cam/worker-report.json
 
