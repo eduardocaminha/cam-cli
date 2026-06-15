@@ -20,7 +20,7 @@ Inventário rápido de quem renderiza o quê:
 | `cam init` | Ink (`Splash` + `InitScreen`, `SetupScreen`) com fallback linear em CI | validação de máquina, wizard, tmux |
 | `cam run` | print path + tmux | sessão orchestrator (3 panes: orquestrador + dashboard + menu) |
 | `cam plan` | print path + tmux (pane launcher) | abre pane na sessão, retorna 0 imediatamente |
-| `cam next` | print path + supervisor in-process | dirige o loop implement-review-complete, sai no estado terminal |
+| `cam next` | print path + thin-proxy | liga `active:true` (dispara o sidecar), retorna 0 imediatamente |
 | `cam issue` | print path + tmux (pane launcher) | abre pane na sessão, retorna 0 imediatamente |
 | `cam dashboard` | Ink (alt-screen) | TUI read-only; pane 0.1 permanente na sessão |
 | `cam status` | print path | idle / active / paused |
@@ -43,7 +43,7 @@ flowchart TD
     INIT --> RUN["cam run<br/>sessao unica por projeto<br/>3 panes: orquestrador + dashboard + menu"]
 
     RUN -. "lançador de pane" .-> PLAN["cam plan<br/>abre pane: /cam-plan"]
-    RUN -. "supervisor in-process" .-> NEXT["cam next<br/>dirige o loop, sai no terminal"]
+    RUN -. "thin-proxy (dispara o sidecar)" .-> NEXT["cam next<br/>flip active:true, retorna 0"]
     RUN -. "lançador de pane" .-> ISSUE["cam issue 'texto'<br/>abre pane: /cam-issue create"]
 
     PLAN -. "volta pra sessao" .-> RUN
@@ -72,10 +72,11 @@ Resumo da espinha dorsal: `init` (uma vez) prepara a máquina e instala template
 `run` abre a sessão única por projeto com 3 panes: pane 0.0 é o orquestrador, pane 0.1
 é o `cam dashboard` permanente (sempre visível), pane 0.2 é o menu interativo. `plan`
 e `issue` são lançadores de pane: abrem um pane novo na sessão e retornam 0
-imediatamente; `next` é diferente, roda o supervisor in-process (não abre pane) e sai
-no estado terminal. Quando o orquestrador (pane 0.0) sai, o wrapper respawna se houver
-um handoff de token-budget pendente, senão destrói a sessão. Quando o PRD fecha com
-review limpo, o supervisor chega ao terminal, o PR vai via `/cam-ship` e `/cam-prune`
+imediatamente; `next` também é thin-proxy (não abre pane), só liga `active:true` e
+dispara o sidecar (o `runSupervisor` background spawnado pelo `cam run`), que corre o loop.
+Quando o orquestrador (pane 0.0) sai, o wrapper respawna se houver um handoff de
+token-budget pendente, senão destrói a sessão. Quando o PRD fecha com review limpo, o
+sidecar chega ao terminal, o PR vai via `/cam-ship` e `/cam-prune`
 limpa a branch.
 
 ---
@@ -212,40 +213,47 @@ Sem `--issue`, o planner pick o issue de maior prioridade pendente por conta pro
 
 ---
 
-## 4. cam next (supervisor in-process)
+## 4. cam next (thin-proxy que dispara o sidecar)
 
-`cam next` roda o supervisor determinístico (`runSupervisor`, `src/supervisor/loop.ts`)
-no próprio processo. Ele lê o pane de worker alocado por `cam plan`, arma o state file,
-adquire o lock de supervisor único e entra no loop implement-review-complete. NÃO há
-stop hook, NÃO registra nada em `settings.local.json`, e NÃO abre um pane `/cam-next`:
-o supervisor despacha cada worker (claude TUI interativo) no pane de worker reusado via
-`respawn-pane` e detecta conclusão pollando `capture-pane` atrás do sentinel. Retorna ao
-chegar num estado terminal. As flags `--max-iter N` e `--completion-promise S` continuam
-aceitas (a promise é só registrada no state file para display via `cam status`, não
-dirige a terminação).
+`cam next` NÃO roda o supervisor no próprio processo. Ele é um thin-proxy (mesmo modelo
+de `cam plan`/`issue`/`review`/`ship`): liga o flag `active: true` no state file
+`.claude/cam-loop.local.md` para disparar o SIDECAR, e opcionalmente injeta uma narração
+em linguagem natural no pane do orquestrador via send-keys atômico (texto + Enter na MESMA
+chamada, sem `-l`). Retorna imediatamente.
+
+O **sidecar** é o supervisor determinístico (`runSupervisor`, `src/supervisor/loop.ts`)
+rodando como processo background detached, spawnado pelo `cam run` (não pelo `cam next`).
+Ele é gated no flag `active`: ocioso enquanto `active: false`; ao ver `active: true` com
+histórias não-operator pendentes, adquire o lock de supervisor único e corre o loop
+implement-review-complete, despachando cada worker (claude TUI interativo) no pane de
+worker reusado (titulado, via `respawn-pane -k`). A conclusão é detectada lendo o
+push-report-file `scripts/cam/worker-report.json` (não mais pollando o scrollback atrás do
+sentinel). Ao chegar num estado terminal, escreve o report terminal e zera `active: false`.
+As flags `--max-iter N` e `--completion-promise S` continuam aceitas (a promise é só
+registrada no state file para display via `cam status`, não dirige a terminação).
 
 ```mermaid
 flowchart TD
-    A["cam next [--max-iter N] [--completion-promise S]"] --> WP["le worker pane (.claude/.cam-worker-pane)"]
-    WP --> WPOK{"alocado?"}
-    WPOK -->|nao| F1["erro: rode cam plan primeiro"] --> E1(["exit 1"])
-    WPOK -->|sim| H3["arma state file cam-loop.local.md"]
-    H3 --> H3OK{"ok? (recusa sobrescrever<br/>state file existente)"}
-    H3OK -->|nao| F3["erro: state file ja existe,<br/>rode cam stop"] --> E3(["exit 1"])
-    H3OK -->|sim| LOCK["adquire .cam-supervisor.lock<br/>(supervisor unico por projeto)"]
-    LOCK --> LOCKOK{"livre?"}
-    LOCKOK -->|nao| F4["erro: outro supervisor ativo"] --> E4(["exit 1"])
-    LOCKOK -->|sim| SUP["runSupervisor: loop decideNextAction<br/>implement / review / complete"]
-    SUP --> TERM{"estado terminal"}
-    TERM -->|"complete / awaiting-operator"| E0(["exit 0"])
-    TERM -->|"blocked / max-iterations"| E5(["exit 1"])
+    A["cam next [--max-iter N]"] --> ORCH{"orquestrador vivo?"}
+    ORCH -->|nao| BOOT["bootstrapa cam run --no-attach<br/>(spawna o sidecar)"]
+    ORCH -->|sim| FLIP["flip active:true em cam-loop.local.md<br/>(+ send-keys narracao, opcional)"]
+    BOOT --> FLIP
+    FLIP --> E0(["exit 0 imediato"])
+
+    SIDE["SIDECAR: runSupervisor (background detached, spawnado por cam run)"] --> GATE{"active:true?"}
+    GATE -->|nao| IDLE["ocioso (poll)"] --> GATE
+    GATE -->|sim| LOCK["adquire .cam-supervisor.lock"]
+    LOCK --> SUP["loop decideNextAction implement/review/complete<br/>(worker no 3o pane; le worker-report.json)"]
+    SUP --> TERM{"terminal"}
+    TERM --> CLR["escreve report terminal + active:false"] --> GATE
 ```
 
-Decisao chave: o loop corre IN-PROCESS no `cam next`, não num pane separado nem via
-re-injeção de slash command. O pane de worker (alocado por `cam plan`) é reusado a cada
-história via `respawn-pane`. A sessão do projeto já tem pane 0.1 (`cam dashboard`)
-permanente e pane 0.2 (menu). Nao ha deteccao de host: a sessao unica por projeto e a
-fonte de verdade, independente do terminal do operador.
+Decisao chave: o loop corre no SIDECAR (processo background detached spawnado por `cam run`),
+NÃO in-process no `cam next` nem absorvido pelo orquestrador LLM. O `cam next` só dispara
+(flip `active:true`). O pane de worker (3o pane, titulado por `@cam_label`) é reusado a cada
+história via `respawn-pane -k`. A sessão do projeto tem orquestrador (pane 0.0) + dashboard
+(pane 0.1) permanentes; o worker é o 3o pane sob mutex. Nao ha deteccao de host: a sessao
+unica por projeto e a fonte de verdade, independente do terminal do operador.
 
 Guardrails por worker: cada despacho tem dois tetos. (1) Wall-clock: `perWorkerTimeoutMs`
 (default 30min, env `CAM_WORKER_TIMEOUT_MS`); ao estourar, o pane é morto e a iteração
@@ -482,16 +490,27 @@ Quem mexe em quê:
 ## 9. supervisor/dispatch (CAM-55: tres decisoes arquiteturais)
 
 CAM-55 fixa tres perguntas abertas de design sobre como os subcomandos CLI e o supervisor
-interagem com o orquestrador. As respostas abaixo estao decididas e congeladas; as historias
+interagem com o orquestrador (a Q1 foi re-decidida no fix-cycle para o modelo sidecar). As respostas abaixo estao decididas e congeladas; as historias
 seguintes codificam a implementacao sem precisar re-decidir.
 
-**Q1: supervisor e completion-detection.**
-O supervisor (`cam next`, `runSupervisor`) sobrevive sem mudancas estruturais. A unica
-alteracao e no mecanismo de completion-detection: o polling de scrollback (`capture-pane`
-atras do sentinel `CAM_*_STATUS`) e substituido por um push-report-file. O worker escreve
-o resultado num arquivo estruturado ao terminar; o supervisor le esse arquivo. Isso
-elimina a classe de fragilidade documentada em `supervisor-sentinel-parse-fragility.md`
-(falsos positivos de sentinel no scrollback, sentinel em markdown, pane morto).
+**Q1: onde o loop determinístico roda (modelo SIDECAR).**
+O loop determinístico (`runSupervisor`, `src/supervisor/loop.ts`) roda como um SIDECAR: um
+processo background detached spawnado pelo `cam run`, gated no flag `active` do state file
+`.claude/cam-loop.local.md`. `cam next` (e os outros thin-proxies) só liga `active:true`
+para disparar; o sidecar adquire o lock de supervisor único e corre o loop. A
+completion-detection muda de polling de scrollback (`capture-pane` atrás do sentinel
+`CAM_*_STATUS`) para um push-report-file (`scripts/cam/worker-report.json`): o worker
+escreve o resultado estruturado ao terminar, o sidecar lê esse arquivo. Isso elimina a
+classe de fragilidade documentada em `supervisor-sentinel-parse-fragility.md` (falsos
+positivos de sentinel no scrollback, sentinel em markdown, pane morto).
+
+REJEITADO: o modelo "o orquestrador LLM absorve o loop" (o orquestrador recebe o report e
+ele mesmo decide/dispara a próxima história, sem supervisor determinístico). Esse modelo
+perde os guards determinísticos que vivem no `runSupervisor`: streak de no-progress
+(CAM-36), backoff de worker morto (CAM-44), `MAX_ITERATIONS`, o lock de supervisor único, e
+o event log. Um loop dirigido por LLM é não-determinístico e não tem como garantir esses
+limites. O sidecar mantém o loop determinístico; o orquestrador LLM só narra o report
+terminal e roteia os outros slash-commands (plan/review/ship/issue) como interface humana.
 
 **Q2: thin-proxies e o marker `.claude/.cam-orch-ready`.**
 Os subcomandos CLI (`cam plan`, `cam issue`) sao thin-proxies. Fluxo:
