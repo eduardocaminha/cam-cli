@@ -1,22 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-FIX-004",
-    "title": "Fix isSessionStale 3-pane logic (fixes C3: stray pane is stale; labeled worker-pane is alive)"
+    "id": "US-FIX-005",
+    "title": "Fix .cam-orch-ready timing race (fixes C4: marker written by orchestrator, not by parent)"
   },
   "branchName": "cam/CAM-55-single-hub-dispatch",
-  "timestamp": "2026-06-15T18:00:00Z",
+  "timestamp": "2026-06-15T20:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/tmux/session.ts",
-    "test/tmux-session.test.ts"
+    "src/commands/run.ts",
+    "test/run.test.ts",
+    "test/bootstrap-wait.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-FIX-004 done. isSessionStale now identifies the 3rd pane by finding the pane whose label is NOT 'orchestrator' or 'dashboard', then checks if its label is in WORKER_LABELS ('implementer' or 'reviewer'). Stray/unlabeled 3rd panes correctly return stale=true. Tests rewritten to production-realistic fixtures (orchestrator + dashboard always labeled). 912 tests pass. Check prd.json for the next pending story.",
+  "nextStoryContext": "US-FIX-005 done. The .cam-orch-ready marker is no longer written by the parent process in setupPanes(); it is now written by the orchestrator agent as its FIRST action (instructed in buildOrchestratorBootPrompt). The SIGINT/SIGTERM cleanup in runRun still removes the marker on abnormal parent exit (idempotent: already-gone is a no-op). The bootstrap-wait helper (waitForOrchestrator) already re-validates liveness after seeing the marker, no change needed there. 917 tests pass. Check prd.json for the next pending story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Only tmux CLI commands touched (list-panes with @cam_label user option). No external JS library. Tmux @cam_label pane option is validated in patterns.md (US-002 bullet)."
+      "summary": "Pure behavioral fix in run.ts (removed premature writeFileSync, updated boot prompt text). No external JS library touched."
     }
   ]
 }

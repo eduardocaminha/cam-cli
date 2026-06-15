@@ -109,7 +109,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (remove the premature writeFileSync at ~line 281-285; add SIGINT/SIGTERM cleanup if not already), src/supervisor/boot-prompt.ts or wherever buildOrchestratorBootPrompt lives (add the 'first action: write the marker' instruction), the thin-proxy bootstrap-wait helper (re-validate liveness). Patterns.md invariants to re-check: Bun.file for marker writes/reads (orchestrator side will use the WriteFile tool or echo); noUncheckedIndexedAccess; no em-dash in persisted .md (boot-prompt text); the bootstrap-wait helper invariant from US-006 (mirror setup.ts sentinel-poll pattern); SIGINT/SIGTERM cleanup must be idempotent (already-removed marker is not an error)."
     },
