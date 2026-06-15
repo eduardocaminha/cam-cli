@@ -1,28 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Dashboard accepts orchPane, renders a command keybar, and dispatches n/r/s/p/i + d via injectable runTmux"
+    "id": "US-004",
+    "title": "cam run setupPanes drops the menu pane, passes orchPane to cam dashboard, and renders a green status-left active-pane pill"
   },
   "branchName": "cam/CAM-50-navigable-dashboard",
-  "timestamp": "2026-06-14T02:00:00Z",
+  "timestamp": "2026-06-14T03:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/ui/Dashboard.tsx",
-    "src/commands/dashboard.ts",
-    "index.ts",
-    "test/dashboard.test.ts",
+    "src/commands/run.ts",
+    "test/run.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added orchPane + runTmux props to DashboardApp (src/ui/Dashboard.tsx). KEYBAR_COMMANDS constant (n/r/s/p/i) lives in Dashboard.tsx, mirroring Menu.tsx's COMMANDS. useInput now handles n/r/s/p/i (send-keys to orchPane), d (select-pane to orchPane), q/Ctrl+C (exit). Standalone mode (orchPane undefined) makes dispatch keys inert no-ops. runDashboardInk in src/commands/dashboard.ts accepts orchPane and threads it through. index.ts parses an optional positional orchPane from argv[3]. 9 new tests added to test/dashboard.test.ts using stdin.write() from ink-testing-library to simulate keypresses and assert runTmux call args. All 790 tests pass.",
+  "nextStoryContext": "US-004 updated setupPanes in src/commands/run.ts: (1) dashboard respawn now passes orchPaneId as positional arg ('cam dashboard <orchPaneId>'), binding dispatch wiring (US-003) to the real orchestrator pane; (2) status-left changed from fg= pill to bg=#4EBE7D green filled pill with DARK (#000000) fg; (3) DARK constant added alongside existing ACCENT/MUTED; (4) file header + setupPanes JSDoc updated from 3-pane to 2-pane language, menu pane comments removed. test/run.test.ts: existing dashboard test updated to also assert orchPaneId ('%1') in argv; two new tests added: 'no cam menu in any spawned argv' and 'status-left contains bg=#4EBE7D'. 792 tests pass.",
   "officialDocsValidated": [
     {
-      "lib": "ink",
-      "version": "7.x",
-      "url": "https://raw.githubusercontent.com/vadimdemedes/ink/master/readme.md",
-      "fetchedAt": "2026-06-14T02:00:00Z",
-      "status": "ok",
-      "summary": "useInput(input, key) signature confirmed: key.ctrl, key.return, key.escape flags present. Implementation matches. ink-testing-library stdin.write emits data events that trigger useInput; confirmed via passing tests."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Story only touches tmux format strings (set-option status-left) and argv construction. No npm/external library exercised."
     }
   ]
 }

@@ -94,7 +94,7 @@
         "bun test passes."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (setupPanes at ~:247, status-left at ~:355). Depends on US-002 (CreatedPaneIds no longer carries menuPaneId) and US-003 (cam dashboard accepts the orchPane positional). ACCENT='#4EBE7D' and MUTED='#808080' already exist; reuse them, do not redefine. Pick a dark fg constant readable on the accent bg. No em-dash in any pane label or status-left literal (patterns.md, project rule 2026-05-20)."
     },
