@@ -8,10 +8,9 @@
 //      healthy; if it is stale/malformed (cat-placeholder panes, wrong pane
 //      count) kill + recreate it fresh first (CAM-47, isSessionStale). A healthy
 //      running session is never reset, so an active loop is not killed.
-//   3. Otherwise → create a new session with three panes via ensureProjectSession:
-//        Pane 0 (left):         claude orchestrator with boot prompt (US-001).
-//        Pane 1 (top-right):    cam dashboard — permanent pane (US-002, US-010).
-//        Pane 2 (bottom-right): interactive menu — the `cam menu` Ink app (US-004).
+//   3. Otherwise → create a new session with 2 panes via ensureProjectSession:
+//        Pane 0 (left):   claude orchestrator with boot prompt (US-001).
+//        Pane 1 (right):  cam dashboard, permanent pane (US-002, US-010).
 //      Then attach.
 //
 // Dependencies:
@@ -185,12 +184,12 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 /**
  * Create the orchestrator session using the shared session module.
  *
- * Delegates layout creation to ensureProjectSession (3-pane detached session),
+ * Delegates layout creation to ensureProjectSession (2-pane detached session),
  * then respawns the real command into each pane (replacing the silent `cat`
  * placeholder so no interactive shell flashes before it):
  *   - Pane 0: claude orchestrator (via `bash -c`, chained to kill-session).
- *   - Pane 1: `cam dashboard` (permanent monitor).
- *   - Pane 2: `cam menu <orchPane> <dashboardPane>` (the Ink menu).
+ *   - Pane 1: `cam dashboard <orchPaneId>` (permanent monitor; orchPaneId binds
+ *     the dashboard dispatch wiring to the real orchestrator pane).
  *
  * Pane IDs returned by ensureProjectSession are stable %<n> identifiers that
  * work regardless of the user's pane-base-index in .tmux.conf.
@@ -207,7 +206,7 @@ interface SetupOpts {
 
 /**
  * Open or reconcile the orchestrator session (CAM-47):
- *   - new session             -> build + set up the 3 panes. created: true.
+ *   - new session             -> build + set up the 2 panes. created: true.
  *   - existing + healthy       -> attach untouched. created: false.
  *   - existing + stale/broken  -> kill + recreate fresh. created: true, reset: true.
  *
@@ -299,12 +298,13 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 		{ stdio: 'ignore' },
 	);
 
-	// Pane 1: cam dashboard — permanent pane (US-002, US-010). Direct respawn,
-	// no shell. `q` exits the dashboard which closes the pane; tmux reflows the
-	// remaining pane to fill the right column.
+	// Pane 1: cam dashboard, permanent pane (US-002, US-010). Direct respawn,
+	// no shell. The orchPaneId positional binds the dashboard dispatch wiring to
+	// the real orchestrator pane (US-003/US-004). `q` exits the dashboard which
+	// closes the pane; tmux reflows the survivor to fill the right column.
 	spawnFn(
 		'tmux',
-		tmuxArgs(['respawn-pane', '-k', '-t', dashboardPaneId, 'cam', 'dashboard']),
+		tmuxArgs(['respawn-pane', '-k', '-t', dashboardPaneId, 'cam', 'dashboard', orchPaneId]),
 		{ stdio: 'ignore' },
 	);
 
@@ -317,6 +317,7 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	// clobbered by the app. Option syntax validated against tmux 3.x.
 	const ACCENT = '#4EBE7D';
 	const MUTED = '#808080';
+	const DARK = '#000000'; // dark fg readable on the accent green pill background
 	const opt = (name: string, value: string): void => {
 		spawnFn('tmux', tmuxArgs(['set-option', '-t', sessionName, name, value]), { stdio: 'ignore' });
 	};
@@ -339,8 +340,8 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	// active-pane name changes length (orchestrator vs menu).
 	opt('status-justify', 'absolute-centre');
 	opt('status-style', `bg=default fg=${MUTED}`);
-	// Left: the active pane. Right: cam-cli.
-	opt('status-left', `#[fg=${MUTED}]active: #[fg=${ACCENT} bold]#{@cam_label} #[default]`);
+	// Left: active-pane green pill. Right: cam-cli.
+	opt('status-left', `#[fg=${MUTED}]active: #[bg=${ACCENT} fg=${DARK} bold] #{@cam_label} #[default]`);
 	opt('status-left-length', '40');
 	opt('status-right', `#[fg=${ACCENT} bold] cam-cli #[default]`);
 	opt('status-right-length', '24');

@@ -275,14 +275,16 @@ describe('runRun tmux argv — new session', () => {
 		expect(dashSplit?.args).toContain('-d');
 	});
 
-	it('respawns cam dashboard in pane 1 (US-002)', () => {
+	it('respawns cam dashboard in pane 1 with orchPaneId positional (US-002, US-004)', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn });
 
 		// The dashboard runs via respawn-pane (direct command, no interactive
-		// shell) targeting the captured pane id (%2).
+		// shell) targeting the captured pane id (%2). The orchPaneId (%1) is
+		// passed as a positional so the dashboard dispatch wiring binds to the
+		// real orchestrator pane (US-003/US-004).
 		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]='respawn-pane'.
 		const dashboardRespawn = spawn.calls.find(
 			c => c.args[2] === 'respawn-pane' && c.args.some(a => a === '%2'),
@@ -293,6 +295,9 @@ describe('runRun tmux argv — new session', () => {
 		expect(dashboardRespawn?.args).toContain('%2');
 		expect(dashboardRespawn?.args).toContain('cam');
 		expect(dashboardRespawn?.args).toContain('dashboard');
+		// orchPaneId (%1) must appear in the argv so the dashboard can dispatch
+		// keystrokes to the orchestrator pane (US-004).
+		expect(dashboardRespawn?.args).toContain('%1');
 	});
 
 	it('respawns the claude command in pane 0', () => {
@@ -352,10 +357,41 @@ describe('runRun tmux argv — new session', () => {
 		const code = runRun({ cwd, noAttach: true, spawnFn: spawn });
 		expect(code).toBe(1);
 	});
+
+	it('no cam menu command appears in any spawned argv (US-004)', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		// The menu pane was removed in US-004; no spawn should reference 'menu'.
+		const menuCmd = spawn.calls.find(c => c.args.some(a => a === 'menu'));
+		expect(menuCmd).toBeUndefined();
+	});
+
+	it('status-left contains the green bg pill with accent background (US-004)', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		// Find the set-option call for status-left.
+		// argv shape: ['-L', 'cam', 'set-option', '-t', sessionName, 'status-left', value]
+		const statusLeftCall = spawn.calls.find(
+			c => c.args[2] === 'set-option' && c.args.some(a => a === 'status-left'),
+		);
+		expect(statusLeftCall).toBeDefined();
+		const idx = statusLeftCall!.args.indexOf('status-left');
+		const value = statusLeftCall!.args[idx + 1];
+		// Must use a bg= pill (not just fg=) on the accent color so the label is
+		// highlighted with a filled green background (US-004 acceptance criterion).
+		expect(value).toBeDefined();
+		expect(value).toContain('bg=#4EBE7D');
+	});
 });
 
-// The 2-pane layout (US-002) removed the menu pane. Only orchestrator (pane 0)
-// and dashboard (pane 1) are created by ensureProjectSession.
+// The 2-pane layout (US-002/US-004) has exactly orchestrator (pane 0) and
+// dashboard (pane 1); no menu pane is created by ensureProjectSession.
 
 // ---------------------------------------------------------------------------
 // runRun session-id + marker file (US-002)
