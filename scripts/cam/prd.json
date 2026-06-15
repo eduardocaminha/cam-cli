@@ -148,7 +148,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-orchestrator.md, .claude/agents/subagent-implementer.md, .claude/commands/cam-next.md, .claude/commands/cam-plan.md, .claude/commands/cam-issue.md, .claude/commands/cam-review.md, .claude/commands/cam-ship.md, README.md, templates/** (mirror), src/vendor/_generated.ts (regenerated via bun run embed-vendor). Patterns.md invariants to re-check: no em-dash in persisted .md; templates/ and .claude/ must stay in lockstep, then embed-vendor regenerates src/vendor/_generated.ts; conventional commits; the doc must explicitly describe the SIDECAR (not 'orchestrator absorbs the loop') so a cold reader cannot regress to the rejected C2 architecture."
     },
