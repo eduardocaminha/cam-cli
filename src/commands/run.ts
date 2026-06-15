@@ -411,14 +411,14 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 /**
  * Real production implementation of SpawnSidecarFn.
  *
- * Spawns `cam sidecar` as a detached Bun child process with stdout+stderr
- * redirected to `logPath` (.claude/cam-supervisor.log). The sidecar runs for
- * the lifetime of the cam session; cam run kills it on SIGINT/SIGTERM.
+ * Spawns `cam sidecar` as a background Bun child process with stdout+stderr
+ * redirected to `logPath` (.claude/cam-supervisor.log). The sidecar must die
+ * WITH the cam session (operator decision): it is NOT detached, so it shares
+ * cam run's process group and a SIGINT to the group reaches it, and cam run's
+ * SIGINT/SIGTERM cleanup also kills it explicitly. The single-supervisor lock
+ * prevents duplicate sidecars if one somehow lingers.
  *
  * We use Bun.spawn (not node:child_process.spawn) per the Bun-runtime pattern.
- * `detached:true` ensures the sidecar is not in the same process group as cam
- * run, so it survives a terminal detach; cam run's cleanup handler explicitly
- * kills it on exit.
  */
 function spawnSidecarDefault(cwd: string, logPath: string): SidecarProcess {
 	// Open the log file for append (create if absent).
