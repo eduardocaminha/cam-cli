@@ -1,27 +1,38 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "isSessionStale + orchestrator-alive + pane-count mutex predicate"
+    "id": "US-006",
+    "title": "cam plan / next / issue thin-proxies + .claude/.cam-orch-ready bootstrap-wait"
   },
   "branchName": "cam/CAM-55-single-hub-dispatch",
-  "timestamp": "2026-06-15T23:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-15T20:00:00Z",
+  "createdFiles": [
+    "src/tmux/bootstrap-wait.ts",
+    "test/bootstrap-wait.test.ts"
+  ],
   "modifiedFiles": [
+    "src/commands/plan.ts",
+    "src/commands/next.ts",
+    "src/commands/issue.ts",
+    "src/commands/run.ts",
     "src/tmux/session.ts",
-    "test/tmux-session.test.ts",
+    "test/plan.test.ts",
+    "test/next.test.ts",
+    "test/issue.test.ts",
+    "test/attach-hint.test.ts",
+    "test/run.test.ts",
+    "scripts/preview-screens.ts",
     "scripts/cam/prd.json",
-    "scripts/cam/handoff.json"
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 or later story is next. Check prd.json for the current highest-priority passes=false story. All predicates (isSessionStale, orchestratorAlive, paneCountMutex) are exported from src/tmux/session.ts for thin-proxy use.",
+  "nextStoryContext": "US-006 complete. cam plan, cam next, cam issue are now thin-proxies routing to the live orchestrator via atomic send-keys. bootstrap-wait.ts provides waitForOrchestrator (two-condition: marker + liveness re-check). cam run writes .claude/.cam-orch-ready after session creation and cleans it on exit (SIGINT/SIGTERM + bash wrapper rm). getOrchPaneId exported from session.ts. All 850 tests pass, typecheck clean. Next story on this branch: check prd.json for highest-priority passes=false non-operator story.",
   "officialDocsValidated": [
     {
-      "lib": "tmux pane-scoped user options (@cam_label / set-option -p)",
-      "version": "tmux 3.x",
-      "url": "https://man.openbsd.org/tmux.1#FORMATS",
-      "fetchedAt": "2026-06-15T23:00:00Z",
-      "status": "ok",
-      "summary": "pane-scoped @-prefixed user options validated in US-002 (patterns.md). #{@cam_label} in list-panes -F format strings reads the per-pane user option. set-option -p sets it. Web docs confirmed user options with @ prefix are supported; pane scope (-p) was already verified in US-002 dogfood."
+      "lib": "Bun.sleepSync",
+      "url": "https://bun.sh/docs/api/utils",
+      "fetchedAt": "2026-06-15T20:00:00Z",
+      "status": "aligned",
+      "summary": "Bun.sleepSync(ms: number) confirmed as blocking synchronous sleep taking milliseconds. Usage in bootstrap-wait.ts default sleepFn matches exactly."
     }
   ]
 }
