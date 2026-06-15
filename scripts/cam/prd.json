@@ -52,7 +52,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files likely touched: src/commands/run.ts, src/tmux/session.ts (look for the pane-spawn helper and the existing pane-border-format wiring for the orchestrator/dashboard). Patterns.md invariants to re-check: Bun runtime (Bun.spawn for tmux calls or Bun.$ via runTmux helper); never reintroduce claude -p in a worker argv (test/no-claude-p-in-worker.* asserts this); never register a --permission-mode flag on a subcommand; noUncheckedIndexedAccess (guard array/regex captures); Ink screens are not changed by this story, but if you touch any divider, success/failure is the glyph not the divider color. Do not reference a single test/no-claude-p-in-worker.* file (it does not exist); the claude -p absence is asserted via worker-argv inspection in the existing run/plan/issue command tests under test/, so add or extend those argv assertions."
     },

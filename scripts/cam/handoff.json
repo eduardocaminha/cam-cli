@@ -1,21 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Spike design doc for single-hub dispatch"
+    "id": "US-002",
+    "title": "Uniform titled worker-pane (single reused pane, label per phase)"
   },
   "branchName": "cam/CAM-55-single-hub-dispatch",
-  "timestamp": "2026-06-15T20:00:00Z",
+  "timestamp": "2026-06-15T21:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "FLOW.md",
-    "scripts/cam/patterns.md"
+    "src/supervisor/loop.ts",
+    "test/supervisor/loop.test.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 is the next story: uniform titled worker-pane (single reused pane, label per phase). Files likely touched: src/commands/run.ts and src/tmux/session.ts. Check the existing pane-spawn helper and pane-border-format wiring for orchestrator/dashboard. The architectural decisions recorded in FLOW.md section 9 and patterns.md are now in context -- the worker pane must NOT use a kill-session wrapper.",
+  "nextStoryContext": "US-003 is the next story to implement (check prd.json for the story with lowest priority and passes:false). The worker pane labeling is now wired: loop.ts sets @cam_label 'implementer' before implement dispatch and 'reviewer' before review dispatch. The pane-border-format #{@cam_label} at session level (run.ts) picks this up automatically for any pane in the session. The worker argv (buildImplementerWorkerArgv) has no kill-session wrapper and no -p flag.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "tmux set-option -p",
+      "version": "3.x",
+      "url": "https://man.openbsd.org/tmux#set-option",
+      "fetchedAt": "2026-06-15T21:00:00Z",
+      "status": "ok",
+      "summary": "set-option -p sets pane-scoped options; @-prefixed user options (like @cam_label) can be set at pane level. API confirmed correct."
     }
   ]
 }
