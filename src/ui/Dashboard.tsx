@@ -24,6 +24,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
+import { spawnSync } from 'node:child_process';
 
 import { colors } from './theme.ts';
 import { layout } from '../design/tokens.ts';
@@ -32,6 +33,7 @@ import type { DashboardData } from '../commands/dashboard.ts';
 import type { PrdStory } from '../commands/status.ts';
 import { formatWallClock } from '../commands/status.ts';
 import { renderTokensLine, type TranscriptUsage } from '../transcript/usage.ts';
+import { tmuxArgs } from '../tmux/session.ts';
 
 /** Max width of the iteration progress bar (cells). Shrinks to fit narrow
  *  panes; this is the cap for a wide standalone terminal. */
@@ -40,6 +42,49 @@ const PROGRESS_BAR_WIDTH = 22;
 /** How many stories the panel shows around the current one. */
 const STORIES_WINDOW = 8;
 
+/** View mode for the Stories panel: list cursor or story detail. */
+export type SelectionMode = 'list' | 'detail';
+
+/** State managed by the selection reducer: cursor index + view mode. */
+export interface SelectionState {
+	selected: number;
+	mode: SelectionMode;
+}
+
+/**
+ * Pure reducer for the Stories panel.
+ * Handles navigation (up/down) and view transitions (enter/esc).
+ * - enter in list mode (storyCount > 0): open detail view.
+ * - esc in detail mode: return to list.
+ * - up/down: clamp cursor to [0, storyCount-1], only in list mode.
+ * - No-ops when the action does not apply to the current mode.
+ */
+export function selectionReducer(
+	state: SelectionState,
+	action: 'up' | 'down' | 'enter' | 'esc',
+	storyCount: number,
+): SelectionState {
+	if (action === 'enter') {
+		if (state.mode === 'list' && storyCount > 0) {
+			return { ...state, mode: 'detail' };
+		}
+		return state;
+	}
+	if (action === 'esc') {
+		if (state.mode === 'detail') {
+			return { ...state, mode: 'list' };
+		}
+		return state;
+	}
+	// up/down only apply in list mode
+	if (state.mode !== 'list') return state;
+	if (storyCount === 0) return state;
+	if (action === 'up') {
+		return { ...state, selected: Math.max(0, state.selected - 1) };
+	}
+	return { ...state, selected: Math.min(storyCount - 1, state.selected + 1) };
+}
+
 /**
  * Shown in the Stories panel next to a story that has no worker session marker
  * yet (US-014). A muted middot keeps the row visually quiet for the pending
@@ -47,16 +92,41 @@ const STORIES_WINDOW = 8;
  */
 export const STORY_TOKENS_PLACEHOLDER = '·';
 
+/** A single dispatch command wired to the keybar. */
+interface KeybarCommand {
+	key: string;
+	label: string;
+	desc: string;
+	slash: string;
+}
+
+const KEYBAR_COMMANDS: readonly KeybarCommand[] = [
+	{ key: 'n', label: '/cam-next', desc: 'run next story', slash: '/cam-next' },
+	{ key: 'r', label: '/cam-review', desc: 'review PRD', slash: '/cam-review' },
+	{ key: 's', label: '/cam-ship', desc: 'ship iteration', slash: '/cam-ship' },
+	{ key: 'p', label: '/cam-plan', desc: 'plan an issue', slash: '/cam-plan' },
+	{ key: 'i', label: '/cam-issue', desc: 'create issue', slash: '/cam-issue' },
+];
+
 export interface DashboardAppProps {
 	/** Called every `pollIntervalMs` to refresh the data snapshot. */
 	readSnapshot: () => DashboardData;
 	pollIntervalMs: number;
+	/**
+	 * tmux pane id of the orchestrator (target for send-keys).
+	 * When undefined (standalone `cam dashboard`), dispatch keys are inert no-ops.
+	 */
+	orchPane?: string;
+	/** Injectable tmux runner for tests. Defaults to a real spawnSync. */
+	runTmux?: (args: string[]) => void;
 }
 
-export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps): ReactElement {
+export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }: DashboardAppProps): ReactElement {
 	const [data, setData] = useState<DashboardData>(() => readSnapshot());
 	const { exit } = useApp();
 	const { stdout } = useStdout();
+	const stories = data.stories ?? [];
+	const [sel, setSel] = useState<SelectionState>({ selected: 0, mode: 'list' });
 	// Fit the section rule to the host pane: full width minus a symmetric margin
 	// (the heading indent on each side), so the rule spans the pane instead of
 	// stopping at a fixed 50-col cap. Recomputed on SIGWINCH (Ink re-renders).
@@ -65,6 +135,11 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 	// Progress bar shrinks to fit: leave room for the content indent, the
 	// `iter` key column, and the ` N/M` counter that follows the bar.
 	const barWidth = Math.max(6, Math.min(PROGRESS_BAR_WIDTH, cols - 22));
+
+	// Resolve the tmux runner the same way Menu.tsx does: injectable for tests,
+	// real spawnSync as the default. The -L socket flag is applied by tmuxArgs().
+	const tmux =
+		runTmux ?? ((args: string[]) => void spawnSync('tmux', tmuxArgs(args), { stdio: 'ignore' }));
 
 	useEffect(() => {
 		const id = setInterval(() => {
@@ -76,24 +151,192 @@ export function DashboardApp({ readSnapshot, pollIntervalMs }: DashboardAppProps
 	useInput((input, key) => {
 		if (input === 'q' || (key.ctrl && input === 'c')) {
 			exit();
+			return;
+		}
+		// Esc: return to list from detail mode (no-op in list mode).
+		if (key.escape) {
+			setSel((s) => selectionReducer(s, 'esc', stories.length));
+			return;
+		}
+		// Enter: open detail for the selected story (no-op in detail mode or empty list).
+		if (key.return) {
+			setSel((s) => selectionReducer(s, 'enter', stories.length));
+			return;
+		}
+		// Navigation and dispatch keys are only active in list mode.
+		if (sel.mode === 'detail') return;
+		// j / downArrow: move selection cursor down.
+		if (input === 'j' || key.downArrow) {
+			setSel((s) => selectionReducer(s, 'down', stories.length));
+			return;
+		}
+		// k / upArrow: move selection cursor up.
+		if (input === 'k' || key.upArrow) {
+			setSel((s) => selectionReducer(s, 'up', stories.length));
+			return;
+		}
+		const lower = input.toLowerCase();
+		if (lower === 'd') {
+			// Focus the orchestrator pane; inert when orchPane is undefined.
+			if (orchPane !== undefined) {
+				tmux(['select-pane', '-t', orchPane]);
+			}
+			return;
+		}
+		const cmd = KEYBAR_COMMANDS.find((c) => c.key === lower);
+		if (cmd) {
+			// Send the slash command to the orchestrator; inert when orchPane is undefined.
+			if (orchPane !== undefined) {
+				tmux(['send-keys', '-t', orchPane, cmd.slash, 'Enter']);
+			}
 		}
 	});
+
+	// Compute the sorted story order for the detail view (same sort as StoriesSection uses).
+	const orderedForDetail: readonly PrdStory[] =
+		stories.length === 0
+			? []
+			: [...stories].sort((a, b) => {
+					const pa = a.priority ?? Number.POSITIVE_INFINITY;
+					const pb = b.priority ?? Number.POSITIVE_INFINITY;
+					return pa - pb;
+				});
+	const selectedStory: PrdStory | undefined = orderedForDetail[sel.selected];
 
 	return (
 		<Box flexDirection="column">
 			<SummaryPanel data={data} dividerWidth={dividerWidth} barWidth={barWidth} />
-			<StoriesSection
-				stories={data.stories ?? []}
-				currentId={data.currentStoryId}
-				dividerWidth={dividerWidth}
-				storyTokens={data.storyTokens ?? {}}
-			/>
-			<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
-			<Box marginTop={1} paddingLeft={2}>
+			{sel.mode === 'list' ? (
+				<>
+					<StoriesSection
+						stories={stories}
+						currentId={data.currentStoryId}
+						selectedIdx={sel.selected}
+						dividerWidth={dividerWidth}
+						storyTokens={data.storyTokens ?? {}}
+					/>
+					<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
+					<Keybar />
+				</>
+			) : (
+				<>
+					<StoryDetailView
+						story={selectedStory}
+						currentId={data.currentStoryId}
+						reviewLastVerdict={data.reviewLastVerdict}
+						dividerWidth={dividerWidth}
+					/>
+					<DetailKeybar />
+				</>
+			)}
+		</Box>
+	);
+}
+
+/** Full keybar footer: slash-command keys + d (focus orchestrator) + q (quit). */
+function Keybar(): ReactElement {
+	return (
+		<Box marginTop={1} flexDirection="column" paddingLeft={layout.headingIndent}>
+			{KEYBAR_COMMANDS.map((c) => (
+				<Box key={c.key} flexDirection="row">
+					<Text bold>{c.key}</Text>
+					<Text>{'  '}</Text>
+					<Box width={11}>
+						<Text bold>{c.label}</Text>
+					</Box>
+					<Text>{'  '}</Text>
+					<Text color={colors.muted}>{c.desc}</Text>
+				</Box>
+			))}
+			<Box flexDirection="row">
+				<Text bold>d</Text>
+				<Text color={colors.muted}>{'  '}focus orchestrator</Text>
+			</Box>
+			<Box flexDirection="row">
 				<Text bold>q</Text>
-				<Text color={colors.muted}> close pane</Text>
+				<Text color={colors.muted}>{'  '}close pane</Text>
 			</Box>
 		</Box>
+	);
+}
+
+/** Contextual keybar for detail mode: Esc to go back, q to quit. */
+function DetailKeybar(): ReactElement {
+	return (
+		<Box marginTop={1} flexDirection="column" paddingLeft={layout.headingIndent}>
+			<Box flexDirection="row">
+				<Text bold>Esc</Text>
+				<Text color={colors.muted}>{'  '}back to list</Text>
+			</Box>
+			<Box flexDirection="row">
+				<Text bold>q</Text>
+				<Text color={colors.muted}>{'  '}close pane</Text>
+			</Box>
+		</Box>
+	);
+}
+
+/** Structural checkbox glyph for acceptanceCriteria items: purely visual scaffolding. */
+const AC_CHECKBOX = '□';
+
+/**
+ * Detail subview for a single story: id, title, status glyph, acceptanceCriteria
+ * checklist, notes block (when non-empty), and the review verdict when present.
+ * Status stays signalled by the glyph (accent check / accent arrow / muted ring),
+ * never by divider color.
+ */
+function StoryDetailView({
+	story,
+	currentId,
+	reviewLastVerdict,
+	dividerWidth,
+}: {
+	story: PrdStory | undefined;
+	currentId: string;
+	reviewLastVerdict: string | undefined;
+	dividerWidth: number;
+}): ReactElement {
+	if (story === undefined) {
+		return (
+			<Section heading="Story" dividerWidth={dividerWidth}>
+				<Text color={colors.muted}>(no story selected)</Text>
+			</Section>
+		);
+	}
+	const { icon, iconColor } = storyVisual(story, story.id === currentId);
+	const criteria = story.acceptanceCriteria ?? [];
+	return (
+		<Section heading="Story" dividerWidth={dividerWidth}>
+			<Box flexDirection="row">
+				<Text color={iconColor}>{icon} </Text>
+				<Text bold>{story.id}</Text>
+				<Text>{'  '}{story.title}</Text>
+			</Box>
+			{criteria.length > 0 ? (
+				<Box flexDirection="column" marginTop={1}>
+					{criteria.map((ac, i) => (
+						<Box key={i} flexDirection="row">
+							<Text color={colors.muted}>{AC_CHECKBOX} </Text>
+							<Text>{ac}</Text>
+						</Box>
+					))}
+				</Box>
+			) : null}
+			{story.notes ? (
+				<Box flexDirection="column" marginTop={1}>
+					<Text color={colors.muted}>Notes:</Text>
+					<Box paddingLeft={2}>
+						<Text>{story.notes}</Text>
+					</Box>
+				</Box>
+			) : null}
+			{reviewLastVerdict !== undefined ? (
+				<Box flexDirection="row" marginTop={1}>
+					<Text color={colors.muted}>Review: </Text>
+					<Text>{reviewLastVerdict}</Text>
+				</Box>
+			) : null}
+		</Section>
 	);
 }
 
@@ -244,11 +487,13 @@ function StatusIndicator({
 function StoriesSection({
 	stories,
 	currentId,
+	selectedIdx,
 	dividerWidth,
 	storyTokens,
 }: {
 	stories: readonly PrdStory[];
 	currentId: string;
+	selectedIdx: number;
 	dividerWidth: number;
 	storyTokens: Record<string, TranscriptUsage>;
 }): ReactElement {
@@ -267,16 +512,20 @@ function StoriesSection({
 		return pa - pb;
 	});
 
-	// Window around the current story so the panel stays a fixed height even
-	// when the PRD has 30+ stories. Falls back to "first N" when nothing is
-	// current (idle / booting).
-	const currentIdx = ordered.findIndex((s) => s.id === currentId);
-	const window = computeWindow(ordered.length, currentIdx, STORIES_WINDOW);
+	// Window follows the selection cursor so the highlighted row is always
+	// visible even when the PRD has 30+ stories.
+	const window = computeWindow(ordered.length, selectedIdx, STORIES_WINDOW);
 
 	return (
 		<Section heading="Stories" dividerWidth={dividerWidth}>
-			{ordered.slice(window.start, window.end).map((s) => (
-				<StoryRow key={s.id} story={s} isCurrent={s.id === currentId} tokens={storyTokens[s.id]} />
+			{ordered.slice(window.start, window.end).map((s, i) => (
+				<StoryRow
+					key={s.id}
+					story={s}
+					isCurrent={s.id === currentId}
+					tokens={storyTokens[s.id]}
+					isSelected={window.start + i === selectedIdx}
+				/>
 			))}
 			{window.end < ordered.length ? (
 				<Text color={colors.muted}>
@@ -287,20 +536,33 @@ function StoriesSection({
 	);
 }
 
+/** Dark foreground for use on the accent-green selected-row background. */
+const DARK = '#000000';
+
 function StoryRow({
 	story,
 	isCurrent,
 	tokens,
+	isSelected,
 }: {
 	story: PrdStory;
 	isCurrent: boolean;
 	tokens: TranscriptUsage | undefined;
+	isSelected: boolean;
 }): ReactElement {
 	const { icon, iconColor, titleColor } = storyVisual(story, isCurrent);
 	// Per-story tokens sit next to the row (US-014). Reuse renderTokensLine so the
 	// wording matches the Loop panel's `tokens` row; a missing marker shows a muted
 	// placeholder instead of crashing. State stays signalled by the glyph (✓/→/◌),
 	// never the Section divider color.
+	if (isSelected) {
+		// Selected row: accent background, dark fg. The glyph still encodes pass-state
+		// (✓/→/◌); the background color signals selection only.
+		const line = `${icon} ${story.id.padEnd(9)} ${story.title}  ${tokens ? renderTokensLine(tokens) : STORY_TOKENS_PLACEHOLDER}`;
+		return (
+			<Text backgroundColor={colors.accent} color={DARK}>{line}</Text>
+		);
+	}
 	return (
 		<Box flexDirection="row">
 			<Text color={iconColor}>{icon} </Text>

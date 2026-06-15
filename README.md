@@ -8,7 +8,7 @@ long-lived orchestrator agent that drives `/cam-plan`, `/cam-next`,
 Built on Bun + TypeScript. Distributed as a single-file binary built from source.
 
 > **Status:** orchestrator-driven loop live. `cam init` scaffolds the project,
-> `cam run` opens the single per-project session (3-pane layout), `cam plan` and
+> `cam run` opens the single per-project session (2-pane layout: orchestrator + navigable dashboard), `cam plan` and
 > `cam issue` are thin pane launchers that open inside that session, and `cam next`
 > runs the implement-review-complete supervisor in-process. The orchestrator exit
 > respawns on a token-budget handoff, otherwise tears down the session.
@@ -103,10 +103,11 @@ cam init
 
 # 3. When the config agent finishes (it prints CAM_SETUP_STATUS=DONE),
 #    the orchestrator launches automatically in a new pane. The session
-#    has three panes: orchestrator (pane 0.0), cam dashboard (pane 0.1,
-#    permanent read-only monitor), and an interactive menu (pane 0.2).
-#    Talk to the orchestrator in plain English: "plan LIN-42",
-#    "implement", "ship".
+#    has two panes: orchestrator (pane 0.0) and the navigable cam dashboard
+#    (pane 0.1, permanent). In the dashboard, press n/r/s/p/i to send
+#    /cam-* commands to the orchestrator, j/k or arrows to browse stories,
+#    Enter to open a story detail view, Esc to go back, d to focus the
+#    orchestrator pane, q to close the dashboard.
 
 # 4. From any future shell, re-attach the session:
 cam run
@@ -127,12 +128,12 @@ system prompt.
 
 ```text
 cam init [options]          Validate the machine, then run the project-setup wizard
-cam run  [options]          Open or attach the single per-project session (3-pane layout)
+cam run  [options]          Open or attach the single per-project session (2-pane layout)
 cam plan [<N>]              Open a planning pane in the project session (thin launcher)
 cam next [options]          Drive the implement-review-complete loop (in-process supervisor)
 cam issue "<text>"          Open an issue-creation pane in the project session (thin launcher)
 cam claude [args...]        Run claude with built-in auto-retry on rate limits
-cam dashboard               Permanent read-only TUI (pane 0.1 in the session; also standalone)
+cam dashboard               Navigable TUI: browse stories, dispatch /cam-* commands (pane 0.1; also standalone)
 cam status                  Show current loop state (idle / active / paused)
 cam stop                    Cancel a running loop
 cam resume [options]        Reconcile loop state after interrupt
@@ -155,11 +156,10 @@ a stale tmux server left over from a dead security session denies TCC access to
 By using `tmux -L cam`, cam always starts from a fresh server with the correct
 security context for the current login session.
 
-The session layout has three panes:
+The session layout has two panes:
 
 - **Pane 0.0 (left):** orchestrator claude process (boots the `subagent-orchestrator` agent, which drives `/cam-plan`, `/cam-next`, `/cam-review`, `/cam-ship`).
-- **Pane 0.1 (top right):** `cam dashboard`, a permanent read-only monitor. Always visible.
-- **Pane 0.2 (bottom right):** interactive menu. Press `n`, `p`, `i`, `s`, or `q` to inject commands into the orchestrator pane.
+- **Pane 0.1 (right):** `cam dashboard`, a permanent navigable monitor. Browse stories with j/k or arrow keys, Enter to open a story detail view, Esc to go back. Press `n/r/s/p/i` to dispatch `/cam-*` commands to the orchestrator, `d` to focus the orchestrator pane, `q` to close the dashboard.
 
 `cam plan` and `cam issue` are thin pane launchers: they call `cam run` logic to
 ensure the session exists, open a new pane inside it for the requested command,
@@ -284,8 +284,10 @@ The worker pane slot is established by `cam plan` and stored in `.claude/.cam-wo
 
 - **Interactive TUI workers (CAM-42)**: `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`). The supervisor polls full pane scrollback (`capture-pane -p -S -`) for the sentinel line instead of blocking on `tmux wait-for`. `claude -p` is reserved for the `cam claude` retry-wrapper feature only.
 - **Single per-project session**: `cam run` now creates one tmux session per
-  project with a 3-pane layout (orchestrator + permanent dashboard + interactive
-  menu). The orchestrator exit respawns on a token-budget handoff, otherwise tears
+  project with a 2-pane layout (orchestrator + navigable dashboard). The navigable
+  dashboard replaces the old interactive menu: n/r/s/p/i dispatch /cam-* to the
+  orchestrator, j/k or arrows browse stories, Enter opens a story detail view.
+  The orchestrator exit respawns on a token-budget handoff, otherwise tears
   down the session.
 - **Thin pane launchers**: `cam plan` and `cam issue` open a pane inside the
   project session and return 0 immediately (suppressing the attach hint when

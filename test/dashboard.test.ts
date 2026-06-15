@@ -14,12 +14,13 @@
 // The runtime loop polls every `pollIntervalMs`; we set it to 1 ms in
 // tests so a `maxTicks: 2` run completes in a couple of milliseconds.
 
-import { describe, expect, it, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { render } from 'ink-testing-library';
 import React from 'react';
+import chalk, { type ColorSupportLevel } from 'chalk';
 
 import {
 	CURSOR,
@@ -34,7 +35,7 @@ import {
 	type DashboardReader,
 	type DashboardWriter,
 } from '../src/commands/dashboard.ts';
-import { DashboardApp, STORY_TOKENS_PLACEHOLDER } from '../src/ui/Dashboard.tsx';
+import { DashboardApp, STORY_TOKENS_PLACEHOLDER, selectionReducer, type SelectionState } from '../src/ui/Dashboard.tsx';
 import type { TranscriptUsage } from '../src/transcript/usage.ts';
 
 // --- Fakes -----------------------------------------------------------------
@@ -507,6 +508,61 @@ describe('readSnapshot', () => {
 			rmSync(base, { recursive: true, force: true });
 		}
 	});
+
+	test('acceptanceCriteria, notes, requires and review.lastVerdict surface in DashboardData (US-001)', () => {
+		const base = mkdtempSync(join(tmpdir(), 'cam-dash-us001-'));
+		try {
+			const cwd = join(base, 'project');
+			mkdirSync(join(cwd, '.claude'), { recursive: true });
+			writeFileSync(
+				join(cwd, 'prd.json'),
+				JSON.stringify({
+					branchName: 'cam/us-001',
+					review: { lastVerdict: 'CLEAN' },
+					userStories: [
+						{
+							id: 'US-001',
+							title: 'first story',
+							priority: 1,
+							passes: false,
+							acceptanceCriteria: ['AC one', 'AC two'],
+							notes: 'Some implementation notes',
+							requires: null,
+						},
+						{
+							id: 'US-002',
+							title: 'operator story',
+							priority: 2,
+							passes: false,
+							acceptanceCriteria: ['AC three'],
+							notes: 'Operator ceremony',
+							requires: 'operator',
+						},
+					],
+				}),
+			);
+			const claudeDir = join(base, 'claude-dir');
+			mkdirSync(claudeDir, { recursive: true });
+
+			const snap = readSnapshot({ cwd, nowMs: 0, claudeDir });
+
+			// review.lastVerdict threads into reviewLastVerdict
+			expect(snap.reviewLastVerdict).toBe('CLEAN');
+
+			// Per-story fields land in snap.stories
+			const s1 = snap.stories?.find((s) => s.id === 'US-001');
+			expect(s1?.acceptanceCriteria).toEqual(['AC one', 'AC two']);
+			expect(s1?.notes).toBe('Some implementation notes');
+			expect(s1?.requires).toBeNull();
+
+			const s2 = snap.stories?.find((s) => s.id === 'US-002');
+			expect(s2?.acceptanceCriteria).toEqual(['AC three']);
+			expect(s2?.notes).toBe('Operator ceremony');
+			expect(s2?.requires).toBe('operator');
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
 });
 
 // --- runDashboard (integration) -------------------------------------------
@@ -633,6 +689,186 @@ describe('runDashboard', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+// --- DashboardApp keybar (US-003) ------------------------------------------
+//
+// Rendered with ink-testing-library so we assert against the ACTUAL screen.
+// Dispatch tests inject a fake runTmux and simulate keypresses via stdin.write
+// (ink-testing-library exposes stdin.write which emits 'data' and fires useInput).
+
+describe('DashboardApp keybar (US-003)', () => {
+	function makeData(overrides: Partial<DashboardData> = {}): DashboardData {
+		return {
+			branchName: 'cam/test',
+			currentStoryId: '',
+			currentStoryTitle: '',
+			iteration: 0,
+			maxIterations: 30,
+			startedAtMs: 0,
+			nowMs: 0,
+			paused: false,
+			idle: false,
+			recent: [],
+			stories: [],
+			storyTokens: {},
+			...overrides,
+		};
+	}
+
+	it('keybar renders slash-command keys and d/q labels', () => {
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%1',
+				runTmux: () => undefined,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		// Slash-command keys.
+		expect(frame).toContain('n');
+		expect(frame).toContain('r');
+		expect(frame).toContain('s');
+		expect(frame).toContain('p');
+		expect(frame).toContain('i');
+		// Slash-command labels.
+		expect(frame).toContain('/cam-next');
+		expect(frame).toContain('/cam-review');
+		expect(frame).toContain('/cam-ship');
+		expect(frame).toContain('/cam-plan');
+		expect(frame).toContain('/cam-issue');
+		// d and q navigation rows.
+		expect(frame).toContain('focus orchestrator');
+		expect(frame).toContain('close pane');
+		unmount();
+	});
+
+	it('keybar renders even when orchPane is undefined (standalone mode)', () => {
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				// no orchPane
+				runTmux: () => undefined,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		expect(frame).toContain('/cam-next');
+		expect(frame).toContain('focus orchestrator');
+		unmount();
+	});
+
+	it('n keypress dispatches send-keys /cam-next to orchPane', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%1',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('n');
+		expect(calls).toEqual([['send-keys', '-t', '%1', '/cam-next', 'Enter']]);
+		unmount();
+	});
+
+	it('r keypress dispatches send-keys /cam-review to orchPane', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%2',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('r');
+		expect(calls).toEqual([['send-keys', '-t', '%2', '/cam-review', 'Enter']]);
+		unmount();
+	});
+
+	it('s keypress dispatches send-keys /cam-ship to orchPane', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%3',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('s');
+		expect(calls).toEqual([['send-keys', '-t', '%3', '/cam-ship', 'Enter']]);
+		unmount();
+	});
+
+	it('p keypress dispatches send-keys /cam-plan to orchPane', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%4',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('p');
+		expect(calls).toEqual([['send-keys', '-t', '%4', '/cam-plan', 'Enter']]);
+		unmount();
+	});
+
+	it('i keypress dispatches send-keys /cam-issue to orchPane', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%5',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('i');
+		expect(calls).toEqual([['send-keys', '-t', '%5', '/cam-issue', 'Enter']]);
+		unmount();
+	});
+
+	it('d keypress dispatches select-pane to orchPane (focus orchestrator)', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				orchPane: '%6',
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('d');
+		expect(calls).toEqual([['select-pane', '-t', '%6']]);
+		unmount();
+	});
+
+	it('standalone mode (orchPane undefined): dispatch keys are inert no-ops', () => {
+		const calls: string[][] = [];
+		const { stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeData(),
+				pollIntervalMs: 100_000,
+				// no orchPane
+				runTmux: (args: string[]) => { calls.push(args); },
+			}),
+		);
+		stdin.write('n');
+		stdin.write('r');
+		stdin.write('s');
+		stdin.write('p');
+		stdin.write('i');
+		stdin.write('d');
+		// None of the dispatch keys should trigger runTmux when orchPane is absent.
+		expect(calls).toEqual([]);
+		unmount();
 	});
 });
 
@@ -811,6 +1047,391 @@ describe('DashboardApp per-story tokens (US-014)', () => {
 		expect(frame).toContain('US-001');
 		expect(frame).toContain('US-002');
 		expect(frame).toContain(STORY_TOKENS_PLACEHOLDER);
+		unmount();
+	});
+});
+
+// --- selectionReducer (US-005) -------------------------------------------
+//
+// Pure unit tests: no Ink, no render, no IO.
+// Input: (selected index, direction, storyCount). Output: clamped index.
+
+describe('selectionReducer (US-005)', () => {
+	const list = (selected: number): SelectionState => ({ selected, mode: 'list' });
+
+	it('moves down by one with action=down', () => {
+		expect(selectionReducer(list(0), 'down', 5)).toEqual(list(1));
+		expect(selectionReducer(list(2), 'down', 5)).toEqual(list(3));
+	});
+
+	it('moves up by one with action=up', () => {
+		expect(selectionReducer(list(3), 'up', 5)).toEqual(list(2));
+		expect(selectionReducer(list(1), 'up', 5)).toEqual(list(0));
+	});
+
+	it('clamps at bottom: down from last index stays at last', () => {
+		expect(selectionReducer(list(4), 'down', 5)).toEqual(list(4));
+	});
+
+	it('clamps at top: up from index 0 stays at 0', () => {
+		expect(selectionReducer(list(0), 'up', 5)).toEqual(list(0));
+	});
+
+	it('no-ops on empty list (returns same state, never crashes)', () => {
+		expect(selectionReducer(list(0), 'up', 0)).toEqual(list(0));
+		expect(selectionReducer(list(0), 'down', 0)).toEqual(list(0));
+	});
+
+	it('single-element list: both directions clamp to 0', () => {
+		expect(selectionReducer(list(0), 'up', 1)).toEqual(list(0));
+		expect(selectionReducer(list(0), 'down', 1)).toEqual(list(0));
+	});
+});
+
+// --- DashboardApp Stories navigation (US-005) ----------------------------
+//
+// ink-testing-library tests that assert the accent-bg ANSI escape appears on
+// the selected row after j/k/arrow keypresses.
+//
+// chalk.level is forced to 3 (TrueColor) for this describe block so the
+// ANSI codes are emitted regardless of whether the test runner is a TTY.
+
+describe('DashboardApp Stories navigation (US-005)', () => {
+	// ANSI 24-bit background for #4EBE7D: R=78 G=190 B=125.
+	const ACCENT_BG = '[48;2;78;190;125m';
+
+	let savedChalkLevel: ColorSupportLevel;
+
+	beforeAll(() => {
+		savedChalkLevel = chalk.level;
+		chalk.level = 3;
+	});
+
+	afterAll(() => {
+		chalk.level = savedChalkLevel;
+	});
+
+	function makeNavData(): DashboardData {
+		return {
+			branchName: 'cam/test',
+			currentStoryId: 'US-002',
+			currentStoryTitle: 'second',
+			iteration: 1,
+			maxIterations: 30,
+			startedAtMs: 0,
+			nowMs: 0,
+			paused: false,
+			idle: false,
+			recent: [],
+			stories: [
+				{ id: 'US-001', title: 'first', priority: 1, passes: true },
+				{ id: 'US-002', title: 'second', priority: 2, passes: false },
+				{ id: 'US-003', title: 'third', priority: 3, passes: false },
+			],
+			storyTokens: {},
+		};
+	}
+
+	/** Wait one macrotask so React can flush state updates and re-render. */
+	const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+	it('initial render: first row (index 0) is selected with accent background', () => {
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		// Accent-bg escape must appear on the first row (index 0).
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-001');
+		unmount();
+	});
+
+	it('j keypress moves selection down: second row gets accent background', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		stdin.write('j');
+		await tick();
+		const frame = lastFrame() ?? '';
+		// The line carrying the accent-bg escape must be the US-002 row.
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-002');
+		unmount();
+	});
+
+	it('down arrow (\\u001B[B) moves selection down', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		// Full ANSI escape for downArrow: ESC (U+001B) + "[B".
+		stdin.write('[B');
+		await tick();
+		const frame = lastFrame() ?? '';
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-002');
+		unmount();
+	});
+
+	it('k after j returns to first row', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		stdin.write('j'); // down to index 1
+		await tick();
+		stdin.write('k'); // back up to index 0
+		await tick();
+		const frame = lastFrame() ?? '';
+		// US-001 should now be highlighted (index 0).
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-001');
+		unmount();
+	});
+
+	it('up arrow (\\u001B[A) moves selection up', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		stdin.write('j'); // down to index 1
+		await tick();
+		stdin.write('[A'); // up arrow: ESC + "[A"
+		await tick();
+		const frame = lastFrame() ?? '';
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-001');
+		unmount();
+	});
+
+	it('j past last row clamps: last row stays highlighted', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		// Move to last (index 2) then try to go further.
+		stdin.write('j');
+		await tick();
+		stdin.write('j');
+		await tick();
+		stdin.write('j'); // clamps at 2
+		await tick();
+		const frame = lastFrame() ?? '';
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-003');
+		unmount();
+	});
+
+	it('k at first row clamps: first row stays highlighted', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeNavData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		stdin.write('k'); // clamps at 0
+		await tick();
+		stdin.write('k'); // still 0
+		await tick();
+		const frame = lastFrame() ?? '';
+		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		expect(accentLine).toBeDefined();
+		expect(accentLine).toContain('US-001');
+		unmount();
+	});
+
+	it('empty story list: no accent bg and no crash', async () => {
+		const emptyData: DashboardData = {
+			...makeNavData(),
+			stories: [],
+		};
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => emptyData,
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		// j and k on empty list must not crash.
+		stdin.write('j');
+		await tick();
+		stdin.write('k');
+		await tick();
+		const frame = lastFrame() ?? '';
+		// Empty list shows the "(no prd.json found)" placeholder, no accent bg.
+		expect(frame).toContain('no prd.json found');
+		expect(frame).not.toContain(ACCENT_BG);
+		unmount();
+	});
+});
+
+// --- selectionReducer mode transitions (US-006) ---------------------------
+//
+// Pure unit tests for the enter/esc actions on the new mode field.
+
+describe('selectionReducer mode transitions (US-006)', () => {
+	const list = (selected: number): SelectionState => ({ selected, mode: 'list' });
+	const detail = (selected: number): SelectionState => ({ selected, mode: 'detail' });
+
+	it('enter in list mode with stories transitions to detail', () => {
+		expect(selectionReducer(list(1), 'enter', 3)).toEqual(detail(1));
+	});
+
+	it('enter in list mode with 0 stories is a no-op', () => {
+		expect(selectionReducer(list(0), 'enter', 0)).toEqual(list(0));
+	});
+
+	it('enter in detail mode is a no-op', () => {
+		expect(selectionReducer(detail(0), 'enter', 3)).toEqual(detail(0));
+	});
+
+	it('esc in detail mode transitions back to list', () => {
+		expect(selectionReducer(detail(1), 'esc', 3)).toEqual(list(1));
+	});
+
+	it('esc in list mode is a no-op', () => {
+		expect(selectionReducer(list(0), 'esc', 3)).toEqual(list(0));
+	});
+
+	it('up/down in list mode move selection and keep mode=list', () => {
+		expect(selectionReducer(list(0), 'down', 5)).toEqual(list(1));
+		expect(selectionReducer(list(2), 'up', 5)).toEqual(list(1));
+	});
+
+	it('up/down in detail mode are no-ops (selection and mode unchanged)', () => {
+		expect(selectionReducer(detail(1), 'down', 5)).toEqual(detail(1));
+		expect(selectionReducer(detail(1), 'up', 5)).toEqual(detail(1));
+	});
+});
+
+// --- DashboardApp detail view (US-006) ------------------------------------
+//
+// ink-testing-library tests: Enter opens the detail subview, Esc returns to list.
+// Uses the same chalk.level=3 trick as US-005 for consistent rendering.
+
+describe('DashboardApp detail view (US-006)', () => {
+	let savedChalkLevel: ColorSupportLevel;
+
+	beforeAll(() => {
+		savedChalkLevel = chalk.level;
+		chalk.level = 3;
+	});
+
+	afterAll(() => {
+		chalk.level = savedChalkLevel;
+	});
+
+	/** Wait one macrotask for React to flush state updates. */
+	const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+	function makeDetailData(): DashboardData {
+		return {
+			branchName: 'cam/test-detail',
+			currentStoryId: 'US-002',
+			currentStoryTitle: 'second',
+			iteration: 1,
+			maxIterations: 30,
+			startedAtMs: 0,
+			nowMs: 0,
+			paused: false,
+			idle: false,
+			recent: [],
+			stories: [
+				{
+					id: 'US-001',
+					title: 'first story',
+					priority: 1,
+					passes: true,
+					acceptanceCriteria: ['Criterion A', 'Criterion B'],
+					notes: 'Implementation notes here',
+				},
+				{
+					id: 'US-002',
+					title: 'second story',
+					priority: 2,
+					passes: false,
+					acceptanceCriteria: ['AC for second'],
+					notes: '',
+				},
+			],
+			storyTokens: {},
+			reviewLastVerdict: 'CLEAN',
+		};
+	}
+
+	it('Enter (\\r) opens detail view showing id, title, AC, notes, and review verdict', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeDetailData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		// First row (US-001, priority 1) is selected initially.
+		stdin.write('\r'); // Enter
+		await tick();
+		const frame = lastFrame() ?? '';
+		// Story id and title
+		expect(frame).toContain('US-001');
+		expect(frame).toContain('first story');
+		// At least one acceptanceCriteria line
+		expect(frame).toContain('Criterion A');
+		// Notes block (non-empty for US-001)
+		expect(frame).toContain('Implementation notes here');
+		// Review verdict from reviewLastVerdict
+		expect(frame).toContain('CLEAN');
+		// Detail keybar shown, not the list keybar
+		expect(frame).toContain('back to list');
+		expect(frame).not.toContain('/cam-next');
+		unmount();
+	});
+
+	it('Esc (\\u001B) returns from detail to list and shows list-mode keybar', async () => {
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeDetailData(),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		stdin.write('\r'); // Enter detail
+		await tick();
+		stdin.write(''); // Esc back to list
+		// Ink buffers lone ESC for 20ms (pending escape) before flush; wait > 20ms.
+		await new Promise((r) => setTimeout(r, 50));
+		const frame = lastFrame() ?? '';
+		// List-mode keybar is back
+		expect(frame).toContain('/cam-next');
+		expect(frame).toContain('close pane');
+		// Detail keybar is gone
+		expect(frame).not.toContain('back to list');
 		unmount();
 	});
 });

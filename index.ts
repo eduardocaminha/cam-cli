@@ -19,7 +19,6 @@
 import process from 'node:process';
 
 import { runDashboardInk } from './src/commands/dashboard.ts';
-import { runMenuInk } from './src/commands/menu.ts';
 import { runInit } from './src/commands/init.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runNext } from './src/commands/next.ts';
@@ -133,10 +132,9 @@ const RUN_HELP = renderHelp({
 				'1. Verifies tmux and `.claude/agents/subagent-orchestrator.md` exist\n' +
 				'   (run `cam init` first if not).\n' +
 				'2. Computes a stable session name per project (cam-orch-<basename>-<hash>).\n' +
-				'3. If the session does not exist: creates it with three panes.\n' +
+				'3. If the session does not exist: creates it with two panes.\n' +
 				'     Pane 0.0 (left):  orchestrator (claude /cam-next loop).\n' +
-				'     Pane 0.1 (top right): cam dashboard (permanent, read-only).\n' +
-				'     Pane 0.2 (bottom right): interactive menu (injects commands into pane 0.0).\n' +
+				'     Pane 0.1 (right): cam dashboard (permanent, navigable TUI).\n' +
 				'   When the orchestrator exits, the session is torn down automatically.\n' +
 				'4. If the session already exists: attach (or switch-client inside tmux).\n' +
 				'5. plan, next, and issue are thin pane launchers: they open a new pane\n' +
@@ -169,7 +167,7 @@ const PLAN_HELP = renderHelp({
 				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
 				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
-				'   creates it (with 3-pane layout) if needed.\n' +
+				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Opens a new pane inside the session running:\n' +
 				'     claude --permission-mode <mode> "/cam-plan" (or "/cam-plan N")\n' +
 				'4. Returns 0 immediately. The planning flow runs inside the pane.\n' +
@@ -203,7 +201,7 @@ const ISSUE_HELP = renderHelp({
 				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
 				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
-				'   creates it (with 3-pane layout) if needed.\n' +
+				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Opens a new pane inside the session running:\n' +
 				'     claude --permission-mode <mode> "/cam-issue create <text>"\n' +
 				'4. Returns 0 immediately. The issue-creation flow runs inside the pane.\n' +
@@ -240,7 +238,7 @@ const NEXT_HELP = renderHelp({
 				'   .claude/cam-loop.local.md (vendored template at\n' +
 				'   vendor/cam-loop.local.md.tmpl).\n' +
 				'3. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
-				'   creates it (with 3-pane layout: orchestrator + dashboard + menu) if needed.\n' +
+				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'4. Opens a new pane inside the session running:\n' +
 				'     claude --permission-mode <mode> "/cam-next"\n' +
 				'5. Returns 0 immediately. The loop runs inside the pane.\n' +
@@ -286,17 +284,26 @@ const STATUS_HELP = renderHelp({
 const DASHBOARD_HELP = renderHelp({
 	title: 'cam dashboard',
 	tagline: 'Read-only TUI for monitoring a running loop',
-	usage: 'cam dashboard',
+	usage: 'cam dashboard [orchPane]',
 	sections: [
+		{
+			heading: 'Arguments',
+			body:
+				'  orchPane   Optional tmux pane id of the orchestrator (e.g. %5).\n' +
+				'             When provided, the keybar keys (n/r/s/p/i/d) dispatch\n' +
+				'             commands to that pane. Omit for standalone monitoring.',
+		},
 		{
 			heading: 'Behaviour',
 			body:
 				'1. Enters the alternate screen buffer (vim/htop style), hides the cursor.\n' +
 				'2. Polls the cwd\'s prd.json + .claude/cam-loop.local.md every 2s and\n' +
 				'   redraws on change.\n' +
-				'3. Surfaces: branch, current story (id + title), iteration N/M, wall-clock,\n' +
-				'   last 5 progress.txt entries, sleep banner if active:false.\n' +
-				'4. Exits cleanly on `q` or Ctrl+C — restores the cursor + leaves alt-screen.',
+				'3. Surfaces: branch, current story (id + title), wall-clock,\n' +
+				'   last 5 progress events, story list with token counts.\n' +
+				'4. Keybar: n=/cam-next  r=/cam-review  s=/cam-ship  p=/cam-plan\n' +
+				'           i=/cam-issue  d=focus orchestrator  q=close pane.\n' +
+				'5. Exits cleanly on q or Ctrl+C, restores the cursor + leaves alt-screen.',
 		},
 	],
 	footer:
@@ -711,18 +718,20 @@ async function main(argv: string[]): Promise<number> {
 				process.stdout.write(DASHBOARD_HELP);
 				return 0;
 			}
-			if (tail.length > 0) {
-				printError(`unknown dashboard option: ${tail[0]}`);
+			// Optional positional: orchPane (tmux pane id, e.g. %5). Injected by
+			// `cam run` so the keybar can dispatch to the orchestrator. Omitted
+			// when the dashboard is run standalone.
+			const remaining = [...tail];
+			let orchPane: string | undefined;
+			if (remaining.length > 0 && !remaining[0]!.startsWith('-')) {
+				orchPane = remaining.shift();
+			}
+			if (remaining.length > 0) {
+				printError(`unknown dashboard option: ${remaining[0]}`);
 				printFatalHint('run `cam dashboard --help` for usage');
 				return 1;
 			}
-			return runDashboardInk();
-		}
-		// Internal: spawned by `cam run` as the workspace menu pane. Not listed in
-		// the top-level help. Args are the orchestrator + dashboard pane ids so the
-		// menu's keys can target them.
-		case 'menu': {
-			return runMenuInk({ orchPane: argv[3] ?? '', dashboardPane: argv[4] ?? '' });
+			return runDashboardInk({ ...(orchPane !== undefined ? { orchPane } : {}) });
 		}
 		case 'status': {
 			const tail = argv.slice(3);

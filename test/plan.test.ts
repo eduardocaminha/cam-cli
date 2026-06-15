@@ -146,7 +146,7 @@ describe('parsePlanArgs', () => {
 // --- runPlan (thin pane launcher) ------------------------------------------
 
 describe('runPlan (tmux pane launcher)', () => {
-	test('calls has-session, new-session (x2 split-window), then split-window for the plan pane', async () => {
+	test('calls has-session, new-session (x1 split-window), then split-window for the plan pane', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-test-'));
 		const tmuxSpawnFn = makeFakeTmuxSpawn(false);
 
@@ -172,9 +172,9 @@ describe('runPlan (tmux pane launcher)', () => {
 
 		// Verify openPaneInSession was called with split-window.
 		const splitCalls = tmuxSpawnFn.calls.filter((c) => c.args[2] === 'split-window');
-		// ensureProjectSession makes 2 split-window calls (pane 1 + pane 2),
+		// ensureProjectSession makes 1 split-window call (pane 1 dashboard),
 		// openPaneInSession makes 1 more (the plan pane).
-		expect(splitCalls.length).toBeGreaterThanOrEqual(3);
+		expect(splitCalls.length).toBeGreaterThanOrEqual(2);
 	});
 
 	test('the plan pane split-window includes the claude /cam-plan command as separate argv elements', async () => {

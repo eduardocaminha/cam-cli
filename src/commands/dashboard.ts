@@ -196,6 +196,11 @@ export interface DashboardData {
 	 * stalled loop.
 	 */
 	lastActivity?: string;
+	/**
+	 * Top-level review verdict from prd.json's `review.lastVerdict` field
+	 * (US-001). Undefined when absent (no review run yet or old prd.json).
+	 */
+	reviewLastVerdict?: string;
 }
 
 /**
@@ -408,6 +413,10 @@ export function readSnapshot(options: { cwd: string; nowMs: number; claudeDir?: 
 		if (story) {
 			data.currentStoryId = story.id;
 			data.currentStoryTitle = story.title;
+		}
+		// US-001: surface the top-level review verdict when present.
+		if (typeof prd.review?.lastVerdict === "string" && prd.review.lastVerdict.length > 0) {
+			data.reviewLastVerdict = prd.review.lastVerdict;
 		}
 	}
 
@@ -795,6 +804,11 @@ export interface RunDashboardInkOptions {
 	now?: () => number;
 	/** Override the Claude config dir (default: CLAUDE_CONFIG_DIR env or ~/.claude). Tests inject a tmpdir. */
 	claudeDir?: string;
+	/**
+	 * tmux pane id of the orchestrator pane (target for send-keys / select-pane).
+	 * When undefined (standalone `cam dashboard`), dispatch keys are inert no-ops.
+	 */
+	orchPane?: string;
 }
 
 /**
@@ -808,6 +822,7 @@ export async function runDashboardInk(options: RunDashboardInkOptions = {}): Pro
 	const intervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 	const now = options.now ?? (() => Date.now());
 	const claudeDir = options.claudeDir;
+	const orchPane = options.orchPane;
 
 	// Dynamic imports so the legacy non-Ink path (used by tests) does not
 	// drag React/Ink into the cold-start cost when the dashboard is not
@@ -840,6 +855,7 @@ export async function runDashboardInk(options: RunDashboardInkOptions = {}): Pro
 		const view = createElement(DashboardApp, {
 			readSnapshot: () => readSnapshot({ cwd, nowMs: now(), ...(claudeDir !== undefined ? { claudeDir } : {}) }),
 			pollIntervalMs: intervalMs,
+			...(orchPane !== undefined ? { orchPane } : {}),
 		});
 		const instance = render(view);
 		await instance.waitUntilExit();
