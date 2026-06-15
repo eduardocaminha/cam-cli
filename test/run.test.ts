@@ -406,6 +406,26 @@ describe('runRun tmux argv — new session', () => {
 		expect(value).toBeDefined();
 		expect(value).toContain('bg=#4EBE7D');
 	});
+
+	it('both pane border styles are accent so the shared divider is uniformly green', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		const styleFor = (name: string): string | undefined => {
+			const call = spawn.calls.find(
+				c => c.args[2] === 'set-option' && c.args.some(a => a === name),
+			);
+			if (call === undefined) return undefined;
+			return call.args[call.args.indexOf(name) + 1];
+		};
+		// tmux colors each side of a shared border with that pane's own style;
+		// if the inactive style were muted the divider would render half-green and
+		// flip with focus. Both accent => the full divider is green regardless.
+		expect(styleFor('pane-active-border-style')).toContain('#4EBE7D');
+		expect(styleFor('pane-border-style')).toContain('#4EBE7D');
+	});
 });
 
 // The 2-pane layout (US-002/US-004) has exactly orchestrator (pane 0) and
