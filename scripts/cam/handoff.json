@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Spike design doc for single-hub dispatch"
+  },
+  "branchName": "cam/CAM-55-single-hub-dispatch",
+  "timestamp": "2026-06-15T20:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "FLOW.md",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 is the next story: uniform titled worker-pane (single reused pane, label per phase). Files likely touched: src/commands/run.ts and src/tmux/session.ts. Check the existing pane-spawn helper and pane-border-format wiring for orchestrator/dashboard. The architectural decisions recorded in FLOW.md section 9 and patterns.md are now in context -- the worker pane must NOT use a kill-session wrapper.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}

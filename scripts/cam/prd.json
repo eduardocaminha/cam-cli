@@ -35,7 +35,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Doc-only story. Files to edit: FLOW.md, scripts/cam/patterns.md. Do NOT touch any source files. Patterns.md invariants to re-check while editing: no em-dash in persisted .md; the bullet must be actionable (not generality). Read scripts/cam/patterns.md before writing so the new bullet matches the existing voice and format."
     },
