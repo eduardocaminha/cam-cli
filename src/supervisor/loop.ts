@@ -27,6 +27,7 @@ import type { PrdSnapshot } from './decide.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
+import type { WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail } from './events.ts';
 
@@ -106,6 +107,21 @@ export interface ReviewDispatchResult {
  * Called with the ACTUAL completed storyId (from handoff/sentinel), not advisory.
  */
 export type WriteSessionMarker = (storyId: string, uuid: string) => void;
+
+/**
+ * Read the worker's structured exit report (scripts/cam/worker-report.json).
+ * Returns the parsed WorkerReport on success, or null when the file is absent
+ * or not yet written. Used by the implement poll loop to detect completion
+ * (US-004); replaces the capturePane + parseAnySentinel path when injected.
+ */
+export type ReadWorkerReport = () => WorkerReport | null;
+
+/**
+ * Erase the worker report file before dispatching a new worker. This prevents
+ * a stale report from a previous run from triggering a false-positive completion
+ * on the first poll tick (US-004). Best-effort: absent file is fine.
+ */
+export type ClearWorkerReport = () => void;
 
 /**
  * Minimal shape of handoff.json consumed by runSupervisor.
@@ -212,6 +228,21 @@ export interface RunSupervisorOptions {
 	 * 'tokens' event. Optional: absent => no 'tokens' events.
 	 */
 	readWorkerTokens?: (uuid: string) => TokensEventDetail | null;
+	/**
+	 * Read the worker's structured exit report (scripts/cam/worker-report.json).
+	 * When injected, the implement poll loop uses this instead of capturePane +
+	 * parseAnySentinel to detect worker completion (US-004). The report file
+	 * presence is the push event; the report content corroborates but never
+	 * sole-gates (prd.json + handoff.json remain the state-primary source).
+	 * Optional: when absent the loop falls back to capturePane + parseAnySentinel.
+	 */
+	readWorkerReport?: ReadWorkerReport;
+	/**
+	 * Erase the worker report file before dispatching a new worker (US-004).
+	 * Prevents a stale report from a previous run from triggering a false-positive
+	 * completion on the first poll tick. Optional: best-effort, absent means no erase.
+	 */
+	clearWorkerReport?: ClearWorkerReport;
 	/**
 	 * Verify that the worker's pass actually landed on origin before the supervisor
 	 * continues the loop (US-001). Runs after writeSessionMarker, before continue.
@@ -412,6 +443,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const readWorkerTokens = opts.readWorkerTokens;
 	const ensurePushed = opts.ensurePushed;
 	const onProgress = opts.onProgress;
+	// US-004: report-file completion detection (optional; falls back to capturePane
+	// + parseAnySentinel when absent for backward compat with existing callers).
+	const readWorkerReport = opts.readWorkerReport;
+	const clearWorkerReport = opts.clearWorkerReport;
 
 	// --- US-001 progress tracking helpers ---
 	// Compute done/total counts from a PRD snapshot (non-operator stories only).
@@ -543,6 +578,12 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// Best-effort: set-option -p is a no-op when the pane is not yet visible.
 			spawn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', workerPaneId, '@cam_label', 'implementer']);
 
+			// US-004: erase any stale report from the previous worker run before
+			// dispatching the new one. This prevents a leftover report file from
+			// triggering a false-positive on the first poll tick of the new run.
+			// Best-effort: clearWorkerReport handles the no-file case gracefully.
+			clearWorkerReport?.();
+
 			// Respawn the worker pane with the implementer command.
 			// respawn-pane -k reuses the existing pane (no new split-window spawned).
 			spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
@@ -563,10 +604,23 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					pollOutcome = 'pane-died';
 					break;
 				}
-				const polledText = capturePane(workerPaneId);
-				if (parseAnySentinel(polledText) !== null) {
-					pollOutcome = 'sentinel';
-					break;
+				// US-004: primary completion-detection path. When a readWorkerReport
+				// reader is injected, poll the report file instead of the pane text.
+				// The file presence is the push event; report content corroborates but
+				// never sole-gates (prd.json + handoff.json are consulted in
+				// readWorkerOutcome below). Falls back to capturePane + parseAnySentinel
+				// when no reader is provided (backward compat with existing callers).
+				if (readWorkerReport !== undefined) {
+					if (readWorkerReport() !== null) {
+						pollOutcome = 'sentinel';
+						break;
+					}
+				} else {
+					const polledText = capturePane(workerPaneId);
+					if (parseAnySentinel(polledText) !== null) {
+						pollOutcome = 'sentinel';
+						break;
+					}
 				}
 				// CAM-5: opt-in per-worker token ceiling. Spend = input + cacheCreation
 				// + cacheRead (same as computeOrchBudget). Disabled when maxWorkerTokens

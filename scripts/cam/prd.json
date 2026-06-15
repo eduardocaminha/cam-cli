@@ -69,7 +69,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files likely touched: src/supervisor/worker-argv.ts (worker wrapper) and the worker exit path. JSON shape should mirror the CAM-52 verdict (outcome, story, gates, notes) so future structured-outputs work reuses it. Patterns.md invariants to re-check: send-keys atomic text+Enter (memory tmux-drive-orchestrator-atomic-enter); -l for literal payloads with shell-metachar content; Bun.spawn/Bun.$ over node:child_process for tmux calls; Bun.file for writing the report file; noUncheckedIndexedAccess on any regex/JSON-parse step; no em-dash in any persisted .md the implementer touches."
     },
@@ -86,7 +86,7 @@
         "Tests pass (bun test)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files likely touched: src/supervisor/loop.ts, src/supervisor/result.ts. Re-read loop.ts:553-581 (capturePane + parseAnySentinel block) before refactoring; that is the exact code being replaced. Patterns.md invariants to re-check: Bun.file for reading the report; noUncheckedIndexedAccess (JSON.parse result is unknown, guard each field); never reintroduce sentinel-polling-as-sole-gate (memory supervisor-sentinel-parse-fragility); tests under test/ mirror src/, inject fake reader instead of touching the real fs; no claude -p anywhere."
     },

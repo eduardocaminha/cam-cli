@@ -62,6 +62,7 @@ import {
 } from '../tmux/session.ts';
 import { readEmbedded } from '../vendor/embedded.ts';
 import { runSupervisor, DEFAULT_PER_WORKER_TIMEOUT_MS, type RunSupervisorOptions, type OnProgress } from '../supervisor/loop.ts';
+import { WORKER_REPORT_FILENAME, type WorkerReport } from '../supervisor/worker-report.ts';
 import { makeReviewDispatch } from '../supervisor/review.ts';
 import { makeFileEventLogger, readWorkerTokens } from '../supervisor/events.ts';
 import { acquireSupervisorLock, SUPERVISOR_LOCK_FILE, type AcquireLockResult } from '../supervisor/lock.ts';
@@ -293,6 +294,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const taskPrompt = options.taskPrompt ?? DEFAULT_TASK_PROMPT;
 	const prdPath = options.prdPath ?? join(cwd, PRD_PATH_CANONICAL);
 	const handoffPath = options.handoffPath ?? join(cwd, HANDOFF_PATH_CANONICAL);
+	const workerReportPath = join(cwd, WORKER_REPORT_FILENAME);
 
 	// Per-worker timeout: configurable via CAM_WORKER_TIMEOUT_MS env var or default (30 min).
 	const perWorkerTimeoutMs = (() => {
@@ -539,6 +541,32 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 
 	const clock: RunSupervisorOptions['clock'] = () => new Date().toISOString();
 
+	// US-004: report-file completion detection. The worker writes
+	// scripts/cam/worker-report.json at exit (US-003). The supervisor reads it
+	// on each poll tick to detect completion instead of polling capturePane for
+	// the sentinel. prd.json + handoff.json remain the state-primary source.
+	const readWorkerReport: RunSupervisorOptions['readWorkerReport'] = () => {
+		try {
+			const raw = readFileSync(workerReportPath, 'utf8');
+			const parsed: unknown = JSON.parse(raw);
+			if (parsed !== null && typeof parsed === 'object' && 'outcome' in parsed) {
+				return parsed as WorkerReport;
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	};
+	const clearWorkerReport: RunSupervisorOptions['clearWorkerReport'] = () => {
+		try {
+			if (existsSync(workerReportPath)) {
+				unlinkSync(workerReportPath);
+			}
+		} catch {
+			// best-effort: ignore errors (file may already be absent)
+		}
+	};
+
 	// Review dispatch: wired via makeReviewDispatch (US-008). Interactive TUI
 	// reviewer with <review>-tag polling since CAM-42 (claude -p is forbidden
 	// for subscription accounts).
@@ -718,6 +746,9 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 			readWorkerTokens: readWorkerTokensAdapter,
 			ensurePushed,
 			onProgress: progressOnProgress,
+			// US-004: report-file push-signal (replaces scrollback-poll for detection).
+			readWorkerReport,
+			clearWorkerReport,
 			// Bun.sleepSync blocks the thread: drives both the no-progress backoff
 			// (CAM-38) and the sentinel-poll interval between capture-pane reads.
 			sleepFn: (ms) => {

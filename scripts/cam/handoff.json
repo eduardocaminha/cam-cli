@@ -1,26 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Uniform titled worker-pane (single reused pane, label per phase)"
+    "id": "US-004",
+    "title": "Supervisor reads the report file (replaces scrollback-poll completion-detection)"
   },
   "branchName": "cam/CAM-55-single-hub-dispatch",
-  "timestamp": "2026-06-15T21:00:00Z",
+  "timestamp": "2026-06-15T22:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "src/supervisor/loop.ts",
+    "src/commands/next.ts",
     "test/supervisor/loop.test.ts",
-    "scripts/cam/prd.json"
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 is the next story to implement (check prd.json for the story with lowest priority and passes:false). The worker pane labeling is now wired: loop.ts sets @cam_label 'implementer' before implement dispatch and 'reviewer' before review dispatch. The pane-border-format #{@cam_label} at session level (run.ts) picks this up automatically for any pane in the session. The worker argv (buildImplementerWorkerArgv) has no kill-session wrapper and no -p flag.",
+  "nextStoryContext": "US-005 is the next story to implement. It extends isSessionStale / pane-count mutex in src/tmux/session.ts. Check prd.json for the current state.",
   "officialDocsValidated": [
     {
-      "lib": "tmux set-option -p",
-      "version": "3.x",
-      "url": "https://man.openbsd.org/tmux#set-option",
-      "fetchedAt": "2026-06-15T21:00:00Z",
+      "lib": "node:fs existsSync/unlinkSync",
+      "version": "Node.js 26.x",
+      "url": "https://nodejs.org/api/fs.html#fsexistssyncpath",
+      "fetchedAt": "2026-06-15T22:00:00Z",
       "status": "ok",
-      "summary": "set-option -p sets pane-scoped options; @-prefixed user options (like @cam_label) can be set at pane level. API confirmed correct."
+      "summary": "existsSync returns false for missing files (no throw). unlinkSync throws ENOENT if file absent. clearWorkerReport uses existsSync guard + try-catch: correct for best-effort deletion."
     }
   ]
 }

@@ -37,6 +37,7 @@ import type {
 	ProgressPayload,
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import type { WorkerReport } from '../../src/supervisor/worker-report.ts';
 import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
@@ -1209,6 +1210,121 @@ describe('runSupervisor', () => {
 		const respawnCall = spawnCalls[1] ?? [];
 		expect(respawnCall).toContain('respawn-pane');
 		expect(respawnCall).toContain(WORKER_PANE_ID);
+	});
+
+	// -------------------------------------------------------------------------
+	// US-004: readWorkerReport - report-file completion detection
+	// -------------------------------------------------------------------------
+
+	test('US-004: supervisor advances on a report event (readWorkerReport injected)', async () => {
+		// When readWorkerReport is injected and returns a non-null report,
+		// the poll loop exits with pollOutcome='sentinel' on the first tick.
+		// The state-primary outcome is still confirmed via prd.json + handoff.json
+		// through readWorkerOutcome (capturePane called once for the pane text).
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		let prdCall = 0;
+
+		const fakeReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-001',
+			gates: { typecheck: 'ok', tests: '5 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readHandoff: () => makeHandoff('US-001'),
+			// capturePane is called ONLY for the post-loop readWorkerOutcome call,
+			// not for detection (report reader handles detection instead).
+			capturePane: (_paneId) => donePane('US-001'),
+			readWorkerReport: () => fakeReport, // immediate hit on first poll tick
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		expect(result.lastOutcome?.kind).toBe('pass');
+		expect(result.lastOutcome?.storyId).toBe('US-001');
+	});
+
+	test('US-004: absent report reuses existing timeout guard', async () => {
+		// When readWorkerReport always returns null (report not yet written),
+		// the poll loop falls through to the timeout guard (perWorkerTimeoutMs:0).
+		// All existing guards remain active even when the report reader is injected.
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		const spawnCalls: string[][] = [];
+		let prdCall = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readWorkerReport: () => null, // no report written yet
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 0, // elapsed 0 >= 0 -> immediate timeout on first tick
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Timeout fires (dead-worker streak 1, under cap), loop continues to next
+		// iteration where prd is all done -> complete.
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		// The existing timeout kill-command guard is still active.
+		expect(spawnCalls.some((a) => a.includes('echo timeout'))).toBe(true);
+	});
+
+	test('US-004: clearWorkerReport called once per implement dispatch', async () => {
+		// clearWorkerReport must be called exactly once before respawn-pane -k so
+		// a stale report from the previous run does not trigger a false positive.
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		let prdCall = 0;
+		let clearCalls = 0;
+
+		const report: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-001',
+			gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readHandoff: () => makeHandoff('US-001'),
+			capturePane: (_paneId) => donePane('US-001'),
+			readWorkerReport: () => report,
+			clearWorkerReport: () => {
+				clearCalls++;
+			},
+		});
+
+		await runSupervisor(opts);
+
+		expect(clearCalls).toBe(1); // exactly once per implement dispatch
 	});
 });
 
