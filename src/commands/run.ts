@@ -117,6 +117,13 @@ export function buildOrchestratorBootPrompt(): string {
 	return [
 		'You are the cam orchestrator for this project.',
 		'',
+		'FIRST ACTION (before anything else): write an empty file at',
+		'.claude/.cam-orch-ready  (use the Write tool with empty string content).',
+		'This marker signals to thin-proxy commands (cam plan, cam next, etc.)',
+		'that the orchestrator agent has loaded and is ready to receive requests.',
+		'The marker is cleared on exit by the bash wrapper. Writing it is mandatory',
+		'even on a cold boot; skip nothing.',
+		'',
 		'Read .claude/agents/subagent-orchestrator.md NOW. That file is your',
 		'system prompt — every instruction in it applies to you for the entire',
 		'duration of this session.',
@@ -303,11 +310,13 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	const sessionId = genSessionId();
 	writeFileSync(join(dotClaude, '.cam-orch-session'), sessionId, 'utf8');
 
-	// Write the ready marker so thin-proxy commands know the orchestrator is
-	// starting up (US-006). Cleared by the bash wrapper on orchestrator exit
-	// and by the SIGINT/SIGTERM handler in runRun.
+	// The ready marker (.claude/.cam-orch-ready) is NOT written here by the
+	// parent. The orchestrator agent writes it as its FIRST action after boot
+	// (instructed in buildOrchestratorBootPrompt). This ensures the marker
+	// means "agent has loaded and is ready", not "parent is about to spawn"
+	// (US-FIX-005). The bash wrapper removes it on orchestrator exit;
+	// the SIGINT/SIGTERM handler in runRun removes it on abnormal parent exit.
 	const readyMarkerPath = join(dotClaude, ORCH_READY_MARKER);
-	writeFileSync(readyMarkerPath, '', 'utf8');
 
 	// Pane 0: orchestrator (claude), wrapped in the CAM-23 bounded self-handoff
 	// loop. --permission-mode bypassPermissions is INTENTIONAL (2026-06-06): the
@@ -507,12 +516,13 @@ export function runRun(options: RunOptions = {}): number {
 		return 1;
 	}
 
-	// US-006: Register SIGINT/SIGTERM cleanup for the orch-ready marker.
-	// When cam run is killed before the orchestrator bash wrapper fires, the
-	// marker would otherwise be left stale. The bash wrapper also clears it on
-	// normal orchestrator exit; this handler covers the abnormal-exit path.
-	// Only registered when a new session was just created (the marker was just
-	// written); an attach-to-existing path has no newly written marker to clear.
+	// US-006 / US-FIX-005: Register SIGINT/SIGTERM cleanup for the orch-ready
+	// marker. The marker is written by the orchestrator agent (not the parent),
+	// but if cam run is killed before the agent finishes or after it wrote the
+	// marker, we must remove any stale file. The bash wrapper removes it on
+	// normal orchestrator exit; this handler covers the abnormal parent-exit
+	// path. Only registered when a new session was just created; an
+	// attach-to-existing path leaves the marker for the running orchestrator.
 	//
 	// US-FIX-002: also spawn the sidecar supervisor and kill it on exit.
 	// The sidecar runs for the lifetime of the cam session, polling the active

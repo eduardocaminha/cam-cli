@@ -605,6 +605,48 @@ describe('buildOrchestratorBootPrompt (CAM-23 rehydration directive)', () => {
 		// Still tells it to read its agent system prompt.
 		expect(prompt).toContain('subagent-orchestrator.md');
 	});
+
+	it('US-FIX-005: instructs the orchestrator to write .cam-orch-ready as FIRST action', () => {
+		const prompt = buildOrchestratorBootPrompt();
+		// The boot prompt must tell the agent to write the ready marker before
+		// anything else (so the marker means "agent loaded", not "parent spawned").
+		expect(prompt).toContain('.claude/.cam-orch-ready');
+		// The instruction must appear BEFORE the subagent-orchestrator.md read
+		// directive so the agent writes the marker as its very first action.
+		expect(prompt.indexOf('.cam-orch-ready')).toBeLessThan(
+			prompt.indexOf('subagent-orchestrator.md'),
+		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// runRun: orch-ready marker NOT written by parent (US-FIX-005)
+// ---------------------------------------------------------------------------
+
+describe('runRun orch-ready marker (US-FIX-005)', () => {
+	it('does NOT write .cam-orch-ready in the parent process on new session creation', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+		const fakeSidecar = { kill: () => {} };
+		const spawnSidecarFn = (_c: string, _l: string) => fakeSidecar;
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn });
+
+		// The marker must NOT be written by the parent. The orchestrator agent
+		// writes it after boot (instructed by buildOrchestratorBootPrompt).
+		const markerPath = join(cwd, '.claude', '.cam-orch-ready');
+		expect(existsSync(markerPath)).toBe(false);
+	});
+
+	it('does NOT write .cam-orch-ready on an existing session re-attach', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: true });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn });
+
+		const markerPath = join(cwd, '.claude', '.cam-orch-ready');
+		expect(existsSync(markerPath)).toBe(false);
+	});
 });
 
 // ---------------------------------------------------------------------------

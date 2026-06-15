@@ -93,6 +93,44 @@ describe('waitForOrchestrator', () => {
 		expect(result).toBe(false);
 	});
 
+	// US-FIX-005: liveness re-validation after seeing the marker (defense-in-depth).
+	// The marker can be a stale artifact from a previous crashed orchestrator.
+	// waitForOrchestrator must re-check orchestratorAlive even when the marker
+	// is present, so a stale marker does not cause the thin-proxy to send-keys
+	// into a pane where the agent is not running.
+	test('US-FIX-005: re-validates liveness after seeing marker (stale marker does not cause proceed)', () => {
+		// Marker present from the start (as if left by a crashed previous session).
+		// orchestratorAlive returns false (no claude process in the pane).
+		const spawnFn = makeOrchSpawnFn(false);
+		const result = waitForOrchestrator({
+			claudeDir: '/fake/.claude',
+			sessionName: 'cam-orch-test-abc',
+			spawnFn,
+			statFn: () => true, // stale marker always present
+			sleepFn: () => {},
+			timeoutMs: 5, // tiny budget so the loop exits quickly
+			pollIntervalMs: 2,
+		});
+		// Must return false: the liveness re-check must prevent a false positive.
+		expect(result).toBe(false);
+	});
+
+	test('US-FIX-005: proceeds when marker present AND orchestrator alive (agent wrote marker after boot)', () => {
+		// This is the happy path: the orchestrator agent booted, wrote the marker,
+		// and is still running. The thin-proxy should get true and proceed.
+		const spawnFn = makeOrchSpawnFn(true);
+		const result = waitForOrchestrator({
+			claudeDir: '/fake/.claude',
+			sessionName: 'cam-orch-test-abc',
+			spawnFn,
+			statFn: () => true, // marker written by agent after boot
+			sleepFn: () => {},
+			timeoutMs: 5_000,
+			pollIntervalMs: 100,
+		});
+		expect(result).toBe(true);
+	});
+
 	test('polls until marker appears then returns true', () => {
 		const spawnFn = makeOrchSpawnFn(true);
 		let pollCalls = 0;
