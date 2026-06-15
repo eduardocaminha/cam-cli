@@ -1,23 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "cam run setupPanes drops the menu pane, passes orchPane to cam dashboard, and renders a green status-left active-pane pill"
+    "id": "US-005",
+    "title": "Navigable Stories section with a pure selection reducer and green-highlighted selected row"
   },
   "branchName": "cam/CAM-50-navigable-dashboard",
-  "timestamp": "2026-06-14T03:00:00Z",
+  "timestamp": "2026-06-14T04:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/run.ts",
-    "test/run.test.ts",
-    "scripts/cam/prd.json"
+    "src/ui/Dashboard.tsx",
+    "test/dashboard.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 updated setupPanes in src/commands/run.ts: (1) dashboard respawn now passes orchPaneId as positional arg ('cam dashboard <orchPaneId>'), binding dispatch wiring (US-003) to the real orchestrator pane; (2) status-left changed from fg= pill to bg=#4EBE7D green filled pill with DARK (#000000) fg; (3) DARK constant added alongside existing ACCENT/MUTED; (4) file header + setupPanes JSDoc updated from 3-pane to 2-pane language, menu pane comments removed. test/run.test.ts: existing dashboard test updated to also assert orchPaneId ('%1') in argv; two new tests added: 'no cam menu in any spawned argv' and 'status-left contains bg=#4EBE7D'. 792 tests pass.",
+  "nextStoryContext": "US-005 added j/k/arrow navigation to the Stories section in Dashboard.tsx: (1) exported `selectionReducer(selected, dir, storyCount)` - pure reducer, clamps to [0,storyCount-1], no-ops on empty list; (2) added `selectedIdx` useState(0) and `stories` variable in DashboardApp; (3) wired useInput for j/downArrow (down) and k/upArrow (up) before the KEYBAR_COMMANDS dispatch block; (4) StoriesSection now accepts `selectedIdx` and computes the window around it (instead of currentId); (5) StoryRow accepts `isSelected` and renders a single <Text backgroundColor={colors.accent} color='#000000'>{line}</Text> when selected, preserving the glyph for pass-state semantics; (6) DARK constant (#000000) added locally in Dashboard.tsx. Tests: 6 pure reducer unit tests + 8 ink-testing-library navigation tests (initial render ANSI assertion, j/k/arrow keypresses with per-line ACCENT_BG checks, clamping, empty-list). Key gotcha: React 19 state updates from useInput are async; navigation tests need `await new Promise(r => setTimeout(r, 0))` after each stdin.write to let React flush before calling lastFrame(). chalk.level=3 forced in beforeAll for ANSI assertions. 806 tests pass.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Story only touches tmux format strings (set-option status-left) and argv construction. No npm/external library exercised."
+      "lib": "ink",
+      "version": "7.x",
+      "url": "https://github.com/vadimdemedes/ink/blob/master/readme.md",
+      "fetchedAt": "2026-06-14T04:00:00Z",
+      "status": "ok",
+      "summary": "Ink 7 docs confirmed: (1) useInput key object supports key.upArrow and key.downArrow for all arrow directions; (2) <Text backgroundColor> accepts hex values and is inherited by child <Text> components, same formats as color prop. Implementation matches."
     }
   ]
 }

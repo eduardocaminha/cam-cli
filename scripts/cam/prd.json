@@ -112,7 +112,7 @@
         "bun test passes."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/ui/Dashboard.tsx, test/dashboard.test.ts. Keep the reducer pure (input: state + key, output: state) so the unit test does not need Ink. Use colors.accent from src/design/tokens.ts (#4EBE7D). Respect the Ink-glyph-not-divider rule (patterns.md): the row glyph still drives success/failure semantics; the bg color signals selection only, not pass-state. No em-dash in any rendered string (patterns.md, project rule 2026-05-20)."
     },
