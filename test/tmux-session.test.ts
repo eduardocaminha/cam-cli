@@ -616,7 +616,12 @@ describe('isSessionStale', () => {
 function orchSpawn(listPanesStdout: string, status = 0): SpawnFn {
 	return ((cmd, args, opts) => {
 		const sub = args[0] === '-L' ? args[2] : args[0];
-		if (cmd === 'tmux' && sub === 'list-panes' && opts?.stdio === 'pipe') {
+		const fIdx = args.indexOf('-F');
+		const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
+		// Gate on the EXACT -F format orchestratorAlive requests. Without this, a
+		// fake would keep answering even if production changed its format string,
+		// masking exactly the kind of fake-vs-real drift the operator smoke exposed.
+		if (cmd === 'tmux' && sub === 'list-panes' && fmt === '#{@cam_label}' && opts?.stdio === 'pipe') {
 			return {
 				pid: 1, output: [null, Buffer.from(listPanesStdout), Buffer.from('')],
 				stdout: Buffer.from(listPanesStdout), stderr: Buffer.from(''),

@@ -97,7 +97,7 @@ test.skipIf(!tmuxAvailable)(
 			.stdout.toString()
 			.split('\n')
 			.find((l) => l.startsWith('0;'))
-			?.slice(2)
+			?.replace(/^0;/, '')
 			.trim();
 		const got = getOrchPaneId(SESSION, swapSocketSpawn);
 		// The tab-separated version returned null here (tmux emits '_' for a tab),
