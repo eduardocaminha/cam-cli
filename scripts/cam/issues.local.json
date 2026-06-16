@@ -1,5 +1,5 @@
 {
-  "next_id": 65,
+  "next_id": 67,
   "issues": [
     {
       "id": "CAM-1",
@@ -525,6 +525,22 @@
       "createdAt": "2026-06-16T22:30:00Z",
       "title": "Typed pattern records + outcome-status + decay (mulch model), replacing free-text patterns.md",
       "description": "cam's scripts/cam/patterns.md is free-text bullets with no structure, no outcome tracking, and no decay: a pattern that later proves wrong is never detected or demoted, and the file grows monotonically. Adopt the mulch expertise-record model: (1) typed records (schema-validated: type, classification tier foundational/tactical/observational, recorded_at, name/description, evidence, dir_anchors = the paths the pattern is about, outcomes[]); (2) outcome-status: append {status: success|failure|partial, recorded_at} whenever a pattern is applied (cam's supervisor/reviewer already produce pass/fail signals to wire in) + confirmation-scoring (successCount + 0.5*partialCount) so unconfirmed patterns sink; (3) decay/demotion as a gate: a cam prune that demotes superseded patterns one tier, archives stale tactical/observational by shelf-life (14d/30d), and (optionally) demotes patterns whose dir_anchors point at files that no longer exist (anchor-decay). This is real 'learning-capture as a gate'. Source: mulch src/schemas/record.ts, src/commands/prune.ts, src/utils/scoring.ts."
+    },
+    {
+      "id": "CAM-65",
+      "priority": "P2",
+      "state": "open",
+      "createdAt": "2026-06-16T23:00:00Z",
+      "title": "Worker-pane closes on completion (kill-pane after report; CAM-57 recreates next dispatch)",
+      "description": "After an implementer/reviewer worker finishes and pushes its report, the worker pane lingers (the claude TUI stays idle at its prompt) until the next dispatch respawns it. Dogfood 2026-06-16: US-004 emitted CAM_IMPLEMENTER_STATUS=DONE and wrote worker-report.json, but the pane stayed open. Desired: the supervisor closes (kill-pane) the worker pane as soon as it reads the completion report; CAM-57's ensureWorkerPane recreates a dead/missing pane on the next dispatch, so close-then-recreate is safe now. Two benefits: (1) clean UX, the worker pane exists only while a worker is actually active; (2) mutex consistency, closing returns the session to the canonical 2-pane idle state, so the 2-pane dispatch mutex reads idle instead of treating a lingering 3rd pane as busy. NOT CAM-58 (that is the loop false-terminal logic; this is the pane lifecycle). Acceptance sketch: after the completion-report is read (loop.ts implement branch + review.ts), kill-pane the worker pane; assert a completed worker leaves the session at 2 panes and the next dispatch recreates a titled worker pane. Builds on CAM-57 self-heal + CAM-55 mutex. Source: dogfood observation."
+    },
+    {
+      "id": "CAM-66",
+      "priority": "P3",
+      "state": "open",
+      "createdAt": "2026-06-16T23:00:00Z",
+      "title": "Dashboard polish: truncate long story titles (list) + harden the Loop-header ghost",
+      "description": "Two cam dashboard render issues from dogfood 2026-06-16. (1) Story titles overflow: src/ui/Dashboard.tsx renders story.title raw (lines 562/573, no truncation), so long titles wrap and interleave with the per-story token counts, breaking the list layout. Fix (operator chose this approach): truncate the list row to a fixed width with a trailing ellipsis; the full title already shows in the detail subview (the navigable per-story view from CAM-50), so 'enter the story to read all' already works, no PRD schema change. (2) Loop-header ghosting: the 'Loop' section header stacks/duplicates on rapid terminal reflow (seen as many repeated 'Loop' lines). src/commands/dashboard.ts:837-848 already mitigates a single resize by clearing the alt-screen on the resize event, but it still ghosts under a reflow/dispatch storm (intermittent; clean in a later screenshot). Harden it (periodic full-clear, or fix the stale Ink line-count tracking at the old width). Both are pure src/ui/Dashboard.tsx + src/commands/dashboard.ts changes. Source: dogfood screenshots."
     }
   ]
 }
