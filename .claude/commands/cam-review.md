@@ -103,7 +103,7 @@ The reviewer emits a structured **verdict body** block immediately before the te
 }
 ```
 
-The `status` field is binary: `"PASS"` when all 8 Layer-B criteria are satisfied and no hard-constraint rule triggered; `"FAIL"` otherwise. `itemizedFailures` lists only criteria that FAIL. The terminal `<review>CLEAN</review>` / `<review>FIXES_PENDING:N</review>` sentinel (parsed by `parseReviewVerdict` in `src/supervisor/result.ts`) is separate from this body and must remain the absolute last line of the reviewer's output.
+The `status` field is binary: `"PASS"` when all 8 Layer-B criteria are satisfied and no hard-constraint rule triggered; `"FAIL"` otherwise. `itemizedFailures` lists only criteria that FAIL. The terminal `<review>CLEAN</review>` / `<review>FIXES_PENDING:N</review>` sentinel (parsed by `parseReviewVerdict` in `src/supervisor/review.ts:151`) is separate from this body and must remain the absolute last line of the reviewer's output.
 
 ---
 
