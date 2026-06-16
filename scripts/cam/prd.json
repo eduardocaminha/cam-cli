@@ -65,7 +65,7 @@
         "Tests pass (bun test)."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-implementer.md, templates/agents/subagent-implementer.md, src/vendor/_generated.ts (via `bun run embed-vendor`), optionally src/supervisor/worker-report.ts + test/supervisor/worker-report.test.ts (only if the shape must change), test/embedded.test.ts (extend). The current shape is `gates: { typecheck: 'pass'|'fail'|'skip', tests: 'pass'|'fail'|'skip' }`; keep it unless naming the command + exitCode adds real value. Sources: github.com/jayminwest/overstory `src/insights/quality-gates.ts` + agentic-engineering-book 11-agent-readiness/2-failure-modes.md. Gotcha: the supervisor sentinel parsing class of bug (memory `supervisor-sentinel-parse-fragility`) — keep the gate roll-up a JSON field, never a regex-on-prose channel."
     },

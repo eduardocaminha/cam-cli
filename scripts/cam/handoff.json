@@ -1,15 +1,15 @@
 {
-  "lastCompletedStory": "US-002",
+  "lastCompletedStory": "US-003",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-auditor.md",
-    "templates/agents/subagent-auditor.md",
+    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-implementer.md",
     "src/vendor/_generated.ts",
     "test/embedded.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 upgraded the auditor's C9 to require an oracle (named-command, file-assert, reviewer-judgment) and BLOCK on any criterion missing one. C23 self-hosting caution updated: intentional, declared edits to .claude/agents/* are not harness drift. Templates mirrored and embed regenerated. Tests assert 'has an oracle', all three oracle kinds, and BLOCK verb in the embedded auditor. Next story to pick is the highest-priority passes:false non-operator story in prd.json.",
+  "nextStoryContext": "US-003 added Gate discipline section to the implementer prompt (both .claude/agents/ and templates/agents/). PROHIBITED phrase, named-command + exitCode 0 gate definition, and success/partial/failure roll-up labels added. WorkerReport.gates shape kept as-is (string fields sufficient). embed-vendor regenerated. test/embedded.test.ts has three new assertions on the implementer prompt. Next story to pick is the highest-priority passes:false non-operator story in prd.json.",
   "officialDocsValidated": [
     {
       "lib": "none",
