@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": "US-001",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-planner.md",
+    ".claude/commands/cam-plan.md",
+    "templates/agents/subagent-planner.md",
+    "templates/commands/cam-plan.md",
+    "src/vendor/_generated.ts",
+    "test/embedded.test.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 upgrades the auditor (subagent-auditor.md) to BLOCK on any acceptanceCriterion missing an oracle. The three oracle kinds to enforce are exactly: named-command, file-assert, reviewer-judgment (matching US-001's contract in subagent-planner.md). Mirror edits to templates/agents/subagent-auditor.md. Regenerate src/vendor/_generated.ts via bun run embed-vendor. Add assertions in test/embedded.test.ts for the auditor embedded content. Note: this story itself edits .claude/agents/* so the commit message must call out the intentional self-hosting.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
