@@ -89,6 +89,22 @@ Do NOT pass: `scripts/cam/handoff.json` or any generator reasoning.
 
 Display the `subagent-reviewer`'s output verbatim.
 
+### Verdict body contract
+
+The reviewer emits a structured **verdict body** block immediately before the terminal `<review>` sentinel. This body is the **payload the CAM-55 report-on-exit pushes to the orchestrator**:
+
+```json
+{
+  "status": "PASS or FAIL",
+  "justification": "<one-sentence prose summary of the verdict>",
+  "itemizedFailures": [
+    { "criterion": "<criterion-name>", "evidence": "<file:line or quoted snippet>", "note": "<short explanation>" }
+  ]
+}
+```
+
+The `status` field is binary: `"PASS"` when all 8 Layer-B criteria are satisfied and no hard-constraint rule triggered; `"FAIL"` otherwise. `itemizedFailures` lists only criteria that FAIL. The terminal `<review>CLEAN</review>` / `<review>FIXES_PENDING:N</review>` sentinel (parsed by `parseReviewVerdict` in `src/supervisor/result.ts`) is separate from this body and must remain the absolute last line of the reviewer's output.
+
 ---
 
 ## Step 4: Triage findings

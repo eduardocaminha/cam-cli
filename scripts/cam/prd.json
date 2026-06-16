@@ -89,7 +89,7 @@
         "Tests pass (bun test)."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-reviewer.md, .claude/commands/cam-review.md, templates/agents/subagent-reviewer.md, templates/commands/cam-review.md, src/vendor/_generated.ts (via `bun run embed-vendor`), test/embedded.test.ts (extend). DO NOT touch src/supervisor/result.ts:parseReviewVerdict — the terminal signal stays. Sources: github.com/jayminwest/overstory `agents/reviewer.md` + agentic-engineering-book 8-practices/2-evaluation.md + orchestrator memory `agent-eval-research-jaymin-reporter`. The 8 criteria are the canonical Jaymin rubric (spec-correctness, tests-with-meaningful-assert, strict-types, error-handling, project-conventions, security, deps, perf). Gotcha: the verdict body shape is the payload of the CAM-55 report-on-exit push — keep the field names stable for downstream consumers; document the contract in cam-review.md."
     }

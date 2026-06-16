@@ -243,6 +243,38 @@ describe('templatesContents — gate discipline in implementer prompt (US-003)',
 	});
 });
 
+describe('templatesContents — Layer B binary rubric in reviewer prompt (US-004)', () => {
+	// The reviewer agent at templates/agents/subagent-reviewer.md must deliver a
+	// binary PASS/FAIL verdict on a fixed 8-criterion rubric, walking criterion-
+	// by-criterion with per-criterion evidence, explicitly NOT trusting a green
+	// test suite, and hard-failing the entire verdict on any hard-constraint breach.
+
+	const reviewer = templatesContents['agents/subagent-reviewer.md'];
+
+	test('contains all 8 rubric criterion names verbatim', () => {
+		expect(reviewer).toContain('spec-correctness');
+		expect(reviewer).toContain('tests-with-meaningful-assert');
+		expect(reviewer).toContain('strict-types');
+		expect(reviewer).toContain('error-handling');
+		expect(reviewer).toContain('project-conventions');
+		expect(reviewer).toContain('security');
+		expect(reviewer).toContain('deps');
+		expect(reviewer).toContain('perf');
+	});
+
+	test('contains the evidence-per-criterion instruction', () => {
+		expect(reviewer).toContain('evidence per criterion');
+	});
+
+	test('contains the does-not-trust-green-tests clause', () => {
+		expect(reviewer).toContain('does not trust green tests');
+	});
+
+	test('contains the hard-constraint-fail-the-whole rule', () => {
+		expect(reviewer).toContain('hard-constraint');
+	});
+});
+
 describe('materializeEmbedded', () => {
 	let cacheDir: string;
 	let prevCache: string | undefined;
