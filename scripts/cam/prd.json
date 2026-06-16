@@ -43,7 +43,7 @@
         "Tests pass (bun test)."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-auditor.md, templates/agents/subagent-auditor.md, src/vendor/_generated.ts (via `bun run embed-vendor`), test/embedded.test.ts (extend). Depends on US-001: the auditor enforces the exact contract US-001 documents on the planner side; keep terminology aligned (named-command / file-assert / reviewer-judgment) to avoid a silent contract gap. Source: orchestrator memory `agent-eval-research-jaymin-reporter`. Gotcha: this story itself edits .claude/agents/* — flag the intent in the commit message so a later audit does not trip on harness drift."
     },
