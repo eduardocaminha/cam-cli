@@ -136,6 +136,28 @@ describe('templatesContents — oracle contract in planner prompt (US-001)', () 
 	});
 });
 
+describe('templatesContents — oracle enforcement in auditor prompt (US-002)', () => {
+	// The auditor at templates/agents/subagent-auditor.md must BLOCK (not soft-note)
+	// on any acceptanceCriterion that lacks an oracle. Spec: C9 upgraded from
+	// "verifiable" to "has an oracle" with explicit BLOCK verb and all three oracle kinds.
+
+	const auditor = templatesContents['agents/subagent-auditor.md'];
+
+	test('contains the oracle requirement phrase', () => {
+		expect(auditor).toContain('has an oracle');
+	});
+
+	test('names all three oracle kinds: named-command, file-assert, reviewer-judgment', () => {
+		expect(auditor).toContain('named-command');
+		expect(auditor).toContain('file-assert');
+		expect(auditor).toContain('reviewer-judgment');
+	});
+
+	test('contains the BLOCK verb for oracle-free criterion finding', () => {
+		expect(auditor).toContain('BLOCK');
+	});
+});
+
 describe('materializeTemplates — .gitignore is merged, never clobbered', () => {
 	// CAM-55 round-2 review: `templates/.gitignore` lands at the project root.
 	// A blind overwrite would destroy a downstream project's existing
