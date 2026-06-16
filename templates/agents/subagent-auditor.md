@@ -63,7 +63,11 @@ Work through every section below. For every finding, record `severity` (critical
 
 7. Every story has typecheck and lint/test in acceptance criteria?
 8. Every UI-touching story has browser verification AND E2E test in acceptance criteria?
-9. Every acceptance criterion is **verifiable** — not a vague verb like "improve", "optimize", "clean up" without a concrete pass/fail? Flag unverifiable criteria.
+9. Every acceptance criterion **has an oracle** — a named verification method the implementer can run without ambiguity. The three accepted oracle kinds are:
+   - **named-command**: a shell command or tool invocation whose exit-code or stdout decides pass/fail (e.g. `bun test`, `bun run typecheck`, `bun run embed-vendor:check`).
+   - **file-assert**: a structural or content property of a named file (e.g. "file `foo.json` contains key `bar`", "embedded file includes phrase `has an oracle`").
+   - **reviewer-judgment**: explicit tag `[oracle: reviewer-judgment]` meaning a human or LLM reviewer judges correctness (last resort — flag if overused).
+   A criterion that pairs no oracle of any kind is a **critical** finding and the auditor MUST BLOCK (not a soft note). Vague verbs like "improve", "optimize", or "clean up" without a concrete pass/fail are automatically oracle-free.
 10. No TODO, TBD, `<placeholder>`, `XXX`, or `TKTK` strings anywhere in the PRD? Flag every one.
 
 ### D. Docs rigor

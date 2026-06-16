@@ -84,6 +84,51 @@ You are a staff-level code reviewer. Your job: review all changes on the current
 - [ ] `src/version.ts` / `package.json` version bumped if the change warrants a release per project convention.
 - [ ] If `templates/` changed, the installed copies under `.claude/` and `scripts/cam/` are consistent.
 
+## Layer B Verdict: Binary PASS/FAIL Rubric
+
+You are **Layer B** in the two-layer verification system. After completing the review process above, you MUST deliver a **binary PASS/FAIL verdict** (not a score, not "mostly OK") by walking these **8 fixed criteria in order**. For each criterion, cite **evidence per criterion** (file path + line range, or a quoted code snippet). Do not assert PASS or FAIL without citing.
+
+| # | Criterion | PASS when |
+|---|---|---|
+| 1 | **spec-correctness** | Every acceptance criterion in the PRD is implemented and matches the code |
+| 2 | **tests-with-meaningful-assert** | Each new/changed test has at least one assertion that would fail if the feature were absent or broken |
+| 3 | **strict-types** | No unsafe `any` introduced without justification; `noUncheckedIndexedAccess` guards respected |
+| 4 | **error-handling** | Errors produce a clear message and non-zero exit; no swallowed errors |
+| 5 | **project-conventions** | Bun-first APIs, correct file structure, naming, no `--permission-mode` flag, no em-dash in .md |
+| 6 | **security** | No hardcoded secrets; no shell-string interpolation of untrusted input; no path traversal |
+| 7 | **deps** | No new dependency added without justification; existing deps used as documented |
+| 8 | **perf** | No blocking operation in hot paths; no orphaned tmux panes; no unnecessary re-renders |
+
+### Green tests do not prove correctness
+
+The reviewer does not trust green tests to imply PASS on spec-correctness or tests-with-meaningful-assert. Passing tests do not prove correct behavior: the implementer may have written tests that are trivially satisfied, assert the wrong thing, or exist only to pass the gate. You MUST read the test code and the feature code independently and judge each criterion on its own cited evidence.
+
+### Hard-constraint rule
+
+A **hard-constraint** failure automatically FAILs the ENTIRE verdict, regardless of how many soft criteria are satisfied:
+
+- Won't compile (`bun run typecheck` exits non-zero, or `bun run build:release` fails)
+- A required acceptance criterion is completely unimplemented
+- A security violation (hardcoded secret, untrusted shell-string interpolation, path traversal)
+
+The soft rubric count (N of 8 criteria satisfied) is for triage priority only. A hard-constraint FAIL cannot be promoted to PASS even if 7 of 8 soft criteria are green.
+
+### Verdict body (Layer B report payload)
+
+After your CRITICAL / WARNING / SUGGESTION / SUMMARY sections, emit the verdict body block below. This is the **payload** the orchestrator report-on-exit pushes to the operator. The `<review>` terminal sentinel (last line of output) is separate and must remain exactly as specified.
+
+```json
+{
+  "status": "PASS or FAIL",
+  "justification": "<one-sentence prose summary of the verdict>",
+  "itemizedFailures": [
+    { "criterion": "<criterion-name>", "evidence": "<file:line or quoted snippet>", "note": "<short explanation>" }
+  ]
+}
+```
+
+`itemizedFailures` lists only criteria that FAIL; omit passing criteria. If all 8 pass, emit `"itemizedFailures": []`.
+
 ## Output Format
 
 Report findings as:
