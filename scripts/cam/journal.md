@@ -84,3 +84,15 @@ Each entry follows this template:
 - **Decisions**: Keep progress.txt in the pathspec (harmless under --ignore-unmatch, defensive for ancient branches). The ship command is markdown executed by an LLM with no TS code path, so the only automatable regression guard is a test on the embedded templatesContents map (what cam init writes into user projects): that is US-002, which pins the robust form and forbids the masked-atomic pattern.
 - **Blockers encountered**: PRD audit BLOCKed once: issueNumber was the string "CAM-49" instead of the bare integer 49, which would make Step 4a construct id "CAM-CAM-49" and silently fail to close the issue. Fixed to 49 (matches every prior shipped PRD and the planner schema); auditor then APPROVEd. Review round 1 verdict CLEAN.
 - **Follow-ups**: none. The fix dogfooded itself on its own ship: with progress.txt absent, the fixed Step 4b exited 0 and staged prd.json + handoff.json for deletion (verified via git show --stat), so this cycle's harness state did not leak to main. Closes the CAM-48 process-note loop.
+
+## cam/CAM-56-two-layer-verification: two-layer verification (gates + reviewer binary rubric)
+
+- **Started**: 2026-06-16
+- **Closed**: 2026-06-16
+- **Branch**: cam/CAM-56-two-layer-verification
+- **Issue**: CAM-56
+- **Outcome**: shipped (PR #57)
+- **Summary**: Two-layer verification modeled on Jaymin West. Layer A (implementer): a gate is a named command + exitCode 0 with a success/partial/failure roll-up, and the implementer is PROHIBITED from declaring a story done before gates pass. Layer B (reviewer): binary PASS/FAIL on a FIXED 8-criterion rubric with per-criterion cited evidence plus a does-not-trust-green-tests clause. Planner pairs each acceptanceCriterion with an oracle (named-command, file-assert, or reviewer-judgment); auditor BLOCKs on any criterion lacking one. Prompt/doc/template/embed/test only, no runtime code. 947 tests.
+- **Decisions**: kept the existing gates {typecheck,tests} shape (US-003) instead of extending it; preserved the <review> sentinel + parseReviewVerdict (review path untouched).
+- **Blockers encountered**: dogfood blocked on CAM-57 (worker-pane never created post-CAM-55 2-pane mutex). Fixed via PR #55 (sidecar self-heal) + rebuild/reinstall + in-place sidecar respawn, no session restart. CAM-58 (supervisor false-terminals after each correct story: readWorkerOutcome reads handoff.lastCompletedStory.id but the push-model worker writes a string, no worker-report.json fallback) forced manual per-story re-arms, and once all stories passed the review could not be sidecar-dispatched (hasPendingStories=false), so review ran via /cam-review directly. Round 1 FIXES_PENDING:1 (the new rubric caught a real cite error: parseReviewVerdict cited at result.ts vs the real review.ts:151), round 2 CLEAN.
+- **Follow-ups**: CAM-58 (filed). Reviewer round-1 backlog: tighten the trivially-satisfied US-002 BLOCK test assertion; em-dash drift in the auditor prompt; the implementer template leaks the cam-cli-specific worker-report.ts path.
