@@ -1,0 +1,219 @@
+// src/commands/sidecar.ts
+//
+// Production caller for runSupervisor via the sidecar model (US-FIX-002).
+//
+// `cam sidecar` is an INTERNAL command spawned as a detached background process
+// by `cam run`. It is not listed in `cam help` (there is no public user-facing
+// use case) but it IS a real registered subcommand in index.ts so that
+// `Bun.spawn(['cam', 'sidecar', ...])` works against the installed binary.
+//
+// Architecture (FLOW.md §4 + §9, sidecar model):
+//   The sidecar:
+//     1. Reads the `active` flag in .claude/cam-loop.local.md.
+//     2. When active:false (or absent): idles (sleeps SIDECAR_IDLE_POLL_MS).
+//     3. When active:true AND non-operator stories pending:
+//        a. Acquires the supervisor lock (.claude/.cam-supervisor.lock).
+//        b. Calls runSupervisor with the real-I/O options from host.ts.
+//        c. On terminal: sets active:false (cam status shows 'paused').
+//     4. Loops forever until killed by cam run's SIGINT/SIGTERM cleanup.
+//
+// All I/O is injectable via SidecarOptions for unit tests.
+
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import process from 'node:process';
+
+import { runSidecarLoop, type RunSidecarLoopOptions } from '../supervisor/loop.ts';
+import { buildSupervisorOptions } from '../supervisor/host.ts';
+import { parseStateFile } from './status.ts';
+import { renderStateFile, writeStateFile } from './next.ts';
+import type { PrdSnapshot } from '../supervisor/decide.ts';
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+export interface SidecarOptions {
+	/** Working directory (defaults to process.cwd()). */
+	cwd?: string;
+	/**
+	 * Override the readActive implementation.
+	 * Reads the active flag from .claude/cam-loop.local.md.
+	 * Tests inject a fake to control the gate.
+	 */
+	readActiveFn?: () => boolean | undefined;
+	/**
+	 * Override the clearActive implementation.
+	 * Sets active:false in .claude/cam-loop.local.md.
+	 * Tests inject a fake to assert it was called.
+	 */
+	clearActiveFn?: () => void;
+	/**
+	 * Override the hasPendingStories check.
+	 * Tests inject a fake to control whether work exists.
+	 */
+	hasPendingStoriesFn?: () => boolean;
+	/**
+	 * Override the sleep function. Tests inject a no-op.
+	 */
+	sleepFn?: (ms: number) => void;
+	/**
+	 * Override the supervisor lock acquisition. Tests inject a fake.
+	 */
+	acquireLockFn?: () => { acquired: true; release: () => void } | { acquired: false; holderPid: number };
+	/**
+	 * Override the runSupervisor call. Tests inject a fake.
+	 */
+	runSupervisorFn?: RunSidecarLoopOptions['runSupervisorFn'];
+	/**
+	 * Override the buildOpts call. Tests inject a fake.
+	 */
+	buildOptsFn?: RunSidecarLoopOptions['buildOpts'];
+}
+
+// ---------------------------------------------------------------------------
+// Active-flag helpers (real implementations)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the `active` flag from .claude/cam-loop.local.md.
+ * Returns undefined when the file is absent, unparseable, or the active field
+ * is not present. The sidecar treats undefined as false (idle).
+ */
+function makeReadActive(claudeDir: string): () => boolean | undefined {
+	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
+	return () => {
+		try {
+			if (!existsSync(stateFilePath)) return undefined;
+			const contents = readFileSync(stateFilePath, 'utf8');
+			const parsed = parseStateFile(contents);
+			if (parsed === null) return undefined;
+			return parsed.active;
+		} catch {
+			return undefined;
+		}
+	};
+}
+
+/**
+ * Set active:false in .claude/cam-loop.local.md by overwriting the frontmatter.
+ * Reads the existing state to preserve other fields; falls back to a minimal
+ * write if the file is absent or unparseable. Best-effort: a failure here is
+ * non-fatal (the loop will just re-check on the next poll).
+ */
+function makeClearActive(claudeDir: string, cwd: string): () => void {
+	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
+	return () => {
+		try {
+			if (!existsSync(stateFilePath)) {
+				// Write a minimal state file with active:false so cam status shows 'paused'.
+				const body = renderStateFile({
+					maxIterations: 50,
+					completionPromise: 'COMPLETE',
+					startedAt: new Date().toISOString(),
+					pid: process.pid,
+					active: false,
+				});
+				writeStateFile(cwd, body, { force: true });
+				return;
+			}
+			const contents = readFileSync(stateFilePath, 'utf8');
+			const parsed = parseStateFile(contents);
+			if (parsed === null) {
+				// Unparseable: write fresh minimal state with active:false.
+				const body = renderStateFile({
+					maxIterations: 50,
+					completionPromise: 'COMPLETE',
+					startedAt: new Date().toISOString(),
+					pid: process.pid,
+					active: false,
+				});
+				writeFileSync(stateFilePath, body, 'utf8');
+				return;
+			}
+			const body = renderStateFile({
+				maxIterations: parsed.max_iterations ?? 50,
+				completionPromise: parsed.completion_promise ?? 'COMPLETE',
+				startedAt: parsed.started_at ?? new Date().toISOString(),
+				pid: parsed.pid ?? process.pid,
+				active: false,
+				iteration: parsed.iteration,
+				currentStory: parsed.current_story,
+				storiesDone: parsed.stories_done,
+				storiesTotal: parsed.stories_total,
+				lastActivity: parsed.last_activity ?? new Date().toISOString(),
+			});
+			writeFileSync(stateFilePath, body, 'utf8');
+		} catch {
+			// Non-fatal.
+		}
+	};
+}
+
+/**
+ * Check whether there are non-operator stories with passes:false in prd.json.
+ */
+function makeHasPendingStories(prdPath: string): () => boolean {
+	return () => {
+		try {
+			const raw = readFileSync(prdPath, 'utf8');
+			const parsed: unknown = JSON.parse(raw);
+			if (parsed === null || typeof parsed !== 'object') return false;
+			const prd = parsed as PrdSnapshot;
+			const stories = prd.userStories ?? [];
+			return stories.some((s) => s.passes !== true && s.requires !== 'operator');
+		} catch {
+			return false;
+		}
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Public entrypoint
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the sidecar supervisor loop.
+ *
+ * This is the PRODUCTION caller of runSupervisor. It is spawned as a detached
+ * background process by `cam run` and runs for the lifetime of the cam session.
+ *
+ * Returns a Promise<void> that never resolves (the process is killed by cam run's
+ * cleanup handler on SIGINT/SIGTERM).
+ */
+export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
+	const cwd = options.cwd ?? process.cwd();
+	const claudeDir = join(cwd, '.claude');
+	const prdPath = join(cwd, 'scripts/cam/prd.json');
+
+	const readActiveFn = options.readActiveFn ?? makeReadActive(claudeDir);
+	const clearActiveFn = options.clearActiveFn ?? makeClearActive(claudeDir, cwd);
+	const hasPendingStoriesFn = options.hasPendingStoriesFn ?? makeHasPendingStories(prdPath);
+	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
+
+	// Lock factory: built from real host.ts unless injected by tests.
+	const acquireLockFn =
+		options.acquireLockFn ??
+		(() => {
+			const built = buildSupervisorOptions(cwd);
+			return built.acquireLock();
+		});
+
+	// buildOpts factory: build RunSupervisorOptions for each sidecar cycle.
+	const buildOptsFn =
+		options.buildOptsFn ??
+		(() => {
+			const built = buildSupervisorOptions(cwd);
+			return built.opts;
+		});
+
+	await runSidecarLoop({
+		buildOpts: buildOptsFn,
+		readActive: readActiveFn,
+		clearActive: clearActiveFn,
+		sleep: sleepFn,
+		hasPendingStories: hasPendingStoriesFn,
+		acquireLock: acquireLockFn,
+		runSupervisorFn: options.runSupervisorFn,
+	});
+}

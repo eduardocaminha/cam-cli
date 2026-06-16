@@ -40,25 +40,53 @@ function captureStdout(fn: () => unknown): Promise<string> {
 	});
 }
 
-// --- Fake tmux spawn --------------------------------------------------------
+// --- Fake tmux spawn for thin-proxy commands --------------------------------
+//
+// The thin-proxy commands (runPlan, runNext, runIssue) call orchestratorAlive
+// and getOrchPaneId. This fake simulates a live orchestrator so the hit path
+// fires and attach-hint is emitted.
 
-function makeFakeTmuxSpawn(sessionExists = false): TmuxSpawnFn {
-	let paneCounter = 0;
-	return ((cmd: string, args: string[], opts?: { stdio?: string }) => {
-		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
+function makeFakeTmuxSpawn(orchAlive = true): TmuxSpawnFn {
+	return ((cmd: string, args: string[]) => {
+		const base: SpawnSyncReturns<Buffer> = {
+			pid: 1,
+			output: [null, Buffer.from(''), Buffer.from('')],
+			stdout: Buffer.from(''),
+			stderr: Buffer.from(''),
+			status: 0,
+			signal: null,
+		};
 		const subcommand = args[0] === '-L' ? args[2] : args[0];
-		if (subcommand === 'has-session') {
-			return { status: sessionExists ? 0 : 1, stdout: Buffer.from('') } as SpawnSyncReturns<Buffer>;
+
+		if (subcommand === 'has-session') return base; // session exists
+
+		if (subcommand === 'list-panes') {
+			const fIdx = args.indexOf('-F');
+			const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
+			if (fmt === '#{@cam_label}') {
+				// orchestratorAlive keys on @cam_label (claude runs under a bash
+				// respawn-wrapper, so pane_current_command is never claude).
+				return {
+					...base,
+					stdout: Buffer.from(orchAlive ? 'orchestrator\ndashboard\n' : 'dashboard\n'),
+				};
+			}
+			if (fmt === '#{pane_index};#{pane_id}') {
+				return { ...base, stdout: Buffer.from('0;%0\n') };
+			}
+			if (fmt === '#{pane_id}') {
+				// For paneCountMutex: return 2 pane IDs (available).
+				return { ...base, stdout: Buffer.from('%0\n%1\n') };
+			}
+			return { ...base, stdout: Buffer.from('') };
 		}
-		// Return a stable pane id for calls that capture it via -P -F #{pane_id}.
-		if (
-			(subcommand === 'new-session' || subcommand === 'split-window') &&
-			opts?.stdio === 'pipe'
-		) {
-			paneCounter += 1;
-			return { status: 0, stdout: Buffer.from(`%${paneCounter}\n`) } as SpawnSyncReturns<Buffer>;
+
+		if (subcommand === 'capture-pane') {
+			// Return idle pane content so the idle-check (US-008) passes immediately.
+			return { ...base, stdout: Buffer.from('> ') };
 		}
-		return { status: 0, stdout: Buffer.from('') } as SpawnSyncReturns<Buffer>;
+
+		return base;
 	}) as TmuxSpawnFn;
 }
 
@@ -109,7 +137,6 @@ describe('runPlan attach hint', () => {
 		const output = await captureStdout(() =>
 			runPlan({
 				cwd: tmpDir,
-				permissionMode: 'bypassPermissions',
 				tmuxSpawnFn,
 				env: {},
 			}),
@@ -127,7 +154,6 @@ describe('runPlan attach hint', () => {
 		const output = await captureStdout(() =>
 			runPlan({
 				cwd: tmpDir,
-				permissionMode: 'bypassPermissions',
 				tmuxSpawnFn,
 				env: { TMUX: '/tmp/tmux-1/default,1234,0', CAM_SESSION: sessionName },
 			}),
@@ -150,7 +176,6 @@ describe('runIssue attach hint', () => {
 			runIssue({
 				text: 'Add dark mode',
 				cwd: tmpDir,
-				permissionMode: 'bypassPermissions',
 				tmuxSpawnFn,
 				env: {},
 			}),
@@ -169,7 +194,6 @@ describe('runIssue attach hint', () => {
 			runIssue({
 				text: 'Add dark mode',
 				cwd: tmpDir,
-				permissionMode: 'bypassPermissions',
 				tmuxSpawnFn,
 				env: { TMUX: '/tmp/tmux-1/default,1234,0', CAM_SESSION: sessionName },
 			}),
@@ -182,25 +206,15 @@ describe('runIssue attach hint', () => {
 // --- runNext: hint is contextual --------------------------------
 
 describe('runNext attach hint', () => {
-	/** Fake supervisor that completes immediately. */
-	const fakeSupervisor = async () => ({
-		status: 'complete' as const,
-		iterations: 1,
-		lastOutcome: null,
-	});
-
 	test('emits attach hint when caller is detached (no TMUX)', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-next-hint-'));
+		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 
 		const output = await captureStdout(() =>
 			runNext({
 				cwd: tmpDir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2: string, _body: string) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir: string) => '%3',
-				supervisorFn: fakeSupervisor,
-				startedAt: '2026-06-08T00:00:00Z',
+				tmuxSpawnFn,
 				env: {},
 			}),
 		);
@@ -211,16 +225,13 @@ describe('runNext attach hint', () => {
 
 	test('suppresses attach hint when caller is inside the session', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-next-hint-'));
+		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 
 		const output = await captureStdout(() =>
 			runNext({
 				cwd: tmpDir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2: string, _body: string) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir: string) => '%3',
-				supervisorFn: fakeSupervisor,
-				startedAt: '2026-06-08T00:00:00Z',
+				tmuxSpawnFn,
 				env: { TMUX: '/tmp/tmux-1/default,1234,0', CAM_SESSION: sessionName },
 			}),
 		);

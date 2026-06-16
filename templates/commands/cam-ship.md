@@ -4,6 +4,8 @@ model: claude-sonnet-4-6
 
 Ship all changes on the current branch: verify PRD complete, run quality gates, push, and open PR.
 
+**CLI thin-proxy invocation**: `cam ship` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-ship` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
+
 Steps:
 
 1. **Verify PRD is complete — MANDATORY, blocks everything if not.**

@@ -27,6 +27,7 @@ import type { PrdSnapshot } from './decide.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
+import type { WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail } from './events.ts';
 
@@ -106,6 +107,21 @@ export interface ReviewDispatchResult {
  * Called with the ACTUAL completed storyId (from handoff/sentinel), not advisory.
  */
 export type WriteSessionMarker = (storyId: string, uuid: string) => void;
+
+/**
+ * Read the worker's structured exit report (scripts/cam/worker-report.json).
+ * Returns the parsed WorkerReport on success, or null when the file is absent
+ * or not yet written. Used by the implement poll loop to detect completion
+ * (US-004); replaces the capturePane + parseAnySentinel path when injected.
+ */
+export type ReadWorkerReport = () => WorkerReport | null;
+
+/**
+ * Erase the worker report file before dispatching a new worker. This prevents
+ * a stale report from a previous run from triggering a false-positive completion
+ * on the first poll tick (US-004). Best-effort: absent file is fine.
+ */
+export type ClearWorkerReport = () => void;
 
 /**
  * Minimal shape of handoff.json consumed by runSupervisor.
@@ -212,6 +228,21 @@ export interface RunSupervisorOptions {
 	 * 'tokens' event. Optional: absent => no 'tokens' events.
 	 */
 	readWorkerTokens?: (uuid: string) => TokensEventDetail | null;
+	/**
+	 * Read the worker's structured exit report (scripts/cam/worker-report.json).
+	 * When injected, the implement poll loop uses this instead of capturePane +
+	 * parseAnySentinel to detect worker completion (US-004). The report file
+	 * presence is the push event; the report content corroborates but never
+	 * sole-gates (prd.json + handoff.json remain the state-primary source).
+	 * Optional: when absent the loop falls back to capturePane + parseAnySentinel.
+	 */
+	readWorkerReport?: ReadWorkerReport;
+	/**
+	 * Erase the worker report file before dispatching a new worker (US-004).
+	 * Prevents a stale report from a previous run from triggering a false-positive
+	 * completion on the first poll tick. Optional: best-effort, absent means no erase.
+	 */
+	clearWorkerReport?: ClearWorkerReport;
 	/**
 	 * Verify that the worker's pass actually landed on origin before the supervisor
 	 * continues the loop (US-001). Runs after writeSessionMarker, before continue.
@@ -412,6 +443,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const readWorkerTokens = opts.readWorkerTokens;
 	const ensurePushed = opts.ensurePushed;
 	const onProgress = opts.onProgress;
+	// US-004: report-file completion detection (optional; falls back to capturePane
+	// + parseAnySentinel when absent for backward compat with existing callers).
+	const readWorkerReport = opts.readWorkerReport;
+	const clearWorkerReport = opts.clearWorkerReport;
 
 	// --- US-001 progress tracking helpers ---
 	// Compute done/total counts from a PRD snapshot (non-operator stories only).
@@ -537,7 +572,20 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				permissionMode,
 			});
 
+			// US-002: set the worker pane label for this phase before respawning.
+			// The pane-border-format #{@cam_label} at the session level picks this up,
+			// rendering the same green pill that the orchestrator and dashboard panes use.
+			// Best-effort: set-option -p is a no-op when the pane is not yet visible.
+			spawn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', workerPaneId, '@cam_label', 'implementer']);
+
+			// US-004: erase any stale report from the previous worker run before
+			// dispatching the new one. This prevents a leftover report file from
+			// triggering a false-positive on the first poll tick of the new run.
+			// Best-effort: clearWorkerReport handles the no-file case gracefully.
+			clearWorkerReport?.();
+
 			// Respawn the worker pane with the implementer command.
+			// respawn-pane -k reuses the existing pane (no new split-window spawned).
 			spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
 
 			// US-013: worker-start. storyId is advisory here (the worker
@@ -556,10 +604,31 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					pollOutcome = 'pane-died';
 					break;
 				}
-				const polledText = capturePane(workerPaneId);
-				if (parseAnySentinel(polledText) !== null) {
-					pollOutcome = 'sentinel';
-					break;
+				// US-004: primary completion-detection path. When a readWorkerReport
+				// reader is injected, poll the report file instead of the pane text.
+				// The file presence is the push event; report content corroborates but
+				// never sole-gates (prd.json + handoff.json are consulted in
+				// readWorkerOutcome below). Falls back to capturePane + parseAnySentinel
+				// when no reader is provided (backward compat with existing callers).
+				if (readWorkerReport !== undefined) {
+					if (readWorkerReport() !== null) {
+						pollOutcome = 'sentinel';
+						break;
+					}
+				} else {
+					// W5 guard (US-FIX-006): only scan the LAST 10 lines of the pane.
+					// The agent sentinel is always the final line of its output. Scanning
+					// the full scrollback risks a false-positive if docs or templates
+					// that contain a literal 'CAM_IMPLEMENTER_STATUS=DONE' string appear
+					// anywhere earlier in the pane history (e.g. from CLAUDE.md displayed
+					// in context or a template file being cat'd). Restricting to the tail
+					// makes the guard exact: a sentinel in old scroll-history cannot fire.
+					const polledText = capturePane(workerPaneId);
+					const tail = polledText.split('\n').slice(-10).join('\n');
+					if (parseAnySentinel(tail) !== null) {
+						pollOutcome = 'sentinel';
+						break;
+					}
 				}
 				// CAM-5: opt-in per-worker token ceiling. Spend = input + cacheCreation
 				// + cacheRead (same as computeOrchBudget). Disabled when maxWorkerTokens
@@ -802,6 +871,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 		// --- Review branch ---
 		if (action.kind === 'review') {
+			// US-002: label the worker pane for the review phase.
+			// Same pattern as the implement branch: set-option -p is best-effort.
+			spawn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', workerPaneId, '@cam_label', 'reviewer']);
+
 			// CAM-37: a reviewer worker can silently no-op (instant-exit /
 			// rate-limited: empty output, no `<review>` verdict) or its pane can be
 			// captured before it flushes, making reviewDispatch return 'error'.
@@ -846,4 +919,124 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// Hard cap reached.
 	notifyTerminal('max-iterations');
 	return { status: 'max-iterations', iterations, lastOutcome };
+}
+
+// ---------------------------------------------------------------------------
+// runSidecarLoop — outer active-flag gate (US-FIX-002 sidecar model)
+// ---------------------------------------------------------------------------
+
+/**
+ * Options for the outer sidecar loop that gates on the active flag.
+ * All dependencies are injectable for unit tests.
+ */
+export interface RunSidecarLoopOptions {
+	/**
+	 * Return the RunSupervisorOptions bag to use when active. Called once per
+	 * sidecar cycle so the wiring can be rebuilt with a fresh onProgress closure.
+	 */
+	buildOpts: () => RunSupervisorOptions;
+	/**
+	 * Read the `active` flag from .claude/cam-loop.local.md.
+	 * Returns undefined when the file is absent or unparseable.
+	 */
+	readActive: () => boolean | undefined;
+	/**
+	 * Set active:false in .claude/cam-loop.local.md after the supervisor
+	 * reaches a terminal state.
+	 */
+	clearActive: () => void;
+	/**
+	 * Sleep between polls when inactive (ms).
+	 * Injected so tests can use a no-op.
+	 */
+	sleep: (ms: number) => void;
+	/**
+	 * Poll interval when idle (no active flag set).
+	 * Default: SIDECAR_IDLE_POLL_MS (2 000 ms).
+	 */
+	idlePollMs?: number;
+	/**
+	 * Check whether there are any non-operator stories with passes:false before
+	 * calling runSupervisor. When this function returns false, the sidecar stays
+	 * idle even if active:true (PRD is already done or empty). When absent,
+	 * always defers to runSupervisor (which will return 'complete' quickly).
+	 */
+	hasPendingStories?: () => boolean;
+	/**
+	 * Acquire the single-supervisor lock. Returns { acquired:true } on success.
+	 * Injected so tests never touch the filesystem.
+	 */
+	acquireLock: () => { acquired: true; release: () => void } | { acquired: false; holderPid: number };
+	/**
+	 * Run the supervisor inner loop. Injected for tests (default: runSupervisor).
+	 */
+	runSupervisorFn?: (opts: RunSupervisorOptions) => Promise<SupervisorResult>;
+}
+
+/** Idle polling interval for the sidecar outer loop (2 seconds). */
+export const SIDECAR_IDLE_POLL_MS = 2_000;
+
+/**
+ * The outer sidecar loop: gated on the `active` flag in cam-loop.local.md.
+ *
+ * When active:false (or absent): idle — poll via sleep.
+ * When active:true AND pending non-operator stories: acquire lock + call runSupervisor.
+ * On terminal SupervisorResult: call clearActive() to set active:false.
+ *
+ * This function runs forever (until the process is killed by cam run's cleanup
+ * handler). All I/O is injectable for unit tests.
+ */
+export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void> {
+	const idlePollMs = opts.idlePollMs ?? SIDECAR_IDLE_POLL_MS;
+	const runSupervisorFn = opts.runSupervisorFn ?? runSupervisor;
+
+	while (true) {
+		const active = opts.readActive();
+
+		if (active !== true) {
+			// Idle: sleep and re-poll.
+			opts.sleep(idlePollMs);
+			continue;
+		}
+
+		// active:true: check if there is work to do.
+		const hasPending = opts.hasPendingStories ? opts.hasPendingStories() : true;
+		if (!hasPending) {
+			// Nothing pending even though active was set. Clear the flag and idle.
+			opts.clearActive();
+			opts.sleep(idlePollMs);
+			continue;
+		}
+
+		// Acquire the supervisor lock before running.
+		const lockResult = opts.acquireLock();
+		if (!lockResult.acquired) {
+			// Another supervisor is already running (e.g. a concurrent cam next).
+			// Idle and retry.
+			opts.sleep(idlePollMs);
+			continue;
+		}
+
+		// Run the deterministic loop. Guards (CAM-36, CAM-44, MAX_ITERATIONS,
+		// event log) all live inside runSupervisor — unchanged.
+		let result: SupervisorResult;
+		try {
+			const supervisorOpts = opts.buildOpts();
+			result = await runSupervisorFn(supervisorOpts);
+		} finally {
+			// Release the lock whether the run succeeded or threw.
+			lockResult.release();
+		}
+
+		// Terminal state reached: set active:false so cam status shows 'paused'.
+		// The onProgress callback inside buildOpts() may have already updated the
+		// state file; clearActive() is the safety net that ensures active:false
+		// even when onProgress was absent or failed.
+		opts.clearActive();
+
+		// Prevent busy-spin on rapid complete/blocked cycles (e.g. empty PRD).
+		// A short sleep lets the sidecar settle before the next poll.
+		void result; // result is available for logging if needed
+		opts.sleep(idlePollMs);
+	}
 }

@@ -1,0 +1,30 @@
+{
+  "lastCompletedStory": {
+    "id": "US-FIX-007",
+    "title": "Docs + templates + embed-vendor re-sync"
+  },
+  "branchName": "cam/CAM-55-single-hub-dispatch",
+  "timestamp": "2026-06-15T22:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-implementer.md",
+    ".claude/commands/cam-next.md",
+    "FLOW.md",
+    "README.md",
+    "scripts/cam/prd.json",
+    "src/vendor/_generated.ts",
+    "templates/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-implementer.md",
+    "templates/commands/cam-next.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-FIX-007 done. Doc + template sync for sidecar model: subagent-orchestrator (loop semantics -> narrate sidecar report), subagent-implementer (invoker: sidecar not orchestrator; session model: report-file primary), cam-next.md (sidecar drives loop, not orchestrator). FLOW.md sections 4.5/7/8 updated (stale in-process refs removed). README.md fixed (-l flag comment, cam next description, 3-pane layout). All mirrors updated in templates/. src/vendor/_generated.ts regenerated via embed-vendor. 921 tests pass, typecheck clean, embed-vendor:check clean. US-FIX-008 is operator-only (requires: operator) -- the autonomous implementer must skip it and emit PRD_COMPLETE.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure doc-sync story: .md files and _generated.ts (from templates). No external JS library touched."
+    }
+  ]
+}

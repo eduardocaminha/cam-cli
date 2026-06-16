@@ -94,16 +94,23 @@ branches, opening PRs).
 
 ## Dispatch protocol
 
-When dispatching a worker, use the `SlashCommand` tool when available. Each
-worker runs in a fresh claude session in this same project's working
-directory and inherits the project's `.claude/` configuration.
+All workflow commands dispatch through a single hub: `cam run` owns the session.
+CLI subcommands (`cam plan`, `cam issue`, `cam next`, `cam review`, `cam ship`)
+are thin-proxies that detect the live session and inject the corresponding
+slash command into your pane via atomic `send-keys` (text + Enter in one call).
+
+### Planning and issue commands
+
+For `/cam-plan`, `/cam-issue`, `/cam-review`, `/cam-ship`: use the `SlashCommand`
+tool when available, or process the injected command when a CLI thin-proxy sends
+it to your pane. Each command runs in your context and returns a result line.
 
 For each dispatch:
 
 1. **Pre-flight from your side**: confirm the project state is sane. Don't
-   spawn `/cam-next` if there's no PRD; don't spawn `/cam-ship` if `prd.json`
+   dispatch `/cam-next` if there's no PRD; don't dispatch `/cam-ship` if `prd.json`
    has unfinished stories.
-2. **Spawn**: invoke the slash command with the right arguments.
+2. **Run or delegate**: invoke the slash command with the right arguments.
 3. **Tail output**: surface the worker's output to the human verbatim. Do
    not summarize unless the human asks.
 4. **Parse result**: every cam slash command emits a final `CAM_*_STATUS=...`
@@ -111,33 +118,54 @@ For each dispatch:
    step.
 5. **Absorb**: append a brief note to your conversation memory ("LIN-42
    plan generated, 5 stories, awaiting approval"). Do NOT mutate journal.md
-   yet — only on cycle close.
+   yet -- only on cycle close.
+
+### Implementer and reviewer workers
+
+Workers (implementer, reviewer) run as interactive TUI `claude` sessions in the
+**titled 3rd pane** (reused across stories; mutex prevents concurrent dispatches).
+A mutex check runs before each dispatch: if 3 panes are present (worker active),
+the dispatch is refused until the worker-pane closes.
+
+**Completion is push-based, not poll-based:**
+
+When a worker finishes, it:
+1. Writes `scripts/cam/worker-report.json` with `{ outcome, story, gates, notes }`.
+2. Sends a one-line summary directly to your pane via `tmux send-keys`:
+   `[cam] US-003 DONE: typecheck ok, 42 pass / 0 fail`
+
+You receive this line in your conversation context. Read `scripts/cam/worker-report.json`
+to get the structured outcome, then decide the next action (dispatch another story,
+run review, or surface a blocker to the human).
 
 ---
 
-## Loop semantics for `/cam-next`
+## Sidecar model: your role in the implement-review cycle
 
-`/cam-next` implements one story at a time. To complete a cycle, you call
-it repeatedly until it emits `CAM_LOOP_STATUS=COMPLETE`.
+You do NOT drive the implement-review loop. The loop is driven by the SIDECAR:
+a deterministic background process (`runSupervisor`, spawned by `cam run`) that
+is gated on the `active` flag in `.claude/cam-loop.local.md`. When `cam next`
+flips `active:true`, the sidecar acquires the supervisor lock and dispatches
+workers autonomously until a terminal state (complete, blocked, awaiting-operator).
 
-Pseudo-procedure:
+Your role in this cycle is to:
 
-```
-while True:
-    spawn /cam-next
-    output = wait_for_worker()
-    status = grep("CAM_LOOP_STATUS=", output)
-    if status == "COMPLETE":
-        break
-    if status == "FIXES_PENDING":
-        continue   # the worker will dispatch /cam-review next iteration
-    if status == "BLOCKED":
-        ask_human("worker reports BLOCKED: ...; how should we proceed?")
-        break
-```
+1. **Narrate the sidecar's terminal report** when a worker pushes a summary line
+   to your pane: `[cam] US-XXX DONE: typecheck ok, 42 pass / 0 fail`. Read
+   `scripts/cam/worker-report.json` and tell the human what happened.
+2. **Route one-shot slash commands**: `/cam-plan`, `/cam-review`, `/cam-ship`,
+   `/cam-issue`. These run in your context and return a result line.
+3. **Surface blockers** when the sidecar pushes `BLOCKED_*` or `PRD_COMPLETE`
+   outcomes. Ask the human how to proceed; then trigger the next step (review,
+   ship, or new implementation run).
 
-The human can interrupt at any point — pause the loop, ask a question, then
-resume by saying "continua" or "go".
+You do NOT decide when to dispatch the next worker. The sidecar does.
+You do NOT poll the pane or check scrollback for sentinels. The push report
+arrives as a direct `send-keys` line in your conversation.
+
+The human can interrupt at any point -- pause the loop, ask a question, then
+resume by saying "continua" or "go" (which re-triggers the sidecar via
+`cam next` or the `/cam-next` injected into your pane).
 
 ---
 

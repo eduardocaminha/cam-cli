@@ -1,0 +1,182 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-55-single-hub-dispatch",
+  "description": "Fix-forward cycle on the CAM-55 branch: the 10 committed stories pass gates but the new code never executed in the prior cycle (ran on the old supervisor). Staff review returned REQUEST CHANGES (FIXES_PENDING:4). This fix-cycle resolves the architecture via a SIDECAR SUPERVISOR (cam run spawns runSupervisor as a detached background process, trigger-driven via the cam-loop.local.md active flag and driving the titled worker-pane while reading scripts/cam/worker-report.json), unbreaks tmux send-keys submission, repairs isSessionStale 3-pane logic, fixes the .cam-orch-ready timing race, and sweeps the W2/W3/W4/W5 warnings.",
+  "issueNumber": 55,
+  "relatedDocs": [
+    "FLOW.md",
+    "README.md",
+    "lessons.md",
+    "scripts/cam/patterns.md",
+    ".claude/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-implementer.md",
+    ".claude/commands/cam-next.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "tmux",
+      "url": "https://man.openbsd.org/tmux.1",
+      "version": "man (openbsd)",
+      "fetchedAt": "2026-06-15",
+      "summary": "send-keys -l makes ALL trailing args literal incl Enter (no submit); for a submitting dispatch use send-keys text Enter WITHOUT -l, or split into send-keys -l text then send-keys Enter. set -p @user-option for per-pane labels.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-FIX-001",
+      "title": "Sidecar supervisor design doc (spike)",
+      "description": "As the next implementer or operator, I need the PINNED sidecar-supervisor architecture documented so subsequent fix stories encode it without re-deciding: (a) cam run spawns runSupervisor as a DETACHED BACKGROUND SIDECAR process (child of the wrapper, not a tmux pane; logs to a file the dashboard can surface); (b) the sidecar is TRIGGER-DRIVEN via the .claude/cam-loop.local.md active flag (when active:true and the PRD has pending non-operator stories, the sidecar runs decideNextAction, respawns the titled worker-pane, polls scripts/cam/worker-report.json, repeats); (c) cam next is a thin-proxy that FLIPS active:true to trigger the sidecar (it may also narrate to the orchestrator, but does NOT ask the LLM orchestrator to dispatch workers); (d) the LLM orchestrator persona is the human interface and surfaces the sidecar's terminal report; the OTHER thin-proxies (plan/issue/ship) still inject natural-language requests into pane %0 via the FIXED send-keys.",
+      "acceptanceCriteria": [
+        "FLOW.md is updated so that §4 and §9 describe the SIDECAR-SUPERVISOR model consistently (W1 reconciled): cam next does NOT runSupervisor in-process; cam run spawns the sidecar; the sidecar drives the worker-pane reading worker-report.json; the LLM orchestrator narrates and routes the other slash-commands.",
+        "FLOW.md explicitly rejects the 'orchestrator absorbs the loop' model (the rejected C2 architecture) and explains why (loses deterministic guards: no-progress streak CAM-36, dead-worker backoff CAM-44, MAX_ITERATIONS, supervisor lock, event log).",
+        "scripts/cam/patterns.md gains one durable bullet capturing the sidecar-supervisor invariant (cam run = sidecar host; sidecar = deterministic loop driver; orchestrator = human interface; cam next = trigger via active flag; worker-report.json = push completion).",
+        "No em-dash in any persisted .md edit (project rule, 2026-05-20).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "requires": null,
+      "notes": "Doc-only story. Files: FLOW.md, scripts/cam/patterns.md. Do NOT touch any src/ file in this story; later stories implement the architecture. Patterns.md invariants to re-check while writing: no em-dash in persisted .md; the new bullet must be actionable (not generality), in the existing voice and length of the surrounding bullets. Read FLOW.md §4 and §9 first and reconcile any contradiction in the SAME edit (W1)."
+    },
+    {
+      "id": "US-FIX-002",
+      "title": "Wire the sidecar supervisor (fixes C2: runSupervisor production caller restored)",
+      "description": "As the cam runtime, I need cam run to spawn runSupervisor as a DETACHED BACKGROUND SIDECAR process (not a tmux pane) and cam next to FLIP .claude/cam-loop.local.md active:true to trigger the sidecar, so that the deterministic guards (decideNextAction sequencing, no-progress streak CAM-36, dead-worker backoff CAM-44, MAX_ITERATIONS, supervisor lock, event log) are alive again and the LLM orchestrator no longer dispatches implement/review workers. The sidecar drives the titled worker-pane and polls scripts/cam/worker-report.json (US-004's report-file mechanism) for completion, replacing the dead scrollback-poll path.",
+      "acceptanceCriteria": [
+        "cam run (src/commands/run.ts) spawns runSupervisor as a detached background child process; logs are redirected to a file under .claude/ so the dashboard can surface them.",
+        "cam next (src/commands/next.ts) is a thin-proxy that flips .claude/cam-loop.local.md active:true to trigger the sidecar, and may inject a natural-language narration into the orchestrator pane via the fixed send-keys (US-FIX-003) but does NOT call runSupervisor in-process.",
+        "src/supervisor/loop.ts is gated on the active flag (idle when active:false; runs the deterministic loop when active:true with pending non-operator stories; sets active:false and writes a terminal report on terminal).",
+        "grep -n 'runSupervisor(' src/ index.ts shows at least one PRODUCTION call site (not just test fixtures): explicit assertion in the story's verification step.",
+        "A unit test asserts cam run spawns the sidecar (via an injected spawn fake) and that the sidecar polls/idles on active:false and runs on active:true.",
+        "All existing supervisor guards remain intact (no-progress streak CAM-36, dead-worker backoff CAM-44, MAX_ITERATIONS, supervisor lock, event log): assert via unit tests inheriting from the existing loop tests.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "requires": null,
+      "notes": "Files likely touched: src/commands/run.ts (spawn sidecar; cleanup on SIGINT/SIGTERM), src/commands/next.ts (thin-proxy flips active:true), src/supervisor/loop.ts (active-flag gate; reuse the US-004 ReadWorkerReport injected reader). Patterns.md invariants to re-check: Bun runtime (use Bun.spawn for the detached sidecar; pass {stdio:'ignore'} or redirect to a Bun.file write stream); noUncheckedIndexedAccess on the parsed cam-loop.local.md frontmatter; never reintroduce claude -p in any worker argv (CAM-42); never register a --permission-mode flag on cam next or cam run; conventional commits. Re-check the existing state-primary invariant: prd.json passes: + handoff.json remain the source of truth; the report file corroborates."
+    },
+    {
+      "id": "US-FIX-003",
+      "title": "Fix send-keys submit (fixes C1: thin-proxy + worker-exit-push actually submit)",
+      "description": "As any thin-proxy (cam plan/next/issue/review/ship) or the worker-exit pusher, I need tmux send-keys to actually SUBMIT the line (a newline reaches the program) instead of silently injecting 'Enter' as literal text. Empirically: `tmux send-keys -l 'HELLO' Enter` yields pane text `HELLOEnter` with no newline submitted, because -l makes ALL trailing args literal including Enter. Fix: drop -l on the submit (working precedent: src/ui/Dashboard.tsx:190 and src/retry/tmux.ts:13 use `send-keys -t pane text Enter` with no -l), OR split into two calls (`send-keys -l text` then `send-keys Enter`).",
+      "acceptanceCriteria": [
+        "src/tmux/dispatch.ts sendKeysWhenIdle's submit argv NO LONGER has '-l' immediately before 'Enter': either drop -l for the whole call, or split into two calls (send-keys -l text, then send-keys Enter).",
+        "src/supervisor/worker-report.ts (worker-exit one-line summary push) is fixed the same way.",
+        ".claude/agents/subagent-implementer.md (and any other agent doc that documents the send-keys form) is updated to reflect the corrected argv; the templates/ mirror is also updated.",
+        "An EMPIRICAL / integration test drives a real tmux pane through the helper and asserts the line was SUBMITTED (a newline reached the program), not merely that the argv shape is correct. Suggested approach: spawn a real tmux server in a unique socket, send a literal payload via the helper, capture-pane and assert the next prompt line is present (proving Enter was processed).",
+        "No unit-only-asserts-argv test is accepted as a substitute for the empirical check above (the bug we are fixing IS the argv-vs-runtime mismatch).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "requires": null,
+      "notes": "Files: src/tmux/dispatch.ts (line ~189-193 the submit call), src/supervisor/worker-report.ts (worker-exit push), .claude/agents/subagent-implementer.md (and any other agent doc that documents the send-keys form), templates/.claude/agents/subagent-implementer.md mirror. Empirical test pattern: spawn tmux with a private socket via tmux -L <unique>, new-session -d, run a tiny `cat > /tmp/foo` in the pane, send payload via the helper, then read /tmp/foo to confirm a trailing newline (proving Enter was submitted). Clean up the tmux server with `tmux -L <unique> kill-server` in afterAll. Patterns.md invariants to re-check: send-keys submit has NO -l before Enter (this story is what creates that invariant; the existing patterns.md bullet that says '-l for literal payloads' must be updated to call out the Enter-arg pitfall); no em-dash in any persisted .md edit; Bun runtime (use Bun.spawnSync for the test tmux calls)."
+    },
+    {
+      "id": "US-FIX-004",
+      "title": "Fix isSessionStale 3-pane logic (fixes C3: stray pane is stale; labeled worker-pane is alive)",
+      "description": "As the dispatch layer, I need src/tmux/session.ts isSessionStale (lines 158-163) to identify the 3rd pane positively (not via 'any pane has a label' which is trivially true because orchestrator + dashboard are always labeled), and require that the 3rd pane (the one that is NOT orchestrator and NOT dashboard) carries a worker @cam_label. A stray/dead unlabeled 3rd pane (e.g. a leftover bash shell) must be 'stale'.",
+      "acceptanceCriteria": [
+        "isSessionStale identifies orchestrator and dashboard panes by their @cam_label values ('orchestrator', 'dashboard') and treats the REMAINING 3rd pane as the worker-pane.",
+        "A 3-pane session whose 3rd pane has no @cam_label OR has a non-worker label is reported 'stale'.",
+        "A 3-pane session whose 3rd pane carries a worker @cam_label (e.g. 'implementer', 'reviewer', or the documented worker-label values) is reported 'alive'.",
+        "The test fixture is production-realistic: orchestrator and dashboard ALWAYS labeled; the old all-empty-labels fixture is removed or rewritten.",
+        "Unit tests cover: 2-pane alive; 3-pane with labeled worker alive; 3-pane with stray unlabeled 3rd stale; 4+-pane stale.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "requires": null,
+      "notes": "Files: src/tmux/session.ts (isSessionStale ~line 136-165), test/tmux-session.test.ts. The @cam_label value for the orchestrator and dashboard is set in src/commands/run.ts setupPanes; cross-reference those literal values in the test fixture. Patterns.md invariants to re-check: noUncheckedIndexedAccess on the split('\\t') results (label may be missing entirely); inject runTmux fake for unit tests, do not call real tmux; Bun runtime; the @cam_label pane-labeling pattern bullet in patterns.md (US-002) is the canonical reference."
+    },
+    {
+      "id": "US-FIX-005",
+      "title": "Fix .cam-orch-ready timing race (fixes C4: marker written by orchestrator, not by parent)",
+      "description": "As a thin-proxy bootstrapping cam run, I need .claude/.cam-orch-ready to mean AGENT READY (not 'parent process is about to spawn'). Today src/commands/run.ts:281-285 writes the marker synchronously in the cam run parent BEFORE the orchestrator claude process is even spawned (respawn at ~line 308), so a thin-proxy sees 'ready' instantly and pushes send-keys into a pane where claude has not loaded.",
+      "acceptanceCriteria": [
+        "src/commands/run.ts NO LONGER writes .claude/.cam-orch-ready in the parent before the respawn-pane call.",
+        "The orchestrator boot prompt (buildOrchestratorBootPrompt) instructs the orchestrator to write .claude/.cam-orch-ready as its FIRST action after boot (i.e. the marker means the agent has loaded).",
+        "SIGINT/SIGTERM cleanup in src/commands/run.ts removes the marker on parent exit (a crash must not leave a stale marker).",
+        "The thin-proxy bootstrap-wait helper (src/tmux/bootstrap-wait.ts or wherever US-006 placed it) re-validates orchestrator liveness via the orchestratorAlive predicate AFTER seeing the marker, before trusting it (defense-in-depth).",
+        "Unit tests cover: marker absent -> wait; marker present + orchestrator alive -> proceed; marker present + orchestrator dead -> fall through to bootstrap or fail with clear UX.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 5,
+      "passes": true,
+      "requires": null,
+      "notes": "Files: src/commands/run.ts (remove the premature writeFileSync at ~line 281-285; add SIGINT/SIGTERM cleanup if not already), src/supervisor/boot-prompt.ts or wherever buildOrchestratorBootPrompt lives (add the 'first action: write the marker' instruction), the thin-proxy bootstrap-wait helper (re-validate liveness). Patterns.md invariants to re-check: Bun.file for marker writes/reads (orchestrator side will use the WriteFile tool or echo); noUncheckedIndexedAccess; no em-dash in persisted .md (boot-prompt text); the bootstrap-wait helper invariant from US-006 (mirror setup.ts sentinel-poll pattern); SIGINT/SIGTERM cleanup must be idempotent (already-removed marker is not an error)."
+    },
+    {
+      "id": "US-FIX-006",
+      "title": "Warnings sweep (W2/W3/W4/W5)",
+      "description": "As the next operator coming in cold, I need the small staff-review warnings cleaned in one focused story: (W2) scripts/cam/worker-report.json must be gitignored in BOTH .gitignore and templates/.gitignore so it cannot be `git add -A`d into a downstream project; (W3) the BUSY_GLYPHS braille regex in src/tmux/dispatch.ts:81 must cover the FULL braille spinner cycle (today it covers ~half, so isOrchPaneIdle returns true mid-spinner ~half the time, defeating US-008); (W4) add behavioral no-permission-mode tests for parseShipArgs and parseReviewArgs (the existing textual smoke is not enough); (W5) delete-or-guard the loop.ts scrollback-poll FALLBACK (~lines 618-624) so docs containing the literal 'CAM_IMPLEMENTER_STATUS=DONE' sentinel cannot false-trigger now that the sidecar reads worker-report.json.",
+      "acceptanceCriteria": [
+        "scripts/cam/worker-report.json is in .gitignore AND in templates/.gitignore (mirrored).",
+        "BUSY_GLYPHS in src/tmux/dispatch.ts is widened to cover the FULL braille spinner range (U+2800 to U+28FF is the full braille block; the specific spinner glyphs claude uses are within ⠁-⠿; verify against the actual glyphs claude renders before settling on the final character class). The widened regex still includes the active tool-call glyph ◆.",
+        "Behavioral no-permission-mode tests exist for parseShipArgs and parseReviewArgs: extract `parseShipArgs` and `parseReviewArgs` as named exports in src/commands/ship.ts and src/commands/review.ts (mirroring the existing `parseNextArgs`/`parsePlanArgs`/`parseIssueArgs` pattern), then add behavioral assertions to test/no-permission-mode-flag.test.ts that each parser rejects `--permission-mode` at the parse layer (same shape as the existing parser assertions). If ship/review legitimately take no flags worth a parser, instead assert at the command entry that `--permission-mode` is not accepted; pick the parse-layer path by default.",
+        "src/supervisor/loop.ts scrollback-poll fallback (~lines 618-624) is either deleted OR guarded so that a literal 'CAM_IMPLEMENTER_STATUS=DONE' string appearing in docs/scrollback cannot trip a false completion. If guarded, the guard is explicit and unit-tested.",
+        "Vendor drift check passes (bun run embed-vendor:check)",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 6,
+      "passes": true,
+      "requires": null,
+      "notes": "Files: .gitignore, templates/.gitignore, src/tmux/dispatch.ts (BUSY_GLYPHS regex line ~81), src/supervisor/loop.ts (scrollback fallback ~618-624), test/<new test files for parseShipArgs/parseReviewArgs behavioral checks>. The W3 braille widening should ALSO be reflected in the patterns.md bullet on idle-guarantee (US-008) if the character class is documented there; if not, no doc change required. Patterns.md invariants to re-check: noUncheckedIndexedAccess on regex captures; never register --permission-mode on a subcommand (the behavioral test is what enforces this); Bun runtime; conventional commits. Extract `parseShipArgs` and `parseReviewArgs` as named exports in src/commands/ship.ts and src/commands/review.ts (mirroring the existing `parseNextArgs`/`parsePlanArgs`/`parseIssueArgs` pattern), then add behavioral assertions to test/no-permission-mode-flag.test.ts that each parser rejects `--permission-mode` at the parse layer (same shape as the existing parser assertions). If ship/review legitimately take no flags worth a parser, instead assert at the command entry that `--permission-mode` is not accepted; pick the parse-layer path by default. templates/.gitignore does not exist yet; create it (so `cam init` mirrors the ignore into downstream projects) and ensure it is picked up by embed-vendor if templates/ is vendored."
+    },
+    {
+      "id": "US-FIX-007",
+      "title": "Docs + templates + embed-vendor re-sync",
+      "description": "As the next operator (or implementer) coming cold, I need all .claude/** <-> templates/** mirrors re-synced for the changes in US-FIX-001 through US-FIX-006, and src/vendor/_generated.ts regenerated so the embedded vendor reflects the new dispatch model (sidecar supervisor, fixed send-keys, fixed isSessionStale, fixed marker timing).",
+      "acceptanceCriteria": [
+        ".claude/agents/subagent-orchestrator.md and .claude/agents/subagent-implementer.md describe the sidecar-supervisor model (orchestrator narrates the sidecar's terminal report; implementer is dispatched by the sidecar, not by the orchestrator).",
+        ".claude/commands/cam-next.md describes the thin-proxy + active-flag trigger (no longer describes runSupervisor in-process; no longer describes scrollback-poll).",
+        ".claude/commands/cam-plan.md, cam-issue.md, cam-review.md, cam-ship.md describe the thin-proxy + fixed send-keys submit behavior.",
+        "README.md is updated to reflect the single-hub + sidecar-supervisor model.",
+        "All changes are mirrored into templates/ (agents, commands, scripts/cam where applicable).",
+        "bun run embed-vendor regenerates src/vendor/_generated.ts.",
+        "Vendor drift check passes (bun run embed-vendor:check)",
+        "No em-dash in any persisted .md edit (project rule, 2026-05-20).",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 7,
+      "passes": true,
+      "requires": null,
+      "notes": "Files: .claude/agents/subagent-orchestrator.md, .claude/agents/subagent-implementer.md, .claude/commands/cam-next.md, .claude/commands/cam-plan.md, .claude/commands/cam-issue.md, .claude/commands/cam-review.md, .claude/commands/cam-ship.md, README.md, templates/** (mirror), src/vendor/_generated.ts (regenerated via bun run embed-vendor). Patterns.md invariants to re-check: no em-dash in persisted .md; templates/ and .claude/ must stay in lockstep, then embed-vendor regenerates src/vendor/_generated.ts; conventional commits; the doc must explicitly describe the SIDECAR (not 'orchestrator absorbs the loop') so a cold reader cannot regress to the rejected C2 architecture."
+    },
+    {
+      "id": "US-FIX-008",
+      "title": "Operator smoke: REWIRED dispatch end-to-end (C1+C2+C3+C4 all live)",
+      "description": "As the operator, I need to hand-run a real cam plan + real cam run smoke that exercises the rewired dispatch end-to-end: a thin-proxy actually SUBMITS to the orchestrator pane (proves C1 fixed); the sidecar drives the titled worker-pane reading scripts/cam/worker-report.json (proves C2 fixed); a single titled worker-pane is reused with the mutex blocking a concurrent dispatch; isSessionStale shows no false-positive on the worker-pane (proves C3 fixed); .cam-orch-ready means agent-ready (proves C4 fixed: a thin-proxy started immediately after cam run waits for the marker AND the orchestrator is actually loaded when send-keys fires).",
+      "acceptanceCriteria": [
+        "Real cam plan <N> + cam run reproduces the CAM-55 scenario AFTER the fixes (not the pre-fix runtime).",
+        "A thin-proxy (e.g. cam next or cam ship) issued during the run is observed to actually submit (the orchestrator pane shows the line as a submitted command, not literal 'Enter' text). Capture a screencap or terminal recording proving the submit.",
+        "The sidecar (background runSupervisor process) is observed driving the worker-pane (via process list + .claude/cam-supervisor.log or equivalent), and worker-report.json is created/read across at least one story dispatch.",
+        "Exactly one titled worker-pane is observed across the run (reused, not a fresh pane per dispatch); a concurrent cam next attempt while the worker is active surfaces the US-009 mutex UX (no 4th pane spawned).",
+        "isSessionStale returns 'alive' throughout the worker's lifetime AND 'stale' when a stray unlabeled pane is manually injected (operator hand-test).",
+        ".cam-orch-ready is absent immediately after cam run starts and appears only after the orchestrator finishes boot; a thin-proxy started during the gap waits and then succeeds.",
+        "Operator records the run (terminal recording or screencaps of the 5 checks above) and flips this story passes: true manually.",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)"
+      ],
+      "priority": 8,
+      "passes": true,
+      "requires": "operator",
+      "notes": "Operator-only story (real tmux + real claude + real keypresses); the autonomous implementer must exit BLOCKED_OPERATOR_REQUIRED. Patterns.md invariants to re-check (operator runbook side): never run a mutating command (cam init, cam plan) against an unrelated working tree; this smoke runs on this repo's branch on purpose. Capture worker-report.json and .claude/cam-supervisor.log (or equivalent) artifacts for the journal. The 5 checks map 1:1 to C1/C2/C3/C4 plus the mutex/single-pane invariant from the original CAM-55. SMOKE OUTCOME (2026-06-15): ran live against real tmux + real claude. PROVEN: C1 (thin-proxy submits: 'cam next' showed 'Sent task prompt to orchestrator pane %0' and the prompt landed submitted at the orchestrator prompt), C2 (sidecar process spawned + alive), C3 (isSessionStale alive on 2-pane, stale on injected stray pane), C4 (.cam-orch-ready absent at boot, appears after orchestrator boot), plus orchestrator detection + getOrchPaneId. The smoke FOUND and FIXED two ship-blocker criticals the 3 CLEAN review rounds missed: (1) orchestratorAlive keyed on pane_current_command (orchestrator runs under a bash wrapper) -> fixed to @cam_label; (2) tmux converts TAB to '_' in -F output, breaking getOrchPaneId AND isSessionStale -> fixed to ';' separator. A real-tmux integration test now guards this class. DEFERRED by operator decision: the full worker-dispatch E2E (sidecar dispatching a real claude worker + worker-report across a story + mutex) was not exercised live (needs a scratch-branch dummy story); the introspection layer it depends on is now covered by the integration test."
+    }
+  ],
+  "review": {
+    "roundsCompleted": 3,
+    "maxRounds": 3,
+    "lastReviewSha": "e8c3d32",
+    "lastVerdict": "CLEAN"
+  }
+}

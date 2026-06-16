@@ -1,6 +1,8 @@
 Review all changes on the current branch vs `main` using the `subagent-reviewer` agent.
 
-The `subagent-reviewer` runs in a **separate context** with read-only access. It receives only the diff and acceptance criteria — not the generator's reasoning or progress notes.
+**CLI thin-proxy invocation**: `cam review` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-review` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
+
+The `subagent-reviewer` runs in a **separate context** with read-only access. It receives only the diff and acceptance criteria -- not the generator's reasoning or progress notes.
 
 The review-fix cycle is **bounded**: at most `CAM_MAX_REVIEW_ROUNDS` rounds (default 3, env override). Each round either ends with `<review>CLEAN</review>` (loop terminates with `<promise>COMPLETE</promise>`) or with N findings that get turned into `US-RX-NNN` stories for the implementer to pick up next iteration. After max-rounds, ship with explicit debt rather than spinning forever.
 

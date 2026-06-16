@@ -1,15 +1,14 @@
-// test/plan.test.ts
+// test/review.test.ts
 //
-// Unit tests for `cam plan` (US-006: thin-proxy to orchestrator).
+// Unit tests for `cam review` (US-007: thin-proxy to orchestrator).
 //
 // What we cover:
-//   - parsePlanArgs: positional integer, leading-# tolerance, bare (no arg),
-//     and standardized error on any present-but-non-integer token.
-//   - runPlan (hit path): orchestrator alive → send-keys /cam-plan [N] and return 0.
-//   - runPlan (miss path): bootstraps cam run, waits for marker, then send-keys.
-//   - runPlan: bootstrap failure returns 1.
-//   - runPlan: marker timeout returns 1.
-//   - runPlan: missing orch pane returns 1.
+//   - parseReviewArgs: --help/-h, unknown flag rejection.
+//   - runReview (hit path): orchestrator alive -> send-keys /cam-review and return 0.
+//   - runReview (miss path): bootstraps cam run, waits for marker, then send-keys.
+//   - runReview: bootstrap failure returns 1.
+//   - runReview: marker timeout returns 1.
+//   - runReview: missing orch pane returns 1.
 //   - send-keys is atomic (NO -l; -l would make "Enter" literal; text + Enter same call).
 
 import { describe, expect, test } from 'bun:test';
@@ -18,8 +17,8 @@ import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import { runPlan } from '../src/commands/plan.ts';
-import { parsePlanArgs } from '../index.ts';
+import { runReview } from '../src/commands/review.ts';
+import { parseReviewArgs } from '../index.ts';
 import {
 	projectSessionName,
 	type SpawnFn as TmuxSpawnFn,
@@ -34,10 +33,6 @@ interface TmuxCall {
 
 /**
  * Build a fake TmuxSpawnFn that simulates a session with an orchestrator pane.
- *
- * @param sessionExists  Whether has-session returns 0 (session exists).
- * @param orchAlive      Whether pane index 0 is running 'claude'.
- * @param orchPaneId     Pane ID returned by list-panes for index 0.
  */
 function makeFakeTmuxSpawn(opts: {
 	sessionExists?: boolean;
@@ -59,7 +54,6 @@ function makeFakeTmuxSpawn(opts: {
 			status: 0,
 			signal: null,
 		};
-		// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
 		const subcommand = args[0] === '-L' ? args[2] : args[0];
 
 		if (subcommand === 'has-session') {
@@ -71,16 +65,14 @@ function makeFakeTmuxSpawn(opts: {
 			const fIdx = args.indexOf('-F');
 			const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
 			if (fmt === '#{@cam_label}') {
-				// For orchestratorAlive: return a pane labeled 'orchestrator' (or not).
-				// The orchestrator runs claude under a bash respawn-wrapper, so liveness
-				// is keyed on @cam_label, not pane_current_command.
+				// orchestratorAlive keys on @cam_label (the orchestrator runs claude
+				// under a bash respawn-wrapper, so pane_current_command is never claude).
 				return {
 					...base,
 					stdout: Buffer.from(orchAlive ? `orchestrator\ndashboard\n` : `dashboard\n`),
 				};
 			}
 			if (fmt === '#{pane_index};#{pane_id}') {
-				// For getOrchPaneId: return pane 0 with orchPaneId.
 				return { ...base, stdout: Buffer.from(`0;${orchPaneId}\n`) };
 			}
 			if (fmt === '#{pane_id}') {
@@ -106,122 +98,94 @@ function makeFakeTmuxSpawn(opts: {
 	return fn;
 }
 
-// --- parsePlanArgs (strict, number-only CLI contract) ----------------------
+// --- parseReviewArgs -------------------------------------------------------
 
-describe('parsePlanArgs', () => {
-	test('parses a positional integer issue number', () => {
-		expect(parsePlanArgs(['21'])).toEqual({ issue: 21, help: false });
+describe('parseReviewArgs', () => {
+	test('bare (no args) returns help: false', () => {
+		expect(parseReviewArgs([])).toEqual({ help: false });
 	});
 
-	test('tolerates a leading `#` on the number', () => {
-		expect(parsePlanArgs(['#21'])).toEqual({ issue: 21, help: false });
+	test('--help sets help: true', () => {
+		expect(parseReviewArgs(['--help'])).toEqual({ help: true });
 	});
 
-	test('bare (no argument) leaves issue undefined', () => {
-		expect(parsePlanArgs([])).toEqual({ help: false });
+	test('-h sets help: true', () => {
+		expect(parseReviewArgs(['-h'])).toEqual({ help: true });
 	});
 
-	test('--help / -h set the help flag', () => {
-		expect(parsePlanArgs(['--help'])).toEqual({ help: true });
-		expect(parsePlanArgs(['-h'])).toEqual({ help: true });
+	test('unknown flag returns null', () => {
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		try {
+			expect(parseReviewArgs(['--bogus'])).toBeNull();
+		} finally {
+			process.stderr.write = original;
+		}
 	});
 
-	test('rejects a present-but-non-integer token (returns null)', () => {
-		expect(parsePlanArgs(['abc'])).toBeNull();
-		expect(parsePlanArgs(['1.5'])).toBeNull();
-		expect(parsePlanArgs(['21abc'])).toBeNull();
-		expect(parsePlanArgs(['#abc'])).toBeNull();
-		expect(parsePlanArgs([''])).toBeNull();
-	});
-
-	test('rejects zero and negatives', () => {
-		expect(parsePlanArgs(['0'])).toBeNull();
-		expect(parsePlanArgs(['-5'])).toBeNull();
-	});
-
-	test('rejects the removed --issue flag and any unknown option', () => {
-		expect(parsePlanArgs(['--issue', '21'])).toBeNull();
-		expect(parsePlanArgs(['--issue=21'])).toBeNull();
-		expect(parsePlanArgs(['--bogus'])).toBeNull();
-	});
-
-	test('rejects more than one positional argument', () => {
-		expect(parsePlanArgs(['21', '22'])).toBeNull();
+	test('does not accept --permission-mode (returns null)', () => {
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		try {
+			expect(parseReviewArgs(['--permission-mode', 'acceptEdits'])).toBeNull();
+		} finally {
+			process.stderr.write = original;
+		}
 	});
 });
 
-// --- runPlan (thin-proxy): hit path ----------------------------------------
+// --- runReview (thin-proxy): hit path ----------------------------------------
 
-describe('runPlan (thin-proxy, hit path)', () => {
-	test('sends /cam-plan to orchestrator pane and returns 0', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-hit-'));
+describe('runReview (thin-proxy, hit path)', () => {
+	test('sends /cam-review to orchestrator pane and returns 0', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-hit-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%2' });
 
-		const code = await runPlan({
+		const code = await runReview({
 			cwd: tmpDir,
 			tmuxSpawnFn: spawnFn,
 		});
 
 		expect(code).toBe(0);
 
-		// Verify send-keys was called with /cam-plan.
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
 		expect(sendKeys).toBeDefined();
 		expect(sendKeys?.args).not.toContain('-l');
-		expect(sendKeys?.args).toContain('/cam-plan');
+		expect(sendKeys?.args).toContain('/cam-review');
 		expect(sendKeys?.args).toContain('Enter');
 		expect(sendKeys?.args).toContain('%2');
 	});
 
-	test('sends /cam-plan N when issue is provided', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-hit-issue-'));
-		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%3' });
-
-		const code = await runPlan({
-			cwd: tmpDir,
-			tmuxSpawnFn: spawnFn,
-			issue: 42,
-		});
-
-		expect(code).toBe(0);
-		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-		expect(sendKeys?.args).toContain('/cam-plan 42');
-		expect(sendKeys?.args).not.toContain('-l');
-		expect(sendKeys?.args).toContain('Enter');
-	});
-
 	test('send-keys is atomic: text and Enter are in the same send-keys call', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-atomic-'));
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-atomic-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
-		await runPlan({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
 
-		// One send-keys call with both the text and 'Enter' as separate args.
 		const sendKeys = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
 		expect(sendKeys).toHaveLength(1);
 		const call = sendKeys[0];
-		// 'Enter' must be a discrete argument (not concatenated with the text).
 		const enterIdx = call?.args.lastIndexOf('Enter') ?? -1;
-		const textIdx = call?.args.findIndex((a) => a.startsWith('/cam-plan')) ?? -1;
+		const textIdx = call?.args.findIndex((a) => a === '/cam-review') ?? -1;
 		expect(enterIdx).toBeGreaterThan(textIdx);
 	});
 
 	test('does NOT use -l (regression: -l makes "Enter" literal, never submits)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-literal-'));
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-literal-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
-		await runPlan({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
 
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
 		expect(sendKeys?.args).not.toContain('-l');
 	});
 
 	test('skips bootstrap when orchestrator is already alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-no-bootstrap-'));
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-no-bootstrap-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		let bootstrapCalled = false;
 
-		await runPlan({
+		await runReview({
 			cwd: tmpDir,
 			tmuxSpawnFn: spawnFn,
 			bootstrapFn: async () => { bootstrapCalled = true; return true; },
@@ -231,14 +195,14 @@ describe('runPlan (thin-proxy, hit path)', () => {
 	});
 
 	test('returns 1 and does not send-keys when pane mutex is busy', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-busy-'));
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-busy-'));
 		const spawnFn = makeFakeTmuxSpawn({
 			sessionExists: true,
 			orchAlive: true,
 			paneMutexBusy: true,
 		});
 
-		const code = await runPlan({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		const code = await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
 
 		expect(code).toBe(1);
 		// send-keys must NOT have been called (worker is still running)
@@ -247,17 +211,16 @@ describe('runPlan (thin-proxy, hit path)', () => {
 	});
 });
 
-// --- runPlan (thin-proxy): miss path ----------------------------------------
+// --- runReview (thin-proxy): miss path ----------------------------------------
 
-describe('runPlan (thin-proxy, miss path)', () => {
+describe('runReview (thin-proxy, miss path)', () => {
 	test('bootstraps + waits for marker + sends keys when orch not alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-miss-'));
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-miss-'));
 
 		let bootstrapCalled = false;
 		let markerPresent = false;
-		let orchReady = false; // transitions to true when bootstrapFn fires
+		let orchReady = false;
 
-		// Stateful spawn fn: session/orch not alive until bootstrapFn sets orchReady.
 		const calls: TmuxCall[] = [];
 		const statefulSpawnFn: TmuxSpawnFn & { calls: TmuxCall[] } = Object.assign(
 			(cmd: string, args: string[]) => {
@@ -306,7 +269,7 @@ describe('runPlan (thin-proxy, miss path)', () => {
 			return true;
 		};
 
-		const code = await runPlan({
+		const code = await runReview({
 			cwd: tmpDir,
 			tmuxSpawnFn: statefulSpawnFn,
 			bootstrapFn,
@@ -318,48 +281,46 @@ describe('runPlan (thin-proxy, miss path)', () => {
 		expect(code).toBe(0);
 		expect(bootstrapCalled).toBe(true);
 
-		// send-keys should have fired.
 		const sendKeys = statefulSpawnFn.calls.find((c) => c.args[2] === 'send-keys');
 		expect(sendKeys).toBeDefined();
-		expect(sendKeys?.args).toContain('/cam-plan');
+		expect(sendKeys?.args).toContain('/cam-review');
 	});
 
 	test('returns 1 when bootstrap fails', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-boot-fail-'));
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-boot-fail-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
-		const code = await runPlan({
+		const code = await runReview({
 			cwd: tmpDir,
 			tmuxSpawnFn: spawnFn,
-			bootstrapFn: async () => false, // bootstrap fails
+			bootstrapFn: async () => false,
 		});
 
 		expect(code).toBe(1);
 	});
 
 	test('returns 1 when marker never appears (timeout)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-timeout-'));
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-timeout-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
-		const code = await runPlan({
+		const code = await runReview({
 			cwd: tmpDir,
 			tmuxSpawnFn: spawnFn,
-			bootstrapFn: async () => true, // bootstrap succeeds
-			statFn: () => false, // marker never appears
+			bootstrapFn: async () => true,
+			statFn: () => false,
 			sleepFn: () => {},
-			waitTimeoutMs: 5, // tiny budget
+			waitTimeoutMs: 5,
 		});
 
 		expect(code).toBe(1);
 	});
 });
 
-// --- runPlan (thin-proxy): pane-not-found path ------------------------------
+// --- runReview (thin-proxy): pane-not-found path ------------------------------
 
-describe('runPlan (thin-proxy, pane lookup)', () => {
+describe('runReview (thin-proxy, pane lookup)', () => {
 	test('returns 1 when getOrchPaneId returns null (list-panes fails)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-nopane-'));
-		// Session exists, orch alive, but list-panes returns empty for pane-id lookup.
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-nopane-'));
 		const spawnFn: TmuxSpawnFn & { calls: TmuxCall[] } = (() => {
 			const calls: TmuxCall[] = [];
 			const fn = ((cmd: string, args: string[]) => {
@@ -373,15 +334,13 @@ describe('runPlan (thin-proxy, pane lookup)', () => {
 					signal: null,
 				};
 				const subcommand = args[0] === '-L' ? args[2] : args[0];
-				if (subcommand === 'has-session') return base; // session exists (status 0)
+				if (subcommand === 'has-session') return base;
 				if (subcommand === 'list-panes') {
 					const fIdx = args.indexOf('-F');
 					const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
 					if (fmt === '#{@cam_label}') {
-						// orchestratorAlive: a pane labeled 'orchestrator' exists
 						return { ...base, stdout: Buffer.from('orchestrator\ndashboard\n') };
 					}
-					// getOrchPaneId: return empty (no pane found)
 					return { ...base, stdout: Buffer.from('') };
 				}
 				return base;
@@ -390,20 +349,20 @@ describe('runPlan (thin-proxy, pane lookup)', () => {
 			return fn;
 		})();
 
-		const code = await runPlan({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		const code = await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
 		expect(code).toBe(1);
 	});
 });
 
-// --- runPlan: session name used in all tmux calls ---------------------------
+// --- runReview: session name used in all tmux calls ---------------------------
 
-describe('runPlan: session name', () => {
+describe('runReview: session name', () => {
 	test('all tmux calls include the project session name', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-sessname-'));
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-sessname-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 		const sessionName = projectSessionName(tmpDir);
 
-		await runPlan({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
 
 		const callsWithSession = spawnFn.calls.filter((c) => c.args.includes(sessionName));
 		expect(callsWithSession.length).toBeGreaterThan(0);

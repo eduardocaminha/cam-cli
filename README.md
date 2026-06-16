@@ -7,11 +7,8 @@ long-lived orchestrator agent that drives `/cam-plan`, `/cam-next`,
 
 Built on Bun + TypeScript. Distributed as a single-file binary built from source.
 
-> **Status:** orchestrator-driven loop live. `cam init` scaffolds the project,
-> `cam run` opens the single per-project session (2-pane layout: orchestrator + navigable dashboard), `cam plan` and
-> `cam issue` are thin pane launchers that open inside that session, and `cam next`
-> runs the implement-review-complete supervisor in-process. The orchestrator exit
-> respawns on a token-budget handoff, otherwise tears down the session.
+> **Status:** single-hub dispatch model live. `cam init` scaffolds the project,
+> `cam run` opens the single per-project session (2-pane layout: orchestrator + navigable dashboard), and all CLI subcommands (`cam plan`, `cam issue`, `cam next`, `cam review`, `cam ship`) are thin-proxies that inject into the orchestrator pane via atomic `send-keys`. Workers run in a titled 3rd pane; completion is push-based (worker writes a report file + sends a summary line to the orchestrator). The orchestrator exit respawns on a token-budget handoff, otherwise tears down the session.
 
 ---
 
@@ -130,7 +127,7 @@ system prompt.
 cam init [options]          Validate the machine, then run the project-setup wizard
 cam run  [options]          Open or attach the single per-project session (2-pane layout)
 cam plan [<N>]              Open a planning pane in the project session (thin launcher)
-cam next [options]          Drive the implement-review-complete loop (in-process supervisor)
+cam next [options]          Trigger the sidecar loop (flips active:true, thin-proxy)
 cam issue "<text>"          Open an issue-creation pane in the project session (thin launcher)
 cam claude [args...]        Run claude with built-in auto-retry on rate limits
 cam dashboard               Navigable TUI: browse stories, dispatch /cam-* commands (pane 0.1; also standalone)
@@ -156,18 +153,13 @@ a stale tmux server left over from a dead security session denies TCC access to
 By using `tmux -L cam`, cam always starts from a fresh server with the correct
 security context for the current login session.
 
-The session layout has two panes:
+The session layout has two permanent panes plus an optional worker pane:
 
-- **Pane 0.0 (left):** orchestrator claude process (boots the `subagent-orchestrator` agent, which drives `/cam-plan`, `/cam-next`, `/cam-review`, `/cam-ship`).
+- **Pane 0.0 (left):** orchestrator claude process (boots the `subagent-orchestrator` agent). The orchestrator is the human-facing interface: it narrates sidecar reports, routes `/cam-plan`, `/cam-review`, `/cam-ship`, `/cam-issue`, and surfaces blockers. The implement-review loop is driven by the SIDECAR (background process), not by the orchestrator.
 - **Pane 0.1 (right):** `cam dashboard`, a permanent navigable monitor. Browse stories with j/k or arrow keys, Enter to open a story detail view, Esc to go back. Press `n/r/s/p/i` to dispatch `/cam-*` commands to the orchestrator, `d` to focus the orchestrator pane, `q` to close the dashboard.
+- **Pane 0.2 (worker, ephemeral):** created on first worker dispatch, reused across stories via `respawn-pane -k`. Present only while a worker is active; the mutex check refuses new dispatches when this pane exists (3 panes = busy).
 
-`cam plan` and `cam issue` are thin pane launchers: they call `cam run` logic to
-ensure the session exists, open a new pane inside it for the requested command,
-and return 0 immediately. If you run them from outside the session, they print a
-contextual hint with the `cam run` attach command (suppressed inside the session).
-`cam next` is different: it runs the implement-review-complete supervisor
-in-process (it does not open a pane), driving worker sessions in the reused
-worker pane and exiting at a terminal state.
+`cam plan`, `cam issue`, `cam next`, `cam review`, and `cam ship` are thin-proxies: they detect the active cam session, ensure the orchestrator is idle (`sendKeysWhenIdle`), and inject the corresponding slash command into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `cam run --no-attach` first. If a worker is already running (mutex: 3 panes present), the proxy refuses the dispatch and exits with code 1. From outside the session the proxy prints a contextual hint with the `cam run` attach command (suppressed inside the session).
 
 When the orchestrator process in pane 0.0 exits, the `cam run` wrapper respawns it
 (rehydrating from a token-budget handoff) when one is pending and under the
@@ -258,31 +250,38 @@ test/                 bun:test suites
 
 ## Architecture
 
-`cam next` drives a deterministic TypeScript supervisor (`src/supervisor/loop.ts`) that owns the full implement-review-complete cycle without relying on stop hooks or re-injection. The supervisor reuses a single worker pane across all stories:
+`cam run` is the single dispatch hub. All CLI subcommands (`cam plan`, `cam next`, `cam issue`, `cam review`, `cam ship`) are thin-proxies: they detect the live orchestrator session and inject the request into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `cam run --no-attach` and wait for the `.claude/.cam-orch-ready` marker before injecting.
 
 ```
-cam next
-  └── runSupervisor()
-        ├── decideNextAction(prd)     -- implement | review | complete
-        ├── respawn-pane -k <pane>    -- kill old command, reuse pane id
+cam next  (thin-proxy)
+  └── detect live orchestrator (hasSession + orchestratorAlive)
+        ├── on miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
+        ├── mutex check: refuse if worker-pane is already running (3 panes = busy)
+        ├── idle check: wait for orchestrator pane idle (sendKeysWhenIdle)
+        └── atomic send-keys: inject task prompt + Enter (NO -l: -l makes "Enter" literal and never submits)
+
+sidecar (background process, spawned by cam run)
+  └── receives active:true flag, dispatches workers in the titled 3rd pane
+        ├── respawn-pane -k <worker-pane>   -- reuse titled pane id
         │     claude --permission-mode <mode>
         │             --session-id <uuid>
         │             --agent <name>
         │             "<task-prompt>"
-        ├── poll capture-pane -p -S - -- full scrollback, every N seconds
-        │     detect CAM_IMPLEMENTER_STATUS= sentinel line
-        └── loop until: complete | blocked | max-iterations
+        └── worker pushes completion:
+              scripts/cam/worker-report.json   -- structured outcome
+              tmux send-keys -> orchestrator pane: "[cam] US-XXX DONE: ..."
 ```
 
-Workers (implementer, reviewer) are interactive TUI `claude` sessions invoked with `--agent <name>`. Completion is detected by the supervisor polling the full pane scrollback (`capture-pane -p -S -`) for the sentinel line; the worker session does not exit on its own. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired; `claude -p` (print mode) is not used for workers.
+Workers (implementer, reviewer) are interactive TUI `claude` sessions invoked with `--agent <name>`. On completion, the worker writes a push report (`scripts/cam/worker-report.json`) and sends a one-line summary directly to the orchestrator pane via `tmux send-keys`. The orchestrator receives the line and reads the report file to determine the next action. Scrollback polling is not used for completion detection. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired; `claude -p` (print mode) is not used for workers.
 
-The worker pane slot is established by `cam plan` and stored in `.claude/.cam-worker-pane`. Every subsequent `cam next` call reuses the same pane id with `respawn-pane -k`, keeping the session layout stable.
+Workers always run in the **titled 3rd pane** (created on first dispatch, reused across stories via `respawn-pane -k`). A mutex check before each dispatch prevents concurrent workers: if 3 panes are already present, the dispatch is refused until the worker-pane closes.
 
 ---
 
 ## Recent changes
 
-- **Interactive TUI workers (CAM-42)**: `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`). The supervisor polls full pane scrollback (`capture-pane -p -S -`) for the sentinel line instead of blocking on `tmux wait-for`. `claude -p` is reserved for the `cam claude` retry-wrapper feature only.
+- **Single-hub dispatch (CAM-55)**: `cam run` is the only dispatch hub. All CLI subcommands (`cam plan`, `cam issue`, `cam next`, `cam review`, `cam ship`) are thin-proxies that inject into the orchestrator pane via atomic `send-keys`. Workers run in a uniform titled 3rd pane; completion is push-based (worker writes `scripts/cam/worker-report.json` + sends a summary line to the orchestrator pane via `tmux send-keys`). A mutex prevents concurrent worker dispatches (3 panes = busy). The idle-guarantee (`sendKeysWhenIdle`) ensures the orchestrator is not mid-response when the request is injected.
+- **Interactive TUI workers (CAM-42)**: `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`). `claude -p` is reserved for the `cam claude` retry-wrapper feature only.
 - **Single per-project session**: `cam run` now creates one tmux session per
   project with a 2-pane layout (orchestrator + navigable dashboard). The navigable
   dashboard replaces the old interactive menu: n/r/s/p/i dispatch /cam-* to the
@@ -291,7 +290,8 @@ The worker pane slot is established by `cam plan` and stored in `.claude/.cam-wo
   down the session.
 - **Thin pane launchers**: `cam plan` and `cam issue` open a pane inside the
   project session and return 0 immediately (suppressing the attach hint when
-  already inside the session). `cam next` instead runs the supervisor in-process.
+  already inside the session). `cam next` is also a thin-proxy: it flips
+  `active:true` to trigger the sidecar and returns 0 immediately.
 - **`cam issue` subcommand**: file an issue from free text without entering
   the session. The pane agent runs `/cam-issue create <text>`.
 - **Auto-retry internalized**: rate-limit retry is now built into `cam` (no

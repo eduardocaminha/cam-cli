@@ -1,0 +1,489 @@
+// src/supervisor/host.ts
+//
+// Shared wiring that builds a RunSupervisorOptions for a given cwd.
+// Extracted from the old src/commands/next.ts (pre-thin-proxy) so that the
+// production sidecar caller (src/commands/sidecar.ts) can reuse exactly the
+// same dep-wiring that the old in-process supervisor used.
+//
+// Every I/O adapter here uses real filesystem / real process primitives.
+// Tests that need a fake supervisor do NOT use this module; they build their
+// own minimal options bags (see test/supervisor/loop.test.ts).
+//
+// Exports:
+//   buildSupervisorOptions(cwd, options?) -> RunSupervisorOptions + ancillaries
+//   makeReadWorkerReport(cwd)             -> ReadWorkerReport
+//   makeClearWorkerReport(cwd)            -> ClearWorkerReport
+
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+
+import {
+	DEFAULT_PER_WORKER_TIMEOUT_MS,
+	type RunSupervisorOptions,
+	type OnProgress,
+} from './loop.ts';
+import { makeReviewDispatch } from './review.ts';
+import { makeFileEventLogger, readWorkerTokens } from './events.ts';
+import { acquireSupervisorLock, SUPERVISOR_LOCK_FILE, type AcquireLockResult } from './lock.ts';
+import type { PrdSnapshot } from './decide.ts';
+import { readWorkerPaneMarker } from '../tmux/session.ts';
+import { projectSessionName } from '../tmux/session.ts';
+import { isPidAlive } from '../commands/resume.ts';
+import { renderStateFile, writeStateFile } from '../commands/next.ts';
+import { WORKER_REPORT_FILENAME } from './worker-report.ts';
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+/** Minimal ancillary info returned alongside RunSupervisorOptions. */
+export interface BuiltSupervisorOptions {
+	/** The fully wired options bag ready to pass to runSupervisor. */
+	opts: RunSupervisorOptions;
+	/** The tmux session name for this project (used by lock and state file). */
+	sessionName: string;
+	/** Absolute path to .claude/cam-loop.local.md (state file). */
+	stateFilePath: string;
+	/** Acquire the single-supervisor lock for this cwd/session. */
+	acquireLock: () => AcquireLockResult;
+	/** Absolute path to the PRD file. */
+	prdPath: string;
+	/** Absolute path to the handoff file. */
+	handoffPath: string;
+}
+
+// ---------------------------------------------------------------------------
+// report-file readers (US-004 injected deps for runSupervisor)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a ReadWorkerReport function for the given cwd.
+ * Reads `<cwd>/scripts/cam/worker-report.json`.
+ * Returns the parsed WorkerReport or null when absent / unparseable.
+ */
+export function makeReadWorkerReport(cwd: string): RunSupervisorOptions['readWorkerReport'] {
+	const reportPath = join(cwd, WORKER_REPORT_FILENAME);
+	return () => {
+		try {
+			const raw = readFileSync(reportPath, 'utf8');
+			const parsed: unknown = JSON.parse(raw);
+			if (parsed !== null && typeof parsed === 'object') {
+				return parsed as import('./worker-report.ts').WorkerReport;
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	};
+}
+
+/**
+ * Build a ClearWorkerReport function for the given cwd.
+ * Removes `<cwd>/scripts/cam/worker-report.json`. Best-effort: no-op on
+ * missing file. Prevents false-positive on the first poll tick of a new run.
+ */
+export function makeClearWorkerReport(cwd: string): RunSupervisorOptions['clearWorkerReport'] {
+	const reportPath = join(cwd, WORKER_REPORT_FILENAME);
+	return () => {
+		try {
+			if (existsSync(reportPath)) {
+				unlinkSync(reportPath);
+			}
+		} catch {
+			// best-effort: ignore failures
+		}
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Main factory
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a fully wired RunSupervisorOptions for the given cwd.
+ * All I/O is real: filesystem, spawnSync, process signals.
+ *
+ * Options:
+ *   permissionMode - claude permission mode (default: bypassPermissions).
+ *   taskPrompt     - task prompt sent to the implementer (default: DEFAULT_TASK_PROMPT).
+ *   maxIterations  - hard cap (default: MAX_ITERATIONS = 50).
+ */
+export function buildSupervisorOptions(
+	cwd: string,
+	options: {
+		permissionMode?: string;
+		taskPrompt?: string;
+		maxIterations?: number;
+	} = {},
+): BuiltSupervisorOptions {
+	const permissionMode = options.permissionMode ?? 'bypassPermissions';
+	const taskPrompt =
+		options.taskPrompt ?? 'Implement the next user story from scripts/cam/prd.json per your AGENT.md.';
+
+	const PRD_PATH_CANONICAL = 'scripts/cam/prd.json';
+	const HANDOFF_PATH_CANONICAL = 'scripts/cam/handoff.json';
+
+	const prdPath = join(cwd, PRD_PATH_CANONICAL);
+	const handoffPath = join(cwd, HANDOFF_PATH_CANONICAL);
+	const claudeDir = join(cwd, '.claude');
+	const sessionName = projectSessionName(cwd);
+	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
+
+	// Per-worker timeout: configurable via CAM_WORKER_TIMEOUT_MS env var.
+	const perWorkerTimeoutMs = (() => {
+		const envVal = process.env['CAM_WORKER_TIMEOUT_MS'];
+		if (envVal !== undefined) {
+			const parsed = parseInt(envVal, 10);
+			if (!isNaN(parsed) && parsed > 0) return parsed;
+		}
+		return DEFAULT_PER_WORKER_TIMEOUT_MS;
+	})();
+
+	// Per-worker token ceiling (CAM-5).
+	const maxWorkerTokens = (() => {
+		const envVal = process.env['CAM_WORKER_MAX_TOKENS'];
+		if (envVal !== undefined) {
+			const parsed = parseInt(envVal, 10);
+			if (!isNaN(parsed) && parsed > 0) return parsed;
+		}
+		return 0;
+	})();
+
+	// Read worker pane id (must be allocated by `cam plan` first).
+	const workerPaneId = readWorkerPaneMarker(claudeDir) ?? '%2';
+
+	// --- I/O adapters ---
+
+	const supervisorSpawn: RunSupervisorOptions['spawn'] = (cmd, args, opts) => {
+		const result = spawnSync(cmd, args, {
+			stdio: opts?.stdio ?? 'pipe',
+			encoding: 'utf8',
+		} as Parameters<typeof spawnSync>[2]);
+		return {
+			stdout: typeof result.stdout === 'string' ? result.stdout : '',
+			exitCode: result.status ?? null,
+		};
+	};
+
+	const isPaneAlive: RunSupervisorOptions['isPaneAlive'] = (paneId) => {
+		const result = spawnSync(
+			'tmux',
+			['-L', 'cam', 'display-message', '-p', '-t', paneId, '#{pane_dead}'],
+			{ stdio: 'pipe', encoding: 'utf8' } as Parameters<typeof spawnSync>[2],
+		);
+		if (result.status !== 0) return false;
+		const out = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+		return out === '0';
+	};
+
+	const capturePane: RunSupervisorOptions['capturePane'] = (paneId) => {
+		const result = spawnSync(
+			'tmux',
+			['-L', 'cam', 'capture-pane', '-p', '-S', '-', '-t', paneId],
+			{ stdio: 'pipe', encoding: 'utf8' } as Parameters<typeof spawnSync>[2],
+		);
+		return typeof result.stdout === 'string' ? result.stdout : '';
+	};
+
+	const readPrd: RunSupervisorOptions['readPrd'] = () => {
+		try {
+			const raw = readFileSync(prdPath, 'utf8');
+			const parsed: unknown = JSON.parse(raw);
+			if (parsed !== null && typeof parsed === 'object') {
+				return parsed as PrdSnapshot;
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	};
+
+	const writePrd: RunSupervisorOptions['writePrd'] = (prd) => {
+		writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\n', 'utf8');
+	};
+
+	const readHandoff: RunSupervisorOptions['readHandoff'] = () => {
+		try {
+			const raw = readFileSync(handoffPath, 'utf8');
+			const parsed: unknown = JSON.parse(raw);
+			if (parsed !== null && typeof parsed === 'object') {
+				return parsed as ReturnType<RunSupervisorOptions['readHandoff']>;
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	};
+
+	const clock: RunSupervisorOptions['clock'] = () => new Date().toISOString();
+
+	// US-013 structured event sink.
+	const logEvent = makeFileEventLogger(join(claudeDir, 'cam-worker-events.jsonl'));
+
+	// Concurrency lock factory.
+	const lockPath = join(claudeDir, SUPERVISOR_LOCK_FILE);
+	const acquireLock = (): AcquireLockResult =>
+		acquireSupervisorLock(process.pid, sessionName, {
+			read: () => {
+				try {
+					return readFileSync(lockPath, 'utf8');
+				} catch {
+					return null;
+				}
+			},
+			write: (content) => {
+				mkdirSync(dirname(lockPath), { recursive: true });
+				writeFileSync(lockPath, content, 'utf8');
+			},
+			remove: () => {
+				try {
+					unlinkSync(lockPath);
+				} catch {
+					/* already gone */
+				}
+			},
+			pidAlive: (probePid) => isPidAlive(probePid, (p, s) => process.kill(p, s)),
+			clock: () => new Date().toISOString(),
+			logEvent,
+		});
+
+	// Review dispatch.
+	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
+		spawn: (cmd, args) => {
+			const proc = spawnSync(cmd, args, { stdio: 'pipe' });
+			return {
+				stdout: proc.stdout?.toString() ?? '',
+				exitCode: proc.status ?? null,
+			};
+		},
+		capturePane: (paneId) => {
+			const proc = spawnSync(
+				'tmux',
+				['-L', 'cam', 'capture-pane', '-p', '-S', '-', '-t', paneId],
+				{ stdio: 'pipe' },
+			);
+			return proc.stdout?.toString() ?? '';
+		},
+		isPaneAlive,
+		sleepFn: (ms) => {
+			Bun.sleepSync(ms);
+		},
+		permissionMode,
+		timeoutMs: perWorkerTimeoutMs,
+		readPrd: (): PrdSnapshot | null => {
+			try {
+				const text = readFileSync(prdPath, 'utf8');
+				return JSON.parse(text) as PrdSnapshot;
+			} catch {
+				return null;
+			}
+		},
+		writePrd: (prd) => {
+			writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\n', 'utf8');
+		},
+		workerPaneId,
+	});
+
+	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {
+		const markerPath = join(claudeDir, `.cam-worker-${storyId}.session`);
+		mkdirSync(claudeDir, { recursive: true });
+		writeFileSync(markerPath, uuid, 'utf8');
+	};
+
+	// runGates + finalizeStory for CAM-32 supervisor-finalize.
+	const runGates: RunSupervisorOptions['runGates'] = () => {
+		const tc = spawnSync('bun', ['run', 'typecheck'], { cwd, stdio: 'ignore' });
+		if (tc.status !== 0) return { ok: false, detail: 'typecheck failed' };
+		const tt = spawnSync('bun', ['test'], { cwd, stdio: 'ignore' });
+		if (tt.status !== 0) return { ok: false, detail: 'tests failed' };
+		return { ok: true, detail: 'typecheck + tests passed' };
+	};
+
+	const finalizeStory: RunSupervisorOptions['finalizeStory'] = (storyId) => {
+		try {
+			const prd = readPrd();
+			if (!prd || !Array.isArray(prd.userStories)) {
+				return { ok: false, detail: 'prd.json unreadable for finalize' };
+			}
+			const story = prd.userStories.find((s) => s.id === storyId);
+			if (!story) return { ok: false, detail: `story ${storyId} not found in prd.json` };
+			story.passes = true;
+			writePrd(prd);
+			const add = spawnSync('git', ['add', '-A'], { cwd, stdio: 'ignore' });
+			if (add.status !== 0) return { ok: false, detail: 'git add failed' };
+			const commit = spawnSync(
+				'git',
+				['commit', '-m', `chore(cam): finalize ${storyId} (supervisor)`],
+				{ cwd, stdio: 'ignore' },
+			);
+			if (commit.status !== 0) return { ok: false, detail: 'git commit failed' };
+			const branchProc = spawnSync('git', ['branch', '--show-current'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const branchName = (typeof branchProc.stdout === 'string' ? branchProc.stdout : '').trim();
+			const push = spawnSync('git', ['push', 'origin', branchName], { cwd, stdio: 'ignore' });
+			if (push.status !== 0) return { ok: false, detail: `git push to ${branchName} failed` };
+			return { ok: true, detail: `finalized ${storyId} on ${branchName}` };
+		} catch (e) {
+			return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+		}
+	};
+
+	// ensurePushed for US-001.
+	const ensurePushed: RunSupervisorOptions['ensurePushed'] = () => {
+		try {
+			const branchProc = spawnSync('git', ['branch', '--show-current'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const branchName = (typeof branchProc.stdout === 'string' ? branchProc.stdout : '').trim();
+			if (!branchName) {
+				return { ok: false, pushed: false, sha: '', detail: 'could not determine current branch' };
+			}
+			const pushProc = spawnSync('git', ['push', 'origin', branchName], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const pushStdout = typeof pushProc.stdout === 'string' ? pushProc.stdout : '';
+			const pushStderr = typeof pushProc.stderr === 'string' ? pushProc.stderr : '';
+			const combined = pushStdout + pushStderr;
+			const noop = combined.includes('Everything up-to-date');
+			if (pushProc.status !== 0 && !noop) {
+				return { ok: false, pushed: false, sha: '', detail: `git push failed: ${combined.trim()}` };
+			}
+			const pushed = !noop;
+			const headProc = spawnSync('git', ['rev-parse', 'HEAD'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const localSha = (typeof headProc.stdout === 'string' ? headProc.stdout : '').trim();
+			const originProc = spawnSync('git', ['rev-parse', `origin/${branchName}`], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const originSha = (typeof originProc.stdout === 'string' ? originProc.stdout : '').trim();
+			if (!localSha || !originSha || localSha !== originSha) {
+				return {
+					ok: false,
+					pushed,
+					sha: localSha,
+					detail: `HEAD (${localSha || 'unknown'}) != origin/${branchName} (${originSha || 'unknown'}) after push`,
+				};
+			}
+			return { ok: true, pushed, sha: localSha, detail: `HEAD == origin/${branchName} (${localSha})` };
+		} catch (e) {
+			return { ok: false, pushed: false, sha: '', detail: e instanceof Error ? e.message : String(e) };
+		}
+	};
+
+	// US-013 token reader.
+	const transcriptClaudeDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude');
+	const readWorkerTokensAdapter: RunSupervisorOptions['readWorkerTokens'] = (uuid) =>
+		readWorkerTokens(uuid, cwd, transcriptClaudeDir);
+
+	// US-004 worker-report readers.
+	const readWorkerReport = makeReadWorkerReport(cwd);
+	const clearWorkerReport = makeClearWorkerReport(cwd);
+
+	// onProgress: rewrite state file on each iteration and terminal exit.
+	// Built here so the sidecar can inject it when calling runSupervisor.
+	const startedAt = new Date().toISOString();
+	const pid = process.pid;
+	const maxIterations = options.maxIterations;
+	const stateFileBase = {
+		maxIterations: maxIterations ?? 50,
+		completionPromise: 'COMPLETE',
+		startedAt,
+		pid,
+	};
+
+	const onProgress: OnProgress = (payload) => {
+		if (payload.terminalStatus !== undefined) {
+			if (payload.terminalStatus === 'complete') {
+				try {
+					unlinkSync(stateFilePath);
+				} catch {
+					/* already gone */
+				}
+				return;
+			}
+			const pausedBody = renderStateFile({
+				...stateFileBase,
+				active: false,
+				iteration: payload.iteration,
+				currentStory: payload.currentStoryId ?? null,
+				storiesDone: payload.storiesDone,
+				storiesTotal: payload.storiesTotal,
+				lastActivity: payload.lastActivity,
+			});
+			try {
+				writeFileSync(stateFilePath, pausedBody, 'utf8');
+			} catch {
+				// non-fatal
+			}
+			return;
+		}
+		const body = renderStateFile({
+			...stateFileBase,
+			active: true,
+			iteration: payload.iteration,
+			currentStory: payload.currentStoryId ?? null,
+			storiesDone: payload.storiesDone,
+			storiesTotal: payload.storiesTotal,
+			lastActivity: payload.lastActivity,
+		});
+		try {
+			writeFileSync(stateFilePath, body, 'utf8');
+		} catch {
+			// non-fatal
+		}
+	};
+
+	const opts: RunSupervisorOptions = {
+		spawn: supervisorSpawn,
+		capturePane,
+		readPrd,
+		writePrd,
+		readHandoff,
+		clock,
+		reviewDispatch,
+		writeSessionMarker,
+		runGates,
+		finalizeStory,
+		isPaneAlive,
+		workerPaneId,
+		prdPath,
+		handoffPath,
+		permissionMode,
+		taskPrompt,
+		maxIterations,
+		perWorkerTimeoutMs,
+		maxWorkerTokens,
+		logEvent,
+		readWorkerTokens: readWorkerTokensAdapter,
+		ensurePushed,
+		onProgress,
+		readWorkerReport,
+		clearWorkerReport,
+		sleepFn: (ms) => {
+			Bun.sleepSync(ms);
+		},
+	};
+
+	return {
+		opts,
+		sessionName,
+		stateFilePath,
+		acquireLock,
+		prdPath,
+		handoffPath,
+	};
+}

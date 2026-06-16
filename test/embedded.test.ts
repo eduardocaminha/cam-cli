@@ -42,7 +42,7 @@ import {
 	readEmbedded,
 	type EmbeddedKey,
 } from '../src/vendor/embedded.ts';
-import { templatesContents } from '../src/templates/embedded.ts';
+import { materializeTemplates, templatesContents } from '../src/templates/embedded.ts';
 
 const VENDOR_KEYS: readonly EmbeddedKey[] = [
 	'cam-loop.local.md.tmpl',
@@ -114,6 +114,67 @@ describe('templatesContents — codegen byte-parity', () => {
 		for (const rel of onDisk) {
 			expect(templatesContents[rel]).toBe(readFileSync(join(TEMPLATES_DIR, rel), 'utf8'));
 		}
+	});
+});
+
+describe('materializeTemplates — .gitignore is merged, never clobbered', () => {
+	// CAM-55 round-2 review: `templates/.gitignore` lands at the project root.
+	// A blind overwrite would destroy a downstream project's existing
+	// .gitignore (silent data loss). These cover the merge contract.
+	let cwd: string;
+
+	beforeEach(() => {
+		cwd = mkdtempSync(join(tmpdir(), 'cam-templates-test-'));
+	});
+
+	afterEach(() => {
+		if (cwd && existsSync(cwd)) rmSync(cwd, { recursive: true, force: true });
+	});
+
+	const camPattern = 'scripts/cam/worker-report.json';
+	const gitignorePath = () => join(cwd, '.gitignore');
+
+	test('creates .gitignore (verbatim) when the project has none', () => {
+		materializeTemplates(cwd);
+		expect(existsSync(gitignorePath())).toBe(true);
+		// Template as `expected` (received accepts unknown; expected must be string).
+		expect(templatesContents['.gitignore']).toBe(readFileSync(gitignorePath(), 'utf8'));
+	});
+
+	test('preserves an existing .gitignore and appends the cam pattern', () => {
+		const userContent = 'node_modules\ndist\n.env\n';
+		writeFileSync(gitignorePath(), userContent, 'utf8');
+		materializeTemplates(cwd);
+		const merged = readFileSync(gitignorePath(), 'utf8');
+		// Every user line survives.
+		expect(merged).toContain('node_modules');
+		expect(merged).toContain('dist');
+		expect(merged).toContain('.env');
+		// The cam pattern is appended.
+		expect(merged).toContain(camPattern);
+		// It was an APPEND, not a clobber: user content is the prefix.
+		expect(merged.startsWith(userContent)).toBe(true);
+	});
+
+	test('is idempotent — a re-run does not duplicate the cam pattern', () => {
+		writeFileSync(gitignorePath(), 'node_modules\n', 'utf8');
+		materializeTemplates(cwd);
+		const once = readFileSync(gitignorePath(), 'utf8');
+		materializeTemplates(cwd);
+		const twice = readFileSync(gitignorePath(), 'utf8');
+		expect(twice).toBe(once);
+		// Exactly one occurrence of the pattern.
+		expect(twice.split(camPattern).length - 1).toBe(1);
+	});
+
+	test('handles an existing .gitignore with no trailing newline', () => {
+		writeFileSync(gitignorePath(), 'node_modules', 'utf8'); // no trailing \n
+		materializeTemplates(cwd);
+		const merged = readFileSync(gitignorePath(), 'utf8');
+		// The appended pattern is on its own line, not glued to node_modules.
+		expect(merged).toContain('node_modules\n');
+		expect(merged).toContain(camPattern);
+		expect(merged).not.toContain(`node_modules${camPattern}`);
 	});
 });
 

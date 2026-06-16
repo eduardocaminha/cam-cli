@@ -12,6 +12,10 @@
 //        Pane 0 (left):   claude orchestrator with boot prompt (US-001).
 //        Pane 1 (right):  cam dashboard, permanent pane (US-002, US-010).
 //      Then attach.
+//   4. After session creation (new sessions only): spawn the sidecar supervisor
+//      as a background child process (NOT detached). Logs go to
+//      .claude/cam-supervisor.log. The sidecar shares cam run's process group
+//      and is killed on cam run exit (SIGINT/SIGTERM cleanup).
 //
 // Dependencies:
 //   - tmux on PATH (verified by `cam init`).
@@ -22,7 +26,7 @@
 // CLI contract:
 //   cam run [--no-attach]         (don't attach, just create the session)
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -45,6 +49,7 @@ import {
 	type SpawnFn,
 	type CreatedPaneIds,
 } from '../tmux/session.ts';
+import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -54,6 +59,23 @@ export { projectSessionName } from '../tmux/session.ts';
 // Public types
 // ---------------------------------------------------------------------------
 
+/**
+ * Shape of the sidecar process handle. The real implementation uses
+ * Bun.spawn; tests inject a fake via spawnSidecarFn.
+ */
+export interface SidecarProcess {
+	/** Kill the sidecar process. Best-effort (no-throw). */
+	kill: () => void;
+}
+
+/**
+ * Factory that spawns the sidecar as a background child process (NOT detached:
+ * it shares cam run's process group and dies with it).
+ * The real default redirects stdout+stderr to .claude/cam-supervisor.log.
+ * Tests inject a fake that records the invocation and returns a no-op handle.
+ */
+export type SpawnSidecarFn = (cwd: string, logPath: string) => SidecarProcess;
+
 export interface RunOptions {
 	noAttach?: boolean;
 	cwd?: string;
@@ -61,6 +83,13 @@ export interface RunOptions {
 	spawnFn?: SpawnFn;
 	/** Injectable session-id generator for unit tests. Defaults to randomUUID. */
 	genSessionId?: () => string;
+	/**
+	 * Injectable sidecar spawn function for unit tests.
+	 * Default: spawn `cam sidecar` as a background Bun child process (NOT
+	 * detached: shares cam run's process group, killed on exit) with
+	 * stdout+stderr redirected to .claude/cam-supervisor.log.
+	 */
+	spawnSidecarFn?: SpawnSidecarFn;
 }
 
 export interface ParsedRunArgs {
@@ -90,6 +119,14 @@ function tmuxAvailable(spawnFn: SpawnFn): boolean {
 export function buildOrchestratorBootPrompt(): string {
 	return [
 		'You are the cam orchestrator for this project.',
+		'',
+		'FIRST ACTION (before anything else): create the readiness marker by running',
+		'this Bash command exactly: `: > .claude/.cam-orch-ready`',
+		'(use the Bash tool — you do NOT have the Write tool). This empty marker',
+		'signals to thin-proxy commands (cam plan, cam next, etc.) that the',
+		'orchestrator agent has loaded and is ready to receive requests. The marker',
+		'is cleared on exit by the bash wrapper. Creating it is mandatory even on a',
+		'cold boot; skip nothing.',
 		'',
 		'Read .claude/agents/subagent-orchestrator.md NOW. That file is your',
 		'system prompt — every instruction in it applies to you for the entire',
@@ -128,6 +165,8 @@ export interface OrchestratorPaneCommandOptions {
 	/** Path to the loop state file (.claude/cam-loop.local.md); removed on teardown so an
 	 * `/exit` leaves no stale state (matches `cam stop`, which `kill-session` alone did not). */
 	stateFile: string;
+	/** Path to .claude/.cam-orch-ready; removed when the orchestrator tears down (US-006). */
+	readyMarker: string;
 	/** Max consecutive respawns (default DEFAULT_MAX_ORCH_RESPAWNS). */
 	maxRespawns?: number;
 }
@@ -169,6 +208,9 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		// Clear the loop state file before kill-session so a clean `/exit` leaves no
 		// stale `cam-loop.local.md` (kill-session alone left it; `cam stop` removes it).
 		`rm -f ${q(opts.stateFile)}; ` +
+		// Clear the ready marker so stale markers don't deceive thin-proxy commands
+		// after the orchestrator has exited (US-006).
+		`rm -f ${q(opts.readyMarker)}; ` +
 		// sessionName is a sanitized identifier (projectSessionName); unquoted to
 		// match the pre-CAM-23 command + the kill-session assertion in run.test.ts.
 		`tmux -L cam kill-session -t ${opts.sessionName}; break; ` +
@@ -272,6 +314,14 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	const sessionId = genSessionId();
 	writeFileSync(join(dotClaude, '.cam-orch-session'), sessionId, 'utf8');
 
+	// The ready marker (.claude/.cam-orch-ready) is NOT written here by the
+	// parent. The orchestrator agent writes it as its FIRST action after boot
+	// (instructed in buildOrchestratorBootPrompt). This ensures the marker
+	// means "agent has loaded and is ready", not "parent is about to spawn"
+	// (US-FIX-005). The bash wrapper removes it on orchestrator exit;
+	// the SIGINT/SIGTERM handler in runRun removes it on abnormal parent exit.
+	const readyMarkerPath = join(dotClaude, ORCH_READY_MARKER);
+
 	// Pane 0: orchestrator (claude), wrapped in the CAM-23 bounded self-handoff
 	// loop. --permission-mode bypassPermissions is INTENTIONAL (2026-06-06): the
 	// orchestrator runs unattended and must bypass; do NOT change to
@@ -287,6 +337,7 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 		sessionIdMarker: join(dotClaude, '.cam-orch-session'),
 		handoffMarker: join(dotClaude, '.cam-orch-handoff.json'),
 		stateFile: join(dotClaude, 'cam-loop.local.md'),
+		readyMarker: readyMarkerPath,
 	});
 	// respawn-pane -k runs the command DIRECTLY in the pane, replacing the silent
 	// `cat` placeholder. No interactive bash means no macOS zsh notice / prompt /
@@ -367,6 +418,40 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 }
 
 // ---------------------------------------------------------------------------
+// Sidecar spawn (real production implementation)
+// ---------------------------------------------------------------------------
+
+/**
+ * Real production implementation of SpawnSidecarFn.
+ *
+ * Spawns `cam sidecar` as a background Bun child process with stdout+stderr
+ * redirected to `logPath` (.claude/cam-supervisor.log). The sidecar must die
+ * WITH the cam session (operator decision): it is NOT detached, so it shares
+ * cam run's process group and a SIGINT to the group reaches it, and cam run's
+ * SIGINT/SIGTERM cleanup also kills it explicitly. The single-supervisor lock
+ * prevents duplicate sidecars if one somehow lingers.
+ *
+ * We use Bun.spawn (not node:child_process.spawn) per the Bun-runtime pattern.
+ */
+function spawnSidecarDefault(cwd: string, logPath: string): SidecarProcess {
+	// Open the log file for append (create if absent).
+	const logFd = openSync(logPath, 'a');
+	const proc = Bun.spawn(['cam', 'sidecar'], {
+		cwd,
+		stdio: ['ignore', logFd, logFd],
+	});
+	return {
+		kill: () => {
+			try {
+				proc.kill();
+			} catch {
+				// best-effort
+			}
+		},
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
@@ -433,6 +518,49 @@ export function runRun(options: RunOptions = {}): number {
 		);
 		emitTrailingBlank();
 		return 1;
+	}
+
+	// US-006 / US-FIX-005: Register SIGINT/SIGTERM cleanup for the orch-ready
+	// marker. The marker is written by the orchestrator agent (not the parent),
+	// but if cam run is killed before the agent finishes or after it wrote the
+	// marker, we must remove any stale file. The bash wrapper removes it on
+	// normal orchestrator exit; this handler covers the abnormal parent-exit
+	// path. Only registered when a new session was just created; an
+	// attach-to-existing path leaves the marker for the running orchestrator.
+	//
+	// US-FIX-002: also spawn the sidecar supervisor and kill it on exit.
+	// The sidecar runs for the lifetime of the cam session, polling the active
+	// flag and calling runSupervisor when triggered by `cam next`. It must NOT
+	// outlive cam run: the cleanup handler kills it on SIGINT/SIGTERM.
+	if (result.created) {
+		const orchReadyPath = join(cwd, '.claude', ORCH_READY_MARKER);
+
+		// Ensure .claude/ exists before opening the log file.
+		mkdirSync(join(cwd, '.claude'), { recursive: true });
+		const sidecarLogPath = join(cwd, '.claude', 'cam-supervisor.log');
+		const spawnSidecarFn = options.spawnSidecarFn ?? spawnSidecarDefault;
+		const sidecarProc = spawnSidecarFn(cwd, sidecarLogPath);
+		emitMutedHint(`Sidecar supervisor started (log: .claude/cam-supervisor.log)`);
+
+		let cleaned = false;
+		const cleanup = () => {
+			if (cleaned) return;
+			cleaned = true;
+			try {
+				unlinkSync(orchReadyPath);
+			} catch {
+				// already gone or never written
+			}
+			sidecarProc.kill();
+		};
+		process.once('SIGINT', () => {
+			cleanup();
+			process.exit(130);
+		});
+		process.once('SIGTERM', () => {
+			cleanup();
+			process.exit(143);
+		});
 	}
 
 	// 4. Attach (unless --no-attach).

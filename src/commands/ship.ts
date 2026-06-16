@@ -1,12 +1,12 @@
-// src/commands/issue.ts
+// src/commands/ship.ts
 //
-// Implementation of `cam issue "<free text>"` -- thin-proxy that routes
-// /cam-issue create to the live orchestrator pane via send-keys (US-006).
+// Implementation of `cam ship` -- thin-proxy that routes /cam-ship to the
+// live orchestrator pane via send-keys (US-007).
 //
-// Acceptance criteria (US-006):
+// Acceptance criteria (US-007):
 //   1. Detect a live orchestrator via orchestratorAlive (US-005 predicate).
-//   2. On hit: atomic send-keys /cam-issue create <text> to the orchestrator
-//      pane and return 0 immediately (fire-and-forget).
+//   2. On hit: atomic send-keys /cam-ship to the orchestrator pane and
+//      return 0 immediately (fire-and-forget).
 //   3. On miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
 //      (with orchestratorAlive re-check), then send-keys.
 //   4. send-keys is atomic (text + Enter in one call), NO -l (it would make "Enter" literal).
@@ -40,9 +40,7 @@ import { sendKeysWhenIdle, type CapturePaneFn } from '../tmux/dispatch.ts';
 
 // --- Types -----------------------------------------------------------------
 
-export interface IssueOptions {
-	/** Free-text description of the issue to file. */
-	text: string;
+export interface ShipOptions {
 	/** Override the working directory; default `process.cwd()`. */
 	cwd?: string;
 	/**
@@ -55,7 +53,8 @@ export interface IssueOptions {
 	 */
 	env?: Env;
 	/**
-	 * Bootstrap the orchestrator when not alive.
+	 * Bootstrap the orchestrator when not alive. Receives `cwd` and
+	 * returns a Promise<boolean> (true = bootstrap succeeded).
 	 * Defaults to `spawnSync('cam', ['run', '--no-attach'])`.
 	 * Tests inject a no-op that returns true immediately.
 	 */
@@ -96,10 +95,10 @@ async function doBootstrap(cwd: string, bootstrapFn?: () => Promise<boolean>): P
 // --- Public entrypoint -----------------------------------------------------
 
 /**
- * Run the `cam issue` flow: thin-proxy to the live orchestrator (US-006).
+ * Run the `cam ship` flow: thin-proxy to the live orchestrator (US-007).
  *
  * If the orchestrator is already running (hasSession + orchestratorAlive):
- *   - Sends `/cam-issue create <text>` to the orchestrator pane via send-keys.
+ *   - Sends `/cam-ship` to the orchestrator pane via send-keys.
  *
  * If the orchestrator is not running:
  *   - Bootstraps it via `cam run --no-attach` (or injected bootstrapFn).
@@ -108,18 +107,17 @@ async function doBootstrap(cwd: string, bootstrapFn?: () => Promise<boolean>): P
  *
  * Returns 0 on success, 1 on bootstrap/liveness failure.
  */
-export async function runIssue(options: IssueOptions): Promise<number> {
+export async function runShip(options: ShipOptions = {}): Promise<number> {
 	const cwd = options.cwd ?? process.cwd();
 	const env = options.env ?? process.env;
-	const text = options.text;
-	const request = `/cam-issue create ${text}`;
+	const request = '/cam-ship';
 
 	const { spawnSync } = await import('node:child_process');
 	const tmuxSpawnFn: TmuxSpawnFn =
 		options.tmuxSpawnFn ??
 		((cmd, args, opts) => spawnSync(cmd, args, { stdio: opts?.stdio ?? 'ignore' }));
 
-	emitTitle('cam issue');
+	emitTitle('cam ship');
 	emitSectionHeading('Orchestrator');
 
 	const sessionName = projectSessionName(cwd);
@@ -134,7 +132,7 @@ export async function runIssue(options: IssueOptions): Promise<number> {
 		if (!bootstrapped) {
 			printError(
 				'Failed to bootstrap orchestrator',
-				'Run `cam run` manually, then retry `cam issue`.',
+				'Run `cam run` manually, then retry `cam ship`.',
 			);
 			emitTrailingBlank();
 			return 1;
@@ -191,7 +189,7 @@ export async function runIssue(options: IssueOptions): Promise<number> {
 		idleTimeoutMs: options.idleTimeoutMs,
 	});
 
-	emitOk(`Sent "/cam-issue create" to orchestrator pane ${orchPaneId}`);
+	emitOk(`Sent "${request}" to orchestrator pane ${orchPaneId}`);
 	emitAttachHint(sessionName, env);
 	emitTrailingBlank();
 	return 0;

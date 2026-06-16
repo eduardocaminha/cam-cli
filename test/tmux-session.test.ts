@@ -23,6 +23,8 @@ import {
 	openPaneInSession,
 	isInsideProjectSession,
 	isSessionStale,
+	orchestratorAlive,
+	paneCountMutex,
 	clampDashboardWidth,
 	CAM_TMUX_SOCKET,
 	tmuxArgs,
@@ -33,6 +35,7 @@ import {
 	WORKER_PANE_MARKER,
 	type SpawnFn,
 	type Env,
+	type PaneMutexState,
 } from '../src/tmux/session.ts';
 
 // ---------------------------------------------------------------------------
@@ -543,20 +546,57 @@ function staleSpawn(listPanesStdout: string, listPanesStatus = 0): SpawnFn {
 }
 
 describe('isSessionStale', () => {
-	test('healthy: 2 panes, none cat -> false', () => {
-		expect(isSessionStale('s', staleSpawn('claude\ncam\n'))).toBe(false);
+	// Production-realistic fixtures: orchestrator + dashboard are ALWAYS labeled.
+	// Format: #{pane_current_command};#{@cam_label} (semicolon, NOT tab: tmux
+	// converts a literal TAB in -F output to '_', so tab can't be a separator).
+
+	test('2-pane canonical layout (orchestrator + dashboard, both labeled) -> false (alive)', () => {
+		// The healthy idle state: only the two permanent panes exist.
+		expect(isSessionStale('s', staleSpawn('claude;orchestrator\ncam;dashboard\n'))).toBe(false);
 	});
 
-	test('a cat placeholder pane -> true', () => {
-		expect(isSessionStale('s', staleSpawn('cat\ncam\n'))).toBe(true);
+	test('3-pane: worker-pane labeled "implementer" -> false (alive)', () => {
+		// Supervisor has respawned the worker slot for the implement phase.
+		expect(isSessionStale('s', staleSpawn(
+			'claude;orchestrator\ncam;dashboard\nclaude;implementer\n',
+		))).toBe(false);
 	});
 
-	test('wrong pane count (3) -> true', () => {
-		expect(isSessionStale('s', staleSpawn('claude\ncam\ncam\n'))).toBe(true);
+	test('3-pane: worker-pane labeled "reviewer" -> false (alive)', () => {
+		// Supervisor has respawned the worker slot for the review phase.
+		expect(isSessionStale('s', staleSpawn(
+			'claude;orchestrator\ncam;dashboard\nclaude;reviewer\n',
+		))).toBe(false);
 	});
 
-	test('wrong pane count (1) -> true', () => {
-		expect(isSessionStale('s', staleSpawn('claude\n'))).toBe(true);
+	test('3-pane: stray unlabeled 3rd pane -> true (stale)', () => {
+		// A leftover bash shell with no @cam_label is NOT a legitimate worker-pane.
+		expect(isSessionStale('s', staleSpawn(
+			'claude;orchestrator\ncam;dashboard\nbash;\n',
+		))).toBe(true);
+	});
+
+	test('3-pane: 3rd pane has unknown (non-worker) label -> true (stale)', () => {
+		// A pane labeled something unrecognised is not a valid worker-pane.
+		expect(isSessionStale('s', staleSpawn(
+			'claude;orchestrator\ncam;dashboard\nbash;unknown-label\n',
+		))).toBe(true);
+	});
+
+	test('4-pane session -> true (too many panes, stale)', () => {
+		// 4+ panes: always stale regardless of labels.
+		expect(isSessionStale('s', staleSpawn(
+			'claude;orchestrator\ncam;dashboard\nclaude;implementer\nbash;\n',
+		))).toBe(true);
+	});
+
+	test('a cat placeholder pane -> true (placeholder never respawned)', () => {
+		// cat is the session-creation placeholder; if still running, session is stale.
+		expect(isSessionStale('s', staleSpawn('cat;orchestrator\ncam;dashboard\n'))).toBe(true);
+	});
+
+	test('wrong pane count (1 pane) -> true', () => {
+		expect(isSessionStale('s', staleSpawn('claude;orchestrator\n'))).toBe(true);
 	});
 
 	test('empty list-panes output -> true (conservative)', () => {
@@ -565,6 +605,120 @@ describe('isSessionStale', () => {
 
 	test('list-panes non-zero exit -> true (conservative)', () => {
 		expect(isSessionStale('s', staleSpawn('', 1))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// orchestratorAlive
+// ---------------------------------------------------------------------------
+
+/** Fake spawn: list-panes returns one @cam_label per line. */
+function orchSpawn(listPanesStdout: string, status = 0): SpawnFn {
+	return ((cmd, args, opts) => {
+		const sub = args[0] === '-L' ? args[2] : args[0];
+		const fIdx = args.indexOf('-F');
+		const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
+		// Gate on the EXACT -F format orchestratorAlive requests. Without this, a
+		// fake would keep answering even if production changed its format string,
+		// masking exactly the kind of fake-vs-real drift the operator smoke exposed.
+		if (cmd === 'tmux' && sub === 'list-panes' && fmt === '#{@cam_label}' && opts?.stdio === 'pipe') {
+			return {
+				pid: 1, output: [null, Buffer.from(listPanesStdout), Buffer.from('')],
+				stdout: Buffer.from(listPanesStdout), stderr: Buffer.from(''),
+				status, signal: null,
+			} as ReturnType<SpawnFn>;
+		}
+		return {
+			pid: 1, output: [null, Buffer.from(''), Buffer.from('')],
+			stdout: Buffer.from(''), stderr: Buffer.from(''), status: 0, signal: null,
+		} as ReturnType<SpawnFn>;
+	}) as SpawnFn;
+}
+
+describe('orchestratorAlive', () => {
+	// REGRESSION (US-FIX-008 operator smoke): the orchestrator pane runs claude
+	// UNDER a bash respawn-wrapper (CAM-23), so pane_current_command is 'bash',
+	// never 'claude'. Liveness is keyed on @cam_label, not the command. The old
+	// implementation checked `cmd === 'claude'` and returned false for every real
+	// orchestrator pane, breaking all thin-proxy detection. These fixtures are
+	// one @cam_label per line (the new list-panes -F format).
+	test('pane labeled orchestrator (real: claude under bash wrapper) -> true', () => {
+		expect(orchestratorAlive('s', orchSpawn('orchestrator\ndashboard\n'))).toBe(true);
+	});
+
+	test('3-pane session (orchestrator + dashboard + worker) -> true', () => {
+		expect(orchestratorAlive('s', orchSpawn('orchestrator\ndashboard\nimplementer\n'))).toBe(true);
+	});
+
+	test('no pane labeled orchestrator -> false', () => {
+		expect(orchestratorAlive('s', orchSpawn('dashboard\nimplementer\n'))).toBe(false);
+	});
+
+	test('unlabeled panes only (foreign/corrupted session) -> false', () => {
+		expect(orchestratorAlive('s', orchSpawn('\n\n'))).toBe(false);
+	});
+
+	test('list-panes fails (non-zero exit) -> false (conservative)', () => {
+		expect(orchestratorAlive('s', orchSpawn('', 1))).toBe(false);
+	});
+
+	test('empty list-panes output -> false', () => {
+		expect(orchestratorAlive('s', orchSpawn(''))).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// paneCountMutex
+// ---------------------------------------------------------------------------
+
+/** Fake spawn: list-panes returns pane-id lines. */
+function mutexSpawn(paneIds: string[], status = 0): SpawnFn {
+	const stdout = paneIds.join('\n') + (paneIds.length > 0 ? '\n' : '');
+	return ((cmd, args, opts) => {
+		const sub = args[0] === '-L' ? args[2] : args[0];
+		if (cmd === 'tmux' && sub === 'list-panes' && opts?.stdio === 'pipe') {
+			return {
+				pid: 1, output: [null, Buffer.from(stdout), Buffer.from('')],
+				stdout: Buffer.from(stdout), stderr: Buffer.from(''),
+				status, signal: null,
+			} as ReturnType<SpawnFn>;
+		}
+		return {
+			pid: 1, output: [null, Buffer.from(''), Buffer.from('')],
+			stdout: Buffer.from(''), stderr: Buffer.from(''), status: 0, signal: null,
+		} as ReturnType<SpawnFn>;
+	}) as SpawnFn;
+}
+
+describe('paneCountMutex', () => {
+	test('exactly 2 panes -> "available" (dispatch may spawn worker pane)', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn(['%1', '%2']));
+		expect(result).toBe('available');
+	});
+
+	test('3 panes -> "busy" (worker already running)', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn(['%1', '%2', '%3']));
+		expect(result).toBe('busy');
+	});
+
+	test('1 pane -> "busy" (session malformed)', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn(['%1']));
+		expect(result).toBe('busy');
+	});
+
+	test('0 panes (empty output) -> "busy" (conservative)', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn([]));
+		expect(result).toBe('busy');
+	});
+
+	test('list-panes fails (non-zero exit) -> "busy" (conservative)', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn(['%1', '%2'], 1));
+		expect(result).toBe('busy');
+	});
+
+	test('4 panes -> "busy"', () => {
+		const result: PaneMutexState = paneCountMutex('s', mutexSpawn(['%1', '%2', '%3', '%4']));
+		expect(result).toBe('busy');
 	});
 });
 

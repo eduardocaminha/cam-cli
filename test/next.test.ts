@@ -1,25 +1,24 @@
 // test/next.test.ts
 //
-// Unit tests for `cam next` (US-007: Rewire to supervisor + retire stop-hook driver).
+// Unit tests for `cam next` (US-006: thin-proxy to orchestrator).
 //
-// What we cover per acceptance criteria:
-//   1. Supervisor dispatch happy path: runNext calls runSupervisor() with the
-//      right arguments (permissionMode, workerPaneId, prdPath, handoffPath, etc.).
-//   2. State-file shape contract: the file written to .claude/cam-loop.local.md
-//      has the fields parseStateFile expects (iteration, started_at, pid,
-//      max_iterations, active) and no stop-hook re-inject body.
-//   3. No stop-hook artifacts: settings.local.json hooks block is NOT written,
-//      .claude/hooks/cam-loop-stop.sh is NOT created.
-//   4. Missing worker pane: returns 1 and does not invoke supervisorFn.
-//   5. State-file write failure: returns 1 and does not invoke supervisorFn.
-//   6. Supervisor blocked: returns 1.
-//   7. Supervisor max-iterations: returns 1.
-//   8. Supervisor complete: returns 0.
+// What we cover:
+//   - renderStateFile: template substitution, YAML shape, no stop-hook body.
+//   - writeStateFile: creates .claude/, refuses clobber, force flag.
+//   - runNext (hit path): orch alive → send-keys task prompt → return 0.
+//   - runNext (miss path): bootstrap + wait + send-keys.
+//   - runNext: bootstrap failure returns 1.
+//   - runNext: marker timeout returns 1.
+//   - runNext: missing pane returns 1.
+//   - runNext: uses DEFAULT_TASK_PROMPT by default.
+//   - runNext: custom taskPrompt forwarded to orchestrator.
+//   - send-keys is atomic (NO -l; -l would make "Enter" literal; text + Enter same call).
 
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { SpawnSyncReturns } from 'node:child_process';
 
 import {
 	runNext,
@@ -29,27 +28,74 @@ import {
 	DEFAULT_COMPLETION_PROMISE,
 	DEFAULT_TASK_PROMPT,
 } from '../src/commands/next.ts';
-import type { RunSupervisorOptions, SupervisorResult } from '../src/supervisor/loop.ts';
+import { type SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
 import yaml from 'js-yaml';
 
-// --- Fake supervisor factory ------------------------------------------------
+// --- Fake tmux spawn --------------------------------------------------------
 
-interface FakeSupervisorCall {
-	opts: RunSupervisorOptions;
+interface TmuxCall {
+	cmd: string;
+	args: string[];
 }
 
-function makeFakeSupervisor(result: SupervisorResult): {
-	supervisorFn: (opts: RunSupervisorOptions) => Promise<SupervisorResult>;
-	calls: FakeSupervisorCall[];
-} {
-	const calls: FakeSupervisorCall[] = [];
-	return {
-		supervisorFn: async (opts: RunSupervisorOptions) => {
-			calls.push({ opts });
-			return result;
-		},
-		calls,
-	};
+function makeFakeTmuxSpawn(opts: {
+	sessionExists?: boolean;
+	orchAlive?: boolean;
+	orchPaneId?: string;
+	/** When true, paneCountMutex returns 'busy' (3 panes instead of 2). */
+	paneMutexBusy?: boolean;
+} = {}): TmuxSpawnFn & { calls: TmuxCall[] } {
+	const { sessionExists = true, orchAlive = true, orchPaneId = '%0', paneMutexBusy = false } = opts;
+	const calls: TmuxCall[] = [];
+
+	const fn = ((cmd: string, args: string[]) => {
+		calls.push({ cmd, args: [...args] });
+		const base: SpawnSyncReturns<Buffer> = {
+			pid: 1,
+			output: [null, Buffer.from(''), Buffer.from('')],
+			stdout: Buffer.from(''),
+			stderr: Buffer.from(''),
+			status: 0,
+			signal: null,
+		};
+		const subcommand = args[0] === '-L' ? args[2] : args[0];
+
+		if (subcommand === 'has-session') {
+			return { ...base, status: sessionExists ? 0 : 1 };
+		}
+
+		if (subcommand === 'list-panes') {
+			if (!sessionExists) return { ...base, status: 1 };
+			const fIdx = args.indexOf('-F');
+			const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
+			if (fmt === '#{@cam_label}') {
+				// orchestratorAlive keys on @cam_label (the orchestrator runs claude
+				// under a bash respawn-wrapper, so pane_current_command is never claude).
+				return {
+					...base,
+					stdout: Buffer.from(orchAlive ? `orchestrator\ndashboard\n` : `dashboard\n`),
+				};
+			}
+			if (fmt === '#{pane_index};#{pane_id}') {
+				return { ...base, stdout: Buffer.from(`0;${orchPaneId}\n`) };
+			}
+			if (fmt === '#{pane_id}') {
+				// For paneCountMutex: return 2 pane IDs (available) or 3 (busy).
+				const panes = paneMutexBusy ? '%0\n%1\n%2\n' : '%0\n%1\n';
+				return { ...base, stdout: Buffer.from(panes) };
+			}
+			return { ...base, stdout: Buffer.from('') };
+		}
+
+		if (subcommand === 'capture-pane') {
+			// Return idle pane content so the idle-check (US-008) passes immediately.
+			return { ...base, stdout: Buffer.from('> ') };
+		}
+		if (subcommand === 'send-keys') return base;
+		return base;
+	}) as TmuxSpawnFn & { calls: TmuxCall[] };
+	fn.calls = calls;
+	return fn;
 }
 
 // --- renderStateFile -------------------------------------------------------
@@ -77,10 +123,7 @@ describe('renderStateFile', () => {
 			startedAt: '2026-06-08T12:00:00Z',
 			pid: 1,
 		});
-		// Split at the closing YAML delimiter and verify body is blank/whitespace only.
 		const parts = out.split(/^---$/m);
-		// parts[0] = '---\n...', parts[1] = YAML body, parts[2] = content after second ---
-		// The content after the closing --- should be empty (no /cam-next, no prompt text).
 		const bodyAfterDelimiter = (parts[2] ?? '').trim();
 		expect(bodyAfterDelimiter).toBe('');
 	});
@@ -102,7 +145,6 @@ describe('renderStateFile', () => {
 			startedAt: '2026-06-08T12:00:00Z',
 			pid: 9999,
 		});
-		// Extract YAML section between the two --- delimiters.
 		const lines = out.split('\n');
 		let endIdx = -1;
 		for (let i = 1; i < lines.length; i += 1) {
@@ -116,6 +158,19 @@ describe('renderStateFile', () => {
 		expect(parsed['max_iterations']).toBe(50);
 		expect(typeof parsed['started_at']).toBe('string');
 		expect(parsed['pid']).toBe(9999);
+	});
+
+	test('DEFAULT_MAX_ITERATIONS is 30', () => {
+		expect(DEFAULT_MAX_ITERATIONS).toBe(30);
+	});
+
+	test('DEFAULT_COMPLETION_PROMISE is "COMPLETE"', () => {
+		expect(DEFAULT_COMPLETION_PROMISE).toBe('COMPLETE');
+	});
+
+	test('DEFAULT_TASK_PROMPT mentions prd.json and AGENT.md', () => {
+		expect(DEFAULT_TASK_PROMPT).toContain('prd.json');
+		expect(DEFAULT_TASK_PROMPT).toContain('AGENT.md');
 	});
 });
 
@@ -148,573 +203,231 @@ describe('writeStateFile', () => {
 	});
 });
 
-// --- runNext integration ---------------------------------------------------
+// --- runNext (thin-proxy): hit path ----------------------------------------
 
-describe('runNext', () => {
-	test('supervisor dispatch happy path: calls supervisorFn with correct args', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-dispatch-'));
+describe('runNext (thin-proxy, hit path)', () => {
+	test('sends DEFAULT_TASK_PROMPT to orchestrator pane and returns 0', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-hit-'));
 		try {
-			const { supervisorFn, calls } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 2,
-				lastOutcome: null,
-			});
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%3' });
 
-			const code = await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				startedAt: '2026-06-08T12:00:00Z',
-				pid: 1234,
-				prdPath: join(dir, 'scripts/cam/prd.json'),
-				handoffPath: join(dir, 'scripts/cam/handoff.json'),
-			});
+			const code = await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
 
 			expect(code).toBe(0);
-			expect(calls).toHaveLength(1);
-			expect(calls[0]!.opts.workerPaneId).toBe('%5');
-			expect(calls[0]!.opts.permissionMode).toBe('bypassPermissions');
-			expect(calls[0]!.opts.prdPath).toBe(join(dir, 'scripts/cam/prd.json'));
-			expect(calls[0]!.opts.handoffPath).toBe(join(dir, 'scripts/cam/handoff.json'));
-			expect(calls[0]!.opts.maxIterations).toBe(DEFAULT_MAX_ITERATIONS);
-			expect(calls[0]!.opts.taskPrompt).toBe(DEFAULT_TASK_PROMPT);
+
+			const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+			expect(sendKeys).toBeDefined();
+			expect(sendKeys?.args).not.toContain('-l');
+			expect(sendKeys?.args).toContain(DEFAULT_TASK_PROMPT);
+			expect(sendKeys?.args).toContain('Enter');
+			expect(sendKeys?.args).toContain('%3');
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	test('CAM-5: forwards parsed maxWorkerTokens + readWorkerTokens to the supervisor', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-tokceil-'));
+	test('forwards a custom taskPrompt to the orchestrator', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-custom-prompt-'));
 		try {
-			const { supervisorFn, calls } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 1,
-				lastOutcome: null,
-			});
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+			const customPrompt = 'Run the review cycle on the latest PRD.';
 
-			const code = await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				env: { ...process.env, CAM_WORKER_MAX_TOKENS: '50000' },
-				startedAt: '2026-06-08T12:00:00Z',
-				pid: 1234,
-				prdPath: join(dir, 'scripts/cam/prd.json'),
-				handoffPath: join(dir, 'scripts/cam/handoff.json'),
-			});
+			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn, taskPrompt: customPrompt });
 
-			expect(code).toBe(0);
-			expect(calls).toHaveLength(1);
-			// The opt-in env knob is parsed and forwarded.
-			expect(calls[0]!.opts.maxWorkerTokens).toBe(50000);
-			// The token reader the ceiling depends on reaches the supervisor.
-			expect(typeof calls[0]!.opts.readWorkerTokens).toBe('function');
+			const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+			expect(sendKeys?.args).toContain(customPrompt);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	test('CAM-5: maxWorkerTokens defaults to 0 (disabled) when the env knob is unset', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-tokceil-off-'));
+	test('send-keys does NOT use -l (regression: -l makes "Enter" literal)', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-literal-'));
 		try {
-			const { supervisorFn, calls } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 1,
-				lastOutcome: null,
-			});
-			const envNoKnob = { ...process.env };
-			delete envNoKnob['CAM_WORKER_MAX_TOKENS'];
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+
+			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
+
+			const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+			expect(sendKeys?.args).not.toContain('-l');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('Enter is a separate argument in the send-keys call (atomic)', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-atomic-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+
+			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
+
+			const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+			const enterIdx = sendKeys?.args.lastIndexOf('Enter') ?? -1;
+			const textIdx = sendKeys?.args.findIndex((a) => a === DEFAULT_TASK_PROMPT) ?? -1;
+			expect(enterIdx).toBeGreaterThan(textIdx);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('skips bootstrap when orchestrator is alive', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-no-bootstrap-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+			let bootstrapCalled = false;
 
 			await runNext({
 				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				env: envNoKnob,
-				startedAt: '2026-06-08T12:00:00Z',
-				pid: 1234,
+				tmuxSpawnFn: spawnFn,
+				bootstrapFn: async () => { bootstrapCalled = true; return true; },
 			});
 
-			expect(calls[0]!.opts.maxWorkerTokens).toBe(0);
+			expect(bootstrapCalled).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	test('state-file shape contract: written fields match parseStateFile expectations', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-state-'));
+	test('maxIterations and completionPromise options are accepted (CLI compat) but do not affect output', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-compat-'));
 		try {
-			const { supervisorFn } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 1,
-				lastOutcome: null,
-			});
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 
-			await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				startedAt: '2026-06-08T12:00:00Z',
-				pid: 5678,
-			});
-
-			const statePath = join(dir, '.claude', 'cam-loop.local.md');
-			expect(existsSync(statePath)).toBe(true);
-			const body = readFileSync(statePath, 'utf8');
-
-			// YAML frontmatter fields
-			expect(body).toContain('active: true');
-			expect(body).toContain('iteration: 1');
-			expect(body).toContain('started_at: "2026-06-08T12:00:00Z"');
-			expect(body).toContain('pid: 5678');
-			expect(body).toContain(`max_iterations: ${DEFAULT_MAX_ITERATIONS}`);
-
-			// No stop-hook re-inject body
-			const lines = body.split('\n');
-			let closingIdx = -1;
-			for (let i = 1; i < lines.length; i += 1) {
-				if (lines[i]?.trim() === '---') { closingIdx = i; break; }
-			}
-			expect(closingIdx).toBeGreaterThan(0);
-			const bodyAfter = lines.slice(closingIdx + 1).join('\n').trim();
-			expect(bodyAfter).toBe('');
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('no stop-hook artifacts: settings.local.json and .claude/hooks/ are not created', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-no-hooks-'));
-		try {
-			const { supervisorFn } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 1,
-				lastOutcome: null,
-			});
-
-			await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				startedAt: '2026-06-08T12:00:00Z',
-			});
-
-			// settings.local.json must NOT be written
-			expect(existsSync(join(dir, '.claude', 'settings.local.json'))).toBe(false);
-			// .claude/hooks/ must NOT be created
-			expect(existsSync(join(dir, '.claude', 'hooks'))).toBe(false);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('missing worker pane: returns 1 without calling supervisorFn', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-no-pane-'));
-		try {
-			const { supervisorFn, calls } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 0,
-				lastOutcome: null,
-			});
-
+			// These options are kept for CLI compat; they should not cause errors.
 			const code = await runNext({
 				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				workerPaneReader: (_claudeDir) => null, // no pane allocated
-				supervisorFn,
-				startedAt: '2026-06-08T12:00:00Z',
-			});
-
-			expect(code).toBe(1);
-			expect(calls).toHaveLength(0);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('state-file write failure: returns 1 without calling supervisorFn', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-writer-fail-'));
-		try {
-			const { supervisorFn, calls } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 0,
-				lastOutcome: null,
-			});
-
-			const code = await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: () => { throw new Error('disk full'); },
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				startedAt: '2026-06-08T12:00:00Z',
-			});
-
-			expect(code).toBe(1);
-			expect(calls).toHaveLength(0);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('supervisor blocked: returns 1', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-blocked-'));
-		try {
-			const { supervisorFn } = makeFakeSupervisor({
-				status: 'blocked',
-				iterations: 3,
-				lastOutcome: null,
-			});
-
-			const code = await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				startedAt: '2026-06-08T12:00:00Z',
-			});
-
-			expect(code).toBe(1);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('supervisor awaiting-operator: returns 0 (success, operator ceremony pending)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-awaitop-'));
-		try {
-			const { supervisorFn } = makeFakeSupervisor({
-				status: 'awaiting-operator',
-				iterations: 4,
-				lastOutcome: null,
-				pendingStoryIds: ['US-018'],
-			});
-
-			const code = await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				startedAt: '2026-06-08T12:00:00Z',
-			});
-
-			expect(code).toBe(0);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('supervisor max-iterations: returns 1', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-maxiter-'));
-		try {
-			const { supervisorFn } = makeFakeSupervisor({
-				status: 'max-iterations',
-				iterations: 50,
-				lastOutcome: null,
-			});
-
-			const code = await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				startedAt: '2026-06-08T12:00:00Z',
-			});
-
-			expect(code).toBe(1);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('supervisor complete: returns 0', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-complete-'));
-		try {
-			const { supervisorFn } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 5,
-				lastOutcome: null,
-			});
-
-			const code = await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				startedAt: '2026-06-08T12:00:00Z',
-			});
-
-			expect(code).toBe(0);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('passes custom maxIterations to supervisorFn', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-maxiter-custom-'));
-		try {
-			const { supervisorFn, calls } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 1,
-				lastOutcome: null,
-			});
-
-			await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
+				tmuxSpawnFn: spawnFn,
 				maxIterations: 10,
-				startedAt: '2026-06-08T12:00:00Z',
+				completionPromise: 'MY_PROMISE',
 			});
-
-			expect(calls[0]!.opts.maxIterations).toBe(10);
+			expect(code).toBe(0);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	test('concurrency guard: another live supervisor -> returns 1 without dispatching', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-lock-busy-'));
+	test('returns 1 and does not send-keys when pane mutex is busy', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-busy-'));
 		try {
-			const { supervisorFn, calls } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 0,
-				lastOutcome: null,
+			const spawnFn = makeFakeTmuxSpawn({
+				sessionExists: true,
+				orchAlive: true,
+				paneMutexBusy: true,
 			});
+
+			const code = await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
+
+			expect(code).toBe(1);
+			// send-keys must NOT have been called (worker is still running)
+			const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+			expect(sendKeys).toBeUndefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// --- runNext (thin-proxy): miss path ----------------------------------------
+
+describe('runNext (thin-proxy, miss path)', () => {
+	test('returns 1 when bootstrap fails', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-boot-fail-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
 			const code = await runNext({
 				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				acquireLock: () => ({ acquired: false, holderPid: 4242 }),
-				onShutdown: () => {},
-				startedAt: '2026-06-08T12:00:00Z',
+				tmuxSpawnFn: spawnFn,
+				bootstrapFn: async () => false,
 			});
 
 			expect(code).toBe(1);
-			expect(calls).toHaveLength(0);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	test('concurrency guard: lock released on normal exit and handed to shutdown registrar', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-lock-release-'));
+	test('returns 1 when marker never appears (timeout)', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-timeout-'));
 		try {
-			const { supervisorFn } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 1,
-				lastOutcome: null,
-			});
-
-			let released = 0;
-			const reg: { fn: (() => void) | null } = { fn: null };
-			const release = () => {
-				released += 1;
-			};
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
 			const code = await runNext({
 				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				writer: (_cwd2, _body) => '/fake/.claude/cam-loop.local.md',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				acquireLock: () => ({
-					acquired: true,
-					info: { pid: 1234, startedAt: '2026-06-08T12:00:00Z', project: 'cam-cli' },
-					release,
-				}),
-				onShutdown: (rel) => {
-					reg.fn = rel;
-				},
-				startedAt: '2026-06-08T12:00:00Z',
-			});
-
-			expect(code).toBe(0);
-			// Released at least once on the normal terminal return.
-			expect(released).toBeGreaterThanOrEqual(1);
-			// The same release fn was handed to the shutdown registrar (AC4).
-			expect(reg.fn).toBe(release);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('existing state file causes error without force', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-existing-'));
-		try {
-			mkdirSync(join(dir, '.claude'), { recursive: true });
-			require('node:fs').writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'old\n');
-
-			const { supervisorFn, calls } = makeFakeSupervisor({
-				status: 'complete',
-				iterations: 0,
-				lastOutcome: null,
-			});
-
-			const code = await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn,
-				startedAt: '2026-06-08T12:00:00Z',
+				tmuxSpawnFn: spawnFn,
+				bootstrapFn: async () => true,
+				statFn: () => false, // marker never appears
+				sleepFn: () => {},
+				waitTimeoutMs: 5,
 			});
 
 			expect(code).toBe(1);
-			expect(calls).toHaveLength(0);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	// US-001: progress writer + clear-on-exit --------------------------------
-
-	test('progress writer: live onProgress call rewrites state file with new fields', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-prog-live-'));
+	test('bootstraps + waits + sends keys when orch not alive initially', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-miss-'));
 		try {
+			// After bootstrap, orch is alive.
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+			let markerPresent = false;
+
 			const code = await runNext({
 				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn: async (opts: RunSupervisorOptions) => {
-					// Simulate a live iteration progress call (no terminalStatus).
-					opts.onProgress?.({
-						iteration: 3,
-						currentStoryId: 'US-007',
-						storiesDone: 4,
-						storiesTotal: 10,
-						lastActivity: '2026-06-09T10:00:00Z',
-					});
-					// Return without a terminal onProgress call so the file stays on disk.
-					return { status: 'complete' as const, iterations: 3, lastOutcome: null };
-				},
-				startedAt: '2026-06-09T09:00:00Z',
-				pid: 42,
+				tmuxSpawnFn: spawnFn,
+				bootstrapFn: async () => { markerPresent = true; return true; },
+				statFn: () => markerPresent,
+				sleepFn: () => {},
+				waitTimeoutMs: 5_000,
 			});
 
+			// spawnFn always sees a live orch so it takes the hit path.
 			expect(code).toBe(0);
-			const statePath = join(dir, '.claude', 'cam-loop.local.md');
-			// File still exists (no terminal call was made in this fake).
-			expect(existsSync(statePath)).toBe(true);
-			const body = readFileSync(statePath, 'utf8');
-			expect(body).toContain('iteration: 3');
-			expect(body).toContain('current_story: "US-007"');
-			expect(body).toContain('stories_done: 4');
-			expect(body).toContain('stories_total: 10');
-			expect(body).toContain('last_activity: "2026-06-09T10:00:00Z"');
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+});
 
-	test('progress writer: terminal onProgress call unlinks the state file', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-prog-term-'));
+// --- runNext (thin-proxy): pane not found ----------------------------------
+
+describe('runNext (thin-proxy, pane not found)', () => {
+	test('returns 1 when getOrchPaneId returns null', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-nopane-'));
 		try {
-			const code = await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn: async (opts: RunSupervisorOptions) => {
-					// Simulate a terminal exit progress call.
-					opts.onProgress?.({
-						iteration: 2,
-						currentStoryId: undefined,
-						storiesDone: 5,
-						storiesTotal: 5,
-						lastActivity: '2026-06-09T10:05:00Z',
-						terminalStatus: 'complete',
-					});
-					return { status: 'complete' as const, iterations: 2, lastOutcome: null };
-				},
-				startedAt: '2026-06-09T09:00:00Z',
-				pid: 42,
-			});
+			const spawnFn: TmuxSpawnFn & { calls: TmuxCall[] } = (() => {
+				const calls: TmuxCall[] = [];
+				const fn = ((cmd: string, args: string[]) => {
+					calls.push({ cmd, args: [...args] });
+					const base: SpawnSyncReturns<Buffer> = {
+						pid: 1,
+						output: [null, Buffer.from(''), Buffer.from('')],
+						stdout: Buffer.from(''),
+						stderr: Buffer.from(''),
+						status: 0,
+						signal: null,
+					};
+					const subcommand = args[0] === '-L' ? args[2] : args[0];
+					if (subcommand === 'has-session') return base;
+					if (subcommand === 'list-panes') {
+						const fIdx = args.indexOf('-F');
+						const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
+						if (fmt === '#{@cam_label}') {
+							return { ...base, stdout: Buffer.from('orchestrator\ndashboard\n') };
+						}
+						return { ...base, stdout: Buffer.from('') }; // no pane id found
+					}
+					return base;
+				}) as TmuxSpawnFn & { calls: TmuxCall[] };
+				fn.calls = calls;
+				return fn;
+			})();
 
-			expect(code).toBe(0);
-			const statePath = join(dir, '.claude', 'cam-loop.local.md');
-			// State file must be unlinked after a 'complete' terminal call.
-			expect(existsSync(statePath)).toBe(false);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('progress writer: non-success terminal rewrites state file with active:false (paused, CAM-2)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-prog-paused-'));
-		try {
-			const code = await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn: async (opts: RunSupervisorOptions) => {
-					// A blocked terminal exit: the loop STOPPED but needs the operator.
-					opts.onProgress?.({
-						iteration: 3,
-						currentStoryId: 'US-002',
-						storiesDone: 1,
-						storiesTotal: 4,
-						lastActivity: '2026-06-09T10:10:00Z',
-						terminalStatus: 'blocked',
-					});
-					return { status: 'blocked' as const, iterations: 3, lastOutcome: null };
-				},
-				startedAt: '2026-06-09T09:00:00Z',
-				pid: 42,
-			});
-
-			expect(code).toBe(1); // blocked exits non-zero
-			const statePath = join(dir, '.claude', 'cam-loop.local.md');
-			// The file must remain, marked active:false so status/dashboard render
-			// 'paused' (the stopped-needs-operator state) instead of idle.
-			expect(existsSync(statePath)).toBe(true);
-			expect(readFileSync(statePath, 'utf8')).toContain('active: false');
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('progress writer: null currentStoryId renders as null in YAML', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-prog-nullid-'));
-		try {
-			await runNext({
-				cwd: dir,
-				permissionMode: 'bypassPermissions',
-				workerPaneReader: (_claudeDir) => '%5',
-				supervisorFn: async (opts: RunSupervisorOptions) => {
-					opts.onProgress?.({
-						iteration: 1,
-						currentStoryId: undefined,
-						storiesDone: 0,
-						storiesTotal: 3,
-						lastActivity: '2026-06-09T10:00:00Z',
-					});
-					return { status: 'complete' as const, iterations: 1, lastOutcome: null };
-				},
-				startedAt: '2026-06-09T09:00:00Z',
-				pid: 42,
-			});
-
-			const statePath = join(dir, '.claude', 'cam-loop.local.md');
-			expect(existsSync(statePath)).toBe(true);
-			const body = readFileSync(statePath, 'utf8');
-			expect(body).toContain('current_story: null');
-			expect(body).toContain('stories_total: 3');
+			const code = await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
+			expect(code).toBe(1);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
