@@ -28,7 +28,7 @@ import { makeReviewDispatch } from './review.ts';
 import { makeFileEventLogger, readWorkerTokens } from './events.ts';
 import { acquireSupervisorLock, SUPERVISOR_LOCK_FILE, type AcquireLockResult } from './lock.ts';
 import type { PrdSnapshot } from './decide.ts';
-import { readWorkerPaneMarker } from '../tmux/session.ts';
+import { readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker } from '../tmux/session.ts';
 import { projectSessionName } from '../tmux/session.ts';
 import { isPidAlive } from '../commands/resume.ts';
 import { renderStateFile, writeStateFile } from '../commands/next.ts';
@@ -152,6 +152,8 @@ export function buildSupervisorOptions(
 	})();
 
 	// Read worker pane id (must be allocated by `cam plan` first).
+	// The boot-time value is the fallback; ensureWorkerPane re-reads the marker
+	// fresh on each call so it is never stale across loop boundaries.
 	const workerPaneId = readWorkerPaneMarker(claudeDir) ?? '%2';
 
 	// --- I/O adapters ---
@@ -249,6 +251,31 @@ export function buildSupervisorOptions(
 			logEvent,
 		});
 
+	// CAM-57: ensure a live worker pane exists before each respawn-pane dispatch.
+	// Re-reads the marker fresh (do NOT rely on the boot-time cached const) so a
+	// pane allocated mid-session by a previous dispatch is picked up correctly.
+	// If the current pane is dead or missing, opens a new one via openPaneInSession
+	// (a vertical split inside the project session), writes the new marker, and
+	// returns the new id. Always use this returned id for set-option + respawn-pane.
+	const ensureWorkerPaneFn: RunSupervisorOptions['ensureWorkerPane'] = () => {
+		const currentId = readWorkerPaneMarker(claudeDir) ?? workerPaneId;
+		if (isPaneAlive(currentId)) {
+			return currentId;
+		}
+		// Pane is dead or missing: open a fresh one with a placeholder command.
+		// openPaneInSession does a split-window -v inside the project session and
+		// returns the stable %<n> pane id. We start with 'cat' (silent placeholder)
+		// because the respawn-pane -k call immediately after will replace it.
+		const newId = openPaneInSession(sessionName, ['cat'], (cmd, args, opts) => {
+			return spawnSync(cmd, args, {
+				stdio: opts?.stdio ?? 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+		});
+		writeWorkerPaneMarker(claudeDir, newId);
+		return newId;
+	};
+
 	// Review dispatch.
 	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
 		spawn: (cmd, args) => {
@@ -284,6 +311,9 @@ export function buildSupervisorOptions(
 			writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\n', 'utf8');
 		},
 		workerPaneId,
+		// CAM-57: thread ensureWorkerPane into the review dispatch so the review
+		// closure also self-heals a dead pane before each respawn.
+		ensureWorkerPane: ensureWorkerPaneFn,
 	});
 
 	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {
@@ -473,6 +503,8 @@ export function buildSupervisorOptions(
 		onProgress,
 		readWorkerReport,
 		clearWorkerReport,
+		// CAM-57: self-heal dead worker pane before each dispatch.
+		ensureWorkerPane: ensureWorkerPaneFn,
 		sleepFn: (ms) => {
 			Bun.sleepSync(ms);
 		},

@@ -30,7 +30,7 @@
 //     dispatch polls for the <review> tag, mirroring the implementer's
 //     sentinel polling in loop.ts.
 
-import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPrd, WritePrd } from './loop.ts';
+import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPrd, WritePrd, EnsureWorkerPane } from './loop.ts';
 import type { PrdSnapshot } from './decide.ts';
 import { workerEnvPrefix } from './worker-argv.ts';
 
@@ -212,6 +212,15 @@ export interface MakeReviewDispatchOptions {
 	timeoutMs?: number;
 	/** Monotonic-ish clock in ms. Defaults to Date.now. Injectable for tests. */
 	now?: () => number;
+	/**
+	 * Ensure a live worker pane exists before the respawn-pane call (CAM-57).
+	 * When provided, called at the top of each reviewDispatch invocation before
+	 * the `respawn-pane -k`. If the current pane is dead, it creates a fresh
+	 * one and returns the new id; the returned id is used for respawn-pane and
+	 * all poll calls in this invocation. Optional: when absent, the static
+	 * `workerPaneId` from opts is used as-is (backward compat).
+	 */
+	ensureWorkerPane?: EnsureWorkerPane;
 }
 
 /** Default max review rounds (mirrors decide.ts and cam-review.md). */
@@ -251,7 +260,6 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		capturePane,
 		readPrd,
 		writePrd,
-		workerPaneId,
 		isPaneAlive,
 		sleepFn,
 		permissionMode,
@@ -261,8 +269,16 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_REVIEW_POLL_INTERVAL_MS;
 	const timeoutMs = opts.timeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS;
 	const now = opts.now ?? (() => Date.now());
+	const ensureWorkerPane = opts.ensureWorkerPane;
 
 	return function reviewDispatch(uuid: string): ReviewDispatchResult {
+		// CAM-57: ensure a live worker pane exists before the respawn. When
+		// ensureWorkerPane is absent, fall back to the static workerPaneId from
+		// opts (backward compat). Re-resolve per-call, not once at construction.
+		const liveWorkerPaneId = ensureWorkerPane !== undefined
+			? ensureWorkerPane()
+			: opts.workerPaneId;
+
 		// Build and respawn the interactive reviewer (CAM-41: the prompt is
 		// mandatory; a promptless claude dies instantly).
 		const shellCmd = buildReviewerWorkerArgv({
@@ -271,7 +287,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			taskPrompt,
 			permissionMode,
 		});
-		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
+		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, shellCmd]);
 
 		// Poll the pane until the <review> tag appears, the pane dies, or the
 		// deadline fires. The TUI session does not exit on its own.
@@ -279,17 +295,17 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		let parsed: ParsedReviewVerdict | null = null;
 		while (true) {
 			sleepFn(pollIntervalMs);
-			if (!isPaneAlive(workerPaneId)) {
+			if (!isPaneAlive(liveWorkerPaneId)) {
 				return {
 					status: 'error',
 					detail: 'Reviewer pane died before a <review> verdict was emitted.',
 				};
 			}
-			parsed = parseReviewVerdict(capturePane(workerPaneId));
+			parsed = parseReviewVerdict(capturePane(liveWorkerPaneId));
 			if (parsed !== null) break;
 			if (now() - startMs >= timeoutMs) {
 				// Kill the stuck reviewer so the retry (CAM-37) starts clean.
-				spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo review-timeout']);
+				spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, 'echo review-timeout']);
 				return {
 					status: 'error',
 					detail: 'Reviewer timed out before emitting a <review> verdict.',

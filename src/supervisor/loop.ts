@@ -52,6 +52,18 @@ export type SpawnFn = (
 export type IsPaneAlive = (paneId: string) => boolean;
 
 /**
+ * Ensure a live worker pane exists and return its id (CAM-57).
+ *
+ * Called immediately before each `respawn-pane -k` dispatch (both implement
+ * and review branches). If the currently-tracked pane id refers to a dead or
+ * missing pane, the implementation creates a fresh pane, writes the new id to
+ * the marker file, and returns it. If the pane is already live it is returned
+ * unchanged. This makes the dispatch-side self-healing: the second loop in a
+ * long-lived session works even when the worker pane was closed between runs.
+ */
+export type EnsureWorkerPane = () => string;
+
+/**
  * Capture the visible text of a tmux pane.
  * Returns the captured text as a string.
  */
@@ -244,6 +256,21 @@ export interface RunSupervisorOptions {
 	 */
 	clearWorkerReport?: ClearWorkerReport;
 	/**
+	 * Ensure a live worker pane exists before each dispatch (CAM-57).
+	 *
+	 * When injected, called immediately before every `respawn-pane -k` (in both
+	 * the implement and review branches). If the currently-tracked pane is dead
+	 * or missing, the implementation creates a fresh pane via
+	 * `openPaneInSession`, writes the new id to the marker, and returns the new
+	 * id. The returned id is used for `set-option @cam_label`, `respawn-pane
+	 * -k`, and all subsequent poll calls in that dispatch.
+	 *
+	 * Optional: when absent the loop falls back to the current behavior (use
+	 * the `workerPaneId` from options as-is). This keeps older callers and
+	 * existing tests byte-for-byte unchanged.
+	 */
+	ensureWorkerPane?: EnsureWorkerPane;
+	/**
 	 * Verify that the worker's pass actually landed on origin before the supervisor
 	 * continues the loop (US-001). Runs after writeSessionMarker, before continue.
 	 * Returns { ok, pushed, sha, detail }:
@@ -421,12 +448,15 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 		reviewDispatch,
 		writeSessionMarker,
 		isPaneAlive,
-		workerPaneId,
 		prdPath,
 		handoffPath,
 		permissionMode,
 		taskPrompt,
 	} = opts;
+
+	// CAM-57: mutable worker pane id. Re-resolved per dispatch via ensureWorkerPane
+	// when injected; otherwise stays as the static value from opts (backward compat).
+	let workerPaneId = opts.workerPaneId;
 
 	const genUuid = opts.genUuid ?? defaultGenUuid;
 	const maxIter = opts.maxIterations ?? MAX_ITERATIONS;
@@ -434,6 +464,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const maxWorkerTokens = opts.maxWorkerTokens ?? 0;
 	const runGates = opts.runGates;
 	const finalizeStory = opts.finalizeStory;
+	const ensureWorkerPane = opts.ensureWorkerPane;
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 	// Real sleep: use a no-op by default so tests never block; callers that want
 	// actual sleeping must inject Bun.sleepSync (or similar).
@@ -571,6 +602,15 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				taskPrompt,
 				permissionMode,
 			});
+
+			// CAM-57: ensure a live worker pane exists before dispatching. When
+			// ensureWorkerPane is injected it re-reads the marker and creates a
+			// fresh pane if the current one is dead (self-heal for the 2nd loop in
+			// a long-lived session). Without the injection the pane id is unchanged
+			// (backward compat: existing callers and tests are unaffected).
+			if (ensureWorkerPane !== undefined) {
+				workerPaneId = ensureWorkerPane();
+			}
 
 			// US-002: set the worker pane label for this phase before respawning.
 			// The pane-border-format #{@cam_label} at the session level picks this up,
@@ -871,6 +911,12 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 		// --- Review branch ---
 		if (action.kind === 'review') {
+			// CAM-57: ensure a live worker pane exists before the review dispatch,
+			// same self-heal as the implement branch above.
+			if (ensureWorkerPane !== undefined) {
+				workerPaneId = ensureWorkerPane();
+			}
+
 			// US-002: label the worker pane for the review phase.
 			// Same pattern as the implement branch: set-option -p is best-effort.
 			spawn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', workerPaneId, '@cam_label', 'reviewer']);
