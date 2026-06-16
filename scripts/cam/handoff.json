@@ -1,15 +1,17 @@
 {
-  "lastCompletedStory": "US-003",
+  "lastCompletedStory": "US-004",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-implementer.md",
-    "templates/agents/subagent-implementer.md",
+    ".claude/agents/subagent-reviewer.md",
+    ".claude/commands/cam-review.md",
+    "templates/agents/subagent-reviewer.md",
+    "templates/commands/cam-review.md",
     "src/vendor/_generated.ts",
     "test/embedded.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added Gate discipline section to the implementer prompt (both .claude/agents/ and templates/agents/). PROHIBITED phrase, named-command + exitCode 0 gate definition, and success/partial/failure roll-up labels added. WorkerReport.gates shape kept as-is (string fields sufficient). embed-vendor regenerated. test/embedded.test.ts has three new assertions on the implementer prompt. Next story to pick is the highest-priority passes:false non-operator story in prd.json.",
+  "nextStoryContext": "US-004 added the Layer B binary PASS/FAIL rubric (8 fixed criteria: spec-correctness, tests-with-meaningful-assert, strict-types, error-handling, project-conventions, security, deps, perf) to both the reviewer prompt (.claude/agents/ and templates/agents/) and cam-review command (.claude/commands/ and templates/commands/). Evidence-per-criterion requirement, does-not-trust-green-tests clause, hard-constraint rule, and verdict body shape documented. Terminal signal (<review>CLEAN</review> / FIXES_PENDING:N) and parseReviewVerdict in result.ts left untouched. embed-vendor regenerated. test/embedded.test.ts has four new assertions on the reviewer prompt. Next story: highest-priority passes:false non-operator story in prd.json.",
   "officialDocsValidated": [
     {
       "lib": "none",
