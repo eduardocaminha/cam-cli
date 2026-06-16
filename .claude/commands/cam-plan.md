@@ -183,6 +183,7 @@ Rules:
 - Add top-level `"relatedDocs"` listing docs read in Step 4 (empty array `[]` if none).
 - Add top-level `"officialDocsConsulted"` as an array of `{ lib, url, version, fetchedAt, summary, status }` (empty array `[]` if no external library touched).
 - Stories needing real-user keypress, OS-level action, or human-curated artifact MUST set `requires: "operator"`.
+- **Oracle rule**: every acceptanceCriterion MUST name its verification method. Choose one of: named-command (e.g. `bun test`), file-assert (e.g. grep check), or reviewer-judgment for irreducibly subjective checks. Litmus: "if you can't test whether the spec was followed, it's too vague." Append `[oracle: <kind-or-command>]` at the end of each criterion string.
 
 **Minimal PRD schema**:
 ```json

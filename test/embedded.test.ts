@@ -117,6 +117,25 @@ describe('templatesContents — codegen byte-parity', () => {
 	});
 });
 
+describe('templatesContents — oracle contract in planner prompt (US-001)', () => {
+	// The planner agent at templates/agents/subagent-planner.md must document
+	// the oracle contract so every generated PRD has mechanically-checkable
+	// acceptance criteria. Spec drift (a criterion that cannot be verified) is
+	// the #1 failure mode identified in the two-layer-verification research.
+
+	const planner = templatesContents['agents/subagent-planner.md'];
+
+	test('contains the oracle litmus quote', () => {
+		expect(planner).toContain("if you can't test whether the spec was followed, it's too vague");
+	});
+
+	test('names all three oracle kinds: named-command, file-assert, reviewer-judgment', () => {
+		expect(planner).toContain('named-command');
+		expect(planner).toContain('file-assert');
+		expect(planner).toContain('reviewer-judgment');
+	});
+});
+
 describe('materializeTemplates — .gitignore is merged, never clobbered', () => {
 	// CAM-55 round-2 review: `templates/.gitignore` lands at the project root.
 	// A blind overwrite would destroy a downstream project's existing
