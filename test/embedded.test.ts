@@ -219,6 +219,30 @@ describe('materializeTemplates — .gitignore is merged, never clobbered', () =>
 	});
 });
 
+describe('templatesContents — gate discipline in implementer prompt (US-003)', () => {
+	// The implementer agent at templates/agents/subagent-implementer.md must
+	// document the gate-discipline rules so every future worker knows:
+	//   (a) it is PROHIBITED from declaring done before gates pass,
+	//   (b) a gate is a named-command + exitCode 0 (not prose),
+	//   (c) the roll-up uses success/partial/failure labels.
+
+	const implementer = templatesContents['agents/subagent-implementer.md'];
+
+	test('contains the PROHIBITED phrase', () => {
+		expect(implementer).toContain('PROHIBITED');
+	});
+
+	test('contains the named-command + exitCode 0 gate definition', () => {
+		expect(implementer).toContain('named-command + exitCode 0');
+	});
+
+	test('contains the success/partial/failure roll-up labels', () => {
+		expect(implementer).toContain('success');
+		expect(implementer).toContain('partial');
+		expect(implementer).toContain('failure');
+	});
+});
+
 describe('materializeEmbedded', () => {
 	let cacheDir: string;
 	let prevCache: string | undefined;
