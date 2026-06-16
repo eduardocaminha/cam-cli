@@ -63,7 +63,11 @@ Work through every section below. For every finding, record `severity` (critical
 
 7. Every story has typecheck and lint/test in acceptance criteria?
 8. Every UI-touching story has browser verification AND E2E test in acceptance criteria?
-9. Every acceptance criterion is **verifiable** — not a vague verb like "improve", "optimize", "clean up" without a concrete pass/fail? Flag unverifiable criteria.
+9. Every acceptance criterion **has an oracle** — a named verification method the implementer can run without ambiguity. The three accepted oracle kinds are:
+   - **named-command**: a shell command or tool invocation whose exit-code or stdout decides pass/fail (e.g. `bun test`, `bun run typecheck`, `bun run embed-vendor:check`).
+   - **file-assert**: a structural or content property of a named file (e.g. "file `foo.json` contains key `bar`", "embedded file includes phrase `has an oracle`").
+   - **reviewer-judgment**: explicit tag `[oracle: reviewer-judgment]` meaning a human or LLM reviewer judges correctness (last resort — flag if overused).
+   A criterion that pairs no oracle of any kind is a **critical** finding and the auditor MUST BLOCK (not a soft note). Vague verbs like "improve", "optimize", or "clean up" without a concrete pass/fail are automatically oracle-free.
 10. No TODO, TBD, `<placeholder>`, `XXX`, or `TKTK` strings anywhere in the PRD? Flag every one.
 
 ### D. Docs rigor
@@ -88,7 +92,7 @@ cam-cli is the `cam` binary: a Bun + TypeScript + Ink CLI. Check these invariant
 20. **Ink UI honesty**: any story rendering an Ink screen must verify via the ✓/✗ glyph, not divider color, and reuse `src/design/tokens.ts` / `src/ui/theme.ts`. Flag stories that propose color-coded dividers as a success signal.
 21. **Vendor/template sync**: a story editing `vendor/` or `templates/` must also regenerate the embedded copy (`bun run embed-vendor`); flag if that step is missing from notes/criteria.
 22. **No secrets inline**: `LINEAR_API_KEY` and any token must come from the environment, never committed into `project.toml`, `prd.json`, or source.
-23. **Self-hosting caution**: because this repo IS the cam tooling, a story must not modify `.claude/agents/*`, `.claude/hooks/*`, or `templates/` unless its acceptance criteria explicitly say so. Flag incidental edits to the harness itself.
+23. **Self-hosting caution**: because this repo IS the cam tooling, a story must not modify `.claude/agents/*`, `.claude/hooks/*`, or `templates/` unless its acceptance criteria explicitly declare the intent. If the story body declares the edit (e.g. "this story edits `.claude/agents/subagent-auditor.md`"), that is intentional self-hosting — do NOT flag it as harness drift. Flag only incidental or undeclared edits to the harness.
 
 ## Output format
 

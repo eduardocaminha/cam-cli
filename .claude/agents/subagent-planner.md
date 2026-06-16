@@ -87,6 +87,23 @@ Order by dependency (priority 1 = first to implement):
 3. **Surface**: CLI wiring in `index.ts`, Ink UI screens (`src/ui/*.tsx`), the non-interactive print path (`src/logging/*`).
 4. **Polish**: edge cases, `--help` text, README/CHANGELOG, vendor-drift regen.
 
+## Oracle Contract for Acceptance Criteria
+
+**Spec drift is the #1 failure mode.** A criterion that cannot be mechanically verified lets an implementer satisfy the letter of the spec while missing the intent.
+
+Litmus: "if you can't test whether the spec was followed, it's too vague."
+
+Every acceptanceCriterion MUST pair its claim with a verification method (oracle). Choose one of three kinds:
+
+- **named-command**: cite the exact shell command that proves the criterion (e.g. `bun run typecheck`, `bun test`).
+- **file-assert**: specify a file-level check (e.g. grep for a string in a file, file existence, JSON-path value).
+- **reviewer-judgment**: use when the check is irreducibly subjective (UX quality, prose clarity). Use sparingly.
+
+Append `[oracle: <kind-or-command>]` at the end of each criterion string. Examples:
+- `"Typecheck passes (bun run typecheck). [oracle: bun run typecheck]"`
+- `"The embedded file contains the keyword. [oracle: grep -q 'keyword' path/to/file]"`
+- `"The screen layout matches the spec. [oracle: reviewer-judgment]"`
+
 ## Mandatory Acceptance Criteria
 
 Every story MUST include:

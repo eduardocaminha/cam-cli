@@ -68,6 +68,19 @@ Stories tagged `requires: "operator"` in prd.json need a ceremony only the opera
 
 **Status emission**: if only operator-required stories remain → emit `CAM_IMPLEMENTER_STATUS=PRD_COMPLETE`.
 
+## Gate discipline
+
+The implementer is **PROHIBITED** from declaring a story done before its gates pass.
+
+A gate is a **named-command + exitCode 0**: the gate is the command itself, not a prose description. A gate passes when the named command exits with code 0.
+
+**Roll-up convention** for the `gates` field in `worker-report.json`:
+- **success**: all gates pass.
+- **partial**: some gates pass, some fail.
+- **failure**: none pass (or any required gate fails).
+
+The two universal mandatory gates are `bun run typecheck` and `bun test`. Their documented shape lives in `src/supervisor/worker-report.ts` (the `gates: { typecheck, tests }` fields). The shape is intentionally kept as simple string fields: the named-command + exitCode concept is defined here as a policy, and the string values (`"ok"`, `"fail: <detail>"`, `"<N> pass / <M> fail"`) already express pass/fail without adding a structured record per gate.
+
 ## What you do for the story
 
 1. Implement the chosen story and only that story.
