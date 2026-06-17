@@ -30,6 +30,9 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
 
 import { readSidecarPid, removeSidecarPid, sidecarPidAlive } from '../supervisor/sidecar-pid.ts';
+import { SUPERVISOR_LOCK_FILE } from '../supervisor/lock.ts';
+import { WORKER_REPORT_FILENAME } from '../supervisor/worker-report.ts';
+import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
 
 import {
 	emitMutedHint,
@@ -39,7 +42,13 @@ import {
 	emitTrailingBlank,
 } from '../logging/screen.ts';
 import { parseStateFile } from './status.ts';
-import { projectSessionName, readWorkerPaneMarker, tmuxArgs } from '../tmux/session.ts';
+import {
+	projectSessionName,
+	readWorkerPaneMarker,
+	tmuxArgs,
+	WORKER_PANE_MARKER,
+	ORCH_SESSION_MARKER,
+} from '../tmux/session.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -266,6 +275,35 @@ export function performStop(options: StopOptions = {}): StopReport {
 			// Couldn't unlink (permissions / race). Treat as not-removed; the
 			// operator gets a warning + exit 0 still — the next `cam next`
 			// will refuse to clobber the file and surface the same diagnostic.
+		}
+	}
+
+	// 2b. Remove the full per-session marker set (US-002).
+	//
+	// Files cleaned (all idempotent: existsSync + unlinkSync in try/catch):
+	//   - .cam-supervisor.lock  (SUPERVISOR_LOCK_FILE)    in .claude/
+	//   - .cam-orch-session     (ORCH_SESSION_MARKER)     in .claude/
+	//   - .cam-worker-pane      (WORKER_PANE_MARKER)      in .claude/
+	//   - .cam-orch-ready       (ORCH_READY_MARKER)       in .claude/
+	//   - scripts/cam/worker-report.json (WORKER_REPORT_FILENAME) in cwd
+	//
+	// Absent markers are a no-op (existsSyncImpl returns false -> skip).
+	// Diagnostic-value files (.cam-worker-*.session, cam-worker-events.jsonl,
+	// cam-supervisor.log) are intentionally NOT removed.
+	for (const [dir, name] of [
+		[claudeDir, SUPERVISOR_LOCK_FILE],
+		[claudeDir, ORCH_SESSION_MARKER],
+		[claudeDir, WORKER_PANE_MARKER],
+		[claudeDir, ORCH_READY_MARKER],
+		[cwd, WORKER_REPORT_FILENAME],
+	] as [string, string][]) {
+		const p = join(dir, name);
+		if (existsSyncImpl(p)) {
+			try {
+				unlinkSyncImpl(p);
+			} catch {
+				// best-effort: permission race or already gone
+			}
 		}
 	}
 

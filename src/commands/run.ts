@@ -46,6 +46,7 @@ import {
 	ensureProjectSession,
 	isSessionStale,
 	tmuxArgs,
+	ORCH_SESSION_MARKER,
 	type SpawnFn,
 	type CreatedPaneIds,
 } from '../tmux/session.ts';
@@ -320,7 +321,7 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	// Generate and persist the orchestrator session id so the dashboard can
 	// locate the JSONL transcript for token-spend reporting (US-002).
 	const sessionId = genSessionId();
-	writeFileSync(join(dotClaude, '.cam-orch-session'), sessionId, 'utf8');
+	writeFileSync(join(dotClaude, ORCH_SESSION_MARKER), sessionId, 'utf8');
 
 	// The ready marker (.claude/.cam-orch-ready) is NOT written here by the
 	// parent. The orchestrator agent writes it as its FIRST action after boot
@@ -342,7 +343,7 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 		sessionName,
 		sessionId,
 		promptFile,
-		sessionIdMarker: join(dotClaude, '.cam-orch-session'),
+		sessionIdMarker: join(dotClaude, ORCH_SESSION_MARKER),
 		handoffMarker: join(dotClaude, '.cam-orch-handoff.json'),
 		stateFile: join(dotClaude, 'cam-loop.local.md'),
 		readyMarker: readyMarkerPath,

@@ -58,7 +58,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/stop.ts (performStop body ~line 186-251; today only STATE_FILE_PATH = '.claude/cam-loop.local.md' at line 44 is removed; the worker pane is respawn-killed but the WORKER_PANE_MARKER file is NOT removed). Imports to add: SUPERVISOR_LOCK_FILE from ../supervisor/lock.ts, WORKER_REPORT_FILENAME from ../supervisor/worker-report.ts, WORKER_PANE_MARKER from ../tmux/session.ts, ORCH_READY_MARKER from ../tmux/bootstrap-wait.ts. The .cam-orch-session file is currently written at run.ts:315 as a bare string literal (no constant exists today): this story MUST promote it to a named export ORCH_SESSION_MARKER (place it on src/tmux/session.ts next to WORKER_PANE_MARKER, or on the same module the writer lives in) and reuse it from BOTH the writer (run.ts:315 and run.ts:337) and the remover (stop.ts). Without that promotion the negative-grep oracle (no bare marker literals in stop.ts) is unsatisfiable for .cam-orch-session. Test mirrors the existing stop.test.ts shape (inject unlinkSyncFn + existsSyncFn). The StopReport will grow markersRemoved in US-005."
     },
