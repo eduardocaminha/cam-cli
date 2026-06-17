@@ -128,7 +128,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/stop.ts (after US-001 sidecar-kill path, before the marker removal of US-002; the fallback only runs when the pid-file path did NOT find a live pid). The cwd-scoped scan must be injectable for tests: take a listProcessesFn dep that returns ProcessRecord[] with { pid, argv: string[], cwd: string }; the production adapter shells out (on macOS: ps -eo pid,command + lsof for cwd, OR Bun.$ with the existing patterns). Prefer Bun.$ over node:child_process per patterns.md. CRITICAL scoping rule from the issue: scope to THIS project's cwd; never a blanket pkill cam sidecar (that would hit other projects' sidecars on the same machine). Reaps already-orphaned sidecars the dogfood found (US-001 only prevents NEW orphans). Reference: dogfood 2026-06-17 noted an 11h-uptime orphan sidecar."
     },

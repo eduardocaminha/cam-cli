@@ -1,27 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Observability: structured sidecar-exit event + StopReport teardown fields"
+    "id": "US-006",
+    "title": "Scoped fallback kill for already-orphaned sidecars"
   },
   "branchName": "cam/CAM-67-stop-kills-sidecar",
   "timestamp": "2026-06-17T00:00:00Z",
   "createdFiles": [
-    "test/stop-report-fields.test.ts"
+    "test/stop-sidecar-fallback.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/events.ts",
-    "src/supervisor/loop.ts",
-    "src/commands/sidecar.ts",
     "src/commands/stop.ts",
+    "test/supervisor/sidecar-self-exit.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 complete: sidecar-exit event added to WorkerEventKind, logEvent dep wired through RunSidecarLoopOptions and SidecarOptions, markersRemoved:string[] added to StopReport with tracking in performStop, runStop updated to print 'Sent SIGTERM to sidecar process' and list removed markers. All 7 oracles pass (4 file-assert + 3 gate). Next story should be the next passes:false non-operator entry in prd.json.",
+  "nextStoryContext": "US-006 complete: ProcessRecord + ListProcessesFn types added to stop.ts; matchesSidecarForProject helper (strict record.cwd===projectCwd) exported; defaultListProcesses production adapter (ps+lsof); fallbackSidecarKilled:boolean in StopReport; fallback logic runs after pid-file phase when no live pid found; listProcessesFn injectable dep in StopOptions. New test: test/stop-sidecar-fallback.test.ts (3 cases: match, foreign cwd, wrong argv). sidecar-self-exit.test.ts gains a 3rd test for absent->present->absent startup-grace race. All 993 tests pass, typecheck clean. Next story: pick next passes:false non-operator entry.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-005 only touched TypeScript types and built-in node:path/node:fs. No external library was introduced or changed."
+      "summary": "US-006 only touched TypeScript types and built-in node:child_process (spawnSync). No external library was introduced or changed."
     }
   ]
 }
