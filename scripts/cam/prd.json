@@ -133,9 +133,14 @@
         "Operator reports the ceremony outcome in the PR/issue thread (pass or specific failure mode) — this is the launch-ready evidence the PR needs. [oracle: reviewer-judgment]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "This story is hand-executed by the operator after US-001..US-006 land. Reference memory 'Recuperacao in-place + re-arm por-story do cam' for the in-place rebuild path (rm+cp avoids ETXTBSY). The CAM-56 dogfood that surfaced the bug is the inverse ceremony: a successful repeat of that flow on this branch is the proof. Re-check FLOW.md §7 (autonomous loop) and §8 (state machine) to know what terminal events the operator should look for in `.claude/cam-worker-events.jsonl`."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "CLEAN"
+  }
 }
