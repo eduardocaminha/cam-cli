@@ -1,23 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Sidecar hasPendingStories also returns true when review is non-terminal"
+    "id": "US-004",
+    "title": "Staleness guard: worker-report fallback only trusts a report whose story matches the expected dispatched story"
   },
   "branchName": "cam/CAM-58-supervisor-outcome-worker-report",
   "timestamp": "2026-06-17T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/decide.ts",
-    "src/commands/sidecar.ts",
-    "test/supervisor/sidecar-loop.test.ts"
+    "src/supervisor/result.ts",
+    "src/supervisor/loop.ts",
+    "test/supervisor/result.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 exported TERMINAL_VERDICTS from decide.ts, exported makeHasPendingStories from sidecar.ts, and extended its logic to gate on prd.review.lastVerdict (returns true when verdict is absent/null/non-terminal, false only when CLEAN or MAX_ROUNDS_DEBT). Added 7 direct-import tests. No US-004+ context yet; read prd.json fresh to pick the next story.",
+  "nextStoryContext": "US-004 added expectedStoryId?: string to ReadWorkerOutcomeOptions. When set and report.story does not match, the worker-report fallback is skipped (falls to unknown). When undefined, US-001 behavior is preserved. loop.ts now passes advisoryStoryId as expectedStoryId. 5 new tests in test/supervisor/result.test.ts (36 total, all pass). Full suite: 970 pass / 0 fail.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure TypeScript refactor: exported a function and a constant, extended logic to check prd.review.lastVerdict. No external npm library introduced or modified."
+      "summary": "Pure TypeScript internal change: added expectedStoryId field to ReadWorkerOutcomeOptions and threaded it from loop.ts. No external npm library introduced or modified."
     }
   ]
 }

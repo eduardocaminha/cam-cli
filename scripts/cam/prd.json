@@ -79,7 +79,7 @@
         "Tests pass. [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Touch src/supervisor/result.ts (extend ReadWorkerOutcomeOptions and the US-001 fallback branch), src/supervisor/loop.ts:758-775 (thread advisoryStoryId from loop.ts:594 into readWorkerOutcome opts). src/supervisor/host.ts is unaffected (the field is set per-call by loop.ts, not built by host.ts). Note clearWorkerReport (loop.ts:625, host.ts:87-98) already wipes the file before dispatch, so the freshness guard here is the second line of defense against a clearWorkerReport failure or a worker that writes a report then crashes. Tests in test/supervisor/result.test.ts. Re-check FLOW.md §9-Q1 for the push-model assumption."
     },
