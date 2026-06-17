@@ -22,12 +22,14 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { spawnSync } from 'node:child_process';
 
 import { runSidecarLoop, type RunSidecarLoopOptions } from '../supervisor/loop.ts';
 import { buildSupervisorOptions } from '../supervisor/host.ts';
 import { parseStateFile } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
+import { hasSession, projectSessionName, type SpawnFn } from '../tmux/session.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -69,6 +71,12 @@ export interface SidecarOptions {
 	 * Override the buildOpts call. Tests inject a fake.
 	 */
 	buildOptsFn?: RunSidecarLoopOptions['buildOpts'];
+	/**
+	 * Override the hasSession check used for sidecar self-exit.
+	 * Production: closure over hasSession(projectSessionName(cwd), spawnFn).
+	 * Tests inject a fake to avoid spawning real tmux.
+	 */
+	hasSessionFn?: () => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +217,15 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	const hasPendingStoriesFn = options.hasPendingStoriesFn ?? makeHasPendingStories(prdPath);
 	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
 
+	// Production hasSession checker: uses the real spawnSync-based SpawnFn so
+	// has-session runs against the -L cam dedicated tmux socket without needing
+	// a full tmux session object in this process.
+	const realSpawnFn: SpawnFn = (cmd, args, spawnOpts) =>
+		spawnSync(cmd, args, spawnOpts as Parameters<typeof spawnSync>[2]);
+	const sessionName = projectSessionName(cwd);
+	const hasSessionFn =
+		options.hasSessionFn ?? (() => hasSession(sessionName, realSpawnFn));
+
 	// Lock factory: built from real host.ts unless injected by tests.
 	const acquireLockFn =
 		options.acquireLockFn ??
@@ -233,5 +250,6 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		hasPendingStories: hasPendingStoriesFn,
 		acquireLock: acquireLockFn,
 		runSupervisorFn: options.runSupervisorFn,
+		hasSessionFn,
 	});
 }
