@@ -144,7 +144,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/integration/stop-sidecar-real.test.ts (new). Templates: test/integration/tmux-introspect.test.ts is the closest existing real-tmux test; test/integration/ensure-worker-pane-selfheal.test.ts (CAM-57) is the closest real-tmux + real-process pattern. Per the issue, prefer a fully automated test (not requires:'operator') because tmux is available in the project's bun test environment (the two existing real-tmux integration tests already run there). Domain fit: tmux has-session + process.kill is exactly where unit fakes pass but reality differs (CAM-55 lesson). Use Bun.spawn for the sleeper (a long sleep), capture proc.pid, write it to .claude/.cam-sidecar.pid in a unique mkdtemp cwd, run performStop({cwd}) with REAL spawnSyncFn/killFn (no injections for the kill), then verify with process.kill(pid, 0). Clean up the temp dir and any leftover tmux session in afterAll."
     }
