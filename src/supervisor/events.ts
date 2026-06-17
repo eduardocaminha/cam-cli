@@ -59,7 +59,8 @@ export type WorkerEventKind =
 	| 'no-progress-retry'
 	| 'pane-died-retry'
 	| 'worker-token-ceiling'
-	| 'outcome-fallback';
+	| 'outcome-fallback'
+	| 'sidecar-exit';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';

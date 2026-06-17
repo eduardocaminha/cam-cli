@@ -1,22 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Update docs/recovery-runbook.md for sidecar pid + new cam stop scope"
+    "id": "US-005",
+    "title": "Observability: structured sidecar-exit event + StopReport teardown fields"
   },
   "branchName": "cam/CAM-67-stop-kills-sidecar",
   "timestamp": "2026-06-17T00:00:00Z",
-  "createdFiles": [],
+  "createdFiles": [
+    "test/stop-report-fields.test.ts"
+  ],
   "modifiedFiles": [
-    "docs/recovery-runbook.md",
+    "src/supervisor/events.ts",
+    "src/supervisor/loop.ts",
+    "src/commands/sidecar.ts",
+    "src/commands/stop.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 complete: docs/recovery-runbook.md updated with .cam-sidecar.pid table row, sidecar self-terminates note in scenario (a), full marker set listing, and cross-reference update. All four oracles pass. Next story US-005 adds structured sidecar-exit event + StopReport teardown fields.",
+  "nextStoryContext": "US-005 complete: sidecar-exit event added to WorkerEventKind, logEvent dep wired through RunSidecarLoopOptions and SidecarOptions, markersRemoved:string[] added to StopReport with tracking in performStop, runStop updated to print 'Sent SIGTERM to sidecar process' and list removed markers. All 7 oracles pass (4 file-assert + 3 gate). Next story should be the next passes:false non-operator entry in prd.json.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 is a doc-only update (docs/recovery-runbook.md). No external library was touched."
+      "summary": "US-005 only touched TypeScript types and built-in node:path/node:fs. No external library was introduced or changed."
     }
   ]
 }

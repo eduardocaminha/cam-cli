@@ -1064,6 +1064,13 @@ export interface RunSidecarLoopOptions {
 	 * Injected so tests do not need a real tmux process.
 	 */
 	hasSessionFn?: () => boolean;
+	/**
+	 * Structured event sink for sidecar lifecycle events.
+	 * When provided, the sidecar self-exit path writes a 'sidecar-exit' event.
+	 * Production wiring: makeFileEventLogger('.claude/cam-worker-events.jsonl').
+	 * Tests inject makeInMemoryEventLogger().logger to capture events.
+	 */
+	logEvent?: WorkerEventLogger;
 }
 
 /** Idle polling interval for the sidecar outer loop (2 seconds). */
@@ -1108,6 +1115,15 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 					sessionSeen = true;
 				} else if (sessionSeen) {
 					// Session was alive, now gone: the cam run host died abnormally.
+					// Emit a structured 'sidecar-exit' event so the operator can diagnose
+					// the self-exit from the event log without reading source.
+					opts.logEvent?.({
+						ts: new Date().toISOString(),
+						storyId: undefined,
+						uuid: 'sidecar',
+						kind: 'sidecar-exit',
+						detail: { reason: 'session-absent' },
+					});
 					return;
 				}
 			}

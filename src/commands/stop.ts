@@ -25,7 +25,7 @@
 // installed at all (e.g. on a fresh dev box) — also "nothing to clean".
 
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
 
@@ -134,6 +134,13 @@ export interface StopReport {
 	 * regardless of liveness.
 	 */
 	sidecarKilled: boolean;
+	/**
+	 * Relative paths (from cwd) of every marker file actually unlinked by this
+	 * call. Empty when no markers were present. Populated by step 2 (state file)
+	 * and step 2b (per-session marker set). Useful for diagnostic output so the
+	 * operator knows exactly which files were cleaned without re-reading source.
+	 */
+	markersRemoved: string[];
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -239,6 +246,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 		supervisorKilled: false,
 		workerPaneKilled: false,
 		sidecarKilled: false,
+		markersRemoved: [],
 	};
 
 	// 1. Kill the supervisor PID from the state file (before we remove it).
@@ -271,6 +279,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 		try {
 			unlinkSyncImpl(statePath);
 			report.stateFileRemoved = true;
+			report.markersRemoved.push(STATE_FILE_PATH);
 		} catch {
 			// Couldn't unlink (permissions / race). Treat as not-removed; the
 			// operator gets a warning + exit 0 still — the next `cam next`
@@ -301,6 +310,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 		if (existsSyncImpl(p)) {
 			try {
 				unlinkSyncImpl(p);
+				report.markersRemoved.push(relative(cwd, p));
 			} catch {
 				// best-effort: permission race or already gone
 			}
@@ -350,7 +360,11 @@ export function runStop(options: StopOptions = {}): number {
 	}
 
 	if (report.sidecarKilled) {
-		emitOk('Sent SIGTERM to sidecar PID');
+		emitOk('Sent SIGTERM to sidecar process');
+	}
+
+	if (report.markersRemoved.length > 0) {
+		emitOk(`Removed ${report.markersRemoved.length} marker file(s): ${report.markersRemoved.join(', ')}`);
 	}
 
 	if (report.stateFileRemoved) {
@@ -375,7 +389,7 @@ export function runStop(options: StopOptions = {}): number {
 	// success is signaled by the accent ✓ glyph on the content line (`emitOk`),
 	// matching how the Ink screens do it.
 	emitSectionHeading('Done');
-	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled) {
+	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled || report.markersRemoved.length > 0) {
 		emitOk('Loop stopped');
 	} else {
 		emitMutedHint('Nothing to clean — no active loop or stale state');

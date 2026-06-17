@@ -111,7 +111,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (event emission on the self-exit path from US-003) and src/supervisor/events.ts. Two concrete facts verified against the source:\n  (1) RunSidecarLoopOptions (loop.ts ~line 1010-1050) does NOT currently expose a logEvent / WorkerEventLogger dependency. This story MUST add one (e.g. logEvent?: WorkerEventLogger) and wire it from the production callers (src/supervisor/host.ts and/or src/commands/sidecar.ts) so the self-exit path can emit a structured event; tests use makeInMemoryEventLogger from events.ts.\n  (2) WorkerEventKind in events.ts (~line 51-62) is a CLOSED string-union (currently 'worker-start' | 'worker-end' | 'result' | 'tokens' | 'pushed' | 'stale-lock' | 'rate-limited' | 'no-progress-retry' | 'pane-died-retry' | 'worker-token-ceiling' | 'outcome-fallback'). 'sidecar-exit' MUST be added to that union, otherwise typecheck fails when loop.ts emits { kind: 'sidecar-exit' }.\nReference patterns: lock.ts:98-104 emits 'stale-lock' with detail; mirror that shape. src/commands/stop.ts (StopReport interface ~line 82-103; runStop print path ~line 257-296). The runbook doc (US-004) section (f) Diagnosing with the event log already lists known kinds; if US-004 already added 'sidecar-exit' under section (f), good: otherwise this story can do nothing in the doc (Doc Maintenance is owned by US-004)."
     },

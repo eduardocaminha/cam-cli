@@ -26,6 +26,7 @@ import { spawnSync } from 'node:child_process';
 
 import { runSidecarLoop, type RunSidecarLoopOptions } from '../supervisor/loop.ts';
 import { buildSupervisorOptions } from '../supervisor/host.ts';
+import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/events.ts';
 import { parseStateFile } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
@@ -77,6 +78,12 @@ export interface SidecarOptions {
 	 * Tests inject a fake to avoid spawning real tmux.
 	 */
 	hasSessionFn?: () => boolean;
+	/**
+	 * Override the event logger used to record sidecar lifecycle events.
+	 * Production: makeFileEventLogger('.claude/cam-worker-events.jsonl').
+	 * Tests inject makeInMemoryEventLogger().logger to capture events in memory.
+	 */
+	logEventFn?: WorkerEventLogger;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +233,11 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	const hasSessionFn =
 		options.hasSessionFn ?? (() => hasSession(sessionName, realSpawnFn));
 
+	// Structured event logger: writes sidecar lifecycle events (e.g. 'sidecar-exit')
+	// to the shared cam-worker-events.jsonl file so operators can diagnose self-exits.
+	const logEvent =
+		options.logEventFn ?? makeFileEventLogger(join(claudeDir, 'cam-worker-events.jsonl'));
+
 	// Lock factory: built from real host.ts unless injected by tests.
 	const acquireLockFn =
 		options.acquireLockFn ??
@@ -251,5 +263,6 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		acquireLock: acquireLockFn,
 		runSupervisorFn: options.runSupervisorFn,
 		hasSessionFn,
+		logEvent,
 	});
 }
