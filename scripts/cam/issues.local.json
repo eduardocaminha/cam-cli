@@ -1,5 +1,5 @@
 {
-  "next_id": 67,
+  "next_id": 68,
   "issues": [
     {
       "id": "CAM-1",
@@ -551,6 +551,14 @@
       "createdAt": "2026-06-16T23:00:00Z",
       "title": "Dashboard polish: truncate long story titles (list) + harden the Loop-header ghost",
       "description": "Two cam dashboard render issues from dogfood 2026-06-16. (1) Story titles overflow: src/ui/Dashboard.tsx renders story.title raw (lines 562/573, no truncation), so long titles wrap and interleave with the per-story token counts, breaking the list layout. Fix (operator chose this approach): truncate the list row to a fixed width with a trailing ellipsis; the full title already shows in the detail subview (the navigable per-story view from CAM-50), so 'enter the story to read all' already works, no PRD schema change. (2) Loop-header ghosting: the 'Loop' section header stacks/duplicates on rapid terminal reflow (seen as many repeated 'Loop' lines). src/commands/dashboard.ts:837-848 already mitigates a single resize by clearing the alt-screen on the resize event, but it still ghosts under a reflow/dispatch storm (intermittent; clean in a later screenshot). Harden it (periodic full-clear, or fix the stale Ink line-count tracking at the old width). Both are pure src/ui/Dashboard.tsx + src/commands/dashboard.ts changes. Source: dogfood screenshots."
+    },
+    {
+      "id": "CAM-67",
+      "priority": "P2",
+      "state": "open",
+      "createdAt": "2026-06-17T00:45:00Z",
+      "title": "cam stop must kill the sidecar + clean all markers; cam run abnormal-exit orphans the sidecar",
+      "description": "Dogfood 2026-06-17: after the operator closed the session and ran cam stop, an orphan cam sidecar process was still running (observed ~11h uptime, having survived multiple sessions; sidecars accumulate, consistent with the 'two sidecars alive ~15h' seen in the CAM-56 dogfood), plus stale markers left behind (.claude/.cam-orch-session, .claude/.cam-worker-pane, scripts/cam/worker-report.json). cam stop kills the tmux session but does NOT kill the sidecar process and does not clean all markers; and a cam run killed abnormally (session closed rather than a clean SIGINT/SIGTERM to the cam run process) orphans its sidecar (the sidecar only dies via cam run's own SIGINT/SIGTERM cleanup handler). Result: orphan sidecars poll forever and pile up across sessions. Fix: (1) cam stop locates and kills the project's sidecar (via the supervisor-lock recorded pid, or a scoped kill) and removes ALL per-session markers (.cam-orch-session, .cam-worker-pane, worker-report.json, .cam-supervisor.lock, cam-loop.local.md, .cam-orch-ready); (2) the sidecar self-terminates when its session is gone (poll for the tmux session and exit if absent within one idle interval) so an orphan can never poll indefinitely. Acceptance sketch: after cam stop, no cam sidecar process remains and all markers are gone; killing the cam run session without a clean stop leaves no orphan sidecar within one poll interval; a regression test on the cam stop teardown (lock-pid kill + marker cleanup) and on the sidecar session-absent self-exit. NOT CAM-58 (that is the loop false-terminal/outcome logic). Relates to the sidecar lifecycle (CAM-55 spawn, CAM-57 self-heal) and the memory note that active:false alone does not halt the sidecar. Source: dogfood observation."
     }
   ]
 }
