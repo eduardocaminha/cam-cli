@@ -195,6 +195,13 @@ export interface RunSupervisorOptions {
 	prdPath: string;
 	/** Absolute path to handoff.json (for readWorkerOutcome). */
 	handoffPath: string;
+	/**
+	 * Absolute path to scripts/cam/worker-report.json (for readWorkerOutcome
+	 * fallback when neither handoff nor DONE sentinel yield a story id).
+	 * When provided, the fileReader adapter serves it via readWorkerReport.
+	 * Optional: when absent, the fallback is simply skipped (backward compat).
+	 */
+	workerReportPath?: string;
 	/** Claude permission mode forwarded to the worker. */
 	permissionMode: string;
 	/** Free-text task prompt sent to the implementer. */
@@ -478,6 +485,8 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// + parseAnySentinel when absent for backward compat with existing callers).
 	const readWorkerReport = opts.readWorkerReport;
 	const clearWorkerReport = opts.clearWorkerReport;
+	// Passed to readWorkerOutcome for the worker-report-fallback branch.
+	const workerReportPath = opts.workerReportPath;
 
 	// --- US-001 progress tracking helpers ---
 	// Compute done/total counts from a PRD snapshot (non-operator stories only).
@@ -764,12 +773,18 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					const handoff = _readHandoff();
 					return handoff !== null ? JSON.stringify(handoff) : null;
 				}
+				if (workerReportPath && path === workerReportPath) {
+					const report = readWorkerReport ? readWorkerReport() : null;
+					return report !== null ? JSON.stringify(report) : null;
+				}
 				return null;
 			};
 
 			const outcome = readWorkerOutcome({
 				prdPath,
 				handoffPath,
+				workerReportPath,
+				expectedStoryId: advisoryStoryId,
 				capturedPaneText: paneText,
 				readFile: fileReader,
 			});
@@ -780,6 +795,21 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			const actualStoryId = outcome.storyId ?? advisoryStoryId;
 			emit('result', actualStoryId, uuid, buildResultDetail(outcome, _readHandoff()));
 			emitTokens(actualStoryId, uuid);
+
+			// US-005: emit outcome-fallback when readWorkerOutcome resolved via the
+			// worker-report fallback path OR via handoff bare-string coercion.
+			// Mirror the pane-died-retry pattern: thin detail, no new subsystem.
+			if (
+				outcome.detail.includes('worker-report-fallback') ||
+				outcome.detail.includes('handoff-string-coerced')
+			) {
+				emit('outcome-fallback', actualStoryId, uuid, {
+					fallbackKind: outcome.detail.includes('worker-report-fallback')
+						? 'worker-report-fallback'
+						: 'handoff-string-coerced',
+					detail: outcome.detail,
+				});
+			}
 
 			if (outcome.kind === 'pass' && outcome.storyId !== undefined) {
 				writeSessionMarker(outcome.storyId, uuid);

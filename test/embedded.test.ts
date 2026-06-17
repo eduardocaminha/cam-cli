@@ -275,6 +275,22 @@ describe('templatesContents — Layer B binary rubric in reviewer prompt (US-004
 	});
 });
 
+describe('templatesContents — lastCompletedStory object shape in implementer prompt (CAM-58 US-002)', () => {
+	// The implementer prompt must instruct writing lastCompletedStory as a JSON
+	// object {id, title}, not a bare string. US-001 coercion is a defensive net;
+	// the happy path should always emit the schema-compliant object form.
+
+	const implementer = templatesContents['agents/subagent-implementer.md'];
+
+	test('contains the object form for lastCompletedStory', () => {
+		expect(implementer).toContain('"lastCompletedStory": {');
+	});
+
+	test('does not contain the bare-string form for lastCompletedStory', () => {
+		expect(implementer).not.toMatch(/"lastCompletedStory"\s*:\s*"US-/);
+	});
+});
+
 describe('materializeEmbedded', () => {
 	let cacheDir: string;
 	let prevCache: string | undefined;

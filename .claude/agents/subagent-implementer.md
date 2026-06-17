@@ -93,7 +93,10 @@ The two universal mandatory gates are `bun run typecheck` and `bun test`. Their 
 4. Flip `passes: true` for the completed story in `prd.json`.
 5. If you discovered a reusable pattern (a project convention, a library quirk, a gotcha), append a bullet to `scripts/cam/patterns.md`. The per-story factual record (outcome, files, gates) is written by the harness to `.claude/cam-worker-events.jsonl`; you do not write a prose entry.
 6. **Step 5.5**: validate the code you just wrote against current docs of the primary external library the story touched (see worked example below). Capture the `officialDocsValidated[]` entry.
-7. Write `scripts/cam/handoff.json` per the schema (`handoff.schema.json`). Include the Step 5.5 entry. Commit handoff.json.
+7. Write `scripts/cam/handoff.json` per the schema (`handoff.schema.json`). Include the Step 5.5 entry. Commit handoff.json. Write `lastCompletedStory` as a JSON object with both fields:
+   ```json
+   { "lastCompletedStory": { "id": "US-XXX", "title": "<story title>" } }
+   ```
 8. `git push origin $(git branch --show-current)`.
 9. **Exit report (US-003)**: immediately before printing the sentinel, write `scripts/cam/worker-report.json` and push a one-line summary to the orchestrator pane. See "Exit report protocol" below.
 

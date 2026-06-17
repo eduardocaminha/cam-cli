@@ -50,7 +50,7 @@ export type SupervisorAction =
 const DEFAULT_MAX_ROUNDS = 3;
 
 /** Terminal verdict strings from cam-review.md. */
-const TERMINAL_VERDICTS = new Set(['CLEAN', 'MAX_ROUNDS_DEBT']);
+export const TERMINAL_VERDICTS = new Set(['CLEAN', 'MAX_ROUNDS_DEBT']);
 
 /**
  * Decide what the supervisor should do next given a prd.json snapshot.
