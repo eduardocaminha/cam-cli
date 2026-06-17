@@ -117,6 +117,47 @@ describe('templatesContents — codegen byte-parity', () => {
 	});
 });
 
+describe('templatesContents — oracle contract in planner prompt (US-001)', () => {
+	// The planner agent at templates/agents/subagent-planner.md must document
+	// the oracle contract so every generated PRD has mechanically-checkable
+	// acceptance criteria. Spec drift (a criterion that cannot be verified) is
+	// the #1 failure mode identified in the two-layer-verification research.
+
+	const planner = templatesContents['agents/subagent-planner.md'];
+
+	test('contains the oracle litmus quote', () => {
+		expect(planner).toContain("if you can't test whether the spec was followed, it's too vague");
+	});
+
+	test('names all three oracle kinds: named-command, file-assert, reviewer-judgment', () => {
+		expect(planner).toContain('named-command');
+		expect(planner).toContain('file-assert');
+		expect(planner).toContain('reviewer-judgment');
+	});
+});
+
+describe('templatesContents — oracle enforcement in auditor prompt (US-002)', () => {
+	// The auditor at templates/agents/subagent-auditor.md must BLOCK (not soft-note)
+	// on any acceptanceCriterion that lacks an oracle. Spec: C9 upgraded from
+	// "verifiable" to "has an oracle" with explicit BLOCK verb and all three oracle kinds.
+
+	const auditor = templatesContents['agents/subagent-auditor.md'];
+
+	test('contains the oracle requirement phrase', () => {
+		expect(auditor).toContain('has an oracle');
+	});
+
+	test('names all three oracle kinds: named-command, file-assert, reviewer-judgment', () => {
+		expect(auditor).toContain('named-command');
+		expect(auditor).toContain('file-assert');
+		expect(auditor).toContain('reviewer-judgment');
+	});
+
+	test('contains the BLOCK verb for oracle-free criterion finding', () => {
+		expect(auditor).toContain('BLOCK');
+	});
+});
+
 describe('materializeTemplates — .gitignore is merged, never clobbered', () => {
 	// CAM-55 round-2 review: `templates/.gitignore` lands at the project root.
 	// A blind overwrite would destroy a downstream project's existing
@@ -175,6 +216,78 @@ describe('materializeTemplates — .gitignore is merged, never clobbered', () =>
 		expect(merged).toContain('node_modules\n');
 		expect(merged).toContain(camPattern);
 		expect(merged).not.toContain(`node_modules${camPattern}`);
+	});
+});
+
+describe('templatesContents — gate discipline in implementer prompt (US-003)', () => {
+	// The implementer agent at templates/agents/subagent-implementer.md must
+	// document the gate-discipline rules so every future worker knows:
+	//   (a) it is PROHIBITED from declaring done before gates pass,
+	//   (b) a gate is a named-command + exitCode 0 (not prose),
+	//   (c) the roll-up uses success/partial/failure labels.
+
+	const implementer = templatesContents['agents/subagent-implementer.md'];
+
+	test('contains the PROHIBITED phrase', () => {
+		expect(implementer).toContain('PROHIBITED');
+	});
+
+	test('contains the named-command + exitCode 0 gate definition', () => {
+		expect(implementer).toContain('named-command + exitCode 0');
+	});
+
+	test('contains the success/partial/failure roll-up labels', () => {
+		expect(implementer).toContain('success');
+		expect(implementer).toContain('partial');
+		expect(implementer).toContain('failure');
+	});
+});
+
+describe('templatesContents — Layer B binary rubric in reviewer prompt (US-004)', () => {
+	// The reviewer agent at templates/agents/subagent-reviewer.md must deliver a
+	// binary PASS/FAIL verdict on a fixed 8-criterion rubric, walking criterion-
+	// by-criterion with per-criterion evidence, explicitly NOT trusting a green
+	// test suite, and hard-failing the entire verdict on any hard-constraint breach.
+
+	const reviewer = templatesContents['agents/subagent-reviewer.md'];
+
+	test('contains all 8 rubric criterion names verbatim', () => {
+		expect(reviewer).toContain('spec-correctness');
+		expect(reviewer).toContain('tests-with-meaningful-assert');
+		expect(reviewer).toContain('strict-types');
+		expect(reviewer).toContain('error-handling');
+		expect(reviewer).toContain('project-conventions');
+		expect(reviewer).toContain('security');
+		expect(reviewer).toContain('deps');
+		expect(reviewer).toContain('perf');
+	});
+
+	test('contains the evidence-per-criterion instruction', () => {
+		expect(reviewer).toContain('evidence per criterion');
+	});
+
+	test('contains the does-not-trust-green-tests clause', () => {
+		expect(reviewer).toContain('does not trust green tests');
+	});
+
+	test('contains the hard-constraint-fail-the-whole rule', () => {
+		expect(reviewer).toContain('hard-constraint');
+	});
+});
+
+describe('templatesContents — lastCompletedStory object shape in implementer prompt (CAM-58 US-002)', () => {
+	// The implementer prompt must instruct writing lastCompletedStory as a JSON
+	// object {id, title}, not a bare string. US-001 coercion is a defensive net;
+	// the happy path should always emit the schema-compliant object form.
+
+	const implementer = templatesContents['agents/subagent-implementer.md'];
+
+	test('contains the object form for lastCompletedStory', () => {
+		expect(implementer).toContain('"lastCompletedStory": {');
+	});
+
+	test('does not contain the bare-string form for lastCompletedStory', () => {
+		expect(implementer).not.toMatch(/"lastCompletedStory"\s*:\s*"US-/);
 	});
 });
 

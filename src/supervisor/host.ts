@@ -492,6 +492,7 @@ export function buildSupervisorOptions(
 		workerPaneId,
 		prdPath,
 		handoffPath,
+		workerReportPath: join(cwd, WORKER_REPORT_FILENAME),
 		permissionMode,
 		taskPrompt,
 		maxIterations,

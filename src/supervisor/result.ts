@@ -47,6 +47,22 @@ export interface ReadWorkerOutcomeOptions {
 	prdPath: string;
 	/** Absolute path to scripts/cam/handoff.json. */
 	handoffPath: string;
+	/**
+	 * Optional absolute path to scripts/cam/worker-report.json.
+	 * When provided and neither handoff nor DONE sentinel yield a story id,
+	 * readWorkerOutcome falls back to worker-report.json (worker-report-fallback).
+	 */
+	workerReportPath?: string;
+	/**
+	 * Optional advisory story id set by the supervisor loop (the story it
+	 * dispatched). When provided, the worker-report.json fallback rejects any
+	 * report whose story field does NOT match this id (staleness guard). This
+	 * prevents a leftover report from a previous run from being mistaken as a
+	 * fresh completion signal when clearWorkerReport failed or the worker wrote
+	 * a report and then crashed before clearing it. When undefined, the fallback
+	 * degrades gracefully to US-001 behavior (no staleness check).
+	 */
+	expectedStoryId?: string;
 	/** Raw text captured from the worker pane (via capture-pane -p). */
 	capturedPaneText: string;
 	/** Injected file reader; returns file contents as string, or null on error. */
@@ -126,16 +142,49 @@ function isObject(obj: unknown): obj is Record<string, unknown> {
 	return typeof obj === 'object' && obj !== null;
 }
 
-/** Read and validate handoff.json. Returns null on any problem. */
-function readHandoff(handoffPath: string, readFile: FileReader): HandoffJson | null {
+/**
+ * Read and validate handoff.json. Returns null on any problem.
+ * Also returns a coerced flag: true when lastCompletedStory was a bare string
+ * that was coerced to {id: string} (handoff-string-coerced path).
+ */
+function readHandoff(
+	handoffPath: string,
+	readFile: FileReader,
+): { handoff: HandoffJson | null; coerced: boolean } {
 	const text = readFile(handoffPath);
+	if (text === null) return { handoff: null, coerced: false };
+	const parsed = tryParseJson(text);
+	if (!isObject(parsed)) return { handoff: null, coerced: false };
+	// Validate and possibly coerce lastCompletedStory.
+	// Tolerate a bare string (e.g. "US-001"): coerce to {id: string} in place.
+	const rawStory = (parsed as Record<string, unknown>).lastCompletedStory;
+	if (rawStory !== undefined) {
+		if (typeof rawStory === 'string') {
+			(parsed as Record<string, unknown>).lastCompletedStory = { id: rawStory };
+			return { handoff: parsed as HandoffJson, coerced: true };
+		} else if (!isObject(rawStory)) {
+			return { handoff: null, coerced: false };
+		}
+	}
+	return { handoff: parsed as HandoffJson, coerced: false };
+}
+
+/**
+ * Minimal shape of worker-report.json consumed for the fallback path.
+ * Only outcome and story are needed; other fields are ignored.
+ */
+interface WorkerReportFallback {
+	outcome?: string;
+	story?: string;
+}
+
+/** Read and parse worker-report.json for the fallback branch. Returns null on any problem. */
+function tryReadWorkerReport(reportPath: string, readFile: FileReader): WorkerReportFallback | null {
+	const text = readFile(reportPath);
 	if (text === null) return null;
 	const parsed = tryParseJson(text);
 	if (!isObject(parsed)) return null;
-	// Validate lastCompletedStory.id is a string if present
-	const story = (parsed as HandoffJson).lastCompletedStory;
-	if (story !== undefined && !isObject(story)) return null;
-	return parsed as HandoffJson;
+	return parsed as WorkerReportFallback;
 }
 
 /** Read and validate prd.json. Returns null on any problem. */
@@ -259,7 +308,7 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 	// sentinel is corroboration, never a gate: a worker can succeed yet lose its
 	// sentinel when the ephemeral pane dies (BUG 1), or truncate before emitting
 	// it (BUG 2). We never depend on the sentinel alone.
-	const handoff = readHandoff(handoffPath, readFile);
+	const { handoff, coerced: handoffWasStringCoerced } = readHandoff(handoffPath, readFile);
 	const handoffStoryId = handoff?.lastCompletedStory?.id;
 	const prd = readPrd(prdPath, readFile);
 
@@ -285,6 +334,56 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 		handoffStoryId ?? (sentinel !== null && sentinel.status === 'DONE' ? sentinel.storyId : undefined);
 
 	if (completedStory === undefined) {
+		// Worker-report fallback: when neither handoff.lastCompletedStory.id nor a
+		// DONE sentinel yields a story id, consult worker-report.json (the push
+		// signal written by the worker at exit). This recovers from cases where the
+		// pane scrollback was idle/truncated by the time the supervisor captured it
+		// and the handoff.json was never written (e.g. worker died mid-protocol).
+		if (opts.workerReportPath) {
+			const report = tryReadWorkerReport(opts.workerReportPath, readFile);
+			if (report && typeof report.outcome === 'string' && typeof report.story === 'string') {
+				const reportStory = report.story;
+				// Staleness guard (US-004): when the supervisor knows which story it
+				// dispatched, reject any report that names a DIFFERENT story. A leftover
+				// report from a prior run would otherwise be mistaken as a fresh signal
+				// (e.g. clearWorkerReport failed, or worker crashed after writing the
+				// report). When expectedStoryId is undefined we skip the guard and fall
+				// back to US-001 behavior (backward compat for older callers and tests).
+				if (opts.expectedStoryId !== undefined && reportStory !== opts.expectedStoryId) {
+					// Stale report: fall through to 'unknown'
+				} else {
+					if (report.outcome.startsWith('BLOCKED_')) {
+						return {
+							kind: 'blocked',
+							storyId: reportStory,
+							detail: `Worker reported ${report.outcome} story=${reportStory} (worker-report-fallback).`,
+						};
+					}
+					if (report.outcome === 'DONE') {
+						if (!prd) {
+							return {
+								kind: 'fail',
+								storyId: reportStory,
+								detail: `worker-report-fallback: story=${reportStory} but prd.json could not be read.`,
+							};
+						}
+						if (storyPassesInPrd(prd, reportStory)) {
+							return {
+								kind: 'pass',
+								storyId: reportStory,
+								detail: `story=${reportStory} confirmed: prd.json passes:true (worker-report-fallback).`,
+							};
+						}
+						return {
+							kind: 'incomplete',
+							storyId: reportStory,
+							detail: `Worker completed ${reportStory} (worker-report-fallback) but prd.json still shows passes:false; supervisor finalize required.`,
+						};
+					}
+				}
+			}
+		}
+
 		return {
 			kind: 'unknown',
 			storyId: undefined,
@@ -302,7 +401,11 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 	}
 
 	if (storyPassesInPrd(prd, completedStory)) {
-		const corroboration = sentinelDone ? 'sentinel DONE corroborates' : 'no sentinel, state-primary';
+		const corroboration = sentinelDone
+			? 'sentinel DONE corroborates'
+			: handoffWasStringCoerced
+				? 'handoff-string-coerced'
+				: 'no sentinel, state-primary';
 		return {
 			kind: 'pass',
 			storyId: completedStory,

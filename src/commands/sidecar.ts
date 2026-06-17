@@ -27,7 +27,7 @@ import { runSidecarLoop, type RunSidecarLoopOptions } from '../supervisor/loop.t
 import { buildSupervisorOptions } from '../supervisor/host.ts';
 import { parseStateFile } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
-import type { PrdSnapshot } from '../supervisor/decide.ts';
+import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -151,9 +151,19 @@ function makeClearActive(claudeDir: string, cwd: string): () => void {
 }
 
 /**
- * Check whether there are non-operator stories with passes:false in prd.json.
+ * Check whether there is pending work in prd.json.
+ *
+ * Returns true when:
+ *   (a) at least one non-operator story has passes !== true, OR
+ *   (b) all non-operator stories pass but the review verdict is non-terminal
+ *       (absent, null, or any value not in TERMINAL_VERDICTS from decide.ts).
+ *
+ * Returns false only when all non-operator stories pass AND the review verdict
+ * is terminal ('CLEAN' or 'MAX_ROUNDS_DEBT').
+ *
+ * Exported so unit tests can import it directly.
  */
-function makeHasPendingStories(prdPath: string): () => boolean {
+export function makeHasPendingStories(prdPath: string): () => boolean {
 	return () => {
 		try {
 			const raw = readFileSync(prdPath, 'utf8');
@@ -161,7 +171,15 @@ function makeHasPendingStories(prdPath: string): () => boolean {
 			if (parsed === null || typeof parsed !== 'object') return false;
 			const prd = parsed as PrdSnapshot;
 			const stories = prd.userStories ?? [];
-			return stories.some((s) => s.passes !== true && s.requires !== 'operator');
+			// Case (a): at least one implementable story is still pending.
+			if (stories.some((s) => s.passes !== true && s.requires !== 'operator')) {
+				return true;
+			}
+			// Case (b): all non-operator stories pass — gate on review verdict.
+			// Return true when the verdict is absent/null (review not yet run) or
+			// non-terminal (e.g. FIXES_PENDING:*), so the sidecar triggers review.
+			const verdict = prd.review?.lastVerdict;
+			return verdict == null || !TERMINAL_VERDICTS.has(verdict);
 		} catch {
 			return false;
 		}

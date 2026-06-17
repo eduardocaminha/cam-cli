@@ -13,13 +13,15 @@
 //      the exported runSupervisor (not a re-export or wrapper that drops options).
 //   8. Releases the lock even when runSupervisorFn throws.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { unlinkSync, writeFileSync } from 'node:fs';
 import {
 	runSidecarLoop,
 	type RunSidecarLoopOptions,
 	type RunSupervisorOptions,
 	type SupervisorResult,
 } from '../../src/supervisor/loop.ts';
+import { makeHasPendingStories } from '../../src/commands/sidecar.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -344,5 +346,95 @@ describe('runSidecarLoop', () => {
 		for (const key of required) {
 			expect(capturedOpts![key]).toBeDefined();
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// makeHasPendingStories — verdict-gated tests
+// ---------------------------------------------------------------------------
+
+describe('makeHasPendingStories', () => {
+	const tmpPaths: string[] = [];
+
+	function writeTempPrd(content: unknown): string {
+		const path = `/tmp/cam-test-prd-${Date.now()}-${Math.random().toString(36).slice(2)}.json`;
+		writeFileSync(path, JSON.stringify(content), 'utf8');
+		tmpPaths.push(path);
+		return path;
+	}
+
+	afterAll(() => {
+		for (const p of tmpPaths) {
+			try {
+				unlinkSync(p);
+			} catch {
+				// best-effort cleanup
+			}
+		}
+	});
+
+	test('returns true when a non-operator story has passes !== true (existing behavior)', () => {
+		const path = writeTempPrd({
+			userStories: [{ id: 'US-001', passes: false, requires: null }],
+			review: { lastVerdict: 'CLEAN' },
+		});
+		const fn = makeHasPendingStories(path);
+		expect(fn()).toBe(true);
+	});
+
+	test('returns true when all non-operator stories pass and review is absent', () => {
+		const path = writeTempPrd({
+			userStories: [{ id: 'US-001', passes: true, requires: null }],
+		});
+		const fn = makeHasPendingStories(path);
+		expect(fn()).toBe(true);
+	});
+
+	test('returns true when all non-operator stories pass and review.lastVerdict is null', () => {
+		const path = writeTempPrd({
+			userStories: [{ id: 'US-001', passes: true, requires: null }],
+			review: { lastVerdict: null },
+		});
+		const fn = makeHasPendingStories(path);
+		expect(fn()).toBe(true);
+	});
+
+	test('returns true when all non-operator stories pass and verdict is FIXES_PENDING (non-terminal)', () => {
+		const path = writeTempPrd({
+			userStories: [{ id: 'US-001', passes: true, requires: null }],
+			review: { lastVerdict: 'FIXES_PENDING:US-001' },
+		});
+		const fn = makeHasPendingStories(path);
+		expect(fn()).toBe(true);
+	});
+
+	test('returns false when all non-operator stories pass and verdict is CLEAN', () => {
+		const path = writeTempPrd({
+			userStories: [{ id: 'US-001', passes: true, requires: null }],
+			review: { lastVerdict: 'CLEAN' },
+		});
+		const fn = makeHasPendingStories(path);
+		expect(fn()).toBe(false);
+	});
+
+	test('returns false when all non-operator stories pass and verdict is MAX_ROUNDS_DEBT', () => {
+		const path = writeTempPrd({
+			userStories: [{ id: 'US-001', passes: true, requires: null }],
+			review: { lastVerdict: 'MAX_ROUNDS_DEBT' },
+		});
+		const fn = makeHasPendingStories(path);
+		expect(fn()).toBe(false);
+	});
+
+	test('operator-required stories are ignored: operator pending + all non-operator pass + CLEAN => false', () => {
+		const path = writeTempPrd({
+			userStories: [
+				{ id: 'US-001', passes: true, requires: null },
+				{ id: 'US-002', passes: false, requires: 'operator' },
+			],
+			review: { lastVerdict: 'CLEAN' },
+		});
+		const fn = makeHasPendingStories(path);
+		expect(fn()).toBe(false);
 	});
 });

@@ -68,6 +68,19 @@ Stories tagged `requires: "operator"` in prd.json need a ceremony only the opera
 
 **Status emission**: if only operator-required stories remain → emit `CAM_IMPLEMENTER_STATUS=PRD_COMPLETE`.
 
+## Gate discipline
+
+The implementer is **PROHIBITED** from declaring a story done before its gates pass.
+
+A gate is a **named-command + exitCode 0**: the gate is the command itself, not a prose description. A gate passes when the named command exits with code 0.
+
+**Roll-up convention** for the `gates` field in `worker-report.json`:
+- **success**: all gates pass.
+- **partial**: some gates pass, some fail.
+- **failure**: none pass (or any required gate fails).
+
+The two universal mandatory gates are `bun run typecheck` and `bun test`. Their documented shape lives in `src/supervisor/worker-report.ts` (the `gates: { typecheck, tests }` fields). The shape is intentionally kept as simple string fields: the named-command + exitCode concept is defined here as a policy, and the string values (`"ok"`, `"fail: <detail>"`, `"<N> pass / <M> fail"`) already express pass/fail without adding a structured record per gate.
+
 ## What you do for the story
 
 1. Implement the chosen story and only that story.
@@ -76,7 +89,10 @@ Stories tagged `requires: "operator"` in prd.json need a ceremony only the opera
 4. Flip `passes: true` for the completed story in `prd.json`.
 5. If you discovered a reusable pattern (a project convention, a library quirk, a gotcha), append a bullet to `scripts/cam/patterns.md`. The per-story factual record (outcome, files, gates) is written by the harness to `.claude/cam-worker-events.jsonl`; you do not write a prose entry.
 6. **Step 5.5**: validate the code you just wrote against current docs of the primary external library the story touched (see worked example below). Capture the `officialDocsValidated[]` entry.
-7. Write `scripts/cam/handoff.json` per the schema (`handoff.schema.json`). Include the Step 5.5 entry. Commit handoff.json.
+7. Write `scripts/cam/handoff.json` per the schema (`handoff.schema.json`). Include the Step 5.5 entry. Commit handoff.json. Write `lastCompletedStory` as a JSON object with both fields:
+   ```json
+   { "lastCompletedStory": { "id": "US-XXX", "title": "<story title>" } }
+   ```
 8. `git push origin $(git branch --show-current)`.
 9. **Exit report (US-003)**: immediately before printing the sentinel, write `scripts/cam/worker-report.json` and push a one-line summary to the orchestrator pane. See "Exit report protocol" below.
 
