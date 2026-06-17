@@ -3,7 +3,9 @@
   "branchName": "cam/CAM-58-supervisor-outcome-worker-report",
   "description": "Fix supervisor false-terminal after a correct story + sidecar never dispatching review when all stories pass: align readWorkerOutcome with worker-report.json (push-model), tolerate string lastCompletedStory, gate hasPendingStories on review verdict, guard against stale reports, emit fallback events, and prove the fix end-to-end via a regression test plus an operator dogfood.",
   "issueNumber": 58,
-  "relatedDocs": ["FLOW.md (§4 cam next/sidecar, §7 autonomous loop / state-primary CAM-32, §8 state machine, §9 Q1 worker-report.json primary gate)"],
+  "relatedDocs": [
+    "FLOW.md (§4 cam next/sidecar, §7 autonomous loop / state-primary CAM-32, §8 state machine, §9 Q1 worker-report.json primary gate)"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -21,7 +23,7 @@
         "Tests pass. [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Touch src/supervisor/result.ts (extend ReadWorkerOutcomeOptions; add a readWorkerReport branch under the existing 'Step 4: State-primary outcome' block at result.ts:256-294; tolerate string handoff in readHandoff around lines 130-139 or by coercing inside readWorkerOutcome). Thread workerReportPath via src/supervisor/loop.ts:758-775 (the fileReader adapter calls into the existing readWorkerReport injected dep — reuse it; the simpler path is to add `workerReportPath: WORKER_REPORT_FILENAME-joined absolute path` to the options bag in host.ts and have the fileReader return its raw text when path === workerReportPath). Wire workerReportPath in src/supervisor/host.ts:113-521 (right next to prdPath/handoffPath assembly). Re-check FLOW.md §9-Q1 (worker-report.json primary gate) before coding. Add unit tests in test/supervisor/result.test.ts (mirror existing test fakes — pure file-reader injection, no real fs)."
     },
