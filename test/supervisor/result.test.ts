@@ -316,6 +316,181 @@ describe('readWorkerOutcome: unknown', () => {
 });
 
 // ---------------------------------------------------------------------------
+// US-001: handoff lastCompletedStory is a bare string (handoff-string-coerced)
+// ---------------------------------------------------------------------------
+
+const WORKER_REPORT_PATH = '/fake/worker-report.json';
+
+function fakeHandoffStringStory(storyId: string): string {
+	return JSON.stringify({
+		lastCompletedStory: storyId, // bare string, not {id, title}
+		branchName: 'cam/test-branch',
+		timestamp: '2026-06-17T00:00:00Z',
+	});
+}
+
+function fakeWorkerReport(outcome: string, storyId: string): string {
+	return JSON.stringify({
+		outcome,
+		story: storyId,
+		gates: { typecheck: 'ok', tests: '5 pass / 0 fail' },
+		notes: 'none',
+	});
+}
+
+describe('readWorkerOutcome: handoff-string-coerced', () => {
+	test('bare string lastCompletedStory + prd passes:true -> pass with handoff-string-coerced detail', () => {
+		const storyId = 'US-001';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: '', // no sentinel: state-primary via coerced handoff
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, true),
+				[HANDOFF_PATH]: fakeHandoffStringStory(storyId),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('handoff-string-coerced');
+	});
+
+	test('bare string lastCompletedStory + prd passes:false -> incomplete', () => {
+		const storyId = 'US-001';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, false),
+				[HANDOFF_PATH]: fakeHandoffStringStory(storyId),
+			}),
+		});
+		expect(result.kind).toBe('incomplete');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('bare string lastCompletedStory + DONE sentinel corroborates -> sentinel DONE corroborates wins', () => {
+		const storyId = 'US-005';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: donePane(storyId),
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, true),
+				[HANDOFF_PATH]: fakeHandoffStringStory(storyId),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+		// sentinel takes precedence over handoff-string-coerced in corroboration
+		expect(result.detail).toContain('sentinel DONE corroborates');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001: worker-report.json fallback (worker-report-fallback)
+// ---------------------------------------------------------------------------
+
+describe('readWorkerOutcome: worker-report-fallback', () => {
+	test('no handoff id, no DONE sentinel, worker-report DONE + prd passes:true -> pass', () => {
+		const storyId = 'US-007';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH,
+			capturedPaneText: '', // no sentinel (pane idle/truncated)
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, true),
+				// no HANDOFF_PATH -> null
+				[WORKER_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('worker-report-fallback');
+	});
+
+	test('no handoff id, no DONE sentinel, worker-report DONE + prd passes:false -> incomplete', () => {
+		const storyId = 'US-007';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, false),
+				[WORKER_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+		});
+		expect(result.kind).toBe('incomplete');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('worker-report-fallback');
+	});
+
+	test('no handoff id, no DONE sentinel, worker-report BLOCKED_ -> blocked with BLOCKED_ token in detail', () => {
+		const storyId = 'US-007';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, false),
+				[WORKER_REPORT_PATH]: fakeWorkerReport('BLOCKED_QUALITY', storyId),
+			}),
+		});
+		expect(result.kind).toBe('blocked');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('BLOCKED_QUALITY');
+		expect(result.detail).toContain('worker-report-fallback');
+	});
+
+	test('no handoff id, no DONE sentinel, no worker-report -> unknown (unchanged)', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({}), // no files at all
+		});
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	test('workerReportPath absent -> unknown (no fallback attempted)', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			// workerReportPath not provided
+			capturedPaneText: '',
+			readFile: makeReader({
+				// worker-report exists on disk but path not wired -> ignored
+				[WORKER_REPORT_PATH]: fakeWorkerReport('DONE', 'US-007'),
+			}),
+		});
+		expect(result.kind).toBe('unknown');
+	});
+
+	test('worker-report DONE + prd unreadable -> fail (worker-report-fallback)', () => {
+		const storyId = 'US-007';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				// no prd, no handoff
+				[WORKER_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+		});
+		expect(result.kind).toBe('fail');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('worker-report-fallback');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // CAM-42 / US-002: TUI prompt-echo must never match a sentinel
 // ---------------------------------------------------------------------------
 //
