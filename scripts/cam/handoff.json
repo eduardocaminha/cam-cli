@@ -1,24 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "readWorkerOutcome falls back to worker-report.json and tolerates string lastCompletedStory"
+    "id": "US-002",
+    "title": "Implementer writes lastCompletedStory as {id,title} object, matching handoff.schema.json"
   },
   "branchName": "cam/CAM-58-supervisor-outcome-worker-report",
   "timestamp": "2026-06-17T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/result.ts",
-    "src/supervisor/loop.ts",
-    "src/supervisor/host.ts",
-    "test/supervisor/result.test.ts"
+    "templates/agents/subagent-implementer.md",
+    ".claude/agents/subagent-implementer.md",
+    "src/vendor/_generated.ts",
+    "test/embedded.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added workerReportPath to ReadWorkerOutcomeOptions and RunSupervisorOptions. The fileReader adapter in loop.ts now serves worker-report.json via readWorkerReport. The handoff-string-coerced and worker-report-fallback paths are both tested. The next story (US-002) should check prd.json for its own acceptance criteria.",
+  "nextStoryContext": "US-002 added an inline JSON example to both templates/agents/subagent-implementer.md and .claude/agents/subagent-implementer.md showing lastCompletedStory as {id,title} object. Added 2 tests to test/embedded.test.ts (object form present, bare-string form absent). Regenerated src/vendor/_generated.ts. Next story US-003 should export makeHasPendingStories from src/commands/sidecar.ts and extend its return logic to gate on review.lastVerdict.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure TypeScript refactor of src/supervisor/result.ts, loop.ts, host.ts. No external npm library was introduced or modified."
+      "summary": "Pure doc/template edit plus codegen regen. No external npm library was introduced or modified."
     }
   ]
 }
