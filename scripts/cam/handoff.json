@@ -1,26 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Sidecar self-terminates when its tmux session is gone"
+    "id": "US-004",
+    "title": "Update docs/recovery-runbook.md for sidecar pid + new cam stop scope"
   },
   "branchName": "cam/CAM-67-stop-kills-sidecar",
   "timestamp": "2026-06-17T00:00:00Z",
-  "createdFiles": [
-    "test/supervisor/sidecar-self-exit.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/commands/sidecar.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "docs/recovery-runbook.md",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 complete: hasSessionFn dep + sessionSeen startup-grace latch added to runSidecarLoop in loop.ts; sidecar.ts wires production hasSessionFn via hasSession(projectSessionName(cwd), spawnFn). Two new unit tests in test/supervisor/sidecar-self-exit.test.ts cover both branches. All 3 stories in CAM-67 PRD now pass.",
+  "nextStoryContext": "US-004 complete: docs/recovery-runbook.md updated with .cam-sidecar.pid table row, sidecar self-terminates note in scenario (a), full marker set listing, and cross-reference update. All four oracles pass. Next story US-005 adds structured sidecar-exit event + StopReport teardown fields.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-003 is entirely internal: new hasSessionFn dep in loop.ts wired to existing hasSession helper in session.ts via spawnSync (Node.js built-in already used in host.ts). No new external library introduced."
+      "summary": "US-004 is a doc-only update (docs/recovery-runbook.md). No external library was touched."
     }
   ]
 }

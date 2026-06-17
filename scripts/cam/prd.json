@@ -93,7 +93,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: docs/recovery-runbook.md (Canonical runtime files table at lines 8-19; scenario (a) at lines 29-66; scenario (d) at lines 147-178). Doc Maintenance rule: the edit reflects the post-US-001..003 reality. Match the existing table format (4-column markdown). Cross-reference list at the bottom (line 259) may also gain .cam-sidecar.pid. Do not introduce travessão; use colon, comma, parens, period."
     },
