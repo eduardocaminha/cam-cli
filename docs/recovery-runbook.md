@@ -16,6 +16,7 @@ All paths are relative to the project root.
 | `.claude/.cam-worker-<US>.session` | `cam next` | Per-story worker session uuid (one file per completed story), used to resolve that story's transcript. |
 | `.claude/cam-worker-events.jsonl` | `cam next` | One JSON line per worker lifecycle step (`worker-start`, `worker-end`, `result`, `tokens`, `pushed`, `stale-lock`). Your primary diagnostic log. |
 | `.claude/.cam-supervisor.lock` | `cam next` | Single-supervisor concurrency lock: `{ pid, startedAt, project }`. |
+| `.claude/.cam-sidecar.pid` | `cam run` | Sidecar process pid: `cam stop` reads this to SIGTERM the sidecar on shutdown. |
 
 Quick triage first:
 
@@ -43,12 +44,19 @@ commits, the worker pane is idle).
    ps -p <pid>
    ```
 
-3. The clean fix is `cam stop`, which SIGTERMs that pid, removes the state file,
-   and kills the project tmux session:
+3. The clean fix is `cam stop`, which SIGTERMs the supervisor pid, SIGTERMs the
+   sidecar (via `.claude/.cam-sidecar.pid`), and removes the full marker set
+   (`.claude/.cam-supervisor.lock`, `.claude/.cam-orch-session`,
+   `.claude/.cam-worker-pane`, `.claude/.cam-orch-ready`,
+   `scripts/cam/worker-report.json`, and `.claude/cam-loop.local.md`):
 
    ```bash
    cam stop
    ```
+
+   Note: the sidecar also self-terminates when the project tmux session disappears
+   after an abnormal `cam run` exit, so it does not orphan the process on crash.
+   An abnormal exit therefore no longer requires a manual sidecar kill.
 
 4. Restart from where the iteration counter left off:
 
@@ -256,4 +264,4 @@ the uuid:
 cat .claude/.cam-worker-US-XXX.session
 ```
 
-Cross-references: `.claude/cam-loop.local.md`, `.claude/.cam-worker-pane`, `.claude/.cam-worker-<US>.session`, `.claude/cam-worker-events.jsonl`, `.claude/.cam-supervisor.lock`.
+Cross-references: `.claude/cam-loop.local.md`, `.claude/.cam-worker-pane`, `.claude/.cam-worker-<US>.session`, `.claude/cam-worker-events.jsonl`, `.claude/.cam-supervisor.lock`, `.claude/.cam-sidecar.pid`.
