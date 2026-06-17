@@ -53,6 +53,16 @@ export interface ReadWorkerOutcomeOptions {
 	 * readWorkerOutcome falls back to worker-report.json (worker-report-fallback).
 	 */
 	workerReportPath?: string;
+	/**
+	 * Optional advisory story id set by the supervisor loop (the story it
+	 * dispatched). When provided, the worker-report.json fallback rejects any
+	 * report whose story field does NOT match this id (staleness guard). This
+	 * prevents a leftover report from a previous run from being mistaken as a
+	 * fresh completion signal when clearWorkerReport failed or the worker wrote
+	 * a report and then crashed before clearing it. When undefined, the fallback
+	 * degrades gracefully to US-001 behavior (no staleness check).
+	 */
+	expectedStoryId?: string;
 	/** Raw text captured from the worker pane (via capture-pane -p). */
 	capturedPaneText: string;
 	/** Injected file reader; returns file contents as string, or null on error. */
@@ -333,33 +343,43 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 			const report = tryReadWorkerReport(opts.workerReportPath, readFile);
 			if (report && typeof report.outcome === 'string' && typeof report.story === 'string') {
 				const reportStory = report.story;
-				if (report.outcome.startsWith('BLOCKED_')) {
-					return {
-						kind: 'blocked',
-						storyId: reportStory,
-						detail: `Worker reported ${report.outcome} story=${reportStory} (worker-report-fallback).`,
-					};
-				}
-				if (report.outcome === 'DONE') {
-					if (!prd) {
+				// Staleness guard (US-004): when the supervisor knows which story it
+				// dispatched, reject any report that names a DIFFERENT story. A leftover
+				// report from a prior run would otherwise be mistaken as a fresh signal
+				// (e.g. clearWorkerReport failed, or worker crashed after writing the
+				// report). When expectedStoryId is undefined we skip the guard and fall
+				// back to US-001 behavior (backward compat for older callers and tests).
+				if (opts.expectedStoryId !== undefined && reportStory !== opts.expectedStoryId) {
+					// Stale report: fall through to 'unknown'
+				} else {
+					if (report.outcome.startsWith('BLOCKED_')) {
 						return {
-							kind: 'fail',
+							kind: 'blocked',
 							storyId: reportStory,
-							detail: `worker-report-fallback: story=${reportStory} but prd.json could not be read.`,
+							detail: `Worker reported ${report.outcome} story=${reportStory} (worker-report-fallback).`,
 						};
 					}
-					if (storyPassesInPrd(prd, reportStory)) {
+					if (report.outcome === 'DONE') {
+						if (!prd) {
+							return {
+								kind: 'fail',
+								storyId: reportStory,
+								detail: `worker-report-fallback: story=${reportStory} but prd.json could not be read.`,
+							};
+						}
+						if (storyPassesInPrd(prd, reportStory)) {
+							return {
+								kind: 'pass',
+								storyId: reportStory,
+								detail: `story=${reportStory} confirmed: prd.json passes:true (worker-report-fallback).`,
+							};
+						}
 						return {
-							kind: 'pass',
+							kind: 'incomplete',
 							storyId: reportStory,
-							detail: `story=${reportStory} confirmed: prd.json passes:true (worker-report-fallback).`,
+							detail: `Worker completed ${reportStory} (worker-report-fallback) but prd.json still shows passes:false; supervisor finalize required.`,
 						};
 					}
-					return {
-						kind: 'incomplete',
-						storyId: reportStory,
-						detail: `Worker completed ${reportStory} (worker-report-fallback) but prd.json still shows passes:false; supervisor finalize required.`,
-					};
 				}
 			}
 		}

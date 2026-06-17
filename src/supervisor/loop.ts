@@ -784,6 +784,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				prdPath,
 				handoffPath,
 				workerReportPath,
+				expectedStoryId: advisoryStoryId,
 				capturedPaneText: paneText,
 				readFile: fileReader,
 			});

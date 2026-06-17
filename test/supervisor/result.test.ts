@@ -491,6 +491,105 @@ describe('readWorkerOutcome: worker-report-fallback', () => {
 });
 
 // ---------------------------------------------------------------------------
+// US-004: staleness guard — worker-report fallback only trusts a report whose
+// story matches the expected dispatched story (expectedStoryId).
+// ---------------------------------------------------------------------------
+
+describe('readWorkerOutcome: staleness guard (US-004)', () => {
+	test('DONE report + expectedStoryId matches -> fallback taken, pass (prd passes:true)', () => {
+		const storyId = 'US-007';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH,
+			expectedStoryId: storyId,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, true),
+				[WORKER_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('worker-report-fallback');
+	});
+
+	test('DONE report + expectedStoryId MISMATCH -> fallback rejected -> unknown', () => {
+		const dispatchedStory = 'US-007';
+		const staleStory = 'US-005'; // leftover from a prior run
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH,
+			expectedStoryId: dispatchedStory,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(staleStory, true),
+				[WORKER_REPORT_PATH]: fakeWorkerReport('DONE', staleStory),
+			}),
+		});
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	test('BLOCKED_* report + expectedStoryId MISMATCH -> fallback rejected -> unknown', () => {
+		const dispatchedStory = 'US-007';
+		const staleStory = 'US-005';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH,
+			expectedStoryId: dispatchedStory,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(staleStory, false),
+				[WORKER_REPORT_PATH]: fakeWorkerReport('BLOCKED_QUALITY', staleStory),
+			}),
+		});
+		// Stale BLOCKED_* must NOT produce kind:blocked for the dispatched story
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	test('expectedStoryId undefined + DONE report -> fallback used (graceful degradation, US-001 behavior)', () => {
+		const storyId = 'US-007';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH,
+			// expectedStoryId NOT provided
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, true),
+				[WORKER_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('worker-report-fallback');
+	});
+
+	test('expectedStoryId undefined + BLOCKED_* report -> fallback used, kind:blocked (graceful degradation)', () => {
+		const storyId = 'US-007';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH,
+			// expectedStoryId NOT provided
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, false),
+				[WORKER_REPORT_PATH]: fakeWorkerReport('BLOCKED_QUALITY', storyId),
+			}),
+		});
+		expect(result.kind).toBe('blocked');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('BLOCKED_QUALITY');
+		expect(result.detail).toContain('worker-report-fallback');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // CAM-42 / US-002: TUI prompt-echo must never match a sentinel
 // ---------------------------------------------------------------------------
 //
