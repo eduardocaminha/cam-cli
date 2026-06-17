@@ -1,24 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Implementer writes lastCompletedStory as {id,title} object, matching handoff.schema.json"
+    "id": "US-003",
+    "title": "Sidecar hasPendingStories also returns true when review is non-terminal"
   },
   "branchName": "cam/CAM-58-supervisor-outcome-worker-report",
   "timestamp": "2026-06-17T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "templates/agents/subagent-implementer.md",
-    ".claude/agents/subagent-implementer.md",
-    "src/vendor/_generated.ts",
-    "test/embedded.test.ts"
+    "src/supervisor/decide.ts",
+    "src/commands/sidecar.ts",
+    "test/supervisor/sidecar-loop.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added an inline JSON example to both templates/agents/subagent-implementer.md and .claude/agents/subagent-implementer.md showing lastCompletedStory as {id,title} object. Added 2 tests to test/embedded.test.ts (object form present, bare-string form absent). Regenerated src/vendor/_generated.ts. Next story US-003 should export makeHasPendingStories from src/commands/sidecar.ts and extend its return logic to gate on review.lastVerdict.",
+  "nextStoryContext": "US-003 exported TERMINAL_VERDICTS from decide.ts, exported makeHasPendingStories from sidecar.ts, and extended its logic to gate on prd.review.lastVerdict (returns true when verdict is absent/null/non-terminal, false only when CLEAN or MAX_ROUNDS_DEBT). Added 7 direct-import tests. No US-004+ context yet; read prd.json fresh to pick the next story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure doc/template edit plus codegen regen. No external npm library was introduced or modified."
+      "summary": "Pure TypeScript refactor: exported a function and a constant, extended logic to check prd.review.lastVerdict. No external npm library introduced or modified."
     }
   ]
 }
