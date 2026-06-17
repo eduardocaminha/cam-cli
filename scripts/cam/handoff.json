@@ -1,27 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "cam stop removes the full per-session marker set, idempotently"
+    "id": "US-003",
+    "title": "Sidecar self-terminates when its tmux session is gone"
   },
   "branchName": "cam/CAM-67-stop-kills-sidecar",
   "timestamp": "2026-06-17T00:00:00Z",
   "createdFiles": [
-    "test/stop-markers.test.ts"
+    "test/supervisor/sidecar-self-exit.test.ts"
   ],
   "modifiedFiles": [
-    "src/tmux/session.ts",
-    "src/commands/run.ts",
-    "src/commands/stop.ts",
+    "src/supervisor/loop.ts",
+    "src/commands/sidecar.ts",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 complete: ORCH_SESSION_MARKER added to session.ts; run.ts uses it; stop.ts now removes all 6 per-session markers idempotently. Next story can continue with CAM-67 requirements.",
+  "nextStoryContext": "US-003 complete: hasSessionFn dep + sessionSeen startup-grace latch added to runSidecarLoop in loop.ts; sidecar.ts wires production hasSessionFn via hasSession(projectSessionName(cwd), spawnFn). Two new unit tests in test/supervisor/sidecar-self-exit.test.ts cover both branches. All 3 stories in CAM-67 PRD now pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-002 is entirely internal refactoring: promoted ORCH_SESSION_MARKER constant, wired 6-marker cleanup loop in performStop. No new external library dependency introduced."
+      "summary": "US-003 is entirely internal: new hasSessionFn dep in loop.ts wired to existing hasSession helper in session.ts via spawnSync (Node.js built-in already used in host.ts). No new external library introduced."
     }
   ]
 }

@@ -76,7 +76,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (RunSidecarLoopOptions ~line 1020-1050; SIDECAR_IDLE_POLL_MS = 2_000 ~line 1053; runSidecarLoop body ~line 1065-1118). Inject a hasSessionFn: () => boolean dep on RunSidecarLoopOptions so tests do not spawn real tmux; the production wiring (src/supervisor/host.ts and src/commands/sidecar.ts) passes a closure that calls hasSession(projectSessionName(cwd), spawnFn) (session.ts:102, 117). The idle branch (line 1072-1075) is the natural insertion point: check has-session before the sleep, and (a) if absent AND sessionSeen -> return; (b) if present -> set sessionSeen=true. Do NOT add the check inside the active branch (runSupervisorFn already runs to terminal); putting it on the idle tick is sufficient because the orphan symptom is exactly the idle-poll-forever case. The lock is NOT held while idle (it is acquired+released inside the active branch at lines 1088-1105) so 'release the lock if held' is a no-op for the idle-exit path; mention this in the comment so a future reader does not add a spurious lock.release(). Pattern reference: scripts/cam/patterns.md 'Sidecar-supervisor invariant'."
     },
