@@ -64,6 +64,22 @@ export type SpawnSyncFn = (
 ) => SpawnSyncReturns<string>;
 
 /**
+ * A snapshot of a running process: its pid, full argv array, and current
+ * working directory. Used by the fallback scoped-scan in `performStop`.
+ */
+export type ProcessRecord = {
+	pid: number;
+	argv: string[];
+	cwd: string;
+};
+
+/**
+ * Injectable dep that returns a list of running processes. The production
+ * default shells out to `ps`+`lsof`; unit tests inject a static list.
+ */
+export type ListProcessesFn = () => ProcessRecord[];
+
+/**
  * Minimal kill-signal function; injectable so tests never signal real PIDs.
  * `process.kill(pid, 'SIGTERM')` is the canonical graceful-terminate signal.
  */
@@ -104,6 +120,13 @@ export interface StopOptions {
 	 * When undefined, defaults to `removeSidecarPid` from sidecar-pid.ts.
 	 */
 	sidecarPidRemover?: (claudeDir: string) => void;
+	/**
+	 * Override the process-listing function for tests.
+	 * The production default shells out to `ps`+`lsof` to discover cam sidecar
+	 * processes; unit tests inject a static list. Only called when the pid-file
+	 * path did NOT find a live sidecar (absent file or dead pid).
+	 */
+	listProcessesFn?: ListProcessesFn;
 }
 
 export interface StopReport {
@@ -141,6 +164,13 @@ export interface StopReport {
 	 * operator knows exactly which files were cleaned without re-reading source.
 	 */
 	markersRemoved: string[];
+	/**
+	 * Were any orphaned sidecar processes found via the fallback scoped scan and
+	 * sent SIGTERM? True when the pid-file path found nothing alive AND the
+	 * scoped process scan matched at least one `cam sidecar` process whose cwd
+	 * equals this project's cwd.
+	 */
+	fallbackSidecarKilled: boolean;
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -171,6 +201,72 @@ function sessionAlive(spawnFn: SpawnSyncFn, sessionName: string): boolean {
 function killSession(spawnFn: SpawnSyncFn, sessionName: string): boolean {
 	const result = spawnFn('tmux', tmuxArgs(['kill-session', '-t', sessionName]), { encoding: 'utf8' });
 	return result.status === 0;
+}
+
+/**
+ * Returns true when `record` is a `cam sidecar` process whose cwd matches
+ * `projectCwd` exactly. Scoped strictly: cwd equality, not prefix/substring.
+ *
+ * Argv must begin with `cam` (index 0) and `sidecar` (index 1). The cwd
+ * comparison is strict equality so no other project's sidecar is touched.
+ */
+export function matchesSidecarForProject(record: ProcessRecord, projectCwd: string): boolean {
+	return (
+		record.cwd === projectCwd &&
+		record.argv[0] === 'cam' &&
+		record.argv[1] === 'sidecar'
+	);
+}
+
+/**
+ * Production default for `listProcessesFn`.
+ *
+ * Uses `ps -eo pid,args` to enumerate processes, then `lsof -a -d cwd -p <pid>
+ * -F n` to resolve the cwd for any candidate that looks like `cam sidecar`.
+ * Returns an empty array when either command is unavailable or fails.
+ */
+function defaultListProcesses(): ProcessRecord[] {
+	const psResult = spawnSync('ps', ['-eo', 'pid,args'], { encoding: 'utf8' });
+	if (psResult.status !== 0 || !psResult.stdout) return [];
+
+	const records: ProcessRecord[] = [];
+	const lines = psResult.stdout.split('\n').slice(1); // skip header row
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		const spaceIdx = trimmed.indexOf(' ');
+		if (spaceIdx === -1) continue;
+
+		const pidStr = trimmed.slice(0, spaceIdx);
+		const argsStr = trimmed.slice(spaceIdx + 1).trim();
+		const pid = parseInt(pidStr, 10);
+		if (!Number.isFinite(pid) || pid <= 0) continue;
+
+		const argv = argsStr.split(/\s+/).filter(Boolean);
+		// Quick filter: skip anything that cannot be `cam sidecar`.
+		const cmdBase = (argv[0] ?? '').split('/').pop() ?? '';
+		if (cmdBase !== 'cam' || argv[1] !== 'sidecar') continue;
+
+		// Resolve cwd via lsof. The -F n format emits lines prefixed with 'n'.
+		const lsofResult = spawnSync(
+			'lsof',
+			['-a', '-d', 'cwd', '-p', String(pid), '-F', 'n'],
+			{ encoding: 'utf8' },
+		);
+		if (lsofResult.status !== 0 || !lsofResult.stdout) continue;
+
+		const cwdLine = lsofResult.stdout.split('\n').find((l) => l.startsWith('n'));
+		if (!cwdLine) continue;
+		const cwd = cwdLine.slice(1).trim();
+		if (!cwd) continue;
+
+		// Normalise argv[0] to the bare name for consistent matching.
+		const normArgv = [cmdBase, ...argv.slice(1)];
+		records.push({ pid, argv: normArgv, cwd });
+	}
+
+	return records;
 }
 
 // --- Public entrypoint -----------------------------------------------------
@@ -234,6 +330,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 	const sidecarPidReaderImpl = options.sidecarPidReader ?? readSidecarPid;
 	const sidecarPidAliveImpl = options.sidecarPidAliveFn ?? sidecarPidAlive;
 	const sidecarPidRemoverImpl = options.sidecarPidRemover ?? removeSidecarPid;
+	const listProcessesImpl = options.listProcessesFn ?? defaultListProcesses;
 
 	const session = projectSessionName(cwd);
 	const claudeDir = join(cwd, '.claude');
@@ -247,6 +344,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 		workerPaneKilled: false,
 		sidecarKilled: false,
 		markersRemoved: [],
+		fallbackSidecarKilled: false,
 	};
 
 	// 1. Kill the supervisor PID from the state file (before we remove it).
@@ -259,9 +357,11 @@ export function performStop(options: StopOptions = {}): StopReport {
 	//     Probe liveness first (signal-0); SIGTERM only when alive.
 	//     Always remove the pid file when present (idempotent).
 	const sidecarPid = sidecarPidReaderImpl(claudeDir);
+	let sidecarFoundAlive = false;
 	if (sidecarPid !== null) {
 		const alive = sidecarPidAliveImpl(sidecarPid);
 		if (alive) {
+			sidecarFoundAlive = true;
 			try {
 				killFn(sidecarPid, 'SIGTERM');
 				report.sidecarKilled = true;
@@ -271,6 +371,23 @@ export function performStop(options: StopOptions = {}): StopReport {
 		}
 		// Always remove the pid file (idempotent whether alive or dead).
 		sidecarPidRemoverImpl(claudeDir);
+	}
+
+	// 1c. Fallback scoped scan: if the pid-file path did NOT find a live sidecar
+	//     (file absent or pid dead), enumerate processes and SIGTERM any
+	//     `cam sidecar` whose cwd matches THIS project exactly.
+	//     Scoped strictly: cwd equality, never a blanket process kill.
+	if (!sidecarFoundAlive) {
+		for (const record of listProcessesImpl()) {
+			if (matchesSidecarForProject(record, cwd)) {
+				try {
+					killFn(record.pid, 'SIGTERM');
+					report.fallbackSidecarKilled = true;
+				} catch {
+					// process may have exited between listing and kill
+				}
+			}
+		}
 	}
 
 	// 2. Remove the loop state file.
@@ -363,6 +480,10 @@ export function runStop(options: StopOptions = {}): number {
 		emitOk('Sent SIGTERM to sidecar process');
 	}
 
+	if (report.fallbackSidecarKilled) {
+		emitOk('Sent SIGTERM to orphaned sidecar process (fallback scoped scan)');
+	}
+
 	if (report.markersRemoved.length > 0) {
 		emitOk(`Removed ${report.markersRemoved.length} marker file(s): ${report.markersRemoved.join(', ')}`);
 	}
@@ -389,7 +510,7 @@ export function runStop(options: StopOptions = {}): number {
 	// success is signaled by the accent ✓ glyph on the content line (`emitOk`),
 	// matching how the Ink screens do it.
 	emitSectionHeading('Done');
-	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled || report.markersRemoved.length > 0) {
+	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled || report.fallbackSidecarKilled || report.markersRemoved.length > 0) {
 		emitOk('Loop stopped');
 	} else {
 		emitMutedHint('Nothing to clean — no active loop or stale state');

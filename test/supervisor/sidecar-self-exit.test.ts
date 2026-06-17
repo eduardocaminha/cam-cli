@@ -86,6 +86,49 @@ describe('runSidecarLoop — session self-exit (hasSessionFn)', () => {
 		expect(sleepCount).toBeGreaterThanOrEqual(5);
 	});
 
+	test('startup-grace race: absent->present->absent => loop exits after latch is set', async () => {
+		// Simulates the startup race:
+		//   tick 1: hasSessionFn() returns false  (session not yet visible)
+		//           -> sessionSeen NOT set, startup-grace prevents exit -> sleep
+		//   tick 2: hasSessionFn() returns true   (session now visible)
+		//           -> sessionSeen latched -> sleep
+		//   tick 3: hasSessionFn() returns false  (session gone)
+		//           -> sessionSeen already set -> return cleanly
+		//
+		// Result: loop resolves with undefined; hasSessionFn called 3×; sleep 2×.
+		const ESCAPE = Symbol('escape');
+		let sleepCount = 0;
+		let sessionCalls = 0;
+		const sessionResponses = [false, true, false]; // absent, present, absent
+
+		const opts: RunSidecarLoopOptions = {
+			buildOpts: () => makeDummySupervisorOpts(),
+			readActive: () => false,
+			clearActive: () => {},
+			sleep: () => {
+				sleepCount += 1;
+				// Safety valve: should never need more than 5 ticks.
+				if (sleepCount > 5) throw ESCAPE;
+			},
+			hasPendingStories: () => false,
+			acquireLock: () => ({ acquired: false as const, holderPid: 99 }),
+			hasSessionFn: () => {
+				const response = sessionResponses[sessionCalls] ?? false;
+				sessionCalls += 1;
+				return response;
+			},
+			idlePollMs: 1,
+		};
+
+		// Loop must resolve cleanly (no ESCAPE sentinel, no unhandled throw).
+		await expect(runSidecarLoop(opts)).resolves.toBeUndefined();
+
+		// hasSessionFn was called exactly three times.
+		expect(sessionCalls).toBe(3);
+		// sleep was called for ticks 1 and 2; on tick 3 the loop returns before sleeping.
+		expect(sleepCount).toBe(2);
+	});
+
 	test('session-gone: hasSessionFn true once then false => loop returns within one idle interval', async () => {
 		// hasSessionFn returns true on the first call (sessionSeen latched),
 		// then false on the second call (session gone => return).
