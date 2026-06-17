@@ -35,6 +35,7 @@ import type {
 	WriteSessionMarker,
 	IsPaneAlive,
 	ProgressPayload,
+	HandoffSnapshot,
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import type { WorkerReport } from '../../src/supervisor/worker-report.ts';
@@ -2070,5 +2071,117 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 		expect(labelCall).toBeDefined();
 		// Must target the custom pane id.
 		expect(labelCall).toContain(customPaneId);
+	});
+
+	// -------------------------------------------------------------------------
+	// US-005: outcome-fallback event
+	// -------------------------------------------------------------------------
+
+	test('US-005: outcome-fallback event fires on worker-report fallback path', async () => {
+		// When readHandoff returns null (no handoff) and capturePane has no DONE
+		// sentinel, readWorkerOutcome resolves via the worker-report fallback.
+		// The loop must emit an 'outcome-fallback' event with fallbackKind:
+		// 'worker-report-fallback' for operator diagnostics.
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+
+		const blockedReport: WorkerReport = {
+			outcome: 'BLOCKED_QUALITY',
+			story: 'US-001',
+			gates: { typecheck: 'fail: 2 errors', tests: '0 pass / 5 fail' },
+			notes: 'tests failed',
+		};
+
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const opts = makeBaseOpts({
+			readPrd: () => prd_impl,
+			readHandoff: () => null, // no handoff -> worker-report fallback activated
+			capturePane: (_paneId) => UNKNOWN_PANE, // no DONE sentinel
+			readWorkerReport: () => blockedReport, // triggers poll sentinel + fallback read
+			workerReportPath: '/fake/worker-report.json',
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		const fallbackEvents = events.filter((e) => e.kind === 'outcome-fallback');
+		expect(fallbackEvents).toHaveLength(1);
+		expect(fallbackEvents[0]?.detail).toMatchObject({ fallbackKind: 'worker-report-fallback' });
+	});
+
+	test('US-005: outcome-fallback event fires on handoff-string-coerced path', async () => {
+		// When handoff.lastCompletedStory is a bare string (instead of {id,title}),
+		// readWorkerOutcome coerces it to {id} and records 'handoff-string-coerced'
+		// in the detail. The loop must emit an 'outcome-fallback' event.
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done_clean = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		let prdCall = 0;
+
+		const fakeReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-001',
+			gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				// Call 1: top of iter 1 -> passes:false (implement action)
+				// Call 2: fileReader prd in readWorkerOutcome -> passes:true (pass outcome)
+				// Call 3+: top of iter 2 -> all done + clean (complete)
+				return prdCall <= 1 ? prd_impl : prd_done_clean;
+			},
+			// Bare-string lastCompletedStory triggers the handoff-string-coerced path.
+			readHandoff: () => ({ lastCompletedStory: 'US-001' } as unknown as HandoffSnapshot),
+			capturePane: (_paneId) => UNKNOWN_PANE, // no DONE sentinel (so corroboration = handoff-string-coerced)
+			readWorkerReport: () => fakeReport, // used only to trigger poll sentinel detection
+			workerReportPath: '/fake/worker-report.json',
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		const fallbackEvents = events.filter((e) => e.kind === 'outcome-fallback');
+		expect(fallbackEvents).toHaveLength(1);
+		expect(fallbackEvents[0]?.detail).toMatchObject({ fallbackKind: 'handoff-string-coerced' });
+	});
+
+	test('US-005: outcome-fallback event does NOT fire on happy path (well-formed handoff + DONE sentinel)', async () => {
+		// When handoff.lastCompletedStory is a proper {id,title} object AND the
+		// captured pane text contains a DONE sentinel, readWorkerOutcome resolves
+		// via state-primary + sentinel corroboration. No fallback or coercion
+		// occurred, so no 'outcome-fallback' event should be emitted.
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done_clean = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		let prdCall = 0;
+
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done_clean;
+			},
+			readHandoff: () => makeHandoff('US-001'), // well-formed object, no coercion
+			capturePane: (_paneId) => donePane('US-001'), // DONE sentinel present
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		const fallbackEvents = events.filter((e) => e.kind === 'outcome-fallback');
+		expect(fallbackEvents).toHaveLength(0);
 	});
 });

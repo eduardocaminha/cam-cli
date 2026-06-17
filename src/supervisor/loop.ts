@@ -796,6 +796,21 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			emit('result', actualStoryId, uuid, buildResultDetail(outcome, _readHandoff()));
 			emitTokens(actualStoryId, uuid);
 
+			// US-005: emit outcome-fallback when readWorkerOutcome resolved via the
+			// worker-report fallback path OR via handoff bare-string coercion.
+			// Mirror the pane-died-retry pattern: thin detail, no new subsystem.
+			if (
+				outcome.detail.includes('worker-report-fallback') ||
+				outcome.detail.includes('handoff-string-coerced')
+			) {
+				emit('outcome-fallback', actualStoryId, uuid, {
+					fallbackKind: outcome.detail.includes('worker-report-fallback')
+						? 'worker-report-fallback'
+						: 'handoff-string-coerced',
+					detail: outcome.detail,
+				});
+			}
+
 			if (outcome.kind === 'pass' && outcome.storyId !== undefined) {
 				writeSessionMarker(outcome.storyId, uuid);
 				// US-001: verify the pass actually landed on origin before continuing.
