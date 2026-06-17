@@ -29,6 +29,8 @@ import { join } from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
 
+import { readSidecarPid, removeSidecarPid, sidecarPidAlive } from '../supervisor/sidecar-pid.ts';
+
 import {
 	emitMutedHint,
 	emitOk,
@@ -77,6 +79,22 @@ export interface StopOptions {
 	 * When undefined, defaults to `readWorkerPaneMarker`.
 	 */
 	workerPaneReader?: (claudeDir: string) => string | null;
+	/**
+	 * Override the sidecar pid reader for tests.
+	 * When undefined, defaults to `readSidecarPid` from sidecar-pid.ts.
+	 */
+	sidecarPidReader?: (claudeDir: string) => number | null;
+	/**
+	 * Override the signal-0 liveness probe for tests (real process.kill(pid, 0)
+	 * cannot be called against fake pids in unit tests).
+	 * When undefined, defaults to `sidecarPidAlive` from sidecar-pid.ts.
+	 */
+	sidecarPidAliveFn?: (pid: number) => boolean;
+	/**
+	 * Override the sidecar pid-file remover for tests.
+	 * When undefined, defaults to `removeSidecarPid` from sidecar-pid.ts.
+	 */
+	sidecarPidRemover?: (claudeDir: string) => void;
 }
 
 export interface StopReport {
@@ -100,6 +118,13 @@ export interface StopReport {
 	 * command failed.
 	 */
 	workerPaneKilled: boolean;
+	/**
+	 * Was the sidecar process (from .claude/.cam-sidecar.pid) sent SIGTERM?
+	 * False when the pid file is absent, the pid is dead (signal-0 fails),
+	 * or the kill call threw. The pid file is always removed when present,
+	 * regardless of liveness.
+	 */
+	sidecarKilled: boolean;
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -190,6 +215,9 @@ export function performStop(options: StopOptions = {}): StopReport {
 	const spawnFn = options.spawnSyncFn ?? ((cmd, args, opts) => spawnSync(cmd, args, opts));
 	const killFn = options.killFn ?? ((pid: number, signal: 'SIGTERM') => process.kill(pid, signal));
 	const workerPaneReader = options.workerPaneReader ?? readWorkerPaneMarker;
+	const sidecarPidReaderImpl = options.sidecarPidReader ?? readSidecarPid;
+	const sidecarPidAliveImpl = options.sidecarPidAliveFn ?? sidecarPidAlive;
+	const sidecarPidRemoverImpl = options.sidecarPidRemover ?? removeSidecarPid;
 
 	const session = projectSessionName(cwd);
 	const claudeDir = join(cwd, '.claude');
@@ -201,12 +229,31 @@ export function performStop(options: StopOptions = {}): StopReport {
 		sessionName: session,
 		supervisorKilled: false,
 		workerPaneKilled: false,
+		sidecarKilled: false,
 	};
 
 	// 1. Kill the supervisor PID from the state file (before we remove it).
 	const supervisorPid = readSupervisorPid(cwd);
 	if (supervisorPid !== null) {
 		report.supervisorKilled = killSupervisorPid(supervisorPid, killFn);
+	}
+
+	// 1b. Kill the sidecar process from .claude/.cam-sidecar.pid.
+	//     Probe liveness first (signal-0); SIGTERM only when alive.
+	//     Always remove the pid file when present (idempotent).
+	const sidecarPid = sidecarPidReaderImpl(claudeDir);
+	if (sidecarPid !== null) {
+		const alive = sidecarPidAliveImpl(sidecarPid);
+		if (alive) {
+			try {
+				killFn(sidecarPid, 'SIGTERM');
+				report.sidecarKilled = true;
+			} catch {
+				// kill threw — pid may have died in the instant between probe and kill
+			}
+		}
+		// Always remove the pid file (idempotent whether alive or dead).
+		sidecarPidRemoverImpl(claudeDir);
 	}
 
 	// 2. Remove the loop state file.
@@ -264,6 +311,10 @@ export function runStop(options: StopOptions = {}): number {
 		emitOk('Sent SIGTERM to supervisor PID');
 	}
 
+	if (report.sidecarKilled) {
+		emitOk('Sent SIGTERM to sidecar PID');
+	}
+
 	if (report.stateFileRemoved) {
 		emitOk(`Removed ${STATE_FILE_PATH}`);
 	} else {
@@ -286,7 +337,7 @@ export function runStop(options: StopOptions = {}): number {
 	// success is signaled by the accent ✓ glyph on the content line (`emitOk`),
 	// matching how the Ink screens do it.
 	emitSectionHeading('Done');
-	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled) {
+	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled) {
 		emitOk('Loop stopped');
 	} else {
 		emitMutedHint('Nothing to clean — no active loop or stale state');

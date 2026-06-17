@@ -33,7 +33,7 @@ import type { SpawnFn } from '../src/tmux/session.ts';
  * which hangs `bun test`. Every runRun test must inject this so no real
  * sidecar is spawned (US-FIX-002 test-hygiene fix, CAM-55 operator smoke).
  */
-const noopSidecar: SpawnSidecarFn = () => ({ kill: () => {} });
+const noopSidecar: SpawnSidecarFn = () => ({ pid: 0, kill: () => {} });
 
 // ---------------------------------------------------------------------------
 // Fake spawn helper for argv tests
@@ -647,7 +647,7 @@ describe('runRun orch-ready marker (US-FIX-005)', () => {
 	it('does NOT write .cam-orch-ready in the parent process on new session creation', () => {
 		const cwd = makeTmpProject();
 		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
-		const fakeSidecar = { kill: () => {} };
+		const fakeSidecar = { pid: 0, kill: () => {} };
 		const spawnSidecarFn = (_c: string, _l: string) => fakeSidecar;
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn });
@@ -680,7 +680,7 @@ describe('runRun sidecar spawn (US-FIX-002)', () => {
 
 		let sidecarCwd: string | undefined;
 		let sidecarLogPath: string | undefined;
-		const fakeSidecar = { kill: () => {} };
+		const fakeSidecar = { pid: 0, kill: () => {} };
 		const spawnSidecarFn = (c: string, l: string) => {
 			sidecarCwd = c;
 			sidecarLogPath = l;
@@ -702,7 +702,7 @@ describe('runRun sidecar spawn (US-FIX-002)', () => {
 		let sidecarSpawnCalled = false;
 		const spawnSidecarFn = (_c: string, _l: string) => {
 			sidecarSpawnCalled = true;
-			return { kill: () => {} };
+			return { pid: 0, kill: () => {} };
 		};
 
 		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn });
