@@ -117,7 +117,7 @@
         "Tests pass. [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-003 exporting makeHasPendingStories — Scenarios 2/3 import it directly. Create test/integration/supervisor-outcome-cam58.test.ts. Use mkdtempSync + writeFileSync to set up a real cwd with scripts/cam/prd.json, scripts/cam/handoff.json, scripts/cam/worker-report.json. Import readWorkerOutcome from src/supervisor/result.ts (call it with the real fileReader = (p) => readFileSync(p, 'utf8') and the workerReportPath/expectedStoryId wired through). Import makeHasPendingStories from src/commands/sidecar.ts (now exported by US-003). Re-check patterns.md 'tmux mangles TAB in -F output; key panes on @cam_label, not command (CAM-55 operator smoke)' for the 'fakes lie' lesson driving this story. Re-check FLOW.md §7 (autonomous loop) + §9-Q1 for the contracts asserted here."
     },

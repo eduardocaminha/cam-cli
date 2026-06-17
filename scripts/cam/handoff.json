@@ -1,23 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Emit a structured supervisor event when readWorkerOutcome falls back or coerces"
+    "id": "US-006",
+    "title": "Integration test reproducing the exact CAM-56 dogfood failure end-to-end"
   },
   "branchName": "cam/CAM-58-supervisor-outcome-worker-report",
   "timestamp": "2026-06-17T00:00:00Z",
-  "createdFiles": [],
+  "createdFiles": [
+    "test/integration/supervisor-outcome-cam58.test.ts"
+  ],
   "modifiedFiles": [
-    "src/supervisor/events.ts",
-    "src/supervisor/loop.ts",
-    "test/supervisor/loop.test.ts"
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 added 'outcome-fallback' to WorkerEventKind in events.ts and added the emit in loop.ts after the 'result' emit: fires when outcome.detail contains 'worker-report-fallback' or 'handoff-string-coerced'. 3 new tests in test/supervisor/loop.test.ts (worker-report fallback fires, handoff-string-coerced fires, happy path does NOT fire). Full suite: 973 pass / 0 fail.",
+  "nextStoryContext": "US-006 added test/integration/supervisor-outcome-cam58.test.ts: 3 scenarios using real readWorkerOutcome + real makeHasPendingStories against mkdtempSync tmp dirs. No mocks. Scenario 1: string lastCompletedStory + empty pane + DONE worker-report -> kind:pass. Scenarios 2/3: makeHasPendingStories with null vs CLEAN verdict. 976 pass / 0 fail.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure TypeScript internal change: added 'outcome-fallback' to WorkerEventKind and wired the emit in loop.ts. No external npm library introduced or modified."
+      "summary": "Pure integration test using node:fs (mkdtempSync, writeFileSync, readFileSync, rmSync) and bun:test. No new external npm library introduced or modified."
     }
   ]
 }
