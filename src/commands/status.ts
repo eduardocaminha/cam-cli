@@ -40,7 +40,7 @@ import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
-import yaml from 'js-yaml';
+import { load as yamlLoad } from 'js-yaml';
 
 import { glyphs } from '../design/tokens.ts';
 import { accent, chalk, muted, warning } from '../logging/color.ts';
@@ -213,7 +213,7 @@ export function parseStateFile(contents: string): LoopState | null {
 	const fmText = lines.slice(1, endIdx).join('\n');
 	let parsed: unknown;
 	try {
-		parsed = yaml.load(fmText);
+		parsed = yamlLoad(fmText);
 	} catch {
 		return null;
 	}

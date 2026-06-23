@@ -265,3 +265,47 @@ cat .claude/.cam-worker-US-XXX.session
 ```
 
 Cross-references: `.claude/cam-loop.local.md`, `.claude/.cam-worker-pane`, `.claude/.cam-worker-<US>.session`, `.claude/cam-worker-events.jsonl`, `.claude/.cam-supervisor.lock`, `.claude/.cam-sidecar.pid`.
+
+## (g) CAM-69: "Missing default export" from js-yaml in vendored smoke
+
+Symptom: `cam init` or `cam plan` runs the vendored `check-agent-frontmatter`
+smoke script and it fails with an error similar to:
+
+```
+error: Expected a default export in 'js-yaml'
+Missing 'default' export in module 'js-yaml'
+```
+
+Cause: the smoke script formerly used `import yaml from 'js-yaml'` (a default
+import). js-yaml v5 is ESM-only and ships no default export, only named
+exports (`load`, `dump`, etc.). If `bun` resolves js-yaml@5 from the
+module cache (for example after `bun update` or a global cache refresh), the
+default import crashes at runtime, even though `package.json` pins
+`js-yaml@^4`.
+
+Fix shipped in CAM-69: the smoke script was rewritten with a hand-rolled YAML
+parser that has zero external dependencies, so the js-yaml major is no longer
+relevant for the smoke. Additionally, all in-repo `js-yaml` consumers in
+`src/` were migrated to named imports (`import { load } from 'js-yaml'`),
+which are forward-compatible across v4 and v5.
+
+Recovery: if you see this error, your installed `cam` binary predates the fix.
+Rebuild and reinstall:
+
+```bash
+bash scripts/build-release.sh --install
+```
+
+This builds the binary, re-signs it ad-hoc (required on macOS arm64), runs a
+quick smoke, and installs to `~/.local/bin/cam`.
+
+Confirm the fix is active:
+
+```bash
+which cam        # should point to ~/.local/bin/cam
+cam --version    # shows the rebuilt version
+```
+
+If the error persists after reinstall, confirm the binary on PATH is the one
+you just built (`which cam`) and that no stale copy exists in an earlier PATH
+entry such as `/usr/local/bin`.
