@@ -15,13 +15,13 @@ scored N/A and excluded from the denominator, consistent with `warren` (also a
 CLI) being the L5 reference. Judgment calls are flagged; the score is reported
 as a band, not a precise grade.
 
-## Score: cam is roughly Level 3 (~26/57 applicable criteria, ~45-50%)
+## Score: cam is roughly Level 3 (~27/57 applicable criteria, ~45-50%)
 
 | Category | Pass / applicable | Gap |
 |---|---|---|
 | Documentation | ~6/8 | strong (README, CLAUDE.md, FLOW.md diagrams, recovery-runbook); missing agents_md_validation (doc-as-code) |
 | Testing & Quality | 5/9 | has unit + integration + isolation; missing coverage-threshold, test-perf-tracking, flaky-detection, quality-metrics (all CI/coverage-bound) |
-| Style & Validation | 3/8 | type_check + strict_typing pass; no linter/formatter, no complexity/dead-code/dup gates |
+| Style & Validation | 4/8 | type_check + strict_typing pass; biome lint (complexity rules, grandfather overrides) added; no formatter, no dead-code/dup gates |
 | Development Workflow | 4/9 | agentic-development + gh + priority-labels; missing tech-debt-scanner, code-boundaries, unused-deps, pr-template; branch_protection blocked (free private plan) |
 | Build System | 2/5 | build doc + lockfile; no file-size/build-perf/bundle-size tracking |
 | Security & Compliance | 2/5 applic. | secrets + gitignore; no secret-scanning/codeowners/security-review |

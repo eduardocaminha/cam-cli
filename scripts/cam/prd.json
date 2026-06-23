@@ -54,7 +54,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: biome.json (new, repo root), package.json (add devDependency + `lint` script), scripts/check-all.ts:79 (GATES manifest, use g('lint', 'bunx biome lint --error-on-warnings')). Operator constraints (MUST honor): (a) biome is LINT-ONLY (formatter NOT a gate, never run); (b) lean ruleset: recommended: false; enable ONLY the two named complexity rules. Do NOT enable biome's recommended ruleset (would surface hundreds of findings to grandfather; explicit future follow-up). `maxLines` target: 80 (must be <= 100 per AC). Picking a sane N rather than the biome default 50 reflects current cam-cli style (functions in src/supervisor/loop.ts run long but bounded) while still proving the rule is on. Grandfather pattern: `overrides[].includes` must be a per-file allowlist of CONCRETE paths from the violator scan (enumerate each oversized file by exact path, e.g. `src/supervisor/loop.ts`, `src/commands/dashboard.ts`); the gate AC explicitly forbids catch-all globs (`**`, `**/*`, `**/*.ts`, `**/*.tsx`, `src/**`). Per biome 2.x docs the grandfather targets the rule, not the file globally. Use `noExcessiveLinesPerFunction` with `{ level: 'error', options: { maxLines: 80 } }`. Re-check docs/agent-readiness.md `## Score` table (Style & Validation row) and scripts/cam/patterns.md `Gate-spine convention` bullet. Gate-spine invariant: adding to GATES auto-propagates to CI via the spine; do NOT add a separate `bun run lint` step to ci.yml."
     },

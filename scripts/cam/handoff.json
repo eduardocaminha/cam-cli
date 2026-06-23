@@ -1,0 +1,29 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Adopt biome as a lint-only gate (lean ruleset + grandfather overrides)"
+  },
+  "createdFiles": [
+    "biome.json"
+  ],
+  "modifiedFiles": [
+    "bun.lock",
+    "docs/agent-readiness.md",
+    "package.json",
+    "scripts/check-all.ts",
+    "src/logging/color.ts",
+    "test/check-all.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "biome.json is live with lint-only mode (linter.enabled:true, formatter.enabled:false, recommended:false, two complexity rules). Grandfather overrides cover 21 files. The lint gate is at index 3 in GATES (between embed-vendor and ci-parity). bun run lint exits 0. Next stories can add more ratchet/dup gates to the spine.",
+  "officialDocsValidated": [
+    {
+      "lib": "@biomejs/biome",
+      "version": "2.5.1",
+      "url": "https://biomejs.dev/reference/configuration/",
+      "fetchedAt": "2026-06-23T00:00:00Z",
+      "status": "ok",
+      "summary": "biome 2.x overrides structure (includes + linter.rules per-file) confirmed. recommended field is deprecated (use preset:none) but still accepted as info-only, not error. formatter.enabled:false and noExcessiveLinesPerFunction options.maxLines all match implementation."
+    }
+  ]
+}

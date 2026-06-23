@@ -12,9 +12,11 @@
     "typecheck": "bunx tsc --noEmit",
     "check:all": "bun scripts/check-all.ts",
     "check:ci-parity": "bun scripts/check-ci-parity.ts",
+    "lint": "bunx biome lint --error-on-warnings",
     "verify": "bun scripts/check-all.ts"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.1",
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
     "ink-testing-library": "^4.0.0"

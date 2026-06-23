@@ -50,12 +50,13 @@ function makeRecordingSpawn(exitCodes: number[]): { calls: Call[]; fn: SpawnFn }
 // ---------------------------------------------------------------------------
 
 describe('GATES manifest', () => {
-	test('has 4 gates in order: typecheck, test, embed-vendor, ci-parity', () => {
-		expect(GATES).toHaveLength(4);
+	test('has 5 gates in order: typecheck, test, embed-vendor, lint, ci-parity', () => {
+		expect(GATES).toHaveLength(5);
 		expect(GATES[0]?.name).toBe('typecheck');
 		expect(GATES[1]?.name).toBe('test');
 		expect(GATES[2]?.name).toBe('embed-vendor');
-		expect(GATES[3]?.name).toBe('ci-parity');
+		expect(GATES[3]?.name).toBe('lint');
+		expect(GATES[4]?.name).toBe('ci-parity');
 	});
 
 	test('typecheck gate: bunx tsc --noEmit', () => {
@@ -78,8 +79,15 @@ describe('GATES manifest', () => {
 		expect(gate?.args).toContain('--check');
 	});
 
-	test('ci-parity gate: bun run check:ci-parity', () => {
+	test('lint gate: bunx biome lint --error-on-warnings', () => {
 		const gate = GATES[3];
+		expect(gate?.name).toBe('lint');
+		expect(gate?.cmd).toBe('bunx');
+		expect(gate?.args).toEqual(['biome', 'lint', '--error-on-warnings']);
+	});
+
+	test('ci-parity gate: bun run check:ci-parity', () => {
+		const gate = GATES[4];
 		expect(gate?.name).toBe('ci-parity');
 		expect(gate?.cmd).toBe('bun');
 		expect(gate?.args).toEqual(['run', 'check:ci-parity']);
@@ -265,14 +273,14 @@ describe('--json mode (onResults)', () => {
 		}
 	});
 
-	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, ci-parity)', () => {
-		const { fn } = makeRecordingSpawn([0, 0, 0, 0]);
+	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, ci-parity)', () => {
+		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0]);
 		let captured: GateResult[] | null = null;
 		runGates({ spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		const names = results.map((r) => r.name);
-		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'ci-parity']);
+		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'ci-parity']);
 	});
 
 	test('onResults receives durationMs as a non-negative number', () => {
