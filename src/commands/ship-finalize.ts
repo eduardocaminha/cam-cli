@@ -14,7 +14,8 @@
 
 import type { SpawnSyncReturns } from 'node:child_process';
 import { parseToml } from '../config/toml.ts';
-import { printError, printHint } from '../logging/color.ts';
+import { printError } from '../logging/color.ts';
+import { emitOk } from '../logging/screen.ts';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency types
@@ -121,7 +122,7 @@ export function finalizeCycleClose(
 	try {
 		prdText = readPrd();
 	} catch (_err) {
-		printHint('scripts/cam/prd.json not found; cycle already closed, skipping finalize.');
+		emitOk('cycle already closed: prd.json absent, finalize skipped');
 		return {
 			issueId: `${issuePrefix}-0`,
 			issueBackend: issueSystem,
@@ -183,7 +184,7 @@ export function finalizeCycleClose(
 		{ encoding: 'utf8' },
 	);
 	if (diffResult.status === 0) {
-		printHint('nothing staged after git rm; commit skipped (already clean).');
+		emitOk('nothing staged after git rm: commit skipped (already clean)');
 		return {
 			issueId,
 			issueBackend: issueSystem,
@@ -196,6 +197,16 @@ export function finalizeCycleClose(
 	// 6. Commit
 	const commitMessage = `chore(cam): close ${issueId} + drop per-branch harness state (CAM-27 hygiene)`;
 	spawnFn('git', ['-C', cwd, 'commit', '-m', commitMessage], { encoding: 'utf8' });
+
+	// 6a. Emit structured result line: issue-id, files removed, commit sha.
+	//     The sha is obtained AFTER commit so it reflects the cleanup commit itself.
+	//     CAM-71 auto-ship narrative depends on this line being stable; do not change
+	//     the shape after release without bumping a test.
+	const shaResult = spawnFn('git', ['-C', cwd, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' });
+	const commitSha = (shaResult.stdout ?? '').trim() || 'unknown';
+	const removedNames = harnessPaths.map((p) => p.split('/').pop() ?? p);
+	const backendNote = issueSystem !== 'none' ? ` (issue-close: ${issueSystem})` : '';
+	emitOk(`closed ${issueId}${backendNote}: removed ${removedNames.join(', ')}`, `sha ${commitSha}`);
 
 	return {
 		issueId,

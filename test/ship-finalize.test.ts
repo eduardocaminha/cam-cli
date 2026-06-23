@@ -65,14 +65,21 @@ interface SpawnCall {
  * "nothing staged" guard introduced in US-005:
  *   status 1 (default) = staged changes present  => commit proceeds
  *   status 0            = no staged changes        => commit is skipped
+ *
+ * For `git rev-parse --short HEAD` the returned stdout is `revParseSha`
+ * (default 'abc1234'), reflecting the new structured-result-line emit (US-006).
  */
-function makeRecordingSpawn(opts: { diffCachedStatus?: number } = {}): { spawnFn: SpawnFn; calls: SpawnCall[] } {
+function makeRecordingSpawn(opts: { diffCachedStatus?: number; revParseSha?: string } = {}): { spawnFn: SpawnFn; calls: SpawnCall[] } {
 	const calls: SpawnCall[] = [];
 	const diffStatus = opts.diffCachedStatus ?? 1;
+	const sha = opts.revParseSha ?? 'abc1234';
 	const spawnFn: SpawnFn = (cmd, args, _opts) => {
 		calls.push({ cmd, args });
 		if (args.includes('diff') && args.includes('--cached') && args.includes('--quiet')) {
 			return { ...okResult(), status: diffStatus };
+		}
+		if (args.includes('rev-parse') && args.includes('--short')) {
+			return { ...okResult(), stdout: sha + '\n' };
 		}
 		return okResult();
 	};
@@ -234,6 +241,135 @@ describe('finalizeCycleClose — linear backend', () => {
 
 		const commitCall = calls.find((c) => c.args.includes('commit'));
 		expect(commitCall).toBeDefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// (e) structured result line (US-006): emitOk with issue-id, files, sha
+// ---------------------------------------------------------------------------
+
+/** Strip ANSI escape codes from a string for plain-text assertions. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC (0x1B) required for ANSI stripping
+function stripAnsi(s: string): string {
+	return s.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+describe('finalizeCycleClose — structured result line (US-006)', () => {
+	test('happy path (none backend) emits line with issue-id, removed files, and sha', () => {
+		const captured: string[] = [];
+		const origWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: unknown) => {
+			if (typeof chunk === 'string') captured.push(chunk);
+			else if (chunk instanceof Uint8Array) captured.push(Buffer.from(chunk).toString('utf8'));
+			return true;
+		}) as unknown as typeof process.stdout.write;
+
+		let error: unknown;
+		try {
+			const { spawnFn } = makeRecordingSpawn({ revParseSha: 'def5678' });
+			finalizeCycleClose(
+				makeOptions({
+					spawnFn,
+					readProjectToml: () => PROJECT_TOML_NONE,
+					writeIssues: () => {},
+				}),
+			);
+		} catch (e) {
+			error = e;
+		} finally {
+			process.stdout.write = origWrite;
+		}
+
+		expect(error).toBeUndefined();
+
+		const plain = stripAnsi(captured.join(''));
+		expect(plain).toContain('closed CAM-72');
+		expect(plain).toContain('prd.json');
+		expect(plain).toContain('handoff.json');
+		expect(plain).toContain('progress.txt');
+		expect(plain).toContain('sha def5678');
+	});
+
+	test('github backend emits line noting issue-close handled by github', () => {
+		const captured: string[] = [];
+		const origWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: unknown) => {
+			if (typeof chunk === 'string') captured.push(chunk);
+			else if (chunk instanceof Uint8Array) captured.push(Buffer.from(chunk).toString('utf8'));
+			return true;
+		}) as unknown as typeof process.stdout.write;
+
+		try {
+			const { spawnFn } = makeRecordingSpawn({ revParseSha: 'aaa0001' });
+			finalizeCycleClose(
+				makeOptions({
+					spawnFn,
+					readProjectToml: () => PROJECT_TOML_GITHUB,
+				}),
+			);
+		} finally {
+			process.stdout.write = origWrite;
+		}
+
+		const plain = stripAnsi(captured.join(''));
+		expect(plain).toContain('closed CAM-72');
+		expect(plain).toContain('github');
+		expect(plain).toContain('sha aaa0001');
+	});
+
+	test('no-op (prd absent) emits a clear skip message, not silent', () => {
+		const captured: string[] = [];
+		const origWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: unknown) => {
+			if (typeof chunk === 'string') captured.push(chunk);
+			else if (chunk instanceof Uint8Array) captured.push(Buffer.from(chunk).toString('utf8'));
+			return true;
+		}) as unknown as typeof process.stdout.write;
+
+		try {
+			const { spawnFn } = makeRecordingSpawn();
+			finalizeCycleClose(
+				makeOptions({
+					spawnFn,
+					readPrd: () => { throw new Error('ENOENT'); },
+				}),
+			);
+		} finally {
+			process.stdout.write = origWrite;
+		}
+
+		const plain = stripAnsi(captured.join(''));
+		// Must not be silent: some output that mentions "skipped" or "already closed"
+		expect(plain.length).toBeGreaterThan(0);
+		const lower = plain.toLowerCase();
+		expect(lower.includes('skipped') || lower.includes('already closed')).toBe(true);
+	});
+
+	test('no-op (nothing staged) emits a clear skip message, not silent', () => {
+		const captured: string[] = [];
+		const origWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: unknown) => {
+			if (typeof chunk === 'string') captured.push(chunk);
+			else if (chunk instanceof Uint8Array) captured.push(Buffer.from(chunk).toString('utf8'));
+			return true;
+		}) as unknown as typeof process.stdout.write;
+
+		try {
+			const { spawnFn } = makeRecordingSpawn({ diffCachedStatus: 0 });
+			finalizeCycleClose(
+				makeOptions({
+					spawnFn,
+					readProjectToml: () => PROJECT_TOML_GITHUB,
+				}),
+			);
+		} finally {
+			process.stdout.write = origWrite;
+		}
+
+		const plain = stripAnsi(captured.join(''));
+		expect(plain.length).toBeGreaterThan(0);
+		const lower = plain.toLowerCase();
+		expect(lower.includes('skipped') || lower.includes('nothing staged')).toBe(true);
 	});
 });
 
