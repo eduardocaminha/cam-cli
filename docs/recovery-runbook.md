@@ -309,3 +309,63 @@ cam --version    # shows the rebuilt version
 If the error persists after reinstall, confirm the binary on PATH is the one
 you just built (`which cam`) and that no stale copy exists in an earlier PATH
 entry such as `/usr/local/bin`.
+
+## (h) Wedged ship cycle: use cam ship --finalize
+
+Symptom: the supervisor reached a terminal state (all non-operator stories pass
+and review is CLEAN), but the cycle-close step did not complete. The per-branch
+harness state files (`scripts/cam/prd.json`, `scripts/cam/handoff.json`) are
+still present and tracked in the repo, or `scripts/cam/issues.local.json` still
+shows the issue as open.
+
+When it happens: the sidecar exited before running the cycle-close commit,
+or the process crashed mid-finalize.
+
+Recovery: run the deterministic cycle-close primitive:
+
+```bash
+cam ship --finalize
+```
+
+What it does (in order):
+
+1. Reads `scripts/cam/project.toml` for `issue_system` and `issue_prefix`.
+2. Reads `scripts/cam/prd.json` for the issue number (before removing it).
+3. When `issue_system == 'none'`: marks the matching entry in
+   `scripts/cam/issues.local.json` as `state: "closed"` with a timestamp.
+   For `github` or `linear`: skips this step (the backend closes the issue via
+   PR merge or explicit API call).
+4. Removes `scripts/cam/prd.json`, `scripts/cam/handoff.json`, and
+   `scripts/cam/progress.txt` via `git rm -f --ignore-unmatch` (idempotent:
+   missing or untracked files are silently skipped).
+5. Stages `issues.local.json` when applicable.
+6. Commits: `chore(cam): close <issue-id> + drop per-branch harness state
+   (CAM-27 hygiene)`.
+
+The command is idempotent: a second invocation after prd.json is already gone
+exits cleanly with "cycle already closed: prd.json absent, finalize skipped"
+and makes no commit.
+
+Manual fallback (use only when the `cam` binary itself is broken or unavailable):
+
+```bash
+# Step 4: remove harness state files
+git rm -f --ignore-unmatch \
+  scripts/cam/prd.json \
+  scripts/cam/handoff.json \
+  scripts/cam/progress.txt
+
+# Step 3 (if issue_system == 'none'): edit issues.local.json by hand.
+#   Set "state": "closed" and "closedAt": "<ISO timestamp>" on the matching entry.
+git add scripts/cam/issues.local.json
+
+# Step 6: commit
+git commit -m "chore(cam): close <issue-id> + drop per-branch harness state (CAM-27 hygiene)"
+```
+
+After the cycle-close commit, push and open the PR if not already open:
+
+```bash
+git push origin $(git branch --show-current)
+cam ship   # thin-proxy: sends /cam-ship to the orchestrator pane
+```

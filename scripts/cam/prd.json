@@ -131,7 +131,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: docs/recovery-runbook.md, possibly FLOW.md. No em-dash anywhere in persisted .md (project rule, lessons.md / patterns.md:17). Use colon, comma, parens, or period instead. Read the existing recovery-runbook to match its tone and structure (do not invent a new format)."
     }
