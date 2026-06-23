@@ -1,30 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "scripts/check-ci-parity.ts + check:ci-parity gate"
+    "id": "US-003",
+    "title": ".github/workflows/ci.yml on macos-latest invoking the gate spine"
   },
   "branchName": "cam/CAM-59-ci-macos-gate-spine",
   "timestamp": "2026-06-23T00:00:00Z",
   "createdFiles": [
-    "scripts/check-ci-parity.ts",
-    "test/check-ci-parity.test.ts",
-    "test/fixtures/aligned.yml",
-    "test/fixtures/unknown-script.yml",
-    "test/fixtures/missing-gate.yml"
+    ".github/workflows/ci.yml",
+    "test/ci-workflow.test.ts"
   ],
   "modifiedFiles": [
-    "package.json"
+    "scripts/check-all.ts",
+    "test/check-all.test.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 must create .github/workflows/ci.yml with macos-latest, brew install tmux, bun install --frozen-lockfile, and bun run check:all. After ci.yml exists, add 'ci-parity' gate to the GATES manifest in check-all.ts. The three fixture files in test/fixtures/ (aligned, unknown-script, missing-gate) are already in place and used by check-ci-parity tests. The checkParity / checkParityFromFile exports from scripts/check-ci-parity.ts are importable by test/ci-workflow.test.ts (the test that validates the real ci.yml). The gate name for the parity gate should be 'ci-parity' and its cmd should be 'bun run check:ci-parity' or equivalent.",
+  "nextStoryContext": "US-003 delivered: ci.yml (macos-latest, setup-bun@v2, brew install tmux, bun install --frozen-lockfile, bun run check:all), ci-parity gate added to GATES manifest (4th entry), test/ci-workflow.test.ts validates the real ci.yml. Next story should consult prd.json for the next highest-priority passes:false entry.",
   "officialDocsValidated": [
     {
-      "lib": "js-yaml",
-      "version": "4.x",
-      "url": "https://github.com/nodeca/js-yaml",
+      "lib": "oven-sh/setup-bun",
+      "version": "v2",
+      "url": "https://github.com/oven-sh/setup-bun",
       "fetchedAt": "2026-06-23T00:00:00Z",
       "status": "ok",
-      "summary": "Named exports confirmed: load, loadAll, dump, schema constants. No default export in v4/v5. load() throws YAMLException on error. import { load } from 'js-yaml' is the correct forward-compatible form. Matches patterns.md js-yaml named import rule."
+      "summary": "@v2 confirmed as the current latest and recommended major. No required inputs; bun-version is optional and auto-detected from package.json engines.bun or falls back to latest. Usage `uses: oven-sh/setup-bun@v2` is correct."
     }
   ]
 }

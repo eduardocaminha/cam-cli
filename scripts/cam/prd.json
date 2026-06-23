@@ -67,7 +67,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .github/workflows/ci.yml (new), test/ci-workflow.test.ts (new). Pin setup-bun to @v2 (current major, verified at plan time per officialDocsConsulted). engines.bun is not set in package.json today; setup-bun falls back to latest (acceptable per issue scope, do not introduce a version pin without operator say-so per Surgical Changes). Real-tmux integration tests live under test/integration/ and self-skip when 'tmux -V' is missing; confirm by reading one of them (e.g. test/integration/tmux-introspect.test.ts referenced in MEMORY) before writing the workflow. ci-parity is the keystone test here: only 'bun run check:all' should appear as the gate-driving invocation in ci.yml."
     },
