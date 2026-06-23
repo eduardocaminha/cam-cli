@@ -14,6 +14,7 @@
 
 import type { SpawnSyncReturns } from 'node:child_process';
 import { parseToml } from '../config/toml.ts';
+import { printError, printHint } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency types
@@ -79,6 +80,8 @@ export interface FinalizeCycleCloseResult {
 	issueBackend: string;
 	issueLocalClosed: boolean;
 	commitMessage: string;
+	/** true when the function exited cleanly without committing (prd absent, nothing staged). */
+	noOp?: boolean;
 }
 
 /**
@@ -111,8 +114,22 @@ export function finalizeCycleClose(
 	const issuePrefix =
 		typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
 
-	// 2. Read issueNumber from prd.json BEFORE removing prd.json
-	const prdText = readPrd();
+	// 2. Read issueNumber from prd.json BEFORE removing prd.json.
+	//    If prd.json is absent (already removed by a prior run), treat as a
+	//    clean idempotent no-op rather than crashing.
+	let prdText: string;
+	try {
+		prdText = readPrd();
+	} catch (_err) {
+		printHint('scripts/cam/prd.json not found; cycle already closed, skipping finalize.');
+		return {
+			issueId: `${issuePrefix}-0`,
+			issueBackend: issueSystem,
+			issueLocalClosed: false,
+			commitMessage: '',
+			noOp: true,
+		};
+	}
 	const prd = JSON.parse(prdText) as PrdShape;
 	const issueNumber = typeof prd.issueNumber === 'number' ? prd.issueNumber : null;
 	const issueId = issueNumber !== null ? `${issuePrefix}-${issueNumber}` : `${issuePrefix}-0`;
@@ -123,12 +140,20 @@ export function finalizeCycleClose(
 		const issuesText = readIssues();
 		const issuesData = JSON.parse(issuesText) as IssuesLocalJson;
 		const entry = issuesData.issues.find((i) => i.id === issueId);
-		if (entry !== undefined) {
-			entry.state = 'closed';
-			entry.closedAt = clock();
-			issueLocalClosed = true;
-			writeIssues(JSON.stringify(issuesData, null, 2) + '\n');
+		if (entry === undefined) {
+			// Hard failure: the issue entry must exist when issue_system == 'none'.
+			// A missing entry indicates a misconfigured or mismatched PRD; rm + commit
+			// must NOT silently proceed, as that would corrupt the issue log.
+			printError(
+				`issue not found in issues.local.json: ${issueId}`,
+				'add the issue entry or check issue_prefix / issueNumber in project.toml / prd.json',
+			);
+			throw new Error(`issue not found in issues.local.json: ${issueId}`);
 		}
+		entry.state = 'closed';
+		entry.closedAt = clock();
+		issueLocalClosed = true;
+		writeIssues(JSON.stringify(issuesData, null, 2) + '\n');
 	}
 	// For github/linear: skips the issues.local.json edit but still proceeds
 	// with git rm + commit below.
@@ -146,6 +171,26 @@ export function finalizeCycleClose(
 	// 5. Stage issues.local.json when applicable
 	if (issueLocalClosed) {
 		spawnFn('git', ['-C', cwd, 'add', 'scripts/cam/issues.local.json'], { encoding: 'utf8' });
+	}
+
+	// 5a. Guard: skip commit when nothing is staged.
+	//     `git diff --cached --quiet` exits 0 when no staged changes, 1 when staged.
+	//     Skipping prevents a "nothing to commit" git error when no harness files
+	//     were tracked (e.g., they were never staged, or already removed earlier).
+	const diffResult = spawnFn(
+		'git',
+		['-C', cwd, 'diff', '--cached', '--quiet'],
+		{ encoding: 'utf8' },
+	);
+	if (diffResult.status === 0) {
+		printHint('nothing staged after git rm; commit skipped (already clean).');
+		return {
+			issueId,
+			issueBackend: issueSystem,
+			issueLocalClosed,
+			commitMessage: '',
+			noOp: true,
+		};
 	}
 
 	// 6. Commit

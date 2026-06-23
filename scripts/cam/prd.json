@@ -98,7 +98,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New test file: test/ship-finalize-hardening.test.ts (or extend test/ship-finalize.test.ts). Use injected fakes from US-001's surface. Idempotency matters because CAM-71 auto-ship may re-invoke if a downstream step fails. The 'nothing to commit' guard can be implemented by checking `git diff --cached --quiet` before commit (exit 0 = no staged changes). Keep error messages aligned with src/logging/color.ts printError style."
     },

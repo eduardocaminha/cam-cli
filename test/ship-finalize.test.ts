@@ -58,11 +58,22 @@ interface SpawnCall {
 	args: string[];
 }
 
-/** Build a SpawnFn that records every call and always returns success. */
-function makeRecordingSpawn(): { spawnFn: SpawnFn; calls: SpawnCall[] } {
+/**
+ * Build a SpawnFn that records every call and returns success.
+ *
+ * For `git diff --cached --quiet` the returned status controls the
+ * "nothing staged" guard introduced in US-005:
+ *   status 1 (default) = staged changes present  => commit proceeds
+ *   status 0            = no staged changes        => commit is skipped
+ */
+function makeRecordingSpawn(opts: { diffCachedStatus?: number } = {}): { spawnFn: SpawnFn; calls: SpawnCall[] } {
 	const calls: SpawnCall[] = [];
+	const diffStatus = opts.diffCachedStatus ?? 1;
 	const spawnFn: SpawnFn = (cmd, args, _opts) => {
 		calls.push({ cmd, args });
+		if (args.includes('diff') && args.includes('--cached') && args.includes('--quiet')) {
+			return { ...okResult(), status: diffStatus };
+		}
 		return okResult();
 	};
 	return { spawnFn, calls };
