@@ -101,7 +101,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/cam/patterns.md, docs/recovery-runbook.md, docs/agent-readiness.md. Read the existing structure of each file first and append in the established style (no reformatting of surrounding content per Surgical Changes). The em-dash check is mandatory: rg/grep for U+2014 in the touched files before declaring done. Cross-reference the gate-spine bullet in patterns.md to the runbook section rather than restating the recovery steps in two places (lesson 5: avoid drift between duplicated rules)."
     },

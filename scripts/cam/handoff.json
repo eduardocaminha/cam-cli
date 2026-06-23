@@ -1,25 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Per-gate timing surfaced to GitHub step summary (--json output)"
+    "id": "US-005",
+    "title": "Docs: patterns + recovery-runbook + agent-readiness updates"
   },
   "branchName": "cam/CAM-59-ci-macos-gate-spine",
   "timestamp": "2026-06-23T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/check-all.ts",
-    "test/check-all.test.ts",
-    ".github/workflows/ci.yml",
-    ".gitignore",
+    "scripts/cam/patterns.md",
+    "docs/recovery-runbook.md",
+    "docs/agent-readiness.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 delivered: GateResult type + onResults callback in check-all.ts; --json CLI flag writes gate-results.json (gitignored); ci.yml updated to pass -- --json to check:all and adds 'if: always()' summary step using jq; 8 new tests pass (23 total in check-all.test.ts). Next story: consult prd.json for highest-priority passes:false entry.",
+  "nextStoryContext": "US-005 delivered: gate-spine convention bullet added to patterns.md; CAM-59 section (ci-parity failure debugging) added to recovery-runbook.md; agent-readiness.md updated to mark CAM-59 as done in the roadmap and add a 'CAM-59 done' section. Only operator-gated story remains (US-006). Next story: consult prd.json for highest-priority passes:false entry.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 only extends scripts/check-all.ts (node built-ins: node:fs, node:path, node:child_process) and ci.yml (shell/jq). No external TS library touched."
+      "summary": "US-005 is a docs-only story touching three .md files. No external TypeScript library was exercised."
     }
   ]
 }

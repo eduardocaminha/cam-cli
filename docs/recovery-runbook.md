@@ -369,3 +369,78 @@ After the cycle-close commit, push and open the PR if not already open:
 git push origin $(git branch --show-current)
 cam ship   # thin-proxy: sends /cam-ship to the orchestrator pane
 ```
+
+## (i) CAM-59: red CI or ci-parity failure
+
+Symptom: the GitHub Actions CI job fails, or `bun run check:ci-parity` exits
+non-zero locally with an error like:
+
+```
+ci-parity FAIL: CI does not cover gate 'my-gate' (not in 'bun run check:all' spine)
+```
+
+or:
+
+```
+ci-parity FAIL: CI step 'bun run my-gate' is not in the GATES manifest
+```
+
+### How the gate-spine works
+
+All quality gates are declared as entries in the `GATES` manifest at the top of
+`scripts/check-all.ts`. The CI workflow (`ci.yml`) calls a single step:
+
+```yaml
+- run: bun run check:all
+```
+
+The `check:ci-parity` gate (`scripts/check-ci-parity.ts`) then verifies that
+`ci.yml` and the GATES manifest are in sync. Parity fails when they drift:
+either a gate exists in the manifest but is not covered by the CI spine, or a
+`bun run <script>` step appears in CI that is not in the manifest (and is not
+on the explicit allowlist in `check-ci-parity.ts`).
+
+### Fixing a parity failure
+
+**Common cause: a new gate was added ad-hoc to `ci.yml` instead of to the
+manifest.** Fix:
+
+1. Remove the ad-hoc step from `ci.yml`.
+2. Add the gate as a `GATES` entry in `scripts/check-all.ts` using the `g()`
+   helper (a space-separated command string: `g('my-gate', 'bun run my:script')`).
+3. Verify locally:
+
+   ```bash
+   bun run check:all
+   bun run check:ci-parity
+   ```
+
+**Common cause: a gate was added to the manifest but the CI workflow still runs
+it as a separate step too.** Fix: remove the redundant CI step (the spine
+covers all GATES entries automatically).
+
+**Common cause: a script was added to the allowlist in `check-ci-parity.ts`
+that should instead be a proper gate.** Promote it to a GATES entry instead.
+
+### Debugging a red CI run
+
+1. Open the failing GitHub Actions run and expand the failing step.
+2. If the failure is in `check:all`, the output names the failing gate:
+
+   ```
+   fail typecheck (3.2s)
+   ```
+
+   Fix the underlying issue (typecheck errors, failing tests, vendor drift,
+   parity errors) and push again.
+3. If the failure is in the summary step (`gate-results.json`), confirm the
+   JSON file was written: `bun run check:all -- --json` must produce
+   `gate-results.json` in the repo root.
+4. To reproduce CI locally:
+
+   ```bash
+   bun run check:all -- --json
+   bun run check:ci-parity
+   ```
+
+Cross-reference: `scripts/check-all.ts` (GATES manifest), `scripts/check-ci-parity.ts` (parity checker), `.github/workflows/ci.yml` (spine step), `scripts/cam/patterns.md` (gate-spine convention bullet).
