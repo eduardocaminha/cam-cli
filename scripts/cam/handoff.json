@@ -1,23 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Deterministic regression test for the zero-dep smoke"
+    "id": "US-003",
+    "title": "Defensive hardening of in-repo js-yaml default import + runbook note"
   },
   "branchName": "cam/CAM-69-smoke-zero-dep",
-  "timestamp": "2026-06-23T11:00:00Z",
-  "createdFiles": [
-    "test/vendor/check-agent-frontmatter-standalone.test.ts"
-  ],
+  "timestamp": "2026-06-23T11:30:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
+    "src/commands/status.ts",
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added a deterministic regression test (test/vendor/check-agent-frontmatter-standalone.test.ts) that materializes the embedded smoke in a fresh tmpdir, runs git init, writes a minimal .claude/agents/example.md fixture, and invokes via spawnSync('bun', [scriptPath]). The F-02 oracle (BUN_INSTALL_CACHE_DIR empty) passes because the smoke now uses only node: built-ins. US-003 adds defensive hardening of in-repo js-yaml default imports + a runbook note.",
+  "nextStoryContext": "US-003 switched src/commands/status.ts from `import yaml from 'js-yaml'` (default import) to `import { load as yamlLoad } from 'js-yaml'` (named import, forward-compatible across js-yaml v4 and v5). Verified grep: zero remaining default js-yaml imports in src/. Also appended section (g) to docs/recovery-runbook.md explaining the CAM-69 stale-binary 'Missing default export' failure and the rebuild/reinstall recovery path. All non-operator stories in this PRD now pass: true.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "US-002 only adds a test file using built-in node:fs/node:child_process and the repo-internal _generated.ts. No new external library is exercised."
+      "lib": "js-yaml",
+      "version": "4.1.1",
+      "url": "https://github.com/nodeca/js-yaml",
+      "fetchedAt": "2026-06-23T11:30:00Z",
+      "status": "ok",
+      "summary": "v4.1.1 confirmed: `load` is a named export (function), no default export. Named import `import { load } from 'js-yaml'` is forward-compatible with v5. Verified via local node_modules introspection (npm 403 blocked WebFetch; GitHub page showed v5 uses named `load` as well)."
     }
   ]
 }

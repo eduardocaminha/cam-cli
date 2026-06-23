@@ -90,7 +90,7 @@
         "Tests pass. [oracle: named-command: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/status.ts (named-import refactor + adjust `yaml.load(...)` -> `load(...)` call sites), grep src/ for any other default `js-yaml` import and fix in the same edit (likely only status.ts but verify), docs/recovery-runbook.md (append a CAM-69 section — F-06 operator decision: use the EXISTING docs/recovery-runbook.md, do NOT create a parallel docs/runbooks/cam-loop-recovery.md). The section must explain the zero-dep smoke fix and the rebuild/reinstall step (`bun run build:release --install` or equivalent) so an operator hitting `Missing default export` knows to clear a stale binary. Patterns: scripts/cam/patterns.md `No em-dash in persisted .md` applies to the doc edit. The js-yaml@4 pin in package.json means status.ts works today regardless, but a transitive `bun update` could float to v5 and break it silently; the named import is forward-compatible per the v4/v5 docs (load() exists in both)."
     }
