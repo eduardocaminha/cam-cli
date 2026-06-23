@@ -9,7 +9,9 @@
     "embed-vendor:check": "bun scripts/generate-embedded-vendor.ts --check",
     "build:release": "bun scripts/generate-embedded-vendor.ts && bash scripts/build-release.sh",
     "test": "bun test",
-    "typecheck": "bunx tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit",
+    "check:all": "bun scripts/check-all.ts",
+    "verify": "bun scripts/check-all.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
