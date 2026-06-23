@@ -56,6 +56,7 @@ export const GATES: Gate[] = [
 	g('typecheck', 'bunx tsc --noEmit'),
 	g('test', 'bun test'),
 	g('embed-vendor', 'bun scripts/generate-embedded-vendor.ts --check'),
+	g('ci-parity', 'bun run check:ci-parity'),
 ];
 
 // ---------------------------------------------------------------------------

@@ -49,11 +49,12 @@ function makeRecordingSpawn(exitCodes: number[]): { calls: Call[]; fn: SpawnFn }
 // ---------------------------------------------------------------------------
 
 describe('GATES manifest', () => {
-	test('has 3 gates in order: typecheck, test, embed-vendor', () => {
-		expect(GATES).toHaveLength(3);
+	test('has 4 gates in order: typecheck, test, embed-vendor, ci-parity', () => {
+		expect(GATES).toHaveLength(4);
 		expect(GATES[0]?.name).toBe('typecheck');
 		expect(GATES[1]?.name).toBe('test');
 		expect(GATES[2]?.name).toBe('embed-vendor');
+		expect(GATES[3]?.name).toBe('ci-parity');
 	});
 
 	test('typecheck gate: bunx tsc --noEmit', () => {
@@ -74,6 +75,13 @@ describe('GATES manifest', () => {
 		expect(gate?.cmd).toBe('bun');
 		expect(gate?.args).toContain('scripts/generate-embedded-vendor.ts');
 		expect(gate?.args).toContain('--check');
+	});
+
+	test('ci-parity gate: bun run check:ci-parity', () => {
+		const gate = GATES[3];
+		expect(gate?.name).toBe('ci-parity');
+		expect(gate?.cmd).toBe('bun');
+		expect(gate?.args).toEqual(['run', 'check:ci-parity']);
 	});
 });
 
