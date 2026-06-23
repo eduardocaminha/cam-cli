@@ -41,6 +41,14 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .claude/hooks/
 # Runtime orchestrator session-id marker written by `cam run` (US-002, CAM-21)
 .claude/.cam-orch-session
+# CAM-68: escaped harness runtime markers (orchestrator + setup + handoff + sidecar)
+.claude/.cam-orchestrator-prompt.txt
+.claude/.cam-setup-menu.sh
+.claude/.cam-setup-prompt.txt
+.claude/.cam-orch-ready
+.claude/.cam-sidecar.pid
+.claude/.cam-orch-handoff.json
+.claude/.cam-orch-handoff.consumed.json
 # Runtime per-story supervisor artifacts: session markers + durable out-logs (CAM-22/CAM-32)
 .claude/.cam-worker-*.session
 .claude/.cam-worker-out-*.log

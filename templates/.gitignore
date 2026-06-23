@@ -1,3 +1,12 @@
 # Ephemeral per-invocation worker exit report written by the cam agent (US-003).
 # Never commit this file: it is overwritten on each worker invocation.
 scripts/cam/worker-report.json
+
+# CAM-68: escaped harness runtime markers (orchestrator + setup + handoff + sidecar)
+.claude/.cam-orchestrator-prompt.txt
+.claude/.cam-setup-menu.sh
+.claude/.cam-setup-prompt.txt
+.claude/.cam-orch-ready
+.claude/.cam-sidecar.pid
+.claude/.cam-orch-handoff.json
+.claude/.cam-orch-handoff.consumed.json

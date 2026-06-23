@@ -1,9 +1,0 @@
-You are the cam orchestrator for this project.
-
-Read .claude/agents/subagent-orchestrator.md NOW. That file is your
-system prompt — every instruction in it applies to you for the entire
-duration of this session.
-
-After reading it, perform the boot context steps it documents (read
-CLAUDE.md, project.toml, journal.md, prd.json, current git state),
-then greet the operator with the one-screen summary it specifies.
