@@ -13,6 +13,12 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true
+    },
+    {
       "id": "US-001",
       "title": "Implement finalizeCycleClose() in src/ with injectable deps",
       "description": "As a sidecar/orchestrator, I need a deterministic finalizeCycleClose() primitive in TypeScript so that the cycle-close (issue close + per-branch state removal + commit) is not an LLM step and is reproducible/testable.",
@@ -27,7 +33,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "New files: src/commands/ship-finalize.ts, test/ship-finalize.test.ts. Read scripts/cam/patterns.md:10 (Bun preference) but FOLLOW the established repo pattern of injectable spawnFn over node:child_process (see src/commands/status.ts:338, src/commands/resume.ts:181) so tests stay hermetic. The deviation from patterns.md:10 (Bun.spawn preference) is deliberate: the git surface in this repo uses dependency-injected synchronous spawn mirroring src/commands/status.ts:338 and src/commands/resume.ts:181 for hermetic sync testability, and Bun.spawnSync is an acceptable Bun-native sync equivalent if preferred. This pre-empts a reviewer block on the Bun rule. Read existing issues.local.json shape (top-level next_id + issues[] with id/state/closedAt). Read src/config/toml.ts for TOML parsing. The issue-id format is `${issue_prefix}-${issueNumber}` (e.g. CAM-72). Clock is injectable (returns ISO string), tests pass a fixed clock. Use noUncheckedIndexedAccess-safe access (patterns.md:13)."
@@ -45,7 +51,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: index.ts (parseShipArgs ~line 685, case 'ship' ~line 820, SHIP_HELP constant), new test/ship-args.test.ts. The finalize path runs synchronously in-process (no send-keys, no tmux session needed). Keep the parseShipArgs return shape backward-compatible (add a field, do not rename). Patterns.md:11 forbids --permission-mode. The thin-proxy-preservation is the operator's explicit invariant: the behavioral oracle in AC5 must prove runShip is NEVER called on --finalize, not just grep that finalizeCycleClose appears in the source."
@@ -64,7 +70,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Edit BOTH copies (templates/commands/cam-ship.md and .claude/commands/cam-ship.md) THEN run `bun run embed-vendor`, patterns.md:32 self-hosting rule. The byte-parity test in test/embedded.test.ts will catch drift. Keep Step 1 (PRD-complete gate), Step 2 (git status), Step 3 (gates), Step 5 (push), Step 6 (PR), Step 7 (github/linear close) intact, only Step 4 changes. The new Step 4 body should explain that `cam ship --finalize` reads the issue backend, closes the local issue (if none), removes per-branch state with `git rm -f --ignore-unmatch`, and commits."
@@ -80,7 +86,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "New file: test/integration/ship-finalize-dirty-prd.test.ts. Mirror the skip-when-tool-absent pattern from test/integration/tmux-introspect.test.ts (patterns.md:35). Use Bun.spawnSync / node:child_process spawnSync for the git setup commands and node:fs for tmp dir. This test is the operator-named oracle of the CAM-72 fix: without this, a unit fake could pass while the real git path still wedges (lessons.md:35: fakes can mask tool-real-behavior bugs)."
@@ -97,7 +103,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "New test file: test/ship-finalize-hardening.test.ts (or extend test/ship-finalize.test.ts). Use injected fakes from US-001's surface. Idempotency matters because CAM-71 auto-ship may re-invoke if a downstream step fails. The 'nothing to commit' guard can be implemented by checking `git diff --cached --quiet` before commit (exit 0 = no staged changes). Keep error messages aligned with src/logging/color.ts printError style."
@@ -114,7 +120,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Use src/logging/screen.ts emit helpers (emitTitle/emitSectionHeading/emitOk) and src/logging/color.ts printError. The commit sha can be obtained via `git rev-parse --short HEAD` after commit (one more spawnFn call). Keep the result line plain text + readable; this is not JSON. CAM-71 auto-ship narrative depends on this being present and stable, so do not change the shape after release without bumping a test."
@@ -130,10 +136,15 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "Files: docs/recovery-runbook.md, possibly FLOW.md. No em-dash anywhere in persisted .md (project rule, lessons.md / patterns.md:17). Use colon, comma, parens, or period instead. Read the existing recovery-runbook to match its tone and structure (do not invent a new format)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING"
+  }
 }

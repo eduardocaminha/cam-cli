@@ -1,22 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Update recovery runbook + FLOW pointer to document `cam ship --finalize`"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-72-deterministic-cycle-close",
-  "timestamp": "2026-06-23T17:30:00.000Z",
+  "timestamp": "2026-06-23T18:00:00.000Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/recovery-runbook.md",
+    "templates/commands/cam-ship.md",
+    ".claude/commands/cam-ship.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 done: docs/recovery-runbook.md gains section (h) describing cam ship --finalize (what it does, when to invoke, idempotency guarantee, and the manual git rm fallback). FLOW.md confirmed no change needed: it references /cam-ship (the orchestrator slash command / happy path), not the recovery path. All 1032 tests pass, typecheck clean.",
+  "nextStoryContext": "US-R1-001 done: fixed stale 'Step 4a' cross-reference in cam-ship.md Step 7 (both templates/ and .claude/ copies). US-003 had collapsed Step 4 into a single cam ship --finalize invocation with no sub-steps, so the 'Step 4a' reference was dangling. Changed to 'Step 4'. embed-vendor regenerated. 1032 tests pass, typecheck clean.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story is a pure docs update to docs/recovery-runbook.md. No external library API was exercised."
+      "summary": "Story is a pure doc fix in cam-ship.md (both copies) + embed-vendor regen. No external library API was exercised."
     }
   ]
 }

@@ -74,7 +74,7 @@ Steps:
    <anything reviewers should know>
    ```
 
-7. **Close the `github` / `linear` backend issue (if applicable).** The `none` backend was already closed in Step 4a; for the others:
+7. **Close the `github` / `linear` backend issue (if applicable).** The `none` backend was already closed by `cam ship --finalize` in Step 4; for the others:
    ```bash
    # github:
    gh issue close <N> --reason completed --comment "Shipped via PR #<PR>"
