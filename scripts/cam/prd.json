@@ -115,7 +115,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Use src/logging/screen.ts emit helpers (emitTitle/emitSectionHeading/emitOk) and src/logging/color.ts printError. The commit sha can be obtained via `git rev-parse --short HEAD` after commit (one more spawnFn call). Keep the result line plain text + readable; this is not JSON. CAM-71 auto-ship narrative depends on this being present and stable, so do not change the shape after release without bumping a test."
     },

@@ -1,25 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Failure-mode hardening + idempotency for finalizeCycleClose"
+    "id": "US-006",
+    "title": "Structured deterministic result line for finalizeCycleClose"
   },
   "branchName": "cam/CAM-72-deterministic-cycle-close",
-  "timestamp": "2026-06-23T16:00:00.000Z",
-  "createdFiles": [
-    "test/ship-finalize-hardening.test.ts"
-  ],
+  "timestamp": "2026-06-23T17:00:00.000Z",
+  "createdFiles": [],
   "modifiedFiles": [
     "src/commands/ship-finalize.ts",
     "test/ship-finalize.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 done: finalizeCycleClose hardened with three guards: (1) missing issue in issues.local.json (none backend) -> printError + throw; (2) prd.json absent -> printHint + noOp:true return; (3) nothing staged after git rm -> git diff --cached --quiet guard + noOp:true return. New test file test/ship-finalize-hardening.test.ts covers all four ACs (11 new tests). Existing test/ship-finalize.test.ts makeRecordingSpawn updated to return diffCachedStatus:1 by default so happy-path tests still expect a commit. 1028 tests pass.",
+  "nextStoryContext": "US-006 done: finalizeCycleClose now emits one structured emitOk result line on every code path. Happy path: emitOk with issue-id, removed file names (prd.json, handoff.json, progress.txt), and commit sha (from git rev-parse --short HEAD). GitHub/linear path: same line with backend note in parentheses. No-op paths (prd absent, nothing staged): emitOk with clear skip message instead of the old silent printHint. New tests in test/ship-finalize.test.ts capture stdout and assert the structured line is present. 1032 tests pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story only modified src/commands/ship-finalize.ts and tests. Internal deps only (parseToml, printError, printHint from project modules). No external library API was exercised."
+      "summary": "Story only used the existing internal emitOk helper from src/logging/screen.ts and printError from src/logging/color.ts. No new external library API was exercised."
     }
   ]
 }
