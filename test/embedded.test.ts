@@ -275,6 +275,44 @@ describe('templatesContents — Layer B binary rubric in reviewer prompt (US-004
 	});
 });
 
+describe('CAM-68: harness runtime marker ignore rules', () => {
+	// CAM-68 added 7 runtime-marker rules to templates/.gitignore so that
+	// orchestrator / setup / handoff / sidecar files are never accidentally
+	// committed. These tests pin all 7 rules in the embedded templates map and
+	// guard against the orchestrator-prompt file being re-tracked.
+
+	const gitignore = templatesContents['.gitignore'] ?? '';
+
+	const MARKER_RULES = [
+		'.cam-orchestrator-prompt.txt',
+		'.cam-setup-menu.sh',
+		'.cam-setup-prompt.txt',
+		'.cam-orch-ready',
+		'.cam-sidecar.pid',
+		'.cam-orch-handoff.json',
+		'.cam-orch-handoff.consumed.json',
+	] as const;
+
+	for (const rule of MARKER_RULES) {
+		test(`embedded .gitignore contains rule for ${rule}`, () => {
+			expect(gitignore).toContain(rule);
+		});
+	}
+
+	test('orchestrator-prompt file is NOT tracked by git (re-tracking regression guard)', () => {
+		// git ls-files --error-unmatch exits 1 when the file is absent from
+		// the index (either untracked or gitignored). We assert NON-ZERO so
+		// this test breaks loudly if the file ever gets accidentally re-added.
+		const r = Bun.spawnSync([
+			'git',
+			'ls-files',
+			'--error-unmatch',
+			'.claude/.cam-orchestrator-prompt.txt',
+		]);
+		expect(r.exitCode).not.toBe(0);
+	});
+});
+
 describe('templatesContents — lastCompletedStory object shape in implementer prompt (CAM-58 US-002)', () => {
 	// The implementer prompt must instruct writing lastCompletedStory as a JSON
 	// object {id, title}, not a bare string. US-001 coercion is a defensive net;
