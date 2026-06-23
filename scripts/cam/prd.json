@@ -1,0 +1,139 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-72-deterministic-cycle-close",
+  "description": "Move /cam-ship Step 4b cycle-close hygiene from LLM-executed markdown to deterministic TypeScript invoked via `cam ship --finalize`, fixing the dirty-prd.json git rm regression.",
+  "issueNumber": 72,
+  "relatedDocs": [
+    "scripts/cam/patterns.md",
+    "scripts/cam/CLAUDE.md",
+    "scripts/cam/journal.md",
+    "FLOW.md",
+    "docs/recovery-runbook.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Implement finalizeCycleClose() in src/ with injectable deps",
+      "description": "As a sidecar/orchestrator, I need a deterministic finalizeCycleClose() primitive in TypeScript so that the cycle-close (issue close + per-branch state removal + commit) is not an LLM step and is reproducible/testable.",
+      "acceptanceCriteria": [
+        "A new module exports finalizeCycleClose(options) (e.g. src/commands/ship-finalize.ts) with injectable deps: spawnFn (git CLI), clock (now()), fs reader/writer for project.toml/prd.json/issues.local.json. [oracle: file-assert grep -nE 'export (async )?function finalizeCycleClose' /Users/eduardo/Documents/Projects/cam-cli/src/commands/ship-finalize.ts]",
+        "Reads issue_system and issue_prefix from scripts/cam/project.toml (via existing src/config/toml.ts) and issueNumber from scripts/cam/prd.json BEFORE removing prd.json. [oracle: file-assert grep -nE 'issueNumber|issue_prefix|issue_system' /Users/eduardo/Documents/Projects/cam-cli/src/commands/ship-finalize.ts]",
+        "When issue_system == 'none', finds the matching entry in scripts/cam/issues.local.json by id == `${issue_prefix}-${issueNumber}` and sets state='closed' + closedAt=ISO timestamp; for github/linear, skips the issues.local.json edit but still proceeds with rm + commit. [oracle: file-assert grep -nE 'closedAt|state.*closed|issue_system' /Users/eduardo/Documents/Projects/cam-cli/src/commands/ship-finalize.ts]",
+        "Removes scripts/cam/prd.json, scripts/cam/handoff.json, scripts/cam/progress.txt via `git rm -f --ignore-unmatch` (the -f flag overrides git's local-modifications guard and resolves both the dirty and missing cases atomically). [oracle: file-assert grep -nE \"'rm'.*'-f'.*'--ignore-unmatch'|'rm', '-f', '--ignore-unmatch'\" /Users/eduardo/Documents/Projects/cam-cli/src/commands/ship-finalize.ts]",
+        "Stages scripts/cam/issues.local.json (when applicable) and commits with message exactly: `chore(cam): close <issue-id> + drop per-branch harness state (CAM-27 hygiene)`. [oracle: file-assert grep -nE 'close .* drop per-branch harness state .CAM-27 hygiene.' /Users/eduardo/Documents/Projects/cam-cli/src/commands/ship-finalize.ts]",
+        "Uses dependency-injected spawnFn (node:child_process spawnSync pattern matching src/commands/status.ts:338) so unit tests need no real git binary. [oracle: file-assert grep -nE 'spawnFn|SpawnFn' /Users/eduardo/Documents/Projects/cam-cli/src/commands/ship-finalize.ts]",
+        "Unit test file test/ship-finalize.test.ts covers: (a) none-backend happy path closes issue + rms + commits; (b) github-backend skips issues.local.json edit but still rms + commits; (c) linear-backend ditto; (d) dirty-prd.json case still removes the file (asserts `git rm -f --ignore-unmatch` is in the recorded spawn calls). [oracle: bun test test/ship-finalize.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New files: src/commands/ship-finalize.ts, test/ship-finalize.test.ts. Read scripts/cam/patterns.md:10 (Bun preference) but FOLLOW the established repo pattern of injectable spawnFn over node:child_process (see src/commands/status.ts:338, src/commands/resume.ts:181) so tests stay hermetic. The deviation from patterns.md:10 (Bun.spawn preference) is deliberate: the git surface in this repo uses dependency-injected synchronous spawn mirroring src/commands/status.ts:338 and src/commands/resume.ts:181 for hermetic sync testability, and Bun.spawnSync is an acceptable Bun-native sync equivalent if preferred. This pre-empts a reviewer block on the Bun rule. Read existing issues.local.json shape (top-level next_id + issues[] with id/state/closedAt). Read src/config/toml.ts for TOML parsing. The issue-id format is `${issue_prefix}-${issueNumber}` (e.g. CAM-72). Clock is injectable (returns ISO string), tests pass a fixed clock. Use noUncheckedIndexedAccess-safe access (patterns.md:13)."
+    },
+    {
+      "id": "US-002",
+      "title": "Wire `cam ship --finalize` into dispatch, bypassing the thin-proxy",
+      "description": "As an operator (or the markdown ship flow), I need `cam ship --finalize` to invoke finalizeCycleClose directly (NOT send /cam-ship to the orchestrator) so the deterministic cycle-close runs in-process.",
+      "acceptanceCriteria": [
+        "parseShipArgs (index.ts ~line 685) accepts a new --finalize flag (boolean); unknown args still error as today. [oracle: file-assert grep -nE \"'--finalize'\" /Users/eduardo/Documents/Projects/cam-cli/index.ts]",
+        "case 'ship' in index.ts main() branches on parsed.finalize: when true, calls finalizeCycleClose({}) and returns its exit code WITHOUT calling runShip (the thin-proxy). [oracle: file-assert grep -nE 'finalize.*finalizeCycleClose|finalizeCycleClose.*finalize' /Users/eduardo/Documents/Projects/cam-cli/index.ts]",
+        "No --permission-mode flag is introduced anywhere (test/no-permission-mode-flag.test.ts must keep passing). [oracle: bun test test/no-permission-mode-flag.test.ts]",
+        "SHIP_HELP text documents the --finalize flag. [oracle: file-assert grep -n 'finalize' /Users/eduardo/Documents/Projects/cam-cli/index.ts]",
+        "Unit tests cover: (a) parseShipArgs(['--finalize']) returns {help:false, finalize:true}; (b) the dispatch routes to finalize and never calls runShip's bootstrap/send-keys path: the test injects fakes for both finalizeCycleClose and runShip (or wraps dispatch with an injectable runShip dep / spawnFn) and asserts the runShip fake was invoked exactly zero times on the --finalize path while the finalizeCycleClose fake was invoked exactly once. Behavioral oracle, not grep. The --finalize path MUST NOT call runShip. [oracle: bun test test/ship-args.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: index.ts (parseShipArgs ~line 685, case 'ship' ~line 820, SHIP_HELP constant), new test/ship-args.test.ts. The finalize path runs synchronously in-process (no send-keys, no tmux session needed). Keep the parseShipArgs return shape backward-compatible (add a field, do not rename). Patterns.md:11 forbids --permission-mode. The thin-proxy-preservation is the operator's explicit invariant: the behavioral oracle in AC5 must prove runShip is NEVER called on --finalize, not just grep that finalizeCycleClose appears in the source."
+    },
+    {
+      "id": "US-003",
+      "title": "Replace markdown Step 4b in both cam-ship.md copies with a single `cam ship --finalize` invocation",
+      "description": "As the orchestrator agent, I need the /cam-ship slash command's Step 4b to be ONE deterministic command invocation instead of three hand-typed git commands, so the cycle-close is reproducible and the dirty-prd.json bug cannot recur.",
+      "acceptanceCriteria": [
+        "templates/commands/cam-ship.md Step 4 is rewritten so the entire cycle-close (4a + 4b + 4c) is a single `cam ship --finalize` invocation, with a brief description of what the command does. [oracle: file-assert grep -n 'cam ship --finalize' /Users/eduardo/Documents/Projects/cam-cli/templates/commands/cam-ship.md]",
+        ".claude/commands/cam-ship.md is updated identically (intentional self-hosting per patterns.md:32). [oracle: file-assert grep -n 'cam ship --finalize' /Users/eduardo/Documents/Projects/cam-cli/.claude/commands/cam-ship.md]",
+        "Raw `git rm -q --ignore-unmatch` and inline `git commit -m \"chore(cam): close\"` blocks are removed from BOTH cam-ship.md copies (no longer hand-executed by the LLM). [oracle: file-assert ! grep -q 'git rm -q --ignore-unmatch' /Users/eduardo/Documents/Projects/cam-cli/templates/commands/cam-ship.md && ! grep -q 'git rm -q --ignore-unmatch' /Users/eduardo/Documents/Projects/cam-cli/.claude/commands/cam-ship.md]",
+        "`bun run embed-vendor` was run to sync src/vendor/_generated.ts and `bun run embed-vendor:check` passes (byte-parity gate). [oracle: bun run embed-vendor:check]",
+        "test/vendor/cam-ship-hygiene.test.ts is updated: asserts the embedded cam-ship.md contains the literal `cam ship --finalize`, no longer asserts the raw `git rm` form, still forbids the masked-atomic pattern. [oracle: bun test test/vendor/cam-ship-hygiene.test.ts]",
+        "No em-dash characters are introduced in EITHER edited .md file (project rule, patterns.md:17); the runtime mirror under .claude/commands is checked alongside the templates/ source. [oracle: file-assert ! grep -q '—' /Users/eduardo/Documents/Projects/cam-cli/templates/commands/cam-ship.md && ! grep -q '—' /Users/eduardo/Documents/Projects/cam-cli/.claude/commands/cam-ship.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit BOTH copies (templates/commands/cam-ship.md and .claude/commands/cam-ship.md) THEN run `bun run embed-vendor`, patterns.md:32 self-hosting rule. The byte-parity test in test/embedded.test.ts will catch drift. Keep Step 1 (PRD-complete gate), Step 2 (git status), Step 3 (gates), Step 5 (push), Step 6 (PR), Step 7 (github/linear close) intact, only Step 4 changes. The new Step 4 body should explain that `cam ship --finalize` reads the issue backend, closes the local issue (if none), removes per-branch state with `git rm -f --ignore-unmatch`, and commits."
+    },
+    {
+      "id": "US-004",
+      "title": "Real-git integration regression test for the dirty-prd.json bug",
+      "description": "As a maintainer, I need a regression test that builds a real temp git repo, commits prd.json + handoff.json, then modifies prd.json (the CAM-68 scenario), runs finalizeCycleClose, and asserts both files end DELETED (not modified) so the bug cannot silently regress.",
+      "acceptanceCriteria": [
+        "test/integration/ship-finalize-dirty-prd.test.ts exists and runs against a real git binary (skip cleanly when git is absent, mirroring patterns.md:35 tmux-introspect skip pattern). [oracle: file-assert test -f /Users/eduardo/Documents/Projects/cam-cli/test/integration/ship-finalize-dirty-prd.test.ts]",
+        "The test creates a fresh git repo in a tmp dir, sets user.email/user.name, commits scripts/cam/prd.json + handoff.json + project.toml + issues.local.json, then OVERWRITES prd.json with a modified copy (simulating the review block append), runs finalizeCycleClose against that cwd, and asserts: (a) `git ls-files scripts/cam/prd.json` is empty (file removed from the index); (b) the working tree contains no prd.json/handoff.json; (c) `git status --porcelain` is empty (clean tree); (d) the HEAD commit message is the expected `chore(cam): close ... CAM-27 hygiene` form. [oracle: bun test test/integration/ship-finalize-dirty-prd.test.ts]",
+        "A second test case covers the missing-files variant: prd.json/handoff.json already absent, finalizeCycleClose still runs cleanly and produces the expected commit (or a clean exit if there is nothing to remove). [oracle: bun test test/integration/ship-finalize-dirty-prd.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "New file: test/integration/ship-finalize-dirty-prd.test.ts. Mirror the skip-when-tool-absent pattern from test/integration/tmux-introspect.test.ts (patterns.md:35). Use Bun.spawnSync / node:child_process spawnSync for the git setup commands and node:fs for tmp dir. This test is the operator-named oracle of the CAM-72 fix: without this, a unit fake could pass while the real git path still wedges (lessons.md:35: fakes can mask tool-real-behavior bugs)."
+    },
+    {
+      "id": "US-005",
+      "title": "Failure-mode hardening + idempotency for finalizeCycleClose",
+      "description": "As an operator, I need finalizeCycleClose to fail loudly on real problems (issue not in issues.local.json) and silently no-op on benign repeats (already-finalized cycle), so a transient failure or a re-run does not corrupt state.",
+      "acceptanceCriteria": [
+        "When issue_system == 'none' and the matching issue-id is NOT in issues.local.json, finalizeCycleClose returns a non-zero exit code with a clear error message (printError) that names the missing id; the rm + commit do NOT proceed silently. [oracle: bun test test/ship-finalize-hardening.test.ts]",
+        "When scripts/cam/prd.json is absent entirely AND no harness files exist, finalizeCycleClose exits cleanly (idempotent no-op, exit 0, no commit) and logs a muted hint. [oracle: bun test test/ship-finalize-hardening.test.ts]",
+        "When the rm produces no staged changes (nothing was tracked), the commit step is skipped cleanly (no `nothing to commit` git error surfaces as a failure); exit 0. [oracle: bun test test/ship-finalize-hardening.test.ts]",
+        "A second invocation immediately after a successful first run is a clean no-op (exit 0, no duplicate commit). [oracle: bun test test/ship-finalize-hardening.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "New test file: test/ship-finalize-hardening.test.ts (or extend test/ship-finalize.test.ts). Use injected fakes from US-001's surface. Idempotency matters because CAM-71 auto-ship may re-invoke if a downstream step fails. The 'nothing to commit' guard can be implemented by checking `git diff --cached --quiet` before commit (exit 0 = no staged changes). Keep error messages aligned with src/logging/color.ts printError style."
+    },
+    {
+      "id": "US-006",
+      "title": "Structured deterministic result line for finalizeCycleClose",
+      "description": "As the CAM-71 auto-ship orchestrator (running unattended), I need finalizeCycleClose to emit a structured result line (issue-id closed, files removed, commit sha) via src/logging/* so the unattended close can be narrated/audited without human watching.",
+      "acceptanceCriteria": [
+        "finalizeCycleClose emits exactly one structured result line on success containing: the closed issue-id (e.g. CAM-72), the list of files removed (subset of prd.json/handoff.json/progress.txt), and the resulting commit short sha. [oracle: bun test test/ship-finalize.test.ts]",
+        "The result is emitted via the project logging path (src/logging/screen.ts or src/logging/color.ts), consistent with other commands (emitOk / emitSectionHeading patterns). [oracle: file-assert grep -nE \"from '../logging\" /Users/eduardo/Documents/Projects/cam-cli/src/commands/ship-finalize.ts]",
+        "On skip paths (no-op idempotent, github/linear), the emitted line clearly states what was skipped vs done (no silent exits). [oracle: bun test test/ship-finalize.test.ts]",
+        "A test asserts the structured line is present in the captured stdout for the happy path (none backend). [oracle: bun test test/ship-finalize.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Use src/logging/screen.ts emit helpers (emitTitle/emitSectionHeading/emitOk) and src/logging/color.ts printError. The commit sha can be obtained via `git rev-parse --short HEAD` after commit (one more spawnFn call). Keep the result line plain text + readable; this is not JSON. CAM-71 auto-ship narrative depends on this being present and stable, so do not change the shape after release without bumping a test."
+    },
+    {
+      "id": "US-007",
+      "title": "Update recovery runbook + FLOW pointer to document `cam ship --finalize`",
+      "description": "As an operator hitting a wedged ship cycle, I need docs/recovery-runbook.md to point at `cam ship --finalize` and document the manual fallback, so I can recover deterministically.",
+      "acceptanceCriteria": [
+        "docs/recovery-runbook.md gains a section describing `cam ship --finalize` (what it does, when to invoke, and the manual `git rm -f --ignore-unmatch` fallback for the case where the binary itself is broken). [oracle: file-assert grep -n 'cam ship --finalize' /Users/eduardo/Documents/Projects/cam-cli/docs/recovery-runbook.md]",
+        "FLOW.md (if it references the ship cycle-close) is updated to point at the new command, OR confirmed to need no change (a brief note in the commit message). [oracle: reviewer-judgment]",
+        "No em-dash is introduced in any edited .md file (project rule, patterns.md:17). [oracle: file-assert ! grep -q '—' /Users/eduardo/Documents/Projects/cam-cli/docs/recovery-runbook.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: docs/recovery-runbook.md, possibly FLOW.md. No em-dash anywhere in persisted .md (project rule, lessons.md / patterns.md:17). Use colon, comma, parens, or period instead. Read the existing recovery-runbook to match its tone and structure (do not invent a new format)."
+    }
+  ]
+}
