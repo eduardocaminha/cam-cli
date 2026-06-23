@@ -1,25 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Replace markdown Step 4b in both cam-ship.md copies with a single `cam ship --finalize` invocation"
+    "id": "US-004",
+    "title": "Real-git integration regression test for the dirty-prd.json bug"
   },
   "branchName": "cam/CAM-72-deterministic-cycle-close",
-  "timestamp": "2026-06-23T14:00:00.000Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-23T15:00:00.000Z",
+  "createdFiles": [
+    "test/integration/ship-finalize-dirty-prd.test.ts"
+  ],
   "modifiedFiles": [
-    "templates/commands/cam-ship.md",
-    ".claude/commands/cam-ship.md",
-    "src/vendor/_generated.ts",
-    "test/vendor/cam-ship-hygiene.test.ts",
-    "scripts/cam/prd.json"
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 done: both cam-ship.md copies now delegate Step 4 cycle-close to a single `cam ship --finalize` invocation. Raw `git rm -q --ignore-unmatch` blocks removed from both copies. Pre-existing em-dashes in Steps 1 and 2 also removed (oracle required file-wide absence). embed-vendor regenerated and byte-parity check passes. Hygiene test updated to assert `cam ship --finalize`. All 1015 tests pass. PRD is now complete (all non-operator stories pass).",
+  "nextStoryContext": "US-004 done: real-git integration test in test/integration/ship-finalize-dirty-prd.test.ts. Two test cases: (1) dirty-prd scenario (prd.json committed then overwritten, finalizeCycleClose removes it via git rm -f --ignore-unmatch, tree ends clean); (2) missing-files variant (prd.json/handoff.json never committed, --ignore-unmatch is a no-op, issues.local.json staged+committed). 1017 tests pass. Next story is US-005 (failure-mode hardening + idempotency for finalizeCycleClose).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story only edited markdown files and the hygiene test. No external library API was used."
+      "summary": "Story only created a test file using node:child_process spawnSync and node:fs. No external library API beyond Node builtins was exercised."
     }
   ]
 }

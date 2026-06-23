@@ -81,7 +81,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file: test/integration/ship-finalize-dirty-prd.test.ts. Mirror the skip-when-tool-absent pattern from test/integration/tmux-introspect.test.ts (patterns.md:35). Use Bun.spawnSync / node:child_process spawnSync for the git setup commands and node:fs for tmp dir. This test is the operator-named oracle of the CAM-72 fix: without this, a unit fake could pass while the real git path still wedges (lessons.md:35: fakes can mask tool-real-behavior bugs)."
     },
