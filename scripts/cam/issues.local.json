@@ -1,5 +1,5 @@
 {
-  "next_id": 68,
+  "next_id": 69,
   "issues": [
     {
       "id": "CAM-1",
@@ -561,6 +561,14 @@
       "title": "cam stop must kill the sidecar + clean all markers; cam run abnormal-exit orphans the sidecar",
       "description": "Dogfood 2026-06-17: after the operator closed the session and ran cam stop, an orphan cam sidecar process was still running (observed ~11h uptime, having survived multiple sessions; sidecars accumulate, consistent with the 'two sidecars alive ~15h' seen in the CAM-56 dogfood), plus stale markers left behind (.claude/.cam-orch-session, .claude/.cam-worker-pane, scripts/cam/worker-report.json). cam stop kills the tmux session but does NOT kill the sidecar process and does not clean all markers; and a cam run killed abnormally (session closed rather than a clean SIGINT/SIGTERM to the cam run process) orphans its sidecar (the sidecar only dies via cam run's own SIGINT/SIGTERM cleanup handler). Result: orphan sidecars poll forever and pile up across sessions. Fix: (1) cam stop locates and kills the project's sidecar (via the supervisor-lock recorded pid, or a scoped kill) and removes ALL per-session markers (.cam-orch-session, .cam-worker-pane, worker-report.json, .cam-supervisor.lock, cam-loop.local.md, .cam-orch-ready); (2) the sidecar self-terminates when its session is gone (poll for the tmux session and exit if absent within one idle interval) so an orphan can never poll indefinitely. Acceptance sketch: after cam stop, no cam sidecar process remains and all markers are gone; killing the cam run session without a clean stop leaves no orphan sidecar within one poll interval; a regression test on the cam stop teardown (lock-pid kill + marker cleanup) and on the sidecar session-absent self-exit. NOT CAM-58 (that is the loop false-terminal/outcome logic). Relates to the sidecar lifecycle (CAM-55 spawn, CAM-57 self-heal) and the memory note that active:false alone does not halt the sidecar. Source: dogfood observation.",
       "closedAt": "2026-06-17T13:03:59Z"
+    },
+    {
+      "id": "CAM-68",
+      "priority": "P2",
+      "state": "open",
+      "createdAt": "2026-06-23T10:40:00Z",
+      "title": "Gitignore os markers runtime do harness que escaparam (.cam-orchestrator-prompt.txt tracked + .cam-orch-ready + .cam-sidecar.pid): repo + template + teste",
+      "description": "Tres arquivos runtime do cam escaparam do .gitignore que ja cobre os irmaos (CAM-21/22/32/55), entao toda sessao cam run suja o working tree em qualquer branch (atrapalha o /cam-prune, que aborta em arvore suja). (1) .claude/.cam-orchestrator-prompt.txt e TRACKED no git mas reescrito por cam run a cada boot (src/commands/run.ts:318, writeFileSync(promptFile, buildOrchestratorBootPrompt())); a copia commitada fica stale (faltava o bloco do ready-marker US-FIX-005), entao aparece como 'M' em toda sessao. Nao e seed: e gerado de codigo (buildOrchestratorBootPrompt em run.ts:172), entao deve ser gitignored E removido do tracking (git rm --cached). (2) .claude/.cam-orch-ready (ORCH_READY_MARKER, src/tmux/bootstrap-wait.ts) e criado no boot do orquestrador mas nao esta no .gitignore (aparece como '??'); e irmao do .cam-orch-session, ja ignorado na linha 43 do .gitignore. (3) .claude/.cam-sidecar.pid (SIDECAR_PID_FILE, src/supervisor/sidecar-pid.ts, escrito por run.ts no spawn do sidecar) tambem nao esta ignorado. FIX (precedente CAM-49, consertar repo E produto): adicionar as 3 regras ao .gitignore deste repo E ao .gitignore que cam init materializa nos projetos do usuario (templates/ + regen de src/vendor/_generated.ts via bun run embed-vendor), git rm --cached no .cam-orchestrator-prompt.txt, e um teste no templatesContents map que pina as 3 regras e garante que o prompt-file nao volta a ser tracked. LATENTE (avaliar incluir no escopo): .cam-setup-menu.sh e .cam-setup-prompt.txt tem o mesmo defeito (tracked + reescritos por cam init) mas so sujam ao rodar cam init, nao toda sessao. Fonte: investigacao 2026-06-23 (varredura do src confirmou run.ts:318 + inventario completo de markers runtime sob .claude/)."
     }
   ]
 }
