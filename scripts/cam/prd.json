@@ -59,7 +59,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/.gitignore, src/vendor/_generated.ts (latter is auto-generated, do NOT hand-edit; run `bun run embed-vendor` which is `bun scripts/generate-embedded-vendor.ts`). Current templates/.gitignore is 3 lines (comment + comment + scripts/cam/worker-report.json). Append the 7 new entries below the existing block, prefixed by a `# CAM-68: escaped harness runtime markers (orchestrator + setup + handoff + sidecar)` grouping comment, matching the same one-line-per-rule style. Workflow: edit templates/.gitignore -> `bun run embed-vendor` -> `bun run embed-vendor:check` (must pass). The embed-vendor:check oracle is the canonical parity gate per scripts/cam/CLAUDE.md 'Vendor drift'. Do NOT modify src/templates/embedded.ts (the consumer); the append-merge logic at src/templates/embedded.ts:45-90 already handles user-side .gitignore preservation. Lesson reminder (patterns.md US-001 2026-06-16, 'Agent-prompt self-hosting'): any story that edits a templates/ file must regen the embedded map in the same commit."
     },

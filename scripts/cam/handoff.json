@@ -1,12 +1,12 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Repo .gitignore: add 7 marker rules + untrack 3 tracked markers"
+    "id": "US-002",
+    "title": "templates/.gitignore: add same 7 rules + regenerate embedded vendor map"
   },
   "createdFiles": [],
-  "modifiedFiles": [".gitignore", "scripts/cam/prd.json"],
+  "modifiedFiles": ["templates/.gitignore", "src/vendor/_generated.ts", "scripts/cam/prd.json"],
   "openQuestions": [],
-  "nextStoryContext": "US-001 was a pure .gitignore edit: added 7 CAM-68 runtime-marker entries and removed 3 previously-tracked marker files from the index. No source code changes. Quality gates: typecheck ok, 996 tests pass.",
+  "nextStoryContext": "US-002 was a templates/.gitignore edit + vendor regen: appended 7 CAM-68 runtime-marker entries (with grouping comment) to templates/.gitignore, ran bun run embed-vendor to regenerate src/vendor/_generated.ts, and verified byte-parity with embed-vendor:check. No source code changes. Quality gates: typecheck ok, 996 tests pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
