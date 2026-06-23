@@ -1,24 +1,30 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "GATES-as-data manifest + scripts/check-all.ts runner"
+    "id": "US-002",
+    "title": "scripts/check-ci-parity.ts + check:ci-parity gate"
   },
   "branchName": "cam/CAM-59-ci-macos-gate-spine",
   "timestamp": "2026-06-23T00:00:00Z",
   "createdFiles": [
-    "scripts/check-all.ts",
-    "test/check-all.test.ts"
+    "scripts/check-ci-parity.ts",
+    "test/check-ci-parity.test.ts",
+    "test/fixtures/aligned.yml",
+    "test/fixtures/unknown-script.yml",
+    "test/fixtures/missing-gate.yml"
   ],
   "modifiedFiles": [
     "package.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "GATES manifest is now exported from scripts/check-all.ts. The g() helper splits 'cmd args...' strings into { cmd, args[] }. US-002 (CI workflow) should import GATES to enumerate gate steps. The --bail flag is wired and tested. package.json has both check:all and verify scripts pointing to bun scripts/check-all.ts.",
+  "nextStoryContext": "US-003 must create .github/workflows/ci.yml with macos-latest, brew install tmux, bun install --frozen-lockfile, and bun run check:all. After ci.yml exists, add 'ci-parity' gate to the GATES manifest in check-all.ts. The three fixture files in test/fixtures/ (aligned, unknown-script, missing-gate) are already in place and used by check-ci-parity tests. The checkParity / checkParityFromFile exports from scripts/check-ci-parity.ts are importable by test/ci-workflow.test.ts (the test that validates the real ci.yml). The gate name for the parity gate should be 'ci-parity' and its cmd should be 'bun run check:ci-parity' or equivalent.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Story only uses node:child_process (built-in); no external npm library touched."
+      "lib": "js-yaml",
+      "version": "4.x",
+      "url": "https://github.com/nodeca/js-yaml",
+      "fetchedAt": "2026-06-23T00:00:00Z",
+      "status": "ok",
+      "summary": "Named exports confirmed: load, loadAll, dump, schema constants. No default export in v4/v5. load() throws YAMLException on error. import { load } from 'js-yaml' is the correct forward-compatible form. Matches patterns.md js-yaml named import rule."
     }
   ]
 }

@@ -50,7 +50,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-ci-parity.ts (new), package.json, test/check-ci-parity.test.ts (new), test/fixtures/<aligned|unknown-script|missing-gate>.yml (new). js-yaml is fine here (already a project dep; runs from repo root where node_modules exists). Explicitly do NOT auto-install js-yaml inside a tmpdir test fixture - that is the CAM-69 anti-pattern (frontmatter parser shipped zero-dep precisely because node_modules-less tmpdirs broke). Allowlist must include: 'bun install', 'brew install tmux', 'bun run check:ci-parity' invocations, and 'bun run check:all' itself (it IS the spine call). The CAM-69 commit message in git log can be skimmed for context. Note in test file header that fixtures are inline strings or files under test/fixtures/ (do NOT shell out to real GH Actions). F-02 (audit): check-ci-parity MUST handle a MISSING .github/workflows/ci.yml with a clear non-crash error (exit nonzero + 'ci.yml not found' message), and add a unit test for that branch; the ci.yml does not exist until US-003. Do NOT add ci-parity to the check-all.ts GATES manifest in this story (that lands in US-003, once ci.yml exists), so 'bun run check:all' is not broken between US-002 and US-003."
     },
