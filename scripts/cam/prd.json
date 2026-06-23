@@ -120,6 +120,27 @@
       "passes": false,
       "requires": "operator",
       "notes": "This story requires a real GitHub Actions run on macos-latest, which cannot be executed inside the autonomous loop. Implementer exits with BLOCKED_OPERATOR_REQUIRED. Operator ceremony: (1) push branch + open PR, (2) wait for the macos-latest job, (3) open the Actions run, (4) confirm overall green, (5) expand the 'bun run check:all' step log and grep for the integration test file names (test/integration/*.test.ts) to confirm they ran instead of self-skipping, (6) paste the Actions run URL into the PR. If tmux tests show as skipped, the brew install step or the self-skip probe needs a fix (loop back to US-003)."
+    },
+    {
+      "id": "US-007",
+      "title": "Decouple init.test.ts from the claude binary being on PATH so CI is green",
+      "description": "The two init.test.ts cases assert runInit() exitCode===0, which only holds when the claude binary is on PATH (dev machine). On CI (no claude) runInit returns 1 because the setup-checklist claude check fails, even though config.toml IS written. Make the tests hermetic so they verify the config write independent of the claude-presence exit code, turning PR #65's red CI green.",
+      "acceptanceCriteria": [
+        "test/init.test.ts no longer couples to claude being on PATH: the cases 'writes config.toml with permission_mode=bypassPermissions on a fresh path' and 'preserves existing keys when re-running' pass whether or not claude is installed. [oracle: named-command: env PATH=\"/usr/bin:/bin:$(dirname \"$(command -v bun)\")\" bun test test/init.test.ts]",
+        "The fix does not weaken what the tests verify: config.toml is still asserted to contain permission_mode=bypassPermissions and to preserve existing keys on re-run; only the environment coupling (the exitCode===0 assertion that depends on the claude check) is removed or made injectable. [oracle: reviewer-judgment]",
+        "Full init suite green with claude present too. [oracle: bun test test/init.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: test/init.test.ts (and src/commands/init.ts ONLY if a DI seam for the claude-presence check is the cleaner fix). Root cause (CI run 28057154217, PR #65): runInit() returns 1 on the runner because the claude setup-check fails (no claude installed), but config.toml IS written ('Config written' is printed before 'check failed'). The fragile line is test/init.test.ts:48 expect(exitCode).toBe(0) (the test comment already flags it). Preferred fix: assert the config write + content and drop/relax the exitCode===0 coupling; OR make the claude-presence check injectable and stub it. Do NOT mock away the config-write behavior, that is the unit under test. Reproduce CI locally by excluding ~/.local/bin (where claude lives) from PATH. This unblocks US-006 (green CI). Pre-existing bug surfaced by CAM-59's own CI, tracked as the green-local!=green-CI win the issue predicted."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 0,
+    "maxRounds": 3,
+    "lastVerdict": null
+  }
 }
