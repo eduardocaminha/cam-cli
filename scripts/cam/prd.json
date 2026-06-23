@@ -1,0 +1,125 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-59-ci-macos-gate-spine",
+  "description": "Add macOS GitHub Actions CI, a deterministic GATES-as-data check:all/verify runner, and a check:ci-parity gate so green-locally equals green-in-CI.",
+  "issueNumber": 59,
+  "relatedDocs": [
+    "docs/agent-readiness.md",
+    "docs/recovery-runbook.md",
+    "scripts/cam/patterns.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "oven-sh/setup-bun (GitHub Action)",
+      "url": "https://github.com/oven-sh/setup-bun",
+      "version": "v2",
+      "fetchedAt": "2026-06-23",
+      "summary": "Current major is v2 (uses: oven-sh/setup-bun@v2). Resolves bun version via package.json packageManager/engines.bun, else latest. Caches the downloaded executable by default. Supports macOS runners.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "GATES-as-data manifest + scripts/check-all.ts runner",
+      "description": "As a cam-cli maintainer, I need a single ordered gate-spine runner (scripts/check-all.ts) backed by an exported GATES-as-data manifest so every quality gate (typecheck, test, embed-vendor) runs through one canonical entrypoint that CI and operators both call.",
+      "acceptanceCriteria": [
+        "scripts/check-all.ts exists and exports a GATES manifest array (ordered: typecheck via 'bunx tsc --noEmit', test via 'bun test', embed-vendor via 'bun scripts/generate-embedded-vendor.ts --check') so other scripts can import it. [oracle: file-assert grep -E 'export (const|function).*GATES' scripts/check-all.ts && grep -q 'tsc --noEmit' scripts/check-all.ts && grep -q 'bun test' scripts/check-all.ts && grep -q 'generate-embedded-vendor.ts --check' scripts/check-all.ts]",
+        "Runner executes each manifest gate in order, captures exit code and wall-clock duration, and prints one quiet line per gate of shape 'ok <name> (<Xs>)' or 'fail <name> (<Xs>)'. [oracle: bun test test/check-all.test.ts]",
+        "Runner supports --bail (stop at first failing gate) and exits nonzero when any gate fails, zero when all pass. [oracle: bun test test/check-all.test.ts]",
+        "Gate execution is injectable (spawn fn parameter / DI) mirroring the synchronous spawn DI pattern in src/commands/status.ts, src/commands/resume.ts, src/commands/ship-finalize.ts; the unit test drives it with a fake spawn and does not invoke a real subprocess. [oracle: file-assert grep -E 'spawn.*=.*\\(|spawnSync.*=' scripts/check-all.ts && bun test test/check-all.test.ts]",
+        "package.json declares both scripts 'check:all' and 'verify', each pointing at 'bun scripts/check-all.ts'. [oracle: file-assert bun -e \"const p=await Bun.file('./package.json').json();if(p.scripts['check:all']!=='bun scripts/check-all.ts'||p.scripts.verify!=='bun scripts/check-all.ts')process.exit(1)\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/check-all.ts (new), package.json, test/check-all.test.ts (new). Sync-DI carveout: use spawnSync from node:child_process (Bun.spawn is async-first and has NO sync variant; the patterns.md Bun-runtime rule has this established carveout for hermetic sync tests). Copy the exact shape from src/commands/status.ts, src/commands/resume.ts, src/commands/ship-finalize.ts, which inject a spawnSync fn for testing. GATES manifest must be exportable so US-002 can import it. Quiet output convention: one line per gate, no decorative banners (issue's stated value: 'the signal'). Re-check docs/agent-readiness.md (CI keystone section) for the exact gates expected today before coding."
+    },
+    {
+      "id": "US-002",
+      "title": "scripts/check-ci-parity.ts + check:ci-parity gate",
+      "description": "As a cam-cli maintainer, I need a parity gate that parses .github/workflows/ci.yml and fails when CI invokes anything outside the GATES manifest (or when a manifest gate is not covered by CI), so green-locally always equals green-in-CI and drift is impossible to land silently.",
+      "acceptanceCriteria": [
+        "scripts/check-ci-parity.ts exists and parses .github/workflows/ci.yml, extracting every 'run:' step's 'bun run <script>' / 'bunx <tool>' invocation. [oracle: file-assert test -f scripts/check-ci-parity.ts && grep -q 'workflows/ci.yml' scripts/check-ci-parity.ts]",
+        "Parity contract: ci.yml drives the spine via 'bun run check:all'; the script fails (nonzero exit, clear message naming the drifted script) if CI invokes a gate-ish 'bun run' that is NOT in the imported GATES manifest from check-all.ts, or if a manifest gate is not covered by CI. Infra commands (bun install, brew install tmux, the parity check itself) are allowlisted. [oracle: bun test test/check-ci-parity.test.ts]",
+        "Fixture-driven unit tests under test/fixtures/ cover: aligned workflow (passes), workflow invoking an unknown script (fails with that script name in the message), workflow missing a manifest gate (fails naming the missing gate). [oracle: bun test test/check-ci-parity.test.ts]",
+        "package.json declares script 'check:ci-parity' -> 'bun scripts/check-ci-parity.ts'. (The 'ci-parity' entry is added to the check-all.ts GATES manifest in US-003, AFTER ci.yml exists, so 'bun run check:all' stays green at every commit.) [oracle: file-assert bun -e \"const p=await Bun.file('./package.json').json();if(p.scripts['check:ci-parity']!=='bun scripts/check-ci-parity.ts')process.exit(1)\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/check-ci-parity.ts (new), package.json, test/check-ci-parity.test.ts (new), test/fixtures/<aligned|unknown-script|missing-gate>.yml (new). js-yaml is fine here (already a project dep; runs from repo root where node_modules exists). Explicitly do NOT auto-install js-yaml inside a tmpdir test fixture - that is the CAM-69 anti-pattern (frontmatter parser shipped zero-dep precisely because node_modules-less tmpdirs broke). Allowlist must include: 'bun install', 'brew install tmux', 'bun run check:ci-parity' invocations, and 'bun run check:all' itself (it IS the spine call). The CAM-69 commit message in git log can be skimmed for context. Note in test file header that fixtures are inline strings or files under test/fixtures/ (do NOT shell out to real GH Actions). F-02 (audit): check-ci-parity MUST handle a MISSING .github/workflows/ci.yml with a clear non-crash error (exit nonzero + 'ci.yml not found' message), and add a unit test for that branch; the ci.yml does not exist until US-003. Do NOT add ci-parity to the check-all.ts GATES manifest in this story (that lands in US-003, once ci.yml exists), so 'bun run check:all' is not broken between US-002 and US-003."
+    },
+    {
+      "id": "US-003",
+      "title": ".github/workflows/ci.yml on macos-latest invoking the gate spine",
+      "description": "As a cam-cli maintainer, I need a GitHub Actions workflow that runs on macos-latest with real tmux installed and invokes the gate spine, so the OS-gated real-tmux integration tests actually run in CI (not only on the operator laptop) and Burrow's lesson (OS-gated test + Linux-only CI = test never runs) is fixed.",
+      "acceptanceCriteria": [
+        ".github/workflows/ci.yml exists, declares 'runs-on: macos-latest', triggers on push and pull_request, and sets a 'concurrency' group with cancel-in-progress: true. [oracle: file-assert grep -q 'runs-on: macos-latest' .github/workflows/ci.yml && grep -q 'pull_request' .github/workflows/ci.yml && grep -q 'cancel-in-progress: true' .github/workflows/ci.yml]",
+        "Workflow steps in order: checkout, oven-sh/setup-bun@v2, 'brew install tmux' (so the spawnSync('tmux',['-V']) probe in test/integration/* succeeds and the real-tmux suites run instead of self-skipping), 'bun install --frozen-lockfile', then 'bun run check:all' (and only that as the gate invocation, so ci-parity holds). [oracle: file-assert grep -q 'oven-sh/setup-bun@v2' .github/workflows/ci.yml && grep -q 'brew install tmux' .github/workflows/ci.yml && grep -q 'bun install --frozen-lockfile' .github/workflows/ci.yml && grep -q 'bun run check:all' .github/workflows/ci.yml]",
+        "test/ci-workflow.test.ts runs check:ci-parity logic against the REAL committed .github/workflows/ci.yml and passes (green-local==green-CI proof), and asserts the workflow declares macos-latest and installs tmux. [oracle: bun test test/ci-workflow.test.ts]",
+        "scripts/check-all.ts GATES manifest now includes a 'ci-parity' entry (added here, after ci.yml exists, so 'bun run check:all' covers parity and stays green at this commit). [oracle: file-assert grep -q 'ci-parity' scripts/check-all.ts && bun run check:ci-parity]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .github/workflows/ci.yml (new), test/ci-workflow.test.ts (new). Pin setup-bun to @v2 (current major, verified at plan time per officialDocsConsulted). engines.bun is not set in package.json today; setup-bun falls back to latest (acceptable per issue scope, do not introduce a version pin without operator say-so per Surgical Changes). Real-tmux integration tests live under test/integration/ and self-skip when 'tmux -V' is missing; confirm by reading one of them (e.g. test/integration/tmux-introspect.test.ts referenced in MEMORY) before writing the workflow. ci-parity is the keystone test here: only 'bun run check:all' should appear as the gate-driving invocation in ci.yml."
+    },
+    {
+      "id": "US-004",
+      "title": "Per-gate timing surfaced to GitHub step summary (--json output)",
+      "description": "As a cam-cli maintainer reading a CI run, I need per-gate timing visible in the GitHub Actions step summary so build/test_performance_tracking has the observability signal the rubric expects, without parsing free-form logs.",
+      "acceptanceCriteria": [
+        "scripts/check-all.ts supports a '--json' flag that emits a structured array of {name, status, durationMs} for each gate (one entry per manifest gate, in manifest order, status one of 'ok'|'fail'). [oracle: bun test test/check-all.test.ts]",
+        ".github/workflows/ci.yml runs the gate spine and writes the per-gate name/status/durationMs breakdown to $GITHUB_STEP_SUMMARY (e.g. via a follow-up step that reads the --json output). [oracle: file-assert grep -q 'GITHUB_STEP_SUMMARY' .github/workflows/ci.yml && grep -q -- '--json' .github/workflows/ci.yml]",
+        "Extended unit test asserts the --json shape (array of objects with exactly name/status/durationMs keys) parses cleanly and matches manifest gate names and order. [oracle: bun test test/check-all.test.ts]",
+        "check:ci-parity still passes against the updated ci.yml (the --json invocation does not introduce an un-allowlisted gate script). [oracle: bun run check:ci-parity]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/check-all.ts (extend), .github/workflows/ci.yml (extend), test/check-all.test.ts (extend). Keep the quiet per-gate line output as the default (US-001 contract); --json is an additional emission mode, not a replacement. If --json is used, ensure it still exits with the aggregate nonzero-on-any-fail behavior. The GH step-summary step should run with 'if: always()' so it surfaces timing even on red runs. Update check-ci-parity's allowlist (if needed) so a second 'bun run check:all -- --json' or equivalent does not look like drift; prefer reusing a single check:all invocation that also writes JSON to a known path the summary step reads."
+    },
+    {
+      "id": "US-005",
+      "title": "Docs: patterns + recovery-runbook + agent-readiness updates",
+      "description": "As a future maintainer or agent loading project context, I need the gate-spine convention, the ci-parity recovery steps, and the agent-readiness status updated so CAM-59's contract is discoverable from the canonical docs.",
+      "acceptanceCriteria": [
+        "scripts/cam/patterns.md gains a bullet documenting the gate-spine convention: new gates are added to the GATES manifest in scripts/check-all.ts (never invoked ad-hoc in CI); ci-parity enforces it. [oracle: file-assert grep -q 'GATES manifest' scripts/cam/patterns.md && grep -q 'ci-parity' scripts/cam/patterns.md]",
+        "docs/recovery-runbook.md gains a CAM-59 section explaining how to debug a red CI or a ci-parity failure (parity fails when ci.yml and the manifest drift; fix by aligning the workflow to call only 'bun run check:all'). [oracle: file-assert grep -q 'CAM-59' docs/recovery-runbook.md && grep -q 'ci-parity' docs/recovery-runbook.md]",
+        "docs/agent-readiness.md is updated so CAM-59 moves from open gap (CI keystone / roadmap list) to done. [oracle: file-assert grep -q 'CAM-59' docs/agent-readiness.md]",
+        "No em-dash character is introduced in any touched .md file (operator rule: persisted markdown uses colon, comma, parens, period, or rewrite). [oracle: file-assert ! grep -l $'\\xe2\\x80\\x94' scripts/cam/patterns.md docs/recovery-runbook.md docs/agent-readiness.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/cam/patterns.md, docs/recovery-runbook.md, docs/agent-readiness.md. Read the existing structure of each file first and append in the established style (no reformatting of surrounding content per Surgical Changes). The em-dash check is mandatory: rg/grep for U+2014 in the touched files before declaring done. Cross-reference the gate-spine bullet in patterns.md to the runbook section rather than restating the recovery steps in two places (lesson 5: avoid drift between duplicated rules)."
+    },
+    {
+      "id": "US-006",
+      "title": "Operator validation: real CI green on macos-latest with real-tmux tests executing",
+      "description": "As the operator, I need to confirm the first GitHub Actions run on macos-latest is green AND that the real-tmux integration tests actually ran (were not silently skipped for missing tmux), so the Burrow's-lesson fix is empirically validated end-to-end (this is inverifiable inside the loop - no GitHub Actions runner is available locally).",
+      "acceptanceCriteria": [
+        "After the branch is pushed and a PR opened, the GitHub Actions CI run on macos-latest completes GREEN end-to-end. [oracle: reviewer-judgment]",
+        "The Actions log shows the real-tmux integration tests (e.g. test/integration/tmux-introspect.test.ts) ACTUALLY EXECUTED (not skipped for missing tmux); operator greps the log for the integration test names and confirms they ran. [oracle: reviewer-judgment]",
+        "The Actions run URL is recorded in the PR description or a comment for traceability. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": "operator",
+      "notes": "This story requires a real GitHub Actions run on macos-latest, which cannot be executed inside the autonomous loop. Implementer exits with BLOCKED_OPERATOR_REQUIRED. Operator ceremony: (1) push branch + open PR, (2) wait for the macos-latest job, (3) open the Actions run, (4) confirm overall green, (5) expand the 'bun run check:all' step log and grep for the integration test file names (test/integration/*.test.ts) to confirm they ran instead of self-skipping, (6) paste the Actions run URL into the PR. If tmux tests show as skipped, the brew install step or the self-skip probe needs a fix (loop back to US-003)."
+    }
+  ]
+}
