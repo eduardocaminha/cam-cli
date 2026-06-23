@@ -99,7 +99,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-debt-markers.ts (new), test/check-debt-markers.test.ts (new). Pattern: pure `scanForMarkers(files: { path, text }[]): { path, line, marker, cited }[]` (exact export name asserted by AC2) + a separate `filterScannablePaths(paths: string[]): string[]` (or equivalent) that drops excluded dirs, both driven by tests + a thin CLI guarded by `import.meta.main` (mirrors scripts/check-all.ts SpawnFn DI). EXCLUSION SET (AC6, MUST pin): `vendor/`, `node_modules/`, `claude-code-harness/`, `dist/`. RATIONALE: pre-existing pattern grep found exactly the expected matches in src/vendor/_generated.ts:24 (7+ literal TODO/FIXME/HACK/XXX tokens inside the embedded auditor prompt) plus references to placeholder strings (`US-XXX`, `CAM-XXX`) inside test/oracle prose; the scan must not trip on either. Recognize markers via `\\b(TODO|FIXME|HACK|XXX)\\b` followed by `:` or whitespace (ignore identifier-internal matches like `US-XXX`). Use `Bun.Glob` to enumerate; honor noUncheckedIndexedAccess (regex capture groups are `T | undefined`, guard with `?? ''`). Pre-scan the current tree (the project context indicates no real markers in src/ or scripts/ outside vendor; verify with `grep -rEn '\\b(TODO|FIXME|HACK|XXX)\\b' src/ scripts/ --exclude-dir=vendor` before claiming green). Re-check scripts/cam/patterns.md `Oracle-friendly manifest design` and `Gate-spine convention` bullets."
     },

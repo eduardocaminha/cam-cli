@@ -82,6 +82,7 @@ export const GATES: Gate[] = [
 	g('embed-vendor', 'bun scripts/generate-embedded-vendor.ts --check'),
 	g('lint', 'bunx biome lint --error-on-warnings'),
 	g('file-size', 'bun scripts/check-file-sizes.ts'),
+	g('debt-markers', 'bun scripts/check-debt-markers.ts'),
 	g('ci-parity', 'bun run check:ci-parity'),
 ];
 
