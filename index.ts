@@ -17,6 +17,9 @@
 //   on a registration. Search markers documented in that test.
 
 import process from 'node:process';
+import { spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { runDashboardInk } from './src/commands/dashboard.ts';
 import { runInit } from './src/commands/init.ts';
@@ -26,6 +29,10 @@ import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
 import { runReview } from './src/commands/review.ts';
 import { runShip } from './src/commands/ship.ts';
+import {
+	finalizeCycleClose,
+	type FinalizeCycleCloseResult,
+} from './src/commands/ship-finalize.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
@@ -283,11 +290,11 @@ const REVIEW_HELP = renderHelp({
 
 const SHIP_HELP = renderHelp({
 	title: 'cam ship',
-	tagline: 'Dispatch /cam-ship to the live orchestrator',
-	usage: 'cam ship',
+	tagline: 'Dispatch /cam-ship to the live orchestrator, or finalize a cycle in-process',
+	usage: 'cam ship [--finalize]',
 	sections: [
 		{
-			heading: 'Behaviour',
+			heading: 'Behaviour (default)',
 			body:
 				'1. Checks whether a live orchestrator session exists\n' +
 				'   (cam-orch-<basename>-<hash>).\n' +
@@ -299,8 +306,20 @@ const SHIP_HELP = renderHelp({
 				'4. If not already inside the session, prints a hint:\n' +
 				'     Run `cam run` to open the project session.',
 		},
+		{
+			heading: 'Options',
+			entries: [
+				{
+					name: '--finalize',
+					description:
+						'Run the deterministic cycle-close in-process (no tmux session needed). ' +
+						'Closes the tracked issue, removes per-branch harness state files via ' +
+						'`git rm -f --ignore-unmatch`, and commits the cleanup.',
+				},
+			],
+		},
 	],
-	footer: 'cam ship accepts no arguments. cam does NOT accept a --permission-mode flag.',
+	footer: 'cam does NOT accept a --permission-mode flag.',
 });
 
 const STATUS_HELP = renderHelp({
@@ -682,17 +701,70 @@ export function parseReviewArgs(args: string[]): { help: boolean } | null {
  * greps this file for the literal `--permission-mode` and fails the build
  * if a parser registers it.
  */
-export function parseShipArgs(args: string[]): { help: boolean } | null {
-	const result = { help: false };
+export function parseShipArgs(args: string[]): { help: boolean; finalize: boolean } | null {
+	const result = { help: false, finalize: false };
 	for (const arg of args) {
 		if (arg === '--help' || arg === '-h') {
 			result.help = true;
+			continue;
+		}
+		if (arg === '--finalize') {
+			result.finalize = true;
 			continue;
 		}
 		printError(`unknown ship option: ${arg}`);
 		return null;
 	}
 	return result;
+}
+
+// ---------------------------------------------------------------------------
+// cam ship dispatch (exported for unit testing with injectable deps)
+// ---------------------------------------------------------------------------
+
+/** Injectable deps for dispatchShip — both optional; production uses real impls. */
+export interface ShipDispatchDeps {
+	/** Inject a fake finalizeCycleClose wrapper; default: uses real fs + spawnSync. */
+	finalizeFn?: () => FinalizeCycleCloseResult;
+	/** Inject a fake runShip; default: calls the real runShip({}) thin-proxy. */
+	runShipFn?: () => Promise<number>;
+}
+
+/**
+ * Route a parsed `cam ship` call: --finalize => finalizeCycleClose (in-process,
+ * no tmux needed); otherwise => runShip thin-proxy. Exported so unit tests can
+ * inject fakes for both branches and prove the --finalize path NEVER calls runShip.
+ */
+export async function dispatchShip(
+	parsed: { help: boolean; finalize: boolean },
+	deps?: ShipDispatchDeps,
+): Promise<number> {
+	if (parsed.finalize) {
+		const finalizeFn = deps?.finalizeFn ?? (() => finalizeCycleClose(_buildFinalizeOpts(process.cwd())));
+		try {
+			finalizeFn();
+			return 0;
+		} catch (err) {
+			printError(`cam ship --finalize failed: ${String(err)}`);
+			return 1;
+		}
+	}
+	const ship = deps?.runShipFn ?? (() => runShip({}));
+	return ship();
+}
+
+/** Build production deps for finalizeCycleClose from the given project root. */
+function _buildFinalizeOpts(cwd: string) {
+	return {
+		cwd,
+		spawnFn: spawnSync,
+		clock: () => new Date().toISOString(),
+		readProjectToml: () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8'),
+		readPrd: () => readFileSync(join(cwd, 'scripts/cam/prd.json'), 'utf8'),
+		readIssues: () => readFileSync(join(cwd, 'scripts/cam/issues.local.json'), 'utf8'),
+		writeIssues: (text: string) =>
+			writeFileSync(join(cwd, 'scripts/cam/issues.local.json'), text, 'utf8'),
+	};
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -827,7 +899,7 @@ async function main(argv: string[]): Promise<number> {
 				process.stdout.write(SHIP_HELP);
 				return 0;
 			}
-			return runShip({});
+			return dispatchShip(parsed);
 		}
 		case 'dashboard': {
 			const tail = argv.slice(3);

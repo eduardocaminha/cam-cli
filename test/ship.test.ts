@@ -101,16 +101,16 @@ function makeFakeTmuxSpawn(opts: {
 // --- parseShipArgs ---------------------------------------------------------
 
 describe('parseShipArgs', () => {
-	test('bare (no args) returns help: false', () => {
-		expect(parseShipArgs([])).toEqual({ help: false });
+	test('bare (no args) returns help: false, finalize: false', () => {
+		expect(parseShipArgs([])).toEqual({ help: false, finalize: false });
 	});
 
 	test('--help sets help: true', () => {
-		expect(parseShipArgs(['--help'])).toEqual({ help: true });
+		expect(parseShipArgs(['--help'])).toEqual({ help: true, finalize: false });
 	});
 
 	test('-h sets help: true', () => {
-		expect(parseShipArgs(['-h'])).toEqual({ help: true });
+		expect(parseShipArgs(['-h'])).toEqual({ help: true, finalize: false });
 	});
 
 	test('unknown flag returns null', () => {

@@ -46,7 +46,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (parseShipArgs ~line 685, case 'ship' ~line 820, SHIP_HELP constant), new test/ship-args.test.ts. The finalize path runs synchronously in-process (no send-keys, no tmux session needed). Keep the parseShipArgs return shape backward-compatible (add a field, do not rename). Patterns.md:11 forbids --permission-mode. The thin-proxy-preservation is the operator's explicit invariant: the behavioral oracle in AC5 must prove runShip is NEVER called on --finalize, not just grep that finalizeCycleClose appears in the source."
     },

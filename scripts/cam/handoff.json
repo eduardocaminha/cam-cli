@@ -1,24 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Implement finalizeCycleClose() in src/ with injectable deps"
+    "id": "US-002",
+    "title": "Wire `cam ship --finalize` into dispatch, bypassing the thin-proxy"
   },
   "branchName": "cam/CAM-72-deterministic-cycle-close",
-  "timestamp": "2026-06-23T12:30:00.000Z",
+  "timestamp": "2026-06-23T13:00:00.000Z",
   "createdFiles": [
-    "src/commands/ship-finalize.ts",
-    "test/ship-finalize.test.ts"
+    "test/ship-args.test.ts"
   ],
   "modifiedFiles": [
+    "index.ts",
+    "test/ship.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "finalizeCycleClose() is now implemented in src/commands/ship-finalize.ts with fully injectable deps (spawnFn, clock, readProjectToml, readPrd, readIssues, writeIssues). The SpawnFn type mirrors the one in src/commands/resume.ts. All 4 acceptance-criteria scenarios are covered by test/ship-finalize.test.ts (none-backend, github-backend, linear-backend, dirty-prd.json). The function is synchronous. Next story can wire this into cam ship --finalize or the supervisor.",
+  "nextStoryContext": "US-002 done: parseShipArgs now returns {help, finalize}, dispatchShip (exported) routes --finalize to finalizeCycleClose in-process (no tmux) and the thin-proxy path to runShip. ShipDispatchDeps interface is exported from index.ts for test injection. _buildFinalizeOpts() builds production deps (spawnSync, readFileSync, writeFileSync, join). All oracles pass. Next story can wire finalizeCycleClose into the supervisor or add the /cam-ship --finalize operator story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Implementation uses only in-repo parseToml wrapper (Bun.TOML.parse already validated in toml.ts), JSON builtins, and a type import from node:child_process. No new external library API was called."
+      "summary": "Implementation uses only node builtins (node:child_process spawnSync, node:fs readFileSync/writeFileSync, node:path join) and the in-repo finalizeCycleClose from ship-finalize.ts (validated in US-001). No new external library API was called."
     }
   ]
 }
