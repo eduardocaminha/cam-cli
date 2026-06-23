@@ -1047,6 +1047,30 @@ export interface RunSidecarLoopOptions {
 	 * Run the supervisor inner loop. Injected for tests (default: runSupervisor).
 	 */
 	runSupervisorFn?: (opts: RunSupervisorOptions) => Promise<SupervisorResult>;
+	/**
+	 * Check whether the host tmux session (the one opened by `cam run`) is still
+	 * alive. Returns true when the session exists, false when it is gone.
+	 *
+	 * Production wiring (src/commands/sidecar.ts) calls
+	 *   hasSession(projectSessionName(cwd), spawnFn)
+	 * on the dedicated -L cam socket. When absent, session-gone detection is
+	 * disabled (sidecar runs until killed externally).
+	 *
+	 * Startup grace rule: the sidecar requires the session to have been observed
+	 * PRESENT at least once (sessionSeen latch) before an absent-poll can trigger
+	 * a self-exit. This prevents premature exit during the spawn-vs-session-creation
+	 * race at startup.
+	 *
+	 * Injected so tests do not need a real tmux process.
+	 */
+	hasSessionFn?: () => boolean;
+	/**
+	 * Structured event sink for sidecar lifecycle events.
+	 * When provided, the sidecar self-exit path writes a 'sidecar-exit' event.
+	 * Production wiring: makeFileEventLogger('.claude/cam-worker-events.jsonl').
+	 * Tests inject makeInMemoryEventLogger().logger to capture events.
+	 */
+	logEvent?: WorkerEventLogger;
 }
 
 /** Idle polling interval for the sidecar outer loop (2 seconds). */
@@ -1059,18 +1083,50 @@ export const SIDECAR_IDLE_POLL_MS = 2_000;
  * When active:true AND pending non-operator stories: acquire lock + call runSupervisor.
  * On terminal SupervisorResult: call clearActive() to set active:false.
  *
- * This function runs forever (until the process is killed by cam run's cleanup
- * handler). All I/O is injectable for unit tests.
+ * Session self-exit (startup grace): on each idle tick, if hasSessionFn is wired,
+ * the loop checks whether the host tmux session still exists. The sessionSeen latch
+ * (one-shot flag set on the first PRESENT poll) provides startup grace: an absent
+ * result cannot trigger self-exit until the session has been seen at least once.
+ * Once the latch is set, an absent poll causes the loop to return cleanly. The lock
+ * is NOT held during idle ticks, so no lock.release() is needed on the exit path.
+ *
+ * This function returns when the host session is gone (hasSessionFn wired + sessionSeen
+ * latched + session absent). Otherwise it runs until the process is killed by cam run's
+ * SIGINT/SIGTERM cleanup handler. All I/O is injectable for unit tests.
  */
 export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void> {
 	const idlePollMs = opts.idlePollMs ?? SIDECAR_IDLE_POLL_MS;
 	const runSupervisorFn = opts.runSupervisorFn ?? runSupervisor;
 
+	// Startup grace latch: must see the session PRESENT at least once before
+	// an absent-poll can trigger self-exit (prevents premature exit on startup race).
+	let sessionSeen = false;
+
 	while (true) {
 		const active = opts.readActive();
 
 		if (active !== true) {
-			// Idle: sleep and re-poll.
+			// Idle: check session health when a checker is wired.
+			// Startup grace: only exit when sessionSeen is latched AND session is gone.
+			// The lock is NOT held during idle, so no lock.release() is needed here.
+			if (opts.hasSessionFn) {
+				const sessionGone = !opts.hasSessionFn();
+				if (!sessionGone) {
+					sessionSeen = true;
+				} else if (sessionSeen) {
+					// Session was alive, now gone: the cam run host died abnormally.
+					// Emit a structured 'sidecar-exit' event so the operator can diagnose
+					// the self-exit from the event log without reading source.
+					opts.logEvent?.({
+						ts: new Date().toISOString(),
+						storyId: undefined,
+						uuid: 'sidecar',
+						kind: 'sidecar-exit',
+						detail: { reason: 'session-absent' },
+					});
+					return;
+				}
+			}
 			opts.sleep(idlePollMs);
 			continue;
 		}

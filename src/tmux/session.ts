@@ -488,6 +488,15 @@ export function capturePaneArgv(paneId: string): string[] {
 export const WORKER_PANE_MARKER = '.cam-worker-pane';
 
 /**
+ * Filename within `.claude/` where the orchestrator session UUID is persisted.
+ *
+ * Written by `cam run` on every new session boot so the dashboard can locate
+ * the JSONL transcript for token-spend reporting (US-002 / run.ts). Removed by
+ * `cam stop` as part of the full per-session marker cleanup (US-002 / stop.ts).
+ */
+export const ORCH_SESSION_MARKER = '.cam-orch-session';
+
+/**
  * Persist the worker pane id to `<claudeDir>/.cam-worker-pane`.
  *
  * `claudeDir` is typically `<cwd>/.claude`. Creates the directory if absent.

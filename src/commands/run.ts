@@ -46,10 +46,12 @@ import {
 	ensureProjectSession,
 	isSessionStale,
 	tmuxArgs,
+	ORCH_SESSION_MARKER,
 	type SpawnFn,
 	type CreatedPaneIds,
 } from '../tmux/session.ts';
 import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
+import { writeSidecarPid, removeSidecarPidIfExists } from '../supervisor/sidecar-pid.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -66,6 +68,13 @@ export { projectSessionName } from '../tmux/session.ts';
 export interface SidecarProcess {
 	/** Kill the sidecar process. Best-effort (no-throw). */
 	kill: () => void;
+	/**
+	 * The OS pid of the spawned sidecar process.
+	 * Persisted to .claude/.cam-sidecar.pid immediately after spawn so that
+	 * `cam stop` can SIGTERM the sidecar even when it holds no supervisor lock
+	 * (the lock is only acquired in the active branch of runSidecarLoop).
+	 */
+	pid: number;
 }
 
 /**
@@ -312,7 +321,7 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	// Generate and persist the orchestrator session id so the dashboard can
 	// locate the JSONL transcript for token-spend reporting (US-002).
 	const sessionId = genSessionId();
-	writeFileSync(join(dotClaude, '.cam-orch-session'), sessionId, 'utf8');
+	writeFileSync(join(dotClaude, ORCH_SESSION_MARKER), sessionId, 'utf8');
 
 	// The ready marker (.claude/.cam-orch-ready) is NOT written here by the
 	// parent. The orchestrator agent writes it as its FIRST action after boot
@@ -334,7 +343,7 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 		sessionName,
 		sessionId,
 		promptFile,
-		sessionIdMarker: join(dotClaude, '.cam-orch-session'),
+		sessionIdMarker: join(dotClaude, ORCH_SESSION_MARKER),
 		handoffMarker: join(dotClaude, '.cam-orch-handoff.json'),
 		stateFile: join(dotClaude, 'cam-loop.local.md'),
 		readyMarker: readyMarkerPath,
@@ -441,6 +450,7 @@ function spawnSidecarDefault(cwd: string, logPath: string): SidecarProcess {
 		stdio: ['ignore', logFd, logFd],
 	});
 	return {
+		pid: proc.pid,
 		kill: () => {
 			try {
 				proc.kill();
@@ -540,6 +550,9 @@ export function runRun(options: RunOptions = {}): number {
 		const sidecarLogPath = join(cwd, '.claude', 'cam-supervisor.log');
 		const spawnSidecarFn = options.spawnSidecarFn ?? spawnSidecarDefault;
 		const sidecarProc = spawnSidecarFn(cwd, sidecarLogPath);
+		// Persist pid immediately after spawn so `cam stop` can SIGTERM the
+		// sidecar even when it holds no supervisor lock (idle branch).
+		writeSidecarPid(join(cwd, '.claude'), sidecarProc.pid);
 		emitMutedHint(`Sidecar supervisor started (log: .claude/cam-supervisor.log)`);
 
 		let cleaned = false;
@@ -551,6 +564,7 @@ export function runRun(options: RunOptions = {}): number {
 			} catch {
 				// already gone or never written
 			}
+			removeSidecarPidIfExists(join(cwd, '.claude'));
 			sidecarProc.kill();
 		};
 		process.once('SIGINT', () => {
