@@ -1,29 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Adopt biome as a lint-only gate (lean ruleset + grandfather overrides)"
+    "id": "US-002",
+    "title": "File-size ratchet (raising a ceiling requires tracker ref in diff)"
   },
   "createdFiles": [
-    "biome.json"
+    "scripts/check-file-sizes.ts",
+    "scripts/file-size-budget.json",
+    "test/check-file-sizes.test.ts"
   ],
   "modifiedFiles": [
-    "bun.lock",
-    "docs/agent-readiness.md",
-    "package.json",
     "scripts/check-all.ts",
-    "src/logging/color.ts",
     "test/check-all.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "biome.json is live with lint-only mode (linter.enabled:true, formatter.enabled:false, recommended:false, two complexity rules). Grandfather overrides cover 21 files. The lint gate is at index 3 in GATES (between embed-vendor and ci-parity). bun run lint exits 0. Next stories can add more ratchet/dup gates to the spine.",
+  "nextStoryContext": "File-size ratchet is live. Budget snapshots 126 tracked src/scripts/test files. Gate runs via 'bun scripts/check-file-sizes.ts'. DI pattern: getSizes/readBudget/getStagedDiff all injectable for unit tests. Lint needed two helper extractions (checkSizeCeilings, checkDiffTrackerRef) to get below biome's max cognitive complexity of 15. Bun Glob scanSync with {cwd} is correct; onlyFiles defaults to true. Next stories add more ratchet/dup gates.",
   "officialDocsValidated": [
     {
-      "lib": "@biomejs/biome",
-      "version": "2.5.1",
-      "url": "https://biomejs.dev/reference/configuration/",
+      "lib": "bun:glob",
+      "version": "1.3.x",
+      "url": "https://bun.sh/docs/api/glob",
       "fetchedAt": "2026-06-23T00:00:00Z",
       "status": "ok",
-      "summary": "biome 2.x overrides structure (includes + linter.rules per-file) confirmed. recommended field is deprecated (use preset:none) but still accepted as info-only, not error. formatter.enabled:false and noExcessiveLinesPerFunction options.maxLines all match implementation."
+      "summary": "Glob.scanSync({ cwd }) confirmed. onlyFiles defaults to true (correct, no need to pass explicitly). Pattern syntax {a,b}/{c,d} and *.{ts,tsx} are both valid. Implementation matches docs."
     }
   ]
 }

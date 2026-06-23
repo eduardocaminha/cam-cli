@@ -77,7 +77,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-file-sizes.ts (new), scripts/file-size-budget.json (new, snapshot current tree), test/check-file-sizes.test.ts (new, mirror source), scripts/check-all.ts (add GATES entry). DI pattern (MUST mirror scripts/check-all.ts SpawnFn DI, also used by US-004 coverage gate): export pure functions and inject (a) a sizes source `getSizes: () => Record<string, number>`, (b) a budget reader `readBudget: () => Record<string, number>`, and (c) a git-diff source `getStagedDiff: (path: string) => string`. The CLI entrypoint wires real adapters (`Bun.file`/`Bun.Glob` for sizes, `Bun.spawn` git diff for staged); tests inject in-memory fakes. NEVER shell out to git in unit tests. Ratchet logic: parse the staged diff of scripts/file-size-budget.json; if any per-file `-` / `+` pair indicates a raised ceiling (new value > old value), require at least one `CAM-\\d+|#\\d+|https?://` token elsewhere in the staged diff. Same direction as US-004 (coverage lowering): a directional change requires a citation. Symmetric to US-007 docs AC (which already states 'raising a file-size ceiling requires a tracker ref'). Initial snapshot MUST land green: enumerate src/ and scripts/ files (and possibly test/), record current line counts as ceilings, commit. Use `Bun.file` / `Bun.Glob` over node:fs where natural. Honor noUncheckedIndexedAccess (regex/array access is `T | undefined`). Re-check scripts/cam/patterns.md `Oracle-friendly manifest design` and `Gate-spine convention` bullets."
     },
