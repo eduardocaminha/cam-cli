@@ -50,13 +50,14 @@ function makeRecordingSpawn(exitCodes: number[]): { calls: Call[]; fn: SpawnFn }
 // ---------------------------------------------------------------------------
 
 describe('GATES manifest', () => {
-	test('has 5 gates in order: typecheck, test, embed-vendor, lint, ci-parity', () => {
-		expect(GATES).toHaveLength(5);
+	test('has 6 gates in order: typecheck, test, embed-vendor, lint, file-size, ci-parity', () => {
+		expect(GATES).toHaveLength(6);
 		expect(GATES[0]?.name).toBe('typecheck');
 		expect(GATES[1]?.name).toBe('test');
 		expect(GATES[2]?.name).toBe('embed-vendor');
 		expect(GATES[3]?.name).toBe('lint');
-		expect(GATES[4]?.name).toBe('ci-parity');
+		expect(GATES[4]?.name).toBe('file-size');
+		expect(GATES[5]?.name).toBe('ci-parity');
 	});
 
 	test('typecheck gate: bunx tsc --noEmit', () => {
@@ -86,8 +87,15 @@ describe('GATES manifest', () => {
 		expect(gate?.args).toEqual(['biome', 'lint', '--error-on-warnings']);
 	});
 
-	test('ci-parity gate: bun run check:ci-parity', () => {
+	test('file-size gate: bun scripts/check-file-sizes.ts', () => {
 		const gate = GATES[4];
+		expect(gate?.name).toBe('file-size');
+		expect(gate?.cmd).toBe('bun');
+		expect(gate?.args).toEqual(['scripts/check-file-sizes.ts']);
+	});
+
+	test('ci-parity gate: bun run check:ci-parity', () => {
+		const gate = GATES[5];
 		expect(gate?.name).toBe('ci-parity');
 		expect(gate?.cmd).toBe('bun');
 		expect(gate?.args).toEqual(['run', 'check:ci-parity']);
@@ -273,14 +281,14 @@ describe('--json mode (onResults)', () => {
 		}
 	});
 
-	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, ci-parity)', () => {
-		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0]);
+	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, file-size, ci-parity)', () => {
+		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0, 0]);
 		let captured: GateResult[] | null = null;
 		runGates({ spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		const names = results.map((r) => r.name);
-		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'ci-parity']);
+		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'file-size', 'ci-parity']);
 	});
 
 	test('onResults receives durationMs as a non-negative number', () => {
