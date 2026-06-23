@@ -1,25 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Wire `cam ship --finalize` into dispatch, bypassing the thin-proxy"
+    "id": "US-003",
+    "title": "Replace markdown Step 4b in both cam-ship.md copies with a single `cam ship --finalize` invocation"
   },
   "branchName": "cam/CAM-72-deterministic-cycle-close",
-  "timestamp": "2026-06-23T13:00:00.000Z",
-  "createdFiles": [
-    "test/ship-args.test.ts"
-  ],
+  "timestamp": "2026-06-23T14:00:00.000Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "test/ship.test.ts",
+    "templates/commands/cam-ship.md",
+    ".claude/commands/cam-ship.md",
+    "src/vendor/_generated.ts",
+    "test/vendor/cam-ship-hygiene.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 done: parseShipArgs now returns {help, finalize}, dispatchShip (exported) routes --finalize to finalizeCycleClose in-process (no tmux) and the thin-proxy path to runShip. ShipDispatchDeps interface is exported from index.ts for test injection. _buildFinalizeOpts() builds production deps (spawnSync, readFileSync, writeFileSync, join). All oracles pass. Next story can wire finalizeCycleClose into the supervisor or add the /cam-ship --finalize operator story.",
+  "nextStoryContext": "US-003 done: both cam-ship.md copies now delegate Step 4 cycle-close to a single `cam ship --finalize` invocation. Raw `git rm -q --ignore-unmatch` blocks removed from both copies. Pre-existing em-dashes in Steps 1 and 2 also removed (oracle required file-wide absence). embed-vendor regenerated and byte-parity check passes. Hygiene test updated to assert `cam ship --finalize`. All 1015 tests pass. PRD is now complete (all non-operator stories pass).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Implementation uses only node builtins (node:child_process spawnSync, node:fs readFileSync/writeFileSync, node:path join) and the in-repo finalizeCycleClose from ship-finalize.ts (validated in US-001). No new external library API was called."
+      "summary": "Story only edited markdown files and the hygiene test. No external library API was used."
     }
   ]
 }

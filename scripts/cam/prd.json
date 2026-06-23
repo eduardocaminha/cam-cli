@@ -65,7 +65,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit BOTH copies (templates/commands/cam-ship.md and .claude/commands/cam-ship.md) THEN run `bun run embed-vendor`, patterns.md:32 self-hosting rule. The byte-parity test in test/embedded.test.ts will catch drift. Keep Step 1 (PRD-complete gate), Step 2 (git status), Step 3 (gates), Step 5 (push), Step 6 (PR), Step 7 (github/linear close) intact, only Step 4 changes. The new Step 4 body should explain that `cam ship --finalize` reads the issue backend, closes the local issue (if none), removes per-branch state with `git rm -f --ignore-unmatch`, and commits."
     },
