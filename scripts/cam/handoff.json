@@ -1,12 +1,12 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "templates/.gitignore: add same 7 rules + regenerate embedded vendor map"
+    "id": "US-003",
+    "title": "Regression test: pin all 7 rules in embedded .gitignore and assert markers stay ignored"
   },
   "createdFiles": [],
-  "modifiedFiles": ["templates/.gitignore", "src/vendor/_generated.ts", "scripts/cam/prd.json"],
+  "modifiedFiles": ["test/embedded.test.ts", "scripts/cam/prd.json"],
   "openQuestions": [],
-  "nextStoryContext": "US-002 was a templates/.gitignore edit + vendor regen: appended 7 CAM-68 runtime-marker entries (with grouping comment) to templates/.gitignore, ran bun run embed-vendor to regenerate src/vendor/_generated.ts, and verified byte-parity with embed-vendor:check. No source code changes. Quality gates: typecheck ok, 996 tests pass.",
+  "nextStoryContext": "US-003 appended a describe('CAM-68: harness runtime marker ignore rules', ...) block to test/embedded.test.ts. Eight new tests: 7 toContain checks on templatesContents['.gitignore'] (one per CAM-68 rule) plus 1 Bun.spawnSync git ls-files re-tracking guard for .claude/.cam-orchestrator-prompt.txt. Total tests: 1004 (up from 996). No vendor or source changes.",
   "officialDocsValidated": [
     {
       "lib": "none",

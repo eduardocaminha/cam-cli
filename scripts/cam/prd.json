@@ -81,7 +81,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/embedded.test.ts (only). Append a new `describe('CAM-68: harness runtime marker ignore rules', ...)` block to the existing file (do not rewrite the existing tests; surgical change rule from CLAUDE.md global section 2). Two kinds of assertions: (1) byte-content checks on the imported `templatesContents` map (already exported from src/vendor/_generated.ts; existing tests show the import shape), looping over the 7 expected substrings and asserting `expect(gitignore).toContain(rule)`; (2) a git-state guard that runs `git ls-files --error-unmatch .claude/.cam-orchestrator-prompt.txt` via `Bun.spawnSync` and asserts the exit code is NON-ZERO (file is NOT tracked). Bun pattern: `const r = Bun.spawnSync(['git', 'ls-files', '--error-unmatch', '.claude/.cam-orchestrator-prompt.txt']); expect(r.exitCode).not.toBe(0);` (per scripts/cam/CLAUDE.md 'Project Stack', prefer Bun.spawn/Bun.$ over node:child_process). If the test must skip outside a git working tree (defensive), guard on `Bun.spawnSync(['git','rev-parse','--git-dir']).exitCode === 0` first, but the cam-cli repo always has one, so a hard assertion is fine. Do NOT add a check for the other six markers' tracked-state: only the orchestrator-prompt file (the noisy one called out in the issue body) needs the re-tracking guard; pinning the other 6 in templatesContents is sufficient and avoids brittle 'is the file present in working tree' checks (sidecar.pid / orch-ready may legitimately be absent on a clean checkout). The 'no em-dash in persisted .md' rule does not apply (this is .ts)."
     }
