@@ -1,29 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": ".github/workflows/ci.yml on macos-latest invoking the gate spine"
+    "id": "US-004",
+    "title": "Per-gate timing surfaced to GitHub step summary (--json output)"
   },
   "branchName": "cam/CAM-59-ci-macos-gate-spine",
   "timestamp": "2026-06-23T00:00:00Z",
-  "createdFiles": [
-    ".github/workflows/ci.yml",
-    "test/ci-workflow.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
     "scripts/check-all.ts",
     "test/check-all.test.ts",
+    ".github/workflows/ci.yml",
+    ".gitignore",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 delivered: ci.yml (macos-latest, setup-bun@v2, brew install tmux, bun install --frozen-lockfile, bun run check:all), ci-parity gate added to GATES manifest (4th entry), test/ci-workflow.test.ts validates the real ci.yml. Next story should consult prd.json for the next highest-priority passes:false entry.",
+  "nextStoryContext": "US-004 delivered: GateResult type + onResults callback in check-all.ts; --json CLI flag writes gate-results.json (gitignored); ci.yml updated to pass -- --json to check:all and adds 'if: always()' summary step using jq; 8 new tests pass (23 total in check-all.test.ts). Next story: consult prd.json for highest-priority passes:false entry.",
   "officialDocsValidated": [
     {
-      "lib": "oven-sh/setup-bun",
-      "version": "v2",
-      "url": "https://github.com/oven-sh/setup-bun",
-      "fetchedAt": "2026-06-23T00:00:00Z",
-      "status": "ok",
-      "summary": "@v2 confirmed as the current latest and recommended major. No required inputs; bun-version is optional and auto-detected from package.json engines.bun or falls back to latest. Usage `uses: oven-sh/setup-bun@v2` is correct."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-004 only extends scripts/check-all.ts (node built-ins: node:fs, node:path, node:child_process) and ci.yml (shell/jq). No external TS library touched."
     }
   ]
 }

@@ -84,7 +84,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-all.ts (extend), .github/workflows/ci.yml (extend), test/check-all.test.ts (extend). Keep the quiet per-gate line output as the default (US-001 contract); --json is an additional emission mode, not a replacement. If --json is used, ensure it still exits with the aggregate nonzero-on-any-fail behavior. The GH step-summary step should run with 'if: always()' so it surfaces timing even on red runs. Update check-ci-parity's allowlist (if needed) so a second 'bun run check:all -- --json' or equivalent does not look like drift; prefer reusing a single check:all invocation that also writes JSON to a known path the summary step reads."
     },

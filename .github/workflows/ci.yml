@@ -21,4 +21,11 @@ jobs:
       - name: Install deps
         run: bun install --frozen-lockfile
       - name: Run all gates
-        run: bun run check:all
+        run: bun run check:all -- --json
+      - name: Write gate timing to step summary
+        if: always()
+        run: |
+          [ -f gate-results.json ] || exit 0
+          echo "| Gate | Status | Duration |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+          jq -r '.[] | "| \(.name) | \(.status) | \(.durationMs)ms |"' gate-results.json >> $GITHUB_STEP_SUMMARY
