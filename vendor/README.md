@@ -7,7 +7,7 @@ These files are vendored verbatim from the [eduardocaminha/reporter](https://git
 | File | Source | Last vendored from sha |
 |---|---|---|
 | `check-agent-frontmatter.sh` | `reporter:scripts/smoke/check-agent-frontmatter.sh` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
-| `check-agent-frontmatter.ts` | `reporter:scripts/smoke/check-agent-frontmatter.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
+| `check-agent-frontmatter.ts` (CAM-69: hand-rolled parser, zero-dep) | `reporter:scripts/smoke/check-agent-frontmatter.ts` | 03c185c3244b7d3fa29cdd92793f8e01cae88c38 |
 | `cam-loop.local.md.tmpl` | cam-cli (state file pre-armed by `cam next`)                                          | n/a |
 
 The sha column for the reporter-derived files refers to the reporter HEAD at the time of the most recent re-vendor. Byte-parity of the embedded copies (in `src/vendor/_generated.ts`) against the on-disk vendor files is checked by `test/embedded.test.ts` on every `bun test` run, and by `bun run embed-vendor:check`.
