@@ -74,7 +74,7 @@
         "Tests pass. [oracle: named-command: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/vendor/check-agent-frontmatter-standalone.test.ts (new). The materialization path must mirror src/commands/init.ts:runVendoredSmoke (writeFileSync of the embedded constant — import from src/vendor/_generated.ts — to a tmpdir path, then spawnSync('bun', [scriptPath])). Include a minimal `.claude/agents/example.md` fixture with valid frontmatter (name/description/model + one of tools/disallowedTools) and run `git init` in the tmpdir (the smoke uses `git rev-parse --show-toplevel`). Use Bun.spawnSync or node:child_process spawnSync; do NOT shell out to `bun install`. Cleanup the tmpdir in afterEach. The F-02 named-command oracle (BUN_INSTALL_CACHE_DIR=tmp) is the load-bearing check: it forces any accidental auto-install to fail by pointing Bun at an empty cache, so if the parser still imports js-yaml the test fails offline-equivalent. Patterns to re-check: scripts/cam/patterns.md `Bun runtime` (prefer Bun.spawn over node:child_process where feasible, but matching runVendoredSmoke uses spawnSync — either is acceptable as long as it does not run install)."
     },

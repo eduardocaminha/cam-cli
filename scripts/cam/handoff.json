@@ -1,24 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Make check-agent-frontmatter zero-dep (hand-rolled frontmatter parser)"
+    "id": "US-002",
+    "title": "Deterministic regression test for the zero-dep smoke"
   },
   "branchName": "cam/CAM-69-smoke-zero-dep",
-  "timestamp": "2026-06-23T10:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-23T11:00:00Z",
+  "createdFiles": [
+    "test/vendor/check-agent-frontmatter-standalone.test.ts"
+  ],
   "modifiedFiles": [
-    "vendor/check-agent-frontmatter.ts",
-    "vendor/README.md",
-    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 replaced the js-yaml import in vendor/check-agent-frontmatter.ts with a hand-rolled parser that supports top-level key:scalar pairs and simple block-sequence lists. The vendor embed was regenerated. US-002 requires a standalone deterministic regression test (test/vendor/check-agent-frontmatter-standalone.test.ts) that runs the smoke in a tmpdir with no node_modules to prove the zero-dep invariant holds.",
+  "nextStoryContext": "US-002 added a deterministic regression test (test/vendor/check-agent-frontmatter-standalone.test.ts) that materializes the embedded smoke in a fresh tmpdir, runs git init, writes a minimal .claude/agents/example.md fixture, and invokes via spawnSync('bun', [scriptPath]). The F-02 oracle (BUN_INSTALL_CACHE_DIR empty) passes because the smoke now uses only node: built-ins. US-003 adds defensive hardening of in-repo js-yaml default imports + a runbook note.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-001 removed the js-yaml dependency and replaced it with a hand-rolled parser. No new external library is exercised in the rewritten code."
+      "summary": "US-002 only adds a test file using built-in node:fs/node:child_process and the repo-internal _generated.ts. No new external library is exercised."
     }
   ]
 }
