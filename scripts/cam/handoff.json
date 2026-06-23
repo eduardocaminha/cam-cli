@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "GATES-as-data manifest + scripts/check-all.ts runner"
+  },
+  "branchName": "cam/CAM-59-ci-macos-gate-spine",
+  "timestamp": "2026-06-23T00:00:00Z",
+  "createdFiles": [
+    "scripts/check-all.ts",
+    "test/check-all.test.ts"
+  ],
+  "modifiedFiles": [
+    "package.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "GATES manifest is now exported from scripts/check-all.ts. The g() helper splits 'cmd args...' strings into { cmd, args[] }. US-002 (CI workflow) should import GATES to enumerate gate steps. The --bail flag is wired and tested. package.json has both check:all and verify scripts pointing to bun scripts/check-all.ts.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Story only uses node:child_process (built-in); no external npm library touched."
+    }
+  ]
+}

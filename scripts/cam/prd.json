@@ -33,7 +33,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-all.ts (new), package.json, test/check-all.test.ts (new). Sync-DI carveout: use spawnSync from node:child_process (Bun.spawn is async-first and has NO sync variant; the patterns.md Bun-runtime rule has this established carveout for hermetic sync tests). Copy the exact shape from src/commands/status.ts, src/commands/resume.ts, src/commands/ship-finalize.ts, which inject a spawnSync fn for testing. GATES manifest must be exportable so US-002 can import it. Quiet output convention: one line per gate, no decorative banners (issue's stated value: 'the signal'). Re-check docs/agent-readiness.md (CI keystone section) for the exact gates expected today before coding."
     },
