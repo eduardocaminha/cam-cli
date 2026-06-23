@@ -33,7 +33,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .gitignore (only). Edit region: lines 43-60 of the current .gitignore (the .cam-* runtime markers block that starts with the existing '.claude/.cam-orch-session' entry); add a '# CAM-68: escaped harness runtime markers (orchestrator + setup + handoff + sidecar)' grouping comment and the 7 entries directly underneath, matching the existing one-line-per-rule style. Order suggestion: orchestrator-prompt, setup-menu, setup-prompt, orch-ready, sidecar.pid, orch-handoff.json, orch-handoff.consumed.json. After editing, run `git rm --cached .claude/.cam-orchestrator-prompt.txt .claude/.cam-setup-menu.sh .claude/.cam-setup-prompt.txt` (working copies stay; these files are rewritten every cam run / cam setup so the operator keeps them locally). Do NOT use --no-verify on the commit. Sanity-check before commit: `for f in .claude/.cam-orchestrator-prompt.txt .claude/.cam-setup-menu.sh .claude/.cam-setup-prompt.txt .claude/.cam-orch-ready .claude/.cam-sidecar.pid .claude/.cam-orch-handoff.json .claude/.cam-orch-handoff.consumed.json; do git check-ignore -q \"$f\" && echo OK $f || echo MISS $f; done` should print OK x7. Project gotchas to remember: no em-dash in persisted docs (irrelevant here, but watch the commit message); conventional commits required (`chore:` or `fix:` is appropriate)."
     },
