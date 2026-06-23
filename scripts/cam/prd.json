@@ -122,7 +122,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "HIGHEST-RISK story of this PRD. Files: scripts/check-coverage.ts (new), scripts/coverage-budget.json (new, snapshot CURRENT measured coverage, NOT a target), test/check-coverage.test.ts (new). DI pattern (MUST mirror scripts/check-all.ts SpawnFn DI; same shape used by US-002 file-size gate): export pure functions and inject (a) a coverage source `getCoverage: () => CoverageReport` and (b) a git-diff source `getStagedDiff: (path: string) => string`; the CLI entrypoint wires real adapters, the tests inject in-memory fakes. NEVER shell out to bun test or git in unit tests (would re-enter bun test or require real git). Floor-lowering logic: parse the staged diff of scripts/coverage-budget.json (using e.g. `git diff --cached -- scripts/coverage-budget.json` in the production adapter), if any per-metric `-` line indicates a decrease, require at least one `CAM-\\d+|#\\d+|https?://` token elsewhere in the staged diff (covers diff-comment-style citations). The snapshot lands GREEN at current measured coverage; do NOT pad floors upward beyond measurement. Re-check scripts/cam/patterns.md `Injectable onResults callback` and `Oracle-friendly manifest design` bullets, and CLAUDE.md `Bun runtime` invariant (`Bun.spawn`/`Bun.$` for the production adapter is acceptable; tests inject fakes)."
     },

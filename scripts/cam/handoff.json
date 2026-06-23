@@ -1,11 +1,12 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Debt-marker gate: every TODO/FIXME/HACK/XXX must cite a tracker id"
+    "id": "US-004",
+    "title": "Coverage ratchet (up-only, lowering requires tracker ref in diff)"
   },
   "createdFiles": [
-    "scripts/check-debt-markers.ts",
-    "test/check-debt-markers.test.ts"
+    "scripts/check-coverage.ts",
+    "scripts/coverage-budget.json",
+    "test/check-coverage.test.ts"
   ],
   "modifiedFiles": [
     "scripts/check-all.ts",
@@ -13,15 +14,15 @@
     "test/check-all.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Debt-marker gate live. Scans {src,scripts}/**/*.{ts,tsx} with Bun.Glob, excludes vendor/node_modules/claude-code-harness/dist/, classifies markers via (?<!-)\\b(TODO|FIXME|HACK|XXX)\\b(?=[:\\s]) regex, and requires CAM-\\d+|#\\d+|https?:// on the same line. 28 new tests. Gate added to GATES manifest as 'debt-markers' between file-size and ci-parity. Key gotcha: own file's comment 'TODO/FIXME/HACK/XXX markers' trips the gate when XXX is followed by space; fixed by wrapping in parens '(TODO/FIXME/HACK/XXX) markers'. Budget updated with _ref: CAM-60 tracker annotation. check:all 7 gates green.",
+  "nextStoryContext": "Coverage ratchet gate live. Runs `bun test --coverage`, parses 'All files' row (columns: % Funcs | % Lines), compares against floors in scripts/coverage-budget.json. DI pattern: getCoverage() and getStagedDiff() injected in tests. Floor-lowering check mirrors file-size ratchet: parseDiffKv extracts numeric values from staged diff; findLoweredFloors detects decreases; requires CAM-\\d+|#\\d+|https?:// in diff when lowering. Gate added as index 6 ('coverage') in GATES manifest, before ci-parity. Budget floors: functions=75.65, lines=78.63 (measured after story code added). 23 new tests. check-all.test.ts updated to expect 8 gates. Note: bun test runs twice in check:all (once for 'test' gate, once for 'coverage' gate). Key gotcha: parseCoverageOutput targets the 'All files' row only; file-level rows ignored. spawnSync default stdio is 'pipe', both r.stdout and r.stderr captured.",
   "officialDocsValidated": [
     {
-      "lib": "Bun.Glob",
+      "lib": "bun:test --coverage",
       "version": "1.3.x",
-      "url": "https://bun.sh/docs/api/glob",
+      "url": "https://bun.sh/docs/cli/test#coverage",
       "fetchedAt": "2026-06-23T00:00:00Z",
       "status": "ok",
-      "summary": "scanSync({ cwd }) confirmed. onlyFiles defaults to true. {a,b,c}/**/*.{ts,tsx} pattern syntax valid. Implementation matches docs."
+      "summary": "Confirmed: --coverage flag uses text reporter by default, output columns are '% Funcs | % Lines' with an 'All files' aggregate row. Implementation matches."
     }
   ]
 }
