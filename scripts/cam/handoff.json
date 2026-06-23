@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Implement finalizeCycleClose() in src/ with injectable deps"
+  },
+  "branchName": "cam/CAM-72-deterministic-cycle-close",
+  "timestamp": "2026-06-23T12:30:00.000Z",
+  "createdFiles": [
+    "src/commands/ship-finalize.ts",
+    "test/ship-finalize.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "finalizeCycleClose() is now implemented in src/commands/ship-finalize.ts with fully injectable deps (spawnFn, clock, readProjectToml, readPrd, readIssues, writeIssues). The SpawnFn type mirrors the one in src/commands/resume.ts. All 4 acceptance-criteria scenarios are covered by test/ship-finalize.test.ts (none-backend, github-backend, linear-backend, dirty-prd.json). The function is synchronous. Next story can wire this into cam ship --finalize or the supervisor.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Implementation uses only in-repo parseToml wrapper (Bun.TOML.parse already validated in toml.ts), JSON builtins, and a type import from node:child_process. No new external library API was called."
+    }
+  ]
+}

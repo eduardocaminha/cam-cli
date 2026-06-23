@@ -28,7 +28,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files: src/commands/ship-finalize.ts, test/ship-finalize.test.ts. Read scripts/cam/patterns.md:10 (Bun preference) but FOLLOW the established repo pattern of injectable spawnFn over node:child_process (see src/commands/status.ts:338, src/commands/resume.ts:181) so tests stay hermetic. The deviation from patterns.md:10 (Bun.spawn preference) is deliberate: the git surface in this repo uses dependency-injected synchronous spawn mirroring src/commands/status.ts:338 and src/commands/resume.ts:181 for hermetic sync testability, and Bun.spawnSync is an acceptable Bun-native sync equivalent if preferred. This pre-empts a reviewer block on the Bun rule. Read existing issues.local.json shape (top-level next_id + issues[] with id/state/closedAt). Read src/config/toml.ts for TOML parsing. The issue-id format is `${issue_prefix}-${issueNumber}` (e.g. CAM-72). Clock is injectable (returns ISO string), tests pass a fixed clock. Use noUncheckedIndexedAccess-safe access (patterns.md:13)."
     },
