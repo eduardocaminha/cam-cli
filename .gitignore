@@ -66,6 +66,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .claude/cam-next-run.log
 # Ephemeral per-invocation worker exit report (US-003/US-FIX-006; read by supervisor, never committed)
 scripts/cam/worker-report.json
+# Per-run gate timing output written by check-all.ts --json (US-004, CAM-59); read by CI step summary
+gate-results.json
 
 # Cursor IDE workspace files (content is already in CLAUDE.md, which Cursor reads as fallback)
 .cursor/

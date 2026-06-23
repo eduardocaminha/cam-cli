@@ -33,14 +33,33 @@ Judgment calls that most move the band: `CLAUDE.md` counted as the `agents_md`
 criterion; service-only criteria as N/A; `branch_protection` as a structural
 fail of the free private plan.
 
-## The keystone: CI cascades
+## CAM-59 done: CI on macOS + gate spine (2026-06-23)
 
-cam has no `.github/workflows` at all, and that single absence fails ~8 criteria
-across 5 categories: `fast_ci_feedback`, `build_performance_tracking`,
-`test_performance_tracking`, `secret_scanning`, `automated_security_review`,
-`agents_md_validation`, `code_quality_metrics`, `release_automation`,
-`automated_pr_review`. Adding CI plus the ratchets/coverage moves cam from
-Level 3 toward Level 4 without touching any service-only criterion.
+CAM-59 shipped the CI keystone that was the single largest gap in the 2026-06-16
+snapshot. What was added:
+
+- `.github/workflows/ci.yml` running on `macos-latest`, invoking `bun run check:all`
+  as the single spine step, plus an `if: always()` summary step that reads
+  `gate-results.json` (written by `check:all -- --json`) and appends a per-gate
+  timing table to the GitHub step summary.
+- `scripts/check-all.ts`: the GATES manifest (typecheck, test, embed-vendor,
+  ci-parity) and the `runGates` runner. The `--json` flag writes a structured
+  `gate-results.json` for the summary step.
+- `scripts/check-ci-parity.ts`: the parity gate that enforces `ci.yml` and the
+  GATES manifest stay in sync. Prevents ad-hoc CI steps from drifting out of
+  the spine.
+
+With CAM-59, `fast_ci_feedback` and `code_quality_metrics` now pass. The CI
+cascade that was failing ~8 criteria now passes the first two; the remaining
+gaps (`secret_scanning`, `automated_security_review`, `release_automation`,
+`automated_pr_review`) require later issues (CAM-60+).
+
+## The keystone status after CAM-59
+
+cam now has `.github/workflows/ci.yml` running on every push. The gate-spine
+pattern means CI will automatically pick up any gate added to `GATES` in
+`scripts/check-all.ts` without manual `ci.yml` edits. The ci-parity gate
+enforces this contract.
 
 ## Where cam is already ahead of the rubric
 
@@ -58,7 +77,7 @@ judgment axis; the real gap is purely the deterministic plumbing
 
 Filed as issues, dependency-ordered by leverage:
 
-1. CAM-59 (P1): CI on macOS + gate spine (check:all/verify + ci-parity). Keystone.
+1. CAM-59 (P1): CI on macOS + gate spine (check:all/verify + ci-parity). DONE (2026-06-23).
 2. CAM-60 (P1): linter (biome) + ratchets (coverage / file-size / debt / dead-code / dup).
 3. CAM-61 (P2): doc-as-code gate + check-count assertions + golden-fixtures for the CAM_*_STATUS sentinel.
 4. CAM-62 (P2): test-quality enforced in the reviewer (anti-mock codified + per-test discipline + flaky), extends CAM-56 Layer B.
