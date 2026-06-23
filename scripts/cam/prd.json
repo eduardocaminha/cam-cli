@@ -133,7 +133,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/init.test.ts (and src/commands/init.ts ONLY if a DI seam for the claude-presence check is the cleaner fix). Root cause (CI run 28057154217, PR #65): runInit() returns 1 on the runner because the claude setup-check fails (no claude installed), but config.toml IS written ('Config written' is printed before 'check failed'). The fragile line is test/init.test.ts:48 expect(exitCode).toBe(0) (the test comment already flags it). Preferred fix: assert the config write + content and drop/relax the exitCode===0 coupling; OR make the claude-presence check injectable and stub it. Do NOT mock away the config-write behavior, that is the unit under test. Reproduce CI locally by excluding ~/.local/bin (where claude lives) from PATH. This unblocks US-006 (green CI). Pre-existing bug surfaced by CAM-59's own CI, tracked as the green-local!=green-CI win the issue predicted."
     }
