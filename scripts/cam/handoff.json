@@ -1,23 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Structured deterministic result line for finalizeCycleClose"
+    "id": "US-007",
+    "title": "Update recovery runbook + FLOW pointer to document `cam ship --finalize`"
   },
   "branchName": "cam/CAM-72-deterministic-cycle-close",
-  "timestamp": "2026-06-23T17:00:00.000Z",
+  "timestamp": "2026-06-23T17:30:00.000Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/ship-finalize.ts",
-    "test/ship-finalize.test.ts",
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 done: finalizeCycleClose now emits one structured emitOk result line on every code path. Happy path: emitOk with issue-id, removed file names (prd.json, handoff.json, progress.txt), and commit sha (from git rev-parse --short HEAD). GitHub/linear path: same line with backend note in parentheses. No-op paths (prd absent, nothing staged): emitOk with clear skip message instead of the old silent printHint. New tests in test/ship-finalize.test.ts capture stdout and assert the structured line is present. 1032 tests pass.",
+  "nextStoryContext": "US-007 done: docs/recovery-runbook.md gains section (h) describing cam ship --finalize (what it does, when to invoke, idempotency guarantee, and the manual git rm fallback). FLOW.md confirmed no change needed: it references /cam-ship (the orchestrator slash command / happy path), not the recovery path. All 1032 tests pass, typecheck clean.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story only used the existing internal emitOk helper from src/logging/screen.ts and printError from src/logging/color.ts. No new external library API was exercised."
+      "summary": "Story is a pure docs update to docs/recovery-runbook.md. No external library API was exercised."
     }
   ]
 }
