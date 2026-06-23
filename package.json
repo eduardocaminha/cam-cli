@@ -11,6 +11,7 @@
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit",
     "check:all": "bun scripts/check-all.ts",
+    "check:ci-parity": "bun scripts/check-ci-parity.ts",
     "verify": "bun scripts/check-all.ts"
   },
   "devDependencies": {

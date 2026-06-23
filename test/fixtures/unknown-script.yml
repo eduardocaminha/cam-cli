@@ -1,0 +1,15 @@
+name: CI
+on:
+  push:
+    branches: [main]
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: bun install
+      - name: Run all gates
+        run: bun run check:all
+      - name: Unknown step
+        run: bun run mystery-script
