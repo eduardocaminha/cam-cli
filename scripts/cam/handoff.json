@@ -1,26 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Duplicate-code gate (jscpd <=4%) wired into check:all"
+    "id": "US-007",
+    "title": "Wiring reconciliation + observability + recovery docs for the new static layer"
   },
   "createdFiles": [
-    ".jscpd.json"
+    "test/gates-manifest.test.ts"
   ],
   "modifiedFiles": [
-    "scripts/check-all.ts",
-    "test/check-all.test.ts",
-    "scripts/file-size-budget.json"
+    "docs/agent-readiness.md",
+    "docs/recovery-runbook.md",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Dup gate live. .jscpd.json at repo root: threshold=4, reporters=[\"threshold\"], ignore=[node_modules,vendor,claude-code-harness,dist,test,.claude,templates]. Gate added as index 8 ('dup') in GATES manifest (bunx jscpd@5 --config .jscpd.json src scripts), before ci-parity which is now index 9. GATES now has 10 entries. test/check-all.test.ts updated to expect 10 gates. file-size-budget.json bumped: check-all.ts 170->171 (split), test/check-all.test.ts 367->375 (split). Measured duplication on current tree: 3.87% (below 4% threshold). jscpd v5 config gotcha: reporters and ignore are both JSON arrays; threshold is numeric; paths are positional CLI args (not a config key).",
+  "nextStoryContext": "All 10 GATES manifest entries verified. New test file test/gates-manifest.test.ts asserts exact-string membership of all 4 CAM-59 + 6 CAM-60 gate names. docs/agent-readiness.md updated with CAM-60 done section and annotated Style & Validation row (pre-CAM-60: 4/8; post-CAM-60: ~8/8). docs/recovery-runbook.md has scenario (j) covering file-size ceiling, dup threshold, and coverage floor ratchet unblocking procedures. scripts/cam/patterns.md has ratchet gate pattern bullet (snapshot-on-adopt, change-direction-locked, tracker ref required in staged diff). No code changes: this was a pure reconciliation + docs story.",
   "officialDocsValidated": [
     {
-      "lib": "jscpd",
-      "version": "5.x",
-      "url": "https://github.com/kucherenko/jscpd/blob/master/docs/rust.md",
+      "lib": "none",
+      "version": "n/a",
+      "url": "n/a",
       "fetchedAt": "2026-06-23T00:00:00Z",
-      "status": "ok",
-      "summary": "v5 uses same .jscpd.json format as v4: reporters and ignore are arrays, threshold is numeric. Implementation matches documented API."
+      "status": "no_external_lib_touched",
+      "summary": "US-007 is a docs/reconciliation/test story with no external library usage."
     }
   ]
 }

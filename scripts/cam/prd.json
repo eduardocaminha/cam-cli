@@ -179,7 +179,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: docs/agent-readiness.md (update Style & Validation row + add CAM-60-done section mirroring the CAM-59-done section style), docs/recovery-runbook.md (add `(j) CAM-60: ratchet gate blocking a story` section mirroring section (i)), scripts/cam/patterns.md (append bullet), test/gates-manifest.test.ts (new, asserts GATES contains all expected names). No new ci.yml edit is needed: the gate-spine pattern (scripts/cam/patterns.md `Gate-spine convention`) means adding to GATES auto-propagates to CI through the existing `bun run check:all -- --json` step; the summary step already reads `gate-results.json` and renders every gate to the GitHub step summary. Mandatory rules to honor when writing docs: NO em-dash (use colon, comma, parens, period, or cut); these are persisted .md files (project decision 2026-05-20)."
     }
