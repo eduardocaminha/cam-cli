@@ -1,23 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Add cam config to README.md Commands section"
+    "id": "US-R1-003",
+    "title": "Fix missing .ts extension in setup.ts models import"
   },
   "branchName": "cam/CAM-53-cam-config-models-backend",
-  "timestamp": "2026-06-24T16:00:00Z",
+  "timestamp": "2026-06-24T17:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "README.md",
+    "src/commands/setup.ts",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-002 complete. Added 'cam config [--show]' line to README.md Commands block after 'cam init'. All 1262 tests green. US-R1-003 is next: fix missing .ts extension in setup.ts models import.",
+  "nextStoryContext": "US-R1-003 complete. One-line fix: added .ts extension to models import in setup.ts. All 1262 tests green, typecheck clean.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story is a doc-only change (README.md one-liner). No external library introduced or changed."
+      "summary": "Story is a one-line import path fix. No external library introduced or changed."
     }
   ]
 }

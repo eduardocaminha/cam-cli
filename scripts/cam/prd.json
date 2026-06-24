@@ -74,7 +74,7 @@
       "id": "US-R1-003",
       "title": "Fix missing .ts extension in setup.ts models import",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "src/commands/setup.ts imports DEFAULTS with the .ts extension: import { DEFAULTS } from '../config/models.ts'. [oracle: file-assert: grep -q \"from '../config/models.ts'\" src/commands/setup.ts]",
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
