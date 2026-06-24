@@ -1,29 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Structured spawn-log of {phase, model, backend} and codex-backend guard notice"
+    "id": "US-008",
+    "title": "cam config --show, patterns.md bullet, recovery-runbook entry"
   },
   "branchName": "cam/CAM-53-cam-config-models-backend",
   "timestamp": "2026-06-24T00:00:00Z",
   "createdFiles": [
-    "src/logging/spawn-resolution.ts",
-    "test/logging/spawn-resolution.test.ts",
-    "test/logging/codex-guard.test.ts"
+    "test/commands/config-show.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/run.ts",
-    "src/supervisor/loop.ts",
-    "src/supervisor/review.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "src/commands/config.ts",
+    "scripts/cam/patterns.md",
+    "docs/recovery-runbook.md",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 complete. Created src/logging/spawn-resolution.ts with emitSpawnResolution pure emitter (injectable writeEvent/emitNotice seams). Added call-sites in run.ts (orchestrator), loop.ts (implementer), review.ts (reviewer) immediately before respawn-pane. CODEX_GUARD_NOTICE = 'codex backend not yet wired (CAM-54)' fires when backend=codex (informational, does not abort). 1256 tests green. Next: check prd.json for next passes:false story.",
+  "nextStoryContext": "US-008 complete. Added printConfigShow (injectable writer seam, no Ink/TTY) to src/commands/config.ts. runConfig({ show: true }) delegates to it. 6 new tests in test/commands/config-show.test.ts all pass. patterns.md bullet added (CAM-53 oracle satisfied). docs/recovery-runbook.md section (l) CAM-53 added. 1262 tests green. Check prd.json for next passes:false story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story uses only node:process (process.stderr.write) which is a Bun/Node.js built-in. No external library introduced."
+      "summary": "Story uses only built-in process.stdout.write and existing internal modules (readPhaseModel, readBackend from src/config/models.ts). No external library introduced."
     }
   ]
 }

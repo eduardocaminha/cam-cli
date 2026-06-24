@@ -640,3 +640,87 @@ Cross-reference: `src/supervisor/worker-report.ts` (`formatReviewVerdictLine`),
 `src/supervisor/loop.ts` (notify call site), `src/supervisor/host.ts`
 (`makeNotifyOrchestrator`), `scripts/cam/patterns.md` (notifyOrchestrator seam
 bullet, makeNotifyOrchestrator factory pattern bullet).
+
+## (l) CAM-53: inspecting and resetting per-phase model config
+
+CAM-53 introduced per-phase model selection (`[models]`) and backend selection
+(`[backend]`) stored in `scripts/cam/project.toml`. Workers read these at spawn
+time via `readPhaseModel` and `readBackend` in `src/config/models.ts`, falling
+back to `DEFAULTS` on any read/parse error.
+
+### How to inspect the current resolved config
+
+Run the non-interactive show command (no TTY or Ink required):
+
+```bash
+cam config --show
+```
+
+Output example:
+
+```
+phase          model
+-----------------------------
+orchestrator   claude-opus-4-8
+planner        claude-opus-4-8
+auditor        claude-opus-4-8
+implementer    claude-sonnet-4-6
+reviewer       claude-opus-4-8
+ship           claude-sonnet-4-6
+backend        claude
+```
+
+The values shown are the RESOLVED values (defaults applied when a key is absent
+or the file is missing).
+
+### How to reset to defaults
+
+Remove the `[models]` and `[backend]` sections from `scripts/cam/project.toml`.
+The simplest approach: delete those sections and their keys by hand, then run
+`cam config --show` to confirm the defaults are active.
+
+Or use the interactive wizard to re-select explicitly:
+
+```bash
+cam config
+```
+
+### How to recover from a typo'd model name
+
+A typo'd model name (e.g. `orchestrator = "claude-oops-4-8"`) is not caught at
+config-write time: `mergeConfigChoices` stores whatever string the wizard
+produces. The error surfaces only when the spawned `claude --model <value>`
+call rejects the unknown model.
+
+Recovery steps:
+
+1. Identify the typo:
+
+   ```bash
+   cam config --show
+   ```
+
+2. Fix by re-running the wizard (which presents a validated list):
+
+   ```bash
+   cam config
+   ```
+
+   Or edit `scripts/cam/project.toml` directly: find the `[models]` section and
+   correct the offending key to a valid model ID.
+
+3. Confirm the fix:
+
+   ```bash
+   cam config --show
+   ```
+
+4. Re-dispatch the story that was blocked by the bad model:
+
+   ```bash
+   cam next
+   ```
+
+Cross-reference: `src/commands/config.ts` (`printConfigShow`),
+`src/config/models.ts` (`readPhaseModel`, `readBackend`, `DEFAULTS`),
+`scripts/cam/patterns.md` ([models]/[backend] config surface bullet).

@@ -182,7 +182,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/config.ts (extend with --show branch), scripts/cam/patterns.md (append bullet), docs/recovery-runbook.md (append section), test/commands/config-show.test.ts (new). Patterns: no em-dash in persisted .md (project rule 2026-05-20); use colon/comma/parens/period. Reuse src/logging/* for print-path output; do not render Ink for --show."
     },
