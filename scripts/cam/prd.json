@@ -148,7 +148,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/config.ts (call the writer on save), src/templates/frontmatter.ts (new pure helper rewriting the single `model: <value>` line via a scoped regex), .claude/agents/subagent-planner.md, .claude/agents/subagent-auditor.md, .claude/commands/cam-ship.md (the runtime targets, resolved from cwd), test/commands/config-frontmatter.test.ts (new). SCOPE DECISION: rewrite ONLY the project-local .claude/ files. A user project (post cam init) has no templates/ dir at all; templates/ exists only in the cam-cli source repo and holds the shipped opus-4-8 DEFAULTS (owned by US-004), NOT the operator's per-project override. So this story does NOT touch templates/ and has NO embed-vendor coupling. Use a scoped regex over the model: line, NOT js-yaml (CAM-69 rule: a bare js-yaml import auto-installs ESM-only v5 in a node_modules-less context and breaks). The pure rewriter is the testable seam; tests inject string in/out, no fs touch. Expose the target-path list so the test can assert none is under templates/."
     },
