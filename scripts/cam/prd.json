@@ -1,0 +1,206 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-53-cam-config-models-backend",
+  "description": "cam config TUI menu to choose model per phase + backend (claude default; codex deferred to CAM-54); persist to project.toml; spawns read from config; non-stale opus-4-8 defaults.",
+  "issueNumber": 53,
+  "relatedDocs": [
+    "scripts/cam/CLAUDE.md",
+    "scripts/cam/patterns.md",
+    "CLAUDE.md",
+    "docs/recovery-runbook.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "ink",
+      "url": "https://github.com/vadimdemedes/ink#useinput-inputhandler-options",
+      "version": "7.x",
+      "fetchedAt": "2026-06-24T00:00:00Z",
+      "summary": "Ink 7 useInput hook is already proven in-repo via src/ui/Select.tsx (keyboard navigation, enter to select). Per-story Step 5.5 validation will re-confirm the exact signature when US-003 lands.",
+      "status": "ok"
+    },
+    {
+      "lib": "Bun.TOML",
+      "url": "https://bun.com/reference/bun/TOML/parse",
+      "version": "bun >= 1.2",
+      "fetchedAt": "2026-06-24T00:00:00Z",
+      "summary": "Reading is Bun.TOML.parse (full TOML), proven in-repo at src/config/toml.ts:111; writing is the hand-rolled stringifyToml (toml.ts:68-97) restricted to single-level [section] tables of scalars, which exactly fits [models]/[backend]. No nested tables needed. Implementer re-confirms in Step 5.5 for US-001/US-003/US-005.",
+      "status": "ok"
+    },
+    {
+      "lib": "ink-testing-library",
+      "url": "https://github.com/vadimdemedes/ink-testing-library#readme",
+      "version": "4.x",
+      "fetchedAt": "2026-06-24T00:00:00Z",
+      "summary": "stdin.write keypress simulation + lastFrame() for the US-003 menu test; proven in-repo (patterns.md US-003 2026-06-14: React 19 useState in useInput is async, tick setTimeout(0) before lastFrame). Implementer re-confirms in Step 5.5.",
+      "status": "ok"
+    },
+    {
+      "lib": "js-yaml",
+      "url": "n/a (intentionally NOT used)",
+      "version": "n/a",
+      "fetchedAt": "2026-06-24T00:00:00Z",
+      "summary": "US-006 rewrites the single frontmatter model: line via a scoped regex, NOT a YAML library. js-yaml is intentionally avoided per the CAM-69 hand-rolled-parser rule (patterns.md): a vendored bare js-yaml import auto-installs the ESM-only v5 in a node_modules-less context and breaks. Recorded here so the implementer does not reach for it.",
+      "status": "intentionally_avoided"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Config reader for [models] and [backend] with defaults",
+      "description": "As the cam runtime, I need a typed reader for per-phase model and backend keys in the project config scripts/cam/project.toml (project-scoped, resolved from cwd; the per-user ~/.config/cam/config.toml is NOT consulted for models/backend), with safe defaults on missing or malformed input, so all spawn sites can resolve {phase, model, backend} from a single source of truth.",
+      "acceptanceCriteria": [
+        "New file src/config/models.ts exports readPhaseModel(phase, configPath?) and readBackend(configPath?), mirroring the try/catch/default pattern of src/config/permission-mode.ts:47-61. [oracle: file-assert: grep -q 'export function readPhaseModel' src/config/models.ts && grep -q 'export function readBackend' src/config/models.ts]",
+        "DEFAULTS map sets orchestrator/planner/auditor/reviewer to claude-opus-4-8, implementer and ship to claude-sonnet-4-6, and the backend default to claude; a bun test imports the map and asserts each value, including DEFAULTS.backend === 'claude'. [oracle: bun test test/config/models.test.ts]",
+        "Phase type union covers exactly orchestrator, planner, auditor, implementer, reviewer, ship. [oracle: file-assert: grep -q 'orchestrator' src/config/models.ts && grep -q 'planner' src/config/models.ts && grep -q 'auditor' src/config/models.ts && grep -q 'implementer' src/config/models.ts && grep -q 'reviewer' src/config/models.ts && grep -q 'ship' src/config/models.ts]",
+        "Reader falls back to default on missing file, missing section, missing key, malformed TOML, and non-string value (5 paths). [oracle: bun test test/config/models.test.ts]",
+        "The default config path is scripts/cam/project.toml resolved from process.cwd(); the optional configPath argument overrides it (used by tests). The per-user ~/.config/cam/config.toml and CAM_CONFIG_PATH (which target the user config in permission-mode.ts) are NOT consulted for models/backend. [oracle: bun test test/config/models.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/config/models.ts (new), test/config/models.test.ts (new). Mirror the try/catch/default CODE pattern of src/config/permission-mode.ts:47-61, but NOT its file target: permission-mode reads the per-user ~/.config/cam/config.toml via defaultConfigPath()/CAM_CONFIG_PATH; models/backend are PROJECT-scoped and read scripts/cam/project.toml resolved from process.cwd(). Do not overload CAM_CONFIG_PATH. The configPath? param (default join(cwd,'scripts/cam/project.toml')) is the test seam; no env override needed. Bun.TOML.parse already returns full TOML (toml.ts:111); the writer at toml.ts:68-97 already supports single-level [section] tables of scalars, so no toml.ts change is needed for reading. Patterns: noUncheckedIndexedAccess (guard array/object access), Bun runtime, never block the loop on malformed config (defensive defaults like permission-mode.ts)."
+    },
+    {
+      "id": "US-002",
+      "title": "Wire cam-spawned phases (orchestrator, implementer, reviewer) to use configured --model",
+      "description": "As cam, I need the 3 cam-spawned claude processes (orchestrator, implementer worker, reviewer worker) to pass --model <value> read from config so the operator's per-phase choice actually takes effect at spawn time.",
+      "acceptanceCriteria": [
+        "Orchestrator argv built in src/commands/run.ts (around run.ts:196-205) includes '--model' followed by readPhaseModel('orchestrator'). [oracle: bun test test/commands/run-model-argv.test.ts]",
+        "Implementer worker argv in src/supervisor/worker-argv.ts:117-128 (buildImplementerWorkerArgv) includes '--model' followed by readPhaseModel('implementer'). [oracle: bun test test/supervisor/worker-argv-model.test.ts]",
+        "Reviewer worker argv in src/supervisor/review.ts:102-114 (buildReviewerWorkerArgv) includes '--model' followed by readPhaseModel('reviewer'). [oracle: bun test test/supervisor/review-argv-model.test.ts]",
+        "When config is absent, each phase falls back to its DEFAULTS value (no --model omission; the flag is always present). [oracle: bun test test/supervisor/worker-argv-model.test.ts]",
+        "Backend=claude is the only wired path: the implementer and reviewer argv builders never emit a 'codex' literal for any backend input value, asserted behaviorally (expect(argv).not.toContain('codex')). [oracle: bun test test/supervisor/worker-argv-model.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/run.ts (orchestrator argv ~ 196-205), src/supervisor/worker-argv.ts:117-128 (buildImplementerWorkerArgv), src/supervisor/review.ts:102-114 (buildReviewerWorkerArgv). Tests: test/commands/run-model-argv.test.ts, test/supervisor/worker-argv-model.test.ts, test/supervisor/review-argv-model.test.ts. planner/auditor/ship run as Task subagents / slash steps, NOT cam-spawned: out of scope here (US-006 handles those via frontmatter). Patterns: argv builder pure-function pattern (assert with array containment), never reintroduce -p (CAM-42)."
+    },
+    {
+      "id": "US-003",
+      "title": "cam config command + Ink menu to choose model per phase + backend",
+      "description": "As an operator, I need a `cam config` TUI menu that walks me through the 6 phases (picking a model for each) then the backend, and persists my choices to scripts/cam/project.toml under [models] and [backend], so I can configure the cam loop without hand-editing TOML.",
+      "acceptanceCriteria": [
+        "New file src/commands/config.ts implements the config command (interactive + --show paths; --show implemented in US-008). [oracle: file-assert: test -f src/commands/config.ts]",
+        "index.ts registers 'config' in HELP and dispatches to commands/config.ts. [oracle: file-assert: grep -q \"config\" index.ts && grep -q 'commands/config' index.ts]",
+        "UI is an Ink screen reusing src/ui/Select.tsx (useInput keyboard nav, ❯ cursor) and the multi-step pattern of src/ui/SetupScreen.tsx (one step per phase, final step = backend). [oracle: reviewer-judgment]",
+        "Backend step lists claude (default) and codex (selectable but labelled with the literal string 'wired in CAM-54'); selecting codex is allowed (writes the choice; US-007 emits the guard at spawn time). [oracle: file-assert: grep -q 'wired in CAM-54' src/ui/ConfigScreen.tsx]",
+        "On save, mergeIntoConfig writes [models] (one key per phase) and [backend] (single 'name' key) to scripts/cam/project.toml without clobbering issue_system / issue_prefix. [oracle: bun test test/commands/config-persist.test.ts]",
+        "Selection/persistence logic is unit-testable separately from the live Ink render (pure helper + tests). [oracle: bun test test/commands/config-persist.test.ts]",
+        "Verify the screen renders correctly (ink-testing-library smoke or operator screencap; success/failure shown by ✓/✗ glyph, never divider color). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/config.ts (new), src/ui/ConfigScreen.tsx (new), index.ts (dispatch + HELP entry), test/commands/config-persist.test.ts (new). Reuse: src/ui/Select.tsx (Ink 7 useInput, ❯ cursor), src/ui/SetupScreen.tsx (multi-step pattern), src/ui/theme.ts (tokens), src/config/toml.ts:158-175 (mergeIntoConfig). Patterns: ink-testing-library stdin.write keypress simulation (patterns.md, US-003 2026-06-14); React 19 useState in useInput is async, tick with setTimeout(0) before lastFrame assertions; success/failure is the glyph not divider color. The persistence target is scripts/cam/project.toml (per-project), NOT ~/.config/cam/config.toml (per-user)."
+    },
+    {
+      "id": "US-004",
+      "title": "Bump stale claude-opus-4-7 frontmatter to claude-opus-4-8 in both .claude/agents and templates/agents",
+      "description": "As the cam product, I need the shipped agent frontmatter to reflect the current opus model so a fresh `cam init` does not start with stale defaults.",
+      "acceptanceCriteria": [
+        "No file under .claude/agents/ contains 'claude-opus-4-7'. [oracle: file-assert: ! grep -r 'claude-opus-4-7' .claude/agents/]",
+        "No file under templates/agents/ contains 'claude-opus-4-7'. [oracle: file-assert: ! grep -r 'claude-opus-4-7' templates/agents/]",
+        "orchestrator/planner/auditor/reviewer agents in both .claude/agents/ and templates/agents/ carry model: claude-opus-4-8. [oracle: file-assert: grep -q 'claude-opus-4-8' .claude/agents/subagent-orchestrator.md && grep -q 'claude-opus-4-8' templates/agents/subagent-orchestrator.md]",
+        "subagent-implementer.md remains claude-sonnet-4-6 (untouched). [oracle: file-assert: grep -q 'claude-sonnet-4-6' .claude/agents/subagent-implementer.md && grep -q 'claude-sonnet-4-6' templates/agents/subagent-implementer.md]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/agents/subagent-orchestrator.md, .claude/agents/subagent-planner.md, .claude/agents/subagent-auditor.md, .claude/agents/subagent-reviewer.md, and the four mirrors in templates/agents/. After editing run: bun run embed-vendor (regenerates src/vendor/_generated.ts), then bun run embed-vendor:check. Patterns: agent-prompt self-hosting (patterns.md, US-001 2026-06-16): templates/ is source of truth, .claude/ is runtime mirror; both must move together. Verify the exact stale set first with: grep -r 'claude-opus-4-7' .claude/agents/ templates/agents/."
+    },
+    {
+      "id": "US-005",
+      "title": "cam init seeds [models] and [backend] defaults in project.toml",
+      "description": "As an operator running `cam init` on a new project, I need the generated project.toml to carry the non-stale per-phase model defaults and backend=claude so the loop is born consistent with US-001 defaults.",
+      "acceptanceCriteria": [
+        "cam init writes [models] with all 6 phase keys (orchestrator/planner/auditor/implementer/reviewer/ship) and [backend] with name=claude to scripts/cam/project.toml. [oracle: bun test test/commands/setup-models-defaults.test.ts]",
+        "The default models written by setup.ts match the DEFAULTS map in src/config/models.ts (single source of truth: import the constants). [oracle: file-assert: grep -q \"from '../config/models'\" src/commands/setup.ts || grep -q 'from \\\"../config/models\\\"' src/commands/setup.ts]",
+        "Existing keys (issue_system, issue_prefix) are preserved by mergeIntoConfig. [oracle: bun test test/commands/setup-models-defaults.test.ts]",
+        "Static guard complementing the tmpdir test: setup.ts's mergeIntoConfig payload literally includes a models and a backend section. [oracle: file-assert: grep -q 'models:' src/commands/setup.ts && grep -q 'backend:' src/commands/setup.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/setup.ts (extend the mergeIntoConfig payload near where issue_system is written; the explore found this around setup.ts:418-423 / 533-540, confirm the live line), test/commands/setup-models-defaults.test.ts (new). DECISION: take the in-code path, do NOT create templates/project.toml. Extend setup.ts to merge { models: DEFAULTS, backend: { name: 'claude' } } alongside { issue_system }; import DEFAULTS from src/config/models.ts to avoid drift. Because no templates/ file changes, there is no embed-vendor coupling in this story. Patterns: mergeIntoConfig is additive (toml.ts:158-175); the writer emits single-level [section] of scalars (so backend = { name: 'claude' } renders [backend] name = 'claude')."
+    },
+    {
+      "id": "US-006",
+      "title": "Rewrite frontmatter model: line for in-session phases (planner, auditor, ship) on config save",
+      "description": "As an operator, I need `cam config` saves for planner/auditor/ship phases to actually take effect, since those phases run as Task subagents / slash steps where cam cannot pass --model, so the chosen model must be written into the model: frontmatter line of the project-local .claude/ runtime files the harness resolves them from.",
+      "acceptanceCriteria": [
+        "On `cam config` save, the planner phase choice rewrites the model: line in the project-local .claude/agents/subagent-planner.md (resolved from cwd). [oracle: bun test test/commands/config-frontmatter.test.ts]",
+        "Same for auditor (.claude/agents/subagent-auditor.md) and ship (.claude/commands/cam-ship.md). [oracle: bun test test/commands/config-frontmatter.test.ts]",
+        "The frontmatter rewriter is a pure helper (string in, string out) that changes only the single model: line; all other frontmatter keys and the body are preserved byte-for-byte; the test injects string in/out with no fs. [oracle: bun test test/commands/config-frontmatter.test.ts]",
+        "The save targets ONLY the three project-local .claude/ runtime files; a test asserts none of the rewriter's target paths is under templates/ (templates/ defaults are owned by US-004; no embed-vendor coupling here). [oracle: bun test test/commands/config-frontmatter.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/config.ts (call the writer on save), src/templates/frontmatter.ts (new pure helper rewriting the single `model: <value>` line via a scoped regex), .claude/agents/subagent-planner.md, .claude/agents/subagent-auditor.md, .claude/commands/cam-ship.md (the runtime targets, resolved from cwd), test/commands/config-frontmatter.test.ts (new). SCOPE DECISION: rewrite ONLY the project-local .claude/ files. A user project (post cam init) has no templates/ dir at all; templates/ exists only in the cam-cli source repo and holds the shipped opus-4-8 DEFAULTS (owned by US-004), NOT the operator's per-project override. So this story does NOT touch templates/ and has NO embed-vendor coupling. Use a scoped regex over the model: line, NOT js-yaml (CAM-69 rule: a bare js-yaml import auto-installs ESM-only v5 in a node_modules-less context and breaks). The pure rewriter is the testable seam; tests inject string in/out, no fs touch. Expose the target-path list so the test can assert none is under templates/."
+    },
+    {
+      "id": "US-007",
+      "title": "Structured spawn-log of {phase, model, backend} and codex-backend guard notice",
+      "description": "As an operator, I need every cam-controlled spawn to log a structured event with the resolved phase/model/backend (so I can audit what actually ran), and selecting backend=codex must emit an explicit notice that the backend is not yet wired (CAM-54), so the loop cannot silently degrade.",
+      "acceptanceCriteria": [
+        "Every cam-controlled spawn (orchestrator, implementer, reviewer) emits a structured event with {phase, model, backend} to the existing event log (.claude/cam-worker-events.jsonl) or src/logging path. [oracle: bun test test/logging/spawn-resolution.test.ts]",
+        "When backend resolves to 'codex', a guard notice with the exact literal text 'codex backend not yet wired (CAM-54)' is emitted to stderr / event log; the test asserts that exact string. [oracle: bun test test/logging/codex-guard.test.ts]",
+        "The guard does not abort the spawn (it is informational; CAM-54 wires codex). [oracle: bun test test/logging/codex-guard.test.ts]",
+        "Tests inject a fake event-writer and assert the event shape (no real fs). [oracle: bun test test/logging/spawn-resolution.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/logging/spawn-resolution.ts (new pure emitter), src/commands/run.ts + src/supervisor/worker-argv.ts + src/supervisor/review.ts (call-sites), test/logging/spawn-resolution.test.ts and test/logging/codex-guard.test.ts (new). Reuse existing event log writer (search for cam-worker-events.jsonl writers in src/supervisor/). Patterns: injectable fake-writer seam (patterns.md, makeNotifyOrchestrator factory pattern, US-002 2026-06-23, CAM-70). The guard is the safety net so codex-selection cannot silently fall back to claude without operator awareness."
+    },
+    {
+      "id": "US-008",
+      "title": "cam config --show, patterns.md bullet, recovery-runbook entry",
+      "description": "As an operator, I need a non-interactive `cam config --show` that prints the current resolved per-phase model + backend, plus a durable pattern note and a recovery-runbook entry so the new surface is discoverable and debuggable.",
+      "acceptanceCriteria": [
+        "cam config --show prints a stable table of 6 rows (phase | model) + 1 row (backend) to stdout. [oracle: bun test test/commands/config-show.test.ts]",
+        "--show is non-interactive: a test drives `cam config --show` and asserts it prints the stdout table without entering the Ink render path (no raw-mode/TTY requirement, no useInput). [oracle: bun test test/commands/config-show.test.ts]",
+        "scripts/cam/patterns.md gains one bullet documenting the [models]/[backend] config surface and the read-at-spawn invariant. [oracle: file-assert: grep -q 'CAM-53' scripts/cam/patterns.md]",
+        "docs/recovery-runbook.md gains a section (or paragraph) for CAM-53 covering: how to inspect (cam config --show), how to reset to defaults (delete [models]/[backend] from project.toml), how to recover from a typo'd model name. [oracle: file-assert: grep -q 'CAM-53' docs/recovery-runbook.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 8,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/config.ts (extend with --show branch), scripts/cam/patterns.md (append bullet), docs/recovery-runbook.md (append section), test/commands/config-show.test.ts (new). Patterns: no em-dash in persisted .md (project rule 2026-05-20); use colon/comma/parens/period. Reuse src/logging/* for print-path output; do not render Ink for --show."
+    },
+    {
+      "id": "US-009",
+      "title": "Operator dogfood: cam config + real spawn carries --model <chosen>",
+      "description": "As the operator, I need to actually run `cam config`, pick a non-default model for one phase, save, then trigger a real spawn (cam run or cam next), and visually confirm the spawned claude process argv carries --model <chosen>, so the end-to-end loop is verified outside unit-fake land.",
+      "acceptanceCriteria": [
+        "Operator runs `cam config`, picks a non-default model for one phase (e.g. orchestrator), saves. [oracle: reviewer-judgment]",
+        "Operator triggers a real spawn (cam run or cam next) and inspects the spawned argv (via ps -ef | grep claude, tmux capture-pane, or the structured spawn event from US-007). [oracle: reviewer-judgment]",
+        "The argv contains --model <chosen>; the spawn does not silently fall back to the default. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 9,
+      "passes": false,
+      "requires": "operator",
+      "notes": "Operator ceremony: TUI keypress + OS-level inspection of a live spawned process. Not implementable by an autonomous agent. The autonomous loop completes US-001 through US-008, then the supervisor exits awaiting-operator (see scripts/cam/CLAUDE.md stop condition); operator flips passes: true after the dogfood. Cross-check: the US-007 spawn event is the cleanest evidence channel (cat .claude/cam-worker-events.jsonl | jq 'select(.kind==\"spawn-resolution\")')."
+    }
+  ]
+}
