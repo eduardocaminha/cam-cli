@@ -539,3 +539,104 @@ silently.
 Cross-reference: `scripts/check-file-sizes.ts`, `scripts/check-coverage.ts`,
 `scripts/file-size-budget.json`, `scripts/coverage-budget.json`, `.jscpd.json`,
 `scripts/cam/patterns.md` (ratchet pattern bullet).
+
+## (k) CAM-70: reviewer verdict not appearing in the orchestrator pane
+
+Symptom: the reviewer worker finishes a review round and the orchestrator pane
+does not display the verdict line (`[cam] review round N: CLEAN`,
+`FIXES_PENDING:K`, or `MAX_ROUNDS_DEBT`). The loop may hang waiting for operator
+input that was supposed to be automatic.
+
+### Background
+
+CAM-70 wired an automatic verdict handback: at the end of every review round the
+sidecar calls `notifyOrchestrator(line)`, which runs `send-keys` into the
+orchestrator pane (pane 0 on the cam tmux socket). The line format is:
+
+```
+[cam] review round N: CLEAN
+[cam] review round N: FIXES_PENDING:K
+[cam] review round N: MAX_ROUNDS_DEBT
+[cam] review BLOCKED: <detail>
+```
+
+`N` is the round number (starting at 1) and `K` is the count of stories that
+still have findings. The BLOCKED variant fires when the review dispatch itself
+fails (e.g. the reviewer pane never emitted a verdict), not when the verdict is
+FIXES_PENDING.
+
+The formatter lives in `src/supervisor/worker-report.ts`
+(`formatReviewVerdictLine`). The wiring lives in `src/supervisor/loop.ts` (calls
+`opts.notifyOrchestrator?.()` after each non-error review dispatch) and in
+`src/supervisor/host.ts` (`makeNotifyOrchestrator` factory, wired in
+`buildSupervisorOptions`).
+
+### Diagnosing a missing verdict line
+
+1. Confirm the reviewer worker finished (look for `kind:"result"` in the event
+   log):
+
+   ```bash
+   grep '"kind":"result"' .claude/cam-worker-events.jsonl | tail -5
+   ```
+
+2. Confirm `prd.review.lastVerdict` was written (the reviewer writes this
+   regardless of the notify path):
+
+   ```bash
+   jq '.review.lastVerdict' scripts/cam/prd.json
+   ```
+
+3. Check whether the orchestrator pane is still alive:
+
+   ```bash
+   tmux -L cam list-panes -a -F '#{pane_id} #{@cam_label}'
+   ```
+
+   Look for a pane labeled `orchestrator`. If it is absent, the `send-keys` call
+   silently failed (the pane closed or the session ended).
+
+4. Inspect the sidecar log for notify errors:
+
+   ```bash
+   tail -n 50 .claude/cam-supervisor.log
+   ```
+
+### Manual fallback
+
+If the automatic handback failed (e.g. the orchestrator pane closed, a tmux
+socket mismatch, or a regression in `makeNotifyOrchestrator`), read the verdict
+directly and report it yourself:
+
+```bash
+jq -r '.review | "round \(.round // "?"): \(.lastVerdict // "(none)")"' scripts/cam/prd.json
+```
+
+Then type the result into the orchestrator pane, or proceed based on the verdict
+without it:
+
+- `CLEAN`: all stories pass review. Run `cam ship` to close the cycle.
+- `FIXES_PENDING:K`: K stories have findings. Re-run `cam next` to dispatch another
+  implement round.
+- `MAX_ROUNDS_DEBT`: the review cap was reached. Decide whether to ship with
+  debt or pause and file follow-ups manually.
+
+If the loop is stuck waiting for a verdict line it will never see, `cam stop`
+and `cam resume` to restart the sidecar (it will re-check `prd.review` state at
+boot and pick up from the correct place).
+
+### Confirming the fix is active
+
+After rebuilding:
+
+```bash
+bash scripts/build-release.sh --install
+```
+
+Watch the orchestrator pane during the next review round: the verdict line should
+appear automatically within a few seconds of the reviewer worker exiting.
+
+Cross-reference: `src/supervisor/worker-report.ts` (`formatReviewVerdictLine`),
+`src/supervisor/loop.ts` (notify call site), `src/supervisor/host.ts`
+(`makeNotifyOrchestrator`), `scripts/cam/patterns.md` (notifyOrchestrator seam
+bullet, makeNotifyOrchestrator factory pattern bullet).
