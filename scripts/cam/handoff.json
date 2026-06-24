@@ -1,26 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Dead-code gate (knip) wired into check:all"
+    "id": "US-006",
+    "title": "Duplicate-code gate (jscpd <=4%) wired into check:all"
   },
   "createdFiles": [
-    "knip.json"
+    ".jscpd.json"
   ],
   "modifiedFiles": [
     "scripts/check-all.ts",
-    "scripts/file-size-budget.json",
-    "test/check-all.test.ts"
+    "test/check-all.test.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Dead-code gate live. knip.json at repo root: entry=[index.ts, scripts/**/*.ts, test/**/*.ts], project=[src/**/*.{ts,tsx}, scripts/**/*.ts, test/**/*.ts], ignore=[6 specific unused files + vendor/**+dist/**+claude-code-harness/**], ignoreBinaries=[claude,tmux,ps,lsof], ignoreExportsUsedInFile:true, exclude=[exports,types,duplicates]. Gate added as index 7 ('dead-code') in GATES manifest (bunx knip), before ci-parity which is now index 8. GATES now has 9 entries. test/check-all.test.ts updated to expect 9 gates. file-size-budget.json bumped: check-all.ts 169->170, test/check-all.test.ts 359->367 (split-based counts). Key gotcha: content.split('\\n').length = wc -l + 1 for files with trailing newline; set budgets to split-based count. knip configuration hints (informational) don't affect exit code.",
+  "nextStoryContext": "Dup gate live. .jscpd.json at repo root: threshold=4, reporters=[\"threshold\"], ignore=[node_modules,vendor,claude-code-harness,dist,test,.claude,templates]. Gate added as index 8 ('dup') in GATES manifest (bunx jscpd@5 --config .jscpd.json src scripts), before ci-parity which is now index 9. GATES now has 10 entries. test/check-all.test.ts updated to expect 10 gates. file-size-budget.json bumped: check-all.ts 170->171 (split), test/check-all.test.ts 367->375 (split). Measured duplication on current tree: 3.87% (below 4% threshold). jscpd v5 config gotcha: reporters and ignore are both JSON arrays; threshold is numeric; paths are positional CLI args (not a config key).",
   "officialDocsValidated": [
     {
-      "lib": "knip",
-      "version": "latest (knip.dev)",
-      "url": "https://knip.dev/reference/configuration",
+      "lib": "jscpd",
+      "version": "5.x",
+      "url": "https://github.com/kucherenko/jscpd/blob/master/docs/rust.md",
       "fetchedAt": "2026-06-23T00:00:00Z",
       "status": "ok",
-      "summary": "Confirmed: entry, project, ignore, ignoreBinaries, ignoreExportsUsedInFile, and exclude are all valid knip config keys. Implementation matches documented API."
+      "summary": "v5 uses same .jscpd.json format as v4: reporters and ignore are arrays, threshold is numeric. Implementation matches documented API."
     }
   ]
 }

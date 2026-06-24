@@ -159,7 +159,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .jscpd.json (new, root), scripts/check-all.ts (add GATES entry). Pattern: per jscpd 5.x docs, `.jscpd.json` with `threshold: <pct>` and `reporters: [\"threshold\"]` makes the process exit non-zero when duplication exceeds the threshold. Scope: `src/`, `scripts/` (use `pattern` glob); `ignore` should exclude vendor/, claude-code-harness/, dist/, test/, .claude/, templates/. If current measured duplication > 4%, raise `threshold` to the measured value (rounded up by 1pp), add an inline comment in .jscpd.json with a tracker ref pointing at a follow-up cleanup issue (file the follow-up as a CAM-NNN under issues.local.json if appropriate); operator-approved fallback per scope brief. Re-check scripts/cam/patterns.md `Gate-spine convention` bullet."
     },
