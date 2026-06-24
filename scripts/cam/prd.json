@@ -81,7 +81,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/events.ts (existing event kinds; grep `logEvent` in loop.ts for emission precedents like outcome-fallback and sidecar-exit), src/supervisor/loop.ts (emission site colocated with the notifyOrchestrator call from US-001), test/supervisor/. Per scripts/cam/CLAUDE.md: the event log is supervisor-owned and append-only; do NOT have the agent hand-write into it. Reuse the existing logEvent helper signature; do not invent a new write path."
     },

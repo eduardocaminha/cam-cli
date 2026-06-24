@@ -16,6 +16,7 @@ import {
 	makeInMemoryEventLogger,
 	readWorkerTokens,
 	type PushEventDetail,
+	type ReviewVerdictHandbackEventDetail,
 	type WorkerEvent,
 } from '../../src/supervisor/events.ts';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
@@ -260,6 +261,119 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 
 		const tokensEvent = events.find((e) => e.kind === 'tokens');
 		expect(tokensEvent?.detail).toEqual({ inputTokens: 100, outputTokens: 50, cacheReadTokens: 20, cacheCreationTokens: 10 });
+	});
+
+	// ---------------------------------------------------------------------------
+	// review-verdict-handback event (US-004)
+	// ---------------------------------------------------------------------------
+
+	test("emits 'review-verdict-handback' for CLEAN verdict with correct round", async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+
+		// Scenario: all stories already pass -> supervisor goes straight to review.
+		// readPrd call order:
+		//   call 0 (iter 1 top, decideNextAction): all pass, no verdict -> review
+		//   call 1 (review branch, re-read after reviewDispatch): CLEAN, round 1
+		//   call 2 (iter 2 top, decideNextAction): CLEAN -> complete
+		const REVIEW_UUID = '00000000-0000-0000-0000-review000001';
+		const prdReturns: PrdSnapshot[] = [
+			{ userStories: [{ id: 'US-001', priority: 1, passes: true, requires: null }], review: undefined },
+			{ userStories: [{ id: 'US-001', priority: 1, passes: true, requires: null }], review: { roundsCompleted: 1, lastVerdict: 'CLEAN' } },
+			{ userStories: [{ id: 'US-001', priority: 1, passes: true, requires: null }], review: { roundsCompleted: 1, lastVerdict: 'CLEAN' } },
+		];
+		let prdCall = 0;
+
+		const opts: RunSupervisorOptions = {
+			spawn: () => ({ stdout: '', exitCode: 0 }),
+			capturePane: () => '',
+			readPrd: () => prdReturns[prdCall++] ?? null,
+			writePrd: () => {},
+			readHandoff: () => null,
+			clock: () => '2026-06-23T00:00:00Z',
+			genUuid: () => REVIEW_UUID,
+			reviewDispatch: () => ({ status: 'ok', detail: 'review ok' }),
+			writeSessionMarker: () => {},
+			isPaneAlive: () => true,
+			workerPaneId: '%3',
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			permissionMode: 'bypassPermissions',
+			taskPrompt: 'Implement the next story.',
+			sleepFn: (_ms) => {},
+			nowMs: () => 0,
+			logEvent: logger,
+		};
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('complete');
+
+		const handbackEvent = events.find((e) => e.kind === 'review-verdict-handback');
+		expect(handbackEvent).toBeDefined();
+		const detail = handbackEvent?.detail as ReviewVerdictHandbackEventDetail;
+		expect(detail.verdict).toBe('CLEAN');
+		expect(detail.round).toBe(1);
+		expect(handbackEvent?.uuid).toBe(REVIEW_UUID);
+		expect(handbackEvent?.storyId).toBeUndefined();
+	});
+
+	test("emits 'review-verdict-handback' for FIXES_PENDING verdict with round", async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+
+		// Scenario: all stories pass -> review returns FIXES_PENDING:2, then CLEAN.
+		// readPrd call order:
+		//   call 0 (iter 1, decideNextAction): all pass, no verdict -> review
+		//   call 1 (review branch re-read): FIXES_PENDING:2, round 1
+		//   call 2 (iter 2, decideNextAction): FIXES_PENDING -> review again
+		//   call 3 (review branch re-read): CLEAN, round 2
+		//   call 4 (iter 3, decideNextAction): CLEAN -> complete
+		const prdBase = { id: 'US-001', priority: 1, passes: true, requires: null };
+		const prdReturns: PrdSnapshot[] = [
+			{ userStories: [prdBase], review: undefined },
+			{ userStories: [prdBase], review: { roundsCompleted: 1, lastVerdict: 'FIXES_PENDING:2' } },
+			{ userStories: [prdBase], review: { roundsCompleted: 1, lastVerdict: 'FIXES_PENDING:2' } },
+			{ userStories: [prdBase], review: { roundsCompleted: 2, lastVerdict: 'CLEAN' } },
+			{ userStories: [prdBase], review: { roundsCompleted: 2, lastVerdict: 'CLEAN' } },
+		];
+		let prdCall = 0;
+
+		const opts: RunSupervisorOptions = {
+			spawn: () => ({ stdout: '', exitCode: 0 }),
+			capturePane: () => '',
+			readPrd: () => prdReturns[prdCall++] ?? null,
+			writePrd: () => {},
+			readHandoff: () => null,
+			clock: () => '2026-06-23T00:00:00Z',
+			genUuid: () => '00000000-0000-0000-0000-review000002',
+			reviewDispatch: () => ({ status: 'ok', detail: 'review ok' }),
+			writeSessionMarker: () => {},
+			isPaneAlive: () => true,
+			workerPaneId: '%3',
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			permissionMode: 'bypassPermissions',
+			taskPrompt: 'Implement the next story.',
+			sleepFn: (_ms) => {},
+			nowMs: () => 0,
+			logEvent: logger,
+		};
+
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('complete');
+
+		const handbackEvents = events.filter((e) => e.kind === 'review-verdict-handback');
+		expect(handbackEvents).toHaveLength(2);
+
+		// First event: FIXES_PENDING round 1.
+		const first = handbackEvents[0] as WorkerEvent;
+		const firstDetail = first.detail as ReviewVerdictHandbackEventDetail;
+		expect(firstDetail.verdict).toBe('FIXES_PENDING:2');
+		expect(firstDetail.round).toBe(1);
+
+		// Second event: CLEAN round 2.
+		const second = handbackEvents[1] as WorkerEvent;
+		const secondDetail = second.detail as ReviewVerdictHandbackEventDetail;
+		expect(secondDetail.verdict).toBe('CLEAN');
+		expect(secondDetail.round).toBe(2);
 	});
 
 	test('no events emitted when logEvent is absent (zero behavior change)', async () => {

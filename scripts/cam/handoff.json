@@ -1,19 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Real-tmux integration test: verdict line lands in orchestrator pane via the wired closure"
+    "id": "US-004",
+    "title": "Structured supervisor event for the verdict handback in cam-worker-events.jsonl"
   },
   "branchName": "cam/CAM-70-reviewer-verdict-handback",
-  "timestamp": "2026-06-23T14:00:00Z",
-  "createdFiles": [
-    "test/integration/review-verdict-handback.test.ts"
-  ],
+  "timestamp": "2026-06-23T15:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
+    "src/supervisor/events.ts",
+    "src/supervisor/loop.ts",
+    "test/supervisor/events.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added a real-tmux integration test proving the end-to-end verdict handback: makeNotifyOrchestrator closure sends CLEAN/FIXES_PENDING/MAX_ROUNDS_DEBT verdict lines to the orchestrator pane and they appear in capture-pane output. Pattern follows tmux-introspect.test.ts: socket-swap SpawnFn isolates tests from live cam sessions. US-004 is the next story (structured supervisor event for verdict handback in cam-worker-events.jsonl).",
+  "nextStoryContext": "US-004 added 'review-verdict-handback' WorkerEventKind to events.ts plus ReviewVerdictHandbackEventDetail { verdict, round }. loop.ts hoists reviewUuid out of the dispatch for-loop and emits the event after the notifyOrchestrator call. Two new tests in test/supervisor/events.test.ts cover CLEAN (single round) and FIXES_PENDING->CLEAN (two rounds).",
   "officialDocsValidated": [
     {
       "lib": "none",

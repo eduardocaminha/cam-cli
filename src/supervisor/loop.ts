@@ -29,7 +29,7 @@ import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
 import { formatReviewVerdictLine, type WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
-import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail } from './events.ts';
+import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail } from './events.ts';
 
 // ---------------------------------------------------------------------------
 // Injected dependency types
@@ -975,9 +975,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// reviewDispatch only writes prd.json on a real verdict, so retrying
 			// after 'error' is side-effect free.
 			let reviewResult: ReviewDispatchResult | null = null;
+			let reviewUuid = '';
 			for (let attempt = 1; attempt <= MAX_REVIEW_DISPATCH_ATTEMPTS; attempt += 1) {
-				const uuid = genUuid();
-				reviewResult = reviewDispatch(uuid);
+				reviewUuid = genUuid();
+				reviewResult = reviewDispatch(reviewUuid);
 				if (reviewResult.status !== 'error') break;
 			}
 
@@ -1002,6 +1003,16 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			if (opts.notifyOrchestrator !== undefined && updatedPrd !== null && updatedPrd.review?.lastVerdict != null) {
 				const round = updatedPrd.review.roundsCompleted ?? 0;
 				opts.notifyOrchestrator(formatReviewVerdictLine(round, updatedPrd.review.lastVerdict));
+			}
+
+			// US-004: emit a structured 'review-verdict-handback' event so the
+			// handback is auditable independently of the pane scrollback.
+			if (updatedPrd !== null && updatedPrd.review?.lastVerdict != null) {
+				const handbackDetail: ReviewVerdictHandbackEventDetail = {
+					verdict: updatedPrd.review.lastVerdict,
+					round: updatedPrd.review.roundsCompleted ?? 0,
+				};
+				emit('review-verdict-handback', undefined, reviewUuid, handbackDetail);
 			}
 
 			// CAM-36: a review iteration is real state-machine progress, so it
