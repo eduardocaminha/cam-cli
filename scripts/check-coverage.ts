@@ -67,6 +67,16 @@ const ALL_FILES_RE = /^All files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/;
 /** Matches a JSON key: number pair from a diff line. */
 const KV_RE = /^\s*"([^"]+)":\s*([\d.]+)/;
 
+/**
+ * Tolerance (percentage points) applied to floor comparison to absorb
+ * cross-environment coverage jitter. The macos CI runner measures ~0.2-0.3pp
+ * lower than local because env-sensitive tests (e.g. init.test.ts behaves
+ * differently without `claude` on PATH; OS-gated tmux tests) cover different
+ * lines. Without slack the gate red-lights every PR on benign jitter.
+ * (CAM-60 follow-up: coverage ratchet brittleness found by CI on PR #66.)
+ */
+const FLOOR_TOLERANCE_PP = 0.5;
+
 // ---------------------------------------------------------------------------
 // Coverage output parsing
 // ---------------------------------------------------------------------------
@@ -169,12 +179,12 @@ function checkFloorMet(
 	floors: CoverageBudget['floors'],
 	errors: string[],
 ): void {
-	if (coverage.functions < floors.functions) {
+	if (coverage.functions < floors.functions - FLOOR_TOLERANCE_PP) {
 		errors.push(
 			`functions coverage ${coverage.functions.toFixed(2)}% is below floor ${floors.functions}%`,
 		);
 	}
-	if (coverage.lines < floors.lines) {
+	if (coverage.lines < floors.lines - FLOOR_TOLERANCE_PP) {
 		errors.push(
 			`lines coverage ${coverage.lines.toFixed(2)}% is below floor ${floors.lines}%`,
 		);

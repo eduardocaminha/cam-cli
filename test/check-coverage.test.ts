@@ -11,6 +11,8 @@
 //   checkCoverage: functions below floor (exits fail, names metric)
 //   checkCoverage: lines below floor (exits fail, names metric)
 //   checkCoverage: both metrics below floor (exits fail, names both)
+//   checkCoverage: measured within tolerance band (exits ok)
+//   checkCoverage: measured beyond tolerance band (exits fail, names metric)
 //   checkCoverage: floor raised in diff (exits ok, raising always allowed)
 //   checkCoverage: floor lowered with CAM-NNN ref (exits ok)
 //   checkCoverage: floor lowered with #N ref (exits ok)
@@ -163,6 +165,37 @@ describe('checkCoverage — coverage below floors', () => {
 		const msgs = result.errors.join('\n');
 		expect(msgs).toContain('functions');
 		expect(msgs).toContain('lines');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// checkCoverage: cross-environment tolerance band (CAM-60 follow-up, PR #66)
+// ---------------------------------------------------------------------------
+
+describe('checkCoverage — floor comparison tolerance band', () => {
+	test('measured within 0.5pp tolerance below floor: exits ok', () => {
+		// floor 80, measured 79.7 => 0.3pp below, inside the 0.5pp slack
+		const result = checkCoverage({
+			getCoverage: makeCoverage({ functions: 79.7, lines: 79.7 }),
+			readBudget: makeBudget({ functions: 80.0, lines: 80.0 }),
+			getStagedDiff: () => '',
+		});
+		expect(result.ok).toBe(true);
+		expect(result.errors).toHaveLength(0);
+	});
+
+	test('measured beyond 0.5pp tolerance below floor: exits fail, names metric', () => {
+		// floor 80, measured 79.0 => 1.0pp below, outside the 0.5pp slack
+		const result = checkCoverage({
+			getCoverage: makeCoverage({ functions: 79.0, lines: 85.0 }),
+			readBudget: makeBudget({ functions: 80.0, lines: 80.0 }),
+			getStagedDiff: () => '',
+		});
+		expect(result.ok).toBe(false);
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]).toContain('functions');
+		expect(result.errors[0]).toContain('79.00%');
+		expect(result.errors[0]).toContain('80%');
 	});
 });
 

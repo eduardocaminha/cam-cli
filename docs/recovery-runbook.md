@@ -507,6 +507,10 @@ The `check-coverage.ts` gate compares actual coverage (from `bun test
 is always allowed. Lowering a floor requires a tracker reference in the staged
 diff of the budget file.
 
+The floor comparison carries a 0.5pp tolerance to absorb cross-environment
+jitter (the macos CI runner measures slightly different coverage than local),
+so a metric is only flagged when it falls more than 0.5pp below its floor.
+
 To unblock a story that genuinely reduces coverage:
 
 1. Edit `scripts/coverage-budget.json` and lower the affected floor (functions
