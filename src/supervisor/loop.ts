@@ -27,7 +27,7 @@ import type { PrdSnapshot } from './decide.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
-import type { WorkerReport } from './worker-report.ts';
+import { formatReviewVerdictLine, type WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail } from './events.ts';
 
@@ -298,6 +298,22 @@ export interface RunSupervisorOptions {
 	 * Absent onProgress is a pure no-op; existing loop tests pass unchanged.
 	 */
 	onProgress?: OnProgress;
+	/**
+	 * Callback invoked after every non-error review dispatch (US-001).
+	 * Receives a formatted verdict line and hands it to the wiring layer (e.g.
+	 * tmux send-keys to the orchestrator pane). The loop does NOT contain any
+	 * tmux details; this callback is the seam where wiring is injected.
+	 *
+	 * Line format (from formatReviewVerdictLine):
+	 *   '[cam] review round N: CLEAN'
+	 *   '[cam] review round N: FIXES_PENDING:K'
+	 *   '[cam] review round N: MAX_ROUNDS_DEBT'
+	 *
+	 * Optional: when absent (undefined) the loop runs unchanged (no throw,
+	 * no log line). Existing tests that do not inject this callback pass
+	 * byte-for-byte unchanged.
+	 */
+	notifyOrchestrator?: (line: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -977,6 +993,15 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			const updatedPrd = readPrd();
 			if (updatedPrd !== null) {
 				writePrd(updatedPrd);
+			}
+
+			// US-001: notify the orchestrator pane with the formatted verdict line.
+			// Only fires when lastVerdict is non-null (reviewDispatch wrote a verdict).
+			// The notifyOrchestrator callback carries no tmux details; the wiring layer
+			// (US-002) supplies the actual send-keys call via the injected callback.
+			if (opts.notifyOrchestrator !== undefined && updatedPrd !== null && updatedPrd.review?.lastVerdict != null) {
+				const round = updatedPrd.review.roundsCompleted ?? 0;
+				opts.notifyOrchestrator(formatReviewVerdictLine(round, updatedPrd.review.lastVerdict));
 			}
 
 			// CAM-36: a review iteration is real state-machine progress, so it

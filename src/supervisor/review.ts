@@ -383,7 +383,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 				...(prd.review ?? {}),
 				roundsCompleted: newRound,
 				maxRounds,
-				lastVerdict: 'FIXES_PENDING',
+				lastVerdict: `FIXES_PENDING:${parsed.findingsCount}`,
 			},
 			userStories: [...storiesWithPriority, ...bumpedExisting],
 		});

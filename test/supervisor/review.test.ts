@@ -324,7 +324,7 @@ describe('makeReviewDispatch', () => {
 		expect(result.status).toBe('ok');
 		expect(capturedWrittenPrd.length).toBe(1);
 		const written = capturedWrittenPrd[0];
-		expect(written?.review?.lastVerdict).toBe('FIXES_PENDING');
+		expect(written?.review?.lastVerdict).toBe('FIXES_PENDING:2');
 		expect(written?.review?.roundsCompleted).toBe(1);
 
 		// Should have prepended 2 new US-R1-NNN stories.

@@ -48,6 +48,22 @@ export function formatWorkerReportSummary(report: WorkerReport): string {
 }
 
 /**
+ * Format a one-line verdict line for the review branch orchestrator notification.
+ * Lives next to formatWorkerReportSummary as a pure formatter (no I/O).
+ *
+ * @param round       The completed review round number (prd.review.roundsCompleted).
+ * @param lastVerdict The verdict stored in prd.review.lastVerdict after reviewDispatch.
+ *
+ * Examples:
+ *   formatReviewVerdictLine(1, 'CLEAN')            -> '[cam] review round 1: CLEAN'
+ *   formatReviewVerdictLine(2, 'FIXES_PENDING:3')  -> '[cam] review round 2: FIXES_PENDING:3'
+ *   formatReviewVerdictLine(4, 'MAX_ROUNDS_DEBT')  -> '[cam] review round 4: MAX_ROUNDS_DEBT'
+ */
+export function formatReviewVerdictLine(round: number, lastVerdict: string): string {
+	return `[cam] review round ${round}: ${lastVerdict}`;
+}
+
+/**
  * Build the tmux argv for pushing the worker's one-line summary to the
  * orchestrator pane via send-keys.
  *

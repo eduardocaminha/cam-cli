@@ -3,7 +3,9 @@
   "branchName": "cam/CAM-70-reviewer-verdict-handback",
   "description": "Push the deterministic review verdict from the sidecar back to the orchestrator pane so the orchestrator never hangs at 'wait for review'.",
   "issueNumber": 70,
-  "relatedDocs": ["docs/recovery-runbook.md"],
+  "relatedDocs": [
+    "docs/recovery-runbook.md"
+  ],
   "officialDocsConsulted": [
     {
       "lib": "tmux",
@@ -29,7 +31,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (review branch lines 942-992; RunSupervisorOptions type around 107-176), src/supervisor/review.ts, src/supervisor/worker-report.ts (mirror formatWorkerReportSummary as the precedent pure formatter), test/supervisor/. Verdict source: re-read PRD's prd.review.lastVerdict after the dispatch (already wired in the existing branch). Keep notifyOrchestrator OPTIONAL; the no-op behavior when absent is what keeps every existing test green. Read scripts/cam/patterns.md (Sidecar-supervisor invariant; tmux mangles TAB / key panes on @cam_label) before touching the loop. Do NOT inject tmux details here: this story is about the contract; US-002 does the wiring."
     },
