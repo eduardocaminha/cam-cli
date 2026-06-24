@@ -113,7 +113,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: docs/recovery-runbook.md. Follow the existing CAM-NN section format used by CAM-59, CAM-72 etc. Hard rule from patterns.md: no em-dash in persisted .md (use colon, comma, parens, period, or cut). The AC3 oracle forbids em-dash file-wide (not just the new section); if any pre-existing em-dash is present, this story owns scrubbing it as part of touching the file. Patterns.md cross-reference to add: the new section mirrors the existing 'gate-spine convention' style (point to the canonical module, not duplicate the rule)."
     },

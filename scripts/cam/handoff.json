@@ -1,20 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Push BLOCKED line on review dispatch 'blocked' path so the orchestrator never hangs on a failed review"
+    "id": "US-006",
+    "title": "Recovery runbook: document the reviewer-to-orchestrator verdict handback"
   },
   "branchName": "cam/CAM-70-reviewer-verdict-handback",
-  "timestamp": "2026-06-23T15:30:00Z",
+  "timestamp": "2026-06-23T15:45:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "test/supervisor/loop.test.ts",
-    "test/supervisor/notify-orchestrator.test.ts",
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 added opts.notifyOrchestrator?.(`[cam] review BLOCKED: ${detail}`) in loop.ts at the blocked-review path (before notifyTerminal). The existing notify-orchestrator.test.ts test 5 was updated from 'NOT called' to 'IS called with [cam] review BLOCKED:' (correct per the new AC). A new test in loop.test.ts pins the same invariant independently.",
+  "nextStoryContext": "US-006 added section (k) CAM-70 to docs/recovery-runbook.md. The section covers: background on the automatic handback, the formatter shape ([cam] review round N: CLEAN | FIXES_PENDING:K | MAX_ROUNDS_DEBT | BLOCKED), diagnosis steps, and a manual fallback via `jq '.review.lastVerdict' scripts/cam/prd.json`. No em-dashes were found pre-existing; none were introduced. US-007 is operator-required (dogfood) and will exit with BLOCKED_OPERATOR_REQUIRED.",
   "officialDocsValidated": [
     {
       "lib": "none",
