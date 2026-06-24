@@ -35,7 +35,7 @@ import { render } from 'ink';
 import { createElement } from 'react';
 
 import { mergeIntoConfig } from '../config/toml.ts';
-import { DEFAULTS } from '../config/models';
+import { DEFAULTS } from '../config/models.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 import { materializeTemplates } from '../templates/embedded.ts';
 import { buildOrchestratorBootPrompt } from './run.ts';
