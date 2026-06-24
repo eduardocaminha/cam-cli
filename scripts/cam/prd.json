@@ -62,7 +62,7 @@
       "id": "US-R1-002",
       "title": "Add cam config to README.md Commands section",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "README.md Commands section (around line 127) lists cam config [--show] with a short description. [oracle: file-assert: grep -q 'cam config' README.md]",
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",

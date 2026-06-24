@@ -1,26 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Shell-escape --model value in implementer/reviewer worker argv builders"
+    "id": "US-R1-002",
+    "title": "Add cam config to README.md Commands section"
   },
   "branchName": "cam/CAM-53-cam-config-models-backend",
-  "timestamp": "2026-06-24T15:30:00Z",
+  "timestamp": "2026-06-24T16:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/worker-argv.ts",
-    "src/supervisor/review.ts",
-    "test/supervisor/worker-argv-model.test.ts",
-    "test/supervisor/review-argv-model.test.ts",
+    "README.md",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 complete. Fixed unescaped --model shell injection in worker-argv.ts and review.ts (wrapped with shellEscape()). Updated test assertions to expect shell-quoted form. 1262 tests green. US-R1-002 is next: add cam config to README.md Commands section. US-R1-003 after that: fix missing .ts extension in setup.ts models import.",
+  "nextStoryContext": "US-R1-002 complete. Added 'cam config [--show]' line to README.md Commands block after 'cam init'. All 1262 tests green. US-R1-003 is next: fix missing .ts extension in setup.ts models import.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story fixes shell-escaping in argv builders (internal code). No external library introduced or changed."
+      "summary": "Story is a doc-only change (README.md one-liner). No external library introduced or changed."
     }
   ]
 }
