@@ -33,6 +33,7 @@
 import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPrd, WritePrd, EnsureWorkerPane } from './loop.ts';
 import type { PrdSnapshot } from './decide.ts';
 import { workerEnvPrefix } from './worker-argv.ts';
+import { DEFAULTS, readPhaseModel } from '../config/models.ts';
 
 // ---------------------------------------------------------------------------
 // buildReviewerWorkerArgv
@@ -59,6 +60,12 @@ export interface ReviewerWorkerArgvOptions {
 	 * interactive permission prompts. Defaults to 'bypassPermissions'.
 	 */
 	permissionMode?: string;
+	/**
+	 * Model to pass as `--model` to the spawned claude process.
+	 * Defaults to DEFAULTS.reviewer when absent. The caller (makeReviewDispatch)
+	 * passes readPhaseModel('reviewer') so the project config is respected.
+	 */
+	model?: string;
 }
 
 /** Default agent name; matches .claude/agents/subagent-reviewer.md. */
@@ -101,6 +108,7 @@ function shellEscape(s: string): string {
  */
 export function buildReviewerWorkerArgv(opts: ReviewerWorkerArgvOptions): string {
 	const agentName = opts.agentName ?? DEFAULT_REVIEWER_AGENT;
+	const model = opts.model ?? DEFAULTS.reviewer;
 	const escapedPrompt = shellEscape(opts.taskPrompt ?? REVIEWER_TASK_PROMPT);
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
 	return (
@@ -108,6 +116,7 @@ export function buildReviewerWorkerArgv(opts: ReviewerWorkerArgvOptions): string
 		`claude` +
 		` --permission-mode ${permissionMode}` +
 		` --session-id ${opts.uuid}` +
+		` --model ${model}` +
 		` --agent ${agentName}` +
 		` ${escapedPrompt}`
 	);
@@ -286,6 +295,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			agentName,
 			taskPrompt,
 			permissionMode,
+			model: readPhaseModel('reviewer'),
 		});
 		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, shellCmd]);
 

@@ -27,6 +27,7 @@ import type { PrdSnapshot } from './decide.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
+import { readPhaseModel } from '../config/models.ts';
 import { formatReviewVerdictLine, type WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail } from './events.ts';
@@ -626,6 +627,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				uuid,
 				taskPrompt,
 				permissionMode,
+				model: readPhaseModel('implementer'),
 			});
 
 			// CAM-57: ensure a live worker pane exists before dispatching. When

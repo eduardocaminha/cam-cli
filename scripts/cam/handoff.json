@@ -1,26 +1,32 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Config reader for [models] and [backend] with defaults"
+    "id": "US-002",
+    "title": "Wire cam-spawned phases (orchestrator, implementer, reviewer) to use configured --model"
   },
   "branchName": "cam/CAM-53-cam-config-models-backend",
   "timestamp": "2026-06-24T00:00:00Z",
   "createdFiles": [
-    "src/config/models.ts",
-    "test/config/models.test.ts"
+    "test/commands/run-model-argv.test.ts",
+    "test/supervisor/worker-argv-model.test.ts",
+    "test/supervisor/review-argv-model.test.ts"
   ],
   "modifiedFiles": [
+    "src/commands/run.ts",
+    "src/supervisor/worker-argv.ts",
+    "src/supervisor/review.ts",
+    "src/supervisor/loop.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 is complete. src/config/models.ts exports readPhaseModel(phase, configPath?) and readBackend(configPath?) with DEFAULTS map. The configPath? param defaults to join(cwd,'scripts/cam/project.toml') and is the test seam. The existing project.toml only has issue_system and issue_prefix top-level keys; adding [models] and/or backend= to it will be picked up automatically. No toml.ts changes were needed (loadConfig handles missing files gracefully).",
+  "nextStoryContext": "US-002 is complete. The three cam-spawned claude processes (orchestrator in run.ts, implementer in worker-argv.ts via loop.ts, reviewer in review.ts) now pass --model <value> from readPhaseModel(phase). Each builder has model?: string optional; defaults to DEFAULTS[phase] (constant, no I/O) when absent; callers pass readPhaseModel(phase) for production config reads. Three new oracle test files cover the wiring. US-003 is next: the cam config Ink menu to choose model per phase + backend, persisting to project.toml.",
   "officialDocsValidated": [
     {
-      "lib": "Bun.TOML.parse",
-      "url": "https://bun.com/reference/bun/TOML/parse",
+      "lib": "claude-code-cli --model flag",
+      "version": "current",
+      "url": "https://code.claude.com/docs/en/cli-reference",
       "fetchedAt": "2026-06-24T00:00:00Z",
-      "status": "aligned",
-      "summary": "Bun.TOML.parse(input: string): object confirmed. Our usage in loadConfig matches the API."
+      "status": "ok",
+      "summary": "--model flag confirmed: accepts full model name (e.g. claude-sonnet-4-6) or alias (sonnet, opus). Our usage of full names like claude-opus-4-8 and claude-sonnet-4-6 matches the documented form exactly."
     }
   ]
 }

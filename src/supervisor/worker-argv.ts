@@ -29,6 +29,8 @@
 //   - `--permission-mode` is NOT a CLI flag on any cam subcommand; it is
 //     forwarded programmatically to the spawned claude process only.
 
+import { DEFAULTS } from '../config/models.ts';
+
 /** Arguments for buildImplementerWorkerArgv. */
 export interface ImplementerWorkerArgvOptions {
 	/** UUID for this worker invocation; passed as --session-id. */
@@ -42,6 +44,12 @@ export interface ImplementerWorkerArgvOptions {
 	 * Defaults to 'subagent-implementer'.
 	 */
 	agentName?: string;
+	/**
+	 * Model to pass as `--model` to the spawned claude process.
+	 * Defaults to DEFAULTS.implementer when absent. The caller (loop.ts)
+	 * passes readPhaseModel('implementer') so the project config is respected.
+	 */
+	model?: string;
 }
 
 /** Default agent name; matches .claude/agents/subagent-implementer.md. */
@@ -116,12 +124,14 @@ function shellEscape(s: string): string {
  */
 export function buildImplementerWorkerArgv(opts: ImplementerWorkerArgvOptions): string {
 	const agentName = opts.agentName ?? DEFAULT_IMPLEMENTER_AGENT;
+	const model = opts.model ?? DEFAULTS.implementer;
 	const escapedPrompt = shellEscape(opts.taskPrompt);
 	return (
 		workerEnvPrefix() +
 		`claude` +
 		` --permission-mode ${opts.permissionMode}` +
 		` --session-id ${opts.uuid}` +
+		` --model ${model}` +
 		` --agent ${agentName}` +
 		` ${escapedPrompt}`
 	);

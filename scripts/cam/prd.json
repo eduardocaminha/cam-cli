@@ -76,7 +76,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (orchestrator argv ~ 196-205), src/supervisor/worker-argv.ts:117-128 (buildImplementerWorkerArgv), src/supervisor/review.ts:102-114 (buildReviewerWorkerArgv). Tests: test/commands/run-model-argv.test.ts, test/supervisor/worker-argv-model.test.ts, test/supervisor/review-argv-model.test.ts. planner/auditor/ship run as Task subagents / slash steps, NOT cam-spawned: out of scope here (US-006 handles those via frontmatter). Patterns: argv builder pure-function pattern (assert with array containment), never reintroduce -p (CAM-42)."
     },
