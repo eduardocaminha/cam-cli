@@ -444,3 +444,94 @@ that should instead be a proper gate.** Promote it to a GATES entry instead.
    ```
 
 Cross-reference: `scripts/check-all.ts` (GATES manifest), `scripts/check-ci-parity.ts` (parity checker), `.github/workflows/ci.yml` (spine step), `scripts/cam/patterns.md` (gate-spine convention bullet).
+
+## (j) CAM-60: ratchet gate blocking a story
+
+Symptom: a story's implementation causes one of the CAM-60 static-layer gates
+to fail (file-size, coverage, debt-markers, dead-code, or dup), and the worker
+cannot implement the story without triggering the ratchet.
+
+Ratchets enforce a "change-direction-locked" invariant: metrics may improve
+freely, but degradation (raising a size ceiling, lowering a coverage floor,
+raising a dup threshold) requires an explicit tracker reference in the staged
+diff. This prevents silent regression without blocking intentional trade-offs.
+
+### (j.1) Raising a file-size ceiling
+
+The `check-file-sizes.ts` gate checks that no file in `scripts/file-size-budget.json`
+exceeds its ceiling, AND that any ceiling that was RAISED in the staged diff
+carries at least one tracker reference (`CAM-NNN`, `#N`, or `https://`).
+
+To unblock:
+
+1. Edit `scripts/file-size-budget.json` and raise the ceiling for the affected
+   file.
+2. Ensure the same `git diff --cached` output for that file contains a tracker
+   ref. The simplest form: add a `"_ref"` comment key in the JSON file whose
+   value mentions the tracker ID (e.g. `"_ref": "CAM-XXX ..."`).
+3. Stage the budget file and re-run the gate:
+
+   ```bash
+   git add scripts/file-size-budget.json
+   bun scripts/check-file-sizes.ts
+   ```
+
+The gate reads only the staged diff, so the tracker ref must be staged, not
+just present in the working tree.
+
+### (j.2) Raising the duplication threshold (dup gate)
+
+The `dup` gate runs `bunx jscpd@5 --config .jscpd.json src scripts`. The
+threshold lives in `.jscpd.json` as a numeric `threshold` key (currently 4,
+meaning 4% maximum duplication).
+
+To raise the threshold:
+
+1. Edit `.jscpd.json` and increase the `threshold` value.
+2. Add a comment or annotation nearby (in a `_ref` sibling key or a commit
+   message) referencing the tracker: `CAM-NNN`, `#N`, or a URL.
+3. Re-run the gate to confirm the new threshold is not immediately exceeded:
+
+   ```bash
+   bunx jscpd@5 --config .jscpd.json src scripts
+   ```
+
+Note: jscpd has no built-in tracker-ref enforcement; the reference requirement
+is a process convention (code-reviewed by the CI reviewer gate). Do not raise
+the threshold without a tracker ref in the commit message.
+
+### (j.3) Lowering a coverage floor
+
+The `check-coverage.ts` gate compares actual coverage (from `bun test
+--coverage`) against floors in `scripts/coverage-budget.json`. Raising a floor
+is always allowed. Lowering a floor requires a tracker reference in the staged
+diff of the budget file.
+
+To unblock a story that genuinely reduces coverage:
+
+1. Edit `scripts/coverage-budget.json` and lower the affected floor (functions
+   or lines).
+2. Add a tracker ref inside the same budget file, visible in the staged diff
+   (e.g. in the `"_ref"` key at the top of the JSON object).
+3. Stage and re-run:
+
+   ```bash
+   git add scripts/coverage-budget.json
+   bun scripts/check-coverage.ts
+   ```
+
+The gate reads only `git diff --cached scripts/coverage-budget.json`, so the
+tracker ref must appear in that staged diff.
+
+### General ratchet principle
+
+All three ratchets follow the same pattern: snapshot-on-adopt, then
+change-direction-locked. Improvement is free; degradation requires a tracker
+ref in the staged diff (or commit message for jscpd). If a story legitimately
+requires degradation, file a tracker issue first, then reference it in the diff.
+The sidecar will not block you from merging; it will block you from merging
+silently.
+
+Cross-reference: `scripts/check-file-sizes.ts`, `scripts/check-coverage.ts`,
+`scripts/file-size-budget.json`, `scripts/coverage-budget.json`, `.jscpd.json`,
+`scripts/cam/patterns.md` (ratchet pattern bullet).
