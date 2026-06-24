@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add notifyOrchestrator injectable + pure verdict-line formatter; call from loop.ts review branch"
+  },
+  "branchName": "cam/CAM-70-reviewer-verdict-handback",
+  "timestamp": "2026-06-23T12:00:00Z",
+  "createdFiles": [
+    "test/supervisor/notify-orchestrator.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/loop.ts",
+    "src/supervisor/review.ts",
+    "src/supervisor/worker-report.ts",
+    "test/supervisor/review.test.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 introduced: (1) formatReviewVerdictLine(round, lastVerdict) in worker-report.ts; (2) notifyOrchestrator?: (line: string) => void on RunSupervisorOptions; (3) the loop calls it in the review branch after a non-error dispatch when lastVerdict is non-null. Also: review.ts now stores FIXES_PENDING:K (with count) instead of bare FIXES_PENDING in lastVerdict. US-002 (the wiring story) can now inject a real send-keys callback via notifyOrchestrator without tmux details leaking into the loop.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
