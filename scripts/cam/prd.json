@@ -49,7 +49,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/host.ts (sessionName resolved at ~131; supervisorSpawn at ~161; reviewDispatch construction at ~280; opts at ~480), src/tmux/session.ts (getOrchPaneId), src/supervisor/worker-report.ts (buildWorkerReportSendKeysArgv). Hard rule from patterns.md: send-keys text + Enter MUST go in the SAME tmux call; never use `-l` (CAM-55, sendkeys-literal-enter-gotcha). Best-effort only: getOrchPaneId can legitimately return null (orch pane closed between detection and notify); skip silently. Read patterns.md `@cam_label pane-labeling pattern` and `tmux mangles TAB` before touching tmux args. Do NOT bypass buildSupervisorOptions; the wiring belongs here per the Sidecar dep-wiring invariant."
     },

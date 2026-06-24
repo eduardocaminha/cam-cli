@@ -13,6 +13,7 @@
 //   buildSupervisorOptions(cwd, options?) -> RunSupervisorOptions + ancillaries
 //   makeReadWorkerReport(cwd)             -> ReadWorkerReport
 //   makeClearWorkerReport(cwd)            -> ClearWorkerReport
+//   makeNotifyOrchestrator(sessionName, spawnFn) -> (line) => void
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -28,11 +29,17 @@ import { makeReviewDispatch } from './review.ts';
 import { makeFileEventLogger, readWorkerTokens } from './events.ts';
 import { acquireSupervisorLock, SUPERVISOR_LOCK_FILE, type AcquireLockResult } from './lock.ts';
 import type { PrdSnapshot } from './decide.ts';
-import { readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker } from '../tmux/session.ts';
-import { projectSessionName } from '../tmux/session.ts';
+import {
+	readWorkerPaneMarker,
+	openPaneInSession,
+	writeWorkerPaneMarker,
+	projectSessionName,
+	getOrchPaneId,
+	type SpawnFn as TmuxSpawnFn,
+} from '../tmux/session.ts';
 import { isPidAlive } from '../commands/resume.ts';
 import { renderStateFile, writeStateFile } from '../commands/next.ts';
-import { WORKER_REPORT_FILENAME } from './worker-report.ts';
+import { WORKER_REPORT_FILENAME, buildWorkerReportSendKeysArgv } from './worker-report.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -94,6 +101,39 @@ export function makeClearWorkerReport(cwd: string): RunSupervisorOptions['clearW
 		} catch {
 			// best-effort: ignore failures
 		}
+	};
+}
+
+// ---------------------------------------------------------------------------
+// notifyOrchestrator factory (US-002)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a notifyOrchestrator closure that resolves the orchestrator pane via
+ * getOrchPaneId and, if found, sends the verdict line via send-keys using
+ * buildWorkerReportSendKeysArgv.
+ *
+ * Best-effort: when getOrchPaneId returns null (orch pane closed or session
+ * gone), the closure is a silent no-op. No throw, no error log.
+ *
+ * Invariants (sendkeys-literal-enter-gotcha, CAM-55):
+ *   - send-keys text + Enter go in ONE tmux call (atomic).
+ *   - NO -l flag (would make "Enter" literal text, not a key).
+ *   buildWorkerReportSendKeysArgv enforces both.
+ *
+ * @param sessionName  The project's tmux session name.
+ * @param spawnFn      Injectable SpawnFn (tmux-flavoured: returns SpawnSyncReturns).
+ */
+export function makeNotifyOrchestrator(
+	sessionName: string,
+	spawnFn: TmuxSpawnFn,
+): (line: string) => void {
+	return (line: string): void => {
+		const orchPane = getOrchPaneId(sessionName, spawnFn);
+		if (orchPane === null) return; // best-effort: silent no-op
+		const argv = buildWorkerReportSendKeysArgv(orchPane, line);
+		// argv is the full tmux argv after "tmux"; pass as args to 'tmux'.
+		spawnFn('tmux', argv, { stdio: 'ignore' });
 	};
 }
 
@@ -423,6 +463,18 @@ export function buildSupervisorOptions(
 	const readWorkerReport = makeReadWorkerReport(cwd);
 	const clearWorkerReport = makeClearWorkerReport(cwd);
 
+	// US-002: build the notifyOrchestrator closure that resolves the orch pane
+	// and sends the verdict line via send-keys. Uses a spawnSync adapter that
+	// matches the TmuxSpawnFn signature (returns SpawnSyncReturns, not the
+	// loop.ts SpawnFn shape). Best-effort: silent no-op when orch pane is gone.
+	const tmuxSpawnFn: TmuxSpawnFn = (cmd, args, spawnOpts) =>
+		spawnSync(cmd, args, {
+			stdio: spawnOpts?.stdio ?? 'pipe',
+			encoding: 'utf8',
+		} as Parameters<typeof spawnSync>[2]);
+
+	const notifyOrchestrator = makeNotifyOrchestrator(sessionName, tmuxSpawnFn);
+
 	// onProgress: rewrite state file on each iteration and terminal exit.
 	// Built here so the sidecar can inject it when calling runSupervisor.
 	const startedAt = new Date().toISOString();
@@ -504,6 +556,8 @@ export function buildSupervisorOptions(
 		onProgress,
 		readWorkerReport,
 		clearWorkerReport,
+		// US-002: push review verdict line to the orchestrator pane. Best-effort.
+		notifyOrchestrator,
 		// CAM-57: self-heal dead worker pane before each dispatch.
 		ensureWorkerPane: ensureWorkerPaneFn,
 		sleepFn: (ms) => {

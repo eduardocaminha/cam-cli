@@ -1,22 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add notifyOrchestrator injectable + pure verdict-line formatter; call from loop.ts review branch"
+    "id": "US-002",
+    "title": "Wire notifyOrchestrator in host.ts/buildSupervisorOptions via getOrchPaneId + buildWorkerReportSendKeysArgv"
   },
   "branchName": "cam/CAM-70-reviewer-verdict-handback",
-  "timestamp": "2026-06-23T12:00:00Z",
+  "timestamp": "2026-06-23T13:00:00Z",
   "createdFiles": [
-    "test/supervisor/notify-orchestrator.test.ts"
+    "test/supervisor/host-notify-orch.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/supervisor/review.ts",
-    "src/supervisor/worker-report.ts",
-    "test/supervisor/review.test.ts",
-    "scripts/cam/prd.json"
+    "src/supervisor/host.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 introduced: (1) formatReviewVerdictLine(round, lastVerdict) in worker-report.ts; (2) notifyOrchestrator?: (line: string) => void on RunSupervisorOptions; (3) the loop calls it in the review branch after a non-error dispatch when lastVerdict is non-null. Also: review.ts now stores FIXES_PENDING:K (with count) instead of bare FIXES_PENDING in lastVerdict. US-002 (the wiring story) can now inject a real send-keys callback via notifyOrchestrator without tmux details leaking into the loop.",
+  "nextStoryContext": "US-002 wired notifyOrchestrator into buildSupervisorOptions via makeNotifyOrchestrator (exported from host.ts). The closure uses a TmuxSpawnFn adapter over spawnSync, calls getOrchPaneId to find the orch pane, and sends the verdict line via buildWorkerReportSendKeysArgv (no -l, Enter as separate key, one call). The loop already calls notifyOrchestrator after review dispatch (US-001). US-003 and beyond can rely on the full pipeline being wired.",
   "officialDocsValidated": [
     {
       "lib": "none",
