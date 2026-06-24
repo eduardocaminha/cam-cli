@@ -27,9 +27,9 @@ import type { PrdSnapshot } from './decide.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
-import type { WorkerReport } from './worker-report.ts';
+import { formatReviewVerdictLine, type WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
-import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail } from './events.ts';
+import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail } from './events.ts';
 
 // ---------------------------------------------------------------------------
 // Injected dependency types
@@ -298,6 +298,22 @@ export interface RunSupervisorOptions {
 	 * Absent onProgress is a pure no-op; existing loop tests pass unchanged.
 	 */
 	onProgress?: OnProgress;
+	/**
+	 * Callback invoked after every non-error review dispatch (US-001).
+	 * Receives a formatted verdict line and hands it to the wiring layer (e.g.
+	 * tmux send-keys to the orchestrator pane). The loop does NOT contain any
+	 * tmux details; this callback is the seam where wiring is injected.
+	 *
+	 * Line format (from formatReviewVerdictLine):
+	 *   '[cam] review round N: CLEAN'
+	 *   '[cam] review round N: FIXES_PENDING:K'
+	 *   '[cam] review round N: MAX_ROUNDS_DEBT'
+	 *
+	 * Optional: when absent (undefined) the loop runs unchanged (no throw,
+	 * no log line). Existing tests that do not inject this callback pass
+	 * byte-for-byte unchanged.
+	 */
+	notifyOrchestrator?: (line: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -959,9 +975,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// reviewDispatch only writes prd.json on a real verdict, so retrying
 			// after 'error' is side-effect free.
 			let reviewResult: ReviewDispatchResult | null = null;
+			let reviewUuid = '';
 			for (let attempt = 1; attempt <= MAX_REVIEW_DISPATCH_ATTEMPTS; attempt += 1) {
-				const uuid = genUuid();
-				reviewResult = reviewDispatch(uuid);
+				reviewUuid = genUuid();
+				reviewResult = reviewDispatch(reviewUuid);
 				if (reviewResult.status !== 'error') break;
 			}
 
@@ -969,6 +986,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 			if (reviewResult === null || reviewResult.status === 'error') {
 				// Review still failing after all attempts: treat as blocked.
+				// US-005: best-effort notify the orchestrator so it narrates the blocker.
+				const blockedDetail = reviewResult?.detail ?? 'pane died after retries';
+				opts.notifyOrchestrator?.(`[cam] review BLOCKED: ${blockedDetail}`);
 				notifyTerminal('blocked');
 				return { status: 'blocked', iterations, lastOutcome };
 			}
@@ -977,6 +997,25 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			const updatedPrd = readPrd();
 			if (updatedPrd !== null) {
 				writePrd(updatedPrd);
+			}
+
+			// US-001: notify the orchestrator pane with the formatted verdict line.
+			// Only fires when lastVerdict is non-null (reviewDispatch wrote a verdict).
+			// The notifyOrchestrator callback carries no tmux details; the wiring layer
+			// (US-002) supplies the actual send-keys call via the injected callback.
+			if (opts.notifyOrchestrator !== undefined && updatedPrd !== null && updatedPrd.review?.lastVerdict != null) {
+				const round = updatedPrd.review.roundsCompleted ?? 0;
+				opts.notifyOrchestrator(formatReviewVerdictLine(round, updatedPrd.review.lastVerdict));
+			}
+
+			// US-004: emit a structured 'review-verdict-handback' event so the
+			// handback is auditable independently of the pane scrollback.
+			if (updatedPrd !== null && updatedPrd.review?.lastVerdict != null) {
+				const handbackDetail: ReviewVerdictHandbackEventDetail = {
+					verdict: updatedPrd.review.lastVerdict,
+					round: updatedPrd.review.roundsCompleted ?? 0,
+				};
+				emit('review-verdict-handback', undefined, reviewUuid, handbackDetail);
 			}
 
 			// CAM-36: a review iteration is real state-machine progress, so it

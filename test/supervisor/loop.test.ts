@@ -12,7 +12,8 @@
 //   7. Worker outcome 'fail' -> 'blocked'.
 //   8. Worker outcome 'unknown' -> 'blocked'.
 //   9. Review dispatch error -> 'blocked'.
-//  10. writeSessionMarker called with actualStoryId, not advisory storyId.
+//  10. US-005: blocked-review path calls notifyOrchestrator with '[cam] review BLOCKED:'.
+//  11. writeSessionMarker called with actualStoryId, not advisory storyId.
 //  11. PRD_COMPLETE sentinel (outcome.storyId undefined) -> continue, next iter complete.
 //  12. CAM-44: persistent timeout blocks at the dead-worker cap (escalating backoff), not max-iterations.
 //  13. CAM-44: persistent pane-death blocks at the dead-worker cap.
@@ -925,6 +926,32 @@ describe('runSupervisor', () => {
 
 		expect(result.status).toBe('blocked');
 		expect(result.iterations).toBe(1);
+	});
+
+	test('US-005: blocked-review path calls notifyOrchestrator exactly once with [cam] review BLOCKED:', async () => {
+		// All stories pass -> supervisor goes to review branch.
+		// reviewDispatch returns error every attempt -> blocked path triggered.
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 0, lastVerdict: null },
+		});
+
+		const notified: string[] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			reviewDispatch: (_uuid) => ({ status: 'error', detail: 'pane died after retries' }),
+			notifyOrchestrator: (line) => {
+				notified.push(line);
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		// notifyOrchestrator called exactly once on the blocked path.
+		expect(notified.length).toBe(1);
+		expect(notified[0]).toMatch(/^\[cam\] review BLOCKED:/);
 	});
 
 	test('writeSessionMarker called with actualStoryId (not advisory)', async () => {

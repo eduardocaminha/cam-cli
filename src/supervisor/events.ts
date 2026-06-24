@@ -60,7 +60,8 @@ export type WorkerEventKind =
 	| 'pane-died-retry'
 	| 'worker-token-ceiling'
 	| 'outcome-fallback'
-	| 'sidecar-exit';
+	| 'sidecar-exit'
+	| 'review-verdict-handback';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -118,11 +119,25 @@ export interface PushEventDetail {
 	detail: string;
 }
 
+/**
+ * 'review-verdict-handback' event detail: emitted in the review branch of the
+ * supervisor loop after a reviewer worker completes and the verdict is known.
+ * Provides an auditable record of the handback independently of pane scrollback.
+ *   - verdict: the string stored in prd.review.lastVerdict (e.g. 'CLEAN',
+ *     'FIXES_PENDING:3', 'MAX_ROUNDS_DEBT').
+ *   - round: the roundsCompleted counter from prd.review at the time of emit.
+ */
+export interface ReviewVerdictHandbackEventDetail {
+	verdict: string;
+	round: number;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
 	| TokensEventDetail
 	| PushEventDetail
+	| ReviewVerdictHandbackEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */
