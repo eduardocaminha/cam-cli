@@ -1,18 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Recovery runbook: document the reviewer-to-orchestrator verdict handback"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-70-reviewer-verdict-handback",
-  "timestamp": "2026-06-23T15:45:00Z",
+  "timestamp": "2026-06-24T03:05:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/recovery-runbook.md",
+    "scripts/file-size-budget.json",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 added section (k) CAM-70 to docs/recovery-runbook.md. The section covers: background on the automatic handback, the formatter shape ([cam] review round N: CLEAN | FIXES_PENDING:K | MAX_ROUNDS_DEBT | BLOCKED), diagnosis steps, and a manual fallback via `jq '.review.lastVerdict' scripts/cam/prd.json`. No em-dashes were found pre-existing; none were introduced. US-007 is operator-required (dogfood) and will exit with BLOCKED_OPERATOR_REQUIRED.",
+  "nextStoryContext": "US-R1-001 fixed the file-size ratchet gate failure that the reviewer found in round 1. Six files grew past their budget ceilings with the CAM-70 additions (notifyOrchestrator injectable, formatReviewVerdictLine, review-verdict-handback event, integration test, BLOCKED notify). Ceilings raised with CAM-70 tracker ref in _ref; three new test files adopted into the ratchet. All gates pass (check:all green). US-007 is operator-required (dogfood) and will exit with BLOCKED_OPERATOR_REQUIRED. The next sidecar action after this story should be another review round (prd.review.lastVerdict is still FIXES_PENDING from the stale binary run).",
   "officialDocsValidated": [
     {
       "lib": "none",
