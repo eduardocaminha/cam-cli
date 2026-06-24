@@ -114,7 +114,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-orchestrator.md, .claude/agents/subagent-planner.md, .claude/agents/subagent-auditor.md, .claude/agents/subagent-reviewer.md, and the four mirrors in templates/agents/. After editing run: bun run embed-vendor (regenerates src/vendor/_generated.ts), then bun run embed-vendor:check. Patterns: agent-prompt self-hosting (patterns.md, US-001 2026-06-16): templates/ is source of truth, .claude/ is runtime mirror; both must move together. Verify the exact stale set first with: grep -r 'claude-opus-4-7' .claude/agents/ templates/agents/."
     },

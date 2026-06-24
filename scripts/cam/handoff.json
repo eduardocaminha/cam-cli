@@ -1,30 +1,30 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "cam config command + Ink menu to choose model per phase + backend"
+    "id": "US-004",
+    "title": "Bump stale claude-opus-4-7 frontmatter to claude-opus-4-8 in both .claude/agents and templates/agents"
   },
   "branchName": "cam/CAM-53-cam-config-models-backend",
   "timestamp": "2026-06-24T00:00:00Z",
-  "createdFiles": [
-    "src/commands/config.ts",
-    "src/ui/ConfigScreen.tsx",
-    "test/commands/config-persist.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/config/models.ts",
-    "index.ts",
+    ".claude/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-planner.md",
+    ".claude/agents/subagent-auditor.md",
+    ".claude/agents/subagent-reviewer.md",
+    "templates/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-planner.md",
+    "templates/agents/subagent-auditor.md",
+    "templates/agents/subagent-reviewer.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 is complete. ConfigScreen.tsx is a multi-step Ink wizard (6 phase steps + backend step) reusing Select.tsx and Section.tsx. mergeConfigChoices writes [models] section (one key per phase) and [backend] section (name key) to project.toml via mergeIntoConfig without clobbering issue_system/issue_prefix. readBackend was updated to handle both scalar form (backward compat) and [backend] section form. index.ts registers 'config' in HELP and dispatches to runConfig. Next story is US-004 or whichever has the next lowest priority with passes:false.",
+  "nextStoryContext": "US-004 complete. Bumped claude-opus-4-7 to claude-opus-4-8 in 4 agent frontmatter files under .claude/agents/ and 4 mirrors under templates/agents/. Regenerated src/vendor/_generated.ts. All quality gates pass (typecheck, 1224 tests, vendor-drift clean). Next story: check prd.json for next passes:false with lowest priority.",
   "officialDocsValidated": [
     {
-      "lib": "ink",
-      "version": "7.x",
-      "url": "https://github.com/vadimdemedes/ink",
-      "fetchedAt": "2026-06-24T00:00:00Z",
-      "status": "ok",
-      "summary": "render() returns { unmount, waitUntilExit } confirmed. useInput, useState, useEffect all supported. API matches ConfigScreen.tsx implementation."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Story was a pure frontmatter model-string bump in YAML agent files and a vendor embed regeneration. No external library was exercised."
     }
   ]
 }
