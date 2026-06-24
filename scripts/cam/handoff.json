@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Config reader for [models] and [backend] with defaults"
+  },
+  "branchName": "cam/CAM-53-cam-config-models-backend",
+  "timestamp": "2026-06-24T00:00:00Z",
+  "createdFiles": [
+    "src/config/models.ts",
+    "test/config/models.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 is complete. src/config/models.ts exports readPhaseModel(phase, configPath?) and readBackend(configPath?) with DEFAULTS map. The configPath? param defaults to join(cwd,'scripts/cam/project.toml') and is the test seam. The existing project.toml only has issue_system and issue_prefix top-level keys; adding [models] and/or backend= to it will be picked up automatically. No toml.ts changes were needed (loadConfig handles missing files gracefully).",
+  "officialDocsValidated": [
+    {
+      "lib": "Bun.TOML.parse",
+      "url": "https://bun.com/reference/bun/TOML/parse",
+      "fetchedAt": "2026-06-24T00:00:00Z",
+      "status": "aligned",
+      "summary": "Bun.TOML.parse(input: string): object confirmed. Our usage in loadConfig matches the API."
+    }
+  ]
+}
