@@ -125,6 +125,7 @@ system prompt.
 
 ```text
 cam init [options]          Validate the machine, then run the project-setup wizard
+cam config [--show]         Interactive wizard to set model per phase and backend
 cam run  [options]          Open or attach the single per-project session (2-pane layout)
 cam plan [<N>]              Open a planning pane in the project session (thin launcher)
 cam next [options]          Trigger the sidecar loop (flips active:true, thin-proxy)
