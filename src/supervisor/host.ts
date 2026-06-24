@@ -354,6 +354,8 @@ export function buildSupervisorOptions(
 		// CAM-57: thread ensureWorkerPane into the review dispatch so the review
 		// closure also self-heals a dead pane before each respawn.
 		ensureWorkerPane: ensureWorkerPaneFn,
+		// US-007: persist spawn-resolution events for the reviewer phase.
+		logEvent,
 	});
 
 	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {

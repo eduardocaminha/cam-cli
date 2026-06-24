@@ -52,6 +52,9 @@ import {
 } from '../tmux/session.ts';
 import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
 import { writeSidecarPid, removeSidecarPidIfExists } from '../supervisor/sidecar-pid.ts';
+import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
+import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
+import { makeFileEventLogger } from '../supervisor/events.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -178,6 +181,12 @@ export interface OrchestratorPaneCommandOptions {
 	readyMarker: string;
 	/** Max consecutive respawns (default DEFAULT_MAX_ORCH_RESPAWNS). */
 	maxRespawns?: number;
+	/**
+	 * Model to pass as `--model` to the claude orchestrator process.
+	 * Defaults to DEFAULTS.orchestrator when absent. The caller (setupPanes)
+	 * passes readPhaseModel('orchestrator') so the project config is respected.
+	 */
+	model?: string;
 }
 
 /**
@@ -195,6 +204,7 @@ export interface OrchestratorPaneCommandOptions {
  */
 export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOptions): string {
 	const max = opts.maxRespawns ?? DEFAULT_MAX_ORCH_RESPAWNS;
+	const model = opts.model ?? DEFAULTS.orchestrator;
 	const consumed = opts.handoffMarker.replace(/\.json$/, '.consumed.json');
 	// Single-quote-escape paths/values embedded in the bash -c string so a cwd
 	// with spaces or quotes cannot break out of the argument boundary.
@@ -202,7 +212,7 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 	return (
 		`sid=${q(opts.sessionId)}; n=0; max=${max}; ` +
 		`while true; do ` +
-		`claude --permission-mode bypassPermissions --session-id "$sid" "$(cat ${q(opts.promptFile)})"; ` +
+		`claude --permission-mode bypassPermissions --session-id "$sid" --model ${q(model)} "$(cat ${q(opts.promptFile)})"; ` +
 		`if [ -f ${q(opts.handoffMarker)} ] && [ "$n" -lt "$max" ]; then ` +
 		`mv ${q(opts.handoffMarker)} ${q(consumed)}; ` +
 		// Lowercase the uuid: macOS `uuidgen` emits UPPERCASE, but claude writes
@@ -339,6 +349,11 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	// claude exit the wrapper either respawns a FRESH orchestrator reading the
 	// handoff (when .cam-orch-handoff.json is present, bounded by maxRespawns) or
 	// kill-sessions the whole tmux session (the pre-CAM-23 teardown).
+	// Resolve model/backend once so argv and the spawn-resolution event
+	// report the identical resolved values (reviewer finding: double-read).
+	const orchModel = readPhaseModel('orchestrator');
+	const orchBackend = readBackend();
+
 	const agentCmd = buildOrchestratorPaneCommand({
 		sessionName,
 		sessionId,
@@ -347,7 +362,25 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 		handoffMarker: join(dotClaude, '.cam-orch-handoff.json'),
 		stateFile: join(dotClaude, 'cam-loop.local.md'),
 		readyMarker: readyMarkerPath,
+		model: orchModel,
 	});
+	// US-007: emit structured {phase, model, backend} spawn-resolution event.
+	// writeEvent persists the event to .claude/cam-worker-events.jsonl.
+	const orchEventLogger = makeFileEventLogger(join(dotClaude, 'cam-worker-events.jsonl'));
+	emitSpawnResolution({
+		phase: 'orchestrator',
+		model: orchModel,
+		backend: orchBackend,
+		writeEvent: (e) =>
+			orchEventLogger({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: sessionId,
+				kind: 'spawn-resolution',
+				detail: e,
+			}),
+	});
+
 	// respawn-pane -k runs the command DIRECTLY in the pane, replacing the silent
 	// `cat` placeholder. No interactive bash means no macOS zsh notice / prompt /
 	// command echo flashing before the real command paints (`bash -c` is

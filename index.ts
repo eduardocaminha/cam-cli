@@ -39,6 +39,7 @@ import { runStatus } from './src/commands/status.ts';
 import { runOrchBudget } from './src/commands/orch-budget.ts';
 import { runStop } from './src/commands/stop.ts';
 import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
+import { runConfig } from './src/commands/config.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { runSidecar } from './src/commands/sidecar.ts';
 import { printError, printFatalHint, printHint } from './src/logging/color.ts';
@@ -54,6 +55,7 @@ const HELP = renderHelp({
 			heading: 'Commands',
 			entries: [
 				{ name: 'init [options]', description: 'Validate the machine, then run the project-setup wizard' },
+				{ name: 'config [--show]', description: 'Interactive wizard to set model per phase and backend' },
 				{ name: 'run [options]', description: 'Open or attach the long-lived orchestrator (tmux session)' },
 				{ name: 'plan [--issue <N>]', description: 'Spawn claude + dispatch /cam-plan; APPROVE happens inside the pane' },
 				{ name: 'next [options]', description: 'Launch the autonomous loop as a tmux pane in the project session' },
@@ -825,6 +827,25 @@ async function main(argv: string[]): Promise<number> {
 				description: setupArgs.description,
 				noTmux: setupArgs.noTmux,
 			});
+		}
+		case 'config': {
+			const tail = argv.slice(3);
+			if (tail.includes('--help') || tail.includes('-h')) {
+				process.stdout.write(
+					'Usage: cam config [--show]\n' +
+					'  Interactive wizard to set model per phase and backend\n' +
+					'  --show  Print current config without prompting (US-008)\n',
+				);
+				return 0;
+			}
+			const showFlag = tail.includes('--show');
+			const unknownFlags = tail.filter((a) => a !== '--show');
+			if (unknownFlags.length > 0) {
+				printError(`unknown config option: ${unknownFlags[0]}`);
+				printFatalHint('run `cam config --help` for usage');
+				return 1;
+			}
+			return runConfig({ show: showFlag });
 		}
 		case 'run': {
 			const parsed = parseRunArgs(argv.slice(3));

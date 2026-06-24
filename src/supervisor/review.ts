@@ -31,8 +31,11 @@
 //     sentinel polling in loop.ts.
 
 import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPrd, WritePrd, EnsureWorkerPane } from './loop.ts';
+import type { WorkerEventLogger } from './events.ts';
 import type { PrdSnapshot } from './decide.ts';
 import { workerEnvPrefix } from './worker-argv.ts';
+import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
+import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 
 // ---------------------------------------------------------------------------
 // buildReviewerWorkerArgv
@@ -59,6 +62,12 @@ export interface ReviewerWorkerArgvOptions {
 	 * interactive permission prompts. Defaults to 'bypassPermissions'.
 	 */
 	permissionMode?: string;
+	/**
+	 * Model to pass as `--model` to the spawned claude process.
+	 * Defaults to DEFAULTS.reviewer when absent. The caller (makeReviewDispatch)
+	 * passes readPhaseModel('reviewer') so the project config is respected.
+	 */
+	model?: string;
 }
 
 /** Default agent name; matches .claude/agents/subagent-reviewer.md. */
@@ -101,6 +110,7 @@ function shellEscape(s: string): string {
  */
 export function buildReviewerWorkerArgv(opts: ReviewerWorkerArgvOptions): string {
 	const agentName = opts.agentName ?? DEFAULT_REVIEWER_AGENT;
+	const model = opts.model ?? DEFAULTS.reviewer;
 	const escapedPrompt = shellEscape(opts.taskPrompt ?? REVIEWER_TASK_PROMPT);
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
 	return (
@@ -108,6 +118,7 @@ export function buildReviewerWorkerArgv(opts: ReviewerWorkerArgvOptions): string
 		`claude` +
 		` --permission-mode ${permissionMode}` +
 		` --session-id ${opts.uuid}` +
+		` --model ${shellEscape(model)}` +
 		` --agent ${agentName}` +
 		` ${escapedPrompt}`
 	);
@@ -221,6 +232,12 @@ export interface MakeReviewDispatchOptions {
 	 * `workerPaneId` from opts is used as-is (backward compat).
 	 */
 	ensureWorkerPane?: EnsureWorkerPane;
+	/**
+	 * Structured worker event logger (US-007). When provided, spawn-resolution
+	 * events are persisted to .claude/cam-worker-events.jsonl. When absent, the
+	 * event is silently dropped (backward compat).
+	 */
+	logEvent?: WorkerEventLogger;
 }
 
 /** Default max review rounds (mirrors decide.ts and cam-review.md). */
@@ -270,6 +287,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	const timeoutMs = opts.timeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS;
 	const now = opts.now ?? (() => Date.now());
 	const ensureWorkerPane = opts.ensureWorkerPane;
+	const logEvent = opts.logEvent;
 
 	return function reviewDispatch(uuid: string): ReviewDispatchResult {
 		// CAM-57: ensure a live worker pane exists before the respawn. When
@@ -279,6 +297,11 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			? ensureWorkerPane()
 			: opts.workerPaneId;
 
+		// Resolve model/backend once so argv and the spawn-resolution event
+		// report the identical resolved values (reviewer finding: double-read).
+		const reviewModel = readPhaseModel('reviewer');
+		const reviewBackend = readBackend();
+
 		// Build and respawn the interactive reviewer (CAM-41: the prompt is
 		// mandatory; a promptless claude dies instantly).
 		const shellCmd = buildReviewerWorkerArgv({
@@ -286,7 +309,20 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			agentName,
 			taskPrompt,
 			permissionMode,
+			model: reviewModel,
 		});
+
+		// US-007: emit structured {phase, model, backend} spawn-resolution event.
+		// writeEvent bridges into the structured worker event log (logEvent sink).
+		emitSpawnResolution({
+			phase: 'reviewer',
+			model: reviewModel,
+			backend: reviewBackend,
+			writeEvent: logEvent
+				? (e) => logEvent({ ts: new Date().toISOString(), storyId: undefined, uuid, kind: 'spawn-resolution', detail: e })
+				: undefined,
+		});
+
 		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, shellCmd]);
 
 		// Poll the pane until the <review> tag appears, the pane dies, or the

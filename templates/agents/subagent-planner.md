@@ -1,7 +1,7 @@
 ---
 name: subagent-planner
 description: Converts an issue or description into a structured PRD (prd.json) with small, dependency-ordered user stories. READ the project context (CLAUDE.md, AGENTS.md) before generating. Invoked from /cam-plan Step 7 after scope is approved.
-model: claude-opus-4-7
+model: claude-opus-4-8
 effort: xhigh
 tools:
   - Read

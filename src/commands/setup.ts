@@ -35,6 +35,7 @@ import { render } from 'ink';
 import { createElement } from 'react';
 
 import { mergeIntoConfig } from '../config/toml.ts';
+import { DEFAULTS } from '../config/models.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 import { materializeTemplates } from '../templates/embedded.ts';
 import { buildOrchestratorBootPrompt } from './run.ts';
@@ -533,7 +534,18 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 	// Persist to scripts/cam/project.toml (per-project config).
 	try {
 		const projectToml = join(cwd, 'scripts', 'cam', 'project.toml');
-		mergeIntoConfig(projectToml, { issue_system: issueSystem });
+		mergeIntoConfig(projectToml, {
+			issue_system: issueSystem,
+			models: {
+				orchestrator: DEFAULTS.orchestrator,
+				planner: DEFAULTS.planner,
+				auditor: DEFAULTS.auditor,
+				implementer: DEFAULTS.implementer,
+				reviewer: DEFAULTS.reviewer,
+				ship: DEFAULTS.ship,
+			},
+			backend: { name: 'claude' },
+		});
 		printSuccess(`Wrote ${projectToml.replace(cwd + '/', '')}`);
 	} catch (err) {
 		printWarning(
