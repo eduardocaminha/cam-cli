@@ -98,8 +98,16 @@ export function readBackend(configPath?: string): string {
 	try {
 		const config = loadConfig(path);
 		const value = config['backend'];
+		// Scalar form: backend = "claude"
 		if (typeof value === 'string' && value.length > 0) {
 			return value;
+		}
+		// Section form written by mergeConfigChoices: [backend]\nname = "<backend>"
+		if (value !== null && value !== undefined && typeof value === 'object') {
+			const name = (value as Record<string, unknown>)['name'];
+			if (typeof name === 'string' && name.length > 0) {
+				return name;
+			}
 		}
 	} catch {
 		// Malformed TOML or fs read error: fall back to default.
