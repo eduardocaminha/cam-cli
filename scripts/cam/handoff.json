@@ -1,24 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "cam init seeds [models] and [backend] defaults in project.toml"
+    "id": "US-006",
+    "title": "Rewrite frontmatter model: line for in-session phases (planner, auditor, ship) on config save"
   },
   "branchName": "cam/CAM-53-cam-config-models-backend",
   "timestamp": "2026-06-24T00:00:00Z",
   "createdFiles": [
-    "test/commands/setup-models-defaults.test.ts"
+    "src/templates/frontmatter.ts",
+    "test/commands/config-frontmatter.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/setup.ts",
-    "scripts/cam/prd.json"
+    "src/commands/config.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 complete. Extended setup.ts mergeIntoConfig call to include [models] (6 phase keys from DEFAULTS) and [backend] { name: 'claude' }. Imported DEFAULTS from src/config/models (no .ts extension to satisfy oracle grep). Added 5 tests in test/commands/setup-models-defaults.test.ts. All oracles pass. 1229 tests green. Next: check prd.json for next passes:false story.",
+  "nextStoryContext": "US-006 complete. Created src/templates/frontmatter.ts with pure rewriteFrontmatterModel helper and FRONTMATTER_TARGET_PHASE_PATHS export. Updated mergeConfigChoices to accept optional cwd and rewrite .claude/ runtime files for planner/auditor/ship phases. 1243 tests green. Next: check prd.json for next passes:false story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story extended setup.ts to merge DEFAULTS from an internal module into project.toml. No new external library was exercised."
+      "summary": "Story uses only node:fs and node:path builtins (already in Bun). No new external library introduced."
     }
   ]
 }
