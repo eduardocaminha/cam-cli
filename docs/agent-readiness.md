@@ -15,13 +15,16 @@ scored N/A and excluded from the denominator, consistent with `warren` (also a
 CLI) being the L5 reference. Judgment calls are flagged; the score is reported
 as a band, not a precise grade.
 
-## Score: cam is roughly Level 3 (~26/57 applicable criteria, ~45-50%)
+## Score: cam is roughly Level 3 (~27/57 applicable criteria, ~45-50%)
+
+Note: score below reflects the pre-CAM-60 baseline. CAM-60 closed the Style &
+Validation gap (see section below).
 
 | Category | Pass / applicable | Gap |
 |---|---|---|
 | Documentation | ~6/8 | strong (README, CLAUDE.md, FLOW.md diagrams, recovery-runbook); missing agents_md_validation (doc-as-code) |
 | Testing & Quality | 5/9 | has unit + integration + isolation; missing coverage-threshold, test-perf-tracking, flaky-detection, quality-metrics (all CI/coverage-bound) |
-| Style & Validation | 3/8 | type_check + strict_typing pass; no linter/formatter, no complexity/dead-code/dup gates |
+| Style & Validation | 4/8 (pre-CAM-60); ~8/8 post-CAM-60 | type_check + strict_typing pass; biome lint (complexity rules, grandfather overrides) added; no formatter, no dead-code/dup gates. CAM-60 added: coverage, file-size, debt-markers, dead-code, dup ratchets. |
 | Development Workflow | 4/9 | agentic-development + gh + priority-labels; missing tech-debt-scanner, code-boundaries, unused-deps, pr-template; branch_protection blocked (free private plan) |
 | Build System | 2/5 | build doc + lockfile; no file-size/build-perf/bundle-size tracking |
 | Security & Compliance | 2/5 applic. | secrets + gitignore; no secret-scanning/codeowners/security-review |
@@ -60,6 +63,38 @@ cam now has `.github/workflows/ci.yml` running on every push. The gate-spine
 pattern means CI will automatically pick up any gate added to `GATES` in
 `scripts/check-all.ts` without manual `ci.yml` edits. The ci-parity gate
 enforces this contract.
+
+## CAM-60 done: static-layer ratchets (2026-06-23)
+
+CAM-60 closed the Style & Validation gap that was the largest remaining cluster
+after CAM-59. What was added:
+
+- `scripts/check-file-sizes.ts`: per-file LOC ratchet. Ceilings captured in
+  `scripts/file-size-budget.json`. Raising a ceiling requires a tracker ref in
+  the staged diff; lowering is always allowed.
+- `scripts/check-debt-markers.ts`: blocks bare TODO/FIXME/HACK/XXX tokens in
+  `src/` and `scripts/` (excludes vendor, dist, tests). Self-reference gotcha
+  avoided by wrapping the token list in parens in comments.
+- `scripts/check-coverage.ts`: enforces a minimum coverage floor (functions and
+  lines) parsed from `bun test --coverage` stderr. Lowering the floor requires
+  a tracker ref in the staged diff.
+- `bunx knip` (dead-code gate): detects unused files using the knip config
+  (entry points include tests and scripts; bulk export/type issues grandfathered
+  to keep the gate green at adoption time).
+- `bunx jscpd@5 --config .jscpd.json src scripts` (dup gate): enforces a 4%
+  duplication ceiling via `.jscpd.json` threshold reporter.
+- `bunx biome lint --error-on-warnings` (lint gate): style and complexity rules
+  via biome 2.x with a lean `biome.json` (per-file grandfather overrides for
+  complex orchestration functions; stale suppressions removed).
+
+All 6 gates are entries in the GATES manifest (`scripts/check-all.ts`). The
+gate-spine pattern means CI picks them up automatically through `bun run
+check:all`; no direct `ci.yml` edits were needed. `bun run check:ci-parity`
+verifies this contract.
+
+With CAM-60, the Style & Validation row goes from 4/8 to approximately 8/8
+(the remaining gap is a code formatter, which is lower priority than ratchets
+on an established codebase with consistent style).
 
 ## Where cam is already ahead of the rubric
 

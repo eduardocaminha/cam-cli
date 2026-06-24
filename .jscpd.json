@@ -1,0 +1,13 @@
+{
+  "threshold": 4,
+  "reporters": ["threshold"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/claude-code-harness/**",
+    "**/dist/**",
+    "**/test/**",
+    "**/.claude/**",
+    "**/templates/**"
+  ]
+}

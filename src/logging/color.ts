@@ -62,7 +62,6 @@ export const noColor: ColorFn = (text: string) => text;
 
 // --- ANSI strip utilities (for visible-width calculations in dashboard) ---
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC (0x1B) is required to match ANSI escape sequences
 const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
 
 /** Strip ANSI escape codes from a string. */

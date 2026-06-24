@@ -80,6 +80,12 @@ export const GATES: Gate[] = [
 	g('typecheck', 'bunx tsc --noEmit'),
 	g('test', 'bun test'),
 	g('embed-vendor', 'bun scripts/generate-embedded-vendor.ts --check'),
+	g('lint', 'bunx biome lint --error-on-warnings'),
+	g('file-size', 'bun scripts/check-file-sizes.ts'),
+	g('debt-markers', 'bun scripts/check-debt-markers.ts'),
+	g('coverage', 'bun scripts/check-coverage.ts'),
+	g('dead-code', 'bunx knip'),
+	g('dup', 'bunx jscpd@5 --config .jscpd.json src scripts'),
 	g('ci-parity', 'bun run check:ci-parity'),
 ];
 
