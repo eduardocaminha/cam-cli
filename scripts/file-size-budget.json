@@ -1,6 +1,6 @@
 {
-  "_ref": "CAM-60 (US-005 dead-code gate: check-all.ts +1 line for knip gate; test/check-all.test.ts +8 lines for gate test)",
-  "scripts/check-all.ts": 170,
+  "_ref": "CAM-60 (US-006 dup gate: check-all.ts +1 line for jscpd gate; test/check-all.test.ts +8 lines for gate test)",
+  "scripts/check-all.ts": 171,
   "scripts/check-ci-parity.ts": 176,
   "scripts/check-coverage.ts": 251,
   "scripts/check-debt-markers.ts": 160,
@@ -74,7 +74,7 @@
   "test/attach-hint.test.ts": 242,
   "test/bootstrap-wait.test.ts": 180,
   "test/build-release-smoke.test.ts": 86,
-  "test/check-all.test.ts": 367,
+  "test/check-all.test.ts": 375,
   "test/check-ci-parity.test.ts": 172,
   "test/check-coverage.test.ts": 404,
   "test/check-debt-markers.test.ts": 290,
