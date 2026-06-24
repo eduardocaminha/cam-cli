@@ -1,20 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Structured supervisor event for the verdict handback in cam-worker-events.jsonl"
+    "id": "US-005",
+    "title": "Push BLOCKED line on review dispatch 'blocked' path so the orchestrator never hangs on a failed review"
   },
   "branchName": "cam/CAM-70-reviewer-verdict-handback",
-  "timestamp": "2026-06-23T15:00:00Z",
+  "timestamp": "2026-06-23T15:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/events.ts",
     "src/supervisor/loop.ts",
-    "test/supervisor/events.test.ts",
+    "test/supervisor/loop.test.ts",
+    "test/supervisor/notify-orchestrator.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added 'review-verdict-handback' WorkerEventKind to events.ts plus ReviewVerdictHandbackEventDetail { verdict, round }. loop.ts hoists reviewUuid out of the dispatch for-loop and emits the event after the notifyOrchestrator call. Two new tests in test/supervisor/events.test.ts cover CLEAN (single round) and FIXES_PENDING->CLEAN (two rounds).",
+  "nextStoryContext": "US-005 added opts.notifyOrchestrator?.(`[cam] review BLOCKED: ${detail}`) in loop.ts at the blocked-review path (before notifyTerminal). The existing notify-orchestrator.test.ts test 5 was updated from 'NOT called' to 'IS called with [cam] review BLOCKED:' (correct per the new AC). A new test in loop.test.ts pins the same invariant independently.",
   "officialDocsValidated": [
     {
       "lib": "none",

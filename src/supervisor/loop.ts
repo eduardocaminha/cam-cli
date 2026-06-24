@@ -986,6 +986,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 			if (reviewResult === null || reviewResult.status === 'error') {
 				// Review still failing after all attempts: treat as blocked.
+				// US-005: best-effort notify the orchestrator so it narrates the blocker.
+				const blockedDetail = reviewResult?.detail ?? 'pane died after retries';
+				opts.notifyOrchestrator?.(`[cam] review BLOCKED: ${blockedDetail}`);
 				notifyTerminal('blocked');
 				return { status: 'blocked', iterations, lastOutcome };
 			}

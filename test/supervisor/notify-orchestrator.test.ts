@@ -8,7 +8,7 @@
 //   2. FIXES_PENDING:3 verdict: notifyOrchestrator called with '[cam] review round 1: FIXES_PENDING:3'.
 //   3. MAX_ROUNDS_DEBT verdict: notifyOrchestrator called with '[cam] review round 4: MAX_ROUNDS_DEBT'.
 //   4. notifyOrchestrator absent: loop runs without throwing (backward compat).
-//   5. reviewResult.status 'error': notifyOrchestrator is NOT called.
+//   5. reviewResult.status 'error': notifyOrchestrator IS called with '[cam] review BLOCKED:' (US-005).
 //   6. updatedPrd.review.lastVerdict null: notifyOrchestrator is NOT called.
 
 import { describe, expect, test } from 'bun:test';
@@ -201,7 +201,7 @@ describe('notifyOrchestrator in review branch (US-001)', () => {
 		expect(result.status).toBe('complete');
 	});
 
-	test('reviewResult status error: notifyOrchestrator is NOT called', async () => {
+	test('reviewResult status error: notifyOrchestrator IS called with [cam] review BLOCKED: (US-005)', async () => {
 		uuidSeq = 0;
 		const notifiedLines: string[] = [];
 
@@ -218,7 +218,9 @@ describe('notifyOrchestrator in review branch (US-001)', () => {
 		const result = await runSupervisor(opts);
 
 		expect(result.status).toBe('blocked');
-		expect(notifiedLines).toEqual([]);
+		// US-005: notifyOrchestrator is called exactly once with the BLOCKED prefix.
+		expect(notifiedLines.length).toBe(1);
+		expect(notifiedLines[0]).toMatch(/^\[cam\] review BLOCKED:/);
 	});
 
 	test('lastVerdict null in re-read PRD: notifyOrchestrator is NOT called', async () => {

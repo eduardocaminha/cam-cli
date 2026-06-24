@@ -97,7 +97,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (blocked path lines 970-974; reuses the notifyOrchestrator injectable from US-001), test/supervisor/. Keep the BLOCKED detail short (single line); the orchestrator narrates from the pane, not from a structured payload. Do not introduce a separate injectable for blocked: reuse notifyOrchestrator so the optionality story is consistent. The pure formatter from US-001 can be extended (one function or two: judgment call, both fine as long as they live next to formatWorkerReportSummary)."
     },
