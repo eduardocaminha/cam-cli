@@ -131,7 +131,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/setup.ts (extend the mergeIntoConfig payload near where issue_system is written; the explore found this around setup.ts:418-423 / 533-540, confirm the live line), test/commands/setup-models-defaults.test.ts (new). DECISION: take the in-code path, do NOT create templates/project.toml. Extend setup.ts to merge { models: DEFAULTS, backend: { name: 'claude' } } alongside { issue_system }; import DEFAULTS from src/config/models.ts to avoid drift. Because no templates/ file changes, there is no embed-vendor coupling in this story. Patterns: mergeIntoConfig is additive (toml.ts:158-175); the writer emits single-level [section] of scalars (so backend = { name: 'claude' } renders [backend] name = 'claude')."
     },
