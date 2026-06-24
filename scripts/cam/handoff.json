@@ -1,12 +1,10 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Coverage ratchet (up-only, lowering requires tracker ref in diff)"
+    "id": "US-005",
+    "title": "Dead-code gate (knip) wired into check:all"
   },
   "createdFiles": [
-    "scripts/check-coverage.ts",
-    "scripts/coverage-budget.json",
-    "test/check-coverage.test.ts"
+    "knip.json"
   ],
   "modifiedFiles": [
     "scripts/check-all.ts",
@@ -14,15 +12,15 @@
     "test/check-all.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Coverage ratchet gate live. Runs `bun test --coverage`, parses 'All files' row (columns: % Funcs | % Lines), compares against floors in scripts/coverage-budget.json. DI pattern: getCoverage() and getStagedDiff() injected in tests. Floor-lowering check mirrors file-size ratchet: parseDiffKv extracts numeric values from staged diff; findLoweredFloors detects decreases; requires CAM-\\d+|#\\d+|https?:// in diff when lowering. Gate added as index 6 ('coverage') in GATES manifest, before ci-parity. Budget floors: functions=75.65, lines=78.63 (measured after story code added). 23 new tests. check-all.test.ts updated to expect 8 gates. Note: bun test runs twice in check:all (once for 'test' gate, once for 'coverage' gate). Key gotcha: parseCoverageOutput targets the 'All files' row only; file-level rows ignored. spawnSync default stdio is 'pipe', both r.stdout and r.stderr captured.",
+  "nextStoryContext": "Dead-code gate live. knip.json at repo root: entry=[index.ts, scripts/**/*.ts, test/**/*.ts], project=[src/**/*.{ts,tsx}, scripts/**/*.ts, test/**/*.ts], ignore=[6 specific unused files + vendor/**+dist/**+claude-code-harness/**], ignoreBinaries=[claude,tmux,ps,lsof], ignoreExportsUsedInFile:true, exclude=[exports,types,duplicates]. Gate added as index 7 ('dead-code') in GATES manifest (bunx knip), before ci-parity which is now index 8. GATES now has 9 entries. test/check-all.test.ts updated to expect 9 gates. file-size-budget.json bumped: check-all.ts 169->170, test/check-all.test.ts 359->367 (split-based counts). Key gotcha: content.split('\\n').length = wc -l + 1 for files with trailing newline; set budgets to split-based count. knip configuration hints (informational) don't affect exit code.",
   "officialDocsValidated": [
     {
-      "lib": "bun:test --coverage",
-      "version": "1.3.x",
-      "url": "https://bun.sh/docs/cli/test#coverage",
+      "lib": "knip",
+      "version": "latest (knip.dev)",
+      "url": "https://knip.dev/reference/configuration",
       "fetchedAt": "2026-06-23T00:00:00Z",
       "status": "ok",
-      "summary": "Confirmed: --coverage flag uses text reporter by default, output columns are '% Funcs | % Lines' with an 'All files' aggregate row. Implementation matches."
+      "summary": "Confirmed: entry, project, ignore, ignoreBinaries, ignoreExportsUsedInFile, and exclude are all valid knip config keys. Implementation matches documented API."
     }
   ]
 }

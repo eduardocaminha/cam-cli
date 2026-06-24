@@ -141,7 +141,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: knip.json (new, root), package.json (optional: add knip to devDependencies), scripts/check-all.ts (add GATES entry). Project entry: `index.ts` is the Bun module entry (per package.json `module` field); the bin entry per `bun build --compile` is also `index.ts`. Project globs: include `src/**/*.{ts,tsx}` and `scripts/**/*.ts`. Exclude vendor/, claude-code-harness/, dist/ (consistent with tsconfig). Bun + TS: per knip v6 docs, TypeScript is a peer dep; knip auto-detects Bun. Some exports are intentionally public-facing (e.g. exports re-used by tests via `import { runGates } from '../scripts/check-all'`); grandfather these via `ignoreExportsUsedInFile` or by adding the test files to entry. Re-check scripts/cam/patterns.md `Gate-spine convention` bullet. CAM-59 lesson: never leave check:all red between stories; grandfather aggressively rather than delete code."
     },
