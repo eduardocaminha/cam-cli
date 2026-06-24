@@ -52,7 +52,8 @@ import {
 } from '../tmux/session.ts';
 import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
 import { writeSidecarPid, removeSidecarPidIfExists } from '../supervisor/sidecar-pid.ts';
-import { DEFAULTS, readPhaseModel } from '../config/models.ts';
+import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
+import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -357,6 +358,13 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 		readyMarker: readyMarkerPath,
 		model: readPhaseModel('orchestrator'),
 	});
+	// US-007: emit structured {phase, model, backend} spawn-resolution event.
+	emitSpawnResolution({
+		phase: 'orchestrator',
+		model: readPhaseModel('orchestrator'),
+		backend: readBackend(),
+	});
+
 	// respawn-pane -k runs the command DIRECTLY in the pane, replacing the silent
 	// `cat` placeholder. No interactive bash means no macOS zsh notice / prompt /
 	// command echo flashing before the real command paints (`bash -c` is

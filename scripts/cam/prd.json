@@ -165,7 +165,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/logging/spawn-resolution.ts (new pure emitter), src/commands/run.ts + src/supervisor/worker-argv.ts + src/supervisor/review.ts (call-sites), test/logging/spawn-resolution.test.ts and test/logging/codex-guard.test.ts (new). Reuse existing event log writer (search for cam-worker-events.jsonl writers in src/supervisor/). Patterns: injectable fake-writer seam (patterns.md, makeNotifyOrchestrator factory pattern, US-002 2026-06-23, CAM-70). The guard is the safety net so codex-selection cannot silently fall back to claude without operator awareness."
     },

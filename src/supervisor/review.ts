@@ -33,7 +33,8 @@
 import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPrd, WritePrd, EnsureWorkerPane } from './loop.ts';
 import type { PrdSnapshot } from './decide.ts';
 import { workerEnvPrefix } from './worker-argv.ts';
-import { DEFAULTS, readPhaseModel } from '../config/models.ts';
+import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
+import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 
 // ---------------------------------------------------------------------------
 // buildReviewerWorkerArgv
@@ -297,6 +298,14 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			permissionMode,
 			model: readPhaseModel('reviewer'),
 		});
+
+		// US-007: emit structured {phase, model, backend} spawn-resolution event.
+		emitSpawnResolution({
+			phase: 'reviewer',
+			model: readPhaseModel('reviewer'),
+			backend: readBackend(),
+		});
+
 		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, shellCmd]);
 
 		// Poll the pane until the <review> tag appears, the pane dies, or the

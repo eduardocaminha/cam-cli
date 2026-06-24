@@ -1,26 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Rewrite frontmatter model: line for in-session phases (planner, auditor, ship) on config save"
+    "id": "US-007",
+    "title": "Structured spawn-log of {phase, model, backend} and codex-backend guard notice"
   },
   "branchName": "cam/CAM-53-cam-config-models-backend",
   "timestamp": "2026-06-24T00:00:00Z",
   "createdFiles": [
-    "src/templates/frontmatter.ts",
-    "test/commands/config-frontmatter.test.ts"
+    "src/logging/spawn-resolution.ts",
+    "test/logging/spawn-resolution.test.ts",
+    "test/logging/codex-guard.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/config.ts",
+    "src/commands/run.ts",
+    "src/supervisor/loop.ts",
+    "src/supervisor/review.ts",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 complete. Created src/templates/frontmatter.ts with pure rewriteFrontmatterModel helper and FRONTMATTER_TARGET_PHASE_PATHS export. Updated mergeConfigChoices to accept optional cwd and rewrite .claude/ runtime files for planner/auditor/ship phases. 1243 tests green. Next: check prd.json for next passes:false story.",
+  "nextStoryContext": "US-007 complete. Created src/logging/spawn-resolution.ts with emitSpawnResolution pure emitter (injectable writeEvent/emitNotice seams). Added call-sites in run.ts (orchestrator), loop.ts (implementer), review.ts (reviewer) immediately before respawn-pane. CODEX_GUARD_NOTICE = 'codex backend not yet wired (CAM-54)' fires when backend=codex (informational, does not abort). 1256 tests green. Next: check prd.json for next passes:false story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story uses only node:fs and node:path builtins (already in Bun). No new external library introduced."
+      "summary": "Story uses only node:process (process.stderr.write) which is a Bun/Node.js built-in. No external library introduced."
     }
   ]
 }

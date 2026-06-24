@@ -27,7 +27,8 @@ import type { PrdSnapshot } from './decide.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
-import { readPhaseModel } from '../config/models.ts';
+import { readPhaseModel, readBackend } from '../config/models.ts';
+import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { formatReviewVerdictLine, type WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail } from './events.ts';
@@ -650,6 +651,13 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// triggering a false-positive on the first poll tick of the new run.
 			// Best-effort: clearWorkerReport handles the no-file case gracefully.
 			clearWorkerReport?.();
+
+			// US-007: emit structured {phase, model, backend} spawn-resolution event.
+			emitSpawnResolution({
+				phase: 'implementer',
+				model: readPhaseModel('implementer'),
+				backend: readBackend(),
+			});
 
 			// Respawn the worker pane with the implementer command.
 			// respawn-pane -k reuses the existing pane (no new split-window spawned).
