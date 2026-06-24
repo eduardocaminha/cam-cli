@@ -45,9 +45,15 @@
   ],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true
+    },
+    {
       "id": "US-R1-001",
       "title": "Shell-escape --model value in implementer/reviewer worker argv builders",
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "acceptanceCriteria": [
         "In src/supervisor/worker-argv.ts, --model value is wrapped with shellEscape() so user-controlled model names from project.toml cannot inject shell commands. [oracle: file-assert: grep -q 'shellEscape(model)' src/supervisor/worker-argv.ts]",
@@ -61,7 +67,7 @@
     {
       "id": "US-R1-002",
       "title": "Add cam config to README.md Commands section",
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "acceptanceCriteria": [
         "README.md Commands section (around line 127) lists cam config [--show] with a short description. [oracle: file-assert: grep -q 'cam config' README.md]",
@@ -73,7 +79,7 @@
     {
       "id": "US-R1-003",
       "title": "Fix missing .ts extension in setup.ts models import",
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "acceptanceCriteria": [
         "src/commands/setup.ts imports DEFAULTS with the .ts extension: import { DEFAULTS } from '../config/models.ts'. [oracle: file-assert: grep -q \"from '../config/models.ts'\" src/commands/setup.ts]",
@@ -95,7 +101,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: src/config/models.ts (new), test/config/models.test.ts (new). Mirror the try/catch/default CODE pattern of src/config/permission-mode.ts:47-61, but NOT its file target: permission-mode reads the per-user ~/.config/cam/config.toml via defaultConfigPath()/CAM_CONFIG_PATH; models/backend are PROJECT-scoped and read scripts/cam/project.toml resolved from process.cwd(). Do not overload CAM_CONFIG_PATH. The configPath? param (default join(cwd,'scripts/cam/project.toml')) is the test seam; no env override needed. Bun.TOML.parse already returns full TOML (toml.ts:111); the writer at toml.ts:68-97 already supports single-level [section] tables of scalars, so no toml.ts change is needed for reading. Patterns: noUncheckedIndexedAccess (guard array/object access), Bun runtime, never block the loop on malformed config (defensive defaults like permission-mode.ts)."
@@ -113,7 +119,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (orchestrator argv ~ 196-205), src/supervisor/worker-argv.ts:117-128 (buildImplementerWorkerArgv), src/supervisor/review.ts:102-114 (buildReviewerWorkerArgv). Tests: test/commands/run-model-argv.test.ts, test/supervisor/worker-argv-model.test.ts, test/supervisor/review-argv-model.test.ts. planner/auditor/ship run as Task subagents / slash steps, NOT cam-spawned: out of scope here (US-006 handles those via frontmatter). Patterns: argv builder pure-function pattern (assert with array containment), never reintroduce -p (CAM-42)."
@@ -133,7 +139,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/config.ts (new), src/ui/ConfigScreen.tsx (new), index.ts (dispatch + HELP entry), test/commands/config-persist.test.ts (new). Reuse: src/ui/Select.tsx (Ink 7 useInput, ❯ cursor), src/ui/SetupScreen.tsx (multi-step pattern), src/ui/theme.ts (tokens), src/config/toml.ts:158-175 (mergeIntoConfig). Patterns: ink-testing-library stdin.write keypress simulation (patterns.md, US-003 2026-06-14); React 19 useState in useInput is async, tick with setTimeout(0) before lastFrame assertions; success/failure is the glyph not divider color. The persistence target is scripts/cam/project.toml (per-project), NOT ~/.config/cam/config.toml (per-user)."
@@ -151,7 +157,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-orchestrator.md, .claude/agents/subagent-planner.md, .claude/agents/subagent-auditor.md, .claude/agents/subagent-reviewer.md, and the four mirrors in templates/agents/. After editing run: bun run embed-vendor (regenerates src/vendor/_generated.ts), then bun run embed-vendor:check. Patterns: agent-prompt self-hosting (patterns.md, US-001 2026-06-16): templates/ is source of truth, .claude/ is runtime mirror; both must move together. Verify the exact stale set first with: grep -r 'claude-opus-4-7' .claude/agents/ templates/agents/."
@@ -162,13 +168,13 @@
       "description": "As an operator running `cam init` on a new project, I need the generated project.toml to carry the non-stale per-phase model defaults and backend=claude so the loop is born consistent with US-001 defaults.",
       "acceptanceCriteria": [
         "cam init writes [models] with all 6 phase keys (orchestrator/planner/auditor/implementer/reviewer/ship) and [backend] with name=claude to scripts/cam/project.toml. [oracle: bun test test/commands/setup-models-defaults.test.ts]",
-        "The default models written by setup.ts match the DEFAULTS map in src/config/models.ts (single source of truth: import the constants). [oracle: file-assert: grep -q \"from '../config/models'\" src/commands/setup.ts || grep -q 'from \\\"../config/models\\\"' src/commands/setup.ts]",
+        "The default models written by setup.ts match the DEFAULTS map in src/config/models.ts (single source of truth: import the constants). [oracle: file-assert: grep -q \"from '../config/models\" src/commands/setup.ts || grep -q 'from \\\"../config/models' src/commands/setup.ts]",
         "Existing keys (issue_system, issue_prefix) are preserved by mergeIntoConfig. [oracle: bun test test/commands/setup-models-defaults.test.ts]",
         "Static guard complementing the tmpdir test: setup.ts's mergeIntoConfig payload literally includes a models and a backend section. [oracle: file-assert: grep -q 'models:' src/commands/setup.ts && grep -q 'backend:' src/commands/setup.ts]",
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 8,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/setup.ts (extend the mergeIntoConfig payload near where issue_system is written; the explore found this around setup.ts:418-423 / 533-540, confirm the live line), test/commands/setup-models-defaults.test.ts (new). DECISION: take the in-code path, do NOT create templates/project.toml. Extend setup.ts to merge { models: DEFAULTS, backend: { name: 'claude' } } alongside { issue_system }; import DEFAULTS from src/config/models.ts to avoid drift. Because no templates/ file changes, there is no embed-vendor coupling in this story. Patterns: mergeIntoConfig is additive (toml.ts:158-175); the writer emits single-level [section] of scalars (so backend = { name: 'claude' } renders [backend] name = 'claude')."
@@ -185,7 +191,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 9,
+      "priority": 10,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/config.ts (call the writer on save), src/templates/frontmatter.ts (new pure helper rewriting the single `model: <value>` line via a scoped regex), .claude/agents/subagent-planner.md, .claude/agents/subagent-auditor.md, .claude/commands/cam-ship.md (the runtime targets, resolved from cwd), test/commands/config-frontmatter.test.ts (new). SCOPE DECISION: rewrite ONLY the project-local .claude/ files. A user project (post cam init) has no templates/ dir at all; templates/ exists only in the cam-cli source repo and holds the shipped opus-4-8 DEFAULTS (owned by US-004), NOT the operator's per-project override. So this story does NOT touch templates/ and has NO embed-vendor coupling. Use a scoped regex over the model: line, NOT js-yaml (CAM-69 rule: a bare js-yaml import auto-installs ESM-only v5 in a node_modules-less context and breaks). The pure rewriter is the testable seam; tests inject string in/out, no fs touch. Expose the target-path list so the test can assert none is under templates/."
@@ -202,7 +208,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 10,
+      "priority": 11,
       "passes": true,
       "requires": null,
       "notes": "Files: src/logging/spawn-resolution.ts (new pure emitter), src/commands/run.ts + src/supervisor/worker-argv.ts + src/supervisor/review.ts (call-sites), test/logging/spawn-resolution.test.ts and test/logging/codex-guard.test.ts (new). Reuse existing event log writer (search for cam-worker-events.jsonl writers in src/supervisor/). Patterns: injectable fake-writer seam (patterns.md, makeNotifyOrchestrator factory pattern, US-002 2026-06-23, CAM-70). The guard is the safety net so codex-selection cannot silently fall back to claude without operator awareness."
@@ -219,7 +225,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 11,
+      "priority": 12,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/config.ts (extend with --show branch), scripts/cam/patterns.md (append bullet), docs/recovery-runbook.md (append section), test/commands/config-show.test.ts (new). Patterns: no em-dash in persisted .md (project rule 2026-05-20); use colon/comma/parens/period. Reuse src/logging/* for print-path output; do not render Ink for --show."
@@ -235,15 +241,15 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 12,
+      "priority": 13,
       "passes": false,
       "requires": "operator",
       "notes": "Operator ceremony: TUI keypress + OS-level inspection of a live spawned process. Not implementable by an autonomous agent. The autonomous loop completes US-001 through US-008, then the supervisor exits awaiting-operator (see scripts/cam/CLAUDE.md stop condition); operator flips passes: true after the dogfood. Cross-check: the US-007 spawn event is the cleanest evidence channel (cat .claude/cam-worker-events.jsonl | jq 'select(.kind==\"spawn-resolution\")')."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:3"
+    "lastVerdict": "FIXES_PENDING:1"
   }
 }
