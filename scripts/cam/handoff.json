@@ -1,32 +1,30 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Wire cam-spawned phases (orchestrator, implementer, reviewer) to use configured --model"
+    "id": "US-003",
+    "title": "cam config command + Ink menu to choose model per phase + backend"
   },
   "branchName": "cam/CAM-53-cam-config-models-backend",
   "timestamp": "2026-06-24T00:00:00Z",
   "createdFiles": [
-    "test/commands/run-model-argv.test.ts",
-    "test/supervisor/worker-argv-model.test.ts",
-    "test/supervisor/review-argv-model.test.ts"
+    "src/commands/config.ts",
+    "src/ui/ConfigScreen.tsx",
+    "test/commands/config-persist.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/run.ts",
-    "src/supervisor/worker-argv.ts",
-    "src/supervisor/review.ts",
-    "src/supervisor/loop.ts",
+    "src/config/models.ts",
+    "index.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 is complete. The three cam-spawned claude processes (orchestrator in run.ts, implementer in worker-argv.ts via loop.ts, reviewer in review.ts) now pass --model <value> from readPhaseModel(phase). Each builder has model?: string optional; defaults to DEFAULTS[phase] (constant, no I/O) when absent; callers pass readPhaseModel(phase) for production config reads. Three new oracle test files cover the wiring. US-003 is next: the cam config Ink menu to choose model per phase + backend, persisting to project.toml.",
+  "nextStoryContext": "US-003 is complete. ConfigScreen.tsx is a multi-step Ink wizard (6 phase steps + backend step) reusing Select.tsx and Section.tsx. mergeConfigChoices writes [models] section (one key per phase) and [backend] section (name key) to project.toml via mergeIntoConfig without clobbering issue_system/issue_prefix. readBackend was updated to handle both scalar form (backward compat) and [backend] section form. index.ts registers 'config' in HELP and dispatches to runConfig. Next story is US-004 or whichever has the next lowest priority with passes:false.",
   "officialDocsValidated": [
     {
-      "lib": "claude-code-cli --model flag",
-      "version": "current",
-      "url": "https://code.claude.com/docs/en/cli-reference",
+      "lib": "ink",
+      "version": "7.x",
+      "url": "https://github.com/vadimdemedes/ink",
       "fetchedAt": "2026-06-24T00:00:00Z",
       "status": "ok",
-      "summary": "--model flag confirmed: accepts full model name (e.g. claude-sonnet-4-6) or alias (sonnet, opus). Our usage of full names like claude-opus-4-8 and claude-sonnet-4-6 matches the documented form exactly."
+      "summary": "render() returns { unmount, waitUntilExit } confirmed. useInput, useState, useEffect all supported. API matches ConfigScreen.tsx implementation."
     }
   ]
 }

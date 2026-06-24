@@ -96,7 +96,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/config.ts (new), src/ui/ConfigScreen.tsx (new), index.ts (dispatch + HELP entry), test/commands/config-persist.test.ts (new). Reuse: src/ui/Select.tsx (Ink 7 useInput, ❯ cursor), src/ui/SetupScreen.tsx (multi-step pattern), src/ui/theme.ts (tokens), src/config/toml.ts:158-175 (mergeIntoConfig). Patterns: ink-testing-library stdin.write keypress simulation (patterns.md, US-003 2026-06-14); React 19 useState in useInput is async, tick with setTimeout(0) before lastFrame assertions; success/failure is the glyph not divider color. The persistence target is scripts/cam/project.toml (per-project), NOT ~/.config/cam/config.toml (per-user)."
     },
