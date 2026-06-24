@@ -18,6 +18,12 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true
+    },
+    {
       "id": "US-001",
       "title": "Add notifyOrchestrator injectable + pure verdict-line formatter; call from loop.ts review branch",
       "description": "As the sidecar supervisor, I need to invoke a no-op-by-default notifyOrchestrator callback with a formatted verdict line after every non-error review dispatch, so the wiring layer can hand the verdict back to the orchestrator pane without bleeding tmux details into the loop.",
@@ -30,7 +36,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (review branch lines 942-992; RunSupervisorOptions type around 107-176), src/supervisor/review.ts, src/supervisor/worker-report.ts (mirror formatWorkerReportSummary as the precedent pure formatter), test/supervisor/. Verdict source: re-read PRD's prd.review.lastVerdict after the dispatch (already wired in the existing branch). Keep notifyOrchestrator OPTIONAL; the no-op behavior when absent is what keeps every existing test green. Read scripts/cam/patterns.md (Sidecar-supervisor invariant; tmux mangles TAB / key panes on @cam_label) before touching the loop. Do NOT inject tmux details here: this story is about the contract; US-002 does the wiring."
@@ -48,7 +54,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/host.ts (sessionName resolved at ~131; supervisorSpawn at ~161; reviewDispatch construction at ~280; opts at ~480), src/tmux/session.ts (getOrchPaneId), src/supervisor/worker-report.ts (buildWorkerReportSendKeysArgv). Hard rule from patterns.md: send-keys text + Enter MUST go in the SAME tmux call; never use `-l` (CAM-55, sendkeys-literal-enter-gotcha). Best-effort only: getOrchPaneId can legitimately return null (orch pane closed between detection and notify); skip silently. Read patterns.md `@cam_label pane-labeling pattern` and `tmux mangles TAB` before touching tmux args. Do NOT bypass buildSupervisorOptions; the wiring belongs here per the Sidecar dep-wiring invariant."
@@ -64,7 +70,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Mirror: test/integration/sendkeys-submit.test.ts and test/integration/tmux-introspect.test.ts (skip pattern, real-tmux setup/teardown). The exact skip idiom from sendkeys-submit.test.ts:18,30 is `const tmuxAvailable = Bun.spawnSync([\"tmux\", \"-V\"]).exitCode === 0;` and `test.skipIf(!tmuxAvailable)(...)`; the AC3 oracle pins both literals. Lesson reinforced by CAM-55 operator smoke (patterns.md): a unit fake that returns the output the code EXPECTS cannot catch tool-real-behavior bugs; every new tmux send-keys integration MUST be guarded by a real-tmux test. Cleanup the session in afterEach (kill-session). Use a unique session name per test invocation to avoid collisions with a live `cam run`."
@@ -80,7 +86,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/events.ts (existing event kinds; grep `logEvent` in loop.ts for emission precedents like outcome-fallback and sidecar-exit), src/supervisor/loop.ts (emission site colocated with the notifyOrchestrator call from US-001), test/supervisor/. Per scripts/cam/CLAUDE.md: the event log is supervisor-owned and append-only; do NOT have the agent hand-write into it. Reuse the existing logEvent helper signature; do not invent a new write path."
@@ -96,7 +102,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (blocked path lines 970-974; reuses the notifyOrchestrator injectable from US-001), test/supervisor/. Keep the BLOCKED detail short (single line); the orchestrator narrates from the pane, not from a structured payload. Do not introduce a separate injectable for blocked: reuse notifyOrchestrator so the optionality story is consistent. The pure formatter from US-001 can be extended (one function or two: judgment call, both fine as long as they live next to formatWorkerReportSummary)."
@@ -112,7 +118,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: docs/recovery-runbook.md. Follow the existing CAM-NN section format used by CAM-59, CAM-72 etc. Hard rule from patterns.md: no em-dash in persisted .md (use colon, comma, parens, period, or cut). The AC3 oracle forbids em-dash file-wide (not just the new section); if any pre-existing em-dash is present, this story owns scrubbing it as part of touching the file. Patterns.md cross-reference to add: the new section mirrors the existing 'gate-spine convention' style (point to the canonical module, not duplicate the rule)."
@@ -128,10 +134,15 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": false,
       "requires": "operator",
       "notes": "Operator ceremony only: this story exits with BLOCKED_OPERATOR_REQUIRED in the autonomous loop; the operator flips passes:true after the live dogfood. Prereq for CAM-71 (auto-ship). Capture a screenshot of the orchestrator pane showing the `[cam] review round N: ...` line for the ship commit body."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING"
+  }
 }
