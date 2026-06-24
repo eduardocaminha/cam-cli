@@ -1,20 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Wire notifyOrchestrator in host.ts/buildSupervisorOptions via getOrchPaneId + buildWorkerReportSendKeysArgv"
+    "id": "US-003",
+    "title": "Real-tmux integration test: verdict line lands in orchestrator pane via the wired closure"
   },
   "branchName": "cam/CAM-70-reviewer-verdict-handback",
-  "timestamp": "2026-06-23T13:00:00Z",
+  "timestamp": "2026-06-23T14:00:00Z",
   "createdFiles": [
-    "test/supervisor/host-notify-orch.test.ts"
+    "test/integration/review-verdict-handback.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/host.ts",
     "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 wired notifyOrchestrator into buildSupervisorOptions via makeNotifyOrchestrator (exported from host.ts). The closure uses a TmuxSpawnFn adapter over spawnSync, calls getOrchPaneId to find the orch pane, and sends the verdict line via buildWorkerReportSendKeysArgv (no -l, Enter as separate key, one call). The loop already calls notifyOrchestrator after review dispatch (US-001). US-003 and beyond can rely on the full pipeline being wired.",
+  "nextStoryContext": "US-003 added a real-tmux integration test proving the end-to-end verdict handback: makeNotifyOrchestrator closure sends CLEAN/FIXES_PENDING/MAX_ROUNDS_DEBT verdict lines to the orchestrator pane and they appear in capture-pane output. Pattern follows tmux-introspect.test.ts: socket-swap SpawnFn isolates tests from live cam sessions. US-004 is the next story (structured supervisor event for verdict handback in cam-worker-events.jsonl).",
   "officialDocsValidated": [
     {
       "lib": "none",

@@ -65,7 +65,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mirror: test/integration/sendkeys-submit.test.ts and test/integration/tmux-introspect.test.ts (skip pattern, real-tmux setup/teardown). The exact skip idiom from sendkeys-submit.test.ts:18,30 is `const tmuxAvailable = Bun.spawnSync([\"tmux\", \"-V\"]).exitCode === 0;` and `test.skipIf(!tmuxAvailable)(...)`; the AC3 oracle pins both literals. Lesson reinforced by CAM-55 operator smoke (patterns.md): a unit fake that returns the output the code EXPECTS cannot catch tool-real-behavior bugs; every new tmux send-keys integration MUST be guarded by a real-tmux test. Cleanup the session in afterEach (kill-session). Use a unique session name per test invocation to avoid collisions with a live `cam run`."
     },
