@@ -28,6 +28,7 @@ import { dirname } from 'node:path';
 
 import { parseTranscriptUsage, transcriptPathForSession } from '../transcript/usage.ts';
 import type { WorkerOutcome, WorkerOutcomeKind } from './result.ts';
+import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
 
 // ---------------------------------------------------------------------------
 // Event types
@@ -61,7 +62,8 @@ export type WorkerEventKind =
 	| 'worker-token-ceiling'
 	| 'outcome-fallback'
 	| 'sidecar-exit'
-	| 'review-verdict-handback';
+	| 'review-verdict-handback'
+	| 'spawn-resolution';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -138,6 +140,7 @@ export type WorkerEventDetail =
 	| TokensEventDetail
 	| PushEventDetail
 	| ReviewVerdictHandbackEventDetail
+	| SpawnResolutionEvent
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

@@ -54,6 +54,7 @@ import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
 import { writeSidecarPid, removeSidecarPidIfExists } from '../supervisor/sidecar-pid.ts';
 import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
+import { makeFileEventLogger } from '../supervisor/events.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -348,6 +349,11 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	// claude exit the wrapper either respawns a FRESH orchestrator reading the
 	// handoff (when .cam-orch-handoff.json is present, bounded by maxRespawns) or
 	// kill-sessions the whole tmux session (the pre-CAM-23 teardown).
+	// Resolve model/backend once so argv and the spawn-resolution event
+	// report the identical resolved values (reviewer finding: double-read).
+	const orchModel = readPhaseModel('orchestrator');
+	const orchBackend = readBackend();
+
 	const agentCmd = buildOrchestratorPaneCommand({
 		sessionName,
 		sessionId,
@@ -356,13 +362,23 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 		handoffMarker: join(dotClaude, '.cam-orch-handoff.json'),
 		stateFile: join(dotClaude, 'cam-loop.local.md'),
 		readyMarker: readyMarkerPath,
-		model: readPhaseModel('orchestrator'),
+		model: orchModel,
 	});
 	// US-007: emit structured {phase, model, backend} spawn-resolution event.
+	// writeEvent persists the event to .claude/cam-worker-events.jsonl.
+	const orchEventLogger = makeFileEventLogger(join(dotClaude, 'cam-worker-events.jsonl'));
 	emitSpawnResolution({
 		phase: 'orchestrator',
-		model: readPhaseModel('orchestrator'),
-		backend: readBackend(),
+		model: orchModel,
+		backend: orchBackend,
+		writeEvent: (e) =>
+			orchEventLogger({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: sessionId,
+				kind: 'spawn-resolution',
+				detail: e,
+			}),
 	});
 
 	// respawn-pane -k runs the command DIRECTLY in the pane, replacing the silent

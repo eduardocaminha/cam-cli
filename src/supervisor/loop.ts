@@ -623,12 +623,17 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// Mint a fresh uuid for this invocation.
 			const uuid = genUuid();
 
+			// Resolve model/backend once so argv and the spawn-resolution event
+			// report the identical resolved values (reviewer finding: double-read).
+			const implModel = readPhaseModel('implementer');
+			const implBackend = readBackend();
+
 			// Build the shell command for the worker (always interactive TUI session).
 			const shellCmd = buildImplementerWorkerArgv({
 				uuid,
 				taskPrompt,
 				permissionMode,
-				model: readPhaseModel('implementer'),
+				model: implModel,
 			});
 
 			// CAM-57: ensure a live worker pane exists before dispatching. When
@@ -653,10 +658,14 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			clearWorkerReport?.();
 
 			// US-007: emit structured {phase, model, backend} spawn-resolution event.
+			// writeEvent bridges into the structured worker event log (logEvent sink).
 			emitSpawnResolution({
 				phase: 'implementer',
-				model: readPhaseModel('implementer'),
-				backend: readBackend(),
+				model: implModel,
+				backend: implBackend,
+				writeEvent: logEvent
+					? (e) => logEvent({ ts: clock(), storyId: advisoryStoryId, uuid, kind: 'spawn-resolution', detail: e })
+					: undefined,
 			});
 
 			// Respawn the worker pane with the implementer command.
