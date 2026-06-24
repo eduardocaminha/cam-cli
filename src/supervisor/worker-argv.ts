@@ -131,7 +131,7 @@ export function buildImplementerWorkerArgv(opts: ImplementerWorkerArgvOptions): 
 		`claude` +
 		` --permission-mode ${opts.permissionMode}` +
 		` --session-id ${opts.uuid}` +
-		` --model ${model}` +
+		` --model ${shellEscape(model)}` +
 		` --agent ${agentName}` +
 		` ${escapedPrompt}`
 	);

@@ -1,26 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-008",
-    "title": "cam config --show, patterns.md bullet, recovery-runbook entry"
+    "id": "US-R1-001",
+    "title": "Shell-escape --model value in implementer/reviewer worker argv builders"
   },
   "branchName": "cam/CAM-53-cam-config-models-backend",
-  "timestamp": "2026-06-24T00:00:00Z",
-  "createdFiles": [
-    "test/commands/config-show.test.ts"
-  ],
+  "timestamp": "2026-06-24T15:30:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/config.ts",
-    "scripts/cam/patterns.md",
-    "docs/recovery-runbook.md",
-    "scripts/cam/prd.json"
+    "src/supervisor/worker-argv.ts",
+    "src/supervisor/review.ts",
+    "test/supervisor/worker-argv-model.test.ts",
+    "test/supervisor/review-argv-model.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-008 complete. Added printConfigShow (injectable writer seam, no Ink/TTY) to src/commands/config.ts. runConfig({ show: true }) delegates to it. 6 new tests in test/commands/config-show.test.ts all pass. patterns.md bullet added (CAM-53 oracle satisfied). docs/recovery-runbook.md section (l) CAM-53 added. 1262 tests green. Check prd.json for next passes:false story.",
+  "nextStoryContext": "US-R1-001 complete. Fixed unescaped --model shell injection in worker-argv.ts and review.ts (wrapped with shellEscape()). Updated test assertions to expect shell-quoted form. 1262 tests green. US-R1-002 is next: add cam config to README.md Commands section. US-R1-003 after that: fix missing .ts extension in setup.ts models import.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story uses only built-in process.stdout.write and existing internal modules (readPhaseModel, readBackend from src/config/models.ts). No external library introduced."
+      "summary": "Story fixes shell-escaping in argv builders (internal code). No external library introduced or changed."
     }
   ]
 }

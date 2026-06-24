@@ -15,9 +15,9 @@ const BASE = {
 };
 
 describe('buildReviewerWorkerArgv --model wiring (US-002)', () => {
-	test('includes --model flag with the supplied model value', () => {
+	test('includes --model flag with the supplied model value (shell-quoted)', () => {
 		const argv = buildReviewerWorkerArgv({ ...BASE, model: 'claude-opus-4-8' });
-		expect(argv).toContain('--model claude-opus-4-8');
+		expect(argv).toContain("--model 'claude-opus-4-8'");
 	});
 
 	test('--model appears before --agent in the command string', () => {
@@ -29,9 +29,9 @@ describe('buildReviewerWorkerArgv --model wiring (US-002)', () => {
 		expect(modelIdx).toBeLessThan(agentIdx);
 	});
 
-	test('defaults to DEFAULTS.reviewer when model is not supplied', () => {
+	test('defaults to DEFAULTS.reviewer when model is not supplied (shell-quoted)', () => {
 		const argv = buildReviewerWorkerArgv(BASE);
-		expect(argv).toContain(`--model ${DEFAULTS.reviewer}`);
+		expect(argv).toContain(`--model '${DEFAULTS.reviewer}'`);
 	});
 
 	test('DEFAULTS.reviewer is the expected default model', () => {

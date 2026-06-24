@@ -117,7 +117,7 @@ export function buildReviewerWorkerArgv(opts: ReviewerWorkerArgvOptions): string
 		`claude` +
 		` --permission-mode ${permissionMode}` +
 		` --session-id ${opts.uuid}` +
-		` --model ${model}` +
+		` --model ${shellEscape(model)}` +
 		` --agent ${agentName}` +
 		` ${escapedPrompt}`
 	);

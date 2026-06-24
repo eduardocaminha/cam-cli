@@ -17,9 +17,9 @@ const BASE = {
 };
 
 describe('buildImplementerWorkerArgv --model wiring (US-002)', () => {
-	test('includes --model flag with the supplied model value', () => {
+	test('includes --model flag with the supplied model value (shell-quoted)', () => {
 		const argv = buildImplementerWorkerArgv({ ...BASE, model: 'claude-sonnet-4-6' });
-		expect(argv).toContain('--model claude-sonnet-4-6');
+		expect(argv).toContain("--model 'claude-sonnet-4-6'");
 	});
 
 	test('--model appears before --agent in the command string', () => {
@@ -31,9 +31,9 @@ describe('buildImplementerWorkerArgv --model wiring (US-002)', () => {
 		expect(modelIdx).toBeLessThan(agentIdx);
 	});
 
-	test('defaults to DEFAULTS.implementer when model is not supplied', () => {
+	test('defaults to DEFAULTS.implementer when model is not supplied (shell-quoted)', () => {
 		const argv = buildImplementerWorkerArgv(BASE);
-		expect(argv).toContain(`--model ${DEFAULTS.implementer}`);
+		expect(argv).toContain(`--model '${DEFAULTS.implementer}'`);
 	});
 
 	test('DEFAULTS.implementer is the expected default model', () => {
