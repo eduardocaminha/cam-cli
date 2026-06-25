@@ -1,2 +1,13 @@
-issue_system = "none"
 issue_prefix = "CAM"
+issue_system = "none"
+
+[backend]
+name = "claude"
+
+[models]
+auditor = "claude-opus-4-8"
+implementer = "claude-sonnet-4-6"
+orchestrator = "claude-opus-4-8"
+planner = "claude-opus-4-8"
+reviewer = "claude-opus-4-8"
+ship = "claude-sonnet-4-6"
