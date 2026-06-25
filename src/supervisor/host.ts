@@ -40,6 +40,8 @@ import {
 import { isPidAlive } from '../commands/resume.ts';
 import { renderStateFile, writeStateFile } from '../commands/next.ts';
 import { WORKER_REPORT_FILENAME, buildWorkerReportSendKeysArgv } from './worker-report.ts';
+import type { ReviewReport } from './review-report.ts';
+import { REVIEW_REPORT_FILENAME } from './review-report.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -93,6 +95,60 @@ export function makeReadWorkerReport(cwd: string): RunSupervisorOptions['readWor
  */
 export function makeClearWorkerReport(cwd: string): RunSupervisorOptions['clearWorkerReport'] {
 	const reportPath = join(cwd, WORKER_REPORT_FILENAME);
+	return () => {
+		try {
+			if (existsSync(reportPath)) {
+				unlinkSync(reportPath);
+			}
+		} catch {
+			// best-effort: ignore failures
+		}
+	};
+}
+
+// ---------------------------------------------------------------------------
+// review-report reader (US-002 / CAM-75)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a readReviewReport function for the given cwd.
+ * Reads `<cwd>/scripts/cam/review-report.json`.
+ * Returns the parsed ReviewReport or null when absent / unparseable.
+ * Never throws (graceful degradation, like makeReadWorkerReport).
+ */
+export function makeReadReviewReport(cwd: string): () => ReviewReport | null {
+	const reportPath = join(cwd, REVIEW_REPORT_FILENAME);
+	return () => {
+		try {
+			const raw = readFileSync(reportPath, 'utf8');
+			const parsed: unknown = JSON.parse(raw);
+			// Shape guard: must be a non-null, non-array object with a string `verdict`.
+			// A valid-JSON-but-wrong-shape file (missing `verdict`, top-level array,
+			// etc.) returns null so the dispatch falls back to the <review>-tag verdict
+			// instead of treating `undefined` as a verdict string (US-R2-001).
+			if (
+				parsed !== null &&
+				typeof parsed === 'object' &&
+				!Array.isArray(parsed) &&
+				typeof (parsed as Record<string, unknown>)['verdict'] === 'string'
+			) {
+				return parsed as ReviewReport;
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	};
+}
+
+/**
+ * Build a clearReviewReport function for the given cwd.
+ * Removes `<cwd>/scripts/cam/review-report.json`. Best-effort: no-op on
+ * missing file, never throws. Prevents a stale round-N report from being
+ * read on the first poll tick of round N+1 (mirrors makeClearWorkerReport).
+ */
+export function makeClearReviewReport(cwd: string): () => void {
+	const reportPath = join(cwd, REVIEW_REPORT_FILENAME);
 	return () => {
 		try {
 			if (existsSync(reportPath)) {
@@ -316,6 +372,12 @@ export function buildSupervisorOptions(
 		return newId;
 	};
 
+	// US-002 / CAM-75: reviewer structured exit report reader.
+	const readReviewReport = makeReadReviewReport(cwd);
+
+	// US-R1-001: clear stale review-report.json before each reviewer respawn.
+	const clearReviewReport = makeClearReviewReport(cwd);
+
 	// Review dispatch.
 	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
 		spawn: (cmd, args) => {
@@ -356,6 +418,10 @@ export function buildSupervisorOptions(
 		ensureWorkerPane: ensureWorkerPaneFn,
 		// US-007: persist spawn-resolution events for the reviewer phase.
 		logEvent,
+		// US-002 / CAM-75: structured reviewer exit report (primary completion signal).
+		readReviewReport,
+		// US-R1-001: clear stale report before each reviewer respawn.
+		clearReviewReport,
 	});
 
 	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {

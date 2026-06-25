@@ -17,6 +17,7 @@ All paths are relative to the project root.
 | `.claude/cam-worker-events.jsonl` | `cam next` | One JSON line per worker lifecycle step (`worker-start`, `worker-end`, `result`, `tokens`, `pushed`, `stale-lock`). Your primary diagnostic log. |
 | `.claude/.cam-supervisor.lock` | `cam next` | Single-supervisor concurrency lock: `{ pid, startedAt, project }`. |
 | `.claude/.cam-sidecar.pid` | `cam run` | Sidecar process pid: `cam stop` reads this to SIGTERM the sidecar on shutdown. |
+| `scripts/cam/review-report.json` | reviewer agent | Ephemeral, gitignored. Written by the reviewer at exit; sidecar reads it for verdict+findings (file is left in place after reading and cleared before the next review round begins). See section (m). |
 
 Quick triage first:
 
@@ -724,3 +725,147 @@ Recovery steps:
 Cross-reference: `src/commands/config.ts` (`printConfigShow`),
 `src/config/models.ts` (`readPhaseModel`, `readBackend`, `DEFAULTS`),
 `scripts/cam/patterns.md` ([models]/[backend] config surface bullet).
+
+## (m) CAM-75: reviewer handback via review-report.json
+
+CAM-75 changed how the reviewer worker hands structured output to the sidecar.
+Instead of the sidecar parsing verdict and findings from the pane's scrollback
+text (which is rendered markdown: `##` headers and `- [file:line]` bullets are
+consumed by the Ink TUI renderer), the reviewer writes a structured JSON file
+and the sidecar reads it directly.
+
+### How the flow works
+
+1. The reviewer agent runs in the worker pane, evaluates each story against its
+   acceptance criteria, and writes `scripts/cam/review-report.json` before
+   exiting.
+
+2. The sidecar poll loop checks for the file's presence on each tick (before
+   checking for pane death). When the file is present, the sidecar reads it for
+   `verdict` and `findings` and records them in `prd.review`. The file is left in
+   place after reading; before the next review round begins the sidecar clears it
+   (so a stale round-N report is not picked up on the first poll tick of round
+   N+1).
+
+3. The `<review>` tag in the pane output remains the human-readable fallback
+   sentinel. If `review-report.json` is absent when the reviewer pane closes,
+   the sidecar falls back to parsing the `<review>` tag from capture-pane text.
+
+### File shape
+
+`scripts/cam/review-report.json` (ephemeral, gitignored):
+
+```json
+{
+  "verdict": "FIXES_PENDING:2",
+  "findings": [
+    { "severity": "CRITICAL", "file": "src/foo.ts", "line": 42, "text": "Acceptance criterion not met: ..." },
+    { "severity": "WARNING",  "text": "Non-blocking observation..." }
+  ]
+}
+```
+
+Field notes:
+
+- `verdict`: `"CLEAN"` or `"FIXES_PENDING:N"` (where N is the count of CRITICAL + actionable WARNING findings). `MAX_ROUNDS_DEBT` is a supervisor-derived terminal state and is never written by the reviewer to this file.
+- `findings[].severity`: `"CRITICAL"` (blocks shipping), `"WARNING"` (should fix, not blocking), or `"SUGGESTION"` (nice to have).
+- `findings[].file` and `findings[].line`: optional; present when the finding maps to a specific file location.
+- `findings[].text`: the human-readable description.
+
+### Durable state after the round
+
+After reading `review-report.json`, the sidecar writes findings into `prd.json`
+as `prd.review.findings`. This is the durable record:
+
+```bash
+jq '.review.findings' scripts/cam/prd.json
+```
+
+Each element matches the `{severity, file?, line?, text}` shape above.
+
+### Graceful fallback path
+
+If `review-report.json` is absent (the reviewer exited without writing it, or
+the file was deleted before the sidecar polled), the sidecar falls back to
+parsing the `<review>` tag from the worker pane's captured text. In this case:
+
+- `prd.review.lastVerdict` is set from the tag (e.g. `CLEAN`).
+- `prd.review.findings` is NOT set (the tag carries no structured findings).
+
+A warning is logged to `.claude/cam-supervisor.log` when the fallback triggers.
+
+### Diagnosing issues
+
+**Reviewer finished but verdict not updated:**
+
+```bash
+# Check whether review-report.json was written (still present means the sidecar
+# has not polled yet, or there is a parse error):
+cat scripts/cam/review-report.json
+
+# Check durable state in prd.json:
+jq '.review' scripts/cam/prd.json
+```
+
+**review-report.json present but malformed:**
+
+The sidecar treats a parse error as if the file were absent and falls back to
+the `<review>` tag. Look for the warning in the sidecar log:
+
+```bash
+tail -n 50 .claude/cam-supervisor.log | grep -i 'review-report'
+```
+
+**Findings missing from prd.review.findings after a FIXES_PENDING round:**
+
+Findings are only persisted when the file-based path is used. If the tag-based
+fallback ran instead (file absent or malformed), `prd.review.findings` will be
+absent. Fix stories created by the sidecar will have no `notes` in that case.
+
+To check which path ran, look at the sidecar log for `review-report` entries
+and compare with `prd.review.findings`:
+
+```bash
+grep 'review-report' .claude/cam-supervisor.log | tail -5
+jq '.review' scripts/cam/prd.json
+```
+
+### Manual override
+
+If the loop is stuck waiting for the reviewer and the pane is dead with no
+verdict:
+
+1. Read the event log to confirm the worker finished:
+
+   ```bash
+   grep '"kind":"result"' .claude/cam-worker-events.jsonl | tail -3
+   ```
+
+2. Check whether a partial `review-report.json` was written:
+
+   ```bash
+   cat scripts/cam/review-report.json 2>/dev/null || echo "(absent)"
+   ```
+
+3. Inspect `prd.review`:
+
+   ```bash
+   jq '.review' scripts/cam/prd.json
+   ```
+
+4. If none of the above gives a verdict, set it manually and resume:
+
+   ```bash
+   # Mark CLEAN to proceed to ship:
+   jq '.review.lastVerdict = "CLEAN"' scripts/cam/prd.json > /tmp/prd.tmp && mv /tmp/prd.tmp scripts/cam/prd.json
+   cam next
+   ```
+
+   Or set `FIXES_PENDING` and allow the sidecar to dispatch another implement
+   round.
+
+Cross-reference: `src/supervisor/review-report.ts` (REVIEW_REPORT_FILENAME,
+ReviewReport schema), `src/supervisor/review.ts` (makeReviewDispatch, poll loop,
+fallback path), `src/supervisor/host.ts` (makeReadReviewReport factory),
+`scripts/cam/patterns.md` (structured reviewer exit report pattern,
+capture-pane-is-rendered-markdown bullet).

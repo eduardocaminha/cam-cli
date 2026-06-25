@@ -1,6 +1,9 @@
 # Ephemeral per-invocation worker exit report written by the cam agent (US-003).
 # Never commit this file: it is overwritten on each worker invocation.
 scripts/cam/worker-report.json
+# Ephemeral per-review structured findings report written by the reviewer agent (US-001, CAM-75).
+# Never commit this file: it is overwritten on each review invocation.
+scripts/cam/review-report.json
 
 # CAM-68: escaped harness runtime markers (orchestrator + setup + handoff + sidecar)
 .claude/.cam-orchestrator-prompt.txt

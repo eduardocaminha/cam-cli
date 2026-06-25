@@ -18,8 +18,16 @@
 //  13. makeReviewDispatch: prd unreadable returns status='error'.
 //  14. makeReviewDispatch: spawns interactive reviewer (no -p, no wait-for).
 //  15. US-RX story IDs use the correct round number (US-R{round}-NNN format).
+//  US-006 regression tests (CAM-75 acceptance):
+//  AC1: verbatim finding text from review-report.json appears in fix-story notes (not generic).
+//  AC2: missing report + FIXES_PENDING:N tag -> ok, N stories, no throw (loop not wedged).
+//  AC3: findings come from review-report.json, NOT capture-pane; proved by pane having
+//       rendered (markdown-stripped) text while file findings appear verbatim in fix stories.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	buildReviewerWorkerArgv,
 	parseReviewVerdict,
@@ -30,6 +38,8 @@ import {
 import type { MakeReviewDispatchOptions } from '../../src/supervisor/review.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import type { SpawnFn, CapturePane, ReadPrd, WritePrd } from '../../src/supervisor/loop.ts';
+import { makeReadReviewReport } from '../../src/supervisor/host.ts';
+import { REVIEW_REPORT_FILENAME } from '../../src/supervisor/review-report.ts';
 
 // ---------------------------------------------------------------------------
 // buildReviewerWorkerArgv tests
@@ -278,6 +288,9 @@ function makeDispatchOpts(
 		pollIntervalMs: overrides.pollIntervalMs ?? 1,
 		timeoutMs: overrides.timeoutMs ?? 60_000,
 		now: overrides.now ?? now,
+		readReviewReport: overrides.readReviewReport,
+		warnFn: overrides.warnFn,
+		clearReviewReport: overrides.clearReviewReport,
 		capturedWrittenPrd,
 		capturedSpawnArgs,
 	};
@@ -561,5 +574,646 @@ describe('makeReviewDispatch', () => {
 			const written = capturedWrittenPrd[0];
 			expect(written?.review?.roundsCompleted).toBe(3);
 		}
+	});
+
+	// ---------------------------------------------------------------------------
+	// review-report.json file-based verdict tests (US-002, CAM-75)
+	// ---------------------------------------------------------------------------
+
+	test('file-based CLEAN verdict: sourced from review-report.json, not pane tag', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		// Pane has no <review> tag -- completion comes from file only.
+		const opts = makeDispatchOpts({
+			paneText: 'Reviewing changes... (no tag here)',
+			prd: makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'CLEAN', findings: [] }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('CLEAN');
+		expect(written?.review?.roundsCompleted).toBe(1);
+	});
+
+	test('file-based FIXES_PENDING: verdict and findingsCount sourced from file', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		// Pane has no tag; file has FIXES_PENDING:2.
+		const opts = makeDispatchOpts({
+			paneText: 'still working...',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({
+				verdict: 'FIXES_PENDING:2',
+				findings: [
+					{ severity: 'CRITICAL', file: 'src/foo.ts', line: 10, text: 'null deref' },
+					{ severity: 'WARNING', text: 'missing test' },
+				],
+			}),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('FIXES_PENDING:2');
+		const stories = written?.userStories ?? [];
+		const fixStories = stories.filter((s) => s.id?.startsWith('US-R1-'));
+		expect(fixStories.length).toBe(2);
+	});
+
+	test('file-based findings injected into fix story notes (verbatim severity/file/line/text)', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const findings = [
+			{ severity: 'CRITICAL', file: 'src/foo.ts', line: 42, text: 'null deref on prd' },
+			{ severity: 'WARNING', file: 'src/bar.ts', text: 'missing return type' },
+			{ severity: 'SUGGESTION', text: 'consider extracting helper' },
+		];
+		const opts = makeDispatchOpts({
+			paneText: 'no tag',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:3', findings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		const stories = written?.userStories ?? [];
+
+		// First story: CRITICAL with file and line.
+		const s1 = stories.find((s) => s.id === 'US-R1-001');
+		expect(s1?.notes).toContain('CRITICAL');
+		expect(s1?.notes).toContain('src/foo.ts');
+		expect(s1?.notes).toContain('42');
+		expect(s1?.notes).toContain('null deref on prd');
+
+		// Second story: WARNING with file, no line.
+		const s2 = stories.find((s) => s.id === 'US-R1-002');
+		expect(s2?.notes).toContain('WARNING');
+		expect(s2?.notes).toContain('src/bar.ts');
+		expect(s2?.notes).toContain('missing return type');
+
+		// Third story: SUGGESTION with no file.
+		const s3 = stories.find((s) => s.id === 'US-R1-003');
+		expect(s3?.notes).toContain('SUGGESTION');
+		expect(s3?.notes).toContain('consider extracting helper');
+	});
+
+	test('fallback: readReviewReport always null -> tag-based path used', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		// readReviewReport always returns null; pane has the tag.
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => null,
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('CLEAN');
+	});
+
+	test('file takes priority: when both file and tag present, file verdict wins', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		// File says CLEAN; pane says FIXES_PENDING. File should win.
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:5</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'CLEAN', findings: [] }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		// File's CLEAN verdict wins over pane's FIXES_PENDING tag.
+		expect(written?.review?.lastVerdict).toBe('CLEAN');
+	});
+
+	test('FIXES_PENDING: prd.review.findings carries verbatim findings from review-report.json (US-003, CAM-75)', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const findings = [
+			{ severity: 'CRITICAL', file: 'src/supervisor/review.ts', line: 100, text: 'null dereference on prd' },
+			{ severity: 'WARNING', file: 'src/supervisor/decide.ts', text: 'unreachable branch' },
+			{ severity: 'SUGGESTION', text: 'extract helper function' },
+		];
+		const opts = makeDispatchOpts({
+			paneText: 'no tag here',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:3', findings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		// prd.review.findings must carry the verbatim findings array from the file.
+		const persistedFindings = written?.review?.findings;
+		expect(persistedFindings).toBeDefined();
+		expect(persistedFindings?.length).toBe(3);
+		// Finding 0: CRITICAL with file and line.
+		expect(persistedFindings?.[0]?.severity).toBe('CRITICAL');
+		expect(persistedFindings?.[0]?.file).toBe('src/supervisor/review.ts');
+		expect(persistedFindings?.[0]?.line).toBe(100);
+		expect(persistedFindings?.[0]?.text).toBe('null dereference on prd');
+		// Finding 1: WARNING with file, no line.
+		expect(persistedFindings?.[1]?.severity).toBe('WARNING');
+		expect(persistedFindings?.[1]?.file).toBe('src/supervisor/decide.ts');
+		expect(persistedFindings?.[1]?.line).toBeUndefined();
+		expect(persistedFindings?.[1]?.text).toBe('unreachable branch');
+		// Finding 2: SUGGESTION with no file.
+		expect(persistedFindings?.[2]?.severity).toBe('SUGGESTION');
+		expect(persistedFindings?.[2]?.file).toBeUndefined();
+		expect(persistedFindings?.[2]?.text).toBe('extract helper function');
+	});
+
+	test('FIXES_PENDING without file-based findings: prd.review.findings absent (tag-based path)', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:1</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			// No readReviewReport -> tag-based fallback; findings absent from prd.
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		// Tag-based path: no fileFindings available; prd.review.findings must not be set.
+		expect(written?.review?.findings).toBeUndefined();
+	});
+
+	test('fix stories without file findings have no notes (tag fallback path)', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:1</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			// No readReviewReport injected -> fallback path, no findings.
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		const fixStory = (written?.userStories ?? []).find((s) => s.id === 'US-R1-001');
+		expect(fixStory).toBeDefined();
+		// No notes on tag-based path (no findings available).
+		expect(fixStory?.notes).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-004: Graceful degradation when review-report.json is missing or malformed
+// ---------------------------------------------------------------------------
+
+describe('makeReviewDispatch: graceful degradation (US-004)', () => {
+	const SAMPLE_UUID = '11111111-2222-3333-4444-555555555555';
+
+	test('missing report file: falls back to tag verdict, returns status=ok, warning logged', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const warnings: string[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => null, // simulates missing file
+			warnFn: (msg) => warnings.push(msg),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		// Must not throw; must complete successfully.
+		expect(result.status).toBe('ok');
+		expect(capturedWrittenPrd[0]?.review?.lastVerdict).toBe('CLEAN');
+		// Warning must be logged when file is absent.
+		expect(warnings.length).toBeGreaterThan(0);
+		expect(warnings[0]).toContain('missing or malformed');
+	});
+
+	test('malformed JSON report: falls back to tag verdict, returns status=ok, warning logged', () => {
+		// From dispatch perspective, malformed JSON and missing file both return null
+		// from readReviewReport. The dispatch must not throw in either case.
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const warnings: string[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:2</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => null, // simulates malformed JSON (reader returns null)
+			warnFn: (msg) => warnings.push(msg),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		expect(warnings.length).toBeGreaterThan(0);
+		expect(warnings[0]).toContain('missing or malformed');
+	});
+
+	test('loop not wedged: missing report + FIXES_PENDING:N creates N fix stories and returns ok', () => {
+		// AC5: with missing report and FIXES_PENDING:3 tag, dispatch returns 'ok' and
+		// creates exactly 3 fix stories (count reconciled to the tag's N).
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const warnings: string[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:3</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => null, // simulates missing report file
+			warnFn: (msg) => warnings.push(msg),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		// Dispatch must not throw or block; status must be 'ok'.
+		expect(result.status).toBe('ok');
+
+		// Must create exactly N=3 fix stories reconciled to the tag's count.
+		const written = capturedWrittenPrd[0];
+		const fixStories = (written?.userStories ?? []).filter((s) => s.id?.startsWith('US-R1-'));
+		expect(fixStories.length).toBe(3);
+		fixStories.forEach((s) => {
+			expect(s.passes).toBe(false);
+		});
+
+		// Warning logged because readReviewReport was provided but returned null.
+		expect(warnings.length).toBeGreaterThan(0);
+	});
+
+	test('no warning when readReviewReport is absent (pure tag-based path, no file expected)', () => {
+		// When readReviewReport is not injected at all, the dispatch uses the pure
+		// tag-based path by design. No warning should be emitted.
+		const warnings: string[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			warnFn: (msg) => warnings.push(msg),
+			// readReviewReport NOT injected -> pure tag-based path, no warning expected.
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		// No warning when the caller never expected a report file.
+		expect(warnings.length).toBe(0);
+	});
+
+	test('warning emitted exactly once per dispatch invocation (not once per poll)', () => {
+		// Even though the poll loop runs multiple iterations, the warning is logged
+		// only once (at verdict-resolution time, not at each failed file check).
+		const warnings: string[] = [];
+		let polls = 0;
+		const opts = makeDispatchOpts({
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturePane: (_paneId: string) => {
+				polls += 1;
+				// Tag appears on the 3rd poll to force multiple iterations.
+				return polls < 3 ? 'still working...' : '<review>CLEAN</review>';
+			},
+			readReviewReport: () => null, // file always absent
+			warnFn: (msg) => warnings.push(msg),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		expect(polls).toBeGreaterThanOrEqual(3);
+		// Warning logged exactly once, not on every failed file check.
+		expect(warnings.length).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-R1-001 regression: clearReviewReport is called before respawn-pane
+//
+// Proves that a stale review-report.json from a prior round cannot be read on
+// the first poll tick of a new dispatch. The fix mirrors the clearWorkerReport
+// call in loop.ts (line ~658): erase before respawn so the poll loop never
+// sees an artifact from a previous round.
+//
+// The test verifies ordering: clearReviewReport must fire BEFORE the
+// 'respawn-pane' tmux call, confirmed by recording the event sequence.
+// ---------------------------------------------------------------------------
+
+describe('makeReviewDispatch: US-R1-001 regression - clearReviewReport called before respawn-pane', () => {
+	const SAMPLE_UUID = 'cc112233-4455-6677-8899-aabbccddeeff';
+
+	test('clearReviewReport is invoked before respawn-pane when injected', () => {
+		const events: string[] = [];
+
+		// Record every clearReviewReport call.
+		const clearReviewReport = () => {
+			events.push('clear');
+		};
+
+		// Record every spawn call and note the respawn-pane call.
+		const spawn: SpawnFn = (_cmd, args) => {
+			if (args.includes('respawn-pane')) {
+				events.push('respawn-pane');
+			}
+			return { stdout: '', exitCode: 0 };
+		};
+
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			spawn,
+			clearReviewReport,
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+
+		// Both events must have fired.
+		expect(events).toContain('clear');
+		expect(events).toContain('respawn-pane');
+
+		// clear must come BEFORE respawn-pane.
+		const clearIdx = events.indexOf('clear');
+		const respawnIdx = events.indexOf('respawn-pane');
+		expect(clearIdx).toBeLessThan(respawnIdx);
+	});
+
+	test('dispatch works correctly when clearReviewReport is absent (backward compat)', () => {
+		// No clearReviewReport injected: dispatch must still complete without error.
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			// clearReviewReport intentionally omitted.
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-006 regression: findings source proof (AC3 for CAM-75)
+//
+// Proves that the findings injected into fix-story notes come exclusively from
+// review-report.json, NOT from capture-pane text.
+//
+// The key property: tmux capture-pane returns what the TUI renderer printed.
+// Ink renders "## CRITICAL" headings and "- [src/foo.ts:42]" bullets as plain
+// text - the markdown syntax is consumed by the renderer and does not survive
+// in the captured pane output. Any code that tried to parse structured findings
+// from the pane would silently lose the "[file:line]" structure.
+//
+// This test verifies the invariant by supplying:
+//   - a capturePane fake that returns "rendered" text (bullets stripped, brackets
+//     absent) so any regex-based pane parsing would recover degraded content, and
+//   - a review-report.json fake with DIFFERENT distinctive text than what the
+//     pane shows.
+// Then it asserts the fix-story notes carry the FILE's exact content (not the
+// pane's degraded content), proving the file is the source.
+// ---------------------------------------------------------------------------
+
+describe('makeReviewDispatch: US-006 regression - findings come from file, not pane', () => {
+	const SAMPLE_UUID = 'aabbccdd-1122-3344-5566-778899aabbcc';
+
+	test('AC3: capturePane returns rendered markdown (bullets stripped); fix-story notes carry verbatim file findings, not pane text', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+
+		// Simulate the pane after Ink/tmux rendering: the reviewer wrote markdown
+		// with "## CRITICAL" headings and "- [src/supervisor/review.ts:99]" bullets,
+		// but capture-pane captures the rendered output. The "[file:line]" bracket
+		// structure is lost; only the flavor text survives in a degraded form.
+		//
+		// Critically, the text fragments below differ from the file findings to make
+		// it unambiguous which source the notes came from.
+		const simulatedRenderedPaneText = [
+			'CRITICAL FINDING',
+			'src supervisor review ts 99',  // rendered "[src/supervisor/review.ts:99]" - brackets/colon lost
+			'some finding about dispatch',  // pane-side flavor text (different from file)
+			'',
+			'WARNING FINDING',
+			'src supervisor decide ts',     // rendered "[src/supervisor/decide.ts]" - brackets/colon lost
+			'some finding about verdict',   // pane-side flavor text (different from file)
+			// No <review> tag - file is the primary completion signal.
+		].join('\n');
+
+		// The review-report.json carries the EXACT structured findings with distinctive
+		// text that does NOT appear anywhere in the simulated rendered pane above.
+		const fileFindings = [
+			{
+				severity: 'CRITICAL',
+				file: 'src/supervisor/review.ts',
+				line: 99,
+				text: 'unreachable null dereference in reviewDispatch resolution path',
+			},
+			{
+				severity: 'WARNING',
+				file: 'src/supervisor/decide.ts',
+				text: 'stale verdict check bypasses MAX_ROUNDS_DEBT guard',
+			},
+			{
+				severity: 'SUGGESTION',
+				text: 'extract buildFixStories result mapping into a named helper',
+			},
+		];
+
+		const opts = makeDispatchOpts({
+			paneText: simulatedRenderedPaneText,
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:3', findings: fileFindings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+
+		const written = capturedWrittenPrd[0];
+		const stories = written?.userStories ?? [];
+
+		// Story 1: CRITICAL finding with file + line.
+		// Notes must carry the file's exact content, not anything reconstructed from the pane.
+		const s1 = stories.find((s) => s.id === 'US-R1-001');
+		expect(s1).toBeDefined();
+		expect(s1?.notes).toContain('CRITICAL');
+		expect(s1?.notes).toContain('src/supervisor/review.ts');   // verbatim file path
+		expect(s1?.notes).toContain('99');                          // verbatim line number
+		expect(s1?.notes).toContain('unreachable null dereference in reviewDispatch resolution path'); // verbatim file text
+
+		// Negative: the pane-side degraded fragments must NOT appear in the notes.
+		// If they did, it would prove the code is parsing the pane instead of the file.
+		expect(s1?.notes).not.toContain('src supervisor review ts'); // pane's degraded form
+		expect(s1?.notes).not.toContain('some finding about dispatch'); // pane-only flavor text
+
+		// Story 2: WARNING finding with file, no line.
+		const s2 = stories.find((s) => s.id === 'US-R1-002');
+		expect(s2).toBeDefined();
+		expect(s2?.notes).toContain('WARNING');
+		expect(s2?.notes).toContain('src/supervisor/decide.ts');    // verbatim file path
+		expect(s2?.notes).toContain('stale verdict check bypasses MAX_ROUNDS_DEBT guard'); // verbatim file text
+		expect(s2?.notes).not.toContain('src supervisor decide ts'); // pane's degraded form
+		expect(s2?.notes).not.toContain('some finding about verdict'); // pane-only flavor text
+
+		// Story 3: SUGGESTION with no file or line.
+		const s3 = stories.find((s) => s.id === 'US-R1-003');
+		expect(s3).toBeDefined();
+		expect(s3?.notes).toContain('SUGGESTION');
+		expect(s3?.notes).toContain('extract buildFixStories result mapping into a named helper'); // verbatim file text
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-R2-001 regression: makeReadReviewReport verdict shape guard
+//
+// A valid-JSON-but-wrong-shape review-report.json (missing `verdict`, top-level
+// array, extra-only keys) must return null from makeReadReviewReport so that
+// makeReviewDispatch falls back to the <review>-tag verdict.
+//
+// Previously, makeReadReviewReport only checked `typeof parsed === 'object'`,
+// so { "foo": "bar" } was returned as a bogus ReviewReport. makeReviewDispatch
+// then called /^FIXES_PENDING:(\d+)$/.exec(undefined), derived FIXES_PENDING:0,
+// and created a contentless placeholder fix story even when the pane had a valid
+// <review>CLEAN</review> tag.
+// ---------------------------------------------------------------------------
+
+describe('makeReadReviewReport: verdict shape guard (US-R2-001 regression)', () => {
+	const tmpDirs: string[] = [];
+
+	afterEach(() => {
+		for (const d of tmpDirs) {
+			rmSync(d, { recursive: true, force: true });
+		}
+		tmpDirs.length = 0;
+	});
+
+	function makeTmpWithReport(json: unknown): string {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-review-report-shape-'));
+		tmpDirs.push(dir);
+		mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
+		writeFileSync(join(dir, REVIEW_REPORT_FILENAME), JSON.stringify(json));
+		return dir;
+	}
+
+	test('returns null for a wrong-shape object missing the verdict field', () => {
+		const dir = makeTmpWithReport({ foo: 'bar', findings: [] });
+		const reader = makeReadReviewReport(dir);
+		expect(reader()).toBeNull();
+	});
+
+	test('returns null for a top-level array (Array.isArray guard)', () => {
+		const dir = makeTmpWithReport([{ verdict: 'CLEAN', findings: [] }]);
+		const reader = makeReadReviewReport(dir);
+		expect(reader()).toBeNull();
+	});
+
+	test('returns null when verdict is not a string (numeric)', () => {
+		const dir = makeTmpWithReport({ verdict: 42, findings: [] });
+		const reader = makeReadReviewReport(dir);
+		expect(reader()).toBeNull();
+	});
+
+	test('returns the report when verdict is a string (well-formed)', () => {
+		const dir = makeTmpWithReport({ verdict: 'CLEAN', findings: [] });
+		const reader = makeReadReviewReport(dir);
+		expect(reader()).toEqual({ verdict: 'CLEAN', findings: [] });
+	});
+
+	test('dispatch: wrong-shape file + CLEAN tag -> tag fallback, CLEAN verdict, warning logged', () => {
+		// End-to-end regression: a wrong-shape file on disk (missing verdict) must not
+		// override a valid <review>CLEAN</review> tag in the pane. The real production
+		// reader makeReadReviewReport must return null, dispatch must warn and use tag.
+		const dir = makeTmpWithReport({ notAVerdict: true, findings: [] });
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const warnings: string[] = [];
+
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: makeReadReviewReport(dir),
+			warnFn: (msg) => warnings.push(msg),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+
+		// Dispatch must not throw and must use the tag-based CLEAN verdict.
+		expect(result.status).toBe('ok');
+		expect(capturedWrittenPrd[0]?.review?.lastVerdict).toBe('CLEAN');
+		// Warning must be logged because the reader was provided but returned null.
+		expect(warnings.length).toBeGreaterThan(0);
+		expect(warnings[0]).toContain('missing or malformed');
 	});
 });

@@ -31,6 +31,7 @@ export interface PrdSnapshot {
 		roundsCompleted?: number;
 		maxRounds?: number;
 		lastVerdict?: string | null;
+		findings?: Array<{ severity: string; file?: string; line?: number; text: string }>;
 	};
 }
 
