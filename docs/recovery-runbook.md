@@ -541,6 +541,17 @@ Cross-reference: `scripts/check-file-sizes.ts`, `scripts/check-coverage.ts`,
 `scripts/file-size-budget.json`, `scripts/coverage-budget.json`, `.jscpd.json`,
 `scripts/cam/patterns.md` (ratchet pattern bullet).
 
+### (j.4) Ratchet failure during /cam-ship (the ship gate)
+
+`/cam-ship` Step 3 runs `bun run check:all` as the ship gate -- the same spine
+CI runs. If this ship gate fails on a ratchet (file-size ceiling or coverage
+floor) because the story represents legitimate growth, use the raise-and-retry
+procedure from (j.1) or (j.3): edit the budget file, add the tracker ref in the
+`"_ref"` field, stage the file, and re-run `bun run check:all` before opening
+the PR. Do not skip to the PR step.
+
+Cross-reference: `.claude/commands/cam-ship.md` Step 3 (raise-and-retry block).
+
 ## (k) CAM-70: reviewer verdict not appearing in the orchestrator pane
 
 Symptom: the reviewer worker finishes a review round and the orchestrator pane

@@ -33,6 +33,13 @@ Steps:
    ```
    Fix any failures before proceeding.
 
+   If `check:all` fails on a **ratchet gate** (file-size ceiling or coverage floor) because the story represents LEGITIMATE growth, raise the ratchet and retry -- do not dead-end:
+
+   - **File-size ceiling** (`scripts/file-size-budget.json`): raise the ceiling for the affected file, add the current issue tracker ref to the top-level `"_ref"` field (e.g. `"_ref": "CAM-NNN"`), stage the file.
+   - **Coverage floor** (`scripts/coverage-budget.json`): lower the affected floor (`floors.functions` or `floors.lines`), set `"_ref"` to the tracker ref, stage the file.
+
+   Then re-run `bun run check:all`. The gate reads only the staged diff, so the tracker ref must be staged before re-running.
+
 4. **Cycle-close hygiene (backend-aware close + harness reset) -- before push.**
 
    Run the finalize command. It reads the issue backend from `scripts/cam/project.toml`, closes the local issue (when `issue_system = "none"`), removes per-branch harness state (`prd.json`, `handoff.json`, `progress.txt`) via `git rm -f --ignore-unmatch`, and commits everything in a single cycle-close commit.

@@ -1,22 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Regression test on the embedded cam-ship template pins check:all and forbids the partial-gate-only ship"
+    "id": "US-003",
+    "title": "cam-ship Step 3 guidance for a check:all ratchet failure: raise-and-retry before opening the PR"
   },
   "branchName": "cam/CAM-79-ship-runs-check-all",
-  "timestamp": "2026-06-25T00:30:00Z",
+  "timestamp": "2026-06-25T01:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "test/vendor/cam-ship-hygiene.test.ts",
+    ".claude/commands/cam-ship.md",
+    "templates/commands/cam-ship.md",
+    "docs/recovery-runbook.md",
+    "scripts/file-size-budget.json",
+    "src/vendor/_generated.ts",
+    "scripts/cam/patterns.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 extended test/vendor/cam-ship-hygiene.test.ts with two new assertions on templatesContents[SHIP_KEY]: (1) content contains 'bun run check:all'; (2) content does NOT contain '<project typecheck command>'. All 4 tests in that file pass (1288 total). US-003 (next) adds ratchet-failure guidance to Step 3 of cam-ship.md and a short note in docs/recovery-runbook.md, then regenerates the embed.",
+  "nextStoryContext": "US-003 added ratchet raise-and-retry guidance to cam-ship.md Step 3 (both .claude/ and templates/ copies), added runbook (j.4) in docs/recovery-runbook.md, raised file-size-budget.json ceiling for test/vendor/cam-ship-hygiene.test.ts from 24 to 40 (grew in US-002), regenerated src/vendor/_generated.ts. All 1288 tests pass, check:all clean. No US-004+ remaining (check prd.json).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Test-only story: extended cam-ship-hygiene.test.ts with two assertion calls. No external library API exercised."
+      "summary": "Doc-only story: updated cam-ship.md, recovery-runbook.md, file-size-budget.json, and regenerated vendor embed. No external library API exercised."
     }
   ]
 }

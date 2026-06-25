@@ -65,7 +65,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Builds on US-001's Step 3 in both .claude/commands/cam-ship.md and templates/commands/cam-ship.md. Add a short failure-handling block to Step 3: on a check:all ratchet failure that reflects LEGITIMATE growth, raise the ceiling in scripts/file-size-budget.json (per-file int; `_ref` is a top-level string tracker ref) or lower-the-bar / raise-the-floor in scripts/coverage-budget.json (`_ref` + floors.functions / floors.lines), tag it with the current issue ref, then re-run `bun run check:all` BEFORE opening the PR. Never dead-end. docs/recovery-runbook.md: existing section (j) CAM-60 already covers ratchet mechanics (j.1 file-size, j.3 coverage); add a short note tying the NEW ship gate (check:all in cam-ship Step 3) to that raise-and-retry procedure -- a cross-ref bullet near section (j) or (i)/(j) is fine, do not duplicate the full (j) mechanics. Runbook is currently em-dash-clean (0 U+2014); keep it so -- use `:`/`,`/`(...)` instead. After editing both template copies, run `bun run embed-vendor` and `bun run embed-vendor:check` must pass. Consider a one-line bullet in scripts/cam/patterns.md on the green-local==green-CI convention now that the ship gate is the full spine (optional, relatedDocs)."
     }
