@@ -134,7 +134,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Follow the existing runbook section convention (lettered headings, e.g. add '## (n) CAM-86: file-on-main backlog filing' after the last section in docs/recovery-runbook.md). patterns.md bullet format: '- **commit-tree-to-main backlog mutation** (US-007, CAM-86, 2026-06-25): ...'. PROJECT RULE: no em-dash and no decorative emoji in persisted .md (2026-05-20); use colon/comma/parens/period. REAL CASE worth documenting: a parallel Sonnet filed CAM-81..85 and the commit landed on cam/CAM-79 instead of main, recovered by cherry-pick to main + rebase to drop from the branch. Files: docs/recovery-runbook.md, scripts/cam/patterns.md."
     }

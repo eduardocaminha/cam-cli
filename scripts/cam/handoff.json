@@ -1,20 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "none get/list read backlog from main"
+    "id": "US-007",
+    "title": "Recovery runbook + patterns.md for file-on-main"
   },
-  "timestamp": "2026-06-25T18:00:00.000Z",
+  "timestamp": "2026-06-25T19:00:00.000Z",
   "branchName": "cam/CAM-86-file-issue-on-main",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/commands/cam-issue.md",
-    "templates/commands/cam-issue.md",
-    "src/vendor/_generated.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "docs/recovery-runbook.md",
+    "scripts/cam/patterns.md",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 (recovery runbook + patterns.md) is the last remaining story. It is a docs + patterns.md update with no TS code changes expected. The git show main:<path> pattern for reading state files from main is documented in patterns.md (US-006 bullet).",
+  "nextStoryContext": "All 7 stories pass. PRD is complete. Review cycle can proceed.",
   "officialDocsValidated": [
     {
       "lib": "none",
