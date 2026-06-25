@@ -62,7 +62,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit src/supervisor/decide.ts:30-34 (PrdSnapshot.review) to add findings?: Array<{severity:string; file?:string; line?:number; text:string}>. Edit src/supervisor/review.ts FIXES_PENDING write path (:416-425) to persist findings into prd.review.findings. RECONCILIATION (decision to document in story/commit): the issue's anchor mentions a prior unwired findingsArtifactWriter writing .claude/cam-review-findings.json in host.ts — verified it does NOT exist in the current tree (prior CAM-75 never merged), so there is nothing to delete; the test in this story is a guard asserting it stays absent. review-report.json (ephemeral event) + prd.review.findings (durable state) are the two channels, matching the 5-concern design (Event + State). Production-wiring test belongs in test/supervisor/review.test.ts."
     },

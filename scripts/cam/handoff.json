@@ -1,19 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Sidecar sources verdict, findings, and completion from review-report.json with tag fallback"
+    "id": "US-003",
+    "title": "Persist review findings to prd.review.findings and confirm no separate sidecar findings artifact"
   },
   "branchName": "cam/CAM-75-reviewer-report-channel",
-  "timestamp": "2026-06-25T14:00:00Z",
+  "timestamp": "2026-06-25T15:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
+    "src/supervisor/decide.ts",
     "src/supervisor/review.ts",
-    "src/supervisor/host.ts",
     "test/supervisor/review.test.ts",
-    "scripts/cam/patterns.md"
+    "scripts/cam/patterns.md",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 wired readReviewReport into makeReviewDispatch: file is the primary completion signal (checked before pane-death guard), verdict/findings sourced from review-report.json when present. buildFixStories now accepts ReviewFinding[] and injects each finding as notes (format: 'SEVERITY [file:line]: text'). makeReadReviewReport(cwd) added to host.ts as the production factory. parseReviewVerdict retained as fallback. 41 review tests pass. US-003 is next; import ReviewReport/REVIEW_REPORT_FILENAME from src/supervisor/review-report.ts as before.",
+  "nextStoryContext": "US-003 added findings?: Array<{severity,file?,line?,text}> to PrdSnapshot.review in decide.ts. Added conditional spread of fileFindings into prd.review.findings on the FIXES_PENDING within-rounds writePrd call in review.ts (absent on tag-based fallback path). Two new tests: verbatim findings persisted, and tag-based path leaves findings absent. 43 review tests pass, 1273 total. US-004 is next: graceful degradation when review-report.json is missing or malformed.",
   "officialDocsValidated": [
     {
       "lib": "none",
