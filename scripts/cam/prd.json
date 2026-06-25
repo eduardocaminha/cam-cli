@@ -27,7 +27,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit .claude/commands/cam-ship.md Step 3 (lines ~30-39: the ```bash block with `bun run typecheck` / `bun test` / `bun run embed-vendor:check`) to a single `bun run check:all`. Mirror into templates/commands/cam-ship.md (its current Step 3 uses placeholders `<project typecheck command>` / `<project test command>` because cam init writes it into arbitrary projects, but the ship gate command itself is `bun run check:all` and is pinned literally in both copies). Then run `bun run embed-vendor` to regenerate src/vendor/_generated.ts (the embedded templatesContents map that cam init writes), and `bun run embed-vendor:check` must pass. GOTCHA (CLAUDE.md): no em-dash (U+2014) in persisted markdown; cam-ship.md uses `--` for asides, keep that style. check:all = `bun scripts/check-all.ts` (package.json), gate list in scripts/check-all.ts includes typecheck, test, embed-vendor, lint(biome), file-size, debt-markers, coverage, dead-code(knip), dup(jscpd), ci-parity -- a strict superset of the old 3-gate set. Do NOT add a `--permission-mode` flag or invent a linter (biome is already inside check:all)."
     },

@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "cam-ship Step 3 runs bun run check:all (full spine) instead of the partial gate set"
+  },
+  "branchName": "cam/CAM-79-ship-runs-check-all",
+  "timestamp": "2026-06-25T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/commands/cam-ship.md",
+    "templates/commands/cam-ship.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/patterns.md",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 replaced the 3-command ship gate with `bun run check:all` in both .claude/commands/cam-ship.md and templates/commands/cam-ship.md. src/vendor/_generated.ts was regenerated. US-002 (next) must assert against the EMBEDDED templatesContents map (not the .claude/ copy on disk) -- the precedent test test/vendor/cam-ship-hygiene.test.ts already does this correctly. US-003 (after) adds ratchet-failure guidance to Step 3 and docs/recovery-runbook.md.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure template/docs edit + embed regeneration; no external library API exercised."
+    }
+  ]
+}
