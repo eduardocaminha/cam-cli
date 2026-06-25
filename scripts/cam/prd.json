@@ -21,7 +21,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [docs/recovery-runbook.md:757]: Section (m) documents a ReviewReport shape that does not match the code or the agent spec. (1) Severity values are shown as 'error'/'warn' (lines 759-760, 768) but the agent instruction, the ReviewReport type, and the tests use CRITICAL/WARNING/SUGGESTION. (2) The verdict example is 'FIXES_PENDING' without ':N' and lists MAX_ROUNDS_DEBT as a possible file verdict (lines 757, 767), but review.ts:407 requires 'FIXES_PENDING:N' to extract the count and the reviewer never writes MAX_ROUNDS_DEBT (it is derived by the supervisor); a reviewer following this example would have its findings count parsed as 0. (3) Lines 20 and 745 claim the sidecar 'deletes the file', which no code does (see the CRITICAL). Reconcile the runbook with the real schema and clearing behavior."
     },
     {

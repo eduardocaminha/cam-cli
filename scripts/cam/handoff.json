@@ -1,19 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "branchName": "cam/CAM-75-reviewer-report-channel",
-  "timestamp": "2026-06-25T19:00:00Z",
+  "timestamp": "2026-06-25T19:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/review.ts",
-    "src/supervisor/host.ts",
-    "test/supervisor/review.test.ts",
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 added clearReviewReport seam to MakeReviewDispatchOptions (review.ts), calls clearReviewReport?.() before the respawn-pane tmux call in makeReviewDispatch. Added makeClearReviewReport(cwd) factory in host.ts mirroring makeClearWorkerReport. Wired clearReviewReport into makeReviewDispatch call in buildSupervisorOptions. Added 2 new tests in the US-R1-001 regression describe block: (1) proves clear fires before respawn-pane via event ordering, (2) proves backward compat when clearReviewReport is absent. Total tests: 1281 pass / 0 fail. US-R1-002 (Review round 1 fix 002) is the next story to implement; it is still passes:false.",
+  "nextStoryContext": "US-R1-002 was a docs-only fix: reconciled docs/recovery-runbook.md section (m) with the real review-report.json schema. Three issues fixed: (1) severity values corrected from 'error'/'warn' to 'CRITICAL'/'WARNING' in JSON example and field notes; (2) verdict format corrected from bare 'FIXES_PENDING' to 'FIXES_PENDING:N', removed MAX_ROUNDS_DEBT from file-verdict options (it is supervisor-derived only); (3) deletion behavior corrected on lines 20 and 745 (file is left in place after reading, cleared before next review round, not deleted immediately). 1281 tests pass / 0 fail. Check prd.json for next story (if any).",
   "officialDocsValidated": [
     {
       "lib": "none",
