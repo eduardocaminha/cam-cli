@@ -27,16 +27,18 @@ Steps:
 
 2. `git status` -- verify there are changes or commits ahead of main.
 
-3. **Run quality gates**:
+3. **Run quality gates** -- `bun run check:all` is the same spine CI runs, so a green ship implies a green CI:
    ```bash
-   # Typecheck
-   bun run typecheck
-   # Tests
-   bun test
-   # Vendor/templates drift (only when the branch touched vendor/ or templates/)
-   bun run embed-vendor:check
+   bun run check:all
    ```
    Fix any failures before proceeding.
+
+   If `check:all` fails on a **ratchet gate** (file-size ceiling or coverage floor) because the story represents LEGITIMATE growth, raise the ratchet and retry -- do not dead-end:
+
+   - **File-size ceiling** (`scripts/file-size-budget.json`): raise the ceiling for the affected file, add the current issue tracker ref to the top-level `"_ref"` field (e.g. `"_ref": "CAM-NNN"`), stage the file.
+   - **Coverage floor** (`scripts/coverage-budget.json`): lower the affected floor (`floors.functions` or `floors.lines`), set `"_ref"` to the tracker ref, stage the file.
+
+   Then re-run `bun run check:all`. The gate reads only the staged diff, so the tracker ref must be staged before re-running.
 
 4. **Cycle-close hygiene (backend-aware close + harness reset) -- before push.**
 

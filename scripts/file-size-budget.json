@@ -1,5 +1,5 @@
 {
-  "_ref": "CAM-75 (reviewer findings via structured-report channel review-report.json): review.ts 461 to 579 (makeReadReviewReport reader + clearReviewReport seam + findings injection into buildFixStories + verdict-from-file with <review>-tag fallback + graceful degradation), review.test.ts 566 to 1220 (review-report.json fixtures, findings-propagation regression, missing/malformed graceful cases, R1/R2 fix-round tests), decide.ts 128 to 129 (PrdSnapshot.review.findings field), host.ts 579 to 645 (makeReadReviewReport + clearReviewReport wired into makeReviewDispatch construction; refactor candidate). Prior CAM-53 raise (run.ts/setup.ts/events.ts/host.ts/loop.ts/worker-argv.ts per-phase --model + spawn-resolution) already on main.",
+  "_ref": "CAM-79 (US-002 added two new assertions to cam-ship-hygiene.test.ts; ceiling raised from 24 to 40). Prior: CAM-75 (reviewer findings via structured-report channel review-report.json): review.ts 461 to 579 (makeReadReviewReport reader + clearReviewReport seam + findings injection into buildFixStories + verdict-from-file with <review>-tag fallback + graceful degradation), review.test.ts 566 to 1220 (review-report.json fixtures, findings-propagation regression, missing/malformed graceful cases, R1/R2 fix-round tests), decide.ts 128 to 129 (PrdSnapshot.review.findings field), host.ts 579 to 645 (makeReadReviewReport + clearReviewReport wired into makeReviewDispatch construction; refactor candidate). Prior CAM-53 raise (run.ts/setup.ts/events.ts/host.ts/loop.ts/worker-argv.ts per-phase --model + spawn-resolution) already on main.",
   "scripts/check-all.ts": 171,
   "scripts/check-ci-parity.ts": 176,
   "scripts/check-coverage.ts": 261,
@@ -141,7 +141,7 @@
   "test/tmux-session.test.ts": 754,
   "test/toml.test.ts": 161,
   "test/transcript/usage.test.ts": 477,
-  "test/vendor/cam-ship-hygiene.test.ts": 24,
+  "test/vendor/cam-ship-hygiene.test.ts": 40,
   "test/vendor/check-agent-frontmatter-standalone.test.ts": 58,
   "test/version.test.ts": 84
 }
