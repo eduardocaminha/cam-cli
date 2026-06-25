@@ -1,21 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Up-to-date-main guard + push on file-on-main"
+    "id": "US-006",
+    "title": "none get/list read backlog from main"
   },
-  "timestamp": "2026-06-25T17:00:00.000Z",
+  "timestamp": "2026-06-25T18:00:00.000Z",
   "branchName": "cam/CAM-86-file-issue-on-main",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/issue-file.ts",
-    "test/issue-file.test.ts",
-    "test/integration/issue-file-on-main.test.ts",
-    "index.ts",
+    ".claude/commands/cam-issue.md",
+    "templates/commands/cam-issue.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 (none get/list read backlog from main) and US-007 (recovery runbook + patterns.md) remain. US-006 is a cam-issue.md doc change (same self-hosting pattern as US-004: edit both templates/ and .claude/commands/, then embed-vendor). US-007 is a docs + patterns.md update. The createLocalIssueOnMain return type is now a discriminated union CreateLocalIssueOnMainOutcome; callers must narrow with if (!result.ok) before accessing id/sha/branchWasMain.",
+  "nextStoryContext": "US-007 (recovery runbook + patterns.md) is the last remaining story. It is a docs + patterns.md update with no TS code changes expected. The git show main:<path> pattern for reading state files from main is documented in patterns.md (US-006 bullet).",
   "officialDocsValidated": [
     {
       "lib": "none",

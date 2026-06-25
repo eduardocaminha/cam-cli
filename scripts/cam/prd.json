@@ -119,7 +119,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Same self-hosting rule as US-004: edit BOTH templates/commands/cam-issue.md and .claude/commands/cam-issue.md, then 'bun run embed-vendor' + 'bun run embed-vendor:check'. The READ-lag is called out in the issue spec: working tree may lag main post-filing; reading 'git show main:...' resolves it. No em-dash / decorative emoji in persisted .md. Files: .claude/commands/cam-issue.md, templates/commands/cam-issue.md, src/vendor/_generated.ts, test (parity assertion in test/embedded.test.ts or sibling)."
     },
