@@ -1,23 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Real-git integration test for file-on-main"
+    "id": "US-003",
+    "title": "Wire cam issue --file-local CLI surface"
   },
-  "timestamp": "2026-06-25T14:00:00.000Z",
+  "timestamp": "2026-06-25T15:00:00.000Z",
   "branchName": "cam/CAM-86-file-issue-on-main",
   "createdFiles": [
-    "test/integration/issue-file-on-main.test.ts"
+    "test/issue-dispatch.test.ts"
   ],
   "modifiedFiles": [
+    "index.ts",
+    "test/issue.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 wires the 'cam issue --file-local' CLI surface in index.ts. Mirror the ship dispatch pattern: parseIssueArgs (index.ts:466) gains a --file-local mode, a new exported dispatchIssue routes to createLocalIssueOnMain before the runIssue thin-proxy, _buildCreateIssueOpts wires production deps. The dispatch unit test must inject fakes for both branches and prove --file-local never calls runIssue. The case 'issue' block in main() routes through dispatchIssue. GOTCHA: do NOT register --permission-mode (test/no-permission-mode-flag.test.ts). The realSpawnFn pattern for tests: forward opts.env (GIT_INDEX_FILE) and opts.input (hash-object --stdin) as shown in the US-002 integration test.",
+  "nextStoryContext": "US-004 and beyond are next. All three stories in this PRD (US-001 createLocalIssueOnMain, US-002 real-git integration test, US-003 CLI dispatch) are now complete. The remaining stories are operator-required or future work. The dispatch pattern in index.ts now mirrors dispatchShip: parseIssueArgs returns a discriminated union (mode: text | file-local | help), dispatchIssue routes --file-local to createLocalIssueOnMain via _buildCreateIssueOpts (wraps spawnSync with env/input support), and the text path calls runIssue thin-proxy unchanged.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "US-002 creates a real-git integration test using only node:child_process, node:fs, node:os, node:path (all built-in). The subject under test (createLocalIssueOnMain) was validated in US-001. No new external JS library is introduced."
+      "lib": "bun-stdin",
+      "version": "1.x",
+      "url": "https://bun.sh/docs/api/file-io",
+      "fetchedAt": "2026-06-25T15:00:00.000Z",
+      "status": "ok",
+      "summary": "Bun.stdin is a BunFile (confirmed in Bun File I/O docs). BunFile.text() returns Promise<string> -- matches our dispatchIssue default fileLocalFn which calls await Bun.stdin.text(). API is stable and matches implementation."
     }
   ]
 }

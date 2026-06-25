@@ -65,7 +65,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mirror the ship dispatch in index.ts: parseShipArgs (index.ts:706), dispatchShip + ShipDispatchDeps (index.ts:740), _buildFinalizeOpts (index.ts:759), and the case 'ship' wiring (index.ts:914). The existing free-text runIssue (src/commands/issue.ts) single-hub thin-proxy stays as the no-flag path; --file-local is the deterministic in-process surface like ship --finalize. parseIssueArgs is at index.ts:466 and case 'issue' at index.ts:874. GOTCHA: do NOT register --permission-mode (test/no-permission-mode-flag.test.ts greps this file). Single-hub invariant (patterns.md CAM-55): the proxy path is unchanged. Read stdin via Bun (e.g. Bun.stdin.text()) or node process.stdin; keep it injectable for the dispatch test. Files: index.ts, test/ (issue dispatch test mirroring the ship dispatch test)."
     },
