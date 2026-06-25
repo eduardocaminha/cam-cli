@@ -26,7 +26,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mirror src/supervisor/worker-report.ts (WorkerReport interface + WORKER_REPORT_FILENAME at :38) as the template for the new src/supervisor/review-report.ts. Mirror the implementer exit protocol in .claude/agents/subagent-implementer.md:121-147 when adding the reviewer write instruction to .claude/agents/subagent-reviewer.md (Output Format ~:132-158). worker-report.json is gitignored at .gitignore:68 and templates/.gitignore:3 — add scripts/cam/review-report.json next to it in BOTH files. After editing .claude/agents/ and templates/agents/, run `bun run embed-vendor` to regenerate the embed; embed-vendor:check is the gate. Gotcha: the reviewer agent file warns to NEVER print a literal <review> tag in prose before the final line (capture-pane reads the whole scrollback); keep that constraint when adding the review-report.json example. Verify in advance: current review.ts has NO parseReviewFindings (prior CAM-75 was never merged), so this slice ADDS the file channel rather than replacing an existing parser. See docs/agent-readiness.md (structured-handback / two-layer-verification theme) for the rationale governing this reviewer-agent change."
     },

@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Define ReviewReport type and instruct the reviewer to write review-report.json"
+  },
+  "branchName": "cam/CAM-75-reviewer-report-channel",
+  "timestamp": "2026-06-25T12:00:00Z",
+  "createdFiles": [
+    "src/supervisor/review-report.ts"
+  ],
+  "modifiedFiles": [
+    ".claude/agents/subagent-reviewer.md",
+    "templates/agents/subagent-reviewer.md",
+    ".gitignore",
+    "templates/.gitignore",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added ReviewReport type (src/supervisor/review-report.ts) and review-report.json exit protocol to both reviewer agent files. The reviewer now has Write tool allowed (for review-report.json only). US-002 will wire the sidecar to read this file after review dispatch; import REVIEW_REPORT_FILENAME from src/supervisor/review-report.ts.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
