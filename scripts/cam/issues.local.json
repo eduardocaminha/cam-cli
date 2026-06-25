@@ -1,5 +1,5 @@
 {
-  "next_id": 89,
+  "next_id": 90,
   "issues": [
     {
       "id": "CAM-1",
@@ -739,6 +739,14 @@
       "createdAt": "2026-06-25T15:51:08Z",
       "title": "cam init setup-agent: sinalizar `bun run check:all` para adaptacao em projetos downstream nao-cam-cli",
       "description": "O CAM-79 (PR #70) fez o /cam-ship Step 3 e o template embarcado cam-ship.md rodarem `bun run check:all` como gate. Em cam-cli o check:all e o gate spine canonico (CAM-59/60). Mas em projetos downstream gerados por `cam init` que NAO sao o cam-cli, `bun run check:all` pode nao existir como script (ou agregar gates diferentes), entao o template hardcoda um nome de gate menos auto-evidente que typecheck/test. SUGESTAO advisory do subagent-reviewer no review do CAM-79 (PR #70, round 1 CLEAN): o setup-agent do `cam init` (src/commands/setup.ts, o passo ~7 que adapta os comandos ao projeto destino) deve sinalizar explicitamente `bun run check:all` como ponto de adaptacao, instruindo o agente de setup a mapear pro gate agregado equivalente do projeto destino, ou degradar pra typecheck+test quando nao houver agregado. ONDE: src/commands/setup.ts (prompt do setup-agent); avaliar um comentario de adaptacao em .claude/commands/cam-ship.md / templates espelhado se ajudar. Prioridade P3: NAO e regressao (foi aprovado no PRD do CAM-79 e segue a convencao do cam-next.md que ja hardcoda typecheck/test); e polish de portabilidade do cam init pra projetos nao-cam-cli. Origem: SUGGESTION do reviewer no CAM-79."
+    },
+    {
+      "id": "CAM-89",
+      "priority": "P2",
+      "state": "open",
+      "createdAt": "2026-06-25T16:00:00Z",
+      "title": "Bump de versao automatico via Conventional Commits no cam ship",
+      "description": "Hoje a versao (src/version.ts + package.json) e bumpeada manualmente. Nao ha convencao formal de quando bumpar nem automacao. CONVENCAO ADOTADA: Conventional Commits (https://www.conventionalcommits.org). Formato de commit message: feat: nova feature (MINOR bump), fix: correcao (PATCH bump), feat!: ou BREAKING CHANGE: no corpo (MAJOR bump em pos-1.0; MINOR em pre-1.0/0.x por convencao). chore:, docs:, test: nao geram bump. AUTOMATIZACAO: integrar no cam ship um passo que (1) le os commits desde a ultima git tag via git log v<last>..HEAD --pretty=%s, (2) classifica o bump type por regra deterministica (sem modelo: basta regex nos prefixos), (3) calcula a nova versao, (4) atualiza src/version.ts e package.json, (5) atualiza CHANGELOG.md (move [Unreleased] pra [X.Y.Z] - data), (6) commita os tres arquivos com chore(release): bump version to X.Y.Z, (7) cria git tag vX.Y.Z e push. REGRAS PRE-1.0 (0.x): feat! e BREAKING CHANGE viram MINOR (nao MAJOR) porque pre-1.0 nao tem contrato de estabilidade; MAJOR fica reservado para o 1.0.0 declarado manualmente. 1.0.0 nunca e gerado automaticamente. DETERMINISTICO: nao usa modelo nem subagente; a classificacao e pura regex sobre prefixos de commit. A unica dependencia humana e escrever feat! quando realmente quebra algo. ONDE TOCAR: .claude/commands/cam-ship.md (novo Step entre quality gates e PR), templates/commands/cam-ship.md espelhado, src/ (logica de bump, pode ser script bun ou funcao em commands/ship.ts), test para o parser de bump type. PREREQUISITO: enforcar Conventional Commits nos commits da branch antes do ship (o reviewer pode checar; ou adicionar um gate no cam ship que rejeita commits sem prefixo reconhecido). Prioridade P2: desbloqueador para distribuicao publica (o usuario nao quer bumpar manualmente quando comecar a divulgar o cam-cli)."
     }
   ]
 }
