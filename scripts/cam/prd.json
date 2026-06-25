@@ -112,7 +112,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/result.ts (readWorkerOutcome primary report read) + src/supervisor/loop.ts (poll nets). Promote the expectedStoryId staleness guard (today only inside the fallback branch at result.ts:352) onto the PRIMARY report path: a report whose story != expectedStoryId is rejected as stale (no pass/blocked). Absent / malformed / wrong-shape report -> non-committal 'unknown' so the loop's pane-died (loop.ts:687) + timeout (loop.ts:731) nets remain the terminal signal; integrity vs prd.passes (US-001) + the staleness guard together prevent any false-pass. host.ts makeClearWorkerReport (host.ts:96) already wipes the report per-dispatch so a worker that crashes before writing has no report -> the net fires (intended failure mode after removing the handoff fallback). Apply the JSON shape-guard discipline from patterns.md ('JSON reader shape guards: validate discriminator fields', US-R2-001): verify report.story and report.outcome are strings before trusting them. Depends on US-001 + US-002. Tests: test/supervisor/result.test.ts + test/supervisor/loop.test.ts."
     },
@@ -124,7 +124,7 @@
         "docs/recovery-runbook.md documents that worker-report.json is the authoritative outcome source the sidecar reads for the implementer, handoff.json is forward-context only (not a control signal), and CAM_IMPLEMENTER_STATUS is human-readable corroboration. [oracle: file-assert grep -nE 'worker-report.json.*(authoritative|outcome)|authoritative.*outcome|single.source' docs/recovery-runbook.md]",
         "The runbook adds or updates a scenario for diagnosing a wrong / stale / absent report falling to the pane-died/timeout nets with no false-pass, and the stale CAM-58 'worker-report-fallback' framing is corrected to read primary/authoritative. [oracle: file-assert grep -Eq 'worker-report\\.json.*(primary|authoritative)|(primary|authoritative).*worker-report\\.json' docs/recovery-runbook.md]",
         "scripts/cam/patterns.md gains a CAM-77 bullet recording the single-source outcome contract and the 5-concern mapping (Event=worker-report.json authoritative, State=prd.json, Context=handoff.json, Observability=cam-worker-events.jsonl, Wisdom=patterns.md), and supersedes the prior 'worker-report-fallback and handoff-string-coerced' bullet. [oracle: file-assert grep -nE 'CAM-77|Event=worker-report|single.source.*outcome' scripts/cam/patterns.md]",
-        "No em-dash (U+2014) is introduced in either edited doc (project rule: no em-dash in persisted human-readable .md). [oracle: file-assert ! grep -q -- '\u2014' docs/recovery-runbook.md scripts/cam/patterns.md]",
+        "No em-dash (U+2014) is introduced in either edited doc (project rule: no em-dash in persisted human-readable .md). [oracle: file-assert ! grep -q -- '—' docs/recovery-runbook.md scripts/cam/patterns.md]",
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],

@@ -2477,3 +2477,214 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 		});
 	});
 });
+
+// ---------------------------------------------------------------------------
+// US-006: absent / malformed / stale report falls safely to pane-died +
+//         timeout nets; CAM-44 backoff intact
+//
+// AC4 (loop-level): when the report never appears, or is stale/rejected, the
+// completion-detect poll does NOT exit via the report path. The pane-died and
+// timeout nets fire instead, keeping the CAM-44 dead-worker backoff intact.
+// A stale or malformed report must NOT produce a terminal 'blocked' outcome
+// that bypasses the backoff.
+// ---------------------------------------------------------------------------
+
+describe('runSupervisor US-006: stale / absent / malformed report safety nets', () => {
+	// Helper: two-snapshot prd sequence so iter 1 dispatches, iter 2 completes.
+	function makeTwoSnapshots() {
+		const prd_impl = makePrd({ stories: [{ id: 'US-010', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-010', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		return { prd_impl, prd_done };
+	}
+
+	// AC4: stale report (story mismatch) -> poll continues -> pane-died fires
+	test('AC4: stale report (story != expectedStoryId) -> pane-died net fires, not terminal blocked', async () => {
+		// The report carries a stale story ('US-005', not the dispatched 'US-010').
+		// With US-006 fix, the poll does NOT exit on the stale report. The pane
+		// dies on the same tick, so pane-died fires (streak 1, under cap).
+		// The next iteration finds prd all done -> complete.
+		const { prd_impl, prd_done } = makeTwoSnapshots();
+		let prdCall = 0;
+
+		const staleReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-005', // stale: dispatcher expected US-010
+			gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			// Pane dies immediately (stale-report scenario: worker crashed after writing stale report)
+			isPaneAlive: (_paneId) => false,
+			readWorkerReport: () => staleReport,
+			workerReportPath: '/fake/worker-report.json',
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 99_999,
+		});
+
+		const result = await runSupervisor(opts);
+
+		// pane-died fires (streak 1, under MAX_DEAD_WORKER_RETRIES cap).
+		// Next decideNextAction finds prd all done -> complete.
+		// Must NOT be a terminal 'blocked' from the stale-report path.
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+	});
+
+	// AC4: stale report -> poll continues -> timeout fires, CAM-44 backoff increments
+	test('AC4: stale report -> timeout fires with CAM-44 backoff intact (not terminal block)', async () => {
+		// The report carries stale story 'US-005'; dispatched story is 'US-010'.
+		// Poll does NOT exit on stale report. Timeout fires (perWorkerTimeoutMs:0).
+		// CAM-44 backoff: streak=1 (under cap), pane-died-retry event emitted.
+		// Next iter finds prd done -> complete.
+		const { prd_impl, prd_done } = makeTwoSnapshots();
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		const staleReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-005', // stale
+			gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readWorkerReport: () => staleReport,
+			workerReportPath: '/fake/worker-report.json',
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 0, // immediate timeout
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Timeout fires (not sentinel), CAM-44 backoff active (streak 1, under cap).
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		// Timeout kill command was issued (confirms exit was timeout, not sentinel).
+		expect(spawnCalls.some((a) => a.includes('echo timeout'))).toBe(true);
+	});
+
+	// AC4: malformed report (missing story string) -> poll continues -> timeout fires
+	test('AC4: malformed report (missing story discriminator) -> timeout fires, not false-pass', async () => {
+		const { prd_impl, prd_done } = makeTwoSnapshots();
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		// A report object with outcome but no story (wrong-shape).
+		// readWorkerReport returns it; the poll loop must reject it (no story string).
+		const malformedReport = {
+			outcome: 'DONE',
+			// story field absent - TypeScript cast is intentional to test runtime check
+		} as WorkerReport;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readWorkerReport: () => malformedReport,
+			workerReportPath: '/fake/worker-report.json',
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 0,
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Timeout fires (malformed report rejected), not a false sentinel exit.
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		expect(spawnCalls.some((a) => a.includes('echo timeout'))).toBe(true);
+	});
+
+	// AC4: absent report (readWorkerReport returns null) -> poll continues -> timeout
+	// (regression: ensure the null path is unchanged by US-006 edits)
+	test('AC4: absent report (null) -> timeout fires, pane-died/timeout nets intact', async () => {
+		const { prd_impl, prd_done } = makeTwoSnapshots();
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readWorkerReport: () => null,
+			workerReportPath: '/fake/worker-report.json',
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 0,
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		expect(spawnCalls.some((a) => a.includes('echo timeout'))).toBe(true);
+	});
+
+	// AC4: fresh report for the correct story still exits the poll via sentinel (regression guard).
+	test('AC4: fresh report (matching story) still exits poll correctly (no regression)', async () => {
+		const { prd_impl, prd_done } = makeTwoSnapshots();
+		let prdCall = 0;
+
+		const freshReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-010', // matches dispatched story
+			gates: { typecheck: 'ok', tests: '2 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readHandoff: () => makeHandoff('US-010'),
+			capturePane: (_paneId) => donePane('US-010'),
+			readWorkerReport: () => freshReport,
+			workerReportPath: '/fake/worker-report.json',
+			// No timeout (perWorkerTimeoutMs default: very high), no pane-died.
+			// Poll exits via fresh report on first tick.
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		expect(result.lastOutcome?.kind).toBe('pass');
+		expect(result.lastOutcome?.storyId).toBe('US-010');
+	});
+
+	// AC4: host.ts makeReadWorkerReport applies shape guards (no false-positive from wrong-shape JSON)
+	test('AC4: host.ts makeReadWorkerReport applies shape guard for story + outcome (US-R2-001)', async () => {
+		// Assert the production reader function (makeReadWorkerReport) includes the
+		// correct shape guard expression for both discriminator fields.
+		const hostSrc = await Bun.file('src/supervisor/host.ts').text();
+		// Shape guard: !Array.isArray + typeof outcome === 'string' + typeof story === 'string'
+		expect(hostSrc).toContain("!Array.isArray(parsed)");
+		expect(hostSrc).toContain("'outcome'] === 'string'");
+		expect(hostSrc).toContain("'story'] === 'string'");
+	});
+});

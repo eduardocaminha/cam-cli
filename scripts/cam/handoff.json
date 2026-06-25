@@ -1,25 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Structured event records the outcome-source decision and integrity result"
+    "id": "US-006",
+    "title": "Absent / malformed / stale report falls safely to the failure nets with no false-pass; staleness guard on the primary path"
   },
   "branchName": "cam/CAM-77-worker-report-sole-outcome",
-  "timestamp": "2026-06-25T23:50:00Z",
+  "timestamp": "2026-06-25T23:59:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/events.ts",
     "src/supervisor/loop.ts",
+    "src/supervisor/host.ts",
+    "test/supervisor/result.test.ts",
     "test/supervisor/loop.test.ts",
-    "test/supervisor/events.test.ts",
-    "scripts/cam/prd.json"
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 adds 'outcome-source' to WorkerEventKind in events.ts, adds OutcomeSourceEventDetail interface (winningSrc: 'worker-report'|'fallback', integrityResult: 'confirmed-pass'|'incomplete'|'stale-absent-rejection', detail: string), emits the event in loop.ts after readWorkerOutcome resolves (after the outcome-fallback block), and adds 6 tests in the US-005 (CAM-77) describe block in loop.test.ts. events.test.ts lifecycle test updated to include 'outcome-source' in the expected event sequence. All 1356 tests pass. Next story is US-006.",
+  "nextStoryContext": "US-006 adds two code changes: (1) loop.ts poll loop now applies a staleness+shape guard before breaking on readWorkerReport() -- a stale report (story!=advisoryStoryId) or malformed report (missing string discriminators) does NOT exit the poll, letting pane-died/timeout nets with CAM-44 backoff remain the terminal signal; (2) host.ts makeReadWorkerReport now applies the US-R2-001 shape guard pattern (!Array.isArray + typeof outcome === string + typeof story === string) before casting. 14 new tests added: 11 in test/supervisor/result.test.ts (US-006 absent/malformed/stale describe block) and 6 in test/supervisor/loop.test.ts (US-006 stale/absent/malformed loop-level describe block). Total tests: 1372 pass / 0 fail.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-005 only touches src/supervisor/events.ts (type additions), src/supervisor/loop.ts (emit call), and test files. No external library API was exercised."
+      "summary": "US-006 only touches src/supervisor/loop.ts (poll guard), src/supervisor/host.ts (shape guard), and test files. No external library API was exercised."
     }
   ]
 }

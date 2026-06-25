@@ -701,7 +701,22 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				// break the poll here. Falls back to capturePane + parseAnySentinel ONLY
 				// when readWorkerReport is absent (backward compat with legacy callers).
 				if (readWorkerReport !== undefined) {
-					if (readWorkerReport() !== null) {
+					// US-006: staleness + shape guard on the PRIMARY poll-exit check.
+					// A report whose story does not match the advisory story (stale
+					// leftover from a previous run) is rejected here so the poll
+					// continues — letting the pane-died / timeout nets with CAM-44
+					// backoff remain the terminal signal. A malformed report (missing
+					// string story / outcome discriminators) is also rejected so it
+					// cannot cause a false poll-exit. When advisoryStoryId is absent,
+					// skip the staleness part (graceful degradation for callers that
+					// do not pass the dispatched story id).
+					const report = readWorkerReport();
+					const isValidFreshReport =
+						report !== null &&
+						typeof report.story === 'string' &&
+						typeof report.outcome === 'string' &&
+						(advisoryStoryId === undefined || report.story === advisoryStoryId);
+					if (isValidFreshReport) {
 						pollOutcome = 'sentinel';
 						break;
 					}

@@ -78,7 +78,17 @@ export function makeReadWorkerReport(cwd: string): RunSupervisorOptions['readWor
 		try {
 			const raw = readFileSync(reportPath, 'utf8');
 			const parsed: unknown = JSON.parse(raw);
-			if (parsed !== null && typeof parsed === 'object') {
+			// Shape guard (US-006 / US-R2-001): validate discriminator fields before
+			// casting. A wrong-shape file (missing string outcome or story fields)
+			// returns null so the poll loop continues to the pane-died / timeout nets
+			// instead of treating absent fields as valid completion signals.
+			if (
+				parsed !== null &&
+				typeof parsed === 'object' &&
+				!Array.isArray(parsed) &&
+				typeof (parsed as Record<string, unknown>)['outcome'] === 'string' &&
+				typeof (parsed as Record<string, unknown>)['story'] === 'string'
+			) {
 				return parsed as import('./worker-report.ts').WorkerReport;
 			}
 			return null;
