@@ -18,6 +18,11 @@
 //  13. makeReviewDispatch: prd unreadable returns status='error'.
 //  14. makeReviewDispatch: spawns interactive reviewer (no -p, no wait-for).
 //  15. US-RX story IDs use the correct round number (US-R{round}-NNN format).
+//  US-006 regression tests (CAM-75 acceptance):
+//  AC1: verbatim finding text from review-report.json appears in fix-story notes (not generic).
+//  AC2: missing report + FIXES_PENDING:N tag -> ok, N stories, no throw (loop not wedged).
+//  AC3: findings come from review-report.json, NOT capture-pane; proved by pane having
+//       rendered (markdown-stripped) text while file findings appear verbatim in fix stories.
 
 import { describe, expect, test } from 'bun:test';
 import {
@@ -929,5 +934,119 @@ describe('makeReviewDispatch: graceful degradation (US-004)', () => {
 		expect(polls).toBeGreaterThanOrEqual(3);
 		// Warning logged exactly once, not on every failed file check.
 		expect(warnings.length).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-006 regression: findings source proof (AC3 for CAM-75)
+//
+// Proves that the findings injected into fix-story notes come exclusively from
+// review-report.json, NOT from capture-pane text.
+//
+// The key property: tmux capture-pane returns what the TUI renderer printed.
+// Ink renders "## CRITICAL" headings and "- [src/foo.ts:42]" bullets as plain
+// text - the markdown syntax is consumed by the renderer and does not survive
+// in the captured pane output. Any code that tried to parse structured findings
+// from the pane would silently lose the "[file:line]" structure.
+//
+// This test verifies the invariant by supplying:
+//   - a capturePane fake that returns "rendered" text (bullets stripped, brackets
+//     absent) so any regex-based pane parsing would recover degraded content, and
+//   - a review-report.json fake with DIFFERENT distinctive text than what the
+//     pane shows.
+// Then it asserts the fix-story notes carry the FILE's exact content (not the
+// pane's degraded content), proving the file is the source.
+// ---------------------------------------------------------------------------
+
+describe('makeReviewDispatch: US-006 regression - findings come from file, not pane', () => {
+	const SAMPLE_UUID = 'aabbccdd-1122-3344-5566-778899aabbcc';
+
+	test('AC3: capturePane returns rendered markdown (bullets stripped); fix-story notes carry verbatim file findings, not pane text', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+
+		// Simulate the pane after Ink/tmux rendering: the reviewer wrote markdown
+		// with "## CRITICAL" headings and "- [src/supervisor/review.ts:99]" bullets,
+		// but capture-pane captures the rendered output. The "[file:line]" bracket
+		// structure is lost; only the flavor text survives in a degraded form.
+		//
+		// Critically, the text fragments below differ from the file findings to make
+		// it unambiguous which source the notes came from.
+		const simulatedRenderedPaneText = [
+			'CRITICAL FINDING',
+			'src supervisor review ts 99',  // rendered "[src/supervisor/review.ts:99]" - brackets/colon lost
+			'some finding about dispatch',  // pane-side flavor text (different from file)
+			'',
+			'WARNING FINDING',
+			'src supervisor decide ts',     // rendered "[src/supervisor/decide.ts]" - brackets/colon lost
+			'some finding about verdict',   // pane-side flavor text (different from file)
+			// No <review> tag - file is the primary completion signal.
+		].join('\n');
+
+		// The review-report.json carries the EXACT structured findings with distinctive
+		// text that does NOT appear anywhere in the simulated rendered pane above.
+		const fileFindings = [
+			{
+				severity: 'CRITICAL',
+				file: 'src/supervisor/review.ts',
+				line: 99,
+				text: 'unreachable null dereference in reviewDispatch resolution path',
+			},
+			{
+				severity: 'WARNING',
+				file: 'src/supervisor/decide.ts',
+				text: 'stale verdict check bypasses MAX_ROUNDS_DEBT guard',
+			},
+			{
+				severity: 'SUGGESTION',
+				text: 'extract buildFixStories result mapping into a named helper',
+			},
+		];
+
+		const opts = makeDispatchOpts({
+			paneText: simulatedRenderedPaneText,
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:3', findings: fileFindings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+
+		const written = capturedWrittenPrd[0];
+		const stories = written?.userStories ?? [];
+
+		// Story 1: CRITICAL finding with file + line.
+		// Notes must carry the file's exact content, not anything reconstructed from the pane.
+		const s1 = stories.find((s) => s.id === 'US-R1-001');
+		expect(s1).toBeDefined();
+		expect(s1?.notes).toContain('CRITICAL');
+		expect(s1?.notes).toContain('src/supervisor/review.ts');   // verbatim file path
+		expect(s1?.notes).toContain('99');                          // verbatim line number
+		expect(s1?.notes).toContain('unreachable null dereference in reviewDispatch resolution path'); // verbatim file text
+
+		// Negative: the pane-side degraded fragments must NOT appear in the notes.
+		// If they did, it would prove the code is parsing the pane instead of the file.
+		expect(s1?.notes).not.toContain('src supervisor review ts'); // pane's degraded form
+		expect(s1?.notes).not.toContain('some finding about dispatch'); // pane-only flavor text
+
+		// Story 2: WARNING finding with file, no line.
+		const s2 = stories.find((s) => s.id === 'US-R1-002');
+		expect(s2).toBeDefined();
+		expect(s2?.notes).toContain('WARNING');
+		expect(s2?.notes).toContain('src/supervisor/decide.ts');    // verbatim file path
+		expect(s2?.notes).toContain('stale verdict check bypasses MAX_ROUNDS_DEBT guard'); // verbatim file text
+		expect(s2?.notes).not.toContain('src supervisor decide ts'); // pane's degraded form
+		expect(s2?.notes).not.toContain('some finding about verdict'); // pane-only flavor text
+
+		// Story 3: SUGGESTION with no file or line.
+		const s3 = stories.find((s) => s.id === 'US-R1-003');
+		expect(s3).toBeDefined();
+		expect(s3?.notes).toContain('SUGGESTION');
+		expect(s3?.notes).toContain('extract buildFixStories result mapping into a named helper'); // verbatim file text
 	});
 });
