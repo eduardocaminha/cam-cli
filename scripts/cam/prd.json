@@ -78,7 +78,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/supervisor/result.test.ts (630 lines; ~81 references to handoff / state-primary / expectedStoryId / worker-report-fallback assert the OLD cross-check order and must be reconciled to the report-first authority from US-001). Add the four regression cases (report-wins-over-handoff, sentinel-non-override, DONE+passes:false -> incomplete, DONE+passes:true -> pass). Reconcile or replace any test that asserted handoff-authoritative selection (old completedStory resolution) or the DONE-sentinel-vs-handoff mismatch -> fail (old result.ts:318-330). Where loop-level behavior is asserted, mirror into test/supervisor/loop.test.ts. Depends on US-001 (and US-002 for any loop-level cases). Test convention (patterns.md): inject fake FileReader shapes; no real filesystem."
     },
