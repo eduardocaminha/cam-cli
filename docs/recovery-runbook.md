@@ -17,7 +17,7 @@ All paths are relative to the project root.
 | `.claude/cam-worker-events.jsonl` | `cam next` | One JSON line per worker lifecycle step (`worker-start`, `worker-end`, `result`, `tokens`, `pushed`, `stale-lock`). Your primary diagnostic log. |
 | `.claude/.cam-supervisor.lock` | `cam next` | Single-supervisor concurrency lock: `{ pid, startedAt, project }`. |
 | `.claude/.cam-sidecar.pid` | `cam run` | Sidecar process pid: `cam stop` reads this to SIGTERM the sidecar on shutdown. |
-| `scripts/cam/review-report.json` | reviewer agent | Ephemeral, gitignored. Written by the reviewer at exit; sidecar reads it for verdict+findings, then deletes it. See section (m). |
+| `scripts/cam/review-report.json` | reviewer agent | Ephemeral, gitignored. Written by the reviewer at exit; sidecar reads it for verdict+findings (file is left in place after reading and cleared before the next review round begins). See section (m). |
 
 Quick triage first:
 
@@ -742,7 +742,10 @@ and the sidecar reads it directly.
 
 2. The sidecar poll loop checks for the file's presence on each tick (before
    checking for pane death). When the file is present, the sidecar reads it for
-   `verdict` and `findings`, records them in `prd.review`, and deletes the file.
+   `verdict` and `findings` and records them in `prd.review`. The file is left in
+   place after reading; before the next review round begins the sidecar clears it
+   (so a stale round-N report is not picked up on the first poll tick of round
+   N+1).
 
 3. The `<review>` tag in the pane output remains the human-readable fallback
    sentinel. If `review-report.json` is absent when the reviewer pane closes,
@@ -754,18 +757,18 @@ and the sidecar reads it directly.
 
 ```json
 {
-  "verdict": "FIXES_PENDING",
+  "verdict": "FIXES_PENDING:2",
   "findings": [
-    { "severity": "error", "file": "src/foo.ts", "line": 42, "text": "Acceptance criterion not met: ..." },
-    { "severity": "warn",  "text": "Non-blocking observation..." }
+    { "severity": "CRITICAL", "file": "src/foo.ts", "line": 42, "text": "Acceptance criterion not met: ..." },
+    { "severity": "WARNING",  "text": "Non-blocking observation..." }
   ]
 }
 ```
 
 Field notes:
 
-- `verdict`: one of `CLEAN`, `FIXES_PENDING`, or `MAX_ROUNDS_DEBT`.
-- `findings[].severity`: `"error"` (blocks shipping) or `"warn"` (informational).
+- `verdict`: `"CLEAN"` or `"FIXES_PENDING:N"` (where N is the count of CRITICAL + actionable WARNING findings). `MAX_ROUNDS_DEBT` is a supervisor-derived terminal state and is never written by the reviewer to this file.
+- `findings[].severity`: `"CRITICAL"` (blocks shipping), `"WARNING"` (should fix, not blocking), or `"SUGGESTION"` (nice to have).
 - `findings[].file` and `findings[].line`: optional; present when the finding maps to a specific file location.
 - `findings[].text`: the human-readable description.
 
