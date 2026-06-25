@@ -97,7 +97,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Docs only. docs/recovery-runbook.md currently has sections (a)-(k) ending at CAM-70 (:543), and HAS NO existing CAM-75 section (prior CAM-75 never merged), so ADD a new section; there is no pre-existing documented drift to fix in this tree. The runbook currently has 0 em-dash characters (verified) — keep it that way per the no-em-dash-in-persisted-md convention (global CLAUDE.md). scripts/cam/patterns.md already documents the capture-pane sentinel polling (:12, :28); add the rendered-markdown-eats-findings lesson as a new bullet. No travessão (—) in either file."
     },

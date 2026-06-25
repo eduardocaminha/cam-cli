@@ -1,18 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Graceful degradation when review-report.json is missing or malformed"
+    "id": "US-005",
+    "title": "Document the review-report.json flow in the recovery runbook and patterns"
   },
   "branchName": "cam/CAM-75-reviewer-report-channel",
-  "timestamp": "2026-06-25T16:00:00Z",
+  "timestamp": "2026-06-25T17:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/review.ts",
-    "test/supervisor/review.test.ts",
+    "docs/recovery-runbook.md",
+    "scripts/cam/patterns.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added warnFn?: (msg: string) => void to MakeReviewDispatchOptions in review.ts. Default is console.warn. Warning is emitted exactly once (at verdict-resolution time, not per poll) when readReviewReport was injected but returned null and the tag-based fallback is used. Five new tests added under 'makeReviewDispatch: graceful degradation (US-004)': missing-file, malformed-JSON, loop-not-wedged (3 fix stories), no-warning-when-reader-absent, and warning-exactly-once. 1278 tests total pass. US-005 is next: document the review-report.json flow in the recovery runbook and patterns.",
+  "nextStoryContext": "US-005 added section (m) CAM-75 to docs/recovery-runbook.md (review-report.json flow, file shape, prd.review.findings, graceful fallback, diagnostic commands, manual override). Also added review-report.json row to canonical runtime files table. Added a new bullet to scripts/cam/patterns.md recording that tmux capture-pane returns rendered markdown and why that necessitated the review-report.json file channel. 1278 tests pass. No em-dashes in either file. All four ACs verified via grep oracles.",
   "officialDocsValidated": [
     {
       "lib": "none",
