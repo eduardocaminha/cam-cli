@@ -29,7 +29,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mirror src/commands/ship-finalize.ts: same exported ClockFn type, same injectable-reader style, same exported result interface. MANDATORY widened SpawnFn: the exported SpawnFn type for this primitive MUST accept an optional env (Record<string,string>) and an optional input (string) in its options arg, i.e. a strict superset of ship-finalize's { encoding: 'utf8' }. AC#1's 'mirroring the SpawnFn/ClockFn injectable types' means mirror the STYLE, extending the options to carry env + input. The off-main path requires this: GIT_INDEX_FILE goes through options.env (pointing at a mktemp index) and the updated JSON is fed to 'git hash-object -w --stdin' through options.input/stdin. Keep all git calls injectable so the unit test never shells out. noUncheckedIndexedAccess: guard array/regex access (patterns.md). Read issue_prefix via parseToml(readProjectToml()) like finalizeCycleClose. Files: src/commands/issue-file.ts, test/issue-file.test.ts. Read patterns.md 'finalizeCycleClose hardening pattern' and 'issues.local.json hygiene (CAM-47)' before coding."
     },

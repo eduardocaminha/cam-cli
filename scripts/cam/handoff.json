@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "createLocalIssueOnMain primitive (commit-tree to main)"
+  },
+  "timestamp": "2026-06-25T13:30:00.000Z",
+  "branchName": "cam/CAM-86-file-issue-on-main",
+  "createdFiles": [
+    "src/commands/issue-file.ts",
+    "test/issue-file.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 needs a real-git integration test for createLocalIssueOnMain. Mirror test/integration/ship-finalize-dirty-prd.test.ts: mkdtempSync in tmpdir, git init, configure user.email+user.name, seed issues.local.json on main, commit it. Then: Case A checkout feature branch, call createLocalIssueOnMain with realSpawnFn over spawnSync, assert git show main shows the new entry and working tree is clean. Case B: stay on main, call it, assert direct commit landed. The realSpawnFn MUST forward options.env (for GIT_INDEX_FILE) and options.input (for hash-object --stdin). Use spawnSync from node:child_process; wrap it to match the SpawnFn signature from issue-file.ts.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Implementation uses node:fs (mkdtempSync, rmSync, writeFileSync), node:os (tmpdir), node:path (join), and git plumbing via injected SpawnFn. No new external JS library. Bun.TOML.parse is used indirectly via parseToml() (already validated in patterns.md)."
+    }
+  ]
+}
