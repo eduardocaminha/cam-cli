@@ -46,7 +46,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mirror test/integration/ship-finalize-dirty-prd.test.ts and patterns.md 'Real-git integration test pattern (US-004, CAM-72)': mkdtempSync in tmpdir, git init, git config user.email/user.name (required for commit), seed+stage+commit baseline on main, run with realSpawnFn wrapping spawnSync, assert with real git show / git status --porcelain / git rev-parse. The realSpawnFn wrapper MUST forward the optional env (GIT_INDEX_FILE) and input/stdin (for hash-object --stdin) introduced in US-001, or the off-main path will not exercise correctly. The tmpdir has NO remote, so do not assume origin exists (US-005 guard must already tolerate that). Files: test/integration/issue-file-on-main.test.ts."
     },

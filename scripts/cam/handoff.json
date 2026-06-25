@@ -1,24 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "createLocalIssueOnMain primitive (commit-tree to main)"
+    "id": "US-002",
+    "title": "Real-git integration test for file-on-main"
   },
-  "timestamp": "2026-06-25T13:30:00.000Z",
+  "timestamp": "2026-06-25T14:00:00.000Z",
   "branchName": "cam/CAM-86-file-issue-on-main",
   "createdFiles": [
-    "src/commands/issue-file.ts",
-    "test/issue-file.test.ts"
+    "test/integration/issue-file-on-main.test.ts"
   ],
   "modifiedFiles": [
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 needs a real-git integration test for createLocalIssueOnMain. Mirror test/integration/ship-finalize-dirty-prd.test.ts: mkdtempSync in tmpdir, git init, configure user.email+user.name, seed issues.local.json on main, commit it. Then: Case A checkout feature branch, call createLocalIssueOnMain with realSpawnFn over spawnSync, assert git show main shows the new entry and working tree is clean. Case B: stay on main, call it, assert direct commit landed. The realSpawnFn MUST forward options.env (for GIT_INDEX_FILE) and options.input (for hash-object --stdin). Use spawnSync from node:child_process; wrap it to match the SpawnFn signature from issue-file.ts.",
+  "nextStoryContext": "US-003 wires the 'cam issue --file-local' CLI surface in index.ts. Mirror the ship dispatch pattern: parseIssueArgs (index.ts:466) gains a --file-local mode, a new exported dispatchIssue routes to createLocalIssueOnMain before the runIssue thin-proxy, _buildCreateIssueOpts wires production deps. The dispatch unit test must inject fakes for both branches and prove --file-local never calls runIssue. The case 'issue' block in main() routes through dispatchIssue. GOTCHA: do NOT register --permission-mode (test/no-permission-mode-flag.test.ts). The realSpawnFn pattern for tests: forward opts.env (GIT_INDEX_FILE) and opts.input (hash-object --stdin) as shown in the US-002 integration test.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Implementation uses node:fs (mkdtempSync, rmSync, writeFileSync), node:os (tmpdir), node:path (join), and git plumbing via injected SpawnFn. No new external JS library. Bun.TOML.parse is used indirectly via parseToml() (already validated in patterns.md)."
+      "summary": "US-002 creates a real-git integration test using only node:child_process, node:fs, node:os, node:path (all built-in). The subject under test (createLocalIssueOnMain) was validated in US-001. No new external JS library is introduced."
     }
   ]
 }
