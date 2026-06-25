@@ -80,7 +80,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit src/supervisor/review.ts. Hard constraint from scripts/cam/patterns.md (capture-pane returns RENDERED markdown; structured handback exists precisely because the markdown bullets are consumed by the renderer). The file reader from US-002 returns null on any read/parse failure; this story makes makeReviewDispatch tolerate null by falling back to parseReviewVerdict(capturePane(...)) which already runs in the poll loop. Count reconciliation: when the file is absent the verbatim findings are unavailable, so reuse the existing placeholder builder in buildFixStories keyed to the tag's findingsCount (N). Tests live in test/supervisor/review.test.ts: one missing-file fixture, one malformed-JSON fixture, plus an assertion the dispatch never throws and returns 'ok'. Do NOT make the file-read a precondition/gate (the lesson: sentinel/file is never a gate over handoff+prd)."
     },
