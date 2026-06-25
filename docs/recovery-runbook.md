@@ -18,6 +18,7 @@ All paths are relative to the project root.
 | `.claude/.cam-supervisor.lock` | `cam next` | Single-supervisor concurrency lock: `{ pid, startedAt, project }`. |
 | `.claude/.cam-sidecar.pid` | `cam run` | Sidecar process pid: `cam stop` reads this to SIGTERM the sidecar on shutdown. |
 | `scripts/cam/review-report.json` | reviewer agent | Ephemeral, gitignored. Written by the reviewer at exit; sidecar reads it for verdict+findings (file is left in place after reading and cleared before the next review round begins). See section (m). |
+| `scripts/cam/worker-report.json` | implementer agent | Ephemeral, gitignored. Written by the implementer at exit before printing the sentinel. The sidecar reads it as the PRIMARY (authoritative) outcome source for the implementer channel: `report.story` names the completed story; `report.outcome` carries DONE/BLOCKED/PRD_COMPLETE. Absent, malformed, or stale reports (story field does not match the advisory story id) fall to the pane-died/timeout failure nets with no false-pass. See section (o). |
 
 Quick triage first:
 
@@ -971,3 +972,114 @@ If your local `main` has diverged from `origin/main` (e.g. the file-on-main comm
 Cross-reference: `src/commands/issue-file.ts` (commit-tree-to-main implementation),
 `scripts/cam/patterns.md` (up-to-date guard + best-effort push pattern,
 widened SpawnFn for git plumbing, commit-tree-to-main backlog mutation bullets).
+
+## (o) CAM-77: single-source outcome model for the implementer channel
+
+CAM-77 establishes `scripts/cam/worker-report.json` as the sole authoritative outcome
+source for the implementer. This section documents the single-source contract,
+explains the 5-concern model, and provides a diagnostic guide for absent, wrong,
+or stale reports.
+
+### The single-source contract
+
+Three artifacts carry implementer outcome information. Only one is the authoritative
+outcome source:
+
+- `scripts/cam/worker-report.json` (PRIMARY, authoritative): the implementer writes
+  this file before exiting. The sidecar reads `report.story` to identify which story
+  completed and `report.outcome` to determine DONE/BLOCKED/PRD_COMPLETE. An absent,
+  malformed (missing required string fields), or stale report (where `report.story`
+  does not match the advisory story id) is not treated as a success signal: the poll
+  loop continues and the pane-died/timeout failure nets (with CAM-44 backoff) remain
+  the terminal signal. No false-pass is possible from a stale or missing report.
+- `CAM_IMPLEMENTER_STATUS=...` sentinel in pane scrollback: human-readable
+  corroboration for the operator only. The sidecar does not parse scrollback as a
+  primary gate; the sentinel is purely observational.
+- `scripts/cam/handoff.json`: forward-context for the NEXT implementer agent.
+  It is NOT a sidecar control signal. An absent or stale handoff does not change
+  the named story when a valid report is present.
+
+### The 5-concern model
+
+Each concern maps to exactly one file (operator decision 2026-06-25):
+
+| Concern | File | Role |
+|---|---|---|
+| Event | `scripts/cam/worker-report.json` | AUTHORITATIVE outcome for the implementer channel |
+| State | `scripts/cam/prd.json` | Integrity confirmation (`passes:true`); read-only by the sidecar after the report |
+| Context | `scripts/cam/handoff.json` | Forward-context for the next implementer; not a control signal |
+| Observability | `.claude/cam-worker-events.jsonl` | Append-only flight recorder; supervisor-owned |
+| Wisdom | `scripts/cam/patterns.md` | Durable codebase conventions; agent-read at story start |
+
+### Diagnosing a missing or stale report
+
+If the sidecar does not detect completion after a worker run:
+
+1. Check whether the implementer wrote the report:
+
+   ```bash
+   cat scripts/cam/worker-report.json 2>/dev/null || echo "(absent)"
+   ```
+
+2. Confirm the `story` field matches the dispatched story:
+
+   ```bash
+   jq '.story' scripts/cam/worker-report.json
+   ```
+
+   A stale story field (from a previous run that was not cleared) causes the
+   poll guard to skip the break. The sidecar then waits for pane death or timeout.
+   `cam stop` + `cam resume` restarts the sidecar and clears the stale report via
+   `clearWorkerReport` before the next `respawn-pane -k`.
+
+3. Check the event log for the worker outcome:
+
+   ```bash
+   grep '"kind":"result"' .claude/cam-worker-events.jsonl | tail -5
+   ```
+
+   A `"result"` line with `"outcome":"BLOCKED_QUALITY"` means the report was
+   written but gates failed; the sidecar treated it as a non-DONE outcome and will
+   re-dispatch.
+
+4. Confirm `prd.json` integrity:
+
+   ```bash
+   jq '.userStories[] | select(.id=="US-XXX") | .passes' scripts/cam/prd.json
+   ```
+
+   The sidecar only writes `passes:true` AFTER reading a valid authoritative report.
+   If `passes` is still `false` after the worker exited, the report was absent or
+   stale at poll time.
+
+### Manual override
+
+If the poll timed out and you know the story is complete (gates passed, commit
+landed):
+
+1. Confirm quality gates:
+
+   ```bash
+   bun run typecheck
+   bun test
+   ```
+
+2. Flip `passes: true` in `scripts/cam/prd.json` for the completed story.
+
+3. Remove the stale report so the next run starts clean:
+
+   ```bash
+   rm -f scripts/cam/worker-report.json
+   ```
+
+4. Resume:
+
+   ```bash
+   cam resume
+   ```
+
+Cross-reference: `src/supervisor/loop.ts` (poll-loop staleness + shape guard before sentinel break),
+`src/supervisor/result.ts` (readWorkerOutcome priority order: report first, prd integrity, fallback),
+`src/supervisor/host.ts` (makeReadWorkerReport shape guard),
+`scripts/cam/patterns.md` (single-source outcome contract + 5-concern model bullet,
+poll-loop staleness + shape guard bullet).
