@@ -21,6 +21,11 @@
 //   - writeSessionMarker is keyed to the actualStoryId from the outcome, never
 //     to the advisory storyId from decideNextAction.
 //   - Hard max-iterations cap (default MAX_ITERATIONS = 50) prevents runaway loops.
+//   - worker-report.json is the canonical implementer completion-detect path
+//     (US-002). buildSupervisorOptions in host.ts always injects readWorkerReport
+//     so the report-file detection path is never skipped in production. When the
+//     reader is present, parseAnySentinel is demoted to human-corroboration only:
+//     a DONE sentinel in the pane without a matching report does NOT break the poll.
 
 import { decideNextAction } from './decide.ts';
 import type { PrdSnapshot } from './decide.ts';
@@ -31,7 +36,7 @@ import { readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { formatReviewVerdictLine, type WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
-import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail } from './events.ts';
+import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail, OutcomeSourceEventDetail } from './events.ts';
 
 // ---------------------------------------------------------------------------
 // Injected dependency types
@@ -688,14 +693,30 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					pollOutcome = 'pane-died';
 					break;
 				}
-				// US-004: primary completion-detection path. When a readWorkerReport
-				// reader is injected, poll the report file instead of the pane text.
-				// The file presence is the push event; report content corroborates but
-				// never sole-gates (prd.json + handoff.json are consulted in
-				// readWorkerOutcome below). Falls back to capturePane + parseAnySentinel
-				// when no reader is provided (backward compat with existing callers).
+				// US-002: worker-report.json is the canonical implementer completion-detect
+				// path. When readWorkerReport is injected (always in production via
+				// buildSupervisorOptions), the report file presence is the SOLE poll-exit
+				// trigger. parseAnySentinel is demoted to human-corroboration only: a
+				// DONE sentinel visible in the pane without a matching report does NOT
+				// break the poll here. Falls back to capturePane + parseAnySentinel ONLY
+				// when readWorkerReport is absent (backward compat with legacy callers).
 				if (readWorkerReport !== undefined) {
-					if (readWorkerReport() !== null) {
+					// US-006: staleness + shape guard on the PRIMARY poll-exit check.
+					// A report whose story does not match the advisory story (stale
+					// leftover from a previous run) is rejected here so the poll
+					// continues — letting the pane-died / timeout nets with CAM-44
+					// backoff remain the terminal signal. A malformed report (missing
+					// string story / outcome discriminators) is also rejected so it
+					// cannot cause a false poll-exit. When advisoryStoryId is absent,
+					// skip the staleness part (graceful degradation for callers that
+					// do not pass the dispatched story id).
+					const report = readWorkerReport();
+					const isValidFreshReport =
+						report !== null &&
+						typeof report.story === 'string' &&
+						typeof report.outcome === 'string' &&
+						(advisoryStoryId === undefined || report.story === advisoryStoryId);
+					if (isValidFreshReport) {
 						pollOutcome = 'sentinel';
 						break;
 					}
@@ -707,6 +728,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					// anywhere earlier in the pane history (e.g. from CLAUDE.md displayed
 					// in context or a template file being cat'd). Restricting to the tail
 					// makes the guard exact: a sentinel in old scroll-history cannot fire.
+					// (human-corroboration fallback only, not canonical detection)
 					const polledText = capturePane(workerPaneId);
 					const tail = polledText.split('\n').slice(-10).join('\n');
 					if (parseAnySentinel(tail) !== null) {
@@ -842,6 +864,26 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					fallbackKind: outcome.detail.includes('worker-report-fallback')
 						? 'worker-report-fallback'
 						: 'handoff-string-coerced',
+					detail: outcome.detail,
+				});
+			}
+
+			// US-005 (CAM-77): emit outcome-source on every readWorkerOutcome resolution.
+			// Records which source won (worker-report.json vs legacy fallback) and the
+			// integrity verdict so an operator can replay the decision without parsing
+			// pane scrollback. No-op when logEvent is absent (emit() guards that).
+			{
+				const winningSrc: OutcomeSourceEventDetail['winningSrc'] =
+					outcome.detail.includes('worker-report-fallback') ? 'worker-report' : 'fallback';
+				const integrityResult: OutcomeSourceEventDetail['integrityResult'] =
+					outcome.kind === 'pass'
+						? 'confirmed-pass'
+						: outcome.kind === 'incomplete'
+							? 'incomplete'
+							: 'stale-absent-rejection';
+				emit('outcome-source', actualStoryId, uuid, {
+					winningSrc,
+					integrityResult,
 					detail: outcome.detail,
 				});
 			}

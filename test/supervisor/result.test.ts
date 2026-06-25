@@ -1,11 +1,12 @@
 // test/supervisor/result.test.ts
 //
-// Unit tests for src/supervisor/result.ts (CAM-32 state-primary outcome).
+// Unit tests for src/supervisor/result.ts (US-001: worker-report.json primary).
 //
-// readWorkerOutcome derives the outcome from durable state (handoff.json +
-// prd.json) PRIMARILY; the pane sentinel is corroboration, never a gate. This
-// keeps a successful worker from being misreported when the pane dies (BUG 1)
-// or the worker truncates before emitting the sentinel (BUG 2).
+// readWorkerOutcome derives the outcome from worker-report.json (the EVENT,
+// authoritative) when workerReportPath is provided and the file is valid.
+// handoff.json and the CAM_IMPLEMENTER_STATUS sentinel are no longer outcome
+// gates (US-001). For backward compat, when no valid report is present the
+// function falls back to sentinel + handoff.json (state-primary).
 
 import { describe, expect, test } from 'bun:test';
 import { readWorkerOutcome } from '../../src/supervisor/result.ts';
@@ -211,15 +212,21 @@ describe('readWorkerOutcome: incomplete', () => {
 // ---------------------------------------------------------------------------
 
 describe('readWorkerOutcome: fail', () => {
-	test('sentinel story= mismatches handoff lastCompletedStory.id', () => {
+	// US-001: The DONE-sentinel-vs-handoff mismatch->fail block was removed.
+	// When sentinel names a different story than handoff (and no report is
+	// present), handoff wins for story selection without raising a fail.
+	// In this fixture prd only has US-004; handoff says US-003 (not in prd),
+	// so the result is 'incomplete' (handoff set, prd not confirmed for US-003).
+	test('sentinel story= mismatches handoff -> handoff wins, incomplete (mismatch block dropped, US-001)', () => {
 		const result = readWorkerOutcome({
 			prdPath: PRD_PATH,
 			handoffPath: HANDOFF_PATH,
 			capturedPaneText: donePane('US-004'),
 			readFile: makeReader({ [PRD_PATH]: fakePrd('US-004', true), [HANDOFF_PATH]: fakeHandoff('US-003') }),
 		});
-		expect(result.kind).toBe('fail');
-		expect(result.detail).toContain('mismatch');
+		// handoff says US-003; prd has US-004 (not US-003), so passes:false for US-003.
+		expect(result.kind).toBe('incomplete');
+		expect(result.storyId).toBe('US-003');
 	});
 
 	test('completed story known but prd.json unreadable -> fail', () => {
@@ -389,7 +396,131 @@ describe('readWorkerOutcome: handoff-string-coerced', () => {
 });
 
 // ---------------------------------------------------------------------------
-// US-001: worker-report.json fallback (worker-report-fallback)
+// US-001: worker-report.json PRIMARY behavioral contract
+//
+// When workerReportPath is provided and a valid report is present:
+//   AC1 - report.story is the primary story signal (wins over handoff)
+//   AC3 - stale/absent handoff.json does not change the named story
+//   AC4 - a DONE sentinel that disagrees with the report is not a gate
+// ---------------------------------------------------------------------------
+
+const WORKER_REPORT_PATH_AC = '/fake/worker-report.json';
+
+describe('readWorkerOutcome: US-001 report-primary contract', () => {
+	// AC1: report naming story B wins over handoff naming story A.
+	test('AC1: report.story B wins over handoff story A -> storyId = B', () => {
+		const reportStory = 'US-007';
+		const handoffStory = 'US-001';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH_AC,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, true),
+				[HANDOFF_PATH]: fakeHandoff(handoffStory), // handoff says a DIFFERENT story
+				[WORKER_REPORT_PATH_AC]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(reportStory); // report wins, not handoff
+	});
+
+	// AC3: stale handoff (different story) does not affect result when report is present.
+	test('AC3: stale handoff does not change named story when report is valid', () => {
+		const reportStory = 'US-007';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH_AC,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, true),
+				// No handoff file at all
+				[WORKER_REPORT_PATH_AC]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(reportStory);
+	});
+
+	// AC4: a DONE sentinel naming a different story than the report does not
+	// produce a fail-on-mismatch; the report wins.
+	test('AC4: DONE sentinel disagrees with report -> report wins, no fail', () => {
+		const reportStory = 'US-007';
+		const sentinelStory = 'US-006'; // sentinel says different story
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH_AC,
+			capturedPaneText: donePane(sentinelStory),
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, true),
+				[WORKER_REPORT_PATH_AC]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(reportStory); // report wins
+		// Must NOT be 'fail' due to the sentinel-vs-report disagreement.
+	});
+
+	// AC4 + AC2 combined: DONE report + passes:false -> incomplete (integrity check),
+	// regardless of what the sentinel says.
+	test('AC2: DONE report + prd passes:false -> incomplete (integrity check)', () => {
+		const reportStory = 'US-007';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH_AC,
+			capturedPaneText: donePane(reportStory),
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, false), // passes:false
+				[WORKER_REPORT_PATH_AC]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+		expect(result.kind).toBe('incomplete');
+		expect(result.storyId).toBe(reportStory);
+		expect(result.detail).toContain('finalize');
+	});
+
+	// AC5: BLOCKED from report -> kind 'blocked', storyId from report.
+	test('AC5: BLOCKED_QUALITY from report -> blocked (not from sentinel)', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH_AC,
+			capturedPaneText: '', // no sentinel
+			readFile: makeReader({
+				[WORKER_REPORT_PATH_AC]: fakeWorkerReport('BLOCKED_QUALITY', 'US-007'),
+			}),
+		});
+		expect(result.kind).toBe('blocked');
+		expect(result.storyId).toBe('US-007');
+	});
+
+	// AC5: PRD_COMPLETE from report -> pass, storyId undefined.
+	test('AC5: PRD_COMPLETE from report -> pass, storyId undefined', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: WORKER_REPORT_PATH_AC,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[WORKER_REPORT_PATH_AC]: JSON.stringify({
+					outcome: 'PRD_COMPLETE',
+					story: 'none',
+					gates: { typecheck: 'ok', tests: 'n/a' },
+					notes: 'none',
+				}),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001: worker-report.json primary path (formerly "fallback")
 // ---------------------------------------------------------------------------
 
 describe('readWorkerOutcome: worker-report-fallback', () => {
@@ -586,6 +717,330 @@ describe('readWorkerOutcome: staleness guard (US-004)', () => {
 		expect(result.storyId).toBe(storyId);
 		expect(result.detail).toContain('BLOCKED_QUALITY');
 		expect(result.detail).toContain('worker-report-fallback');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-004: regression — report-first authority order
+//
+// These four tests pin the new authority contract from US-001 so that a
+// future refactor that accidentally restores the old handoff-authoritative or
+// sentinel-gate behavior will fail immediately at this named regression suite.
+//
+// Rules being pinned:
+//   R1 (report-wins-over-handoff): when workerReportPath is provided and the
+//      report is valid, report.story drives storyId — handoff is inert.
+//   R2 (sentinel-non-override): a divergent DONE sentinel in the pane text
+//      does NOT override the report and does NOT trigger a fail-on-mismatch.
+//   R3 (DONE+passes:false->incomplete): a DONE report whose story is
+//      passes:false in prd.json yields kind 'incomplete', never 'pass'.
+//   R4 (DONE+passes:true->pass): a DONE report whose story is passes:true
+//      yields kind 'pass' with that storyId.
+// ---------------------------------------------------------------------------
+
+const REG_REPORT_PATH = '/reg/worker-report.json';
+
+describe('US-004: regression - report-first authority order', () => {
+	// R1: report wins over handoff (handoff is inert when a valid report is present)
+	test('R1: report.story wins over divergent handoff story - storyId must equal report.story', () => {
+		const reportStory = 'US-R1-REPORT';
+		const handoffStory = 'US-R1-HANDOFF'; // different story in handoff
+
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: REG_REPORT_PATH,
+			capturedPaneText: '', // no sentinel
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, true),
+				[HANDOFF_PATH]: fakeHandoff(handoffStory), // handoff names a DIFFERENT story
+				[REG_REPORT_PATH]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+
+		// Report wins: outcome is determined by report.story, not handoff.
+		expect(result.storyId).toBe(reportStory);
+		expect(result.kind).toBe('pass');
+	});
+
+	// R1 variant: absent handoff does not change the named story either.
+	test('R1-absent: absent handoff does not change storyId when report is present', () => {
+		const reportStory = 'US-R1-ABSENT';
+
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: REG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, true),
+				// HANDOFF_PATH absent (not in reader map)
+				[REG_REPORT_PATH]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+
+		expect(result.storyId).toBe(reportStory);
+		expect(result.kind).toBe('pass');
+	});
+
+	// R2: divergent sentinel does NOT override the report and must NOT produce fail-on-mismatch.
+	test('R2: divergent DONE sentinel in pane text must not override report and must not fail', () => {
+		const reportStory = 'US-R2-REPORT';
+		const sentinelStory = 'US-R2-SENTINEL'; // sentinel names a completely different story
+
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: REG_REPORT_PATH,
+			capturedPaneText: donePane(sentinelStory), // DONE sentinel with wrong story
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, true),
+				[REG_REPORT_PATH]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+
+		// Report wins. Must NOT be 'fail' (no fail-on-mismatch).
+		expect(result.storyId).toBe(reportStory);
+		expect(result.kind).toBe('pass');
+		expect(result.kind).not.toBe('fail');
+	});
+
+	// R3: DONE report + prd passes:false must yield 'incomplete', NEVER 'pass'.
+	test('R3: DONE report + prd passes:false must yield incomplete, never pass', () => {
+		const reportStory = 'US-R3-INCOMPLETE';
+
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: REG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, false), // passes:false - story NOT flipped
+				[REG_REPORT_PATH]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+
+		expect(result.kind).toBe('incomplete');
+		expect(result.kind).not.toBe('pass');
+		expect(result.storyId).toBe(reportStory);
+		expect(result.detail).toContain('finalize');
+	});
+
+	// R4: DONE report + prd passes:true must yield 'pass' with that storyId.
+	test('R4: DONE report + prd passes:true must yield pass with storyId', () => {
+		const reportStory = 'US-R4-PASS';
+
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: REG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, true), // passes:true
+				[REG_REPORT_PATH]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(reportStory);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-006: absent / malformed / stale report falls safely to failure nets
+//
+// AC1: staleness guard on PRIMARY path — a report whose story != expectedStoryId
+//      is rejected and yields no pass or blocked outcome (falls to 'unknown').
+// AC2: absent or malformed (unparseable / wrong-shape / missing discriminators)
+//      report yields 'unknown' (non-committal), keeping pane-died/timeout nets
+//      as the terminal signal; no false 'pass'.
+// AC3: stale report (clearWorkerReport failed / crash-after-write) does not
+//      finalize: integrity check + staleness guard together prevent false-pass.
+// ---------------------------------------------------------------------------
+
+const US006_REPORT_PATH = '/us006/worker-report.json';
+
+describe('readWorkerOutcome: US-006 absent / malformed / stale report safety nets', () => {
+	// AC2: absent report with workerReportPath provided -> 'unknown'
+	test('AC2: absent report file (null from readFile) with workerReportPath -> unknown', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: US006_REPORT_PATH,
+			expectedStoryId: 'US-010',
+			capturedPaneText: '',
+			readFile: makeReader({}), // no files -> readFile returns null for all paths
+		});
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	// AC2: malformed JSON -> 'unknown'
+	test('AC2: malformed JSON report -> unknown (JSON.parse fails)', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: US006_REPORT_PATH,
+			expectedStoryId: 'US-010',
+			capturedPaneText: '',
+			readFile: makeReader({ [US006_REPORT_PATH]: '{ not valid json !!!' }),
+		});
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	// AC2: wrong-shape report (empty object, no story/outcome) -> 'unknown'
+	test('AC2: wrong-shape report (empty object {}) -> unknown', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: US006_REPORT_PATH,
+			expectedStoryId: 'US-010',
+			capturedPaneText: '',
+			readFile: makeReader({ [US006_REPORT_PATH]: '{}' }),
+		});
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	// AC2: report has outcome but no story -> 'unknown'
+	test('AC2: report missing story discriminator -> unknown', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: US006_REPORT_PATH,
+			expectedStoryId: 'US-010',
+			capturedPaneText: '',
+			readFile: makeReader({
+				[US006_REPORT_PATH]: JSON.stringify({
+					outcome: 'DONE',
+					// story field absent
+					gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+					notes: 'none',
+				}),
+			}),
+		});
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	// AC2: report has story but no outcome -> 'unknown'
+	test('AC2: report missing outcome discriminator -> unknown', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: US006_REPORT_PATH,
+			expectedStoryId: 'US-010',
+			capturedPaneText: '',
+			readFile: makeReader({
+				[US006_REPORT_PATH]: JSON.stringify({
+					// outcome field absent
+					story: 'US-010',
+					gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+					notes: 'none',
+				}),
+			}),
+		});
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	// AC2: top-level JSON array -> 'unknown'
+	test('AC2: top-level JSON array report -> unknown', () => {
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: US006_REPORT_PATH,
+			expectedStoryId: 'US-010',
+			capturedPaneText: '',
+			readFile: makeReader({ [US006_REPORT_PATH]: '[{"outcome":"DONE","story":"US-010"}]' }),
+		});
+		// isObject([...]) = false -> report null -> unknown
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	// AC1: staleness guard on PRIMARY path: stale DONE report -> unknown (no pass)
+	test('AC1: stale DONE report (story != expectedStoryId) -> unknown, no pass', () => {
+		const dispatchedStory = 'US-010';
+		const staleStory = 'US-005';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: US006_REPORT_PATH,
+			expectedStoryId: dispatchedStory,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(staleStory, true), // stale story passes in prd
+				[US006_REPORT_PATH]: fakeWorkerReport('DONE', staleStory), // stale story in report
+			}),
+		});
+		// The stale report must not produce a pass even though prd.passes=true for stale story.
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	// AC1: staleness guard on PRIMARY path: stale BLOCKED report -> unknown (no blocked from stale)
+	test('AC1: stale BLOCKED report (story != expectedStoryId) -> unknown, not blocked', () => {
+		const dispatchedStory = 'US-010';
+		const staleStory = 'US-005';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: US006_REPORT_PATH,
+			expectedStoryId: dispatchedStory,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[US006_REPORT_PATH]: fakeWorkerReport('BLOCKED_QUALITY', staleStory),
+			}),
+		});
+		// Stale BLOCKED must not produce kind:'blocked' from the report alone.
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	// AC3: stale report (crashAfterWrite scenario) + prd.passes=true for stale story
+	// -> no false-pass: integrity + staleness guard together prevent it.
+	test('AC3: crash-after-write stale report does not finalize story (no false pass)', () => {
+		const dispatchedStory = 'US-010'; // what the supervisor dispatched
+		const staleStory = 'US-005'; // what the worker wrote before crashing
+
+		// Worst case: prd shows passes:true for the stale story (it was done previously)
+		// and the stale report claims DONE for it. This must still not produce a pass
+		// for the dispatched story.
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: US006_REPORT_PATH,
+			expectedStoryId: dispatchedStory,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(staleStory, true), // stale story already confirmed
+				[US006_REPORT_PATH]: fakeWorkerReport('DONE', staleStory), // stale report
+			}),
+		});
+
+		// Neither a pass for the stale story, nor a pass for the dispatched story.
+		expect(result.kind).toBe('unknown');
+		expect(result.storyId).toBeUndefined();
+	});
+
+	// AC1/AC3: fresh report for the CORRECT story is still accepted (regression guard).
+	test('AC1/AC3: fresh report (story == expectedStoryId) + prd passes:true -> pass', () => {
+		const dispatchedStory = 'US-010';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: US006_REPORT_PATH,
+			expectedStoryId: dispatchedStory,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(dispatchedStory, true),
+				[US006_REPORT_PATH]: fakeWorkerReport('DONE', dispatchedStory),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(dispatchedStory);
 	});
 });
 

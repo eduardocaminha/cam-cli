@@ -61,6 +61,7 @@ export type WorkerEventKind =
 	| 'pane-died-retry'
 	| 'worker-token-ceiling'
 	| 'outcome-fallback'
+	| 'outcome-source'
 	| 'sidecar-exit'
 	| 'review-verdict-handback'
 	| 'spawn-resolution';
@@ -134,12 +135,30 @@ export interface ReviewVerdictHandbackEventDetail {
 	round: number;
 }
 
+/**
+ * 'outcome-source' event detail: emitted after every readWorkerOutcome call in
+ * the implement branch, recording which source won the outcome decision and what
+ * the integrity check concluded.
+ *   - winningSrc: 'worker-report' when worker-report.json drove the outcome;
+ *     'fallback' when the legacy handoff/sentinel path was used instead.
+ *   - integrityResult: 'confirmed-pass' (prd.json passes:true confirmed),
+ *     'incomplete' (DONE reported but prd.json not flipped), or
+ *     'stale-absent-rejection' (blocked/fail/unknown; no integrity to confirm).
+ *   - detail: verbatim outcome.detail string for operator diagnostics.
+ */
+export interface OutcomeSourceEventDetail {
+	winningSrc: 'worker-report' | 'fallback';
+	integrityResult: 'confirmed-pass' | 'incomplete' | 'stale-absent-rejection';
+	detail: string;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
 	| TokensEventDetail
 	| PushEventDetail
 	| ReviewVerdictHandbackEventDetail
+	| OutcomeSourceEventDetail
 	| SpawnResolutionEvent
 	| Record<string, unknown>;
 

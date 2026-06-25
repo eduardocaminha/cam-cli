@@ -796,13 +796,15 @@ describe('runSupervisor', () => {
 		expect(reviewCalls).toBe(MAX_REVIEW_DISPATCH_ATTEMPTS); // bounded, then block
 	});
 
-	test('worker outcome fail -> blocked', async () => {
-		// Sentinel says US-001 but handoff records US-002 -> mismatch -> fail
+	test('worker outcome incomplete -> blocked (sentinel-handoff mismatch no longer fails, US-001)', async () => {
+		// US-001: the DONE-sentinel-vs-handoff mismatch->fail block was dropped.
+		// Sentinel says US-001 but handoff records US-002. Handoff now wins for
+		// story selection (no fail-on-mismatch). US-002 is not in the prd
+		// (which only has US-001), so passes:false -> kind='incomplete' -> blocked.
 		const prd = makePrd({
 			stories: [{ id: 'US-001', priority: 1, passes: false }],
 		});
 
-		// Pane DONE story=US-001 but handoff lastCompletedStory.id=US-002: real mismatch.
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
 			capturePane: (_paneId) => donePane('US-001'),
@@ -813,7 +815,8 @@ describe('runSupervisor', () => {
 
 		expect(result.status).toBe('blocked');
 		expect(result.iterations).toBe(1);
-		expect(result.lastOutcome?.kind).toBe('fail');
+		// US-001: was 'fail', now 'incomplete' (handoff wins, prd not confirmed for US-002)
+		expect(result.lastOutcome?.kind).toBe('incomplete');
 	});
 
 	test('worker outcome unknown -> blocked', async () => {
@@ -1403,6 +1406,80 @@ describe('runSupervisor', () => {
 		await runSupervisor(opts);
 
 		expect(clearCalls).toBe(1); // exactly once per implement dispatch
+	});
+
+	// -------------------------------------------------------------------------
+	// US-002: canonical implementer completion-detect via worker-report.json
+	// -------------------------------------------------------------------------
+
+	test('US-002: DONE sentinel in pane is ignored when readWorkerReport is injected (report is canonical, sentinel is corroboration)', async () => {
+		// AC3: when readWorkerReport IS injected (canonical path), a DONE sentinel
+		// visible in the pane is NOT used to break the poll loop. The else-branch
+		// (capturePane + parseAnySentinel) is skipped entirely. The poll exits only
+		// via timeout (or report file, or pane-died) -- never via sentinel alone.
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			// Pane shows a DONE sentinel -- ignored because readWorkerReport is injected.
+			capturePane: (_paneId) => donePane('US-001'),
+			// readWorkerReport returns null -> no report file present yet.
+			readWorkerReport: () => null,
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 0, // immediate timeout fires (not sentinel)
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Poll exits via timeout (dead-worker streak 1, under cap), not via sentinel.
+		// Next decideNextAction finds prd all done -> complete.
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		// Timeout kill was issued, confirming the exit was timeout not sentinel.
+		expect(spawnCalls.some((a) => a.includes('echo timeout'))).toBe(true);
+	});
+
+	test('US-002: pane-died remains a failure net when readWorkerReport is injected', async () => {
+		// AC2: pane-died is checked BEFORE readWorkerReport (first guard in the loop).
+		// A dead pane terminates the poll immediately even when the report reader is wired.
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		let prdCall = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			isPaneAlive: (_paneId) => false, // pane dies immediately on first poll tick
+			// readWorkerReport returns null -- but pane-died fires before it is checked.
+			readWorkerReport: () => null,
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 99_999,
+		});
+
+		const result = await runSupervisor(opts);
+
+		// pane-died fires (streak 1, under MAX_DEAD_WORKER_RETRIES cap).
+		// Next decideNextAction finds prd all done -> complete.
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
 	});
 });
 
@@ -2137,10 +2214,12 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 		expect(fallbackEvents[0]?.detail).toMatchObject({ fallbackKind: 'worker-report-fallback' });
 	});
 
-	test('US-005: outcome-fallback event fires on handoff-string-coerced path', async () => {
-		// When handoff.lastCompletedStory is a bare string (instead of {id,title}),
-		// readWorkerOutcome coerces it to {id} and records 'handoff-string-coerced'
-		// in the detail. The loop must emit an 'outcome-fallback' event.
+	test('US-005 / US-001: when report is primary, outcome-fallback fires with worker-report-fallback (not handoff-string-coerced)', async () => {
+		// US-001 inversion: when workerReportPath is provided and a valid DONE
+		// report is present, the report is the authoritative source. Even if
+		// handoff.lastCompletedStory is a bare string, the handoff-string-coerced
+		// path is never taken (handoff is not consulted). The outcome-fallback event
+		// fires with fallbackKind 'worker-report-fallback' (the primary-path label).
 		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
 		const prd_done_clean = makePrd({
 			stories: [{ id: 'US-001', priority: 1, passes: true }],
@@ -2165,10 +2244,10 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 				// Call 3+: top of iter 2 -> all done + clean (complete)
 				return prdCall <= 1 ? prd_impl : prd_done_clean;
 			},
-			// Bare-string lastCompletedStory triggers the handoff-string-coerced path.
+			// Bare-string handoff: under US-001 primary path, this is IGNORED.
 			readHandoff: () => ({ lastCompletedStory: 'US-001' } as unknown as HandoffSnapshot),
-			capturePane: (_paneId) => UNKNOWN_PANE, // no DONE sentinel (so corroboration = handoff-string-coerced)
-			readWorkerReport: () => fakeReport, // used only to trigger poll sentinel detection
+			capturePane: (_paneId) => UNKNOWN_PANE, // no DONE sentinel
+			readWorkerReport: () => fakeReport, // triggers poll sentinel detection + primary path
 			workerReportPath: '/fake/worker-report.json',
 			logEvent: logger,
 		});
@@ -2177,8 +2256,10 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 
 		expect(result.status).toBe('complete');
 		const fallbackEvents = events.filter((e) => e.kind === 'outcome-fallback');
+		// Report is primary: detail contains 'worker-report-fallback', so the
+		// outcome-fallback event fires with that label (not 'handoff-string-coerced').
 		expect(fallbackEvents).toHaveLength(1);
-		expect(fallbackEvents[0]?.detail).toMatchObject({ fallbackKind: 'handoff-string-coerced' });
+		expect(fallbackEvents[0]?.detail).toMatchObject({ fallbackKind: 'worker-report-fallback' });
 	});
 
 	test('US-005: outcome-fallback event does NOT fire on happy path (well-formed handoff + DONE sentinel)', async () => {
@@ -2210,5 +2291,400 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 		expect(result.status).toBe('complete');
 		const fallbackEvents = events.filter((e) => e.kind === 'outcome-fallback');
 		expect(fallbackEvents).toHaveLength(0);
+	});
+
+	// -------------------------------------------------------------------------
+	// US-005 (CAM-77): outcome-source event
+	// -------------------------------------------------------------------------
+
+	describe('US-005 (CAM-77): outcome-source event', () => {
+		const fakeReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-001',
+			gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		test('(A) worker-report primary path: event fires with winningSrc=worker-report, integrityResult=confirmed-pass', async () => {
+			// DONE report + prd passes:true in fileReader -> outcome kind=pass.
+			// Detail contains 'worker-report-fallback' -> winningSrc=worker-report.
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done_clean = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+			let prdCall = 0;
+
+			const { logger, events } = makeInMemoryEventLogger();
+
+			const opts = makeBaseOpts({
+				readPrd: () => {
+					prdCall++;
+					// call 1: top of iter 1 -> implement; call 2: fileReader in outcome check -> pass; call 3+: complete
+					return prdCall <= 1 ? prd_impl : prd_done_clean;
+				},
+				readHandoff: () => null,
+				capturePane: (_paneId) => UNKNOWN_PANE,
+				readWorkerReport: () => fakeReport,
+				workerReportPath: '/fake/worker-report.json',
+				logEvent: logger,
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			const srcEvents = events.filter((e) => e.kind === 'outcome-source');
+			expect(srcEvents).toHaveLength(1);
+			expect(srcEvents[0]?.detail).toMatchObject({
+				winningSrc: 'worker-report',
+				integrityResult: 'confirmed-pass',
+			});
+		});
+
+		test('(B) fallback path (handoff + sentinel): event fires with winningSrc=fallback, integrityResult=confirmed-pass', async () => {
+			// Handoff present, DONE sentinel in pane, no workerReportPath.
+			// Detail does NOT contain 'worker-report-fallback' -> winningSrc=fallback.
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done_clean = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+			let prdCall = 0;
+
+			const { logger, events } = makeInMemoryEventLogger();
+
+			const opts = makeBaseOpts({
+				readPrd: () => {
+					prdCall++;
+					return prdCall <= 1 ? prd_impl : prd_done_clean;
+				},
+				readHandoff: () => makeHandoff('US-001'),
+				capturePane: (_paneId) => donePane('US-001'),
+				logEvent: logger,
+				// No workerReportPath -> fallback path
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			const srcEvents = events.filter((e) => e.kind === 'outcome-source');
+			expect(srcEvents).toHaveLength(1);
+			expect(srcEvents[0]?.detail).toMatchObject({
+				winningSrc: 'fallback',
+				integrityResult: 'confirmed-pass',
+			});
+		});
+
+		test('(C) DONE report + prd passes:false: event fires with integrityResult=incomplete', async () => {
+			// DONE report found, but readPrd always returns passes:false (prd not flipped).
+			// readWorkerOutcome returns kind=incomplete; outcome-source should record that.
+			const prd_never_passing = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: false }],
+			});
+
+			const { logger, events } = makeInMemoryEventLogger();
+
+			const opts = makeBaseOpts({
+				readPrd: () => prd_never_passing,
+				readHandoff: () => null,
+				capturePane: (_paneId) => UNKNOWN_PANE,
+				readWorkerReport: () => fakeReport,
+				workerReportPath: '/fake/worker-report.json',
+				logEvent: logger,
+				// Inject runGates returning fail so the loop exits quickly after the event.
+				runGates: () => ({ ok: false, detail: 'test gate fail' }),
+				finalizeStory: (_storyId) => ({ ok: true, detail: 'finalized' }),
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			const srcEvents = events.filter((e) => e.kind === 'outcome-source');
+			expect(srcEvents).toHaveLength(1);
+			expect(srcEvents[0]?.detail).toMatchObject({
+				winningSrc: 'worker-report',
+				integrityResult: 'incomplete',
+			});
+		});
+
+		test('(D) BLOCKED report: event fires with integrityResult=stale-absent-rejection', async () => {
+			// BLOCKED_QUALITY report -> outcome kind=blocked.
+			// outcome-source must record stale-absent-rejection.
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const blockedReport: WorkerReport = {
+				outcome: 'BLOCKED_QUALITY',
+				story: 'US-001',
+				gates: { typecheck: 'fail: 2 errors', tests: '0 pass / 5 fail' },
+				notes: 'tests failed',
+			};
+
+			const { logger, events } = makeInMemoryEventLogger();
+
+			const opts = makeBaseOpts({
+				readPrd: () => prd_impl,
+				readHandoff: () => null,
+				capturePane: (_paneId) => UNKNOWN_PANE,
+				readWorkerReport: () => blockedReport,
+				workerReportPath: '/fake/worker-report.json',
+				logEvent: logger,
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			const srcEvents = events.filter((e) => e.kind === 'outcome-source');
+			expect(srcEvents).toHaveLength(1);
+			expect(srcEvents[0]?.detail).toMatchObject({
+				winningSrc: 'worker-report',
+				integrityResult: 'stale-absent-rejection',
+			});
+		});
+
+		test('(E) logEvent absent: no crash, loop still resolves normally', async () => {
+			// When logEvent is not injected, the emit() helper is a no-op.
+			// The loop must complete normally without throwing.
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done_clean = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+			let prdCall = 0;
+
+			const opts = makeBaseOpts({
+				readPrd: () => {
+					prdCall++;
+					return prdCall <= 1 ? prd_impl : prd_done_clean;
+				},
+				readHandoff: () => null,
+				capturePane: (_paneId) => UNKNOWN_PANE,
+				readWorkerReport: () => fakeReport,
+				workerReportPath: '/fake/worker-report.json',
+				// logEvent intentionally absent: emit is a no-op.
+			});
+
+			const result = await runSupervisor(opts);
+			expect(result.status).toBe('complete');
+		});
+
+		test('(F) production-wiring: host.ts buildSupervisorOptions wires logEvent into supervisor opts', async () => {
+			// CAM-53 lesson: an event emitted without a writeEvent sink wired at the
+			// call-site never persists. Assert that host.ts assigns logEvent in the
+			// opts object so the production path has a real file sink.
+			const hostSrc = await Bun.file('src/supervisor/host.ts').text();
+			// logEvent is built from makeFileEventLogger and assigned in opts.
+			expect(hostSrc).toContain('makeFileEventLogger');
+			expect(hostSrc).toContain('logEvent,');
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-006: absent / malformed / stale report falls safely to pane-died +
+//         timeout nets; CAM-44 backoff intact
+//
+// AC4 (loop-level): when the report never appears, or is stale/rejected, the
+// completion-detect poll does NOT exit via the report path. The pane-died and
+// timeout nets fire instead, keeping the CAM-44 dead-worker backoff intact.
+// A stale or malformed report must NOT produce a terminal 'blocked' outcome
+// that bypasses the backoff.
+// ---------------------------------------------------------------------------
+
+describe('runSupervisor US-006: stale / absent / malformed report safety nets', () => {
+	// Helper: two-snapshot prd sequence so iter 1 dispatches, iter 2 completes.
+	function makeTwoSnapshots() {
+		const prd_impl = makePrd({ stories: [{ id: 'US-010', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-010', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		return { prd_impl, prd_done };
+	}
+
+	// AC4: stale report (story mismatch) -> poll continues -> pane-died fires
+	test('AC4: stale report (story != expectedStoryId) -> pane-died net fires, not terminal blocked', async () => {
+		// The report carries a stale story ('US-005', not the dispatched 'US-010').
+		// With US-006 fix, the poll does NOT exit on the stale report. The pane
+		// dies on the same tick, so pane-died fires (streak 1, under cap).
+		// The next iteration finds prd all done -> complete.
+		const { prd_impl, prd_done } = makeTwoSnapshots();
+		let prdCall = 0;
+
+		const staleReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-005', // stale: dispatcher expected US-010
+			gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			// Pane dies immediately (stale-report scenario: worker crashed after writing stale report)
+			isPaneAlive: (_paneId) => false,
+			readWorkerReport: () => staleReport,
+			workerReportPath: '/fake/worker-report.json',
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 99_999,
+		});
+
+		const result = await runSupervisor(opts);
+
+		// pane-died fires (streak 1, under MAX_DEAD_WORKER_RETRIES cap).
+		// Next decideNextAction finds prd all done -> complete.
+		// Must NOT be a terminal 'blocked' from the stale-report path.
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+	});
+
+	// AC4: stale report -> poll continues -> timeout fires, CAM-44 backoff increments
+	test('AC4: stale report -> timeout fires with CAM-44 backoff intact (not terminal block)', async () => {
+		// The report carries stale story 'US-005'; dispatched story is 'US-010'.
+		// Poll does NOT exit on stale report. Timeout fires (perWorkerTimeoutMs:0).
+		// CAM-44 backoff: streak=1 (under cap), pane-died-retry event emitted.
+		// Next iter finds prd done -> complete.
+		const { prd_impl, prd_done } = makeTwoSnapshots();
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		const staleReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-005', // stale
+			gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readWorkerReport: () => staleReport,
+			workerReportPath: '/fake/worker-report.json',
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 0, // immediate timeout
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Timeout fires (not sentinel), CAM-44 backoff active (streak 1, under cap).
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		// Timeout kill command was issued (confirms exit was timeout, not sentinel).
+		expect(spawnCalls.some((a) => a.includes('echo timeout'))).toBe(true);
+	});
+
+	// AC4: malformed report (missing story string) -> poll continues -> timeout fires
+	test('AC4: malformed report (missing story discriminator) -> timeout fires, not false-pass', async () => {
+		const { prd_impl, prd_done } = makeTwoSnapshots();
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		// A report object with outcome but no story (wrong-shape).
+		// readWorkerReport returns it; the poll loop must reject it (no story string).
+		const malformedReport = {
+			outcome: 'DONE',
+			// story field absent - TypeScript cast is intentional to test runtime check
+		} as WorkerReport;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readWorkerReport: () => malformedReport,
+			workerReportPath: '/fake/worker-report.json',
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 0,
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Timeout fires (malformed report rejected), not a false sentinel exit.
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		expect(spawnCalls.some((a) => a.includes('echo timeout'))).toBe(true);
+	});
+
+	// AC4: absent report (readWorkerReport returns null) -> poll continues -> timeout
+	// (regression: ensure the null path is unchanged by US-006 edits)
+	test('AC4: absent report (null) -> timeout fires, pane-died/timeout nets intact', async () => {
+		const { prd_impl, prd_done } = makeTwoSnapshots();
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readWorkerReport: () => null,
+			workerReportPath: '/fake/worker-report.json',
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 0,
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		expect(spawnCalls.some((a) => a.includes('echo timeout'))).toBe(true);
+	});
+
+	// AC4: fresh report for the correct story still exits the poll via sentinel (regression guard).
+	test('AC4: fresh report (matching story) still exits poll correctly (no regression)', async () => {
+		const { prd_impl, prd_done } = makeTwoSnapshots();
+		let prdCall = 0;
+
+		const freshReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-010', // matches dispatched story
+			gates: { typecheck: 'ok', tests: '2 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readHandoff: () => makeHandoff('US-010'),
+			capturePane: (_paneId) => donePane('US-010'),
+			readWorkerReport: () => freshReport,
+			workerReportPath: '/fake/worker-report.json',
+			// No timeout (perWorkerTimeoutMs default: very high), no pane-died.
+			// Poll exits via fresh report on first tick.
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		expect(result.lastOutcome?.kind).toBe('pass');
+		expect(result.lastOutcome?.storyId).toBe('US-010');
+	});
+
+	// AC4: host.ts makeReadWorkerReport applies shape guards (no false-positive from wrong-shape JSON)
+	test('AC4: host.ts makeReadWorkerReport applies shape guard for story + outcome (US-R2-001)', async () => {
+		// Assert the production reader function (makeReadWorkerReport) includes the
+		// correct shape guard expression for both discriminator fields.
+		const hostSrc = await Bun.file('src/supervisor/host.ts').text();
+		// Shape guard: !Array.isArray + typeof outcome === 'string' + typeof story === 'string'
+		expect(hostSrc).toContain("!Array.isArray(parsed)");
+		expect(hostSrc).toContain("'outcome'] === 'string'");
+		expect(hostSrc).toContain("'story'] === 'string'");
 	});
 });
