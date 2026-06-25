@@ -1,23 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Supervisor poll loop completion-detects via worker-report.json as the canonical path; parseAnySentinel demoted"
+    "id": "US-003",
+    "title": "Document worker-report.json as the outcome source in the implementer agent (both copies + vendor regen)"
   },
   "branchName": "cam/CAM-77-worker-report-sole-outcome",
-  "timestamp": "2026-06-25T22:30:00Z",
+  "timestamp": "2026-06-25T23:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "test/supervisor/loop.test.ts",
+    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-implementer.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 demoted parseAnySentinel for the implementer path: the poll loop comment and file header now explicitly document worker-report.json as canonical and the sentinel as human-corroboration only. Two new tests (AC3 + AC2) confirm the demotion. No logic change was needed since the if (readWorkerReport !== undefined) / else structure already gave the report priority. US-003 documents the change in the implementer agent prompt (both template and runtime copies + vendor regen).",
+  "nextStoryContext": "US-003 is a documentation-only story: both agent prompt copies now state worker-report.json is the authoritative outcome source and CAM_IMPLEMENTER_STATUS is human-readable corroboration only. handoff.json is described as forward-context for the next agent, not a sidecar control signal. No behavior changes. vendor regen passed (embed-vendor:check clean). All 3 PRD stories now have passes: true.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-002 touched only internal TypeScript files (loop.ts, loop.test.ts). No external library API was exercised."
+      "summary": "US-003 touched only agent prompt .md files and the vendored codegen output. No external library API was exercised."
     }
   ]
 }

@@ -60,7 +60,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-implementer.md AND templates/agents/subagent-implementer.md (BOTH copies; self-hosting pattern, patterns.md 'Agent-prompt self-hosting pattern' 2026-06-16). After editing both, run `bun run embed-vendor` to regenerate src/vendor/_generated.ts, then `bun run embed-vendor:check` (test/embedded.test.ts byte-parity catches drift between templates/ and the embedded copy). Update the 'Session model' section (currently says the report is the push signal; reinforce that it is the AUTHORITATIVE OUTCOME channel and the sentinel is corroboration ONLY) and the 'Exit report protocol (US-003)' section. The agent ALREADY writes worker-report.json on every exit (incl BLOCKED_* and PRD_COMPLETE) so this is a documentation alignment, not a behavior change; do not alter the write steps. Agent .md files are EXEMPT from the no-em-dash rule (global CLAUDE.md: .claude/agents/*.md are LLM-consumed). Commit message should flag 'intentional self-hosting' per patterns.md so an auditor does not treat the dual edit as harness drift. Depends on US-001 + US-002 (the contract they establish)."
     },
