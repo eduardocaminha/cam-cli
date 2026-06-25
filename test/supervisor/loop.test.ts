@@ -1407,6 +1407,80 @@ describe('runSupervisor', () => {
 
 		expect(clearCalls).toBe(1); // exactly once per implement dispatch
 	});
+
+	// -------------------------------------------------------------------------
+	// US-002: canonical implementer completion-detect via worker-report.json
+	// -------------------------------------------------------------------------
+
+	test('US-002: DONE sentinel in pane is ignored when readWorkerReport is injected (report is canonical, sentinel is corroboration)', async () => {
+		// AC3: when readWorkerReport IS injected (canonical path), a DONE sentinel
+		// visible in the pane is NOT used to break the poll loop. The else-branch
+		// (capturePane + parseAnySentinel) is skipped entirely. The poll exits only
+		// via timeout (or report file, or pane-died) -- never via sentinel alone.
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		let prdCall = 0;
+		const spawnCalls: string[][] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			// Pane shows a DONE sentinel -- ignored because readWorkerReport is injected.
+			capturePane: (_paneId) => donePane('US-001'),
+			// readWorkerReport returns null -> no report file present yet.
+			readWorkerReport: () => null,
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 0, // immediate timeout fires (not sentinel)
+			spawn: (_cmd, args) => {
+				spawnCalls.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Poll exits via timeout (dead-worker streak 1, under cap), not via sentinel.
+		// Next decideNextAction finds prd all done -> complete.
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+		// Timeout kill was issued, confirming the exit was timeout not sentinel.
+		expect(spawnCalls.some((a) => a.includes('echo timeout'))).toBe(true);
+	});
+
+	test('US-002: pane-died remains a failure net when readWorkerReport is injected', async () => {
+		// AC2: pane-died is checked BEFORE readWorkerReport (first guard in the loop).
+		// A dead pane terminates the poll immediately even when the report reader is wired.
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		let prdCall = 0;
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			isPaneAlive: (_paneId) => false, // pane dies immediately on first poll tick
+			// readWorkerReport returns null -- but pane-died fires before it is checked.
+			readWorkerReport: () => null,
+			pollIntervalMs: 0,
+			perWorkerTimeoutMs: 99_999,
+		});
+
+		const result = await runSupervisor(opts);
+
+		// pane-died fires (streak 1, under MAX_DEAD_WORKER_RETRIES cap).
+		// Next decideNextAction finds prd all done -> complete.
+		expect(result.status).toBe('complete');
+		expect(result.iterations).toBe(1);
+	});
 });
 
 // ---------------------------------------------------------------------------

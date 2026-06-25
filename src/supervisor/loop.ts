@@ -21,6 +21,11 @@
 //   - writeSessionMarker is keyed to the actualStoryId from the outcome, never
 //     to the advisory storyId from decideNextAction.
 //   - Hard max-iterations cap (default MAX_ITERATIONS = 50) prevents runaway loops.
+//   - worker-report.json is the canonical implementer completion-detect path
+//     (US-002). buildSupervisorOptions in host.ts always injects readWorkerReport
+//     so the report-file detection path is never skipped in production. When the
+//     reader is present, parseAnySentinel is demoted to human-corroboration only:
+//     a DONE sentinel in the pane without a matching report does NOT break the poll.
 
 import { decideNextAction } from './decide.ts';
 import type { PrdSnapshot } from './decide.ts';
@@ -688,12 +693,13 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					pollOutcome = 'pane-died';
 					break;
 				}
-				// US-004: primary completion-detection path. When a readWorkerReport
-				// reader is injected, poll the report file instead of the pane text.
-				// The file presence is the push event; report content corroborates but
-				// never sole-gates (prd.json + handoff.json are consulted in
-				// readWorkerOutcome below). Falls back to capturePane + parseAnySentinel
-				// when no reader is provided (backward compat with existing callers).
+				// US-002: worker-report.json is the canonical implementer completion-detect
+				// path. When readWorkerReport is injected (always in production via
+				// buildSupervisorOptions), the report file presence is the SOLE poll-exit
+				// trigger. parseAnySentinel is demoted to human-corroboration only: a
+				// DONE sentinel visible in the pane without a matching report does NOT
+				// break the poll here. Falls back to capturePane + parseAnySentinel ONLY
+				// when readWorkerReport is absent (backward compat with legacy callers).
 				if (readWorkerReport !== undefined) {
 					if (readWorkerReport() !== null) {
 						pollOutcome = 'sentinel';
@@ -707,6 +713,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					// anywhere earlier in the pane history (e.g. from CLAUDE.md displayed
 					// in context or a template file being cat'd). Restricting to the tail
 					// makes the guard exact: a sentinel in old scroll-history cannot fire.
+					// (human-corroboration fallback only, not canonical detection)
 					const polledText = capturePane(workerPaneId);
 					const tail = polledText.split('\n').slice(-10).join('\n');
 					if (parseAnySentinel(tail) !== null) {

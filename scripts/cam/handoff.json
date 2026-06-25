@@ -1,25 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "readWorkerOutcome reads worker-report.json as the sole authoritative outcome source"
+    "id": "US-002",
+    "title": "Supervisor poll loop completion-detects via worker-report.json as the canonical path; parseAnySentinel demoted"
   },
   "branchName": "cam/CAM-77-worker-report-sole-outcome",
-  "timestamp": "2026-06-25T22:00:00Z",
+  "timestamp": "2026-06-25T22:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/result.ts",
-    "test/supervisor/result.test.ts",
+    "src/supervisor/loop.ts",
     "test/supervisor/loop.test.ts",
-    "scripts/cam/patterns.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 inverted readWorkerOutcome: worker-report.json is now PRIMARY. The fallback path (handoff + sentinel) is preserved for backward compat when workerReportPath is absent. US-002 should wire loop.ts to always provide workerReportPath so the primary path is always exercised in production. The 'worker-report-fallback' detail label is kept in the primary path for backward compat with loop.ts outcome-fallback detection. US-006 can harden staleness/failure modes.",
+  "nextStoryContext": "US-002 demoted parseAnySentinel for the implementer path: the poll loop comment and file header now explicitly document worker-report.json as canonical and the sentinel as human-corroboration only. Two new tests (AC3 + AC2) confirm the demotion. No logic change was needed since the if (readWorkerReport !== undefined) / else structure already gave the report priority. US-003 documents the change in the implementer agent prompt (both template and runtime copies + vendor regen).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-001 touched only internal TypeScript files (result.ts, test files). No external library API was exercised."
+      "summary": "US-002 touched only internal TypeScript files (loop.ts, loop.test.ts). No external library API was exercised."
     }
   ]
 }

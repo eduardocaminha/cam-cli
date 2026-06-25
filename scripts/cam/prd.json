@@ -43,7 +43,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (implement poll loop ~lines 685-734; readWorkerReport injectable branch ~lines 697-716; imports readWorkerOutcome + parseAnySentinel at line 27). Today the report-watch runs only inside `if (readWorkerReport !== undefined)`; host.ts buildSupervisorOptions ALWAYS injects readWorkerReport (host.ts:531 + opts at line 625), so production already takes the report path, but the `else` branch (capturePane + parseAnySentinel, lines 702-716) is still the completion gate when a reader is absent. Make the report-watch the CANONICAL detector and demote the parseAnySentinel else-branch to a non-gate corroboration fallback: even if it breaks the poll, readWorkerOutcome (US-001, report-first) decides the outcome, so the sentinel never finalizes. Preserve pane-died (line 687), timeout (line 731), token-ceiling (line 720), and the CAM-44 dead-worker backoff (lines 765-792). parseAnySentinel lives at src/supervisor/result.ts:235 and is also used for CAM_REVIEWER_STATUS / <review> tags: do NOT remove it, only demote its implementer role. Depends on US-001. Tests: test/supervisor/loop.test.ts (2214 lines; many cases already inject readWorkerReport)."
     },
