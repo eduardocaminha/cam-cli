@@ -11,16 +11,23 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/supervisor/host.ts:119]: makeReadReviewReport validates only JSON-parseability and object-ness, not the ReviewReport shape. A valid-JSON-but-wrong-shape review-report.json (e.g. one missing the `verdict` field, or a top-level array) is returned as a bogus ReviewReport, so makeReviewDispatch (review.ts:418-428) runs `/^FIXES_PENDING:(\\d+)$/.exec(undefined)`, derives FIXES_PENDING:0, and creates a contentless placeholder fix story, even overriding a valid <review>CLEAN</review> tag in the pane. This contradicts US-004 AC2, which requires that a report 'present but malformed (invalid JSON or wrong shape)' falls back to the <review>-tag verdict. The US-004 tests only simulate malformed via an injected reader returning null (review.test.ts:817,844), so the wrong-shape-object path through the real production reader is uncovered. Fix: add a verdict-shape guard to makeReadReviewReport (return null when `verdict` is not a string) and add a regression test feeding a wrong-shape object through the real reader / dispatch asserting tag fallback."
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "notes": "CRITICAL [src/supervisor/review.ts:363]: review-report.json is never cleared before a review dispatch, unlike worker-report.json which is erased at loop.ts:658 specifically 'to prevent a leftover report file from triggering a false-positive on the first poll tick'. makeReviewDispatch respawns the reviewer then, after a single sleepFn(pollIntervalMs), immediately reads readReviewReport() before the pane-death check. On review round 2+ within one cam run (and across cam run sessions, since the file is gitignored but persists in the working tree) the stale round-1 report is read and breaks the poll loop with the previous round's verdict/findings, ignoring the still-booting round-2 reviewer. The result is a false-positive completion that replays stale findings until MAX_ROUNDS_DEBT. Mirror the worker-report fix: add a makeClearReviewReport(cwd) factory in host.ts and a clearReviewReport seam invoked before the respawn-pane in makeReviewDispatch."
     },
     {
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "notes": "WARNING [docs/recovery-runbook.md:757]: Section (m) documents a ReviewReport shape that does not match the code or the agent spec. (1) Severity values are shown as 'error'/'warn' (lines 759-760, 768) but the agent instruction, the ReviewReport type, and the tests use CRITICAL/WARNING/SUGGESTION. (2) The verdict example is 'FIXES_PENDING' without ':N' and lists MAX_ROUNDS_DEBT as a possible file verdict (lines 757, 767), but review.ts:407 requires 'FIXES_PENDING:N' to extract the count and the reviewer never writes MAX_ROUNDS_DEBT (it is derived by the supervisor); a reviewer following this example would have its findings count parsed as 0. (3) Lines 20 and 745 claim the sidecar 'deletes the file', which no code does (see the CRITICAL). Reconcile the runbook with the real schema and clearing behavior."
     },
@@ -39,10 +46,10 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
-      "notes": "Mirror src/supervisor/worker-report.ts (WorkerReport interface + WORKER_REPORT_FILENAME at :38) as the template for the new src/supervisor/review-report.ts. Mirror the implementer exit protocol in .claude/agents/subagent-implementer.md:121-147 when adding the reviewer write instruction to .claude/agents/subagent-reviewer.md (Output Format ~:132-158). worker-report.json is gitignored at .gitignore:68 and templates/.gitignore:3 — add scripts/cam/review-report.json next to it in BOTH files. After editing .claude/agents/ and templates/agents/, run `bun run embed-vendor` to regenerate the embed; embed-vendor:check is the gate. Gotcha: the reviewer agent file warns to NEVER print a literal <review> tag in prose before the final line (capture-pane reads the whole scrollback); keep that constraint when adding the review-report.json example. Verify in advance: current review.ts has NO parseReviewFindings (prior CAM-75 was never merged), so this slice ADDS the file channel rather than replacing an existing parser. See docs/agent-readiness.md (structured-handback / two-layer-verification theme) for the rationale governing this reviewer-agent change."
+      "notes": "Mirror src/supervisor/worker-report.ts (WorkerReport interface + WORKER_REPORT_FILENAME at :38) as the template for the new src/supervisor/review-report.ts. Mirror the implementer exit protocol in .claude/agents/subagent-implementer.md:121-147 when adding the reviewer write instruction to .claude/agents/subagent-reviewer.md (Output Format ~:132-158). worker-report.json is gitignored at .gitignore:68 and templates/.gitignore:3 \u2014 add scripts/cam/review-report.json next to it in BOTH files. After editing .claude/agents/ and templates/agents/, run `bun run embed-vendor` to regenerate the embed; embed-vendor:check is the gate. Gotcha: the reviewer agent file warns to NEVER print a literal <review> tag in prose before the final line (capture-pane reads the whole scrollback); keep that constraint when adding the review-report.json example. Verify in advance: current review.ts has NO parseReviewFindings (prior CAM-75 was never merged), so this slice ADDS the file channel rather than replacing an existing parser. See docs/agent-readiness.md (structured-handback / two-layer-verification theme) for the rationale governing this reviewer-agent change."
     },
     {
       "id": "US-002",
@@ -58,10 +65,10 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
-      "notes": "Edit src/supervisor/review.ts: makeReviewDispatch (:274-432), the poll loop (:330-350, reads capturePane every pollIntervalMs=DEFAULT_REVIEW_POLL_INTERVAL_MS at :247), buildFixStories (:444-460, currently emits placeholder titles only — add findings injection). parseReviewVerdict (:162-189) STAYS as fallback/human sentinel. Reader wiring: src/supervisor/host.ts:319-359 (makeReviewDispatch construction) — add a known-path reader for scripts/cam/review-report.json like the worker-report.json reader pattern; resolve the path against the repo root the same way prdPath is resolved in host.ts. Type from US-001: import ReviewReport + REVIEW_REPORT_FILENAME from src/supervisor/review-report.ts. Regression home: test/supervisor/review.test.ts (565 lines) — add a realistic review-report.json fixture. Gotcha (memory sidecar/parse-fragility): the file read is a completion SIGNAL plus a data source; it must not become a gate that hangs the loop (graceful degradation is US-004, but design the reader here to return null on read/parse error rather than throw). Do NOT add a --permission-mode CLI flag; permissionMode flows to the spawned claude only."
+      "notes": "Edit src/supervisor/review.ts: makeReviewDispatch (:274-432), the poll loop (:330-350, reads capturePane every pollIntervalMs=DEFAULT_REVIEW_POLL_INTERVAL_MS at :247), buildFixStories (:444-460, currently emits placeholder titles only \u2014 add findings injection). parseReviewVerdict (:162-189) STAYS as fallback/human sentinel. Reader wiring: src/supervisor/host.ts:319-359 (makeReviewDispatch construction) \u2014 add a known-path reader for scripts/cam/review-report.json like the worker-report.json reader pattern; resolve the path against the repo root the same way prdPath is resolved in host.ts. Type from US-001: import ReviewReport + REVIEW_REPORT_FILENAME from src/supervisor/review-report.ts. Regression home: test/supervisor/review.test.ts (565 lines) \u2014 add a realistic review-report.json fixture. Gotcha (memory sidecar/parse-fragility): the file read is a completion SIGNAL plus a data source; it must not become a gate that hangs the loop (graceful degradation is US-004, but design the reader here to return null on read/parse error rather than throw). Do NOT add a --permission-mode CLI flag; permissionMode flows to the spawned claude only."
     },
     {
       "id": "US-003",
@@ -75,10 +82,10 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
-      "notes": "Edit src/supervisor/decide.ts:30-34 (PrdSnapshot.review) to add findings?: Array<{severity:string; file?:string; line?:number; text:string}>. Edit src/supervisor/review.ts FIXES_PENDING write path (:416-425) to persist findings into prd.review.findings. RECONCILIATION (decision to document in story/commit): the issue's anchor mentions a prior unwired findingsArtifactWriter writing .claude/cam-review-findings.json in host.ts — verified it does NOT exist in the current tree (prior CAM-75 never merged), so there is nothing to delete; the test in this story is a guard asserting it stays absent. review-report.json (ephemeral event) + prd.review.findings (durable state) are the two channels, matching the 5-concern design (Event + State). Production-wiring test belongs in test/supervisor/review.test.ts."
+      "notes": "Edit src/supervisor/decide.ts:30-34 (PrdSnapshot.review) to add findings?: Array<{severity:string; file?:string; line?:number; text:string}>. Edit src/supervisor/review.ts FIXES_PENDING write path (:416-425) to persist findings into prd.review.findings. RECONCILIATION (decision to document in story/commit): the issue's anchor mentions a prior unwired findingsArtifactWriter writing .claude/cam-review-findings.json in host.ts \u2014 verified it does NOT exist in the current tree (prior CAM-75 never merged), so there is nothing to delete; the test in this story is a guard asserting it stays absent. review-report.json (ephemeral event) + prd.review.findings (durable state) are the two channels, matching the 5-concern design (Event + State). Production-wiring test belongs in test/supervisor/review.test.ts."
     },
     {
       "id": "US-004",
@@ -93,7 +100,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Edit src/supervisor/review.ts. Hard constraint from scripts/cam/patterns.md (capture-pane returns RENDERED markdown; structured handback exists precisely because the markdown bullets are consumed by the renderer). The file reader from US-002 returns null on any read/parse failure; this story makes makeReviewDispatch tolerate null by falling back to parseReviewVerdict(capturePane(...)) which already runs in the poll loop. Count reconciliation: when the file is absent the verbatim findings are unavailable, so reuse the existing placeholder builder in buildFixStories keyed to the tag's findingsCount (N). Tests live in test/supervisor/review.test.ts: one missing-file fixture, one malformed-JSON fixture, plus an assertion the dispatch never throws and returns 'ok'. Do NOT make the file-read a precondition/gate (the lesson: sentinel/file is never a gate over handoff+prd)."
@@ -105,15 +112,15 @@
       "acceptanceCriteria": [
         "docs/recovery-runbook.md gains a CAM-75 section describing the review-report.json flow: the reviewer writes scripts/cam/review-report.json, the sidecar reads it for verdict+findings+completion, and the <review> tag is the human/fallback sentinel. [oracle: grep -q 'review-report.json' docs/recovery-runbook.md]",
         "The runbook documents the correct shapes: finding shape {severity, file?, line?, text}, prd field prd.review.findings, and the graceful fallback to the <review> tag. [oracle: grep -q 'prd.review.findings' docs/recovery-runbook.md]",
-        "docs/recovery-runbook.md remains free of em-dash characters. [oracle: ! grep -q '—' docs/recovery-runbook.md]",
+        "docs/recovery-runbook.md remains free of em-dash characters. [oracle: ! grep -q '\u2014' docs/recovery-runbook.md]",
         "scripts/cam/patterns.md gains a bullet recording that tmux capture-pane returns the reviewer TUI's rendered markdown (## headers and - [file:line] bullets are consumed by the renderer), which is why findings move to review-report.json. [oracle: grep -q 'review-report.json' scripts/cam/patterns.md]",
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": true,
       "requires": null,
-      "notes": "Docs only. docs/recovery-runbook.md currently has sections (a)-(k) ending at CAM-70 (:543), and HAS NO existing CAM-75 section (prior CAM-75 never merged), so ADD a new section; there is no pre-existing documented drift to fix in this tree. The runbook currently has 0 em-dash characters (verified) — keep it that way per the no-em-dash-in-persisted-md convention (global CLAUDE.md). scripts/cam/patterns.md already documents the capture-pane sentinel polling (:12, :28); add the rendered-markdown-eats-findings lesson as a new bullet. No travessão (—) in either file."
+      "notes": "Docs only. docs/recovery-runbook.md currently has sections (a)-(k) ending at CAM-70 (:543), and HAS NO existing CAM-75 section (prior CAM-75 never merged), so ADD a new section; there is no pre-existing documented drift to fix in this tree. The runbook currently has 0 em-dash characters (verified) \u2014 keep it that way per the no-em-dash-in-persisted-md convention (global CLAUDE.md). scripts/cam/patterns.md already documents the capture-pane sentinel polling (:12, :28); add the rendered-markdown-eats-findings lesson as a new bullet. No travess\u00e3o (\u2014) in either file."
     },
     {
       "id": "US-006",
@@ -126,7 +133,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 8,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "All tests in test/supervisor/review.test.ts (the 565-line regression home). This is the ACEITE for CAM-75. Fixtures: (1) a well-formed review-report.json with 2-3 findings carrying distinctive text; assert that text in fix-story notes/AC. (2) capturePane fake returns text WITHOUT the markdown bullets (simulating the renderer consuming ## headers and - [file:line]) while review-report.json carries the findings, proving the file path is the source. (3) missing-file fixture proves graceful degradation (depends on US-002/US-003/US-004 being in place). Use the injected reader/capturePane/readPrd/writePrd fakes already established in this test file. Do not assert against real tmux."
@@ -142,28 +149,34 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 9,
+      "priority": 10,
       "passes": false,
       "requires": "operator",
       "notes": "Operator ceremony (requires a real claude TUI reviewer session + tmux pane + live cam run, which the autonomous loop cannot self-produce). Steps: rebuild+reinstall the binary (memory: stale PATH binary; use build-release.sh --install or `bun index.ts run`), start a cam run that reaches a review round, then inspect scripts/cam/review-report.json on disk and the dispatched fix story's notes. Fallback path is the US-006 regression. Implementer exits BLOCKED_OPERATOR_REQUIRED if no live session; the loop falls through. Memory pointers: project-cam-run-single-hub, sidecar-stale-worker-pane-wedge (self-heal CAM-57)."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:2",
+    "lastVerdict": "FIXES_PENDING:1",
     "findings": [
       {
-        "severity": "CRITICAL",
-        "file": "src/supervisor/review.ts",
-        "line": 363,
-        "text": "review-report.json is never cleared before a review dispatch, unlike worker-report.json which is erased at loop.ts:658 specifically 'to prevent a leftover report file from triggering a false-positive on the first poll tick'. makeReviewDispatch respawns the reviewer then, after a single sleepFn(pollIntervalMs), immediately reads readReviewReport() before the pane-death check. On review round 2+ within one cam run (and across cam run sessions, since the file is gitignored but persists in the working tree) the stale round-1 report is read and breaks the poll loop with the previous round's verdict/findings, ignoring the still-booting round-2 reviewer. The result is a false-positive completion that replays stale findings until MAX_ROUNDS_DEBT. Mirror the worker-report fix: add a makeClearReviewReport(cwd) factory in host.ts and a clearReviewReport seam invoked before the respawn-pane in makeReviewDispatch."
+        "severity": "WARNING",
+        "file": "src/supervisor/host.ts",
+        "line": 119,
+        "text": "makeReadReviewReport validates only JSON-parseability and object-ness, not the ReviewReport shape. A valid-JSON-but-wrong-shape review-report.json (e.g. one missing the `verdict` field, or a top-level array) is returned as a bogus ReviewReport, so makeReviewDispatch (review.ts:418-428) runs `/^FIXES_PENDING:(\\d+)$/.exec(undefined)`, derives FIXES_PENDING:0, and creates a contentless placeholder fix story, even overriding a valid <review>CLEAN</review> tag in the pane. This contradicts US-004 AC2, which requires that a report 'present but malformed (invalid JSON or wrong shape)' falls back to the <review>-tag verdict. The US-004 tests only simulate malformed via an injected reader returning null (review.test.ts:817,844), so the wrong-shape-object path through the real production reader is uncovered. Fix: add a verdict-shape guard to makeReadReviewReport (return null when `verdict` is not a string) and add a regression test feeding a wrong-shape object through the real reader / dispatch asserting tag fallback."
       },
       {
-        "severity": "WARNING",
-        "file": "docs/recovery-runbook.md",
-        "line": 757,
-        "text": "Section (m) documents a ReviewReport shape that does not match the code or the agent spec. (1) Severity values are shown as 'error'/'warn' (lines 759-760, 768) but the agent instruction, the ReviewReport type, and the tests use CRITICAL/WARNING/SUGGESTION. (2) The verdict example is 'FIXES_PENDING' without ':N' and lists MAX_ROUNDS_DEBT as a possible file verdict (lines 757, 767), but review.ts:407 requires 'FIXES_PENDING:N' to extract the count and the reviewer never writes MAX_ROUNDS_DEBT (it is derived by the supervisor); a reviewer following this example would have its findings count parsed as 0. (3) Lines 20 and 745 claim the sidecar 'deletes the file', which no code does (see the CRITICAL). Reconcile the runbook with the real schema and clearing behavior."
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/review.ts",
+        "line": 465,
+        "text": "prd.review.findings is never reset when a round produces no file-based findings. The CLEAN write (:465-474), the MAX_ROUNDS_DEBT write (:484-491), and the tag-fallback FIXES_PENDING write (fileFindings undefined) all spread `...(prd.review ?? {})` without clearing findings, so stale findings from a prior FIXES_PENDING round persist into a later CLEAN/debt review state. Informational only (findings is not a decision gate in decide.ts), but the durable record can misrepresent the latest round."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/review.ts",
+        "line": 560,
+        "text": "buildFixStories iterates by the verdict's N count (Math.max(count, 1)) rather than findings.length. If the reviewer's verdict N (CRITICAL + actionable WARNINGs) diverges from the findings array length (which may also include SUGGESTIONs), trailing findings are silently dropped or extra noteless stories are created. Consider keying the story count to findings.length when file findings are present."
       }
     ]
   }

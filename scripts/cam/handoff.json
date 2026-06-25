@@ -1,17 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Review round 1 fix 002: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-75-reviewer-report-channel",
-  "timestamp": "2026-06-25T19:30:00Z",
+  "timestamp": "2026-06-25T20:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/recovery-runbook.md",
+    "src/supervisor/host.ts",
+    "test/supervisor/review.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-002 was a docs-only fix: reconciled docs/recovery-runbook.md section (m) with the real review-report.json schema. Three issues fixed: (1) severity values corrected from 'error'/'warn' to 'CRITICAL'/'WARNING' in JSON example and field notes; (2) verdict format corrected from bare 'FIXES_PENDING' to 'FIXES_PENDING:N', removed MAX_ROUNDS_DEBT from file-verdict options (it is supervisor-derived only); (3) deletion behavior corrected on lines 20 and 745 (file is left in place after reading, cleared before next review round, not deleted immediately). 1281 tests pass / 0 fail. Check prd.json for next story (if any).",
+  "nextStoryContext": "US-R2-001 adds a verdict-shape guard to makeReadReviewReport: now returns null when the parsed JSON is an array, or when the `verdict` field is not a string. Previously a wrong-shape object (e.g. { notAVerdict: true }) would be returned as-is, causing makeReviewDispatch to call /^FIXES_PENDING:(\\d+)$/.exec(undefined) and derive FIXES_PENDING:0, overriding a valid <review>CLEAN</review> pane tag. Added 6 regression tests (5 unit tests for the reader directly + 1 end-to-end dispatch regression) in test/supervisor/review.test.ts. 1286 tests pass / 0 fail. Check prd.json for next story (if any).",
   "officialDocsValidated": [
     {
       "lib": "none",

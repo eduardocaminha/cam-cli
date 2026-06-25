@@ -24,7 +24,10 @@
 //  AC3: findings come from review-report.json, NOT capture-pane; proved by pane having
 //       rendered (markdown-stripped) text while file findings appear verbatim in fix stories.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	buildReviewerWorkerArgv,
 	parseReviewVerdict,
@@ -35,6 +38,8 @@ import {
 import type { MakeReviewDispatchOptions } from '../../src/supervisor/review.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import type { SpawnFn, CapturePane, ReadPrd, WritePrd } from '../../src/supervisor/loop.ts';
+import { makeReadReviewReport } from '../../src/supervisor/host.ts';
+import { REVIEW_REPORT_FILENAME } from '../../src/supervisor/review-report.ts';
 
 // ---------------------------------------------------------------------------
 // buildReviewerWorkerArgv tests
@@ -1123,5 +1128,92 @@ describe('makeReviewDispatch: US-006 regression - findings come from file, not p
 		expect(s3).toBeDefined();
 		expect(s3?.notes).toContain('SUGGESTION');
 		expect(s3?.notes).toContain('extract buildFixStories result mapping into a named helper'); // verbatim file text
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-R2-001 regression: makeReadReviewReport verdict shape guard
+//
+// A valid-JSON-but-wrong-shape review-report.json (missing `verdict`, top-level
+// array, extra-only keys) must return null from makeReadReviewReport so that
+// makeReviewDispatch falls back to the <review>-tag verdict.
+//
+// Previously, makeReadReviewReport only checked `typeof parsed === 'object'`,
+// so { "foo": "bar" } was returned as a bogus ReviewReport. makeReviewDispatch
+// then called /^FIXES_PENDING:(\d+)$/.exec(undefined), derived FIXES_PENDING:0,
+// and created a contentless placeholder fix story even when the pane had a valid
+// <review>CLEAN</review> tag.
+// ---------------------------------------------------------------------------
+
+describe('makeReadReviewReport: verdict shape guard (US-R2-001 regression)', () => {
+	const tmpDirs: string[] = [];
+
+	afterEach(() => {
+		for (const d of tmpDirs) {
+			rmSync(d, { recursive: true, force: true });
+		}
+		tmpDirs.length = 0;
+	});
+
+	function makeTmpWithReport(json: unknown): string {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-review-report-shape-'));
+		tmpDirs.push(dir);
+		mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
+		writeFileSync(join(dir, REVIEW_REPORT_FILENAME), JSON.stringify(json));
+		return dir;
+	}
+
+	test('returns null for a wrong-shape object missing the verdict field', () => {
+		const dir = makeTmpWithReport({ foo: 'bar', findings: [] });
+		const reader = makeReadReviewReport(dir);
+		expect(reader()).toBeNull();
+	});
+
+	test('returns null for a top-level array (Array.isArray guard)', () => {
+		const dir = makeTmpWithReport([{ verdict: 'CLEAN', findings: [] }]);
+		const reader = makeReadReviewReport(dir);
+		expect(reader()).toBeNull();
+	});
+
+	test('returns null when verdict is not a string (numeric)', () => {
+		const dir = makeTmpWithReport({ verdict: 42, findings: [] });
+		const reader = makeReadReviewReport(dir);
+		expect(reader()).toBeNull();
+	});
+
+	test('returns the report when verdict is a string (well-formed)', () => {
+		const dir = makeTmpWithReport({ verdict: 'CLEAN', findings: [] });
+		const reader = makeReadReviewReport(dir);
+		expect(reader()).toEqual({ verdict: 'CLEAN', findings: [] });
+	});
+
+	test('dispatch: wrong-shape file + CLEAN tag -> tag fallback, CLEAN verdict, warning logged', () => {
+		// End-to-end regression: a wrong-shape file on disk (missing verdict) must not
+		// override a valid <review>CLEAN</review> tag in the pane. The real production
+		// reader makeReadReviewReport must return null, dispatch must warn and use tag.
+		const dir = makeTmpWithReport({ notAVerdict: true, findings: [] });
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const warnings: string[] = [];
+
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: makeReadReviewReport(dir),
+			warnFn: (msg) => warnings.push(msg),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+
+		// Dispatch must not throw and must use the tag-based CLEAN verdict.
+		expect(result.status).toBe('ok');
+		expect(capturedWrittenPrd[0]?.review?.lastVerdict).toBe('CLEAN');
+		// Warning must be logged because the reader was provided but returned null.
+		expect(warnings.length).toBeGreaterThan(0);
+		expect(warnings[0]).toContain('missing or malformed');
 	});
 });

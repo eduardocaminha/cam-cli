@@ -122,7 +122,16 @@ export function makeReadReviewReport(cwd: string): () => ReviewReport | null {
 		try {
 			const raw = readFileSync(reportPath, 'utf8');
 			const parsed: unknown = JSON.parse(raw);
-			if (parsed !== null && typeof parsed === 'object') {
+			// Shape guard: must be a non-null, non-array object with a string `verdict`.
+			// A valid-JSON-but-wrong-shape file (missing `verdict`, top-level array,
+			// etc.) returns null so the dispatch falls back to the <review>-tag verdict
+			// instead of treating `undefined` as a verdict string (US-R2-001).
+			if (
+				parsed !== null &&
+				typeof parsed === 'object' &&
+				!Array.isArray(parsed) &&
+				typeof (parsed as Record<string, unknown>)['verdict'] === 'string'
+			) {
 				return parsed as ReviewReport;
 			}
 			return null;
