@@ -141,10 +141,24 @@ Subcommands:
    ```
 
 #### `get <id>`
-Read the file, find the matching id, print as JSON.
+
+Read the backlog from main so a just-filed issue is visible from any checked-out branch,
+with a fallback to the working-tree file when the git read fails:
+```bash
+git show main:scripts/cam/issues.local.json 2>/dev/null || cat scripts/cam/issues.local.json
+```
+Parse the JSON, find the issue whose `id` matches `<id>`, print it as JSON.
 
 #### `list`
-Read the file, render the open issues as a table.
+
+Read the backlog from main so a just-filed issue is visible from any checked-out branch,
+with a fallback to the working-tree file when the git read fails:
+```bash
+git show main:scripts/cam/issues.local.json 2>/dev/null || cat scripts/cam/issues.local.json
+```
+Render the open issues as a markdown table.
+
+Note: a deterministic `cam issue list` CLI command is tracked separately (CAM-74).
 
 ---
 
