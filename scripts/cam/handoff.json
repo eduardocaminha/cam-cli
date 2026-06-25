@@ -1,26 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Absent / malformed / stale report falls safely to the failure nets with no false-pass; staleness guard on the primary path"
+    "id": "US-007",
+    "title": "Update recovery-runbook.md and patterns.md to the single-source outcome model"
   },
   "branchName": "cam/CAM-77-worker-report-sole-outcome",
-  "timestamp": "2026-06-25T23:59:00Z",
+  "timestamp": "2026-06-25T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/supervisor/host.ts",
-    "test/supervisor/result.test.ts",
-    "test/supervisor/loop.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "docs/recovery-runbook.md",
+    "scripts/cam/patterns.md",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 adds two code changes: (1) loop.ts poll loop now applies a staleness+shape guard before breaking on readWorkerReport() -- a stale report (story!=advisoryStoryId) or malformed report (missing string discriminators) does NOT exit the poll, letting pane-died/timeout nets with CAM-44 backoff remain the terminal signal; (2) host.ts makeReadWorkerReport now applies the US-R2-001 shape guard pattern (!Array.isArray + typeof outcome === string + typeof story === string) before casting. 14 new tests added: 11 in test/supervisor/result.test.ts (US-006 absent/malformed/stale describe block) and 6 in test/supervisor/loop.test.ts (US-006 stale/absent/malformed loop-level describe block). Total tests: 1372 pass / 0 fail.",
+  "nextStoryContext": "US-007 adds two doc changes: (1) docs/recovery-runbook.md gains the worker-report.json row in the canonical runtime files table (PRIMARY authoritative, ephemeral, gitignored) and a new section (o) documenting the single-source outcome model, the 5-concern model table, a diagnostic guide for absent/stale/malformed reports, and a manual override procedure; (2) scripts/cam/patterns.md gains a new CAM-77 bullet documenting the 5-concern model (Event=worker-report.json AUTHORITATIVE, State=prd.json, Context=handoff.json, Observability=cam-worker-events.jsonl, Wisdom=patterns.md) and superseding the old worker-report-fallback framing. All four acceptance-criteria oracles pass. Total tests: 1372 pass / 0 fail.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-006 only touches src/supervisor/loop.ts (poll guard), src/supervisor/host.ts (shape guard), and test files. No external library API was exercised."
+      "summary": "US-007 only edits docs/recovery-runbook.md and scripts/cam/patterns.md. No external library API was exercised."
     }
   ]
 }

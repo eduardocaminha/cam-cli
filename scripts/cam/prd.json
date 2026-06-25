@@ -129,7 +129,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: docs/recovery-runbook.md (Canonical runtime files table lines 12-20; section (m) CAM-75 review-report.json is the structural precedent to mirror for the implementer channel; the CAM-58 'worker-report-fallback' wording is now stale and must read 'primary/authoritative') + scripts/cam/patterns.md (append a CAM-77 bullet). Document the 5-concern model (operator decision 2026-06-25, memory comms-architecture-structured-handback): Event=worker-report.json (AUTHORITATIVE outcome for the implementer), State=prd.json (integrity), Context=handoff.json (forward-only, not a control signal), Observability=.claude/cam-worker-events.jsonl, Wisdom=patterns.md. The patterns.md bullet 'worker-report-fallback and handoff-string-coerced in readWorkerOutcome' (US-001, 2026-06-17) is SUPERSEDED: append a superseding note rather than silently leaving the stale bullet. Both files are currently em-dash-clean (verified, 0 occurrences); keep them clean (use colon, comma, parens, period). Doc Maintenance per CLAUDE.md section 7. Depends on US-001 through US-006."
     }
