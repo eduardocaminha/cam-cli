@@ -1,25 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "cam-ship Step 3 runs bun run check:all (full spine) instead of the partial gate set"
+    "id": "US-002",
+    "title": "Regression test on the embedded cam-ship template pins check:all and forbids the partial-gate-only ship"
   },
   "branchName": "cam/CAM-79-ship-runs-check-all",
-  "timestamp": "2026-06-25T00:00:00Z",
+  "timestamp": "2026-06-25T00:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/commands/cam-ship.md",
-    "templates/commands/cam-ship.md",
-    "src/vendor/_generated.ts",
-    "scripts/cam/patterns.md",
+    "test/vendor/cam-ship-hygiene.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 replaced the 3-command ship gate with `bun run check:all` in both .claude/commands/cam-ship.md and templates/commands/cam-ship.md. src/vendor/_generated.ts was regenerated. US-002 (next) must assert against the EMBEDDED templatesContents map (not the .claude/ copy on disk) -- the precedent test test/vendor/cam-ship-hygiene.test.ts already does this correctly. US-003 (after) adds ratchet-failure guidance to Step 3 and docs/recovery-runbook.md.",
+  "nextStoryContext": "US-002 extended test/vendor/cam-ship-hygiene.test.ts with two new assertions on templatesContents[SHIP_KEY]: (1) content contains 'bun run check:all'; (2) content does NOT contain '<project typecheck command>'. All 4 tests in that file pass (1288 total). US-003 (next) adds ratchet-failure guidance to Step 3 of cam-ship.md and a short note in docs/recovery-runbook.md, then regenerates the embed.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure template/docs edit + embed regeneration; no external library API exercised."
+      "summary": "Test-only story: extended cam-ship-hygiene.test.ts with two assertion calls. No external library API exercised."
     }
   ]
 }

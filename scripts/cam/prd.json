@@ -44,7 +44,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Extend test/vendor/cam-ship-hygiene.test.ts (the CAM-49 precedent, ~24 lines). It already imports `templatesContents` from ../../src/vendor/_generated and keys on SHIP_KEY = 'commands/cam-ship.md'. Add two assertions: (1) content contains 'bun run check:all'; (2) content does NOT pin the partial gate, e.g. expect(content).not.toContain('bun run typecheck') OR not.toContain a check:all-absent partial pattern -- pick the negative token that proves the partial-gate-only form is gone without false-positives. This story depends on US-001 having regenerated src/vendor/_generated.ts (the embed), otherwise the assertions read stale embedded content. GOTCHA: assert against the EMBEDDED map (cam init target), never read .claude/commands/cam-ship.md off disk -- the precedent test does this correctly. No template/vendor file is edited here (test-only), so embed-vendor:check is not strictly required, but it must still be green from US-001."
     },
