@@ -1,22 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Regression tests pin the report-first authority order in readWorkerOutcome"
+    "id": "US-005",
+    "title": "Structured event records the outcome-source decision and integrity result"
   },
   "branchName": "cam/CAM-77-worker-report-sole-outcome",
-  "timestamp": "2026-06-25T23:30:00Z",
+  "timestamp": "2026-06-25T23:50:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "test/supervisor/result.test.ts",
+    "src/supervisor/events.ts",
+    "src/supervisor/loop.ts",
+    "test/supervisor/loop.test.ts",
+    "test/supervisor/events.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 adds a dedicated 'US-004: regression - report-first authority order' describe block with 5 tests (R1, R1-absent, R2, R3, R4) to test/supervisor/result.test.ts. These pin: (R1) report.story wins over divergent handoff storyId; (R2) divergent DONE sentinel does not override report and produces no fail-on-mismatch; (R3) DONE report + passes:false -> incomplete, never pass; (R4) DONE report + passes:true -> pass. All 1350 tests pass. Next story is US-005: emit a structured event recording the outcome-source decision and integrity result in the supervisor loop.",
+  "nextStoryContext": "US-005 adds 'outcome-source' to WorkerEventKind in events.ts, adds OutcomeSourceEventDetail interface (winningSrc: 'worker-report'|'fallback', integrityResult: 'confirmed-pass'|'incomplete'|'stale-absent-rejection', detail: string), emits the event in loop.ts after readWorkerOutcome resolves (after the outcome-fallback block), and adds 6 tests in the US-005 (CAM-77) describe block in loop.test.ts. events.test.ts lifecycle test updated to include 'outcome-source' in the expected event sequence. All 1356 tests pass. Next story is US-006.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 only touches test/supervisor/result.test.ts (adds regression describe block). No external library API was exercised."
+      "summary": "US-005 only touches src/supervisor/events.ts (type additions), src/supervisor/loop.ts (emit call), and test files. No external library API was exercised."
     }
   ]
 }

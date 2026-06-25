@@ -36,7 +36,7 @@ import { readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { formatReviewVerdictLine, type WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
-import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail } from './events.ts';
+import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail, OutcomeSourceEventDetail } from './events.ts';
 
 // ---------------------------------------------------------------------------
 // Injected dependency types
@@ -849,6 +849,26 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					fallbackKind: outcome.detail.includes('worker-report-fallback')
 						? 'worker-report-fallback'
 						: 'handoff-string-coerced',
+					detail: outcome.detail,
+				});
+			}
+
+			// US-005 (CAM-77): emit outcome-source on every readWorkerOutcome resolution.
+			// Records which source won (worker-report.json vs legacy fallback) and the
+			// integrity verdict so an operator can replay the decision without parsing
+			// pane scrollback. No-op when logEvent is absent (emit() guards that).
+			{
+				const winningSrc: OutcomeSourceEventDetail['winningSrc'] =
+					outcome.detail.includes('worker-report-fallback') ? 'worker-report' : 'fallback';
+				const integrityResult: OutcomeSourceEventDetail['integrityResult'] =
+					outcome.kind === 'pass'
+						? 'confirmed-pass'
+						: outcome.kind === 'incomplete'
+							? 'incomplete'
+							: 'stale-absent-rejection';
+				emit('outcome-source', actualStoryId, uuid, {
+					winningSrc,
+					integrityResult,
 					detail: outcome.detail,
 				});
 			}

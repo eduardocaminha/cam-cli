@@ -245,7 +245,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 		const result = await runSupervisor(opts);
 		expect(result.status).toBe('complete');
 
-		expect(events.map((e) => e.kind)).toEqual(['spawn-resolution', 'worker-start', 'worker-end', 'result', 'tokens']);
+		expect(events.map((e) => e.kind)).toEqual(['spawn-resolution', 'worker-start', 'worker-end', 'result', 'tokens', 'outcome-source']);
 		// Every lifecycle event shares the single worker uuid.
 		expect(new Set(events.map((e) => e.uuid))).toEqual(new Set([FIXED_UUID]));
 		// storyId resolves to the actual completed story (spawn-resolution carries advisory storyId).

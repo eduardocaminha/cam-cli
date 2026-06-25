@@ -2292,4 +2292,188 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 		const fallbackEvents = events.filter((e) => e.kind === 'outcome-fallback');
 		expect(fallbackEvents).toHaveLength(0);
 	});
+
+	// -------------------------------------------------------------------------
+	// US-005 (CAM-77): outcome-source event
+	// -------------------------------------------------------------------------
+
+	describe('US-005 (CAM-77): outcome-source event', () => {
+		const fakeReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-001',
+			gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		test('(A) worker-report primary path: event fires with winningSrc=worker-report, integrityResult=confirmed-pass', async () => {
+			// DONE report + prd passes:true in fileReader -> outcome kind=pass.
+			// Detail contains 'worker-report-fallback' -> winningSrc=worker-report.
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done_clean = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+			let prdCall = 0;
+
+			const { logger, events } = makeInMemoryEventLogger();
+
+			const opts = makeBaseOpts({
+				readPrd: () => {
+					prdCall++;
+					// call 1: top of iter 1 -> implement; call 2: fileReader in outcome check -> pass; call 3+: complete
+					return prdCall <= 1 ? prd_impl : prd_done_clean;
+				},
+				readHandoff: () => null,
+				capturePane: (_paneId) => UNKNOWN_PANE,
+				readWorkerReport: () => fakeReport,
+				workerReportPath: '/fake/worker-report.json',
+				logEvent: logger,
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			const srcEvents = events.filter((e) => e.kind === 'outcome-source');
+			expect(srcEvents).toHaveLength(1);
+			expect(srcEvents[0]?.detail).toMatchObject({
+				winningSrc: 'worker-report',
+				integrityResult: 'confirmed-pass',
+			});
+		});
+
+		test('(B) fallback path (handoff + sentinel): event fires with winningSrc=fallback, integrityResult=confirmed-pass', async () => {
+			// Handoff present, DONE sentinel in pane, no workerReportPath.
+			// Detail does NOT contain 'worker-report-fallback' -> winningSrc=fallback.
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done_clean = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+			let prdCall = 0;
+
+			const { logger, events } = makeInMemoryEventLogger();
+
+			const opts = makeBaseOpts({
+				readPrd: () => {
+					prdCall++;
+					return prdCall <= 1 ? prd_impl : prd_done_clean;
+				},
+				readHandoff: () => makeHandoff('US-001'),
+				capturePane: (_paneId) => donePane('US-001'),
+				logEvent: logger,
+				// No workerReportPath -> fallback path
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			const srcEvents = events.filter((e) => e.kind === 'outcome-source');
+			expect(srcEvents).toHaveLength(1);
+			expect(srcEvents[0]?.detail).toMatchObject({
+				winningSrc: 'fallback',
+				integrityResult: 'confirmed-pass',
+			});
+		});
+
+		test('(C) DONE report + prd passes:false: event fires with integrityResult=incomplete', async () => {
+			// DONE report found, but readPrd always returns passes:false (prd not flipped).
+			// readWorkerOutcome returns kind=incomplete; outcome-source should record that.
+			const prd_never_passing = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: false }],
+			});
+
+			const { logger, events } = makeInMemoryEventLogger();
+
+			const opts = makeBaseOpts({
+				readPrd: () => prd_never_passing,
+				readHandoff: () => null,
+				capturePane: (_paneId) => UNKNOWN_PANE,
+				readWorkerReport: () => fakeReport,
+				workerReportPath: '/fake/worker-report.json',
+				logEvent: logger,
+				// Inject runGates returning fail so the loop exits quickly after the event.
+				runGates: () => ({ ok: false, detail: 'test gate fail' }),
+				finalizeStory: (_storyId) => ({ ok: true, detail: 'finalized' }),
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			const srcEvents = events.filter((e) => e.kind === 'outcome-source');
+			expect(srcEvents).toHaveLength(1);
+			expect(srcEvents[0]?.detail).toMatchObject({
+				winningSrc: 'worker-report',
+				integrityResult: 'incomplete',
+			});
+		});
+
+		test('(D) BLOCKED report: event fires with integrityResult=stale-absent-rejection', async () => {
+			// BLOCKED_QUALITY report -> outcome kind=blocked.
+			// outcome-source must record stale-absent-rejection.
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const blockedReport: WorkerReport = {
+				outcome: 'BLOCKED_QUALITY',
+				story: 'US-001',
+				gates: { typecheck: 'fail: 2 errors', tests: '0 pass / 5 fail' },
+				notes: 'tests failed',
+			};
+
+			const { logger, events } = makeInMemoryEventLogger();
+
+			const opts = makeBaseOpts({
+				readPrd: () => prd_impl,
+				readHandoff: () => null,
+				capturePane: (_paneId) => UNKNOWN_PANE,
+				readWorkerReport: () => blockedReport,
+				workerReportPath: '/fake/worker-report.json',
+				logEvent: logger,
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			const srcEvents = events.filter((e) => e.kind === 'outcome-source');
+			expect(srcEvents).toHaveLength(1);
+			expect(srcEvents[0]?.detail).toMatchObject({
+				winningSrc: 'worker-report',
+				integrityResult: 'stale-absent-rejection',
+			});
+		});
+
+		test('(E) logEvent absent: no crash, loop still resolves normally', async () => {
+			// When logEvent is not injected, the emit() helper is a no-op.
+			// The loop must complete normally without throwing.
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done_clean = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+			let prdCall = 0;
+
+			const opts = makeBaseOpts({
+				readPrd: () => {
+					prdCall++;
+					return prdCall <= 1 ? prd_impl : prd_done_clean;
+				},
+				readHandoff: () => null,
+				capturePane: (_paneId) => UNKNOWN_PANE,
+				readWorkerReport: () => fakeReport,
+				workerReportPath: '/fake/worker-report.json',
+				// logEvent intentionally absent: emit is a no-op.
+			});
+
+			const result = await runSupervisor(opts);
+			expect(result.status).toBe('complete');
+		});
+
+		test('(F) production-wiring: host.ts buildSupervisorOptions wires logEvent into supervisor opts', async () => {
+			// CAM-53 lesson: an event emitted without a writeEvent sink wired at the
+			// call-site never persists. Assert that host.ts assigns logEvent in the
+			// opts object so the production path has a real file sink.
+			const hostSrc = await Bun.file('src/supervisor/host.ts').text();
+			// logEvent is built from makeFileEventLogger and assigned in opts.
+			expect(hostSrc).toContain('makeFileEventLogger');
+			expect(hostSrc).toContain('logEvent,');
+		});
+	});
 });
