@@ -1,28 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Wire cam issue --file-local CLI surface"
+    "id": "US-004",
+    "title": "Rewrite cam-issue.md none/create to use --file-local"
   },
-  "timestamp": "2026-06-25T15:00:00.000Z",
+  "timestamp": "2026-06-25T16:00:00.000Z",
   "branchName": "cam/CAM-86-file-issue-on-main",
-  "createdFiles": [
-    "test/issue-dispatch.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "test/issue.test.ts",
+    ".claude/commands/cam-issue.md",
+    "templates/commands/cam-issue.md",
+    "src/vendor/_generated.ts",
+    "test/embedded.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 and beyond are next. All three stories in this PRD (US-001 createLocalIssueOnMain, US-002 real-git integration test, US-003 CLI dispatch) are now complete. The remaining stories are operator-required or future work. The dispatch pattern in index.ts now mirrors dispatchShip: parseIssueArgs returns a discriminated union (mode: text | file-local | help), dispatchIssue routes --file-local to createLocalIssueOnMain via _buildCreateIssueOpts (wraps spawnSync with env/input support), and the text path calls runIssue thin-proxy unchanged.",
+  "nextStoryContext": "US-005 and beyond are next. All four stories in this PRD are now complete. US-005+ appear to be operator-required or future work. The none/create subcommand in cam-issue.md now delegates to cam issue --file-local (piping JSON to stdin) instead of hand-editing issues.local.json directly; both the .claude/commands/ runtime copy and the templates/ source-of-truth copy were updated together, bun run embed-vendor regenerated src/vendor/_generated.ts, and a parity test in test/embedded.test.ts pins the --file-local invocation and forbids the old 'write the file back' instruction.",
   "officialDocsValidated": [
     {
-      "lib": "bun-stdin",
-      "version": "1.x",
-      "url": "https://bun.sh/docs/api/file-io",
-      "fetchedAt": "2026-06-25T15:00:00.000Z",
-      "status": "ok",
-      "summary": "Bun.stdin is a BunFile (confirmed in Bun File I/O docs). BunFile.text() returns Promise<string> -- matches our dispatchIssue default fileLocalFn which calls await Bun.stdin.text(). API is stable and matches implementation."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }

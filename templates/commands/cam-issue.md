@@ -125,9 +125,20 @@ Schema:
 Subcommands:
 
 #### `create`
-Read or create `scripts/cam/issues.local.json`, allocate `id = "CAM-<next_id>"`,
-increment `next_id`, append the issue, write the file back. Print the new
-identifier on the last line.
+
+**CONVENTION**: never hand-edit issues.local.json on a feature branch; always file via `cam issue` (it commits to main deterministically).
+
+1. Expand the free-text argument into a structured **title** (concise, under 80 chars) and an optional **description** (one or two sentences).
+2. Build a JSON payload with `title` and `description`. Include `priority` (integer 1-4, 1 = urgent) only when the request implies one.
+3. Invoke `cam issue --file-local`, piping the JSON payload to stdin. It commits the new issue directly to `main` without touching the current work branch:
+   ```bash
+   echo '{"title":"<title>","description":"<description>"}' | cam issue --file-local
+   ```
+   The command prints the new identifier (e.g. `CAM-42`) to stdout and exits 0 on success.
+4. Print the returned identifier and end with:
+   ```
+   CAM_ISSUE_RESULT=<identifier>
+   ```
 
 #### `get <id>`
 Read the file, find the matching id, print as JSON.

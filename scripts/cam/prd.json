@@ -84,7 +84,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Agent-prompt self-hosting pattern (patterns.md US-001, 2026-06-16): templates/commands/cam-issue.md is source of truth, .claude/commands/cam-issue.md is the runtime mirror; edit BOTH, then run 'bun run embed-vendor' to sync src/vendor/_generated.ts, then 'bun run embed-vendor:check'. Precedent for pinning a literal CLI command in both copies + parity test: CAM-79 (patterns.md 'cam-ship gate is bun run check:all'). The current none/create text is .claude/commands/cam-issue.md:127-130 ('write the file back'). PROJECT RULE: no em-dash and no decorative emoji in persisted .md (2026-05-20). Files: .claude/commands/cam-issue.md, templates/commands/cam-issue.md, src/vendor/_generated.ts, test/embedded.test.ts (or sibling parity test)."
     },

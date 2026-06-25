@@ -275,6 +275,27 @@ describe('templatesContents — Layer B binary rubric in reviewer prompt (US-004
 	});
 });
 
+describe('templatesContents — none/create uses --file-local in cam-issue prompt (US-004)', () => {
+	// US-004: the none create subcommand must invoke cam issue --file-local
+	// (commits to main without touching the work branch) instead of the old
+	// direct-edit path ("write the file back"). Both copies (templates/ and
+	// .claude/commands/) must carry this instruction.
+
+	const camIssue = templatesContents['commands/cam-issue.md'] ?? '';
+
+	test('contains cam issue --file-local invocation', () => {
+		expect(camIssue).toContain('cam issue --file-local');
+	});
+
+	test('does not contain the old hand-edit instruction', () => {
+		expect(camIssue).not.toContain('write the file back');
+	});
+
+	test('contains the CONVENTION note about never hand-editing on a feature branch', () => {
+		expect(camIssue).toContain('never hand-edit issues.local.json on a feature branch');
+	});
+});
+
 describe('CAM-68: harness runtime marker ignore rules', () => {
 	// CAM-68 added 7 runtime-marker rules to templates/.gitignore so that
 	// orchestrator / setup / handoff / sidecar files are never accidentally
