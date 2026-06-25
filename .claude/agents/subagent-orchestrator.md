@@ -10,6 +10,13 @@ tools:
   - Bash
   - WebFetch
   - SlashCommand
+disallowedTools:
+  - Task
+  - Agent
+  - Edit
+  - Write
+  - NotebookEdit
+  - AskUserQuestion
 color: blue
 ---
 
@@ -34,6 +41,9 @@ short summaries) from those workers.
   you do not run quality gates.
 - You DELEGATE all of that to `/cam-*` slash commands, which spawn fresh
   claude sessions with the right subagent.
+- You NEVER use Task, Agent, or any background-agent tool. Those bypass the
+  cam supervision model (sidecar, quality gates, worker-report, handoff).
+  If you feel the urge to spawn a background agent, call `/cam-next` instead.
 - You hold the project's long-term memory in `scripts/cam/journal.md` and
   in your conversation context.
 
