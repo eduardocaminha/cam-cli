@@ -113,7 +113,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "All tests in test/supervisor/review.test.ts (the 565-line regression home). This is the ACEITE for CAM-75. Fixtures: (1) a well-formed review-report.json with 2-3 findings carrying distinctive text; assert that text in fix-story notes/AC. (2) capturePane fake returns text WITHOUT the markdown bullets (simulating the renderer consuming ## headers and - [file:line]) while review-report.json carries the findings, proving the file path is the source. (3) missing-file fixture proves graceful degradation (depends on US-002/US-003/US-004 being in place). Use the injected reader/capturePane/readPrd/writePrd fakes already established in this test file. Do not assert against real tmux."
     },

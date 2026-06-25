@@ -1,18 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Document the review-report.json flow in the recovery runbook and patterns"
+    "id": "US-006",
+    "title": "Regression test: findings reach fix stories from review-report.json and missing-file is graceful"
   },
   "branchName": "cam/CAM-75-reviewer-report-channel",
-  "timestamp": "2026-06-25T17:00:00Z",
+  "timestamp": "2026-06-25T18:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/recovery-runbook.md",
-    "scripts/cam/patterns.md",
+    "test/supervisor/review.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 added section (m) CAM-75 to docs/recovery-runbook.md (review-report.json flow, file shape, prd.review.findings, graceful fallback, diagnostic commands, manual override). Also added review-report.json row to canonical runtime files table. Added a new bullet to scripts/cam/patterns.md recording that tmux capture-pane returns rendered markdown and why that necessitated the review-report.json file channel. 1278 tests pass. No em-dashes in either file. All four ACs verified via grep oracles.",
+  "nextStoryContext": "US-006 added one new describe block 'makeReviewDispatch: US-006 regression - findings come from file, not pane' with a single AC3 test to test/supervisor/review.test.ts (+119 lines, 49 total tests in that file, 1279 total). The AC3 test sets capturePane to return rendered markdown text (bullets/brackets stripped, pane-side flavor text) while readReviewReport returns structured findings with distinctive text; asserts verbatim file content in fix-story notes; negatively asserts pane-only text is absent from notes. AC1 and AC2 were already covered by existing tests added in prior stories. US-007 is operator-required (live dogfood); PRD is effectively complete for autonomous implementation.",
   "officialDocsValidated": [
     {
       "lib": "none",
