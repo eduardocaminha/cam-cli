@@ -11,6 +11,20 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/supervisor/result.ts:60]: Type-level doc comments still describe worker-report.json as a fallback consulted only when handoff/sentinel fail, contradicting the now-primary behavior and the updated module header. ReadWorkerOutcomeOptions.workerReportPath (line 57-61) says 'When provided and neither handoff nor DONE sentinel yield a story id, readWorkerOutcome falls back to worker-report.json'; expectedStoryId (line 63-71) calls it 'the worker-report.json fallback'; WorkerOutcome.storyId (line 42-45) says storyId is 'derived from handoff.json and the sentinel'. The runtime is correct (report-first); only these field docs are stale. Mechanical doc fix in one file."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [scripts/cam/patterns.md:77]: CAM-77 bullet states the 'worker-report-fallback' detail label 'describes the ABSENT-REPORT failure path, not a success variant'. This is inverted: in code the literal 'worker-report-fallback' substring appears ONLY on the present-report PRIMARY path (result.ts:318,326,336,343,349), including the success/pass case, and loop.ts:877 derives winningSrc='worker-report' precisely because that substring is present. The label marks the report-present primary/success path, not the absent-report failure path. A factually inverted statement in the durable patterns file (read by every implementer at story start) will mislead future maintainers."
+    },
+    {
       "id": "US-001",
       "title": "readWorkerOutcome reads worker-report.json as the sole authoritative outcome source",
       "description": "As the supervisor's deterministic outcome reader, I need readWorkerOutcome to derive the completed story and DONE/BLOCKED/PRD_COMPLETE outcome from worker-report.json (the Event source) and confirm integrity against prd.json passes (the State source), so that handoff.json leaves the outcome path and the CAM_IMPLEMENTER_STATUS sentinel is no longer a control gate.",
@@ -24,7 +38,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/result.ts (readWorkerOutcome ~lines 268-424). INVERT the current layering: worker-report.json moves from the FALLBACK branch (lines 336-385, only when neither handoff nor a DONE sentinel yielded a story id) to the PRIMARY read. handoff.json LEAVES the outcome path: readHandoff (line 311) no longer drives story selection (the handoffPath option may remain on ReadWorkerOutcomeOptions for backward-compat but is not consulted to pick the story); drop the DONE-sentinel-vs-handoff mismatch->fail block (lines 318-330) and the handoff-authoritative completedStory resolution (lines 332-334). parseSentinel (line 80) stays only as human-readable corroboration, never a gate. SOURCE BLOCKED_*/PRD_COMPLETE from report.outcome (the existing fallback already does this at lines 355-382: report.outcome.startsWith('BLOCKED_') -> blocked; outcome === 'DONE' -> confirm via storyPassesInPrd at line 202). Integrity = read-only confirm against prd.json passes:true; DONE report + passes:false -> 'incomplete' (supervisor finalize), never false-pass; do NOT write prd.json here (no double-push). ReadWorkerOutcomeOptions already carries workerReportPath + expectedStoryId (CAM-58). 5-concern model (operator decision 2026-06-25): Event=worker-report.json (authoritative), State=prd.json (integrity), Context=handoff.json (forward-only). Pilot precedent to mirror: CAM-75 review-report.json primary read (src/supervisor/review.ts makeReviewDispatch; patterns.md 'Review-report.json reader dep-injection pattern'). US-002 wires the loop side; US-006 hardens the staleness/failure modes. patterns.md bullet 'worker-report-fallback and handoff-string-coerced in readWorkerOutcome' (2026-06-17) is SUPERSEDED by this change (US-007 updates it)."
@@ -42,7 +56,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (implement poll loop ~lines 685-734; readWorkerReport injectable branch ~lines 697-716; imports readWorkerOutcome + parseAnySentinel at line 27). Today the report-watch runs only inside `if (readWorkerReport !== undefined)`; host.ts buildSupervisorOptions ALWAYS injects readWorkerReport (host.ts:531 + opts at line 625), so production already takes the report path, but the `else` branch (capturePane + parseAnySentinel, lines 702-716) is still the completion gate when a reader is absent. Make the report-watch the CANONICAL detector and demote the parseAnySentinel else-branch to a non-gate corroboration fallback: even if it breaks the poll, readWorkerOutcome (US-001, report-first) decides the outcome, so the sentinel never finalizes. Preserve pane-died (line 687), timeout (line 731), token-ceiling (line 720), and the CAM-44 dead-worker backoff (lines 765-792). parseAnySentinel lives at src/supervisor/result.ts:235 and is also used for CAM_REVIEWER_STATUS / <review> tags: do NOT remove it, only demote its implementer role. Depends on US-001. Tests: test/supervisor/loop.test.ts (2214 lines; many cases already inject readWorkerReport)."
@@ -59,7 +73,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-implementer.md AND templates/agents/subagent-implementer.md (BOTH copies; self-hosting pattern, patterns.md 'Agent-prompt self-hosting pattern' 2026-06-16). After editing both, run `bun run embed-vendor` to regenerate src/vendor/_generated.ts, then `bun run embed-vendor:check` (test/embedded.test.ts byte-parity catches drift between templates/ and the embedded copy). Update the 'Session model' section (currently says the report is the push signal; reinforce that it is the AUTHORITATIVE OUTCOME channel and the sentinel is corroboration ONLY) and the 'Exit report protocol (US-003)' section. The agent ALREADY writes worker-report.json on every exit (incl BLOCKED_* and PRD_COMPLETE) so this is a documentation alignment, not a behavior change; do not alter the write steps. Agent .md files are EXEMPT from the no-em-dash rule (global CLAUDE.md: .claude/agents/*.md are LLM-consumed). Commit message should flag 'intentional self-hosting' per patterns.md so an auditor does not treat the dual edit as harness drift. Depends on US-001 + US-002 (the contract they establish)."
@@ -77,7 +91,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: test/supervisor/result.test.ts (630 lines; ~81 references to handoff / state-primary / expectedStoryId / worker-report-fallback assert the OLD cross-check order and must be reconciled to the report-first authority from US-001). Add the four regression cases (report-wins-over-handoff, sentinel-non-override, DONE+passes:false -> incomplete, DONE+passes:true -> pass). Reconcile or replace any test that asserted handoff-authoritative selection (old completedStory resolution) or the DONE-sentinel-vs-handoff mismatch -> fail (old result.ts:318-330). Where loop-level behavior is asserted, mirror into test/supervisor/loop.test.ts. Depends on US-001 (and US-002 for any loop-level cases). Test convention (patterns.md): inject fake FileReader shapes; no real filesystem."
@@ -94,7 +108,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (implement branch, after readWorkerOutcome resolves, around the existing 'outcome-fallback' emit at lines 837-847; reuse the emit() helper at line 538) + src/supervisor/events.ts (WorkerEventKind union ~lines 52-66; add 'outcome-source' or extend the 'outcome-fallback' detail with the winning source + integrity verdict). Mirror the existing emit shape: { ts, storyId, uuid, kind, detail }. Production-wiring proof (memory: Spawn-resolution emitter pattern + the CAM-53 lesson that emitSpawnResolution without a wired writeEvent never persists): assert the event reaches the injected logEvent (events.ts makeInMemoryEventLogger) AND confirm host.ts wires logEvent into opts (host.ts:621 / buildSupervisorOptions) so the call-site sink is real, not a dangling emitter. logEvent absent -> no-op (loop.ts emit() already guards `if (!logEvent) return`). Depends on US-001. Tests: test/supervisor/loop.test.ts + test/supervisor/events.test.ts."
@@ -111,7 +125,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/result.ts (readWorkerOutcome primary report read) + src/supervisor/loop.ts (poll nets). Promote the expectedStoryId staleness guard (today only inside the fallback branch at result.ts:352) onto the PRIMARY report path: a report whose story != expectedStoryId is rejected as stale (no pass/blocked). Absent / malformed / wrong-shape report -> non-committal 'unknown' so the loop's pane-died (loop.ts:687) + timeout (loop.ts:731) nets remain the terminal signal; integrity vs prd.passes (US-001) + the staleness guard together prevent any false-pass. host.ts makeClearWorkerReport (host.ts:96) already wipes the report per-dispatch so a worker that crashes before writing has no report -> the net fires (intended failure mode after removing the handoff fallback). Apply the JSON shape-guard discipline from patterns.md ('JSON reader shape guards: validate discriminator fields', US-R2-001): verify report.story and report.outcome are strings before trusting them. Depends on US-001 + US-002. Tests: test/supervisor/result.test.ts + test/supervisor/loop.test.ts."
@@ -128,10 +142,47 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "Files: docs/recovery-runbook.md (Canonical runtime files table lines 12-20; section (m) CAM-75 review-report.json is the structural precedent to mirror for the implementer channel; the CAM-58 'worker-report-fallback' wording is now stale and must read 'primary/authoritative') + scripts/cam/patterns.md (append a CAM-77 bullet). Document the 5-concern model (operator decision 2026-06-25, memory comms-architecture-structured-handback): Event=worker-report.json (AUTHORITATIVE outcome for the implementer), State=prd.json (integrity), Context=handoff.json (forward-only, not a control signal), Observability=.claude/cam-worker-events.jsonl, Wisdom=patterns.md. The patterns.md bullet 'worker-report-fallback and handoff-string-coerced in readWorkerOutcome' (US-001, 2026-06-17) is SUPERSEDED: append a superseding note rather than silently leaving the stale bullet. Both files are currently em-dash-clean (verified, 0 occurrences); keep them clean (use colon, comma, parens, period). Doc Maintenance per CLAUDE.md section 7. Depends on US-001 through US-006."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:2",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/supervisor/result.ts",
+        "line": 60,
+        "text": "Type-level doc comments still describe worker-report.json as a fallback consulted only when handoff/sentinel fail, contradicting the now-primary behavior and the updated module header. ReadWorkerOutcomeOptions.workerReportPath (line 57-61) says 'When provided and neither handoff nor DONE sentinel yield a story id, readWorkerOutcome falls back to worker-report.json'; expectedStoryId (line 63-71) calls it 'the worker-report.json fallback'; WorkerOutcome.storyId (line 42-45) says storyId is 'derived from handoff.json and the sentinel'. The runtime is correct (report-first); only these field docs are stale. Mechanical doc fix in one file."
+      },
+      {
+        "severity": "WARNING",
+        "file": "scripts/cam/patterns.md",
+        "line": 77,
+        "text": "CAM-77 bullet states the 'worker-report-fallback' detail label 'describes the ABSENT-REPORT failure path, not a success variant'. This is inverted: in code the literal 'worker-report-fallback' substring appears ONLY on the present-report PRIMARY path (result.ts:318,326,336,343,349), including the success/pass case, and loop.ts:877 derives winningSrc='worker-report' precisely because that substring is present. The label marks the report-present primary/success path, not the absent-report failure path. A factually inverted statement in the durable patterns file (read by every implementer at story start) will mislead future maintainers."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/events.ts",
+        "line": 151,
+        "text": "integrityResult='stale-absent-rejection' is a misnomer for a genuine BLOCKED_* outcome (test (D) maps a real BLOCKED_QUALITY report to 'stale-absent-rejection'). The report was neither stale nor absent. Consider a 'blocked' bucket or renaming the enum value for accurate observability."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/loop.ts",
+        "line": 859,
+        "text": "Because the primary-path detail strings carry the legacy 'worker-report-fallback' substring, the 'outcome-fallback' event now fires on every happy-path primary resolution (tested at loop.test.ts:2244). An event named outcome-fallback firing on the common success path is noisy/misleading. The clean fix is to rename the primary-path detail label (e.g. 'worker-report-primary') and update the three derivation sites (loop.ts winningSrc + outcome-fallback emit + the oracle-grep tests); this also resolves both WARNINGs at the root."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/result.ts",
+        "line": 398,
+        "text": "The handoff-based fallback path can still return kind 'pass'/'incomplete' from handoff.lastCompletedStory.id when no valid report is present, which strictly contradicts the single-source goal inside readWorkerOutcome itself. It is unreachable in the production loop (readWorkerOutcome is only invoked after a valid fresh report breaks the poll) and is PRD-sanctioned backward-compat, so US-006 AC2 'absent/malformed -> unknown' only holds when handoff is also absent (as the tests fixture it). Acceptable as documented backward-compat; noting the residual dual-path."
+      }
+    ]
+  }
 }

@@ -1,23 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Update recovery-runbook.md and patterns.md to the single-source outcome model"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-77-worker-report-sole-outcome",
   "timestamp": "2026-06-25T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/recovery-runbook.md",
-    "scripts/cam/patterns.md",
+    "src/supervisor/result.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 adds two doc changes: (1) docs/recovery-runbook.md gains the worker-report.json row in the canonical runtime files table (PRIMARY authoritative, ephemeral, gitignored) and a new section (o) documenting the single-source outcome model, the 5-concern model table, a diagnostic guide for absent/stale/malformed reports, and a manual override procedure; (2) scripts/cam/patterns.md gains a new CAM-77 bullet documenting the 5-concern model (Event=worker-report.json AUTHORITATIVE, State=prd.json, Context=handoff.json, Observability=cam-worker-events.jsonl, Wisdom=patterns.md) and superseding the old worker-report-fallback framing. All four acceptance-criteria oracles pass. Total tests: 1372 pass / 0 fail.",
+  "nextStoryContext": "US-R1-001 is a mechanical doc-only fix in src/supervisor/result.ts: three JSDoc field comments (workerReportPath, expectedStoryId, WorkerOutcome.storyId) that still described worker-report.json as a fallback were corrected to reflect the report-first (PRIMARY) behavior introduced in US-001. Runtime behavior is unchanged. One gotcha: BLOCKED_*/PRD_COMPLETE in a JSDoc block comment terminates the comment early via the */ sequence; replaced with BLOCKED_.../PRD_COMPLETE. All 1372 tests pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-007 only edits docs/recovery-runbook.md and scripts/cam/patterns.md. No external library API was exercised."
+      "summary": "US-R1-001 only edits JSDoc comments in src/supervisor/result.ts. No external library API was exercised."
     }
   ]
 }
