@@ -1,5 +1,5 @@
 {
-  "next_id": 79,
+  "next_id": 80,
   "issues": [
     {
       "id": "CAM-1",
@@ -656,6 +656,14 @@
       "createdAt": "2026-06-25T12:13:51Z",
       "title": "Sidecar = unico pusher pro orchestrator pane; remover auto-narracao vestigial do cam next; zero double-push",
       "description": "Parte 3 da unificacao de comunicacao inter-pane (decisao 2026-06-25, ver CAM-75/CAM-77). Push hygiene: o SIDECAR e o UNICO ator que da send-keys pro orchestrator pane, uma narracao por evento terminal. Remove a auto-narracao vestigial do cam next (a thin-proxy injeta o task prompt que colide com o push do sidecar; visivel como \"Implement the next user story... [cam] DONE\" grudado). Garante que nenhum worker/thin-proxy de double-push pro mesmo evento logico. ONDE: src/commands/next.ts (sendKeysWhenIdle narration), src/tmux/dispatch.ts, src/supervisor/host.ts (notifyOrchestrator e o canal unico). Depende dos canais do reviewer (CAM-75) e implementer (CAM-77) ja estarem estruturados."
+    },
+    {
+      "id": "CAM-79",
+      "priority": "P1",
+      "state": "open",
+      "createdAt": "2026-06-25T13:52:29Z",
+      "title": "/cam-ship roda o check:all completo (nao so typecheck+tests): ship verde garante CI verde, fim do green-local != green-CI pos-ship",
+      "description": "RECORRENTE (CAM-53/59/60, de novo no CAM-75 PR #69): a CI fica VERMELHA logo apos o orquestrador declarar shipped. Causa: o /cam-ship Step 3 roda so `bun run typecheck` + `bun test` + `bun run embed-vendor:check`, enquanto a CI roda `bun run check:all` (o gate spine completo: typecheck, test, embed-vendor, biome/lint, file-size ratchet, debt-markers, coverage ratchet, knip dead-code, jscpd dup, ci-parity). O worker per-story TAMBEM roda so typecheck+tests, entao crescimento de arquivo (file-size ratchet), queda de cobertura, dup, dead-code etc. acumulam silenciosos e so estouram no CI. No CAM-75, 4 arquivos passaram do teto (review.ts/test, decide.ts, host.ts) e a 1a CI ficou vermelha pos-ship. FIX: o /cam-ship Step 3 passa a rodar `bun run check:all` (exatamente o que a CI roda; o gate ci-parity do CAM-59 ja garante manifest local == CI), substituindo a forma parcial typecheck+test+embed. Assim ship verde => CI verde por construcao. Quando o check:all falhar no ship por crescimento legitimo (ratchet), o ship FALHA com mensagem clara e o operador/worker sobe o teto em file-size-budget.json (ou o floor em coverage-budget.json) com o _ref do issue ANTES de abrir o PR. ONDE: .claude/commands/cam-ship.md Step 3 + templates/commands/cam-ship.md espelhado + regen embed (src/vendor/_generated.ts, embed-vendor:check), e uma regressao no test do templatesContents embarcado que pina check:all no Step 3 e proibe a forma parcial isolada. AVALIAR (fora do MVP): rodar check:all tambem no pre-flight do /cam-plan e /cam-next (mais pesado, ~30-60s; o ratchet e cumulativo, faz mais sentido no ship). Tambem avaliar um teto/limite que faca o worker per-story ao menos AVISAR de crescimento. Prioridade P1: higiene recorrente que custa um ciclo de CI vermelho + retrabalho a cada ship; o operador pediu explicitamente o fix definitivo (nunca mais)."
     }
   ]
 }
