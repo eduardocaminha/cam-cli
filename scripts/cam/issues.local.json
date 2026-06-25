@@ -1,5 +1,5 @@
 {
-  "next_id": 90,
+  "next_id": 91,
   "issues": [
     {
       "id": "CAM-1",
@@ -747,6 +747,14 @@
       "createdAt": "2026-06-25T16:00:00Z",
       "title": "Bump de versao automatico via Conventional Commits no cam ship",
       "description": "Hoje a versao (src/version.ts + package.json) e bumpeada manualmente. Nao ha convencao formal de quando bumpar nem automacao. CONVENCAO ADOTADA: Conventional Commits (https://www.conventionalcommits.org). Formato de commit message: feat: nova feature (MINOR bump), fix: correcao (PATCH bump), feat!: ou BREAKING CHANGE: no corpo (MAJOR bump em pos-1.0; MINOR em pre-1.0/0.x por convencao). chore:, docs:, test: nao geram bump. AUTOMATIZACAO: integrar no cam ship um passo que (1) le os commits desde a ultima git tag via git log v<last>..HEAD --pretty=%s, (2) classifica o bump type por regra deterministica (sem modelo: basta regex nos prefixos), (3) calcula a nova versao, (4) atualiza src/version.ts e package.json, (5) atualiza CHANGELOG.md (move [Unreleased] pra [X.Y.Z] - data), (6) commita os tres arquivos com chore(release): bump version to X.Y.Z, (7) cria git tag vX.Y.Z e push. REGRAS PRE-1.0 (0.x): feat! e BREAKING CHANGE viram MINOR (nao MAJOR) porque pre-1.0 nao tem contrato de estabilidade; MAJOR fica reservado para o 1.0.0 declarado manualmente. 1.0.0 nunca e gerado automaticamente. DETERMINISTICO: nao usa modelo nem subagente; a classificacao e pura regex sobre prefixos de commit. A unica dependencia humana e escrever feat! quando realmente quebra algo. ONDE TOCAR: .claude/commands/cam-ship.md (novo Step entre quality gates e PR), templates/commands/cam-ship.md espelhado, src/ (logica de bump, pode ser script bun ou funcao em commands/ship.ts), test para o parser de bump type. PREREQUISITO: enforcar Conventional Commits nos commits da branch antes do ship (o reviewer pode checar; ou adicionar um gate no cam ship que rejeita commits sem prefixo reconhecido). Prioridade P2: desbloqueador para distribuicao publica (o usuario nao quer bumpar manualmente quando comecar a divulgar o cam-cli)."
+    },
+    {
+      "id": "CAM-90",
+      "priority": "P2",
+      "state": "open",
+      "createdAt": "2026-06-25T15:45:00Z",
+      "title": "Substituir mecanismo next_id por file-per-issue (scripts/cam/issues/CAM-NNN.json)",
+      "description": "O formato atual (issues.local.json: array + next_id counter) tem tres problemas estruturais. (1) next_id fica stale: qualquer gravacao fora do fluxo normal (hand-filing, commit direto na main, bug do cam issue) dessincroniza o counter do max(id) real — exige reconciliacao manual. Vimos isso no CAM-86/87: next_id=81 enquanto CAM-86 ja existia. (2) Multi-writer collision: dois processos gravando o mesmo arquivo criam conflito de merge no array inteiro, nao so na entrada nova. (3) Branch entanglement: qualquer issue filado numa branch de trabalho toca o mesmo arquivo que a main usa como backlog — merge ou rebase carrega o issue pra branch errada ou conflita. O fix do CAM-86 (commit-tree via index temporario) e um workaround pra isso, nao uma solucao. REDESIGN: um arquivo por issue em scripts/cam/issues/CAM-NNN.json (zero-padded 3 digitos). Sem next_id armazenado: o proximo ID e derivado em runtime como max(parseInt(ls scripts/cam/issues/)) + 1. BENEFICIOS: (a) sem counter stale — o max e sempre correto por construcao; (b) branches nunca conflitam no mesmo arquivo — cada issue e um arquivo independente; (c) git blame por issue; (d) hand-filing e criar um arquivo, nao editar um array. MIGRACAO: script que le issues.local.json e escreve um arquivo por issue + deleta issues.local.json. ONDE TOCAR: src/commands/issue.ts (leitura/escrita), src/commands/dashboard.ts (listagem), cam-plan.md (leitura do backlog), scripts/cam/issues.local.json (substituido pelo diretorio), tests. Checar se alguma outra parte do codigo referencia issues.local.json diretamente. Manter o prefixo CAM- e formato de id identico para nao quebrar referencias existentes nos PRDs/handoffs. Prioridade P2: o workaround do CAM-86 resolve o sintoma mais urgente (commit na branch certa), mas enquanto o formato de arquivo unico persistir o problema de counter stale e merge conflict segue latente."
     }
   ]
 }
