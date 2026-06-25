@@ -40,8 +40,10 @@ export interface WorkerOutcome {
 	/** What happened. */
 	kind: WorkerOutcomeKind;
 	/**
-	 * The story ID the worker completed, derived from handoff.json and the
-	 * sentinel. May be undefined when kind is 'unknown' and no signals exist.
+	 * The story ID the worker completed. Derived from worker-report.json when a
+	 * valid, non-stale report is present; falls back to handoff.json and the
+	 * sentinel in the backward-compat path. May be undefined when kind is
+	 * 'unknown' and no signals exist.
 	 */
 	storyId: string | undefined;
 	/** Human-readable explanation of what was detected and why. */
@@ -56,18 +58,21 @@ export interface ReadWorkerOutcomeOptions {
 	handoffPath: string;
 	/**
 	 * Optional absolute path to scripts/cam/worker-report.json.
-	 * When provided and neither handoff nor DONE sentinel yield a story id,
-	 * readWorkerOutcome falls back to worker-report.json (worker-report-fallback).
+	 * When provided and the file is valid and non-stale, this is the PRIMARY
+	 * outcome source: report.story drives which story completed, report.outcome
+	 * drives DONE/BLOCKED_.../PRD_COMPLETE. handoff.json is not consulted in this
+	 * path. Falls through to the sentinel+handoff fallback only when absent,
+	 * missing, or stale.
 	 */
 	workerReportPath?: string;
 	/**
 	 * Optional advisory story id set by the supervisor loop (the story it
-	 * dispatched). When provided, the worker-report.json fallback rejects any
-	 * report whose story field does NOT match this id (staleness guard). This
-	 * prevents a leftover report from a previous run from being mistaken as a
-	 * fresh completion signal when clearWorkerReport failed or the worker wrote
-	 * a report and then crashed before clearing it. When undefined, the fallback
-	 * degrades gracefully to US-001 behavior (no staleness check).
+	 * dispatched). When provided, reports whose story field does NOT match this
+	 * id are considered stale and fall through to the sentinel+handoff fallback
+	 * path (staleness guard). This prevents a leftover report from a previous
+	 * run from masquerading as a fresh completion signal when clearWorkerReport
+	 * failed or the worker crashed after writing its report. When undefined, no
+	 * staleness check is applied (US-001 behavior).
 	 */
 	expectedStoryId?: string;
 	/** Raw text captured from the worker pane (via capture-pane -p). */
