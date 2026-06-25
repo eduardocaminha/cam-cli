@@ -1,22 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Define ReviewReport type and instruct the reviewer to write review-report.json"
+    "id": "US-002",
+    "title": "Sidecar sources verdict, findings, and completion from review-report.json with tag fallback"
   },
   "branchName": "cam/CAM-75-reviewer-report-channel",
-  "timestamp": "2026-06-25T12:00:00Z",
-  "createdFiles": [
-    "src/supervisor/review-report.ts"
-  ],
+  "timestamp": "2026-06-25T14:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-reviewer.md",
-    "templates/agents/subagent-reviewer.md",
-    ".gitignore",
-    "templates/.gitignore",
-    "src/vendor/_generated.ts"
+    "src/supervisor/review.ts",
+    "src/supervisor/host.ts",
+    "test/supervisor/review.test.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added ReviewReport type (src/supervisor/review-report.ts) and review-report.json exit protocol to both reviewer agent files. The reviewer now has Write tool allowed (for review-report.json only). US-002 will wire the sidecar to read this file after review dispatch; import REVIEW_REPORT_FILENAME from src/supervisor/review-report.ts.",
+  "nextStoryContext": "US-002 wired readReviewReport into makeReviewDispatch: file is the primary completion signal (checked before pane-death guard), verdict/findings sourced from review-report.json when present. buildFixStories now accepts ReviewFinding[] and injects each finding as notes (format: 'SEVERITY [file:line]: text'). makeReadReviewReport(cwd) added to host.ts as the production factory. parseReviewVerdict retained as fallback. 41 review tests pass. US-003 is next; import ReviewReport/REVIEW_REPORT_FILENAME from src/supervisor/review-report.ts as before.",
   "officialDocsValidated": [
     {
       "lib": "none",

@@ -278,6 +278,7 @@ function makeDispatchOpts(
 		pollIntervalMs: overrides.pollIntervalMs ?? 1,
 		timeoutMs: overrides.timeoutMs ?? 60_000,
 		now: overrides.now ?? now,
+		readReviewReport: overrides.readReviewReport,
 		capturedWrittenPrd,
 		capturedSpawnArgs,
 	};
@@ -561,5 +562,168 @@ describe('makeReviewDispatch', () => {
 			const written = capturedWrittenPrd[0];
 			expect(written?.review?.roundsCompleted).toBe(3);
 		}
+	});
+
+	// ---------------------------------------------------------------------------
+	// review-report.json file-based verdict tests (US-002, CAM-75)
+	// ---------------------------------------------------------------------------
+
+	test('file-based CLEAN verdict: sourced from review-report.json, not pane tag', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		// Pane has no <review> tag -- completion comes from file only.
+		const opts = makeDispatchOpts({
+			paneText: 'Reviewing changes... (no tag here)',
+			prd: makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'CLEAN', findings: [] }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('CLEAN');
+		expect(written?.review?.roundsCompleted).toBe(1);
+	});
+
+	test('file-based FIXES_PENDING: verdict and findingsCount sourced from file', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		// Pane has no tag; file has FIXES_PENDING:2.
+		const opts = makeDispatchOpts({
+			paneText: 'still working...',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({
+				verdict: 'FIXES_PENDING:2',
+				findings: [
+					{ severity: 'CRITICAL', file: 'src/foo.ts', line: 10, text: 'null deref' },
+					{ severity: 'WARNING', text: 'missing test' },
+				],
+			}),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('FIXES_PENDING:2');
+		const stories = written?.userStories ?? [];
+		const fixStories = stories.filter((s) => s.id?.startsWith('US-R1-'));
+		expect(fixStories.length).toBe(2);
+	});
+
+	test('file-based findings injected into fix story notes (verbatim severity/file/line/text)', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const findings = [
+			{ severity: 'CRITICAL', file: 'src/foo.ts', line: 42, text: 'null deref on prd' },
+			{ severity: 'WARNING', file: 'src/bar.ts', text: 'missing return type' },
+			{ severity: 'SUGGESTION', text: 'consider extracting helper' },
+		];
+		const opts = makeDispatchOpts({
+			paneText: 'no tag',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:3', findings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		const stories = written?.userStories ?? [];
+
+		// First story: CRITICAL with file and line.
+		const s1 = stories.find((s) => s.id === 'US-R1-001');
+		expect(s1?.notes).toContain('CRITICAL');
+		expect(s1?.notes).toContain('src/foo.ts');
+		expect(s1?.notes).toContain('42');
+		expect(s1?.notes).toContain('null deref on prd');
+
+		// Second story: WARNING with file, no line.
+		const s2 = stories.find((s) => s.id === 'US-R1-002');
+		expect(s2?.notes).toContain('WARNING');
+		expect(s2?.notes).toContain('src/bar.ts');
+		expect(s2?.notes).toContain('missing return type');
+
+		// Third story: SUGGESTION with no file.
+		const s3 = stories.find((s) => s.id === 'US-R1-003');
+		expect(s3?.notes).toContain('SUGGESTION');
+		expect(s3?.notes).toContain('consider extracting helper');
+	});
+
+	test('fallback: readReviewReport always null -> tag-based path used', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		// readReviewReport always returns null; pane has the tag.
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => null,
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('CLEAN');
+	});
+
+	test('file takes priority: when both file and tag present, file verdict wins', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		// File says CLEAN; pane says FIXES_PENDING. File should win.
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:5</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'CLEAN', findings: [] }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		// File's CLEAN verdict wins over pane's FIXES_PENDING tag.
+		expect(written?.review?.lastVerdict).toBe('CLEAN');
+	});
+
+	test('fix stories without file findings have no notes (tag fallback path)', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:1</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			// No readReviewReport injected -> fallback path, no findings.
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		const fixStory = (written?.userStories ?? []).find((s) => s.id === 'US-R1-001');
+		expect(fixStory).toBeDefined();
+		// No notes on tag-based path (no findings available).
+		expect(fixStory?.notes).toBeUndefined();
 	});
 });

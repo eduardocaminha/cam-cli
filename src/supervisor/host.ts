@@ -40,6 +40,8 @@ import {
 import { isPidAlive } from '../commands/resume.ts';
 import { renderStateFile, writeStateFile } from '../commands/next.ts';
 import { WORKER_REPORT_FILENAME, buildWorkerReportSendKeysArgv } from './worker-report.ts';
+import type { ReviewReport } from './review-report.ts';
+import { REVIEW_REPORT_FILENAME } from './review-report.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -100,6 +102,32 @@ export function makeClearWorkerReport(cwd: string): RunSupervisorOptions['clearW
 			}
 		} catch {
 			// best-effort: ignore failures
+		}
+	};
+}
+
+// ---------------------------------------------------------------------------
+// review-report reader (US-002 / CAM-75)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a readReviewReport function for the given cwd.
+ * Reads `<cwd>/scripts/cam/review-report.json`.
+ * Returns the parsed ReviewReport or null when absent / unparseable.
+ * Never throws (graceful degradation, like makeReadWorkerReport).
+ */
+export function makeReadReviewReport(cwd: string): () => ReviewReport | null {
+	const reportPath = join(cwd, REVIEW_REPORT_FILENAME);
+	return () => {
+		try {
+			const raw = readFileSync(reportPath, 'utf8');
+			const parsed: unknown = JSON.parse(raw);
+			if (parsed !== null && typeof parsed === 'object') {
+				return parsed as ReviewReport;
+			}
+			return null;
+		} catch {
+			return null;
 		}
 	};
 }
@@ -316,6 +344,9 @@ export function buildSupervisorOptions(
 		return newId;
 	};
 
+	// US-002 / CAM-75: reviewer structured exit report reader.
+	const readReviewReport = makeReadReviewReport(cwd);
+
 	// Review dispatch.
 	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
 		spawn: (cmd, args) => {
@@ -356,6 +387,8 @@ export function buildSupervisorOptions(
 		ensureWorkerPane: ensureWorkerPaneFn,
 		// US-007: persist spawn-resolution events for the reviewer phase.
 		logEvent,
+		// US-002 / CAM-75: structured reviewer exit report (primary completion signal).
+		readReviewReport,
 	});
 
 	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {

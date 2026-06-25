@@ -45,7 +45,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit src/supervisor/review.ts: makeReviewDispatch (:274-432), the poll loop (:330-350, reads capturePane every pollIntervalMs=DEFAULT_REVIEW_POLL_INTERVAL_MS at :247), buildFixStories (:444-460, currently emits placeholder titles only — add findings injection). parseReviewVerdict (:162-189) STAYS as fallback/human sentinel. Reader wiring: src/supervisor/host.ts:319-359 (makeReviewDispatch construction) — add a known-path reader for scripts/cam/review-report.json like the worker-report.json reader pattern; resolve the path against the repo root the same way prdPath is resolved in host.ts. Type from US-001: import ReviewReport + REVIEW_REPORT_FILENAME from src/supervisor/review-report.ts. Regression home: test/supervisor/review.test.ts (565 lines) — add a realistic review-report.json fixture. Gotcha (memory sidecar/parse-fragility): the file read is a completion SIGNAL plus a data source; it must not become a gate that hangs the loop (graceful degradation is US-004, but design the reader here to return null on read/parse error rather than throw). Do NOT add a --permission-mode CLI flag; permissionMode flows to the spawned claude only."
     },

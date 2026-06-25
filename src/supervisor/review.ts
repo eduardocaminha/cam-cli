@@ -33,6 +33,7 @@
 import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPrd, WritePrd, EnsureWorkerPane } from './loop.ts';
 import type { WorkerEventLogger } from './events.ts';
 import type { PrdSnapshot } from './decide.ts';
+import type { ReviewReport, ReviewFinding } from './review-report.ts';
 import { workerEnvPrefix } from './worker-argv.ts';
 import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
@@ -238,6 +239,17 @@ export interface MakeReviewDispatchOptions {
 	 * event is silently dropped (backward compat).
 	 */
 	logEvent?: WorkerEventLogger;
+	/**
+	 * Read the reviewer's structured exit report from review-report.json.
+	 * Returns the parsed ReviewReport when the file is present and well-formed,
+	 * or null on any read/parse error (graceful degradation: never throws).
+	 * When present, a non-null return is treated as the primary completion signal
+	 * and the verdict/findings are sourced from the file instead of capture-pane.
+	 * When absent (undefined), the poll loop falls back to parseReviewVerdict over
+	 * capture-pane text (tag-based sentinel).
+	 * Mirrors the readWorkerReport dep in RunSupervisorOptions.
+	 */
+	readReviewReport?: () => ReviewReport | null;
 }
 
 /** Default max review rounds (mirrors decide.ts and cam-review.md). */
@@ -288,6 +300,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	const now = opts.now ?? (() => Date.now());
 	const ensureWorkerPane = opts.ensureWorkerPane;
 	const logEvent = opts.logEvent;
+	const readReviewReport = opts.readReviewReport;
 
 	return function reviewDispatch(uuid: string): ReviewDispatchResult {
 		// CAM-57: ensure a live worker pane exists before the respawn. When
@@ -325,20 +338,40 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 
 		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, shellCmd]);
 
-		// Poll the pane until the <review> tag appears, the pane dies, or the
-		// deadline fires. The TUI session does not exit on its own.
+		// Poll until one of three sources signals completion:
+		//   1. review-report.json present and well-formed (primary, structured).
+		//   2. <review> tag in capture-pane (fallback, human-readable sentinel).
+		// Or until an error condition fires (pane death, timeout).
 		const startMs = now();
+		let fileBasedReport: ReviewReport | null = null;
 		let parsed: ParsedReviewVerdict | null = null;
+
 		while (true) {
 			sleepFn(pollIntervalMs);
+
+			// Primary completion signal: review-report.json written by the reviewer.
+			// Check before pane-death so we can use the report even if the pane
+			// exits right after writing. Never throws (graceful degradation).
+			if (readReviewReport !== undefined) {
+				const fileReport = readReviewReport();
+				if (fileReport !== null) {
+					fileBasedReport = fileReport;
+					break;
+				}
+			}
+
 			if (!isPaneAlive(liveWorkerPaneId)) {
 				return {
 					status: 'error',
 					detail: 'Reviewer pane died before a <review> verdict was emitted.',
 				};
 			}
+
+			// Fallback completion signal: <review> tag scraped from capture-pane.
+			// parseReviewVerdict is retained as a human-readable sentinel.
 			parsed = parseReviewVerdict(capturePane(liveWorkerPaneId));
 			if (parsed !== null) break;
+
 			if (now() - startMs >= timeoutMs) {
 				// Kill the stuck reviewer so the retry (CAM-37) starts clean.
 				spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, 'echo review-timeout']);
@@ -347,6 +380,39 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 					detail: 'Reviewer timed out before emitting a <review> verdict.',
 				};
 			}
+		}
+
+		// Resolve verdict and findings from whichever source triggered loop exit.
+		// File-based verdict takes priority over tag-based verdict.
+		let verdictKind: 'CLEAN' | 'FIXES_PENDING';
+		let findingsCount: number;
+		let fileFindings: ReviewFinding[] | undefined;
+
+		if (fileBasedReport !== null) {
+			// Verdict sourced from review-report.json (structured, survives markdown render).
+			const fileVerdict = fileBasedReport.verdict;
+			if (fileVerdict === 'CLEAN') {
+				verdictKind = 'CLEAN';
+				findingsCount = 0;
+			} else {
+				// FIXES_PENDING:N - extract count from verdict string.
+				const m = /^FIXES_PENDING:(\d+)$/.exec(fileVerdict);
+				const n = m !== null ? parseInt(m[1] ?? '0', 10) : 0;
+				verdictKind = 'FIXES_PENDING';
+				findingsCount = isNaN(n) ? 0 : n;
+			}
+			fileFindings = fileBasedReport.findings;
+		} else if (parsed !== null) {
+			// Fallback: verdict from parseReviewVerdict (tag-based, no file findings).
+			verdictKind = parsed.verdict;
+			findingsCount = parsed.findingsCount;
+			fileFindings = undefined;
+		} else {
+			// Unreachable: loop can only exit with one of the two set.
+			return {
+				status: 'error',
+				detail: 'Internal: poll loop exited without a verdict.',
+			};
 		}
 
 		// Read current prd to update review state.
@@ -362,7 +428,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		const maxRounds = prd.review?.maxRounds ?? DEFAULT_MAX_ROUNDS;
 		const newRound = roundsCompleted + 1;
 
-		if (parsed.verdict === 'CLEAN') {
+		if (verdictKind === 'CLEAN') {
 			writePrd({
 				...prd,
 				review: {
@@ -397,7 +463,8 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		}
 
 		// FIXES_PENDING and still within max rounds: create US-R{round}-NNN stories.
-		const newStories = buildFixStories(parsed.findingsCount, newRound);
+		// Pass file findings so each fix story gets the verbatim finding text in notes.
+		const newStories = buildFixStories(findingsCount, newRound, fileFindings);
 
 		// Prepend new fix stories before existing stories.
 		// New stories get priorities 1..N; existing stories are bumped up by N.
@@ -407,6 +474,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			title: s.title,
 			priority: i + 1,
 			passes: false,
+			...(s.notes !== undefined ? { notes: s.notes } : {}),
 		}));
 		const bumpedExisting = existingStories.map((s) => ({
 			...s,
@@ -419,14 +487,14 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 				...(prd.review ?? {}),
 				roundsCompleted: newRound,
 				maxRounds,
-				lastVerdict: `FIXES_PENDING:${parsed.findingsCount}`,
+				lastVerdict: `FIXES_PENDING:${findingsCount}`,
 			},
 			userStories: [...storiesWithPriority, ...bumpedExisting],
 		});
 
 		return {
 			status: 'ok',
-			detail: `Review round ${newRound}: FIXES_PENDING:${parsed.findingsCount}. Created ${newStories.length} fix stories.`,
+			detail: `Review round ${newRound}: FIXES_PENDING:${findingsCount}. Created ${newStories.length} fix stories.`,
 		};
 	};
 }
@@ -438,22 +506,37 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 /**
  * Build fix story records for a FIXES_PENDING round.
  * Generates `count` stories with IDs US-R{round}-001 .. US-R{round}-{NNN}.
- * Titles are placeholder descriptions; the implementer agent will read the
- * reviewer's pane output to understand the actual findings.
+ *
+ * When `findings` are provided (from review-report.json), each story's `notes`
+ * field is populated with the verbatim finding text (severity/file/line/text)
+ * so a fix-worker reads the real finding rather than a generic placeholder.
+ *
+ * When `findings` is absent (tag-based fallback path), stories are created with
+ * placeholder titles only (backward-compat behavior).
  */
 function buildFixStories(
 	count: number,
 	round: number,
-): Array<{ id: string; title: string }> {
-	const stories: Array<{ id: string; title: string }> = [];
+	findings?: ReviewFinding[],
+): Array<{ id: string; title: string; notes?: string }> {
+	const stories: Array<{ id: string; title: string; notes?: string }> = [];
 	const actualCount = Math.max(count, 1); // always create at least 1 story on FIXES_PENDING
 
 	for (let i = 1; i <= actualCount; i++) {
 		const nnn = String(i).padStart(3, '0');
-		stories.push({
+		const finding: ReviewFinding | undefined = findings !== undefined ? findings[i - 1] : undefined;
+		const story: { id: string; title: string; notes?: string } = {
 			id: `US-R${round}-${nnn}`,
 			title: `Review round ${round} fix ${nnn}: address reviewer finding`,
-		});
+		};
+		if (finding !== undefined) {
+			// Inject verbatim finding into notes so the fix-worker has the real context.
+			const loc = finding.file !== undefined
+				? ` [${finding.file}${finding.line !== undefined ? `:${finding.line}` : ''}]`
+				: '';
+			story.notes = `${finding.severity}${loc}: ${finding.text}`;
+		}
+		stories.push(story);
 	}
 
 	return stories;
