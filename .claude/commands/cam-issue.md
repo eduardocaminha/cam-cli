@@ -125,15 +125,40 @@ Schema:
 Subcommands:
 
 #### `create`
-Read or create `scripts/cam/issues.local.json`, allocate `id = "CAM-<next_id>"`,
-increment `next_id`, append the issue, write the file back. Print the new
-identifier on the last line.
+
+**CONVENTION**: never hand-edit issues.local.json on a feature branch; always file via `cam issue` (it commits to main deterministically).
+
+1. Expand the free-text argument into a structured **title** (concise, under 80 chars) and an optional **description** (one or two sentences).
+2. Build a JSON payload with `title` and `description`. Include `priority` (integer 1-4, 1 = urgent) only when the request implies one.
+3. Invoke `cam issue --file-local`, piping the JSON payload to stdin. It commits the new issue directly to `main` without touching the current work branch:
+   ```bash
+   echo '{"title":"<title>","description":"<description>"}' | cam issue --file-local
+   ```
+   The command prints the new identifier (e.g. `CAM-42`) to stdout and exits 0 on success.
+4. Print the returned identifier and end with:
+   ```
+   CAM_ISSUE_RESULT=<identifier>
+   ```
 
 #### `get <id>`
-Read the file, find the matching id, print as JSON.
+
+Read the backlog from main so a just-filed issue is visible from any checked-out branch,
+with a fallback to the working-tree file when the git read fails:
+```bash
+git show main:scripts/cam/issues.local.json 2>/dev/null || cat scripts/cam/issues.local.json
+```
+Parse the JSON, find the issue whose `id` matches `<id>`, print it as JSON.
 
 #### `list`
-Read the file, render the open issues as a table.
+
+Read the backlog from main so a just-filed issue is visible from any checked-out branch,
+with a fallback to the working-tree file when the git read fails:
+```bash
+git show main:scripts/cam/issues.local.json 2>/dev/null || cat scripts/cam/issues.local.json
+```
+Render the open issues as a markdown table.
+
+Note: a deterministic `cam issue list` CLI command is tracked separately (CAM-74).
 
 ---
 

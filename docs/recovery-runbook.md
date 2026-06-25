@@ -880,3 +880,94 @@ ReviewReport schema), `src/supervisor/review.ts` (makeReviewDispatch, poll loop,
 fallback path), `src/supervisor/host.ts` (makeReadReviewReport factory),
 `scripts/cam/patterns.md` (structured reviewer exit report pattern,
 capture-pane-is-rendered-markdown bullet).
+
+## (n) CAM-86: file-on-main backlog filing
+
+Symptom: a `/cam-issue create` call (or a `cam issue --file-local` run) completed without error but the resulting commit landed on a feature branch instead of `main`. The backlog entry (`scripts/cam/issues.local.json`) is thus visible only on that branch; `cam issue get`/`list` and other commands that read from `main` cannot see it.
+
+This can happen when a worker agent is dispatched from a feature branch and the up-to-date guard in `issue-file.ts` fails silently (e.g. no remote configured), or when a parallel worker commits to the wrong HEAD.
+
+Real case (2026-06-25): a parallel Sonnet filed CAM-81 through CAM-85 and the commit landed on `cam/CAM-79` instead of `main`. Recovery: cherry-pick to `main` + rebase to drop from the feature branch.
+
+### How the commit-tree-to-main primitive works
+
+`cam issue --file-local` files a backlog entry directly on `main` without checking out `main`:
+
+1. **Read-from-main allocation**: the current `issues.local.json` is read via `git show main:scripts/cam/issues.local.json` (no checkout needed), so the next-id allocation is always based on the committed state of `main`.
+2. **Off-main commit-tree path**: a temporary git index file is created (`mkdtempSync` + `GIT_INDEX_FILE`), the new JSON content is hashed via `git hash-object -w --stdin` and staged in the temp index (`git update-index --add --cacheinfo`), and a tree object is built from the temp index (`git write-tree`).
+3. **On-main direct commit**: `git commit-tree <tree> -p $(git rev-parse main) -m "<message>"` creates the commit object with `main` as parent, then `git update-ref refs/heads/main <new-sha>` advances `main` atomically. The current HEAD branch is never touched.
+
+After this flow, `main` has the new entry and the feature branch is unaffected.
+
+### Recovery: wrong-branch commit
+
+Symptom: `git log main -- scripts/cam/issues.local.json` does NOT show the new entry, but `git log <feature-branch>` does.
+
+1. Find the commit SHA on the feature branch:
+
+   ```bash
+   git log --oneline <feature-branch> | head -10
+   # identify the "chore(cam): file issue CAM-NNN" commit
+   ```
+
+2. Cherry-pick it onto `main`:
+
+   ```bash
+   git checkout main
+   git cherry-pick <sha>
+   git push origin main
+   ```
+
+3. Drop the stray commit from the feature branch (rebase to remove it):
+
+   ```bash
+   git checkout <feature-branch>
+   git rebase main
+   git push --force-with-lease origin <feature-branch>
+   ```
+
+   The force push is safe here because the stray commit is a harness-state commit that was never part of the story implementation.
+
+4. Verify `main` has the entry and the feature branch no longer carries a delta:
+
+   ```bash
+   git show main:scripts/cam/issues.local.json | jq '.issues[-1]'
+   git diff main..<feature-branch> -- scripts/cam/issues.local.json   # should be empty
+   ```
+
+### Recovery: divergent local main
+
+If your local `main` has diverged from `origin/main` (e.g. the file-on-main commit landed locally but another writer also committed to `origin/main` before your push):
+
+1. Try a fast-forward push first:
+
+   ```bash
+   git push origin main
+   ```
+
+2. If the push is rejected (non-fast-forward), inspect the divergence:
+
+   ```bash
+   git fetch origin
+   git log --oneline main..origin/main    # commits on remote not in local
+   git log --oneline origin/main..main    # commits in local not on remote
+   ```
+
+3. Rebase local `main` onto `origin/main`:
+
+   ```bash
+   git rebase origin/main main
+   git push origin main
+   ```
+
+   If the divergence is in `issues.local.json`, the rebase may surface a conflict. Accept both sides by merging the `issues[]` arrays manually and advancing `next_id` to `max(existing ids) + 1`.
+
+4. Confirm the feature branch is still consistent with `main`:
+
+   ```bash
+   git log --oneline main..origin/main   # should be empty after push
+   ```
+
+Cross-reference: `src/commands/issue-file.ts` (commit-tree-to-main implementation),
+`scripts/cam/patterns.md` (up-to-date guard + best-effort push pattern,
+widened SpawnFn for git plumbing, commit-tree-to-main backlog mutation bullets).

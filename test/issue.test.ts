@@ -92,10 +92,14 @@ function makeFakeTmuxSpawn(opts: {
 // --- parseIssueArgs ---------------------------------------------------------
 
 describe('parseIssueArgs (dispatch wiring in index.ts)', () => {
-	test('parses a single free-text argument', () => {
+	test('parses a single free-text argument (mode=text)', () => {
 		const result = parseIssueArgs(['Add dark mode support']);
 		expect(result).not.toBeNull();
-		expect(result?.text).toBe('Add dark mode support');
+		expect(result?.mode).toBe('text');
+		// Narrow to 'text' mode to access the text field.
+		if (result?.mode === 'text') {
+			expect(result.text).toBe('Add dark mode support');
+		}
 		expect(result?.help).toBe(false);
 	});
 
