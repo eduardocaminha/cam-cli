@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "readWorkerOutcome reads worker-report.json as the sole authoritative outcome source"
+  },
+  "branchName": "cam/CAM-77-worker-report-sole-outcome",
+  "timestamp": "2026-06-25T22:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/result.ts",
+    "test/supervisor/result.test.ts",
+    "test/supervisor/loop.test.ts",
+    "scripts/cam/patterns.md",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 inverted readWorkerOutcome: worker-report.json is now PRIMARY. The fallback path (handoff + sentinel) is preserved for backward compat when workerReportPath is absent. US-002 should wire loop.ts to always provide workerReportPath so the primary path is always exercised in production. The 'worker-report-fallback' detail label is kept in the primary path for backward compat with loop.ts outcome-fallback detection. US-006 can harden staleness/failure modes.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-001 touched only internal TypeScript files (result.ts, test files). No external library API was exercised."
+    }
+  ]
+}

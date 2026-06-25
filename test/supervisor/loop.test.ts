@@ -796,13 +796,15 @@ describe('runSupervisor', () => {
 		expect(reviewCalls).toBe(MAX_REVIEW_DISPATCH_ATTEMPTS); // bounded, then block
 	});
 
-	test('worker outcome fail -> blocked', async () => {
-		// Sentinel says US-001 but handoff records US-002 -> mismatch -> fail
+	test('worker outcome incomplete -> blocked (sentinel-handoff mismatch no longer fails, US-001)', async () => {
+		// US-001: the DONE-sentinel-vs-handoff mismatch->fail block was dropped.
+		// Sentinel says US-001 but handoff records US-002. Handoff now wins for
+		// story selection (no fail-on-mismatch). US-002 is not in the prd
+		// (which only has US-001), so passes:false -> kind='incomplete' -> blocked.
 		const prd = makePrd({
 			stories: [{ id: 'US-001', priority: 1, passes: false }],
 		});
 
-		// Pane DONE story=US-001 but handoff lastCompletedStory.id=US-002: real mismatch.
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
 			capturePane: (_paneId) => donePane('US-001'),
@@ -813,7 +815,8 @@ describe('runSupervisor', () => {
 
 		expect(result.status).toBe('blocked');
 		expect(result.iterations).toBe(1);
-		expect(result.lastOutcome?.kind).toBe('fail');
+		// US-001: was 'fail', now 'incomplete' (handoff wins, prd not confirmed for US-002)
+		expect(result.lastOutcome?.kind).toBe('incomplete');
 	});
 
 	test('worker outcome unknown -> blocked', async () => {
@@ -2137,10 +2140,12 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 		expect(fallbackEvents[0]?.detail).toMatchObject({ fallbackKind: 'worker-report-fallback' });
 	});
 
-	test('US-005: outcome-fallback event fires on handoff-string-coerced path', async () => {
-		// When handoff.lastCompletedStory is a bare string (instead of {id,title}),
-		// readWorkerOutcome coerces it to {id} and records 'handoff-string-coerced'
-		// in the detail. The loop must emit an 'outcome-fallback' event.
+	test('US-005 / US-001: when report is primary, outcome-fallback fires with worker-report-fallback (not handoff-string-coerced)', async () => {
+		// US-001 inversion: when workerReportPath is provided and a valid DONE
+		// report is present, the report is the authoritative source. Even if
+		// handoff.lastCompletedStory is a bare string, the handoff-string-coerced
+		// path is never taken (handoff is not consulted). The outcome-fallback event
+		// fires with fallbackKind 'worker-report-fallback' (the primary-path label).
 		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
 		const prd_done_clean = makePrd({
 			stories: [{ id: 'US-001', priority: 1, passes: true }],
@@ -2165,10 +2170,10 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 				// Call 3+: top of iter 2 -> all done + clean (complete)
 				return prdCall <= 1 ? prd_impl : prd_done_clean;
 			},
-			// Bare-string lastCompletedStory triggers the handoff-string-coerced path.
+			// Bare-string handoff: under US-001 primary path, this is IGNORED.
 			readHandoff: () => ({ lastCompletedStory: 'US-001' } as unknown as HandoffSnapshot),
-			capturePane: (_paneId) => UNKNOWN_PANE, // no DONE sentinel (so corroboration = handoff-string-coerced)
-			readWorkerReport: () => fakeReport, // used only to trigger poll sentinel detection
+			capturePane: (_paneId) => UNKNOWN_PANE, // no DONE sentinel
+			readWorkerReport: () => fakeReport, // triggers poll sentinel detection + primary path
 			workerReportPath: '/fake/worker-report.json',
 			logEvent: logger,
 		});
@@ -2177,8 +2182,10 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 
 		expect(result.status).toBe('complete');
 		const fallbackEvents = events.filter((e) => e.kind === 'outcome-fallback');
+		// Report is primary: detail contains 'worker-report-fallback', so the
+		// outcome-fallback event fires with that label (not 'handoff-string-coerced').
 		expect(fallbackEvents).toHaveLength(1);
-		expect(fallbackEvents[0]?.detail).toMatchObject({ fallbackKind: 'handoff-string-coerced' });
+		expect(fallbackEvents[0]?.detail).toMatchObject({ fallbackKind: 'worker-report-fallback' });
 	});
 
 	test('US-005: outcome-fallback event does NOT fire on happy path (well-formed handoff + DONE sentinel)', async () => {
