@@ -279,6 +279,7 @@ function makeDispatchOpts(
 		timeoutMs: overrides.timeoutMs ?? 60_000,
 		now: overrides.now ?? now,
 		readReviewReport: overrides.readReviewReport,
+		warnFn: overrides.warnFn,
 		capturedWrittenPrd,
 		capturedSpawnArgs,
 	};
@@ -787,5 +788,146 @@ describe('makeReviewDispatch', () => {
 		expect(fixStory).toBeDefined();
 		// No notes on tag-based path (no findings available).
 		expect(fixStory?.notes).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-004: Graceful degradation when review-report.json is missing or malformed
+// ---------------------------------------------------------------------------
+
+describe('makeReviewDispatch: graceful degradation (US-004)', () => {
+	const SAMPLE_UUID = '11111111-2222-3333-4444-555555555555';
+
+	test('missing report file: falls back to tag verdict, returns status=ok, warning logged', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const warnings: string[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => null, // simulates missing file
+			warnFn: (msg) => warnings.push(msg),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		// Must not throw; must complete successfully.
+		expect(result.status).toBe('ok');
+		expect(capturedWrittenPrd[0]?.review?.lastVerdict).toBe('CLEAN');
+		// Warning must be logged when file is absent.
+		expect(warnings.length).toBeGreaterThan(0);
+		expect(warnings[0]).toContain('missing or malformed');
+	});
+
+	test('malformed JSON report: falls back to tag verdict, returns status=ok, warning logged', () => {
+		// From dispatch perspective, malformed JSON and missing file both return null
+		// from readReviewReport. The dispatch must not throw in either case.
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const warnings: string[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:2</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => null, // simulates malformed JSON (reader returns null)
+			warnFn: (msg) => warnings.push(msg),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		expect(warnings.length).toBeGreaterThan(0);
+		expect(warnings[0]).toContain('missing or malformed');
+	});
+
+	test('loop not wedged: missing report + FIXES_PENDING:N creates N fix stories and returns ok', () => {
+		// AC5: with missing report and FIXES_PENDING:3 tag, dispatch returns 'ok' and
+		// creates exactly 3 fix stories (count reconciled to the tag's N).
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const warnings: string[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:3</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => null, // simulates missing report file
+			warnFn: (msg) => warnings.push(msg),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		// Dispatch must not throw or block; status must be 'ok'.
+		expect(result.status).toBe('ok');
+
+		// Must create exactly N=3 fix stories reconciled to the tag's count.
+		const written = capturedWrittenPrd[0];
+		const fixStories = (written?.userStories ?? []).filter((s) => s.id?.startsWith('US-R1-'));
+		expect(fixStories.length).toBe(3);
+		fixStories.forEach((s) => {
+			expect(s.passes).toBe(false);
+		});
+
+		// Warning logged because readReviewReport was provided but returned null.
+		expect(warnings.length).toBeGreaterThan(0);
+	});
+
+	test('no warning when readReviewReport is absent (pure tag-based path, no file expected)', () => {
+		// When readReviewReport is not injected at all, the dispatch uses the pure
+		// tag-based path by design. No warning should be emitted.
+		const warnings: string[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			warnFn: (msg) => warnings.push(msg),
+			// readReviewReport NOT injected -> pure tag-based path, no warning expected.
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		// No warning when the caller never expected a report file.
+		expect(warnings.length).toBe(0);
+	});
+
+	test('warning emitted exactly once per dispatch invocation (not once per poll)', () => {
+		// Even though the poll loop runs multiple iterations, the warning is logged
+		// only once (at verdict-resolution time, not at each failed file check).
+		const warnings: string[] = [];
+		let polls = 0;
+		const opts = makeDispatchOpts({
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturePane: (_paneId: string) => {
+				polls += 1;
+				// Tag appears on the 3rd poll to force multiple iterations.
+				return polls < 3 ? 'still working...' : '<review>CLEAN</review>';
+			},
+			readReviewReport: () => null, // file always absent
+			warnFn: (msg) => warnings.push(msg),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		expect(polls).toBeGreaterThanOrEqual(3);
+		// Warning logged exactly once, not on every failed file check.
+		expect(warnings.length).toBe(1);
 	});
 });

@@ -250,6 +250,13 @@ export interface MakeReviewDispatchOptions {
 	 * Mirrors the readWorkerReport dep in RunSupervisorOptions.
 	 */
 	readReviewReport?: () => ReviewReport | null;
+	/**
+	 * Called when readReviewReport is provided but returns null (file missing or
+	 * malformed) AND the dispatch ultimately resolves the verdict via the
+	 * <review>-tag fallback. Called at most once per dispatch invocation.
+	 * Defaults to console.warn when absent. Injectable for tests.
+	 */
+	warnFn?: (msg: string) => void;
 }
 
 /** Default max review rounds (mirrors decide.ts and cam-review.md). */
@@ -301,6 +308,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	const ensureWorkerPane = opts.ensureWorkerPane;
 	const logEvent = opts.logEvent;
 	const readReviewReport = opts.readReviewReport;
+	const warnFn = opts.warnFn ?? ((msg: string) => console.warn(`[cam/review] ${msg}`));
 
 	return function reviewDispatch(uuid: string): ReviewDispatchResult {
 		// CAM-57: ensure a live worker pane exists before the respawn. When
@@ -404,6 +412,15 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			fileFindings = fileBasedReport.findings;
 		} else if (parsed !== null) {
 			// Fallback: verdict from parseReviewVerdict (tag-based, no file findings).
+			// When readReviewReport was provided (file expected) but returned null
+			// (file missing or malformed), log a warning so the operator knows the
+			// structured report channel was unavailable. The loop is never wedged:
+			// placeholder fix stories are still created using the tag's count (AC4).
+			if (readReviewReport !== undefined) {
+				warnFn(
+					'review-report.json was missing or malformed; falling back to <review>-tag verdict from capture-pane',
+				);
+			}
 			verdictKind = parsed.verdict;
 			findingsCount = parsed.findingsCount;
 			fileFindings = undefined;
