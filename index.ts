@@ -860,6 +860,10 @@ export async function dispatchIssue(
 					const result = createLocalIssueOnMain(
 						_buildCreateIssueOpts(process.cwd(), stdinData),
 					);
+					if (!result.ok) {
+						// printError already fired inside createLocalIssueOnMain
+						return 1;
+					}
 					printHint(`filed ${result.id} on main (${result.sha})`);
 					return 0;
 				} catch (err) {

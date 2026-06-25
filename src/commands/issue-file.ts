@@ -14,6 +14,14 @@
 //   - All external dependencies are injectable for unit-testing without a real
 //     git binary or filesystem.
 //
+// US-005 additions:
+//   - Up-to-date guard: best-effort fetch + local vs origin/main sha comparison;
+//     skip when origin/main is absent (no remote configured).
+//   - Detached HEAD and missing local main branch: clear errors returned as
+//     { ok: false, reason } before any mutation.
+//   - Best-effort push after commit: non-zero exit is logged via printError,
+//     never silently swallowed.
+//
 // Mirrors src/commands/ship-finalize.ts: same ClockFn type, same injectable-
 // reader style, same exported result interface.
 //
@@ -24,6 +32,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseToml } from '../config/toml.ts';
+import { printError } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency types
@@ -94,12 +103,24 @@ export interface CreateLocalIssueOnMainOptions {
 	writeFile?: (path: string, text: string) => void;
 }
 
+/** Successful outcome: issue was allocated, committed to main, and pushed. */
 export interface CreateLocalIssueOnMainResult {
+	ok: true;
 	id: string;
 	committedTo: 'main';
 	sha: string;
 	branchWasMain: boolean;
 }
+
+/** Guard or error outcome: no commit was made. */
+export interface CreateLocalIssueOnMainError {
+	ok: false;
+	reason: 'diverged' | 'detached-head' | 'missing-main';
+}
+
+export type CreateLocalIssueOnMainOutcome =
+	| CreateLocalIssueOnMainResult
+	| CreateLocalIssueOnMainError;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -127,6 +148,13 @@ function buildIndexEnv(tempIndex: string): Record<string, string> {
 /**
  * Append a new issue to scripts/cam/issues.local.json on main.
  *
+ * Guard steps (run before any mutation):
+ *   0a. Detached HEAD -> return { ok: false, reason: 'detached-head' }.
+ *   0b. Missing local main branch -> return { ok: false, reason: 'missing-main' }.
+ *   0c. Best-effort git fetch origin main; if origin/main exists and sha differs
+ *       from local main -> return { ok: false, reason: 'diverged' }.
+ *       If origin/main is absent (no remote), the check is skipped entirely.
+ *
  * Steps (off-main path, the common case):
  *   1. Read issue_prefix from project.toml.
  *   2. Determine current branch via `git rev-parse --abbrev-ref HEAD`.
@@ -136,7 +164,8 @@ function buildIndexEnv(tempIndex: string): Record<string, string> {
  *   6. Off-main plumbing: temp GIT_INDEX_FILE, read-tree main, hash-object
  *      -w --stdin (fed the JSON via options.input), update-index --add
  *      --cacheinfo, write-tree, commit-tree -p main, update-ref refs/heads/main.
- *   7. Return { id, committedTo: 'main', sha, branchWasMain: false }.
+ *   7. Best-effort git push origin main; log on rejection.
+ *   8. Return { ok: true, id, committedTo: 'main', sha, branchWasMain: false }.
  *
  * On-main path (rare):
  *   - Write working-tree file, git add, git commit.
@@ -144,18 +173,12 @@ function buildIndexEnv(tempIndex: string): Record<string, string> {
  */
 export function createLocalIssueOnMain(
 	options: CreateLocalIssueOnMainOptions,
-): CreateLocalIssueOnMainResult {
+): CreateLocalIssueOnMainOutcome {
 	const { cwd, title, description, priority, spawnFn, clock, readProjectToml } = options;
 	const writeFile =
 		options.writeFile ?? ((p: string, t: string) => writeFileSync(p, t, 'utf8'));
 
-	// 1. Read issue_prefix from project.toml.
-	const tomlText = readProjectToml();
-	const config = parseToml(tomlText);
-	const issuePrefix =
-		typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
-
-	// 2. Determine current branch.
+	// Guard 0a: Determine current branch; detect detached HEAD.
 	const branchResult = spawnFn(
 		'git',
 		['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'],
@@ -163,6 +186,53 @@ export function createLocalIssueOnMain(
 	);
 	const currentBranch = (branchResult.stdout ?? '').trim();
 	const branchWasMain = currentBranch === 'main';
+
+	if (currentBranch === 'HEAD') {
+		printError('detached HEAD', 'cannot file issue from a detached HEAD state');
+		return { ok: false, reason: 'detached-head' };
+	}
+
+	// Guard 0b: Verify local main exists; capture sha for reuse in commit-tree.
+	const localMainResult = spawnFn(
+		'git',
+		['-C', cwd, 'rev-parse', 'main'],
+		{ encoding: 'utf8' },
+	);
+	if ((localMainResult.status ?? 1) !== 0) {
+		printError('missing local main branch', 'run: git fetch origin main:main');
+		return { ok: false, reason: 'missing-main' };
+	}
+	const localMainSha = (localMainResult.stdout ?? '').trim();
+
+	// Guard 0c: Best-effort fetch + up-to-date check.
+	// fetch is best-effort: we ignore non-zero exit (e.g. no network, no remote).
+	spawnFn('git', ['-C', cwd, 'fetch', 'origin', 'main'], { encoding: 'utf8' });
+
+	// If origin/main exists, compare it against the local sha.
+	// When the ref is absent (no remote configured), skip the check entirely.
+	const originMainResult = spawnFn(
+		'git',
+		['-C', cwd, 'rev-parse', 'origin/main'],
+		{ encoding: 'utf8' },
+	);
+	if ((originMainResult.status ?? 1) === 0) {
+		const originSha = (originMainResult.stdout ?? '').trim();
+		if (localMainSha !== originSha) {
+			printError(
+				'local main is diverged from origin/main',
+				'run: git pull origin main',
+			);
+			return { ok: false, reason: 'diverged' };
+		}
+	}
+
+	// 1. Read issue_prefix from project.toml.
+	const tomlText = readProjectToml();
+	const config = parseToml(tomlText);
+	const issuePrefix =
+		typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
+
+	// 2. (branch already determined above; branchWasMain already set.)
 
 	// 3. Read the backlog from main (NOT the working tree).
 	const showResult = spawnFn(
@@ -250,18 +320,11 @@ export function createLocalIssueOnMain(
 			});
 			const treeSha = (treeResult.stdout ?? '').trim();
 
-			// Resolve main's current commit sha.
-			const mainShaResult = spawnFn(
-				'git',
-				['-C', cwd, 'rev-parse', 'main'],
-				{ encoding: 'utf8' },
-			);
-			const mainSha = (mainShaResult.stdout ?? '').trim();
-
 			// commit-tree: create a new commit on top of main.
+			// Reuse localMainSha captured in the guard step (avoids a second rev-parse).
 			const commitResult = spawnFn(
 				'git',
-				['-C', cwd, 'commit-tree', treeSha, '-p', mainSha, '-m', commitMsg],
+				['-C', cwd, 'commit-tree', treeSha, '-p', localMainSha, '-m', commitMsg],
 				{ encoding: 'utf8' },
 			);
 			const newCommitSha = (commitResult.stdout ?? '').trim();
@@ -279,5 +342,18 @@ export function createLocalIssueOnMain(
 		}
 	}
 
-	return { id, committedTo: 'main', sha, branchWasMain };
+	// Best-effort push. Rejection is logged explicitly, never swallowed.
+	const pushResult = spawnFn(
+		'git',
+		['-C', cwd, 'push', 'origin', 'main'],
+		{ encoding: 'utf8' },
+	);
+	if ((pushResult.status ?? 1) !== 0) {
+		printError(
+			'push rejected',
+			`git push origin main: ${(pushResult.stderr ?? '').trim() || 'unknown error'}`,
+		);
+	}
+
+	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
 }

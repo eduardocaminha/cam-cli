@@ -145,6 +145,11 @@ test.skipIf(!gitAvailable)(
 			readProjectToml: () => PROJECT_TOML,
 		});
 
+		// Guard: no remote configured in tmpdir, so up-to-date check is skipped
+		if (!result.ok) {
+			throw new Error(`Expected ok:true but got: ${JSON.stringify(result)}`);
+		}
+
 		// (a) new entry exists on main
 		const showResult = run(['show', 'main:scripts/cam/issues.local.json']);
 		const mainData = JSON.parse(showResult.stdout as string) as {
@@ -204,6 +209,11 @@ test.skipIf(!gitAvailable)(
 			clock: () => FIXED_CLOCK,
 			readProjectToml: () => PROJECT_TOML,
 		});
+
+		// Guard: no remote configured in tmpdir, so up-to-date check is skipped
+		if (!result.ok) {
+			throw new Error(`Expected ok:true but got: ${JSON.stringify(result)}`);
+		}
 
 		// (a) result shape
 		expect(result.id).toBe('CAM-20');
