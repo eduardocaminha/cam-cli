@@ -705,6 +705,68 @@ describe('makeReviewDispatch', () => {
 		expect(written?.review?.lastVerdict).toBe('CLEAN');
 	});
 
+	test('FIXES_PENDING: prd.review.findings carries verbatim findings from review-report.json (US-003, CAM-75)', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const findings = [
+			{ severity: 'CRITICAL', file: 'src/supervisor/review.ts', line: 100, text: 'null dereference on prd' },
+			{ severity: 'WARNING', file: 'src/supervisor/decide.ts', text: 'unreachable branch' },
+			{ severity: 'SUGGESTION', text: 'extract helper function' },
+		];
+		const opts = makeDispatchOpts({
+			paneText: 'no tag here',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:3', findings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		// prd.review.findings must carry the verbatim findings array from the file.
+		const persistedFindings = written?.review?.findings;
+		expect(persistedFindings).toBeDefined();
+		expect(persistedFindings?.length).toBe(3);
+		// Finding 0: CRITICAL with file and line.
+		expect(persistedFindings?.[0]?.severity).toBe('CRITICAL');
+		expect(persistedFindings?.[0]?.file).toBe('src/supervisor/review.ts');
+		expect(persistedFindings?.[0]?.line).toBe(100);
+		expect(persistedFindings?.[0]?.text).toBe('null dereference on prd');
+		// Finding 1: WARNING with file, no line.
+		expect(persistedFindings?.[1]?.severity).toBe('WARNING');
+		expect(persistedFindings?.[1]?.file).toBe('src/supervisor/decide.ts');
+		expect(persistedFindings?.[1]?.line).toBeUndefined();
+		expect(persistedFindings?.[1]?.text).toBe('unreachable branch');
+		// Finding 2: SUGGESTION with no file.
+		expect(persistedFindings?.[2]?.severity).toBe('SUGGESTION');
+		expect(persistedFindings?.[2]?.file).toBeUndefined();
+		expect(persistedFindings?.[2]?.text).toBe('extract helper function');
+	});
+
+	test('FIXES_PENDING without file-based findings: prd.review.findings absent (tag-based path)', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:1</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			// No readReviewReport -> tag-based fallback; findings absent from prd.
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		// Tag-based path: no fileFindings available; prd.review.findings must not be set.
+		expect(written?.review?.findings).toBeUndefined();
+	});
+
 	test('fix stories without file findings have no notes (tag fallback path)', () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({

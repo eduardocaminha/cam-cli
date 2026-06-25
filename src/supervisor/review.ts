@@ -488,6 +488,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 				roundsCompleted: newRound,
 				maxRounds,
 				lastVerdict: `FIXES_PENDING:${findingsCount}`,
+				...(fileFindings !== undefined ? { findings: fileFindings } : {}),
 			},
 			userStories: [...storiesWithPriority, ...bumpedExisting],
 		});
