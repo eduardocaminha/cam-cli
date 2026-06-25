@@ -721,6 +721,132 @@ describe('readWorkerOutcome: staleness guard (US-004)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// US-004: regression — report-first authority order
+//
+// These four tests pin the new authority contract from US-001 so that a
+// future refactor that accidentally restores the old handoff-authoritative or
+// sentinel-gate behavior will fail immediately at this named regression suite.
+//
+// Rules being pinned:
+//   R1 (report-wins-over-handoff): when workerReportPath is provided and the
+//      report is valid, report.story drives storyId — handoff is inert.
+//   R2 (sentinel-non-override): a divergent DONE sentinel in the pane text
+//      does NOT override the report and does NOT trigger a fail-on-mismatch.
+//   R3 (DONE+passes:false->incomplete): a DONE report whose story is
+//      passes:false in prd.json yields kind 'incomplete', never 'pass'.
+//   R4 (DONE+passes:true->pass): a DONE report whose story is passes:true
+//      yields kind 'pass' with that storyId.
+// ---------------------------------------------------------------------------
+
+const REG_REPORT_PATH = '/reg/worker-report.json';
+
+describe('US-004: regression - report-first authority order', () => {
+	// R1: report wins over handoff (handoff is inert when a valid report is present)
+	test('R1: report.story wins over divergent handoff story - storyId must equal report.story', () => {
+		const reportStory = 'US-R1-REPORT';
+		const handoffStory = 'US-R1-HANDOFF'; // different story in handoff
+
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: REG_REPORT_PATH,
+			capturedPaneText: '', // no sentinel
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, true),
+				[HANDOFF_PATH]: fakeHandoff(handoffStory), // handoff names a DIFFERENT story
+				[REG_REPORT_PATH]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+
+		// Report wins: outcome is determined by report.story, not handoff.
+		expect(result.storyId).toBe(reportStory);
+		expect(result.kind).toBe('pass');
+	});
+
+	// R1 variant: absent handoff does not change the named story either.
+	test('R1-absent: absent handoff does not change storyId when report is present', () => {
+		const reportStory = 'US-R1-ABSENT';
+
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: REG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, true),
+				// HANDOFF_PATH absent (not in reader map)
+				[REG_REPORT_PATH]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+
+		expect(result.storyId).toBe(reportStory);
+		expect(result.kind).toBe('pass');
+	});
+
+	// R2: divergent sentinel does NOT override the report and must NOT produce fail-on-mismatch.
+	test('R2: divergent DONE sentinel in pane text must not override report and must not fail', () => {
+		const reportStory = 'US-R2-REPORT';
+		const sentinelStory = 'US-R2-SENTINEL'; // sentinel names a completely different story
+
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: REG_REPORT_PATH,
+			capturedPaneText: donePane(sentinelStory), // DONE sentinel with wrong story
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, true),
+				[REG_REPORT_PATH]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+
+		// Report wins. Must NOT be 'fail' (no fail-on-mismatch).
+		expect(result.storyId).toBe(reportStory);
+		expect(result.kind).toBe('pass');
+		expect(result.kind).not.toBe('fail');
+	});
+
+	// R3: DONE report + prd passes:false must yield 'incomplete', NEVER 'pass'.
+	test('R3: DONE report + prd passes:false must yield incomplete, never pass', () => {
+		const reportStory = 'US-R3-INCOMPLETE';
+
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: REG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, false), // passes:false - story NOT flipped
+				[REG_REPORT_PATH]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+
+		expect(result.kind).toBe('incomplete');
+		expect(result.kind).not.toBe('pass');
+		expect(result.storyId).toBe(reportStory);
+		expect(result.detail).toContain('finalize');
+	});
+
+	// R4: DONE report + prd passes:true must yield 'pass' with that storyId.
+	test('R4: DONE report + prd passes:true must yield pass with storyId', () => {
+		const reportStory = 'US-R4-PASS';
+
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: REG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(reportStory, true), // passes:true
+				[REG_REPORT_PATH]: fakeWorkerReport('DONE', reportStory),
+			}),
+		});
+
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(reportStory);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // CAM-42 / US-002: TUI prompt-echo must never match a sentinel
 // ---------------------------------------------------------------------------
 //
