@@ -21,7 +21,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/cam/patterns.md:77]: CAM-77 bullet states the 'worker-report-fallback' detail label 'describes the ABSENT-REPORT failure path, not a success variant'. This is inverted: in code the literal 'worker-report-fallback' substring appears ONLY on the present-report PRIMARY path (result.ts:318,326,336,343,349), including the success/pass case, and loop.ts:877 derives winningSrc='worker-report' precisely because that substring is present. The label marks the report-present primary/success path, not the absent-report failure path. A factually inverted statement in the durable patterns file (read by every implementer at story start) will mislead future maintainers."
     },
     {
