@@ -257,6 +257,14 @@ export interface MakeReviewDispatchOptions {
 	 * Defaults to console.warn when absent. Injectable for tests.
 	 */
 	warnFn?: (msg: string) => void;
+	/**
+	 * Remove any stale review-report.json before the reviewer is (re)spawned.
+	 * Mirrors clearWorkerReport in RunSupervisorOptions: prevents a leftover
+	 * report from round N from being read on the first poll tick of round N+1.
+	 * Best-effort: no-op on missing file, never throws. Optional for backward
+	 * compat with callers that do not yet inject this dep.
+	 */
+	clearReviewReport?: () => void;
 }
 
 /** Default max review rounds (mirrors decide.ts and cam-review.md). */
@@ -308,6 +316,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	const ensureWorkerPane = opts.ensureWorkerPane;
 	const logEvent = opts.logEvent;
 	const readReviewReport = opts.readReviewReport;
+	const clearReviewReport = opts.clearReviewReport;
 	const warnFn = opts.warnFn ?? ((msg: string) => console.warn(`[cam/review] ${msg}`));
 
 	return function reviewDispatch(uuid: string): ReviewDispatchResult {
@@ -332,6 +341,14 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			permissionMode,
 			model: reviewModel,
 		});
+
+		// US-R1-001: erase any stale review-report.json from a previous round before
+		// dispatching the new reviewer. Mirrors the clearWorkerReport call in loop.ts
+		// (before each implementer respawn-pane). Without this, the round-N+1 poll
+		// loop reads the leftover round-N report on its very first tick and
+		// immediately exits with the previous round's verdict and findings.
+		// Best-effort: clearReviewReport handles the no-file case gracefully.
+		clearReviewReport?.();
 
 		// US-007: emit structured {phase, model, backend} spawn-resolution event.
 		// writeEvent bridges into the structured worker event log (logEvent sink).

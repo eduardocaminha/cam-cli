@@ -285,6 +285,7 @@ function makeDispatchOpts(
 		now: overrides.now ?? now,
 		readReviewReport: overrides.readReviewReport,
 		warnFn: overrides.warnFn,
+		clearReviewReport: overrides.clearReviewReport,
 		capturedWrittenPrd,
 		capturedSpawnArgs,
 	};
@@ -934,6 +935,80 @@ describe('makeReviewDispatch: graceful degradation (US-004)', () => {
 		expect(polls).toBeGreaterThanOrEqual(3);
 		// Warning logged exactly once, not on every failed file check.
 		expect(warnings.length).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-R1-001 regression: clearReviewReport is called before respawn-pane
+//
+// Proves that a stale review-report.json from a prior round cannot be read on
+// the first poll tick of a new dispatch. The fix mirrors the clearWorkerReport
+// call in loop.ts (line ~658): erase before respawn so the poll loop never
+// sees an artifact from a previous round.
+//
+// The test verifies ordering: clearReviewReport must fire BEFORE the
+// 'respawn-pane' tmux call, confirmed by recording the event sequence.
+// ---------------------------------------------------------------------------
+
+describe('makeReviewDispatch: US-R1-001 regression - clearReviewReport called before respawn-pane', () => {
+	const SAMPLE_UUID = 'cc112233-4455-6677-8899-aabbccddeeff';
+
+	test('clearReviewReport is invoked before respawn-pane when injected', () => {
+		const events: string[] = [];
+
+		// Record every clearReviewReport call.
+		const clearReviewReport = () => {
+			events.push('clear');
+		};
+
+		// Record every spawn call and note the respawn-pane call.
+		const spawn: SpawnFn = (_cmd, args) => {
+			if (args.includes('respawn-pane')) {
+				events.push('respawn-pane');
+			}
+			return { stdout: '', exitCode: 0 };
+		};
+
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			spawn,
+			clearReviewReport,
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+
+		// Both events must have fired.
+		expect(events).toContain('clear');
+		expect(events).toContain('respawn-pane');
+
+		// clear must come BEFORE respawn-pane.
+		const clearIdx = events.indexOf('clear');
+		const respawnIdx = events.indexOf('respawn-pane');
+		expect(clearIdx).toBeLessThan(respawnIdx);
+	});
+
+	test('dispatch works correctly when clearReviewReport is absent (backward compat)', () => {
+		// No clearReviewReport injected: dispatch must still complete without error.
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			// clearReviewReport intentionally omitted.
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
 	});
 });
 

@@ -132,6 +132,25 @@ export function makeReadReviewReport(cwd: string): () => ReviewReport | null {
 	};
 }
 
+/**
+ * Build a clearReviewReport function for the given cwd.
+ * Removes `<cwd>/scripts/cam/review-report.json`. Best-effort: no-op on
+ * missing file, never throws. Prevents a stale round-N report from being
+ * read on the first poll tick of round N+1 (mirrors makeClearWorkerReport).
+ */
+export function makeClearReviewReport(cwd: string): () => void {
+	const reportPath = join(cwd, REVIEW_REPORT_FILENAME);
+	return () => {
+		try {
+			if (existsSync(reportPath)) {
+				unlinkSync(reportPath);
+			}
+		} catch {
+			// best-effort: ignore failures
+		}
+	};
+}
+
 // ---------------------------------------------------------------------------
 // notifyOrchestrator factory (US-002)
 // ---------------------------------------------------------------------------
@@ -347,6 +366,9 @@ export function buildSupervisorOptions(
 	// US-002 / CAM-75: reviewer structured exit report reader.
 	const readReviewReport = makeReadReviewReport(cwd);
 
+	// US-R1-001: clear stale review-report.json before each reviewer respawn.
+	const clearReviewReport = makeClearReviewReport(cwd);
+
 	// Review dispatch.
 	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
 		spawn: (cmd, args) => {
@@ -389,6 +411,8 @@ export function buildSupervisorOptions(
 		logEvent,
 		// US-002 / CAM-75: structured reviewer exit report (primary completion signal).
 		readReviewReport,
+		// US-R1-001: clear stale report before each reviewer respawn.
+		clearReviewReport,
 	});
 
 	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {
