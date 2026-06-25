@@ -1,5 +1,5 @@
 {
-  "next_id": 81,
+  "next_id": 86,
   "issues": [
     {
       "id": "CAM-1",
@@ -673,6 +673,46 @@
       "createdAt": "2026-06-25T14:03:57Z",
       "title": "Geometria deterministica do worker-pane: openPaneInSession splita pane explicito (orquestrador) com tamanho fixo, nao o pane ativo (session:0 -v). Pre-req do CAM-65",
       "description": "Bug latente exposto no dogfood do CAM-75 (2026-06-25): o worker-pane (implementer/reviewer reusado) nasce de openPaneInSession (src/tmux/session.ts:436-449) via `split-window -t <session>:0 -v -d ... cat` SEM `-t <pane>` explicito e SEM flags de tamanho, entao o tmux divide o pane ATIVO 50/50. Normalmente o orquestrador e o pane ativo no 1o dispatch, entao o worker nasce largo abaixo do orquestrador e e reusado (respawn-pane -k, mesmo id). MAS quando o pane morre e o self-heal (CAM-57, host.ts:300-317 ensureWorkerPaneFn) recria com a DASHBOARD (coluna direita ~49 col) ativa, o worker nasce 49x24 no canto inferior-direito, ilegivel pro output do reviewer/implementer (que despejam mais texto que o orquestrador). Confirmado no runtime: reviewer pane=%5 (recriado ~4x por kills manuais), 49x24 @139,26, filho do split da coluna direita; o orquestrador (138x49) intocado. FIX: openPaneInSession deve mirar um pane EXPLICITO (o orchestrator pane id, ou criar na coluna/posicao canonica) com TAMANHO EXPLICITO (-l/-x/-y), deterministico em create E recreate, independente de qual pane esta ativo; opcionalmente normalizar via select-layout/resize-pane pos-create (o hook window-resized do CAM-48 so re-clampa a dashboard, nunca o worker). Considerar dar ao worker espaco proeminente. DEPENDENCIA CRITICA com CAM-65: o CAM-65 fecha o worker-pane quando ocioso, o que torna TODO dispatch um recreate; sem o CAM-80 o CAM-65 faria a geometria aleatoria/pequena acontecer em CADA story (nao so apos kills manuais). Logo CAM-80 e PRE-REQUISITO do CAM-65: sequenciar CAM-80 antes, ou os dois juntos. ONDE: src/tmux/session.ts:436-449 (openPaneInSession), src/supervisor/host.ts:300-317 (ensureWorkerPaneFn), src/tmux/session.ts:389-401 (window-resized hook, hoje so dashboard). Prioridade P2 (UX do cam run + pre-req do CAM-65). Descoberto verificando o runtime (a leitura estatica sozinha previu worker largo; o runtime revelou o split do pane ativo)."
+    },
+    {
+      "id": "CAM-81",
+      "priority": "P1",
+      "state": "open",
+      "createdAt": "2026-06-25T15:00:00Z",
+      "title": "Bug: subagent-reviewer perdeu Write tool — commits CAM-75 (review-report.json) nao chegaram em main",
+      "description": "HEAD == main nao contem os commits efcb7a2 (US-001: Write tool no reviewer + review-report.json) nem 6c6401a (US-002: sidecar le review-report.json). O arquivo .claude/agents/subagent-reviewer.md no HEAD atual ainda tem Write em disallowedTools e nao tem a secao \"Exit report protocol\". O journal de CAM-75 diz \"shipped PR #69\" mas o diff de main nao inclui essas mudancas. Consequencia: o reviewer nao consegue escrever review-report.json (Write bloqueado), entao o sidecar cai no fallback de tag-based parsing via capture-pane, que e menos robusto. FIX: relandar os commits de CAM-75 (US-001 + US-002) numa nova branch e abrir PR. O codigo dos commits existe no reflog; recuperar com git cherry-pick ou recriar do zero. Prioridade P1: o mecanismo de findings estruturados do reviewer (CAM-75) e prerequisito do modo autonomo (CAM-71) e da propagacao de findings para fix-stories."
+    },
+    {
+      "id": "CAM-82",
+      "priority": "P2",
+      "state": "open",
+      "createdAt": "2026-06-25T15:00:00Z",
+      "title": "cam run: verificar login e subscrição Claude Code no startup antes de iniciar o loop",
+      "description": "Hoje o cam run inicia o loop sem checar se o usuario esta logado e com subscricao ativa. Quando nao esta, o worker-pane morre silencioso pre-sessao (instant-exit sem output), o supervisor cai no no-progress backoff (60s * streak) e so bloqueia apos 3 tentativas (3 min de espera). O operador nao ve nenhuma mensagem util. FIX: no startup do cam run (antes de subir o sidecar e o orchestrator pane), rodar `claude --version` ou equivalente que confirma login e retorna rapido; se falhar, imprimir mensagem clara (\"not logged in: run claude to authenticate\") e sair sem subir o loop. Alternativa mais simples: detectar o instant-exit de qualquer worker no PRIMEIRO dispatch como possivel login-fail e imprimir hint. Prioridade P2: melhora DX drasticamente para novos usuarios e apos expiracao de sessao."
+    },
+    {
+      "id": "CAM-83",
+      "priority": "P2",
+      "state": "open",
+      "createdAt": "2026-06-25T15:00:00Z",
+      "title": "Dashboard: exibir custo acumulado de tokens e tempo total de sessao",
+      "description": "O supervisor ja rastreia tokens por story via readWorkerTokens/logEvent(tokens) (loop.ts:547-553). Mas o dashboard nao exibe custo acumulado da sessao nem tempo total decorrido. O operador nao tem visibilidade de quanto a sessao esta custando nem ha quanto tempo esta rodando. FIX: (a) acumular totalTokens no EventLog ao longo da sessao (somar campo de cada evento tokens), (b) rastrear sessionStartTs no startup do sidecar, (c) expor ambos no DashboardData e renderizar no header do Dashboard (ao lado do status/branch). Custo em tokens (nao USD, pois o preco varia por modelo e o cam nao sabe qual tier o usuario tem). Prioridade P2: observabilidade de custo e essencial para uso autonomo prolongado (CAM-71); o operador precisa saber quando parar."
+    },
+    {
+      "id": "CAM-84",
+      "priority": "P2",
+      "state": "open",
+      "createdAt": "2026-06-25T15:00:00Z",
+      "title": "cam ship: auto-merge do PR apos criacao (gh pr merge --auto --squash)",
+      "description": "Hoje o cam ship abre o PR mas nao configura auto-merge. O operador precisa entrar no GitHub e apertar o botao de merge manualmente, o que interrompe o fluxo autonomo (CAM-71). FIX: apos `gh pr create`, rodar `gh pr merge --auto --squash` para habilitar o auto-merge quando todos os checks passarem. Quando o repo nao tem branch protection com checks obrigatorios (e.g. sem CI ou sem CAM-73), o merge acontece imediatamente. Quando tem branch protection (CAM-73 habilitado), o merge espera os checks. O comportamento e correto nos dois casos. AVISO: auto-merge squash-merge: o squash precisa estar habilitado nas configuracoes do repo (Settings > Allow squash merging). Verificar no setup inicial ou documentar como prerequisito. Prioridade P2: desbloqueador do modo autonomo end-to-end; sem isso o operador sempre precisa intervir no merge."
+    },
+    {
+      "id": "CAM-85",
+      "priority": "P3",
+      "state": "open",
+      "createdAt": "2026-06-25T15:00:00Z",
+      "title": "Supervisor: substituir backoff linear por exponencial com jitter nos retries de no-progress/dead-pane",
+      "description": "O mecanismo atual de retry (CAM-36/38/44) usa backoff LINEAR: NO_PROGRESS_BACKOFF_MS * streak (60s, 120s, block). Total de espera antes de bloquear: 180s. Para rate-limits de curto prazo (tipicamente 1-5 min) o linear e suficiente, mas para rate-limits mais longos ou rajadas de crashes transientes, o exponencial seria mais robusto. FIX: substituir `NO_PROGRESS_BACKOFF_MS * streak` por `min(MAX_BACKOFF_MS, BASE_MS * 2^(streak-1)) + jitter`, onde jitter = aleatorio +/-20% do intervalo calculado. Sugestao de parametros: BASE_MS=60_000, MAX_BACKOFF_MS=300_000 (5min), 3 retries => esperas aproximadas de 60s, 120+jitter, 240+jitter antes de bloquear (~6 min total). O jitter evita thundering herd em multiplas instancias e torna o comportamento mais natural. Notar: sleepFn e injetavel nos testes, entao a mudanca e segura sem tocar nos testes existentes (o no-op sleepFn ja abstrai o wait). Prioridade P3: melhoria incremental; o mecanismo atual resolve a maioria dos casos praticos."
     }
   ]
 }
