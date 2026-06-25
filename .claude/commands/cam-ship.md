@@ -27,14 +27,9 @@ Steps:
 
 2. `git status` -- verify there are changes or commits ahead of main.
 
-3. **Run quality gates**:
+3. **Run quality gates** -- `bun run check:all` is the same spine CI runs, so a green ship implies a green CI:
    ```bash
-   # Typecheck
-   bun run typecheck
-   # Tests
-   bun test
-   # Vendor/templates drift (only when the branch touched vendor/ or templates/)
-   bun run embed-vendor:check
+   bun run check:all
    ```
    Fix any failures before proceeding.
 
