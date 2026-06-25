@@ -102,7 +102,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Layer the guard into src/commands/issue-file.ts. Use printError from src/logging/color.ts (precedent: finalizeCycleClose hard-failure path). CRITICAL compat: the US-002 integration tmpdir has no remote, so a missing origin/main must SKIP the up-to-date check (not abort) and push must be best-effort (missing remote => log, do not fail). Keep git fetch / rev-parse / push all on the injected spawnFn so the unit test asserts argv with no network. Files: src/commands/issue-file.ts, test/issue-file.test.ts."
     },
