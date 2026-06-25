@@ -17,12 +17,16 @@
 //   on a registration. Search markers documented in that test.
 
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { runDashboardInk } from './src/commands/dashboard.ts';
 import { runInit } from './src/commands/init.ts';
+import {
+	createLocalIssueOnMain,
+	type CreateLocalIssueOnMainOptions,
+} from './src/commands/issue-file.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
@@ -463,9 +467,29 @@ const RESUME_HELP = renderHelp({
  * greps this file for the literal `--permission-mode` and fails the build
  * if a parser registers it.
  */
-export function parseIssueArgs(args: string[]): { text: string; help: boolean } | null {
+
+/**
+ * Discriminated union returned by parseIssueArgs.
+ * - mode === 'text': free-text thin-proxy path (existing behaviour).
+ * - mode === 'file-local': deterministic in-process path (US-003).
+ * - help === true: caller should print ISSUE_HELP and exit 0.
+ */
+export type ParsedIssueArgs =
+	| { mode: 'text'; text: string; help: false }
+	| { mode: 'file-local'; help: false }
+	| { mode?: never; help: true };
+
+export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 	if (args.includes('--help') || args.includes('-h')) {
-		return { text: '', help: true };
+		return { help: true };
+	}
+	if (args.includes('--file-local')) {
+		const rest = args.filter((a) => a !== '--file-local');
+		if (rest.length > 0) {
+			printError(`unexpected argument: ${rest[0]!}`);
+			return null;
+		}
+		return { mode: 'file-local', help: false };
 	}
 	const text = args[0];
 	if (text === undefined || text.trim().length === 0) {
@@ -476,7 +500,7 @@ export function parseIssueArgs(args: string[]): { text: string; help: boolean } 
 		printError(`unexpected argument: ${args[1]}`);
 		return null;
 	}
-	return { text, help: false };
+	return { mode: 'text', text, help: false };
 }
 
 /**
@@ -769,6 +793,88 @@ function _buildFinalizeOpts(cwd: string) {
 	};
 }
 
+// ---------------------------------------------------------------------------
+// cam issue dispatch (exported for unit testing with injectable deps)
+// ---------------------------------------------------------------------------
+
+/** Injectable deps for dispatchIssue — both optional; production uses real impls. */
+export interface IssueDispatchDeps {
+	/**
+	 * Inject a fake for the --file-local branch.
+	 * Default: reads stdin as JSON and routes to createLocalIssueOnMain (in-process, no tmux).
+	 */
+	fileLocalFn?: () => Promise<number>;
+	/** Inject a fake runIssue thin-proxy. Default: calls the real runIssue with the parsed text. */
+	runIssueFn?: () => Promise<number>;
+}
+
+/** Build production CreateLocalIssueOnMainOptions from project root + parsed stdin JSON. */
+function _buildCreateIssueOpts(
+	cwd: string,
+	parsedStdin: { title: string; description?: string; priority?: string },
+): CreateLocalIssueOnMainOptions {
+	return {
+		cwd,
+		title: parsedStdin.title,
+		...(parsedStdin.description !== undefined ? { description: parsedStdin.description } : {}),
+		...(parsedStdin.priority !== undefined ? { priority: parsedStdin.priority } : {}),
+		spawnFn: (cmd, args, opts) =>
+			spawnSync(cmd, args, {
+				encoding: opts.encoding,
+				...(opts.env !== undefined ? { env: opts.env } : {}),
+				...(opts.input !== undefined ? { input: opts.input } : {}),
+				stdio: 'pipe',
+			}) as SpawnSyncReturns<string>,
+		clock: () => new Date().toISOString(),
+		readProjectToml: () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8'),
+	};
+}
+
+/**
+ * Route a parsed `cam issue` call: --file-local => createLocalIssueOnMain (in-process,
+ * reads stdin as JSON, no tmux needed); otherwise => runIssue thin-proxy. Exported so
+ * unit tests can inject fakes for both branches and prove the --file-local path NEVER
+ * calls runIssue.
+ */
+export async function dispatchIssue(
+	parsed: ParsedIssueArgs,
+	deps?: IssueDispatchDeps,
+): Promise<number> {
+	if (parsed.mode === 'file-local') {
+		const fileLocalFn =
+			deps?.fileLocalFn ??
+			(async () => {
+				const stdinText = await Bun.stdin.text();
+				let stdinData: { title: string; description?: string; priority?: string };
+				try {
+					stdinData = JSON.parse(stdinText) as {
+						title: string;
+						description?: string;
+						priority?: string;
+					};
+				} catch (err) {
+					printError(`cam issue --file-local: invalid JSON from stdin: ${String(err)}`);
+					return 1;
+				}
+				try {
+					const result = createLocalIssueOnMain(
+						_buildCreateIssueOpts(process.cwd(), stdinData),
+					);
+					printHint(`filed ${result.id} on main (${result.sha})`);
+					return 0;
+				} catch (err) {
+					printError(`cam issue --file-local failed: ${String(err)}`);
+					return 1;
+				}
+			});
+		return fileLocalFn();
+	}
+	// Free-text thin-proxy path (text mode or unexpected help=true — help is handled in main()).
+	const text = parsed.mode === 'text' ? parsed.text : '';
+	const issueFn = deps?.runIssueFn ?? (() => runIssue({ text }));
+	return issueFn();
+}
+
 async function main(argv: string[]): Promise<number> {
 	const command = argv[2];
 	if (!command || command === 'help' || command === '--help' || command === '-h') {
@@ -874,14 +980,14 @@ async function main(argv: string[]): Promise<number> {
 		case 'issue': {
 			const parsed = parseIssueArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('Usage: cam issue "<free text>"');
+				printFatalHint('Usage: cam issue "<free text>" | cam issue --file-local');
 				return 1;
 			}
 			if (parsed.help) {
 				process.stdout.write(ISSUE_HELP);
 				return 0;
 			}
-			return runIssue({ text: parsed.text });
+			return dispatchIssue(parsed);
 		}
 		case 'next': {
 			const parsed = parseNextArgs(argv.slice(3));
