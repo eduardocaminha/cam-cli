@@ -21,3 +21,15 @@ test("embedded cam-ship.md does NOT contain masked-atomic git rm pattern", () =>
     "git rm -q scripts/cam/prd.json scripts/cam/handoff.json scripts/cam/progress.txt 2>/dev/null || true"
   );
 });
+
+test("embedded cam-ship.md Step 3 pins bun run check:all (full gate spine)", () => {
+  const content = templatesContents[SHIP_KEY];
+  expect(content).toBeDefined();
+  expect(content).toContain("bun run check:all");
+});
+
+test("embedded cam-ship.md Step 3 does NOT pin the partial-gate-only placeholder", () => {
+  const content = templatesContents[SHIP_KEY];
+  expect(content).toBeDefined();
+  expect(content).not.toContain("<project typecheck command>");
+});
