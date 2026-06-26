@@ -42,10 +42,12 @@ import { colors } from './theme.ts';
 import { Section } from './Section.tsx';
 import { Select, type SelectOption } from './Select.tsx';
 import type { ProjectMode, IssueSystem } from '../commands/setup.ts';
+import type { MergeMode } from '../config/models.ts';
 
 export interface SetupAnswers {
 	projectMode: ProjectMode;
 	issueSystem: IssueSystem;
+	mergeMode: MergeMode;
 	description: string;
 }
 
@@ -55,7 +57,7 @@ interface SetupScreenProps {
 	onCancel: () => void;
 }
 
-type Step = 'mode' | 'issue' | 'description' | 'done';
+type Step = 'mode' | 'issue' | 'merge' | 'description' | 'done';
 
 const MODE_OPTIONS: readonly SelectOption<ProjectMode>[] = [
 	{ value: 'existing', label: 'Existing project', description: 'This folder already has code' },
@@ -68,15 +70,22 @@ const ISSUE_OPTIONS: readonly SelectOption<IssueSystem>[] = [
 	{ value: 'none', label: 'None', description: 'Local-only, no external tracker' },
 ];
 
+const MERGE_OPTIONS: readonly SelectOption<MergeMode>[] = [
+	{ value: 'immediate', label: 'Immediate (default)', description: 'Merge PR as soon as it is created' },
+	{ value: 'ci-gated', label: 'CI-gated', description: 'Wait for CI to pass before merging' },
+];
+
 export function SetupScreen({ prefilled, onDone, onCancel }: SetupScreenProps): ReactElement {
 	const [projectMode, setProjectMode] = useState<ProjectMode | undefined>(prefilled.projectMode);
 	const [issueSystem, setIssueSystem] = useState<IssueSystem | undefined>(prefilled.issueSystem);
+	const [mergeMode, setMergeMode] = useState<MergeMode | undefined>(prefilled.mergeMode);
 	const [description, setDescription] = useState<string | undefined>(prefilled.description);
 	const [descDraft, setDescDraft] = useState<string>('');
 
 	const step: Step = (() => {
 		if (projectMode === undefined) return 'mode';
 		if (issueSystem === undefined) return 'issue';
+		if (mergeMode === undefined) return 'merge';
 		if (projectMode === 'new' && description === undefined) return 'description';
 		return 'done';
 	})();
@@ -100,17 +109,20 @@ export function SetupScreen({ prefilled, onDone, onCancel }: SetupScreenProps): 
 			onDone({
 				projectMode: projectMode!,
 				issueSystem: issueSystem!,
+				mergeMode: mergeMode!,
 				description: description ?? '',
 			});
 		}, 0);
 		return () => clearTimeout(id);
-	}, [step, projectMode, issueSystem, description, onDone]);
+	}, [step, projectMode, issueSystem, mergeMode, description, onDone]);
 
 	const showProjectSummary = projectMode !== undefined && step !== 'mode';
 	const showIssueSection = projectMode !== undefined;
 	const showIssueSummary = issueSystem !== undefined && step !== 'issue';
+	const showMergeSection = issueSystem !== undefined;
+	const showMergeSummary = mergeMode !== undefined && step !== 'merge';
 	const showDescriptionSection =
-		projectMode === 'new' && issueSystem !== undefined;
+		projectMode === 'new' && issueSystem !== undefined && mergeMode !== undefined;
 
 	return (
 		<Box flexDirection="column">
@@ -153,6 +165,26 @@ export function SetupScreen({ prefilled, onDone, onCancel }: SetupScreenProps): 
 						<ConfirmedAnswer
 							label={issueLabel(issueSystem!)}
 							description={ISSUE_OPTIONS.find((o) => o.value === issueSystem)?.description}
+						/>
+					) : null}
+				</Section>
+			) : null}
+
+			{showMergeSection ? (
+				<Section heading="Merge mode">
+					{step === 'merge' ? (
+						<Select
+							question="How should cam ship merge pull requests?"
+							options={MERGE_OPTIONS}
+							defaultValue="immediate"
+							onChange={setMergeMode}
+							onCancel={onCancel}
+						/>
+					) : null}
+					{showMergeSummary ? (
+						<ConfirmedAnswer
+							label={mergeLabel(mergeMode!)}
+							description={MERGE_OPTIONS.find((o) => o.value === mergeMode)?.description}
 						/>
 					) : null}
 				</Section>
@@ -250,4 +282,8 @@ function modeLabel(mode: ProjectMode): string {
 
 function issueLabel(issue: IssueSystem): string {
 	return issue === 'linear' ? 'Linear' : issue === 'github' ? 'GitHub' : 'None';
+}
+
+function mergeLabel(mode: MergeMode): string {
+	return mode === 'ci-gated' ? 'CI-gated' : 'Immediate (default)';
 }

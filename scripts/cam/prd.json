@@ -67,7 +67,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/setup.ts (add merge_mode to SetupAnswers/SetupOptions, the readline askChoice path, the mergeIntoConfig call writing the [ship] section; thread a --merge-mode flag through parseSetupArgs to match --issue-system) + src/ui/SetupScreen.tsx (add a merge-mode Section mirroring the existing Issue-system Section; uses ./Section.tsx, NOT divider color for state). GOTCHA: the Ink/readline + verifyAgent gate makes the call-site headlessly untestable, so the merge-mode decision + branch-protection invocation must be an extracted pure helper that the test drives directly (CAM-84 precedent). branch-protection helper is from US-002. Keep printAutomergeNotice + the issue_system hints intact. Reviewer-judgment / operator-dogfood (US-010) covers the visual confirm."
     },

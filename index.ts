@@ -990,6 +990,7 @@ async function main(argv: string[]): Promise<number> {
 			return runSetup({
 				projectMode: setupArgs.projectMode,
 				issueSystem: setupArgs.issueSystem,
+				mergeMode: setupArgs.mergeMode,
 				description: setupArgs.description,
 				noTmux: setupArgs.noTmux,
 			});
@@ -1010,6 +1011,7 @@ async function main(argv: string[]): Promise<number> {
 			return runSetup({
 				projectMode: setupArgs.projectMode,
 				issueSystem: setupArgs.issueSystem,
+				mergeMode: setupArgs.mergeMode,
 				description: setupArgs.description,
 				noTmux: setupArgs.noTmux,
 			});
