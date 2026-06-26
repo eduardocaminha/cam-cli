@@ -34,7 +34,7 @@ import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
 import { readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
-import { formatReviewVerdictLine, type WorkerReport } from './worker-report.ts';
+import { formatReviewVerdictLine, formatWorkerReportSummary, type WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail, OutcomeSourceEventDetail } from './events.ts';
 
@@ -907,6 +907,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 							storyId: outcome.storyId,
 							detail: `push-verification failed: ${pushCheck.detail}`,
 						};
+						{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
 						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}
@@ -918,6 +919,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				outcome.kind === 'fail' ||
 				outcome.kind === 'unknown'
 			) {
+				{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
 				notifyTerminal('blocked');
 				return { status: 'blocked', iterations, lastOutcome };
 			}
@@ -935,6 +937,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						storyId: outcome.storyId,
 						detail: `finalize aborted, gates failed for ${outcome.storyId}: ${gate.detail}`,
 					};
+					{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
 					notifyTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
@@ -945,6 +948,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						storyId: outcome.storyId,
 						detail: `finalize failed for ${outcome.storyId}: ${fin.detail}`,
 					};
+					{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
 					notifyTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
@@ -957,10 +961,12 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				// CAM-36: a successful finalize is real progress; reset the no-op
 				// streak so the "consecutive no-progress" semantics hold (review R1).
 				noProgressStreak = 0;
+				{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
 				continue;
 			}
 
 			if (outcome.kind === 'incomplete') {
+				{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
 				notifyTerminal('blocked');
 				return { status: 'blocked', iterations, lastOutcome };
 			}
@@ -992,6 +998,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						// live state file (US-001 clear-on-exit). Every other terminal
 						// return in this loop does this; the no-progress block is a
 						// real terminal exit too.
+						{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
 						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}
@@ -1008,11 +1015,21 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					sleepFn(NO_PROGRESS_BACKOFF_MS * noProgressStreak);
 				} else {
 					noProgressStreak = 0;
+					// Genuine advance: story was NOT already passing. Notify the
+					// orchestrator pane with the worker-report summary (US-003).
+					{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
 				}
 			}
 
-			// PRD_COMPLETE sentinel (storyId === undefined) or pass: loop will call
-			// decideNextAction next iteration.
+			// PRD_COMPLETE sentinel (storyId === undefined): notify the orchestrator.
+			// The genuine-advance case (storyId defined) already notified in the
+			// else-branch above; this fires only for the PRD_COMPLETE path that
+			// bypasses the no-progress guard.
+			if (outcome.storyId === undefined) {
+				const r = readWorkerReport?.();
+				if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r));
+			}
+			// PRD_COMPLETE or pass: loop will call decideNextAction next iteration.
 			continue;
 		}
 

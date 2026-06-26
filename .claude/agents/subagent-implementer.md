@@ -148,25 +148,7 @@ Use the `Write` tool to create `scripts/cam/worker-report.json` with this shape:
 
 Do NOT commit this file; it is ephemeral per-invocation state read by the supervisor.
 
-**Step B: push a one-line summary to the orchestrator pane.**
-
-Run this Bash command (atomic, one call, NO `-l`):
-
-```bash
-tmux -L cam send-keys -t %0 '[cam] <story> <outcome>: typecheck <tc>, <tests>' Enter
-```
-
-Invariants (memory: sendkeys-literal-enter-gotcha):
-- Do NOT use `-l`. It makes EVERY argument literal, so "Enter" is typed as the text "Enter" and the summary never submits (empirically: `send-keys -l X Enter` lands the string "XEnter" in the pane, never a carriage return).
-- The summary is a SINGLE quoted argv element, so tmux already sends its characters literally: `{`, `}`, `"`, `:`, spaces all land verbatim without `-l`.
-- `Enter` is a SEPARATE argument after the summary, in the SAME `send-keys` call (atomic), so it stays a recognised key and actually submits.
-
-Example for a DONE story:
-```bash
-tmux -L cam send-keys -t %0 '[cam] US-003 DONE: typecheck ok, 42 pass / 0 fail' Enter
-```
-
-If the tmux call fails (e.g. no session), log the error and continue to the sentinel. The report file is the primary push signal; the send-keys is a best-effort human notification.
+The sidecar reads this file and emits the `[cam] <story> <outcome>: ...` narration line to the orchestrator pane automatically on detection. The worker does NOT send any tmux keys.
 
 ## Constraints
 
@@ -182,8 +164,7 @@ You run as an interactive TUI `claude` session (not `claude -p`). `scripts/cam/w
 The correct exit sequence is:
 1. Run steps 1-8 (implement, gates, commit, push).
 2. Write `scripts/cam/worker-report.json` (Step A of exit report protocol).
-3. Run `tmux -L cam send-keys -t %0 '...' Enter` (Step B, push summary to orchestrator; NO `-l`).
-4. Print the sentinel as the ABSOLUTE LAST LINE of your output.
+3. Print the sentinel as the ABSOLUTE LAST LINE of your output.
 
 ## Output protocol
 
@@ -200,7 +181,7 @@ When you finish, print **exactly one** of the following status lines as the **ve
 
 Above that status line, write a concise natural-language summary: story id, files changed, quality-gate result, any notes. Keep it under 20 lines.
 
-**Output format** (report file write + tmux push happen BEFORE printing; sentinel must be the absolute last line, nothing after it):
+**Output format** (report file write happens BEFORE printing; sentinel must be the absolute last line, nothing after it):
 ```
 Implemented US-XXX ([one-line story title]).
 Files changed: path/a, path/b (+N lines), path/c.
