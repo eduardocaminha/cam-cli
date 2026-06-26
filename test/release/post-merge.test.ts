@@ -70,11 +70,15 @@ function makeSpawnFn(
 
 /** Build a standard happy-path SpawnFn. Caller provides tag response. */
 function happySpawn(
-	opts: { tagListReturnsTag?: boolean; tagCreateStatus?: number; tagPushStatus?: number; branchDeleteLocalStatus?: number; branchDeleteRemoteStatus?: number } = {},
+	opts: { checkoutStatus?: number; tagListReturnsTag?: boolean; tagCreateStatus?: number; tagPushStatus?: number; branchDeleteLocalStatus?: number; branchDeleteRemoteStatus?: number } = {},
 	calls?: SpawnCall[],
 ): SpawnFn {
 	return (cmd, args, _o) => {
 		if (calls) calls.push({ cmd, args: [...args] });
+		// checkout main (Step 0)
+		if (args.includes('checkout') && args.includes('main')) {
+			return fakeSpawn({ status: opts.checkoutStatus ?? 0 });
+		}
 		// pull origin main
 		if (args.includes('pull') && args.includes('origin') && args.includes('main')) {
 			return fakeSpawn({ status: 0 });
@@ -138,7 +142,22 @@ describe('runPostMerge -- happy path', () => {
 		expect(result.branchPrunedRemote).toBe(true);
 	});
 
-	test('git pull is called first', () => {
+	test('git checkout main is called before git pull', () => {
+		const calls: SpawnCall[] = [];
+		runPostMerge(baseOpts({ spawnFn: happySpawn({}, calls) }));
+
+		const checkoutIdx = calls.findIndex(
+			(c) => c.args.includes('checkout') && c.args.includes('main'),
+		);
+		expect(checkoutIdx).toBeGreaterThanOrEqual(0);
+
+		const pullIdx = calls.findIndex(
+			(c) => c.args.includes('pull') && c.args.includes('origin') && c.args.includes('main'),
+		);
+		expect(pullIdx).toBeGreaterThan(checkoutIdx);
+	});
+
+	test('git pull is called before tag operations', () => {
 		const calls: SpawnCall[] = [];
 		runPostMerge(baseOpts({ spawnFn: happySpawn({}, calls) }));
 
@@ -182,6 +201,33 @@ describe('runPostMerge -- happy path', () => {
 				c.args.includes(FAKE_BRANCH),
 		);
 		expect(remoteDelete).toBeDefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: checkout-main failure (Step 0 guard)
+// ---------------------------------------------------------------------------
+
+describe('runPostMerge -- checkout-main failure', () => {
+	test('returns ok:false reason:checkout-main-failed when checkout exits non-zero', () => {
+		const result = runPostMerge(
+			baseOpts({ spawnFn: happySpawn({ checkoutStatus: 1 }) }),
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('checkout-main-failed');
+		}
+	});
+
+	test('no pull or tag calls are made when checkout fails', () => {
+		const calls: SpawnCall[] = [];
+		runPostMerge(baseOpts({ spawnFn: happySpawn({ checkoutStatus: 128 }, calls) }));
+
+		const pullCall = calls.find((c) => c.args.includes('pull'));
+		expect(pullCall).toBeUndefined();
+
+		const tagCall = calls.find((c) => c.args.includes('tag'));
+		expect(tagCall).toBeUndefined();
 	});
 });
 

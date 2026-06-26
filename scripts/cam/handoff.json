@@ -1,27 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "branchName": "cam/CAM-101-configurable-merge-mode",
-  "timestamp": "2026-06-27T01:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-27T02:00:00Z",
+  "createdFiles": [
+    "test/integration/post-merge-on-main.test.ts"
+  ],
   "modifiedFiles": [
-    ".claude/commands/cam-ship.md",
-    "templates/commands/cam-ship.md",
-    "src/vendor/_generated.ts",
-    "test/vendor/cam-ship-hygiene.test.ts"
+    "src/release/post-merge.ts",
+    "test/release/post-merge.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 fixed the dead ci-gated pipeline: cam-ship.md ci-gated Step 7 now instructs the orchestrator to write .claude/.cam-merge-watch.json (prNumber + mergedBranch) after gh pr create, using 'gh pr view --json number --jq .number' to capture the PR number. Both runtime (.claude/commands/) and template (templates/commands/) copies updated, vendor embed regenerated. Three new hygiene tests in test/vendor/cam-ship-hygiene.test.ts guard the fix. 1646 tests all pass.",
+  "nextStoryContext": "US-R1-002 fixed the post-merge checkout-main bug: runPostMerge now does git checkout main before git pull origin main (mirrors the must-be-on-main guard in tag.ts:66-79). Without this, git pull merges origin/main into the feature branch, rev-parse HEAD returns the feature SHA (wrong tag target), and branch -d fails because you cannot delete the checked-out branch. Added unit tests for checkout-main-failed path and a real-git integration test (test/integration/post-merge-on-main.test.ts) that verifies the tag SHA matches main HEAD and branchPrunedLocal is true. 1650 tests pass.",
   "officialDocsValidated": [
     {
-      "lib": "gh CLI (gh pr view --json --jq)",
-      "version": "current",
-      "url": "https://cli.github.com/manual/gh_pr_view",
-      "fetchedAt": "2026-06-27T01:00:00Z",
-      "status": "ok",
-      "summary": "gh pr view --json number --jq '.number' outputs just the PR number (e.g. 21) when on a branch with an open PR. Syntax confirmed correct."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }

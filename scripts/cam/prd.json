@@ -29,7 +29,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [src/release/post-merge.ts:104]: runPostMerge does `git pull origin main` without checking out main, then tags `git rev-parse HEAD`. After `cam ship` the working tree is on the feature branch, so the pull merges origin/main INTO the feature branch, the tag lands on the feature-branch HEAD (NOT main, violating the Release Conventions and US-006 AC), and `git branch -d <mergedBranch>` fails because you cannot delete the currently checked-out branch (branchPrunedLocal silently false while ok:true). runTag (tag.ts:66-79) has a 'must be on main' guard that this reimplementation dropped. No real-git integration test covers it; the fake-spawn unit test masks the defect."
     },
     {

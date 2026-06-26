@@ -100,6 +100,23 @@ function parseVersionFromContent(content: string): string | undefined {
 export function runPostMerge(opts: PostMergeOptions): PostMergeOutcome {
 	const { cwd, mergedBranch, spawnFn } = opts;
 
+	// Step 0: Check out main before pulling.
+	//         runTag (src/commands/tag.ts:66-79) enforces the same invariant.
+	//         Without this, git pull origin main merges origin/main INTO the
+	//         feature branch, rev-parse HEAD returns the feature SHA (wrong tag
+	//         target), and git branch -d <feature> fails because you cannot
+	//         delete the currently-checked-out branch.
+	const checkoutResult = spawnFn(
+		'git',
+		['-C', cwd, 'checkout', 'main'],
+		{ encoding: 'utf8' },
+	);
+	if ((checkoutResult.status ?? 1) !== 0) {
+		const stderr = (checkoutResult.stderr ?? '').trim();
+		printError(`git checkout main failed: ${stderr || '(no output)'}`);
+		return { ok: false, reason: 'checkout-main-failed' };
+	}
+
 	// Step 1: git pull origin main
 	const pullResult = spawnFn(
 		'git',
