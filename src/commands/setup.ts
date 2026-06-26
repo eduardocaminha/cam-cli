@@ -65,24 +65,38 @@ export interface SetupOptions {
 // Readline helpers (used when stdin is not a TTY: tests, CI, pipes)
 // ---------------------------------------------------------------------------
 
-async function ask(question: string): Promise<string> {
-	const rl = createInterface({ input: process.stdin, output: process.stdout });
+export async function ask(
+	question: string,
+	defaultValue = '',
+	input: NodeJS.ReadableStream = process.stdin,
+): Promise<string> {
+	const output = input === process.stdin ? process.stdout : undefined;
+	const rl = createInterface({ input, output });
+	let answered = false;
 	return new Promise((resolve) => {
+		rl.on('close', () => {
+			if (!answered) {
+				answered = true;
+				resolve(defaultValue);
+			}
+		});
 		rl.question(question, (answer) => {
+			answered = true;
 			rl.close();
 			resolve(answer.trim());
 		});
 	});
 }
 
-async function askChoice<T extends string>(
+export async function askChoice<T extends string>(
 	question: string,
 	choices: readonly T[],
 	defaultChoice?: T,
+	input: NodeJS.ReadableStream = process.stdin,
 ): Promise<T> {
 	const label = choices.map((c) => (c === defaultChoice ? `[${c}]` : c)).join(' / ');
 	while (true) {
-		const raw = await ask(`${question} (${label}): `);
+		const raw = await ask(`${question} (${label}): `, '', input);
 		if (raw === '' && defaultChoice !== undefined) return defaultChoice;
 		const lower = raw.toLowerCase() as T;
 		if ((choices as readonly string[]).includes(lower)) return lower;
