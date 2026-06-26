@@ -15,6 +15,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { spawnSync } from 'node:child_process';
+import type { SpawnSyncReturns } from 'node:child_process';
 
 import { render } from 'ink';
 import { createElement } from 'react';
@@ -27,10 +29,12 @@ import {
 	rewriteFrontmatterModel,
 	FRONTMATTER_TARGET_PHASE_PATHS,
 } from '../templates/frontmatter.ts';
-import { printHint } from '../logging/color.ts';
+import { printHint, printWarning } from '../logging/color.ts';
 import { AUTOMERGE_NOTICE } from '../logging/notices.ts';
 import { ConfigScreen } from '../ui/ConfigScreen.tsx';
 import type { ConfigChoices } from '../ui/ConfigScreen.tsx';
+import { applyMergeMode } from './setup-merge-mode.ts';
+import type { SpawnFn } from '../release/branch-protection.ts';
 
 export type { ConfigChoices };
 
@@ -55,6 +59,23 @@ export function printConfigAutomergeHint(
 // ---------------------------------------------------------------------------
 
 /**
+ * Injectable options for the merge-mode side-effect in mergeConfigChoices.
+ * All fields are optional; production defaults use process spawnSync +
+ * printHint/printWarning. Inject fakes in unit tests to avoid real gh calls.
+ */
+export interface MergeModeOpts {
+	spawnFn?: SpawnFn;
+	emitHint?: (msg: string) => void;
+	emitWarning?: (msg: string, hint?: string) => void;
+	emitResult?: (msg: string) => void;
+	/**
+	 * Owner/repo slug (e.g. "acme/my-repo"). Passed directly to applyMergeMode
+	 * so tests can bypass the `gh repo view` resolution call.
+	 */
+	ownerRepo?: string;
+}
+
+/**
  * Persist `choices` into `configPath` (scripts/cam/project.toml) additively
  * via mergeIntoConfig:
  *
@@ -66,7 +87,15 @@ export function printConfigAutomergeHint(
  *   [backend]
  *   name = "<backend>"
  *
+ *   [ship]
+ *   merge_mode = "immediate"|"ci-gated"   (when choices.mergeMode is defined)
+ *
  * Pre-existing keys (issue_system, issue_prefix, etc.) are preserved.
+ *
+ * When `choices.mergeMode` is `"ci-gated"`, invokes the US-002
+ * branch-protection helper (configureBranchProtection via applyMergeMode) and
+ * prints the configured/verified or fallback-warn result. When `"immediate"`,
+ * the helper is NOT invoked.
  *
  * When `cwd` is provided, also rewrites the `model:` frontmatter line in the
  * three project-local .claude/ runtime files for planner, auditor, and ship
@@ -77,12 +106,33 @@ export function mergeConfigChoices(
 	configPath: string,
 	choices: ConfigChoices,
 	cwd?: string,
+	mergeModeOpts?: MergeModeOpts,
 ): void {
 	const updates: TomlConfig = {
 		models: choices.models as TomlSection,
 		backend: { name: choices.backend } as TomlSection,
 	};
 	mergeIntoConfig(configPath, updates);
+
+	// Persist [ship] merge_mode when the wizard collected it.
+	if (choices.mergeMode !== undefined) {
+		mergeIntoConfig(configPath, {
+			ship: { merge_mode: choices.mergeMode } as TomlSection,
+		});
+
+		// Invoke branch-protection helper for ci-gated; no-op for immediate.
+		const prodSpawnFn: SpawnFn = (cmd, args, opts) =>
+			spawnSync(cmd, args, { encoding: 'utf8', input: opts.input }) as SpawnSyncReturns<string>;
+
+		applyMergeMode({
+			mergeMode: choices.mergeMode,
+			spawnFn: mergeModeOpts?.spawnFn ?? prodSpawnFn,
+			ownerRepo: mergeModeOpts?.ownerRepo,
+			emitHint: mergeModeOpts?.emitHint,
+			emitWarning: mergeModeOpts?.emitWarning,
+			emitResult: mergeModeOpts?.emitResult,
+		});
+	}
 
 	if (cwd !== undefined) {
 		for (const [phase, relPath] of Object.entries(FRONTMATTER_TARGET_PHASE_PATHS)) {
@@ -197,7 +247,11 @@ function collectViaInk(configPath: string, cwd: string): Promise<number> {
 				if (result === null) {
 					return resolve(1);
 				}
-				mergeConfigChoices(configPath, result, cwd);
+				mergeConfigChoices(configPath, result, cwd, {
+					emitHint: printHint,
+					emitWarning: (msg, hint) => printWarning(msg, hint),
+					emitResult: (msg) => process.stdout.write(msg + '\n'),
+				});
 				printConfigAutomergeHint();
 				return resolve(0);
 			})
