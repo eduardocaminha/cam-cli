@@ -64,7 +64,8 @@ export type WorkerEventKind =
 	| 'outcome-source'
 	| 'sidecar-exit'
 	| 'review-verdict-handback'
-	| 'spawn-resolution';
+	| 'spawn-resolution'
+	| 'ship-bump';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';

@@ -78,3 +78,23 @@ Some PRDs span multiple repos. A PRD may declare a top-level `crossRepoLayout` b
 ```
 
 Per-story routing is driven by the optional `repo` field on each `userStories[]` entry (default `"main-repo"`). When the implementer picks a story whose `repo` is not the default, it `cd`s into the corresponding path BEFORE reading the story's files or running `git` commands. The harness state files (`prd.json`, `handoff.json`) always live in the main repo; `patterns.md` is durable and versioned on main; the event log (`.claude/cam-worker-events.jsonl`) is per-project but supervisor-owned. Only the story's source edits move cwd.
+
+## Release Conventions
+
+**0.x convention:** while the major component of the current version is 0, a
+`major` bump (breaking change via `feat!:` or `BREAKING CHANGE:`) is demoted
+to a minor increment. Example: `0.1.2 + major -> 0.2.0`, never `1.0.0`.
+The rule lives only in `computeNextVersion` (`src/release/version.ts`).
+`classifyBump` always returns the raw signal (`major` for breaking); the
+demotion is applied at version-compute time. No command produces `1.0.0`
+automatically; a 1.0.0 graduation requires a manual operator edit of
+`src/version.ts`.
+
+**Squash-merge tag-timing decision:** `cam ship --bump` commits the version
+bump on the feature branch. After the PR squash-merges to main, the branch SHA
+is gone and tagging it is wrong. Always run `cam tag` on main (after
+`git pull origin main`) to create and push the `vX.Y.Z` tag at the correct
+main HEAD SHA.
+
+Recovery scenarios for misfired bumps, tag drift, re-tagging, and the manual
+1.0.0 escape hatch are documented in `docs/recovery-runbook.md` section (r).

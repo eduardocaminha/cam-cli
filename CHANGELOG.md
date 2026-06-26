@@ -2,9 +2,25 @@
 
 All notable changes to cam-cli are documented here.
 
-Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]` for staged changes.
+Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
----
+## [0.2.0] - 2026-06-26
+
+### Added
+
+- US-R1-004 - add --bump dispatch coverage to ship-args tests
+- US-007 - Structured observability event + result line for the bump
+- US-006 - Auto-generate CHANGELOG release-section body from classified branch commits
+- US-005 - cam tag: deterministic post-merge tag command on main
+- US-004 - CHANGELOG release-section roll (Unreleased -> versioned, fresh Unreleased)
+- US-003 - Wire the deterministic bump step into cam ship before push
+- US-002 - Compute next version (0.x convention) and atomically write version.ts + package.json
+- US-001 - Deterministic Conventional-Commits bump parser
+
+### Fixed
+
+- US-R1-002 - wire writeEvent in production _buildBumpOpts
+- US-R1-001 - guard git add/commit exit status in runShipBump
 
 ## [Unreleased]
 

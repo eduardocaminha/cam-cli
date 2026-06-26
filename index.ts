@@ -37,6 +37,7 @@ import {
 	finalizeCycleClose,
 	type FinalizeCycleCloseResult,
 } from './src/commands/ship-finalize.ts';
+import { runShipBump, type ShipBumpResult } from './src/release/ship-bump.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
@@ -46,6 +47,8 @@ import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.t
 import { runConfig } from './src/commands/config.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { runSidecar } from './src/commands/sidecar.ts';
+import { runTag } from './src/commands/tag.ts';
+import { makeFileEventLogger } from './src/supervisor/events.ts';
 import { printError, printFatalHint, printHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { CAM_VERSION } from './src/version.ts';
@@ -65,6 +68,7 @@ const HELP = renderHelp({
 				{ name: 'next [options]', description: 'Launch the autonomous loop as a tmux pane in the project session' },
 				{ name: 'review', description: 'Dispatch /cam-review to the live orchestrator (or bootstrap first)' },
 				{ name: 'ship', description: 'Dispatch /cam-ship to the live orchestrator (or bootstrap first)' },
+				{ name: 'tag', description: 'Create and push the vX.Y.Z git tag for the current CAM_VERSION on main' },
 				{ name: 'issue "<text>"', description: 'File an issue from free text; opens /cam-issue create in a pane' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
@@ -297,7 +301,7 @@ const REVIEW_HELP = renderHelp({
 const SHIP_HELP = renderHelp({
 	title: 'cam ship',
 	tagline: 'Dispatch /cam-ship to the live orchestrator, or finalize a cycle in-process',
-	usage: 'cam ship [--finalize]',
+	usage: 'cam ship [--finalize] [--bump]',
 	sections: [
 		{
 			heading: 'Behaviour (default)',
@@ -322,10 +326,39 @@ const SHIP_HELP = renderHelp({
 						'Closes the tracked issue, removes per-branch harness state files via ' +
 						'`git rm -f --ignore-unmatch`, and commits the cleanup.',
 				},
+				{
+					name: '--bump',
+					description:
+						'Classify branch commits (main..HEAD), compute the next semver version ' +
+						'(0.x convention: major -> minor while major is 0), write src/version.ts ' +
+						'and package.json, and commit `chore(release): bump version to X.Y.Z`. ' +
+						'No-op when all commits classify as none.',
+				},
 			],
 		},
 	],
 	footer: 'cam does NOT accept a --permission-mode flag.',
+});
+
+const TAG_HELP = renderHelp({
+	title: 'cam tag',
+	tagline: 'Create and push the vX.Y.Z git tag for the current CAM_VERSION',
+	usage: 'cam tag',
+	sections: [
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Reads CAM_VERSION from src/version.ts to determine the tag name (vX.Y.Z).\n' +
+				'2. Refuses with a non-zero exit if the current branch is not `main`.\n' +
+				'3. Refuses with a non-zero exit if the working tree is dirty.\n' +
+				'4. If the tag already exists, prints a message and exits 0 (idempotent).\n' +
+				'5. Otherwise: runs `git tag vX.Y.Z` then `git push origin vX.Y.Z`.\n' +
+				'\n' +
+				'Run this on main AFTER the PR squash-merges (squash mints a new SHA,\n' +
+				'so tagging from the feature branch would tag the wrong commit).',
+		},
+	],
+	footer: 'Requires a clean working tree and `git push` access to origin.',
 });
 
 const STATUS_HELP = renderHelp({
@@ -727,8 +760,8 @@ export function parseReviewArgs(args: string[]): { help: boolean } | null {
  * greps this file for the literal `--permission-mode` and fails the build
  * if a parser registers it.
  */
-export function parseShipArgs(args: string[]): { help: boolean; finalize: boolean } | null {
-	const result = { help: false, finalize: false };
+export function parseShipArgs(args: string[]): { help: boolean; finalize: boolean; bump: boolean } | null {
+	const result = { help: false, finalize: false, bump: false };
 	for (const arg of args) {
 		if (arg === '--help' || arg === '-h') {
 			result.help = true;
@@ -736,6 +769,10 @@ export function parseShipArgs(args: string[]): { help: boolean; finalize: boolea
 		}
 		if (arg === '--finalize') {
 			result.finalize = true;
+			continue;
+		}
+		if (arg === '--bump') {
+			result.bump = true;
 			continue;
 		}
 		printError(`unknown ship option: ${arg}`);
@@ -748,21 +785,26 @@ export function parseShipArgs(args: string[]): { help: boolean; finalize: boolea
 // cam ship dispatch (exported for unit testing with injectable deps)
 // ---------------------------------------------------------------------------
 
-/** Injectable deps for dispatchShip — both optional; production uses real impls. */
+/** Injectable deps for dispatchShip — all optional; production uses real impls. */
 export interface ShipDispatchDeps {
 	/** Inject a fake finalizeCycleClose wrapper; default: uses real fs + spawnSync. */
 	finalizeFn?: () => FinalizeCycleCloseResult;
+	/** Inject a fake runShipBump wrapper; default: uses real fs + spawnSync. */
+	bumpFn?: () => ShipBumpResult;
 	/** Inject a fake runShip; default: calls the real runShip({}) thin-proxy. */
 	runShipFn?: () => Promise<number>;
 }
 
 /**
- * Route a parsed `cam ship` call: --finalize => finalizeCycleClose (in-process,
- * no tmux needed); otherwise => runShip thin-proxy. Exported so unit tests can
- * inject fakes for both branches and prove the --finalize path NEVER calls runShip.
+ * Route a parsed `cam ship` call:
+ *   --finalize => finalizeCycleClose (in-process, no tmux needed)
+ *   --bump     => runShipBump (in-process, DI'd spawnFn + clock)
+ *   otherwise  => runShip thin-proxy
+ *
+ * Exported so unit tests can inject fakes for all branches.
  */
 export async function dispatchShip(
-	parsed: { help: boolean; finalize: boolean },
+	parsed: { help: boolean; finalize: boolean; bump: boolean },
 	deps?: ShipDispatchDeps,
 ): Promise<number> {
 	if (parsed.finalize) {
@@ -772,6 +814,16 @@ export async function dispatchShip(
 			return 0;
 		} catch (err) {
 			printError(`cam ship --finalize failed: ${String(err)}`);
+			return 1;
+		}
+	}
+	if (parsed.bump) {
+		const bumpFn = deps?.bumpFn ?? (() => runShipBump(_buildBumpOpts(process.cwd())));
+		try {
+			bumpFn();
+			return 0;
+		} catch (err) {
+			printError(`cam ship --bump failed: ${String(err)}`);
 			return 1;
 		}
 	}
@@ -790,6 +842,30 @@ function _buildFinalizeOpts(cwd: string) {
 		readIssues: () => readFileSync(join(cwd, 'scripts/cam/issues.local.json'), 'utf8'),
 		writeIssues: (text: string) =>
 			writeFileSync(join(cwd, 'scripts/cam/issues.local.json'), text, 'utf8'),
+	};
+}
+
+/** Build production deps for runShipBump from the given project root. */
+function _buildBumpOpts(cwd: string) {
+	const eventLogger = makeFileEventLogger(join(cwd, '.claude/cam-worker-events.jsonl'));
+	return {
+		cwd,
+		spawnFn: spawnSync,
+		clock: () => new Date().toISOString(),
+		readVersionTs: () => readFileSync(join(cwd, 'src/version.ts'), 'utf8'),
+		readPackageJson: () => readFileSync(join(cwd, 'package.json'), 'utf8'),
+		writeVersionTs: (text: string) => writeFileSync(join(cwd, 'src/version.ts'), text, 'utf8'),
+		writePackageJson: (text: string) => writeFileSync(join(cwd, 'package.json'), text, 'utf8'),
+		readChangelog: () => readFileSync(join(cwd, 'CHANGELOG.md'), 'utf8'),
+		writeChangelog: (text: string) => writeFileSync(join(cwd, 'CHANGELOG.md'), text, 'utf8'),
+		writeEvent: (event: ShipBumpResult) =>
+			eventLogger({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'ship-bump',
+				kind: 'ship-bump',
+				detail: event as unknown as Record<string, unknown>,
+			}),
 	};
 }
 
@@ -1031,6 +1107,23 @@ async function main(argv: string[]): Promise<number> {
 				return 0;
 			}
 			return dispatchShip(parsed);
+		}
+		case 'tag': {
+			const tail = argv.slice(3);
+			if (tail.includes('--help') || tail.includes('-h')) {
+				process.stdout.write(TAG_HELP);
+				return 0;
+			}
+			if (tail.length > 0) {
+				printError(`unknown tag option: ${tail[0]}`);
+				printFatalHint('run `cam tag --help` for usage');
+				return 1;
+			}
+			const tagResult = runTag({
+				cwd: process.cwd(),
+				spawnFn: (cmd, args, opts) => spawnSync(cmd, args, { ...opts, cwd: process.cwd() }),
+			});
+			return tagResult.ok ? 0 : 1;
 		}
 		case 'dashboard': {
 			const tail = argv.slice(3);
