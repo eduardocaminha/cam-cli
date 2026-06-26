@@ -49,7 +49,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "NEW module: suggest src/release/branch-protection.ts (sits with src/release/ship-bump.ts, tag logic). MIRROR src/commands/ship-finalize.ts and src/commands/issue-file.ts: DI'd synchronous SpawnFn, hermetic gh/git tests, exported result interface, never Bun.spawn. DOC DEPRECATION (note in code header): required_status_checks.contexts is deprecated in favor of checks:[{context}]; PUT checks, accept either checks or contexts in the GET verification (GitHub mirrors them). All four PUT top-level fields REQUIRED — omitting any is a 422. enforce_admins=false (operator decision 3: emergency force-merge), required_pull_request_reviews=null (gotcha 3: a non-null reviews block would block auto-merge forever without a human review), strict=true (operator decision 3). The 'ci' string is the exact required check name (gotcha 1). Fallback hint must parallel AUTOMERGE_NOTICE in src/logging/notices.ts. Reuse printHint/printWarning from src/logging/color.ts for operator-facing output; keep the gh-api logic pure/returning a result so it is headlessly testable."
     },
