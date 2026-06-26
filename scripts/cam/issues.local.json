@@ -835,9 +835,10 @@
     {
       "id": "CAM-100",
       "title": "cam init auto-merge notice usa stdout cru (nao-mutado/nao-quiet-gated); paridade com cam config (printHint)",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-26T16:27:10.420Z",
-      "description": "Reviewer SUGGESTION do CAM-84 (PR #77, review CLEAN round 1). cam init imprime o AUTOMERGE_NOTICE via printAutomergeNotice cujo writeFn default e process.stdout.write cru: nao e mutado nem gated por isQuiet(), enquanto cam config imprime a MESMA constante via printHint (mutado + quiet-gated). FIX: trocar o default do writeFn do helper de setup (printAutomergeNotice em src/commands/setup.ts) para printHint (de src/logging/color.ts), pro aviso ser suprimido em quiet mode como todo outro hint, dando paridade init/config. ONDE TOCAR: src/commands/setup.ts (default do writeFn), test/commands/setup-automerge-notice.test.ts (ajustar a asserção se necessario). Prioridade P3: nit cosmetico de paridade de quiet-mode, nao afeta comportamento funcional do auto-merge."
+      "description": "Reviewer SUGGESTION do CAM-84 (PR #77, review CLEAN round 1). cam init imprime o AUTOMERGE_NOTICE via printAutomergeNotice cujo writeFn default e process.stdout.write cru: nao e mutado nem gated por isQuiet(), enquanto cam config imprime a MESMA constante via printHint (mutado + quiet-gated). FIX: trocar o default do writeFn do helper de setup (printAutomergeNotice em src/commands/setup.ts) para printHint (de src/logging/color.ts), pro aviso ser suprimido em quiet mode como todo outro hint, dando paridade init/config. ONDE TOCAR: src/commands/setup.ts (default do writeFn), test/commands/setup-automerge-notice.test.ts (ajustar a asserção se necessario). Prioridade P3: nit cosmetico de paridade de quiet-mode, nao afeta comportamento funcional do auto-merge.",
+      "closedAt": "2026-06-26T20:30:49.481Z"
     },
     {
       "id": "CAM-101",
