@@ -29,7 +29,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Root fix. File: src/commands/setup.ts. `ask` at ~line 68 (uses rl.question callback at :71); `askChoice` at ~line 78; both build a node:readline interface via createInterface({ input: process.stdin, output: process.stdout }) at :69. The callback API rl.question(cb) fires ONLY on a complete 'line' event; on EOF (piped /dev/null) the stream emits 'end' -> readline emits 'close' but the question callback NEVER fires, so the Promise never resolves -> infinite hang. Fix: register rl.on('close', ...) that resolves to the supplied default if not already answered. ask() currently takes no default and is module-private; the implementer must let ask() accept/return a default and make ask()/askChoice() reachable from a test (export them or inject a stdin stream) — testing strategy is the implementer's call. Match existing test conventions in test/setup-prompt.test.ts (bun:test, import from ../src/commands/setup.ts). Do not change the happy-path line-event path. Per project CLAUDE.md: keep changes surgical; success/failure UX is the print path here (readline), not Ink."
     },
