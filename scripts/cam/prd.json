@@ -113,7 +113,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New: src/commands/tag.ts + test/release/tag.test.ts, plus a `case 'tag':` in index.ts switch (dispatch by argv[2], line ~901) and a TAG_HELP renderHelp block + an entry in the top-level HELP Commands list. greenfield: scripts/build-release.sh today only READS version.ts and does NOT tag, so no collision. DI'd spawn pattern is exactly finalizeCycleClose's SpawnFn type. Guards: `git rev-parse --abbrev-ref HEAD` == main; `git status --porcelain` empty; `git tag -l vX.Y.Z` empty before creating. This runs POST-merge on main (the operator runs it after the PR squash-merges), which is why it is a separate command, not part of ship."
     },

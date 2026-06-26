@@ -47,6 +47,7 @@ import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.t
 import { runConfig } from './src/commands/config.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { runSidecar } from './src/commands/sidecar.ts';
+import { runTag } from './src/commands/tag.ts';
 import { printError, printFatalHint, printHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { CAM_VERSION } from './src/version.ts';
@@ -66,6 +67,7 @@ const HELP = renderHelp({
 				{ name: 'next [options]', description: 'Launch the autonomous loop as a tmux pane in the project session' },
 				{ name: 'review', description: 'Dispatch /cam-review to the live orchestrator (or bootstrap first)' },
 				{ name: 'ship', description: 'Dispatch /cam-ship to the live orchestrator (or bootstrap first)' },
+				{ name: 'tag', description: 'Create and push the vX.Y.Z git tag for the current CAM_VERSION on main' },
 				{ name: 'issue "<text>"', description: 'File an issue from free text; opens /cam-issue create in a pane' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
@@ -335,6 +337,27 @@ const SHIP_HELP = renderHelp({
 		},
 	],
 	footer: 'cam does NOT accept a --permission-mode flag.',
+});
+
+const TAG_HELP = renderHelp({
+	title: 'cam tag',
+	tagline: 'Create and push the vX.Y.Z git tag for the current CAM_VERSION',
+	usage: 'cam tag',
+	sections: [
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Reads CAM_VERSION from src/version.ts to determine the tag name (vX.Y.Z).\n' +
+				'2. Refuses with a non-zero exit if the current branch is not `main`.\n' +
+				'3. Refuses with a non-zero exit if the working tree is dirty.\n' +
+				'4. If the tag already exists, prints a message and exits 0 (idempotent).\n' +
+				'5. Otherwise: runs `git tag vX.Y.Z` then `git push origin vX.Y.Z`.\n' +
+				'\n' +
+				'Run this on main AFTER the PR squash-merges (squash mints a new SHA,\n' +
+				'so tagging from the feature branch would tag the wrong commit).',
+		},
+	],
+	footer: 'Requires a clean working tree and `git push` access to origin.',
 });
 
 const STATUS_HELP = renderHelp({
@@ -1079,6 +1102,23 @@ async function main(argv: string[]): Promise<number> {
 				return 0;
 			}
 			return dispatchShip(parsed);
+		}
+		case 'tag': {
+			const tail = argv.slice(3);
+			if (tail.includes('--help') || tail.includes('-h')) {
+				process.stdout.write(TAG_HELP);
+				return 0;
+			}
+			if (tail.length > 0) {
+				printError(`unknown tag option: ${tail[0]}`);
+				printFatalHint('run `cam tag --help` for usage');
+				return 1;
+			}
+			const tagResult = runTag({
+				cwd: process.cwd(),
+				spawnFn: (cmd, args, opts) => spawnSync(cmd, args, { ...opts, cwd: process.cwd() }),
+			});
+			return tagResult.ok ? 0 : 1;
 		}
 		case 'dashboard': {
 			const tail = argv.slice(3);
