@@ -47,7 +47,7 @@
       "id": "US-R1-003",
       "title": "Review round 1 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [docs/recovery-runbook.md:1321]: Recovery runbook r.1 (line 1321) and r.4 (line 1381) instruct the operator to write `export const CAM_VERSION = \"X.Y.Z\";` with DOUBLE quotes, but src/version.ts uses single quotes and both bump regexes only match single quotes (ship-bump.ts:105 VERSION_TS_RE and version.ts:57 applyVersionToVersionTs). Following the runbook leaves version.ts in a form the next `cam ship --bump` cannot parse (currentVersion silently falls back to 0.0.0) or rewrite (replace no-ops). Use single quotes to match the literal the tooling requires."
     },
     {

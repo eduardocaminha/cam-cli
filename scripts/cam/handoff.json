@@ -1,25 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Review round 1 fix 002: address reviewer finding"
+    "id": "US-R1-003",
+    "title": "Review round 1 fix 003: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "src/supervisor/events.ts",
-    "test/release/ship-bump.test.ts",
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-002 wired writeEvent in _buildBumpOpts (index.ts): creates makeFileEventLogger pointing to .claude/cam-worker-events.jsonl and passes it as writeEvent wrapping ShipBumpResult in a WorkerEvent with kind 'ship-bump'. Also added oracle tests verifying the production wiring. The 'ship-bump' WorkerEventKind was already declared in src/supervisor/events.ts (part of the uncommitted US-007 work); this story committed it along with the wiring fix. Next stories (US-R1-003 onward) should be checked for similar production-wiring gaps.",
+  "nextStoryContext": "US-R1-003 was a pure doc fix: recovery runbook r.1 (line 1321) and r.4 (line 1381) used double quotes in the CAM_VERSION literal. Both were changed to single quotes to match the regex in ship-bump.ts (VERSION_TS_RE) and applyVersionToVersionTs in src/release/version.ts. No code changes.",
   "officialDocsValidated": [
     {
-      "lib": "node:fs appendFileSync",
-      "version": "Node.js current",
-      "url": "https://nodejs.org/api/fs.html#fsappendfilesyncpath-data-options",
-      "fetchedAt": "2026-06-26T00:00:00Z",
-      "status": "ok",
-      "summary": "appendFileSync creates the file if absent and appends data synchronously. makeFileEventLogger in events.ts correctly uses mkdirSync+appendFileSync pattern confirmed against Node.js docs."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
