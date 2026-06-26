@@ -30,7 +30,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/config/models.ts (mirror readPhaseModel/readBackend try/catch/default exactly — never throw, never block the loop on a bad project.toml). The TOML schema in src/config/toml.ts is generic Record-based (TomlScalar/TomlSection/TomlConfig); a [ship] section with a string scalar is already representable, so toml.ts needs no change — only a read accessor + tests. Default MUST be \"immediate\" so CAM-84 behavior is preserved byte-for-byte for existing projects. Restrict the union type to \"immediate\" | \"ci-gated\". Per-story worker runs only typecheck+tests; check:all ratchets are a ship-time concern."
     },

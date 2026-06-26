@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add [ship] merge_mode config schema + typed read accessor"
+  },
+  "branchName": "cam/CAM-101-configurable-merge-mode",
+  "timestamp": "2026-06-26T20:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/config/models.ts",
+    "test/config/models.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "readMergeMode() is now the single source of truth for merge mode. Downstream stories (US-002: cam init sets/tests branch protection; US-003: ci-gated sidecar post-merge) must call readMergeMode() from src/config/models.ts. The function lives next to readPhaseModel and readBackend; the MergeMode type is exported from the same module.",
+  "officialDocsValidated": [
+    {
+      "lib": "Bun.TOML.parse",
+      "url": "https://bun.com/reference/bun/TOML/parse",
+      "fetchedAt": "2026-06-26T20:00:00Z",
+      "status": "aligned",
+      "summary": "API confirmed: parse(input: string): object. Throws on malformed TOML (caught by defensive try/catch in loadConfig). Implementation matches."
+    }
+  ]
+}
