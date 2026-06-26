@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.6.0] - 2026-06-26
+
+### Added
+
+- [US-001] - Quiet-gate printAutomergeNotice via printHint
+
 ## [0.5.0] - 2026-06-26
 
 ### Added
