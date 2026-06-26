@@ -1138,28 +1138,41 @@ Cross-reference: `src/supervisor/loop.ts` (notifyOrchestrator placement: post no
 `src/supervisor/host.ts` (makeNotifyOrchestrator factory),
 `scripts/cam/patterns.md` (single-pusher invariant bullet, cam-next-is-pure-trigger bullet).
 
-## (q) CAM-91: orchestrator Task spawn denied by the agent-allowlist hook
+## (q) CAM-102: orchestrator Task spawn denied by the agent-allowlist hook
 
 Symptom: the orchestrator's `/cam-plan` flow blocks mid-execution, or a Task spawn is
 denied with an error containing `permissionDecisionReason`. The orchestrator pane shows
 output similar to:
 
 ```
-Subagent type "..." is not in the cam allowlist {subagent-planner, subagent-auditor}.
+Subagent type "..." is not in the cam capability allowlist.
+Allowed read-only helpers: Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor, subagent-reviewer.
 For code work, dispatch the implementer worker via /cam-next instead.
+(Policy is scoped to cam-managed sessions via CAM_SESSION.)
 ```
 
 Cause: the PreToolUse hook `.claude/hooks/orch-agent-allowlist.sh` (registered in
-`.claude/settings.json`) intercepts every `Task` and `Agent` tool call. It allows only
-two sanctioned plan-time subagent types: `subagent-planner` and `subagent-auditor`. Any
-other type (including an absent or empty type) is denied.
+`.claude/settings.json`) intercepts every `Task` and `Agent` tool call inside a
+cam-managed session and applies the capability policy described below.
 
 ### Background
 
-CAM-91 added `orch-agent-allowlist.sh` to prevent unsanctioned subagent spawns from
-inside the orchestrator. The orchestrator is a plan-and-route persona: code
-implementation runs in the sidecar-dispatched worker pane, not as a Task subagent
-inside the orchestrator conversation.
+CAM-102 replaced the original fixed-name allowlist with a capability-based policy
+gated by the `CAM_SESSION` environment variable.
+
+**CAM_SESSION scope gate:** when `CAM_SESSION` is unset, the hook exits 0 immediately
+(allow everything) without reading stdin. Interactive dev sessions are completely
+unrestricted. Only sessions where the sidecar set `CAM_SESSION` (via `tmux new-session
+-e CAM_SESSION=...`) are subject to the capability check below.
+
+**Capability policy (applies only when CAM_SESSION is set):**
+
+- ALLOW: read-only, plan-time helpers that do not write code.
+  Types: `Explore`, `Plan`, `claude-code-guide`, `subagent-planner`, `subagent-auditor`,
+  `subagent-reviewer`.
+- DENY: everything else, including code-writers and absent/unknown types. Default-deny
+  is preserved within scope: an unrecognised type is always DENY, so a misread
+  `subagent_type` can only produce a false DENY, never a false ALLOW.
 
 The hook reads the spawned subagent type from three field paths (defensive read, in
 case the payload shape varies):
@@ -1192,14 +1205,23 @@ The hook registration in `.claude/settings.json`:
    `permissionDecisionReason` field in the tool result. Read it from the orchestrator
    pane or from the Claude Code event log.
 
-2. Identify the subagent type that was denied:
+2. Check whether the CAM_SESSION scope gate is set:
+
+   ```bash
+   tmux show-environment -t <session-name> CAM_SESSION
+   ```
+
+   If `CAM_SESSION` is unset in the tmux environment, the hook should be inactive (exit
+   0 always). A denial in that case points to a different hook or settings entry.
+
+3. Identify the subagent type that was denied:
 
    - If the orchestrator tried to spawn an ad-hoc Task that is not plan-related, the
      denial is expected behavior. Route the work to the worker pane via `/cam-next`
      instead.
-   - If the orchestrator tried to spawn `subagent-planner` or `subagent-auditor` and
-     was still denied, the hook invocation itself may have failed (e.g. `jq` absent,
-     malformed `settings.json`, or the hook file is missing its executable bit):
+   - If the orchestrator tried to spawn one of the ALLOW types and was still denied,
+     the hook invocation itself may have failed (e.g. `jq` absent, malformed
+     `settings.json`, or the hook file is missing its executable bit):
 
      ```bash
      ls -la .claude/hooks/orch-agent-allowlist.sh   # should show -rwxr-xr-x
@@ -1207,23 +1229,33 @@ The hook registration in `.claude/settings.json`:
      cat .claude/settings.json | jq .               # must parse cleanly
      ```
 
-3. To trace what the hook receives, run a test payload by hand:
+4. To trace what the hook receives, run a test payload by hand:
 
    ```bash
-   # Expect: no output (allow)
-   echo '{"tool_input":{"subagent_type":"subagent-planner"}}' \
-     | bash .claude/hooks/orch-agent-allowlist.sh
+   # Expect: no output (allow) -- must set CAM_SESSION for the scope gate to pass
+   CAM_SESSION=test echo '{"tool_input":{"subagent_type":"subagent-planner"}}' \
+     | CAM_SESSION=test bash .claude/hooks/orch-agent-allowlist.sh
 
    # Expect: JSON deny payload on stdout
+   CAM_SESSION=test echo '{"tool_input":{"subagent_type":"unknown-type"}}' \
+     | CAM_SESSION=test bash .claude/hooks/orch-agent-allowlist.sh
+
+   # Expect: no output (allow) -- hook inactive when CAM_SESSION is absent
    echo '{"tool_input":{"subagent_type":"unknown-type"}}' \
      | bash .claude/hooks/orch-agent-allowlist.sh
    ```
 
 ### Manual override
 
-**Extending the allowlist with a new sanctioned subagent type:**
+**Extending the capability allowlist with a new read-only helper type:**
 
-When a new plan-time subagent is introduced, both copies of the hook must be updated
+The capability policy is based on what a subagent type does, not on its name. Before
+adding a type to the ALLOW set, confirm it is a read-only, plan-time helper (no file
+edits, no commits, no shell mutations). Code-writing types must stay in the DENY set
+and be dispatched as sidecar-managed worker panes, not as Task subagents inside the
+orchestrator.
+
+When a new read-only helper type is introduced, both copies of the hook must be updated
 (the runtime copy used by the current project and the template copy embedded at
 `cam init` time).
 
@@ -1234,18 +1266,18 @@ When a new plan-time subagent is introduced, both copies of the hook must be upd
    # Template copy:   templates/.claude/hooks/orch-agent-allowlist.sh
    ```
 
-   Change the allowlist line. Example adding `subagent-shipper`:
+   Add the new type to the ALLOW branch. Example adding `subagent-researcher`:
 
    ```bash
    # Before:
-   subagent-planner|subagent-auditor)
+   Explore|Plan|claude-code-guide|subagent-planner|subagent-auditor|subagent-reviewer)
 
    # After:
-   subagent-planner|subagent-auditor|subagent-shipper)
+   Explore|Plan|claude-code-guide|subagent-planner|subagent-auditor|subagent-reviewer|subagent-researcher)
    ```
 
 2. Update the human-readable deny message (the `permissionDecisionReason` string) in
-   the same files to name the new member, so future diagnostics are accurate.
+   the same files to list the new member, so future diagnostics are accurate.
 
 3. Regenerate the embedded vendor file and verify:
 
@@ -1262,7 +1294,7 @@ When a new plan-time subagent is introduced, both copies of the hook must be upd
    git add .claude/hooks/orch-agent-allowlist.sh \
            templates/.claude/hooks/orch-agent-allowlist.sh \
            src/vendor/_generated.ts
-   git commit -m "feat: extend agent allowlist with subagent-<name> (CAM-NNN)"
+   git commit -m "feat: extend capability allowlist with subagent-<name> (CAM-NNN)"
    ```
 
 **Restoring the executable bit** (if the hook file loses its executable permission,
@@ -1276,8 +1308,8 @@ Cross-reference: `.claude/hooks/orch-agent-allowlist.sh` (hook implementation),
 `.claude/settings.json` (hook registration),
 `templates/.claude/hooks/orch-agent-allowlist.sh` (template copy),
 `src/vendor/_generated.ts` (embedded copy),
-`scripts/cam/patterns.md` (PreToolUse deny contract + defensive subagent_type read
-bullet, Template hook executable-bit restoration bullet).
+`scripts/cam/patterns.md` (CAM_SESSION scope-gate pattern bullet, PreToolUse deny
+contract bullet, Template hook executable-bit restoration bullet).
 
 ## (r) CAM-89: conventional commits version bump and tag flow
 

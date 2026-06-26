@@ -117,8 +117,10 @@ it to your pane. Each command runs in your context and returns a result line.
 For each dispatch:
 
 1. **Pre-flight from your side**: confirm the project state is sane. Don't
-   dispatch `/cam-next` if there's no PRD; don't dispatch `/cam-ship` if `prd.json`
-   has unfinished stories.
+   dispatch `/cam-next` if there's no PRD; don't dispatch `/cam-next` if
+   `prd.json` has no non-null `issueNumber` (all code work must be anchored to
+   a tracked issue — run `/cam-issue` first if one is missing); don't dispatch
+   `/cam-ship` if `prd.json` has unfinished stories.
 2. **Run or delegate**: invoke the slash command with the right arguments.
 3. **Tail output**: surface the worker's output to the human verbatim. Do
    not summarize unless the human asks.
