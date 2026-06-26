@@ -85,7 +85,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/config.ts (extend ConfigChoices + mergeConfigChoices to carry merge_mode -> [ship] merge_mode; keep printConfigAutomergeHint) + src/ui/ConfigScreen.tsx (add a merge-mode WizardStep mirroring the backend step). Same headless-testability gotcha as US-003: extract the persistence + branch-protection call into a pure helper. branch-protection helper is from US-002. Mirror the exported-pure-helper pattern (mergeConfigChoices) so the TOML output + helper invocation are asserted without a live terminal."
     },
