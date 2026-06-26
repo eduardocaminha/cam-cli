@@ -1179,7 +1179,7 @@ The hook registration in `.claude/settings.json`:
     "PreToolUse": [
       {
         "matcher": "Task|Agent",
-        "hooks": [{ "type": "command", "command": ".claude/hooks/orch-agent-allowlist.sh" }]
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/orch-agent-allowlist.sh" }]
       }
     ]
   }
