@@ -40,7 +40,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-001 (the no-send-keys behavior must already exist). File: test/next.test.ts. The two oracle greps target NEW test titles that do not exist on the pre-change tree, so they are discriminating (F-02: the prior greps on 'cam-loop.local.md' and 'toBeUndefined' matched existing lines 184/196/199/220/252/324 and passed with or without the change). Reuse makeFakeTmuxSpawn (test/next.test.ts:41) and the capture-pane idle fake per patterns.md pattern 28 (answer capture-pane with '> ', handle list-panes formats #{@cam_label}, #{pane_index};#{pane_id}, #{pane_id} per pattern 27). Positive test: after `await runNext({ cwd: dir, tmuxSpawnFn: spawnFn })`, readFileSync(join(dir,'.claude','cam-loop.local.md')) contains 'active: true'. Negative test: spawnFn.calls.find(c => c.args.includes('send-keys')) is undefined on the hit path. Keep the existing miss-path / bootstrap-failure / mutex-busy / pane-not-found tests intact."
     },
