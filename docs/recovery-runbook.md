@@ -1318,7 +1318,7 @@ was intended):
 
    ```bash
    # e.g. to reach 0.3.0
-   sed -i '' 's/^export const CAM_VERSION.*/export const CAM_VERSION = "0.3.0";/' src/version.ts
+   sed -i '' "s/^export const CAM_VERSION.*/export const CAM_VERSION = '0.3.0';/" src/version.ts
    # then update the "version" field in package.json to "0.3.0"
    ```
 
@@ -1378,7 +1378,7 @@ component is 0 (the 0.x convention). To graduate to 1.0.0:
 
    ```bash
    # change the constant to:
-   export const CAM_VERSION = "1.0.0";
+   export const CAM_VERSION = '1.0.0';
    ```
 
 2. Update the `"version"` field in `package.json` to `"1.0.0"` as well.
