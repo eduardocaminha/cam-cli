@@ -154,7 +154,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/events.ts (extend WorkerEventKind union + add a typed *EventDetail interface and add it to the WorkerEventDetail union, following the existing ResultEventDetail/PushEventDetail/ReviewVerdictHandbackEventDetail pattern; the default logger is the synchronous appendFileSync makeFileEventLogger). Wire emits in the US-007 merge-watch path. Reuse makeInMemoryEventLogger() in tests to capture events. Keep events thin (mirror the no-progress-retry / sidecar-exit precedent). cam-worker-events.jsonl is the canonical structured record (CAM-31 retired progress.txt). TRACEABILITY: the ci-red event is the structured counterpart to the US-007 red-path narration ('CI red, PR #N open, not merged') and the diagnostic record an operator follows when working the US-009 recovery-runbook (t) scenario."
     },

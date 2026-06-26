@@ -1,31 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Sidecar merge-watch state: poll PR for MERGED then run post-merge + narrate"
+    "id": "US-008",
+    "title": "Structured merge-watch observability events"
   },
   "branchName": "cam/CAM-101-configurable-merge-mode",
-  "timestamp": "2026-06-26T23:45:00Z",
-  "createdFiles": [
+  "timestamp": "2026-06-26T23:55:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/events.ts",
     "src/release/merge-watch.ts",
     "test/release/merge-watch.test.ts"
   ],
-  "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/commands/sidecar.ts",
-    "scripts/cam/prd.json",
-    "scripts/file-size-budget.json",
-    "knip.json"
-  ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 added src/release/merge-watch.ts: runMergeWatch(opts) with injectable GhPollFn and PostMergeFn. Poll loop: state==MERGED -> runPostMerge + narrate; state==CLOSED -> narrate closed-not-merged + stop; OPEN+BLOCKED -> narrate CI red + stop; null (gh error) -> silent retry; OPEN+other -> keep polling; maxPolls exhausted -> narrate timeout + stop. Wired into RunSidecarLoopOptions.runMergeWatchFn (idle-tick call in runSidecarLoop) and SidecarOptions.runMergeWatchFn (production: reads .claude/.cam-merge-watch.json, only under ci-gated mode; immediate leaves field absent = inert). The MERGE_WATCH_FILENAME constant is '.cam-merge-watch.json'. The orchestrator (cam-ship.md Step 7 ci-gated) is expected to write this file with { prNumber, mergedBranch } before handing off to the sidecar. Also added gh to knip.json ignoreBinaries. 1639 tests all pass.",
+  "nextStoryContext": "US-008 extended src/supervisor/events.ts with 4 new WorkerEventKind values (merge-watch-watching, merge-watch-merged, merge-watch-ci-red, merge-watch-post-merge-done) plus typed detail interfaces (MergeWatchWatchingEventDetail, MergeWatchMergedEventDetail, MergeWatchCiRedEventDetail, MergeWatchPostMergeDoneEventDetail) added to the WorkerEventDetail union. src/release/merge-watch.ts gained an optional logEvent?(kind, detail) injectable on MergeWatchOptions; runMergeWatch emits: merge-watch-watching at loop start, merge-watch-merged on MERGED state, merge-watch-post-merge-done after post-merge (ok:true or ok:false), merge-watch-ci-red with reason:'blocked' on OPEN+BLOCKED and reason:'closed' on CLOSED. 5 new tests in test/release/merge-watch.test.ts under 'runMergeWatch structured events (US-008)' assert happy path (watching->merged->post-merge-done) and CI-red path (watching->ci-red). Production sidecar wiring of logEvent into the file event logger is a follow-up (the injectable seam is in place; production wiring follows the US-R1-002 dep-builder pattern). 1644 tests all pass.",
   "officialDocsValidated": [
     {
-      "lib": "gh CLI + GitHub GraphQL MergeStateStatus",
-      "version": "gh 2.x / GitHub GraphQL v4",
-      "url": "https://developer.github.com/v4/enum/mergestatestatus",
-      "fetchedAt": "2026-06-26T23:45:00Z",
-      "status": "ok",
-      "summary": "gh pr view --json state,mergeStateStatus confirmed. PullRequest.state values: OPEN, MERGED, CLOSED. MergeStateStatus values: BLOCKED (CI failing/admin enforced), CLEAN, CONFLICTING, DRAFT, BEHIND, UNKNOWN. No UNSTABLE or MERGED in MergeStateStatus (MERGED is a PullRequest.state). Implementation correctly handles all cases: BLOCKED -> ci-red, MERGED state -> post-merge, CLOSED state -> closed-not-merged, all others -> keep polling."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "url": "",
+      "fetchedAt": "2026-06-26T23:55:00Z",
+      "summary": "US-008 is a pure internal TypeScript extension (events.ts + merge-watch.ts). No external library was touched."
     }
   ]
 }
