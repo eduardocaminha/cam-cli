@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { DEFAULTS, readBackend, readPhaseModel } from '../../src/config/models.ts';
+import { DEFAULTS, readBackend, readMergeMode, readPhaseModel } from '../../src/config/models.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures helpers
@@ -236,5 +236,123 @@ orchestrator = "seam-model"
 	test('readBackend uses configPath arg instead of cwd default', () => {
 		const path = writeTmpToml(`backend = "seam-backend"`);
 		expect(readBackend(path)).toBe('seam-backend');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readMergeMode: happy path
+// ---------------------------------------------------------------------------
+
+describe('readMergeMode - happy path', () => {
+	test('returns "ci-gated" when [ship] merge_mode = "ci-gated"', () => {
+		const path = writeTmpToml(`
+[ship]
+merge_mode = "ci-gated"
+`);
+		expect(readMergeMode(path)).toBe('ci-gated');
+	});
+
+	test('returns "immediate" when [ship] merge_mode = "immediate"', () => {
+		const path = writeTmpToml(`
+[ship]
+merge_mode = "immediate"
+`);
+		expect(readMergeMode(path)).toBe('immediate');
+	});
+
+	test('reads merge_mode alongside [models] section', () => {
+		const path = writeTmpToml(`
+[models]
+orchestrator = "model-a"
+
+[ship]
+merge_mode = "ci-gated"
+`);
+		expect(readMergeMode(path)).toBe('ci-gated');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readMergeMode: fallback paths (defensive default = "immediate")
+// ---------------------------------------------------------------------------
+
+describe('readMergeMode - fallback on missing file', () => {
+	test('returns "immediate" when file does not exist', () => {
+		const nonExistentPath = join(tmpDir, 'nonexistent.toml');
+		expect(readMergeMode(nonExistentPath)).toBe('immediate');
+	});
+});
+
+describe('readMergeMode - fallback on missing [ship] section', () => {
+	test('returns "immediate" when [ship] section is absent', () => {
+		const path = writeTmpToml(`
+issue_system = "none"
+backend = "claude"
+`);
+		expect(readMergeMode(path)).toBe('immediate');
+	});
+});
+
+describe('readMergeMode - fallback on missing merge_mode key', () => {
+	test('returns "immediate" when merge_mode key is absent from [ship]', () => {
+		const path = writeTmpToml(`
+[ship]
+other_key = "some-value"
+`);
+		expect(readMergeMode(path)).toBe('immediate');
+	});
+});
+
+describe('readMergeMode - fallback on malformed TOML', () => {
+	test('returns "immediate" when TOML is malformed', () => {
+		const path = writeTmpToml(`
+[ship
+merge_mode = "ci-gated"
+`);
+		expect(readMergeMode(path)).toBe('immediate');
+	});
+});
+
+describe('readMergeMode - fallback on non-"ci-gated" values', () => {
+	test('returns "immediate" when value is an unrecognized string', () => {
+		const path = writeTmpToml(`
+[ship]
+merge_mode = "unknown-value"
+`);
+		expect(readMergeMode(path)).toBe('immediate');
+	});
+
+	test('returns "immediate" when value is a number', () => {
+		const path = writeTmpToml(`
+[ship]
+merge_mode = 1
+`);
+		expect(readMergeMode(path)).toBe('immediate');
+	});
+
+	test('returns "immediate" when value is a boolean', () => {
+		const path = writeTmpToml(`
+[ship]
+merge_mode = true
+`);
+		expect(readMergeMode(path)).toBe('immediate');
+	});
+
+	test('returns "immediate" when value is empty string', () => {
+		const path = writeTmpToml(`
+[ship]
+merge_mode = ""
+`);
+		expect(readMergeMode(path)).toBe('immediate');
+	});
+});
+
+describe('readMergeMode - configPath override', () => {
+	test('uses configPath arg instead of cwd default', () => {
+		const path = writeTmpToml(`
+[ship]
+merge_mode = "ci-gated"
+`);
+		expect(readMergeMode(path)).toBe('ci-gated');
 	});
 });
