@@ -1,24 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-009",
-    "title": "CAM-73 absorption: correct stale branch_protection premise + new recovery-runbook scenario"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-101-configurable-merge-mode",
-  "timestamp": "2026-06-27T00:15:00Z",
+  "timestamp": "2026-06-27T01:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/agent-readiness.md",
-    "docs/recovery-runbook.md"
+    ".claude/commands/cam-ship.md",
+    "templates/commands/cam-ship.md",
+    "src/vendor/_generated.ts",
+    "test/vendor/cam-ship-hygiene.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-009 was a doc-only story. Two changes: (1) docs/agent-readiness.md line 28 (Development Workflow table row) and lines 36-37 (judgment call note) -- both 'free private plan' references replaced; the repo is public and branch protection is available (used by ci-gated mode, CAM-101 absorbing CAM-73). (2) docs/recovery-runbook.md gained scenario ## (t) covering CAM-101 ci-gated merge mode: stuck CI (BLOCKED mergeStateStatus), sidecar merge-watch states (merge-watch-watching, merge-watch-merged, merge-watch-ci-red, merge-watch-post-merge-done), and the gh-api verify+warn fallback when the caller lacks admin rights for configureBranchProtection. Follows the lettered format of the existing (s) scenario. 1644 tests all pass.",
+  "nextStoryContext": "US-R1-001 fixed the dead ci-gated pipeline: cam-ship.md ci-gated Step 7 now instructs the orchestrator to write .claude/.cam-merge-watch.json (prNumber + mergedBranch) after gh pr create, using 'gh pr view --json number --jq .number' to capture the PR number. Both runtime (.claude/commands/) and template (templates/commands/) copies updated, vendor embed regenerated. Three new hygiene tests in test/vendor/cam-ship-hygiene.test.ts guard the fix. 1646 tests all pass.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "url": "",
-      "fetchedAt": "2026-06-27T00:15:00Z",
-      "summary": "US-009 is a pure documentation story: two .md files edited, no source code or external library touched."
+      "lib": "gh CLI (gh pr view --json --jq)",
+      "version": "current",
+      "url": "https://cli.github.com/manual/gh_pr_view",
+      "fetchedAt": "2026-06-27T01:00:00Z",
+      "status": "ok",
+      "summary": "gh pr view --json number --jq '.number' outputs just the PR number (e.g. 21) when on a branch with an open PR. Syntax confirmed correct."
     }
   ]
 }
