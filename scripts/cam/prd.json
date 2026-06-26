@@ -34,7 +34,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/hooks/orch-agent-allowlist.sh, test/orch-agent-allowlist.test.ts. The hook is read at runtime from .claude/ by Claude Code; NO binary rebuild needed for it to take effect this session (rebuild only matters for downstream cam init, handled in US-002). Gate CAM_SESSION at the top: `if [ -z \"${CAM_SESSION:-}\" ]; then exit 0; fi` BEFORE the payload read. Replace the name `case` with capability policy: ALLOW set {Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor, subagent-reviewer}, everything else (incl. absent/unknown) = DENY (default-deny preserved WITHIN scope). Security direction preserved: misread falls through to caller identity subagent-orchestrator (not in ALLOW set) -> DENY, never false allow. CRITICAL test fix (CAM-59/60 green-local!=green-CI class): runHook today does NOT pass env to Bun.spawn so it inherits ambient CAM_SESSION (set locally, unset on CI). runHook MUST accept an explicit env override and pass `env:` to Bun.spawn; add a case that proves the UNSCOPED path (env built WITHOUT CAM_SESSION) ALLOWs general-purpose EVEN WHEN the parent process has CAM_SESSION set — locking that the test does not depend on inherited ambient CAM_SESSION. Project lesson (CLAUDE.md): 'comment does not prove behavior' — update the header-comment WITH the logic or it goes stale. Do NOT touch the three-path extraction logic. Skill: none beyond bash + bun:test."
     },
