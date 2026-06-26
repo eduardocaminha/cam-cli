@@ -1,25 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Review round 1 fix 002: address reviewer finding"
+    "id": "US-R1-003",
+    "title": "Review round 1 fix 003: address reviewer finding"
   },
   "branchName": "cam/CAM-101-configurable-merge-mode",
-  "timestamp": "2026-06-27T02:00:00Z",
-  "createdFiles": [
-    "test/integration/post-merge-on-main.test.ts"
-  ],
+  "timestamp": "2026-06-27T03:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/release/post-merge.ts",
-    "test/release/post-merge.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "src/release/merge-watch.ts",
+    "src/commands/sidecar.ts",
+    "test/release/merge-watch.test.ts",
+    "scripts/cam/prd.json"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "US-R1-002 fixed the post-merge checkout-main bug: runPostMerge now does git checkout main before git pull origin main (mirrors the must-be-on-main guard in tag.ts:66-79). Without this, git pull merges origin/main into the feature branch, rev-parse HEAD returns the feature SHA (wrong tag target), and branch -d fails because you cannot delete the checked-out branch. Added unit tests for checkout-main-failed path and a real-git integration test (test/integration/post-merge-on-main.test.ts) that verifies the tag SHA matches main HEAD and branchPrunedLocal is true. 1650 tests pass.",
+  "openQuestions": [
+    "check:all has pre-existing failures in lint (runPostMerge cognitive complexity in post-merge.ts) and file-size (src/supervisor/events.ts:344>290, src/ui/SetupScreen.tsx:290>254, test/vendor/cam-ship-hygiene.test.ts:91>50, src/commands/setup.ts:697>650). These were failing before US-R1-003 and are not introduced by this story. Next implementer should confirm if any of these need a budget raise."
+  ],
+  "nextStoryContext": "US-R1-003 fixed the merge-watch false ci-red bug: GitHub returns mergeStateStatus==BLOCKED while required checks are still pending/in-progress, not only on failure. The old code treated any OPEN+BLOCKED as terminal ci-red, stopping the watch before CI finished. The fix extends PrStatus with optional statusCheckRollup (now fetched via gh pr view --json state,mergeStateStatus,statusCheckRollup), adds hasFailedCheck() that looks at CheckRun conclusion and StatusContext state, and changes the BLOCKED guard: only emit ci-red when hasFailedCheck returns true; otherwise keep polling. 8 new tests added, 1654 tests pass total.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "GitHub GraphQL API (mergeStateStatus + statusCheckRollup)",
+      "version": "v4",
+      "url": "https://github.com/orgs/community/discussions/126484",
+      "fetchedAt": "2026-06-27T03:00:00Z",
+      "status": "ok",
+      "summary": "Confirmed: BLOCKED means one or more merge requirements not satisfied, including pending/in-progress checks. Not exclusive to failed checks. Fix correctly uses statusCheckRollup to distinguish pending from failed."
     }
   ]
 }

@@ -36,7 +36,7 @@
       "id": "US-R1-003",
       "title": "Review round 1 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [src/release/merge-watch.ts:217]: OPEN+mergeStateStatus==BLOCKED is treated as ci-red (narrate + stop). But GitHub returns BLOCKED while a required status check is still pending/in-progress, not only when it has failed (confirmed via GitHub docs/community). On the normal ci-gated happy path (CI takes minutes), the first BLOCKED poll stops the watch, narrates a false 'CI red', and never reaches MERGED, so the post-merge never runs. Distinguish pending vs failed (inspect statusCheckRollup / `gh pr checks` conclusion) instead of treating BLOCKED as terminal."
     },
     {
