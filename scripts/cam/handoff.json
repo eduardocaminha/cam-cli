@@ -1,25 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Deterministic Conventional-Commits bump parser"
+    "id": "US-002",
+    "title": "Compute next version (0.x convention) and atomically write version.ts + package.json"
   },
   "createdFiles": [
-    "src/release/bump.ts",
-    "test/release/bump.test.ts"
+    "src/release/version.ts",
+    "test/release/version.test.ts"
   ],
   "modifiedFiles": [
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 created src/release/bump.ts exporting classifyBump(subjects: string[]): BumpLevel and src/release/BumpLevel type. US-002 (computeNextVersion) should import from '../../src/release/bump' (BumpLevel, classifyBump). The 0.x breaking->minor demotion belongs in US-002's computeNextVersion, NOT in classifyBump. classifyBump returns raw 'major' for breaking changes regardless of current version.",
+  "nextStoryContext": "US-002 created src/release/version.ts exporting computeNextVersion(current, bump) and two pure text-transform writers: applyVersionToVersionTs(text, newVersion) and applyVersionToPackageJson(text, newVersion). US-003 (or whichever story reads next) should import from 'src/release/version.ts'. The 0.x demotion (major->minor for pre-1.0) lives exclusively in computeNextVersion. The two writer functions are DI-friendly pure transforms (no real fs); callers supply the file text and receive the updated text back.",
   "officialDocsValidated": [
     {
-      "lib": "Conventional Commits",
-      "version": "1.0.0",
-      "url": "https://www.conventionalcommits.org/en/v1.0.0/",
-      "fetchedAt": "2026-06-26T12:00:00Z",
-      "status": "ok",
-      "summary": "Spec confirmed: feat->MINOR, fix->PATCH, ! or BREAKING CHANGE: footer->MAJOR, all other types have no implicit SemVer effect. BREAKING CHANGE: token is uppercase followed by colon. Implementation matches exactly."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "src/release/version.ts imports only the project-internal bump.ts (BumpLevel type). No external npm library was used; no fetch needed."
     }
   ]
 }

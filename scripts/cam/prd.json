@@ -61,7 +61,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New: src/release/version.ts + test/release/version.test.ts. Baseline version is the LITERAL in src/version.ts (`0.1.2`), NOT the last git tag (real drift: tag is v0.1.1, version.ts is 0.1.2). The writer should be a pure transform on file text (take old text + new version, return new text) so it is testable without real fs, mirroring the DI'd style of src/commands/ship-finalize.ts. The version.ts edit must match the exact literal `export const CAM_VERSION = '0.1.2';` (single quotes, semicolon). package.json has `\"version\": \"0.1.2\"` at top level. test/version.test.ts tripwire asserts `minor >= 1` so any 0.2.x or higher passes; do not roll back below 0.1."
     },
