@@ -6,6 +6,8 @@
  * circular dependency.
  */
 
+import { printHint } from './color.ts';
+
 /**
  * Operator notice for the auto-merge prerequisite.
  * Printed unconditionally at cam init completion and referenced in config
@@ -17,11 +19,13 @@ export const AUTOMERGE_NOTICE =
 /**
  * Print the auto-merge prerequisite notice.
  *
- * writeFn defaults to process.stdout.write so callers can inject a
- * capture function in unit tests without monkey-patching the global.
+ * writeFn defaults to printHint (from color.ts), which is quiet-gated:
+ * the notice is suppressed when quiet mode is active (setQuiet(true)).
+ * Callers can inject a capture function in unit tests without
+ * monkey-patching the global.
  */
 export function printAutomergeNotice(
-  writeFn: (s: string) => void = (s) => process.stdout.write(s),
+  writeFn: (s: string) => void = printHint,
 ): void {
-  writeFn(`  ${AUTOMERGE_NOTICE}\n`);
+  writeFn(AUTOMERGE_NOTICE);
 }
