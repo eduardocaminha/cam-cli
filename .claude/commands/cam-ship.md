@@ -69,6 +69,12 @@ Steps:
      --base main
    ```
 
+   Then enable auto-merge (best-effort -- the PR is already created; do not abort if this fails):
+   ```bash
+   gh pr merge --auto --squash || echo "Prerequisite hint: go to Settings > General > Pull Requests and enable both 'Allow auto-merge' and 'Allow squash merging'. Once enabled, re-run: gh pr merge --auto --squash"
+   ```
+   <!-- cam-init: adaptation point -- downstream projects using merge-commit instead of squash should change `--squash` to `--merge` (or `--rebase`). -->
+
    PR body template:
    ```markdown
    ## Summary
