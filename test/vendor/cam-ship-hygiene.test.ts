@@ -47,3 +47,28 @@ test("embedded cam-ship.md gh pr merge --auto --squash is positioned after gh pr
   const createIdx = content!.indexOf("gh pr create");
   expect(mergeIdx).toBeGreaterThan(createIdx);
 });
+
+test("embedded cam-ship.md documents ci-gated merge mode branching after gh pr merge", () => {
+  const content = templatesContents[SHIP_KEY];
+  expect(content).toBeDefined();
+  expect(content).toContain("ci-gated");
+});
+
+test("embedded cam-ship.md ci-gated path instructs skipping inline pull/tag/prune", () => {
+  const content = templatesContents[SHIP_KEY];
+  expect(content).toBeDefined();
+  expect(content).toContain("Do NOT run pull/tag/prune inline");
+});
+
+test("embedded cam-ship.md ci-gated path states sidecar completes post-merge autonomously", () => {
+  const content = templatesContents[SHIP_KEY];
+  expect(content).toBeDefined();
+  expect(content).toContain("sidecar detects the CI-merged event");
+});
+
+test("embedded cam-ship.md immediate mode is documented as the unchanged path", () => {
+  const content = templatesContents[SHIP_KEY];
+  expect(content).toBeDefined();
+  expect(content).toContain("immediate");
+  expect(content).toContain("post-merge by hand as today");
+});
