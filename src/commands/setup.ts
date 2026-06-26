@@ -231,7 +231,7 @@ function copyTemplates(cwd: string): void {
  * templates. For new projects it includes the user's description; for existing
  * ones it instructs the agent to infer from the codebase.
  */
-function buildSetupPrompt(opts: {
+export function buildSetupPrompt(opts: {
 	projectMode: ProjectMode;
 	description: string;
 }): string {
@@ -248,6 +248,10 @@ function buildSetupPrompt(opts: {
 		'3. Update .claude/agents/subagent-planner.md: project name, stack, domain terms.',
 		'4. Update .claude/agents/subagent-reviewer.md checklist: real framework, auth, data patterns.',
 		'5. Update .claude/agents/subagent-implementer.md: real quality-gate commands.',
+		'   Adaptation point: `bun run check:all` is cam\'s aggregate quality gate.',
+		'   Map it to this project\'s equivalent aggregate gate when one exists',
+		'   (e.g. `make check`, `poe test-all`, `./gradlew check`);',
+		'   degrade to typecheck + test when no aggregate gate exists.',
 		'6. Update .claude/agents/subagent-auditor.md § F.domain: project-specific sanity checks.',
 		'7. Replace ALL occurrences of generic placeholder text (e.g. "<project typecheck command>").',
 		'8. Do NOT modify scripts/cam/journal.md — it is managed by the orchestrator at runtime.',

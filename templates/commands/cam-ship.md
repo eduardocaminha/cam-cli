@@ -31,6 +31,7 @@ Steps:
    ```bash
    bun run check:all
    ```
+   <!-- cam-init: adaptation point -- `bun run check:all` is cam-cli's own aggregate quality gate. When installing this command in a downstream project, map it to that project's equivalent aggregate gate (e.g. `make check`, `poe test-all`, `./gradlew check`); degrade to typecheck + test when no aggregate gate exists. -->
    Fix any failures before proceeding.
 
    If `check:all` fails on a **ratchet gate** (file-size ceiling or coverage floor) because the story represents LEGITIMATE growth, raise the ratchet and retry -- do not dead-end:
