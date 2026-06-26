@@ -1,18 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Doc Maintenance: single-pusher invariant in patterns.md and recovery-runbook"
+    "id": "US-005",
+    "title": "Guard test: the sidecar is the sole emitter of `[cam]` narration"
   },
-  "createdFiles": [],
+  "createdFiles": [
+    "test/single-pusher-guard.test.ts"
+  ],
   "modifiedFiles": [
-    "scripts/cam/patterns.md",
-    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [
     "templates/commands/cam-next.md still describes the old task-prompt injection behavior. This was explicitly out of scope for US-004 per the story notes; file a follow-up to update it."
   ],
-  "nextStoryContext": "US-004 corrected pattern 28 (Idle-guarantee) to remove cam next from the sendKeysWhenIdle list, added a new single-pusher invariant bullet to patterns.md (SOLE emitter oracle satisfied), and added section (p) to docs/recovery-runbook.md documenting the single-pusher invariant and the glued-double-push diagnostic. No code changes; all 1372 tests pass. The sidecar-sole-pusher branch is clean: US-001, US-002, US-003, US-004 all pass.",
+  "nextStoryContext": "US-005 added test/single-pusher-guard.test.ts (4 tests, 23 expects) asserting makeNotifyOrchestrator is the SOLE emitter of [cam] narration lines. Both standing regression guards (oracle 1: no narration builders in src/commands; oracle 2: no send-keys in subagent-implementer.md) confirmed passing. All 1376 tests pass, typecheck clean. The sidecar-sole-pusher branch is complete: US-001 through US-005 all pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
