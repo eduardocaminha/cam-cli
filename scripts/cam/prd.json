@@ -138,7 +138,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (the sidecar/supervisor terminal states today are complete|awaiting-operator|blocked|max-iterations; add the merge-watch as a new state/path, reusing the notifyOrchestrator(line) send-keys seam from CAM-70/78 — do NOT invent a new narration channel, single-pusher invariant CAM-78) + src/commands/sidecar.ts (runSidecar polls the active flag; thread the merge-watch with injectable gh-poll + post-merge fns). GOTCHA 2: ci-gated introduces ASYNCHRONY — the orchestrator must NOT assume immediate merge; the sidecar (survives between orchestrator turns) owns the wait. Poll `gh pr view <N> --json state,mergeStateStatus`; MERGED -> run US-006 + narrate; CI-red/closed-not-merged -> narrate + stop (operator fixes, new push re-runs CI, merge lands, sidecar completes). Reuse the PR number source the ship path already knows. Keep injectable SpawnFn / poll fn so the integration test is hermetic (fakes lie about tmux — see lessons; prefer a tmux-introspect-style check where feasible, but unit-level fakes are fine for the gh-poll state machine)."
     },

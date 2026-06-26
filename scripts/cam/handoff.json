@@ -1,23 +1,31 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Deterministic post-merge invocable (pull origin main + tag-on-main + prune local/remote)"
+    "id": "US-007",
+    "title": "Sidecar merge-watch state: poll PR for MERGED then run post-merge + narrate"
   },
   "branchName": "cam/CAM-101-configurable-merge-mode",
-  "timestamp": "2026-06-26T23:30:00Z",
+  "timestamp": "2026-06-26T23:45:00Z",
   "createdFiles": [
-    "src/release/post-merge.ts",
-    "test/release/post-merge.test.ts"
+    "src/release/merge-watch.ts",
+    "test/release/merge-watch.test.ts"
   ],
   "modifiedFiles": [
-    "scripts/cam/prd.json"
+    "src/supervisor/loop.ts",
+    "src/commands/sidecar.ts",
+    "scripts/cam/prd.json",
+    "scripts/file-size-budget.json",
+    "knip.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 added src/release/post-merge.ts: runPostMerge(opts) with injectable SpawnFn and ReadVersionFileFn. Steps: (1) git pull origin main, (2) read version from src/version.ts on disk after pull (not CAM_VERSION binary constant), (3) idempotent tag vX.Y.Z (tag -l check, then tag + push if absent), (4) best-effort branch prune local and remote. Returns PostMergeOutcome = { ok: true; pulledSha, tag, tagCreated, branchPrunedLocal, branchPrunedRemote } | { ok: false; reason }. No journal writes. 15 tests all pass. US-007 will wire this into the sidecar merge-watch path (poll gh pr view, on MERGED call runPostMerge, narrate via notifyOrchestrator).",
+  "nextStoryContext": "US-007 added src/release/merge-watch.ts: runMergeWatch(opts) with injectable GhPollFn and PostMergeFn. Poll loop: state==MERGED -> runPostMerge + narrate; state==CLOSED -> narrate closed-not-merged + stop; OPEN+BLOCKED -> narrate CI red + stop; null (gh error) -> silent retry; OPEN+other -> keep polling; maxPolls exhausted -> narrate timeout + stop. Wired into RunSidecarLoopOptions.runMergeWatchFn (idle-tick call in runSidecarLoop) and SidecarOptions.runMergeWatchFn (production: reads .claude/.cam-merge-watch.json, only under ci-gated mode; immediate leaves field absent = inert). The MERGE_WATCH_FILENAME constant is '.cam-merge-watch.json'. The orchestrator (cam-ship.md Step 7 ci-gated) is expected to write this file with { prNumber, mergedBranch } before handing off to the sidecar. Also added gh to knip.json ignoreBinaries. 1639 tests all pass.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "gh CLI + GitHub GraphQL MergeStateStatus",
+      "version": "gh 2.x / GitHub GraphQL v4",
+      "url": "https://developer.github.com/v4/enum/mergestatestatus",
+      "fetchedAt": "2026-06-26T23:45:00Z",
+      "status": "ok",
+      "summary": "gh pr view --json state,mergeStateStatus confirmed. PullRequest.state values: OPEN, MERGED, CLOSED. MergeStateStatus values: BLOCKED (CI failing/admin enforced), CLEAN, CONFLICTING, DRAFT, BEHIND, UNKNOWN. No UNSTABLE or MERGED in MergeStateStatus (MERGED is a PullRequest.state). Implementation correctly handles all cases: BLOCKED -> ci-red, MERGED state -> post-merge, CLOSED state -> closed-not-merged, all others -> keep polling."
     }
   ]
 }
