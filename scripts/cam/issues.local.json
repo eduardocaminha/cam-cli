@@ -1,5 +1,5 @@
 {
-  "next_id": 104,
+  "next_id": 105,
   "issues": [
     {
       "id": "CAM-1",
@@ -863,6 +863,14 @@
       "createdAt": "2026-06-26T19:47:13.644Z",
       "description": "Surgida no review do CAM-101 (SUGGESTION carregada nos rounds 1-3, nao-bloqueante, deferida pelo operador 2026-06-26).\n\nPROBLEMA: runMergeWatchFn e awaited no idle tick e (via Bun.sleepSync) bloqueia o outer loop do sidecar por ate maxPolls*pollIntervalMs (default ~4h). Durante a watch, os checks de active-flag e de session-health NAO rodam. Se o host do cam run morre no meio da watch, o sidecar nao se auto-encerra ate a watch terminar (cam stop ainda o mata via PID file, entao nao e leak permanente, mas a auto-saida por sessao-morta CAM-67 fica suspensa durante a janela da watch).\n\nONDE: src/supervisor/loop.ts:1247 (runMergeWatchFn awaited no tick idle) + src/release/merge-watch.ts (o loop de poll com Bun.sleepSync).\n\nFIX SUGERIDO: interleave o session-health check (has-session da propria sessao tmux) entre os polls, OU bound a duracao da watch a algo bem menor que 4h e re-entrar no outer loop entre janelas, preservando o self-exit do CAM-67. O state da watch (.claude/.cam-merge-watch.json) e duravel, entao re-entrar entre janelas e barato.\n\nPRIORIDADE: P3. Severity SUGGESTION no review; o caminho ci-gated funciona, isto e robustez de borda.",
       "priority": 3
+    },
+    {
+      "id": "CAM-104",
+      "title": "cam init nao-interativo trava no prompt de merge_mode (regressao CAM-101): smoke do build pendura + ask() nao trata EOF do readline",
+      "state": "open",
+      "createdAt": "2026-06-26T20:09:03.636Z",
+      "description": "REGRESSAO introduzida pelo CAM-101 US-003 (merge_mode no fluxo do cam init). Descoberta viva 2026-06-26: o smoke do build-release.sh (AC4) travou ~12min e teve que ser morto a mao; o install so completou apos SIGKILL.\n\nDUAS CAMADAS:\n(1) build-release.sh smoke roda `dist/cam-darwin-arm64 init --no-tmux --existing --issue-system none </dev/null`, fornecendo projectMode+issueSystem via flag mas NAO mergeMode. US-003 adicionou o flag --merge-mode (setup.ts:664) mas nao atualizou o smoke pra passa-lo, entao needsMerge=true quebra o early-return de collectSetupAnswers (setup.ts:108) e forca um prompt. Antes do CAM-101 o smoke fornecia TODAS as respostas via flag e retornava sem prompt.\n(2) Bug latente exposto: ask()/askChoice() (setup.ts:68-77) so resolvem no evento readline `line`; NAO ha handler de `close`/EOF. Com stdin=/dev/null (EOF imediato) o callback de question nunca dispara e a Promise nunca resolve -> hang infinito, em vez de cair no default. Qualquer `cam init` nao-interativo (CI, piped, stdin fechado) que alcance um prompt readline pendura.\n\nFIX (qualquer um/ambos): (a) build-release.sh smoke passa `--merge-mode immediate` (unblock rapido do build); (b) ask()/askChoice() registram rl.on(\"close\") resolvendo no default (fix robusto pra contextos nao-interativos). Recomendo AMBOS: (b) e a correcao de raiz, (a) e cinto-e-suspensorio + alinha o smoke.\n\nONDE: scripts/build-release.sh (smoke AC4, ~linha 115), src/commands/setup.ts (ask linha 68, askChoice linha 78, collectViaReadline linha 123).\n\nGUARD: um teste que roda `cam init --existing --issue-system none </dev/null` (sem --merge-mode) com timeout e exige exit (nao hang). Classe: a lição 2026-06-06 (smoke do build nunca trava) + nova lição (readline deve tratar EOF; novo answer obrigatorio no init exige atualizar o smoke E ter flag).\n\nPRIORIDADE: P1. Trava o build (bun run build:release) e o cam init nao-interativo downstream.",
+      "priority": 1
     }
   ]
 }
