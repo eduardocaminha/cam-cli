@@ -30,6 +30,34 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/release/ship-bump.ts:173]: runShipBump never checks the exit status of `git add` / `git commit`. spawnSync does NOT throw on non-zero exit, and dispatchShip's try/catch only catches thrown errors, so a failed commit (e.g. a pre-commit hook failure, which this repo uses) is swallowed: the step still prints the success result line and returns a result claiming the bump succeeded, leaving src/version.ts, package.json and CHANGELOG.md modified-but-uncommitted. Diverges from the project pattern: finalizeCycleClose guards with `git diff --cached --quiet` and runTag checks `.status` on every git call."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [index.ts:847]: US-007 AC-2 gap: production _buildBumpOpts does not wire `writeEvent`, so the structured {from,to,bumpType,commitsClassified} event is computed and then discarded (opts.writeEvent?.() is a no-op) on every real `cam ship --bump`. It is never appended to .claude/cam-worker-events.jsonl. The two sibling US-007 emitters wire it via makeFileEventLogger (src/commands/run.ts:374, src/supervisor/review.ts:359, src/supervisor/loop.ts:671); the bump path is the lone omission. Only the emitOk result line is emitted in production; the AC-2 oracle (grep on the test file) passes but the deliverable is unwired in the real command."
+    },
+    {
+      "id": "US-R1-003",
+      "title": "Review round 1 fix 003: address reviewer finding",
+      "priority": 3,
+      "passes": false,
+      "notes": "WARNING [docs/recovery-runbook.md:1321]: Recovery runbook r.1 (line 1321) and r.4 (line 1381) instruct the operator to write `export const CAM_VERSION = \"X.Y.Z\";` with DOUBLE quotes, but src/version.ts uses single quotes and both bump regexes only match single quotes (ship-bump.ts:105 VERSION_TS_RE and version.ts:57 applyVersionToVersionTs). Following the runbook leaves version.ts in a form the next `cam ship --bump` cannot parse (currentVersion silently falls back to 0.0.0) or rewrite (replace no-ops). Use single quotes to match the literal the tooling requires."
+    },
+    {
+      "id": "US-R1-004",
+      "title": "Review round 1 fix 004: address reviewer finding",
+      "priority": 4,
+      "passes": false,
+      "notes": "WARNING [test/ship-args.test.ts]: US-003 AC-1 routing is untested: no test asserts parseShipArgs(['--bump']) returns {bump:true} nor that dispatchShip({finalize:false,bump:true},{bumpFn}) calls bumpFn, returns 0, and does NOT call runShip. The dispatchShip docstring claims it is 'Exported so unit tests can inject fakes for all branches' and the symmetric --finalize path has explicit 'never calls runShip' coverage, but the injectable bumpFn is exercised by zero tests. runShipBump itself is well covered; only the dispatch glue is uncovered."
+    },
+    {
       "id": "US-001",
       "title": "Deterministic Conventional-Commits bump parser",
       "description": "As a release engineer, I need a pure-regex classifier that maps a list of commit subjects to a single bump level so that the version bump is fully deterministic with no model or subagent involvement.",
@@ -42,7 +70,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "New module: src/release/bump.ts + test/release/bump.test.ts (neither dir exists yet, create them). The major result here is the raw SIGNAL only; the 0.x demotion to minor happens in US-002's computeNextVersion, NOT here, so this function still returns 'major' for feat!/BREAKING. Branch commit convention is `feat: US-007 - ...` (verified: git log shows these per-story subjects). noUncheckedIndexedAccess is on: regex capture groups are T | undefined, guard them. BREAKING CHANGE detection must match the footer token in a subject string; subjects come from `git log --pretty=%s` (single-line) so match the literal `BREAKING CHANGE:` substring."
@@ -60,7 +88,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "New: src/release/version.ts + test/release/version.test.ts. Baseline version is the LITERAL in src/version.ts (`0.1.2`), NOT the last git tag (real drift: tag is v0.1.1, version.ts is 0.1.2). The writer should be a pure transform on file text (take old text + new version, return new text) so it is testable without real fs, mirroring the DI'd style of src/commands/ship-finalize.ts. The version.ts edit must match the exact literal `export const CAM_VERSION = '0.1.2';` (single quotes, semicolon). package.json has `\"version\": \"0.1.2\"` at top level. test/version.test.ts tripwire asserts `minor >= 1` so any 0.2.x or higher passes; do not roll back below 0.1."
@@ -78,7 +106,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Edit index.ts: parseShipArgs (line ~730) add `--bump`; dispatchShip (line ~764) add the bump branch with injectable deps like _buildFinalizeOpts. New step module e.g. src/release/ship-bump.ts (in-process, DI'd spawnFn/clock, hermetically testable, no real git). New test/release/ship-bump.test.ts. Edit BOTH mirror docs (.claude/commands/cam-ship.md + templates/commands/cam-ship.md, currently byte-identical per diff -q) inserting the bump step after Step 3; then run `bun run embed-vendor` to regenerate src/vendor/_generated.ts and verify with `bun run embed-vendor:check`. The bump COMMITS before the push step (Step 5 in cam-ship.md). This story touches templates/ so embed-vendor:check is mandatory. Classification source is the BRANCH (main..HEAD), never v<lasttag>..HEAD on main (main commits are non-conventional CAM-NN/chore(cam) and would under-count)."
@@ -95,7 +123,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "New: src/release/changelog.ts + test/release/changelog.test.ts. CHANGELOG.md current format (verified): a `---` rule, then `## [Unreleased]` with `### Added` / `### Changed` subsections; releases use `## [version] - YYYY-MM-DD`. The transform should locate the literal `## [Unreleased]` line and replace/insert; do not regex over the whole doc destructively. US-006 fills the section BODY from commits; US-004 only does the heading roll + preserve. Date string is injected (ClockFn from US-003), never `new Date()` inside the pure function, so the test is deterministic."
@@ -112,7 +140,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "New: src/commands/tag.ts + test/release/tag.test.ts, plus a `case 'tag':` in index.ts switch (dispatch by argv[2], line ~901) and a TAG_HELP renderHelp block + an entry in the top-level HELP Commands list. greenfield: scripts/build-release.sh today only READS version.ts and does NOT tag, so no collision. DI'd spawn pattern is exactly finalizeCycleClose's SpawnFn type. Guards: `git rev-parse --abbrev-ref HEAD` == main; `git status --porcelain` empty; `git tag -l vX.Y.Z` empty before creating. This runs POST-merge on main (the operator runs it after the PR squash-merges), which is why it is a separate command, not part of ship."
@@ -129,7 +157,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 10,
       "passes": true,
       "requires": null,
       "notes": "Extends src/release/changelog.ts + test/release/changelog.test.ts (and wires into src/release/ship-bump.ts from US-003). Deterministic from `git log main..HEAD --pretty=%s` (same source as US-003 classification). Reuse US-001's classification rather than re-parsing prefixes ad hoc. Subject text under each bullet should strip the `type(scope)!:` prefix so the bullet reads as prose; keep it simple, no model. The existing hand-maintained `## [Unreleased]` body in CHANGELOG.md was last touched weeks ago and is stale, which is why we generate from commits."
@@ -145,7 +173,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 11,
       "passes": true,
       "requires": null,
       "notes": "Touches src/release/ship-bump.ts (result type + emitOk call) and its test. emitOk signature is `emitOk(msg: string, suffix?: string)` (src/logging/screen.ts:66). Event log .claude/cam-worker-events.jsonl is supervisor-owned/appended; this story records the bump detail in the same `{ts, uuid|source, kind, detail}` line shape (see ship-finalize.ts CAM-71 emitOk precedent and worker-events samples). Keep the result line shape stable (a test pins it); cite that in a code comment like ship-finalize.ts line ~204 does."
@@ -161,7 +189,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 8,
+      "priority": 12,
       "passes": true,
       "requires": null,
       "notes": "Doc/markdown only. docs/recovery-runbook.md currently runs scenarios `## (a)` through `## (q)` (verified by grep); append `## (r)`. Persisted .md files must follow the project rule: NO em-dash and NO decorative emoji in human-readable .md (use colon/comma/period). The 1.0.0 escape hatch: the operator edits version.ts manually to 1.0.0; the auto-bump never emits it. Keep the prose tight; the runbook is long (1280 lines)."
@@ -177,10 +205,52 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 9,
+      "priority": 13,
       "passes": false,
       "requires": "operator",
       "notes": "Operator ceremony: requires a real squash-merge on GitHub, a post-merge `cam tag` push to origin, and human eyeballing of `cam --version` against a freshly built/installed binary. The CAM_VERSION literal is embedded at build time, so the operator must rebuild/reinstall (build-release.sh --install or bun index.ts) before `cam --version` reflects the bump. This story does NOT block the review cycle; the loop exits awaiting-operator and the operator flips passes:true after the ceremony. Coherence note: the sidecar binary must match the branch code for the new --bump/tag paths to exist."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:4",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/release/ship-bump.ts",
+        "line": 173,
+        "text": "runShipBump never checks the exit status of `git add` / `git commit`. spawnSync does NOT throw on non-zero exit, and dispatchShip's try/catch only catches thrown errors, so a failed commit (e.g. a pre-commit hook failure, which this repo uses) is swallowed: the step still prints the success result line and returns a result claiming the bump succeeded, leaving src/version.ts, package.json and CHANGELOG.md modified-but-uncommitted. Diverges from the project pattern: finalizeCycleClose guards with `git diff --cached --quiet` and runTag checks `.status` on every git call."
+      },
+      {
+        "severity": "WARNING",
+        "file": "index.ts",
+        "line": 847,
+        "text": "US-007 AC-2 gap: production _buildBumpOpts does not wire `writeEvent`, so the structured {from,to,bumpType,commitsClassified} event is computed and then discarded (opts.writeEvent?.() is a no-op) on every real `cam ship --bump`. It is never appended to .claude/cam-worker-events.jsonl. The two sibling US-007 emitters wire it via makeFileEventLogger (src/commands/run.ts:374, src/supervisor/review.ts:359, src/supervisor/loop.ts:671); the bump path is the lone omission. Only the emitOk result line is emitted in production; the AC-2 oracle (grep on the test file) passes but the deliverable is unwired in the real command."
+      },
+      {
+        "severity": "WARNING",
+        "file": "docs/recovery-runbook.md",
+        "line": 1321,
+        "text": "Recovery runbook r.1 (line 1321) and r.4 (line 1381) instruct the operator to write `export const CAM_VERSION = \"X.Y.Z\";` with DOUBLE quotes, but src/version.ts uses single quotes and both bump regexes only match single quotes (ship-bump.ts:105 VERSION_TS_RE and version.ts:57 applyVersionToVersionTs). Following the runbook leaves version.ts in a form the next `cam ship --bump` cannot parse (currentVersion silently falls back to 0.0.0) or rewrite (replace no-ops). Use single quotes to match the literal the tooling requires."
+      },
+      {
+        "severity": "WARNING",
+        "file": "test/ship-args.test.ts",
+        "text": "US-003 AC-1 routing is untested: no test asserts parseShipArgs(['--bump']) returns {bump:true} nor that dispatchShip({finalize:false,bump:true},{bumpFn}) calls bumpFn, returns 0, and does NOT call runShip. The dispatchShip docstring claims it is 'Exported so unit tests can inject fakes for all branches' and the symmetric --finalize path has explicit 'never calls runShip' coverage, but the injectable bumpFn is exercised by zero tests. runShipBump itself is well covered; only the dispatch glue is uncovered."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/release/ship-bump.ts",
+        "line": 54,
+        "text": "ShipBumpOptions.cwd is declared and documented ('Absolute path to the project root') but never referenced in runShipBump; git commands rely entirely on the injected spawnFn's implicit process.cwd() (production _buildBumpOpts passes raw spawnSync with no `-C cwd`), unlike finalizeCycleClose which passes `git -C cwd` on every call. Works when run from the repo root but the cwd field is misleading dead code and a latent wrong-repo footgun."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/release/bump.ts",
+        "line": 48,
+        "text": "BREAKING CHANGE is detected only as a substring of the commit subject. Per the Conventional Commits spec the token normally lives in a footer (and `BREAKING-CHANGE` is an accepted synonym); since the classifier reads `git log --pretty=%s` (subject only), a breaking change documented only in the body/footer is missed. This is the PRD's deliberate scope (US-001 AC-3 says 'in any subject'), noted for awareness."
+      }
+    ]
+  }
 }

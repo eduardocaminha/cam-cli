@@ -28,6 +28,7 @@ import {
 	computeNextVersion,
 } from './version.ts';
 import { emitOk } from '../logging/screen.ts';
+import { printError } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency types (mirrored from ship-finalize.ts for isolation)
@@ -169,13 +170,33 @@ export function runShipBump(opts: ShipBumpOptions): ShipBumpResult {
 	const releaseBody = generateReleaseBody(subjects);
 	opts.writeChangelog(rollChangelog(opts.readChangelog(), newVersion, dateStr, releaseBody));
 
-	// Stage and commit.
-	opts.spawnFn('git', ['add', 'src/version.ts', 'package.json', 'CHANGELOG.md'], { encoding: 'utf8' });
-	opts.spawnFn(
+	// Stage and commit.  Check .status on both calls -- spawnSync does NOT throw
+	// on non-zero exit, so an unguarded call silently swallows pre-commit hook
+	// failures and leaves the modified files uncommitted (reviewer finding US-R1-001).
+	const addResult = opts.spawnFn(
+		'git',
+		['add', 'src/version.ts', 'package.json', 'CHANGELOG.md'],
+		{ encoding: 'utf8' },
+	);
+	if ((addResult.status ?? 1) !== 0) {
+		const stderr = (addResult.stderr ?? '').trim();
+		printError(`git add failed: ${stderr || '(no output)'}`);
+		throw new Error(`git add failed (exit ${addResult.status ?? 'null'})`);
+	}
+
+	const commitResult = opts.spawnFn(
 		'git',
 		['commit', '-m', `chore(release): bump version to ${newVersion}`],
 		{ encoding: 'utf8' },
 	);
+	if ((commitResult.status ?? 1) !== 0) {
+		const stderr = (commitResult.stderr ?? '').trim();
+		printError(
+			`git commit failed: ${stderr || '(no output)'}`,
+			'files are staged but not committed -- check pre-commit hook output',
+		);
+		throw new Error(`git commit failed (exit ${commitResult.status ?? 'null'})`);
+	}
 
 	// Emit structured result line -- shape is stable; test pins it (US-007).
 	// Do not change msg/suffix format without a CAM tracker reference.

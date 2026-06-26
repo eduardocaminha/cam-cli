@@ -294,6 +294,100 @@ describe('runShipBump - breaking change on 0.x version', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Tests: exit-status guards on git add / git commit (US-R1-001)
+// ---------------------------------------------------------------------------
+
+describe('runShipBump - git exit-status guards', () => {
+	/** Build a spawnFn that returns a non-zero exit for the specified git subcommand. */
+	function makeFailingSpawnFn(subjects: string[], failSubcmd: 'add' | 'commit') {
+		const calls: Array<{ cmd: string; args: string[] }> = [];
+		function spawnFn(cmd: string, args: string[], _opts: { encoding: 'utf8' }): import('node:child_process').SpawnSyncReturns<string> {
+			calls.push({ cmd, args });
+			if (cmd === 'git' && args[0] === 'log') {
+				return { stdout: subjects.join('\n'), stderr: '', status: 0, pid: 1, output: [null, subjects.join('\n'), ''], signal: null, error: undefined };
+			}
+			if (cmd === 'git' && args[0] === failSubcmd) {
+				return { stdout: '', stderr: 'hook rejected commit', status: 1, pid: 2, output: [null, '', 'hook rejected commit'], signal: null, error: undefined };
+			}
+			return { stdout: '', stderr: '', status: 0, pid: 3, output: [null, '', ''], signal: null, error: undefined };
+		}
+		return { spawnFn, calls };
+	}
+
+	test('throws when git add returns non-zero, does not emit success line', () => {
+		const { spawnFn } = makeFailingSpawnFn(['fix: something'], 'add');
+		const emitted: string[] = [];
+		const events: ShipBumpResult[] = [];
+		const opts: ShipBumpOptions = {
+			cwd: '/fake',
+			spawnFn,
+			clock: () => '2026-06-26T00:00:00.000Z',
+			readVersionTs: () => `export const CAM_VERSION = '0.1.2';\n`,
+			readPackageJson: () => '{\n  "version": "0.1.2"\n}\n',
+			writeVersionTs: () => {},
+			writePackageJson: () => {},
+			readChangelog: () => '# Changelog\n\n## [Unreleased]\n\n',
+			writeChangelog: () => {},
+			emitResultLine: (msg) => { emitted.push(msg); },
+			writeEvent: (e) => { events.push(e); },
+		};
+
+		expect(() => runShipBump(opts)).toThrow(/git add failed/);
+		// Success result line must NOT be emitted when git add fails.
+		expect(emitted.length).toBe(0);
+		expect(events.length).toBe(0);
+	});
+
+	test('throws when git commit returns non-zero (pre-commit hook), does not emit success line', () => {
+		const { spawnFn } = makeFailingSpawnFn(['fix: something'], 'commit');
+		const emitted: string[] = [];
+		const events: ShipBumpResult[] = [];
+		const opts: ShipBumpOptions = {
+			cwd: '/fake',
+			spawnFn,
+			clock: () => '2026-06-26T00:00:00.000Z',
+			readVersionTs: () => `export const CAM_VERSION = '0.1.2';\n`,
+			readPackageJson: () => '{\n  "version": "0.1.2"\n}\n',
+			writeVersionTs: () => {},
+			writePackageJson: () => {},
+			readChangelog: () => '# Changelog\n\n## [Unreleased]\n\n',
+			writeChangelog: () => {},
+			emitResultLine: (msg) => { emitted.push(msg); },
+			writeEvent: (e) => { events.push(e); },
+		};
+
+		expect(() => runShipBump(opts)).toThrow(/git commit failed/);
+		// Success result line must NOT be emitted when commit fails.
+		expect(emitted.length).toBe(0);
+		expect(events.length).toBe(0);
+	});
+
+	test('no-op path (bumpType none) does not reach git add/commit, so no status check needed there', () => {
+		// Sanity: make sure the no-op path still works even with a "failing" spawnFn
+		// because no add/commit is invoked.
+		const { spawnFn } = makeFailingSpawnFn([], 'commit');
+		const emitted: string[] = [];
+		const opts: ShipBumpOptions = {
+			cwd: '/fake',
+			spawnFn,
+			clock: () => '2026-06-26T00:00:00.000Z',
+			readVersionTs: () => `export const CAM_VERSION = '0.1.2';\n`,
+			readPackageJson: () => '{\n  "version": "0.1.2"\n}\n',
+			writeVersionTs: () => {},
+			writePackageJson: () => {},
+			readChangelog: () => '# Changelog\n\n## [Unreleased]\n\n',
+			writeChangelog: () => {},
+			emitResultLine: (msg) => { emitted.push(msg); },
+		};
+
+		const result = runShipBump(opts);
+		expect(result.bumpType).toBe('none');
+		// No-op path still emits its own result line.
+		expect(emitted.length).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Tests: git log command shape (AC-1)
 // ---------------------------------------------------------------------------
 
