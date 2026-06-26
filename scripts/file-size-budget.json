@@ -1,5 +1,5 @@
 {
-  "_ref": "CAM-88 (setup-agent flags check:all adaptation): src/commands/setup.ts 642->646 (US-001 exported buildSetupPrompt + check:all adaptation guidance). Per-story worker runs only typecheck+tests so check:all file-size surfaces at ship (CAM-60 class). Prior CAM-89/91/78/77/86/79/75 (see git history).",
+  "_ref": "CAM-84 (cam ship auto-merge + init/config prerequisite notice): src/commands/setup.ts 646->650 (US-002 exported AUTOMERGE_NOTICE + printAutomergeNotice helper), test/vendor/cam-ship-hygiene.test.ts 40->50 (US-001 extended regression test: auto-merge invocation present + ordered after gh pr create). Per-story worker runs only typecheck+tests so check:all file-size surfaces at ship (CAM-60 class). Prior CAM-88/89/91/78/77/86/79/75 (see git history).",
   "scripts/check-all.ts": 171,
   "scripts/check-ci-parity.ts": 176,
   "scripts/check-coverage.ts": 261,
@@ -19,7 +19,7 @@
   "src/commands/retry-monitor.ts": 108,
   "src/commands/review.ts": 197,
   "src/commands/run.ts": 655,
-  "src/commands/setup.ts": 646,
+  "src/commands/setup.ts": 650,
   "src/commands/ship-finalize.ts": 218,
   "src/commands/ship.ts": 197,
   "src/commands/sidecar.ts": 269,
@@ -141,7 +141,7 @@
   "test/tmux-session.test.ts": 754,
   "test/toml.test.ts": 161,
   "test/transcript/usage.test.ts": 477,
-  "test/vendor/cam-ship-hygiene.test.ts": 40,
+  "test/vendor/cam-ship-hygiene.test.ts": 50,
   "test/vendor/check-agent-frontmatter-standalone.test.ts": 58,
   "test/version.test.ts": 84
 }

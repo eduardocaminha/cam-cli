@@ -33,3 +33,17 @@ test("embedded cam-ship.md Step 3 does NOT pin the partial-gate-only placeholder
   expect(content).toBeDefined();
   expect(content).not.toContain("<project typecheck command>");
 });
+
+test("embedded cam-ship.md contains gh pr merge --auto --squash", () => {
+  const content = templatesContents[SHIP_KEY];
+  expect(content).toBeDefined();
+  expect(content).toContain("gh pr merge --auto --squash");
+});
+
+test("embedded cam-ship.md gh pr merge --auto --squash is positioned after gh pr create", () => {
+  const content = templatesContents[SHIP_KEY];
+  expect(content).toBeDefined();
+  const mergeIdx = content!.indexOf("gh pr merge --auto --squash");
+  const createIdx = content!.indexOf("gh pr create");
+  expect(mergeIdx).toBeGreaterThan(createIdx);
+});

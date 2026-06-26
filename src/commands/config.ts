@@ -27,10 +27,28 @@ import {
 	rewriteFrontmatterModel,
 	FRONTMATTER_TARGET_PHASE_PATHS,
 } from '../templates/frontmatter.ts';
+import { printHint } from '../logging/color.ts';
+import { AUTOMERGE_NOTICE } from '../logging/notices.ts';
 import { ConfigScreen } from '../ui/ConfigScreen.tsx';
 import type { ConfigChoices } from '../ui/ConfigScreen.tsx';
 
 export type { ConfigChoices };
+
+// ---------------------------------------------------------------------------
+// Auto-merge notice (exported seam for unit tests)
+// ---------------------------------------------------------------------------
+
+/**
+ * Print the auto-merge prerequisite notice via printHint.
+ *
+ * Accepts an optional hintFn so tests can capture the output without
+ * monkey-patching process.stdout (defaults to printHint from color.ts).
+ */
+export function printConfigAutomergeHint(
+	hintFn: (msg: string) => void = printHint,
+): void {
+	hintFn(AUTOMERGE_NOTICE);
+}
 
 // ---------------------------------------------------------------------------
 // Persistence helper (pure — no Ink, unit-testable without a live terminal)
@@ -180,6 +198,7 @@ function collectViaInk(configPath: string, cwd: string): Promise<number> {
 					return resolve(1);
 				}
 				mergeConfigChoices(configPath, result, cwd);
+				printConfigAutomergeHint();
 				return resolve(0);
 			})
 			.catch(() => resolve(1));

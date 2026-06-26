@@ -1398,3 +1398,57 @@ rule), `src/release/ship-bump.ts` (runShipBump, bump commit logic),
 `scripts/cam/CLAUDE.md` (Release Conventions section),
 `scripts/cam/patterns.md` (0.x semver convention placement bullet,
 cam ship --bump step placement bullet).
+
+## (s) CAM-84: cam ship enabled auto-merge but the PR did not merge
+
+Symptom: `cam ship` completed without error and the PR was created, but the
+pull request remains open and was never auto-merged. During the ship step the
+terminal printed a hint line similar to:
+
+```
+Prerequisite hint: go to Settings > General > Pull Requests and enable both
+'Allow auto-merge' and 'Allow squash merging'. Once enabled, re-run:
+gh pr merge --auto --squash
+```
+
+Cause: `gh pr merge --auto --squash` requires two settings to be enabled in
+the repository. When either is disabled, the command exits non-zero with a
+GraphQL `enablePullRequestAutoMerge` error. The `gh` manual does not document
+this failure mode. Because cam ship runs the step as
+`gh pr merge --auto --squash || echo "..."` (best-effort -- the PR is already
+created, so the failure is recoverable), the PR is created but the auto-merge
+flag is never set on GitHub.
+
+The two required settings are:
+
+- "Allow auto-merge" (Settings > General > Pull Requests)
+- "Allow squash merging" (Settings > General > Pull Requests)
+
+### Recovery
+
+1. Enable both settings in the repository (requires admin access):
+
+   GitHub repository > Settings > General > Pull Requests
+
+   - Check "Allow auto-merge"
+   - Check "Allow squash merging"
+
+2. Re-enable auto-merge on the open PR:
+
+   ```bash
+   gh pr merge --auto --squash <PR#>
+   ```
+
+   Replace `<PR#>` with the pull-request number shown when `gh pr create` ran
+   during the ship step. The PR will merge automatically once all required
+   status checks pass.
+
+3. If all checks have already passed and an immediate merge is preferred:
+
+   ```bash
+   gh pr merge --squash <PR#>
+   ```
+
+Cross-reference: `.claude/commands/cam-ship.md` Step 7 (the best-effort
+auto-merge call and hint), `scripts/cam/patterns.md` (gh pr merge --auto
+best-effort pattern bullet).
