@@ -1,0 +1,45 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-88-setup-agent-flag-check-all-adaptation",
+  "description": "cam init setup-agent explicitly flags `bun run check:all` as an adaptation point so downstream non-cam-cli projects map it to their aggregate gate or degrade to typecheck+test.",
+  "issueNumber": 88,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add check:all adaptation guidance to buildSetupPrompt",
+      "description": "As a downstream operator running `cam init` on a non-cam-cli project, I need the setup-agent prompt to explicitly flag `bun run check:all` as an adaptation point so that the agent maps it to my project's equivalent aggregate gate (or degrades to typecheck + test when none exists) instead of hardcoding a gate name my project does not have.",
+      "acceptanceCriteria": [
+        "The prompt returned by buildSetupPrompt() contains explicit guidance naming `bun run check:all` as an adaptation point. [oracle: bun test]",
+        "The new guidance instructs the setup-agent to EITHER map `check:all` to the destination project's equivalent aggregate gate OR degrade to `typecheck + test` when no aggregate gate exists. [oracle: bun test]",
+        "A unit test asserts the string returned by buildSetupPrompt() (for both 'new' and 'existing' project modes) contains the new check:all adaptation guidance. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "File: src/commands/setup.ts — buildSetupPrompt() is a PURE function returning a joined string; the numbered task list lives in the `base` array (~lines 238-257). Add the new adaptation instruction inside `base` (e.g. expand the item that already covers replacing generic placeholder text / real quality-gate commands at items 5 and 7), keeping the numbered list coherent. GOTCHA: buildSetupPrompt is currently NOT exported (`grep export ... buildSetupPrompt` returns nothing) — the implementer must export it so the unit test can call it directly. There is no `check:all` mention in setup.ts today, so the test can assert on the literal `check:all`. Test file: add to test/ (the existing setup test is test/setup-menu.test.ts; either extend it or add a sibling like test/setup-prompt.test.ts). Keep this story to source + test only; do NOT touch templates/ here (that is US-002)."
+    },
+    {
+      "id": "US-002",
+      "title": "Add cam-init adaptation marker to cam-ship.md template and re-embed",
+      "description": "As the setup-agent adapting an installed cam-ship.md in a downstream project, I need an explicit cam-init adaptation marker at the point where Step 3 hardcodes `bun run check:all` so that I get the adapt-or-degrade signal exactly where the gate is used, while cam-cli's own runtime copy stays clean.",
+      "acceptanceCriteria": [
+        "templates/commands/cam-ship.md carries a cam-init adaptation marker (an HTML comment) adjacent to the Step 3 `bun run check:all` gate (lines ~30-41) signalling the setup-agent to map check:all to the project's aggregate gate or degrade to typecheck + test. [oracle: grep -q 'cam-init' templates/commands/cam-ship.md]",
+        "The embedded templatesContents map in src/vendor/_generated.ts contains the adaptation marker for the commands/cam-ship.md template (regenerated, not hand-edited). [oracle: bun run embed-vendor:check]",
+        "The vendor/template embed parity gate passes, proving _generated.ts was regenerated from the template source. [oracle: bun run embed-vendor:check]",
+        "The grep confirms the adaptation marker is present in the embedded commands/cam-ship.md entry. [oracle: grep -q 'cam-init' src/vendor/_generated.ts]",
+        "The cam-cli runtime copy .claude/commands/cam-ship.md does NOT carry the adaptation marker, keeping cam-cli's own canonical gate copy clean. [oracle: file-assert: grep -L 'cam-init' .claude/commands/cam-ship.md returns the file (marker absent)]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: templates/commands/cam-ship.md (add the marker near Step 3, lines ~30-41 where `bun run check:all` is hardcoded); src/vendor/_generated.ts (REGENERATE via `bun run embed-vendor` — never hand-edit; the embedded map key is the literal string \"commands/cam-ship.md\"); embedded-template test under test/. DESIGN DECISION (justify in the marker/commit): put the marker ONLY in templates/commands/cam-ship.md (downstream-only guidance) and keep .claude/commands/cam-ship.md CLEAN — in cam-cli itself `check:all` IS the canonical gate (CAM-59/60), so an adaptation comment in cam-cli's own copy would be irrelevant noise. GOTCHA: `check:all` already appears once in _generated.ts (the existing cam-ship.md body), so the grep oracle targets the distinct marker token (e.g. 'cam-init'), NOT 'check:all'. After editing the template run `bun run embed-vendor` to regenerate, then `bun run embed-vendor:check` must pass (parity). Marker is an HTML comment in markdown (consumed by the setup-agent LLM), so no human-prose travessão/emoji constraints apply to it."
+    }
+  ]
+}
