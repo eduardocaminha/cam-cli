@@ -4,6 +4,13 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.3.0] - 2026-06-26
+
+### Added
+
+- US-002 - Add cam-init adaptation marker to cam-ship.md template and re-embed
+- US-001 - Add check:all adaptation guidance to buildSetupPrompt
+
 ## [0.2.0] - 2026-06-26
 
 ### Added
