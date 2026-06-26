@@ -1,25 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "CHANGELOG release-section roll (Unreleased -> versioned, fresh Unreleased)"
+    "id": "US-005",
+    "title": "cam tag: deterministic post-merge tag command on main"
   },
   "createdFiles": [
-    "src/release/changelog.ts",
-    "test/release/changelog.test.ts"
+    "src/commands/tag.ts",
+    "test/release/tag.test.ts"
   ],
   "modifiedFiles": [
-    "src/release/ship-bump.ts",
-    "test/release/ship-bump.test.ts",
     "index.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added rollChangelog() in src/release/changelog.ts (pure string-in/string-out transform: finds '## [Unreleased]', inserts fresh empty '## [Unreleased]' above, renames old heading to '## [X.Y.Z] - YYYY-MM-DD'). The bump step (ship-bump.ts) now reads CHANGELOG.md via readChangelog(), calls rollChangelog() with newVersion and dateStr (clock().slice(0,10)), writes via writeChangelog(), and includes CHANGELOG.md in the git add call. ShipBumpOptions gained readChangelog/writeChangelog. _buildBumpOpts in index.ts wires real fs calls. All 1480 tests pass. The next story (US-005 or higher priority) can import rollChangelog from src/release/changelog.ts if it needs to inspect or extend the CHANGELOG transform logic.",
+  "nextStoryContext": "US-005 added runTag() in src/commands/tag.ts (guards: branch==main, clean worktree, tag-not-exists; then git tag vX.Y.Z + git push origin vX.Y.Z; idempotent no-op if tag already exists; SpawnFn injectable pattern from finalizeCycleClose). index.ts gained case 'tag': dispatch, TAG_HELP renderHelp block, and a 'tag' entry in the top-level HELP Commands list. CAM_VERSION is read from src/version.ts. All 1487 tests pass. The next story is US-006: auto-generate CHANGELOG release-section body from classified branch commits (extends src/release/changelog.ts + wires into src/release/ship-bump.ts).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 only uses pure JS string operations (indexOf, slice, template literals). No external npm library was touched; no fetch needed."
+      "summary": "US-005 only uses node:child_process built-ins (SpawnSyncReturns type, spawnSync) and internal project modules (src/version.ts, src/logging/color.ts). No external npm library was touched; no fetch needed."
     }
   ]
 }
