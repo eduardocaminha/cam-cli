@@ -19,37 +19,44 @@
   ],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [docs/recovery-runbook.md:1476]: The (t) scenario still describes OPEN+BLOCKED as an unconditional terminal ci-red stop ('The sidecar stops the merge-watch loop when it detects mergeStateStatus == BLOCKED' + the state table row 'OPEN | BLOCKED -> narrate merge-watch-ci-red, stop'). The US-R1-003 fix changed the shipped behavior: merge-watch now keeps polling on OPEN+BLOCKED when checks are pending (statusCheckRollup has no failed check) and only stops on a confirmed failed check. The documented poll command 'gh pr view <N> --json state,mergeStateStatus' also omits statusCheckRollup (production requests it), and the example narration '[cam] merge-watch: CI red (BLOCKED) -- PR open, not merged' does not match the actual string '[cam] CI red, PR #N open, not merged'. The runbook now misleads an operator diagnosing a healthy in-progress (pending-CI) watch into believing the sidecar gave up. Sync the (t) table, the 'Recovery: CI is red (BLOCKED)' paragraph, the poll command, and the narration example with the post-US-R1-003 behavior."
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "notes": "CRITICAL [src/commands/sidecar.ts:287]: No producer writes .claude/.cam-merge-watch.json. The sidecar's runMergeWatchFn early-returns when the file is absent (existsSync guard), and the cam-ship.md ci-gated handoff never instructs the orchestrator to write it (prNumber + mergedBranch). No code writes it either. Result: in production the merge-watch (US-007) and its events (US-008) never engage; the autonomous post-merge never runs even though cam-ship.md ci-gated tells the orchestrator to skip the inline post-merge. The whole ci-gated pipeline is dead in production despite green unit tests (which call runMergeWatch directly)."
     },
     {
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "notes": "CRITICAL [src/release/post-merge.ts:104]: runPostMerge does `git pull origin main` without checking out main, then tags `git rev-parse HEAD`. After `cam ship` the working tree is on the feature branch, so the pull merges origin/main INTO the feature branch, the tag lands on the feature-branch HEAD (NOT main, violating the Release Conventions and US-006 AC), and `git branch -d <mergedBranch>` fails because you cannot delete the currently checked-out branch (branchPrunedLocal silently false while ok:true). runTag (tag.ts:66-79) has a 'must be on main' guard that this reimplementation dropped. No real-git integration test covers it; the fake-spawn unit test masks the defect."
     },
     {
       "id": "US-R1-003",
       "title": "Review round 1 fix 003: address reviewer finding",
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "notes": "CRITICAL [src/release/merge-watch.ts:217]: OPEN+mergeStateStatus==BLOCKED is treated as ci-red (narrate + stop). But GitHub returns BLOCKED while a required status check is still pending/in-progress, not only when it has failed (confirmed via GitHub docs/community). On the normal ci-gated happy path (CI takes minutes), the first BLOCKED poll stops the watch, narrates a false 'CI red', and never reaches MERGED, so the post-merge never runs. Distinguish pending vs failed (inspect statusCheckRollup / `gh pr checks` conclusion) instead of treating BLOCKED as terminal."
     },
     {
       "id": "US-R1-004",
       "title": "Review round 1 fix 004: address reviewer finding",
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "notes": "CRITICAL [src/commands/sidecar.ts:354]: US-008 structured events are not wired into the production merge-watch: the runMergeWatch call in sidecar.ts omits the logEvent argument, so merge-watch-watching/merged/ci-red/post-merge-done never reach .claude/cam-worker-events.jsonl in production. The logEvent sink is available in scope (sidecar.ts:259-260) but only passed to runSidecarLoop. The US-008 events test injects logEvent directly into runMergeWatch, so the gap is invisible to the suite."
     },
     {
       "id": "US-R1-005",
       "title": "Review round 1 fix 005: address reviewer finding",
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "notes": "WARNING [templates/commands/cam-ship.md:96]: The ci-gated bullet claims the sidecar 'completes post-merge autonomously (pull main, push tag, prune branch, close issue, print summary)'. runPostMerge does pull/tag/prune ONLY (no issue-close, no summary; it just narrates). Under ci-gated, Step 8 (close github/linear issue) is skipped, so for github/linear backends the issue is never closed. The claim also contradicts recovery-runbook (t) which correctly lists only pull/tag/prune. Correct the doc and define who closes the issue under ci-gated."
     },
@@ -64,7 +71,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: src/config/models.ts (mirror readPhaseModel/readBackend try/catch/default exactly — never throw, never block the loop on a bad project.toml). The TOML schema in src/config/toml.ts is generic Record-based (TomlScalar/TomlSection/TomlConfig); a [ship] section with a string scalar is already representable, so toml.ts needs no change — only a read accessor + tests. Default MUST be \"immediate\" so CAM-84 behavior is preserved byte-for-byte for existing projects. Restrict the union type to \"immediate\" | \"ci-gated\". Per-story worker runs only typecheck+tests; check:all ratchets are a ship-time concern."
@@ -83,7 +90,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "NEW module: suggest src/release/branch-protection.ts (sits with src/release/ship-bump.ts, tag logic). MIRROR src/commands/ship-finalize.ts and src/commands/issue-file.ts: DI'd synchronous SpawnFn, hermetic gh/git tests, exported result interface, never Bun.spawn. DOC DEPRECATION (note in code header): required_status_checks.contexts is deprecated in favor of checks:[{context}]; PUT checks, accept either checks or contexts in the GET verification (GitHub mirrors them). All four PUT top-level fields REQUIRED — omitting any is a 422. enforce_admins=false (operator decision 3: emergency force-merge), required_pull_request_reviews=null (gotcha 3: a non-null reviews block would block auto-merge forever without a human review), strict=true (operator decision 3). The 'ci' string is the exact required check name (gotcha 1). Fallback hint must parallel AUTOMERGE_NOTICE in src/logging/notices.ts. Reuse printHint/printWarning from src/logging/color.ts for operator-facing output; keep the gh-api logic pure/returning a result so it is headlessly testable."
@@ -101,7 +108,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 8,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/setup.ts (add merge_mode to SetupAnswers/SetupOptions, the readline askChoice path, the mergeIntoConfig call writing the [ship] section; thread a --merge-mode flag through parseSetupArgs to match --issue-system) + src/ui/SetupScreen.tsx (add a merge-mode Section mirroring the existing Issue-system Section; uses ./Section.tsx, NOT divider color for state). GOTCHA: the Ink/readline + verifyAgent gate makes the call-site headlessly untestable, so the merge-mode decision + branch-protection invocation must be an extracted pure helper that the test drives directly (CAM-84 precedent). branch-protection helper is from US-002. Keep printAutomergeNotice + the issue_system hints intact. Reviewer-judgment / operator-dogfood (US-010) covers the visual confirm."
@@ -119,7 +126,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 9,
+      "priority": 10,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/config.ts (extend ConfigChoices + mergeConfigChoices to carry merge_mode -> [ship] merge_mode; keep printConfigAutomergeHint) + src/ui/ConfigScreen.tsx (add a merge-mode WizardStep mirroring the backend step). Same headless-testability gotcha as US-003: extract the persistence + branch-protection call into a pure helper. branch-protection helper is from US-002. Mirror the exported-pure-helper pattern (mergeConfigChoices) so the TOML output + helper invocation are asserted without a live terminal."
@@ -137,7 +144,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 10,
+      "priority": 11,
       "passes": true,
       "requires": null,
       "notes": "Files: templates/commands/cam-ship.md (canonical source the codegen reads) + .claude/commands/cam-ship.md (the project-local installed copy) MUST both be edited, then run `bun run embed-vendor` and confirm `bun run embed-vendor:check` passes. The codegen reads templates/ (NOT .claude/); the embedded const key is templatesContents[\"commands/cam-ship.md\"] in src/vendor/_generated.ts. Today cam-ship.md has NO inline post-merge (Step 7 ends at gh pr create + best-effort gh pr merge --auto --squash; the orchestrator does pull/tag/journal/prune by hand) — the ci-gated branch makes the handoff explicit and states the sidecar finishes it. Step 3 check:all (local gate + CI gate, belt-and-suspenders) stays in BOTH modes (do NOT remove). cam ship --bump and --finalize still run on the BRANCH before push in both modes; only the tag is post-merge-only. DRIFT WARNING: the two cam-ship.md copies are ALREADY out of sync on main (templates/commands/cam-ship.md ~4928 bytes vs .claude/commands/cam-ship.md ~4605 bytes); embed-vendor:check only validates templates/ against _generated.ts (NEVER .claude/), so apply the SAME edit to BOTH copies and do not treat either as authoritative. The pre-existing 323-byte drift is a separate latent issue, out of scope for this story."
@@ -155,7 +162,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 11,
+      "priority": 12,
       "passes": true,
       "requires": null,
       "notes": "NEW module: suggest src/release/post-merge.ts. MIRROR ship-finalize.ts (DI'd spawnSync, hermetic tests). REUSE/extract the tag logic from src/commands/tag.ts (runTag tags main HEAD from CAM_VERSION; here the version must be read from src/version.ts on main AFTER `git pull origin main`, not from the running binary — gotcha 4 + scripts/cam/CLAUDE.md \"Release Conventions\": always tag on main after pull, never the branch SHA). DECISION 2: NO journal write — the post-merge is pull+tag+prune ONLY; the orchestrator stays the sole journal author, triggered by the sidecar's narration. Invoked BY the sidecar (US-007), never inline in ship. Per scripts/cam/CLAUDE.md the 0.x convention + 1.0.0 escape hatch live in computeNextVersion — do not duplicate; just read the literal version on main. Note for the [oracle: ! grep -iq 'journal'] check: the assertion is case-insensitive, so ensure the module file contains no 'journal' token in ANY casing (no appendJournalEntry, JournalWriter, etc.); narrate to the orchestrator and let it author the journal."
@@ -172,7 +179,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 12,
+      "priority": 13,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (the sidecar/supervisor terminal states today are complete|awaiting-operator|blocked|max-iterations; add the merge-watch as a new state/path, reusing the notifyOrchestrator(line) send-keys seam from CAM-70/78 — do NOT invent a new narration channel, single-pusher invariant CAM-78) + src/commands/sidecar.ts (runSidecar polls the active flag; thread the merge-watch with injectable gh-poll + post-merge fns). GOTCHA 2: ci-gated introduces ASYNCHRONY — the orchestrator must NOT assume immediate merge; the sidecar (survives between orchestrator turns) owns the wait. Poll `gh pr view <N> --json state,mergeStateStatus`; MERGED -> run US-006 + narrate; CI-red/closed-not-merged -> narrate + stop (operator fixes, new push re-runs CI, merge lands, sidecar completes). Reuse the PR number source the ship path already knows. Keep injectable SpawnFn / poll fn so the integration test is hermetic (fakes lie about tmux — see lessons; prefer a tmux-introspect-style check where feasible, but unit-level fakes are fine for the gh-poll state machine)."
@@ -188,7 +195,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 13,
+      "priority": 14,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/events.ts (extend WorkerEventKind union + add a typed *EventDetail interface and add it to the WorkerEventDetail union, following the existing ResultEventDetail/PushEventDetail/ReviewVerdictHandbackEventDetail pattern; the default logger is the synchronous appendFileSync makeFileEventLogger). Wire emits in the US-007 merge-watch path. Reuse makeInMemoryEventLogger() in tests to capture events. Keep events thin (mirror the no-progress-retry / sidecar-exit precedent). cam-worker-events.jsonl is the canonical structured record (CAM-31 retired progress.txt). TRACEABILITY: the ci-red event is the structured counterpart to the US-007 red-path narration ('CI red, PR #N open, not merged') and the diagnostic record an operator follows when working the US-009 recovery-runbook (t) scenario."
@@ -204,7 +211,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 14,
+      "priority": 15,
       "passes": true,
       "requires": null,
       "notes": "Files: docs/agent-readiness.md line 28 (the 'branch_protection blocked (free private plan)' premise in the Development Workflow row) and line 36-37 (the 'branch_protection as a structural fail of the free private plan' judgment-call note) — both must be corrected: the repo is PUBLIC and branch protection IS available; CAM-101 absorbs CAM-73 (see memory cam59-ci-exists-and-rearm-gotchas: repo is public, branch protection possible). docs/recovery-runbook.md: the last existing scenario is (s) CAM-84 — VERIFIED the next free letter is (t). Add ## (t) CAM-101: ci-gated merge mode (stuck CI / sidecar merge-watch / gh-api verify+warn fallback). Follow the lettered scenario format of the existing sections. Doc-only story; the typecheck/test criteria are the mandatory gates and pass trivially."
@@ -219,52 +226,28 @@
         "After GitHub lands the merge, the sidecar runs the autonomous post-merge (pull origin main + vX.Y.Z tag at main HEAD + branch prune local+remote) and narrates the result to the orchestrator. [oracle: reviewer-judgment]",
         "The red path is observed: a PR with red CI stays open/unmerged and the sidecar narrates 'CI red, PR #N open, not merged' and stops. [oracle: reviewer-judgment]"
       ],
-      "priority": 15,
+      "priority": 16,
       "passes": false,
       "requires": "operator",
       "notes": "OPERATOR-ONLY (requires real GitHub repo admin, a real Actions run, real network + merge). The implementer cannot satisfy this headlessly and must exit BLOCKED_OPERATOR_REQUIRED so the loop falls through. Validates US-002 (protection applied + verified), US-005 (ship hands off under ci-gated), US-006/US-007 (sidecar post-merge + narration), and the CI-red red path. Confirm the tag reads version.ts on main post-pull (gotcha 4). enforce_admins=false means the operator can still force-merge in an emergency. See docs/recovery-runbook.md (t) for the stuck-merge recovery steps."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:5",
+    "lastVerdict": "FIXES_PENDING:1",
     "findings": [
       {
-        "severity": "CRITICAL",
-        "file": "src/commands/sidecar.ts",
-        "line": 287,
-        "text": "No producer writes .claude/.cam-merge-watch.json. The sidecar's runMergeWatchFn early-returns when the file is absent (existsSync guard), and the cam-ship.md ci-gated handoff never instructs the orchestrator to write it (prNumber + mergedBranch). No code writes it either. Result: in production the merge-watch (US-007) and its events (US-008) never engage; the autonomous post-merge never runs even though cam-ship.md ci-gated tells the orchestrator to skip the inline post-merge. The whole ci-gated pipeline is dead in production despite green unit tests (which call runMergeWatch directly)."
-      },
-      {
-        "severity": "CRITICAL",
-        "file": "src/release/post-merge.ts",
-        "line": 104,
-        "text": "runPostMerge does `git pull origin main` without checking out main, then tags `git rev-parse HEAD`. After `cam ship` the working tree is on the feature branch, so the pull merges origin/main INTO the feature branch, the tag lands on the feature-branch HEAD (NOT main, violating the Release Conventions and US-006 AC), and `git branch -d <mergedBranch>` fails because you cannot delete the currently checked-out branch (branchPrunedLocal silently false while ok:true). runTag (tag.ts:66-79) has a 'must be on main' guard that this reimplementation dropped. No real-git integration test covers it; the fake-spawn unit test masks the defect."
-      },
-      {
-        "severity": "CRITICAL",
-        "file": "src/release/merge-watch.ts",
-        "line": 217,
-        "text": "OPEN+mergeStateStatus==BLOCKED is treated as ci-red (narrate + stop). But GitHub returns BLOCKED while a required status check is still pending/in-progress, not only when it has failed (confirmed via GitHub docs/community). On the normal ci-gated happy path (CI takes minutes), the first BLOCKED poll stops the watch, narrates a false 'CI red', and never reaches MERGED, so the post-merge never runs. Distinguish pending vs failed (inspect statusCheckRollup / `gh pr checks` conclusion) instead of treating BLOCKED as terminal."
-      },
-      {
-        "severity": "CRITICAL",
-        "file": "src/commands/sidecar.ts",
-        "line": 354,
-        "text": "US-008 structured events are not wired into the production merge-watch: the runMergeWatch call in sidecar.ts omits the logEvent argument, so merge-watch-watching/merged/ci-red/post-merge-done never reach .claude/cam-worker-events.jsonl in production. The logEvent sink is available in scope (sidecar.ts:259-260) but only passed to runSidecarLoop. The US-008 events test injects logEvent directly into runMergeWatch, so the gap is invisible to the suite."
-      },
-      {
         "severity": "WARNING",
-        "file": "templates/commands/cam-ship.md",
-        "line": 96,
-        "text": "The ci-gated bullet claims the sidecar 'completes post-merge autonomously (pull main, push tag, prune branch, close issue, print summary)'. runPostMerge does pull/tag/prune ONLY (no issue-close, no summary; it just narrates). Under ci-gated, Step 8 (close github/linear issue) is skipped, so for github/linear backends the issue is never closed. The claim also contradicts recovery-runbook (t) which correctly lists only pull/tag/prune. Correct the doc and define who closes the issue under ci-gated."
+        "file": "docs/recovery-runbook.md",
+        "line": 1476,
+        "text": "The (t) scenario still describes OPEN+BLOCKED as an unconditional terminal ci-red stop ('The sidecar stops the merge-watch loop when it detects mergeStateStatus == BLOCKED' + the state table row 'OPEN | BLOCKED -> narrate merge-watch-ci-red, stop'). The US-R1-003 fix changed the shipped behavior: merge-watch now keeps polling on OPEN+BLOCKED when checks are pending (statusCheckRollup has no failed check) and only stops on a confirmed failed check. The documented poll command 'gh pr view <N> --json state,mergeStateStatus' also omits statusCheckRollup (production requests it), and the example narration '[cam] merge-watch: CI red (BLOCKED) -- PR open, not merged' does not match the actual string '[cam] CI red, PR #N open, not merged'. The runbook now misleads an operator diagnosing a healthy in-progress (pending-CI) watch into believing the sidecar gave up. Sync the (t) table, the 'Recovery: CI is red (BLOCKED)' paragraph, the poll command, and the narration example with the post-US-R1-003 behavior."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/supervisor/loop.ts",
         "line": 1247,
-        "text": "runMergeWatchFn is awaited on the idle tick and blocks the sidecar outer loop for up to maxPolls*pollIntervalMs (default 4h). During the watch the active-flag and session-health checks do not run, so if the cam run host dies mid-watch the sidecar will not self-exit until the watch ends (cam stop still kills it via the PID file). Consider interleaving the session-health check or bounding the watch."
+        "text": "runMergeWatchFn is awaited on the idle tick and blocks the sidecar outer loop for up to maxPolls*pollIntervalMs (default 4h). During the watch the active-flag and session-health checks do not run, so if the cam run host dies mid-watch the sidecar will not self-exit until the watch ends (cam stop still kills it via the PID file). Consider interleaving the session-health check or bounding the watch. Carried over from review round 1."
       }
     ]
   }
