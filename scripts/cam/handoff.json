@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add check:all adaptation guidance to buildSetupPrompt"
+  },
+  "createdFiles": [
+    "test/setup-prompt.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/commands/setup.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 touches templates/commands/cam-ship.md and requires re-embedding vendor. The export of buildSetupPrompt done in US-001 is now stable and tested.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}

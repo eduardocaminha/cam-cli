@@ -18,7 +18,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/commands/setup.ts — buildSetupPrompt() is a PURE function returning a joined string; the numbered task list lives in the `base` array (~lines 238-257). Add the new adaptation instruction inside `base` (e.g. expand the item that already covers replacing generic placeholder text / real quality-gate commands at items 5 and 7), keeping the numbered list coherent. GOTCHA: buildSetupPrompt is currently NOT exported (`grep export ... buildSetupPrompt` returns nothing) — the implementer must export it so the unit test can call it directly. There is no `check:all` mention in setup.ts today, so the test can assert on the literal `check:all`. Test file: add to test/ (the existing setup test is test/setup-menu.test.ts; either extend it or add a sibling like test/setup-prompt.test.ts). Keep this story to source + test only; do NOT touch templates/ here (that is US-002)."
     },
