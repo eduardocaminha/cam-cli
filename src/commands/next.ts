@@ -1,20 +1,20 @@
 // src/commands/next.ts
 //
-// Implementation of `cam next` -- thin-proxy that routes the implementation
-// task prompt to the live orchestrator pane via send-keys (US-006).
+// Implementation of `cam next` -- thin-proxy that flips active:true to trigger
+// the sidecar (US-001 of CAM-78).
 //
 // ARCHITECTURE (US-006 single-hub dispatch):
-//   `cam run` is the only dispatch hub. `cam next` is now a thin-proxy that
-//   detects the live orchestrator and injects the task prompt into it via
-//   atomic send-keys. The orchestrator (claude agent) then schedules and
-//   dispatches the worker.
+//   `cam run` is the only dispatch hub. `cam next` is a thin-proxy that
+//   detects the live orchestrator pane (liveness precondition) and then writes
+//   active:true to .claude/cam-loop.local.md. The sidecar (spawned by cam run)
+//   polls that flag and dispatches the next worker autonomously.
 //
 //   On miss (no live orchestrator): bootstrap `cam run --no-attach`, poll
-//   `.claude/.cam-orch-ready` (+ orchestratorAlive re-check), then send-keys.
+//   `.claude/.cam-orch-ready` (+ orchestratorAlive re-check), then flip.
 //
 // Utility exports kept for supervisor internals and tests:
 //   renderStateFile, writeStateFile, DEFAULT_MAX_ITERATIONS,
-//   DEFAULT_COMPLETION_PROMISE, DEFAULT_TASK_PROMPT.
+//   DEFAULT_COMPLETION_PROMISE.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -40,7 +40,6 @@ import {
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
 import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
-import { sendKeysWhenIdle, type CapturePaneFn } from '../tmux/dispatch.ts';
 import { parseStateFile } from './status.ts';
 
 // ---------------------------------------------------------------------------
@@ -56,14 +55,6 @@ export const DEFAULT_MAX_ITERATIONS = 30;
  * Default `--completion-promise` value (kept for backward compat).
  */
 export const DEFAULT_COMPLETION_PROMISE = 'COMPLETE';
-
-/**
- * Default task prompt sent to the orchestrator when `cam next` is invoked.
- * The orchestrator (claude agent) receives this as a natural-language request
- * and schedules the next worker accordingly.
- */
-export const DEFAULT_TASK_PROMPT =
-	'Implement the next user story from scripts/cam/prd.json per your AGENT.md.';
 
 /** State-file path relative to cwd. Read by cam status / cam dashboard. */
 const STATE_FILE_PATH = '.claude/cam-loop.local.md';
@@ -147,8 +138,6 @@ export interface NextOptions {
 	maxIterations?: number;
 	/** Override `--completion-promise`; kept for CLI parity, not used. */
 	completionPromise?: string;
-	/** Task prompt sent to the orchestrator. Default: DEFAULT_TASK_PROMPT. */
-	taskPrompt?: string;
 	/** Override the working directory; default `process.cwd()`. */
 	cwd?: string;
 	/**
@@ -172,22 +161,12 @@ export interface NextOptions {
 	 */
 	statFn?: (path: string) => boolean;
 	/**
-	 * Sleep function for the ready-poll and idle-poll. Defaults to `Bun.sleepSync`.
+	 * Sleep function for the ready-poll. Defaults to `Bun.sleepSync`.
 	 * Tests inject a no-op to avoid real waits.
 	 */
 	sleepFn?: (ms: number) => void;
 	/** Total poll budget for waitForOrchestrator (ms). Default 60 000. */
 	waitTimeoutMs?: number;
-	/**
-	 * Override the capture-pane reader used by the idle-check before send-keys.
-	 * Tests inject a fake that returns controlled pane content strings.
-	 */
-	capturePaneFn?: CapturePaneFn;
-	/**
-	 * Maximum ms to wait for the orchestrator pane to go idle before sending
-	 * anyway (fallback: log + still send). Default: 5 000.
-	 */
-	idleTimeoutMs?: number;
 }
 
 // --- Internal helpers -------------------------------------------------------
@@ -204,22 +183,22 @@ async function doBootstrap(cwd: string, bootstrapFn?: () => Promise<boolean>): P
 // ---------------------------------------------------------------------------
 
 /**
- * Run the `cam next` flow: thin-proxy to the live orchestrator (US-006).
+ * Run the `cam next` flow: thin-proxy that flips active:true (US-001, CAM-78).
  *
  * If the orchestrator is already running (hasSession + orchestratorAlive):
- *   - Sends the task prompt to the orchestrator pane via send-keys.
+ *   - Verifies the orchestrator pane exists (precondition).
+ *   - Writes active:true to .claude/cam-loop.local.md (sidecar trigger).
  *
  * If the orchestrator is not running:
  *   - Bootstraps it via `cam run --no-attach` (or injected bootstrapFn).
  *   - Polls `.claude/.cam-orch-ready` + orchestratorAlive until ready.
- *   - Then sends the task prompt.
+ *   - Then flips active:true.
  *
  * Returns 0 on success, 1 on bootstrap/liveness failure.
  */
 export async function runNext(options: NextOptions = {}): Promise<number> {
 	const cwd = options.cwd ?? process.cwd();
 	const env = options.env ?? process.env;
-	const taskPrompt = options.taskPrompt ?? DEFAULT_TASK_PROMPT;
 
 	const { spawnSync } = await import('node:child_process');
 	const tmuxSpawnFn: TmuxSpawnFn =
@@ -327,21 +306,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		// Non-fatal: the sidecar will still pick up the next active flag write.
 	}
 
-	// Wait for the orchestrator pane to be idle, then issue atomic send-keys.
-	// sendKeysWhenIdle polls capture-pane until the prompt is stable (no
-	// spinner / tool-call glyph), then sends text + Enter in one call WITHOUT -l
-	// (sendkeys-literal-enter-gotcha: -l would make "Enter" literal and never
-	// submit; the text is a single non-key-name arg, already literal; US-008).
-	sendKeysWhenIdle({
-		paneId: orchPaneId,
-		text: taskPrompt,
-		tmuxSpawnFn,
-		capturePaneFn: options.capturePaneFn,
-		sleepFn: options.sleepFn,
-		idleTimeoutMs: options.idleTimeoutMs,
-	});
-
-	emitOk(`Sent task prompt to orchestrator pane ${orchPaneId}`);
+	emitOk(`Sidecar trigger written (active:true); orchestrator pane ${orchPaneId} ready`);
 	emitAttachHint(sessionName, env);
 	emitTrailingBlank();
 	return 0;

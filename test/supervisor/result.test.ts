@@ -1055,10 +1055,14 @@ describe('readWorkerOutcome: US-006 absent / malformed / stale report safety net
 // sentinel) as non-matching.
 
 describe('parseAnySentinel prompt-echo regression (CAM-42 US-002)', () => {
-	test('DEFAULT_TASK_PROMPT echo does not match any sentinel', async () => {
-		const { DEFAULT_TASK_PROMPT } = await import('../../src/commands/next.ts');
+	test('sidecar worker prompt echo does not match any sentinel', async () => {
 		const { parseAnySentinel } = await import('../../src/supervisor/result.ts');
-		expect(parseAnySentinel(DEFAULT_TASK_PROMPT)).toBeNull();
+		// The sidecar injects this literal prompt to the implementer worker (host.ts:229).
+		// Keeping it as a literal ensures the regression stays valid even though
+		// DEFAULT_TASK_PROMPT is no longer exported from next.ts (US-001, CAM-78).
+		const workerPrompt =
+			'Implement the next user story from scripts/cam/prd.json per your AGENT.md.';
+		expect(parseAnySentinel(workerPrompt)).toBeNull();
 	});
 
 	test('documented prompt wording naming CAM_IMPLEMENTER_STATUS= (no value) does not match', async () => {
