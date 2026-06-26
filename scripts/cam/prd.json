@@ -29,7 +29,7 @@
       "id": "US-R3-002",
       "title": "Review round 3 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [src/release/post-merge.ts:100]: The biome `lint` gate in `bun run check:all` is RED with 6 errors, all introduced by this branch: runPostMerge (post-merge.ts:100) cognitive complexity 27 and 111 lines (>80); runMergeWatch (merge-watch.ts:224) complexity 25; configureBranchProtection (branch-protection.ts:180) complexity 20; runSidecar (sidecar.ts:238) 135 lines (>80) plus the ci-gated runMergeWatchFn closure (sidecar.ts:286) complexity 17. These new modules trip the CAM-60 biome complexity/line-length rules with no grandfather override. Extract helpers (CAM-60 factory/helper pattern) or add scoped per-file overrides so `check:all` (= CI gate) passes."
     },
     {
