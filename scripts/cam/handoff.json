@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Remove Task/Agent from orchestrator disallowedTools and re-document the gate"
+  },
+  "branchName": "cam/CAM-91-agent-allowlist-hook",
+  "timestamp": "2026-06-26T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 converged the cff99a0 drift: templates/ now has the reconciled disallowedTools block (Edit, Write, NotebookEdit, AskUserQuestion), _generated.ts is in sync, and both runtime+template copies document the PreToolUse hook gating for Task/Agent. The next story (likely the hook implementation itself) should build on this -- the orchestrator is now correctly configured to expect a hook that allows only subagent-planner and subagent-auditor.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure agent-prompt doc and drift-convergence story; no external library calls."
+    }
+  ]
+}
