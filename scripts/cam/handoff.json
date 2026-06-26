@@ -1,17 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Define shared auto-merge prerequisite-notice constant and print it from cam init"
+    "id": "US-003",
+    "title": "Print the shared auto-merge prerequisite notice from cam config"
   },
   "createdFiles": [
-    "src/logging/notices.ts",
-    "test/commands/setup-automerge-notice.test.ts"
+    "test/commands/config-automerge-notice.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/setup.ts"
+    "src/commands/config.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 needs to import AUTOMERGE_NOTICE from src/logging/notices.ts and print it from cam config (config.ts) so that operators running the config wizard also see the GitHub prerequisite notice. The constant is already defined and tested; US-003 only needs to add the import and the unconditional printAutomergeNotice() call at config completion.",
+  "nextStoryContext": "US-004 needs to add a recovery runbook scenario to docs/recovery-runbook.md for the 'cam ship enabled auto-merge but the PR did not merge' situation. The scenario should cover the root cause (Allow auto-merge / Allow squash merging disabled in Settings > General > Pull Requests) and the fix (gh pr merge --auto --squash <PR#> after enabling the settings).",
   "officialDocsValidated": [
     {
       "lib": "none",
@@ -19,7 +18,7 @@
       "url": "",
       "fetchedAt": "2026-06-26T00:00:00Z",
       "status": "no_external_lib_touched",
-      "summary": "Story only defines a plain TypeScript string constant and a print helper. No external library exercised."
+      "summary": "Story only adds a printHint call and an exported helper in config.ts. No external library exercised."
     }
   ]
 }

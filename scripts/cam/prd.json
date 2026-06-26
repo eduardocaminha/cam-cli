@@ -71,7 +71,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/config.ts and a new test under test/commands/. Depends on US-002 (the exported notice constant must exist first). Print site: the successful completion path. runConfig (config.ts:146) returns 0 after collectViaInk; the clean success is inside collectViaInk (config.ts:177-185) where `mergeConfigChoices(configPath, result, cwd)` runs before resolve(0). Print the notice right after mergeConfigChoices on the success branch (result !== null). Add printHint to the existing import from ../logging/color.ts (config.ts currently imports no color helper, only mergeIntoConfig from ../config/toml.ts and others). The --show path (runConfig early-return at config.ts:151) is a non-interactive read and should NOT print the notice. Testing the Ink success path is hard to drive headlessly; prefer asserting on a small extractable seam: if collectViaInk is not easily unit-testable, factor the post-merge notice print into a tiny exported helper (e.g. a one-liner that takes the writer and calls printHint with the constant) and unit-test that helper, OR test via the same writer-injection pattern US-002 uses. Keep the change surgical: do not refactor collectViaInk beyond what is needed to make the notice testable. Ordering note: the US-002 -> US-003 guarantee that the constant exists first comes from priority (2 before 3), not from requires (which stays null, reserved for operator gating)."
     },
