@@ -1,17 +1,15 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "templates/commands/cam-next.md",
-    ".claude/commands/cam-next.md",
-    "src/vendor/_generated.ts",
+    "README.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 fixed the stale doc in templates/commands/cam-next.md and .claude/commands/cam-next.md: Architecture/dispatch-flow section now describes the active:true sidecar trigger instead of the old send-keys task-prompt injection; Worker exit contract section updated (worker writes report file only, sidecar pushes notifyOrchestrator narration); IMPORTANT footer corrected. Embedded copy regenerated via bun run embed-vendor. All 1376 tests pass, typecheck clean.",
+  "nextStoryContext": "US-R2-001 fixed the Doc Maintenance violation in README.md. Four prose locations were stale: line 11 (status blurb), line 163 (session layout thin-proxy paragraph), lines 254-276 (Architecture section diagram and prose), and line 284 (Recent changes CAM-55 bullet). All now correctly describe cam next as a pure active:true sidecar trigger (no send-keys) and the sidecar as the sole emitter of the [cam] narration line (not the worker). Typecheck clean, 1376 tests pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
