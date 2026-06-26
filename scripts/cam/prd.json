@@ -1,0 +1,96 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-84-ship-auto-merge",
+  "description": "cam ship enables PR auto-merge (gh pr merge --auto --squash) after creating the PR, best-effort, with operator prerequisite notices.",
+  "issueNumber": 84,
+  "relatedDocs": [
+    "docs/recovery-runbook.md",
+    ".claude/commands/cam-ship.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "gh (GitHub CLI)",
+      "url": "https://cli.github.com/manual/gh_pr_merge",
+      "version": "manual (fetched 2026-06-26)",
+      "fetchedAt": "2026-06-26",
+      "summary": "--auto enables auto-merge once branch-protection requirements are met; --squash squashes into one commit. The manual does NOT document the failure path when 'Allow auto-merge' is disabled in repo Settings: empirically the command exits non-zero with a GraphQL enablePullRequestAutoMerge error, and --squash additionally requires 'Allow squash merging' enabled. This is why the ship step is best-effort and init/config surface a prerequisite notice.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add best-effort auto-merge step to cam-ship.md (markdown + template + embed)",
+      "description": "As an operator running an autonomous loop, I need cam ship to enable PR auto-merge right after creating the PR so that the PR merges itself once checks pass and I do not have to click merge manually in GitHub (which breaks the autonomous flow, CAM-71).",
+      "acceptanceCriteria": [
+        "After the Step 7 `gh pr create` invocation, `.claude/commands/cam-ship.md` instructs running `gh pr merge --auto --squash` (with the PR number) to enable auto-merge. [oracle: file-assert grep -q 'gh pr merge --auto --squash' .claude/commands/cam-ship.md]",
+        "The auto-merge invocation is documented as best-effort: cam-ship.md states that if the command fails (auto-merge or squash merging not enabled in repo Settings), print the prerequisite hint and CONTINUE without aborting the ship, because the PR is already created. [oracle: reviewer-judgment]",
+        "The best-effort failure text in `.claude/commands/cam-ship.md` names the GitHub Settings location to fix it: Settings > General > Pull Requests, enabling both 'Allow auto-merge' and 'Allow squash merging'. [oracle: file-assert grep -q 'Allow auto-merge' .claude/commands/cam-ship.md && grep -q 'Allow squash merging' .claude/commands/cam-ship.md]",
+        "An HTML adaptation-point comment is present near the new auto-merge step noting that downstream projects using merge-commit instead of squash should adjust the `--squash` flag. [oracle: file-assert grep -q 'cam-init: adaptation point' .claude/commands/cam-ship.md]",
+        "`templates/commands/cam-ship.md` carries the identical auto-merge step, best-effort failure text (with the Settings location), and adaptation-point comment. [oracle: file-assert grep -q 'gh pr merge --auto --squash' templates/commands/cam-ship.md && grep -q 'Allow auto-merge' templates/commands/cam-ship.md && grep -q 'Allow squash merging' templates/commands/cam-ship.md]",
+        "The embedded copy in src/vendor/_generated.ts was regenerated from the template so the templatesContents map (the bytes `cam init` writes) reflects the new step. [oracle: bun run embed-vendor:check]",
+        "A regression test on the `templatesContents` map (extending test/vendor/cam-ship-hygiene.test.ts) asserts the embedded `commands/cam-ship.md` value contains `gh pr merge --auto --squash`. [oracle: bun test test/vendor/cam-ship-hygiene.test.ts]",
+        "The same regression test asserts the embedded `commands/cam-ship.md` value contains a `gh pr merge --auto --squash` occurrence positioned after the `gh pr create` occurrence (the Step-7 PR creation is followed by an auto-merge invocation, not left standalone), verified by comparing the two substring indexes so the assertion fails if the auto-merge line is removed or moved before PR creation. [oracle: bun test test/vendor/cam-ship-hygiene.test.ts]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/commands/cam-ship.md (runtime copy), templates/commands/cam-ship.md (template copy), src/vendor/_generated.ts (regenerate via `bun run embed-vendor`, never hand-edit), test/vendor/cam-ship-hygiene.test.ts (extend existing regression test). BOTH cam-ship.md copies must change identically; the embedded copy in _generated.ts is the source of truth for what `cam init` writes (test reads from src/vendor/_generated.ts via templatesContents['commands/cam-ship.md']). Insert the auto-merge step in Step 7, immediately after the `gh pr create ... --base main` block; keep it best-effort (do NOT abort ship on failure: PR is already created). Adaptation-point precedent: CAM-88 added a `<!-- cam-init: adaptation point ... -->` comment to Step 3 of these same files (see .claude/commands/cam-ship.md:34); follow that exact comment style for the --squash-vs-merge-commit note. The negative/ordering oracle must be structurally sound: assert indexOf('gh pr merge --auto --squash') > indexOf('gh pr create') so removing the auto-merge invocation fails the test. After editing templates/, run `bun run embed-vendor` to regenerate _generated.ts, then `bun run embed-vendor:check` must pass (vendor-drift gate). Empirical gotcha (encode in the best-effort text, the gh manual does not document it): `gh pr merge --auto --squash` exits non-zero with a GraphQL enablePullRequestAutoMerge error when 'Allow auto-merge' is off, and --squash needs 'Allow squash merging' on. No em-dash / no decorative emoji in the .md files (project rule); the existing files use `--` (double hyphen) and ✓/❌ glyphs already present, match the surrounding style."
+    },
+    {
+      "id": "US-002",
+      "title": "Define shared auto-merge prerequisite-notice constant and print it from cam init",
+      "description": "As an operator setting up a project, I need cam init to tell me to enable 'Allow auto-merge' and 'Allow squash merging' in GitHub Settings so that the auto-merge step added in US-001 will actually work when I later run cam ship.",
+      "acceptanceCriteria": [
+        "One exported string constant holds the operator-facing auto-merge prerequisite notice text, defined in a single low-level module so setup.ts and config.ts both import it without a circular dependency. [oracle: reviewer-judgment]",
+        "The notice text names enabling both 'Allow auto-merge' and 'Allow squash merging' and the GitHub Settings location (Settings > General > Pull Requests). [oracle: file-assert grep -rq 'Allow auto-merge' src/ && grep -rq 'Allow squash merging' src/ && grep -rq 'Settings > General > Pull Requests' src/]",
+        "`cam init` (runSetup in src/commands/setup.ts) prints this notice via printHint at setup completion, and it fires regardless of the chosen issue_system (linear | github | none), because cam ship always opens a GitHub PR. [oracle: reviewer-judgment]",
+        "The unconditional auto-merge notice print is factored into a tiny exported helper that takes an injectable write fn (defaulting to process.stdout.write), and a unit test imports that helper, calls it, and asserts the captured output contains the exported notice constant. [oracle: bun test test/commands/setup-automerge-notice.test.ts]",
+        "The init notice unit test imports the exported constant by name (it does not hard-code a duplicate copy of the text) so the test breaks if the constant is renamed or removed. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/setup.ts, the shared-constant module, and a new test under test/commands/. Canonical home for the constant: prefer src/logging/color.ts (both setup.ts at line 39 and config.ts already import printHint from ../logging/color.ts; it is a leaf module with no cycle risk) OR a tiny new file like src/logging/notices.ts if you want it separate from color helpers. Do NOT put it in setup.ts (US-003's config.ts must import it without depending on setup.ts). Print site in setup.ts: near the existing issue-system hints at setup.ts:532-536 (the `if (issueSystem === 'linear') ... else if (github)` block), but the auto-merge notice is UNCONDITIONAL (outside that if/else) since cam ship always opens a GitHub PR. Use printHint (already imported in setup.ts). Match the notice phrasing in US-001's cam-ship.md best-effort text for consistency. Testability: runSetup is NOT directly drivable in a unit test (it is gated by verifyAgent() which needs claude installed, then collectSetupAnswers() which is Ink/readline; SetupOptions has no writer field and printHint writes straight to process.stdout). So factor the notice print into a small exported helper that takes an injectable write fn (default process.stdout.write) and emits the exported constant via that fn; unit-test THAT helper, importing the exported constant by name (no duplicated literal). If you do not factor a helper, the working alternative is the captureStdout monkeypatch in test/attach-hint.test.ts:26-38 (temporarily swap process.stdout.write). setup.ts calls this helper at completion, unconditionally (regardless of issue_system), since cam ship always opens a GitHub PR. No em-dash in any persisted text the constant contains if it could end up in a .md (it is a TS string literal, so this is about the operator-facing message style, keep it plain)."
+    },
+    {
+      "id": "US-003",
+      "title": "Print the shared auto-merge prerequisite notice from cam config",
+      "description": "As an operator who configures models via cam config, I need cam config to also remind me to enable auto-merge and squash merging in GitHub Settings so that I see the prerequisite even if I did not run cam init recently.",
+      "acceptanceCriteria": [
+        "`cam config` (src/commands/config.ts) prints the SAME exported constant defined in US-002 (imported, not a duplicated copy of the text) after the wizard completes successfully. [oracle: reviewer-judgment]",
+        "config.ts imports printHint from ../logging/color.ts (it previously imported no color helper) and uses it to print the notice. [oracle: file-assert grep -q 'printHint' src/commands/config.ts]",
+        "config.ts imports the notice constant by name from the same module US-002 defined it in (no second copy of the literal text in config.ts). [oracle: reviewer-judgment]",
+        "A unit test asserts the successful config flow surfaces the notice constant in printed output (the constant imported by name, not hard-coded). [oracle: bun test test/commands/config-automerge-notice.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/config.ts and a new test under test/commands/. Depends on US-002 (the exported notice constant must exist first). Print site: the successful completion path. runConfig (config.ts:146) returns 0 after collectViaInk; the clean success is inside collectViaInk (config.ts:177-185) where `mergeConfigChoices(configPath, result, cwd)` runs before resolve(0). Print the notice right after mergeConfigChoices on the success branch (result !== null). Add printHint to the existing import from ../logging/color.ts (config.ts currently imports no color helper, only mergeIntoConfig from ../config/toml.ts and others). The --show path (runConfig early-return at config.ts:151) is a non-interactive read and should NOT print the notice. Testing the Ink success path is hard to drive headlessly; prefer asserting on a small extractable seam: if collectViaInk is not easily unit-testable, factor the post-merge notice print into a tiny exported helper (e.g. a one-liner that takes the writer and calls printHint with the constant) and unit-test that helper, OR test via the same writer-injection pattern US-002 uses. Keep the change surgical: do not refactor collectViaInk beyond what is needed to make the notice testable. Ordering note: the US-002 -> US-003 guarantee that the constant exists first comes from priority (2 before 3), not from requires (which stays null, reserved for operator gating)."
+    },
+    {
+      "id": "US-004",
+      "title": "Add auto-merge recovery scenario to the recovery runbook",
+      "description": "As an operator whose cam ship enabled auto-merge but the PR did not merge, I need a runbook scenario that names the root cause and the fix so that I can unblock the PR without reading source.",
+      "acceptanceCriteria": [
+        "docs/recovery-runbook.md gains a new lettered scenario (the next letter after the current last scenario) titled for the 'cam ship enabled auto-merge but the PR did not merge' situation. [oracle: file-assert grep -q 'auto-merge' docs/recovery-runbook.md]",
+        "The scenario states the root cause: 'Allow auto-merge' and/or 'Allow squash merging' is disabled in the repo Settings. [oracle: file-assert grep -q 'Allow auto-merge' docs/recovery-runbook.md && grep -q 'Allow squash merging' docs/recovery-runbook.md]",
+        "The scenario gives the fix: enable both in Settings > General > Pull Requests, then re-run `gh pr merge --auto --squash <PR#>` manually. [oracle: file-assert grep -q 'gh pr merge --auto --squash' docs/recovery-runbook.md && grep -q 'Settings > General > Pull Requests' docs/recovery-runbook.md]",
+        "The new scenario matches the runbook's existing lettered-scenario heading format (`## (x) ...`). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: docs/recovery-runbook.md only (docs-only, last). Read the runbook's existing format first: scenarios are `## (letter) [CAM-NNN:] Title` with Symptom / Cause / Recovery prose and fenced bash blocks. The current last scenario is `## (r) CAM-89: ...` (recovery-runbook.md:1282), so the new one is `## (s) CAM-84: cam ship enabled auto-merge but the PR did not merge`. Follow the (r) / (q) / (p) structure: Symptom, Cause, then numbered fix steps with bash fences. The empirical fact to encode (gh manual does not document it): the failure is a GraphQL enablePullRequestAutoMerge error from `gh pr merge --auto --squash` when 'Allow auto-merge' is off, and --squash needs 'Allow squash merging' on. PROJECT WRITING RULE: no em-dash (use `--` double-hyphen like the rest of the file, or rephrase) and no decorative emoji in this .md. The fix steps: (1) enable both toggles in Settings > General > Pull Requests, (2) re-run `gh pr merge --auto --squash <PR#>` manually (or re-run cam ship). Cross-reference .claude/commands/cam-ship.md Step 7 at the end, matching how other scenarios add a Cross-reference line."
+    }
+  ]
+}
