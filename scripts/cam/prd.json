@@ -108,7 +108,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: docs/recovery-runbook.md (the issue's relatedDocs path 'docs/runbooks/cam-loop-recovery.md' does NOT exist in this repo, that string only appears as a stale CONSUMERS comment inside vendor/check-agent-frontmatter.ts; the real runbook is docs/recovery-runbook.md). Scenarios are lettered '## (x) CAM-NN: title'; the last existing is '(p) CAM-78'; add '(q) CAM-91: ...'. Follow the existing structure (### Background / ### Diagnosing / ### Manual override subsections). No em-dash in persisted .md (project rule); use colon/comma/period. No code change in this story but keep the gate uniform (typecheck + bun test)."
     }
