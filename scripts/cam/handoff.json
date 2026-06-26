@@ -1,27 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Resolve ask()/askChoice() to a default on readline EOF/close"
+    "id": "US-002",
+    "title": "Pass --merge-mode immediate in the build-release AC4 init smoke"
   },
   "branchName": "cam/CAM-104-init-merge-mode-eof",
-  "timestamp": "2026-06-26T22:00:00Z",
-  "createdFiles": [
-    "test/setup-readline-eof.test.ts"
-  ],
+  "timestamp": "2026-06-26T22:30:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/setup.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/build-release.sh",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 is done: ask() and askChoice() now resolve to defaults on EOF. The next story (US-002) is the belt-and-suspenders fix: add --merge-mode immediate to the build-release AC4 smoke so needsMerge=false and collectSetupAnswers early-returns without touching readline at all. File to edit: scripts/build-release.sh (~line 115). The flag is already parsed by parseSetupArgs.",
+  "nextStoryContext": "US-002 is done: --merge-mode immediate added to the build-release AC4 init smoke (scripts/build-release.sh line 115). Both US-001 (readline EOF guard) and US-002 (belt-and-suspenders flag) are now complete. PRD should be fully passing; no further stories remain.",
   "officialDocsValidated": [
     {
-      "lib": "node:readline",
-      "url": "https://nodejs.org/api/readline.html#event-close",
-      "fetchedAt": "2026-06-26T22:00:00Z",
-      "status": "aligned",
-      "summary": "Docs confirm: 'close' fires on input stream 'end' (EOF); rl.question() callback does NOT fire on EOF. answered-flag + rl.on('close') pattern matches recommended approach."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-002 only edited a shell script flag; no external library API was exercised."
     }
   ]
 }

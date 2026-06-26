@@ -44,7 +44,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: scripts/build-release.sh line ~115. Current smoke: `\"${BIN_ABS}\" init --no-tmux --existing --issue-system none </dev/null`. Add `--merge-mode immediate` so needsMerge (setup.ts:105) is false and collectSetupAnswers (setup.ts:108) early-returns without any prompt. The --merge-mode flag is already parsed (setup.ts:664). Belt-and-suspenders alongside US-001. There is an existing build-release smoke guard test (test/build-release-smoke.test.ts) — re-check it does not assert the old flag list and update it only if it greps the smoke line. Per project convention the smoke must stay hermetic (see the CAM-15 / 2026-06-06 comment block at build-release.sh:100-109)."
     },
