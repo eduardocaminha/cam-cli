@@ -1,23 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "cam tag: deterministic post-merge tag command on main"
+    "id": "US-006",
+    "title": "Auto-generate the CHANGELOG release-section body from classified branch commits"
   },
-  "createdFiles": [
-    "src/commands/tag.ts",
-    "test/release/tag.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
+    "src/release/changelog.ts",
+    "src/release/ship-bump.ts",
+    "test/release/changelog.test.ts",
+    "test/release/ship-bump.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 added runTag() in src/commands/tag.ts (guards: branch==main, clean worktree, tag-not-exists; then git tag vX.Y.Z + git push origin vX.Y.Z; idempotent no-op if tag already exists; SpawnFn injectable pattern from finalizeCycleClose). index.ts gained case 'tag': dispatch, TAG_HELP renderHelp block, and a 'tag' entry in the top-level HELP Commands list. CAM_VERSION is read from src/version.ts. All 1487 tests pass. The next story is US-006: auto-generate CHANGELOG release-section body from classified branch commits (extends src/release/changelog.ts + wires into src/release/ship-bump.ts).",
+  "nextStoryContext": "US-006 added generateReleaseBody(subjects) to src/release/changelog.ts: pure function mapping feat/feat! -> ### Added, fix/fix! -> ### Fixed, stripping conventional-commit prefix, omitting empty subsections. rollChangelog gained an optional 4th param releaseBody?: string: when provided, it replaces the hand-maintained [Unreleased] body with the generated body in the versioned section (legacy path preserved for backward compat when param is absent). runShipBump in ship-bump.ts now calls generateReleaseBody(subjects) and passes the result to rollChangelog, fulfilling AC-4. All 1511 tests pass. Next story: check prd.json for the next passes:false entry.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-005 only uses node:child_process built-ins (SpawnSyncReturns type, spawnSync) and internal project modules (src/version.ts, src/logging/color.ts). No external npm library was touched; no fetch needed."
+      "summary": "US-006 only uses internal project modules (src/release/bump.ts patterns) and built-in regex. No external npm library was touched; no fetch needed."
     }
   ]
 }

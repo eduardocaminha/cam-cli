@@ -130,7 +130,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Extends src/release/changelog.ts + test/release/changelog.test.ts (and wires into src/release/ship-bump.ts from US-003). Deterministic from `git log main..HEAD --pretty=%s` (same source as US-003 classification). Reuse US-001's classification rather than re-parsing prefixes ad hoc. Subject text under each bullet should strip the `type(scope)!:` prefix so the bullet reads as prose; keep it simple, no model. The existing hand-maintained `## [Unreleased]` body in CHANGELOG.md was last touched weeks ago and is stale, which is why we generate from commits."
     },
