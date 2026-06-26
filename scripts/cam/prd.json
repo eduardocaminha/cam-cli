@@ -1,0 +1,28 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-100-automerge-notice-quiet-parity",
+  "description": "Make cam init's auto-merge notice quiet-gated via printHint, matching cam config (init/config parity).",
+  "issueNumber": 100,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Quiet-gate printAutomergeNotice via printHint",
+      "description": "As a cam operator running cam init in quiet mode, I need the auto-merge prerequisite notice to be suppressed like every other hint so that quiet mode is honored consistently and cam init matches cam config (init/config parity).",
+      "acceptanceCriteria": [
+        "printAutomergeNotice's default writeFn routes through the quiet-gated printHint (imported from src/logging/color.ts), so the notice is emitted via the same suppression mechanism as cam config. [oracle: file-assert: grep -q \"printHint\" src/logging/notices.ts]",
+        "The raw process.stdout.write default is removed from printAutomergeNotice (no longer the default writeFn for the notice). [oracle: file-assert: ! grep -q \"process.stdout.write\" src/logging/notices.ts]",
+        "With the default writeFn (no injected fn) and quiet mode OFF (setQuiet(false)), calling printAutomergeNotice() emits the AUTOMERGE_NOTICE text. [oracle: bun test test/commands/setup-automerge-notice.test.ts]",
+        "With the default writeFn (no injected fn) and quiet mode ON (setQuiet(true)), calling printAutomergeNotice() emits nothing (notice suppressed). The test drives the real isQuiet toggle via setQuiet from src/logging/color.ts and asserts written-vs-suppressed (not a tautology). [oracle: bun test test/commands/setup-automerge-notice.test.ts]",
+        "The existing injected-writeFn test still passes (callers can still inject a capture fn for unit tests). [oracle: bun test test/commands/setup-automerge-notice.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/logging/notices.ts (printAutomergeNotice, lines 23-27 — change the default writeFn to printHint). Import printHint from '../logging/color.ts'. GOTCHA on the writeFn contract: today the helper feeds its writeFn a pre-formatted string `  ${AUTOMERGE_NOTICE}\\n` (2-space indent + trailing \\n), but printHint(color.ts:121) takes a BARE message and itself adds the `  ` indent + `\\n`. Passing the already-indented/newlined string to printHint would double the indent and newline. Follow the cam config pattern (src/commands/config.ts:52-54: `hintFn: (msg) => void = printHint; hintFn(AUTOMERGE_NOTICE)` — passes the bare constant). So change the default writeFn signature/body so the default path passes bare AUTOMERGE_NOTICE to printHint while any injected writeFn still receives a string it can capture; keep the existing injected-fn test (test/commands/setup-automerge-notice.test.ts:4-10) green. The setup.ts:554 call site is `printAutomergeNotice()` with no arg — it picks up the new default automatically; no call-site change needed unless the signature shape requires it. NO import cycle: color.ts is a leaf module (imports only chalk + design/tokens.ts); notices.ts is allowed to import it (notices.ts header even says it is a leaf with no deps on setup/config, but color.ts is a sibling leaf so importing it is safe). Quiet toggle is module-level state in color.ts (setQuiet(enabled)/isQuiet()), NOT an env var — the suppression test must call setQuiet(true)/setQuiet(false) directly and MUST reset it (setQuiet(false)) afterward so it does not leak into other tests in the same bun process. Project gotcha (CLAUDE.md): Bun-only (bun run typecheck, bun test). P3 cosmetic parity nit; do not touch the AUTOMERGE_NOTICE constant text or the config.ts path. STALE JSDOC: the JSDoc comment above printAutomergeNotice (notices.ts ~lines 20-21) currently says \"writeFn defaults to process.stdout.write\" — update that comment to describe the new printHint/quiet-gated default, otherwise criterion #2 (the negated grep `! grep -q \"process.stdout.write\" src/logging/notices.ts`) fails on the stale comment even when the code default is correctly swapped."
+    }
+  ]
+}
