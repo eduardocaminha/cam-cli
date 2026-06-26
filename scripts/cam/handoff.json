@@ -1,25 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add best-effort auto-merge step to cam-ship.md (markdown + template + embed)"
+    "id": "US-002",
+    "title": "Define shared auto-merge prerequisite-notice constant and print it from cam init"
   },
-  "createdFiles": [],
+  "createdFiles": [
+    "src/logging/notices.ts",
+    "test/commands/setup-automerge-notice.test.ts"
+  ],
   "modifiedFiles": [
-    ".claude/commands/cam-ship.md",
-    "templates/commands/cam-ship.md",
-    "src/vendor/_generated.ts",
-    "test/vendor/cam-ship-hygiene.test.ts"
+    "src/commands/setup.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 needs to define a shared AUTOMERGE_NOTICE constant (likely in src/logging/notices.ts or src/logging/color.ts) and print it unconditionally at cam init completion via an injectable-write-fn helper. US-003 then imports the same constant into config.ts. US-004 adds a runbook scenario (s). The notice text should match the phrasing in cam-ship.md Step 7's best-effort echo: 'Allow auto-merge' and 'Allow squash merging' in Settings > General > Pull Requests.",
+  "nextStoryContext": "US-003 needs to import AUTOMERGE_NOTICE from src/logging/notices.ts and print it from cam config (config.ts) so that operators running the config wizard also see the GitHub prerequisite notice. The constant is already defined and tested; US-003 only needs to add the import and the unconditional printAutomergeNotice() call at config completion.",
   "officialDocsValidated": [
     {
-      "lib": "gh (GitHub CLI)",
-      "version": "manual (fetched 2026-06-26)",
-      "url": "https://cli.github.com/manual/gh_pr_merge",
+      "lib": "none",
+      "version": "n/a",
+      "url": "",
       "fetchedAt": "2026-06-26T00:00:00Z",
-      "status": "ok",
-      "summary": "Confirmed: --auto enables auto-merge once requirements are met; --squash squashes commits; without a PR number it detects the current branch's PR automatically. Failure when 'Allow auto-merge' is disabled in repo settings is not documented (empirical: exits non-zero with a GraphQL enablePullRequestAutoMerge error). Implementation matches docs."
+      "status": "no_external_lib_touched",
+      "summary": "Story only defines a plain TypeScript string constant and a print helper. No external library exercised."
     }
   ]
 }
