@@ -1,0 +1,116 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-91-agent-allowlist-hook",
+  "description": "Carve out Task/Agent in the orchestrator: drop the blanket disallowedTools ban and replace it with a deterministic PreToolUse allowlist hook that permits only subagent-planner/subagent-auditor.",
+  "issueNumber": 91,
+  "relatedDocs": [
+    "docs/recovery-runbook.md",
+    "scripts/cam/patterns.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Claude Code (hooks API)",
+      "url": "https://code.claude.com/docs/en/hooks",
+      "version": "current",
+      "fetchedAt": "2026-06-26",
+      "summary": "PreToolUse hook. matcher matches tool_name (e.g. 'Task', supports 'Task|Agent' alternation). Hook reads stdin JSON {tool_name, tool_input, ...}. DENY via either (A) exit 2 + stderr (stderr text shown to Claude), or (B) exit 0 + JSON {hookSpecificOutput:{hookEventName:'PreToolUse', permissionDecision:'deny', permissionDecisionReason:'...'}}. Configured in .claude/settings.json under hooks.PreToolUse[] = {matcher, hooks:[{type:'command', command, args?, timeout?}]}. Tool-input field carrying the agent type is ambiguous between tool_input.subagent_type and a top-level agent_type, must verify empirically.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Remove Task/Agent from orchestrator disallowedTools and re-document the gate",
+      "description": "As a cam operator, I need the orchestrator's disallowedTools reconciled to the same block in BOTH copies (drop ONLY Task and Agent; keep Edit, Write, NotebookEdit, AskUserQuestion blocked) so that the sanctioned plan-time subagents (subagent-planner, subagent-auditor) are no longer blocked by construction while the orchestrator still cannot edit code, with the agent prose now stating Task/Agent are gated to the allowlist by a PreToolUse hook rather than blanket-banned. NOTE: the two copies are ALREADY out of sync (cff99a0 added a disallowedTools block to the .claude/ runtime mirror only; templates/ and the embedded _generated.ts copy have NO disallowedTools block, only a tools: list), so this story is ALSO the convergence fix: add the reconciled block to templates/, regen _generated.ts, and bring .claude/ down to the same block.",
+      "acceptanceCriteria": [
+        "In .claude/agents/subagent-orchestrator.md the disallowedTools block no longer lists Task or Agent. [oracle: file-assert grep -Eq '^[[:space:]]*-[[:space:]]*Task[[:space:]]*$' returns NO match AND grep -Eq '^[[:space:]]*-[[:space:]]*Agent[[:space:]]*$' returns NO match in .claude/agents/subagent-orchestrator.md]",
+        "In .claude/agents/subagent-orchestrator.md the disallowedTools block still lists Edit, Write, NotebookEdit, and AskUserQuestion. [oracle: file-assert grep -Eq '^[[:space:]]*-[[:space:]]*Edit[[:space:]]*$' && grep -Eq '^[[:space:]]*-[[:space:]]*Write[[:space:]]*$' && grep -Eq '^[[:space:]]*-[[:space:]]*NotebookEdit[[:space:]]*$' && grep -Eq '^[[:space:]]*-[[:space:]]*AskUserQuestion[[:space:]]*$' .claude/agents/subagent-orchestrator.md]",
+        "In templates/agents/subagent-orchestrator.md a disallowedTools block now EXISTS (this story ADDS it: the templates copy had NO disallowedTools block before, only a tools: list, which is the cff99a0 drift), and it lists Edit, Write, NotebookEdit, AskUserQuestion and does NOT list Task or Agent. [oracle: file-assert in templates/agents/subagent-orchestrator.md grep -q 'disallowedTools:' AND grep -Eq '^[[:space:]]*-[[:space:]]*Edit[[:space:]]*$' && grep -Eq '^[[:space:]]*-[[:space:]]*Write[[:space:]]*$' && grep -Eq '^[[:space:]]*-[[:space:]]*NotebookEdit[[:space:]]*$' && grep -Eq '^[[:space:]]*-[[:space:]]*AskUserQuestion[[:space:]]*$' AND grep -Eq '^[[:space:]]*-[[:space:]]*Task[[:space:]]*$' returns NO match AND grep -Eq '^[[:space:]]*-[[:space:]]*Agent[[:space:]]*$' returns NO match]",
+        "The agent prose that previously said it must NEVER use Task/Agent now documents, in BOTH copies, that Task and Agent are gated to the allowlisted subagents {subagent-planner, subagent-auditor} by the PreToolUse hook (NOT blanket-banned) and that all other spawns are denied (mention /cam-next as the path for code work). [oracle: file-assert grep -q 'subagent-planner' .claude/agents/subagent-orchestrator.md && grep -q 'subagent-auditor' .claude/agents/subagent-orchestrator.md && grep -q 'subagent-planner' templates/agents/subagent-orchestrator.md && grep -q 'subagent-auditor' templates/agents/subagent-orchestrator.md]",
+        "src/vendor/_generated.ts is regenerated so the embedded orchestrator agent string matches the on-disk templates/agents copy (no drift). [oracle: named-command bun run embed-vendor:check]",
+        "The vendored agent-frontmatter smoke still passes against the edited orchestrator agent file. [oracle: named-command bun vendor/check-agent-frontmatter.ts .claude/agents/subagent-orchestrator.md]",
+        "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
+        "Tests pass (bun test). [oracle: named-command bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/agents/subagent-orchestrator.md (disallowedTools block at lines ~13-19, currently lists Task, Agent, Edit, Write, NotebookEdit, AskUserQuestion; identity prose 'You NEVER use Task, Agent...'), templates/agents/subagent-orchestrator.md (SOURCE OF TRUTH per patterns.md; .claude/ is the runtime mirror), src/vendor/_generated.ts (regen via 'bun run embed-vendor', do NOT hand-edit). DRIFT TO CONVERGE: cff99a0 added the disallowedTools block to the .claude/ runtime mirror ONLY and never propagated it to templates/ + the embedded _generated.ts copy, so today templates/ and _generated.ts have NO disallowedTools block at all (only a tools: list) while .claude/ has the full 6-entry block. embed-vendor:check currently passes because templates == _generated (both blockless). This story converges that drift: ADD the reconciled disallowedTools block to templates/ (it had none before), then regen _generated.ts, and edit .claude/ down to the same block. The RECONCILED block in BOTH copies must be exactly: disallowedTools: with list entries Edit, Write, NotebookEdit, AskUserQuestion (i.e. remove ONLY Task and Agent; KEEP Edit, Write, NotebookEdit, AskUserQuestion). Rationale (DECISION encoded, do NOT re-open): Option A (add the block to templates) chosen over Option B (drop the block and hook-gate only) because dropping it would leave Edit/Write/NotebookEdit AVAILABLE to the orchestrator, violating the core 'orchestrator never edits code' invariant. The frontmatter smoke requires at least one of (tools, disallowedTools): keeping Edit/Write/NotebookEdit/AskUserQuestion satisfies that. No em-dash in persisted prose (project rule). This is intentional self-hosting + a drift convergence: call BOTH out in the commit message so the auditor does not flag it as harness drift. Read scripts/cam/patterns.md 'Agent-prompt self-hosting pattern' and 'capture-pane is rendered markdown' before editing."
+    },
+    {
+      "id": "US-002",
+      "title": "Create the PreToolUse deny hook script and register it in .claude/settings.json",
+      "description": "As a cam operator, I need a zero-dep bash PreToolUse hook that reads the spawned subagent_type from the tool_input JSON and DENIES any value outside {subagent-planner, subagent-auditor}, registered in .claude/settings.json against the spawn tool, so that rogue code-work subagents (the CAM-86 failure) are blocked deterministically rather than by prose.",
+      "acceptanceCriteria": [
+        ".claude/hooks/orch-agent-allowlist.sh exists and is executable. [oracle: file-assert test -x .claude/hooks/orch-agent-allowlist.sh]",
+        "Piping a PreToolUse JSON payload whose subagent_type is subagent-planner to the script exits 0 and emits NO deny decision (allow). [oracle: named-command echo payload | .claude/hooks/orch-agent-allowlist.sh ; assert exit 0 and stdout has no permissionDecision:deny]",
+        "Piping a payload whose subagent_type is general-purpose to the script returns the documented deny contract: exit 0 with JSON hookSpecificOutput.hookEventName=PreToolUse, permissionDecision=deny, and a permissionDecisionReason that points to /cam-next for code work. [oracle: named-command echo payload | .claude/hooks/orch-agent-allowlist.sh | jq -e '.hookSpecificOutput.permissionDecision==\"deny\"']",
+        "A missing or empty subagent_type defaults to DENY (never silently allow) with a clear reason; the script does not crash on absent fields. [oracle: named-command echo '{}' | .claude/hooks/orch-agent-allowlist.sh | jq -e '.hookSpecificOutput.permissionDecision==\"deny\"']",
+        "The hook reads the agent type from the alternate field names too (not only tool_input.subagent_type), and BOTH halves of the oracle are discriminating (each fails a naive hook that ignores the alternate field): a payload carrying ONLY a top-level agent_type=subagent-planner (an allowlisted value) is ALLOWED (a naive hook reading only tool_input.subagent_type would wrongly DENY it), and a payload carrying ONLY tool_input.agent_type=subagent-auditor (also an allowlisted value) is ALLOWED (a naive hook that never reads tool_input.agent_type would wrongly DENY this allowlisted value), proving the alternate fields are actually read. [oracle: named-command echo '{\"tool_name\":\"Task\",\"agent_type\":\"subagent-planner\"}' | .claude/hooks/orch-agent-allowlist.sh ; assert NO deny decision (allow) AND echo '{\"tool_name\":\"Task\",\"tool_input\":{\"agent_type\":\"subagent-auditor\"}}' | .claude/hooks/orch-agent-allowlist.sh ; assert NO deny decision (allow)]",
+        ".claude/settings.json is valid JSON containing a hooks.PreToolUse entry whose matcher covers the spawn tool and whose command references the hook script. [oracle: named-command jq -e '.hooks.PreToolUse[] | select(.matcher|test(\"Task\")) | .hooks[].command | test(\"orch-agent-allowlist\")' .claude/settings.json]",
+        "The matcher covers the real trigger tool name (Task and Agent, e.g. matcher 'Task|Agent') so the gate fires regardless of which name the cam-spawned orchestrator session uses. [oracle: file-assert grep -Eq '\"matcher\"[[:space:]]*:[[:space:]]*\"[^\"]*(Task|Agent)' .claude/settings.json]",
+        "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
+        "Tests pass (bun test). [oracle: named-command bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "NEW files: .claude/hooks/orch-agent-allowlist.sh (zero-dep bash, reads stdin JSON, jq is assumed present per the official examples), .claude/settings.json (new file; no .claude/settings.json exists today). EMPIRICAL VERIFICATION IS THE #1 RISK (encoded as ACs above): (1) the tool name firing the PreToolUse event in the cam-spawned claude orchestrator session must be verified, standard Claude Code names the subagent tool 'Task' but some runtimes expose 'Agent'; the matcher MUST cover the real trigger, use 'Task|Agent' unless verification proves only one fires; (2) the field carrying the subagent type is ambiguous in the official doc (tool_input.subagent_type vs top-level agent_type), read all three defensively: .tool_input.subagent_type // .tool_input.agent_type // .agent_type. Deny contract (from officialDocsConsulted): exit 0 + JSON {\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"<msg pointing to /cam-next>\"}}. Allowlist = {subagent-planner, subagent-auditor} (the two sanctioned plan-time helpers, see patterns.md 'Pane worker vs Task subagent'). Do NOT register a --permission-mode flag (patterns.md invariant). chmod +x the script. US-003 is the regression that proves this with synthetic payloads; the empirical-name AC leans on reviewer-judgment + US-003. EMPIRICALLY-OBSERVED SHAPE (S-2): the top-level agent_type field carries the CALLER's identity (present only when running under --agent or inside a subagent), NOT the type of the subagent being spawned by the Task call; per the official hooks doc, the SPAWNED type lives in tool_input. The defensive read order (.tool_input.subagent_type // .tool_input.agent_type // .agent_type) is correct, but the implementer MUST capture the empirically-observed payload shape (which field actually carries the spawned subagent_type in the cam-spawned orchestrator session) and add THAT exact shape as a fixture in US-003's regression, so the test locks the real production shape, not only the defensive-fallback shapes. Worst case is bounded: the orchestrator's own identity is subagent-orchestrator, which is NOT allowlisted, so a top-level-agent_type misread would DENY, never falsely allow."
+    },
+    {
+      "id": "US-003",
+      "title": "Regression test piping synthetic PreToolUse payloads to the real hook script",
+      "description": "As a cam maintainer, I need a bun test that invokes the actual .claude/hooks/orch-agent-allowlist.sh with synthetic PreToolUse payloads and asserts the allow/deny decisions so that the allowlist gate is locked against regression and the shadow-mock failure class (CAM-58/CAM-77) is avoided.",
+      "acceptanceCriteria": [
+        "A test under test/ spawns the real .claude/hooks/orch-agent-allowlist.sh via Bun.spawn (the actual file, not an inline reimplementation of its logic). [oracle: file-assert grep -q 'orch-agent-allowlist.sh' test/orch-agent-allowlist.test.ts && grep -q 'Bun.spawn' test/orch-agent-allowlist.test.ts]",
+        "subagent_type=general-purpose yields a deny decision (permissionDecision deny). [oracle: named-command bun test test/orch-agent-allowlist.test.ts]",
+        "subagent_type=Explore yields a deny decision. [oracle: named-command bun test test/orch-agent-allowlist.test.ts]",
+        "subagent_type=subagent-planner yields an allow (no deny decision, clean exit 0). [oracle: named-command bun test test/orch-agent-allowlist.test.ts]",
+        "subagent_type=subagent-auditor yields an allow. [oracle: named-command bun test test/orch-agent-allowlist.test.ts]",
+        "A missing/empty subagent_type yields a deny decision. [oracle: named-command bun test test/orch-agent-allowlist.test.ts]",
+        "The regression test, driven through the real script via Bun.spawn, includes at least one payload carrying ONLY a top-level agent_type (no subagent_type anywhere) and one carrying ONLY tool_input.agent_type, asserting the correct allow/deny decision for each, so a future field-name change is caught by a failing assertion rather than a passing substring grep. Specifically: a payload with ONLY top-level agent_type=subagent-planner yields ALLOW. [oracle: named-command bun test test/orch-agent-allowlist.test.ts]",
+        "A payload with ONLY tool_input.agent_type=general-purpose yields DENY. [oracle: named-command bun test test/orch-agent-allowlist.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
+        "Tests pass (bun test). [oracle: named-command bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "NEW file: test/orch-agent-allowlist.test.ts. ANTI-SHADOW-MOCK (patterns.md, real-git/real-tmux integration lesson + CAM-55 operator-smoke 'a unit fake that returns the output the code EXPECTS cannot catch tool-real-behavior bugs'): invoke the actual .sh via Bun.spawn with stdin piped (Bun.spawn supports { stdin: <string|Blob|ArrayBuffer> } or write to proc.stdin), read proc.stdout, parse JSON, assert permissionDecision. Do NOT re-mock the script logic in TS. jq is assumed installed (the script depends on it); if a CI runner lacks jq, skip via test.skipIf(jq absent) using Bun.which('jq')===null, mirroring the test.skipIf(!gitAvailable) pattern. Synthetic payloads must include {\"tool_name\":\"Task\",\"tool_input\":{\"subagent_type\":\"...\"}} AND the alternate shapes (tool_input.agent_type, top-level agent_type) that US-002 reads defensively. EMPIRICALLY-OBSERVED SHAPE (S-2): the top-level agent_type field carries the CALLER's identity (present only when running under --agent or inside a subagent), NOT the type of the subagent being spawned by the Task call; per the official hooks doc, the SPAWNED type lives in tool_input. The implementer MUST capture the empirically-observed payload shape (which field actually carries the spawned subagent_type in the cam-spawned orchestrator session) and add THAT exact shape as a fixture here, so this regression locks the real production shape, not only the defensive-fallback shapes. Worst case is bounded: the orchestrator's own identity is subagent-orchestrator (not allowlisted), so a top-level-agent_type misread would DENY, never falsely allow."
+    },
+    {
+      "id": "US-004",
+      "title": "Ship settings.json + hook to downstream projects via the embed/template system",
+      "description": "As a downstream cam user, I need .claude/settings.json and .claude/hooks/orch-agent-allowlist.sh materialized by cam init so that the allowlist gate is present in every project the same way the agents and commands are, not just in the cam-cli repo itself.",
+      "acceptanceCriteria": [
+        "Source copies exist under templates/ mirroring the on-disk target layout the embed expects (templates/.claude/settings.json and templates/.claude/hooks/orch-agent-allowlist.sh). [oracle: file-assert test -f templates/.claude/settings.json && test -f templates/.claude/hooks/orch-agent-allowlist.sh]",
+        "src/templates/embedded.ts SUBTREES and targetPath() are extended so the .claude/settings.json and .claude/hooks/* template keys materialize to .claude/settings.json and .claude/hooks/<name> in the target project cwd. [oracle: file-assert grep -q '.claude' src/templates/embedded.ts && reviewer-judgment that targetPath routes the new keys]",
+        "src/vendor/_generated.ts is regenerated and templatesContents contains the new settings.json + hook keys; embed-vendor:check is in parity. [oracle: named-command bun run embed-vendor:check]",
+        "A bun test asserts the embedded templatesContents map contains both the settings.json key and the hook-script key, so a future regen cannot silently drop them. [oracle: named-command bun test test/embedded.test.ts]",
+        "After materializing the templates into a tempdir, the output .claude/hooks/orch-agent-allowlist.sh is executable (writeFileSync drops the mode bit, so init must chmod +x it or the materialize step must preserve/restore the bit). [oracle: named-command - materialize to a tempdir in the test and assert test -x on the output hook path, or a bun test asserting the file mode has the owner-exec bit]",
+        "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
+        "Tests pass (bun test). [oracle: named-command bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/templates/embedded.ts (SUBTREES const ~line 24, targetPath() ~line 30, materializeTemplates() counts), templates/.claude/settings.json + templates/.claude/hooks/orch-agent-allowlist.sh (NEW source copies, byte-mirror US-002's repo copies), src/vendor/_generated.ts (regen via 'bun run embed-vendor'), test/embedded.test.ts (extend; note it currently locks EMBEDDED_CONTENTS to exactly 3 vendor keys via a sorted-equality assertion, but templatesContents is a separate map keyed by POSIX relative path, so add a contains-key assertion for templatesContents). GOTCHA: scripts/generate-embedded-vendor.ts walkFiles(TEMPLATES_DIR) ALREADY recursively embeds any file under templates/, so dropping files under templates/.claude/ auto-embeds them with keys '.claude/settings.json' and '.claude/hooks/orch-agent-allowlist.sh'. The real work is targetPath()/SUBTREES + the no-silent-drop test, NOT the codegen (it is string-constant codegen, NOT a runtime dir read). targetPath currently falls through to join(cwd, relPath) for unknown prefixes, which lands '.claude/...' keys correctly; verify the executable bit survives materialization (writeFileSync drops mode) and decide whether init chmods the hook. Read src/templates/embedded.ts (SUBTREES, targetPath, materializeTemplates) and scripts/generate-embedded-vendor.ts before touching. EXECUTABLE BIT (S-3): asserting the materialized hook is executable likely requires init/materializeTemplates to chmod the hook after write, since writeFileSync does not carry the source mode (the embedded templatesContents is a string map with no mode metadata). Materialize into a tempdir in the test and assert test -x (or the owner-exec mode bit) on the output .claude/hooks/orch-agent-allowlist.sh."
+    },
+    {
+      "id": "US-005",
+      "title": "Add a recovery-runbook scenario for the orchestrator agent-allowlist hook",
+      "description": "As a cam operator hitting a blocked plan flow or a denied Task spawn, I need a recovery-runbook scenario explaining the PreToolUse allowlist hook, how to diagnose it from the permissionDecisionReason, and how to extend the allowlist when a new sanctioned subagent is added, so that the gate is debuggable without reverse-engineering the hook.",
+      "acceptanceCriteria": [
+        "docs/recovery-runbook.md gains a new lettered scenario (next free letter, q) titled for CAM-91 describing: symptom (orchestrator plan flow blocked / a Task spawn denied), cause (the PreToolUse allowlist hook), diagnosis (read the permissionDecisionReason), and how to extend the allowlist if a new sanctioned subagent is added. [oracle: file-assert grep -q 'CAM-91' docs/recovery-runbook.md && grep -q 'allowlist' docs/recovery-runbook.md]",
+        "The scenario references the hook script path .claude/hooks/orch-agent-allowlist.sh. [oracle: file-assert grep -q 'orch-agent-allowlist.sh' docs/recovery-runbook.md]",
+        "The scenario names the allowlist members subagent-planner and subagent-auditor. [oracle: file-assert grep -q 'subagent-planner' docs/recovery-runbook.md && grep -q 'subagent-auditor' docs/recovery-runbook.md]",
+        "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
+        "Tests pass (bun test). [oracle: named-command bun test]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "File: docs/recovery-runbook.md (the issue's relatedDocs path 'docs/runbooks/cam-loop-recovery.md' does NOT exist in this repo, that string only appears as a stale CONSUMERS comment inside vendor/check-agent-frontmatter.ts; the real runbook is docs/recovery-runbook.md). Scenarios are lettered '## (x) CAM-NN: title'; the last existing is '(p) CAM-78'; add '(q) CAM-91: ...'. Follow the existing structure (### Background / ### Diagnosing / ### Manual override subsections). No em-dash in persisted .md (project rule); use colon/comma/period. No code change in this story but keep the gate uniform (typecheck + bun test)."
+    }
+  ]
+}
