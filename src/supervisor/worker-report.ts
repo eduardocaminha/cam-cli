@@ -6,13 +6,13 @@
 // Shape mirrors the CAM-52 verdict so future structured-outputs work can reuse
 // it without schema changes.
 //
-// The worker (subagent-implementer) is responsible for:
+// The worker (subagent-implementer) is responsible for exactly one thing here:
 //   1. Populating a WorkerReport and writing it as JSON to WORKER_REPORT_FILENAME.
-//   2. Calling buildWorkerReportSendKeysArgv to get the tmux argv that pushes
-//      the one-line summary to the orchestrator pane (%0) before the sentinel.
 //
-// The supervisor reads the report file as a push signal (US-008 will wire this
-// into the polling loop; US-003 only mandates the writer side).
+// The sidecar (makeNotifyOrchestrator in host.ts) is the sole caller of
+// buildWorkerReportSendKeysArgv. It reads the report file as a push signal and
+// pushes the one-line summary to the orchestrator pane (%0) via send-keys.
+// The worker does NOT self-push (US-003/CAM-78 removed that path).
 
 /** Structured report written by the implementer at /exit. */
 export interface WorkerReport {
