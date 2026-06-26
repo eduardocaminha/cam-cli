@@ -1,22 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Compute next version (0.x convention) and atomically write version.ts + package.json"
+    "id": "US-003",
+    "title": "Wire the deterministic bump step into cam ship before push"
   },
   "createdFiles": [
-    "src/release/version.ts",
-    "test/release/version.test.ts"
+    "src/release/ship-bump.ts",
+    "test/release/ship-bump.test.ts"
   ],
   "modifiedFiles": [
+    "index.ts",
+    ".claude/commands/cam-ship.md",
+    "templates/commands/cam-ship.md",
+    "src/vendor/_generated.ts",
+    "test/ship-args.test.ts",
+    "test/ship.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 created src/release/version.ts exporting computeNextVersion(current, bump) and two pure text-transform writers: applyVersionToVersionTs(text, newVersion) and applyVersionToPackageJson(text, newVersion). US-003 (or whichever story reads next) should import from 'src/release/version.ts'. The 0.x demotion (major->minor for pre-1.0) lives exclusively in computeNextVersion. The two writer functions are DI-friendly pure transforms (no real fs); callers supply the file text and receive the updated text back.",
+  "nextStoryContext": "US-003 added runShipBump() in src/release/ship-bump.ts (injectable SpawnFn+ClockFn pattern, modeled on finalizeCycleClose). The function is wired into dispatchShip via the --bump flag. parseShipArgs now returns { help, finalize, bump }. _buildBumpOpts(cwd) is the production factory in index.ts. cam-ship.md (both mirrors) now has 9 steps: Step 4 is 'cam ship --bump', Step 5 is finalize, Step 6 is push. All 1464 tests pass. If a future story needs to extend the ship-bump step (e.g. add git push, or integrate with finalize), import from src/release/ship-bump.ts and extend ShipBumpOptions.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "src/release/version.ts imports only the project-internal bump.ts (BumpLevel type). No external npm library was used; no fetch needed."
+      "summary": "src/release/ship-bump.ts imports only internal modules (bump.ts, version.ts) and node:child_process types. No external npm library was touched; no fetch needed."
     }
   ]
 }

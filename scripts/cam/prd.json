@@ -79,7 +79,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit index.ts: parseShipArgs (line ~730) add `--bump`; dispatchShip (line ~764) add the bump branch with injectable deps like _buildFinalizeOpts. New step module e.g. src/release/ship-bump.ts (in-process, DI'd spawnFn/clock, hermetically testable, no real git). New test/release/ship-bump.test.ts. Edit BOTH mirror docs (.claude/commands/cam-ship.md + templates/commands/cam-ship.md, currently byte-identical per diff -q) inserting the bump step after Step 3; then run `bun run embed-vendor` to regenerate src/vendor/_generated.ts and verify with `bun run embed-vendor:check`. The bump COMMITS before the push step (Step 5 in cam-ship.md). This story touches templates/ so embed-vendor:check is mandatory. Classification source is the BRANCH (main..HEAD), never v<lasttag>..HEAD on main (main commits are non-conventional CAM-NN/chore(cam) and would under-count)."
     },
