@@ -93,7 +93,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-003 (the agent copies are clean and the sidecar owns the implementer narration by now). New file: test/single-pusher-guard.test.ts. F-03: oracles 1 and 2 are STANDING-INVARIANT REGRESSION GUARDS (they pass on the post-migration tree), the DISCRIMINATING proof is the new test file via `bun test`. GOTCHA: do NOT oracle on a bare `grep -rn '[cam]' src/commands`, src/commands/claude.ts:116 has a benign `[cam] <validationError>` stderr message in the cam claude retry wrapper that is NOT a pane narration and would be a false positive; scope the negative grep to the narration builder/emitter symbols (oracle 1). The builders live in src/supervisor/worker-report.ts (buildWorkerReportSendKeysArgv, formatWorkerReportSummary, formatReviewVerdictLine); the emitter factory is makeNotifyOrchestrator in src/supervisor/host.ts:193. Unit test: build a recording fake TmuxSpawnFn (SpawnSyncReturns shape, like makeFakeTmuxSpawn in test/next.test.ts) where list-panes -F '#{pane_index};#{pane_id}' resolves the orch pane; call makeNotifyOrchestrator('cam-<session>', fakeSpawn)('[cam] US-001 DONE: typecheck ok, 1 pass / 0 fail') and assert exactly one send-keys call lands the line + Enter on the orch pane (no -l). Reference patterns 56/57 and 77. This is the zero-double-push guard, NOT CAM-63."
     },
