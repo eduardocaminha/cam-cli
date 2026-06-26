@@ -1,22 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Pass --merge-mode immediate in the build-release AC4 init smoke"
+    "id": "US-003",
+    "title": "Deterministic guard test: readline collection flow resolves init defaults on EOF, never hangs"
   },
   "branchName": "cam/CAM-104-init-merge-mode-eof",
-  "timestamp": "2026-06-26T22:30:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-26T23:00:00Z",
+  "createdFiles": [
+    "test/setup-collection-eof.test.ts"
+  ],
   "modifiedFiles": [
-    "scripts/build-release.sh",
-    "scripts/cam/prd.json"
+    "src/commands/setup.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 is done: --merge-mode immediate added to the build-release AC4 init smoke (scripts/build-release.sh line 115). Both US-001 (readline EOF guard) and US-002 (belt-and-suspenders flag) are now complete. PRD should be fully passing; no further stories remain.",
+  "nextStoryContext": "US-003 done: exported collectViaReadline with injectable input stream; 3 integration tests in test/setup-collection-eof.test.ts prove the collection flow returns mergeMode='immediate' on EOF and never hangs. US-004 (patterns.md doc bullet) and US-005 (operator smoke) remain.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "US-002 only edited a shell script flag; no external library API was exercised."
+      "lib": "node:readline",
+      "version": "Node 22 LTS (built-in)",
+      "url": "https://nodejs.org/api/readline.html",
+      "fetchedAt": "2026-06-26T23:00:00Z",
+      "status": "ok",
+      "summary": "Docs confirm 'close' fires when the input stream emits 'end'. They do not explicitly document behavior when Interface is created on an already-ended stream (empirically: 'close' does not re-fire). Pattern bullet added to patterns.md."
     }
   ]
 }

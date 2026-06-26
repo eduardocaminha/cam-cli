@@ -134,13 +134,17 @@ async function collectSetupAnswers(options: SetupOptions): Promise<SetupAnswers 
 	return collectViaReadline(options);
 }
 
-async function collectViaReadline(options: SetupOptions): Promise<SetupAnswers> {
+export async function collectViaReadline(
+	options: SetupOptions,
+	input: NodeJS.ReadableStream = process.stdin,
+): Promise<SetupAnswers> {
 	const projectMode =
 		options.projectMode ??
 		(await askChoice(
 			'Is this a new project or an existing one?',
 			['new', 'existing'] as const,
 			'existing',
+			input,
 		));
 	const issueSystem =
 		options.issueSystem ??
@@ -148,6 +152,7 @@ async function collectViaReadline(options: SetupOptions): Promise<SetupAnswers> 
 			'Which issue system does this project use?',
 			['linear', 'github', 'none'] as const,
 			'none',
+			input,
 		));
 	const mergeMode =
 		options.mergeMode ??
@@ -155,10 +160,11 @@ async function collectViaReadline(options: SetupOptions): Promise<SetupAnswers> 
 			'Merge mode for cam ship',
 			['immediate', 'ci-gated'] as const,
 			'immediate',
+			input,
 		));
 	let description = options.description ?? '';
 	if (projectMode === 'new' && description === '') {
-		description = await ask('What is this project about? (free-form): ');
+		description = await ask('What is this project about? (free-form): ', '', input);
 	}
 	return { projectMode, issueSystem, mergeMode, description };
 }

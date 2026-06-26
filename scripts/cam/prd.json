@@ -61,7 +61,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New test file (mirror test/setup-prompt.test.ts conventions: bun:test, import from ../src/commands/setup.ts). Do NOT spawn the binary: runSetup calls verifyAgent() at src/commands/setup.ts:517 and `return 1` at :521 BEFORE collectSetupAnswers at :525, and CI (.github/workflows, macos-latest) installs bun+tmux but NOT claude, so a binary-spawn approach never reaches the readline EOF path on CI (guard theater). Instead test the collection seam directly: drive collectViaReadline (or collectSetupAnswers with mergeMode undefined so needsMerge=true at setup.ts:105 forces the readline branch at :120) using a closed/EOF input stream. Testability seam: ask/askChoice (and collectViaReadline) should accept an optional input stream defaulting to process.stdin (the same injectable seam US-001 introduces); exact mechanism (export the collector vs. inject the stream) is the implementer's call, but the asserted EOF path MUST run on CI with no claude present. Default merge_mode is 'immediate' (src/config/models.ts:138 readMergeMode default). Keep distinct from US-001: US-001 proves the ask/askChoice primitives resolve on EOF; US-003 proves the integration (collection flow returns mergeMode='immediate' on EOF), the real path the smoke triggers. Depends on US-001 landing first."
     },
