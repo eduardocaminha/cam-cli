@@ -4,6 +4,14 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.7.0] - 2026-06-26
+
+### Added
+
+- US-004 - Anchor implementer dispatch to issue-bound PRD in both orchestrator personas
+- US-002 - Propagate identical hook change to template and re-embed
+- US-001 - Rewrite runtime hook to capability policy gated by CAM_SESSION
+
 ## [0.6.0] - 2026-06-26
 
 ### Added
