@@ -1,5 +1,5 @@
 {
-  "next_id": 95,
+  "next_id": 96,
   "issues": [
     {
       "id": "CAM-1",
@@ -789,6 +789,13 @@
       "createdAt": "2026-06-26T02:35:16.314Z",
       "description": "Follow-up advisory do review do CAM-78. Os sites de notifyOrchestrator em terminal-blocked (src/supervisor/loop.ts, ex linhas 910/922/940/951/969/1001) narram formatWorkerReportSummary(report), i.e. o outcome auto-reportado do worker (ex DONE), que pode contradizer a decisao de block do supervisor: o pane do orquestrador pode mostrar [cam] US-XXX DONE numa story que o supervisor de fato bloqueou. Spec-conformant (o PRD lista terminal-blocked como caso de notify) e nao-bloqueante, mas e correcao de correcao de narracao. Fix: nos sites terminal-blocked, narrar o outcome do supervisor (block) em vez do auto-reportado do worker. Arquivo: src/supervisor/loop.ts.",
       "priority": 3
+    },
+    {
+      "id": "CAM-95",
+      "title": "Promote review verdict to MAX_ROUNDS_DEBT when the loop stops at the cap",
+      "state": "open",
+      "createdAt": "2026-06-26T04:14:29.819Z",
+      "description": "When the review loop reaches roundsCompleted == maxRounds, decideNextAction treats review as terminal-by-cap and exits without a confirming round, so review.lastVerdict stays at FIXES_PENDING:N instead of being promoted to MAX_ROUNDS_DEBT (the Step 5.5 safety valve only fires when a round is attempted beyond the cap). This wedges /cam-ship, which only accepts CLEAN or MAX_ROUNDS_DEBT as terminal, and forces a manual maxRounds bump. Recurring: CAM-53 follow-up b, reproduced in CAM-78 (PR #73) where the round-3 fix was already committed but the verdict stayed FIXES_PENDING:1."
     }
   ]
 }
