@@ -13,6 +13,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { runShipBump, type ShipBumpOptions, type ShipBumpResult } from '../../src/release/ship-bump.ts';
 
@@ -458,5 +460,45 @@ describe('runShipBump - CHANGELOG roll', () => {
 		const { opts, written } = makeOpts([]);
 		runShipBump(opts);
 		expect(written.changelog).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Oracle: production wiring in index.ts _buildBumpOpts (US-R1-002)
+// ---------------------------------------------------------------------------
+//
+// Verifies that _buildBumpOpts in index.ts wires `writeEvent` to the
+// cam-worker-events.jsonl file logger. This is the gap identified in US-R1-002:
+// the unit tests above confirm writeEvent works when injected, but the
+// production caller (_buildBumpOpts) must actually pass it.
+
+describe('_buildBumpOpts production wiring - writeEvent oracle (US-R1-002)', () => {
+	const indexPath = resolve(import.meta.dir, '..', '..', 'index.ts');
+	const source = readFileSync(indexPath, 'utf8');
+
+	// Isolate the _buildBumpOpts function body for precise assertions.
+	// The function spans from `function _buildBumpOpts` to the closing `}`.
+	const bumpOptsMatch = source.match(
+		/function _buildBumpOpts[\s\S]*?^}/m,
+	);
+
+	test('_buildBumpOpts function exists in index.ts', () => {
+		expect(bumpOptsMatch).not.toBeNull();
+	});
+
+	test('_buildBumpOpts wires writeEvent', () => {
+		expect(bumpOptsMatch?.[0]).toContain('writeEvent');
+	});
+
+	test('_buildBumpOpts uses makeFileEventLogger', () => {
+		expect(bumpOptsMatch?.[0]).toContain('makeFileEventLogger');
+	});
+
+	test('_buildBumpOpts targets cam-worker-events.jsonl', () => {
+		expect(bumpOptsMatch?.[0]).toContain('cam-worker-events.jsonl');
+	});
+
+	test('_buildBumpOpts wraps event with kind ship-bump', () => {
+		expect(bumpOptsMatch?.[0]).toContain("'ship-bump'");
 	});
 });

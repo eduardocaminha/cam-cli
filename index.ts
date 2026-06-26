@@ -48,6 +48,7 @@ import { runConfig } from './src/commands/config.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { runSidecar } from './src/commands/sidecar.ts';
 import { runTag } from './src/commands/tag.ts';
+import { makeFileEventLogger } from './src/supervisor/events.ts';
 import { printError, printFatalHint, printHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { CAM_VERSION } from './src/version.ts';
@@ -846,6 +847,7 @@ function _buildFinalizeOpts(cwd: string) {
 
 /** Build production deps for runShipBump from the given project root. */
 function _buildBumpOpts(cwd: string) {
+	const eventLogger = makeFileEventLogger(join(cwd, '.claude/cam-worker-events.jsonl'));
 	return {
 		cwd,
 		spawnFn: spawnSync,
@@ -856,6 +858,14 @@ function _buildBumpOpts(cwd: string) {
 		writePackageJson: (text: string) => writeFileSync(join(cwd, 'package.json'), text, 'utf8'),
 		readChangelog: () => readFileSync(join(cwd, 'CHANGELOG.md'), 'utf8'),
 		writeChangelog: (text: string) => writeFileSync(join(cwd, 'CHANGELOG.md'), text, 'utf8'),
+		writeEvent: (event: ShipBumpResult) =>
+			eventLogger({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'ship-bump',
+				kind: 'ship-bump',
+				detail: event as unknown as Record<string, unknown>,
+			}),
 	};
 }
 
