@@ -1,16 +1,14 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Print the shared auto-merge prerequisite notice from cam config"
+    "id": "US-004",
+    "title": "Add auto-merge recovery scenario to the recovery runbook"
   },
-  "createdFiles": [
-    "test/commands/config-automerge-notice.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/config.ts"
+    "docs/recovery-runbook.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 needs to add a recovery runbook scenario to docs/recovery-runbook.md for the 'cam ship enabled auto-merge but the PR did not merge' situation. The scenario should cover the root cause (Allow auto-merge / Allow squash merging disabled in Settings > General > Pull Requests) and the fix (gh pr merge --auto --squash <PR#> after enabling the settings).",
+  "nextStoryContext": "US-004 was the final story in this PRD (priority 4, last). All non-operator stories should now be complete. The next agent should check prd.json for any remaining passes:false stories before declaring PRD_COMPLETE.",
   "officialDocsValidated": [
     {
       "lib": "none",
@@ -18,7 +16,7 @@
       "url": "",
       "fetchedAt": "2026-06-26T00:00:00Z",
       "status": "no_external_lib_touched",
-      "summary": "Story only adds a printHint call and an exported helper in config.ts. No external library exercised."
+      "summary": "Story is docs-only (recovery-runbook.md). No external library exercised."
     }
   ]
 }

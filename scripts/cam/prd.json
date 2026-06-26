@@ -88,7 +88,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: docs/recovery-runbook.md only (docs-only, last). Read the runbook's existing format first: scenarios are `## (letter) [CAM-NNN:] Title` with Symptom / Cause / Recovery prose and fenced bash blocks. The current last scenario is `## (r) CAM-89: ...` (recovery-runbook.md:1282), so the new one is `## (s) CAM-84: cam ship enabled auto-merge but the PR did not merge`. Follow the (r) / (q) / (p) structure: Symptom, Cause, then numbered fix steps with bash fences. The empirical fact to encode (gh manual does not document it): the failure is a GraphQL enablePullRequestAutoMerge error from `gh pr merge --auto --squash` when 'Allow auto-merge' is off, and --squash needs 'Allow squash merging' on. PROJECT WRITING RULE: no em-dash (use `--` double-hyphen like the rest of the file, or rephrase) and no decorative emoji in this .md. The fix steps: (1) enable both toggles in Settings > General > Pull Requests, (2) re-run `gh pr merge --auto --squash <PR#>` manually (or re-run cam ship). Cross-reference .claude/commands/cam-ship.md Step 7 at the end, matching how other scenarios add a Cross-reference line."
     }
