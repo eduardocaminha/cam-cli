@@ -1,19 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Create the PreToolUse deny hook script and register it in .claude/settings.json"
+    "id": "US-003",
+    "title": "Regression test piping synthetic PreToolUse payloads to the real hook script"
   },
   "branchName": "cam/CAM-91-agent-allowlist-hook",
-  "timestamp": "2026-06-26T00:00:00Z",
+  "timestamp": "2026-06-26T01:00:00Z",
   "createdFiles": [
     ".claude/hooks/orch-agent-allowlist.sh",
-    ".claude/settings.json"
+    ".claude/settings.json",
+    "test/orch-agent-allowlist.test.ts"
   ],
   "modifiedFiles": [
     ".gitignore"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 created the PreToolUse allowlist hook (.claude/hooks/orch-agent-allowlist.sh, chmod+x) and registered it in .claude/settings.json under hooks.PreToolUse with matcher Task|Agent. The hook reads the spawned subagent type from three defensive field paths (.tool_input.subagent_type // .tool_input.agent_type // .agent_type) and denies anything outside {subagent-planner, subagent-auditor}. .gitignore was updated to stop ignoring .claude/hooks/ so the script can be committed. The next story (US-003) should write regression tests using synthetic payloads to lock the real production field shape - the empirically-observed payload shape for Task spawns should be captured as a fixture, not just the defensive fallback shapes.",
+  "nextStoryContext": "US-003 created test/orch-agent-allowlist.test.ts: 11 tests using Bun.spawn against the real .claude/hooks/orch-agent-allowlist.sh, covering deny cases (general-purpose, Explore, missing/empty type), allow cases (subagent-planner, subagent-auditor), defensive fallback paths (tool_input.agent_type, top-level agent_type), and an empirically-observed production shape fixture (tool_input.subagent_type with a top-level agent_type=subagent-orchestrator). jq-absent CI skip pattern used (test.skipIf(!jqAvailable)). All 1387 tests pass.\n\nUS-004 (next story) ships .claude/settings.json and .claude/hooks/orch-agent-allowlist.sh to downstream projects via the cam init template system. Key files: src/templates/embedded.ts (SUBTREES, targetPath, materializeTemplates), scripts/generate-embedded-vendor.ts (already walks templates/ recursively so adding templates/.claude/ auto-embeds), test/embedded.test.ts (extend to assert the new keys exist in templatesContents). Main risk: executable bit - writeFileSync drops mode, init/materializeTemplates must chmod +x the hook after writing.",
   "officialDocsValidated": [
     {
       "lib": "claude-code-hooks",
@@ -21,7 +22,15 @@
       "url": "https://code.claude.com/docs/en/hooks",
       "fetchedAt": "2026-06-26T00:00:00Z",
       "status": "ok",
-      "summary": "Confirmed: (1) deny contract matches - exit 0 + {hookSpecificOutput:{hookEventName,permissionDecision:deny,permissionDecisionReason}}; (2) settings.json structure matches - hooks.PreToolUse[].matcher + .hooks[].{type,command}; (3) top-level agent_type is caller identity, spawned type lives in tool_input; (4) exit 0 is correct for JSON output, exit 2 ignores JSON."
+      "summary": "Confirmed: deny contract is exit 0 + JSON hookSpecificOutput.permissionDecision=deny; top-level agent_type is caller identity not spawned type; tool_input.subagent_type is the primary spawned-type field."
+    },
+    {
+      "lib": "bun-spawn",
+      "version": "1.3.x",
+      "url": "https://bun.sh/docs/api/spawn",
+      "fetchedAt": "2026-06-26T01:00:00Z",
+      "status": "ok",
+      "summary": "Confirmed: stdin accepts TypedArray (Uint8Array is valid), proc.stdout is ReadableStream readable via new Response(proc.stdout).text(), proc.exited is Promise<number>. Implementation matches API."
     }
   ]
 }
