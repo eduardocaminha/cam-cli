@@ -50,7 +50,7 @@
       "id": "US-R1-005",
       "title": "Review round 1 fix 005: address reviewer finding",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [templates/commands/cam-ship.md:96]: The ci-gated bullet claims the sidecar 'completes post-merge autonomously (pull main, push tag, prune branch, close issue, print summary)'. runPostMerge does pull/tag/prune ONLY (no issue-close, no summary; it just narrates). Under ci-gated, Step 8 (close github/linear issue) is skipped, so for github/linear backends the issue is never closed. The claim also contradicts recovery-runbook (t) which correctly lists only pull/tag/prune. Correct the doc and define who closes the issue under ci-gated."
     },
     {

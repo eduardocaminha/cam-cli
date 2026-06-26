@@ -1,20 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-004",
-    "title": "Review round 1 fix 004: address reviewer finding"
+    "id": "US-R1-005",
+    "title": "Review round 1 fix 005: address reviewer finding"
   },
   "branchName": "cam/CAM-101-configurable-merge-mode",
-  "timestamp": "2026-06-27T04:00:00Z",
+  "timestamp": "2026-06-27T05:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/sidecar.ts",
-    "test/release/merge-watch.test.ts",
+    "templates/commands/cam-ship.md",
+    ".claude/commands/cam-ship.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [
-    "check:all has pre-existing failures in lint (runPostMerge cognitive complexity in post-merge.ts) and file-size (src/supervisor/events.ts:344>290, src/ui/SetupScreen.tsx:290>254, test/vendor/cam-ship-hygiene.test.ts:91>50, src/commands/setup.ts:697>650). These were failing before US-R1-004 and are not introduced by this story."
+    "check:all has pre-existing failures in lint (runPostMerge cognitive complexity in post-merge.ts) and file-size (src/supervisor/events.ts:344>290, src/ui/SetupScreen.tsx:290>254, test/vendor/cam-ship-hygiene.test.ts:91>50, src/commands/setup.ts:697>650). These were failing before US-R1-005 and are not introduced by this story."
   ],
-  "nextStoryContext": "US-R1-004 fixed the missing logEvent wiring in sidecar.ts: the production runMergeWatch call inside the ci-gated closure was omitting the logEvent argument, so merge-watch-watching/merged/ci-red/post-merge-done events never reached cam-worker-events.jsonl. The fix adds a logEvent: (kind, detail) => logEvent({ ts, storyId: undefined, uuid: 'sidecar', kind, detail }) adapter in the runMergeWatch call. A new oracle test in test/release/merge-watch.test.ts reads sidecar.ts source and asserts logEvent: is present in the call, preventing silent regression. 1657 tests pass total.",
+  "nextStoryContext": "US-R1-005 was a documentation-only fix. The ci-gated bullet in cam-ship.md incorrectly claimed that runPostMerge 'closes issue, prints summary'. The code (src/release/post-merge.ts) does only: checkout main, pull origin main, create/push tag, delete branch locally/remotely. The fix: (1) removes 'close issue, print summary' from the description; (2) states that github/linear backends must close the issue manually after merge (gh issue close); (3) clarifies that the none backend was already closed in Step 5 (--finalize); (4) changes 'Skip Steps 8-9' to 'Skip Step 9' since Step 8 only applies to github/linear anyway. Both templates/commands/cam-ship.md and .claude/commands/cam-ship.md were patched identically; bun run embed-vendor was run to sync src/vendor/_generated.ts. 1657 tests pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
