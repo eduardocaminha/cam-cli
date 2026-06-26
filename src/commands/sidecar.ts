@@ -363,6 +363,18 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 								spawnFn: postMergeSpawnFn,
 							}),
 						notifyOrchestrator: notify,
+						// Wire the structured event logger so merge-watch lifecycle events
+						// (watching/merged/ci-red/post-merge-done) reach cam-worker-events.jsonl.
+						// The adapter wraps kind+detail into a full WorkerEvent with a
+						// sidecar-scoped uuid (no story context at this layer).
+						logEvent: (kind, detail) =>
+							logEvent({
+								ts: new Date().toISOString(),
+								storyId: undefined,
+								uuid: 'sidecar',
+								kind,
+								detail,
+							}),
 						sleepFn: (ms) => Bun.sleepSync(ms),
 					});
 				}

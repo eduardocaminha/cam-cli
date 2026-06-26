@@ -19,6 +19,8 @@
 //
 // US-007 (CAM-101).
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, test, expect } from 'bun:test';
 import {
 	runMergeWatch,
@@ -819,5 +821,35 @@ describe('runMergeWatch structured events (US-008)', () => {
 		});
 
 		expect(outcome.kind).toBe('merged');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Production wiring oracle: sidecar.ts passes logEvent to runMergeWatch
+// ---------------------------------------------------------------------------
+// The US-008 structured events tests inject logEvent directly into runMergeWatch,
+// making a missing production wire invisible to the test suite. This oracle reads
+// sidecar.ts source text and confirms the argument is present in the call site,
+// so the gap can never silently re-emerge.
+// ---------------------------------------------------------------------------
+
+describe('sidecar.ts production wiring oracle - logEvent passed to runMergeWatch', () => {
+	const sidecarPath = resolve(import.meta.dir, '..', '..', 'src', 'commands', 'sidecar.ts');
+	const source = readFileSync(sidecarPath, 'utf8');
+
+	// Isolate the runMergeWatch call block in the production ci-gated closure.
+	// The block starts at 'await runMergeWatch({' and ends at the matching '});'.
+	const callMatch = source.match(/await runMergeWatch\(\{[\s\S]*?\}\);/);
+
+	test('runMergeWatch call exists in sidecar.ts', () => {
+		expect(callMatch).not.toBeNull();
+	});
+
+	test('runMergeWatch call wires logEvent:', () => {
+		expect(callMatch?.[0]).toContain('logEvent:');
+	});
+
+	test('logEvent wrapper uses uuid: sidecar', () => {
+		expect(callMatch?.[0]).toContain("uuid: 'sidecar'");
 	});
 });

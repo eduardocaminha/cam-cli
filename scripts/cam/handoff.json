@@ -1,29 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-003",
-    "title": "Review round 1 fix 003: address reviewer finding"
+    "id": "US-R1-004",
+    "title": "Review round 1 fix 004: address reviewer finding"
   },
   "branchName": "cam/CAM-101-configurable-merge-mode",
-  "timestamp": "2026-06-27T03:00:00Z",
+  "timestamp": "2026-06-27T04:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/release/merge-watch.ts",
     "src/commands/sidecar.ts",
     "test/release/merge-watch.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [
-    "check:all has pre-existing failures in lint (runPostMerge cognitive complexity in post-merge.ts) and file-size (src/supervisor/events.ts:344>290, src/ui/SetupScreen.tsx:290>254, test/vendor/cam-ship-hygiene.test.ts:91>50, src/commands/setup.ts:697>650). These were failing before US-R1-003 and are not introduced by this story. Next implementer should confirm if any of these need a budget raise."
+    "check:all has pre-existing failures in lint (runPostMerge cognitive complexity in post-merge.ts) and file-size (src/supervisor/events.ts:344>290, src/ui/SetupScreen.tsx:290>254, test/vendor/cam-ship-hygiene.test.ts:91>50, src/commands/setup.ts:697>650). These were failing before US-R1-004 and are not introduced by this story."
   ],
-  "nextStoryContext": "US-R1-003 fixed the merge-watch false ci-red bug: GitHub returns mergeStateStatus==BLOCKED while required checks are still pending/in-progress, not only on failure. The old code treated any OPEN+BLOCKED as terminal ci-red, stopping the watch before CI finished. The fix extends PrStatus with optional statusCheckRollup (now fetched via gh pr view --json state,mergeStateStatus,statusCheckRollup), adds hasFailedCheck() that looks at CheckRun conclusion and StatusContext state, and changes the BLOCKED guard: only emit ci-red when hasFailedCheck returns true; otherwise keep polling. 8 new tests added, 1654 tests pass total.",
+  "nextStoryContext": "US-R1-004 fixed the missing logEvent wiring in sidecar.ts: the production runMergeWatch call inside the ci-gated closure was omitting the logEvent argument, so merge-watch-watching/merged/ci-red/post-merge-done events never reached cam-worker-events.jsonl. The fix adds a logEvent: (kind, detail) => logEvent({ ts, storyId: undefined, uuid: 'sidecar', kind, detail }) adapter in the runMergeWatch call. A new oracle test in test/release/merge-watch.test.ts reads sidecar.ts source and asserts logEvent: is present in the call, preventing silent regression. 1657 tests pass total.",
   "officialDocsValidated": [
     {
-      "lib": "GitHub GraphQL API (mergeStateStatus + statusCheckRollup)",
-      "version": "v4",
-      "url": "https://github.com/orgs/community/discussions/126484",
-      "fetchedAt": "2026-06-27T03:00:00Z",
-      "status": "ok",
-      "summary": "Confirmed: BLOCKED means one or more merge requirements not satisfied, including pending/in-progress checks. Not exclusive to failed checks. Fix correctly uses statusCheckRollup to distinguish pending from failed."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }

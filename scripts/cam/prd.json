@@ -43,7 +43,7 @@
       "id": "US-R1-004",
       "title": "Review round 1 fix 004: address reviewer finding",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [src/commands/sidecar.ts:354]: US-008 structured events are not wired into the production merge-watch: the runMergeWatch call in sidecar.ts omits the logEvent argument, so merge-watch-watching/merged/ci-red/post-merge-done never reach .claude/cam-worker-events.jsonl in production. The logEvent sink is available in scope (sidecar.ts:259-260) but only passed to runSidecarLoop. The US-008 events test injects logEvent directly into runMergeWatch, so the gap is invisible to the suite."
     },
     {
