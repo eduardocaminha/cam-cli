@@ -72,3 +72,19 @@ test("embedded cam-ship.md immediate mode is documented as the unchanged path", 
   expect(content).toContain("immediate");
   expect(content).toContain("post-merge by hand as today");
 });
+
+test("embedded cam-ship.md ci-gated path writes .cam-merge-watch.json with prNumber and mergedBranch", () => {
+  const content = templatesContents[SHIP_KEY];
+  expect(content).toBeDefined();
+  // The orchestrator must write the watch file after gh pr create so the sidecar
+  // can engage (sidecar early-returns when the file is absent).
+  expect(content).toContain(".cam-merge-watch.json");
+  expect(content).toContain("prNumber");
+  expect(content).toContain("mergedBranch");
+});
+
+test("embedded cam-ship.md ci-gated path captures PR number via gh pr view", () => {
+  const content = templatesContents[SHIP_KEY];
+  expect(content).toBeDefined();
+  expect(content).toContain("gh pr view --json number");
+});

@@ -95,7 +95,13 @@ Steps:
 
    **Merge mode** (read `scripts/cam/project.toml [ship] merge_mode`; default: `immediate`):
 
-   - **`ci-gated`**: Ship ends here after `gh pr create` + `gh pr merge --auto --squash` above. Do NOT run pull/tag/prune inline. The sidecar detects the CI-merged event and completes post-merge autonomously (pull main, push tag, prune branch, close issue, print summary). Skip Steps 8-9.
+   - **`ci-gated`**: After `gh pr create` above, write the merge-watch state file so the sidecar can poll for CI completion:
+     ```bash
+     PR_NUMBER=$(gh pr view --json number --jq '.number')
+     BRANCH=$(git branch --show-current)
+     printf '{"prNumber":%s,"mergedBranch":"%s"}\n' "$PR_NUMBER" "$BRANCH" > .claude/.cam-merge-watch.json
+     ```
+     Do NOT run pull/tag/prune inline. The sidecar detects the CI-merged event by reading `.claude/.cam-merge-watch.json` on idle ticks and completes post-merge autonomously (pull main, push tag, prune branch, close issue, print summary). Skip Steps 8-9.
    - **`immediate`**: Continue to Steps 8-9. The orchestrator does the post-merge by hand as today.
 
 8. **Close the `github` / `linear` backend issue (if applicable).** The `none` backend was already closed by `cam ship --finalize` in Step 5; for the others:
