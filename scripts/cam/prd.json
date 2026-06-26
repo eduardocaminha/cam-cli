@@ -96,7 +96,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New: src/release/changelog.ts + test/release/changelog.test.ts. CHANGELOG.md current format (verified): a `---` rule, then `## [Unreleased]` with `### Added` / `### Changed` subsections; releases use `## [version] - YYYY-MM-DD`. The transform should locate the literal `## [Unreleased]` line and replace/insert; do not regex over the whole doc destructively. US-006 fills the section BODY from commits; US-004 only does the heading roll + preserve. Date string is injected (ClockFn from US-003), never `new Date()` inside the pure function, so the test is deterministic."
     },

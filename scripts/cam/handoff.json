@@ -1,28 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Wire the deterministic bump step into cam ship before push"
+    "id": "US-004",
+    "title": "CHANGELOG release-section roll (Unreleased -> versioned, fresh Unreleased)"
   },
   "createdFiles": [
-    "src/release/ship-bump.ts",
-    "test/release/ship-bump.test.ts"
+    "src/release/changelog.ts",
+    "test/release/changelog.test.ts"
   ],
   "modifiedFiles": [
+    "src/release/ship-bump.ts",
+    "test/release/ship-bump.test.ts",
     "index.ts",
-    ".claude/commands/cam-ship.md",
-    "templates/commands/cam-ship.md",
-    "src/vendor/_generated.ts",
-    "test/ship-args.test.ts",
-    "test/ship.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added runShipBump() in src/release/ship-bump.ts (injectable SpawnFn+ClockFn pattern, modeled on finalizeCycleClose). The function is wired into dispatchShip via the --bump flag. parseShipArgs now returns { help, finalize, bump }. _buildBumpOpts(cwd) is the production factory in index.ts. cam-ship.md (both mirrors) now has 9 steps: Step 4 is 'cam ship --bump', Step 5 is finalize, Step 6 is push. All 1464 tests pass. If a future story needs to extend the ship-bump step (e.g. add git push, or integrate with finalize), import from src/release/ship-bump.ts and extend ShipBumpOptions.",
+  "nextStoryContext": "US-004 added rollChangelog() in src/release/changelog.ts (pure string-in/string-out transform: finds '## [Unreleased]', inserts fresh empty '## [Unreleased]' above, renames old heading to '## [X.Y.Z] - YYYY-MM-DD'). The bump step (ship-bump.ts) now reads CHANGELOG.md via readChangelog(), calls rollChangelog() with newVersion and dateStr (clock().slice(0,10)), writes via writeChangelog(), and includes CHANGELOG.md in the git add call. ShipBumpOptions gained readChangelog/writeChangelog. _buildBumpOpts in index.ts wires real fs calls. All 1480 tests pass. The next story (US-005 or higher priority) can import rollChangelog from src/release/changelog.ts if it needs to inspect or extend the CHANGELOG transform logic.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "src/release/ship-bump.ts imports only internal modules (bump.ts, version.ts) and node:child_process types. No external npm library was touched; no fetch needed."
+      "summary": "US-004 only uses pure JS string operations (indexOf, slice, template literals). No external npm library was touched; no fetch needed."
     }
   ]
 }
