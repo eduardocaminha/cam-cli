@@ -121,7 +121,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "NEW module: suggest src/release/post-merge.ts. MIRROR ship-finalize.ts (DI'd spawnSync, hermetic tests). REUSE/extract the tag logic from src/commands/tag.ts (runTag tags main HEAD from CAM_VERSION; here the version must be read from src/version.ts on main AFTER `git pull origin main`, not from the running binary — gotcha 4 + scripts/cam/CLAUDE.md \"Release Conventions\": always tag on main after pull, never the branch SHA). DECISION 2: NO journal write — the post-merge is pull+tag+prune ONLY; the orchestrator stays the sole journal author, triggered by the sidecar's narration. Invoked BY the sidecar (US-007), never inline in ship. Per scripts/cam/CLAUDE.md the 0.x convention + 1.0.0 escape hatch live in computeNextVersion — do not duplicate; just read the literal version on main. Note for the [oracle: ! grep -iq 'journal'] check: the assertion is case-insensitive, so ensure the module file contains no 'journal' token in ANY casing (no appendJournalEntry, JournalWriter, etc.); narrate to the orchestrator and let it author the journal."
     },

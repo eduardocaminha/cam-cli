@@ -1,20 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "cam-ship.md ci-gated branching: hand off after auto-merge, skip inline post-merge"
+    "id": "US-006",
+    "title": "Deterministic post-merge invocable (pull origin main + tag-on-main + prune local/remote)"
   },
   "branchName": "cam/CAM-101-configurable-merge-mode",
-  "timestamp": "2026-06-26T23:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-26T23:30:00Z",
+  "createdFiles": [
+    "src/release/post-merge.ts",
+    "test/release/post-merge.test.ts"
+  ],
   "modifiedFiles": [
-    "templates/commands/cam-ship.md",
-    ".claude/commands/cam-ship.md",
-    "src/vendor/_generated.ts",
-    "test/vendor/cam-ship-hygiene.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 added merge mode branching to cam-ship.md Step 7. Both copies (templates/ and .claude/) now document: (1) ci-gated: ship ends after gh pr create + gh pr merge --auto --squash; sidecar completes pull/tag/prune/close/summary autonomously; Steps 8-9 skipped. (2) immediate: existing behavior unchanged, orchestrator does post-merge by hand. Vendor _generated.ts regenerated. Oracle tests added to test/vendor/cam-ship-hygiene.test.ts. The pre-existing 323-byte drift between the two copies (noted in US-005 story notes) was NOT resolved -- out of scope.",
+  "nextStoryContext": "US-006 added src/release/post-merge.ts: runPostMerge(opts) with injectable SpawnFn and ReadVersionFileFn. Steps: (1) git pull origin main, (2) read version from src/version.ts on disk after pull (not CAM_VERSION binary constant), (3) idempotent tag vX.Y.Z (tag -l check, then tag + push if absent), (4) best-effort branch prune local and remote. Returns PostMergeOutcome = { ok: true; pulledSha, tag, tagCreated, branchPrunedLocal, branchPrunedRemote } | { ok: false; reason }. No journal writes. 15 tests all pass. US-007 will wire this into the sidecar merge-watch path (poll gh pr view, on MERGED call runPostMerge, narrate via notifyOrchestrator).",
   "officialDocsValidated": [
     {
       "lib": "none",
