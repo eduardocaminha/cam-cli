@@ -1,23 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Remove Task/Agent from orchestrator disallowedTools and re-document the gate"
+    "id": "US-002",
+    "title": "Create the PreToolUse deny hook script and register it in .claude/settings.json"
   },
   "branchName": "cam/CAM-91-agent-allowlist-hook",
   "timestamp": "2026-06-26T00:00:00Z",
-  "createdFiles": [],
+  "createdFiles": [
+    ".claude/hooks/orch-agent-allowlist.sh",
+    ".claude/settings.json"
+  ],
   "modifiedFiles": [
-    ".claude/agents/subagent-orchestrator.md",
-    "templates/agents/subagent-orchestrator.md",
-    "src/vendor/_generated.ts"
+    ".gitignore"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 converged the cff99a0 drift: templates/ now has the reconciled disallowedTools block (Edit, Write, NotebookEdit, AskUserQuestion), _generated.ts is in sync, and both runtime+template copies document the PreToolUse hook gating for Task/Agent. The next story (likely the hook implementation itself) should build on this -- the orchestrator is now correctly configured to expect a hook that allows only subagent-planner and subagent-auditor.",
+  "nextStoryContext": "US-002 created the PreToolUse allowlist hook (.claude/hooks/orch-agent-allowlist.sh, chmod+x) and registered it in .claude/settings.json under hooks.PreToolUse with matcher Task|Agent. The hook reads the spawned subagent type from three defensive field paths (.tool_input.subagent_type // .tool_input.agent_type // .agent_type) and denies anything outside {subagent-planner, subagent-auditor}. .gitignore was updated to stop ignoring .claude/hooks/ so the script can be committed. The next story (US-003) should write regression tests using synthetic payloads to lock the real production field shape - the empirically-observed payload shape for Task spawns should be captured as a fixture, not just the defensive fallback shapes.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Pure agent-prompt doc and drift-convergence story; no external library calls."
+      "lib": "claude-code-hooks",
+      "version": "current",
+      "url": "https://code.claude.com/docs/en/hooks",
+      "fetchedAt": "2026-06-26T00:00:00Z",
+      "status": "ok",
+      "summary": "Confirmed: (1) deny contract matches - exit 0 + {hookSpecificOutput:{hookEventName,permissionDecision:deny,permissionDecisionReason}}; (2) settings.json structure matches - hooks.PreToolUse[].matcher + .hooks[].{type,command}; (3) top-level agent_type is caller identity, spawned type lives in tool_input; (4) exit 0 is correct for JSON output, exit 2 ignores JSON."
     }
   ]
 }
