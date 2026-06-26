@@ -1,25 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Branch-protection helper module (gh api PUT/GET, configure + verify + verify-and-warn fallback)"
+    "id": "US-003",
+    "title": "cam init merge_mode selector + branch-protection setup on ci-gated"
   },
   "branchName": "cam/CAM-101-configurable-merge-mode",
-  "timestamp": "2026-06-26T21:00:00Z",
+  "timestamp": "2026-06-26T22:00:00Z",
   "createdFiles": [
-    "src/release/branch-protection.ts",
-    "test/release/branch-protection.test.ts"
+    "src/commands/setup-merge-mode.ts",
+    "test/commands/setup-merge-mode.test.ts"
   ],
-  "modifiedFiles": [],
+  "modifiedFiles": [
+    "src/commands/setup.ts",
+    "src/ui/SetupScreen.tsx",
+    "index.ts"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "configureBranchProtection() is now the injectable gh-api helper for branch protection. It lives in src/release/branch-protection.ts alongside ship-bump.ts and tag.ts. The SpawnFn type is widened to { encoding: 'utf8'; input?: string } for stdin piping via --input -. Downstream stories (US-003: ci-gated sidecar post-merge) that need to trigger branch protection setup should call configureBranchProtection() with the ownerRepo slug derived from gh repo view --json nameWithOwner. The BRANCH_PROTECTION_FALLBACK_HINT constant is exported for reuse in UI/init flows that surface the manual setup path. readMergeMode() (US-001) and configureBranchProtection() (US-002) are both ready for consumption by US-003.",
+  "nextStoryContext": "applyMergeMode() in src/commands/setup-merge-mode.ts is the pure, injectable helper for the merge-mode setup step. It takes mergeMode + optional ownerRepo + SpawnFn (from branch-protection.ts) and either returns 'immediate-no-op' or delegates to configureBranchProtection(). SetupAnswers now carries mergeMode: MergeMode (exported from SetupScreen.tsx). The cam init wizard has 4 steps: mode -> issue -> merge -> description(new only) -> done. parseSetupArgs accepts --merge-mode immediate|ci-gated. runSetup writes [ship] merge_mode to project.toml and calls applyMergeMode when ci-gated. US-004 (cam config merge_mode) should mirror this pattern: extend ConfigChoices + mergeConfigChoices (src/commands/config.ts) and ConfigScreen.tsx (src/ui/ConfigScreen.tsx) in the same way, reusing applyMergeMode() directly from setup-merge-mode.ts.",
   "officialDocsValidated": [
     {
-      "lib": "GitHub REST API - Branch Protection",
+      "lib": "GitHub REST API - Branch Protection (via configureBranchProtection)",
       "version": "2022-11-28",
       "url": "https://docs.github.com/en/rest/branches/branch-protection?apiVersion=2022-11-28",
-      "fetchedAt": "2026-06-26T21:00:00Z",
+      "fetchedAt": "2026-06-26T22:00:00Z",
       "status": "ok",
-      "summary": "Confirmed: (1) all four top-level fields are required (required_status_checks, enforce_admins, required_pull_request_reviews, restrictions); (2) Accept: application/vnd.github+json is the recommended header; (3) GET response includes both checks[] (current) and contexts[] (deprecated) - dual-check verification is correct; (4) enforce_admins:false correctly preserves admin bypass capability."
+      "summary": "API validated in US-002; applyMergeMode delegates to configureBranchProtection unchanged. No new external API surface added in US-003."
     }
   ]
 }
