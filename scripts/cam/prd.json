@@ -37,7 +37,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/commands/cam-ship.md (add the marker near Step 3, lines ~30-41 where `bun run check:all` is hardcoded); src/vendor/_generated.ts (REGENERATE via `bun run embed-vendor` — never hand-edit; the embedded map key is the literal string \"commands/cam-ship.md\"); embedded-template test under test/. DESIGN DECISION (justify in the marker/commit): put the marker ONLY in templates/commands/cam-ship.md (downstream-only guidance) and keep .claude/commands/cam-ship.md CLEAN — in cam-cli itself `check:all` IS the canonical gate (CAM-59/60), so an adaptation comment in cam-cli's own copy would be irrelevant noise. GOTCHA: `check:all` already appears once in _generated.ts (the existing cam-ship.md body), so the grep oracle targets the distinct marker token (e.g. 'cam-init'), NOT 'check:all'. After editing the template run `bun run embed-vendor` to regenerate, then `bun run embed-vendor:check` must pass (parity). Marker is an HTML comment in markdown (consumed by the setup-agent LLM), so no human-prose travessão/emoji constraints apply to it."
     }

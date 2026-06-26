@@ -1,16 +1,15 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add check:all adaptation guidance to buildSetupPrompt"
+    "id": "US-002",
+    "title": "Add cam-init adaptation marker to cam-ship.md template and re-embed"
   },
-  "createdFiles": [
-    "test/setup-prompt.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/setup.ts"
+    "templates/commands/cam-ship.md",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 touches templates/commands/cam-ship.md and requires re-embedding vendor. The export of buildSetupPrompt done in US-001 is now stable and tested.",
+  "nextStoryContext": "Both US-001 and US-002 are complete. The PRD is now fully implemented. The setup-agent guidance in buildSetupPrompt (US-001) and the inline marker in the cam-ship.md template (US-002) together give downstream projects the check:all adaptation signal at both setup-time and runtime.",
   "officialDocsValidated": [
     {
       "lib": "none",
