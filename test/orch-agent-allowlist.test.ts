@@ -9,6 +9,11 @@
 // catch real behavior bugs (lessons.md CAM-55 operator-smoke).
 //
 // Requires jq on PATH (the script depends on it). Skips when jq is absent.
+//
+// env isolation: every runHook call passes an explicit env object to Bun.spawn.
+// The hook process inherits NO ambient env variables — CAM_SESSION in the parent
+// process does not bleed through. This makes tests deterministic on CI (where
+// CAM_SESSION is unset) and locally (where it may be set inside a cam session).
 
 import { test, expect, describe } from 'bun:test';
 import { join } from 'node:path';
@@ -16,14 +21,26 @@ import { join } from 'node:path';
 const jqAvailable = Bun.which('jq') !== null;
 const HOOK_SCRIPT = join(import.meta.dir, '..', '.claude', 'hooks', 'orch-agent-allowlist.sh');
 
-// Helper: spawn the real hook script with a JSON payload on stdin.
-// Returns { stdout, stderr, exitCode }.
-async function runHook(payload: object): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+// Explicit env objects passed to Bun.spawn. PATH is required for bash to find jq.
+const BASE_PATH = process.env['PATH'] ?? '/usr/bin:/bin:/usr/local/bin';
+// Scoped env: CAM_SESSION is set — capability policy applies.
+const SCOPED_ENV: Record<string, string> = { PATH: BASE_PATH, CAM_SESSION: 'test-session' };
+// Unscoped env: CAM_SESSION is absent — scope gate exits 0 (allow) for everything.
+const UNSCOPED_ENV: Record<string, string> = { PATH: BASE_PATH };
+
+// Helper: spawn the real hook script with a JSON payload on stdin and an explicit env.
+// The env arg controls whether CAM_SESSION is visible to the script (never inherited from
+// the parent process), which is required for deterministic CI/local behavior.
+async function runHook(
+	payload: object,
+	env: Record<string, string>,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 	const stdin = JSON.stringify(payload);
 	const proc = Bun.spawn(['bash', HOOK_SCRIPT], {
 		stdin: new TextEncoder().encode(stdin),
 		stdout: 'pipe',
 		stderr: 'pipe',
+		env,
 	});
 	const [stdoutBuf, stderrBuf, exitCode] = await Promise.all([
 		new Response(proc.stdout).text(),
@@ -54,76 +71,168 @@ function assertAllow(result: { stdout: string; exitCode: number }): void {
 }
 
 describe('orch-agent-allowlist.sh', () => {
-	// --- DENY cases ---
+	// --- Scope gate: unscoped (CAM_SESSION absent) → ALLOW everything ---
+	// These cases prove the hook is a no-op outside cam-managed sessions.
 
 	test.skipIf(!jqAvailable)(
-		'subagent_type=general-purpose yields deny (tool_input.subagent_type)',
+		'unscoped (no CAM_SESSION): general-purpose yields allow',
 		async () => {
-			const payload = {
-				tool_name: 'Task',
-				tool_input: { subagent_type: 'general-purpose' },
-			};
-			const result = await runHook(payload);
-			assertDeny(result);
-		},
-	);
-
-	test.skipIf(!jqAvailable)(
-		'subagent_type=Explore yields deny (tool_input.subagent_type)',
-		async () => {
-			const payload = {
-				tool_name: 'Task',
-				tool_input: { subagent_type: 'Explore' },
-			};
-			const result = await runHook(payload);
-			assertDeny(result);
-		},
-	);
-
-	test.skipIf(!jqAvailable)(
-		'missing subagent_type (empty tool_input) yields deny',
-		async () => {
-			const payload = {
-				tool_name: 'Task',
-				tool_input: {},
-			};
-			const result = await runHook(payload);
-			assertDeny(result);
-		},
-	);
-
-	test.skipIf(!jqAvailable)(
-		'missing subagent_type (no tool_input) yields deny',
-		async () => {
-			const payload = { tool_name: 'Task' };
-			const result = await runHook(payload);
-			assertDeny(result);
-		},
-	);
-
-	// --- ALLOW cases ---
-
-	test.skipIf(!jqAvailable)(
-		'subagent_type=subagent-planner yields allow (tool_input.subagent_type)',
-		async () => {
-			const payload = {
-				tool_name: 'Task',
-				tool_input: { subagent_type: 'subagent-planner' },
-			};
-			const result = await runHook(payload);
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'general-purpose' } },
+				UNSCOPED_ENV,
+			);
 			assertAllow(result);
 		},
 	);
 
 	test.skipIf(!jqAvailable)(
-		'subagent_type=subagent-auditor yields allow (tool_input.subagent_type)',
+		'unscoped (no CAM_SESSION): absent subagent_type yields allow',
 		async () => {
-			const payload = {
-				tool_name: 'Task',
-				tool_input: { subagent_type: 'subagent-auditor' },
-			};
-			const result = await runHook(payload);
+			const result = await runHook({ tool_name: 'Task', tool_input: {} }, UNSCOPED_ENV);
 			assertAllow(result);
+		},
+	);
+
+	// --- Scoped ALLOW cases ---
+	// Capability allowlist: read-only plan-time helpers when CAM_SESSION is set.
+
+	test.skipIf(!jqAvailable)(
+		'scoped: Explore yields allow',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'Explore' } },
+				SCOPED_ENV,
+			);
+			assertAllow(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped: Plan yields allow',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'Plan' } },
+				SCOPED_ENV,
+			);
+			assertAllow(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped: claude-code-guide yields allow',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'claude-code-guide' } },
+				SCOPED_ENV,
+			);
+			assertAllow(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped: subagent-planner yields allow',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'subagent-planner' } },
+				SCOPED_ENV,
+			);
+			assertAllow(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped: subagent-auditor yields allow',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'subagent-auditor' } },
+				SCOPED_ENV,
+			);
+			assertAllow(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped: subagent-reviewer yields allow',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'subagent-reviewer' } },
+				SCOPED_ENV,
+			);
+			assertAllow(result);
+		},
+	);
+
+	// --- Scoped DENY cases ---
+	// Code-writers, general-purpose, and absent/unknown types are denied.
+
+	test.skipIf(!jqAvailable)(
+		'scoped: general-purpose yields deny',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'general-purpose' } },
+				SCOPED_ENV,
+			);
+			assertDeny(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped: claude yields deny',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'claude' } },
+				SCOPED_ENV,
+			);
+			assertDeny(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped: fork yields deny',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'fork' } },
+				SCOPED_ENV,
+			);
+			assertDeny(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped: subagent-implementer yields deny',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'subagent-implementer' } },
+				SCOPED_ENV,
+			);
+			assertDeny(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped: absent subagent_type (empty tool_input) yields deny',
+		async () => {
+			const result = await runHook({ tool_name: 'Task', tool_input: {} }, SCOPED_ENV);
+			assertDeny(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped: absent subagent_type (no tool_input) yields deny',
+		async () => {
+			const result = await runHook({ tool_name: 'Task' }, SCOPED_ENV);
+			assertDeny(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped: unknown type (foobar) yields deny',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { subagent_type: 'foobar' } },
+				SCOPED_ENV,
+			);
+			assertDeny(result);
 		},
 	);
 
@@ -132,13 +241,12 @@ describe('orch-agent-allowlist.sh', () => {
 	// S-1: ONLY tool_input.agent_type (fallback field, no subagent_type).
 	// general-purpose -> DENY.
 	test.skipIf(!jqAvailable)(
-		'tool_input.agent_type=general-purpose yields deny (no subagent_type)',
+		'scoped: tool_input.agent_type=general-purpose yields deny (no subagent_type)',
 		async () => {
-			const payload = {
-				tool_name: 'Task',
-				tool_input: { agent_type: 'general-purpose' },
-			};
-			const result = await runHook(payload);
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: { agent_type: 'general-purpose' } },
+				SCOPED_ENV,
+			);
 			assertDeny(result);
 		},
 	);
@@ -150,14 +258,12 @@ describe('orch-agent-allowlist.sh', () => {
 	// allowlisted), so a misread of this field would produce a DENY, never a false
 	// allow. This fixture locks the defensive fallback path behavior.
 	test.skipIf(!jqAvailable)(
-		'ONLY top-level agent_type=subagent-planner yields allow (third fallback path)',
+		'scoped: ONLY top-level agent_type=subagent-planner yields allow (third fallback path)',
 		async () => {
-			const payload = {
-				tool_name: 'Task',
-				tool_input: {},
-				agent_type: 'subagent-planner',
-			};
-			const result = await runHook(payload);
+			const result = await runHook(
+				{ tool_name: 'Task', tool_input: {}, agent_type: 'subagent-planner' },
+				SCOPED_ENV,
+			);
 			assertAllow(result);
 		},
 	);
@@ -165,14 +271,16 @@ describe('orch-agent-allowlist.sh', () => {
 	// S-3: ONLY tool_input.agent_type=general-purpose (second fallback path, no subagent_type).
 	// DENY: catches a future field-name change that moves the spawned type to agent_type.
 	test.skipIf(!jqAvailable)(
-		'ONLY tool_input.agent_type=general-purpose yields deny (second fallback path)',
+		'scoped: ONLY tool_input.agent_type=general-purpose yields deny (second fallback path)',
 		async () => {
-			const payload = {
-				tool_name: 'Task',
-				tool_input: { agent_type: 'general-purpose' },
-				// no subagent_type, no top-level agent_type
-			};
-			const result = await runHook(payload);
+			const result = await runHook(
+				{
+					tool_name: 'Task',
+					tool_input: { agent_type: 'general-purpose' },
+					// no subagent_type, no top-level agent_type
+				},
+				SCOPED_ENV,
+			);
 			assertDeny(result);
 		},
 	);
@@ -181,34 +289,38 @@ describe('orch-agent-allowlist.sh', () => {
 	// in a cam-orchestrator session. The spawned subagent type lives in tool_input.subagent_type.
 	// This fixture locks the real production field shape.
 	test.skipIf(!jqAvailable)(
-		'empirically-observed production shape: tool_input.subagent_type=subagent-planner yields allow',
+		'scoped: production shape: tool_input.subagent_type=subagent-planner yields allow',
 		async () => {
-			const payload = {
-				tool_name: 'Task',
-				tool_input: {
-					subagent_type: 'subagent-planner',
-					description: 'Plan the next PRD sprint',
+			const result = await runHook(
+				{
+					tool_name: 'Task',
+					tool_input: {
+						subagent_type: 'subagent-planner',
+						description: 'Plan the next PRD sprint',
+					},
+					// top-level agent_type would be 'subagent-orchestrator' in production
+					agent_type: 'subagent-orchestrator',
 				},
-				// top-level agent_type would be 'subagent-orchestrator' in production
-				agent_type: 'subagent-orchestrator',
-			};
-			const result = await runHook(payload);
+				SCOPED_ENV,
+			);
 			assertAllow(result);
 		},
 	);
 
 	test.skipIf(!jqAvailable)(
-		'production shape with general-purpose subagent_type yields deny',
+		'scoped: production shape with general-purpose subagent_type yields deny',
 		async () => {
-			const payload = {
-				tool_name: 'Task',
-				tool_input: {
-					subagent_type: 'general-purpose',
-					description: 'Do some work',
+			const result = await runHook(
+				{
+					tool_name: 'Task',
+					tool_input: {
+						subagent_type: 'general-purpose',
+						description: 'Do some work',
+					},
+					agent_type: 'subagent-orchestrator',
 				},
-				agent_type: 'subagent-orchestrator',
-			};
-			const result = await runHook(payload);
+				SCOPED_ENV,
+			);
 			assertDeny(result);
 		},
 	);
