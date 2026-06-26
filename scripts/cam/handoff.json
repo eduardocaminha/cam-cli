@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Deterministic Conventional-Commits bump parser"
+  },
+  "createdFiles": [
+    "src/release/bump.ts",
+    "test/release/bump.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 created src/release/bump.ts exporting classifyBump(subjects: string[]): BumpLevel and src/release/BumpLevel type. US-002 (computeNextVersion) should import from '../../src/release/bump' (BumpLevel, classifyBump). The 0.x breaking->minor demotion belongs in US-002's computeNextVersion, NOT in classifyBump. classifyBump returns raw 'major' for breaking changes regardless of current version.",
+  "officialDocsValidated": [
+    {
+      "lib": "Conventional Commits",
+      "version": "1.0.0",
+      "url": "https://www.conventionalcommits.org/en/v1.0.0/",
+      "fetchedAt": "2026-06-26T12:00:00Z",
+      "status": "ok",
+      "summary": "Spec confirmed: feat->MINOR, fix->PATCH, ! or BREAKING CHANGE: footer->MAJOR, all other types have no implicit SemVer effect. BREAKING CHANGE: token is uppercase followed by colon. Implementation matches exactly."
+    }
+  ]
+}

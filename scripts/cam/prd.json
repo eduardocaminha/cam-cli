@@ -43,7 +43,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New module: src/release/bump.ts + test/release/bump.test.ts (neither dir exists yet, create them). The major result here is the raw SIGNAL only; the 0.x demotion to minor happens in US-002's computeNextVersion, NOT here, so this function still returns 'major' for feat!/BREAKING. Branch commit convention is `feat: US-007 - ...` (verified: git log shows these per-story subjects). noUncheckedIndexedAccess is on: regex capture groups are T | undefined, guard them. BREAKING CHANGE detection must match the footer token in a subject string; subjects come from `git log --pretty=%s` (single-line) so match the literal `BREAKING CHANGE:` substring."
     },
