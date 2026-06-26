@@ -1,19 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Migrate the implementer worker self-push into the sidecar (make the invariant true)"
+    "id": "US-004",
+    "title": "Doc Maintenance: single-pusher invariant in patterns.md and recovery-runbook"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-implementer.md",
-    "templates/agents/subagent-implementer.md",
-    "src/vendor/_generated.ts",
-    "src/supervisor/loop.ts",
-    "test/supervisor/loop.test.ts",
+    "scripts/cam/patterns.md",
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "US-003 removed the worker self-push (send-keys Step B) from both agent files and the template mirror, regenerated src/vendor/_generated.ts, and wired notifyOrchestrator calls in src/supervisor/loop.ts at all genuine-terminal-advance sites (else-branch for real advance, PRD_COMPLETE, supervisor-finalize pass, and every terminal-blocked return). The two new discriminating tests in test/supervisor/loop.test.ts prove: (1) notify fires exactly once on a fresh advance, (2) notify fires zero times on a no-progress re-confirmation retry. The sidecar is now the sole pusher of implementer narration lines to the orchestrator pane. All 1372 tests pass.",
+  "openQuestions": [
+    "templates/commands/cam-next.md still describes the old task-prompt injection behavior. This was explicitly out of scope for US-004 per the story notes; file a follow-up to update it."
+  ],
+  "nextStoryContext": "US-004 corrected pattern 28 (Idle-guarantee) to remove cam next from the sendKeysWhenIdle list, added a new single-pusher invariant bullet to patterns.md (SOLE emitter oracle satisfied), and added section (p) to docs/recovery-runbook.md documenting the single-pusher invariant and the glued-double-push diagnostic. No code changes; all 1372 tests pass. The sidecar-sole-pusher branch is clean: US-001, US-002, US-003, US-004 all pass.",
   "officialDocsValidated": [
     {
       "lib": "none",

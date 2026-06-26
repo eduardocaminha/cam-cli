@@ -76,7 +76,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-001 + US-003 (documents the shipped invariant once it is true). Files: scripts/cam/patterns.md (pattern 28 'idle-guarantee before send-keys' line ~28 and pattern 29 'sidecar-supervisor invariant' line ~29) and docs/recovery-runbook.md (canonical runtime files table line ~12; section (o) single-source outcome at line ~976 is the natural neighbor for the single-pusher note). Correct pattern 28: `cam next` is the exception, it flips active:true (the real sidecar trigger) and does NOT push to the orchestrator pane; the other thin-proxies still inject SLASH COMMANDS. State the migrated truth: the implementer worker no longer self-pushes its `[cam]` line, the sidecar emits it via notifyOrchestrator(formatWorkerReportSummary(report)) on worker-report detection, exactly once per terminal event, the same seam used for the review verdict (CAM-70). Add the glued-double-push diagnostic to the runbook: orchestrator pane showing 'Implement the next user story... [cam] US-XXX DONE' glued together meant the vestigial task prompt landed adjacent to the sidecar narration (fixed by US-001+US-003). PROJECT RULE: no em-dash in persisted .md (use colon, comma, parens, period, or cut). Out of scope here (flag as follow-up, do not edit): the templates/commands/cam-next.md command template still describes the old task-prompt injection; it was not in the approved scope and is separate from the implementer agent edited in US-003."
     },
