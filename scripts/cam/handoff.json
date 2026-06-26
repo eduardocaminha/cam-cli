@@ -1,15 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Regression test: cam next writes active:true and pushes no task prompt"
+    "id": "US-003",
+    "title": "Migrate the implementer worker self-push into the sidecar (make the invariant true)"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "test/next.test.ts",
+    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-implementer.md",
+    "src/vendor/_generated.ts",
+    "src/supervisor/loop.ts",
+    "test/supervisor/loop.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added two discriminating regression tests to test/next.test.ts: 'runNext writes active:true on the hit path' (asserts .claude/cam-loop.local.md contains 'active: true' after runNext) and 'runNext pushes no task-prompt send-keys to the orchestrator pane' (asserts spawnFn.calls has no send-keys entry). Both tests use the existing makeFakeTmuxSpawn helper. All 1370 tests pass. No source changes; test-only story.",
+  "nextStoryContext": "US-003 removed the worker self-push (send-keys Step B) from both agent files and the template mirror, regenerated src/vendor/_generated.ts, and wired notifyOrchestrator calls in src/supervisor/loop.ts at all genuine-terminal-advance sites (else-branch for real advance, PRD_COMPLETE, supervisor-finalize pass, and every terminal-blocked return). The two new discriminating tests in test/supervisor/loop.test.ts prove: (1) notify fires exactly once on a fresh advance, (2) notify fires zero times on a no-progress re-confirmation retry. The sidecar is now the sole pusher of implementer narration lines to the orchestrator pane. All 1372 tests pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
