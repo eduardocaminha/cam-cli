@@ -1,25 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-008",
-    "title": "Structured merge-watch observability events"
+    "id": "US-009",
+    "title": "CAM-73 absorption: correct stale branch_protection premise + new recovery-runbook scenario"
   },
   "branchName": "cam/CAM-101-configurable-merge-mode",
-  "timestamp": "2026-06-26T23:55:00Z",
+  "timestamp": "2026-06-27T00:15:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/events.ts",
-    "src/release/merge-watch.ts",
-    "test/release/merge-watch.test.ts"
+    "docs/agent-readiness.md",
+    "docs/recovery-runbook.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-008 extended src/supervisor/events.ts with 4 new WorkerEventKind values (merge-watch-watching, merge-watch-merged, merge-watch-ci-red, merge-watch-post-merge-done) plus typed detail interfaces (MergeWatchWatchingEventDetail, MergeWatchMergedEventDetail, MergeWatchCiRedEventDetail, MergeWatchPostMergeDoneEventDetail) added to the WorkerEventDetail union. src/release/merge-watch.ts gained an optional logEvent?(kind, detail) injectable on MergeWatchOptions; runMergeWatch emits: merge-watch-watching at loop start, merge-watch-merged on MERGED state, merge-watch-post-merge-done after post-merge (ok:true or ok:false), merge-watch-ci-red with reason:'blocked' on OPEN+BLOCKED and reason:'closed' on CLOSED. 5 new tests in test/release/merge-watch.test.ts under 'runMergeWatch structured events (US-008)' assert happy path (watching->merged->post-merge-done) and CI-red path (watching->ci-red). Production sidecar wiring of logEvent into the file event logger is a follow-up (the injectable seam is in place; production wiring follows the US-R1-002 dep-builder pattern). 1644 tests all pass.",
+  "nextStoryContext": "US-009 was a doc-only story. Two changes: (1) docs/agent-readiness.md line 28 (Development Workflow table row) and lines 36-37 (judgment call note) -- both 'free private plan' references replaced; the repo is public and branch protection is available (used by ci-gated mode, CAM-101 absorbing CAM-73). (2) docs/recovery-runbook.md gained scenario ## (t) covering CAM-101 ci-gated merge mode: stuck CI (BLOCKED mergeStateStatus), sidecar merge-watch states (merge-watch-watching, merge-watch-merged, merge-watch-ci-red, merge-watch-post-merge-done), and the gh-api verify+warn fallback when the caller lacks admin rights for configureBranchProtection. Follows the lettered format of the existing (s) scenario. 1644 tests all pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
       "url": "",
-      "fetchedAt": "2026-06-26T23:55:00Z",
-      "summary": "US-008 is a pure internal TypeScript extension (events.ts + merge-watch.ts). No external library was touched."
+      "fetchedAt": "2026-06-27T00:15:00Z",
+      "summary": "US-009 is a pure documentation story: two .md files edited, no source code or external library touched."
     }
   ]
 }

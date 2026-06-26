@@ -170,7 +170,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: docs/agent-readiness.md line 28 (the 'branch_protection blocked (free private plan)' premise in the Development Workflow row) and line 36-37 (the 'branch_protection as a structural fail of the free private plan' judgment-call note) — both must be corrected: the repo is PUBLIC and branch protection IS available; CAM-101 absorbs CAM-73 (see memory cam59-ci-exists-and-rearm-gotchas: repo is public, branch protection possible). docs/recovery-runbook.md: the last existing scenario is (s) CAM-84 — VERIFIED the next free letter is (t). Add ## (t) CAM-101: ci-gated merge mode (stuck CI / sidecar merge-watch / gh-api verify+warn fallback). Follow the lettered scenario format of the existing sections. Doc-only story; the typecheck/test criteria are the mandatory gates and pass trivially."
     },
