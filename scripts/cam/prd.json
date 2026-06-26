@@ -3,7 +3,9 @@
   "branchName": "cam/CAM-102-allowlist-hook-refino",
   "description": "Refine the orch-agent-allowlist PreToolUse hook to capability-based policy gated by CAM_SESSION scope, plus implementer issue/PRD anchoring.",
   "issueNumber": 102,
-  "relatedDocs": ["docs/recovery-runbook.md"],
+  "relatedDocs": [
+    "docs/recovery-runbook.md"
+  ],
   "officialDocsConsulted": [
     {
       "lib": "Claude Code hooks (PreToolUse)",
@@ -85,7 +87,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-orchestrator.md AND templates/agents/subagent-orchestrator.md (NOT templates/.claude/agents/, which does not exist) PLUS src/vendor/_generated.ts. VERIFIED: the two personas are byte-identical today and the template copy IS embedded in _generated.ts (the embed script walks the whole templates/ tree). Edit BOTH personas identically, then run `bun run embed-vendor` to regenerate src/vendor/_generated.ts; without the re-embed, downstream cam init ships the stale persona and embed:check stays GREEN (silent drift). The 'Dispatch protocol' section is at line ~104, 'Pre-flight from your side' bullet at ~119 (already says \"Don't dispatch /cam-next if there's no PRD\"). Extend that bullet/section with: refuse implementer dispatch unless prd.json is anchored on a non-null issueNumber. This is a FLOW rule, NOT a hook change (the hook only intercepts Task/Agent spawn, never Edit/Write). Agent .md files are LLM-consumed so em-dash/emoji are allowed there per project style exception. Sequencing is by priority; requires is null."
     },
