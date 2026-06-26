@@ -48,6 +48,13 @@ import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
  * instant-exit, likely a startup rate-limit with no printed message) and the
  * supervisor is backing off before re-dispatching the same story; carries a
  * free-form { attempt, backoffMs, completedStory } detail.
+ *
+ * Merge-watch event kinds (US-008, CAM-101): emitted by the ci-gated merge-watch
+ * state machine (src/release/merge-watch.ts) via the injected logEvent seam.
+ *   - 'merge-watch-watching': emitted once when the watch loop begins polling.
+ *   - 'merge-watch-merged': emitted when GitHub reports state==MERGED.
+ *   - 'merge-watch-ci-red': emitted on OPEN+BLOCKED (CI failing) or CLOSED.
+ *   - 'merge-watch-post-merge-done': emitted after the post-merge step completes.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -65,7 +72,11 @@ export type WorkerEventKind =
 	| 'sidecar-exit'
 	| 'review-verdict-handback'
 	| 'spawn-resolution'
-	| 'ship-bump';
+	| 'ship-bump'
+	| 'merge-watch-watching'
+	| 'merge-watch-merged'
+	| 'merge-watch-ci-red'
+	| 'merge-watch-post-merge-done';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -153,6 +164,50 @@ export interface OutcomeSourceEventDetail {
 	detail: string;
 }
 
+/**
+ * 'merge-watch-watching' event detail: emitted once when the merge-watch poll
+ * loop begins. Allows an operator to identify when monitoring started.
+ */
+export interface MergeWatchWatchingEventDetail {
+	prNumber: number;
+	mergedBranch: string;
+}
+
+/**
+ * 'merge-watch-merged' event detail: emitted when GitHub reports state==MERGED.
+ * The post-merge step is about to run when this event fires.
+ */
+export interface MergeWatchMergedEventDetail {
+	prNumber: number;
+}
+
+/**
+ * 'merge-watch-ci-red' event detail: emitted when the PR cannot proceed to
+ * merge due to a failing or blocking condition.
+ *   - reason 'blocked': state==OPEN and mergeStateStatus==BLOCKED (CI failing).
+ *   - reason 'closed': state==CLOSED (PR closed without merging).
+ */
+export interface MergeWatchCiRedEventDetail {
+	prNumber: number;
+	reason: 'blocked' | 'closed';
+}
+
+/**
+ * 'merge-watch-post-merge-done' event detail: emitted after the post-merge step
+ * completes (whether successful or failed).
+ *   - ok: true if the post-merge step succeeded.
+ *   - tag: the semver tag created/found on main (present when ok==true).
+ *   - tagCreated: whether the tag was newly created (present when ok==true).
+ *   - reason: failure reason string (present when ok==false).
+ */
+export interface MergeWatchPostMergeDoneEventDetail {
+	prNumber: number;
+	ok: boolean;
+	tag?: string;
+	tagCreated?: boolean;
+	reason?: string;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -161,6 +216,10 @@ export type WorkerEventDetail =
 	| ReviewVerdictHandbackEventDetail
 	| OutcomeSourceEventDetail
 	| SpawnResolutionEvent
+	| MergeWatchWatchingEventDetail
+	| MergeWatchMergedEventDetail
+	| MergeWatchCiRedEventDetail
+	| MergeWatchPostMergeDoneEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

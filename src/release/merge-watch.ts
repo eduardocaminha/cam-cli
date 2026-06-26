@@ -19,6 +19,14 @@
 // US-007 (CAM-101).
 
 import type { PostMergeOutcome } from './post-merge.ts';
+import type {
+	WorkerEventKind,
+	WorkerEventDetail,
+	MergeWatchWatchingEventDetail,
+	MergeWatchMergedEventDetail,
+	MergeWatchCiRedEventDetail,
+	MergeWatchPostMergeDoneEventDetail,
+} from '../supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -97,6 +105,13 @@ export interface MergeWatchOptions {
 	 */
 	notifyOrchestrator: (line: string) => void;
 	/**
+	 * Structured event emitter (US-008). Injectable for tests (use
+	 * makeInMemoryEventLogger wrapper). Production: wired by the sidecar to
+	 * the file event logger so lifecycle events land in cam-worker-events.jsonl.
+	 * Called with the event kind and typed detail; the caller wraps ts/uuid/storyId.
+	 */
+	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
+	/**
 	 * Sleep between polls. Defaults to Bun.sleepSync.
 	 * Tests inject a no-op to avoid real delays (with tiny pollIntervalMs).
 	 */
@@ -143,9 +158,15 @@ export type MergeWatchOutcome =
  */
 export async function runMergeWatch(opts: MergeWatchOptions): Promise<MergeWatchOutcome> {
 	const { prNumber, mergedBranch, cwd, pollFn, postMergeFn, notifyOrchestrator } = opts;
+	const { logEvent } = opts;
 	const sleep = opts.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS;
 	const maxPolls = opts.maxPolls ?? DEFAULT_MERGE_WATCH_MAX_POLLS;
+
+	// Emit structured 'watching' event so the operator can identify when
+	// monitoring started (US-008).
+	const watchingDetail: MergeWatchWatchingEventDetail = { prNumber, mergedBranch };
+	logEvent?.('merge-watch-watching', watchingDetail);
 
 	for (let poll = 0; poll < maxPolls; poll++) {
 		// Skip sleep on first poll: start immediately.
@@ -161,23 +182,42 @@ export async function runMergeWatch(opts: MergeWatchOptions): Promise<MergeWatch
 
 		if (status.state === 'MERGED') {
 			notifyOrchestrator(`[cam] PR #${prNumber} merged - running post-merge`);
+			const mergedDetail: MergeWatchMergedEventDetail = { prNumber };
+			logEvent?.('merge-watch-merged', mergedDetail);
 			const result = postMergeFn({ cwd, mergedBranch });
 			if (result.ok) {
 				const tagNote = result.tagCreated ? '(tag created)' : '(tag existed)';
 				notifyOrchestrator(`[cam] post-merge complete: ${result.tag} ${tagNote}`);
+				const doneDetail: MergeWatchPostMergeDoneEventDetail = {
+					prNumber,
+					ok: true,
+					tag: result.tag,
+					tagCreated: result.tagCreated,
+				};
+				logEvent?.('merge-watch-post-merge-done', doneDetail);
 			} else {
 				notifyOrchestrator(`[cam] post-merge failed: ${result.reason}`);
+				const doneDetail: MergeWatchPostMergeDoneEventDetail = {
+					prNumber,
+					ok: false,
+					reason: result.reason,
+				};
+				logEvent?.('merge-watch-post-merge-done', doneDetail);
 			}
 			return { kind: 'merged', postMerge: result };
 		}
 
 		if (status.state === 'CLOSED') {
 			notifyOrchestrator(`[cam] CI red, PR #${prNumber} closed-not-merged`);
+			const ciRedDetail: MergeWatchCiRedEventDetail = { prNumber, reason: 'closed' };
+			logEvent?.('merge-watch-ci-red', ciRedDetail);
 			return { kind: 'closed-not-merged', prNumber };
 		}
 
 		if (status.state === 'OPEN' && status.mergeStateStatus === 'BLOCKED') {
 			notifyOrchestrator(`[cam] CI red, PR #${prNumber} open, not merged`);
+			const ciRedDetail: MergeWatchCiRedEventDetail = { prNumber, reason: 'blocked' };
+			logEvent?.('merge-watch-ci-red', ciRedDetail);
 			return { kind: 'ci-red', prNumber };
 		}
 

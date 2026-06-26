@@ -33,6 +33,11 @@ import {
 	type RunSupervisorOptions,
 	type SupervisorResult,
 } from '../../src/supervisor/loop.ts';
+import {
+	makeInMemoryEventLogger,
+	type WorkerEventKind,
+	type WorkerEventDetail,
+} from '../../src/supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -517,6 +522,182 @@ describe('merge-watch ci-gated vs immediate boundary', () => {
 			sleepFn: () => {},
 			pollIntervalMs: 1,
 			maxPolls: 10,
+		});
+
+		expect(outcome.kind).toBe('merged');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Structured observability events (US-008)
+// ---------------------------------------------------------------------------
+
+describe('runMergeWatch structured events (US-008)', () => {
+	test('happy path: watching -> merged -> post-merge-done', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'test-uuid', kind, detail });
+		};
+
+		const outcome = await runMergeWatch({
+			prNumber: 200,
+			mergedBranch: 'cam/test-branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: () => {},
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+			logEvent,
+		});
+
+		expect(outcome.kind).toBe('merged');
+
+		const kinds = events.map((e) => e.kind);
+		expect(kinds).toEqual(['merge-watch-watching', 'merge-watch-merged', 'merge-watch-post-merge-done']);
+
+		// Check watching detail
+		const watchingEvt = events[0];
+		expect(watchingEvt).toBeDefined();
+		if (watchingEvt) {
+			const d = watchingEvt.detail as { prNumber: number; mergedBranch: string };
+			expect(d.prNumber).toBe(200);
+			expect(d.mergedBranch).toBe('cam/test-branch');
+		}
+
+		// Check merged detail
+		const mergedEvt = events[1];
+		expect(mergedEvt).toBeDefined();
+		if (mergedEvt) {
+			const d = mergedEvt.detail as { prNumber: number };
+			expect(d.prNumber).toBe(200);
+		}
+
+		// Check post-merge-done detail
+		const doneEvt = events[2];
+		expect(doneEvt).toBeDefined();
+		if (doneEvt) {
+			const d = doneEvt.detail as { prNumber: number; ok: boolean; tag?: string; tagCreated?: boolean };
+			expect(d.prNumber).toBe(200);
+			expect(d.ok).toBe(true);
+			expect(d.tag).toBe('v1.2.3');
+			expect(d.tagCreated).toBe(true);
+		}
+	});
+
+	test('CI-red path: watching -> ci-red (OPEN+BLOCKED)', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'test-uuid', kind, detail });
+		};
+
+		let postMergeCalled = false;
+		const outcome = await runMergeWatch({
+			prNumber: 201,
+			mergedBranch: 'cam/test-branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([OPEN_BLOCKED]),
+			postMergeFn: () => {
+				postMergeCalled = true;
+				return { ok: false, reason: 'should-not-run' };
+			},
+			notifyOrchestrator: () => {},
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+			logEvent,
+		});
+
+		expect(outcome.kind).toBe('ci-red');
+		expect(postMergeCalled).toBe(false);
+
+		const kinds = events.map((e) => e.kind);
+		expect(kinds).toEqual(['merge-watch-watching', 'merge-watch-ci-red']);
+
+		// Check ci-red detail
+		const ciRedEvt = events[1];
+		expect(ciRedEvt).toBeDefined();
+		if (ciRedEvt) {
+			const d = ciRedEvt.detail as { prNumber: number; reason: string };
+			expect(d.prNumber).toBe(201);
+			expect(d.reason).toBe('blocked');
+		}
+	});
+
+	test('post-merge failure emits post-merge-done with ok:false', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'test-uuid', kind, detail });
+		};
+
+		await runMergeWatch({
+			prNumber: 202,
+			mergedBranch: 'cam/test-branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: failPostMerge,
+			notifyOrchestrator: () => {},
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+			logEvent,
+		});
+
+		const kinds = events.map((e) => e.kind);
+		expect(kinds).toEqual(['merge-watch-watching', 'merge-watch-merged', 'merge-watch-post-merge-done']);
+
+		const doneEvt = events[2];
+		if (doneEvt) {
+			const d = doneEvt.detail as { ok: boolean; reason?: string };
+			expect(d.ok).toBe(false);
+			expect(d.reason).toBe('pull-failed');
+		}
+	});
+
+	test('closed-not-merged emits ci-red with reason:closed', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'test-uuid', kind, detail });
+		};
+
+		await runMergeWatch({
+			prNumber: 203,
+			mergedBranch: 'cam/test-branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([CLOSED]),
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: () => {},
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+			logEvent,
+		});
+
+		const kinds = events.map((e) => e.kind);
+		expect(kinds).toEqual(['merge-watch-watching', 'merge-watch-ci-red']);
+
+		const ciRedEvt = events[1];
+		if (ciRedEvt) {
+			const d = ciRedEvt.detail as { prNumber: number; reason: string };
+			expect(d.prNumber).toBe(203);
+			expect(d.reason).toBe('closed');
+		}
+	});
+
+	test('logEvent absent: no errors thrown (logEvent optional)', async () => {
+		// Confirm that omitting logEvent does not throw.
+		const outcome = await runMergeWatch({
+			prNumber: 204,
+			mergedBranch: 'cam/test-branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: () => {},
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+			// logEvent intentionally absent
 		});
 
 		expect(outcome.kind).toBe('merged');
