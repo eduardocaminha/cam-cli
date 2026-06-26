@@ -105,6 +105,19 @@ describe('askChoice() – EOF resolution', () => {
 	});
 });
 
+describe('ask() – readableEnded short-circuit (multi-call reuse)', () => {
+	it('resolves immediately to default when the stream is already ended', async () => {
+		const stream = makeEofStream();
+		// Drain the stream so readableEnded becomes true.
+		await ask('Q1?', 'first', stream);
+		// Second call on the same already-ended stream must not hang.
+		const start = Date.now();
+		const result = await ask('Q2?', 'second-default', stream);
+		expect(result).toBe('second-default');
+		expect(Date.now() - start).toBeLessThan(1000);
+	});
+});
+
 describe('askChoice() – happy path (line input still wins)', () => {
 	it('resolves to the chosen option when a valid choice is entered', async () => {
 		const result = await askChoice(

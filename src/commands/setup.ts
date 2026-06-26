@@ -70,6 +70,15 @@ export async function ask(
 	defaultValue = '',
 	input: NodeJS.ReadableStream = process.stdin,
 ): Promise<string> {
+	// Short-circuit: if the stream already ended, no future 'end'/'close' will be
+	// re-emitted on a new readline interface. Resolve immediately to the default so
+	// collectViaReadline never hangs when multiple options are undefined on a single
+	// already-consumed EOF stream.
+	// Duck-typed: NodeJS.ReadableStream minimal interface omits readableEnded;
+	// Readable from node:stream does expose it. Check defensively.
+	if ('readableEnded' in input && (input as unknown as { readableEnded: boolean }).readableEnded) {
+		return defaultValue;
+	}
 	const output = input === process.stdin ? process.stdout : undefined;
 	const rl = createInterface({ input, output });
 	let answered = false;

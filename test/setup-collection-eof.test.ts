@@ -80,3 +80,31 @@ test(
 	},
 	10_000,
 );
+
+// ---------------------------------------------------------------------------
+// Regression: multi-undefined options on a single EOF stream must not hang
+// ---------------------------------------------------------------------------
+// This is the exact reproduce case from US-R1-001 reviewer finding:
+// collectViaReadline({}, eofStream) with ALL options undefined creates multiple
+// readline interfaces on a single already-ended stream. The first one consumes
+// the EOF signal; subsequent ones never receive 'close' and hang indefinitely.
+// The fix (readableEnded short-circuit in ask()) ensures all subsequent calls
+// resolve immediately to defaults.
+
+test(
+	'collectViaReadline({}, eofStream) resolves to all defaults without hanging',
+	async () => {
+		const start = Date.now();
+		const result = await collectViaReadline(
+			// No flags: ALL three prompts (projectMode, issueSystem, mergeMode) go
+			// through readline. This is the scenario that hung before the fix.
+			{},
+			makeEofStream(),
+		);
+		expect(result.projectMode).toBe('existing');
+		expect(result.issueSystem).toBe('none');
+		expect(result.mergeMode).toBe('immediate');
+		expect(Date.now() - start).toBeLessThan(5000);
+	},
+	10_000,
+);
