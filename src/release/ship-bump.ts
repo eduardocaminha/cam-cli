@@ -19,6 +19,7 @@
 // US-003 (CAM-89).
 
 import type { SpawnSyncReturns } from 'node:child_process';
+import { rollChangelog } from './changelog.ts';
 import { classifyBump } from './bump.ts';
 import {
 	applyVersionToPackageJson,
@@ -52,7 +53,7 @@ export interface ShipBumpOptions {
 	cwd: string;
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
-	/** Injectable clock -- reserved for future timestamp annotations. */
+	/** Injectable clock -- ISO 8601 timestamp used for the release date. */
 	clock: ClockFn;
 	/** Read src/version.ts as raw text. */
 	readVersionTs: () => string;
@@ -62,6 +63,10 @@ export interface ShipBumpOptions {
 	writeVersionTs: (text: string) => void;
 	/** Write package.json (receives fully transformed text). */
 	writePackageJson: (text: string) => void;
+	/** Read CHANGELOG.md as raw text. */
+	readChangelog: () => string;
+	/** Write CHANGELOG.md (receives fully transformed text). */
+	writeChangelog: (text: string) => void;
 }
 
 export type ShipBumpResult =
@@ -110,12 +115,18 @@ export function runShipBump(opts: ShipBumpOptions): ShipBumpResult {
 
 	const newVersion = computeNextVersion(currentVersion, bump);
 
-	// Write both files.
+	// Extract YYYY-MM-DD date from the injected ISO timestamp.
+	const dateStr = opts.clock().slice(0, 10);
+
+	// Write version files.
 	opts.writeVersionTs(applyVersionToVersionTs(versionTsText, newVersion));
 	opts.writePackageJson(applyVersionToPackageJson(opts.readPackageJson(), newVersion));
 
+	// Roll CHANGELOG.md: rename [Unreleased] to [X.Y.Z] - YYYY-MM-DD, insert fresh empty [Unreleased].
+	opts.writeChangelog(rollChangelog(opts.readChangelog(), newVersion, dateStr));
+
 	// Stage and commit.
-	opts.spawnFn('git', ['add', 'src/version.ts', 'package.json'], { encoding: 'utf8' });
+	opts.spawnFn('git', ['add', 'src/version.ts', 'package.json', 'CHANGELOG.md'], { encoding: 'utf8' });
 	opts.spawnFn(
 		'git',
 		['commit', '-m', `chore(release): bump version to ${newVersion}`],

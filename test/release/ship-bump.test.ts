@@ -50,6 +50,11 @@ function packageJson(v: string): string {
 	return `{\n  "version": "${v}"\n}\n`;
 }
 
+/** Minimal CHANGELOG.md content for test fixtures. */
+function sampleChangelog(): string {
+	return '# Changelog\n\n---\n\n## [Unreleased]\n\n### Added\n\n- New feature.\n\n### Changed\n\n- Some change.\n';
+}
+
 /** Build ShipBumpOptions with captured writers. */
 function makeOpts(
 	subjects: string[],
@@ -57,10 +62,10 @@ function makeOpts(
 ): {
 	opts: ShipBumpOptions;
 	calls: Array<{ cmd: string; args: string[] }>;
-	written: { versionTs?: string; packageJson?: string };
+	written: { versionTs?: string; packageJson?: string; changelog?: string };
 } {
 	const { spawnFn, calls } = makeSpawnFn(subjects);
-	const written: { versionTs?: string; packageJson?: string } = {};
+	const written: { versionTs?: string; packageJson?: string; changelog?: string } = {};
 
 	const opts: ShipBumpOptions = {
 		cwd: '/fake/project',
@@ -70,6 +75,8 @@ function makeOpts(
 		readPackageJson: () => packageJson(initialVersion),
 		writeVersionTs: (text) => { written.versionTs = text; },
 		writePackageJson: (text) => { written.packageJson = text; },
+		readChangelog: () => sampleChangelog(),
+		writeChangelog: (text) => { written.changelog = text; },
 	};
 
 	return { opts, calls, written };
@@ -88,6 +95,7 @@ describe('runShipBump - no-op when bump is none', () => {
 		expect(result.noOp).toBe(true);
 		expect(written.versionTs).toBeUndefined();
 		expect(written.packageJson).toBeUndefined();
+		expect(written.changelog).toBeUndefined();
 		// No commit call
 		expect(calls.find((c) => c.cmd === 'git' && c.args[0] === 'commit')).toBeUndefined();
 	});
@@ -105,6 +113,7 @@ describe('runShipBump - no-op when bump is none', () => {
 		expect(result.noOp).toBe(true);
 		expect(written.versionTs).toBeUndefined();
 		expect(written.packageJson).toBeUndefined();
+		expect(written.changelog).toBeUndefined();
 		expect(calls.find((c) => c.cmd === 'git' && c.args[0] === 'commit')).toBeUndefined();
 	});
 
@@ -139,12 +148,13 @@ describe('runShipBump - patch bump (fix:)', () => {
 		expect(commitCall?.args).toContain('chore(release): bump version to 0.1.3');
 	});
 
-	test('git add is called with src/version.ts and package.json', () => {
+	test('git add is called with src/version.ts, package.json, and CHANGELOG.md', () => {
 		const { opts, calls } = makeOpts(['fix: minor typo']);
 		runShipBump(opts);
 		const addCall = calls.find((c) => c.cmd === 'git' && c.args[0] === 'add');
 		expect(addCall?.args).toContain('src/version.ts');
 		expect(addCall?.args).toContain('package.json');
+		expect(addCall?.args).toContain('CHANGELOG.md');
 	});
 });
 
@@ -226,5 +236,62 @@ describe('runShipBump - git log command shape', () => {
 		runShipBump(opts);
 		const logCall = calls.find((c) => c.cmd === 'git' && c.args[0] === 'log');
 		expect(logCall?.args).toEqual(['log', 'main..HEAD', '--pretty=%s']);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: CHANGELOG roll (AC-4)
+// ---------------------------------------------------------------------------
+
+describe('runShipBump - CHANGELOG roll', () => {
+	test('writes CHANGELOG with versioned heading when bump is non-none', () => {
+		const { opts, written } = makeOpts(['fix: correct something']);
+		runShipBump(opts);
+		expect(written.changelog).toBeDefined();
+		expect(written.changelog).toContain('## [0.1.3] - 2026-06-26');
+	});
+
+	test('fresh ## [Unreleased] appears above the versioned heading in written CHANGELOG', () => {
+		const { opts, written } = makeOpts(['feat: new capability']);
+		runShipBump(opts);
+		const changelog = written.changelog ?? '';
+		const unreleasedIdx = changelog.indexOf('## [Unreleased]');
+		const versionedIdx = changelog.indexOf('## [0.2.0] - 2026-06-26');
+		expect(unreleasedIdx).toBeGreaterThanOrEqual(0);
+		expect(versionedIdx).toBeGreaterThan(unreleasedIdx);
+	});
+
+	test('existing body content is preserved under the versioned heading', () => {
+		const { opts, written } = makeOpts(['feat: new thing']);
+		runShipBump(opts);
+		expect(written.changelog).toContain('### Added');
+		expect(written.changelog).toContain('- New feature.');
+		expect(written.changelog).toContain('### Changed');
+		expect(written.changelog).toContain('- Some change.');
+	});
+
+	test('date is extracted from clock ISO timestamp (YYYY-MM-DD slice)', () => {
+		const { spawnFn, calls: _calls } = makeSpawnFn(['fix: something']);
+		const written: { changelog?: string } = {};
+		const opts: ShipBumpOptions = {
+			cwd: '/fake',
+			spawnFn,
+			// Clock returns a non-midnight timestamp; only the date portion should appear
+			clock: () => '2026-12-31T15:45:00.000Z',
+			readVersionTs: () => versionTs('0.1.2'),
+			readPackageJson: () => packageJson('0.1.2'),
+			writeVersionTs: () => {},
+			writePackageJson: () => {},
+			readChangelog: () => sampleChangelog(),
+			writeChangelog: (text) => { written.changelog = text; },
+		};
+		runShipBump(opts);
+		expect(written.changelog).toContain('## [0.1.3] - 2026-12-31');
+	});
+
+	test('CHANGELOG is NOT written on no-op', () => {
+		const { opts, written } = makeOpts([]);
+		runShipBump(opts);
+		expect(written.changelog).toBeUndefined();
 	});
 });

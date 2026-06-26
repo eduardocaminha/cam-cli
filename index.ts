@@ -836,6 +836,8 @@ function _buildBumpOpts(cwd: string) {
 		readPackageJson: () => readFileSync(join(cwd, 'package.json'), 'utf8'),
 		writeVersionTs: (text: string) => writeFileSync(join(cwd, 'src/version.ts'), text, 'utf8'),
 		writePackageJson: (text: string) => writeFileSync(join(cwd, 'package.json'), text, 'utf8'),
+		readChangelog: () => readFileSync(join(cwd, 'CHANGELOG.md'), 'utf8'),
+		writeChangelog: (text: string) => writeFileSync(join(cwd, 'CHANGELOG.md'), text, 'utf8'),
 	};
 }
 
