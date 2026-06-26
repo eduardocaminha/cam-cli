@@ -20,16 +20,16 @@ import type { FinalizeCycleCloseResult } from '../src/commands/ship-finalize.ts'
 // ---------------------------------------------------------------------------
 
 describe('parseShipArgs — --finalize flag', () => {
-	test("parseShipArgs(['--finalize']) returns {help:false, finalize:true}", () => {
-		expect(parseShipArgs(['--finalize'])).toEqual({ help: false, finalize: true });
+	test("parseShipArgs(['--finalize']) returns {help:false, finalize:true, bump:false}", () => {
+		expect(parseShipArgs(['--finalize'])).toEqual({ help: false, finalize: true, bump: false });
 	});
 
-	test("parseShipArgs([]) returns {help:false, finalize:false}", () => {
-		expect(parseShipArgs([])).toEqual({ help: false, finalize: false });
+	test("parseShipArgs([]) returns {help:false, finalize:false, bump:false}", () => {
+		expect(parseShipArgs([])).toEqual({ help: false, finalize: false, bump: false });
 	});
 
-	test("parseShipArgs(['--finalize', '--help']) returns {help:true, finalize:true}", () => {
-		expect(parseShipArgs(['--finalize', '--help'])).toEqual({ help: true, finalize: true });
+	test("parseShipArgs(['--finalize', '--help']) returns {help:true, finalize:true, bump:false}", () => {
+		expect(parseShipArgs(['--finalize', '--help'])).toEqual({ help: true, finalize: true, bump: false });
 	});
 });
 
@@ -62,7 +62,7 @@ describe('dispatchShip — --finalize path', () => {
 			},
 		};
 
-		const code = await dispatchShip({ help: false, finalize: true }, deps);
+		const code = await dispatchShip({ help: false, finalize: true, bump: false }, deps);
 
 		expect(code).toBe(0);
 		expect(finalizeCalled).toBe(1);
@@ -79,7 +79,7 @@ describe('dispatchShip — --finalize path', () => {
 			},
 		};
 
-		await dispatchShip({ help: false, finalize: true }, deps);
+		await dispatchShip({ help: false, finalize: true, bump: false }, deps);
 
 		expect(runShipCalled).toBe(0);
 	});
@@ -99,7 +99,7 @@ describe('dispatchShip — --finalize path', () => {
 			},
 		};
 
-		const code = await dispatchShip({ help: false, finalize: false }, deps);
+		const code = await dispatchShip({ help: false, finalize: false, bump: false }, deps);
 
 		expect(code).toBe(0);
 		expect(runShipCalled).toBe(1);
@@ -117,7 +117,7 @@ describe('dispatchShip — --finalize path', () => {
 				},
 			};
 
-			const code = await dispatchShip({ help: false, finalize: true }, deps);
+			const code = await dispatchShip({ help: false, finalize: true, bump: false }, deps);
 			expect(code).toBe(1);
 		} finally {
 			process.stderr.write = original;

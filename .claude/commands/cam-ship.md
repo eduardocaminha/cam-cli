@@ -40,7 +40,15 @@ Steps:
 
    Then re-run `bun run check:all`. The gate reads only the staged diff, so the tracker ref must be staged before re-running.
 
-4. **Cycle-close hygiene (backend-aware close + harness reset) -- before push.**
+4. **Bump version (deterministic, in-process) -- commits before push.**
+
+   Reads `git log main..HEAD --pretty=%s`, classifies commit types (feat/fix/breaking), computes the next semver version (0.x convention: major bump -> minor increment while major is 0), writes `src/version.ts` and `package.json`, and commits `chore(release): bump version to X.Y.Z`. No-op when all commits classify as none.
+
+   ```bash
+   cam ship --bump
+   ```
+
+5. **Cycle-close hygiene (backend-aware close + harness reset) -- before push.**
 
    Run the finalize command. It reads the issue backend from `scripts/cam/project.toml`, closes the local issue (when `issue_system = "none"`), removes per-branch harness state (`prd.json`, `handoff.json`, `progress.txt`) via `git rm -f --ignore-unmatch`, and commits everything in a single cycle-close commit.
 
@@ -48,12 +56,12 @@ Steps:
    cam ship --finalize
    ```
 
-5. **Push the branch**:
+6. **Push the branch**:
    ```bash
    git push origin $(git branch --show-current)
    ```
 
-6. **Open PR**:
+7. **Open PR**:
    ```bash
    gh pr create \
      --title "<issue title>" \
@@ -78,14 +86,14 @@ Steps:
    <anything reviewers should know>
    ```
 
-7. **Close the `github` / `linear` backend issue (if applicable).** The `none` backend was already closed by `cam ship --finalize` in Step 4; for the others:
+8. **Close the `github` / `linear` backend issue (if applicable).** The `none` backend was already closed by `cam ship --finalize` in Step 5; for the others:
    ```bash
    # github:
    gh issue close <N> --reason completed --comment "Shipped via PR #<PR>"
    # linear: transition <issue_prefix>-<N> to Done via the Linear API.
    ```
 
-8. **Print summary**:
+9. **Print summary**:
    ```
    ✅ Shipped: PR #<N> opened
    Branch: <branch>

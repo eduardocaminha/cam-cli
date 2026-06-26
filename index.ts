@@ -37,6 +37,7 @@ import {
 	finalizeCycleClose,
 	type FinalizeCycleCloseResult,
 } from './src/commands/ship-finalize.ts';
+import { runShipBump, type ShipBumpResult } from './src/release/ship-bump.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
@@ -297,7 +298,7 @@ const REVIEW_HELP = renderHelp({
 const SHIP_HELP = renderHelp({
 	title: 'cam ship',
 	tagline: 'Dispatch /cam-ship to the live orchestrator, or finalize a cycle in-process',
-	usage: 'cam ship [--finalize]',
+	usage: 'cam ship [--finalize] [--bump]',
 	sections: [
 		{
 			heading: 'Behaviour (default)',
@@ -321,6 +322,14 @@ const SHIP_HELP = renderHelp({
 						'Run the deterministic cycle-close in-process (no tmux session needed). ' +
 						'Closes the tracked issue, removes per-branch harness state files via ' +
 						'`git rm -f --ignore-unmatch`, and commits the cleanup.',
+				},
+				{
+					name: '--bump',
+					description:
+						'Classify branch commits (main..HEAD), compute the next semver version ' +
+						'(0.x convention: major -> minor while major is 0), write src/version.ts ' +
+						'and package.json, and commit `chore(release): bump version to X.Y.Z`. ' +
+						'No-op when all commits classify as none.',
 				},
 			],
 		},
@@ -727,8 +736,8 @@ export function parseReviewArgs(args: string[]): { help: boolean } | null {
  * greps this file for the literal `--permission-mode` and fails the build
  * if a parser registers it.
  */
-export function parseShipArgs(args: string[]): { help: boolean; finalize: boolean } | null {
-	const result = { help: false, finalize: false };
+export function parseShipArgs(args: string[]): { help: boolean; finalize: boolean; bump: boolean } | null {
+	const result = { help: false, finalize: false, bump: false };
 	for (const arg of args) {
 		if (arg === '--help' || arg === '-h') {
 			result.help = true;
@@ -736,6 +745,10 @@ export function parseShipArgs(args: string[]): { help: boolean; finalize: boolea
 		}
 		if (arg === '--finalize') {
 			result.finalize = true;
+			continue;
+		}
+		if (arg === '--bump') {
+			result.bump = true;
 			continue;
 		}
 		printError(`unknown ship option: ${arg}`);
@@ -748,21 +761,26 @@ export function parseShipArgs(args: string[]): { help: boolean; finalize: boolea
 // cam ship dispatch (exported for unit testing with injectable deps)
 // ---------------------------------------------------------------------------
 
-/** Injectable deps for dispatchShip — both optional; production uses real impls. */
+/** Injectable deps for dispatchShip — all optional; production uses real impls. */
 export interface ShipDispatchDeps {
 	/** Inject a fake finalizeCycleClose wrapper; default: uses real fs + spawnSync. */
 	finalizeFn?: () => FinalizeCycleCloseResult;
+	/** Inject a fake runShipBump wrapper; default: uses real fs + spawnSync. */
+	bumpFn?: () => ShipBumpResult;
 	/** Inject a fake runShip; default: calls the real runShip({}) thin-proxy. */
 	runShipFn?: () => Promise<number>;
 }
 
 /**
- * Route a parsed `cam ship` call: --finalize => finalizeCycleClose (in-process,
- * no tmux needed); otherwise => runShip thin-proxy. Exported so unit tests can
- * inject fakes for both branches and prove the --finalize path NEVER calls runShip.
+ * Route a parsed `cam ship` call:
+ *   --finalize => finalizeCycleClose (in-process, no tmux needed)
+ *   --bump     => runShipBump (in-process, DI'd spawnFn + clock)
+ *   otherwise  => runShip thin-proxy
+ *
+ * Exported so unit tests can inject fakes for all branches.
  */
 export async function dispatchShip(
-	parsed: { help: boolean; finalize: boolean },
+	parsed: { help: boolean; finalize: boolean; bump: boolean },
 	deps?: ShipDispatchDeps,
 ): Promise<number> {
 	if (parsed.finalize) {
@@ -772,6 +790,21 @@ export async function dispatchShip(
 			return 0;
 		} catch (err) {
 			printError(`cam ship --finalize failed: ${String(err)}`);
+			return 1;
+		}
+	}
+	if (parsed.bump) {
+		const bumpFn = deps?.bumpFn ?? (() => runShipBump(_buildBumpOpts(process.cwd())));
+		try {
+			const result = bumpFn();
+			if (result.noOp) {
+				printHint(`version bump: ${result.reason}`);
+			} else {
+				printHint(`version bump: ${result.oldVersion} -> ${result.newVersion} (${result.bump})`);
+			}
+			return 0;
+		} catch (err) {
+			printError(`cam ship --bump failed: ${String(err)}`);
 			return 1;
 		}
 	}
@@ -790,6 +823,19 @@ function _buildFinalizeOpts(cwd: string) {
 		readIssues: () => readFileSync(join(cwd, 'scripts/cam/issues.local.json'), 'utf8'),
 		writeIssues: (text: string) =>
 			writeFileSync(join(cwd, 'scripts/cam/issues.local.json'), text, 'utf8'),
+	};
+}
+
+/** Build production deps for runShipBump from the given project root. */
+function _buildBumpOpts(cwd: string) {
+	return {
+		cwd,
+		spawnFn: spawnSync,
+		clock: () => new Date().toISOString(),
+		readVersionTs: () => readFileSync(join(cwd, 'src/version.ts'), 'utf8'),
+		readPackageJson: () => readFileSync(join(cwd, 'package.json'), 'utf8'),
+		writeVersionTs: (text: string) => writeFileSync(join(cwd, 'src/version.ts'), text, 'utf8'),
+		writePackageJson: (text: string) => writeFileSync(join(cwd, 'package.json'), text, 'utf8'),
 	};
 }
 
