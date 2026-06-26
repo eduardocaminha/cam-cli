@@ -25,7 +25,7 @@ Validation gap (see section below).
 | Documentation | ~6/8 | strong (README, CLAUDE.md, FLOW.md diagrams, recovery-runbook); missing agents_md_validation (doc-as-code) |
 | Testing & Quality | 5/9 | has unit + integration + isolation; missing coverage-threshold, test-perf-tracking, flaky-detection, quality-metrics (all CI/coverage-bound) |
 | Style & Validation | 4/8 (pre-CAM-60); ~8/8 post-CAM-60 | type_check + strict_typing pass; biome lint (complexity rules, grandfather overrides) added; no formatter, no dead-code/dup gates. CAM-60 added: coverage, file-size, debt-markers, dead-code, dup ratchets. |
-| Development Workflow | 4/9 | agentic-development + gh + priority-labels; missing tech-debt-scanner, code-boundaries, unused-deps, pr-template; branch_protection blocked (free private plan) |
+| Development Workflow | 4/9 | agentic-development + gh + priority-labels; missing tech-debt-scanner, code-boundaries, unused-deps, pr-template; branch_protection available (public repo; used by ci-gated mode via CAM-101/CAM-73) |
 | Build System | 2/5 | build doc + lockfile; no file-size/build-perf/bundle-size tracking |
 | Security & Compliance | 2/5 applic. | secrets + gitignore; no secret-scanning/codeowners/security-review |
 | Observability & Debugging | 2/2 applic. | structured event log (cam-worker-events.jsonl) + backoff resilience; rest N/A (CLI) |
@@ -33,8 +33,9 @@ Validation gap (see section below).
 | Progressive Deployment | 1/6 applic. | rollback runbook; no CD/dep-update/release-notes/auto-pr-review |
 
 Judgment calls that most move the band: `CLAUDE.md` counted as the `agents_md`
-criterion; service-only criteria as N/A; `branch_protection` as a structural
-fail of the free private plan.
+criterion; service-only criteria as N/A; `branch_protection` counted as
+available (the repo is public; branch protection can be enabled and is used by
+ci-gated mode, CAM-101 absorbing CAM-73).
 
 ## CAM-59 done: CI on macOS + gate spine (2026-06-23)
 
