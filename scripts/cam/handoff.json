@@ -1,24 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/release/ship-bump.ts",
+    "index.ts",
+    "src/supervisor/events.ts",
     "test/release/ship-bump.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 added exit-status guards to runShipBump: (addResult.status ?? 1) !== 0 and (commitResult.status ?? 1) !== 0, plus printError + throw on failure. Imported printError from src/logging/color.ts. Added 3 new tests covering the failure paths. Next is US-R1-002: wire writeEvent in production _buildBumpOpts in index.ts so the structured ShipBumpResult event is actually appended to .claude/cam-worker-events.jsonl on real cam ship --bump invocations.",
+  "nextStoryContext": "US-R1-002 wired writeEvent in _buildBumpOpts (index.ts): creates makeFileEventLogger pointing to .claude/cam-worker-events.jsonl and passes it as writeEvent wrapping ShipBumpResult in a WorkerEvent with kind 'ship-bump'. Also added oracle tests verifying the production wiring. The 'ship-bump' WorkerEventKind was already declared in src/supervisor/events.ts (part of the uncommitted US-007 work); this story committed it along with the wiring fix. Next stories (US-R1-003 onward) should be checked for similar production-wiring gaps.",
   "officialDocsValidated": [
     {
-      "lib": "node:child_process spawnSync",
-      "version": "Node.js (current)",
-      "url": "https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options",
+      "lib": "node:fs appendFileSync",
+      "version": "Node.js current",
+      "url": "https://nodejs.org/api/fs.html#fsappendfilesyncpath-data-options",
       "fetchedAt": "2026-06-26T00:00:00Z",
       "status": "ok",
-      "summary": "Confirmed: spawnSync returns { status: number | null } and does NOT throw on non-zero exit. status is null when the child terminates via signal. Our (result.status ?? 1) !== 0 guard correctly handles both cases."
+      "summary": "appendFileSync creates the file if absent and appends data synchronously. makeFileEventLogger in events.ts correctly uses mkdirSync+appendFileSync pattern confirmed against Node.js docs."
     }
   ]
 }

@@ -40,7 +40,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [index.ts:847]: US-007 AC-2 gap: production _buildBumpOpts does not wire `writeEvent`, so the structured {from,to,bumpType,commitsClassified} event is computed and then discarded (opts.writeEvent?.() is a no-op) on every real `cam ship --bump`. It is never appended to .claude/cam-worker-events.jsonl. The two sibling US-007 emitters wire it via makeFileEventLogger (src/commands/run.ts:374, src/supervisor/review.ts:359, src/supervisor/loop.ts:671); the bump path is the lone omission. Only the emitOk result line is emitted in production; the AC-2 oracle (grep on the test file) passes but the deliverable is unwired in the real command."
     },
     {
