@@ -163,6 +163,99 @@ function buildProtectionBody(): string {
 }
 
 // ---------------------------------------------------------------------------
+// Step helpers (extracted to keep configureBranchProtection under complexity
+// limits; CAM-60 factory/helper pattern)
+// ---------------------------------------------------------------------------
+
+type EmitWarningFn = (msg: string, hint?: string) => void;
+type EmitHintFn = (msg: string) => void;
+
+/**
+ * PUT the branch protection rule.
+ * Returns a fallback BranchProtectionResult on failure, null on success.
+ */
+function attemptProtectionPut(
+	spawnFn: SpawnFn,
+	ownerRepo: string,
+	bodyJson: string,
+	emitWarning: EmitWarningFn,
+	emitHint: EmitHintFn,
+): BranchProtectionResult | null {
+	const endpoint = `repos/${ownerRepo}/branches/main/protection`;
+	const putResult = spawnFn(
+		'gh',
+		['api', '-X', 'PUT', '--input', '-', '-H', ACCEPT_HEADER, endpoint],
+		{ encoding: 'utf8', input: bodyJson },
+	);
+	if ((putResult.status ?? 1) !== 0) {
+		const errText = ((putResult.stderr ?? '') + (putResult.stdout ?? '')).trim();
+		const detail = isPermissionError(errText)
+			? 'no admin rights on this repo'
+			: errText.slice(0, 80) || 'gh api returned non-zero exit';
+		emitWarning('branch-protection configure failed', detail);
+		emitHint(BRANCH_PROTECTION_FALLBACK_HINT);
+		return { outcome: 'fallback-warned', hint: BRANCH_PROTECTION_FALLBACK_HINT };
+	}
+	return null; // PUT succeeded
+}
+
+/**
+ * GET-verify the protection rule.
+ * Returns a fallback BranchProtectionResult when the check is not confirmed,
+ * null when verified OK.
+ */
+function verifyProtectionGet(
+	spawnFn: SpawnFn,
+	ownerRepo: string,
+	emitWarning: EmitWarningFn,
+	emitHint: EmitHintFn,
+): BranchProtectionResult | null {
+	const endpoint = `repos/${ownerRepo}/branches/main/protection`;
+	const getResult = spawnFn('gh', ['api', '-H', ACCEPT_HEADER, endpoint], { encoding: 'utf8' });
+	if ((getResult.status ?? 1) !== 0) {
+		emitWarning('branch-protection verify failed', 'could not read protection settings after PUT');
+		emitHint(BRANCH_PROTECTION_FALLBACK_HINT);
+		return { outcome: 'fallback-warned', hint: BRANCH_PROTECTION_FALLBACK_HINT };
+	}
+	let verified = false;
+	try {
+		const parsed = JSON.parse(getResult.stdout) as ProtectionGetResponse;
+		verified = hasCiCheck(parsed);
+	} catch {
+		verified = false;
+	}
+	if (!verified) {
+		emitWarning('branch-protection applied but ci check not found in verification response');
+		emitHint(BRANCH_PROTECTION_FALLBACK_HINT);
+		return { outcome: 'fallback-warned', hint: BRANCH_PROTECTION_FALLBACK_HINT, verified: false };
+	}
+	return null; // verified OK
+}
+
+/**
+ * Best-effort CAM-84 prereq check (Allow auto-merge + Allow squash merging).
+ * Never blocks success; emits a hint if either setting is missing.
+ */
+function checkAutoMergePrereqs(
+	spawnFn: SpawnFn,
+	ownerRepo: string,
+	emitHint: EmitHintFn,
+): void {
+	const repoResult = spawnFn(
+		'gh', ['api', '-H', ACCEPT_HEADER, `repos/${ownerRepo}`], { encoding: 'utf8' },
+	);
+	if ((repoResult.status ?? 1) !== 0) return; // best-effort: skip on failure
+	try {
+		const repo = JSON.parse(repoResult.stdout) as RepoSettingsResponse;
+		if (repo.allow_auto_merge !== true || repo.allow_squash_merge !== true) {
+			emitHint(AUTOMERGE_NOTICE);
+		}
+	} catch {
+		// Parse error: skip silently.
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
@@ -184,84 +277,14 @@ export function configureBranchProtection(
 	const emitHint = opts.emitHint ?? printHint;
 	const emitWarning = opts.emitWarning ?? printWarning;
 
-	const protectionEndpoint = `repos/${ownerRepo}/branches/main/protection`;
 	const bodyJson = buildProtectionBody();
 
-	// --- Step 1: PUT branch protection ---
-	const putResult = spawnFn(
-		'gh',
-		['api', '-X', 'PUT', '--input', '-', '-H', ACCEPT_HEADER, protectionEndpoint],
-		{ encoding: 'utf8', input: bodyJson },
-	);
+	const putErr = attemptProtectionPut(spawnFn, ownerRepo, bodyJson, emitWarning, emitHint);
+	if (putErr !== null) return putErr;
 
-	if ((putResult.status ?? 1) !== 0) {
-		const errText = (
-			(putResult.stderr ?? '') + (putResult.stdout ?? '')
-		).trim();
-		const detail = isPermissionError(errText)
-			? 'no admin rights on this repo'
-			: errText.slice(0, 80) || 'gh api returned non-zero exit';
-		emitWarning('branch-protection configure failed', detail);
-		emitHint(BRANCH_PROTECTION_FALLBACK_HINT);
-		return { outcome: 'fallback-warned', hint: BRANCH_PROTECTION_FALLBACK_HINT };
-	}
+	const verifyErr = verifyProtectionGet(spawnFn, ownerRepo, emitWarning, emitHint);
+	if (verifyErr !== null) return verifyErr;
 
-	// --- Step 2: GET to verify ---
-	const getResult = spawnFn(
-		'gh',
-		['api', '-H', ACCEPT_HEADER, protectionEndpoint],
-		{ encoding: 'utf8' },
-	);
-
-	if ((getResult.status ?? 1) !== 0) {
-		emitWarning(
-			'branch-protection verify failed',
-			'could not read protection settings after PUT',
-		);
-		emitHint(BRANCH_PROTECTION_FALLBACK_HINT);
-		return { outcome: 'fallback-warned', hint: BRANCH_PROTECTION_FALLBACK_HINT };
-	}
-
-	let verified = false;
-	try {
-		const parsed = JSON.parse(getResult.stdout) as ProtectionGetResponse;
-		verified = hasCiCheck(parsed);
-	} catch {
-		verified = false;
-	}
-
-	if (!verified) {
-		emitWarning(
-			'branch-protection applied but ci check not found in verification response',
-		);
-		emitHint(BRANCH_PROTECTION_FALLBACK_HINT);
-		return {
-			outcome: 'fallback-warned',
-			hint: BRANCH_PROTECTION_FALLBACK_HINT,
-			verified: false,
-		};
-	}
-
-	// --- Step 3: Check CAM-84 prerequisites (best-effort, no hard failure) ---
-	const repoResult = spawnFn(
-		'gh',
-		['api', '-H', ACCEPT_HEADER, `repos/${ownerRepo}`],
-		{ encoding: 'utf8' },
-	);
-
-	if ((repoResult.status ?? 1) === 0) {
-		try {
-			const repo = JSON.parse(repoResult.stdout) as RepoSettingsResponse;
-			const missingAutoMerge = repo.allow_auto_merge !== true;
-			const missingSquash = repo.allow_squash_merge !== true;
-			if (missingAutoMerge || missingSquash) {
-				emitHint(AUTOMERGE_NOTICE);
-			}
-		} catch {
-			// Parse error: skip prereq check silently.
-		}
-	}
-	// If repo GET fails: skip prereq check (best-effort, never blocks success).
-
+	checkAutoMergePrereqs(spawnFn, ownerRepo, emitHint);
 	return { outcome: 'configured-and-verified', verified: true };
 }

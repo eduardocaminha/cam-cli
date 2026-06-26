@@ -88,6 +88,76 @@ function parseVersionFromContent(content: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// Step helpers (extracted to keep runPostMerge under complexity/line limits)
+// ---------------------------------------------------------------------------
+
+type FailOutcome = { ok: false; reason: string };
+
+/**
+ * Read and parse the version from src/version.ts.
+ * Returns the `vX.Y.Z` tag string on success, or a FailOutcome on error.
+ */
+function readVersionTag(
+	cwd: string,
+	readVersionFileFn: ReadVersionFileFn | undefined,
+): string | FailOutcome {
+	const versionTsPath = `${cwd}/src/version.ts`;
+	let versionContent: string;
+	try {
+		const reader: ReadVersionFileFn =
+			readVersionFileFn ?? ((p) => readFileSync(p, 'utf8'));
+		versionContent = reader(versionTsPath);
+	} catch {
+		printError('could not read src/version.ts after pull');
+		return { ok: false, reason: 'version-file-read-failed' };
+	}
+	const version = parseVersionFromContent(versionContent);
+	if (version === undefined) {
+		printError('could not parse CAM_VERSION from src/version.ts');
+		return { ok: false, reason: 'version-parse-failed' };
+	}
+	return `v${version}`;
+}
+
+/**
+ * Idempotent tag-and-push step.
+ * Returns { tagCreated } on success, or a FailOutcome on error.
+ */
+function performTagStep(
+	spawnFn: SpawnFn,
+	cwd: string,
+	tag: string,
+): { tagCreated: boolean } | FailOutcome {
+	const listResult = spawnFn('git', ['-C', cwd, 'tag', '-l', tag], { encoding: 'utf8' });
+	const existingTag = (listResult.stdout ?? '').trim();
+
+	if (existingTag === tag) {
+		printSuccess(`tag ${tag} already exists`, '(no-op)');
+		return { tagCreated: false };
+	}
+
+	const createResult = spawnFn('git', ['-C', cwd, 'tag', tag], { encoding: 'utf8' });
+	if ((createResult.status ?? 1) !== 0) {
+		const stderr = (createResult.stderr ?? '').trim();
+		printError(`git tag ${tag} failed: ${stderr || '(no output)'}`);
+		return { ok: false, reason: 'tag-create-failed' };
+	}
+
+	const pushTagResult = spawnFn('git', ['-C', cwd, 'push', 'origin', tag], { encoding: 'utf8' });
+	if ((pushTagResult.status ?? 1) !== 0) {
+		const stderr = (pushTagResult.stderr ?? '').trim();
+		printError(
+			`git push origin ${tag} failed: ${stderr || '(no output)'}`,
+			'tag was created locally but not pushed',
+		);
+		return { ok: false, reason: 'tag-push-failed' };
+	}
+
+	printSuccess(`tagged and pushed ${tag}`);
+	return { tagCreated: true };
+}
+
+// ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
 
@@ -100,17 +170,8 @@ function parseVersionFromContent(content: string): string | undefined {
 export function runPostMerge(opts: PostMergeOptions): PostMergeOutcome {
 	const { cwd, mergedBranch, spawnFn } = opts;
 
-	// Step 0: Check out main before pulling.
-	//         runTag (src/commands/tag.ts:66-79) enforces the same invariant.
-	//         Without this, git pull origin main merges origin/main INTO the
-	//         feature branch, rev-parse HEAD returns the feature SHA (wrong tag
-	//         target), and git branch -d <feature> fails because you cannot
-	//         delete the currently-checked-out branch.
-	const checkoutResult = spawnFn(
-		'git',
-		['-C', cwd, 'checkout', 'main'],
-		{ encoding: 'utf8' },
-	);
+	// Step 0: Check out main before pulling (checkout-main guard pattern, US-R1-002).
+	const checkoutResult = spawnFn('git', ['-C', cwd, 'checkout', 'main'], { encoding: 'utf8' });
 	if ((checkoutResult.status ?? 1) !== 0) {
 		const stderr = (checkoutResult.stderr ?? '').trim();
 		printError(`git checkout main failed: ${stderr || '(no output)'}`);
@@ -118,11 +179,7 @@ export function runPostMerge(opts: PostMergeOptions): PostMergeOutcome {
 	}
 
 	// Step 1: git pull origin main
-	const pullResult = spawnFn(
-		'git',
-		['-C', cwd, 'pull', 'origin', 'main'],
-		{ encoding: 'utf8' },
-	);
+	const pullResult = spawnFn('git', ['-C', cwd, 'pull', 'origin', 'main'], { encoding: 'utf8' });
 	if ((pullResult.status ?? 1) !== 0) {
 		const stderr = (pullResult.stderr ?? '').trim();
 		printError(`git pull origin main failed: ${stderr || '(no output)'}`);
@@ -130,101 +187,30 @@ export function runPostMerge(opts: PostMergeOptions): PostMergeOutcome {
 	}
 
 	// Get the HEAD sha after the pull.
-	const shaResult = spawnFn(
-		'git',
-		['-C', cwd, 'rev-parse', 'HEAD'],
-		{ encoding: 'utf8' },
-	);
+	const shaResult = spawnFn('git', ['-C', cwd, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
 	const pulledSha = (shaResult.stdout ?? '').trim();
 
 	// Step 2: Read version from src/version.ts on main AFTER pull.
-	//         Using the file on disk (not CAM_VERSION from the running binary)
-	//         ensures a stale installed binary cannot mis-tag.
-	const versionTsPath = `${cwd}/src/version.ts`;
-	let versionContent: string;
-	try {
-		const reader: ReadVersionFileFn =
-			opts.readVersionFile ?? ((p) => readFileSync(p, 'utf8'));
-		versionContent = reader(versionTsPath);
-	} catch (_err) {
-		printError('could not read src/version.ts after pull');
-		return { ok: false, reason: 'version-file-read-failed' };
-	}
-
-	const version = parseVersionFromContent(versionContent);
-	if (version === undefined) {
-		printError('could not parse CAM_VERSION from src/version.ts');
-		return { ok: false, reason: 'version-parse-failed' };
-	}
-	const tag = `v${version}`;
+	const tagResult = readVersionTag(cwd, opts.readVersionFile);
+	if (typeof tagResult !== 'string') return tagResult;
+	const tag = tagResult;
 
 	// Step 3: Idempotent tag step.
-	//         Check whether the tag already exists before creating.
-	const listResult = spawnFn(
-		'git',
-		['-C', cwd, 'tag', '-l', tag],
-		{ encoding: 'utf8' },
-	);
-	const existingTag = (listResult.stdout ?? '').trim();
-	let tagCreated = false;
-
-	if (existingTag === tag) {
-		// Tag already exists: idempotent no-op.
-		printSuccess(`tag ${tag} already exists`, '(no-op)');
-	} else {
-		// Create the tag on the current main HEAD.
-		const createResult = spawnFn(
-			'git',
-			['-C', cwd, 'tag', tag],
-			{ encoding: 'utf8' },
-		);
-		if ((createResult.status ?? 1) !== 0) {
-			const stderr = (createResult.stderr ?? '').trim();
-			printError(`git tag ${tag} failed: ${stderr || '(no output)'}`);
-			return { ok: false, reason: 'tag-create-failed' };
-		}
-
-		// Push the tag to origin.
-		const pushTagResult = spawnFn(
-			'git',
-			['-C', cwd, 'push', 'origin', tag],
-			{ encoding: 'utf8' },
-		);
-		if ((pushTagResult.status ?? 1) !== 0) {
-			const stderr = (pushTagResult.stderr ?? '').trim();
-			printError(
-				`git push origin ${tag} failed: ${stderr || '(no output)'}`,
-				'tag was created locally but not pushed',
-			);
-			return { ok: false, reason: 'tag-push-failed' };
-		}
-
-		tagCreated = true;
-		printSuccess(`tagged and pushed ${tag}`);
-	}
+	const tagStepResult = performTagStep(spawnFn, cwd, tag);
+	if ('ok' in tagStepResult) return tagStepResult;
+	const { tagCreated } = tagStepResult;
 
 	// Step 4: Delete merged branch locally (best-effort, non-fatal).
 	const deleteLocalResult = spawnFn(
-		'git',
-		['-C', cwd, 'branch', '-d', mergedBranch],
-		{ encoding: 'utf8' },
+		'git', ['-C', cwd, 'branch', '-d', mergedBranch], { encoding: 'utf8' },
 	);
 	const branchPrunedLocal = (deleteLocalResult.status ?? 1) === 0;
 
 	// Step 5: Delete merged branch on origin (best-effort, non-fatal).
 	const deleteRemoteResult = spawnFn(
-		'git',
-		['-C', cwd, 'push', 'origin', '--delete', mergedBranch],
-		{ encoding: 'utf8' },
+		'git', ['-C', cwd, 'push', 'origin', '--delete', mergedBranch], { encoding: 'utf8' },
 	);
 	const branchPrunedRemote = (deleteRemoteResult.status ?? 1) === 0;
 
-	return {
-		ok: true,
-		pulledSha,
-		tag,
-		tagCreated,
-		branchPrunedLocal,
-		branchPrunedRemote,
-	};
+	return { ok: true, pulledSha, tag, tagCreated, branchPrunedLocal, branchPrunedRemote };
 }

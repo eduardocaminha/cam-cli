@@ -196,6 +196,70 @@ function hasFailedCheck(rollup: PrCheckRollupEntry[]): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// State machine helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle one non-null poll result.
+ *
+ * Returns `{ outcome }` when the state machine should stop (terminal outcome),
+ * or `null` to continue polling.
+ *
+ * Extracted from runMergeWatch to keep the main function under complexity/line
+ * limits (CAM-60 factory/helper pattern).
+ */
+function processPollResult(
+	status: PrStatus,
+	opts: MergeWatchOptions,
+): { outcome: MergeWatchOutcome } | null {
+	const { prNumber, mergedBranch, cwd, postMergeFn, notifyOrchestrator, logEvent } = opts;
+
+	if (status.state === 'MERGED') {
+		notifyOrchestrator(`[cam] PR #${prNumber} merged - running post-merge`);
+		const mergedDetail: MergeWatchMergedEventDetail = { prNumber };
+		logEvent?.('merge-watch-merged', mergedDetail);
+		const result = postMergeFn({ cwd, mergedBranch });
+		if (result.ok) {
+			const tagNote = result.tagCreated ? '(tag created)' : '(tag existed)';
+			notifyOrchestrator(`[cam] post-merge complete: ${result.tag} ${tagNote}`);
+			const doneDetail: MergeWatchPostMergeDoneEventDetail = {
+				prNumber, ok: true, tag: result.tag, tagCreated: result.tagCreated,
+			};
+			logEvent?.('merge-watch-post-merge-done', doneDetail);
+		} else {
+			notifyOrchestrator(`[cam] post-merge failed: ${result.reason}`);
+			const doneDetail: MergeWatchPostMergeDoneEventDetail = {
+				prNumber, ok: false, reason: result.reason,
+			};
+			logEvent?.('merge-watch-post-merge-done', doneDetail);
+		}
+		return { outcome: { kind: 'merged', postMerge: result } };
+	}
+
+	if (status.state === 'CLOSED') {
+		notifyOrchestrator(`[cam] CI red, PR #${prNumber} closed-not-merged`);
+		const ciRedDetail: MergeWatchCiRedEventDetail = { prNumber, reason: 'closed' };
+		logEvent?.('merge-watch-ci-red', ciRedDetail);
+		return { outcome: { kind: 'closed-not-merged', prNumber } };
+	}
+
+	if (status.state === 'OPEN' && status.mergeStateStatus === 'BLOCKED') {
+		// GitHub returns BLOCKED while checks are pending: inspect rollup before
+		// treating as ci-red (US-R1-003 pattern).
+		const rollup = status.statusCheckRollup ?? [];
+		if (rollup.length === 0 || !hasFailedCheck(rollup)) {
+			return null; // CI pending/in-progress: keep polling
+		}
+		notifyOrchestrator(`[cam] CI red, PR #${prNumber} open, not merged`);
+		const ciRedDetail: MergeWatchCiRedEventDetail = { prNumber, reason: 'blocked' };
+		logEvent?.('merge-watch-ci-red', ciRedDetail);
+		return { outcome: { kind: 'ci-red', prNumber } };
+	}
+
+	return null; // OPEN + non-BLOCKED (CLEAN, BEHIND, etc.): keep polling
+}
+
+// ---------------------------------------------------------------------------
 // State machine
 // ---------------------------------------------------------------------------
 
@@ -215,91 +279,28 @@ function hasFailedCheck(rollup: PrCheckRollupEntry[]): boolean {
  *     keep polling.
  *   - state=="OPEN" && mergeStateStatus=="BLOCKED" && no failed check in rollup
  *     (CI is pending/in-progress, or BLOCKED for a non-CI reason): keep polling.
- *     GitHub returns BLOCKED while required checks are still running, not only on
- *     failure, so we must inspect statusCheckRollup before treating it as ci-red.
  *
  * Only engages under ci-gated merge mode. Under immediate mode, the sidecar
  * never injects this function, so it is completely inert (zero behavior change).
  */
 export async function runMergeWatch(opts: MergeWatchOptions): Promise<MergeWatchOutcome> {
-	const { prNumber, mergedBranch, cwd, pollFn, postMergeFn, notifyOrchestrator } = opts;
-	const { logEvent } = opts;
+	const { prNumber, logEvent } = opts;
 	const sleep = opts.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS;
 	const maxPolls = opts.maxPolls ?? DEFAULT_MERGE_WATCH_MAX_POLLS;
 
-	// Emit structured 'watching' event so the operator can identify when
-	// monitoring started (US-008).
-	const watchingDetail: MergeWatchWatchingEventDetail = { prNumber, mergedBranch };
+	const watchingDetail: MergeWatchWatchingEventDetail = { prNumber, mergedBranch: opts.mergedBranch };
 	logEvent?.('merge-watch-watching', watchingDetail);
 
 	for (let poll = 0; poll < maxPolls; poll++) {
-		// Skip sleep on first poll: start immediately.
-		if (poll > 0) {
-			sleep(pollIntervalMs);
-		}
-
-		const status = pollFn(prNumber);
-		if (status === null) {
-			// gh error: silent retry (network blip, gh auth, etc.).
-			continue;
-		}
-
-		if (status.state === 'MERGED') {
-			notifyOrchestrator(`[cam] PR #${prNumber} merged - running post-merge`);
-			const mergedDetail: MergeWatchMergedEventDetail = { prNumber };
-			logEvent?.('merge-watch-merged', mergedDetail);
-			const result = postMergeFn({ cwd, mergedBranch });
-			if (result.ok) {
-				const tagNote = result.tagCreated ? '(tag created)' : '(tag existed)';
-				notifyOrchestrator(`[cam] post-merge complete: ${result.tag} ${tagNote}`);
-				const doneDetail: MergeWatchPostMergeDoneEventDetail = {
-					prNumber,
-					ok: true,
-					tag: result.tag,
-					tagCreated: result.tagCreated,
-				};
-				logEvent?.('merge-watch-post-merge-done', doneDetail);
-			} else {
-				notifyOrchestrator(`[cam] post-merge failed: ${result.reason}`);
-				const doneDetail: MergeWatchPostMergeDoneEventDetail = {
-					prNumber,
-					ok: false,
-					reason: result.reason,
-				};
-				logEvent?.('merge-watch-post-merge-done', doneDetail);
-			}
-			return { kind: 'merged', postMerge: result };
-		}
-
-		if (status.state === 'CLOSED') {
-			notifyOrchestrator(`[cam] CI red, PR #${prNumber} closed-not-merged`);
-			const ciRedDetail: MergeWatchCiRedEventDetail = { prNumber, reason: 'closed' };
-			logEvent?.('merge-watch-ci-red', ciRedDetail);
-			return { kind: 'closed-not-merged', prNumber };
-		}
-
-		if (status.state === 'OPEN' && status.mergeStateStatus === 'BLOCKED') {
-			// GitHub returns BLOCKED while checks are still pending/in-progress.
-			// Only treat it as a true CI failure when the rollup confirms a
-			// failed check conclusion. An absent or all-pending rollup means
-			// CI is still running: keep polling.
-			const rollup = status.statusCheckRollup ?? [];
-			if (rollup.length === 0 || !hasFailedCheck(rollup)) {
-				// Checks are pending/in-progress (or BLOCKED for a non-CI reason).
-				// Keep polling.
-				continue;
-			}
-			notifyOrchestrator(`[cam] CI red, PR #${prNumber} open, not merged`);
-			const ciRedDetail: MergeWatchCiRedEventDetail = { prNumber, reason: 'blocked' };
-			logEvent?.('merge-watch-ci-red', ciRedDetail);
-			return { kind: 'ci-red', prNumber };
-		}
-
-		// Still OPEN and CI not failed (CLEAN, BEHIND, UNSTABLE, BLOCKED+pending, etc.): keep polling.
+		if (poll > 0) sleep(pollIntervalMs);
+		const status = opts.pollFn(prNumber);
+		if (status === null) continue; // gh error: silent retry
+		const result = processPollResult(status, opts);
+		if (result !== null) return result.outcome;
 	}
 
-	notifyOrchestrator(
+	opts.notifyOrchestrator(
 		`[cam] merge-watch timeout: PR #${prNumber} not yet merged after ${maxPolls} polls`,
 	);
 	return { kind: 'timeout', polls: maxPolls };
