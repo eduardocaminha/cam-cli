@@ -1278,3 +1278,123 @@ Cross-reference: `.claude/hooks/orch-agent-allowlist.sh` (hook implementation),
 `src/vendor/_generated.ts` (embedded copy),
 `scripts/cam/patterns.md` (PreToolUse deny contract + defensive subagent_type read
 bullet, Template hook executable-bit restoration bullet).
+
+## (r) CAM-89: conventional commits version bump and tag flow
+
+### Background
+
+`cam ship --bump` reads branch commits via `git log main..HEAD --pretty=%s`,
+classifies the bump level using conventional commit prefixes, and writes a
+`chore(release): bump version to X.Y.Z` commit on the feature branch.
+`cam tag` runs after the PR squash-merges to main and creates and pushes
+the `vX.Y.Z` git tag.
+
+**0.x convention:** while the major component of the current version is 0, a
+`major` bump (breaking change) is demoted to a minor increment. For example,
+`0.1.2 + major -> 0.2.0`. No command path produces `1.0.0` automatically; the
+1.0.0 escape hatch requires a manual operator edit (see r.4 below).
+
+**Squash-merge tag-timing decision:** the bump commit lives on the feature
+branch. After the PR squash-merges to main, that SHA is gone; `cam tag` reads
+`CAM_VERSION` from the newly minted main HEAD and creates the tag there.
+Running `git tag vX.Y.Z` on the branch before the merge tags the wrong SHA;
+always run `cam tag` after checking out main.
+
+### r.1 -- Bump misfired (wrong level committed)
+
+If `cam ship --bump` wrote the wrong bump level (e.g. `0.2.0` when `0.3.0`
+was intended):
+
+1. Undo the bump commit on the feature branch:
+
+   ```bash
+   git revert HEAD --no-edit
+   # or, while the branch has not been pushed:
+   git reset HEAD~1 --soft
+   ```
+
+2. Edit `src/version.ts` manually to the correct version and update
+   `package.json` to match:
+
+   ```bash
+   # e.g. to reach 0.3.0
+   sed -i '' 's/^export const CAM_VERSION.*/export const CAM_VERSION = "0.3.0";/' src/version.ts
+   # then update the "version" field in package.json to "0.3.0"
+   ```
+
+3. Commit the corrected files:
+
+   ```bash
+   git add src/version.ts package.json
+   git commit -m "chore(release): bump version to 0.3.0"
+   ```
+
+4. Proceed with the PR merge, then run `cam tag` on main.
+
+### r.2 -- Tag drift (tag points to wrong commit)
+
+If the tag was created before the squash merge (branch SHA), or a force-push
+changed main HEAD after tagging:
+
+1. Delete the local and remote tag:
+
+   ```bash
+   git tag -d vX.Y.Z
+   git push origin :refs/tags/vX.Y.Z
+   ```
+
+2. Verify you are on main and the tree is clean:
+
+   ```bash
+   git checkout main && git pull origin main
+   git status  # must be clean
+   ```
+
+3. Re-run `cam tag` to create and push the tag at the correct main HEAD SHA:
+
+   ```bash
+   cam tag
+   ```
+
+### r.3 -- Re-tag a release (correct tag contents)
+
+Same procedure as r.2: delete local and remote tag, confirm a clean main HEAD,
+then run `cam tag`. `cam tag` is idempotent: if the tag already exists at the
+current SHA it prints a no-op message and exits 0 without creating a duplicate.
+
+If you need the tag at a specific SHA that is not main HEAD, use raw git:
+
+```bash
+git tag vX.Y.Z <sha>
+git push origin vX.Y.Z
+```
+
+### r.4 -- Manually declare 1.0.0
+
+The auto-bump in `cam ship --bump` never produces `1.0.0` while the major
+component is 0 (the 0.x convention). To graduate to 1.0.0:
+
+1. Edit `src/version.ts` directly:
+
+   ```bash
+   # change the constant to:
+   export const CAM_VERSION = "1.0.0";
+   ```
+
+2. Update the `"version"` field in `package.json` to `"1.0.0"` as well.
+
+3. Commit the change:
+
+   ```bash
+   git add src/version.ts package.json
+   git commit -m "chore(release): bump version to 1.0.0"
+   ```
+
+4. After the PR merges to main, run `cam tag` to create the `v1.0.0` tag.
+
+Cross-reference: `src/release/version.ts` (computeNextVersion, 0.x demotion
+rule), `src/release/ship-bump.ts` (runShipBump, bump commit logic),
+`src/commands/tag.ts` (runTag, guard + tag + push),
+`scripts/cam/CLAUDE.md` (Release Conventions section),
+`scripts/cam/patterns.md` (0.x semver convention placement bullet,
+cam ship --bump step placement bullet).
