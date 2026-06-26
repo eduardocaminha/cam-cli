@@ -1,5 +1,5 @@
 {
-  "next_id": 96,
+  "next_id": 97,
   "issues": [
     {
       "id": "CAM-1",
@@ -796,6 +796,14 @@
       "state": "open",
       "createdAt": "2026-06-26T04:14:29.819Z",
       "description": "When the review loop reaches roundsCompleted == maxRounds, decideNextAction treats review as terminal-by-cap and exits without a confirming round, so review.lastVerdict stays at FIXES_PENDING:N instead of being promoted to MAX_ROUNDS_DEBT (the Step 5.5 safety valve only fires when a round is attempted beyond the cap). This wedges /cam-ship, which only accepts CLEAN or MAX_ROUNDS_DEBT as terminal, and forces a manual maxRounds bump. Recurring: CAM-53 follow-up b, reproduced in CAM-78 (PR #73) where the round-3 fix was already committed but the verdict stayed FIXES_PENDING:1."
+    },
+    {
+      "id": "CAM-96",
+      "title": "Hook orch-agent-allowlist.sh deve fail CLOSED quando jq ausente (deny path)",
+      "state": "open",
+      "createdAt": "2026-06-26T09:05:14.692Z",
+      "description": "O deny path do .claude/hooks/orch-agent-allowlist.sh constroi o JSON via jq -n sob set -e. Se jq estiver ausente, jq sai ~127 (non-2), que o Claude Code trata como erro nao-bloqueante e o Task spawn PROSSEGUE (fail-OPEN), bypassando o gate inteiro. O extraction read ja guarda com || echo vazio, mas a emissao do deny nao. jq e pre-condicao dura documentada (US-002 + runbook), dentro do envelope aceito, mas um deny gate idealmente falha FECHADO: emitir deny JSON estatico via printf quando jq indisponivel (ou exit 2). Origem: reviewer WARNING no CAM-91 (PR #74), triado nao-bloqueante 2 rounds.",
+      "priority": 3
     }
   ]
 }
