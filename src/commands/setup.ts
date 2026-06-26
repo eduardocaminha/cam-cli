@@ -37,6 +37,7 @@ import { createElement } from 'react';
 import { mergeIntoConfig } from '../config/toml.ts';
 import { DEFAULTS } from '../config/models.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
+import { printAutomergeNotice } from '../logging/notices.ts';
 import { materializeTemplates } from '../templates/embedded.ts';
 import { buildOrchestratorBootPrompt } from './run.ts';
 import { SetupScreen, type SetupAnswers } from '../ui/SetupScreen.tsx';
@@ -534,6 +535,9 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 	} else if (issueSystem === 'github') {
 		printHint('Ensure `gh auth status` passes before running /cam-issue');
 	}
+	// cam ship always opens a GitHub PR, so the auto-merge prerequisite is
+	// unconditional regardless of the chosen issue_system.
+	printAutomergeNotice();
 
 	// Persist to scripts/cam/project.toml (per-project config).
 	try {
