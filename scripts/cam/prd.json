@@ -103,7 +103,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/commands/cam-ship.md (canonical source the codegen reads) + .claude/commands/cam-ship.md (the project-local installed copy) MUST both be edited, then run `bun run embed-vendor` and confirm `bun run embed-vendor:check` passes. The codegen reads templates/ (NOT .claude/); the embedded const key is templatesContents[\"commands/cam-ship.md\"] in src/vendor/_generated.ts. Today cam-ship.md has NO inline post-merge (Step 7 ends at gh pr create + best-effort gh pr merge --auto --squash; the orchestrator does pull/tag/journal/prune by hand) — the ci-gated branch makes the handoff explicit and states the sidecar finishes it. Step 3 check:all (local gate + CI gate, belt-and-suspenders) stays in BOTH modes (do NOT remove). cam ship --bump and --finalize still run on the BRANCH before push in both modes; only the tag is post-merge-only. DRIFT WARNING: the two cam-ship.md copies are ALREADY out of sync on main (templates/commands/cam-ship.md ~4928 bytes vs .claude/commands/cam-ship.md ~4605 bytes); embed-vendor:check only validates templates/ against _generated.ts (NEVER .claude/), so apply the SAME edit to BOTH copies and do not treat either as authoritative. The pre-existing 323-byte drift is a separate latent issue, out of scope for this story."
     },

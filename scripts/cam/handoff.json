@@ -1,28 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "cam config merge_mode change + branch-protection setup"
+    "id": "US-005",
+    "title": "cam-ship.md ci-gated branching: hand off after auto-merge, skip inline post-merge"
   },
   "branchName": "cam/CAM-101-configurable-merge-mode",
-  "timestamp": "2026-06-26T22:30:00Z",
-  "createdFiles": [
-    "test/commands/config-merge-mode.test.ts"
-  ],
+  "timestamp": "2026-06-26T23:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/ui/ConfigScreen.tsx",
-    "src/commands/config.ts",
+    "templates/commands/cam-ship.md",
+    ".claude/commands/cam-ship.md",
+    "src/vendor/_generated.ts",
+    "test/vendor/cam-ship-hygiene.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 adds a merge-mode WizardStep to ConfigScreen (after the backend step) and extends mergeConfigChoices() to write [ship] merge_mode to project.toml and call applyMergeMode() when ci-gated. MergeModeOpts (exported from config.ts) has spawnFn/emitHint/emitWarning/emitResult/ownerRepo for test injection. ConfigChoices now has an optional mergeMode?: MergeMode field (optional preserves backward compat with existing config-persist tests). The ConfigScreen allSteps array is [...PHASE_STEPS, 'backend', 'merge-mode', 'done']. collectViaInk passes production emitters (printHint, printWarning, process.stdout.write) via mergeModeOpts. US-003 helper applyMergeMode() is reused directly.",
+  "nextStoryContext": "US-005 added merge mode branching to cam-ship.md Step 7. Both copies (templates/ and .claude/) now document: (1) ci-gated: ship ends after gh pr create + gh pr merge --auto --squash; sidecar completes pull/tag/prune/close/summary autonomously; Steps 8-9 skipped. (2) immediate: existing behavior unchanged, orchestrator does post-merge by hand. Vendor _generated.ts regenerated. Oracle tests added to test/vendor/cam-ship-hygiene.test.ts. The pre-existing 323-byte drift between the two copies (noted in US-005 story notes) was NOT resolved -- out of scope.",
   "officialDocsValidated": [
     {
-      "lib": "GitHub REST API - Branch Protection (PUT /repos/{owner}/{repo}/branches/{branch}/protection)",
-      "version": "2022-11-28",
-      "url": "https://docs.github.com/en/rest/branches/branch-protection?apiVersion=2022-11-28",
-      "fetchedAt": "2026-06-26T22:30:00Z",
-      "status": "ok",
-      "summary": "Confirmed 4 required fields: required_status_checks, enforce_admins, required_pull_request_reviews, restrictions. Implementation in configureBranchProtection (US-002) matches. US-004 reuses applyMergeMode unchanged."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
