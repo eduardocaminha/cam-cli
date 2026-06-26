@@ -4,6 +4,15 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.4.0] - 2026-06-26
+
+### Added
+
+- US-004 - Add auto-merge recovery scenario to the recovery runbook
+- US-003 - Print the shared auto-merge prerequisite notice from cam config
+- US-002 - Define shared auto-merge prerequisite-notice constant and print it from cam init
+- US-001 - Add best-effort auto-merge step to cam-ship.md (markdown + template + embed)
+
 ## [0.3.0] - 2026-06-26
 
 ### Added
