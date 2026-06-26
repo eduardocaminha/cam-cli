@@ -78,7 +78,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: scripts/cam/patterns.md (append a bullet at the end, matching the existing `- **<title> (US-..., CAM-..., date)**: <body>` style). Tag it (US-004, CAM-104, 2026-06-26). Two points in one bullet: (1) new mandatory init answer => flag + smoke update; (2) readline must resolve on EOF to a default. Cross-reference the 2026-06-06 'build smoke nunca trava' lesson (the file's existing CAM-15/2026-06-06 lineage and lessons.md). HARD CONSTRAINT from CLAUDE.md global: no em-dashes (—) and no decorative emoji in this human-readable persisted .md; use colon/comma/parens/period instead."
     },

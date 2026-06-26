@@ -1,28 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Deterministic guard test: readline collection flow resolves init defaults on EOF, never hangs"
+    "id": "US-004",
+    "title": "Document the non-interactive-init / readline-EOF pattern in patterns.md"
   },
   "branchName": "cam/CAM-104-init-merge-mode-eof",
-  "timestamp": "2026-06-26T23:00:00Z",
-  "createdFiles": [
-    "test/setup-collection-eof.test.ts"
-  ],
+  "timestamp": "2026-06-26T23:30:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/setup.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/cam/patterns.md",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 done: exported collectViaReadline with injectable input stream; 3 integration tests in test/setup-collection-eof.test.ts prove the collection flow returns mergeMode='immediate' on EOF and never hangs. US-004 (patterns.md doc bullet) and US-005 (operator smoke) remain.",
+  "nextStoryContext": "US-004 done: appended bullet to patterns.md documenting the two invariants (mandatory init answer must have CLI flag + smoke update; readline ask/askChoice must resolve to default on EOF). US-005 (operator smoke) remains.",
   "officialDocsValidated": [
     {
-      "lib": "node:readline",
-      "version": "Node 22 LTS (built-in)",
-      "url": "https://nodejs.org/api/readline.html",
-      "fetchedAt": "2026-06-26T23:00:00Z",
-      "status": "ok",
-      "summary": "Docs confirm 'close' fires when the input stream emits 'end'. They do not explicitly document behavior when Interface is created on an already-ended stream (empirically: 'close' does not re-fire). Pattern bullet added to patterns.md."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
