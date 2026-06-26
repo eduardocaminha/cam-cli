@@ -1,0 +1,186 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-89-conventional-commits-version-bump",
+  "description": "Deterministic Conventional-Commits version bump in cam ship (file bump on branch) plus a separate post-merge cam tag command, honoring a 0.x breaking->minor convention.",
+  "issueNumber": 89,
+  "relatedDocs": [
+    "CHANGELOG.md",
+    "docs/recovery-runbook.md",
+    "scripts/cam/CLAUDE.md",
+    ".claude/commands/cam-ship.md",
+    "templates/commands/cam-ship.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Conventional Commits",
+      "url": "https://www.conventionalcommits.org/en/v1.0.0/",
+      "version": "1.0.0",
+      "fetchedAt": "2026-06-26T00:00:00Z",
+      "summary": "feat->MINOR, fix->PATCH, '!' suffix or 'BREAKING CHANGE:' footer->MAJOR; types other than feat/fix are allowed and do not bump; the spec is silent on pre-1.0/0.x behavior.",
+      "status": "ok"
+    },
+    {
+      "lib": "Semantic Versioning",
+      "url": "https://semver.org/",
+      "version": "2.0.0",
+      "fetchedAt": "2026-06-26T00:00:00Z",
+      "summary": "SemVer section 4: major version zero (0.y.z) is for initial development, anything MAY change at any time, which is the basis for the project's 0.x breaking->MINOR convention and never auto-emitting 1.0.0.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Deterministic Conventional-Commits bump parser",
+      "description": "As a release engineer, I need a pure-regex classifier that maps a list of commit subjects to a single bump level so that the version bump is fully deterministic with no model or subagent involvement.",
+      "acceptanceCriteria": [
+        "A new module exports `classifyBump(subjects: string[]): 'major' | 'minor' | 'patch' | 'none'`, implemented with pure regex and zero new dependencies. [oracle: grep -q \"export function classifyBump\" src/release/bump.ts]",
+        "`feat:` and `feat(scope):` subjects classify as `minor`; `fix:` and `fix(scope):` classify as `patch`; the highest level among all subjects wins (a single `feat` outranks any number of `fix`). [oracle: bun test test/release/bump.test.ts]",
+        "A `!` bang (`feat!:`, `fix!:`, `feat(scope)!:`) OR a `BREAKING CHANGE:` token in any subject classifies as `major` (the raw major SIGNAL, before any 0.x mapping which US-002 applies). [oracle: bun test test/release/bump.test.ts]",
+        "Non-bumping types (`chore:`, `docs:`, `test:`, `refactor:`, `style:`, `ci:`, `build:`, `perf:`) classify as `none`, and unrecognized free-text fallthroughs (`CAM-91: ...`, `chore(cam): ...`, plain prose) also classify as `none` with NO throw or reject. [oracle: bun test test/release/bump.test.ts]",
+        "The test file is table-driven with at least one explicit case per row described above (feat, fix, feat!, fix!, BREAKING CHANGE body, scoped feat/fix, each no-bump type, CAM-NN fallthrough, free-text fallthrough). [oracle: grep -qE \"CAM-91|chore\\\\(cam\\\\)\" test/release/bump.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New module: src/release/bump.ts + test/release/bump.test.ts (neither dir exists yet, create them). The major result here is the raw SIGNAL only; the 0.x demotion to minor happens in US-002's computeNextVersion, NOT here, so this function still returns 'major' for feat!/BREAKING. Branch commit convention is `feat: US-007 - ...` (verified: git log shows these per-story subjects). noUncheckedIndexedAccess is on: regex capture groups are T | undefined, guard them. BREAKING CHANGE detection must match the footer token in a subject string; subjects come from `git log --pretty=%s` (single-line) so match the literal `BREAKING CHANGE:` substring."
+    },
+    {
+      "id": "US-002",
+      "title": "Compute next version (0.x convention) and atomically write version.ts + package.json",
+      "description": "As a release engineer, I need to turn the baseline version plus a bump level into the next version string under the project's 0.x rule, and write it to both source-of-truth files atomically, so that the bump is consistent and the version tripwire stays green.",
+      "acceptanceCriteria": [
+        "A new function exports `computeNextVersion(current: string, bump: 'major' | 'minor' | 'patch' | 'none'): string` that increments patch for `patch`, minor (reset patch) for `minor`, and follows the 0.x convention for `major`. [oracle: grep -q \"export function computeNextVersion\" src/release/version.ts]",
+        "0.x convention: while the major component of `current` is 0, a `major` bump maps to a MINOR increment (e.g. 0.1.2 + major -> 0.2.0); `computeNextVersion` NEVER returns `1.0.0` from any bump level (the test asserts a 0.x major bump yields 0.2.0, not 1.0.0). [oracle: bun test test/release/version.test.ts]",
+        "A `none` bump returns `current` unchanged. [oracle: bun test test/release/version.test.ts]",
+        "An atomic writer updates the literal `export const CAM_VERSION = '<old>';` in src/version.ts to the new version AND the `version` field in package.json, leaving both files otherwise byte-identical. [oracle: bun test test/release/version.test.ts]",
+        "The existing version tripwire stays green: a representative 0.2.0 result still satisfies `minor >= 1` (test/version.test.ts is unmodified and passes). [oracle: bun test test/version.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "New: src/release/version.ts + test/release/version.test.ts. Baseline version is the LITERAL in src/version.ts (`0.1.2`), NOT the last git tag (real drift: tag is v0.1.1, version.ts is 0.1.2). The writer should be a pure transform on file text (take old text + new version, return new text) so it is testable without real fs, mirroring the DI'd style of src/commands/ship-finalize.ts. The version.ts edit must match the exact literal `export const CAM_VERSION = '0.1.2';` (single quotes, semicolon). package.json has `\"version\": \"0.1.2\"` at top level. test/version.test.ts tripwire asserts `minor >= 1` so any 0.2.x or higher passes; do not roll back below 0.1."
+    },
+    {
+      "id": "US-003",
+      "title": "Wire the deterministic bump step into cam ship before push",
+      "description": "As a release engineer, I need `cam ship --bump` to read the branch commits, classify, compute, write the two version files, and commit a dedicated release commit before the push step, so the bump is visible and reviewable in the PR on the branch.",
+      "acceptanceCriteria": [
+        "`parseShipArgs` accepts a `--bump` flag alongside the existing `--finalize`, and `dispatchShip` routes `--bump` to a new in-process bump step with injectable SpawnFn + ClockFn (modeled on finalizeCycleClose), without ever registering a `--permission-mode` flag. [oracle: bun test test/no-permission-mode-flag.test.ts]",
+        "The bump step reads branch commit subjects via `git log main..HEAD --pretty=%s` (the per-story `feat:`/`fix:` commits), classifies with US-001, computes with US-002 off the version.ts baseline, writes src/version.ts + package.json, and commits exactly `chore(release): bump version to X.Y.Z`. [oracle: bun test test/release/ship-bump.test.ts]",
+        "When the classified bump is `none`, the step makes NO file change and creates NO commit (it reports the no-op), matching the spec that all-no-bump PRs produce no version change. [oracle: bun test test/release/ship-bump.test.ts]",
+        "Both .claude/commands/cam-ship.md AND templates/commands/cam-ship.md document the bump step inserted after Step 3 (check:all) / around the finalize step, and the two files remain byte-identical mirrors. [oracle: diff -q .claude/commands/cam-ship.md templates/commands/cam-ship.md]",
+        "The embedded vendor copy is regenerated and not stale. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit index.ts: parseShipArgs (line ~730) add `--bump`; dispatchShip (line ~764) add the bump branch with injectable deps like _buildFinalizeOpts. New step module e.g. src/release/ship-bump.ts (in-process, DI'd spawnFn/clock, hermetically testable, no real git). New test/release/ship-bump.test.ts. Edit BOTH mirror docs (.claude/commands/cam-ship.md + templates/commands/cam-ship.md, currently byte-identical per diff -q) inserting the bump step after Step 3; then run `bun run embed-vendor` to regenerate src/vendor/_generated.ts and verify with `bun run embed-vendor:check`. The bump COMMITS before the push step (Step 5 in cam-ship.md). This story touches templates/ so embed-vendor:check is mandatory. Classification source is the BRANCH (main..HEAD), never v<lasttag>..HEAD on main (main commits are non-conventional CAM-NN/chore(cam) and would under-count)."
+    },
+    {
+      "id": "US-004",
+      "title": "CHANGELOG release-section roll (Unreleased -> versioned, fresh Unreleased)",
+      "description": "As a release engineer, I need the bump step to roll `## [Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` and insert a fresh empty `## [Unreleased]` above it, so the changelog stays in Keep-a-Changelog format release-over-release.",
+      "acceptanceCriteria": [
+        "A pure transform function takes the current CHANGELOG.md text, the new version, and a date string, and returns new text where the existing `## [Unreleased]` heading is renamed to `## [X.Y.Z] - <YYYY-MM-DD>` and a fresh empty `## [Unreleased]` is inserted directly above it. [oracle: grep -q \"export function rollChangelog\" src/release/changelog.ts]",
+        "The transform preserves the existing Keep-a-Changelog `### Added` / `### Changed` subsection content under the rolled version heading (no body lines dropped). [oracle: bun test test/release/changelog.test.ts]",
+        "The transform is pure (operates on the passed-in string, performs no filesystem read or write itself). [oracle: bun test test/release/changelog.test.ts]",
+        "The bump step (US-003) invokes this transform and writes the result so the CHANGELOG roll happens in the same release commit as the version files. [oracle: bun test test/release/ship-bump.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "New: src/release/changelog.ts + test/release/changelog.test.ts. CHANGELOG.md current format (verified): a `---` rule, then `## [Unreleased]` with `### Added` / `### Changed` subsections; releases use `## [version] - YYYY-MM-DD`. The transform should locate the literal `## [Unreleased]` line and replace/insert; do not regex over the whole doc destructively. US-006 fills the section BODY from commits; US-004 only does the heading roll + preserve. Date string is injected (ClockFn from US-003), never `new Date()` inside the pure function, so the test is deterministic."
+    },
+    {
+      "id": "US-005",
+      "title": "cam tag: deterministic post-merge tag command on main",
+      "description": "As a release engineer, I need a `cam tag` subcommand that reads CAM_VERSION and creates+pushes the matching git tag on main HEAD, so the tag is minted on the real merged SHA (squash mints a new SHA, so branch-side tagging is broken).",
+      "acceptanceCriteria": [
+        "A new `tag` subcommand dispatches by argv[2] in index.ts and reads CAM_VERSION from src/version.ts to form the tag name `vX.Y.Z`. [oracle: grep -q \"case 'tag'\" index.ts]",
+        "The command creates `vX.Y.Z` on HEAD and pushes it only when it does not already exist; if the tag exists it is an idempotent no-op with a clear message (exit 0, no second tag created). [oracle: bun test test/release/tag.test.ts]",
+        "The command refuses (non-zero exit, clear error) when the current branch is not `main`, and refuses when the working tree is dirty. [oracle: bun test test/release/tag.test.ts]",
+        "All git interactions go through an injectable SpawnFn so the tests are hermetic (no real git, no real tags created). [oracle: grep -q \"SpawnFn\" src/commands/tag.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "New: src/commands/tag.ts + test/release/tag.test.ts, plus a `case 'tag':` in index.ts switch (dispatch by argv[2], line ~901) and a TAG_HELP renderHelp block + an entry in the top-level HELP Commands list. greenfield: scripts/build-release.sh today only READS version.ts and does NOT tag, so no collision. DI'd spawn pattern is exactly finalizeCycleClose's SpawnFn type. Guards: `git rev-parse --abbrev-ref HEAD` == main; `git status --porcelain` empty; `git tag -l vX.Y.Z` empty before creating. This runs POST-merge on main (the operator runs it after the PR squash-merges), which is why it is a separate command, not part of ship."
+    },
+    {
+      "id": "US-006",
+      "title": "Auto-generate the CHANGELOG release-section body from classified branch commits",
+      "description": "As a release engineer, I need the rolled release section body generated from the branch's classified commits (feat -> Added, fix -> Fixed) so the changelog reflects what actually shipped instead of a stale hand-maintained Unreleased block.",
+      "acceptanceCriteria": [
+        "A pure function takes the classified branch commit subjects and returns Keep-a-Changelog subsection text placing `feat`/`feat!` subjects under `### Added` and `fix`/`fix!` subjects under `### Fixed`. [oracle: grep -q \"### Fixed\" src/release/changelog.ts]",
+        "No-bump subjects (`chore:`, `docs:`, `CAM-NN:`, free text) are excluded from the generated body. [oracle: bun test test/release/changelog.test.ts]",
+        "When there are no feat commits the `### Added` subsection is omitted (and likewise `### Fixed` when no fix commits), rather than emitting an empty subsection. [oracle: bun test test/release/changelog.test.ts]",
+        "The bump step (US-003) uses this generated body for the rolled version section rather than copying the prior `## [Unreleased]` body. [oracle: bun test test/release/ship-bump.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Extends src/release/changelog.ts + test/release/changelog.test.ts (and wires into src/release/ship-bump.ts from US-003). Deterministic from `git log main..HEAD --pretty=%s` (same source as US-003 classification). Reuse US-001's classification rather than re-parsing prefixes ad hoc. Subject text under each bullet should strip the `type(scope)!:` prefix so the bullet reads as prose; keep it simple, no model. The existing hand-maintained `## [Unreleased]` body in CHANGELOG.md was last touched weeks ago and is stale, which is why we generate from commits."
+    },
+    {
+      "id": "US-007",
+      "title": "Structured observability event + result line for the bump",
+      "description": "As an operator, I need the ship bump to emit a structured result line and event recording from/to/bumpType/commitsClassified, so I can see what the deterministic bump decided without re-deriving it.",
+      "acceptanceCriteria": [
+        "The bump step returns a typed result `{ from, to, bumpType, commitsClassified }` and prints a result line via the shared emitOk path (src/logging/screen.ts), consistent with how finalizeCycleClose surfaces its result. [oracle: bun test test/release/ship-bump.test.ts]",
+        "A structured event with the shape `{ from, to, bumpType, commitsClassified }` is recorded for the bump, matching the JSONL event style in .claude/cam-worker-events.jsonl (ts + kind + detail). [oracle: grep -q \"bumpType\" src/release/ship-bump.test.ts]",
+        "The no-op (none) case still emits a result/event making the no-bump decision visible (bumpType: none, from == to). [oracle: bun test test/release/ship-bump.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "Touches src/release/ship-bump.ts (result type + emitOk call) and its test. emitOk signature is `emitOk(msg: string, suffix?: string)` (src/logging/screen.ts:66). Event log .claude/cam-worker-events.jsonl is supervisor-owned/appended; this story records the bump detail in the same `{ts, uuid|source, kind, detail}` line shape (see ship-finalize.ts CAM-71 emitOk precedent and worker-events samples). Keep the result line shape stable (a test pins it); cite that in a code comment like ship-finalize.ts line ~204 does."
+    },
+    {
+      "id": "US-008",
+      "title": "Document the bump/tag flow, 0.x convention, and recovery scenario",
+      "description": "As an operator, I need a recovery-runbook scenario plus a durable record of the 0.x convention and squash-merge tag-timing decision, so a misfired bump or tag drift is recoverable and the design rationale survives.",
+      "acceptanceCriteria": [
+        "docs/recovery-runbook.md gains a new lettered scenario (next letter after the existing `## (q)`) covering: bump misfired, tag drift, how to re-tag a release, and how to manually declare 1.0.0. [oracle: grep -q \"## (r)\" docs/recovery-runbook.md]",
+        "A durable place (scripts/cam/CLAUDE.md or a dedicated release doc) documents the 0.x breaking->minor convention and the squash-merge tag-timing decision (file bump on branch, tag post-merge on main). [oracle: grep -rqi \"0.x\" scripts/cam/CLAUDE.md docs/recovery-runbook.md]",
+        "The runbook scenario references the actual commands `cam ship --bump` and `cam tag`. [oracle: grep -q \"cam ship --bump\" docs/recovery-runbook.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 8,
+      "passes": false,
+      "requires": null,
+      "notes": "Doc/markdown only. docs/recovery-runbook.md currently runs scenarios `## (a)` through `## (q)` (verified by grep); append `## (r)`. Persisted .md files must follow the project rule: NO em-dash and NO decorative emoji in human-readable .md (use colon/comma/period). The 1.0.0 escape hatch: the operator edits version.ts manually to 1.0.0; the auto-bump never emits it. Keep the prose tight; the runbook is long (1280 lines)."
+    },
+    {
+      "id": "US-009",
+      "title": "Operator dogfood: bump cam-cli's own version and tag post-merge",
+      "description": "As the operator, I need to ship CAM-89 itself through the new flow (0.1.2 -> next via cam ship --bump on the branch), then after merge create+push the tag with cam tag and eyeball cam --version, so the end-to-end release path is proven on a real release.",
+      "acceptanceCriteria": [
+        "`cam ship --bump` ran on this branch and produced a `chore(release): bump version to X.Y.Z` commit that updated src/version.ts (off the 0.1.2 baseline) and package.json. [oracle: reviewer-judgment]",
+        "After the squash-merge to main, `cam tag` created and pushed `vX.Y.Z` on main HEAD (the tag points at the merged commit, not a dangling branch SHA). [oracle: reviewer-judgment]",
+        "`cam --version` prints the bumped `cam X.Y.Z` matching the new tag. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 9,
+      "passes": false,
+      "requires": "operator",
+      "notes": "Operator ceremony: requires a real squash-merge on GitHub, a post-merge `cam tag` push to origin, and human eyeballing of `cam --version` against a freshly built/installed binary. The CAM_VERSION literal is embedded at build time, so the operator must rebuild/reinstall (build-release.sh --install or bun index.ts) before `cam --version` reflects the bump. This story does NOT block the review cycle; the loop exits awaiting-operator and the operator flips passes:true after the ceremony. Coherence note: the sidecar binary must match the branch code for the new --bump/tag paths to exist."
+    }
+  ]
+}
