@@ -162,7 +162,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Doc/markdown only. docs/recovery-runbook.md currently runs scenarios `## (a)` through `## (q)` (verified by grep); append `## (r)`. Persisted .md files must follow the project rule: NO em-dash and NO decorative emoji in human-readable .md (use colon/comma/period). The 1.0.0 escape hatch: the operator edits version.ts manually to 1.0.0; the auto-bump never emits it. Keep the prose tight; the runbook is long (1280 lines)."
     },

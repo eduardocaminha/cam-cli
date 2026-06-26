@@ -1,22 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Structured observability event + result line for the bump"
+    "id": "US-008",
+    "title": "Document the bump/tag flow, 0.x convention, and recovery scenario"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/release/ship-bump.ts",
-    "test/release/ship-bump.test.ts",
-    "index.ts",
+    "docs/recovery-runbook.md",
+    "scripts/cam/CLAUDE.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 changed ShipBumpResult from a discriminated union ({ noOp: true, reason } | { noOp: false, oldVersion, newVersion, bump }) to a unified interface { from, to, bumpType: BumpLevel, commitsClassified }. The no-op path now reads readVersionTs() so it can populate from/to even when no bump is performed (bumpType: none, from === to). Both paths emit an emitOk result line (msg: 'bump: <level> (N classified)', suffix: '<from> -> <to>' or '<from> (no change)') and call an optional writeEvent? injectable. ShipBumpOptions gained two optional fields: writeEvent? and emitResultLine?. The index.ts caller was simplified: it no longer reads the result to call printHint (the emitOk inside runShipBump handles it). All 1515 tests pass. Next story: check prd.json for the next passes:false entry.",
+  "nextStoryContext": "US-008 appended scenario ## (r) to docs/recovery-runbook.md (covering bump misfired, tag drift, re-tag, and 1.0.0 escape hatch) and added a Release Conventions section to scripts/cam/CLAUDE.md documenting the 0.x convention and squash-merge tag-timing decision. All non-operator stories now pass. US-009 is the only remaining story and is tagged requires: operator (dogfood ceremony: real squash-merge + cam tag post-merge + cam --version eyeball). The loop should exit awaiting-operator; the operator runs cam ship --bump on the branch, merges, then cam tag on main to complete US-009.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-007 only uses internal project modules (src/logging/screen.ts emitOk, src/release/bump.ts BumpLevel). No external npm library was touched; no fetch needed."
+      "summary": "US-008 is a documentation-only story (markdown edits to docs/recovery-runbook.md and scripts/cam/CLAUDE.md). No external npm library was touched; no fetch needed."
     }
   ]
 }
