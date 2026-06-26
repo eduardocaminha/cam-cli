@@ -1,23 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Auto-generate the CHANGELOG release-section body from classified branch commits"
+    "id": "US-007",
+    "title": "Structured observability event + result line for the bump"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/release/changelog.ts",
     "src/release/ship-bump.ts",
-    "test/release/changelog.test.ts",
     "test/release/ship-bump.test.ts",
+    "index.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 added generateReleaseBody(subjects) to src/release/changelog.ts: pure function mapping feat/feat! -> ### Added, fix/fix! -> ### Fixed, stripping conventional-commit prefix, omitting empty subsections. rollChangelog gained an optional 4th param releaseBody?: string: when provided, it replaces the hand-maintained [Unreleased] body with the generated body in the versioned section (legacy path preserved for backward compat when param is absent). runShipBump in ship-bump.ts now calls generateReleaseBody(subjects) and passes the result to rollChangelog, fulfilling AC-4. All 1511 tests pass. Next story: check prd.json for the next passes:false entry.",
+  "nextStoryContext": "US-007 changed ShipBumpResult from a discriminated union ({ noOp: true, reason } | { noOp: false, oldVersion, newVersion, bump }) to a unified interface { from, to, bumpType: BumpLevel, commitsClassified }. The no-op path now reads readVersionTs() so it can populate from/to even when no bump is performed (bumpType: none, from === to). Both paths emit an emitOk result line (msg: 'bump: <level> (N classified)', suffix: '<from> -> <to>' or '<from> (no change)') and call an optional writeEvent? injectable. ShipBumpOptions gained two optional fields: writeEvent? and emitResultLine?. The index.ts caller was simplified: it no longer reads the result to call printHint (the emitOk inside runShipBump handles it). All 1515 tests pass. Next story: check prd.json for the next passes:false entry.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-006 only uses internal project modules (src/release/bump.ts patterns) and built-in regex. No external npm library was touched; no fetch needed."
+      "summary": "US-007 only uses internal project modules (src/logging/screen.ts emitOk, src/release/bump.ts BumpLevel). No external npm library was touched; no fetch needed."
     }
   ]
 }

@@ -146,7 +146,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Touches src/release/ship-bump.ts (result type + emitOk call) and its test. emitOk signature is `emitOk(msg: string, suffix?: string)` (src/logging/screen.ts:66). Event log .claude/cam-worker-events.jsonl is supervisor-owned/appended; this story records the bump detail in the same `{ts, uuid|source, kind, detail}` line shape (see ship-finalize.ts CAM-71 emitOk precedent and worker-events samples). Keep the result line shape stable (a test pins it); cite that in a code comment like ship-finalize.ts line ~204 does."
     },

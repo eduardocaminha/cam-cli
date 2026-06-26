@@ -5,15 +5,16 @@
 // All git calls and file I/O are injected as fakes; no real git binary or
 // filesystem is touched. Each test exercises a single behavior slice.
 //
-// AC-2: feat/fix/breaking commits -> correct bump + commit message + file writes.
-// AC-3: all-none commits -> no-op, no file writes, no commit.
+// AC-1: result carries { from, to, bumpType, commitsClassified } + emitOk result line.
+// AC-2: writeEvent captures the structured event with bumpType in the shape.
+// AC-3: no-op path emits result/event with bumpType 'none', from === to.
 //
-// US-003 (CAM-89).
+// US-003 (CAM-89), US-007 (CAM-89).
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import { runShipBump, type ShipBumpOptions } from '../../src/release/ship-bump.ts';
+import { runShipBump, type ShipBumpOptions, type ShipBumpResult } from '../../src/release/ship-bump.ts';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -55,10 +56,11 @@ function sampleChangelog(): string {
 	return '# Changelog\n\n---\n\n## [Unreleased]\n\n### Added\n\n- New feature.\n\n### Changed\n\n- Some change.\n';
 }
 
-/** Build ShipBumpOptions with captured writers. */
+/** Build ShipBumpOptions with captured writers and optional event/resultLine capture. */
 function makeOpts(
 	subjects: string[],
 	initialVersion = '0.1.2',
+	extras: Partial<Pick<ShipBumpOptions, 'writeEvent' | 'emitResultLine'>> = {},
 ): {
 	opts: ShipBumpOptions;
 	calls: Array<{ cmd: string; args: string[] }>;
@@ -77,22 +79,28 @@ function makeOpts(
 		writePackageJson: (text) => { written.packageJson = text; },
 		readChangelog: () => sampleChangelog(),
 		writeChangelog: (text) => { written.changelog = text; },
+		...extras,
 	};
 
 	return { opts, calls, written };
 }
 
 // ---------------------------------------------------------------------------
-// Tests: no-op path (AC-3)
+// Tests: no-op path (AC-3) -- bumpType: none, from === to
 // ---------------------------------------------------------------------------
 
-describe('runShipBump - no-op when bump is none', () => {
-	test('empty commit list -> no-op', () => {
+describe('runShipBump - no-op when bumpType is none', () => {
+	test('empty commit list -> bumpType none', () => {
 		const { opts, calls, written } = makeOpts([]);
 
 		const result = runShipBump(opts);
 
-		expect(result.noOp).toBe(true);
+		expect(result.bumpType).toBe('none');
+		expect(result.from).toBe('0.1.2');
+		expect(result.to).toBe('0.1.2');
+		// from === to is the no-op contract (AC-3)
+		expect(result.from).toBe(result.to);
+		expect(result.commitsClassified).toBe(0);
 		expect(written.versionTs).toBeUndefined();
 		expect(written.packageJson).toBeUndefined();
 		expect(written.changelog).toBeUndefined();
@@ -100,7 +108,7 @@ describe('runShipBump - no-op when bump is none', () => {
 		expect(calls.find((c) => c.cmd === 'git' && c.args[0] === 'commit')).toBeUndefined();
 	});
 
-	test('only chore/docs/refactor commits -> no-op', () => {
+	test('only chore/docs/refactor commits -> bumpType none', () => {
 		const { opts, calls, written } = makeOpts([
 			'chore(cam): mark US-002 done',
 			'docs: update README',
@@ -110,23 +118,49 @@ describe('runShipBump - no-op when bump is none', () => {
 
 		const result = runShipBump(opts);
 
-		expect(result.noOp).toBe(true);
+		expect(result.bumpType).toBe('none');
+		expect(result.from).toBe(result.to);
+		expect(result.commitsClassified).toBe(4);
 		expect(written.versionTs).toBeUndefined();
 		expect(written.packageJson).toBeUndefined();
 		expect(written.changelog).toBeUndefined();
 		expect(calls.find((c) => c.cmd === 'git' && c.args[0] === 'commit')).toBeUndefined();
 	});
 
-	test('no-op result carries reason string', () => {
-		const { opts } = makeOpts([]);
-		const result = runShipBump(opts);
-		if (!result.noOp) throw new Error('expected noOp');
-		expect(result.reason).toMatch(/none/i);
+	test('no-op emits result line (AC-3)', () => {
+		const emitted: Array<{ msg: string; suffix?: string }> = [];
+		const { opts } = makeOpts([], '0.1.2', {
+			emitResultLine: (msg, suffix) => { emitted.push({ msg, suffix }); },
+		});
+
+		runShipBump(opts);
+
+		expect(emitted.length).toBe(1);
+		expect(emitted[0]?.msg).toMatch(/^bump: none/);
+		expect(emitted[0]?.suffix).toMatch(/0\.1\.2/);
+	});
+
+	test('no-op fires writeEvent with bumpType none (AC-2, AC-3)', () => {
+		const events: ShipBumpResult[] = [];
+		const { opts } = makeOpts(['chore: housekeeping'], '0.1.2', {
+			writeEvent: (e) => { events.push(e); },
+		});
+
+		runShipBump(opts);
+
+		expect(events.length).toBe(1);
+		const ev = events[0];
+		if (!ev) throw new Error('expected event');
+		// bumpType field is required by AC-2 oracle (grep -q "bumpType" in this file)
+		expect(ev.bumpType).toBe('none');
+		expect(ev.from).toBe('0.1.2');
+		expect(ev.to).toBe('0.1.2');
+		expect(ev.commitsClassified).toBe(1);
 	});
 });
 
 // ---------------------------------------------------------------------------
-// Tests: patch bump (AC-2)
+// Tests: patch bump (AC-1, AC-2)
 // ---------------------------------------------------------------------------
 
 describe('runShipBump - patch bump (fix:)', () => {
@@ -135,11 +169,10 @@ describe('runShipBump - patch bump (fix:)', () => {
 
 		const result = runShipBump(opts);
 
-		expect(result.noOp).toBe(false);
-		if (result.noOp) return;
-		expect(result.bump).toBe('patch');
-		expect(result.oldVersion).toBe('0.1.2');
-		expect(result.newVersion).toBe('0.1.3');
+		expect(result.bumpType).toBe('patch');
+		expect(result.from).toBe('0.1.2');
+		expect(result.to).toBe('0.1.3');
+		expect(result.commitsClassified).toBe(1);
 
 		expect(written.versionTs).toContain("'0.1.3'");
 		expect(written.packageJson).toContain('"0.1.3"');
@@ -156,10 +189,40 @@ describe('runShipBump - patch bump (fix:)', () => {
 		expect(addCall?.args).toContain('package.json');
 		expect(addCall?.args).toContain('CHANGELOG.md');
 	});
+
+	test('emits result line for patch bump (AC-1)', () => {
+		const emitted: Array<{ msg: string; suffix?: string }> = [];
+		const { opts } = makeOpts(['fix: something'], '0.1.2', {
+			emitResultLine: (msg, suffix) => { emitted.push({ msg, suffix }); },
+		});
+
+		runShipBump(opts);
+
+		expect(emitted.length).toBe(1);
+		expect(emitted[0]?.msg).toMatch(/^bump: patch/);
+		expect(emitted[0]?.suffix).toMatch(/0\.1\.2 -> 0\.1\.3/);
+	});
+
+	test('writeEvent carries { from, to, bumpType, commitsClassified } (AC-2)', () => {
+		const events: ShipBumpResult[] = [];
+		const { opts } = makeOpts(['fix: correct something'], '0.1.2', {
+			writeEvent: (e) => { events.push(e); },
+		});
+
+		runShipBump(opts);
+
+		expect(events.length).toBe(1);
+		const ev = events[0];
+		if (!ev) throw new Error('expected event');
+		expect(ev.bumpType).toBe('patch');
+		expect(ev.from).toBe('0.1.2');
+		expect(ev.to).toBe('0.1.3');
+		expect(ev.commitsClassified).toBe(1);
+	});
 });
 
 // ---------------------------------------------------------------------------
-// Tests: minor bump (AC-2)
+// Tests: minor bump (AC-1)
 // ---------------------------------------------------------------------------
 
 describe('runShipBump - minor bump (feat:)', () => {
@@ -168,10 +231,9 @@ describe('runShipBump - minor bump (feat:)', () => {
 
 		const result = runShipBump(opts);
 
-		expect(result.noOp).toBe(false);
-		if (result.noOp) return;
-		expect(result.bump).toBe('minor');
-		expect(result.newVersion).toBe('0.2.0');
+		expect(result.bumpType).toBe('minor');
+		expect(result.from).toBe('0.1.2');
+		expect(result.to).toBe('0.2.0');
 
 		expect(written.versionTs).toContain("'0.2.0'");
 		expect(written.packageJson).toContain('"0.2.0"');
@@ -191,15 +253,23 @@ describe('runShipBump - minor bump (feat:)', () => {
 	test('mixed fix + feat -> minor wins (highest)', () => {
 		const { opts } = makeOpts(['fix: patch thing', 'feat: new capability']);
 		const result = runShipBump(opts);
-		expect(result.noOp).toBe(false);
-		if (result.noOp) return;
-		expect(result.bump).toBe('minor');
-		expect(result.newVersion).toBe('0.2.0');
+		expect(result.bumpType).toBe('minor');
+		expect(result.to).toBe('0.2.0');
+		expect(result.commitsClassified).toBe(2);
+	});
+
+	test('result line suffix shows from -> to (AC-1)', () => {
+		const emitted: Array<{ msg: string; suffix?: string }> = [];
+		const { opts } = makeOpts(['feat: new capability'], '0.1.2', {
+			emitResultLine: (msg, suffix) => { emitted.push({ msg, suffix }); },
+		});
+		runShipBump(opts);
+		expect(emitted[0]?.suffix).toBe('0.1.2 -> 0.2.0');
 	});
 });
 
 // ---------------------------------------------------------------------------
-// Tests: major bump demoted by 0.x convention (AC-2)
+// Tests: major bump demoted by 0.x convention (AC-1)
 // ---------------------------------------------------------------------------
 
 describe('runShipBump - breaking change on 0.x version', () => {
@@ -208,11 +278,9 @@ describe('runShipBump - breaking change on 0.x version', () => {
 
 		const result = runShipBump(opts);
 
-		expect(result.noOp).toBe(false);
-		if (result.noOp) return;
 		// classifyBump returns 'major'; computeNextVersion demotes to minor on 0.x
-		expect(result.bump).toBe('major');
-		expect(result.newVersion).toBe('0.2.0');
+		expect(result.bumpType).toBe('major');
+		expect(result.to).toBe('0.2.0');
 	});
 
 	test('BREAKING CHANGE: token on 1.x -> true major bump', () => {
@@ -220,14 +288,13 @@ describe('runShipBump - breaking change on 0.x version', () => {
 
 		const result = runShipBump(opts);
 
-		expect(result.noOp).toBe(false);
-		if (result.noOp) return;
-		expect(result.newVersion).toBe('2.0.0');
+		expect(result.to).toBe('2.0.0');
+		expect(result.from).toBe('1.2.3');
 	});
 });
 
 // ---------------------------------------------------------------------------
-// Tests: git log command shape (AC-2)
+// Tests: git log command shape (AC-1)
 // ---------------------------------------------------------------------------
 
 describe('runShipBump - git log command shape', () => {
@@ -240,11 +307,11 @@ describe('runShipBump - git log command shape', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests: CHANGELOG roll (AC-4)
+// Tests: CHANGELOG roll (AC-1)
 // ---------------------------------------------------------------------------
 
 describe('runShipBump - CHANGELOG roll', () => {
-	test('writes CHANGELOG with versioned heading when bump is non-none', () => {
+	test('writes CHANGELOG with versioned heading when bumpType is non-none', () => {
 		const { opts, written } = makeOpts(['fix: correct something']);
 		runShipBump(opts);
 		expect(written.changelog).toBeDefined();

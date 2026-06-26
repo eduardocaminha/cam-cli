@@ -819,12 +819,7 @@ export async function dispatchShip(
 	if (parsed.bump) {
 		const bumpFn = deps?.bumpFn ?? (() => runShipBump(_buildBumpOpts(process.cwd())));
 		try {
-			const result = bumpFn();
-			if (result.noOp) {
-				printHint(`version bump: ${result.reason}`);
-			} else {
-				printHint(`version bump: ${result.oldVersion} -> ${result.newVersion} (${result.bump})`);
-			}
+			bumpFn();
 			return 0;
 		} catch (err) {
 			printError(`cam ship --bump failed: ${String(err)}`);
