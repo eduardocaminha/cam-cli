@@ -1,21 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Propagate identical hook change to template and re-embed"
+    "id": "US-003",
+    "title": "Update recovery-runbook section (q) for capability+scope model"
   },
   "branchName": "cam/CAM-102-allowlist-hook-refino",
-  "timestamp": "2026-06-26T04:00:00Z",
+  "timestamp": "2026-06-26T05:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 and US-002 are complete. Both hook copies (.claude/hooks/orch-agent-allowlist.sh and templates/.claude/hooks/orch-agent-allowlist.sh) are byte-identical with the capability+scope model. src/vendor/_generated.ts is up to date. US-003 (Update recovery-runbook section (q) for capability+scope model) is next: docs-only change to docs/recovery-runbook.md describing the new CAM_SESSION gate and capability policy. Both the runtime file .claude/commands/cam-ship.md and the template copy templates/commands/cam-ship.md may also be relevant if the recovery runbook references commands that changed.",
+  "nextStoryContext": "US-001, US-002, and US-003 are complete. The runtime and template hook copies are byte-identical with the capability+scope model (US-001/US-002). The recovery-runbook section (q) now describes the capability policy, CAM_SESSION scope gate, and updated deny message (US-003). US-004 (Anchor implementer dispatch to issue-bound PRD in both orchestrator personas) is next: add a dispatch pre-flight rule to .claude/agents/subagent-orchestrator.md and its template mirror, refusing /cam-next when prd.json has no non-null issueNumber.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-002 is a pure template propagation and embed-vendor gate verification story. No external library was exercised."
+      "summary": "US-003 is a pure documentation update to docs/recovery-runbook.md. No external library was exercised."
     }
   ]
 }

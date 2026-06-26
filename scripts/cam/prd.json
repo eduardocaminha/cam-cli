@@ -68,7 +68,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: docs/recovery-runbook.md. Section (q) spans lines ~1141-1281 (header at 1141 '## (q) CAM-91: orchestrator Task spawn denied by the agent-allowlist hook', next header '## (r)' at 1282). The 'Extending the allowlist with a new sanctioned subagent type:' subsection is at ~line 1224. The stale quoted deny block is at ~1148 ('...is not in the cam allowlist {subagent-planner, subagent-auditor}...') and MUST be removed (positive-removal oracle). Keep the prose factual; no em-dashes / decorative emoji per project doc style. Do NOT touch sections (p) or (r). Sequencing is by priority (do after US-001); requires is null."
     },
