@@ -1461,7 +1461,7 @@ the pull request remains open: the sidecar is polling in merge-watch mode and
 nothing is progressing. The orchestrator pane may show a narration line like:
 
 ```
-[cam] merge-watch: CI red (BLOCKED) -- PR open, not merged
+[cam] CI red, PR #N open, not merged
 ```
 
 or the merge-watch worker started silently and no narration appeared at all.
@@ -1471,17 +1471,27 @@ or the merge-watch worker started silently and no narration appeared at all.
 When `merge_mode = "ci-gated"`, the sidecar does not merge immediately after
 creating the PR. Instead it starts a merge-watch poll loop (via
 `runMergeWatch` in `src/release/merge-watch.ts`). The loop calls `gh pr view <N>
---json state,mergeStateStatus` on a timer and handles four terminal outcomes:
+--json state,mergeStateStatus,statusCheckRollup` on a timer and handles these
+outcomes:
 
-| GitHub state | mergeStateStatus | Sidecar action |
-|---|---|---|
-| MERGED | (any) | run post-merge (pull origin main, tag, prune), narrate `merge-watch-merged` |
-| OPEN | BLOCKED | narrate `merge-watch-ci-red` (reason: blocked), stop |
-| CLOSED | (any) | narrate `merge-watch-ci-red` (reason: closed), stop |
-| (any) | (timeout) | narrate timeout, stop |
+| GitHub state | mergeStateStatus | statusCheckRollup | Sidecar action |
+|---|---|---|---|
+| MERGED | (any) | (any) | run post-merge (pull origin main, tag, prune), narrate `merge-watch-merged` |
+| OPEN | BLOCKED | has a failed check | narrate `merge-watch-ci-red` (reason: blocked), stop |
+| OPEN | BLOCKED | all pending / no failed check | keep polling (CI still in progress) |
+| CLOSED | (any) | (any) | narrate `merge-watch-ci-red` (reason: closed), stop |
+| (any) | (timeout) | (any) | narrate timeout, stop |
 
 Non-terminal states (OPEN + CLEAN / BEHIND / CONFLICTING / DRAFT / UNKNOWN)
 keep polling silently.
+
+**Key distinction:** GitHub reports `mergeStateStatus == "BLOCKED"` for any
+unmet merge condition, including required checks that are still pending or
+in-progress. The sidecar only treats BLOCKED as a terminal CI failure when
+`statusCheckRollup` contains at least one check with a conclusively failed
+conclusion (`FAILURE`, `CANCELLED`, `TIMED_OUT`, `ACTION_REQUIRED`,
+`STARTUP_FAILURE`) or a failed status-context state (`FAILURE`, `ERROR`). An
+absent or all-pending rollup means CI is still running: the loop keeps polling.
 
 The structured events emitted to `.claude/cam-worker-events.jsonl` during a
 merge-watch run are: `merge-watch-watching` (loop start),
@@ -1506,7 +1516,7 @@ PR), and `merge-watch-post-merge-done` (after post-merge completes).
 3. Check the current PR state directly:
 
    ```bash
-   gh pr view --json number,state,mergeStateStatus
+   gh pr view --json number,state,mergeStateStatus,statusCheckRollup
    ```
 
 4. Check the sidecar log for merge-watch output:
@@ -1518,7 +1528,12 @@ PR), and `merge-watch-post-merge-done` (after post-merge completes).
 ### Recovery: CI is red (BLOCKED)
 
 The sidecar stops the merge-watch loop when it detects `mergeStateStatus ==
-BLOCKED`. The PR stays open. Steps to unblock:
+BLOCKED` AND `statusCheckRollup` contains at least one conclusively failed
+check (conclusion in `FAILURE`, `CANCELLED`, `TIMED_OUT`, `ACTION_REQUIRED`,
+`STARTUP_FAILURE` for CheckRun, or state `FAILURE` / `ERROR` for a legacy
+StatusContext). If checks are still pending the loop keeps polling; you will
+only see the narration `[cam] CI red, PR #N open, not merged` after a check
+has definitively failed. The PR stays open. Steps to unblock:
 
 1. Identify the failing CI job:
 
