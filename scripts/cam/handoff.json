@@ -1,26 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-91-agent-allowlist-hook",
-  "timestamp": "2026-06-26T04:00:00Z",
+  "timestamp": "2026-06-26T04:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/settings.json",
-    "templates/.claude/settings.json",
-    "src/vendor/_generated.ts"
+    "docs/recovery-runbook.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 replaced the bare relative hook command path with the env-var absolute form: ${CLAUDE_PROJECT_DIR}/.claude/hooks/orch-agent-allowlist.sh in both .claude/settings.json and templates/.claude/settings.json. The embed-vendor was regenerated. Official Claude Code hooks docs confirm ${CLAUDE_PROJECT_DIR} is the correct placeholder for project-root-relative paths; hooks run in unpredictable CWDs so bare relative paths can silently fail-open. Both copies are now identical and byte-parity clean.",
+  "nextStoryContext": "US-R2-001 updated the recovery runbook Background section (q scenario) to replace the bare relative hook command path .claude/hooks/orch-agent-allowlist.sh with the safe absolute form ${CLAUDE_PROJECT_DIR}/.claude/hooks/orch-agent-allowlist.sh, matching the shipped .claude/settings.json. The bare relative form is fail-open (non-2 exit when hook not found = tool call proceeds), so documenting it in the runbook would teach the anti-pattern the PR fixed. All non-operator stories now pass.",
   "officialDocsValidated": [
     {
       "lib": "claude-code-hooks",
       "version": "current",
       "url": "https://code.claude.com/docs/en/hooks",
-      "fetchedAt": "2026-06-26T04:00:00Z",
+      "fetchedAt": "2026-06-26T04:30:00Z",
       "status": "ok",
-      "summary": "Docs confirm ${CLAUDE_PROJECT_DIR} is the safe form for hook command paths; hooks run with unpredictable CWD, making bare relative paths unsafe. Fix matches official recommendation."
+      "summary": "Docs confirm ${CLAUDE_PROJECT_DIR} is the correct path placeholder for hook commands (project root, working-directory-independent). Non-2 exit codes are non-blocking (fail-open), confirming bare relative paths that fail to resolve are unsafe for policy-enforcement hooks."
     }
   ]
 }

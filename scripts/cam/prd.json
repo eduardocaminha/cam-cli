@@ -19,9 +19,16 @@
   ],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [docs/recovery-runbook.md:1182]: The recovery-runbook (q) 'Background' section documents the hook registration with the bare relative command path \".claude/hooks/orch-agent-allowlist.sh\". This is the exact fail-open form that the round-1 fix (US-R1-001) removed from the real .claude/settings.json (now \"${CLAUDE_PROJECT_DIR}/.claude/hooks/orch-agent-allowlist.sh\"). The official Claude Code hooks docs confirm a non-2 exit (e.g. a hook that cannot be located) is a non-blocking error and the tool call PROCEEDS. Since the recovery runbook exists to help an operator reconstruct/debug settings.json, documenting the unsafe form teaches the very anti-pattern the PR fixed. Update the example JSON in the runbook to ${CLAUDE_PROJECT_DIR}/... to match the shipped file (CLAUDE.md section 7 same-PR doc sync)."
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "notes": "CRITICAL [.claude/settings.json:9]: The PreToolUse hook command is a bare relative path \".claude/hooks/orch-agent-allowlist.sh\". The official Claude Code hooks docs explicitly mark this as the unsafe form (recommending \"${CLAUDE_PROJECT_DIR}/.claude/hooks/...\"): hooks run in the CWD at fire-time, which is NOT guaranteed to be the project root, and a hook command that cannot be located errors with a non-2 exit code, which Claude Code treats as a non-blocking error and PROCEEDS with the tool call (fail-OPEN). A deterministic deny gate that can silently fail open defeats the entire point of CAM-91 (which replaces the prose ban that failed in CAM-86). Fix is mechanical and non-breaking to the oracles: use \"${CLAUDE_PROJECT_DIR}/.claude/hooks/orch-agent-allowlist.sh\" in both .claude/settings.json and templates/.claude/settings.json, then regen src/vendor/_generated.ts (bun run embed-vendor)."
     },
@@ -39,7 +46,7 @@
         "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
         "Tests pass (bun test). [oracle: named-command bun test]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-orchestrator.md (disallowedTools block at lines ~13-19, currently lists Task, Agent, Edit, Write, NotebookEdit, AskUserQuestion; identity prose 'You NEVER use Task, Agent...'), templates/agents/subagent-orchestrator.md (SOURCE OF TRUTH per patterns.md; .claude/ is the runtime mirror), src/vendor/_generated.ts (regen via 'bun run embed-vendor', do NOT hand-edit). DRIFT TO CONVERGE: cff99a0 added the disallowedTools block to the .claude/ runtime mirror ONLY and never propagated it to templates/ + the embedded _generated.ts copy, so today templates/ and _generated.ts have NO disallowedTools block at all (only a tools: list) while .claude/ has the full 6-entry block. embed-vendor:check currently passes because templates == _generated (both blockless). This story converges that drift: ADD the reconciled disallowedTools block to templates/ (it had none before), then regen _generated.ts, and edit .claude/ down to the same block. The RECONCILED block in BOTH copies must be exactly: disallowedTools: with list entries Edit, Write, NotebookEdit, AskUserQuestion (i.e. remove ONLY Task and Agent; KEEP Edit, Write, NotebookEdit, AskUserQuestion). Rationale (DECISION encoded, do NOT re-open): Option A (add the block to templates) chosen over Option B (drop the block and hook-gate only) because dropping it would leave Edit/Write/NotebookEdit AVAILABLE to the orchestrator, violating the core 'orchestrator never edits code' invariant. The frontmatter smoke requires at least one of (tools, disallowedTools): keeping Edit/Write/NotebookEdit/AskUserQuestion satisfies that. No em-dash in persisted prose (project rule). This is intentional self-hosting + a drift convergence: call BOTH out in the commit message so the auditor does not flag it as harness drift. Read scripts/cam/patterns.md 'Agent-prompt self-hosting pattern' and 'capture-pane is rendered markdown' before editing."
@@ -59,7 +66,7 @@
         "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
         "Tests pass (bun test). [oracle: named-command bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "NEW files: .claude/hooks/orch-agent-allowlist.sh (zero-dep bash, reads stdin JSON, jq is assumed present per the official examples), .claude/settings.json (new file; no .claude/settings.json exists today). EMPIRICAL VERIFICATION IS THE #1 RISK (encoded as ACs above): (1) the tool name firing the PreToolUse event in the cam-spawned claude orchestrator session must be verified, standard Claude Code names the subagent tool 'Task' but some runtimes expose 'Agent'; the matcher MUST cover the real trigger, use 'Task|Agent' unless verification proves only one fires; (2) the field carrying the subagent type is ambiguous in the official doc (tool_input.subagent_type vs top-level agent_type), read all three defensively: .tool_input.subagent_type // .tool_input.agent_type // .agent_type. Deny contract (from officialDocsConsulted): exit 0 + JSON {\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"<msg pointing to /cam-next>\"}}. Allowlist = {subagent-planner, subagent-auditor} (the two sanctioned plan-time helpers, see patterns.md 'Pane worker vs Task subagent'). Do NOT register a --permission-mode flag (patterns.md invariant). chmod +x the script. US-003 is the regression that proves this with synthetic payloads; the empirical-name AC leans on reviewer-judgment + US-003. EMPIRICALLY-OBSERVED SHAPE (S-2): the top-level agent_type field carries the CALLER's identity (present only when running under --agent or inside a subagent), NOT the type of the subagent being spawned by the Task call; per the official hooks doc, the SPAWNED type lives in tool_input. The defensive read order (.tool_input.subagent_type // .tool_input.agent_type // .agent_type) is correct, but the implementer MUST capture the empirically-observed payload shape (which field actually carries the spawned subagent_type in the cam-spawned orchestrator session) and add THAT exact shape as a fixture in US-003's regression, so the test locks the real production shape, not only the defensive-fallback shapes. Worst case is bounded: the orchestrator's own identity is subagent-orchestrator, which is NOT allowlisted, so a top-level-agent_type misread would DENY, never falsely allow."
@@ -80,7 +87,7 @@
         "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
         "Tests pass (bun test). [oracle: named-command bun test]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "NEW file: test/orch-agent-allowlist.test.ts. ANTI-SHADOW-MOCK (patterns.md, real-git/real-tmux integration lesson + CAM-55 operator-smoke 'a unit fake that returns the output the code EXPECTS cannot catch tool-real-behavior bugs'): invoke the actual .sh via Bun.spawn with stdin piped (Bun.spawn supports { stdin: <string|Blob|ArrayBuffer> } or write to proc.stdin), read proc.stdout, parse JSON, assert permissionDecision. Do NOT re-mock the script logic in TS. jq is assumed installed (the script depends on it); if a CI runner lacks jq, skip via test.skipIf(jq absent) using Bun.which('jq')===null, mirroring the test.skipIf(!gitAvailable) pattern. Synthetic payloads must include {\"tool_name\":\"Task\",\"tool_input\":{\"subagent_type\":\"...\"}} AND the alternate shapes (tool_input.agent_type, top-level agent_type) that US-002 reads defensively. EMPIRICALLY-OBSERVED SHAPE (S-2): the top-level agent_type field carries the CALLER's identity (present only when running under --agent or inside a subagent), NOT the type of the subagent being spawned by the Task call; per the official hooks doc, the SPAWNED type lives in tool_input. The implementer MUST capture the empirically-observed payload shape (which field actually carries the spawned subagent_type in the cam-spawned orchestrator session) and add THAT exact shape as a fixture here, so this regression locks the real production shape, not only the defensive-fallback shapes. Worst case is bounded: the orchestrator's own identity is subagent-orchestrator (not allowlisted), so a top-level-agent_type misread would DENY, never falsely allow."
@@ -98,7 +105,7 @@
         "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
         "Tests pass (bun test). [oracle: named-command bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: src/templates/embedded.ts (SUBTREES const ~line 24, targetPath() ~line 30, materializeTemplates() counts), templates/.claude/settings.json + templates/.claude/hooks/orch-agent-allowlist.sh (NEW source copies, byte-mirror US-002's repo copies), src/vendor/_generated.ts (regen via 'bun run embed-vendor'), test/embedded.test.ts (extend; note it currently locks EMBEDDED_CONTENTS to exactly 3 vendor keys via a sorted-equality assertion, but templatesContents is a separate map keyed by POSIX relative path, so add a contains-key assertion for templatesContents). GOTCHA: scripts/generate-embedded-vendor.ts walkFiles(TEMPLATES_DIR) ALREADY recursively embeds any file under templates/, so dropping files under templates/.claude/ auto-embeds them with keys '.claude/settings.json' and '.claude/hooks/orch-agent-allowlist.sh'. The real work is targetPath()/SUBTREES + the no-silent-drop test, NOT the codegen (it is string-constant codegen, NOT a runtime dir read). targetPath currently falls through to join(cwd, relPath) for unknown prefixes, which lands '.claude/...' keys correctly; verify the executable bit survives materialization (writeFileSync drops mode) and decide whether init chmods the hook. Read src/templates/embedded.ts (SUBTREES, targetPath, materializeTemplates) and scripts/generate-embedded-vendor.ts before touching. EXECUTABLE BIT (S-3): asserting the materialized hook is executable likely requires init/materializeTemplates to chmod the hook after write, since writeFileSync does not carry the source mode (the embedded templatesContents is a string map with no mode metadata). Materialize into a tempdir in the test and assert test -x (or the owner-exec mode bit) on the output .claude/hooks/orch-agent-allowlist.sh."
@@ -114,37 +121,34 @@
         "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
         "Tests pass (bun test). [oracle: named-command bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "File: docs/recovery-runbook.md (the issue's relatedDocs path 'docs/runbooks/cam-loop-recovery.md' does NOT exist in this repo, that string only appears as a stale CONSUMERS comment inside vendor/check-agent-frontmatter.ts; the real runbook is docs/recovery-runbook.md). Scenarios are lettered '## (x) CAM-NN: title'; the last existing is '(p) CAM-78'; add '(q) CAM-91: ...'. Follow the existing structure (### Background / ### Diagnosing / ### Manual override subsections). No em-dash in persisted .md (project rule); use colon/comma/period. No code change in this story but keep the gate uniform (typecheck + bun test)."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
     "lastVerdict": "FIXES_PENDING:1",
     "findings": [
       {
-        "severity": "CRITICAL",
-        "file": ".claude/settings.json",
-        "line": 9,
-        "text": "The PreToolUse hook command is a bare relative path \".claude/hooks/orch-agent-allowlist.sh\". The official Claude Code hooks docs explicitly mark this as the unsafe form (recommending \"${CLAUDE_PROJECT_DIR}/.claude/hooks/...\"): hooks run in the CWD at fire-time, which is NOT guaranteed to be the project root, and a hook command that cannot be located errors with a non-2 exit code, which Claude Code treats as a non-blocking error and PROCEEDS with the tool call (fail-OPEN). A deterministic deny gate that can silently fail open defeats the entire point of CAM-91 (which replaces the prose ban that failed in CAM-86). Fix is mechanical and non-breaking to the oracles: use \"${CLAUDE_PROJECT_DIR}/.claude/hooks/orch-agent-allowlist.sh\" in both .claude/settings.json and templates/.claude/settings.json, then regen src/vendor/_generated.ts (bun run embed-vendor)."
+        "severity": "WARNING",
+        "file": "docs/recovery-runbook.md",
+        "line": 1182,
+        "text": "The recovery-runbook (q) 'Background' section documents the hook registration with the bare relative command path \".claude/hooks/orch-agent-allowlist.sh\". This is the exact fail-open form that the round-1 fix (US-R1-001) removed from the real .claude/settings.json (now \"${CLAUDE_PROJECT_DIR}/.claude/hooks/orch-agent-allowlist.sh\"). The official Claude Code hooks docs confirm a non-2 exit (e.g. a hook that cannot be located) is a non-blocking error and the tool call PROCEEDS. Since the recovery runbook exists to help an operator reconstruct/debug settings.json, documenting the unsafe form teaches the very anti-pattern the PR fixed. Update the example JSON in the runbook to ${CLAUDE_PROJECT_DIR}/... to match the shipped file (CLAUDE.md section 7 same-PR doc sync)."
       },
       {
         "severity": "WARNING",
         "file": ".claude/hooks/orch-agent-allowlist.sh",
         "line": 40,
-        "text": "The deny path builds its JSON with `jq -n`. Under `set -e`, if jq is absent the deny branch exits non-zero (~127), which Claude Code treats as a non-blocking error and the Task spawn PROCEEDS (fail-open). The extraction path already guards with `|| echo \"\"`, but the deny emission does not. jq is a documented hard precondition (PRD US-002 + runbook), so this is within the accepted operating envelope, but a deny gate ideally fails CLOSED: emit a static deny JSON via printf when jq is unavailable (or exit 2). Non-blocking hardening."
-      },
-      {
-        "severity": "WARNING",
-        "file": ".claude/settings.json",
-        "text": "settings.json registers the PreToolUse hook project-wide, so it applies to every claude session in the project (and every downstream `cam init` project), not only the orchestrator. The implementer/reviewer agents have explicit tools: lists without Task so they are unaffected, but a bare operator `claude` session in a cam-initialized project will have all non-{planner,auditor} Task spawns denied. This is the PRD's explicit design (US-004 ships it project-wide) and is documented in the runbook; flagged for downstream awareness, not a deviation. Non-blocking consideration."
+        "text": "The deny path builds its JSON via `jq -n` under `set -e`. If jq is absent, jq exits ~127 (non-2), which Claude Code treats as a non-blocking error so the Task spawn PROCEEDS (fail-open). The extraction read guards with `|| echo \"\"`, but the deny emission does not, so a jq-less environment silently bypasses the whole gate. jq is a documented hard precondition (PRD US-002 + runbook) and this was triaged non-blocking in round 1, so it is within the accepted envelope, but a deny gate ideally fails CLOSED (emit a static deny JSON via printf when jq is unavailable). Non-blocking hardening."
       },
       {
         "severity": "SUGGESTION",
-        "text": "The hook's empirically-observed production payload shape (which field actually carries the spawned subagent_type in the cam-spawned orchestrator session) is asserted only as an assumed fixture (S-4). The defensive three-path read fails SAFE (a misread denies, never falsely allows), so this is bounded; a one-time live capture would convert the assumption into a verified fact."
+        "file": "test/orch-agent-allowlist.test.ts",
+        "line": 183,
+        "text": "The S-4 'empirically-observed production shape' fixture is an assumed shape (tool_input.subagent_type), not a verified live capture. The defensive three-path read fails safe (a misread denies, never falsely allows, since the orchestrator's own identity subagent-orchestrator is not allowlisted), so this is bounded. A one-time live capture from a cam-spawned orchestrator session would convert the assumption into a verified fact."
       }
     ]
   }
