@@ -1083,3 +1083,57 @@ Cross-reference: `src/supervisor/loop.ts` (poll-loop staleness + shape guard bef
 `src/supervisor/host.ts` (makeReadWorkerReport shape guard),
 `scripts/cam/patterns.md` (single-source outcome contract + 5-concern model bullet,
 poll-loop staleness + shape guard bullet).
+
+## (p) CAM-78: single-pusher invariant for [cam] narration lines
+
+The sidecar's `notifyOrchestrator` (in `src/supervisor/loop.ts`) is the single pusher of
+`[cam]` terminal-event narrations to the orchestrator pane. No implementer or reviewer agent
+writes its own narration line directly; every `[cam]` line in the orchestrator pane was sent
+by the sidecar.
+
+### What the single-pusher invariant means
+
+- **Implementer outcome**: when the worker writes `scripts/cam/worker-report.json` and exits,
+  the sidecar reads the report, calls
+  `opts.notifyOrchestrator(formatWorkerReportSummary(report))`, and sends the
+  `[cam] US-XXX DONE` (or BLOCKED/PRD_COMPLETE) line to the orchestrator pane via `send-keys`.
+  The worker itself no longer sends any `send-keys` call (Step B removed in CAM-78).
+- **Review verdict**: after a non-error review dispatch, the sidecar reads
+  `prd.review.lastVerdict` and calls
+  `opts.notifyOrchestrator(formatReviewVerdictLine(round, lastVerdict))` to emit the
+  `[cam] review round-N CLEAN` (or FIXES_PENDING:K) line. Same seam, same code path.
+- **cam next**: `cam next` is a pure `active:true` flip. It writes
+  `.claude/cam-loop.local.md` and returns. It does NOT call `send-keys` to the orchestrator
+  pane. Slash commands injected by other thin-proxies (plan, issue, review, ship) still
+  use `sendKeysWhenIdle`; `cam next` is the exception.
+
+### Diagnosing a glued double-push
+
+**Symptom**: the orchestrator pane shows a line like:
+
+```
+Implement the next user story from scripts/cam/prd.json per your AGENT.md.[cam] US-XXX DONE: ...
+```
+
+The task prompt and the `[cam]` narration appear adjacent on the same line, glued together.
+
+**Root cause (historical, now fixed)**: before CAM-78, the implementer worker contained a
+Step B that sent its own `[cam]` line via `send-keys` BEFORE printing the
+`CAM_IMPLEMENTER_STATUS` sentinel. The sidecar also sent the line via `notifyOrchestrator`
+on detection. Two pushes, same pane, same event: the second arrived adjacent to the first
+because the orchestrator pane buffer already had the task prompt on that line.
+
+**Resolution**: CAM-78 (US-001 + US-003) removed the worker self-push from both agent files
+and the sidecar template. If you see a glued line with the current binary, rebuild:
+
+```bash
+bun run build:release
+```
+
+**Verification after fix**: run a story end-to-end and confirm the orchestrator pane shows
+exactly one `[cam] US-XXX DONE` line per story, with no adjacent task-prompt prefix.
+
+Cross-reference: `src/supervisor/loop.ts` (notifyOrchestrator placement: post no-progress guard),
+`src/supervisor/worker-report.ts` (formatWorkerReportSummary, formatReviewVerdictLine),
+`src/supervisor/host.ts` (makeNotifyOrchestrator factory),
+`scripts/cam/patterns.md` (single-pusher invariant bullet, cam-next-is-pure-trigger bullet).

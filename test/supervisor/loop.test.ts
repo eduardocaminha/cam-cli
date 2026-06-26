@@ -20,6 +20,8 @@
 //  14. CAM-44: transient pane-death then a real completion does not block (streak resets).
 //  15. CAM-5: worker token ceiling kills + blocks terminally once spend crosses the cap.
 //  16. CAM-5: ceiling disabled (maxWorkerTokens 0) -> no poll-loop token check, no kill.
+//  17. US-003: notifies orchestrator exactly once on genuine implementer advance.
+//  18. US-003: does NOT notify on a no-progress re-confirmation retry.
 
 import { describe, expect, test, beforeEach } from 'bun:test';
 import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
@@ -2686,5 +2688,122 @@ describe('runSupervisor US-006: stale / absent / malformed report safety nets', 
 		expect(hostSrc).toContain("!Array.isArray(parsed)");
 		expect(hostSrc).toContain("'outcome'] === 'string'");
 		expect(hostSrc).toContain("'story'] === 'string'");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-003: sidecar narration wiring
+//
+// The sidecar (not the worker) emits the [cam] <story> <outcome> line to the
+// orchestrator pane. The worker self-push (send-keys) was removed; the sidecar
+// calls notifyOrchestrator(formatWorkerReportSummary(report)) at each genuine
+// terminal advance. Two discriminating tests:
+//   Test 1: genuine advance (story was NOT already passing) -> one notification.
+//   Test 2: no-progress re-confirmation retry (story was ALREADY passing, under
+//            the cap) -> zero notifications (the retry path must stay silent).
+// ---------------------------------------------------------------------------
+
+describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advance', () => {
+	test('notifies orchestrator with worker-report summary on genuine implementer advance', async () => {
+		// Iter 1: US-001 is passes:false -> decideNextAction dispatches worker.
+		// Worker report: DONE for US-001.
+		// readWorkerOutcome (via fileReader) uses prd_done so passes:true -> pass / US-001.
+		// completedAlreadyPassing = false (outer prd at top of iter had passes:false).
+		// -> else branch fires, noProgressStreak = 0, notifyOrchestrator called once.
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
+		let prdCall = 0;
+
+		const fakeReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-001',
+			gates: { typecheck: 'ok', tests: '5 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		const notified: string[] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => {
+				// Call 0: top of loop (decideNextAction + completedAlreadyPassing check).
+				// Call 1+: fileReader inside readWorkerOutcome (prd passes:true -> pass).
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readHandoff: () => makeHandoff('US-001'),
+			capturePane: (_paneId) => donePane('US-001'),
+			readWorkerReport: () => fakeReport,
+			notifyOrchestrator: (line) => {
+				notified.push(line);
+			},
+			// Stop after one iteration so we can assert on exactly this advance.
+			maxIterations: 1,
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Loop exits via max-iterations after the genuine advance iteration.
+		expect(result.status).toBe('max-iterations');
+		// notifyOrchestrator called exactly once with the formatted summary.
+		expect(notified.length).toBe(1);
+		expect(notified[0]).toBe('[cam] US-001 DONE: typecheck ok, 5 pass / 0 fail');
+	});
+
+	test('does not narrate on a no-progress re-confirmation retry', async () => {
+		// Iter 1: US-001 is ALREADY passes:true, US-002 is passes:false ->
+		// decideNextAction dispatches for US-002 (advisory = 'US-002').
+		//
+		// The poll report (story='US-002') matches the advisory ID so the poll
+		// exits immediately via readWorkerReport.
+		//
+		// readWorkerOutcome falls to the fallback path (no workerReportPath):
+		//   handoff says US-001 completed (stale worker output re-confirming US-001);
+		//   prd shows US-001 passes:true -> outcome = pass / US-001.
+		//
+		// completedAlreadyPassing = true (US-001 was passes:true at top of iter).
+		// noProgressStreak becomes 1, which is < MAX_NO_PROGRESS_RETRIES (3).
+		// -> no-progress retry branch: sleep + continue (no notifyOrchestrator call).
+		//
+		// This test FAILS against a defective implementation that calls
+		// notifyOrchestrator BEFORE the no-progress guard (which would fire the
+		// report-based notify unconditionally, yielding notified.length = 1).
+		const prd = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: false },
+			],
+		});
+
+		// Poll report matches the advisory story (US-002) so the staleness guard
+		// passes and the poll exits immediately. readWorkerOutcome still returns
+		// pass/US-001 via the handoff fallback path (capturePane + makeHandoff).
+		const fakeReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-002',
+			gates: { typecheck: 'ok', tests: '5 pass / 0 fail' },
+			notes: 'none',
+		};
+
+		const notified: string[] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			readHandoff: () => makeHandoff('US-001'),
+			// Stale pane: worker emits DONE for already-done US-001.
+			capturePane: (_paneId) => donePane('US-001'),
+			readWorkerReport: () => fakeReport,
+			notifyOrchestrator: (line) => {
+				notified.push(line);
+			},
+			// Stop after one iteration to isolate the single retry.
+			maxIterations: 1,
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Loop exits via max-iterations after the single no-progress retry.
+		expect(result.status).toBe('max-iterations');
+		// notifyOrchestrator must NOT be called on a no-progress retry.
+		expect(notified.length).toBe(0);
 	});
 });

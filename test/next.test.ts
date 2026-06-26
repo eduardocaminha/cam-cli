@@ -5,14 +5,11 @@
 // What we cover:
 //   - renderStateFile: template substitution, YAML shape, no stop-hook body.
 //   - writeStateFile: creates .claude/, refuses clobber, force flag.
-//   - runNext (hit path): orch alive → send-keys task prompt → return 0.
-//   - runNext (miss path): bootstrap + wait + send-keys.
+//   - runNext (hit path): orch alive → flip active:true → return 0.
+//   - runNext (miss path): bootstrap + wait + flip active:true.
 //   - runNext: bootstrap failure returns 1.
 //   - runNext: marker timeout returns 1.
 //   - runNext: missing pane returns 1.
-//   - runNext: uses DEFAULT_TASK_PROMPT by default.
-//   - runNext: custom taskPrompt forwarded to orchestrator.
-//   - send-keys is atomic (NO -l; -l would make "Enter" literal; text + Enter same call).
 
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
@@ -26,7 +23,6 @@ import {
 	writeStateFile,
 	DEFAULT_MAX_ITERATIONS,
 	DEFAULT_COMPLETION_PROMISE,
-	DEFAULT_TASK_PROMPT,
 } from '../src/commands/next.ts';
 import { type SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
 import yaml from 'js-yaml';
@@ -167,11 +163,6 @@ describe('renderStateFile', () => {
 	test('DEFAULT_COMPLETION_PROMISE is "COMPLETE"', () => {
 		expect(DEFAULT_COMPLETION_PROMISE).toBe('COMPLETE');
 	});
-
-	test('DEFAULT_TASK_PROMPT mentions prd.json and AGENT.md', () => {
-		expect(DEFAULT_TASK_PROMPT).toContain('prd.json');
-		expect(DEFAULT_TASK_PROMPT).toContain('AGENT.md');
-	});
 });
 
 // --- writeStateFile --------------------------------------------------------
@@ -206,7 +197,7 @@ describe('writeStateFile', () => {
 // --- runNext (thin-proxy): hit path ----------------------------------------
 
 describe('runNext (thin-proxy, hit path)', () => {
-	test('sends DEFAULT_TASK_PROMPT to orchestrator pane and returns 0', async () => {
+	test('returns 0 and writes active:true when orchestrator is alive', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-next-hit-'));
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%3' });
@@ -214,58 +205,9 @@ describe('runNext (thin-proxy, hit path)', () => {
 			const code = await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
 
 			expect(code).toBe(0);
-
+			// send-keys is no longer called by cam next (sidecar handles dispatch)
 			const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-			expect(sendKeys).toBeDefined();
-			expect(sendKeys?.args).not.toContain('-l');
-			expect(sendKeys?.args).toContain(DEFAULT_TASK_PROMPT);
-			expect(sendKeys?.args).toContain('Enter');
-			expect(sendKeys?.args).toContain('%3');
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('forwards a custom taskPrompt to the orchestrator', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-custom-prompt-'));
-		try {
-			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
-			const customPrompt = 'Run the review cycle on the latest PRD.';
-
-			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn, taskPrompt: customPrompt });
-
-			const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-			expect(sendKeys?.args).toContain(customPrompt);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('send-keys does NOT use -l (regression: -l makes "Enter" literal)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-literal-'));
-		try {
-			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
-
-			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
-
-			const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-			expect(sendKeys?.args).not.toContain('-l');
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('Enter is a separate argument in the send-keys call (atomic)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-atomic-'));
-		try {
-			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
-
-			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
-
-			const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-			const enterIdx = sendKeys?.args.lastIndexOf('Enter') ?? -1;
-			const textIdx = sendKeys?.args.findIndex((a) => a === DEFAULT_TASK_PROMPT) ?? -1;
-			expect(enterIdx).toBeGreaterThan(textIdx);
+			expect(sendKeys).toBeUndefined();
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -302,6 +244,34 @@ describe('runNext (thin-proxy, hit path)', () => {
 				completionPromise: 'MY_PROMISE',
 			});
 			expect(code).toBe(0);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('runNext writes active:true on the hit path', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-active-true-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+
+			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
+
+			const stateContent = readFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'utf8');
+			expect(stateContent).toContain('active: true');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('runNext pushes no task-prompt send-keys to the orchestrator pane', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-no-send-keys-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+
+			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
+
+			const sendKeysCall = spawnFn.calls.find((c) => c.args.includes('send-keys'));
+			expect(sendKeysCall).toBeUndefined();
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -368,7 +338,7 @@ describe('runNext (thin-proxy, miss path)', () => {
 		}
 	});
 
-	test('bootstraps + waits + sends keys when orch not alive initially', async () => {
+	test('bootstraps + waits + flips active:true when orch not alive initially', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-next-miss-'));
 		try {
 			// After bootstrap, orch is alive.
