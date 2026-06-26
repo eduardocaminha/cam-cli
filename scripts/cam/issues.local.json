@@ -1,5 +1,5 @@
 {
-  "next_id": 92,
+  "next_id": 93,
   "issues": [
     {
       "id": "CAM-1",
@@ -764,6 +764,14 @@
       "state": "open",
       "createdAt": "2026-06-25T20:21:00.614Z",
       "description": "O cff99a0 bloqueou Task/Agent no orquestrador com disallowedTools blanket pra matar spawn rogue de code-work (caso CAM-86). Mas o blanket e tudo-ou-nada: pegou junto subagent-planner e subagent-auditor, que sao a delegacao sancionada do /cam-plan (Steps 7-8) e travaram o fluxo de planejamento por construcao (primeiro plan pos-cff99a0 nao roda sem override manual). Intencao real: permitir SO os subagents pre-definidos do cam (planner, auditor), negar qualquer outro (general-purpose, Explore, arbitrario). FIX determinismo (nao prosa: o CAM-86 provou que prosa nao segura): tirar Task/Agent do disallowedTools blanket (manter Edit/Write/NotebookEdit bloqueados); registrar PreToolUse hook em .claude/settings.json casando Task/Agent que le subagent_type do tool_input e NEGA qualquer um fora de {subagent-planner, subagent-auditor}, com mensagem apontando pra /cam-next. ONDE: .claude/agents/subagent-orchestrator.md (+ templates/agents copy + src/vendor/_generated.ts), .claude/settings.json (+ template), script do hook. ACEITE: regressao que asseria que um Task com subagent_type fora da allowlist e negado pelo hook e que planner/auditor passam; /cam-plan permanece executavel pelo orquestrador. Prioridade alta: gateia toda fase de plan autonoma."
+    },
+    {
+      "id": "CAM-92",
+      "title": "Extrair narrateReport() helper no loop.ts (dedup dos ~9 blocos inline de notifyOrchestrator)",
+      "state": "open",
+      "createdAt": "2026-06-26T02:35:11.986Z",
+      "description": "Follow-up advisory do review do CAM-78 (PR da branch cam/CAM-78-sidecar-sole-pusher). O US-003 ligou a narração do sidecar em ~9 call-sites do src/supervisor/loop.ts, cada um repetindo o bloco `{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }`. O reviewer sugeriu (SUGGESTION, nao-gating) extrair um helper privado (ex: narrateReport()) para legibilidade e single-source. Bonus: encolhe loop.ts e reverte a subida de teto file-size aplicada no ship do CAM-78. Arquivo: src/supervisor/loop.ts.",
+      "priority": 3
     }
   ]
 }
