@@ -8,7 +8,7 @@ long-lived orchestrator agent that drives `/cam-plan`, `/cam-next`,
 Built on Bun + TypeScript. Distributed as a single-file binary built from source.
 
 > **Status:** single-hub dispatch model live. `cam init` scaffolds the project,
-> `cam run` opens the single per-project session (2-pane layout: orchestrator + navigable dashboard), and all CLI subcommands (`cam plan`, `cam issue`, `cam next`, `cam review`, `cam ship`) are thin-proxies that inject into the orchestrator pane via atomic `send-keys`. Workers run in a titled 3rd pane; completion is push-based (worker writes a report file + sends a summary line to the orchestrator). The orchestrator exit respawns on a token-budget handoff, otherwise tears down the session.
+> `cam run` opens the single per-project session (2-pane layout: orchestrator + navigable dashboard), and CLI subcommands (`cam plan`, `cam issue`, `cam review`, `cam ship`) are thin-proxies that inject into the orchestrator pane via atomic `send-keys`; `cam next` is a pure `active:true` sidecar trigger (no send-keys). Workers run in a titled 3rd pane; completion is push-based (worker writes a report file; the sidecar reads it and emits the `[cam]` narration line to the orchestrator). The orchestrator exit respawns on a token-budget handoff, otherwise tears down the session.
 
 ---
 
@@ -160,7 +160,7 @@ The session layout has two permanent panes plus an optional worker pane:
 - **Pane 0.1 (right):** `cam dashboard`, a permanent navigable monitor. Browse stories with j/k or arrow keys, Enter to open a story detail view, Esc to go back. Press `n/r/s/p/i` to dispatch `/cam-*` commands to the orchestrator, `d` to focus the orchestrator pane, `q` to close the dashboard.
 - **Pane 0.2 (worker, ephemeral):** created on first worker dispatch, reused across stories via `respawn-pane -k`. Present only while a worker is active; the mutex check refuses new dispatches when this pane exists (3 panes = busy).
 
-`cam plan`, `cam issue`, `cam next`, `cam review`, and `cam ship` are thin-proxies: they detect the active cam session, ensure the orchestrator is idle (`sendKeysWhenIdle`), and inject the corresponding slash command into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `cam run --no-attach` first. If a worker is already running (mutex: 3 panes present), the proxy refuses the dispatch and exits with code 1. From outside the session the proxy prints a contextual hint with the `cam run` attach command (suppressed inside the session).
+`cam plan`, `cam issue`, `cam review`, and `cam ship` are thin-proxies: they detect the active cam session, ensure the orchestrator is idle (`sendKeysWhenIdle`), and inject the corresponding slash command into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `cam run --no-attach` first. If a worker is already running (mutex: 3 panes present), the proxy refuses the dispatch and exits with code 1. From outside the session the proxy prints a contextual hint with the `cam run` attach command (suppressed inside the session). `cam next` is different: it flips `active:true` in the sidecar state file and returns immediately -- no idle check, no send-keys, no slash-command injection.
 
 When the orchestrator process in pane 0.0 exits, the `cam run` wrapper respawns it
 (rehydrating from a token-budget handoff) when one is pending and under the
@@ -251,15 +251,18 @@ test/                 bun:test suites
 
 ## Architecture
 
-`cam run` is the single dispatch hub. All CLI subcommands (`cam plan`, `cam next`, `cam issue`, `cam review`, `cam ship`) are thin-proxies: they detect the live orchestrator session and inject the request into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `cam run --no-attach` and wait for the `.claude/.cam-orch-ready` marker before injecting.
+`cam run` is the single dispatch hub. CLI subcommands (`cam plan`, `cam issue`, `cam review`, `cam ship`) are thin-proxies: they detect the live orchestrator session and inject the request into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `cam run --no-attach` and wait for the `.claude/.cam-orch-ready` marker before injecting. `cam next` is a pure sidecar trigger: it writes `active:true` to the sidecar state file and returns -- no session detection, no idle check, no send-keys.
 
 ```
-cam next  (thin-proxy)
+cam next  (pure sidecar trigger)
+  └── write active:true to .claude/cam-loop.local.md and return
+
+cam plan / cam issue / cam review / cam ship  (send-keys thin-proxies)
   └── detect live orchestrator (hasSession + orchestratorAlive)
         ├── on miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
         ├── mutex check: refuse if worker-pane is already running (3 panes = busy)
         ├── idle check: wait for orchestrator pane idle (sendKeysWhenIdle)
-        └── atomic send-keys: inject task prompt + Enter (NO -l: -l makes "Enter" literal and never submits)
+        └── atomic send-keys: inject slash command + Enter (NO -l: -l makes "Enter" literal and never submits)
 
 sidecar (background process, spawned by cam run)
   └── receives active:true flag, dispatches workers in the titled 3rd pane
@@ -268,12 +271,12 @@ sidecar (background process, spawned by cam run)
         │             --session-id <uuid>
         │             --agent <name>
         │             "<task-prompt>"
-        └── worker pushes completion:
-              scripts/cam/worker-report.json   -- structured outcome
-              tmux send-keys -> orchestrator pane: "[cam] US-XXX DONE: ..."
+        └── worker writes completion report:
+              scripts/cam/worker-report.json   -- structured outcome (PRIMARY)
+              sidecar reads report, emits: "[cam] US-XXX DONE: ..." to orchestrator pane
 ```
 
-Workers (implementer, reviewer) are interactive TUI `claude` sessions invoked with `--agent <name>`. On completion, the worker writes a push report (`scripts/cam/worker-report.json`) and sends a one-line summary directly to the orchestrator pane via `tmux send-keys`. The orchestrator receives the line and reads the report file to determine the next action. Scrollback polling is not used for completion detection. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired; `claude -p` (print mode) is not used for workers.
+Workers (implementer, reviewer) are interactive TUI `claude` sessions invoked with `--agent <name>`. On completion, the worker writes `scripts/cam/worker-report.json` (structured outcome). The sidecar polls for the report file, then emits the `[cam]` narration line to the orchestrator pane via its own `notifyOrchestrator` seam. Scrollback polling is not used for completion detection. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired; `claude -p` (print mode) is not used for workers.
 
 Workers always run in the **titled 3rd pane** (created on first dispatch, reused across stories via `respawn-pane -k`). A mutex check before each dispatch prevents concurrent workers: if 3 panes are already present, the dispatch is refused until the worker-pane closes.
 
@@ -281,7 +284,7 @@ Workers always run in the **titled 3rd pane** (created on first dispatch, reused
 
 ## Recent changes
 
-- **Single-hub dispatch (CAM-55)**: `cam run` is the only dispatch hub. All CLI subcommands (`cam plan`, `cam issue`, `cam next`, `cam review`, `cam ship`) are thin-proxies that inject into the orchestrator pane via atomic `send-keys`. Workers run in a uniform titled 3rd pane; completion is push-based (worker writes `scripts/cam/worker-report.json` + sends a summary line to the orchestrator pane via `tmux send-keys`). A mutex prevents concurrent worker dispatches (3 panes = busy). The idle-guarantee (`sendKeysWhenIdle`) ensures the orchestrator is not mid-response when the request is injected.
+- **Single-hub dispatch (CAM-55)**: `cam run` is the only dispatch hub. `cam plan`, `cam issue`, `cam review`, and `cam ship` are send-keys thin-proxies that inject slash commands into the orchestrator pane; `cam next` is a pure `active:true` sidecar trigger (no send-keys). Workers run in a uniform titled 3rd pane; completion is push-based (worker writes `scripts/cam/worker-report.json`; the sidecar reads it and emits the `[cam]` narration line to the orchestrator pane). A mutex prevents concurrent worker dispatches (3 panes = busy). The idle-guarantee (`sendKeysWhenIdle`) ensures the orchestrator is not mid-response when slash commands are injected.
 - **Interactive TUI workers (CAM-42)**: `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`). `claude -p` is reserved for the `cam claude` retry-wrapper feature only.
 - **Single per-project session**: `cam run` now creates one tmux session per
   project with a 2-pane layout (orchestrator + navigable dashboard). The navigable
