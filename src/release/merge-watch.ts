@@ -61,15 +61,37 @@ export interface MergeWatchState {
 }
 
 /**
- * Subset of the `gh pr view --json state,mergeStateStatus` output we care about.
+ * One entry from the `statusCheckRollup` array returned by
+ * `gh pr view --json statusCheckRollup`.
+ *
+ * GitHub returns a polymorphic list of `CheckRun` and `StatusContext` objects.
+ * We only care about the fields that signal a definitive failure.
+ *
+ * - CheckRun: `conclusion` is null while in-progress; a string like
+ *   "FAILURE" / "TIMED_OUT" / "CANCELLED" when the run completed.
+ * - StatusContext: `state` is "PENDING" while running; "FAILURE" / "ERROR"
+ *   on failure.
+ */
+export interface PrCheckRollupEntry {
+	/** CheckRun conclusion. null = in-progress; string = completed (see FAILED_CHECK_CONCLUSIONS). */
+	conclusion?: string | null;
+	/** StatusContext state (legacy commit-status API). */
+	state?: string;
+}
+
+/**
+ * Subset of the `gh pr view --json state,mergeStateStatus,statusCheckRollup` output we care about.
  *
  * state: "OPEN" | "MERGED" | "CLOSED"
  * mergeStateStatus: "BLOCKED" | "CLEAN" | "BEHIND" | "DIRTY" | "HAS_HOOKS" |
  *                   "UNKNOWN" | "UNSTABLE"
+ * statusCheckRollup: list of check-run / status-context entries (may be absent
+ *   when the PR has no required checks configured).
  */
 export interface PrStatus {
 	state: string;
 	mergeStateStatus: string;
+	statusCheckRollup?: PrCheckRollupEntry[];
 }
 
 /**
@@ -136,6 +158,44 @@ export type MergeWatchOutcome =
 	| { kind: 'timeout'; polls: number };
 
 // ---------------------------------------------------------------------------
+// Check-failure detection helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * CheckRun conclusion values that represent a definitive CI failure.
+ * Excludes SUCCESS, SKIPPED, NEUTRAL, STALE (passing/ignored outcomes).
+ * Excludes null (in-progress/pending).
+ */
+const FAILED_CHECK_CONCLUSIONS = new Set([
+	'FAILURE',
+	'CANCELLED',
+	'TIMED_OUT',
+	'ACTION_REQUIRED',
+	'STARTUP_FAILURE',
+]);
+
+/**
+ * StatusContext state values (legacy commit-status API) that represent failure.
+ */
+const FAILED_CHECK_STATES = new Set(['FAILURE', 'ERROR']);
+
+/**
+ * Returns true if the rollup contains at least one entry with a conclusively
+ * failed check run or status context.
+ *
+ * A null `conclusion` means the check is still in-progress (not a failure).
+ * An absent/empty rollup means no checks have concluded yet -- NOT a failure.
+ */
+function hasFailedCheck(rollup: PrCheckRollupEntry[]): boolean {
+	return rollup.some(
+		(entry) =>
+			(typeof entry.conclusion === 'string' &&
+				FAILED_CHECK_CONCLUSIONS.has(entry.conclusion)) ||
+			(typeof entry.state === 'string' && FAILED_CHECK_STATES.has(entry.state)),
+	);
+}
+
+// ---------------------------------------------------------------------------
 // State machine
 // ---------------------------------------------------------------------------
 
@@ -145,13 +205,18 @@ export type MergeWatchOutcome =
  * Terminal outcomes (in priority order per poll):
  *   - merged: state=="MERGED" -> run postMergeFn + narrate result.
  *   - closed-not-merged: state=="CLOSED" -> narrate + stop (no post-merge).
- *   - ci-red: state=="OPEN" && mergeStateStatus=="BLOCKED" -> narrate + stop.
+ *   - ci-red: state=="OPEN" && mergeStateStatus=="BLOCKED" &&
+ *             statusCheckRollup contains a failed check -> narrate + stop.
  *   - timeout: maxPolls exhausted -> narrate + stop.
  *
  * Non-terminal outcomes (loop continues):
  *   - pollFn returns null (gh error): silent retry.
- *   - state=="OPEN" && mergeStateStatus!="BLOCKED" (CI running, CLEAN, BEHIND, etc.):
+ *   - state=="OPEN" && mergeStateStatus!="BLOCKED" (CLEAN, BEHIND, etc.):
  *     keep polling.
+ *   - state=="OPEN" && mergeStateStatus=="BLOCKED" && no failed check in rollup
+ *     (CI is pending/in-progress, or BLOCKED for a non-CI reason): keep polling.
+ *     GitHub returns BLOCKED while required checks are still running, not only on
+ *     failure, so we must inspect statusCheckRollup before treating it as ci-red.
  *
  * Only engages under ci-gated merge mode. Under immediate mode, the sidecar
  * never injects this function, so it is completely inert (zero behavior change).
@@ -215,13 +280,23 @@ export async function runMergeWatch(opts: MergeWatchOptions): Promise<MergeWatch
 		}
 
 		if (status.state === 'OPEN' && status.mergeStateStatus === 'BLOCKED') {
+			// GitHub returns BLOCKED while checks are still pending/in-progress.
+			// Only treat it as a true CI failure when the rollup confirms a
+			// failed check conclusion. An absent or all-pending rollup means
+			// CI is still running: keep polling.
+			const rollup = status.statusCheckRollup ?? [];
+			if (rollup.length === 0 || !hasFailedCheck(rollup)) {
+				// Checks are pending/in-progress (or BLOCKED for a non-CI reason).
+				// Keep polling.
+				continue;
+			}
 			notifyOrchestrator(`[cam] CI red, PR #${prNumber} open, not merged`);
 			const ciRedDetail: MergeWatchCiRedEventDetail = { prNumber, reason: 'blocked' };
 			logEvent?.('merge-watch-ci-red', ciRedDetail);
 			return { kind: 'ci-red', prNumber };
 		}
 
-		// Still OPEN and CI not failed (CLEAN, BEHIND, UNSTABLE, etc.): keep polling.
+		// Still OPEN and CI not failed (CLEAN, BEHIND, UNSTABLE, BLOCKED+pending, etc.): keep polling.
 	}
 
 	notifyOrchestrator(

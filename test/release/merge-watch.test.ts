@@ -44,7 +44,20 @@ import {
 // ---------------------------------------------------------------------------
 
 const OPEN_CLEAN: PrStatus = { state: 'OPEN', mergeStateStatus: 'CLEAN' };
-const OPEN_BLOCKED: PrStatus = { state: 'OPEN', mergeStateStatus: 'BLOCKED' };
+/** BLOCKED with a conclusively failed check (the true ci-red case). */
+const OPEN_BLOCKED: PrStatus = {
+	state: 'OPEN',
+	mergeStateStatus: 'BLOCKED',
+	statusCheckRollup: [{ conclusion: 'FAILURE' }],
+};
+/** BLOCKED with a pending check (CI still running -- must keep polling). */
+const OPEN_BLOCKED_PENDING: PrStatus = {
+	state: 'OPEN',
+	mergeStateStatus: 'BLOCKED',
+	statusCheckRollup: [{ conclusion: null }],
+};
+/** BLOCKED with no statusCheckRollup (no checks configured -- must keep polling). */
+const OPEN_BLOCKED_NO_ROLLUP: PrStatus = { state: 'OPEN', mergeStateStatus: 'BLOCKED' };
 const MERGED: PrStatus = { state: 'MERGED', mergeStateStatus: 'MERGED' };
 const CLOSED: PrStatus = { state: 'CLOSED', mergeStateStatus: 'UNKNOWN' };
 
@@ -191,6 +204,111 @@ describe('runMergeWatch', () => {
 			n.includes('CI red') && n.includes('PR #55') && n.includes('open, not merged'),
 		);
 		expect(ciRedLine).toBeDefined();
+	});
+
+	test('(b2) BLOCKED+pending checks -> keeps polling, eventually merges (not ci-red)', async () => {
+		// The normal ci-gated happy path: first poll returns BLOCKED because CI
+		// is still running (pending check conclusion == null). Must keep polling
+		// and reach MERGED, NOT stop with a false ci-red.
+		const notifications: string[] = [];
+		let postMergeCalled = false;
+
+		const outcome = await runMergeWatch({
+			prNumber: 56,
+			mergedBranch: 'cam/branch',
+			cwd: '/fake',
+			// First poll: BLOCKED+pending (CI still running). Second poll: MERGED.
+			pollFn: makeSeqPollFn([OPEN_BLOCKED_PENDING, MERGED]),
+			postMergeFn: (opts) => {
+				postMergeCalled = true;
+				return {
+					ok: true,
+					pulledSha: 'sha1',
+					tag: 'v0.1.0',
+					tagCreated: true,
+					branchPrunedLocal: true,
+					branchPrunedRemote: true,
+				};
+			},
+			notifyOrchestrator: (line) => notifications.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 10,
+		});
+
+		expect(outcome.kind).toBe('merged');
+		expect(postMergeCalled).toBe(true);
+		// Must NOT have narrated a false "CI red" line.
+		expect(notifications.some((n) => n.includes('CI red'))).toBe(false);
+	});
+
+	test('(b3) BLOCKED+no rollup -> keeps polling, eventually merges (not ci-red)', async () => {
+		// No statusCheckRollup in the response: can't confirm failure, keep polling.
+		const notifications: string[] = [];
+
+		const outcome = await runMergeWatch({
+			prNumber: 57,
+			mergedBranch: 'cam/branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([OPEN_BLOCKED_NO_ROLLUP, OPEN_BLOCKED_NO_ROLLUP, MERGED]),
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: (line) => notifications.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 10,
+		});
+
+		expect(outcome.kind).toBe('merged');
+		expect(notifications.some((n) => n.includes('CI red'))).toBe(false);
+	});
+
+	test('(b4) BLOCKED+StatusContext failure (state:FAILURE) -> ci-red', async () => {
+		// Legacy commit-status API: StatusContext with state=="FAILURE" is a real failure.
+		const notifications: string[] = [];
+
+		const statusContextFailed: PrStatus = {
+			state: 'OPEN',
+			mergeStateStatus: 'BLOCKED',
+			statusCheckRollup: [{ state: 'FAILURE' }],
+		};
+
+		const outcome = await runMergeWatch({
+			prNumber: 58,
+			mergedBranch: 'cam/branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([statusContextFailed]),
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: (line) => notifications.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 10,
+		});
+
+		expect(outcome.kind).toBe('ci-red');
+		expect(notifications.some((n) => n.includes('CI red') && n.includes('PR #58'))).toBe(true);
+	});
+
+	test('(b5) BLOCKED transitions: pending -> pending -> failed -> ci-red', async () => {
+		// Multiple BLOCKED polls with pending checks, then one with a failure.
+		const notifications: string[] = [];
+
+		const outcome = await runMergeWatch({
+			prNumber: 59,
+			mergedBranch: 'cam/branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([
+				OPEN_BLOCKED_PENDING,
+				OPEN_BLOCKED_PENDING,
+				OPEN_BLOCKED, // OPEN_BLOCKED has conclusion:FAILURE
+			]),
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: (line) => notifications.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 10,
+		});
+
+		expect(outcome.kind).toBe('ci-red');
 	});
 
 	test('(c) CLOSED -> narrates closed-not-merged + stops, post-merge NOT called', async () => {

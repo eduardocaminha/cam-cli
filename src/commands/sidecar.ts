@@ -317,11 +317,11 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 						// best-effort
 					}
 
-					// Injectable gh poll fn: calls gh pr view <N> --json state,mergeStateStatus.
+					// Injectable gh poll fn: calls gh pr view --json state,mergeStateStatus,statusCheckRollup.
 					const ghPollFn: GhPollFn = (prNumber): PrStatus | null => {
 						const result = spawnSync(
 							'gh',
-							['pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus'],
+							['pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,statusCheckRollup'],
 							{ encoding: 'utf8' },
 						);
 						if ((result.status ?? 1) !== 0) return null;
