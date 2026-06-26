@@ -50,7 +50,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/.claude/hooks/orch-agent-allowlist.sh, src/vendor/_generated.ts. The runtime and template hooks START byte-identical (verified); apply the EXACT US-001 change then run `bun run embed-vendor` to regenerate src/vendor/_generated.ts. The embed script (scripts/generate-embedded-vendor.ts) walks templates/ so the hook IS embedded. Canonical propagation rule of this project: both hook copies must always match. Gate parity with embed-vendor:check. Sequencing is by priority (do after US-001); requires is null (the source only honors the literal 'operator' for requires, anything else is inert for ordering)."
     },
