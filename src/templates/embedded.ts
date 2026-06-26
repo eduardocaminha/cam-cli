@@ -10,7 +10,7 @@
 // (`bun src/...`) but silently fails in the compiled binary. Embedding as
 // string constants is the only way to ship templates with a compiled CLI.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { templatesContents } from '../vendor/_generated.ts';
@@ -21,7 +21,7 @@ export { templatesContents };
  * Top-level subtrees the templates ship. Used to produce a per-target
  * file count for human-readable output.
  */
-const SUBTREES = ['commands', 'agents', 'scripts/cam'] as const;
+const SUBTREES = ['commands', 'agents', 'scripts/cam', '.claude'] as const;
 export type TemplateSubtree = (typeof SUBTREES)[number];
 
 /**
@@ -37,6 +37,9 @@ function targetPath(cwd: string, relPath: string): string {
 	}
 	if (relPath.startsWith('scripts/cam/')) {
 		return join(cwd, 'scripts', 'cam', relPath.slice('scripts/cam/'.length));
+	}
+	if (relPath.startsWith('.claude/')) {
+		return join(cwd, relPath);
 	}
 	return join(cwd, relPath);
 }
@@ -79,6 +82,7 @@ export function materializeTemplates(cwd: string): Record<TemplateSubtree, numbe
 		commands: 0,
 		agents: 0,
 		'scripts/cam': 0,
+		'.claude': 0,
 	};
 	for (const [relPath, contents] of Object.entries(templatesContents)) {
 		const dst = targetPath(cwd, relPath);
@@ -91,6 +95,12 @@ export function materializeTemplates(cwd: string): Record<TemplateSubtree, numbe
 			mergeGitignore(dst, contents);
 		} else {
 			writeFileSync(dst, contents, 'utf8');
+			// Hook scripts must be executable. writeFileSync does not carry the
+			// source mode, so we restore the owner-exec bit for anything under
+			// .claude/hooks/ after writing.
+			if (relPath.startsWith('.claude/hooks/')) {
+				chmodSync(dst, 0o755);
+			}
 		}
 		for (const subtree of SUBTREES) {
 			if (relPath.startsWith(`${subtree}/`)) {

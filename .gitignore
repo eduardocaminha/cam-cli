@@ -38,7 +38,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Project-local Claude Code files materialized by `cam next` (gitignored by convention)
 .claude/settings.local.json
-.claude/hooks/
+# hooks/ is versioned (orch-agent-allowlist.sh is a committed project hook, CAM-91)
 # Runtime orchestrator session-id marker written by `cam run` (US-002, CAM-21)
 .claude/.cam-orch-session
 # CAM-68: escaped harness runtime markers (orchestrator + setup + handoff + sidecar)

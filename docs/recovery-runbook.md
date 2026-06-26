@@ -1137,3 +1137,144 @@ Cross-reference: `src/supervisor/loop.ts` (notifyOrchestrator placement: post no
 `src/supervisor/worker-report.ts` (formatWorkerReportSummary, formatReviewVerdictLine),
 `src/supervisor/host.ts` (makeNotifyOrchestrator factory),
 `scripts/cam/patterns.md` (single-pusher invariant bullet, cam-next-is-pure-trigger bullet).
+
+## (q) CAM-91: orchestrator Task spawn denied by the agent-allowlist hook
+
+Symptom: the orchestrator's `/cam-plan` flow blocks mid-execution, or a Task spawn is
+denied with an error containing `permissionDecisionReason`. The orchestrator pane shows
+output similar to:
+
+```
+Subagent type "..." is not in the cam allowlist {subagent-planner, subagent-auditor}.
+For code work, dispatch the implementer worker via /cam-next instead.
+```
+
+Cause: the PreToolUse hook `.claude/hooks/orch-agent-allowlist.sh` (registered in
+`.claude/settings.json`) intercepts every `Task` and `Agent` tool call. It allows only
+two sanctioned plan-time subagent types: `subagent-planner` and `subagent-auditor`. Any
+other type (including an absent or empty type) is denied.
+
+### Background
+
+CAM-91 added `orch-agent-allowlist.sh` to prevent unsanctioned subagent spawns from
+inside the orchestrator. The orchestrator is a plan-and-route persona: code
+implementation runs in the sidecar-dispatched worker pane, not as a Task subagent
+inside the orchestrator conversation.
+
+The hook reads the spawned subagent type from three field paths (defensive read, in
+case the payload shape varies):
+
+1. `.tool_input.subagent_type` (primary field, Claude hooks spec)
+2. `.tool_input.agent_type` (alternate field observed in some payload shapes)
+3. `.agent_type` (top-level alternate)
+
+The first non-null, non-empty value wins. If all three are absent, the type is treated
+as empty string and is denied.
+
+The hook registration in `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Task|Agent",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/orch-agent-allowlist.sh" }]
+      }
+    ]
+  }
+}
+```
+
+### Diagnosing
+
+1. Confirm the hook is causing the block. The denied Task call returns a
+   `permissionDecisionReason` field in the tool result. Read it from the orchestrator
+   pane or from the Claude Code event log.
+
+2. Identify the subagent type that was denied:
+
+   - If the orchestrator tried to spawn an ad-hoc Task that is not plan-related, the
+     denial is expected behavior. Route the work to the worker pane via `/cam-next`
+     instead.
+   - If the orchestrator tried to spawn `subagent-planner` or `subagent-auditor` and
+     was still denied, the hook invocation itself may have failed (e.g. `jq` absent,
+     malformed `settings.json`, or the hook file is missing its executable bit):
+
+     ```bash
+     ls -la .claude/hooks/orch-agent-allowlist.sh   # should show -rwxr-xr-x
+     which jq                                        # must be on PATH
+     cat .claude/settings.json | jq .               # must parse cleanly
+     ```
+
+3. To trace what the hook receives, run a test payload by hand:
+
+   ```bash
+   # Expect: no output (allow)
+   echo '{"tool_input":{"subagent_type":"subagent-planner"}}' \
+     | bash .claude/hooks/orch-agent-allowlist.sh
+
+   # Expect: JSON deny payload on stdout
+   echo '{"tool_input":{"subagent_type":"unknown-type"}}' \
+     | bash .claude/hooks/orch-agent-allowlist.sh
+   ```
+
+### Manual override
+
+**Extending the allowlist with a new sanctioned subagent type:**
+
+When a new plan-time subagent is introduced, both copies of the hook must be updated
+(the runtime copy used by the current project and the template copy embedded at
+`cam init` time).
+
+1. Edit the `case` statement in each copy:
+
+   ```bash
+   # Runtime copy:          .claude/hooks/orch-agent-allowlist.sh
+   # Template copy:   templates/.claude/hooks/orch-agent-allowlist.sh
+   ```
+
+   Change the allowlist line. Example adding `subagent-shipper`:
+
+   ```bash
+   # Before:
+   subagent-planner|subagent-auditor)
+
+   # After:
+   subagent-planner|subagent-auditor|subagent-shipper)
+   ```
+
+2. Update the human-readable deny message (the `permissionDecisionReason` string) in
+   the same files to name the new member, so future diagnostics are accurate.
+
+3. Regenerate the embedded vendor file and verify:
+
+   ```bash
+   bun run embed-vendor
+   bun run embed-vendor:check
+   ```
+
+4. Run quality gates and commit:
+
+   ```bash
+   bun run typecheck
+   bun test
+   git add .claude/hooks/orch-agent-allowlist.sh \
+           templates/.claude/hooks/orch-agent-allowlist.sh \
+           src/vendor/_generated.ts
+   git commit -m "feat: extend agent allowlist with subagent-<name> (CAM-NNN)"
+   ```
+
+**Restoring the executable bit** (if the hook file loses its executable permission,
+e.g. after a `git checkout` or `cp` without mode preservation):
+
+```bash
+chmod +x .claude/hooks/orch-agent-allowlist.sh
+```
+
+Cross-reference: `.claude/hooks/orch-agent-allowlist.sh` (hook implementation),
+`.claude/settings.json` (hook registration),
+`templates/.claude/hooks/orch-agent-allowlist.sh` (template copy),
+`src/vendor/_generated.ts` (embedded copy),
+`scripts/cam/patterns.md` (PreToolUse deny contract + defensive subagent_type read
+bullet, Template hook executable-bit restoration bullet).
