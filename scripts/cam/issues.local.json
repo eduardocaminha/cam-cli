@@ -1,5 +1,5 @@
 {
-  "next_id": 93,
+  "next_id": 94,
   "issues": [
     {
       "id": "CAM-1",
@@ -772,6 +772,14 @@
       "createdAt": "2026-06-26T02:35:11.986Z",
       "description": "Follow-up advisory do review do CAM-78 (PR da branch cam/CAM-78-sidecar-sole-pusher). O US-003 ligou a narração do sidecar em ~9 call-sites do src/supervisor/loop.ts, cada um repetindo o bloco `{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }`. O reviewer sugeriu (SUGGESTION, nao-gating) extrair um helper privado (ex: narrateReport()) para legibilidade e single-source. Bonus: encolhe loop.ts e reverte a subida de teto file-size aplicada no ship do CAM-78. Arquivo: src/supervisor/loop.ts.",
       "priority": 3
+    },
+    {
+      "id": "CAM-93",
+      "title": "cam next: surface write-failure do active:true em vez de falso sucesso",
+      "state": "open",
+      "createdAt": "2026-06-26T02:35:14.263Z",
+      "description": "Follow-up advisory do review do CAM-78. Em src/commands/next.ts (~linha 306) o try/catch em volta do write de active:true engole erros de fs e o codigo entao imprime emitOk() + retorna 0 incondicionalmente. Apos o US-001 do CAM-78, esse write virou o UNICO efeito do hit path, entao uma falha silenciosa de escrita gera falso sucesso e o sidecar nunca dispara. Bloco e pre-existente, mas o CAM-78 aumentou a materialidade. Fix: no catch, emitir erro claro + exit nao-zero quando o write lanca. Arquivo: src/commands/next.ts.",
+      "priority": 2
     }
   ]
 }
