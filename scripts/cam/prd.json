@@ -16,6 +16,13 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/commands/setup.ts:68]: collectViaReadline still hangs in the real non-interactive path when more than one init option is undefined on a single stdin stream. The new rl.on('close') guard only fires for the FIRST readline interface; subsequent interfaces created on the already-ended stream never receive 'close' (node:readline docs: 'close' fires only when input RECEIVES its 'end' event, which a pre-ended stream does not re-emit). Reproduced: collectViaReadline({}, eofStream) hangs >4s. This contradicts US-001's description ('collectViaReadline never hangs') and the PRD goal ('Fix non-interactive cam init hang'). The build smoke is saved only because US-002 supplies every flag (early-return before readline). Mechanical 1-file fix: in ask(), short-circuit to defaultValue when input.readableEnded is already true (or resolve all remaining prompts to defaults after the first EOF)."
+    },
+    {
       "id": "US-001",
       "title": "Resolve ask()/askChoice() to a default on readline EOF/close",
       "description": "As a cam init caller running non-interactively (CI, piped, closed stdin), I need ask()/askChoice() to resolve to the supplied default when stdin reaches EOF so that collectViaReadline never hangs waiting on a line event that will never arrive.",
@@ -28,7 +35,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Root fix. File: src/commands/setup.ts. `ask` at ~line 68 (uses rl.question callback at :71); `askChoice` at ~line 78; both build a node:readline interface via createInterface({ input: process.stdin, output: process.stdout }) at :69. The callback API rl.question(cb) fires ONLY on a complete 'line' event; on EOF (piped /dev/null) the stream emits 'end' -> readline emits 'close' but the question callback NEVER fires, so the Promise never resolves -> infinite hang. Fix: register rl.on('close', ...) that resolves to the supplied default if not already answered. ask() currently takes no default and is module-private; the implementer must let ask() accept/return a default and make ask()/askChoice() reachable from a test (export them or inject a stdin stream) — testing strategy is the implementer's call. Match existing test conventions in test/setup-prompt.test.ts (bun:test, import from ../src/commands/setup.ts). Do not change the happy-path line-event path. Per project CLAUDE.md: keep changes surgical; success/failure UX is the print path here (readline), not Ink."
@@ -43,7 +50,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "File: scripts/build-release.sh line ~115. Current smoke: `\"${BIN_ABS}\" init --no-tmux --existing --issue-system none </dev/null`. Add `--merge-mode immediate` so needsMerge (setup.ts:105) is false and collectSetupAnswers (setup.ts:108) early-returns without any prompt. The --merge-mode flag is already parsed (setup.ts:664). Belt-and-suspenders alongside US-001. There is an existing build-release smoke guard test (test/build-release-smoke.test.ts) — re-check it does not assert the old flag list and update it only if it greps the smoke line. Per project convention the smoke must stay hermetic (see the CAM-15 / 2026-06-06 comment block at build-release.sh:100-109)."
@@ -60,7 +67,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "New test file (mirror test/setup-prompt.test.ts conventions: bun:test, import from ../src/commands/setup.ts). Do NOT spawn the binary: runSetup calls verifyAgent() at src/commands/setup.ts:517 and `return 1` at :521 BEFORE collectSetupAnswers at :525, and CI (.github/workflows, macos-latest) installs bun+tmux but NOT claude, so a binary-spawn approach never reaches the readline EOF path on CI (guard theater). Instead test the collection seam directly: drive collectViaReadline (or collectSetupAnswers with mergeMode undefined so needsMerge=true at setup.ts:105 forces the readline branch at :120) using a closed/EOF input stream. Testability seam: ask/askChoice (and collectViaReadline) should accept an optional input stream defaulting to process.stdin (the same injectable seam US-001 introduces); exact mechanism (export the collector vs. inject the stream) is the implementer's call, but the asserted EOF path MUST run on CI with no claude present. Default merge_mode is 'immediate' (src/config/models.ts:138 readMergeMode default). Keep distinct from US-001: US-001 proves the ask/askChoice primitives resolve on EOF; US-003 proves the integration (collection flow returns mergeMode='immediate' on EOF), the real path the smoke triggers. Depends on US-001 landing first."
@@ -77,7 +84,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "File: scripts/cam/patterns.md (append a bullet at the end, matching the existing `- **<title> (US-..., CAM-..., date)**: <body>` style). Tag it (US-004, CAM-104, 2026-06-26). Two points in one bullet: (1) new mandatory init answer => flag + smoke update; (2) readline must resolve on EOF to a default. Cross-reference the 2026-06-06 'build smoke nunca trava' lesson (the file's existing CAM-15/2026-06-06 lineage and lessons.md). HARD CONSTRAINT from CLAUDE.md global: no em-dashes (—) and no decorative emoji in this human-readable persisted .md; use colon/comma/parens/period instead."
@@ -90,10 +97,34 @@
         "Operator runs bun run build:release; the AC4 init smoke (the compiled binary invoked with init in a hermetic tmpdir) completes and exits without any manual SIGKILL. [oracle: reviewer-judgment]",
         "The overall build:release completes (vendor embed + compile + smoke) without the init step hanging. [oracle: reviewer-judgment]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": false,
       "requires": "operator",
       "notes": "Operator ceremony: slow compile (bun build --compile) + binary smoke + macOS codesign nuance (see global lessons 2026-06-06: ad-hoc re-sign of the compiled artifact). This is the live regression repro on the real binary — the thing that hung 12min. Cannot be verified by an autonomous worker (requires real toolchain + judgment that the smoke exited cleanly). Command: `bun run build:release` (package.json: generate-embedded-vendor then bash scripts/build-release.sh). Implementer for prior stories exits BLOCKED_OPERATOR_REQUIRED here."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/commands/setup.ts",
+        "line": 68,
+        "text": "collectViaReadline still hangs in the real non-interactive path when more than one init option is undefined on a single stdin stream. The new rl.on('close') guard only fires for the FIRST readline interface; subsequent interfaces created on the already-ended stream never receive 'close' (node:readline docs: 'close' fires only when input RECEIVES its 'end' event, which a pre-ended stream does not re-emit). Reproduced: collectViaReadline({}, eofStream) hangs >4s. This contradicts US-001's description ('collectViaReadline never hangs') and the PRD goal ('Fix non-interactive cam init hang'). The build smoke is saved only because US-002 supplies every flag (early-return before readline). Mechanical 1-file fix: in ask(), short-circuit to defaultValue when input.readableEnded is already true (or resolve all remaining prompts to defaults after the first EOF)."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/setup-collection-eof.test.ts",
+        "line": 42,
+        "text": "The US-003 integration test pre-fills projectMode+issueSystem and leaves only mergeMode undefined, exercising a single-prompt path. It deliberately sidesteps the multi-prompt single-stream hang (documented as a test-only gotcha in patterns.md), which masks the production gap. Add a test driving collectViaReadline({}, eofStream) with all options undefined to lock in the full non-interactive path."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/cam/patterns.md",
+        "text": "The 'Single-stream EOF reuse gotcha' bullet frames the multi-prompt hang as a test concern only; in production collectViaReadline shares one process.stdin across up to four sequential prompts, so the same hang is reachable via 'cam init </dev/null' with partial flags when claude is installed. Note the production reachability, not just the test workaround."
+      }
+    ]
+  }
 }

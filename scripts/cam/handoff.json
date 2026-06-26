@@ -1,21 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Document the non-interactive-init / readline-EOF pattern in patterns.md"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-104-init-merge-mode-eof",
-  "timestamp": "2026-06-26T23:30:00Z",
+  "timestamp": "2026-06-26T23:55:00Z",
   "createdFiles": [],
   "modifiedFiles": [
+    "src/commands/setup.ts",
+    "test/setup-readline-eof.test.ts",
+    "test/setup-collection-eof.test.ts",
     "scripts/cam/patterns.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 done: appended bullet to patterns.md documenting the two invariants (mandatory init answer must have CLI flag + smoke update; readline ask/askChoice must resolve to default on EOF). US-005 (operator smoke) remains.",
+  "nextStoryContext": "US-R1-001 done: added readableEnded short-circuit at top of ask() so collectViaReadline({}, eofStream) resolves immediately instead of hanging when the stream is already ended. All 1683 tests pass. No further stories remain in this PRD (all passes:true). Ready for /cam-review.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "node:readline",
+      "version": "Node 22 LTS (built-in)",
+      "url": "https://nodejs.org/api/readline.html#event-close",
+      "fetchedAt": "2026-06-26T23:55:00Z",
+      "status": "ok",
+      "summary": "Confirmed: 'close' fires when the input stream RECEIVES its 'end' event. A pre-ended stream has already emitted 'end' before the readline interface is attached, so 'close' never fires on subsequent interfaces. The readableEnded short-circuit is the correct production fix."
     }
   ]
 }
