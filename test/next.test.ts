@@ -249,6 +249,34 @@ describe('runNext (thin-proxy, hit path)', () => {
 		}
 	});
 
+	test('runNext writes active:true on the hit path', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-active-true-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+
+			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
+
+			const stateContent = readFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'utf8');
+			expect(stateContent).toContain('active: true');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('runNext pushes no task-prompt send-keys to the orchestrator pane', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-no-send-keys-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+
+			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
+
+			const sendKeysCall = spawnFn.calls.find((c) => c.args.includes('send-keys'));
+			expect(sendKeysCall).toBeUndefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test('returns 1 and does not send-keys when pane mutex is busy', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-next-busy-'));
 		try {
