@@ -54,7 +54,7 @@
       "id": "US-R1-004",
       "title": "Review round 1 fix 004: address reviewer finding",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [test/ship-args.test.ts]: US-003 AC-1 routing is untested: no test asserts parseShipArgs(['--bump']) returns {bump:true} nor that dispatchShip({finalize:false,bump:true},{bumpFn}) calls bumpFn, returns 0, and does NOT call runShip. The dispatchShip docstring claims it is 'Exported so unit tests can inject fakes for all branches' and the symmetric --finalize path has explicit 'never calls runShip' coverage, but the injectable bumpFn is exercised by zero tests. runShipBump itself is well covered; only the dispatch glue is uncovered."
     },
     {

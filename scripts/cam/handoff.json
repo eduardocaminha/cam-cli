@@ -1,15 +1,15 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-003",
-    "title": "Review round 1 fix 003: address reviewer finding"
+    "id": "US-R1-004",
+    "title": "Review round 1 fix 004: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/recovery-runbook.md",
+    "test/ship-args.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-003 was a pure doc fix: recovery runbook r.1 (line 1321) and r.4 (line 1381) used double quotes in the CAM_VERSION literal. Both were changed to single quotes to match the regex in ship-bump.ts (VERSION_TS_RE) and applyVersionToVersionTs in src/release/version.ts. No code changes.",
+  "nextStoryContext": "US-R1-004 was a pure test addition: added 5 new tests to test/ship-args.test.ts covering parseShipArgs(['--bump']) -> {bump:true} and dispatchShip({bump:true},{bumpFn}) calling bumpFn once, returning 0, never calling runShipFn (symmetric to the existing --finalize path coverage). Also added returns-1-when-bumpFn-throws test. No source code changes.",
   "officialDocsValidated": [
     {
       "lib": "none",
