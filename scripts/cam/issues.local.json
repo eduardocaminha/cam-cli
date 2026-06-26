@@ -1,5 +1,5 @@
 {
-  "next_id": 97,
+  "next_id": 98,
   "issues": [
     {
       "id": "CAM-1",
@@ -803,6 +803,14 @@
       "state": "open",
       "createdAt": "2026-06-26T09:05:14.692Z",
       "description": "O deny path do .claude/hooks/orch-agent-allowlist.sh constroi o JSON via jq -n sob set -e. Se jq estiver ausente, jq sai ~127 (non-2), que o Claude Code trata como erro nao-bloqueante e o Task spawn PROSSEGUE (fail-OPEN), bypassando o gate inteiro. O extraction read ja guarda com || echo vazio, mas a emissao do deny nao. jq e pre-condicao dura documentada (US-002 + runbook), dentro do envelope aceito, mas um deny gate idealmente falha FECHADO: emitir deny JSON estatico via printf quando jq indisponivel (ou exit 2). Origem: reviewer WARNING no CAM-91 (PR #74), triado nao-bloqueante 2 rounds.",
+      "priority": 3
+    },
+    {
+      "id": "CAM-97",
+      "title": "Capturar shape de payload PreToolUse real numa sessao cam-spawned (fixture S-4)",
+      "state": "open",
+      "createdAt": "2026-06-26T09:05:16.928Z",
+      "description": "A regressao test/orch-agent-allowlist.test.ts usa um shape de payload ASSUMIDO (tool_input.subagent_type) como o empirically-observed production shape (S-4), nao uma captura ao vivo verificada. A leitura defensiva tri-campo falha safe (misread nega, nunca falsa-permite, ja que a identidade subagent-orchestrator nao esta na allowlist), entao e bounded. Uma captura unica ao vivo de uma sessao cam-spawned do orquestrador converteria a premissa em fato verificado e travaria o shape real no fixture. Origem: reviewer SUGGESTION no CAM-91 (PR #74).",
       "priority": 3
     }
   ]
