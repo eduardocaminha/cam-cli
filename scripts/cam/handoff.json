@@ -1,20 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Add a recovery-runbook scenario for the orchestrator agent-allowlist hook"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-91-agent-allowlist-hook",
-  "timestamp": "2026-06-26T03:00:00Z",
+  "timestamp": "2026-06-26T04:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/recovery-runbook.md"
+    ".claude/settings.json",
+    "templates/.claude/settings.json",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 added scenario (q) CAM-91 to docs/recovery-runbook.md. The scenario covers: symptom (orchestrator plan flow blocked / Task spawn denied), cause (the PreToolUse allowlist hook .claude/hooks/orch-agent-allowlist.sh registered in .claude/settings.json), diagnosis (read permissionDecisionReason, test the hook by hand), and how to extend the allowlist when a new sanctioned subagent is added (edit both runtime and template copies, bump the case statement, regenerate embed-vendor). Allowlist members are subagent-planner and subagent-auditor. The scenario follows the existing ### Background / ### Diagnosing / ### Manual override structure. No code was changed in this story; typecheck and all 1392 tests remain green.",
+  "nextStoryContext": "US-R1-001 replaced the bare relative hook command path with the env-var absolute form: ${CLAUDE_PROJECT_DIR}/.claude/hooks/orch-agent-allowlist.sh in both .claude/settings.json and templates/.claude/settings.json. The embed-vendor was regenerated. Official Claude Code hooks docs confirm ${CLAUDE_PROJECT_DIR} is the correct placeholder for project-root-relative paths; hooks run in unpredictable CWDs so bare relative paths can silently fail-open. Both copies are now identical and byte-parity clean.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "claude-code-hooks",
+      "version": "current",
+      "url": "https://code.claude.com/docs/en/hooks",
+      "fetchedAt": "2026-06-26T04:00:00Z",
+      "status": "ok",
+      "summary": "Docs confirm ${CLAUDE_PROJECT_DIR} is the safe form for hook command paths; hooks run with unpredictable CWD, making bare relative paths unsafe. Fix matches official recommendation."
     }
   ]
 }
