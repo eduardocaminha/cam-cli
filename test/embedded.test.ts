@@ -350,6 +350,60 @@ describe('templatesContents — lastCompletedStory object shape in implementer p
 	});
 });
 
+describe('templatesContents — settings.json + hook key presence guard (US-004)', () => {
+	// A future regen must not silently drop the settings.json or the
+	// hook-script key. These assertions make the drop a hard test failure.
+
+	test('contains the .claude/settings.json key', () => {
+		expect(templatesContents['.claude/settings.json']).toBeDefined();
+		expect((templatesContents['.claude/settings.json'] ?? '').length).toBeGreaterThan(0);
+	});
+
+	test('contains the .claude/hooks/orch-agent-allowlist.sh key', () => {
+		expect(templatesContents['.claude/hooks/orch-agent-allowlist.sh']).toBeDefined();
+		expect((templatesContents['.claude/hooks/orch-agent-allowlist.sh'] ?? '').length).toBeGreaterThan(0);
+	});
+
+	test('.claude/settings.json content registers the orch-agent-allowlist.sh hook', () => {
+		const content = templatesContents['.claude/settings.json'] ?? '';
+		expect(content).toContain('orch-agent-allowlist.sh');
+		expect(content).toContain('PreToolUse');
+	});
+});
+
+describe('materializeTemplates — hook is executable after materialization (US-004)', () => {
+	// writeFileSync does not preserve the source mode bit. materializeTemplates
+	// must chmod +x any file under .claude/hooks/ so the hook is runnable by
+	// the Claude Code hooks runtime.
+
+	let cwd: string;
+
+	beforeEach(() => {
+		cwd = mkdtempSync(join(tmpdir(), 'cam-hook-exec-test-'));
+	});
+
+	afterEach(() => {
+		if (cwd && existsSync(cwd)) rmSync(cwd, { recursive: true, force: true });
+	});
+
+	test('materialized orch-agent-allowlist.sh has the owner-exec bit set', () => {
+		materializeTemplates(cwd);
+		const hookPath = join(cwd, '.claude', 'hooks', 'orch-agent-allowlist.sh');
+		expect(existsSync(hookPath)).toBe(true);
+		const mode = statSync(hookPath).mode;
+		// owner-exec bit = 0o100 (S_IXUSR)
+		expect(mode & 0o100).toBe(0o100);
+	});
+
+	test('materialized .claude/settings.json exists and contains the hook command', () => {
+		materializeTemplates(cwd);
+		const settingsPath = join(cwd, '.claude', 'settings.json');
+		expect(existsSync(settingsPath)).toBe(true);
+		const content = readFileSync(settingsPath, 'utf8');
+		expect(content).toContain('orch-agent-allowlist.sh');
+	});
+});
+
 describe('materializeEmbedded', () => {
 	let cacheDir: string;
 	let prevCache: string | undefined;
