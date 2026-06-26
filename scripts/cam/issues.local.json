@@ -852,10 +852,11 @@
     {
       "id": "CAM-102",
       "title": "Refino do allowlist hook (CAM-91): capacidade + escopo cam-managed + ancoragem issue",
-      "state": "open",
+      "state": "closed",
       "createdAt": "2026-06-26T16:45:13.299Z",
       "description": "Refino da CAM-91 (PR #74, mergeada). O PreToolUse hook orch-agent-allowlist.sh (matcher Task|Agent, em .claude/settings.json) hoje e default-deny por allowlist fixa de nomes {subagent-planner, subagent-auditor} e roda em TODA sessao Claude Code do projeto, bloqueando subagentes de pesquisa read-only (Explore, general-purpose) e sessoes interativas do dev. Tres mudancas. (1) Politica por CAPACIDADE: liberar subagentes read-only quanto a codigo-fonte (Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor, subagent-reviewer) e barrar os que escrevem codigo (general-purpose, claude, fork, subagent-implementer-via-Task) mais tipo ausente/desconhecido (default-deny preservado dentro do escopo). (2) ESCOPO so cam-managed: gate via env CAM_SESSION (presente em orchestrator/worker aplica a politica; ausente em sessao interativa faz exit 0 / allow). Validado empirico: sessao interativa tem CAM_SESSION unset (so TMUX + CLAUDECODE); orchestrator roda na tmux session taggeada (session.ts:349); workers herdam CAM_SESSION (o env -u em worker-argv.ts:72 stripa CLAUDECODE e amigos, nao CAM_SESSION). (3) ANCORAGEM implementer-so-de-issue/PRD: regra de fluxo no pre-flight do cam-next e/ou persona do subagent-orchestrator, separada do hook (recusar dispatch sem prd.json ancorado em issueNumber). Insight: o hook so intercepta spawn de subagente (Task|Agent), nunca Edit/Write direto da sessao. Propagacao obrigatoria: editar .claude/hooks/orch-agent-allowlist.sh E templates/.claude/hooks/orch-agent-allowlist.sh, re-embed (bun run embed-vendor + embed-vendor:check parity), estender test/orch-agent-allowlist.test.ts (CAM_SESSION unset -> allow tudo; set + Explore -> allow; set + general-purpose -> deny; set + ausente -> deny; set + subagent-planner -> allow), atualizar docs/recovery-runbook.md (mensagem do hook ~linha 1148). Considerar renomear/ajustar cabecalho do hook (nao e mais so allowlist nem so orch). Trade-off de seguranca do escopo cam-managed anotado na decisao. Detalhes completos na memoria decisao-agent-policy-refino-cam91.",
-      "priority": "P0"
+      "priority": "P0",
+      "closedAt": "2026-06-26T23:11:47.161Z"
     },
     {
       "id": "CAM-103",
