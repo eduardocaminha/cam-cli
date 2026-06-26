@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Stop cam next from injecting the worker task prompt; flip active:true only"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/next.ts",
+    "test/next.test.ts",
+    "test/supervisor/result.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 removed sendKeysWhenIdle, DEFAULT_TASK_PROMPT, capturePaneFn, idleTimeoutMs, and taskPrompt from src/commands/next.ts. The sidecar (host.ts:229) is now the sole holder of the worker prompt literal. The liveness precondition (hasSession + orchestratorAlive) and the paneCountMutex guard are preserved in next.ts. Test neutralizations: result.test.ts uses a literal prompt; next.test.ts drops the send-keys and DEFAULT_TASK_PROMPT assertions. No US-002 story was started.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
