@@ -19,7 +19,7 @@
 // US-003 (CAM-89).
 
 import type { SpawnSyncReturns } from 'node:child_process';
-import { rollChangelog } from './changelog.ts';
+import { generateReleaseBody, rollChangelog } from './changelog.ts';
 import { classifyBump } from './bump.ts';
 import {
 	applyVersionToPackageJson,
@@ -123,7 +123,9 @@ export function runShipBump(opts: ShipBumpOptions): ShipBumpResult {
 	opts.writePackageJson(applyVersionToPackageJson(opts.readPackageJson(), newVersion));
 
 	// Roll CHANGELOG.md: rename [Unreleased] to [X.Y.Z] - YYYY-MM-DD, insert fresh empty [Unreleased].
-	opts.writeChangelog(rollChangelog(opts.readChangelog(), newVersion, dateStr));
+	// The versioned section body is generated from classified commits (not the old hand-maintained body).
+	const releaseBody = generateReleaseBody(subjects);
+	opts.writeChangelog(rollChangelog(opts.readChangelog(), newVersion, dateStr, releaseBody));
 
 	// Stage and commit.
 	opts.spawnFn('git', ['add', 'src/version.ts', 'package.json', 'CHANGELOG.md'], { encoding: 'utf8' });

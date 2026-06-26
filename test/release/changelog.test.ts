@@ -1,18 +1,18 @@
 // test/release/changelog.test.ts
 //
-// Unit tests for rollChangelog (src/release/changelog.ts).
+// Unit tests for rollChangelog and generateReleaseBody (src/release/changelog.ts).
 //
 // Verifies: heading roll, body preservation, fresh [Unreleased] insertion,
-// and edge cases. The function is pure (no filesystem I/O), so no fakes needed.
+// generated-body routing (feat->Added, fix->Fixed), exclusions, empty-subsection
+// omission, and edge cases. Both functions are pure (no filesystem I/O).
 //
-// AC-1: export function rollChangelog exists.
-// AC-2: body preserved under rolled version heading (no lines dropped).
-// AC-3: pure -- takes strings, returns string (verified by design; no FS seams).
+// US-004 (CAM-89): rollChangelog -- heading roll, body preservation.
+// US-006 (CAM-89): generateReleaseBody -- AC-1, AC-2, AC-3.
 //
-// US-004 (CAM-89).
+// US-004 (CAM-89), US-006 (CAM-89).
 
 import { describe, expect, test } from 'bun:test';
-import { rollChangelog } from '../../src/release/changelog.ts';
+import { generateReleaseBody, rollChangelog } from '../../src/release/changelog.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -136,5 +136,189 @@ describe('rollChangelog - edge cases', () => {
 		const versionedIdx = result.indexOf('## [0.2.0] - 2026-06-26');
 		const between = result.slice(unreleasedIdx + '## [Unreleased]'.length, versionedIdx);
 		expect(between.trim()).toBe('');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: generateReleaseBody (AC-1, AC-2, AC-3 -- US-006)
+// ---------------------------------------------------------------------------
+
+describe('generateReleaseBody - routing (AC-1)', () => {
+	test('feat: subject appears under ### Added', () => {
+		const body = generateReleaseBody(['feat: add new command']);
+		expect(body).toContain('### Added');
+		expect(body).toContain('- add new command');
+	});
+
+	test('feat!: subject appears under ### Added', () => {
+		const body = generateReleaseBody(['feat!: drop legacy flag']);
+		expect(body).toContain('### Added');
+		expect(body).toContain('- drop legacy flag');
+	});
+
+	test('feat(scope): subject appears under ### Added', () => {
+		const body = generateReleaseBody(['feat(cli): add --json flag']);
+		expect(body).toContain('### Added');
+		expect(body).toContain('- add --json flag');
+	});
+
+	test('feat(scope)!: subject appears under ### Added', () => {
+		const body = generateReleaseBody(['feat(api)!: rename endpoint']);
+		expect(body).toContain('### Added');
+		expect(body).toContain('- rename endpoint');
+	});
+
+	test('fix: subject appears under ### Fixed', () => {
+		const body = generateReleaseBody(['fix: correct off-by-one']);
+		expect(body).toContain('### Fixed');
+		expect(body).toContain('- correct off-by-one');
+	});
+
+	test('fix!: subject appears under ### Fixed', () => {
+		const body = generateReleaseBody(['fix!: breaking fix for crash']);
+		expect(body).toContain('### Fixed');
+		expect(body).toContain('- breaking fix for crash');
+	});
+
+	test('fix(scope): subject appears under ### Fixed', () => {
+		const body = generateReleaseBody(['fix(ui): patch button color']);
+		expect(body).toContain('### Fixed');
+		expect(body).toContain('- patch button color');
+	});
+
+	test('multiple feat + fix subjects produce both subsections', () => {
+		const body = generateReleaseBody([
+			'feat: add alpha',
+			'fix: correct beta',
+			'feat(scope): add gamma',
+		]);
+		expect(body).toContain('### Added');
+		expect(body).toContain('- add alpha');
+		expect(body).toContain('- add gamma');
+		expect(body).toContain('### Fixed');
+		expect(body).toContain('- correct beta');
+	});
+
+	test('### Added appears before ### Fixed in output', () => {
+		const body = generateReleaseBody(['fix: fix bug', 'feat: add thing']);
+		const addedIdx = body.indexOf('### Added');
+		const fixedIdx = body.indexOf('### Fixed');
+		expect(addedIdx).toBeGreaterThanOrEqual(0);
+		expect(fixedIdx).toBeGreaterThan(addedIdx);
+	});
+
+	test('prefix is stripped: bullet reads as prose (no type:scope: remnant)', () => {
+		const body = generateReleaseBody(['feat(release): auto-generate changelog body']);
+		expect(body).toContain('- auto-generate changelog body');
+		expect(body).not.toContain('feat(release):');
+	});
+});
+
+describe('generateReleaseBody - exclusions (AC-2)', () => {
+	test('chore: subject is excluded', () => {
+		const body = generateReleaseBody(['chore(cam): mark US-004 done']);
+		expect(body).toBe('');
+	});
+
+	test('docs: subject is excluded', () => {
+		const body = generateReleaseBody(['docs: update README']);
+		expect(body).toBe('');
+	});
+
+	test('refactor: subject is excluded', () => {
+		const body = generateReleaseBody(['refactor: extract helper']);
+		expect(body).toBe('');
+	});
+
+	test('CAM-NN: free-text subject is excluded', () => {
+		const body = generateReleaseBody(['CAM-89: write initial PRD']);
+		expect(body).toBe('');
+	});
+
+	test('unrecognized free-text subject is excluded', () => {
+		const body = generateReleaseBody(['Initial commit']);
+		expect(body).toBe('');
+	});
+
+	test('mixed: only feat/fix subjects appear, chore excluded', () => {
+		const body = generateReleaseBody([
+			'chore(cam): mark done',
+			'feat: add ship bump step',
+			'docs: update README',
+			'fix: correct version regex',
+			'refactor: extract helper',
+		]);
+		expect(body).toContain('- add ship bump step');
+		expect(body).toContain('- correct version regex');
+		expect(body).not.toContain('chore');
+		expect(body).not.toContain('docs');
+		expect(body).not.toContain('refactor');
+	});
+});
+
+describe('generateReleaseBody - empty subsection omission (AC-3)', () => {
+	test('when no feat commits, ### Added is omitted', () => {
+		const body = generateReleaseBody(['fix: fix the thing']);
+		expect(body).not.toContain('### Added');
+		expect(body).toContain('### Fixed');
+	});
+
+	test('when no fix commits, ### Fixed is omitted', () => {
+		const body = generateReleaseBody(['feat: add the thing']);
+		expect(body).not.toContain('### Fixed');
+		expect(body).toContain('### Added');
+	});
+
+	test('empty subject list returns empty string', () => {
+		expect(generateReleaseBody([])).toBe('');
+	});
+
+	test('all-none subjects return empty string', () => {
+		const body = generateReleaseBody(['chore: cleanup', 'docs: update', 'refactor: extract']);
+		expect(body).toBe('');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: rollChangelog with releaseBody (AC-4 integration -- US-006)
+// ---------------------------------------------------------------------------
+
+describe('rollChangelog - with releaseBody (US-006)', () => {
+	test('generated body replaces hand-maintained body in versioned section', () => {
+		const releaseBody = generateReleaseBody(['feat: new command', 'fix: correct typo']);
+		const result = rollChangelog(BASIC_CHANGELOG, '0.2.0', '2026-06-26', releaseBody);
+		// Generated entries are present
+		expect(result).toContain('- new command');
+		expect(result).toContain('- correct typo');
+		// Hand-maintained entries from BASIC_CHANGELOG are NOT in the versioned section
+		expect(result).not.toContain('- Supervisor verifies each worker pass landed on origin.');
+		expect(result).not.toContain('- Retired the stop-hook loop driver.');
+	});
+
+	test('fresh [Unreleased] is empty above the versioned heading', () => {
+		const releaseBody = generateReleaseBody(['feat: add thing']);
+		const result = rollChangelog(BASIC_CHANGELOG, '0.2.0', '2026-06-26', releaseBody);
+		const unreleasedIdx = result.indexOf('## [Unreleased]');
+		const versionedIdx = result.indexOf('## [0.2.0] - 2026-06-26');
+		const between = result.slice(unreleasedIdx + '## [Unreleased]'.length, versionedIdx);
+		expect(between.trim()).toBe('');
+	});
+
+	test('prior versioned sections are preserved after the generated body', () => {
+		const withPrior = BASIC_CHANGELOG + '\n## [0.1.0] - 2026-01-01\n\n- prior item\n';
+		const releaseBody = generateReleaseBody(['fix: fix bug']);
+		const result = rollChangelog(withPrior, '0.2.0', '2026-06-26', releaseBody);
+		expect(result).toContain('## [0.1.0] - 2026-01-01');
+		expect(result).toContain('- prior item');
+	});
+
+	test('empty releaseBody (all chore) produces versioned heading with no subsections', () => {
+		const releaseBody = generateReleaseBody(['chore: only chore commits']);
+		expect(releaseBody).toBe('');
+		const result = rollChangelog(BASIC_CHANGELOG, '0.2.0', '2026-06-26', releaseBody);
+		const versionedIdx = result.indexOf('## [0.2.0] - 2026-06-26');
+		expect(versionedIdx).toBeGreaterThanOrEqual(0);
+		// Hand-maintained body is gone when releaseBody is provided (even empty)
+		expect(result).not.toContain('- Supervisor verifies each worker pass landed on origin.');
 	});
 });

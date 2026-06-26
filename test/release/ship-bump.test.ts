@@ -261,13 +261,17 @@ describe('runShipBump - CHANGELOG roll', () => {
 		expect(versionedIdx).toBeGreaterThan(unreleasedIdx);
 	});
 
-	test('existing body content is preserved under the versioned heading', () => {
+	test('versioned section body comes from commits, not old hand-maintained body (AC-4)', () => {
+		// sampleChangelog() contains hand-maintained "- New feature." / "- Some change."
+		// but the commits only have "feat: new thing" -- the generated body wins.
 		const { opts, written } = makeOpts(['feat: new thing']);
 		runShipBump(opts);
 		expect(written.changelog).toContain('### Added');
-		expect(written.changelog).toContain('- New feature.');
-		expect(written.changelog).toContain('### Changed');
-		expect(written.changelog).toContain('- Some change.');
+		expect(written.changelog).toContain('- new thing');
+		// Old hand-maintained entries must NOT appear in the versioned section
+		expect(written.changelog).not.toContain('- New feature.');
+		expect(written.changelog).not.toContain('- Some change.');
+		expect(written.changelog).not.toContain('### Changed');
 	});
 
 	test('date is extracted from clock ISO timestamp (YYYY-MM-DD slice)', () => {
