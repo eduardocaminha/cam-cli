@@ -10,6 +10,13 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [templates/commands/cam-next.md:31]: The cam next slash-command doc (templates/commands/cam-next.md and the mirror .claude/commands/cam-next.md) still describes cam next as injecting the task prompt into the orchestrator pane via atomic send-keys / sendKeysWhenIdle (Architecture section + dispatch-flow block). After US-001 this is factually wrong: cam next is now a pure active:true flip with no pane send-keys. The PRD scoped this out as a follow-up, but the command's own instruction file now contradicts shipped behavior (Doc Maintenance). Rewrite the Architecture/dispatch-flow section to describe the active:true sidecar trigger and regenerate the embedded copy if templates/commands is embedded."
+    },
+    {
       "id": "US-001",
       "title": "Stop cam next from injecting the worker task prompt; flip active:true only",
       "description": "As an operator, I need `cam next` to stop sending the worker task prompt into the orchestrator pane so that the sidecar's `[cam]` terminal-event narration is no longer glued to a vestigial task-prompt line.",
@@ -23,7 +30,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Core fix. File: src/commands/next.ts (runNext ~line 219-348). Remove the sendKeysWhenIdle({...}) call (~line 335) and the DEFAULT_TASK_PROMPT constant (~line 65) + its header-comment mention (~line 17). Remove the now-dead NextOptions fields: taskPrompt (~151), capturePaneFn (~185), idleTimeoutMs (~190), and the `import { sendKeysWhenIdle, type CapturePaneFn } from '../tmux/dispatch.ts'` (line 43). DO NOT remove sleepFn: it is still used by waitForOrchestrator on the miss/bootstrap path (line 254), verify with grep before deleting. Preserve: the hasSession+orchestratorAlive gate (~236), the paneCountMutex busy guard (~270), the getOrchPaneId pane-not-found guard (~278, keep as a precondition even though send-keys is gone), and the active:true write block (~288-328). Reword the stale header comments (lines ~3-13 and ~60-66) and the emitOk('Sent task prompt to orchestrator pane ...') message (~344) to describe the sidecar trigger. GOTCHA (grep-verified): DEFAULT_TASK_PROMPT is imported by BOTH test/next.test.ts AND test/supervisor/result.test.ts:1058-1062; removing the export breaks compilation of both, so this story MUST also (a) update test/supervisor/result.test.ts:1058-1062 to use a literal prompt string ('Implement the next user story from scripts/cam/prd.json per your AGENT.md.') instead of importing DEFAULT_TASK_PROMPT (the parseAnySentinel echo-regression stays valid because the SIDECAR at src/supervisor/host.ts:229 injects that prompt to the implementer worker); and (b) neutralize the obsolete assertions in test/next.test.ts that assert send-keys carries DEFAULT_TASK_PROMPT, so `bun test` stays green (the authoritative positive regression is US-002). Read patterns.md 25 (single-hub dispatch), 28 (idle-guarantee), 29 (sidecar-supervisor invariant), 77 (5-concern model). Do NOT touch templates/ or .claude/commands/cam-next.md here. No em-dash in persisted prose."
@@ -39,7 +46,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Depends on US-001 (the no-send-keys behavior must already exist). File: test/next.test.ts. The two oracle greps target NEW test titles that do not exist on the pre-change tree, so they are discriminating (F-02: the prior greps on 'cam-loop.local.md' and 'toBeUndefined' matched existing lines 184/196/199/220/252/324 and passed with or without the change). Reuse makeFakeTmuxSpawn (test/next.test.ts:41) and the capture-pane idle fake per patterns.md pattern 28 (answer capture-pane with '> ', handle list-panes formats #{@cam_label}, #{pane_index};#{pane_id}, #{pane_id} per pattern 27). Positive test: after `await runNext({ cwd: dir, tmuxSpawnFn: spawnFn })`, readFileSync(join(dir,'.claude','cam-loop.local.md')) contains 'active: true'. Negative test: spawnFn.calls.find(c => c.args.includes('send-keys')) is undefined on the hit path. Keep the existing miss-path / bootstrap-failure / mutex-busy / pane-not-found tests intact."
@@ -58,7 +65,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Option A / F-01: makes the single-pusher invariant TRUE before the docs (US-004) and guard (US-005) assert it. Self-hosting agent edit, declare it as such: edit BOTH .claude/agents/subagent-implementer.md (Step B at lines ~151-169 and the exit-sequence bullet at line ~185) AND the mirror templates/agents/subagent-implementer.md (Step B at ~149-165, bullet at ~181), then run `bun run embed-vendor` to regenerate src/vendor/_generated.ts and confirm with `bun run embed-vendor:check` (parity enforced by the templatesContents byte-parity test in test/embedded.test.ts; patterns.md pattern 32). After removal, rewrite the agent's exit sequence so the worker writes worker-report.json + prints the sentinel only (no send-keys); the report file is already the authoritative completion signal (patterns.md 77). SIDECAR WIRING (CRITICAL placement, re-audit F-01): do NOT insert the notify at src/supervisor/loop.ts:849 (`lastOutcome = outcome;`). That site sits BEFORE the CAM-36 no-progress guard (loop.ts:975-1012); an unconditional notify there would emit a SPURIOUS `[cam] US-XXX DONE` on every no-progress re-confirmation retry (a fresh DONE report whose story matches advisoryStoryId but is ALREADY passes:true, where the loop backs off and re-dispatches via the `continue` at ~1016 WITHOUT terminating), which is precisely the double/spurious narration CAM-78 must eliminate. Also the `report` binding at ~834 is local to the fileReader closure and is NOT in scope at 849. CORRECT placement: fire the notify ONLY on a GENUINE terminal advance, AFTER the no-progress determination. The discriminator is the existing `completedAlreadyPassing` check (loop.ts:976-978): a genuine pass advance is the `else { noProgressStreak = 0; }` branch (~1009-1011) or a PRD_COMPLETE (outcome.storyId === undefined, which skips the no-progress guard), PLUS the supervisor-finalize pass (~951-960) and the terminal-blocked returns (~916-922, ~995). Do NOT fire on no-progress / retry / incomplete intermediate outcomes. At each chosen insertion site, RE-READ the report via `const report = readWorkerReport?.();` and null-guard it (`if (report) opts.notifyOrchestrator?.(formatWorkerReportSummary(report));`) before calling formatWorkerReportSummary, the fileReader-closure `report` is out of scope there. Import formatWorkerReportSummary from ./worker-report.ts (loop.ts already imports formatReviewVerdictLine from there). Net result: EXACTLY ONE narration per terminal event (worker self-push removed in this same story; sidecar emits once on genuine advance, zero on retry). The makeNotifyOrchestrator seam in src/supervisor/host.ts is already wired into opts.notifyOrchestrator (no host.ts change needed beyond confirming the seam carries the implementer line too). formatWorkerReportSummary (src/supervisor/worker-report.ts:46) currently has ZERO production callers; this story gives it its production caller. UNIT TESTS (re-audit F-02, discriminating for the spurious-emit class) in test/supervisor/loop.test.ts, mirror the existing review-verdict notify test: inject a notifyOrchestrator capture array. Test 1 (genuine advance): fresh DONE report whose story is NOT yet passes:true in prd; assert the capture has exactly one '[cam] <story> DONE: ...' line. Test 2 (no-progress retry, the discriminator): prd already has the reported story passes:true + a fresh DONE report (drives the completedAlreadyPassing branch under MAX_NO_PROGRESS_RETRIES so the loop backs off and re-dispatches); assert notifyOrchestrator was called ZERO times on that retry. Test 2 FAILS against the defective line-849 placement and PASSES only with the post-no-progress-guard placement. Touched files: .claude/agents/subagent-implementer.md, templates/agents/subagent-implementer.md, src/vendor/_generated.ts, src/supervisor/loop.ts, test/supervisor/loop.test.ts (confirm src/supervisor/host.ts + src/supervisor/worker-report.ts need no change). Reference patterns.md 56/57 (makeNotifyOrchestrator + verdict format) and 77 (single-source outcome / 5-concern model)."
@@ -75,7 +82,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Depends on US-001 + US-003 (documents the shipped invariant once it is true). Files: scripts/cam/patterns.md (pattern 28 'idle-guarantee before send-keys' line ~28 and pattern 29 'sidecar-supervisor invariant' line ~29) and docs/recovery-runbook.md (canonical runtime files table line ~12; section (o) single-source outcome at line ~976 is the natural neighbor for the single-pusher note). Correct pattern 28: `cam next` is the exception, it flips active:true (the real sidecar trigger) and does NOT push to the orchestrator pane; the other thin-proxies still inject SLASH COMMANDS. State the migrated truth: the implementer worker no longer self-pushes its `[cam]` line, the sidecar emits it via notifyOrchestrator(formatWorkerReportSummary(report)) on worker-report detection, exactly once per terminal event, the same seam used for the review verdict (CAM-70). Add the glued-double-push diagnostic to the runbook: orchestrator pane showing 'Implement the next user story... [cam] US-XXX DONE' glued together meant the vestigial task prompt landed adjacent to the sidecar narration (fixed by US-001+US-003). PROJECT RULE: no em-dash in persisted .md (use colon, comma, parens, period, or cut). Out of scope here (flag as follow-up, do not edit): the templates/commands/cam-next.md command template still describes the old task-prompt injection; it was not in the approved scope and is separate from the implementer agent edited in US-003."
@@ -92,7 +99,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Depends on US-003 (the agent copies are clean and the sidecar owns the implementer narration by now). New file: test/single-pusher-guard.test.ts. F-03: oracles 1 and 2 are STANDING-INVARIANT REGRESSION GUARDS (they pass on the post-migration tree), the DISCRIMINATING proof is the new test file via `bun test`. GOTCHA: do NOT oracle on a bare `grep -rn '[cam]' src/commands`, src/commands/claude.ts:116 has a benign `[cam] <validationError>` stderr message in the cam claude retry wrapper that is NOT a pane narration and would be a false positive; scope the negative grep to the narration builder/emitter symbols (oracle 1). The builders live in src/supervisor/worker-report.ts (buildWorkerReportSendKeysArgv, formatWorkerReportSummary, formatReviewVerdictLine); the emitter factory is makeNotifyOrchestrator in src/supervisor/host.ts:193. Unit test: build a recording fake TmuxSpawnFn (SpawnSyncReturns shape, like makeFakeTmuxSpawn in test/next.test.ts) where list-panes -F '#{pane_index};#{pane_id}' resolves the orch pane; call makeNotifyOrchestrator('cam-<session>', fakeSpawn)('[cam] US-001 DONE: typecheck ok, 1 pass / 0 fail') and assert exactly one send-keys call lands the line + Enter on the orch pane (no -l). Reference patterns 56/57 and 77. This is the zero-double-push guard, NOT CAM-63."
@@ -107,10 +114,41 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": false,
       "requires": "operator",
       "notes": "Operator ceremony: requires a live tmux session, a post-merge rebuild+reinstall of the cam binary (build-release.sh --install, or `bun index.ts` to run from source per memory dogfood-stale-path-binary), and visual inspection of the orchestrator pane (capture-pane -p reads the live state, with lag). The implementer agent must NOT attempt this; it exits BLOCKED_OPERATOR_REQUIRED and the loop falls through. Objective pass signal: in the orchestrator pane the task-prompt string 'Implement the next user story from scripts/cam/prd.json' no longer appears adjacent to a '[cam] US-XXX DONE' line, and the `[cam]` narration appears exactly once and is emitted by the sidecar (US-003 migration), not the worker. Coherence gotcha (memory loop-binary-branch-coherence): the running sidecar binary AND the materialized .claude/agents/subagent-implementer.md must both encarnate the merged US-001+US-003 change, so rebuild+reinstall (or rebase) and re-run `cam init` (or confirm the .claude/agents mirror) before observing."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "templates/commands/cam-next.md",
+        "line": 31,
+        "text": "The cam next slash-command doc (templates/commands/cam-next.md and the mirror .claude/commands/cam-next.md) still describes cam next as injecting the task prompt into the orchestrator pane via atomic send-keys / sendKeysWhenIdle (Architecture section + dispatch-flow block). After US-001 this is factually wrong: cam next is now a pure active:true flip with no pane send-keys. The PRD scoped this out as a follow-up, but the command's own instruction file now contradicts shipped behavior (Doc Maintenance). Rewrite the Architecture/dispatch-flow section to describe the active:true sidecar trigger and regenerate the embedded copy if templates/commands is embedded."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/next.ts",
+        "line": 305,
+        "text": "The try/catch around the active:true write swallows fs errors and the code then unconditionally prints emitOk('Sidecar trigger written (active:true)...') and returns 0. The write is now the SOLE effect of the hit path, so a silent write failure yields a false success and the sidecar is never triggered. Block is pre-existing, but the reframing makes a swallowed failure materially misleading; consider surfacing a non-zero exit + clear error when the write throws."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/loop.ts",
+        "line": 922,
+        "text": "On terminal-blocked notify sites (push-verification fail, finalize fail, etc.) the narrated summary uses the worker's self-reported outcome (e.g. DONE) from worker-report.json, which can contradict the supervisor's block decision. This is spec-conformant (the PRD lists terminal-blocked as a notify case) and matches the prior worker self-push, so non-blocking, but the orchestrator pane may show '[cam] US-XXX DONE' on a story the supervisor actually blocked."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "README.md",
+        "line": 11,
+        "text": "README lines 11/163/254/284 still lump cam next with the send-keys slash-command injectors, internally inconsistent with lines 131/294 which already describe it as the active:true sidecar trigger. Pre-existing (README untouched by this PR), but worth folding into the same cam-next doc-sync follow-up."
+      }
+    ]
+  }
 }

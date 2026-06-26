@@ -1,18 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Guard test: the sidecar is the sole emitter of `[cam]` narration"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
-  "createdFiles": [
-    "test/single-pusher-guard.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
+    "templates/commands/cam-next.md",
+    ".claude/commands/cam-next.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
-  "openQuestions": [
-    "templates/commands/cam-next.md still describes the old task-prompt injection behavior. This was explicitly out of scope for US-004 per the story notes; file a follow-up to update it."
-  ],
-  "nextStoryContext": "US-005 added test/single-pusher-guard.test.ts (4 tests, 23 expects) asserting makeNotifyOrchestrator is the SOLE emitter of [cam] narration lines. Both standing regression guards (oracle 1: no narration builders in src/commands; oracle 2: no send-keys in subagent-implementer.md) confirmed passing. All 1376 tests pass, typecheck clean. The sidecar-sole-pusher branch is complete: US-001 through US-005 all pass.",
+  "openQuestions": [],
+  "nextStoryContext": "US-R1-001 fixed the stale doc in templates/commands/cam-next.md and .claude/commands/cam-next.md: Architecture/dispatch-flow section now describes the active:true sidecar trigger instead of the old send-keys task-prompt injection; Worker exit contract section updated (worker writes report file only, sidecar pushes notifyOrchestrator narration); IMPORTANT footer corrected. Embedded copy regenerated via bun run embed-vendor. All 1376 tests pass, typecheck clean.",
   "officialDocsValidated": [
     {
       "lib": "none",
