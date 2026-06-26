@@ -4,6 +4,29 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.5.0] - 2026-06-26
+
+### Added
+
+- [US-R3-002] - address reviewer finding: extract helpers to remove grandfather lint overrides
+- [US-R3-001] - address reviewer finding: raise file-size ceilings and grandfather lint overrides
+- [US-008] - Structured merge-watch observability events
+- [US-007] - Sidecar merge-watch state: poll PR for MERGED then run post-merge + narrate
+- [US-006] - Deterministic post-merge invocable (pull origin main + tag-on-main + prune local/remote)
+- [US-005] - cam-ship.md ci-gated branching: hand off after auto-merge, skip inline post-merge
+- [US-004] - cam config merge_mode change + branch-protection setup
+- [US-003] - cam init merge_mode selector + branch-protection setup on ci-gated
+- [US-002] - Branch-protection helper module (gh api PUT/GET, configure + verify + verify-and-warn fallback)
+- [US-001] - Add [ship] merge_mode config schema + typed read accessor
+
+### Fixed
+
+- [US-R1-005] - correct ci-gated post-merge claim in cam-ship.md
+- [US-R1-004] - wire logEvent into runMergeWatch production call in sidecar.ts
+- [US-R1-003] - distinguish BLOCKED+pending from BLOCKED+failed in merge-watch
+- [US-R1-002] - checkout main before pull in runPostMerge
+- [US-R1-001] - write .cam-merge-watch.json in ci-gated ship step
+
 ## [0.4.0] - 2026-06-26
 
 ### Added

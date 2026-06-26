@@ -35,8 +35,10 @@ import { render } from 'ink';
 import { createElement } from 'react';
 
 import { mergeIntoConfig } from '../config/toml.ts';
-import { DEFAULTS } from '../config/models.ts';
+import { DEFAULTS, type MergeMode } from '../config/models.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
+import { applyMergeMode } from './setup-merge-mode.ts';
+import type { SpawnFn as BpSpawnFn } from '../release/branch-protection.ts';
 import { printAutomergeNotice } from '../logging/notices.ts';
 import { materializeTemplates } from '../templates/embedded.ts';
 import { buildOrchestratorBootPrompt } from './run.ts';
@@ -53,6 +55,7 @@ export type IssueSystem = 'linear' | 'github' | 'none';
 export interface SetupOptions {
 	projectMode?: ProjectMode;
 	issueSystem?: IssueSystem;
+	mergeMode?: MergeMode;
 	description?: string;
 	noTmux?: boolean;
 	cwd?: string;
@@ -99,12 +102,14 @@ async function collectSetupAnswers(options: SetupOptions): Promise<SetupAnswers 
 	// If every answer came from CLI flags, skip prompting entirely.
 	const needsMode = options.projectMode === undefined;
 	const needsIssue = options.issueSystem === undefined;
+	const needsMerge = options.mergeMode === undefined;
 	const needsDesc =
 		options.projectMode === 'new' && options.description === undefined;
-	if (!needsMode && !needsIssue && !needsDesc) {
+	if (!needsMode && !needsIssue && !needsMerge && !needsDesc) {
 		return {
 			projectMode: options.projectMode!,
 			issueSystem: options.issueSystem!,
+			mergeMode: options.mergeMode!,
 			description: options.description ?? '',
 		};
 	}
@@ -130,17 +135,25 @@ async function collectViaReadline(options: SetupOptions): Promise<SetupAnswers> 
 			['linear', 'github', 'none'] as const,
 			'none',
 		));
+	const mergeMode =
+		options.mergeMode ??
+		(await askChoice(
+			'Merge mode for cam ship',
+			['immediate', 'ci-gated'] as const,
+			'immediate',
+		));
 	let description = options.description ?? '';
 	if (projectMode === 'new' && description === '') {
 		description = await ask('What is this project about? (free-form): ');
 	}
-	return { projectMode, issueSystem, description };
+	return { projectMode, issueSystem, mergeMode, description };
 }
 
 function collectViaInk(options: SetupOptions): Promise<SetupAnswers | null> {
 	const prefilled: Partial<SetupAnswers> = {};
 	if (options.projectMode !== undefined) prefilled.projectMode = options.projectMode;
 	if (options.issueSystem !== undefined) prefilled.issueSystem = options.issueSystem;
+	if (options.mergeMode !== undefined) prefilled.mergeMode = options.mergeMode;
 	if (options.description !== undefined) prefilled.description = options.description;
 
 	return new Promise((resolve) => {
@@ -514,7 +527,7 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 		printWarning('Setup cancelled');
 		return 1;
 	}
-	const { projectMode, issueSystem, description } = answers;
+	const { projectMode, issueSystem, mergeMode, description } = answers;
 
 	// Blank line to separate the Ink screen's rendered output from the linear
 	// CLI prints that follow. Without this, the first hint/success line glues
@@ -529,6 +542,7 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 		printSuccess(`Project mode: ${projectMode}`);
 		printSuccess(`claude found at ${agentResult.path}`);
 		printSuccess(`Issue system: ${issueSystem}`);
+		printSuccess(`Merge mode: ${mergeMode}`);
 	}
 	if (issueSystem === 'linear') {
 		printHint('Set LINEAR_API_KEY in your shell (get one at https://linear.app/settings/api)');
@@ -553,12 +567,25 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 				ship: DEFAULTS.ship,
 			},
 			backend: { name: 'claude' },
+			ship: { merge_mode: mergeMode },
 		});
 		printSuccess(`Wrote ${projectToml.replace(cwd + '/', '')}`);
 	} catch (err) {
 		printWarning(
 			`Could not write scripts/cam/project.toml: ${err instanceof Error ? err.message : String(err)}`,
 		);
+	}
+
+	// When ci-gated: configure branch protection via the US-002 helper.
+	if (mergeMode === 'ci-gated') {
+		const productionSpawnFn: BpSpawnFn = (cmd, args, opts) => spawnSync(cmd, args, opts);
+		applyMergeMode({
+			mergeMode,
+			spawnFn: productionSpawnFn,
+			emitHint: printHint,
+			emitWarning: printWarning,
+			emitResult: (msg) => printSuccess(msg),
+		});
 	}
 
 	if (projectMode === 'new' && description === '') {
@@ -599,12 +626,14 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 export interface ParsedSetupArgs {
 	projectMode?: ProjectMode;
 	issueSystem?: IssueSystem;
+	mergeMode?: MergeMode;
 	description?: string;
 	noTmux: boolean;
 	help: boolean;
 }
 
 const ISSUE_SYSTEMS: readonly IssueSystem[] = ['linear', 'github', 'none'];
+const MERGE_MODES: readonly MergeMode[] = ['immediate', 'ci-gated'];
 
 export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 	const result: ParsedSetupArgs = { noTmux: false, help: false };
@@ -630,6 +659,24 @@ export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 				return null;
 			}
 			result.issueSystem = val as IssueSystem;
+			continue;
+		}
+		if (arg === '--merge-mode') {
+			const next = args[++i];
+			if (!next || !(MERGE_MODES as readonly string[]).includes(next)) {
+				printError('--merge-mode requires: immediate | ci-gated');
+				return null;
+			}
+			result.mergeMode = next as MergeMode;
+			continue;
+		}
+		if (arg.startsWith('--merge-mode=')) {
+			const val = arg.slice('--merge-mode='.length);
+			if (!(MERGE_MODES as readonly string[]).includes(val)) {
+				printError(`--merge-mode must be immediate or ci-gated — got ${val}`);
+				return null;
+			}
+			result.mergeMode = val as MergeMode;
 			continue;
 		}
 		if (arg === '--description') {

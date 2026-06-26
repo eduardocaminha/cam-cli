@@ -22,7 +22,7 @@ import { colors } from './theme.ts';
 import { Section } from './Section.tsx';
 import { Select, type SelectOption } from './Select.tsx';
 import { DEFAULTS } from '../config/models.ts';
-import type { Phase } from '../config/models.ts';
+import type { Phase, MergeMode } from '../config/models.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,9 +31,10 @@ import type { Phase } from '../config/models.ts';
 export type ConfigChoices = {
 	models: Record<Phase, string>;
 	backend: string;
+	mergeMode?: MergeMode;
 };
 
-type WizardStep = Phase | 'backend' | 'done';
+type WizardStep = Phase | 'backend' | 'merge-mode' | 'done';
 
 // ---------------------------------------------------------------------------
 // Static data
@@ -69,6 +70,11 @@ const BACKEND_OPTIONS: readonly SelectOption<string>[] = [
 	{ value: 'codex', label: 'codex', description: 'wired in CAM-54' },
 ];
 
+const MERGE_MODE_OPTIONS: readonly SelectOption<MergeMode>[] = [
+	{ value: 'immediate', label: 'Immediate (default)', description: 'Merge PR as soon as it is created' },
+	{ value: 'ci-gated', label: 'CI-gated', description: 'Wait for CI to pass before merging' },
+];
+
 // ---------------------------------------------------------------------------
 // ConfigScreen component
 // ---------------------------------------------------------------------------
@@ -82,8 +88,9 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 	const [stepIdx, setStepIdx] = useState(0);
 	const [models, setModels] = useState<Partial<Record<Phase, string>>>({});
 	const [backend, setBackend] = useState<string | undefined>(undefined);
+	const [mergeMode, setMergeMode] = useState<MergeMode | undefined>(undefined);
 
-	const allSteps: readonly WizardStep[] = [...PHASE_STEPS, 'backend', 'done'];
+	const allSteps: readonly WizardStep[] = [...PHASE_STEPS, 'backend', 'merge-mode', 'done'];
 	const currentStep: WizardStep = allSteps[stepIdx] ?? 'done';
 
 	// After every choice is made the currentStep becomes 'done'. Fire onDone
@@ -94,11 +101,12 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 			PHASE_STEPS.map((p) => [p, models[p] ?? DEFAULTS[p]]),
 		) as Record<Phase, string>;
 		const chosenBackend = backend ?? DEFAULTS.backend;
+		const chosenMergeMode = mergeMode ?? 'immediate';
 		const id = setTimeout(() => {
-			onDone({ models: allModels, backend: chosenBackend });
+			onDone({ models: allModels, backend: chosenBackend, mergeMode: chosenMergeMode });
 		}, 0);
 		return () => clearTimeout(id);
-	}, [currentStep, models, backend, onDone]);
+	}, [currentStep, models, backend, mergeMode, onDone]);
 
 	function handlePhaseSelect(phase: Phase, value: string): void {
 		setModels((m) => ({ ...m, [phase]: value }));
@@ -107,6 +115,11 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 
 	function handleBackendSelect(value: string): void {
 		setBackend(value);
+		setStepIdx((i) => i + 1);
+	}
+
+	function handleMergeModeSelect(value: MergeMode): void {
+		setMergeMode(value);
 		setStepIdx((i) => i + 1);
 	}
 
@@ -158,6 +171,22 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 				</Section>
 			) : null}
 
+			{stepIdx >= PHASE_STEPS.length + 1 ? (
+				<Section heading="Merge mode">
+					{currentStep === 'merge-mode' ? (
+						<Select
+							question="How should cam ship merge pull requests?"
+							options={MERGE_MODE_OPTIONS}
+							defaultValue="immediate"
+							onChange={handleMergeModeSelect}
+							onCancel={onCancel}
+						/>
+					) : mergeMode !== undefined ? (
+						<ConfirmedChoice label={mergeModeLabel(mergeMode)} />
+					) : null}
+				</Section>
+			) : null}
+
 			{currentStep === 'done' ? (
 				<Section heading="Saved" tone="accent">
 					<Box flexDirection="row">
@@ -181,4 +210,8 @@ function ConfirmedChoice({ label }: { label: string }): ReactElement {
 			<Text>{label}</Text>
 		</Box>
 	);
+}
+
+function mergeModeLabel(mode: MergeMode): string {
+	return mode === 'ci-gated' ? 'CI-gated' : 'Immediate (default)';
 }

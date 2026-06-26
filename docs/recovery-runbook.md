@@ -1452,3 +1452,167 @@ The two required settings are:
 Cross-reference: `.claude/commands/cam-ship.md` Step 7 (the best-effort
 auto-merge call and hint), `scripts/cam/patterns.md` (gh pr merge --auto
 best-effort pattern bullet).
+
+## (t) CAM-101: ci-gated merge mode -- stuck CI or sidecar merge-watch stall
+
+Symptom: the project is configured for `merge_mode = "ci-gated"` in
+`scripts/cam/project.toml`. The PR was created and auto-merge was enabled, but
+the pull request remains open: the sidecar is polling in merge-watch mode and
+nothing is progressing. The orchestrator pane may show a narration line like:
+
+```
+[cam] CI red, PR #N open, not merged
+```
+
+or the merge-watch worker started silently and no narration appeared at all.
+
+### Background: ci-gated merge mode
+
+When `merge_mode = "ci-gated"`, the sidecar does not merge immediately after
+creating the PR. Instead it starts a merge-watch poll loop (via
+`runMergeWatch` in `src/release/merge-watch.ts`). The loop calls `gh pr view <N>
+--json state,mergeStateStatus,statusCheckRollup` on a timer and handles these
+outcomes:
+
+| GitHub state | mergeStateStatus | statusCheckRollup | Sidecar action |
+|---|---|---|---|
+| MERGED | (any) | (any) | run post-merge (pull origin main, tag, prune), narrate `merge-watch-merged` |
+| OPEN | BLOCKED | has a failed check | narrate `merge-watch-ci-red` (reason: blocked), stop |
+| OPEN | BLOCKED | all pending / no failed check | keep polling (CI still in progress) |
+| CLOSED | (any) | (any) | narrate `merge-watch-ci-red` (reason: closed), stop |
+| (any) | (timeout) | (any) | narrate timeout, stop |
+
+Non-terminal states (OPEN + CLEAN / BEHIND / CONFLICTING / DRAFT / UNKNOWN)
+keep polling silently.
+
+**Key distinction:** GitHub reports `mergeStateStatus == "BLOCKED"` for any
+unmet merge condition, including required checks that are still pending or
+in-progress. The sidecar only treats BLOCKED as a terminal CI failure when
+`statusCheckRollup` contains at least one check with a conclusively failed
+conclusion (`FAILURE`, `CANCELLED`, `TIMED_OUT`, `ACTION_REQUIRED`,
+`STARTUP_FAILURE`) or a failed status-context state (`FAILURE`, `ERROR`). An
+absent or all-pending rollup means CI is still running: the loop keeps polling.
+
+The structured events emitted to `.claude/cam-worker-events.jsonl` during a
+merge-watch run are: `merge-watch-watching` (loop start),
+`merge-watch-merged` (on MERGED), `merge-watch-ci-red` (on BLOCKED or CLOSED
+PR), and `merge-watch-post-merge-done` (after post-merge completes).
+
+### Diagnosing a stuck merge-watch
+
+1. Check whether the merge-watch marker is present (it is removed before the
+   loop starts to prevent re-entry):
+
+   ```bash
+   cat .claude/.cam-merge-watch.json 2>/dev/null || echo "(absent -- loop started or never wrote)"
+   ```
+
+2. Inspect recent events to see which state the loop last emitted:
+
+   ```bash
+   grep 'merge-watch' .claude/cam-worker-events.jsonl | tail -10
+   ```
+
+3. Check the current PR state directly:
+
+   ```bash
+   gh pr view --json number,state,mergeStateStatus,statusCheckRollup
+   ```
+
+4. Check the sidecar log for merge-watch output:
+
+   ```bash
+   tail -n 80 .claude/cam-supervisor.log | grep -i 'merge'
+   ```
+
+### Recovery: CI is red (BLOCKED)
+
+The sidecar stops the merge-watch loop when it detects `mergeStateStatus ==
+BLOCKED` AND `statusCheckRollup` contains at least one conclusively failed
+check (conclusion in `FAILURE`, `CANCELLED`, `TIMED_OUT`, `ACTION_REQUIRED`,
+`STARTUP_FAILURE` for CheckRun, or state `FAILURE` / `ERROR` for a legacy
+StatusContext). If checks are still pending the loop keeps polling; you will
+only see the narration `[cam] CI red, PR #N open, not merged` after a check
+has definitively failed. The PR stays open. Steps to unblock:
+
+1. Identify the failing CI job:
+
+   ```bash
+   gh pr checks
+   ```
+
+2. Fix the underlying issue, push a fixup commit to the feature branch, and
+   wait for CI to turn green:
+
+   ```bash
+   git push origin $(git branch --show-current)
+   ```
+
+3. Once CI is green, GitHub auto-merge (enabled by `cam ship`) will merge
+   the PR automatically. After the merge the post-merge step runs the next time
+   `cam sidecar` idles: `git pull origin main`, version tag, and branch prune.
+
+   If the sidecar is no longer running (it stopped after the BLOCKED narration),
+   restart it and re-arm:
+
+   ```bash
+   cam stop
+   cam resume
+   ```
+
+4. To merge immediately without waiting for the sidecar (if CI just went green
+   and the PR has not auto-merged yet):
+
+   ```bash
+   gh pr merge --squash <PR#>
+   ```
+
+   Then run post-merge by hand (see scenario r.2 for tag flow).
+
+### Recovery: branch-protection verify+warn fallback (no admin access)
+
+CAM-101 includes a `configureBranchProtection` step in the ci-gated setup flow.
+It attempts to PUT the branch-protection rule via the GitHub API and then
+verifies it with a GET. When the PUT returns 403 (caller lacks admin
+permissions), the helper falls back to verify+warn mode: it checks whether
+branch protection is already configured (by reading the GET response) and emits
+a warning hint rather than aborting.
+
+Symptom: during `cam config` or the ci-gated setup step the terminal prints a
+warning similar to:
+
+```
+Warning: could not configure branch protection via API (403 -- admin required).
+Hint: go to Settings > Branches > Add rule, set branch 'main', and require
+the 'ci' status check before merging.
+```
+
+Recovery (manual branch-protection setup):
+
+1. Open the repository on GitHub: Settings > Branches > Add rule.
+2. Set the "Branch name pattern" to `main`.
+3. Under "Require status checks to pass before merging", add the `ci` check
+   (this is the check name emitted by `.github/workflows/ci.yml`).
+4. Save the rule.
+5. Verify the rule is active:
+
+   ```bash
+   gh api repos/{owner}/{repo}/branches/main/protection \
+     --jq '.required_status_checks.checks[].context'
+   # should print: ci
+   ```
+
+6. Re-run the ci-gated flow:
+
+   ```bash
+   cam config
+   ```
+
+   The setup step will GET the branch-protection rule, confirm `ci` is present,
+   and proceed without a warning.
+
+Cross-reference: `src/release/merge-watch.ts` (runMergeWatch, poll loop,
+terminal states), `src/release/branch-protection.ts` (configureBranchProtection,
+verify+warn fallback), `src/config/models.ts` (readMergeMode),
+`scripts/cam/patterns.md` (merge-watch state machine pattern bullet,
+branch-protection helper bullet, [ship].merge_mode config surface bullet).

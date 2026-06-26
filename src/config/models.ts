@@ -35,6 +35,12 @@ export type Phase =
  * - implementer/ship: claude-sonnet-4-6 (high-throughput execution phases)
  * - backend: claude (the default Claude Code backend)
  */
+/**
+ * The merge mode for `cam ship`. `"immediate"` merges as soon as the PR is
+ * created; `"ci-gated"` waits for CI to pass before merging.
+ */
+export type MergeMode = 'immediate' | 'ci-gated';
+
 export const DEFAULTS: Record<Phase | 'backend', string> = {
 	orchestrator: 'claude-opus-4-8',
 	planner: 'claude-opus-4-8',
@@ -113,4 +119,35 @@ export function readBackend(configPath?: string): string {
 		// Malformed TOML or fs read error: fall back to default.
 	}
 	return DEFAULTS.backend;
+}
+
+/**
+ * Read the merge mode for `cam ship` from the project config. Returns
+ * `"ci-gated"` only when `[ship] merge_mode = "ci-gated"` is set exactly;
+ * returns `"immediate"` in every other case (missing file, missing section,
+ * missing key, malformed TOML, or any value other than `"ci-gated"`).
+ *
+ * The default `"immediate"` preserves the CAM-84 behavior byte-for-byte for
+ * existing projects that have no `[ship]` section in their project.toml.
+ *
+ * @param configPath  Override the config file path (default:
+ *                    `scripts/cam/project.toml` resolved from `process.cwd()`).
+ *                    Used by tests to target a tmp fixture without modifying
+ *                    the real project config.
+ */
+export function readMergeMode(configPath?: string): MergeMode {
+	const path = configPath ?? defaultProjectConfigPath();
+	try {
+		const config = loadConfig(path);
+		const shipSection = config['ship'];
+		if (shipSection !== undefined && shipSection !== null && typeof shipSection === 'object') {
+			const value = (shipSection as Record<string, unknown>)['merge_mode'];
+			if (value === 'ci-gated') {
+				return 'ci-gated';
+			}
+		}
+	} catch {
+		// Malformed TOML or fs read error: fall back to default.
+	}
+	return 'immediate';
 }

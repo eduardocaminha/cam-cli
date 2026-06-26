@@ -1188,6 +1188,21 @@ export interface RunSidecarLoopOptions {
 	 * Tests inject makeInMemoryEventLogger().logger to capture events.
 	 */
 	logEvent?: WorkerEventLogger;
+	/**
+	 * Run the merge-watch for a CI-gated PR (US-007).
+	 *
+	 * When injected, called on each idle tick (active !== true) BEFORE the
+	 * session-health check and idle sleep. The function is responsible for
+	 * checking whether a merge-watch file exists and, if so, running the full
+	 * blocking poll loop (via runMergeWatch) until a terminal outcome is reached.
+	 * If no watch file is present, the function returns immediately (no-op).
+	 *
+	 * Only wired by the production sidecar (sidecar.ts) when the project config
+	 * has [ship] merge_mode = "ci-gated". Under "immediate" mode this field is
+	 * absent, making the merge-watch path completely inert with zero behavior
+	 * change for existing projects and all tests that do not inject it.
+	 */
+	runMergeWatchFn?: () => Promise<void>;
 }
 
 /** Idle polling interval for the sidecar outer loop (2 seconds). */
@@ -1223,6 +1238,16 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 		const active = opts.readActive();
 
 		if (active !== true) {
+			// US-007: run the merge-watch when ci-gated mode is active and a watch
+			// file is present. The function is injected by sidecar.ts only when
+			// merge_mode == "ci-gated"; under "immediate" it is absent (inert).
+			// runMergeWatchFn checks the watch file itself and returns immediately
+			// when none is present, so calling it on every idle tick is a no-op
+			// in the common case.
+			if (opts.runMergeWatchFn) {
+				await opts.runMergeWatchFn();
+			}
+
 			// Idle: check session health when a checker is wired.
 			// Startup grace: only exit when sessionSeen is latched AND session is gone.
 			// The lock is NOT held during idle, so no lock.release() is needed here.

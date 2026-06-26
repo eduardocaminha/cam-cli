@@ -19,18 +19,27 @@
 //
 // All I/O is injectable via SidecarOptions for unit tests.
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 
 import { runSidecarLoop, type RunSidecarLoopOptions } from '../supervisor/loop.ts';
-import { buildSupervisorOptions } from '../supervisor/host.ts';
+import { buildSupervisorOptions, makeNotifyOrchestrator } from '../supervisor/host.ts';
 import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/events.ts';
 import { parseStateFile } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, type SpawnFn } from '../tmux/session.ts';
+import { readMergeMode } from '../config/models.ts';
+import {
+	runMergeWatch,
+	MERGE_WATCH_FILENAME,
+	type MergeWatchState,
+	type GhPollFn,
+	type PrStatus,
+} from '../release/merge-watch.ts';
+import { runPostMerge, type SpawnFn as PostMergeSpawnFn } from '../release/post-merge.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -84,6 +93,18 @@ export interface SidecarOptions {
 	 * Tests inject makeInMemoryEventLogger().logger to capture events in memory.
 	 */
 	logEventFn?: WorkerEventLogger;
+	/**
+	 * Override the merge-watch function (US-007).
+	 *
+	 * Production (ci-gated mode): reads .claude/.cam-merge-watch.json, runs
+	 * gh polling via runMergeWatch, narrates via notifyOrchestrator.
+	 * Production (immediate mode): undefined (inert, zero behavior change).
+	 * Tests: inject a fake to drive MERGED / CI-red paths without real gh calls.
+	 *
+	 * When absent and merge mode is ci-gated, the production runSidecar builds
+	 * the real implementation automatically.
+	 */
+	runMergeWatchFn?: RunSidecarLoopOptions['runMergeWatchFn'];
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +223,78 @@ export function makeHasPendingStories(prdPath: string): () => boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Merge-watch production factory (extracted to keep runSidecar under
+// complexity/line limits; CAM-60 factory/helper pattern)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the production runMergeWatchFn closure for ci-gated ship mode.
+ *
+ * This factory is called by runSidecar when merge_mode == "ci-gated".
+ * It is NOT exported: tests inject `options.runMergeWatchFn` directly.
+ */
+function makeProductionMergeWatchFn(
+	cwd: string,
+	claudeDir: string,
+	sessionName: string,
+	logEvent: WorkerEventLogger,
+	realSpawnFn: SpawnFn,
+): () => Promise<void> {
+	return async (): Promise<void> => {
+		const watchFilePath = join(claudeDir, MERGE_WATCH_FILENAME);
+		if (!existsSync(watchFilePath)) return; // no watch pending
+
+		let state: MergeWatchState;
+		try {
+			const raw = readFileSync(watchFilePath, 'utf8');
+			const parsed: unknown = JSON.parse(raw);
+			if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+			state = parsed as MergeWatchState;
+		} catch {
+			try { unlinkSync(watchFilePath); } catch { /* best-effort */ }
+			return;
+		}
+
+		// Remove the watch file BEFORE starting to prevent re-entry on sidecar restart.
+		try { unlinkSync(watchFilePath); } catch { /* best-effort */ }
+
+		const ghPollFn: GhPollFn = (prNumber): PrStatus | null => {
+			const result = spawnSync(
+				'gh',
+				['pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,statusCheckRollup'],
+				{ encoding: 'utf8' },
+			);
+			if ((result.status ?? 1) !== 0) return null;
+			try {
+				const parsed: unknown = JSON.parse(result.stdout);
+				if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+					return parsed as PrStatus;
+				}
+				return null;
+			} catch { return null; }
+		};
+
+		const postMergeSpawnFn: PostMergeSpawnFn = (cmd, args, spawnOpts) =>
+			spawnSync(cmd, args, spawnOpts as Parameters<typeof spawnSync>[2]) as SpawnSyncReturns<string>;
+
+		const notify = makeNotifyOrchestrator(sessionName, realSpawnFn);
+
+		await runMergeWatch({
+			prNumber: state.prNumber,
+			mergedBranch: state.mergedBranch,
+			cwd,
+			pollFn: ghPollFn,
+			postMergeFn: ({ cwd: mergeCwd, mergedBranch }) =>
+				runPostMerge({ cwd: mergeCwd, mergedBranch, spawnFn: postMergeSpawnFn }),
+			notifyOrchestrator: notify,
+			logEvent: (kind, detail) =>
+				logEvent({ ts: new Date().toISOString(), storyId: undefined, uuid: 'sidecar', kind, detail }),
+			sleepFn: (ms) => Bun.sleepSync(ms),
+		});
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
@@ -224,17 +317,14 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	const hasPendingStoriesFn = options.hasPendingStoriesFn ?? makeHasPendingStories(prdPath);
 	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
 
-	// Production hasSession checker: uses the real spawnSync-based SpawnFn so
-	// has-session runs against the -L cam dedicated tmux socket without needing
-	// a full tmux session object in this process.
+	// Production hasSession checker: real spawnSync-based SpawnFn.
 	const realSpawnFn: SpawnFn = (cmd, args, spawnOpts) =>
 		spawnSync(cmd, args, spawnOpts as Parameters<typeof spawnSync>[2]);
 	const sessionName = projectSessionName(cwd);
 	const hasSessionFn =
 		options.hasSessionFn ?? (() => hasSession(sessionName, realSpawnFn));
 
-	// Structured event logger: writes sidecar lifecycle events (e.g. 'sidecar-exit')
-	// to the shared cam-worker-events.jsonl file so operators can diagnose self-exits.
+	// Structured event logger: writes sidecar lifecycle events to cam-worker-events.jsonl.
 	const logEvent =
 		options.logEventFn ?? makeFileEventLogger(join(claudeDir, 'cam-worker-events.jsonl'));
 
@@ -254,6 +344,14 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 			return built.opts;
 		});
 
+	// US-007: Merge-watch wiring for CI-gated ship mode.
+	const mergeMode = readMergeMode(join(cwd, 'scripts/cam/project.toml'));
+	const runMergeWatchFn: RunSidecarLoopOptions['runMergeWatchFn'] =
+		options.runMergeWatchFn ??
+		(mergeMode === 'ci-gated'
+			? makeProductionMergeWatchFn(cwd, claudeDir, sessionName, logEvent, realSpawnFn)
+			: undefined);
+
 	await runSidecarLoop({
 		buildOpts: buildOptsFn,
 		readActive: readActiveFn,
@@ -264,5 +362,6 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		runSupervisorFn: options.runSupervisorFn,
 		hasSessionFn,
 		logEvent,
+		runMergeWatchFn,
 	});
 }
