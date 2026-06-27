@@ -41,6 +41,12 @@ export type Phase =
  */
 export type MergeMode = 'immediate' | 'ci-gated';
 
+/**
+ * The plan approval mode. `"auto"` lets the sidecar proceed automatically
+ * after grill; `"operator"` requires a human gate before the loop advances.
+ */
+export type PlanApproval = 'auto' | 'operator';
+
 export const DEFAULTS: Record<Phase | 'backend', string> = {
 	orchestrator: 'claude-opus-4-8',
 	planner: 'claude-opus-4-8',
@@ -150,4 +156,35 @@ export function readMergeMode(configPath?: string): MergeMode {
 		// Malformed TOML or fs read error: fall back to default.
 	}
 	return 'immediate';
+}
+
+/**
+ * Read the plan approval mode from the project config. Returns `"operator"`
+ * only when `[plan] plan_approval = "operator"` is set exactly; returns
+ * `"auto"` in every other case (missing file, missing section, missing key,
+ * malformed TOML, non-string, or any value other than `"operator"`).
+ *
+ * The default `"auto"` allows the sidecar to advance without a human gate
+ * for projects that have not opted in to operator approval.
+ *
+ * @param configPath  Override the config file path (default:
+ *                    `scripts/cam/project.toml` resolved from `process.cwd()`).
+ *                    Used by tests to target a tmp fixture without modifying
+ *                    the real project config.
+ */
+export function readPlanApproval(configPath?: string): PlanApproval {
+	const path = configPath ?? defaultProjectConfigPath();
+	try {
+		const config = loadConfig(path);
+		const planSection = config['plan'];
+		if (planSection !== undefined && planSection !== null && typeof planSection === 'object') {
+			const value = (planSection as Record<string, unknown>)['plan_approval'];
+			if (value === 'operator') {
+				return 'operator';
+			}
+		}
+	} catch {
+		// Malformed TOML or fs read error: fall back to default.
+	}
+	return 'auto';
 }
