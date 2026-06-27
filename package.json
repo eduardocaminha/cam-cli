@@ -32,6 +32,7 @@
     "ink-text-input": "^6.0.0",
     "js-yaml": "^4.1.1",
     "react": "^19.2.6",
-    "react-devtools-core": "^7.0.1"
+    "react-devtools-core": "^7.0.1",
+    "resend": "^6.16.0"
   }
 }

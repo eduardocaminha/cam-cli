@@ -35,7 +35,7 @@ import { render } from 'ink';
 import { createElement } from 'react';
 
 import { mergeIntoConfig } from '../config/toml.ts';
-import { DEFAULTS, type MergeMode } from '../config/models.ts';
+import { DEFAULTS, type MergeMode, type PlanApproval } from '../config/models.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 import { applyMergeMode } from './setup-merge-mode.ts';
 import type { SpawnFn as BpSpawnFn } from '../release/branch-protection.ts';
@@ -56,6 +56,9 @@ export interface SetupOptions {
 	projectMode?: ProjectMode;
 	issueSystem?: IssueSystem;
 	mergeMode?: MergeMode;
+	planApproval?: PlanApproval;
+	resendApiKey?: string;
+	resendRecipient?: string;
 	description?: string;
 	noTmux?: boolean;
 	cwd?: string;
@@ -126,13 +129,15 @@ async function collectSetupAnswers(options: SetupOptions): Promise<SetupAnswers 
 	const needsMode = options.projectMode === undefined;
 	const needsIssue = options.issueSystem === undefined;
 	const needsMerge = options.mergeMode === undefined;
+	const needsPlanApproval = options.planApproval === undefined;
 	const needsDesc =
 		options.projectMode === 'new' && options.description === undefined;
-	if (!needsMode && !needsIssue && !needsMerge && !needsDesc) {
+	if (!needsMode && !needsIssue && !needsMerge && !needsPlanApproval && !needsDesc) {
 		return {
 			projectMode: options.projectMode!,
 			issueSystem: options.issueSystem!,
 			mergeMode: options.mergeMode!,
+			planApproval: options.planApproval!,
 			description: options.description ?? '',
 		};
 	}
@@ -171,11 +176,19 @@ export async function collectViaReadline(
 			'immediate',
 			input,
 		));
+	const planApproval =
+		options.planApproval ??
+		(await askChoice(
+			'Plan approval mode (auto = sidecar advances automatically; operator = human gate)',
+			['auto', 'operator'] as const,
+			'auto',
+			input,
+		));
 	let description = options.description ?? '';
 	if (projectMode === 'new' && description === '') {
 		description = await ask('What is this project about? (free-form): ', '', input);
 	}
-	return { projectMode, issueSystem, mergeMode, description };
+	return { projectMode, issueSystem, mergeMode, planApproval, description };
 }
 
 function collectViaInk(options: SetupOptions): Promise<SetupAnswers | null> {
@@ -183,6 +196,7 @@ function collectViaInk(options: SetupOptions): Promise<SetupAnswers | null> {
 	if (options.projectMode !== undefined) prefilled.projectMode = options.projectMode;
 	if (options.issueSystem !== undefined) prefilled.issueSystem = options.issueSystem;
 	if (options.mergeMode !== undefined) prefilled.mergeMode = options.mergeMode;
+	if (options.planApproval !== undefined) prefilled.planApproval = options.planApproval;
 	if (options.description !== undefined) prefilled.description = options.description;
 
 	return new Promise((resolve) => {
@@ -204,6 +218,35 @@ function collectViaInk(options: SetupOptions): Promise<SetupAnswers | null> {
 			.then(() => resolve(result))
 			.catch(() => resolve(null));
 	});
+}
+
+// ---------------------------------------------------------------------------
+// Resend warning helper (exported for unit tests)
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit a loud printWarning when plan_approval is "auto" and the Resend API
+ * key is unconfigured. A missing key means non-convergence failures are silent:
+ * no escalation email will fire when the review loop hits MAX_ROUNDS_DEBT.
+ *
+ * Exported so unit tests can call it directly without running the full
+ * setup wizard (which requires claude to be installed).
+ *
+ * @param planApproval  The chosen plan approval mode.
+ * @param resendApiKey  The configured Resend API key (empty string = unconfigured).
+ * @param warnFn        Injectable warning emitter (default: printWarning).
+ */
+export function warnIfResendUnconfigured(
+	planApproval: PlanApproval,
+	resendApiKey: string,
+	warnFn: (msg: string, hint?: string) => void = printWarning,
+): void {
+	if (planApproval === 'auto' && resendApiKey === '') {
+		warnFn(
+			'plan_approval is "auto" but Resend is not configured: non-convergence failures will be SILENT',
+			'Set resend_api_key in [notify] of scripts/cam/project.toml or re-run cam init with --resend-api-key',
+		);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -556,7 +599,10 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 		printWarning('Setup cancelled');
 		return 1;
 	}
-	const { projectMode, issueSystem, mergeMode, description } = answers;
+	const { projectMode, issueSystem, mergeMode, planApproval, description } = answers;
+	// Resend config comes from flags (options) or remains unconfigured.
+	const resendApiKey = options.resendApiKey ?? '';
+	const resendRecipient = options.resendRecipient ?? '';
 
 	// Blank line to separate the Ink screen's rendered output from the linear
 	// CLI prints that follow. Without this, the first hint/success line glues
@@ -572,7 +618,13 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 		printSuccess(`claude found at ${agentResult.path}`);
 		printSuccess(`Issue system: ${issueSystem}`);
 		printSuccess(`Merge mode: ${mergeMode}`);
+		printSuccess(`Plan approval: ${planApproval}`);
 	}
+
+	// LOUD WARNING: auto mode with no Resend key means non-convergence failures
+	// are silent (the escalation email will never fire). Warn the operator so
+	// they can configure Resend before relying on the autonomous loop.
+	warnIfResendUnconfigured(planApproval, resendApiKey);
 	if (issueSystem === 'linear') {
 		printHint('Set LINEAR_API_KEY in your shell (get one at https://linear.app/settings/api)');
 	} else if (issueSystem === 'github') {
@@ -597,7 +649,17 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 			},
 			backend: { name: 'claude' },
 			ship: { merge_mode: mergeMode },
+			plan: { plan_approval: planApproval },
 		});
+		// Persist Resend config when a key was provided.
+		if (resendApiKey !== '') {
+			mergeIntoConfig(projectToml, {
+				notify: {
+					resend_api_key: resendApiKey,
+					...(resendRecipient !== '' ? { resend_recipient: resendRecipient } : {}),
+				},
+			});
+		}
 		printSuccess(`Wrote ${projectToml.replace(cwd + '/', '')}`);
 	} catch (err) {
 		printWarning(
@@ -656,6 +718,9 @@ export interface ParsedSetupArgs {
 	projectMode?: ProjectMode;
 	issueSystem?: IssueSystem;
 	mergeMode?: MergeMode;
+	planApproval?: PlanApproval;
+	resendApiKey?: string;
+	resendRecipient?: string;
 	description?: string;
 	noTmux: boolean;
 	help: boolean;
@@ -663,6 +728,7 @@ export interface ParsedSetupArgs {
 
 const ISSUE_SYSTEMS: readonly IssueSystem[] = ['linear', 'github', 'none'];
 const MERGE_MODES: readonly MergeMode[] = ['immediate', 'ci-gated'];
+const PLAN_APPROVALS: readonly PlanApproval[] = ['auto', 'operator'];
 
 export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 	const result: ParsedSetupArgs = { noTmux: false, help: false };
@@ -716,6 +782,44 @@ export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 		}
 		if (arg.startsWith('--description=')) {
 			result.description = arg.slice('--description='.length);
+			continue;
+		}
+		if (arg === '--plan-approval') {
+			const next = args[++i];
+			if (!next || !(PLAN_APPROVALS as readonly string[]).includes(next)) {
+				printError('--plan-approval requires: auto | operator');
+				return null;
+			}
+			result.planApproval = next as PlanApproval;
+			continue;
+		}
+		if (arg.startsWith('--plan-approval=')) {
+			const val = arg.slice('--plan-approval='.length);
+			if (!(PLAN_APPROVALS as readonly string[]).includes(val)) {
+				printError(`--plan-approval must be auto or operator — got ${val}`);
+				return null;
+			}
+			result.planApproval = val as PlanApproval;
+			continue;
+		}
+		if (arg === '--resend-api-key') {
+			const next = args[++i];
+			if (!next) { printError('--resend-api-key requires a string'); return null; }
+			result.resendApiKey = next;
+			continue;
+		}
+		if (arg.startsWith('--resend-api-key=')) {
+			result.resendApiKey = arg.slice('--resend-api-key='.length);
+			continue;
+		}
+		if (arg === '--resend-recipient') {
+			const next = args[++i];
+			if (!next) { printError('--resend-recipient requires a string'); return null; }
+			result.resendRecipient = next;
+			continue;
+		}
+		if (arg.startsWith('--resend-recipient=')) {
+			result.resendRecipient = arg.slice('--resend-recipient='.length);
 			continue;
 		}
 		printError(`Unknown init option: ${arg}`);

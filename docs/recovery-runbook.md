@@ -1806,3 +1806,120 @@ spec writer), `templates/commands/cam-spec.md` (/cam-spec slash command),
 `src/issues/spec.ts` (validateSpec, validateWsjf),
 section (n) (commit-tree-to-main primitive reused by specifyIssueOnMain),
 `scripts/cam/CLAUDE.md` (Domain Model Convention section).
+
+## (v) CAM-109: auto pipeline, non-convergence terminal, and Resend escalation
+
+### Context
+
+When `plan_approval = "auto"` (the default, stored in `[plan]` of
+`scripts/cam/project.toml`), the sidecar advances without a human gate after a
+successful plan audit. The review loop can hit a non-convergence terminal if it
+exhausts `maxRounds` (default 3) without a CLEAN verdict: the supervisor promotes
+`prd.review.lastVerdict` to `"MAX_ROUNDS_DEBT"` and stops.
+
+In auto mode, the operator may not be watching the terminal at that moment. The
+Resend escalation (configured in `[notify]`) fires a best-effort email so the
+operator is alerted asynchronously.
+
+### (v.1) Configure Resend escalation
+
+Run `cam init` or `cam config` to set the Resend API key and recipient. The
+values are persisted to `scripts/cam/project.toml`:
+
+```toml
+[notify]
+resend_api_key = "re_xxxx"
+resend_recipient = "you@example.com"
+```
+
+Alternatively, set them during `cam init` via CLI flags:
+
+```bash
+cam init --plan-approval auto --resend-api-key re_xxxx --resend-recipient you@example.com
+```
+
+If `plan_approval = "auto"` but `resend_api_key` is empty, `cam init` prints a
+loud warning:
+
+```
+WARN: plan_approval is "auto" but Resend is not configured: non-convergence failures will be SILENT
+```
+
+Heed this warning: without a Resend key, a non-convergence event is invisible
+unless the operator is watching the orchestrator pane.
+
+### (v.2) Diagnose a non-convergence terminal
+
+Symptom: the loop stops with `prd.review.lastVerdict = "MAX_ROUNDS_DEBT"` and
+no further stories are dispatched.
+
+1. Confirm the verdict:
+
+   ```bash
+   jq '.review.lastVerdict' scripts/cam/prd.json
+   # => "MAX_ROUNDS_DEBT"
+   ```
+
+2. Inspect the last review report for findings:
+
+   ```bash
+   cat scripts/cam/review-report.json
+   ```
+
+3. Check the event log for the promotion:
+
+   ```bash
+   grep 'MAX_ROUNDS_DEBT' .claude/cam-worker-events.jsonl | tail -3 | jq .
+   ```
+
+4. Check whether the Resend escalation fired (stderr log from the sidecar):
+
+   ```bash
+   grep 'Resend escalation' .claude/cam-supervisor.log | tail -5
+   ```
+
+### (v.3) Recover from a non-convergence terminal
+
+Option A: fix the root cause (the reviewer's findings) manually and re-trigger
+the loop.
+
+1. Read the findings in `scripts/cam/review-report.json`.
+2. Fix the issues in source code.
+3. Reset the review state so the loop re-enters the implement cycle:
+
+   ```bash
+   # Reset review to round 0 so the loop picks up the next story normally.
+   jq '.review = null' scripts/cam/prd.json > /tmp/prd-reset.json \
+     && mv /tmp/prd-reset.json scripts/cam/prd.json
+   git add scripts/cam/prd.json && git commit -m "chore: reset review after MAX_ROUNDS_DEBT recovery"
+   ```
+
+4. Re-arm: `cam next`.
+
+Option B: increase `maxRounds` for projects that legitimately need more review
+iterations.
+
+Add or update `max_rounds` in `scripts/cam/project.toml`:
+
+```toml
+[review]
+max_rounds = 5
+```
+
+Then reset the review state as in Option A and re-arm.
+
+Option C: switch to `plan_approval = "operator"` if the auto pipeline is
+causing too many non-convergence events. Operator mode requires a human gate
+before each loop iteration, so the operator can intervene before maxRounds is
+hit.
+
+```toml
+[plan]
+plan_approval = "operator"
+```
+
+Cross-reference: `src/notify/resend.ts` (best-effort Resend client),
+`src/supervisor/loop.ts` (MAX_ROUNDS_DEBT terminal, escalateFn injection),
+`src/config/models.ts` (readPlanApproval, readResendConfig),
+`src/commands/setup.ts` (warnIfResendUnconfigured),
+section (a) (stuck supervisor general triage).

@@ -332,6 +332,22 @@ export interface RunSupervisorOptions {
 	 * review branch is unchanged (zero behavior change for all existing tests).
 	 */
 	autoShipFn?: () => void;
+	/**
+	 * Best-effort escalation callback (US-007).
+	 *
+	 * When injected, called immediately after the MAX_ROUNDS_DEBT terminal is
+	 * detected (non-convergence after maxRounds review rounds without CLEAN).
+	 * The call is best-effort: any rejection is caught and logged; the pipeline
+	 * always returns { status: 'complete' } regardless of escalation outcome.
+	 *
+	 * In production this calls sendEscalation() from src/notify/resend.ts with
+	 * the configured Resend API key + recipient from project.toml.
+	 *
+	 * Optional: when absent (Resend unconfigured or operator mode without
+	 * escalation) the non-convergence terminal is unchanged. All existing tests
+	 * that do not inject this callback pass byte-for-byte unchanged.
+	 */
+	escalateFn?: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1113,6 +1129,20 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						round: ncRoundsCompleted,
 					};
 					emit('review-verdict-handback', undefined, reviewUuid, promotionDetail);
+					// US-007: best-effort Resend escalation. Swallow any rejection so
+					// the pipeline always reaches the 'complete' return below.
+					if (opts.escalateFn !== undefined) {
+						const escalateFn = opts.escalateFn;
+						void (async () => {
+							try {
+								await escalateFn();
+							} catch (e) {
+								process.stderr.write(
+									`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+								);
+							}
+						})();
+					}
 					notifyTerminal('complete');
 					return { status: 'complete', iterations, lastOutcome };
 				}

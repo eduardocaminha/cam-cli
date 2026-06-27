@@ -90,6 +90,9 @@ export interface MergeModeOpts {
  *   [ship]
  *   merge_mode = "immediate"|"ci-gated"   (when choices.mergeMode is defined)
  *
+ *   [plan]
+ *   plan_approval = "auto"|"operator"     (when choices.planApproval is defined)
+ *
  * Pre-existing keys (issue_system, issue_prefix, etc.) are preserved.
  *
  * When `choices.mergeMode` is `"ci-gated"`, invokes the US-002
@@ -113,6 +116,13 @@ export function mergeConfigChoices(
 		backend: { name: choices.backend } as TomlSection,
 	};
 	mergeIntoConfig(configPath, updates);
+
+	// Persist [plan] plan_approval when the wizard collected it.
+	if (choices.planApproval !== undefined) {
+		mergeIntoConfig(configPath, {
+			plan: { plan_approval: choices.planApproval } as TomlSection,
+		});
+	}
 
 	// Persist [ship] merge_mode when the wizard collected it.
 	if (choices.mergeMode !== undefined) {

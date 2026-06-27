@@ -159,6 +159,41 @@ export function readMergeMode(configPath?: string): MergeMode {
 }
 
 /**
+ * Resend notification config read from `[notify]` in project.toml.
+ */
+export interface ResendConfig {
+	/** Resend API key. Empty string when unconfigured. */
+	apiKey: string;
+	/** Recipient email. Empty string when unconfigured. */
+	recipient: string;
+}
+
+/**
+ * Read the Resend notification config from the project config.
+ * Returns `{ apiKey: '', recipient: '' }` when the section or keys are absent,
+ * malformed, or non-string — preserving the defensive try/catch/default pattern.
+ *
+ * @param configPath  Override the config file path (default:
+ *                    `scripts/cam/project.toml` resolved from `process.cwd()`).
+ */
+export function readResendConfig(configPath?: string): ResendConfig {
+	const path = configPath ?? defaultProjectConfigPath();
+	try {
+		const config = loadConfig(path);
+		const notifySection = config['notify'];
+		if (notifySection !== undefined && notifySection !== null && typeof notifySection === 'object') {
+			const section = notifySection as Record<string, unknown>;
+			const apiKey = typeof section['resend_api_key'] === 'string' ? section['resend_api_key'] : '';
+			const recipient = typeof section['resend_recipient'] === 'string' ? section['resend_recipient'] : '';
+			return { apiKey, recipient };
+		}
+	} catch {
+		// Malformed TOML or fs read error: fall back to empty.
+	}
+	return { apiKey: '', recipient: '' };
+}
+
+/**
  * Read the plan approval mode from the project config. Returns `"operator"`
  * only when `[plan] plan_approval = "operator"` is set exactly; returns
  * `"auto"` in every other case (missing file, missing section, missing key,
