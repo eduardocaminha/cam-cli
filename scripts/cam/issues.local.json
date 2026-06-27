@@ -949,7 +949,7 @@
     {
       "id": "CAM-106",
       "title": "Epico A: schema + maquina de estados da issue (stage/status/blockedBy/wsjf/rank) + gate de PRD-readiness",
-      "stage": "idea",
+      "stage": "shipped",
       "status": "open",
       "blockedBy": [],
       "createdAt": "2026-06-26T21:25:28.294Z",
