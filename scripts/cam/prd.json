@@ -160,35 +160,47 @@
       "passes": true,
       "requires": null,
       "notes": "VERTICAL SLICE: new notify client + terminal wiring + config surface (setup/config/Ink) + runbook. REQUIRES US-006 (the terminal it fires on) and US-001 (plan_approval). RESEND IS THE FIRST EXTERNAL RUNTIME DEP (spec gotcha 3): `bun add resend`, isolate behind src/notify/resend.ts, best-effort ONLY. SDK shape (officialDocsConsulted): import { Resend } from 'resend'; const r=new Resend(apiKey); const {data,error}=await r.emails.send({from,to,subject,html}); it returns {data,error}, never throws on API error -- but a network error CAN throw, so wrap in try/catch AND check error. The client takes injectable deps (the Resend constructor / send fn) so test/notify/resend.test.ts mocks it without a real network hit (no requires:operator). Config surface mirrors CAM-101 merge_mode EXACTLY (patterns.md 'Pure-helper extract for headless-testable setup steps', 'Optional 4th opts-bag', '[ship].merge_mode config surface'): setup.ts Step union + OPTIONS + SetupAnswers + collectViaReadline + collectViaInk + parseSetupArgs/--plan-approval flag (CAM-104 'Non-interactive init: mandatory answer + readline EOF rule': a new mandatory answer needs a CLI flag + build-release smoke update + readline 'close' EOF default, or non-interactive init hangs); config.ts mergeConfigChoices persists [plan] plan_approval + Resend keys; Ink SetupScreen.tsx + ConfigScreen.tsx add the selector blocks (Ink success/failure is the glyph, never divider color; verify render via ink-testing-library). Resend recipient/key likely persist to [plan] or a [notify] section in project.toml. LOUD WARNING: auto + unconfigured Resend -> printWarning that non-convergence failures are silent (CAM-104 gotcha: auto-as-default is bold, init MUST warn loudly + the auto safety net is mandatory). Runbook: add a scenario to docs/recovery-runbook.md for the auto pipeline + escalation. NO em-dash in persisted .md (runbook). Quality gate is `bun run check:all` (the full spine)."
+    },
+    {
+      "id": "US-008",
+      "title": "Fix auto-chain defeating the MAX_ROUNDS_DEBT non-convergence terminal",
+      "description": "As the auto safety net, I need a MAX_ROUNDS_DEBT non-convergence terminal to stop the auto-chain cleanly (and fire the US-007 Resend escalation) instead of advancing toward ship, so that the US-005 auto-chain never overrides the US-006 hard terminal because round-N orphan fix stories make the pipeline look like it still has implementable work.",
+      "acceptanceCriteria": [
+        "On a maxRounds-reached-without-CLEAN scenario, NO orphan fix story is created in the terminal round (the prd.json userStories count is unchanged across the terminal review round, and no US-R{maxRounds}-* fix story exists). [oracle: bun test test/supervisor/non-convergence-autochain.test.ts]",
+        "On that scenario, prd.review.lastVerdict is promoted to MAX_ROUNDS_DEBT. [oracle: bun test test/supervisor/non-convergence-autochain.test.ts]",
+        "makeHasPendingStories returns false in the MAX_ROUNDS_DEBT terminal state (no false-pending from would-be orphan fix stories): a test imports makeHasPendingStories (src/commands/sidecar.ts) against a prd fixture in the terminal state and asserts it returns false. [oracle: bun test test/supervisor/non-convergence-autochain.test.ts]",
+        "The auto-chain does NOT dispatch ship at the MAX_ROUNDS_DEBT terminal: a test with an injected ship/autoShip fake asserts the fake is never called on the terminal, and (where wired) the escalation path is taken instead. [oracle: bun test test/supervisor/non-convergence-autochain.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 11,
+      "passes": false,
+      "requires": null,
+      "notes": "ROUND-3 CRITICAL FIX (reviewer, src/supervisor/loop.ts:1439). THE BUG: in auto mode (default) the US-005 auto-chain defeats the US-006 non-convergence hard terminal. At a real MAX_ROUNDS_DEBT terminal, the round-N reviewer's fix stories are still passes:false in prd.json because reviewDispatch creates them at newRound==maxRounds (src/supervisor/review.ts:499-528) BEFORE loop.ts (1119-1147) promotes the verdict to MAX_ROUNDS_DEBT. So makeHasPendingStories (src/commands/sidecar.ts:241, Case a) counts those fix stories as pending, and the auto-chain at loop.ts:1439 (opts.hasPendingStories()===true) flips active:true and continues toward ship instead of stopping cleanly at the non-convergence terminal. DUAL INTERACTION is between US-005 (auto-chain) and US-006 (hard terminal). RECOMMENDED DESIGN (operator-approved 'option X'; the implementer may choose the concrete code shape): when the review reaches the terminal round (newRound==maxRounds) WITHOUT CLEAN, do NOT create orphan fix stories (skip the buildFixStories/userStories rewrite at review.ts:499-528 on the terminal round); promote lastVerdict to MAX_ROUNDS_DEBT FIRST (loop.ts verdict-promotion ordering ~1119-1147); and ensure makeHasPendingStories (sidecar.ts ~241) and decideNextAction (src/supervisor/decide.ts terminal classification, Case 1 line 76 + reviewTerminal lines 109-111) treat a MAX_ROUNDS_DEBT terminal as terminal-with-no-pending, so the auto-chain stops cleanly (and fires the US-007 Resend escalation) instead of advancing to ship. INVARIANT: a MAX_ROUNDS_DEBT terminal must NEVER leave fix stories that make the pipeline look like it still has implementable work (otherwise both makeHasPendingStories Case a AND decideNextAction Case 1 route back to implement/auto-chain). GOTCHA: review.ts:482 ('newRound > maxRounds') only triggers on the round AFTER maxRounds; the offending fix-story creation happens AT newRound==maxRounds (the <= maxRounds path), so the terminal-round skip must guard newRound==maxRounds, not just > maxRounds. ORACLE NOTE: do NOT grep loop.ts for 'MAX_ROUNDS_DEBT' (loop.ts:317 + the existing US-006 block already contain it; the grep matches the unmodified tree and proves nothing); prove the fix BEHAVIORALLY via test/supervisor/non-convergence-autochain.test.ts with injected fakes (no real tmux). Files to touch: src/supervisor/loop.ts (verdict promotion ordering ~1119-1147), src/supervisor/review.ts (fix-story creation ~499-528, skip on terminal round), src/commands/sidecar.ts (makeHasPendingStories ~241), src/supervisor/decide.ts (terminal classification). Read scripts/cam/patterns.md ('Single-source outcome contract', 'notifyOrchestrator placement rule', 'cam next is a pure sidecar trigger') before touching the loop."
+    },
+    {
+      "id": "US-009",
+      "title": "Doc + dead-code cleanup for round-3 WARNING and three suggestions",
+      "description": "As an operator reading the runbook and setup surface, I need the non-convergence docs to point at the real config source, the dead --resend-api-key flag removed, the planner Stop Condition note corrected, and the escalation-grep diagnostic clarified, so that the docs and CLI never mislead an operator into a silently-broken escalation setup.",
+      "acceptanceCriteria": [
+        "Recovery runbook Option B no longer instructs setting [review] max_rounds in project.toml; it documents the REAL maxRounds source (prd.review.maxRounds or the CAM_MAX_REVIEW_ROUNDS env var), since no code reads [review] max_rounds. [oracle: file-assert ! grep -Eq 'max_rounds = 5' docs/recovery-runbook.md && grep -Eq 'prd.review.maxRounds|CAM_MAX_REVIEW_ROUNDS' docs/recovery-runbook.md]",
+        "The --resend-api-key CLI flag is removed from setup (parse + SetupArgs/SetupAnswers field + the warnIfResendUnconfigured suppression fallback at setup.ts:605), because it is never persisted nor read at runtime (RESEND_API_KEY env var is the only runtime source); the flag no longer suppresses the safety warning. [oracle: file-assert ! grep -q 'resend-api-key' src/commands/setup.ts]",
+        "warnIfResendUnconfigured still fires off RESEND_API_KEY (env var) only, and a test confirms removing the flag did not break the auto+unconfigured loud warning. [oracle: bun test test/commands/setup.test.ts]",
+        "scripts/cam/CLAUDE.md Stop Condition notes that requires:operator stories are hand-filed only now (the subagent-planner no longer emits them, per US-003). [oracle: file-assert grep -Eiq 'hand-filed' scripts/cam/CLAUDE.md]",
+        "The recovery-runbook 'Resend escalation' grep diagnostic clarifies it surfaces only FAILED escalations (sendEscalation writes stderr only on failure; success is silent). [oracle: file-assert grep -Eiq 'only.{0,20}fail|failed escalation' docs/recovery-runbook.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 12,
+      "passes": false,
+      "requires": null,
+      "notes": "ROUND-3 WARNING + 3 SUGGESTIONS cleanup. (1) WARNING docs/recovery-runbook.md (~1910, Option B): the runbook says set [review] max_rounds = 5 in project.toml, but NO code reads [review] max_rounds; maxRounds comes only from prd.review.maxRounds or the CAM_MAX_REVIEW_ROUNDS env var. Rewrite Option B to the real source (verified: grep -rn 'max_rounds' src/ shows no [review].max_rounds reader; readPrd's review.maxRounds + the env var are the only inputs to DEFAULT_MAX_ROUNDS at src/supervisor/decide.ts:51 / loop.ts:1117). (2) SUGGESTION src/commands/setup.ts (~783/804): the --resend-api-key flag is parsed (parseSetupArgs ~804-812) and only feeds options.resendApiKey, which is used solely to suppress warnIfResendUnconfigured via the fallback at setup.ts:605 (process.env['RESEND_API_KEY'] ?? options.resendApiKey ?? ''); it is never persisted (config.ts does not read it) nor read at runtime (readResendConfig at src/config/models.ts:185 reads RESEND_API_KEY env var + backward-compat TOML only). Drop the dead flag entirely (env-var-only) so it cannot silence the warning while leaving escalation unconfigured: remove the parse arm(s), the SetupArgs/SetupAnswers resendApiKey field, and the :605 fallback (read from env only). (3) SUGGESTION scripts/cam/CLAUDE.md: subagent-planner no longer emits requires:operator stories (US-003 shipped that change), but the Stop Condition section (CLAUDE.md:23) still describes operator stories as planner-emitted. Add a note that they are hand-filed only now. CLAUDE.md (scripts/cam/CLAUDE.md) is a SINGLE repo doc with NO template mirror, so the dual-copy+embed rule does NOT apply here. (4) SUGGESTION docs/recovery-runbook.md (~1886): the diagnostic greps cam-supervisor.log for 'Resend escalation', but sendEscalation (src/notify/resend.ts:70) writes to stderr ONLY on failure (the error branch :82 and the catch branch :88); on success it writes nothing. Clarify in the runbook that the grep surfaces only FAILED escalations. NO em-dash in any persisted .md (runbook, CLAUDE.md): use colon/comma/parens per project rule. This story touches docs + setup.ts only, no templates/ or vendor/ (no embed-vendor needed)."
     }
   ],
   "review": {
-    "roundsCompleted": 2,
-    "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:1",
-    "findings": [
-      {
-        "severity": "WARNING",
-        "file": "docs/recovery-runbook.md",
-        "line": 1824,
-        "text": "Runbook section (v.1) drifted from the US-R1-002 env-var change. It documents `resend_api_key = \"re_xxxx\"` in [notify] of project.toml as how `cam init` persists the key, and shows `cam init --resend-api-key re_xxxx`. But R1-002 made setup.ts read the key from RESEND_API_KEY env var and NOT persist it (only resend_recipient is written). The runbook now contradicts the in-product warning hint (setup.ts:247 'Set RESEND_API_KEY in your shell environment') and Resend's own docs ('Store your API key in an environment variable; never hardcode'). Worse, the --resend-api-key flag value is never persisted nor read later by readResendConfig, so an operator following that example suppresses the loud warning yet gets NO escalation. Align the runbook with the env-var convention (RESEND_API_KEY in the shell; only resend_recipient in [notify])."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "scripts/build-release.sh",
-        "line": 115,
-        "text": "The AC4 smoke runs `cam init ... --merge-mode immediate </dev/null` without --plan-approval. The CAM-104 readline EOF default ('auto') prevents a hang, so this is safe, but the patterns.md 'new mandatory init answer needs a build-release smoke update' rule recommends passing --plan-approval for explicitness."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "src/commands/setup.ts",
-        "line": 783,
-        "text": "The --resend-api-key CLI flag is parsed and used only to suppress warnIfResendUnconfigured; it is never persisted nor read at runtime. Consider dropping it (env-var only) so it cannot mislead operators into thinking it configures escalation."
-      },
-      {
-        "severity": "SUGGESTION",
-        "text": "subagent-planner no longer emits requires:operator stories, but scripts/cam/CLAUDE.md still documents the await-operator terminal as planner-emitted. Note that the planner no longer emits them (operator stories are hand-filed only)."
-      }
-    ]
+    "roundsCompleted": 0,
+    "maxRounds": 5,
+    "lastVerdict": null,
+    "findings": []
   }
 }
