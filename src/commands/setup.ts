@@ -231,16 +231,18 @@ function collectViaInk(options: SetupOptions): Promise<SetupAnswers | null> {
  * Exported so unit tests can call it directly without running the full
  * setup wizard (which requires claude to be installed).
  *
- * @param planApproval  The chosen plan approval mode.
- * @param resendApiKey  The configured Resend API key (empty string = unconfigured).
- * @param warnFn        Injectable warning emitter (default: printWarning).
+ * @param planApproval    The chosen plan approval mode.
+ * @param resendApiKey    The configured Resend API key (empty string = unconfigured).
+ * @param resendRecipient The configured Resend recipient (empty string = unconfigured).
+ * @param warnFn          Injectable warning emitter (default: printWarning).
  */
 export function warnIfResendUnconfigured(
 	planApproval: PlanApproval,
 	resendApiKey: string,
+	resendRecipient: string,
 	warnFn: (msg: string, hint?: string) => void = printWarning,
 ): void {
-	if (planApproval === 'auto' && resendApiKey === '') {
+	if (planApproval === 'auto' && (resendApiKey === '' || resendRecipient === '')) {
 		warnFn(
 			'plan_approval is "auto" but Resend is not configured: non-convergence failures will be SILENT',
 			'Set RESEND_API_KEY in your shell environment (like LINEAR_API_KEY); also set resend_recipient in [notify] of scripts/cam/project.toml',
@@ -623,7 +625,7 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 	// LOUD WARNING: auto mode with no Resend key means non-convergence failures
 	// are silent (the escalation email will never fire). Warn the operator so
 	// they can configure Resend before relying on the autonomous loop.
-	warnIfResendUnconfigured(planApproval, resendApiKey);
+	warnIfResendUnconfigured(planApproval, resendApiKey, resendRecipient);
 	if (issueSystem === 'linear') {
 		printHint('Set LINEAR_API_KEY in your shell (get one at https://linear.app/settings/api)');
 	} else if (issueSystem === 'github') {

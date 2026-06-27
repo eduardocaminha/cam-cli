@@ -14,7 +14,7 @@ import { warnIfResendUnconfigured } from '../../src/commands/setup.ts';
 describe('warnIfResendUnconfigured (AC4)', () => {
 	test('emits loud warning when plan_approval=auto and resendApiKey is empty', () => {
 		const warnings: string[] = [];
-		warnIfResendUnconfigured('auto', '', (msg) => warnings.push(msg));
+		warnIfResendUnconfigured('auto', '', '', (msg) => warnings.push(msg));
 
 		expect(warnings).toHaveLength(1);
 		expect(warnings[0]).toContain('non-convergence');
@@ -24,7 +24,7 @@ describe('warnIfResendUnconfigured (AC4)', () => {
 
 	test('warning message mentions Resend (escalation context)', () => {
 		const warnings: string[] = [];
-		warnIfResendUnconfigured('auto', '', (msg) => warnings.push(msg));
+		warnIfResendUnconfigured('auto', '', '', (msg) => warnings.push(msg));
 
 		// The warning string must reference "Resend" so the operator knows
 		// which service to configure.
@@ -33,28 +33,28 @@ describe('warnIfResendUnconfigured (AC4)', () => {
 
 	test('does NOT warn when plan_approval=operator (escalation not expected)', () => {
 		const warnings: string[] = [];
-		warnIfResendUnconfigured('operator', '', (msg) => warnings.push(msg));
+		warnIfResendUnconfigured('operator', '', '', (msg) => warnings.push(msg));
 
 		expect(warnings).toHaveLength(0);
 	});
 
-	test('does NOT warn when resendApiKey is set (Resend configured)', () => {
+	test('does NOT warn when both apiKey and recipient are set (Resend fully configured)', () => {
 		const warnings: string[] = [];
-		warnIfResendUnconfigured('auto', 're_test_key_12345', (msg) => warnings.push(msg));
+		warnIfResendUnconfigured('auto', 're_test_key_12345', 'ops@example.com', (msg) => warnings.push(msg));
 
 		expect(warnings).toHaveLength(0);
 	});
 
 	test('does NOT warn when both planApproval=operator and resendApiKey set', () => {
 		const warnings: string[] = [];
-		warnIfResendUnconfigured('operator', 're_test_key', (msg) => warnings.push(msg));
+		warnIfResendUnconfigured('operator', 're_test_key', 'ops@example.com', (msg) => warnings.push(msg));
 
 		expect(warnings).toHaveLength(0);
 	});
 
 	test('hint is emitted as second arg to warnFn', () => {
 		const calls: Array<{ msg: string; hint?: string }> = [];
-		warnIfResendUnconfigured('auto', '', (msg, hint) => calls.push({ msg, hint }));
+		warnIfResendUnconfigured('auto', '', '', (msg, hint) => calls.push({ msg, hint }));
 
 		expect(calls).toHaveLength(1);
 		expect(calls[0]?.hint).toBeDefined();
@@ -68,7 +68,29 @@ describe('warnIfResendUnconfigured (AC4)', () => {
 		// suppress the non-convergence safety signal.
 		const resendApiKey = ''; // simulates absent RESEND_API_KEY env var
 		const warnings: string[] = [];
-		warnIfResendUnconfigured('auto', resendApiKey, (msg) => warnings.push(msg));
+		warnIfResendUnconfigured('auto', resendApiKey, '', (msg) => warnings.push(msg));
+
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain('non-convergence');
+		expect(warnings[0]).toContain('SILENT');
+	});
+
+	// US-R1-001: warning gate must mirror the escalation gate.
+	// escalateFn (sidecar.ts) only wires when BOTH apiKey AND recipient are non-empty.
+	// So having only the API key set (but no recipient) must still trigger the warning.
+
+	test('WARNS when apiKey is set but recipient is empty (escalation is silently disabled)', () => {
+		const warnings: string[] = [];
+		warnIfResendUnconfigured('auto', 're_test_key_12345', '', (msg) => warnings.push(msg));
+
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain('non-convergence');
+		expect(warnings[0]).toContain('SILENT');
+	});
+
+	test('WARNS when apiKey is empty but recipient is set (escalation is silently disabled)', () => {
+		const warnings: string[] = [];
+		warnIfResendUnconfigured('auto', '', 'ops@example.com', (msg) => warnings.push(msg));
 
 		expect(warnings).toHaveLength(1);
 		expect(warnings[0]).toContain('non-convergence');
