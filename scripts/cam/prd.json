@@ -184,7 +184,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Append a new lettered section to docs/recovery-runbook.md (existing sections run a..o; pick the next free letter and tag it CAM-107). PROJECT RULE: this is human-readable persisted .md, so NO em-dash and NO decorative emoji (colon/comma/parens/period instead). Cross-reference the existing sec (n) CAM-86 (file-on-main) since the spec writer reuses that primitive, and the US-005 CONTEXT.md/adr location. Keep it surgical: document the recovery, do not restate the whole grill design."
     },
