@@ -1,24 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Idempotent migration script for the live issues.local.json"
+    "id": "US-006",
+    "title": "Rewrite cam-plan Step 2 to delegate to the gate (three-copy sync + embed)"
   },
   "branchName": "cam/CAM-106-issue-schema-state-machine",
-  "timestamp": "2026-06-26T23:50:00Z",
-  "createdFiles": [
-    "scripts/cam/migrate-issues-schema.ts",
-    "test/issues/migrate.test.ts"
-  ],
+  "timestamp": "2026-06-26T23:55:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
+    ".claude/commands/cam-plan.md",
+    "templates/commands/cam-plan.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 is complete. scripts/cam/migrate-issues-schema.ts exports migrateBacklog(raw: unknown): IssuesLocalJson. The pure transform maps old schema entries (state:open->stage:idea; state:closed/done/canceled->stage:shipped; derives status; drops priority/closedAt/state; sets blockedBy:[]). Idempotency guard: entries with stage and no state/priority are passed through unchanged. CLI entrypoint uses Bun.file (gated by import.meta.main). 22 tests pass in test/issues/migrate.test.ts. The actual run on the real issues.local.json is US-008 (operator story). Check what the next story is and proceed accordingly.",
+  "nextStoryContext": "US-006 is complete. cam-plan Step 2 now routes the no-arg none path through selectPlannableFromFile: reads issues.local.json via git show main:, filters stage==='specified' && status==='open' && !blocked, sorts by rank then numeric id. The integer-arg none path adds a D2 warning when stage==='idea'. The old P0..P3 priority sort prose is gone. Both .claude/commands/cam-plan.md and templates/commands/cam-plan.md were updated identically; src/vendor/_generated.ts was regenerated via bun run embed-vendor. All gates green (1743 tests, typecheck ok, check:all ok). Next story: find the next passes:false entry in prd.json.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal transform: uses IssueEntry/IssuesLocalJson from src/issues/types.ts and Bun built-ins (Bun.file, Bun.write). No external library API exercised."
+      "summary": "Pure markdown edit + embedded vendor regen. Only .claude/commands/cam-plan.md, templates/commands/cam-plan.md, and src/vendor/_generated.ts were changed. No external library API exercised."
     }
   ]
 }

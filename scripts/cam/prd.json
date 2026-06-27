@@ -119,7 +119,7 @@
         "Full CI gate passes (bun run check:all -- the enforced spine that includes biome lint, typecheck, test, embed-vendor:check). [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "THREE-COPY SYNC is mandatory (patterns.md agent-prompt self-hosting): edit BOTH .claude/commands/cam-plan.md AND templates/commands/cam-plan.md, then `bun run embed-vendor` to regen src/vendor/_generated.ts, then `bun run embed-vendor:check`. Current Step 2 is at .claude/commands/cam-plan.md lines ~71-85 (and the templates mirror); the no-arg `none` bullet (line ~78) sorts by priority P0..P3 -- replace with the gate. D2 bridge (operator decision): no-arg autonomous path enforces stage===specified (delegates to the gate function); explicit `/cam-plan CAM-N` still plans an `idea` with a warning so CAM-107 can be planned by id next. The prose delegates to the deterministic seam from US-003 (mention selectPlannableFromFile + reading via `git show main:scripts/cam/issues.local.json` per the orchestrator-reads-from-main pattern). Keep the github/linear bullets unchanged. The embedded.test.ts byte-parity test catches templates<->_generated drift."
     },
