@@ -4,6 +4,22 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.9.0] - 2026-06-27
+
+### Added
+
+- US-006 - Rewrite cam-plan Step 2 to delegate to the gate (three-copy sync + embed)
+- US-005 - Idempotent migration script for the live issues.local.json
+- US-004 - Adopt new schema in issue writer and ship-finalize reader
+- US-003 - Selection function selectPlannableIssue (the PRD-readiness gate)
+- US-002 - Pure graph helpers: isBlocked, deriveBlocks, referential-integrity check
+- US-001 - Add typed issue schema (stage/status/blockedBy/wsjf?/rank?/spec?) + issues.schema.json
+
+### Fixed
+
+- US-R1-002 - correct ADR graph helper names, migration path, and hardcoded count
+- US-R1-001 - correct sort direction docs to rank ascending
+
 ## [0.8.0] - 2026-06-27
 
 ### Added
