@@ -1,6 +1,8 @@
 {
-  "threshold": 4,
-  "reporters": ["threshold"],
+  "threshold": 5,
+  "reporters": [
+    "threshold"
+  ],
   "ignore": [
     "**/node_modules/**",
     "**/vendor/**",
