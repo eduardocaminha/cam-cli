@@ -1327,13 +1327,15 @@ async function main(argv: string[]): Promise<number> {
 			return runRetryMonitor({ pane: parsed.pane, pid: parsed.pid });
 		}
 		case 'journal': {
-			// `cam journal append` -- reads a JSON cycle entry on stdin, appends it
-			// to scripts/cam/journal.md on main via commit-tree, prints the sentinel.
+			// `cam journal append [--force]` -- reads a JSON cycle entry on stdin,
+			// appends it to scripts/cam/journal.md on main via commit-tree, prints
+			// the sentinel.  --force replaces a duplicate cycleId entry in place.
 			const subCommand = argv[3];
 			if (subCommand !== 'append') {
-				printFatalHint('Usage: cam journal append  (reads JSON from stdin)');
+				printFatalHint('Usage: cam journal append [--force]  (reads JSON from stdin)');
 				return 1;
 			}
+			const force = argv.slice(4).includes('--force');
 			const stdinText = await Bun.stdin.text();
 			let journalEntry: JournalCycleEntry;
 			try {
@@ -1347,6 +1349,7 @@ async function main(argv: string[]): Promise<number> {
 				entry: journalEntry,
 				spawnFn: (cmd, args, opts) =>
 					spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
+				force,
 			});
 			if (!journalResult.ok) {
 				// printError already fired inside appendJournalEntryOnMain

@@ -58,6 +58,12 @@ export interface JournalCycleEntry {
 	outcome: string;
 	/** 1-2 sentence summary of what was accomplished. */
 	summary: string;
+	/** Optional: key decisions made during this cycle. */
+	decisions?: string;
+	/** Optional: blockers encountered. */
+	blockers?: string;
+	/** Optional: follow-up items for the next cycle. */
+	followups?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,6 +82,11 @@ export interface AppendJournalEntryOnMainOptions {
 	 * Defaults to writeFileSync(path, text, 'utf8').
 	 */
 	writeFile?: (path: string, text: string) => void;
+	/**
+	 * When true and a duplicate cycleId is detected, replace the existing
+	 * entry in place instead of rejecting with an error.
+	 */
+	force?: boolean;
 }
 
 export interface AppendJournalEntryOnMainSuccess {
@@ -88,12 +99,24 @@ export interface AppendJournalEntryOnMainSuccess {
 
 export interface AppendJournalEntryOnMainError {
 	ok: false;
-	reason: 'diverged' | 'detached-head' | 'missing-main';
+	reason: 'diverged' | 'detached-head' | 'missing-main' | 'duplicate-cycleId';
+}
+
+/**
+ * Validation error shape: carries `errors` per the discriminated-union pattern.
+ * (patterns.md line 130: members without `errors` must NOT carry it; callers
+ * narrow with `'errors' in result` before accessing it.)
+ */
+export interface AppendJournalEntryOnMainValidationError {
+	ok: false;
+	reason: 'validation';
+	errors: string[];
 }
 
 export type AppendJournalEntryOnMainResult =
 	| AppendJournalEntryOnMainSuccess
-	| AppendJournalEntryOnMainError;
+	| AppendJournalEntryOnMainError
+	| AppendJournalEntryOnMainValidationError;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -117,6 +140,88 @@ function buildIndexEnv(tempIndex: string): Record<string, string> {
 type MainGuardResult =
 	| AppendJournalEntryOnMainError
 	| { ok: true; branchWasMain: boolean; localMainSha: string };
+
+// ---------------------------------------------------------------------------
+// Validation helpers
+// ---------------------------------------------------------------------------
+
+const REQUIRED_FIELDS: ReadonlyArray<keyof JournalCycleEntry> = [
+	'cycleId',
+	'started',
+	'closed',
+	'branch',
+	'issue',
+	'outcome',
+	'summary',
+];
+
+/**
+ * Validate that all required fields are present and non-empty.
+ * Returns an array of missing field names (empty = valid).
+ */
+function validateEntry(entry: JournalCycleEntry): string[] {
+	return REQUIRED_FIELDS.filter(
+		(field) => !entry[field] || String(entry[field]).trim() === '',
+	);
+}
+
+/**
+ * Normalize U+2014 (em-dash) in a body field value.
+ * Per the project no-em-dash rule, em-dashes in persisted .md are replaced
+ * with a colon. The title header line is explicitly excluded (all 33 existing
+ * journal entries use `## cycleId — title` and that format is canonical).
+ */
+function normalizeEmDash(text: string): string {
+	return text.replace(/—/g, ':');
+}
+
+// ---------------------------------------------------------------------------
+// Duplicate-detection and in-place replacement helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Check whether a `## <cycleId> ` header already exists in journal content.
+ */
+function hasDuplicateCycleId(content: string, cycleId: string): boolean {
+	const header = `## ${cycleId} `;
+	return content.startsWith(header) || content.includes(`\n${header}`);
+}
+
+/**
+ * Replace the existing `## <cycleId>` block in `content` with `newBlock`.
+ *
+ * Algorithm (line-based):
+ *   1. Find the line index S where the header starts.
+ *   2. Find the line index N of the NEXT `## ` header (or lines.length).
+ *   3. Replace lines[S..N-2] with the new block lines.
+ *   4. Keep lines[N-1..] (the blank separator before the next entry, or the
+ *      trailing '' that represents the file's final newline).
+ * This preserves the blank-line separators between all entries.
+ */
+function replaceCycleBlock(content: string, cycleId: string, newBlock: string): string {
+	const headerPrefix = `## ${cycleId} `;
+	const lines = content.split('\n');
+
+	const startLine = lines.findIndex((l) => l.startsWith(headerPrefix));
+	if (startLine === -1) return content;
+
+	let endLine = lines.length;
+	for (let i = startLine + 1; i < lines.length; i++) {
+		if ((lines[i] ?? '').startsWith('## ')) {
+			endLine = i;
+			break;
+		}
+	}
+
+	// Replace lines[startLine..endLine-2]; keep lines[N-1..] (blank separator or trailing '').
+	const keepFromIdx = Math.max(endLine - 1, startLine + 1);
+	const result = [
+		...lines.slice(0, startLine),
+		...newBlock.split('\n'),
+		...lines.slice(keepFromIdx),
+	];
+	return result.join('\n');
+}
 
 /**
  * Up-to-date guard. Runs before any mutation. Same logic as issue-file.ts.
@@ -170,20 +275,39 @@ function checkMainUpToDate(cwd: string, spawnFn: SpawnFn): MainGuardResult {
 
 /**
  * Render the canonical journal markdown block for one cycle entry.
- * The em-dash (U+2014) in the header line is intentional and structural:
- * all existing journal entries use this separator.
+ *
+ * Em-dash (U+2014) handling:
+ *   - HEADER LINE: em-dash is INTENTIONAL and structural (all 33 existing entries
+ *     use `## cycleId — title`). It is NOT normalized.
+ *   - BODY FIELDS (Outcome, Summary, Decisions, Blockers, Followups): em-dashes
+ *     are replaced with `:` per the project no-em-dash rule for persisted .md.
+ *
+ * Optional fields (decisions, blockers, followups) are rendered only when present;
+ * an absent optional produces no bullet in the output.
  */
 export function renderJournalBlock(entry: JournalCycleEntry): string {
-	return [
+	const lines = [
 		`## ${entry.cycleId} — ${entry.title}`,
 		'',
 		`- **Started**: ${entry.started}`,
 		`- **Closed**: ${entry.closed}`,
 		`- **Branch**: ${entry.branch}`,
 		`- **Issue**: ${entry.issue}`,
-		`- **Outcome**: ${entry.outcome}`,
-		`- **Summary**: ${entry.summary}`,
-	].join('\n');
+		`- **Outcome**: ${normalizeEmDash(entry.outcome)}`,
+		`- **Summary**: ${normalizeEmDash(entry.summary)}`,
+	];
+
+	if (entry.decisions !== undefined) {
+		lines.push(`- **Decisions**: ${normalizeEmDash(entry.decisions)}`);
+	}
+	if (entry.blockers !== undefined) {
+		lines.push(`- **Blockers**: ${normalizeEmDash(entry.blockers)}`);
+	}
+	if (entry.followups !== undefined) {
+		lines.push(`- **Followups**: ${normalizeEmDash(entry.followups)}`);
+	}
+
+	return lines.join('\n');
 }
 
 /**
@@ -344,15 +468,27 @@ export function appendJournalEntryOnMain(
 	const { cwd, entry, spawnFn } = options;
 	const writeFile =
 		options.writeFile ?? ((p: string, t: string) => writeFileSync(p, t, 'utf8'));
+	const force = options.force ?? false;
 
-	// Guards 0a-0c.
+	// Step 1: validate pure inputs BEFORE any git calls (fail-fast pattern,
+	// patterns.md line 130: validate inputs before the git show read).
+	const missingFields = validateEntry(entry);
+	if (missingFields.length > 0) {
+		printError(
+			'missing required fields',
+			`journal entry is missing: ${missingFields.join(', ')}`,
+		);
+		return { ok: false, reason: 'validation', errors: missingFields };
+	}
+
+	// Step 2: Guards 0a-0c (up-to-date check).
 	const guard = checkMainUpToDate(cwd, spawnFn);
 	if (!guard.ok) {
 		return guard;
 	}
 	const { branchWasMain, localMainSha } = guard;
 
-	// Read journal.md from main (NOT the working tree, CAM-86 / US-006 pattern).
+	// Step 3: Read journal.md from main (NOT the working tree, CAM-86 / US-006 pattern).
 	const showResult = spawnFn(
 		'git',
 		['-C', cwd, 'show', 'main:scripts/cam/journal.md'],
@@ -360,7 +496,27 @@ export function appendJournalEntryOnMain(
 	);
 	const existingContent = showResult.stdout ?? '';
 
-	// Render and append.
+	// Step 4: Duplicate-cycleId check (state check against the journal read from main).
+	if (hasDuplicateCycleId(existingContent, entry.cycleId)) {
+		if (!force) {
+			printError(
+				'duplicate cycleId',
+				`journal already contains an entry for "${entry.cycleId}"; use --force to replace it`,
+			);
+			return { ok: false, reason: 'duplicate-cycleId' };
+		}
+		// --force: replace the existing entry in place.
+		const block = renderJournalBlock(entry);
+		const updatedContent = replaceCycleBlock(existingContent, entry.cycleId, block);
+		const commitMsg = `chore(cam): journal replace ${entry.cycleId}`;
+		const sha = branchWasMain
+			? commitOnMain(cwd, updatedContent, commitMsg, spawnFn, writeFile)
+			: commitTreeToMain(cwd, updatedContent, commitMsg, localMainSha, spawnFn);
+		pushMainBestEffort(cwd, spawnFn);
+		return { ok: true, cycleId: entry.cycleId, sha };
+	}
+
+	// Step 5: Render and append.
 	const block = renderJournalBlock(entry);
 	const updatedContent = appendBlock(existingContent, block);
 
