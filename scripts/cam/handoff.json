@@ -1,26 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-008",
-    "title": "Fix auto-chain defeating the MAX_ROUNDS_DEBT non-convergence terminal"
+    "id": "US-009",
+    "title": "Doc + dead-code cleanup for round-3 WARNING and three suggestions"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T18:00:00Z",
-  "createdFiles": [
-    "test/supervisor/non-convergence-autochain.test.ts"
-  ],
+  "timestamp": "2026-06-27T19:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/review.ts",
-    "src/supervisor/decide.ts",
-    "src/commands/sidecar.ts",
+    "docs/recovery-runbook.md",
+    "scripts/cam/CLAUDE.md",
+    "src/commands/setup.ts",
+    "test/commands/setup.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-008 fixes the DUAL INTERACTION bug where the US-005 auto-chain defeated the US-006 non-convergence hard terminal. Three-layer fix: (1) review.ts: `newRound > maxRounds` changed to `newRound >= maxRounds` so the terminal round (newRound==maxRounds) with FIXES_PENDING skips buildFixStories and sets MAX_ROUNDS_DEBT directly, preventing orphan fix stories; (2) sidecar.ts makeHasPendingStories: added MAX_ROUNDS_DEBT guard before Case (a) so the auto-chain never sees false-pending at the non-convergence terminal; (3) decide.ts decideNextAction: moved review state resolution before Case 1 and added `!verdictIsMaxDebt` guard to Case 1 so orphan stories cannot route back to implement. Existing US-006 non-convergence-terminal tests all still pass. 12 new behavioral oracle tests in test/supervisor/non-convergence-autochain.test.ts cover all 4 ACs.",
+  "nextStoryContext": "US-009 was a doc + dead-code cleanup story. Four changes: (1) recovery-runbook.md Option B rewritten to point at the real maxRounds sources (prd.review.maxRounds JSON field and CAM_MAX_REVIEW_ROUNDS env var) since no code reads [review] max_rounds from project.toml; (2) recovery-runbook.md Resend escalation grep diagnostic clarified to say it shows only FAILED escalations (sendEscalation writes stderr only on failure; success is silent); (3) src/commands/setup.ts: removed dead --resend-api-key flag (two parse arms, resendApiKey field from SetupOptions and ParsedSetupArgs, and the :605 fallback) - warnIfResendUnconfigured now reads RESEND_API_KEY env var only; (4) scripts/cam/CLAUDE.md Stop Condition: added note that requires:operator stories are hand-filed only (US-003 removed planner emission). New test in setup.test.ts confirms env-var-only path still fires the loud warning. All 1892 tests pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure TypeScript fix in src/supervisor/review.ts, src/supervisor/decide.ts, src/commands/sidecar.ts. No external library code was touched."
+      "summary": "Story touched docs and setup.ts only. No external library code was introduced or modified."
     }
   ]
 }
