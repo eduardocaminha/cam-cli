@@ -30,8 +30,10 @@ import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/event
 import { parseStateFile } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
-import { hasSession, projectSessionName, type SpawnFn } from '../tmux/session.ts';
-import { readMergeMode } from '../config/models.ts';
+import { hasSession, projectSessionName, getOrchPaneId, type SpawnFn } from '../tmux/session.ts';
+import { readMergeMode, readPlanApproval, readResendConfig } from '../config/models.ts';
+import { sendEscalation } from '../notify/resend.ts';
+import { buildWorkerReportSendKeysArgv } from '../supervisor/worker-report.ts';
 import {
 	runMergeWatch,
 	MERGE_WATCH_FILENAME,
@@ -94,6 +96,24 @@ export interface SidecarOptions {
 	 */
 	logEventFn?: WorkerEventLogger;
 	/**
+	 * Override the flipActiveFn (US-005).
+	 *
+	 * Production (auto mode): writes active:true to .claude/cam-loop.local.md
+	 * so the sidecar re-triggers after a supervisor run without a human cam-next.
+	 * Production (operator mode): undefined (inert, zero behavior change).
+	 * Tests inject a spy to assert the flip happened.
+	 */
+	flipActiveFn?: RunSidecarLoopOptions['flipActiveFn'];
+	/**
+	 * Override the autoShipFn (US-005).
+	 *
+	 * Production (auto mode): sends '/cam-ship Enter' to the orchestrator pane
+	 * via tmux send-keys so cam-ship runs without a human gate after CLEAN review.
+	 * Production (operator mode): undefined (inert, zero behavior change).
+	 * Tests inject a spy to assert the dispatch happened.
+	 */
+	autoShipFn?: RunSidecarLoopOptions['autoShipFn'];
+	/**
 	 * Override the merge-watch function (US-007).
 	 *
 	 * Production (ci-gated mode): reads .claude/.cam-merge-watch.json, runs
@@ -105,6 +125,16 @@ export interface SidecarOptions {
 	 * the real implementation automatically.
 	 */
 	runMergeWatchFn?: RunSidecarLoopOptions['runMergeWatchFn'];
+	/**
+	 * Override the escalateFn (US-R1-001).
+	 *
+	 * Production: reads RESEND_API_KEY env var + resend_recipient from
+	 * [notify] project.toml and builds a sendEscalation closure. Absent when
+	 * Resend is unconfigured (both values must be non-empty).
+	 * Tests: inject a spy to assert the escalation was dispatched without a
+	 * real network hit.
+	 */
+	escalateFn?: RunSidecarLoopOptions['escalateFn'];
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +237,17 @@ export function makeHasPendingStories(prdPath: string): () => boolean {
 			if (parsed === null || typeof parsed !== 'object') return false;
 			const prd = parsed as PrdSnapshot;
 			const stories = prd.userStories ?? [];
+			// US-008 guard: MAX_ROUNDS_DEBT is the non-convergence terminal. At this
+			// state no further implement should be dispatched, regardless of any
+			// passes:false stories (orphan fix stories left before the terminal was
+			// detected). Return false so the auto-chain does not re-trigger the loop.
+			// Note: CLEAN is NOT guarded here — CLEAN + pending stories is a valid
+			// scenario (e.g. review passed but the operator added a new story). Only
+			// MAX_ROUNDS_DEBT means "the pipeline is exhausted, stop everything."
+			const currentVerdict = prd.review?.lastVerdict ?? null;
+			if (currentVerdict === 'MAX_ROUNDS_DEBT') {
+				return false;
+			}
 			// Case (a): at least one implementable story is still pending.
 			if (stories.some((s) => s.passes !== true && s.requires !== 'operator')) {
 				return true;
@@ -295,6 +336,163 @@ function makeProductionMergeWatchFn(
 }
 
 // ---------------------------------------------------------------------------
+// Auto-chain production factories (US-005)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the production flipActiveFn closure for auto mode.
+ *
+ * Writes active:true to .claude/cam-loop.local.md, preserving all other
+ * fields from the existing state file (mirrors the cam-next thin-proxy).
+ * Non-fatal on any error: the sidecar continues; the auto-chain may simply
+ * miss one cycle rather than aborting.
+ */
+function makeFlipActiveFn(claudeDir: string, cwd: string): () => void {
+	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
+	return (): void => {
+		try {
+			const now = new Date().toISOString();
+			let body: string;
+			if (existsSync(stateFilePath)) {
+				const contents = readFileSync(stateFilePath, 'utf8');
+				const parsed = parseStateFile(contents);
+				body = renderStateFile({
+					maxIterations: parsed?.max_iterations ?? 50,
+					completionPromise: parsed?.completion_promise ?? 'COMPLETE',
+					startedAt: parsed?.started_at ?? now,
+					pid: parsed?.pid ?? process.pid,
+					active: true,
+					iteration: parsed?.iteration,
+					currentStory: parsed?.current_story,
+					storiesDone: parsed?.stories_done,
+					storiesTotal: parsed?.stories_total,
+					lastActivity: now,
+				});
+			} else {
+				body = renderStateFile({
+					maxIterations: 50,
+					completionPromise: 'COMPLETE',
+					startedAt: now,
+					pid: process.pid,
+					active: true,
+					lastActivity: now,
+				});
+			}
+			writeStateFile(cwd, body, { force: true });
+		} catch {
+			// Non-fatal: sidecar continues to next poll cycle.
+		}
+	};
+}
+
+/**
+ * Build the production autoShipFn closure for auto mode.
+ *
+ * Sends '/cam-ship Enter' to the orchestrator pane via tmux send-keys so
+ * cam ship runs without a human gate after a CLEAN review verdict.
+ * Best-effort: a missing orchestrator pane is a silent no-op.
+ */
+function makeAutoShipFn(sessionName: string, spawnFn: SpawnFn): () => void {
+	return (): void => {
+		const orchPane = getOrchPaneId(sessionName, spawnFn);
+		if (orchPane === null) return; // best-effort: silent no-op
+		const argv = buildWorkerReportSendKeysArgv(orchPane, '/cam-ship');
+		spawnFn('tmux', argv, { stdio: 'ignore' });
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Dep-resolution helper (extracted from runSidecar to keep it under the biome
+// cognitive-complexity <=15 and function-length <=80 line limits; CAM-60
+// factory/helper-extraction pattern)
+// ---------------------------------------------------------------------------
+
+interface SidecarLoopDepsCtx {
+	cwd: string;
+	claudeDir: string;
+	prdPath: string;
+	sessionName: string;
+	logEvent: WorkerEventLogger;
+	realSpawnFn: SpawnFn;
+}
+
+interface SidecarLoopDepsResult {
+	readActiveFn: () => boolean | undefined;
+	clearActiveFn: () => void;
+	hasPendingStoriesFn: () => boolean;
+	sleepFn: (ms: number) => void;
+	hasSessionFn: () => boolean;
+	acquireLockFn: NonNullable<SidecarOptions['acquireLockFn']>;
+	buildOptsFn: NonNullable<RunSidecarLoopOptions['buildOpts']>;
+	runMergeWatchFn: RunSidecarLoopOptions['runMergeWatchFn'];
+	flipActiveFn: RunSidecarLoopOptions['flipActiveFn'];
+	autoShipFn: RunSidecarLoopOptions['autoShipFn'];
+	escalateFn: RunSidecarLoopOptions['escalateFn'];
+}
+
+/**
+ * Resolve all injectable sidecar loop deps from SidecarOptions + context.
+ *
+ * Each dep follows the options-injection-or-production-default pattern: when
+ * the option is provided (by tests), use it; otherwise build the real dep.
+ * Extracted so runSidecar stays under the biome cognitive-complexity (<=15)
+ * and function-length (<=80 lines) limits.
+ */
+function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions): SidecarLoopDepsResult {
+	const { cwd, claudeDir, prdPath, sessionName, logEvent, realSpawnFn } = ctx;
+
+	const readActiveFn = options.readActiveFn ?? makeReadActive(claudeDir);
+	const clearActiveFn = options.clearActiveFn ?? makeClearActive(claudeDir, cwd);
+	const hasPendingStoriesFn = options.hasPendingStoriesFn ?? makeHasPendingStories(prdPath);
+	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
+	const hasSessionFn = options.hasSessionFn ?? (() => hasSession(sessionName, realSpawnFn));
+	const acquireLockFn =
+		options.acquireLockFn ??
+		(() => { const built = buildSupervisorOptions(cwd); return built.acquireLock(); });
+	const buildOptsFn =
+		options.buildOptsFn ??
+		(() => { const built = buildSupervisorOptions(cwd); return built.opts; });
+
+	// US-007: Merge-watch wiring for CI-gated ship mode.
+	const mergeMode = readMergeMode(join(cwd, 'scripts/cam/project.toml'));
+	const runMergeWatchFn: RunSidecarLoopOptions['runMergeWatchFn'] =
+		options.runMergeWatchFn ??
+		(mergeMode === 'ci-gated'
+			? makeProductionMergeWatchFn(cwd, claudeDir, sessionName, logEvent, realSpawnFn)
+			: undefined);
+
+	// US-005: plan_approval drives auto-chain wiring (flip + autoShip only in auto
+	// mode; undefined in operator mode = zero behavior change).
+	const planApproval = readPlanApproval(join(cwd, 'scripts/cam/project.toml'));
+	const autoChainProduction = planApproval === 'auto'
+		? { flipActiveFn: makeFlipActiveFn(claudeDir, cwd), autoShipFn: makeAutoShipFn(sessionName, realSpawnFn) }
+		: { flipActiveFn: undefined as RunSidecarLoopOptions['flipActiveFn'], autoShipFn: undefined as RunSidecarLoopOptions['autoShipFn'] };
+	const flipActiveFn = options.flipActiveFn ?? autoChainProduction.flipActiveFn;
+	const autoShipFn = options.autoShipFn ?? autoChainProduction.autoShipFn;
+
+	// US-R1-001: escalateFn from Resend config; only wired when both apiKey and
+	// recipient are non-empty.
+	const resendConfig = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
+	const escalateFn: RunSidecarLoopOptions['escalateFn'] =
+		options.escalateFn ??
+		(resendConfig.apiKey !== '' && resendConfig.recipient !== ''
+			? async () => {
+					await sendEscalation({
+						apiKey: resendConfig.apiKey,
+						recipient: resendConfig.recipient,
+						subject: '[cam] Non-convergence: max review rounds reached',
+						html: '<p><strong>[cam]</strong> The supervisor reached the maximum number of review rounds without a CLEAN verdict. Manual intervention is required.</p>',
+					});
+				}
+			: undefined);
+
+	return {
+		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
+		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, autoShipFn, escalateFn,
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
@@ -312,56 +510,30 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	const claudeDir = join(cwd, '.claude');
 	const prdPath = join(cwd, 'scripts/cam/prd.json');
 
-	const readActiveFn = options.readActiveFn ?? makeReadActive(claudeDir);
-	const clearActiveFn = options.clearActiveFn ?? makeClearActive(claudeDir, cwd);
-	const hasPendingStoriesFn = options.hasPendingStoriesFn ?? makeHasPendingStories(prdPath);
-	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
-
-	// Production hasSession checker: real spawnSync-based SpawnFn.
 	const realSpawnFn: SpawnFn = (cmd, args, spawnOpts) =>
 		spawnSync(cmd, args, spawnOpts as Parameters<typeof spawnSync>[2]);
 	const sessionName = projectSessionName(cwd);
-	const hasSessionFn =
-		options.hasSessionFn ?? (() => hasSession(sessionName, realSpawnFn));
-
-	// Structured event logger: writes sidecar lifecycle events to cam-worker-events.jsonl.
 	const logEvent =
 		options.logEventFn ?? makeFileEventLogger(join(claudeDir, 'cam-worker-events.jsonl'));
 
-	// Lock factory: built from real host.ts unless injected by tests.
-	const acquireLockFn =
-		options.acquireLockFn ??
-		(() => {
-			const built = buildSupervisorOptions(cwd);
-			return built.acquireLock();
-		});
-
-	// buildOpts factory: build RunSupervisorOptions for each sidecar cycle.
-	const buildOptsFn =
-		options.buildOptsFn ??
-		(() => {
-			const built = buildSupervisorOptions(cwd);
-			return built.opts;
-		});
-
-	// US-007: Merge-watch wiring for CI-gated ship mode.
-	const mergeMode = readMergeMode(join(cwd, 'scripts/cam/project.toml'));
-	const runMergeWatchFn: RunSidecarLoopOptions['runMergeWatchFn'] =
-		options.runMergeWatchFn ??
-		(mergeMode === 'ci-gated'
-			? makeProductionMergeWatchFn(cwd, claudeDir, sessionName, logEvent, realSpawnFn)
-			: undefined);
+	const deps = buildSidecarLoopDeps(
+		{ cwd, claudeDir, prdPath, sessionName, logEvent, realSpawnFn },
+		options,
+	);
 
 	await runSidecarLoop({
-		buildOpts: buildOptsFn,
-		readActive: readActiveFn,
-		clearActive: clearActiveFn,
-		sleep: sleepFn,
-		hasPendingStories: hasPendingStoriesFn,
-		acquireLock: acquireLockFn,
+		buildOpts: deps.buildOptsFn,
+		readActive: deps.readActiveFn,
+		clearActive: deps.clearActiveFn,
+		sleep: deps.sleepFn,
+		hasPendingStories: deps.hasPendingStoriesFn,
+		acquireLock: deps.acquireLockFn,
 		runSupervisorFn: options.runSupervisorFn,
-		hasSessionFn,
+		hasSessionFn: deps.hasSessionFn,
 		logEvent,
-		runMergeWatchFn,
+		runMergeWatchFn: deps.runMergeWatchFn,
+		flipActiveFn: deps.flipActiveFn,
+		autoShipFn: deps.autoShipFn,
+		escalateFn: deps.escalateFn,
 	});
 }

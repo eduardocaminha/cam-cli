@@ -4,6 +4,26 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.11.0] - 2026-06-27
+
+### Added
+
+- [US-R2-001] - raise setup.ts file-size ceiling 816->818 after US-R1-001 growth
+- [US-R1-001] - mirror escalation gate in warnIfResendUnconfigured
+- [US-010] - Refactor runSidecar and ConfigScreen under biome complexity/line limits (pure refactor)
+- [US-009] - Doc + dead-code cleanup for round-3 WARNING and three suggestions
+- [US-008] - Fix auto-chain defeating the MAX_ROUNDS_DEBT non-convergence terminal
+- [US-R2-001] - Review round 2 fix 001: address reviewer finding
+- [US-R1-002] - Read RESEND_API_KEY from env instead of project.toml
+- [US-R1-001] - Wire production escalateFn through RunSidecarLoopOptions into RunSupervisorOptions
+- [US-007] - Best-effort Resend escalation + plan_approval/Resend config surface + runbook
+- [US-006] - Non-convergence hard terminal: maxRounds=3 and auditor-no-APPROVE both terminate cleanly
+- [US-005] - Auto-chaining: in auto mode, flip active:true after branch and auto-dispatch ship on review CLEAN
+- [US-004] - Deterministic plan_approval branch decision wired into cam-plan
+- [US-003] - subagent-planner: vertical-slicing + stop emitting requires:operator stories
+- [US-002] - cam-plan: replace the MVP-vs-launch-ready fork with one proportional plan that reads the grilled spec
+- [US-001] - Add [plan] plan_approval accessor (readPlanApproval) defaulting to auto
+
 ## [0.10.0] - 2026-06-27
 
 ### Added

@@ -479,8 +479,14 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		}
 
 		// FIXES_PENDING path.
-		if (newRound > maxRounds) {
-			// Exceeded max rounds: set terminal debt verdict.
+		if (newRound >= maxRounds) {
+			// At or beyond max rounds without CLEAN: set MAX_ROUNDS_DEBT directly.
+			// US-008: do NOT create fix stories here. Orphan passes:false fix stories
+			// created at the terminal round (newRound == maxRounds) would make
+			// makeHasPendingStories return true, which re-triggers the auto-chain and
+			// defeats the US-006 non-convergence hard terminal. By skipping
+			// buildFixStories on the terminal round, prd.json userStories are
+			// unchanged and the pipeline stops cleanly at MAX_ROUNDS_DEBT.
 			writePrd({
 				...prd,
 				review: {
@@ -492,7 +498,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			});
 			return {
 				status: 'ok',
-				detail: `Review round ${newRound} exceeded maxRounds (${maxRounds}). Set MAX_ROUNDS_DEBT.`,
+				detail: `Review round ${newRound} reached maxRounds (${maxRounds}) without CLEAN. Set MAX_ROUNDS_DEBT.`,
 			};
 		}
 

@@ -42,12 +42,13 @@ import { colors } from './theme.ts';
 import { Section } from './Section.tsx';
 import { Select, type SelectOption } from './Select.tsx';
 import type { ProjectMode, IssueSystem } from '../commands/setup.ts';
-import type { MergeMode } from '../config/models.ts';
+import type { MergeMode, PlanApproval } from '../config/models.ts';
 
 export interface SetupAnswers {
 	projectMode: ProjectMode;
 	issueSystem: IssueSystem;
 	mergeMode: MergeMode;
+	planApproval: PlanApproval;
 	description: string;
 }
 
@@ -57,7 +58,7 @@ interface SetupScreenProps {
 	onCancel: () => void;
 }
 
-type Step = 'mode' | 'issue' | 'merge' | 'description' | 'done';
+type Step = 'mode' | 'issue' | 'merge' | 'plan-approval' | 'description' | 'done';
 
 const MODE_OPTIONS: readonly SelectOption<ProjectMode>[] = [
 	{ value: 'existing', label: 'Existing project', description: 'This folder already has code' },
@@ -75,10 +76,16 @@ const MERGE_OPTIONS: readonly SelectOption<MergeMode>[] = [
 	{ value: 'ci-gated', label: 'CI-gated', description: 'Wait for CI to pass before merging' },
 ];
 
+const PLAN_APPROVAL_OPTIONS: readonly SelectOption<PlanApproval>[] = [
+	{ value: 'auto', label: 'Auto (default)', description: 'Sidecar advances automatically after plan audit' },
+	{ value: 'operator', label: 'Operator gate', description: 'Pause for human approval before each loop' },
+];
+
 export function SetupScreen({ prefilled, onDone, onCancel }: SetupScreenProps): ReactElement {
 	const [projectMode, setProjectMode] = useState<ProjectMode | undefined>(prefilled.projectMode);
 	const [issueSystem, setIssueSystem] = useState<IssueSystem | undefined>(prefilled.issueSystem);
 	const [mergeMode, setMergeMode] = useState<MergeMode | undefined>(prefilled.mergeMode);
+	const [planApproval, setPlanApproval] = useState<PlanApproval | undefined>(prefilled.planApproval);
 	const [description, setDescription] = useState<string | undefined>(prefilled.description);
 	const [descDraft, setDescDraft] = useState<string>('');
 
@@ -86,6 +93,7 @@ export function SetupScreen({ prefilled, onDone, onCancel }: SetupScreenProps): 
 		if (projectMode === undefined) return 'mode';
 		if (issueSystem === undefined) return 'issue';
 		if (mergeMode === undefined) return 'merge';
+		if (planApproval === undefined) return 'plan-approval';
 		if (projectMode === 'new' && description === undefined) return 'description';
 		return 'done';
 	})();
@@ -110,19 +118,22 @@ export function SetupScreen({ prefilled, onDone, onCancel }: SetupScreenProps): 
 				projectMode: projectMode!,
 				issueSystem: issueSystem!,
 				mergeMode: mergeMode!,
+				planApproval: planApproval!,
 				description: description ?? '',
 			});
 		}, 0);
 		return () => clearTimeout(id);
-	}, [step, projectMode, issueSystem, mergeMode, description, onDone]);
+	}, [step, projectMode, issueSystem, mergeMode, planApproval, description, onDone]);
 
 	const showProjectSummary = projectMode !== undefined && step !== 'mode';
 	const showIssueSection = projectMode !== undefined;
 	const showIssueSummary = issueSystem !== undefined && step !== 'issue';
 	const showMergeSection = issueSystem !== undefined;
 	const showMergeSummary = mergeMode !== undefined && step !== 'merge';
+	const showPlanApprovalSection = mergeMode !== undefined;
+	const showPlanApprovalSummary = planApproval !== undefined && step !== 'plan-approval';
 	const showDescriptionSection =
-		projectMode === 'new' && issueSystem !== undefined && mergeMode !== undefined;
+		projectMode === 'new' && issueSystem !== undefined && mergeMode !== undefined && planApproval !== undefined;
 
 	return (
 		<Box flexDirection="column">
@@ -185,6 +196,26 @@ export function SetupScreen({ prefilled, onDone, onCancel }: SetupScreenProps): 
 						<ConfirmedAnswer
 							label={mergeLabel(mergeMode!)}
 							description={MERGE_OPTIONS.find((o) => o.value === mergeMode)?.description}
+						/>
+					) : null}
+				</Section>
+			) : null}
+
+			{showPlanApprovalSection ? (
+				<Section heading="Plan approval">
+					{step === 'plan-approval' ? (
+						<Select
+							question="How should cam advance after a plan audit?"
+							options={PLAN_APPROVAL_OPTIONS}
+							defaultValue="auto"
+							onChange={setPlanApproval}
+							onCancel={onCancel}
+						/>
+					) : null}
+					{showPlanApprovalSummary ? (
+						<ConfirmedAnswer
+							label={planApprovalLabel(planApproval!)}
+							description={PLAN_APPROVAL_OPTIONS.find((o) => o.value === planApproval)?.description}
 						/>
 					) : null}
 				</Section>
@@ -286,4 +317,8 @@ function issueLabel(issue: IssueSystem): string {
 
 function mergeLabel(mode: MergeMode): string {
 	return mode === 'ci-gated' ? 'CI-gated' : 'Immediate (default)';
+}
+
+function planApprovalLabel(mode: PlanApproval): string {
+	return mode === 'operator' ? 'Operator gate' : 'Auto (default)';
 }

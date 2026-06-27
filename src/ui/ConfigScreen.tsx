@@ -22,7 +22,7 @@ import { colors } from './theme.ts';
 import { Section } from './Section.tsx';
 import { Select, type SelectOption } from './Select.tsx';
 import { DEFAULTS } from '../config/models.ts';
-import type { Phase, MergeMode } from '../config/models.ts';
+import type { Phase, MergeMode, PlanApproval } from '../config/models.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,9 +32,10 @@ export type ConfigChoices = {
 	models: Record<Phase, string>;
 	backend: string;
 	mergeMode?: MergeMode;
+	planApproval?: PlanApproval;
 };
 
-type WizardStep = Phase | 'backend' | 'merge-mode' | 'done';
+type WizardStep = Phase | 'backend' | 'merge-mode' | 'plan-approval' | 'done';
 
 // ---------------------------------------------------------------------------
 // Static data
@@ -75,6 +76,11 @@ const MERGE_MODE_OPTIONS: readonly SelectOption<MergeMode>[] = [
 	{ value: 'ci-gated', label: 'CI-gated', description: 'Wait for CI to pass before merging' },
 ];
 
+const PLAN_APPROVAL_OPTIONS: readonly SelectOption<PlanApproval>[] = [
+	{ value: 'auto', label: 'Auto (default)', description: 'Sidecar advances automatically after plan audit' },
+	{ value: 'operator', label: 'Operator gate', description: 'Pause for human approval before each loop' },
+];
+
 // ---------------------------------------------------------------------------
 // ConfigScreen component
 // ---------------------------------------------------------------------------
@@ -89,8 +95,9 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 	const [models, setModels] = useState<Partial<Record<Phase, string>>>({});
 	const [backend, setBackend] = useState<string | undefined>(undefined);
 	const [mergeMode, setMergeMode] = useState<MergeMode | undefined>(undefined);
+	const [planApproval, setPlanApproval] = useState<PlanApproval | undefined>(undefined);
 
-	const allSteps: readonly WizardStep[] = [...PHASE_STEPS, 'backend', 'merge-mode', 'done'];
+	const allSteps: readonly WizardStep[] = [...PHASE_STEPS, 'backend', 'merge-mode', 'plan-approval', 'done'];
 	const currentStep: WizardStep = allSteps[stepIdx] ?? 'done';
 
 	// After every choice is made the currentStep becomes 'done'. Fire onDone
@@ -102,11 +109,12 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 		) as Record<Phase, string>;
 		const chosenBackend = backend ?? DEFAULTS.backend;
 		const chosenMergeMode = mergeMode ?? 'immediate';
+		const chosenPlanApproval = planApproval ?? 'auto';
 		const id = setTimeout(() => {
-			onDone({ models: allModels, backend: chosenBackend, mergeMode: chosenMergeMode });
+			onDone({ models: allModels, backend: chosenBackend, mergeMode: chosenMergeMode, planApproval: chosenPlanApproval });
 		}, 0);
 		return () => clearTimeout(id);
-	}, [currentStep, models, backend, mergeMode, onDone]);
+	}, [currentStep, models, backend, mergeMode, planApproval, onDone]);
 
 	function handlePhaseSelect(phase: Phase, value: string): void {
 		setModels((m) => ({ ...m, [phase]: value }));
@@ -123,6 +131,11 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 		setStepIdx((i) => i + 1);
 	}
 
+	function handlePlanApprovalSelect(value: PlanApproval): void {
+		setPlanApproval(value);
+		setStepIdx((i) => i + 1);
+	}
+
 	return (
 		<Box flexDirection="column">
 			<Box marginTop={1}>
@@ -134,9 +147,7 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 			{PHASE_STEPS.map((phase, phaseIdx) => {
 				const isActive = stepIdx === phaseIdx;
 				const isDone = stepIdx > phaseIdx;
-
 				if (!isActive && !isDone) return null;
-
 				return (
 					<Section key={phase} heading={PHASE_LABELS[phase]}>
 						{isActive ? (
@@ -148,44 +159,14 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 								onCancel={onCancel}
 							/>
 						) : null}
-						{isDone ? (
-							<ConfirmedChoice label={models[phase] ?? DEFAULTS[phase]} />
-						) : null}
+						{isDone ? <ConfirmedChoice label={models[phase] ?? DEFAULTS[phase]} /> : null}
 					</Section>
 				);
 			})}
 
-			{stepIdx >= PHASE_STEPS.length ? (
-				<Section heading="Backend">
-					{currentStep === 'backend' ? (
-						<Select
-							question="Backend:"
-							options={BACKEND_OPTIONS}
-							defaultValue={DEFAULTS.backend}
-							onChange={handleBackendSelect}
-							onCancel={onCancel}
-						/>
-					) : backend !== undefined ? (
-						<ConfirmedChoice label={backend} />
-					) : null}
-				</Section>
-			) : null}
-
-			{stepIdx >= PHASE_STEPS.length + 1 ? (
-				<Section heading="Merge mode">
-					{currentStep === 'merge-mode' ? (
-						<Select
-							question="How should cam ship merge pull requests?"
-							options={MERGE_MODE_OPTIONS}
-							defaultValue="immediate"
-							onChange={handleMergeModeSelect}
-							onCancel={onCancel}
-						/>
-					) : mergeMode !== undefined ? (
-						<ConfirmedChoice label={mergeModeLabel(mergeMode)} />
-					) : null}
-				</Section>
-			) : null}
+			<BackendSection stepIdx={stepIdx} currentStep={currentStep} backend={backend} onChange={handleBackendSelect} onCancel={onCancel} />
+			<MergeModeSection stepIdx={stepIdx} currentStep={currentStep} mergeMode={mergeMode} onChange={handleMergeModeSelect} onCancel={onCancel} />
+			<PlanApprovalSection stepIdx={stepIdx} currentStep={currentStep} planApproval={planApproval} onChange={handlePlanApprovalSelect} onCancel={onCancel} />
 
 			{currentStep === 'done' ? (
 				<Section heading="Saved" tone="accent">
@@ -203,6 +184,69 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+interface BackendSectionProps {
+	stepIdx: number;
+	currentStep: WizardStep;
+	backend: string | undefined;
+	onChange: (v: string) => void;
+	onCancel: () => void;
+}
+
+function BackendSection({ stepIdx, currentStep, backend, onChange, onCancel }: BackendSectionProps): ReactElement | null {
+	if (stepIdx < PHASE_STEPS.length) return null;
+	return (
+		<Section heading="Backend">
+			{currentStep === 'backend' ? (
+				<Select question="Backend:" options={BACKEND_OPTIONS} defaultValue={DEFAULTS.backend} onChange={onChange} onCancel={onCancel} />
+			) : backend !== undefined ? (
+				<ConfirmedChoice label={backend} />
+			) : null}
+		</Section>
+	);
+}
+
+interface MergeModeSectionProps {
+	stepIdx: number;
+	currentStep: WizardStep;
+	mergeMode: MergeMode | undefined;
+	onChange: (v: MergeMode) => void;
+	onCancel: () => void;
+}
+
+function MergeModeSection({ stepIdx, currentStep, mergeMode, onChange, onCancel }: MergeModeSectionProps): ReactElement | null {
+	if (stepIdx < PHASE_STEPS.length + 1) return null;
+	return (
+		<Section heading="Merge mode">
+			{currentStep === 'merge-mode' ? (
+				<Select question="How should cam ship merge pull requests?" options={MERGE_MODE_OPTIONS} defaultValue="immediate" onChange={onChange} onCancel={onCancel} />
+			) : mergeMode !== undefined ? (
+				<ConfirmedChoice label={mergeModeLabel(mergeMode)} />
+			) : null}
+		</Section>
+	);
+}
+
+interface PlanApprovalSectionProps {
+	stepIdx: number;
+	currentStep: WizardStep;
+	planApproval: PlanApproval | undefined;
+	onChange: (v: PlanApproval) => void;
+	onCancel: () => void;
+}
+
+function PlanApprovalSection({ stepIdx, currentStep, planApproval, onChange, onCancel }: PlanApprovalSectionProps): ReactElement | null {
+	if (stepIdx < PHASE_STEPS.length + 2) return null;
+	return (
+		<Section heading="Plan approval">
+			{currentStep === 'plan-approval' ? (
+				<Select question="How should cam advance after a plan audit?" options={PLAN_APPROVAL_OPTIONS} defaultValue="auto" onChange={onChange} onCancel={onCancel} />
+			) : planApproval !== undefined ? (
+				<ConfirmedChoice label={planApprovalLabel(planApproval)} />
+			) : null}
+		</Section>
+	);
+}
+
 function ConfirmedChoice({ label }: { label: string }): ReactElement {
 	return (
 		<Box flexDirection="row">
@@ -214,4 +258,8 @@ function ConfirmedChoice({ label }: { label: string }): ReactElement {
 
 function mergeModeLabel(mode: MergeMode): string {
 	return mode === 'ci-gated' ? 'CI-gated' : 'Immediate (default)';
+}
+
+function planApprovalLabel(mode: PlanApproval): string {
+	return mode === 'operator' ? 'Operator gate' : 'Auto (default)';
 }

@@ -27,7 +27,7 @@
 //     reader is present, parseAnySentinel is demoted to human-corroboration only:
 //     a DONE sentinel in the pane without a matching report does NOT break the poll.
 
-import { decideNextAction } from './decide.ts';
+import { decideNextAction, DEFAULT_MAX_ROUNDS } from './decide.ts';
 import type { PrdSnapshot } from './decide.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
@@ -321,6 +321,33 @@ export interface RunSupervisorOptions {
 	 * byte-for-byte unchanged.
 	 */
 	notifyOrchestrator?: (line: string) => void;
+	/**
+	 * Auto-ship callback for auto mode (US-005).
+	 *
+	 * When injected (plan_approval === 'auto'), called immediately after a CLEAN
+	 * review verdict to dispatch /cam-ship without a human gate. In production
+	 * this sends '/cam-ship Enter' to the orchestrator pane via tmux send-keys.
+	 *
+	 * Optional: when absent (operator mode or plan_approval != 'auto') the
+	 * review branch is unchanged (zero behavior change for all existing tests).
+	 */
+	autoShipFn?: () => void;
+	/**
+	 * Best-effort escalation callback (US-007).
+	 *
+	 * When injected, called immediately after the MAX_ROUNDS_DEBT terminal is
+	 * detected (non-convergence after maxRounds review rounds without CLEAN).
+	 * The call is best-effort: any rejection is caught and logged; the pipeline
+	 * always returns { status: 'complete' } regardless of escalation outcome.
+	 *
+	 * In production this calls sendEscalation() from src/notify/resend.ts with
+	 * the configured Resend API key + recipient from project.toml.
+	 *
+	 * Optional: when absent (Resend unconfigured or operator mode without
+	 * escalation) the non-convergence terminal is unchanged. All existing tests
+	 * that do not inject this callback pass byte-for-byte unchanged.
+	 */
+	escalateFn?: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1077,6 +1104,50 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				writePrd(updatedPrd);
 			}
 
+			// US-006: Non-convergence hard terminal.
+			// When review hits maxRounds without CLEAN, promote the verdict to
+			// MAX_ROUNDS_DEBT and return a terminal status WITHOUT continuing into
+			// decideNextAction. This prevents a (maxRounds+1)-th fix dispatch
+			// and exposes a deterministic seam US-007's escalation hooks on.
+			// Auditor-no-APPROVE case: exhausting the review round cap without a
+			// CLEAN verdict IS the deterministic terminal (no separate mechanism
+			// needed; the maxRounds check is the single gate).
+			if (updatedPrd !== null) {
+				const ncRoundsCompleted = updatedPrd.review?.roundsCompleted ?? 0;
+				const ncMaxRounds = updatedPrd.review?.maxRounds ?? DEFAULT_MAX_ROUNDS;
+				const ncLastVerdict = updatedPrd.review?.lastVerdict ?? null;
+				if (ncRoundsCompleted >= ncMaxRounds && ncLastVerdict !== 'CLEAN') {
+					// Promote the stored verdict to MAX_ROUNDS_DEBT so the prd.json
+					// seam is deterministic for US-007 escalation.
+					updatedPrd.review = { ...(updatedPrd.review ?? {}), lastVerdict: 'MAX_ROUNDS_DEBT' };
+					writePrd(updatedPrd);
+					// Notify orchestrator with the promoted verdict line.
+					opts.notifyOrchestrator?.(formatReviewVerdictLine(ncRoundsCompleted, 'MAX_ROUNDS_DEBT'));
+					// Emit structured event for the promotion.
+					const promotionDetail: ReviewVerdictHandbackEventDetail = {
+						verdict: 'MAX_ROUNDS_DEBT',
+						round: ncRoundsCompleted,
+					};
+					emit('review-verdict-handback', undefined, reviewUuid, promotionDetail);
+					// US-007: best-effort Resend escalation. Swallow any rejection so
+					// the pipeline always reaches the 'complete' return below.
+					if (opts.escalateFn !== undefined) {
+						const escalateFn = opts.escalateFn;
+						void (async () => {
+							try {
+								await escalateFn();
+							} catch (e) {
+								process.stderr.write(
+									`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+								);
+							}
+						})();
+					}
+					notifyTerminal('complete');
+					return { status: 'complete', iterations, lastOutcome };
+				}
+			}
+
 			// US-001: notify the orchestrator pane with the formatted verdict line.
 			// Only fires when lastVerdict is non-null (reviewDispatch wrote a verdict).
 			// The notifyOrchestrator callback carries no tmux details; the wiring layer
@@ -1094,6 +1165,14 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					round: updatedPrd.review.roundsCompleted ?? 0,
 				};
 				emit('review-verdict-handback', undefined, reviewUuid, handbackDetail);
+			}
+
+			// US-005: Auto-ship on CLEAN in auto mode.
+			// When autoShipFn is injected (plan_approval === 'auto'), call it
+			// immediately after a CLEAN verdict to dispatch /cam-ship without a
+			// human gate. Inert when absent (operator mode or plan_approval != 'auto').
+			if (opts.autoShipFn !== undefined && updatedPrd?.review?.lastVerdict === 'CLEAN') {
+				opts.autoShipFn();
 			}
 
 			// CAM-36: a review iteration is real state-machine progress, so it
@@ -1203,6 +1282,38 @@ export interface RunSidecarLoopOptions {
 	 * change for existing projects and all tests that do not inject it.
 	 */
 	runMergeWatchFn?: () => Promise<void>;
+	/**
+	 * Auto-chain active:true flip for auto mode (US-005).
+	 *
+	 * When injected (plan_approval === 'auto'), called after the supervisor
+	 * reaches a terminal state AND hasPendingStories() returns true, to flip
+	 * active:true immediately without waiting for a human cam-next call.
+	 * In production this writes active:true to .claude/cam-loop.local.md.
+	 *
+	 * Optional: when absent (operator mode or plan_approval != 'auto') the loop
+	 * calls clearActive() and sleeps as normal (zero behavior change).
+	 */
+	flipActiveFn?: () => void;
+	/**
+	 * Auto-ship callback for auto mode (US-005). When injected, threaded into
+	 * RunSupervisorOptions.autoShipFn so the inner supervisor can call it after
+	 * a CLEAN verdict. See RunSupervisorOptions.autoShipFn for full doc.
+	 *
+	 * Optional: when absent the supervisor runs unchanged.
+	 */
+	autoShipFn?: () => void;
+	/**
+	 * Best-effort escalation callback (US-R1-001).
+	 *
+	 * Threaded into RunSupervisorOptions.escalateFn on each supervisor run so
+	 * the inner loop can call it when the MAX_ROUNDS_DEBT terminal is reached.
+	 * In production this wraps sendEscalation() from src/notify/resend.ts using
+	 * RESEND_API_KEY env var + resend_recipient from [notify] project.toml.
+	 *
+	 * Optional: when absent (Resend unconfigured) the non-convergence terminal
+	 * is unchanged. Zero behavior change for all existing tests.
+	 */
+	escalateFn?: () => Promise<void>;
 }
 
 /** Idle polling interval for the sidecar outer loop (2 seconds). */
@@ -1296,6 +1407,19 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 		let result: SupervisorResult;
 		try {
 			const supervisorOpts = opts.buildOpts();
+			// US-005: Thread autoShipFn from RunSidecarLoopOptions into
+			// RunSupervisorOptions so the inner loop can call it after a CLEAN
+			// verdict. Only injected when plan_approval === 'auto'; absent in
+			// operator mode (zero behavior change for existing callers).
+			if (opts.autoShipFn !== undefined) {
+				supervisorOpts.autoShipFn = opts.autoShipFn;
+			}
+			// US-R1-001: Thread escalateFn into RunSupervisorOptions so the inner
+			// loop can call it when the MAX_ROUNDS_DEBT terminal is reached.
+			// Only wired when RESEND_API_KEY env var + resend_recipient are set.
+			if (opts.escalateFn !== undefined) {
+				supervisorOpts.escalateFn = opts.escalateFn;
+			}
 			result = await runSupervisorFn(supervisorOpts);
 		} finally {
 			// Release the lock whether the run succeeded or threw.
@@ -1307,6 +1431,15 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 		// state file; clearActive() is the safety net that ensures active:false
 		// even when onProgress was absent or failed.
 		opts.clearActive();
+
+		// US-005: Auto-chain in auto mode. When flipActiveFn is injected
+		// (plan_approval === 'auto') and pending work remains, flip active:true
+		// immediately so the sidecar re-triggers without waiting for a human
+		// cam-next call. Skip the idle sleep on the auto-chain path.
+		if (opts.flipActiveFn !== undefined && opts.hasPendingStories && opts.hasPendingStories()) {
+			opts.flipActiveFn();
+			continue; // head straight back to the active-flag poll
+		}
 
 		// Prevent busy-spin on rapid complete/blocked cycles (e.g. empty PRD).
 		// A short sleep lets the sidecar settle before the next poll.

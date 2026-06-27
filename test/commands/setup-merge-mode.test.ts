@@ -408,6 +408,7 @@ describe('AC-7: runSetup writes [ship] merge_mode to project.toml', () => {
 				projectMode: 'existing',
 				issueSystem: 'none',
 				mergeMode,
+				planApproval: 'auto',
 				noTmux: true,
 			}).catch(() => undefined);
 
