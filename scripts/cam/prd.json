@@ -38,7 +38,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Extends src/commands/journal.ts (rendering + validation pure helpers) and test/commands/journal-append.test.ts. Validation guard order mirrors patterns.md US-003 CAM-107 (line 130): validate pure inputs BEFORE the `git show main:scripts/cam/journal.md` read where possible; duplicate-cycleId is a state check against the journal read from main. Discriminated-union error shape: members without `errors` must NOT carry it; callers narrow with `'errors' in result` (patterns.md line 130). Em-dash rule: normalize U+2014 ONLY in the body (Summary/Decisions/Blockers/Followups/Outcome text), NEVER the title (spec gotcha 4: deliberate exception specific to the journal title format, all 33 existing entries use it). Use the same normalization the project applies elsewhere for persisted .md (replace U+2014 with a project-approved substitute per ~/.claude/CLAUDE.md no-em-dash rule; the title is the documented exception). --force replace-in-place: locate the existing `## <cycleId> ` block in the journal text and swap it; do not duplicate. Determinism preserved (no Date.now/new Date). Covers spec AC 2, 3, 4, 5."
     },
