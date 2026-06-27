@@ -76,6 +76,7 @@ const HELP = renderHelp({
 				{ name: 'ship', description: 'Dispatch /cam-ship to the live orchestrator (or bootstrap first)' },
 				{ name: 'tag', description: 'Create and push the vX.Y.Z git tag for the current CAM_VERSION on main' },
 				{ name: 'issue "<text>"', description: 'File an issue from free text; opens /cam-issue create in a pane' },
+				{ name: 'journal append [--force]', description: 'Append a structured cycle entry to scripts/cam/journal.md on main (reads JSON from stdin)' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
@@ -273,6 +274,56 @@ const ISSUE_HELP = renderHelp({
 	footer:
 		'The free text is passed verbatim to the /cam-issue create slash command.\n' +
 		'The pane agent expands it into a structured issue title + description.',
+});
+
+const JOURNAL_HELP = renderHelp({
+	title: 'cam journal',
+	tagline: 'Append a structured cycle entry to scripts/cam/journal.md on main',
+	usage: 'cam journal append [--force]  (reads JSON from stdin)',
+	sections: [
+		{
+			heading: 'Subcommands',
+			entries: [
+				{
+					name: 'append [--force]',
+					description: 'Read a JSON cycle entry from stdin and append it to journal.md on main via commit-tree',
+				},
+			],
+		},
+		{
+			heading: 'Options',
+			entries: [
+				{
+					name: '--force',
+					description: 'Replace an existing entry with the same cycleId instead of rejecting as a duplicate',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Reads a JSON object from stdin; must match the JournalCycleEntry schema\n' +
+				'   (cycleId, title, started, closed, branch, issue, outcome, summary,\n' +
+				'   and optional decisions, blockers, followups arrays).\n' +
+				'2. Reads scripts/cam/journal.md from main via `git show main:...`\n' +
+				'   (never from the working tree -- the commit-tree-to-main pattern).\n' +
+				'3. Validates required fields; rejects entries missing cycleId, title,\n' +
+				'   started, closed, branch, issue, outcome, or summary.\n' +
+				'4. Normalises em-dash (U+2014) in the body/summary fields to a hyphen-space\n' +
+				'   sequence per the no-em-dash-in-persisted-md project rule.\n' +
+				'5. Without --force: rejects a duplicate cycleId with exit 1.\n' +
+				'   With --force: replaces the existing block in place.\n' +
+				'6. Writes the updated markdown to main via git plumbing (hash-object,\n' +
+				'   update-index, write-tree, commit-tree, update-ref) without touching\n' +
+				'   the working tree or HEAD branch.\n' +
+				'7. Best-effort push to origin main (non-zero exit is logged, not fatal).\n' +
+				'8. On success: prints `CAM_JOURNAL_APPENDED=<cycleId> sha=<commit-sha>`\n' +
+				'   and exits 0.',
+		},
+	],
+	footer:
+		'The orchestrator calls `cam journal append` at cycle close time as the\n' +
+		'deterministic housekeeping channel (read-only orchestrator, gated write via cam).',
 });
 
 const NEXT_HELP = renderHelp({
@@ -1331,6 +1382,10 @@ async function main(argv: string[]): Promise<number> {
 			// appends it to scripts/cam/journal.md on main via commit-tree, prints
 			// the sentinel.  --force replaces a duplicate cycleId entry in place.
 			const subCommand = argv[3];
+			if (subCommand === '--help' || argv.slice(3).includes('--help')) {
+				process.stdout.write(JOURNAL_HELP);
+				return 0;
+			}
 			if (subCommand !== 'append') {
 				printFatalHint('Usage: cam journal append [--force]  (reads JSON from stdin)');
 				return 1;

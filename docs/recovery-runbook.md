@@ -1944,3 +1944,117 @@ Cross-reference: `src/notify/resend.ts` (best-effort Resend client),
 `src/config/models.ts` (readPlanApproval, readResendConfig),
 `src/commands/setup.ts` (warnIfResendUnconfigured),
 section (a) (stuck supervisor general triage).
+
+## (w) CAM-122: cam journal append -- deterministic housekeeping channel
+
+`cam journal append` is the gated write channel for appending structured cycle
+entries to `scripts/cam/journal.md` directly on `main`. The orchestrator (a
+read-only LLM session) pipes a JSON object to this command at cycle close time;
+the command validates, normalises, and commits via the commit-tree-to-main
+primitive (same plumbing as `cam issue --file-local`, section (n)).
+
+### How the channel works
+
+1. The orchestrator assembles a JSON object matching the `JournalCycleEntry`
+   schema (cycleId, title, started, closed, branch, issue, outcome, summary,
+   plus optional decisions, blockers, followups arrays).
+2. It pipes the JSON to `cam journal append` via stdin (or with `--force` to
+   replace an existing entry for the same cycleId).
+3. `appendJournalEntryOnMain` validates required fields, normalises em-dash
+   characters to a hyphen-space sequence, rejects duplicates (without `--force`),
+   and writes the updated markdown to `main` via git plumbing without touching
+   the working tree or HEAD branch.
+4. On success the command prints `CAM_JOURNAL_APPENDED=<cycleId> sha=<sha>`
+   and exits 0. On any error it prints via `printError` and exits 1.
+5. A best-effort `git push origin main` follows the commit. Non-zero push exit
+   is logged to stderr but is not fatal: the local commit already landed.
+
+### Diagnosing a failed append
+
+**Symptom: exit 1 with "invalid JSON" error**
+
+The orchestrator produced a non-JSON payload or a malformed JSON string.
+
+1. Re-run with the raw payload to inspect:
+
+   ```bash
+   echo '<payload>' | cam journal append
+   ```
+
+2. Confirm the payload has all required fields:
+   cycleId, title, started, closed, branch, issue, outcome, summary.
+
+3. Check for control characters or mismatched quotes in the JSON.
+
+**Symptom: exit 1 with "duplicate cycleId" error**
+
+An entry for the same `cycleId` already exists in `journal.md` on `main`.
+
+Use `--force` to replace the existing block:
+
+```bash
+echo '<json>' | cam journal append --force
+```
+
+**Symptom: exit 1 with "missing required field" error**
+
+One or more of the eight required fields is absent or empty. The error message
+names the missing field. Confirm the orchestrator assembled the full entry
+before piping.
+
+**Symptom: commit succeeded but push failed**
+
+The local commit is already on `main`; the push failure is logged but not
+fatal. Push manually:
+
+```bash
+git push origin main
+```
+
+If the push is rejected (non-fast-forward), follow the divergent-main recovery
+in section (n).
+
+**Symptom: `git show main:scripts/cam/journal.md` fails (file missing)**
+
+The journal file is created on first use. If it is absent from `main`,
+`appendJournalEntryOnMain` writes a new file with a standard header block and
+the first entry. Confirm `main` has the file after the first successful append:
+
+```bash
+git show main:scripts/cam/journal.md | head -10
+```
+
+### Manual override (operator writes directly)
+
+If the orchestrator session is unavailable and you need to append an entry
+manually:
+
+1. Build the JSON payload (all eight required fields must be present).
+
+2. Pipe it to `cam journal append` from the project root:
+
+   ```bash
+   cat <<'EOF' | cam journal append
+   {
+     "cycleId": "cam/CAM-122-journal-append",
+     "title": "cam journal append deterministico",
+     "started": "2026-06-27",
+     "closed": "2026-06-27",
+     "branch": "cam/CAM-122-journal-append",
+     "issue": "CAM-122",
+     "outcome": "shipped",
+     "summary": "Implemented the deterministic journal write channel via cam journal append."
+   }
+   EOF
+   ```
+
+3. Verify the entry landed on `main`:
+
+   ```bash
+   git show main:scripts/cam/journal.md | grep -A 20 'CAM-122'
+   ```
+
+Cross-reference: `src/commands/journal.ts` (appendJournalEntryOnMain, renderJournalBlock,
+validateEntry, normalizeEmDash, hasDuplicateCycleId, replaceCycleBlock),
+section (n) (commit-tree-to-main primitive),
+`scripts/cam/patterns.md` (cam journal append: deterministic housekeeping channel bullet).
