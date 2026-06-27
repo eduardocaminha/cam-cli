@@ -24,7 +24,7 @@
         "Full CI gate passes (bun run check:all -- the enforced spine that includes biome lint, typecheck, test, embed-vendor:check). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Foundation story (schema only, no behavior). NEW module src/issues/types.ts (do NOT extend src/types.ts, which is UI/event-focused). The schema's canonical home is templates/scripts/cam/ (NOT a top-level schemas/ dir; the issue text's `schemas/handoff.schema.json` reference is imprecise: the real handoff schema lives at scripts/cam/handoff.schema.json with a templates/ mirror). The ENTIRE templates/ tree is embedded into src/vendor/_generated.ts via walkFiles in scripts/generate-embedded-vendor.ts, so adding templates/scripts/cam/issues.schema.json REQUIRES `bun run embed-vendor` then embed-vendor:check (drift gate). Keep the repo-local scripts/cam/issues.schema.json byte-identical to the templates copy (same pattern as handoff.schema.json). Mirror the draft-07 shape of scripts/cam/handoff.schema.json. ADR 0001 SS1 defines the schema. Do NOT touch issue-file.ts / ship-finalize.ts / status.ts in this story (later stories adopt the type). Do NOT populate wsjf/rank/spec (Epicos B/C). officialDocsConsulted is [] by design: this slice touches only Bun built-ins (Bun.file) and TypeScript interfaces/JSON state via existing git plumbing, so no external library/version applies and no doc consult is warranted."
     },
