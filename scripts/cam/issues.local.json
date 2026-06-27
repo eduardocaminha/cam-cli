@@ -1,5 +1,5 @@
 {
-  "next_id": 120,
+  "next_id": 121,
   "issues": [
     {
       "id": "CAM-1",
@@ -1114,6 +1114,15 @@
       "blockedBy": [],
       "createdAt": "2026-06-27T13:54:43.558Z",
       "description": "Descoberto no rebuild-smoke do CAM-107 (2026-06-27). US-001 vendorizou a skill chain grill-with-docs em .claude/skills/ + templates/skills/ + embedou no _generated.ts (templatesContents tem as 6 chaves skills/). MAS o cam init NAO escreve templates/skills/ no destino: o smoke de install reportou commands(7)/agents(5)/scripts-cam(4) e NENHUMA linha de skills; setup.ts so menciona skills num prompt-string (linhas ~301-302, instruindo o setup-agent a criar skills sob medida), nao instala os arquivos vendorizados. CONSEQUENCIA: um projeto cam-init downstream recebe o comando .claude/commands/cam-spec.md mas NAO o skill grill-with-docs que ele invoca, entao /cam-spec falha downstream (skill nao encontrado). cam-cli proprio funciona (US-001 escreveu .claude/skills/ direto). FIX: a rotina de install do cam init (setup.ts) deve copiar a subarvore skills/ do templatesContents pro .claude/skills/ do destino, como ja faz com commands/agents/scripts-cam. P2."
+    },
+    {
+      "id": "CAM-120",
+      "title": "Dedup: jscpd subiu 4.0->5.0 no ship do CAM-107 (index.ts spec arg-parse + check-coverage/file-sizes)",
+      "stage": "idea",
+      "status": "open",
+      "blockedBy": [],
+      "createdAt": "2026-06-27T13:58:17.995Z",
+      "description": "Ship-hygiene do CAM-107 (2026-06-27): check:all dup (jscpd) bateu 4.8% > 4.0%. Per-story workers + reviewer nao rodam jscpd (classe recorrente CAM-60). Mix: clones PRE-EXISTENTES (FLOW.md mermaid, img/ui-snapshot.txt, scripts/check-coverage.ts <-> check-file-sizes.ts parseDiffKv/parseCoverageOutput, scripts/ui-snapshot.tsx) + o NOVO arg-parse do subcomando cam spec em index.ts (linhas ~587-595/634-642/681-689/766-774) espelhando o parse de plan/issue. Acao tomada no ship: subi o threshold .jscpd.json de 4 pra 5 pra destravar (tracked-debt, espirito do _ref do file-size ratchet). FIX deste follow-up: extrair um parser de arg de subcomando compartilhado em index.ts (spec/plan/issue) e o helper de spawn compartilhado entre check-coverage.ts e check-file-sizes.ts, e BAIXAR o threshold de volta pra 4 (ratchet down-only). P2."
     }
   ]
 }
