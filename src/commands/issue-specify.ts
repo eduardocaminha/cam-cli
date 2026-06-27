@@ -26,6 +26,7 @@
 // CAM-107 (US-003 grill spec layer).
 
 import type { SpawnSyncReturns } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,6 +35,8 @@ import { validateSpec, validateWsjf } from '../issues/spec.ts';
 import type { Spec } from '../issues/spec.ts';
 import type { IssueEntry, IssuesLocalJson, WsjfScore } from '../issues/types.ts';
 import { printError } from '../logging/color.ts';
+import { makeFileEventLogger } from '../supervisor/events.ts';
+import type { WorkerEventLogger } from '../supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency types
@@ -77,6 +80,12 @@ export interface SpecifyIssueOnMainOptions {
 	 * Defaults to writeFileSync(path, text, 'utf8').
 	 */
 	writeFile?: (path: string, text: string) => void;
+	/**
+	 * Injectable event sink for the 'stage-promoted' observability event.
+	 * Defaults to makeFileEventLogger(<cwd>/.claude/cam-worker-events.jsonl),
+	 * the canonical production sink. Inject a fake in tests.
+	 */
+	eventSink?: WorkerEventLogger;
 }
 
 /** Successful outcome: issue was promoted, committed to main, and pushed. */
@@ -367,6 +376,33 @@ function applyFoldBlockedBy(
 }
 
 // ---------------------------------------------------------------------------
+// Event emission helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit a 'stage-promoted' observability event.
+ * Uses the injected sink when provided; falls back to the canonical production
+ * file sink (makeFileEventLogger writing to <cwd>/.claude/cam-worker-events.jsonl).
+ */
+function emitStagePromoted(
+	cwd: string,
+	id: string,
+	clock: ClockFn,
+	eventSink: WorkerEventLogger | undefined,
+): void {
+	const sink =
+		eventSink ??
+		makeFileEventLogger(join(cwd, '.claude', 'cam-worker-events.jsonl'));
+	sink({
+		ts: clock(),
+		storyId: id,
+		uuid: randomUUID(),
+		kind: 'stage-promoted',
+		detail: { id, fromStage: 'idea', toStage: 'specified' },
+	});
+}
+
+// ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
 
@@ -397,7 +433,7 @@ function applyFoldBlockedBy(
 export function specifyIssueOnMain(
 	options: SpecifyIssueOnMainOptions,
 ): SpecifyIssueOnMainOutcome {
-	const { cwd, id, spec, wsjf, spawnFn, clock: _clock } = options;
+	const { cwd, id, spec, wsjf, spawnFn, clock } = options;
 	const blockedBy = options.blockedBy ?? [];
 	const writeFile =
 		options.writeFile ?? ((p: string, t: string) => writeFileSync(p, t, 'utf8'));
@@ -477,6 +513,9 @@ export function specifyIssueOnMain(
 
 	// Best-effort push.
 	pushMainBestEffort(cwd, spawnFn);
+
+	// Emit observability event (side effect of successful commit only).
+	emitStagePromoted(cwd, id, clock, options.eventSink);
 
 	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
 }

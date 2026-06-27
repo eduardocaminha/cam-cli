@@ -26,6 +26,11 @@ import {
 } from '../../src/commands/issue-specify.ts';
 import type { Spec } from '../../src/issues/spec.ts';
 import type { IssueEntry, IssuesLocalJson, WsjfScore } from '../../src/issues/types.ts';
+import type {
+	WorkerEvent,
+	WorkerEventLogger,
+	StagePromotedEventDetail,
+} from '../../src/supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -166,6 +171,9 @@ function makeOpts(
 		spec: VALID_SPEC,
 		wsjf: VALID_WSJF,
 		clock: () => '2026-06-27T00:00:00.000Z',
+		// Default no-op eventSink so unit tests do not touch the filesystem.
+		// The production-wiring test explicitly omits this to exercise the default file sink.
+		eventSink: () => {},
 		...rest,
 		spawnFn,
 	};
@@ -480,6 +488,89 @@ test('never calls git checkout on any code path', () => {
 });
 
 // ===========================================================================
+// US-007: stage-promoted observability events
+// ===========================================================================
+
+test('emits stage-promoted event on successful commit (injected sink)', () => {
+	const backlog = makeBacklog();
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+
+	const emittedEvents: WorkerEvent[] = [];
+	const fakeEventSink: WorkerEventLogger = (e) => emittedEvents.push(e);
+
+	specifyIssueOnMain(makeOpts({ spawnFn, eventSink: fakeEventSink }));
+
+	expect(emittedEvents).toHaveLength(1);
+	const ev = emittedEvents[0];
+	expect(ev?.kind).toBe('stage-promoted');
+	const detail = ev?.detail as StagePromotedEventDetail;
+	expect(detail.id).toBe('CAM-1');
+	expect(detail.fromStage).toBe('idea');
+	expect(detail.toStage).toBe('specified');
+	expect(ev?.storyId).toBe('CAM-1');
+});
+
+test('does not emit event when guard fails (not-found)', () => {
+	const backlog = makeBacklog();
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+
+	const emittedEvents: WorkerEvent[] = [];
+	const fakeEventSink: WorkerEventLogger = (e) => emittedEvents.push(e);
+
+	specifyIssueOnMain(makeOpts({ spawnFn, id: 'CAM-999', eventSink: fakeEventSink }));
+
+	expect(emittedEvents).toHaveLength(0);
+});
+
+test('does not emit event when spec is invalid', () => {
+	const backlog = makeBacklog();
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+
+	const emittedEvents: WorkerEvent[] = [];
+	const fakeEventSink: WorkerEventLogger = (e) => emittedEvents.push(e);
+
+	specifyIssueOnMain(
+		makeOpts({
+			spawnFn,
+			spec: { acceptanceCriteria: [], scope: '', gotchas: [], domainTerms: [] },
+			eventSink: fakeEventSink,
+		}),
+	);
+
+	expect(emittedEvents).toHaveLength(0);
+});
+
+test('production-wiring: default sink writes stage-promoted event to cam-worker-events.jsonl', () => {
+	// This test does NOT inject eventSink. specifyIssueOnMain must call
+	// makeFileEventLogger(<cwd>/.claude/cam-worker-events.jsonl) by default.
+	// If the sink is left unwired, readFileSync below throws and the test fails.
+	const tmpCwd = mkdtempSync(join(tmpdir(), 'cam-specify-wiring-'));
+	dirsToCleanup.push(tmpCwd);
+
+	const backlog = makeBacklog();
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+
+	specifyIssueOnMain({
+		cwd: tmpCwd,
+		id: 'CAM-1',
+		spec: VALID_SPEC,
+		wsjf: VALID_WSJF,
+		clock: () => '2026-06-27T00:00:00.000Z',
+		spawnFn,
+		// eventSink intentionally omitted: must use the default file sink
+	});
+
+	const eventsPath = join(tmpCwd, '.claude', 'cam-worker-events.jsonl');
+	const raw = readFileSync(eventsPath, 'utf8').trim();
+	const event = JSON.parse(raw) as WorkerEvent;
+	expect(event.kind).toBe('stage-promoted');
+	const detail = event.detail as StagePromotedEventDetail;
+	expect(detail.id).toBe('CAM-1');
+	expect(detail.fromStage).toBe('idea');
+	expect(detail.toStage).toBe('specified');
+});
+
+// ===========================================================================
 // 2. Real-git integration tests
 // ===========================================================================
 
@@ -564,6 +655,7 @@ test.skipIf(!gitAvailable)(
 			wsjf: VALID_WSJF,
 			spawnFn: realSpawnFn,
 			clock: () => '2026-06-27T00:00:00.000Z',
+			eventSink: () => {}, // no-op: keep tmpdir working tree clean
 		});
 
 		if (!result.ok) {
@@ -626,6 +718,7 @@ test.skipIf(!gitAvailable)(
 			wsjf: VALID_WSJF,
 			spawnFn: realSpawnFn,
 			clock: () => '2026-06-27T00:00:00.000Z',
+			eventSink: () => {}, // no-op: keep tmpdir working tree clean
 		});
 
 		if (!result.ok) {
