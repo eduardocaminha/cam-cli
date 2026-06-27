@@ -1,5 +1,5 @@
 {
-  "next_id": 118,
+  "next_id": 119,
   "issues": [
     {
       "id": "CAM-1",
@@ -1096,6 +1096,15 @@
       "blockedBy": [],
       "createdAt": "2026-06-27T13:48:21.721Z",
       "description": "Converte a fase de plan de markdown-interpretado-por-LLM (cam-plan.md hoje) num state-machine TS deterministico dirigido pelo sidecar, como runSupervisor/loop.ts ja e pro implement->review->ship->merge. PRINCIPIO (cicatriz do cam CAM-49/72/86/104: bugs de logica-em-markdown sempre consertados movendo pra TS): control-flow, gates, mutacoes e seguranca = TS deterministico; so julgamento irredutivel = subagente LLM. A fase de plan tem so 2 passos irredutiveis (gerar-PRD via planner, auditar via auditor); o resto (pre-flight, pick-issue ja-TS CAM-106, branch plan_approval, branch/commit/push, escalada de nao-convergencia) e deterministico-able. O grill CAM-107 DESTRAVA isso: com spec estruturado de entrada e stories estruturadas de saida, a superficie LLM encolhe pros 2 passos. END-STATE: o sidecar dirige o pipeline INTEIRO (plan->implement->review->ship->merge) spawnando os subagentes nos pontos de julgamento; um unico driver deterministico dono dos gates + escalada; cam-plan thin-proxy so sinaliza a fase. CAM-109 ja torna deterministica a superficie de SEGURANCA do auto; este epico converte a orquestracao de plan inteira. DEPENDE de CAM-109. BLOQUEIA o auto pleno e CAM-71. ADR-worthy: pipeline deterministico, LLM nos pontos de julgamento. P2."
+    },
+    {
+      "id": "CAM-118",
+      "title": "Follow-up CAM-107: writer deterministico de CONTEXT.md/ADR para o /cam-spec (orquestrador e read-only)",
+      "stage": "idea",
+      "status": "open",
+      "blockedBy": [],
+      "createdAt": "2026-06-27T13:48:53.367Z",
+      "description": "Descoberto no dogfood US-009 (grill do CAM-109, 2026-06-27). O fluxo /cam-spec tem DOIS outputs: (1) o spec na issue e (2) a camada CONTEXT.md/ADR (modelo de dominio duravel, o diferenciador do grill-with-docs, US-005 fixou a convencao: CONTEXT.md no root glossary-only + docs/adr/ lazy). O output (1) funciona (specifyIssueOnMain via bun-commit-tree). MAS o output (2) nao tem writer e o orquestrador que roda /cam-spec e READ-ONLY: disallowedTools Edit/Write/NotebookEdit, e o hook do CAM-102 nega spawn de subagente-escritor (implementer/general-purpose DENY; os allowed sao read-only). Escrever a mao via heredoc/-e e hazard (licao CAM-106: heredoc nao-quoted corrompe arquivo). RESULTADO: no grill do CAM-109 os domainTerms foram pro campo spec.domainTerms da issue, mas NENHUM CONTEXT.md/ADR foi escrito, apesar de 2 decisoes ADR-worthy resolvidas (verificacao comportamental = gate compartilhado + veredito independente; pipeline deterministico LLM-nos-pontos-de-julgamento). FIX: um writer deterministico de CONTEXT.md/ADR (bun-commit-tree to main, estilo specifyIssueOnMain) invocado pelo /cam-spec no fim da entrevista, OU um mecanismo sancionado pro orquestrador persistir os docs de dominio sem Edit/Write. P2."
     }
   ]
 }
