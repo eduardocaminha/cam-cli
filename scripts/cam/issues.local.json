@@ -976,11 +976,54 @@
     {
       "id": "CAM-109",
       "title": "Epico D: cam-plan simplificado (plano unico, vertical-slicing) + config plan_approval (operator|auto)",
-      "stage": "idea",
+      "stage": "specified",
       "status": "open",
-      "blockedBy": [],
+      "blockedBy": [
+        "CAM-107"
+      ],
       "createdAt": "2026-06-26T21:26:35.266Z",
-      "description": "Simplificacao do cam-plan + gate de aprovacao configuravel (grill de design 2026-06-26). Evidencia do operador: 99% das vezes a recomendacao e launch-ready; MVP so entra em fix trivial. Matar o fork faz o planner concentrar esforco num unico plano robusto.\n\nMUDANCA 1 (cam-plan = prd-to-plan do Pocock): mata o menu MVP vs launch-ready (Step 6). Produz UM plano proporcional a spec, sempre com foco launch-ready (testes, escopo). Uma spec trivial gera plano pequeno; uma rica gera plano robusto; o que some e a ESCOLHA entre dois, nao o ajuste de tamanho. INCORPORA o vertical-slicing do Pocock: cada userStory corta end-to-end por TODAS as camadas (tracer bullet), NAO horizontal (hoje o cam-plan ordena DB->server->client, cada story = uma camada). Le a spec grillada (nao re-litiga escopo: o grill ja confrontou no spec-time).\n\nMUDANCA 2 (config plan_approval): nova chave [plan] plan_approval = operator | auto em project.toml (espelha o [ship] merge_mode do CAM-101). auto: grill (interativo no spec-time) -> planner -> AUDITOR -> se APPROVE, branca e dispara o loop SEM aprovacao do operador. operator: o operador confirma o plano antes do branch. O AUDITOR fica nos DOIS modos; auto so pula a aprovacao do OPERADOR, nunca o gate do auditor (BLOCK sempre trava pra fix). plan_approval e O gate humano estrategico: tudo depois (implement/review/ship/merge/post-merge) ja e autonomo.\n\nONDE TOCAR: .claude/commands/cam-plan.md + template + _generated.ts (remover o fork, vertical-slicing, ler a spec, ramo plan_approval), src/config/toml.ts ([plan] plan_approval + accessor, estilo readMergeMode), src/commands/setup.ts + config.ts + Ink screens (seletor de plan_approval, como o merge_mode do CAM-101), o ramo de auto-aprovacao pos-auditor. Testes do accessor + do ramo auto vs operator + auditor-BLOCK-sempre-trava.\n\nDEPENDENCIAS: MUDANCA 1 (plano unico) BLOQUEADA POR CAM-107 (so e seguro matar o fork quando o grill confronta escopo no spec-time; senao o plano unico cai sobre spec nao-grillada). MUDANCA 2 (plan_approval) e quase independente mas pertence ao mesmo PR. BLOQUEADO POR CAM-106 (schema). Paralelo ao epico C. ALIMENTA CAM-71 (autonomia end-to-end: plan_approval=auto + merge_mode=ci-gated + auto cam-next = fluxo plan->ship autonomo).\n\nPRIORIDADE: P2. Pocock prd-to-plan vertical slices (https://deepwiki.com/mattpocock/skills/3.2-breaking-prds-into-vertical-slices)."
+      "description": "Simplificacao do cam-plan + gate de aprovacao configuravel (grill de design 2026-06-26). Evidencia do operador: 99% das vezes a recomendacao e launch-ready; MVP so entra em fix trivial. Matar o fork faz o planner concentrar esforco num unico plano robusto.\n\nMUDANCA 1 (cam-plan = prd-to-plan do Pocock): mata o menu MVP vs launch-ready (Step 6). Produz UM plano proporcional a spec, sempre com foco launch-ready (testes, escopo). Uma spec trivial gera plano pequeno; uma rica gera plano robusto; o que some e a ESCOLHA entre dois, nao o ajuste de tamanho. INCORPORA o vertical-slicing do Pocock: cada userStory corta end-to-end por TODAS as camadas (tracer bullet), NAO horizontal (hoje o cam-plan ordena DB->server->client, cada story = uma camada). Le a spec grillada (nao re-litiga escopo: o grill ja confrontou no spec-time).\n\nMUDANCA 2 (config plan_approval): nova chave [plan] plan_approval = operator | auto em project.toml (espelha o [ship] merge_mode do CAM-101). auto: grill (interativo no spec-time) -> planner -> AUDITOR -> se APPROVE, branca e dispara o loop SEM aprovacao do operador. operator: o operador confirma o plano antes do branch. O AUDITOR fica nos DOIS modos; auto so pula a aprovacao do OPERADOR, nunca o gate do auditor (BLOCK sempre trava pra fix). plan_approval e O gate humano estrategico: tudo depois (implement/review/ship/merge/post-merge) ja e autonomo.\n\nONDE TOCAR: .claude/commands/cam-plan.md + template + _generated.ts (remover o fork, vertical-slicing, ler a spec, ramo plan_approval), src/config/toml.ts ([plan] plan_approval + accessor, estilo readMergeMode), src/commands/setup.ts + config.ts + Ink screens (seletor de plan_approval, como o merge_mode do CAM-101), o ramo de auto-aprovacao pos-auditor. Testes do accessor + do ramo auto vs operator + auditor-BLOCK-sempre-trava.\n\nDEPENDENCIAS: MUDANCA 1 (plano unico) BLOQUEADA POR CAM-107 (so e seguro matar o fork quando o grill confronta escopo no spec-time; senao o plano unico cai sobre spec nao-grillada). MUDANCA 2 (plan_approval) e quase independente mas pertence ao mesmo PR. BLOQUEADO POR CAM-106 (schema). Paralelo ao epico C. ALIMENTA CAM-71 (autonomia end-to-end: plan_approval=auto + merge_mode=ci-gated + auto cam-next = fluxo plan->ship autonomo).\n\nPRIORIDADE: P2. Pocock prd-to-plan vertical slices (https://deepwiki.com/mattpocock/skills/3.2-breaking-prds-into-vertical-slices).",
+      "spec": {
+        "scope": "Simplify cam-plan into a single proportional plan (kill the MVP vs launch-ready fork), using Pocock vertical-slicing, reading the grilled spec field without re-litigating scope. Add [plan] plan_approval = auto | operator (default auto, operator opt-in via config/init), the only human gate after the grill: in auto the pipeline runs plan->audit->branch->implement->review->ship->merge with zero human gate; in operator the operator confirms the single plan before branch. The auditor gate runs in both modes (BLOCK always halts for fix). The planner stops emitting requires:operator stories: ceremonies become automated criteria with a reviewer-behavioral oracle. The auto safety surface is deterministic TS (not LLM markdown): the plan_approval branch decision, the non-convergence terminal, the Resend escalation, and the maxRounds hard terminal. Touches cam-plan.md (both copies + embed), subagent-planner.md, src/config/toml.ts ([plan] accessor), setup.ts/config.ts + Ink (plan_approval + Resend selectors), the auto-chaining (auto cam-next after branch, auto-ship on review-CLEAN), and a best-effort Resend notification client.",
+        "acceptanceCriteria": [
+          "cam-plan no longer presents the MVP vs launch-ready fork; it produces one plan proportional to the grilled spec.",
+          "cam-plan reads the issue spec field (grill output) and does not re-litigate scope already settled at spec-time.",
+          "subagent-planner decomposes feature work by vertical slice (end-to-end tracer bullet through every layer it touches); internal/refactor/mechanical work stays single-concern.",
+          "subagent-planner never emits requires:operator stories; ceremonies are planned as automated criteria that name the tool (agent-browser/playwright/tmux-pty) and require an artifact, with a reviewer-behavioral oracle.",
+          "[plan] plan_approval = auto | operator exists in project.toml with a deterministic TS accessor (mirrors the merge_mode accessor); default is auto.",
+          "operator mode pauses for a single plan confirmation before branch; there is no MVP fork choice.",
+          "auto mode, after auditor APPROVE, deterministically branches, flips active:true (auto cam-next), and auto-dispatches ship on review CLEAN, with no human gate.",
+          "the auditor gate runs in both modes; a BLOCK always halts for fix (auto never skips the auditor).",
+          "non-convergence is a deterministic hard terminal: auditor exhausts its loops without APPROVE, OR review reaches maxRounds=3 without CLEAN (maxRounds becomes terminal, absorbing CAM-76); the pipeline stops cleanly leaving branch/state intact.",
+          "on the non-convergence terminal the pipeline escalates by sending an email via Resend to a configurable recipient; the escalation is best-effort (a Resend failure never crashes the pipeline).",
+          "cam init/config collect the Resend API key + recipient (optional) and the plan_approval selector (auto default); when plan_approval is auto and Resend is unconfigured, init/config warn loudly that non-convergence failures are silent.",
+          "tests cover: the toml accessor, the auto vs operator branch, auditor-BLOCK-always-halts, the non-convergence terminal firing the mocked Resend call, and maxRounds-3 as a hard terminal."
+        ],
+        "gotchas": [
+          "cam plan (src/commands/plan.ts) is a pure thin-proxy; the plan_approval branch logic lives partly in cam-plan.md markdown but the SAFETY surface (branch decision accessor, non-convergence terminal, Resend escalation, maxRounds terminal) MUST be deterministic TS, not LLM-interpreted markdown (the markdown-logic bug lineage CAM-49/72/86/104).",
+          "the sidecar reads config once at startup (CAM-100 lesson; merge_mode read once at sidecar.ts ~348); plan_approval + Resend config read by the sidecar follow the same pattern, so changing config mid-session requires a sidecar respawn.",
+          "Resend is the first external notification dependency; the escalation must be best-effort and the silent-failure-when-unconfigured must be a loud init/config warning.",
+          "auto-as-default is a bold posture: downstream cam-init projects run gateless by default, so init MUST warn loudly and the auto safety net is mandatory to ship with auto.",
+          "vertical-slicing fattens stories because of the dual-copy + embed invariant (a command slice touches TS + both markdown copies + re-embed + test); accept fatter slices that each ship something working.",
+          "the behavioral verification TOOLING (playwright web / tmux-pty cam + artifact->PR) is a separate blocking epic (D2); CAM-109 D1 only makes the planner EMIT reviewer-behavioral criteria, not executable until D2 ships.",
+          "converting the whole plan phase into a deterministic sidecar-driven runner is a separate epic; CAM-109 only makes the auto safety surface deterministic, not the full plan orchestration."
+        ],
+        "domainTerms": [
+          "plan_approval: the [plan] config (auto|operator) governing the single human gate after the grill.",
+          "auto mode: gateless pipeline plan->merge after the grill; the human re-enters only via the non-convergence escalation.",
+          "operator mode: opt-in single plan-confirmation gate before branch.",
+          "vertical slice (cam): a thin but complete observable capability cut through every layer it touches (type+logic+wiring+test+verification), versus one horizontal layer per story.",
+          "reviewer-behavioral oracle: a shared runnable behavioral gate; both implementer and reviewer can run it, but the reviewer holds the authoritative verdict and the artifact-of-record on the PR.",
+          "non-convergence terminal: the auto safety net; auditor-no-APPROVE or review-maxRounds-without-CLEAN triggers a clean hard stop plus a Resend escalation email.",
+          "artifact-of-record: the reviewer behavioral run output (screenshot/capture/log) attached to the PR for traceability."
+        ]
+      },
+      "wsjf": {
+        "value": 9,
+        "timeCriticality": 7,
+        "riskReduction": 8,
+        "jobSize": 8
+      }
     },
     {
       "id": "CAM-110",
