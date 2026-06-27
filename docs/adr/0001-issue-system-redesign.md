@@ -21,7 +21,7 @@ Sequencia (topo-sort do proprio desenho): A -> B -> (C || D).
 
 ## Consequencias
 
-- O `priority` ad-hoc e substituido por `rank` derivado; migracao: issues fechadas -> `shipped`, 31 abertas -> `idea`.
+- O `priority` ad-hoc e substituido por `rank` derivado; migracao: issues fechadas -> `shipped`, abertas -> `idea`.
 - O tempo humano concentra no grill (spec profunda) e no `plan_approval`; tudo depois (implement/review/ship/merge/post-merge) ja e autonomo.
 - A camada CONTEXT.md/ADR acumula o modelo de dominio e o porque das decisoes (este ADR e a primeira entrada).
 - Conecta com CAM-71 (autonomia end-to-end) e CAM-102 (a politica por capacidade do hook ja libera o triager read-only).
@@ -41,8 +41,8 @@ Concluido em 2026-06-26 na branch `cam/CAM-106-issue-schema-state-machine`.
 Entregou:
 
 - Novo schema de `IssueEntry` (src/issues/types.ts): `stage` (idea | specified | planned | shipped), `status` (open | abandoned), `blockedBy[]`, `wsjf{value,timeCriticality,riskReduction,jobSize}`, `rank` (derivado), `spec`.
-- Helpers de grafo (src/issues/graph.ts): `computeBlocked`, `computeBlocks`, `isAcyclic`, `topSortKahn`.
+- Helpers de grafo (src/issues/graph.ts): `isBlocked`, `deriveBlocks`, `checkReferentialIntegrity`. (`isAcyclic` e `topSortKahn` sao Epico C e ainda nao implementados.)
 - Gate-as-code (src/issues/select.ts): `selectPlannableIssue` filtra `stage === 'specified'` e `status === 'open'`, ordena rank asc (menor rank = maior prioridade), entao id asc.
 - Leitores e escritores de `issues.local.json` atualizados para o novo schema; schema JSON canonico em `scripts/cam/issues.schema.json` e `templates/scripts/cam/issues.schema.json` (byte-identicos).
-- Script de migracao idempotente (`scripts/migrate-issues.ts`): issues fechadas para `shipped`, 31 abertas para `idea`.
+- Script de migracao idempotente (`scripts/cam/migrate-issues-schema.ts`): issues fechadas para `shipped`, abertas para `idea`. Execucao em producao pendente de acao do operador (US-008).
 - `cam-plan` Step 2 reescrito para delegar ao gate (`selectPlannableIssue`), com sincronizacao nas tres copias: `.claude/commands/cam-plan.md`, `templates/commands/cam-plan.md`, e `src/vendor/_generated.ts` (via `bun run embed-vendor`).
