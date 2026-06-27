@@ -1,0 +1,64 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-122-journal-append",
+  "description": "Add cam journal append: a deterministic command that renders and commits one cycle entry to scripts/cam/journal.md on main, replacing the read-only orchestrator's ad-hoc jq-redirect / Write.",
+  "issueNumber": 122,
+  "relatedDocs": ["scripts/cam/patterns.md", "docs/recovery-runbook.md"],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "cam journal append end-to-end (tracer bullet)",
+      "description": "As the read-only orchestrator, I need a deterministic `cam journal append` command that reads a structured JSON cycle entry on stdin, renders the canonical journal markdown block, and commits it to scripts/cam/journal.md on main via commit-tree, so that I can record a cycle without a Write or an ad-hoc jq-redirect.",
+      "acceptanceCriteria": [
+        "cam journal append reads a structured JSON object on stdin (cycleId, started, closed, branch, issue, outcome, summary) and renders the canonical journal block (a `## <cycleId> — <title>` header line plus the bullet fields Started/Closed/Branch/Issue/Outcome/Summary) appended after the existing journal entries. [oracle: bun test test/commands/journal-append.test.ts]",
+        "The entry is committed to main via commit-tree (temp GIT_INDEX_FILE, read-tree main, hash-object -w --stdin, update-index --add --cacheinfo, write-tree, commit-tree -p main, update-ref refs/heads/main), never touching the current work branch; the checked-out branch and HEAD are unchanged and the working tree stays clean. [oracle: real-git integration test in test/integration/journal-append-on-main.test.ts asserting `git rev-parse main` advanced by exactly one commit and `git rev-parse HEAD` on the feature branch plus `git status --porcelain` are unchanged]",
+        "The current journal.md is read from main via `git show main:scripts/cam/journal.md` (read-from-main, CAM-86 US-006 pattern), never from the working tree. [oracle: file-assert grep -q 'main:scripts/cam/journal.md' src/commands/journal.ts]",
+        "Push to origin main is best-effort: when injected spawnFn returns non-zero on push the command prints an error but preserves the local commit and exits 0. [oracle: bun test test/commands/journal-append.test.ts with an injected spawnFn returning non-zero on push]",
+        "On success the command prints `CAM_JOURNAL_APPENDED=<cycleId> sha=<sha>` as a parseable last line. [oracle: bun test test/commands/journal-append.test.ts asserting the stdout last line matches /^CAM_JOURNAL_APPENDED=.+ sha=.+$/]",
+        "The `journal append` subcommand is wired into index.ts dispatch (reads stdin JSON, calls the command, returns its exit code). [oracle: file-assert grep -q \"case 'journal'\" index.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New code under src/commands/journal.ts; unit test test/commands/journal-append.test.ts; real-git integration test test/integration/journal-append-on-main.test.ts; index.ts dispatch (mirror the `case 'issue'` -> dispatchIssue --file-local path at index.ts:994-1035, which reads Bun.stdin.text(), JSON.parse, calls the on-main writer, prints a hint, returns exit code). REUSE the commit-tree-to-main plumbing: src/commands/issue-file.ts createLocalIssueOnMain and src/commands/issue-specify.ts specifyIssueOnMain are the templates (widened SpawnFn `{encoding:'utf8'; env?:Record<string,string>; input?:string}`, buildIndexEnv, checkMainUpToDate guard, commitOnMain vs commitTreeToMain, pushMainBestEffort). Factor shared helpers only if it stays surgical; do NOT reinvent the plumbing. Read journal.md from main via `git show main:scripts/cam/journal.md` (patterns.md US-006 CAM-86, line 77), never the working tree. Append after the existing tail, preserving the `<!-- ENTRIES_BELOW -->` marker and the existing entries (canonical format documented in scripts/cam/journal.md `## Format`). Determinism: started/closed come from the input JSON, clock is injected (mirror ship-finalize/specify, patterns.md gotcha); never Date.now()/new Date() for content. The header title em-dash (U+2014) is intentional and structural (all 33 existing entries use it); this story renders it in the title. Real-git integration test pattern: test/integration/issue-file-on-main.test.ts is the exact template (gitAvailable skip guard via spawnSync git --version, mkdtempSync repo, git init + symbolic-ref HEAD refs/heads/main + user config, seed+commit baseline journal.md on main, realSpawnFn forwarding env+input over spawnSync, afterEach rmSync cleanup) (patterns.md US-004 CAM-72, line 44). spawnSync does NOT throw on non-zero exit: check `(result.status ?? 1) !== 0` (patterns.md line 81). This command IS the gated write channel for the read-only orchestrator (the point of CAM-122); it replaces the ad-hoc jq-redirect / Write. Covers spec AC 1, 6, 7, 8."
+    },
+    {
+      "id": "US-002",
+      "title": "Validation, optional fields, em-dash normalization, duplicate rejection",
+      "description": "As a maintainer of the journal format, I need the command to validate required fields, render optional fields only when present, normalize em-dashes in the body, and reject a duplicate cycleId (with --force to replace in place), so that the journal stays well-formed and the format rule is owned by the command rather than by a fallible operator.",
+      "acceptanceCriteria": [
+        "Required fields (cycleId, started, closed, branch, issue, outcome, summary) are validated: a missing required field exits non-zero with a clear error naming the missing field and appends nothing (no commit-tree call fires). [oracle: bun test test/commands/journal-append.test.ts asserting exit non-zero, error text names the field, and the injected spawnFn recorded no commit-tree/update-ref call]",
+        "Optional fields (decisions, blockers, followups) render their bullet only when present; an absent optional produces no empty bullet in the rendered block. [oracle: bun test test/commands/journal-append.test.ts asserting the rendered body contains no `**Decisions**` bullet when decisions is absent and contains it when present]",
+        "An em-dash (U+2014) in any rendered body field is normalized away per the project no-em-dash rule, while the structural `## <cycleId> — <title>` header line retains its em-dash (consistent with the 33 existing entries). [oracle: bun test test/commands/journal-append.test.ts asserting the rendered body contains no U+2014 and the title line still contains U+2014]",
+        "A duplicate cycleId (a `## <cycleId> ` header already present in journal.md) is rejected with a clear error and no append; the --force flag replaces the existing entry for that cycleId in place instead of appending. [oracle: bun test test/commands/journal-append.test.ts covering both the rejection (exit non-zero, no commit) and the --force in-place replacement (entry count unchanged, body updated)]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Extends src/commands/journal.ts (rendering + validation pure helpers) and test/commands/journal-append.test.ts. Validation guard order mirrors patterns.md US-003 CAM-107 (line 130): validate pure inputs BEFORE the `git show main:scripts/cam/journal.md` read where possible; duplicate-cycleId is a state check against the journal read from main. Discriminated-union error shape: members without `errors` must NOT carry it; callers narrow with `'errors' in result` (patterns.md line 130). Em-dash rule: normalize U+2014 ONLY in the body (Summary/Decisions/Blockers/Followups/Outcome text), NEVER the title (spec gotcha 4: deliberate exception specific to the journal title format, all 33 existing entries use it). Use the same normalization the project applies elsewhere for persisted .md (replace U+2014 with a project-approved substitute per ~/.claude/CLAUDE.md no-em-dash rule; the title is the documented exception). --force replace-in-place: locate the existing `## <cycleId> ` block in the journal text and swap it; do not duplicate. Determinism preserved (no Date.now/new Date). Covers spec AC 2, 3, 4, 5."
+    },
+    {
+      "id": "US-003",
+      "title": "Docs, help text, and gate green",
+      "description": "As an operator and future maintainer, I need the cam journal command family documented in patterns.md and the recovery-runbook, surfaced in cam help, and the full gate spine green, so that the deterministic-housekeeping-channel pattern is discoverable and the change is verified.",
+      "acceptanceCriteria": [
+        "patterns.md gains a bullet documenting the `cam journal append` command and the deterministic-housekeeping-channel pattern (orchestrator-authored content, command-guaranteed format, gated write channel for the read-only orchestrator). [oracle: file-assert grep -q 'cam journal append' scripts/cam/patterns.md]",
+        "docs/recovery-runbook.md gains a CAM-122 scenario for `cam journal append` (how the deterministic journal write channel works, sibling to section (n) CAM-86 file-on-main). [oracle: file-assert grep -q 'cam journal append' docs/recovery-runbook.md]",
+        "index.ts surfaces journal help text (a JOURNAL_HELP block reachable via `cam journal --help`) and lists the journal subcommand in the top-level HELP. [oracle: file-assert grep -q 'cam journal' index.ts]",
+        "No em-dash (U+2014) is introduced in the persisted .md prose added by this story (patterns.md and recovery-runbook.md additions). [oracle: reviewer-judgment confirming the added .md lines contain no U+2014]",
+        "The full gate spine passes. [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Touches scripts/cam/patterns.md (append a dated bullet in the established `(US-xxx, CAM-122, 2026-06-27)` style), docs/recovery-runbook.md (add a section sibling to `(n) CAM-86: file-on-main backlog filing` at docs/recovery-runbook.md:885), and index.ts (add a JOURNAL_HELP block via renderHelp mirroring ISSUE_HELP at index.ts:241, and a line in the top-level HELP at index.ts:57). No em-dash in persisted .md strings (~/.claude/CLAUDE.md no-em-dash rule); the ONLY allowed em-dash is the journal title format itself, which is product behavior, not doc prose. check:all is `bun scripts/check-all.ts` (package.json), the gate spine (typecheck, test, coverage, file-sizes, dup); run it last. Covers spec AC 9."
+    }
+  ]
+}
