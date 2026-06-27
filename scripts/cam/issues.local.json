@@ -976,7 +976,7 @@
     {
       "id": "CAM-109",
       "title": "Epico D: cam-plan simplificado (plano unico, vertical-slicing) + config plan_approval (operator|auto)",
-      "stage": "specified",
+      "stage": "shipped",
       "status": "open",
       "blockedBy": [
         "CAM-107"
