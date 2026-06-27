@@ -1,18 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "cam-plan: replace the MVP-vs-launch-ready fork with one proportional plan that reads the grilled spec"
+    "id": "US-003",
+    "title": "subagent-planner: vertical-slicing + stop emitting requires:operator stories"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T21:00:00Z",
+  "timestamp": "2026-06-27T22:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/commands/cam-plan.md",
-    "templates/commands/cam-plan.md",
+    ".claude/agents/subagent-planner.md",
+    "templates/agents/subagent-planner.md",
     "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 removed the MVP-vs-launch-ready fork from Step 6 of cam-plan and replaced it with a single proportional plan driven by the grilled spec. The Step 7 planner prompt now passes 'Grilled spec' (settled scope) instead of 'Scope approved by operator: MVP/Launch-ready'. Both .claude and templates copies were updated and the embedded _generated.ts was re-synced. US-003 edits subagent-planner.md (both copies) to add vertical-slice decomposition and remove requires:operator story emission.",
+  "nextStoryContext": "US-003 added the vertical-slice decomposition rule and replaced the requires:operator instruction with the no-operator-stories + ceremony-as-automated-criteria rule in both .claude/agents/subagent-planner.md and templates/agents/subagent-planner.md. The two files remain intentionally divergent (cam-cli-specific Types/config -> Core logic -> Surface ordering in .claude/; generic Database -> Server -> Client ordering in templates/). The embedded _generated.ts was re-synced. US-004 and beyond implement the remaining PRD stories (plan_approval auto|operator, safety surface, etc.).",
   "officialDocsValidated": [
     {
       "lib": "none",
