@@ -99,7 +99,7 @@
         "Full CI gate passes (bun run check:all -- the enforced spine that includes biome lint, typecheck, test, embed-vendor:check). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "NEW script scripts/cam/migrate-issues-schema.ts (sibling of the live issues.local.json). Live data at plan time: 113 total, 76 closed, 37 open, next_id 114, priority shapes present = \"P3\",\"P2\",\"P1\",\"P0\",absent,1,2,3 (mixed string/int/undefined -- ALL dropped). Do NOT hardcode 31 (issue text) or 37 (now) -- iterate generically. Import IssuesLocalJson/IssueEntry + the enums from src/issues/types.ts (US-001). Pure transform migrateBacklog is the unit-tested seam; CLI wrapper does the Bun.file read/write. Idempotency: detect already-new entries (have `stage`, no `state`/`priority`) and pass them through unchanged. Test file test/issues/migrate.test.ts with inline fixtures (do NOT read the real file in tests). The real run + commit is US-008 (operator) -- this story ONLY ships the tested script. COVERAGE RATCHET (check:all per-story, CAM-60): scripts/coverage-budget.json floors are functions 75.65% / lines 78.63%. The migrate CLI wrapper (Bun.file read/write; real run deferred to US-008) is deliberately thin -- keep it to a few lines so the well-tested pure migrateBacklog dominates the ratio, or add a tiny covering test, to avoid dipping the aggregate below the floor and failing check:all."
     },

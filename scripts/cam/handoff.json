@@ -1,26 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Adopt new schema in the issue writer (issue-file.ts) and ship-finalize reader"
+    "id": "US-005",
+    "title": "Idempotent migration script for the live issues.local.json"
   },
   "branchName": "cam/CAM-106-issue-schema-state-machine",
-  "timestamp": "2026-06-26T23:30:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-26T23:50:00Z",
+  "createdFiles": [
+    "scripts/cam/migrate-issues-schema.ts",
+    "test/issues/migrate.test.ts"
+  ],
   "modifiedFiles": [
-    "src/commands/issue-file.ts",
-    "src/commands/ship-finalize.ts",
-    "test/issue-file.test.ts",
-    "test/ship-finalize.test.ts",
-    "knip.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 is complete. Both issue-file.ts and ship-finalize.ts now import IssueEntry and IssuesLocalJson from src/issues/types.ts; the local duplicate interfaces are removed. New issues are written with stage:'idea', status:'open', blockedBy:[] (state:'open' and priority write are gone). ship-finalize stamps stage:'shipped' instead of state:'closed' (closedAt dropped; clock param stays in interface for backward compat but is not destructured). knip.json no longer ignores src/issues/types.ts (it is now reachable via two import sites). The next story (US-005) gates on selectPlannableIssue from src/issues/select.ts and should make cam-plan Step 2 delegate to selectPlannableFromFile. Key gotcha: the IssueEntry from types.ts has no index signature and no state/closedAt fields. Any code that reads existing issues.local.json files with old-format entries (state:'open') and casts via JSON.parse as IssuesLocalJson will work fine at runtime since TypeScript casts are not validated; however, unit test fixtures should use the new schema to avoid confusion.",
+  "nextStoryContext": "US-005 is complete. scripts/cam/migrate-issues-schema.ts exports migrateBacklog(raw: unknown): IssuesLocalJson. The pure transform maps old schema entries (state:open->stage:idea; state:closed/done/canceled->stage:shipped; derives status; drops priority/closedAt/state; sets blockedBy:[]). Idempotency guard: entries with stage and no state/priority are passed through unchanged. CLI entrypoint uses Bun.file (gated by import.meta.main). 22 tests pass in test/issues/migrate.test.ts. The actual run on the real issues.local.json is US-008 (operator story). Check what the next story is and proceed accordingly.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal type migration: replaced local IssueEntry/IssuesLocalJson duplicates with imports from src/issues/types.ts. No external library API exercised."
+      "summary": "Pure internal transform: uses IssueEntry/IssuesLocalJson from src/issues/types.ts and Bun built-ins (Bun.file, Bun.write). No external library API exercised."
     }
   ]
 }
