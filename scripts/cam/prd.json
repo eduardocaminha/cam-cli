@@ -43,6 +43,20 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [README.md:130]: A new user-facing subcommand `cam spec <id>` was added (index.ts SPEC_HELP + dispatch case + HELP entry) but README.md was not updated: it is absent from the command list (~line 130) and from every thin-proxy enumeration (~lines 11, 163, 254, 260, 287, 295) that lists `cam plan` / `cam issue` / `cam review` / `cam ship`. Project convention (CLAUDE.md section 7 + review checklist Documentation & Config Sync) requires README sync when a command changes."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [.claude/commands/cam-spec.md:39]: The specifyIssueOnMain call example (also in templates/commands/cam-spec.md) does not match the real signature: it passes a non-existent `issuesPath` field, omits the required `cwd`, `spawnFn`, and `clock` options, and `await`s a synchronous function. This is the prompt that governs the feature's only writer-invocation path; an orchestrator following it verbatim would emit non-compiling glue. Fix the example in both trees and re-run `bun run embed-vendor`."
+    },
+    {
       "id": "US-001",
       "title": "Vendor grill-with-docs skill chain into .claude/ and templates/, re-embed",
       "description": "As a planner, I need the grill-with-docs skill chain vendored into both the dogfood tree (.claude/skills/) and the downstream tree (templates/skills/) and re-embedded into _generated.ts, so the grill is runtime-readable here and shipped by cam init.",
@@ -55,7 +69,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Fetch the 5 files verbatim from github.com/mattpocock/skills (skills/engineering/grill-with-docs, skills/productivity/grilling, skills/engineering/domain-modeling). grill-me is NOT in grill-with-docs's dependency chain: SKIP it. Vendored skill .md is consumed by an LLM, so the no-em-dash/no-emoji project rule does NOT apply: copy punctuation verbatim, do not rewrite. Keep .claude/ and templates/ copies byte-identical (journal's recurring invariant; diff -r is the oracle). scripts/generate-embedded-vendor.ts walkFiles() walks templates/ RECURSIVELY so no per-file map edit is needed: just run `bun run embed-vendor` and commit the regenerated src/vendor/_generated.ts. Re-check docs/recovery-runbook.md sec (g) (vendored-file gotcha) before touching vendor pipeline. Lesson: comments do not prove behavior; run embed-vendor:check, do not assume."
@@ -74,7 +88,7 @@
         "biome lint passes (bun run lint). [oracle: bun run lint]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "New module src/issues/spec.ts; test under test/issues/spec.test.ts. Reuse WsjfScore from src/issues/types.ts (do not redefine: import it). Changing IssueEntry.spec from unknown to Spec? may surface type errors at any existing reader of .spec: run `bun run typecheck` and guard with noUncheckedIndexedAccess in mind (array access is T|undefined). Validators are PURE (no I/O), mirroring src/issues/graph.ts checkReferentialIntegrity shape { ok, errors }. Domain term: a 'spec' is the structured deep-spec written by the grill (AC + scope + gotchas + domainTerms), distinct from the free-text description captured at stage:idea."
@@ -94,7 +108,7 @@
         "biome lint passes (bun run lint). [oracle: bun run lint]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "New module src/commands/issue-specify.ts; tests under test/commands/issue-specify.test.ts. CANONICAL pattern to mirror: src/commands/issue-file.ts (createLocalIssueOnMain) -- DI'd synchronous SpawnFn + ClockFn, on-main path (write/add/commit) vs off-main commit-tree plumbing (temp GIT_INDEX_FILE, read-tree, hash-object -w --stdin, update-index --cacheinfo, write-tree, commit-tree -p main, update-ref refs/heads/main). Reference src/commands/ship-finalize.ts for the stage-write approach (it sets stage:'shipped'). Import validateSpec/validateWsjf from US-002, isBlocked/checkReferentialIntegrity from src/issues/graph.ts. Commit msg style: `chore(cam): specify <id>`. NEVER touch the work branch (the whole point: idea filed/specified on main while a feature branch is open). Lesson (issues-local-next-id-multiwriter): a live `cam run` is a concurrent writer of issues.local.json -- read from main, write via plumbing, do not assume working-tree is canonical."
@@ -113,7 +127,7 @@
         "biome lint passes (bun run lint). [oracle: bun run lint]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "SEAM DECISION (planner picks, document in the command impl): prefer a thin `cam spec <id>` subcommand in index.ts wired to a new src/commands/spec.ts modeled on src/commands/plan.ts (runPlan) -- it injects `/cam-spec <id>` into the orchestrator pane via sendKeysWhenIdle (src/tmux/dispatch.ts), reuses orchestratorAlive/getOrchPaneId/paneCountMutex from src/tmux/session.ts, and respects the 2-pane mutex. The grill is an INTERACTIVE in-session interview (gate humano profundo, like /cam-plan), NOT an autonomous worker: the command .md is prompt-governed, the testable oracle is the dispatch shape + embed parity. GOTCHA (sendkeys-literal-enter-gotcha): send-keys is atomic text+Enter in ONE call, NEVER -l (it makes 'Enter' literal and never submits). index.ts dispatch lives around the 'plan'/'issue' cases (~line 1050-1074). Command .md is LLM-consumed so em-dash/emoji rule does not apply. Re-embed after adding templates/commands/cam-spec.md (`bun run embed-vendor`). Re-read cam-plan.md as the structural template for the command .md."
@@ -131,7 +145,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "docs/adr/ already exists (docs/adr/0001-issue-system-redesign.md); no CONTEXT.md exists yet -- this story pins WHERE it lives (decide: repo-root CONTEXT.md vs scripts/cam/CONTEXT.md; document the choice), not necessarily its full content. The domain-modeling skill already carries the WRITE behavior (CONTEXT.md glossary-only, ADRs sparingly: hard-to-reverse + surprising + real-tradeoff); this story adds the cam PATH convention + a short human-readable note. PROJECT RULE: the note is human-readable persisted .md, so NO em-dash and NO decorative emoji (use colon/comma/parens). If you edit the vendored skill copy to add cam paths, you break byte-identity-with-upstream but MUST keep .claude/<->templates/ byte-identity (diff oracle) and re-embed. Avoid trivially-satisfiable grep: CONTEXT.md already appears nowhere, patterns.md is referenced elsewhere -- assert against the NEW note's file specifically if needed."
@@ -150,7 +164,7 @@
         "biome lint passes (bun run lint). [oracle: bun run lint]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "Extends src/commands/issue-specify.ts (US-003) and its test file. Reuse the SAME commit-tree-on-main plumbing and DI'd SpawnFn; do not duplicate the git wiring (factor a shared helper if needed, but stay surgical). status:'abandoned' is the existing IssueStatus value (src/issues/types.ts). merge-into MUST record the target in the abandoned source's description: scripts/cam/issues.schema.json sets additionalProperties:false (confirmed), so a new top-level field would fail schema validation. Do NOT add an unschema'd field. Commit msg: `chore(cam): abandon <id>` / `chore(cam): merge <id> into <target>`."
@@ -167,7 +181,7 @@
         "biome lint passes (bun run lint). [oracle: bun run lint]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "Event types live in src/supervisor/events.ts (WorkerEventKind union + appendFileSync default sink to .claude/cam-worker-events.jsonl). Add the new kind to the union and emit from the writer. CRITICAL anti-pattern (CAM-53/89, sidecar-stale-worker-pane / fake-spawn-masks-dead-production): a test that only exercises the INJECTED sink proves nothing about production; the wiring test must drive the DEFAULT (real) sink path so an unwired default fails the gate. The event log is supervisor-owned in the loop, but this writer is operator-invoked (grill), so the writer owns its own emit. Keep the emit a side effect of a successful commit only (do not emit on validation/guard failure)."
@@ -183,7 +197,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 8,
+      "priority": 10,
       "passes": true,
       "requires": null,
       "notes": "Append a new lettered section to docs/recovery-runbook.md (existing sections run a..o; pick the next free letter and tag it CAM-107). PROJECT RULE: this is human-readable persisted .md, so NO em-dash and NO decorative emoji (colon/comma/parens/period instead). Cross-reference the existing sec (n) CAM-86 (file-on-main) since the spec writer reuses that primitive, and the US-005 CONTEXT.md/adr location. Keep it surgical: document the recovery, do not restate the whole grill design."
@@ -197,10 +211,53 @@
         "selectPlannableIssue would return that issue (stage:'specified', status:'open', not blocked), making the no-arg cam plan gate non-empty. [oracle: reviewer-judgment]",
         "The promoted issue carries a valid spec (AC + scope + gotchas + domainTerms) and wsjf with all four components. [oracle: reviewer-judgment]"
       ],
-      "priority": 9,
+      "priority": 11,
       "passes": false,
       "requires": "operator",
       "notes": "OPERATOR CEREMONY: the grill is an interactive in-session interview (16-50 questions, one at a time, codebase-first, recommends answers); it cannot be driven autonomously. The implementer exits BLOCKED_OPERATOR_REQUIRED; the operator hand-runs /cam-spec <id> against a real idea, lands stage:'specified' on main, then flips passes:true and re-runs cam next. This unblocks Epicos C and D and gives `cam plan` (no-arg) a selectable issue (src/issues/select.ts selectPlannableIssue). No mandatory typecheck/test criteria: this story writes no source, only exercises the shipped flow and lands a data change on main."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:2",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "README.md",
+        "line": 130,
+        "text": "A new user-facing subcommand `cam spec <id>` was added (index.ts SPEC_HELP + dispatch case + HELP entry) but README.md was not updated: it is absent from the command list (~line 130) and from every thin-proxy enumeration (~lines 11, 163, 254, 260, 287, 295) that lists `cam plan` / `cam issue` / `cam review` / `cam ship`. Project convention (CLAUDE.md section 7 + review checklist Documentation & Config Sync) requires README sync when a command changes."
+      },
+      {
+        "severity": "WARNING",
+        "file": ".claude/commands/cam-spec.md",
+        "line": 39,
+        "text": "The specifyIssueOnMain call example (also in templates/commands/cam-spec.md) does not match the real signature: it passes a non-existent `issuesPath` field, omits the required `cwd`, `spawnFn`, and `clock` options, and `await`s a synchronous function. This is the prompt that governs the feature's only writer-invocation path; an orchestrator following it verbatim would emit non-compiling glue. Fix the example in both trees and re-run `bun run embed-vendor`."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "index.ts",
+        "line": 224,
+        "text": "SPEC_HELP Behaviour point 1 says cam spec 'Reads permission_mode from ~/.config/cam/config.toml'. runSpec (src/commands/spec.ts) is a pure thin-proxy and reads no config; the permission_mode is resolved by the orchestrator at session start. The help text is misleading boilerplate."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/issue-specify.ts",
+        "line": 283,
+        "text": "AbandonIssueOnMainOptions and MergeIssueOnMainOptions require a `clock: ClockFn` field that neither implementation reads (abandon/merge set no timestamp). Callers must pass an unused dependency. Consider making it optional or dropping it from those two option shapes."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/issue-specify.ts",
+        "line": 609,
+        "text": "US-006 AC4 phrases target validation as 'checkReferentialIntegrity'; mergeIssueOnMain instead validates target existence via findIndex (functionally equivalent and tested). Harmless deviation from the AC wording, noted for traceability."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/issue-specify.ts",
+        "line": 466,
+        "text": "JSON.parse(showResult.stdout) is unguarded: a missing or malformed issues.local.json on main would throw an uncaught exception rather than a typed error. This mirrors the canonical issue-file.ts pattern, so it is consistent, but a typed guard would be more robust for both writers."
+      }
+    ]
+  }
 }
