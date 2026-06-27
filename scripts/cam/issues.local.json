@@ -1,5 +1,5 @@
 {
-  "next_id": 123,
+  "next_id": 124,
   "issues": [
     {
       "id": "CAM-1",
@@ -1141,6 +1141,15 @@
       "blockedBy": [],
       "createdAt": "2026-06-27T22:07:06.156Z",
       "description": "Gap de design discutido no ciclo CAM-109 (2026-06-27): o orquestrador e read-only por design (invariante: nunca edita codigo, protege o fluxo worker->review->gates), mas o agent file o responsabiliza pelo journal.md, que exige escrita. Hoje isso se resolve por operador-cola ou por jq>budget.json / shell-write ad-hoc autorizado (o pior padrao: escrita sem gate, fora de qualquer policy). PROPOSTA: mover os artefatos de coordenacao do orquestrador para comandos deterministicos TS (lineage CAM-49/72/86/104, como ship --finalize/--bump e issue --file-local), mantendo a invariante (orquestrador escreve zero; tudo via comando ou worker). ESCOPO: (1) cam journal append: le a entrada via stdin, valida o formato do journal (header + campos obrigatorios), faz append+commit em scripts/cam/journal.md no main; (2) aposentar o jq>budget.json ad-hoc do ship-hygiene: o raise de file-size/coverage vira deterministico no cam ship (ou continua worker-via-story, que ja funciona). FRONTEIRA: codigo revisavel = proibido ao orquestrador; coordenacao (journal/memoria/budget) = via comando, nunca Write nem shell ad-hoc. ALTERNATIVAS REJEITADAS: Write irrestrito ao orquestrador (perde a invariante de qualidade que o two-layer review encarna); write-path PreToolUse hook (mais superficie + fail-open tipo CAM-96). Fundamenta: a leitura (Read/Grep/Glob) do orquestrador esta correta e e essencial; so a escrita precisa do gate. Prioridade P2."
+    },
+    {
+      "id": "CAM-123",
+      "title": "Consolidar o knowledge-layer: aposentar lessons.md + roteamento explicito + cam journal archive + audit advisory",
+      "stage": "idea",
+      "status": "open",
+      "blockedBy": [],
+      "createdAt": "2026-06-27T22:51:49.160Z",
+      "description": "Achado (inventario 2026-06-27, ciclo CAM-109/122): o cam tem 4 canais competindo pelo mesmo conteudo de licoes/conhecimento (lessons.md, journal.md Blockers/Follow-ups, patterns.md, memory/ auto-memory), e a redundancia ja cobrou preco: lessons.md esta MORTO desde 2026-06-15 (as ultimas ~70 issues CAM-53..122 foram registradas em journal+patterns+memory; lessons.md nao foi tocado). E o drift que o CLAUDE.md global alerta na etapa-dupla. DECISAO (operador, 2026-06-27): consolidar. ESCOPO: (1) Aposentar lessons.md: journal+patterns+memory ja o cobrem; arquivar e declarar oficialmente substituido nas instrucoes. (2) Roteamento explicito: tabela de 1 linha em scripts/cam/CLAUDE.md mapeando insight->arquivo (tecnico-reutilizavel->patterns.md; narrativa-de-ciclo->journal.md; licao-transversal-acionavel->memory auto-memory; decisao-hard-to-reverse->docs/adr; vocabulario->CONTEXT.md). Manter os 3 ativos (patterns/journal/memory tem leitor+timing distintos), NAO fundir. (3) CONTEXT.md: usar ou largar; hoje nunca foi materializado (CAM-118); ou o /cam-spec passa a escreve-lo de fato (writer deterministico) ou removemos a pretensao. (4) GC deterministico (nao LLM, nao cron-mutante): cam journal archive (a regra dos >50 entries do agent file vira comando, mesmo modulo do cam journal append do CAM-122); dedup advisory pro patterns.md. (5) Opcional: cam knowledge audit advisory + on-demand + deterministico-onde-der, que REPORTA candidatos a dedup/archive/promote no cycle-close, NUNCA muta autonomamente. REJEITADO explicitamente: cron-subagente mutante (overkill + arriscado: curadoria fria de arquivos canonicos sem o contexto que os gerou e o anti-pattern; a causa-raiz e roteamento ambiguo, nao falta de curador; o cam ja tem muita infra autonoma). CORRELACAO: passo curto na direcao do CAM-64 (Mulch knowledge central: typed pattern records + outcome-status + decay), pode ser coordenada/mergeada com ele. Pre-req parcial: CAM-122 (cam journal append) introduz o modulo cam journal onde o archive encaixa; CAM-118 (writer deterministico de CONTEXT.md/ADR) habilita o item 3. Prioridade P2."
     }
   ]
 }
