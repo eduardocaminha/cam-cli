@@ -1,5 +1,5 @@
 {
-  "next_id": 114,
+  "next_id": 115,
   "issues": [
     {
       "id": "CAM-1",
@@ -1017,6 +1017,15 @@
       "blockedBy": [],
       "createdAt": "2026-06-27T00:38:25.197Z",
       "description": "Descoberto vivo no cycle-close do CAM-104 (2026-06-26). cam ship --finalize imprimiu \"closed CAM-0: removed prd.json...\" e deixou CAM-104 com state=open; CAM-104 foi fechado a mao na branch. CAUSA: o PRD do CAM-104 tinha issueNumber=\"CAM-104\" (string com prefixo) porque a ancoragem do /cam-next so exige issueNumber non-null. O local-close do finalize converte issueNumber pra inteiro (Number(\"CAM-104\") -> NaN -> 0) e tenta fechar \"CAM-0\", inexistente (no-op silencioso), deixando o issue real aberto. AGRAVANTE: o backend none e o default; o schema de exemplo do /cam-plan mostra issueNumber inteiro (42) mas o anchoring nao forca tipo, entao string prefixado passa silenciosamente ate o finalize. FIX (a/ou b): (a) local-close do finalize resolve ids string prefixados: se issueNumber casa /^[A-Z]+-[0-9]+$/, usar como id direto em issues.local.json; senao construir prefix-N do inteiro. (b) alinhar o tipo de issueNumber entre planner (emitir o id no formato do backend) e anchoring/finalize, com validacao. GUARD: teste de cam ship --finalize no backend none com issueNumber string (CAM-NN) que assere o issue NN vira closed (state+closedAt), nao um inexistente CAM-0. ONDE: handler de --finalize (close local do none backend) em src/commands/ship*.ts. CLASSE: parse silencioso que erra pro default (no-op de close deve falhar alto, nao fechar id fantasma). P2: workaround existe (fechar a mao), nao bloqueia ship, mas afeta todo cycle none-backend com issueNumber string."
+    },
+    {
+      "id": "CAM-114",
+      "title": "Corrigir docs stale que afirmam no linter configured (biome + check:all lint vivos desde CAM-60)",
+      "stage": "idea",
+      "status": "open",
+      "blockedBy": [],
+      "createdAt": "2026-06-27T10:53:01.898Z",
+      "description": "scripts/cam/CLAUDE.md (secao Quality Gates) e o checklist do subagent-auditor (~item 19) afirmam que nenhum linter esta configurado e que o typecheck e o gate estatico. Falso: biome.json existe e bun run check:all roda o gate de lint (wired no CAM-60/PR #66; o CI roda check:all). O auditor do CAM-106 sinalizou isso como colateral no F-02 (planner emitiu stories sem o gate de lint ate ser corrigido). Corrigir scripts/cam/CLAUDE.md + .claude/agents/subagent-auditor.md (e o mirror em templates/agents/ + re-embed _generated.ts via embed-vendor) pra que planners/auditors sempre incluam bun run check:all/lint como gate."
     }
   ]
 }
