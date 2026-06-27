@@ -72,8 +72,22 @@ export function decideNextAction(prd: PrdSnapshot): SupervisorAction {
 		(s) => s.passes !== true && s.requires === 'operator',
 	);
 
+	// --- Resolve review state (needed by Case 1 US-008 guard and terminal check) ---
+	const review = prd.review;
+	const roundsCompleted = review?.roundsCompleted ?? 0;
+	const maxRounds = review?.maxRounds ?? DEFAULT_MAX_ROUNDS;
+	const lastVerdict = review?.lastVerdict ?? null;
+
+	// US-008 guard: MAX_ROUNDS_DEBT is the non-convergence terminal. At this
+	// state, skip implement dispatch even if passes:false stories exist. Orphan
+	// fix stories left before the terminal was detected must not re-trigger the
+	// implement loop. CLEAN is NOT guarded: CLEAN + pending stories is a valid
+	// scenario (review passed, but more work was added by the operator) and
+	// should still route to implement (Case 1 preserves its priority).
+	const verdictIsMaxDebt = lastVerdict === 'MAX_ROUNDS_DEBT';
+
 	// --- 1. Dispatch implementer if any implementable story remains ---
-	if (implementableIncomplete.length > 0) {
+	if (implementableIncomplete.length > 0 && !verdictIsMaxDebt) {
 		// Tie-break: priority asc, then id asc.
 		const sorted = [...implementableIncomplete].sort((a, b) => {
 			const pa = a.priority ?? Number.MAX_SAFE_INTEGER;
@@ -93,16 +107,9 @@ export function decideNextAction(prd: PrdSnapshot): SupervisorAction {
 		return { kind: 'implement', storyId: first.id };
 	}
 
-	// At this point: all NON-operator stories pass. Operator-required stories
-	// may still be incomplete, but they do NOT block the review cycle. Resolve
-	// review state first; the operator ceremony is gated only AFTER review is
-	// terminal (see header comment).
-
-	// --- Resolve review state ---
-	const review = prd.review;
-	const roundsCompleted = review?.roundsCompleted ?? 0;
-	const maxRounds = review?.maxRounds ?? DEFAULT_MAX_ROUNDS;
-	const lastVerdict = review?.lastVerdict ?? null;
+	// At this point: all NON-operator stories pass (or review is already terminal).
+	// Operator-required stories may still be incomplete, but they do NOT block the
+	// review cycle. The operator ceremony is gated only AFTER review is terminal.
 
 	// Review is terminal when the round cap is reached OR the last verdict is a
 	// terminal one (CLEAN / MAX_ROUNDS_DEBT).

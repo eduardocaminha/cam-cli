@@ -237,6 +237,17 @@ export function makeHasPendingStories(prdPath: string): () => boolean {
 			if (parsed === null || typeof parsed !== 'object') return false;
 			const prd = parsed as PrdSnapshot;
 			const stories = prd.userStories ?? [];
+			// US-008 guard: MAX_ROUNDS_DEBT is the non-convergence terminal. At this
+			// state no further implement should be dispatched, regardless of any
+			// passes:false stories (orphan fix stories left before the terminal was
+			// detected). Return false so the auto-chain does not re-trigger the loop.
+			// Note: CLEAN is NOT guarded here — CLEAN + pending stories is a valid
+			// scenario (e.g. review passed but the operator added a new story). Only
+			// MAX_ROUNDS_DEBT means "the pipeline is exhausted, stop everything."
+			const currentVerdict = prd.review?.lastVerdict ?? null;
+			if (currentVerdict === 'MAX_ROUNDS_DEBT') {
+				return false;
+			}
 			// Case (a): at least one implementable story is still pending.
 			if (stories.some((s) => s.passes !== true && s.requires !== 'operator')) {
 				return true;
