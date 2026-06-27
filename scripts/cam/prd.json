@@ -56,7 +56,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Fetch the 5 files verbatim from github.com/mattpocock/skills (skills/engineering/grill-with-docs, skills/productivity/grilling, skills/engineering/domain-modeling). grill-me is NOT in grill-with-docs's dependency chain: SKIP it. Vendored skill .md is consumed by an LLM, so the no-em-dash/no-emoji project rule does NOT apply: copy punctuation verbatim, do not rewrite. Keep .claude/ and templates/ copies byte-identical (journal's recurring invariant; diff -r is the oracle). scripts/generate-embedded-vendor.ts walkFiles() walks templates/ RECURSIVELY so no per-file map edit is needed: just run `bun run embed-vendor` and commit the regenerated src/vendor/_generated.ts. Re-check docs/recovery-runbook.md sec (g) (vendored-file gotcha) before touching vendor pipeline. Lesson: comments do not prove behavior; run embed-vendor:check, do not assume."
     },
