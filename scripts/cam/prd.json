@@ -9,16 +9,23 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/commands/ship-finalize.ts:84]: Stale docstring introduced by US-004. The finalizeCycleClose step-3 doc (lines 84-85) still says \"set state='closed' + closedAt=<ISO timestamp>\", but the code now sets entry.stage = 'shipped' (line 143) and no longer writes state/closedAt. The function's own documentation contradicts its behavior, the exact stale-comment failure the project recorded a lesson about (2026-06-05) and which CLAUDE.md section 7 (Doc Maintenance) forbids. Update the docstring to describe stage='shipped' in the same change."
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "notes": "WARNING [docs/adr/0001-issue-system-redesign.md:45]: Sort direction documented backwards. Both the ADR (line 45) and scripts/cam/patterns.md (line 128) state the gate sorts 'rank desc then id asc', but src/issues/select.ts sorts rank ASCENDING (lower rank = higher priority), which is also what US-003 acceptance criteria require. The canonical design doc contradicts the shipped code; fix both files to say 'rank ascending'."
     },
     {
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "notes": "WARNING [docs/adr/0001-issue-system-redesign.md:44]: ADR 'Implementacao Epico A' misdescribes the code the next epic will read. Graph helpers are listed as computeBlocked/computeBlocks/isAcyclic/topSortKahn, but src/issues/graph.ts actually exports isBlocked/deriveBlocks/checkReferentialIntegrity (isAcyclic/topSortKahn are Epico C and unimplemented). Migration script path is cited as scripts/migrate-issues.ts but the real file is scripts/cam/migrate-issues-schema.ts. The note hardcodes '31 abertas para idea' (US-005 prohibited hardcoded counts) and claims the live data was migrated, yet the actual run (US-008) is operator-pending and still passes:false."
     },
@@ -37,7 +44,7 @@
         "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
         "Full CI gate passes (bun run check:all -- the enforced spine that includes biome lint, typecheck, test, embed-vendor:check). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Foundation story (schema only, no behavior). NEW module src/issues/types.ts (do NOT extend src/types.ts, which is UI/event-focused). The schema's canonical home is templates/scripts/cam/ (NOT a top-level schemas/ dir; the issue text's `schemas/handoff.schema.json` reference is imprecise: the real handoff schema lives at scripts/cam/handoff.schema.json with a templates/ mirror). The ENTIRE templates/ tree is embedded into src/vendor/_generated.ts via walkFiles in scripts/generate-embedded-vendor.ts, so adding templates/scripts/cam/issues.schema.json REQUIRES `bun run embed-vendor` then embed-vendor:check (drift gate). Keep the repo-local scripts/cam/issues.schema.json byte-identical to the templates copy (same pattern as handoff.schema.json). Mirror the draft-07 shape of scripts/cam/handoff.schema.json. ADR 0001 SS1 defines the schema. Do NOT touch issue-file.ts / ship-finalize.ts / status.ts in this story (later stories adopt the type). Do NOT populate wsjf/rank/spec (Epicos B/C). officialDocsConsulted is [] by design: this slice touches only Bun built-ins (Bun.file) and TypeScript interfaces/JSON state via existing git plumbing, so no external library/version applies and no doc consult is warranted."
@@ -56,7 +63,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full CI gate passes (bun run check:all -- the enforced spine that includes biome lint, typecheck, test, embed-vendor:check). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "NEW module src/issues/graph.ts; imports IssueEntry from src/issues/types.ts (US-001). Pure functions only (noUncheckedIndexedAccess: backlog lookups via Map/find return T|undefined, always guard). 'blocked is COMPUTED, never stored' (ADR 0001 SS1, issue spec). MINIMAL graph for Epico A: only isBlocked + referential/self-ref checks. Do NOT implement Kahn topo-sort, cycle rejection, or escalation (those are Epico C, CAM-108, explicitly OUT of scope). Test file test/issues/graph.test.ts (mirror src path under test/)."
@@ -74,7 +81,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full CI gate passes (bun run check:all -- the enforced spine that includes biome lint, typecheck, test, embed-vendor:check). [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "NEW module src/issues/select.ts; imports IssueEntry (US-001) and isBlocked (US-002). This IS the D1 gate-as-code decision (ADR 0001 rejected 'convention not code'). SEAM CHOICE (justify in commit): prefer a small exported helper selectPlannableFromFile(cwd) over a new `cam` internal subcommand: the cam-plan prose already reads issues.local.json (it currently does it via `git show main:...` per the orchestrator-reads-from-main pattern in patterns.md), and a pure exported function keeps the gate testable without spawning a subprocess; a subcommand would add a CLI surface + thin-proxy dispatch overhead for zero gain. numeric-id parse: id.split('-').at(-1) is T|undefined under noUncheckedIndexedAccess, guard + Number() + Number.isNaN fallback. Test file test/issues/select.test.ts. Do NOT compute rank here (Epico C); only consume it if present. COVERAGE RATCHET (check:all per-story, CAM-60): scripts/coverage-budget.json floors are functions 75.65% / lines 78.63%. The selectPlannableFromFile I/O seam (Bun.file read) is deliberately thin -- keep it to a few lines so the well-tested pure selectPlannableIssue dominates the ratio, or add a tiny covering test, to avoid dipping the aggregate below the floor and failing check:all mid-implementation."
@@ -93,7 +100,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full CI gate passes (bun run check:all -- the enforced spine that includes biome lint, typecheck, test, embed-vendor:check). [oracle: bun run check:all]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/issue-file.ts (writer: appendEntryAndSerialize at ~221-236 builds the entry with state:'open' + optional priority; createLocalIssueOnMainOptions still accepts an optional priority arg from the CLI -- drop writing it into the entry, the param can stay but is ignored, or remove it if the CLI caller is updatable in-scope; keep surgical) and src/commands/ship-finalize.ts (reader: line ~154 `entry.state = 'closed'`). Both currently have DUPLICATE local IssueEntry interfaces -- replace both with the import from src/issues/types.ts (US-001). IMPORTANT SCOPE CORRECTION: the issue spec's claim that `src/commands/status.ts:~263` reads/sorts issue `priority` is FACTUALLY WRONG -- status.ts:263 sorts PRD *stories* by their PRD-level priority (pickCurrentStory), and status.ts never reads issues.local.json (grep -c returns 0). Do NOT touch status.ts in this story. Preserve the CAM-86 read-from-main + next_id bump + commit-tree-to-main invariants (patterns.md). Tests: test/issue-file.test.ts, test/ship-finalize.test.ts (real-git integration test test/integration may also assert shape)."
@@ -112,7 +119,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full CI gate passes (bun run check:all -- the enforced spine that includes biome lint, typecheck, test, embed-vendor:check). [oracle: bun run check:all]"
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "NEW script scripts/cam/migrate-issues-schema.ts (sibling of the live issues.local.json). Live data at plan time: 113 total, 76 closed, 37 open, next_id 114, priority shapes present = \"P3\",\"P2\",\"P1\",\"P0\",absent,1,2,3 (mixed string/int/undefined -- ALL dropped). Do NOT hardcode 31 (issue text) or 37 (now) -- iterate generically. Import IssuesLocalJson/IssueEntry + the enums from src/issues/types.ts (US-001). Pure transform migrateBacklog is the unit-tested seam; CLI wrapper does the Bun.file read/write. Idempotency: detect already-new entries (have `stage`, no `state`/`priority`) and pass them through unchanged. Test file test/issues/migrate.test.ts with inline fixtures (do NOT read the real file in tests). The real run + commit is US-008 (operator) -- this story ONLY ships the tested script. COVERAGE RATCHET (check:all per-story, CAM-60): scripts/coverage-budget.json floors are functions 75.65% / lines 78.63%. The migrate CLI wrapper (Bun.file read/write; real run deferred to US-008) is deliberately thin -- keep it to a few lines so the well-tested pure migrateBacklog dominates the ratio, or add a tiny covering test, to avoid dipping the aggregate below the floor and failing check:all."
@@ -132,7 +139,7 @@
         "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
         "Full CI gate passes (bun run check:all -- the enforced spine that includes biome lint, typecheck, test, embed-vendor:check). [oracle: bun run check:all]"
       ],
-      "priority": 8,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "THREE-COPY SYNC is mandatory (patterns.md agent-prompt self-hosting): edit BOTH .claude/commands/cam-plan.md AND templates/commands/cam-plan.md, then `bun run embed-vendor` to regen src/vendor/_generated.ts, then `bun run embed-vendor:check`. Current Step 2 is at .claude/commands/cam-plan.md lines ~71-85 (and the templates mirror); the no-arg `none` bullet (line ~78) sorts by priority P0..P3 -- replace with the gate. D2 bridge (operator decision): no-arg autonomous path enforces stage===specified (delegates to the gate function); explicit `/cam-plan CAM-N` still plans an `idea` with a warning so CAM-107 can be planned by id next. The prose delegates to the deterministic seam from US-003 (mention selectPlannableFromFile + reading via `git show main:scripts/cam/issues.local.json` per the orchestrator-reads-from-main pattern). Keep the github/linear bullets unchanged. The embedded.test.ts byte-parity test catches templates<->_generated drift."
@@ -148,7 +155,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 9,
+      "priority": 10,
       "passes": true,
       "requires": null,
       "notes": "Docs-only story. Files: docs/adr/0001-issue-system-redesign.md (append an 'Implementacao Epico A' note near the bottom, do NOT rewrite the decision sections) and scripts/cam/patterns.md (append a bullet at the end, never truncate existing). Project rule: NO em-dash in persisted .md (patterns.md bullet + global CLAUDE.md) -- use colon/comma/parens/period. patterns.md is the durable wisdom file read at story start. Cross-reference the three modules (src/issues/types.ts, graph.ts, select.ts) and the three-copy sync gotcha so the next epic's implementer finds them. Do NOT add a templates/ copy of patterns.md (it is repo-local durable, not distributed)."
@@ -165,40 +172,40 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 10,
+      "priority": 11,
       "passes": false,
       "requires": "operator",
       "notes": "OPERATOR CEREMONY (real data mutation + live-loop interaction): out of scope for autonomous implementation. Depends on US-005 (the migration script) and US-006 (the explicit-idea bridge in cam-plan). MULTI-WRITER HAZARD (patterns.md issues.local.json hygiene + memory): a live `cam run` sidecar is a concurrent writer of issues.local.json -- run `cam stop` (or stop the session) BEFORE running the migration, or the run loop will clobber the rewrite. After migrating: commit on main (read-from-main invariant). Then dogfood the D2 bridge by planning CAM-107 by id (the next epic). Operator flips passes:true manually and re-runs cam next."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:2",
+    "lastVerdict": "FIXES_PENDING:1",
     "findings": [
       {
         "severity": "WARNING",
-        "file": "docs/adr/0001-issue-system-redesign.md",
-        "line": 45,
-        "text": "Sort direction documented backwards. Both the ADR (line 45) and scripts/cam/patterns.md (line 128) state the gate sorts 'rank desc then id asc', but src/issues/select.ts sorts rank ASCENDING (lower rank = higher priority), which is also what US-003 acceptance criteria require. The canonical design doc contradicts the shipped code; fix both files to say 'rank ascending'."
-      },
-      {
-        "severity": "WARNING",
-        "file": "docs/adr/0001-issue-system-redesign.md",
-        "line": 44,
-        "text": "ADR 'Implementacao Epico A' misdescribes the code the next epic will read. Graph helpers are listed as computeBlocked/computeBlocks/isAcyclic/topSortKahn, but src/issues/graph.ts actually exports isBlocked/deriveBlocks/checkReferentialIntegrity (isAcyclic/topSortKahn are Epico C and unimplemented). Migration script path is cited as scripts/migrate-issues.ts but the real file is scripts/cam/migrate-issues-schema.ts. The note hardcodes '31 abertas para idea' (US-005 prohibited hardcoded counts) and claims the live data was migrated, yet the actual run (US-008) is operator-pending and still passes:false."
+        "file": "src/commands/ship-finalize.ts",
+        "line": 84,
+        "text": "Stale docstring introduced by US-004. The finalizeCycleClose step-3 doc (lines 84-85) still says \"set state='closed' + closedAt=<ISO timestamp>\", but the code now sets entry.stage = 'shipped' (line 143) and no longer writes state/closedAt. The function's own documentation contradicts its behavior, the exact stale-comment failure the project recorded a lesson about (2026-06-05) and which CLAUDE.md section 7 (Doc Maintenance) forbids. Update the docstring to describe stage='shipped' in the same change."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/commands/ship-finalize.ts",
         "line": 97,
-        "text": "The 'clock' option is now unused after closedAt was dropped (no longer destructured at line 97) but remains a required field on FinalizeCycleCloseOptions and ClockFn is still exported. Callers must pass a clock that is ignored. Consider removing it in a follow-up (out of surgical scope here since it touches callers)."
+        "text": "clock / ClockFn is now dead: it is no longer destructured (line 97) or used after closedAt was dropped, yet clock remains a required field on FinalizeCycleCloseOptions and ClockFn is still exported. Callers must pass a clock that is ignored. Consider removing in a follow-up (touches callers, out of surgical scope here)."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/issues/select.ts",
-        "line": 70,
-        "text": "selectPlannableFromFile reads ${cwd}/scripts/cam/issues.local.json from the working tree, but the cam-plan prose and the read-from-main invariant describe reading via 'git show main:...'. Matches its US-003 AC (Bun.file/JSON.parse), but the prose 'delegate to selectPlannableFromFile' plus 'read via git show main' is slightly inconsistent about the source of truth."
+        "line": 78,
+        "text": "selectPlannableFromFile catches all read/parse errors and returns null, conflating a missing/corrupt issues.local.json with 'no plannable issue'. A corrupt backlog would silently look empty rather than surfacing an error."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/issues/select.ts",
+        "line": 74,
+        "text": "Source-of-truth inconsistency (carried over from review round 1): selectPlannableFromFile reads ${cwd}/scripts/cam/issues.local.json from the working tree, while the cam-plan prose instructs reading via 'git show main:...'. Matches the US-003 AC but the seam and the prose disagree on where the backlog is read from."
       }
     ]
   }

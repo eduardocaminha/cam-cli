@@ -1,22 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Review round 1 fix 002: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-106-issue-schema-state-machine",
-  "timestamp": "2026-06-26T02:00:00Z",
+  "timestamp": "2026-06-26T03:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/adr/0001-issue-system-redesign.md",
-    "scripts/cam/prd.json"
+    "src/commands/ship-finalize.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-002 is done. Corrected three ADR inaccuracies in docs/adr/0001-issue-system-redesign.md: (1) graph helper names on line 44 changed from computeBlocked/computeBlocks/isAcyclic/topSortKahn to isBlocked/deriveBlocks/checkReferentialIntegrity with a note that isAcyclic/topSortKahn are Epico C; (2) migration script path changed from scripts/migrate-issues.ts to scripts/cam/migrate-issues-schema.ts; (3) hardcoded count '31 abertas' removed from both the Consequencias section and the Epico A section, replaced with a note that the live migration is pending operator action (US-008). All 1743 tests pass, typecheck clean.",
+  "nextStoryContext": "US-R2-001 done. Fixed stale docstring in finalizeCycleClose (src/commands/ship-finalize.ts lines 83-85): step-3 comment previously said 'set state=closed + closedAt=<ISO timestamp>' but the code sets entry.stage = 'shipped' (no state/closedAt). Two-line docstring update; 1743 tests pass, typecheck clean.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Docs-only story: corrected inaccurate ADR descriptions in docs/adr/0001-issue-system-redesign.md. No external library API exercised."
+      "summary": "Docs-only story: corrected stale docstring in src/commands/ship-finalize.ts. No external library API exercised."
     }
   ]
 }
