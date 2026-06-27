@@ -1,25 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Deterministic spec writer specifyIssueOnMain (promote idea->specified on main)"
+    "id": "US-004",
+    "title": "/cam-spec command markdown (both trees) + CLI seam"
   },
   "branchName": "cam/CAM-107-grill-spec-layer",
-  "timestamp": "2026-06-27T02:00:00Z",
+  "timestamp": "2026-06-27T03:00:00Z",
   "createdFiles": [
-    "src/commands/issue-specify.ts",
-    "test/commands/issue-specify.test.ts"
+    ".claude/commands/cam-spec.md",
+    "templates/commands/cam-spec.md",
+    "src/commands/spec.ts",
+    "test/commands/spec.test.ts"
   ],
   "modifiedFiles": [
+    "index.ts",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "test/no-permission-mode-flag.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 created src/commands/issue-specify.ts with specifyIssueOnMain(). It mirrors issue-file.ts commit-tree-to-main plumbing: reads backlog via git show main:scripts/cam/issues.local.json, validates spec (validateSpec from spec.ts) and wsjf (validateWsjf from spec.ts) before reading backlog (fail fast), guards target id exists and stage=idea and status=open, mutates in-memory, runs checkReferentialIntegrity on post-mutation backlog, serializes, and commits on-main or off-main via commit-tree plumbing. Commit msg: chore(cam): specify <id>. Exports SpawnFn, ClockFn, SpecifyIssueOnMainOptions, SpecifyIssueOnMainResult, SpecifyIssueOnMainError, SpecifyIssueOnMainOutcome. 22 tests pass (unit + real-git integration). 1784 total tests pass, typecheck clean, biome lint clean.",
+  "nextStoryContext": "US-004 added the /cam-spec slash command and `cam spec <id>` CLI thin-proxy. Files: .claude/commands/cam-spec.md and templates/commands/cam-spec.md (byte-identical, LLM-consumed so em-dash/emoji fine) reference grill-with-docs skill and specifyIssueOnMain. src/commands/spec.ts is modeled exactly on plan.ts: SpecOptions interface with all injectable deps, runSpec() sends /cam-spec <id> via sendKeysWhenIdle, reuses orchestratorAlive/getOrchPaneId/paneCountMutex. parseSpecArgs in index.ts accepts a string positional id (unlike parsePlanArgs which is integer-only). 16 unit tests in test/commands/spec.test.ts cover dispatch shape, atomic send-keys, no -l, miss path, mutex busy, pane not found. parseSpecArgs added to no-permission-mode-flag.test.ts. embed-vendor regenerated. 1802 tests pass total, typecheck clean, biome lint clean.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-003 is pure TypeScript using only the internal spec.ts validators and graph.ts integrity checker with git plumbing via spawnSync. No external npm library was touched."
+      "summary": "US-004 is a pure TypeScript thin-proxy using only internal abstractions (sendKeysWhenIdle, orchestratorAlive, getOrchPaneId, paneCountMutex). No external npm library was touched."
     }
   ]
 }
