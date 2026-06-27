@@ -1,5 +1,5 @@
 {
-  "next_id": 115,
+  "next_id": 116,
   "issues": [
     {
       "id": "CAM-1",
@@ -1026,6 +1026,15 @@
       "blockedBy": [],
       "createdAt": "2026-06-27T10:53:01.898Z",
       "description": "scripts/cam/CLAUDE.md (secao Quality Gates) e o checklist do subagent-auditor (~item 19) afirmam que nenhum linter esta configurado e que o typecheck e o gate estatico. Falso: biome.json existe e bun run check:all roda o gate de lint (wired no CAM-60/PR #66; o CI roda check:all). O auditor do CAM-106 sinalizou isso como colateral no F-02 (planner emitiu stories sem o gate de lint ate ser corrigido). Corrigir scripts/cam/CLAUDE.md + .claude/agents/subagent-auditor.md (e o mirror em templates/agents/ + re-embed _generated.ts via embed-vendor) pra que planners/auditors sempre incluam bun run check:all/lint como gate."
+    },
+    {
+      "id": "CAM-115",
+      "title": "Follow-ups das SUGGESTIONs do review do CAM-106 (select.ts, source-of-truth seam, dead clock, findings stale)",
+      "stage": "idea",
+      "status": "open",
+      "blockedBy": [],
+      "createdAt": "2026-06-27T10:53:17.946Z",
+      "description": "SUGGESTIONs nao-bloqueantes diferidas do review do CAM-106: (1) selectPlannableFromFile (src/issues/select.ts) retorna undefined em vez de null (o tipo diz IssueEntry|null) e engole todo erro de leitura/parse, confundindo backlog corrompido com vazio; coagir pra null e deixar erro real propagar. (2) Inconsistencia de fonte-de-verdade: selectPlannableFromFile le cwd/scripts/cam/issues.local.json do working tree, enquanto a prosa do cam-plan instrui ler via git show main:; alinhar o seam e a prosa. (3) Dead code: clock/ClockFn em src/commands/ship-finalize.ts ficou orfao apos dropar closedAt (campo required nas options + export ainda existem, callers passam um clock ignorado); remover (toca callers). (4) Observabilidade: o review findings array em prd.json nao e limpo num verdict CLEAN, entao a lista de findings fica stale (mostra o round anterior). Limpar/atualizar no CLEAN."
     }
   ]
 }
