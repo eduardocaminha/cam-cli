@@ -1,24 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-010",
-    "title": "Refactor runSidecar and ConfigScreen under biome complexity/line limits (pure refactor)"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T20:00:00Z",
+  "timestamp": "2026-06-27T21:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/sidecar.ts",
-    "src/ui/ConfigScreen.tsx",
-    "scripts/file-size-budget.json",
+    "src/commands/setup.ts",
+    "test/commands/setup.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-010 was a pure biome refactor story. Two violations fixed: (1) runSidecar (sidecar.ts) extracted a buildSidecarLoopDeps helper that absorbs the 12+ ?? and ternary operators, reducing runSidecar complexity from 18 to 2, line count from 88 to 31. (2) ConfigScreen (ConfigScreen.tsx) extracted BackendSection, MergeModeSection, PlanApprovalSection as internal helper components, reducing ConfigScreen complexity from 20 to ~14, lines from 98 to ~67. No per-file biome overrides added (oracle: grep -Eq passes). file-size-budget.json raised sidecar.ts ceiling from 512 to 540 (helper extraction grows file; expected per notes; _ref CAM-109 already present). All 1892 tests pass. bun run check:all exits 0. This was the final story in CAM-109 (US-010 was the last passes:false). The PRD should now be COMPLETE (all non-operator stories pass); run /cam-review to confirm.",
+  "nextStoryContext": "US-R1-001 (priority 1) fixed: warnIfResendUnconfigured now accepts resendRecipient as 3rd param and warns when planApproval==='auto' AND (apiKey==='' OR recipient===''). This mirrors the escalateFn gate in sidecar.ts (which requires BOTH non-empty). Call site in setup.ts:626 updated to pass resendRecipient (already in scope). Tests updated: existing calls now pass resendRecipient='', and test at line 43 (key-set no-warn) updated to pass non-empty recipient. Two new test cases added: key-set+recipient-empty->WARN and key-empty+recipient-set->WARN. 1894 tests pass. Check if more stories remain in prd.json with passes:false.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure biome refactor: extracted buildSidecarLoopDeps (sidecar.ts) and three Section sub-components (ConfigScreen.tsx). No external library code introduced or modified."
+      "summary": "Pure conditional logic fix in warnIfResendUnconfigured (setup.ts). No external library code introduced or modified."
     }
   ]
 }
