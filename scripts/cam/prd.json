@@ -132,7 +132,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "docs/adr/ already exists (docs/adr/0001-issue-system-redesign.md); no CONTEXT.md exists yet -- this story pins WHERE it lives (decide: repo-root CONTEXT.md vs scripts/cam/CONTEXT.md; document the choice), not necessarily its full content. The domain-modeling skill already carries the WRITE behavior (CONTEXT.md glossary-only, ADRs sparingly: hard-to-reverse + surprising + real-tradeoff); this story adds the cam PATH convention + a short human-readable note. PROJECT RULE: the note is human-readable persisted .md, so NO em-dash and NO decorative emoji (use colon/comma/parens). If you edit the vendored skill copy to add cam paths, you break byte-identity-with-upstream but MUST keep .claude/<->templates/ byte-identity (diff oracle) and re-embed. Avoid trivially-satisfiable grep: CONTEXT.md already appears nowhere, patterns.md is referenced elsewhere -- assert against the NEW note's file specifically if needed."
     },

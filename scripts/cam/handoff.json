@@ -1,29 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "/cam-spec command markdown (both trees) + CLI seam"
+    "id": "US-005",
+    "title": "CONTEXT.md / ADR location convention for the durable domain model"
   },
   "branchName": "cam/CAM-107-grill-spec-layer",
-  "timestamp": "2026-06-27T03:00:00Z",
-  "createdFiles": [
-    ".claude/commands/cam-spec.md",
-    "templates/commands/cam-spec.md",
-    "src/commands/spec.ts",
-    "test/commands/spec.test.ts"
-  ],
+  "timestamp": "2026-06-27T12:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
+    "scripts/cam/CLAUDE.md",
+    ".claude/skills/domain-modeling/SKILL.md",
+    "templates/skills/domain-modeling/SKILL.md",
     "src/vendor/_generated.ts",
-    "scripts/cam/prd.json",
-    "test/no-permission-mode-flag.test.ts"
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added the /cam-spec slash command and `cam spec <id>` CLI thin-proxy. Files: .claude/commands/cam-spec.md and templates/commands/cam-spec.md (byte-identical, LLM-consumed so em-dash/emoji fine) reference grill-with-docs skill and specifyIssueOnMain. src/commands/spec.ts is modeled exactly on plan.ts: SpecOptions interface with all injectable deps, runSpec() sends /cam-spec <id> via sendKeysWhenIdle, reuses orchestratorAlive/getOrchPaneId/paneCountMutex. parseSpecArgs in index.ts accepts a string positional id (unlike parsePlanArgs which is integer-only). 16 unit tests in test/commands/spec.test.ts cover dispatch shape, atomic send-keys, no -l, miss path, mutex busy, pane not found. parseSpecArgs added to no-permission-mode-flag.test.ts. embed-vendor regenerated. 1802 tests pass total, typecheck clean, biome lint clean.",
+  "nextStoryContext": "US-005 added the Domain Model Convention section to scripts/cam/CLAUDE.md (pins CONTEXT.md at repo root + docs/adr/ for ADRs, glossary-only vs ADR-worthy criteria, references to patterns.md and CAM-64). Also added a 'Cam project path convention' subsection to both .claude/skills/domain-modeling/SKILL.md and templates/skills/domain-modeling/SKILL.md (byte-identical). embed-vendor was regenerated. No CONTEXT.md was created (convention is lazy-creation). US-006 is next: abandon and merge-into modes in the spec writer (specifyIssueOnMain). The specifyIssueOnMain function in src/issues/specify.ts handles the 'specified' promotion path; abandon should set stage='idea', status='abandoned'; merge-into should merge blockedBy and spec from one issue into another then abandon the source.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 is a pure TypeScript thin-proxy using only internal abstractions (sendKeysWhenIdle, orchestratorAlive, getOrchPaneId, paneCountMutex). No external npm library was touched."
+      "summary": "US-005 is a pure documentation story: added convention note to scripts/cam/CLAUDE.md and cam path subsection to the domain-modeling skill. No external npm library was touched."
     }
   ]
 }
