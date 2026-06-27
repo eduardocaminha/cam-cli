@@ -114,39 +114,26 @@ When generating the PRD in Step 5:
 
 ### Step 6: Present scope proposal — MANDATORY
 
-Before generating the PRD, the assistant MUST pause and present a structured proposal. **Do NOT proceed to Step 7 without user's explicit approval.**
+The grilled spec (`spec` field in the issue for `issue_system=none`) is the settled scope for this plan. Do not re-litigate scope already settled at spec-time: the spec captures decisions made during the grill session, and re-opening them here would undermine that work.
+
+Before generating the PRD, the assistant MUST pause and present a proportional plan based on the spec. **Do NOT proceed to Step 7 without user's explicit approval.**
 
 Use plan mode (via `ExitPlanMode` tool if available), or present as structured markdown and wait for explicit approval:
 
 ```markdown
 ## Analysis
-<1 paragraph: what the issue asks for, which files/areas will be touched, which external dependencies are involved, what already exists vs what's new>
+<1 paragraph: what the issue asks for, which files/areas will be touched, which external dependencies are involved, what already exists vs what is new>
 
-## MVP Proposal (fast path)
-<User stories for the minimum viable scope — typically 3-5 stories>
+## Proposed Plan
+User stories proportional to the grilled spec (typically 3-8 stories; each implementable in one conversation: 1-3 files or one well-scoped refactor):
 - US-001: ...
 - US-002: ...
 
-## Launch-ready Proposal (prod-grade)
-**Superset of MVP** + the categories below (include only those relevant to the domain):
-- US-001 to US-0NN: (includes MVP stories above)
-- US-0NN+1: Observability — <structured logs, events, alerts>
-- US-0NN+2: Failure modes — <retries / circuit breaker / fallback>
-- US-0NN+3: Scale — <concurrency caps / batching / background jobs>
-- US-0NN+4: QA visual / E2E — <if the feature has UI>
-- US-0NN+5: Recovery runbook — <if the feature goes to real users>
-
-## My recommendation
-<1-2 paragraphs with a concrete opinion. Consider: urgency, project stage, whether real users will be affected, cost/benefit of each launch-ready item for THIS domain.>
-
-## Final question
-Which path?
-(a) MVP — N stories
-(b) Launch-ready — M stories (recommendation)
-(c) Custom mix — tell me what to adjust
+## Open questions (if any)
+<Technical uncertainties or sequencing constraints not already addressed in the spec. Do NOT re-open settled scope decisions.>
 ```
 
-**Wait for explicit choice.** If user asks for custom, iterate until convergence.
+**Wait for explicit approval.** If the operator requests adjustments, iterate until convergence.
 
 ### Step 7: Generate PRD
 
@@ -158,8 +145,8 @@ Task(
   description="Generate PRD",
   prompt="""
 Issue: #<N> — <title>
-Scope approved by operator: <MVP / Launch-ready / Custom — from Step 6>
-Stories to include: <list from Step 6 approval>
+Grilled spec: <spec field from the issue; already settled at spec-time, do not re-litigate>
+Stories approved by operator: <list from Step 6 approval>
 Related docs: <list from Step 4>
 Official docs consulted: <list from Step 5>
 
