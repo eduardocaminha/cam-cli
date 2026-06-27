@@ -42,7 +42,7 @@ Entregou:
 
 - Novo schema de `IssueEntry` (src/issues/types.ts): `stage` (idea | specified | planned | shipped), `status` (open | abandoned), `blockedBy[]`, `wsjf{value,timeCriticality,riskReduction,jobSize}`, `rank` (derivado), `spec`.
 - Helpers de grafo (src/issues/graph.ts): `computeBlocked`, `computeBlocks`, `isAcyclic`, `topSortKahn`.
-- Gate-as-code (src/issues/select.ts): `selectPlannableIssue` filtra `stage === 'specified'` e `status === 'open'`, ordena rank desc entao id asc.
+- Gate-as-code (src/issues/select.ts): `selectPlannableIssue` filtra `stage === 'specified'` e `status === 'open'`, ordena rank asc (menor rank = maior prioridade), entao id asc.
 - Leitores e escritores de `issues.local.json` atualizados para o novo schema; schema JSON canonico em `scripts/cam/issues.schema.json` e `templates/scripts/cam/issues.schema.json` (byte-identicos).
 - Script de migracao idempotente (`scripts/migrate-issues.ts`): issues fechadas para `shipped`, 31 abertas para `idea`.
 - `cam-plan` Step 2 reescrito para delegar ao gate (`selectPlannableIssue`), com sincronizacao nas tres copias: `.claude/commands/cam-plan.md`, `templates/commands/cam-plan.md`, e `src/vendor/_generated.ts` (via `bun run embed-vendor`).
