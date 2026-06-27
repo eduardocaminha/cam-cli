@@ -215,7 +215,21 @@ Parse the verdict:
 - **`verdict: "APPROVE"`** → proceed to Step 9.
 - **`verdict: "BLOCK"`** → do NOT branch. Apply the `suggestion` for each `critical` or `important` finding, then re-invoke the auditor. Repeat until APPROVE or 3 loops — after 3 BLOCKs, surface remaining findings to the user.
 
-### Step 9: Create feature branch and commit
+### Step 9: Consult the plan_approval decision, then create feature branch and commit
+
+After the auditor returns APPROVE, consult the deterministic TS helper
+`decidePostAuditAction(readPlanApproval())` (see `src/plan/plan-approval-decision.ts`)
+to determine the next action. The markdown does not reimplement this logic;
+it delegates entirely to the helper.
+
+- **`{ kind: "pause-operator" }` (operator mode)**: present the plan summary
+  to the operator and pause for a single confirmation before branching. Wait
+  for the operator to confirm before running `git checkout -b`.
+- **`{ kind: "proceed-branch" }` (auto mode)**: proceed directly to
+  `git checkout -b` with no operator gate.
+
+The auditor gate (Step 8) runs in BOTH modes. Auto mode only skips the
+operator confirmation, never the auditor BLOCK loop.
 
 **IMPORTANT**: Create the branch BEFORE committing `prd.json` so it never lands on `main`.
 
