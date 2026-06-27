@@ -31,7 +31,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "VERTICAL SLICE: type + accessor + tests in one cut. PATH RECONCILIATION GOTCHA: the operator brief and the issue both say 'mirror readMergeMode' and name src/config/toml.ts, BUT readMergeMode, readBackend, readPhaseModel and the MergeMode union actually live in src/config/models.ts (toml.ts is the low-level TOML parse/write primitive with no per-key accessors). Add readPlanApproval to src/config/models.ts next to readMergeMode (models.ts:138-153) so the mirror is real; do NOT scatter a half-accessor into toml.ts. Use loadConfig from ./toml.ts exactly like readMergeMode does. Read scripts/cam/patterns.md bullet '[ship].merge_mode config surface (US-001, CAM-101)' for the exact defensive pattern. Test file mirrors source: test/config/plan-approval.test.ts (point configPath at a tmp fixture, never the real project.toml). noUncheckedIndexedAccess: section access is T|undefined, guard with typeof===object before indexing."
     },
