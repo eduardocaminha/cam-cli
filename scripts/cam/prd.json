@@ -19,7 +19,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [docs/adr/0001-issue-system-redesign.md:44]: ADR 'Implementacao Epico A' misdescribes the code the next epic will read. Graph helpers are listed as computeBlocked/computeBlocks/isAcyclic/topSortKahn, but src/issues/graph.ts actually exports isBlocked/deriveBlocks/checkReferentialIntegrity (isAcyclic/topSortKahn are Epico C and unimplemented). Migration script path is cited as scripts/migrate-issues.ts but the real file is scripts/cam/migrate-issues-schema.ts. The note hardcodes '31 abertas para idea' (US-005 prohibited hardcoded counts) and claims the live data was migrated, yet the actual run (US-008) is operator-pending and still passes:false."
     },
     {
