@@ -53,7 +53,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [.claude/commands/cam-spec.md:39]: The specifyIssueOnMain call example (also in templates/commands/cam-spec.md) does not match the real signature: it passes a non-existent `issuesPath` field, omits the required `cwd`, `spawnFn`, and `clock` options, and `await`s a synchronous function. This is the prompt that governs the feature's only writer-invocation path; an orchestrator following it verbatim would emit non-compiling glue. Fix the example in both trees and re-run `bun run embed-vendor`."
     },
     {
