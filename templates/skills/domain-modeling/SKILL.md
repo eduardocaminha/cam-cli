@@ -39,6 +39,15 @@ If a `CONTEXT-MAP.md` exists at the root, the repo has multiple contexts. The ma
 
 Create files lazily — only when you have something to write. If no `CONTEXT.md` exists, create one when the first term is resolved. If no `docs/adr/` exists, create it when the first ADR is needed.
 
+## Cam project path convention
+
+In a cam-managed project (initialized via `cam init`), the canonical paths follow the single-context layout above:
+
+- `CONTEXT.md` at the repo root — glossary only
+- `docs/adr/` at the repo root — ADRs, using the three-gate rule above
+
+These paths are pinned in `scripts/cam/CLAUDE.md` and referenced by the `/cam-spec` slash command. The domain model built here feeds `scripts/cam/patterns.md` (durable codebase wisdom) and, in the future, CAM-64 (Mulch knowledge central). Both files are created lazily: do not pre-create empty stubs.
+
 ## During the session
 
 ### Challenge against the glossary

@@ -66,6 +66,23 @@ When a story reveals a new reusable insight, append a bullet to `scripts/cam/pat
 
 Read `scripts/cam/patterns.md` at story start (step 3 above) so the patterns are in context before you touch files.
 
+## Domain Model Convention
+
+The durable domain model for any cam-managed project lives at two pinned locations:
+
+- `CONTEXT.md` at the repo root: glossary-only (no implementation details, no specs, no decisions). Created lazily: when the first term is resolved.
+- `docs/adr/` at the repo root: Architectural Decision Records. Created lazily: when the first ADR is needed.
+
+**Glossary-only vs ADR-worthy:**
+- Glossary (`CONTEXT.md`): canonical terminology, bounded-context definitions, and ubiquitous language. Nothing about implementation. No specs, no decisions.
+- ADR (`docs/adr/`): write one only when all three gates pass: (1) hard to reverse, (2) surprising without context, (3) the result of a real trade-off with genuine alternatives considered. If any gate is missing, skip the ADR.
+
+This convention applies to cam-cli itself and to any downstream cam project initialized by `cam init`. Both files are created lazily (do not pre-create empty stubs).
+
+**Self-improvement sources:** the domain model cross-references two knowledge layers:
+- `scripts/cam/patterns.md`: durable codebase patterns, gotchas, and invariants (versioned on main, never truncated). Agents read this file at story start to absorb project conventions.
+- CAM-64 (Mulch knowledge central): future machine-readable knowledge graph fed by the grill layer. Terms and decisions written into CONTEXT.md and docs/adr/ during a grill session will eventually flow into this central store.
+
 ## Cross-Repo PRDs (optional)
 
 Some PRDs span multiple repos. A PRD may declare a top-level `crossRepoLayout` block mapping logical repo names to absolute filesystem paths:
