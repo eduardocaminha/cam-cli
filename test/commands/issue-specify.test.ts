@@ -17,8 +17,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	specifyIssueOnMain,
+	abandonIssueOnMain,
+	mergeIssueOnMain,
 	type SpawnFn,
 	type SpecifyIssueOnMainOptions,
+	type AbandonIssueOnMainOptions,
+	type MergeIssueOnMainOptions,
 } from '../../src/commands/issue-specify.ts';
 import type { Spec } from '../../src/issues/spec.ts';
 import type { IssueEntry, IssuesLocalJson, WsjfScore } from '../../src/issues/types.ts';
@@ -693,5 +697,616 @@ test.skipIf(!gitAvailable)(
 		if (!result.ok) {
 			expect(result.reason).toBe('not-found');
 		}
+	},
+);
+
+// ===========================================================================
+// 3. abandonIssueOnMain -- unit tests
+// ===========================================================================
+
+function makeAbandonOpts(
+	overrides: Partial<AbandonIssueOnMainOptions> & { spawnFn: SpawnFn },
+): AbandonIssueOnMainOptions {
+	const { spawnFn, ...rest } = overrides;
+	return {
+		cwd: '/fake/cwd',
+		id: 'CAM-1',
+		clock: () => '2026-06-27T00:00:00.000Z',
+		...rest,
+		spawnFn,
+	};
+}
+
+test('abandon: returns not-found when id absent', () => {
+	const { spawnFn } = makeFakeSpawnFn({ backlog: makeBacklog() });
+	const result = abandonIssueOnMain(makeAbandonOpts({ spawnFn, id: 'CAM-999' }));
+	expect(result.ok).toBe(false);
+	if (!result.ok) expect(result.reason).toBe('not-found');
+});
+
+test('abandon: returns already-abandoned when status is already abandoned', () => {
+	const backlog = makeBacklog({ status: 'abandoned' });
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const result = abandonIssueOnMain(makeAbandonOpts({ spawnFn }));
+	expect(result.ok).toBe(false);
+	if (!result.ok) expect(result.reason).toBe('already-abandoned');
+});
+
+test('abandon: success path (off-main) sets status to abandoned', () => {
+	const backlog = makeBacklog();
+	let capturedJson = '';
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJson = opts.input;
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	const result = abandonIssueOnMain(makeAbandonOpts({ spawnFn: recordingSpawnFn }));
+	expect(result.ok).toBe(true);
+	if (result.ok) {
+		expect(result.id).toBe('CAM-1');
+		expect(result.committedTo).toBe('main');
+		expect(result.branchWasMain).toBe(false);
+	}
+
+	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
+	expect(parsed.issues[0]?.status).toBe('abandoned');
+	// stage is unchanged
+	expect(parsed.issues[0]?.stage).toBe('idea');
+});
+
+test('abandon: success path (on-main) writeFile called', () => {
+	const backlog = makeBacklog();
+	const writtenFiles: Array<{ path: string; content: string }> = [];
+	const { spawnFn } = makeFakeSpawnFn({ backlog, branch: 'main' });
+
+	const result = abandonIssueOnMain(
+		makeAbandonOpts({
+			spawnFn,
+			writeFile: (path, content) => writtenFiles.push({ path, content }),
+		}),
+	);
+
+	expect(result.ok).toBe(true);
+	if (result.ok) expect(result.branchWasMain).toBe(true);
+	expect(writtenFiles).toHaveLength(1);
+	const parsed = JSON.parse(writtenFiles[0]?.content ?? '{}') as IssuesLocalJson;
+	expect(parsed.issues[0]?.status).toBe('abandoned');
+});
+
+test('abandon: commit message is chore(cam): abandon <id>', () => {
+	const backlog = makeBacklog();
+	const { spawnFn, calls } = makeFakeSpawnFn({ backlog });
+	abandonIssueOnMain(makeAbandonOpts({ spawnFn, id: 'CAM-1' }));
+	const commitTreeCall = calls.find((c) => c.join(' ').includes('commit-tree'));
+	expect(commitTreeCall?.join(' ')).toContain('chore(cam): abandon CAM-1');
+});
+
+test('abandon: never calls git checkout', () => {
+	const { spawnFn, calls } = makeFakeSpawnFn({ backlog: makeBacklog() });
+	abandonIssueOnMain(makeAbandonOpts({ spawnFn }));
+	expect(calls.some((c) => c.includes('checkout'))).toBe(false);
+});
+
+// ===========================================================================
+// 4. mergeIssueOnMain -- unit tests
+// ===========================================================================
+
+function makeBacklogTwo(
+	overrides1?: Partial<IssueEntry>,
+	overrides2?: Partial<IssueEntry>,
+): IssuesLocalJson {
+	const e1: IssueEntry = {
+		id: 'CAM-1',
+		title: 'Source idea',
+		stage: 'idea',
+		status: 'open',
+		blockedBy: [],
+		createdAt: '2026-01-01T00:00:00.000Z',
+		...overrides1,
+	};
+	const e2: IssueEntry = {
+		id: 'CAM-2',
+		title: 'Target idea',
+		stage: 'idea',
+		status: 'open',
+		blockedBy: [],
+		createdAt: '2026-01-02T00:00:00.000Z',
+		...overrides2,
+	};
+	return { next_id: 3, issues: [e1, e2] };
+}
+
+function makeMergeOpts(
+	overrides: Partial<MergeIssueOnMainOptions> & { spawnFn: SpawnFn },
+): MergeIssueOnMainOptions {
+	const { spawnFn, ...rest } = overrides;
+	return {
+		cwd: '/fake/cwd',
+		id: 'CAM-1',
+		intoId: 'CAM-2',
+		clock: () => '2026-06-27T00:00:00.000Z',
+		...rest,
+		spawnFn,
+	};
+}
+
+test('merge-into: returns self-merge when id === intoId', () => {
+	const { spawnFn } = makeFakeSpawnFn({ backlog: makeBacklogTwo() });
+	const result = mergeIssueOnMain(makeMergeOpts({ spawnFn, id: 'CAM-1', intoId: 'CAM-1' }));
+	expect(result.ok).toBe(false);
+	if (!result.ok) expect(result.reason).toBe('self-merge');
+});
+
+test('merge-into: returns source-not-found when source id absent', () => {
+	const { spawnFn } = makeFakeSpawnFn({ backlog: makeBacklogTwo() });
+	const result = mergeIssueOnMain(makeMergeOpts({ spawnFn, id: 'CAM-999', intoId: 'CAM-2' }));
+	expect(result.ok).toBe(false);
+	if (!result.ok) expect(result.reason).toBe('source-not-found');
+});
+
+test('merge-into: returns target-not-found when target id absent', () => {
+	const { spawnFn } = makeFakeSpawnFn({ backlog: makeBacklogTwo() });
+	const result = mergeIssueOnMain(makeMergeOpts({ spawnFn, id: 'CAM-1', intoId: 'CAM-999' }));
+	expect(result.ok).toBe(false);
+	if (!result.ok) expect(result.reason).toBe('target-not-found');
+});
+
+test('merge-into: returns already-abandoned when source is abandoned', () => {
+	const backlog = makeBacklogTwo({ status: 'abandoned' });
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const result = mergeIssueOnMain(makeMergeOpts({ spawnFn }));
+	expect(result.ok).toBe(false);
+	if (!result.ok) expect(result.reason).toBe('already-abandoned');
+});
+
+test('merge-into: success sets source status to abandoned and records target in description', () => {
+	const backlog = makeBacklogTwo();
+	let capturedJson = '';
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJson = opts.input;
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	const result = mergeIssueOnMain(makeMergeOpts({ spawnFn: recordingSpawnFn }));
+	expect(result.ok).toBe(true);
+	if (result.ok) {
+		expect(result.id).toBe('CAM-1');
+		expect(result.intoId).toBe('CAM-2');
+		expect(result.committedTo).toBe('main');
+	}
+
+	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
+	const source = parsed.issues.find((e) => e.id === 'CAM-1');
+	expect(source?.status).toBe('abandoned');
+	expect(source?.description).toContain('Merged into CAM-2.');
+	// target untouched
+	const target = parsed.issues.find((e) => e.id === 'CAM-2');
+	expect(target?.status).toBe('open');
+});
+
+test('merge-into: appends to existing description', () => {
+	const backlog = makeBacklogTwo({ description: 'Original desc' });
+	let capturedJson = '';
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJson = opts.input;
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	mergeIssueOnMain(makeMergeOpts({ spawnFn: recordingSpawnFn }));
+
+	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
+	const source = parsed.issues.find((e) => e.id === 'CAM-1');
+	expect(source?.description).toBe('Original desc\n\nMerged into CAM-2.');
+});
+
+test('merge-into: foldBlockedBy folds source blockedBy into target', () => {
+	// source blocks on CAM-3; after merge, target should also block on CAM-3
+	const backlog: IssuesLocalJson = {
+		next_id: 4,
+		issues: [
+			{
+				id: 'CAM-1',
+				title: 'Source',
+				stage: 'idea',
+				status: 'open',
+				blockedBy: ['CAM-3'],
+				createdAt: '2026-01-01T00:00:00.000Z',
+			},
+			{
+				id: 'CAM-2',
+				title: 'Target',
+				stage: 'idea',
+				status: 'open',
+				blockedBy: [],
+				createdAt: '2026-01-02T00:00:00.000Z',
+			},
+			{
+				id: 'CAM-3',
+				title: 'Blocker',
+				stage: 'idea',
+				status: 'open',
+				blockedBy: [],
+				createdAt: '2026-01-03T00:00:00.000Z',
+			},
+		],
+	};
+	let capturedJson = '';
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJson = opts.input;
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	mergeIssueOnMain(makeMergeOpts({ spawnFn: recordingSpawnFn, foldBlockedBy: true }));
+
+	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
+	const target = parsed.issues.find((e) => e.id === 'CAM-2');
+	expect(target?.blockedBy).toContain('CAM-3');
+});
+
+test('merge-into: foldBlockedBy does not fold when false (default)', () => {
+	const backlog: IssuesLocalJson = {
+		next_id: 4,
+		issues: [
+			{
+				id: 'CAM-1',
+				title: 'Source',
+				stage: 'idea',
+				status: 'open',
+				blockedBy: ['CAM-3'],
+				createdAt: '2026-01-01T00:00:00.000Z',
+			},
+			{
+				id: 'CAM-2',
+				title: 'Target',
+				stage: 'idea',
+				status: 'open',
+				blockedBy: [],
+				createdAt: '2026-01-02T00:00:00.000Z',
+			},
+			{
+				id: 'CAM-3',
+				title: 'Blocker',
+				stage: 'idea',
+				status: 'open',
+				blockedBy: [],
+				createdAt: '2026-01-03T00:00:00.000Z',
+			},
+		],
+	};
+	let capturedJson = '';
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJson = opts.input;
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	mergeIssueOnMain(makeMergeOpts({ spawnFn: recordingSpawnFn, foldBlockedBy: false }));
+
+	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
+	const target = parsed.issues.find((e) => e.id === 'CAM-2');
+	expect(target?.blockedBy).toEqual([]);
+});
+
+test('merge-into: foldBlockedBy deduplicates existing entries', () => {
+	const backlog: IssuesLocalJson = {
+		next_id: 4,
+		issues: [
+			{
+				id: 'CAM-1',
+				title: 'Source',
+				stage: 'idea',
+				status: 'open',
+				blockedBy: ['CAM-3'],
+				createdAt: '2026-01-01T00:00:00.000Z',
+			},
+			{
+				id: 'CAM-2',
+				title: 'Target',
+				stage: 'idea',
+				status: 'open',
+				blockedBy: ['CAM-3'],
+				createdAt: '2026-01-02T00:00:00.000Z',
+			},
+			{
+				id: 'CAM-3',
+				title: 'Blocker',
+				stage: 'idea',
+				status: 'open',
+				blockedBy: [],
+				createdAt: '2026-01-03T00:00:00.000Z',
+			},
+		],
+	};
+	let capturedJson = '';
+	const { spawnFn } = makeFakeSpawnFn({ backlog });
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJson = opts.input;
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	mergeIssueOnMain(makeMergeOpts({ spawnFn: recordingSpawnFn, foldBlockedBy: true }));
+
+	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
+	const target = parsed.issues.find((e) => e.id === 'CAM-2');
+	// CAM-3 should appear only once (no duplication)
+	expect(target?.blockedBy.filter((d) => d === 'CAM-3')).toHaveLength(1);
+});
+
+test('merge-into: commit message is chore(cam): merge <id> into <intoId>', () => {
+	const { spawnFn, calls } = makeFakeSpawnFn({ backlog: makeBacklogTwo() });
+	mergeIssueOnMain(makeMergeOpts({ spawnFn }));
+	const commitTreeCall = calls.find((c) => c.join(' ').includes('commit-tree'));
+	expect(commitTreeCall?.join(' ')).toContain('chore(cam): merge CAM-1 into CAM-2');
+});
+
+test('merge-into: never calls git checkout', () => {
+	const { spawnFn, calls } = makeFakeSpawnFn({ backlog: makeBacklogTwo() });
+	mergeIssueOnMain(makeMergeOpts({ spawnFn }));
+	expect(calls.some((c) => c.includes('checkout'))).toBe(false);
+});
+
+// ===========================================================================
+// 5. Real-git integration tests: abandon and merge-into
+// ===========================================================================
+
+function makeTmpRepoTwo(): RepoHandles & { camDir2?: string } {
+	const dir = mkdtempSync(join(tmpdir(), 'cam-abandon-merge-'));
+	dirsToCleanup.push(dir);
+
+	const run = (args: string[]) =>
+		spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
+
+	run(['init']);
+	run(['symbolic-ref', 'HEAD', 'refs/heads/main']);
+	run(['config', 'user.email', 'test@example.com']);
+	run(['config', 'user.name', 'Test User']);
+
+	const camDir = join(dir, 'scripts', 'cam');
+	mkdirSync(camDir, { recursive: true });
+
+	const issues: IssuesLocalJson = {
+		next_id: 3,
+		issues: [
+			{
+				id: 'CAM-1',
+				title: 'Source idea',
+				stage: 'idea',
+				status: 'open',
+				blockedBy: [],
+				createdAt: '2026-01-01T00:00:00.000Z',
+			},
+			{
+				id: 'CAM-2',
+				title: 'Target idea',
+				stage: 'idea',
+				status: 'open',
+				blockedBy: [],
+				createdAt: '2026-01-02T00:00:00.000Z',
+			},
+		],
+	};
+	writeFileSync(join(camDir, 'issues.local.json'), JSON.stringify(issues, null, 2) + '\n');
+
+	run(['add', '-A']);
+	run(['commit', '-m', 'chore: initial harness state']);
+
+	return { dir, run, camDir };
+}
+
+// Real-git abandon tests
+
+test.skipIf(!gitAvailable)(
+	'Real-git abandon (off-main): status set to abandoned; main advances; work branch untouched',
+	() => {
+		const { dir, run } = makeTmpRepoTwo();
+		const mainSha0 = (run(['rev-parse', 'main']).stdout as string).trim();
+		run(['checkout', '-b', 'feat/abandon-test']);
+		const featureSha0 = (run(['rev-parse', 'HEAD']).stdout as string).trim();
+
+		const result = abandonIssueOnMain({
+			cwd: dir,
+			id: 'CAM-1',
+			spawnFn: realSpawnFn,
+			clock: () => '2026-06-27T00:00:00.000Z',
+		});
+
+		if (!result.ok) throw new Error(`Expected ok:true but got: ${JSON.stringify(result)}`);
+		expect(result.id).toBe('CAM-1');
+		expect(result.branchWasMain).toBe(false);
+
+		// main advanced
+		const mainSha1 = (run(['rev-parse', 'main']).stdout as string).trim();
+		expect(mainSha1).not.toBe(mainSha0);
+
+		// commit message
+		const logResult = run(['log', 'main', '-1', '--format=%s']);
+		expect((logResult.stdout as string).trim()).toBe('chore(cam): abandon CAM-1');
+
+		// entry is abandoned on main
+		const showResult = run(['show', 'main:scripts/cam/issues.local.json']);
+		const data = JSON.parse(showResult.stdout as string) as IssuesLocalJson;
+		const entry = data.issues.find((e) => e.id === 'CAM-1');
+		expect(entry?.status).toBe('abandoned');
+
+		// feature branch HEAD unchanged
+		const featureSha1 = (run(['rev-parse', 'HEAD']).stdout as string).trim();
+		expect(featureSha1).toBe(featureSha0);
+
+		// working tree clean
+		expect((run(['status', '--porcelain']).stdout as string).trim()).toBe('');
+	},
+);
+
+test.skipIf(!gitAvailable)(
+	'Real-git abandon (on-main): direct commit; file updated in working tree',
+	() => {
+		const { dir, run, camDir } = makeTmpRepoTwo();
+
+		const result = abandonIssueOnMain({
+			cwd: dir,
+			id: 'CAM-1',
+			spawnFn: realSpawnFn,
+			clock: () => '2026-06-27T00:00:00.000Z',
+		});
+
+		if (!result.ok) throw new Error(`Expected ok:true but got: ${JSON.stringify(result)}`);
+		expect(result.branchWasMain).toBe(true);
+
+		const wtContent = readFileSync(join(camDir, 'issues.local.json'), 'utf8');
+		const data = JSON.parse(wtContent) as IssuesLocalJson;
+		const entry = data.issues.find((e) => e.id === 'CAM-1');
+		expect(entry?.status).toBe('abandoned');
+
+		const logResult = run(['log', '-1', '--format=%s']);
+		expect((logResult.stdout as string).trim()).toBe('chore(cam): abandon CAM-1');
+
+		expect((run(['status', '--porcelain']).stdout as string).trim()).toBe('');
+	},
+);
+
+test.skipIf(!gitAvailable)(
+	'Real-git abandon: already-abandoned guard fires in real git',
+	() => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-abandon-guard-'));
+		dirsToCleanup.push(dir);
+
+		const run = (args: string[]) =>
+			spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
+		run(['init']);
+		run(['symbolic-ref', 'HEAD', 'refs/heads/main']);
+		run(['config', 'user.email', 'test@example.com']);
+		run(['config', 'user.name', 'Test User']);
+		const camDir = join(dir, 'scripts', 'cam');
+		mkdirSync(camDir, { recursive: true });
+		const issues: IssuesLocalJson = {
+			next_id: 2,
+			issues: [
+				{
+					id: 'CAM-1',
+					title: 'Already done',
+					stage: 'idea',
+					status: 'abandoned',
+					blockedBy: [],
+					createdAt: '2026-01-01T00:00:00.000Z',
+				},
+			],
+		};
+		writeFileSync(join(camDir, 'issues.local.json'), JSON.stringify(issues, null, 2) + '\n');
+		run(['add', '-A']);
+		run(['commit', '-m', 'chore: init']);
+
+		const result = abandonIssueOnMain({
+			cwd: dir,
+			id: 'CAM-1',
+			spawnFn: realSpawnFn,
+			clock: () => '2026-06-27T00:00:00.000Z',
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.reason).toBe('already-abandoned');
+	},
+);
+
+// Real-git merge-into tests
+
+test.skipIf(!gitAvailable)(
+	'Real-git merge-into (off-main): source abandoned; description records target; main advances',
+	() => {
+		const { dir, run } = makeTmpRepoTwo();
+		const mainSha0 = (run(['rev-parse', 'main']).stdout as string).trim();
+		run(['checkout', '-b', 'feat/merge-test']);
+		const featureSha0 = (run(['rev-parse', 'HEAD']).stdout as string).trim();
+
+		const result = mergeIssueOnMain({
+			cwd: dir,
+			id: 'CAM-1',
+			intoId: 'CAM-2',
+			spawnFn: realSpawnFn,
+			clock: () => '2026-06-27T00:00:00.000Z',
+		});
+
+		if (!result.ok) throw new Error(`Expected ok:true but got: ${JSON.stringify(result)}`);
+		expect(result.id).toBe('CAM-1');
+		expect(result.intoId).toBe('CAM-2');
+		expect(result.branchWasMain).toBe(false);
+
+		// main advanced
+		const mainSha1 = (run(['rev-parse', 'main']).stdout as string).trim();
+		expect(mainSha1).not.toBe(mainSha0);
+
+		// commit message
+		const logResult = run(['log', 'main', '-1', '--format=%s']);
+		expect((logResult.stdout as string).trim()).toBe('chore(cam): merge CAM-1 into CAM-2');
+
+		// source is abandoned on main; description records merge target
+		const showResult = run(['show', 'main:scripts/cam/issues.local.json']);
+		const data = JSON.parse(showResult.stdout as string) as IssuesLocalJson;
+		const source = data.issues.find((e) => e.id === 'CAM-1');
+		expect(source?.status).toBe('abandoned');
+		expect(source?.description).toContain('Merged into CAM-2.');
+
+		// target untouched
+		const target = data.issues.find((e) => e.id === 'CAM-2');
+		expect(target?.status).toBe('open');
+
+		// feature branch HEAD unchanged
+		const featureSha1 = (run(['rev-parse', 'HEAD']).stdout as string).trim();
+		expect(featureSha1).toBe(featureSha0);
+
+		// working tree clean
+		expect((run(['status', '--porcelain']).stdout as string).trim()).toBe('');
+	},
+);
+
+test.skipIf(!gitAvailable)(
+	'Real-git merge-into: self-merge guard fires in real git',
+	() => {
+		const { dir } = makeTmpRepoTwo();
+		const result = mergeIssueOnMain({
+			cwd: dir,
+			id: 'CAM-1',
+			intoId: 'CAM-1',
+			spawnFn: realSpawnFn,
+			clock: () => '2026-06-27T00:00:00.000Z',
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.reason).toBe('self-merge');
+	},
+);
+
+test.skipIf(!gitAvailable)(
+	'Real-git merge-into: target-not-found guard fires in real git',
+	() => {
+		const { dir } = makeTmpRepoTwo();
+		const result = mergeIssueOnMain({
+			cwd: dir,
+			id: 'CAM-1',
+			intoId: 'CAM-999',
+			spawnFn: realSpawnFn,
+			clock: () => '2026-06-27T00:00:00.000Z',
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.reason).toBe('target-not-found');
 	},
 );

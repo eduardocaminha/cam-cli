@@ -262,6 +262,111 @@ function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
 }
 
 // ---------------------------------------------------------------------------
+// Abandon mode types
+// ---------------------------------------------------------------------------
+
+export interface AbandonIssueOnMainOptions {
+	/** Absolute path to the project root (git repo). */
+	cwd: string;
+	/** Id of the issue to abandon (must be status:'open'). */
+	id: string;
+	/** Injectable spawnSync for all git subprocess calls. */
+	spawnFn: SpawnFn;
+	/** Injectable clock -- returns ISO 8601 timestamp. */
+	clock: ClockFn;
+	/** Injectable file writer (on-main path only). */
+	writeFile?: (path: string, text: string) => void;
+}
+
+export interface AbandonIssueOnMainResult {
+	ok: true;
+	id: string;
+	committedTo: 'main';
+	sha: string;
+	branchWasMain: boolean;
+}
+
+export type AbandonIssueOnMainError =
+	| { ok: false; reason: 'diverged' | 'detached-head' | 'missing-main' }
+	| { ok: false; reason: 'not-found' }
+	| { ok: false; reason: 'already-abandoned' };
+
+export type AbandonIssueOnMainOutcome =
+	| AbandonIssueOnMainResult
+	| AbandonIssueOnMainError;
+
+// ---------------------------------------------------------------------------
+// Merge-into mode types
+// ---------------------------------------------------------------------------
+
+export interface MergeIssueOnMainOptions {
+	/** Absolute path to the project root (git repo). */
+	cwd: string;
+	/** Id of the source issue to abandon. */
+	id: string;
+	/** Id of the target issue to merge into (must exist; must not equal id). */
+	intoId: string;
+	/**
+	 * If true, fold source.blockedBy into target.blockedBy (de-duplicated).
+	 * Default: false.
+	 */
+	foldBlockedBy?: boolean;
+	/** Injectable spawnSync for all git subprocess calls. */
+	spawnFn: SpawnFn;
+	/** Injectable clock -- returns ISO 8601 timestamp. */
+	clock: ClockFn;
+	/** Injectable file writer (on-main path only). */
+	writeFile?: (path: string, text: string) => void;
+}
+
+export interface MergeIssueOnMainResult {
+	ok: true;
+	id: string;
+	intoId: string;
+	committedTo: 'main';
+	sha: string;
+	branchWasMain: boolean;
+}
+
+export type MergeIssueOnMainError =
+	| { ok: false; reason: 'diverged' | 'detached-head' | 'missing-main' }
+	| { ok: false; reason: 'source-not-found' }
+	| { ok: false; reason: 'target-not-found' }
+	| { ok: false; reason: 'self-merge' }
+	| { ok: false; reason: 'already-abandoned' };
+
+export type MergeIssueOnMainOutcome =
+	| MergeIssueOnMainResult
+	| MergeIssueOnMainError;
+
+// ---------------------------------------------------------------------------
+// Private helpers for abandon/merge
+// ---------------------------------------------------------------------------
+
+function buildMergeDescription(existing: string | undefined, intoId: string): string {
+	const note = `Merged into ${intoId}.`;
+	return existing ? `${existing}\n\n${note}` : note;
+}
+
+function applyFoldBlockedBy(
+	source: IssueEntry,
+	target: IssueEntry,
+	targetIndex: number,
+	backlog: IssuesLocalJson,
+): void {
+	if (source.blockedBy.length === 0) return;
+	const seen = new Set(target.blockedBy);
+	const merged = [...target.blockedBy];
+	for (const depId of source.blockedBy) {
+		if (depId !== target.id && !seen.has(depId)) {
+			merged.push(depId);
+			seen.add(depId);
+		}
+	}
+	backlog.issues[targetIndex] = { ...target, blockedBy: merged };
+}
+
+// ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
 
@@ -374,4 +479,115 @@ export function specifyIssueOnMain(
 	pushMainBestEffort(cwd, spawnFn);
 
 	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
+}
+
+/**
+ * Abandon an issue: set status:'abandoned' and commit on main.
+ *
+ * Guards (in order):
+ *   0. Up-to-date (detached-head, missing-main, diverged).
+ *   1. Target id exists -- not-found on failure.
+ *   2. Target status is 'open' -- already-abandoned on failure.
+ *
+ * Commit message: `chore(cam): abandon <id>`.
+ */
+export function abandonIssueOnMain(
+	options: AbandonIssueOnMainOptions,
+): AbandonIssueOnMainOutcome {
+	const { cwd, id, spawnFn } = options;
+	const writeFile =
+		options.writeFile ?? ((p: string, t: string) => writeFileSync(p, t, 'utf8'));
+
+	const guard = checkMainUpToDate(cwd, spawnFn);
+	if (!guard.ok) return guard;
+	const { branchWasMain, localMainSha } = guard;
+
+	const showResult = spawnFn(
+		'git',
+		['-C', cwd, 'show', 'main:scripts/cam/issues.local.json'],
+		{ encoding: 'utf8' },
+	);
+	const backlog = JSON.parse(showResult.stdout) as IssuesLocalJson;
+
+	const entryIndex = backlog.issues.findIndex((e: IssueEntry) => e.id === id);
+	if (entryIndex === -1) return { ok: false, reason: 'not-found' };
+	const entry = backlog.issues[entryIndex];
+	if (entry === undefined) return { ok: false, reason: 'not-found' };
+	if (entry.status !== 'open') return { ok: false, reason: 'already-abandoned' };
+
+	backlog.issues[entryIndex] = { ...entry, status: 'abandoned' };
+
+	const serialized = JSON.stringify(backlog, null, 2) + '\n';
+	const commitMsg = `chore(cam): abandon ${id}`;
+	const sha = branchWasMain
+		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn);
+
+	pushMainBestEffort(cwd, spawnFn);
+	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
+}
+
+/**
+ * Merge a source issue into a target: set source status:'abandoned', record
+ * the merge target in source.description, and optionally fold source.blockedBy
+ * into target.blockedBy. Committed on main.
+ *
+ * Guards (in order):
+ *   0. Up-to-date (detached-head, missing-main, diverged).
+ *   1. id !== intoId -- self-merge on failure.
+ *   2. Source id exists -- source-not-found on failure.
+ *   3. Target id exists (checkReferentialIntegrity) -- target-not-found on failure.
+ *   4. Source status is 'open' -- already-abandoned on failure.
+ *
+ * Commit message: `chore(cam): merge <id> into <intoId>`.
+ */
+export function mergeIssueOnMain(
+	options: MergeIssueOnMainOptions,
+): MergeIssueOnMainOutcome {
+	const { cwd, id, intoId, spawnFn } = options;
+	const foldBlockedBy = options.foldBlockedBy ?? false;
+	const writeFile =
+		options.writeFile ?? ((p: string, t: string) => writeFileSync(p, t, 'utf8'));
+
+	const guard = checkMainUpToDate(cwd, spawnFn);
+	if (!guard.ok) return guard;
+	const { branchWasMain, localMainSha } = guard;
+
+	if (id === intoId) return { ok: false, reason: 'self-merge' };
+
+	const showResult = spawnFn(
+		'git',
+		['-C', cwd, 'show', 'main:scripts/cam/issues.local.json'],
+		{ encoding: 'utf8' },
+	);
+	const backlog = JSON.parse(showResult.stdout) as IssuesLocalJson;
+
+	const sourceIndex = backlog.issues.findIndex((e: IssueEntry) => e.id === id);
+	if (sourceIndex === -1) return { ok: false, reason: 'source-not-found' };
+	const source = backlog.issues[sourceIndex];
+	if (source === undefined) return { ok: false, reason: 'source-not-found' };
+
+	const targetIndex = backlog.issues.findIndex((e: IssueEntry) => e.id === intoId);
+	if (targetIndex === -1) return { ok: false, reason: 'target-not-found' };
+	const target = backlog.issues[targetIndex];
+	if (target === undefined) return { ok: false, reason: 'target-not-found' };
+
+	if (source.status !== 'open') return { ok: false, reason: 'already-abandoned' };
+
+	backlog.issues[sourceIndex] = {
+		...source,
+		status: 'abandoned',
+		description: buildMergeDescription(source.description, intoId),
+	};
+
+	if (foldBlockedBy) applyFoldBlockedBy(source, target, targetIndex, backlog);
+
+	const serialized = JSON.stringify(backlog, null, 2) + '\n';
+	const commitMsg = `chore(cam): merge ${id} into ${intoId}`;
+	const sha = branchWasMain
+		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn);
+
+	pushMainBestEffort(cwd, spawnFn);
+	return { ok: true, id, intoId, committedTo: 'main', sha, branchWasMain };
 }
