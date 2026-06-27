@@ -1823,30 +1823,38 @@ operator is alerted asynchronously.
 
 ### (v.1) Configure Resend escalation
 
-Run `cam init` or `cam config` to set the Resend API key and recipient. The
-values are persisted to `scripts/cam/project.toml`:
+The Resend API key is a secret and must NOT be stored in `project.toml` (which
+is git-tracked). Set it as a shell environment variable instead:
+
+```bash
+export RESEND_API_KEY="re_xxxx"
+```
+
+Add that line to your `~/.zshrc` or `~/.bashrc` so it persists across sessions.
+The recipient address (non-sensitive) is persisted to `scripts/cam/project.toml`
+and is set via `cam init` or `cam config`:
 
 ```toml
 [notify]
-resend_api_key = "re_xxxx"
 resend_recipient = "you@example.com"
 ```
 
-Alternatively, set them during `cam init` via CLI flags:
+To set the recipient during `cam init`:
 
 ```bash
-cam init --plan-approval auto --resend-api-key re_xxxx --resend-recipient you@example.com
+cam init --plan-approval auto --resend-recipient you@example.com
 ```
 
-If `plan_approval = "auto"` but `resend_api_key` is empty, `cam init` prints a
-loud warning:
+If `plan_approval = "auto"` but `RESEND_API_KEY` is absent from the
+environment, `cam init` prints a loud warning:
 
 ```
 WARN: plan_approval is "auto" but Resend is not configured: non-convergence failures will be SILENT
+Set RESEND_API_KEY in your shell environment (like LINEAR_API_KEY); also set resend_recipient in [notify] of scripts/cam/project.toml
 ```
 
-Heed this warning: without a Resend key, a non-convergence event is invisible
-unless the operator is watching the orchestrator pane.
+Heed this warning: without `RESEND_API_KEY` set at runtime, a non-convergence
+event is invisible unless the operator is watching the orchestrator pane.
 
 ### (v.2) Diagnose a non-convergence terminal
 
