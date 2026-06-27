@@ -1880,7 +1880,10 @@ no further stories are dispatched.
    grep 'MAX_ROUNDS_DEBT' .claude/cam-worker-events.jsonl | tail -3 | jq .
    ```
 
-4. Check whether the Resend escalation fired (stderr log from the sidecar):
+4. Check whether the Resend escalation failed (stderr log from the sidecar). This
+   grep surfaces only FAILED escalations: `sendEscalation` writes to stderr only
+   on failure (the error and catch branches); on success it writes nothing, so a
+   silent log means success or no attempt was made.
 
    ```bash
    grep 'Resend escalation' .claude/cam-supervisor.log | tail -5
@@ -1905,14 +1908,24 @@ the loop.
 4. Re-arm: `cam next`.
 
 Option B: increase `maxRounds` for projects that legitimately need more review
-iterations.
+iterations. The real sources for `maxRounds` are (no `[review]` section in
+`project.toml` is read by any code):
 
-Add or update `max_rounds` in `scripts/cam/project.toml`:
+- **`prd.review.maxRounds`** in `scripts/cam/prd.json`: set via `/cam-plan` when
+  the PRD is created. To raise it for an existing PRD, edit the file directly:
 
-```toml
-[review]
-max_rounds = 5
-```
+  ```bash
+  jq '.review.maxRounds = 6' scripts/cam/prd.json > /tmp/prd-rounds.json \
+    && mv /tmp/prd-rounds.json scripts/cam/prd.json
+  git add scripts/cam/prd.json && git commit -m "chore: raise maxRounds to 6"
+  ```
+
+- **`CAM_MAX_REVIEW_ROUNDS`** environment variable: overrides the PRD field.
+  Set it before `cam run` or `cam next`:
+
+  ```bash
+  CAM_MAX_REVIEW_ROUNDS=6 cam next
+  ```
 
 Then reset the review state as in Option A and re-arm.
 

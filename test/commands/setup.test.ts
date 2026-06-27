@@ -60,4 +60,18 @@ describe('warnIfResendUnconfigured (AC4)', () => {
 		expect(calls[0]?.hint).toBeDefined();
 		expect(calls[0]?.hint).toContain('RESEND_API_KEY');
 	});
+
+	test('env-var-only path: auto+unconfigured loud warning fires when key is empty (--resend-api-key flag removed)', () => {
+		// setup.ts now derives the key as: process.env['RESEND_API_KEY'] ?? ''
+		// When RESEND_API_KEY is absent (the common case), key is ''.
+		// Assert the loud warning still fires so flag removal does not silently
+		// suppress the non-convergence safety signal.
+		const resendApiKey = ''; // simulates absent RESEND_API_KEY env var
+		const warnings: string[] = [];
+		warnIfResendUnconfigured('auto', resendApiKey, (msg) => warnings.push(msg));
+
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain('non-convergence');
+		expect(warnings[0]).toContain('SILENT');
+	});
 });

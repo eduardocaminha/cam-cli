@@ -22,6 +22,8 @@ The cam-loop reaches a terminal state when the TS supervisor (`runSupervisor` in
 
 Stories with `requires: "operator"` are **out-of-scope** for autonomous implementation (operator ceremonies: TUI keypress, real-API hit, screencap, etc.). They do NOT block the review cycle: the loop implements all non-operator stories, runs review to a terminal verdict, then exits with status `awaiting-operator` (exit 0). The operator hand-executes the ceremony, flips `passes: true` manually, and re-runs `cam next` to complete the PRD.
 
+Note: `requires: "operator"` stories are hand-filed by the operator only (via `/cam-issue`). The subagent-planner no longer emits them (changed in US-003); any story that requires an operator ceremony must be filed manually.
+
 ## Project Stack
 
 `cam-cli` is the `cam` binary itself: an autonomous Claude Code loop driver.

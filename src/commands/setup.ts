@@ -57,7 +57,6 @@ export interface SetupOptions {
 	issueSystem?: IssueSystem;
 	mergeMode?: MergeMode;
 	planApproval?: PlanApproval;
-	resendApiKey?: string;
 	resendRecipient?: string;
 	description?: string;
 	noTmux?: boolean;
@@ -600,9 +599,8 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 		return 1;
 	}
 	const { projectMode, issueSystem, mergeMode, planApproval, description } = answers;
-	// Resend API key: prefer RESEND_API_KEY env var (canonical, not git-tracked);
-	// fall back to --resend-api-key flag for backward compat / testing.
-	const resendApiKey = process.env['RESEND_API_KEY'] ?? options.resendApiKey ?? '';
+	// Resend API key: read from RESEND_API_KEY env var only (not git-tracked).
+	const resendApiKey = process.env['RESEND_API_KEY'] ?? '';
 	const resendRecipient = options.resendRecipient ?? '';
 
 	// Blank line to separate the Ink screen's rendered output from the linear
@@ -718,7 +716,6 @@ export interface ParsedSetupArgs {
 	issueSystem?: IssueSystem;
 	mergeMode?: MergeMode;
 	planApproval?: PlanApproval;
-	resendApiKey?: string;
 	resendRecipient?: string;
 	description?: string;
 	noTmux: boolean;
@@ -799,16 +796,6 @@ export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 				return null;
 			}
 			result.planApproval = val as PlanApproval;
-			continue;
-		}
-		if (arg === '--resend-api-key') {
-			const next = args[++i];
-			if (!next) { printError('--resend-api-key requires a string'); return null; }
-			result.resendApiKey = next;
-			continue;
-		}
-		if (arg.startsWith('--resend-api-key=')) {
-			result.resendApiKey = arg.slice('--resend-api-key='.length);
 			continue;
 		}
 		if (arg === '--resend-recipient') {
