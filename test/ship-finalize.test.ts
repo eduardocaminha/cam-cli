@@ -40,8 +40,8 @@ const ISSUES_LOCAL_JSON = JSON.stringify(
 	{
 		next_id: 73,
 		issues: [
-			{ id: 'CAM-72', title: 'Test issue', state: 'open', createdAt: '2026-06-01T00:00:00Z' },
-			{ id: 'CAM-71', title: 'Another', state: 'closed', createdAt: '2026-05-01T00:00:00Z' },
+			{ id: 'CAM-72', title: 'Test issue', stage: 'idea', status: 'open', blockedBy: [], createdAt: '2026-06-01T00:00:00Z' },
+			{ id: 'CAM-71', title: 'Another', stage: 'shipped', status: 'open', blockedBy: [], createdAt: '2026-05-01T00:00:00Z' },
 		],
 	},
 	null,
@@ -126,12 +126,11 @@ describe('finalizeCycleClose — none backend (happy path)', () => {
 			'chore(cam): close CAM-72 + drop per-branch harness state (CAM-27 hygiene)',
 		);
 
-		// issues.local.json was written with state='closed' and closedAt set
+		// issues.local.json was written with stage='shipped'
 		expect(writtenIssues).not.toBeNull();
 		const parsed = JSON.parse(writtenIssues!);
 		const entry = parsed.issues.find((i: { id: string }) => i.id === 'CAM-72');
-		expect(entry?.state).toBe('closed');
-		expect(entry?.closedAt).toBe(FIXED_TS);
+		expect(entry?.stage).toBe('shipped');
 
 		// git rm -f --ignore-unmatch for each harness file
 		const rmCalls = calls.filter(

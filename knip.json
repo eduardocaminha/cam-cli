@@ -14,7 +14,6 @@
     "scripts/preview-screens.ts",
     "scripts/ui-snapshot.tsx",
     "src/config/permission-mode.ts",
-    "src/issues/types.ts",
     "src/logging/format.ts",
     "test/fixtures/interactivity/mock-claude.ts",
     "vendor/**",
