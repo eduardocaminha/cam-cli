@@ -1308,7 +1308,7 @@ export interface RunSidecarLoopOptions {
 	 * Threaded into RunSupervisorOptions.escalateFn on each supervisor run so
 	 * the inner loop can call it when the MAX_ROUNDS_DEBT terminal is reached.
 	 * In production this wraps sendEscalation() from src/notify/resend.ts using
-	 * [notify] resend_api_key + resend_recipient from project.toml.
+	 * RESEND_API_KEY env var + resend_recipient from [notify] project.toml.
 	 *
 	 * Optional: when absent (Resend unconfigured) the non-convergence terminal
 	 * is unchanged. Zero behavior change for all existing tests.
@@ -1416,7 +1416,7 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 			}
 			// US-R1-001: Thread escalateFn into RunSupervisorOptions so the inner
 			// loop can call it when the MAX_ROUNDS_DEBT terminal is reached.
-			// Only wired when [notify] resend_api_key + resend_recipient are set.
+			// Only wired when RESEND_API_KEY env var + resend_recipient are set.
 			if (opts.escalateFn !== undefined) {
 				supervisorOpts.escalateFn = opts.escalateFn;
 			}

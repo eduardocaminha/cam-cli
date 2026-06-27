@@ -58,6 +58,6 @@ describe('warnIfResendUnconfigured (AC4)', () => {
 
 		expect(calls).toHaveLength(1);
 		expect(calls[0]?.hint).toBeDefined();
-		expect(calls[0]?.hint).toContain('resend_api_key');
+		expect(calls[0]?.hint).toContain('RESEND_API_KEY');
 	});
 });

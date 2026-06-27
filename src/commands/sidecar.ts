@@ -128,9 +128,9 @@ export interface SidecarOptions {
 	/**
 	 * Override the escalateFn (US-R1-001).
 	 *
-	 * Production: reads [notify] resend_api_key + resend_recipient from
-	 * project.toml and builds a sendEscalation closure. Absent when Resend is
-	 * unconfigured (both keys must be non-empty).
+	 * Production: reads RESEND_API_KEY env var + resend_recipient from
+	 * [notify] project.toml and builds a sendEscalation closure. Absent when
+	 * Resend is unconfigured (both values must be non-empty).
 	 * Tests: inject a spy to assert the escalation was dispatched without a
 	 * real network hit.
 	 */
@@ -465,7 +465,7 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 			: undefined);
 
 	// US-R1-001: Build escalateFn from the Resend config. Only wired when both
-	// resend_api_key and resend_recipient are non-empty in [notify] project.toml.
+	// RESEND_API_KEY env var and resend_recipient ([notify] project.toml) are non-empty.
 	// When unconfigured, escalateFn is undefined and the MAX_ROUNDS_DEBT terminal
 	// is silent (zero behavior change for projects without Resend configured).
 	const resendConfig = readResendConfig(join(cwd, 'scripts/cam/project.toml'));

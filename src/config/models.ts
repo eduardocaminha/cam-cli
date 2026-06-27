@@ -159,7 +159,7 @@ export function readMergeMode(configPath?: string): MergeMode {
 }
 
 /**
- * Resend notification config read from `[notify]` in project.toml.
+ * Resend notification config.
  */
 export interface ResendConfig {
 	/** Resend API key. Empty string when unconfigured. */
@@ -169,28 +169,39 @@ export interface ResendConfig {
 }
 
 /**
- * Read the Resend notification config from the project config.
- * Returns `{ apiKey: '', recipient: '' }` when the section or keys are absent,
- * malformed, or non-string — preserving the defensive try/catch/default pattern.
+ * Read the Resend notification config.
+ *
+ * API key resolution order (mirrors the LINEAR_API_KEY convention):
+ *   1. `RESEND_API_KEY` environment variable (canonical, not git-tracked).
+ *   2. `resend_api_key` in `[notify]` of project.toml (backward compat only).
+ *
+ * Recipient is always read from `[notify] resend_recipient` in project.toml.
+ *
+ * Returns `{ apiKey: '', recipient: '' }` when neither source is configured.
  *
  * @param configPath  Override the config file path (default:
  *                    `scripts/cam/project.toml` resolved from `process.cwd()`).
  */
 export function readResendConfig(configPath?: string): ResendConfig {
+	// Canonical source: RESEND_API_KEY env var (not git-tracked).
+	const envApiKey = process.env['RESEND_API_KEY'] ?? '';
+
 	const path = configPath ?? defaultProjectConfigPath();
 	try {
 		const config = loadConfig(path);
 		const notifySection = config['notify'];
 		if (notifySection !== undefined && notifySection !== null && typeof notifySection === 'object') {
 			const section = notifySection as Record<string, unknown>;
-			const apiKey = typeof section['resend_api_key'] === 'string' ? section['resend_api_key'] : '';
+			// Env var takes priority; fall back to TOML for backward compat.
+			const apiKey = envApiKey !== '' ? envApiKey :
+				(typeof section['resend_api_key'] === 'string' ? section['resend_api_key'] : '');
 			const recipient = typeof section['resend_recipient'] === 'string' ? section['resend_recipient'] : '';
 			return { apiKey, recipient };
 		}
 	} catch {
-		// Malformed TOML or fs read error: fall back to empty.
+		// Malformed TOML or fs read error: fall back to env-only.
 	}
-	return { apiKey: '', recipient: '' };
+	return { apiKey: envApiKey, recipient: '' };
 }
 
 /**

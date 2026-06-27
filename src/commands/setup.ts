@@ -244,7 +244,7 @@ export function warnIfResendUnconfigured(
 	if (planApproval === 'auto' && resendApiKey === '') {
 		warnFn(
 			'plan_approval is "auto" but Resend is not configured: non-convergence failures will be SILENT',
-			'Set resend_api_key in [notify] of scripts/cam/project.toml or re-run cam init with --resend-api-key',
+			'Set RESEND_API_KEY in your shell environment (like LINEAR_API_KEY); also set resend_recipient in [notify] of scripts/cam/project.toml',
 		);
 	}
 }
@@ -600,8 +600,9 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 		return 1;
 	}
 	const { projectMode, issueSystem, mergeMode, planApproval, description } = answers;
-	// Resend config comes from flags (options) or remains unconfigured.
-	const resendApiKey = options.resendApiKey ?? '';
+	// Resend API key: prefer RESEND_API_KEY env var (canonical, not git-tracked);
+	// fall back to --resend-api-key flag for backward compat / testing.
+	const resendApiKey = process.env['RESEND_API_KEY'] ?? options.resendApiKey ?? '';
 	const resendRecipient = options.resendRecipient ?? '';
 
 	// Blank line to separate the Ink screen's rendered output from the linear
@@ -651,13 +652,11 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 			ship: { merge_mode: mergeMode },
 			plan: { plan_approval: planApproval },
 		});
-		// Persist Resend config when a key was provided.
-		if (resendApiKey !== '') {
+		// Persist Resend recipient when provided. The API key is read from
+		// RESEND_API_KEY env var (not stored in git-tracked project.toml).
+		if (resendRecipient !== '') {
 			mergeIntoConfig(projectToml, {
-				notify: {
-					resend_api_key: resendApiKey,
-					...(resendRecipient !== '' ? { resend_recipient: resendRecipient } : {}),
-				},
+				notify: { resend_recipient: resendRecipient },
 			});
 		}
 		printSuccess(`Wrote ${projectToml.replace(cwd + '/', '')}`);
