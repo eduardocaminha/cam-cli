@@ -61,7 +61,7 @@
         "Full CI gate passes (bun run check:all -- the enforced spine that includes biome lint, typecheck, test, embed-vendor:check). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "NEW module src/issues/select.ts; imports IssueEntry (US-001) and isBlocked (US-002). This IS the D1 gate-as-code decision (ADR 0001 rejected 'convention not code'). SEAM CHOICE (justify in commit): prefer a small exported helper selectPlannableFromFile(cwd) over a new `cam` internal subcommand: the cam-plan prose already reads issues.local.json (it currently does it via `git show main:...` per the orchestrator-reads-from-main pattern in patterns.md), and a pure exported function keeps the gate testable without spawning a subprocess; a subcommand would add a CLI surface + thin-proxy dispatch overhead for zero gain. numeric-id parse: id.split('-').at(-1) is T|undefined under noUncheckedIndexedAccess, guard + Number() + Number.isNaN fallback. Test file test/issues/select.test.ts. Do NOT compute rank here (Epico C); only consume it if present. COVERAGE RATCHET (check:all per-story, CAM-60): scripts/coverage-budget.json floors are functions 75.65% / lines 78.63%. The selectPlannableFromFile I/O seam (Bun.file read) is deliberately thin -- keep it to a few lines so the well-tested pure selectPlannableIssue dominates the ratio, or add a tiny covering test, to avoid dipping the aggregate below the floor and failing check:all mid-implementation."
     },
