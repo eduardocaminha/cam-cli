@@ -1,20 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Auto-chaining: in auto mode, flip active:true after branch and auto-dispatch ship on review CLEAN"
+    "id": "US-006",
+    "title": "Non-convergence hard terminal: maxRounds=3 and auditor-no-APPROVE both terminate cleanly"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T23:30:00Z",
+  "timestamp": "2026-06-27T23:50:00Z",
   "createdFiles": [
-    "test/supervisor/auto-chain.test.ts"
+    "test/supervisor/non-convergence-terminal.test.ts"
   ],
   "modifiedFiles": [
+    "src/supervisor/decide.ts",
     "src/supervisor/loop.ts",
-    "src/commands/sidecar.ts",
-    "scripts/cam/prd.json"
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 added autoShipFn (RunSupervisorOptions) and flipActiveFn/autoShipFn (RunSidecarLoopOptions) to loop.ts. The sidecar reads planApproval once at startup (src/commands/sidecar.ts, same read-once point as mergeMode). Auto mode wires makeFlipActiveFn + makeAutoShipFn; operator mode leaves both undefined (conditional-injection pattern mirrors runMergeWatchFn). The auto-chain test file lives at test/supervisor/auto-chain.test.ts (8 tests). The flipActiveFn triggers via the sidecar loop after supervisor completes and hasPendingStories() returns true; autoShipFn triggers in runSupervisor review branch when verdict === 'CLEAN'. Both deps are threaded: autoShipFn via supervisorOpts mutation in runSidecarLoop, flipActiveFn lives only in runSidecarLoop. Production makeAutoShipFn sends '/cam-ship Enter' to orchestrator pane via tmux send-keys (reusing buildWorkerReportSendKeysArgv). Production makeFlipActiveFn writes active:true to .claude/cam-loop.local.md preserving other fields.",
+  "nextStoryContext": "US-006 adds the non-convergence hard terminal to loop.ts. The fix: in the review branch, after writePrd(updatedPrd) re-read, check if roundsCompleted >= maxRounds && lastVerdict !== 'CLEAN'. If so: promote lastVerdict to MAX_ROUNDS_DEBT, writePrd again, notify orchestrator, emit review-verdict-handback event, call notifyTerminal('complete'), return { status: 'complete', ... }. The return is immediate (NOT continue) to prevent a (maxRounds+1)-th fix dispatch. DEFAULT_MAX_ROUNDS is now exported from decide.ts (was previously unexported const). The seam US-007 keys on: prd.review.lastVerdict === 'MAX_ROUNDS_DEBT' in prd.json. The oracle test file is test/supervisor/non-convergence-terminal.test.ts (5 tests, all pass). US-007 (escalation) should hook on the MAX_ROUNDS_DEBT verdict in prd.json to notify the operator.",
   "officialDocsValidated": [
     {
       "lib": "none",

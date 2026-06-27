@@ -48,7 +48,7 @@ export type SupervisorAction =
 	| { kind: 'blocked-no-implementable' };
 
 /** Default max review rounds, mirrors cam-review.md. */
-const DEFAULT_MAX_ROUNDS = 3;
+export const DEFAULT_MAX_ROUNDS = 3;
 
 /** Terminal verdict strings from cam-review.md. */
 export const TERMINAL_VERDICTS = new Set(['CLEAN', 'MAX_ROUNDS_DEBT']);

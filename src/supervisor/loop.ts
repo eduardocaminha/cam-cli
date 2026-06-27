@@ -27,7 +27,7 @@
 //     reader is present, parseAnySentinel is demoted to human-corroboration only:
 //     a DONE sentinel in the pane without a matching report does NOT break the poll.
 
-import { decideNextAction } from './decide.ts';
+import { decideNextAction, DEFAULT_MAX_ROUNDS } from './decide.ts';
 import type { PrdSnapshot } from './decide.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
@@ -1086,6 +1086,36 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			const updatedPrd = readPrd();
 			if (updatedPrd !== null) {
 				writePrd(updatedPrd);
+			}
+
+			// US-006: Non-convergence hard terminal.
+			// When review hits maxRounds without CLEAN, promote the verdict to
+			// MAX_ROUNDS_DEBT and return a terminal status WITHOUT continuing into
+			// decideNextAction. This prevents a (maxRounds+1)-th fix dispatch
+			// and exposes a deterministic seam US-007's escalation hooks on.
+			// Auditor-no-APPROVE case: exhausting the review round cap without a
+			// CLEAN verdict IS the deterministic terminal (no separate mechanism
+			// needed; the maxRounds check is the single gate).
+			if (updatedPrd !== null) {
+				const ncRoundsCompleted = updatedPrd.review?.roundsCompleted ?? 0;
+				const ncMaxRounds = updatedPrd.review?.maxRounds ?? DEFAULT_MAX_ROUNDS;
+				const ncLastVerdict = updatedPrd.review?.lastVerdict ?? null;
+				if (ncRoundsCompleted >= ncMaxRounds && ncLastVerdict !== 'CLEAN') {
+					// Promote the stored verdict to MAX_ROUNDS_DEBT so the prd.json
+					// seam is deterministic for US-007 escalation.
+					updatedPrd.review = { ...(updatedPrd.review ?? {}), lastVerdict: 'MAX_ROUNDS_DEBT' };
+					writePrd(updatedPrd);
+					// Notify orchestrator with the promoted verdict line.
+					opts.notifyOrchestrator?.(formatReviewVerdictLine(ncRoundsCompleted, 'MAX_ROUNDS_DEBT'));
+					// Emit structured event for the promotion.
+					const promotionDetail: ReviewVerdictHandbackEventDetail = {
+						verdict: 'MAX_ROUNDS_DEBT',
+						round: ncRoundsCompleted,
+					};
+					emit('review-verdict-handback', undefined, reviewUuid, promotionDetail);
+					notifyTerminal('complete');
+					return { status: 'complete', iterations, lastOutcome };
+				}
 			}
 
 			// US-001: notify the orchestrator pane with the formatted verdict line.
