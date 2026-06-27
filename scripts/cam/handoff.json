@@ -1,18 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "subagent-planner: vertical-slicing + stop emitting requires:operator stories"
+    "id": "US-004",
+    "title": "Deterministic plan_approval branch decision (operator pauses, auto proceeds) wired into cam-plan"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T22:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-27T23:00:00Z",
+  "createdFiles": [
+    "src/plan/plan-approval-decision.ts",
+    "test/plan/plan-approval-branch.test.ts"
+  ],
   "modifiedFiles": [
-    ".claude/agents/subagent-planner.md",
-    "templates/agents/subagent-planner.md",
-    "src/vendor/_generated.ts"
+    ".claude/commands/cam-plan.md",
+    "templates/commands/cam-plan.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added the vertical-slice decomposition rule and replaced the requires:operator instruction with the no-operator-stories + ceremony-as-automated-criteria rule in both .claude/agents/subagent-planner.md and templates/agents/subagent-planner.md. The two files remain intentionally divergent (cam-cli-specific Types/config -> Core logic -> Surface ordering in .claude/; generic Database -> Server -> Client ordering in templates/). The embedded _generated.ts was re-synced. US-004 and beyond implement the remaining PRD stories (plan_approval auto|operator, safety surface, etc.).",
+  "nextStoryContext": "US-004 added src/plan/plan-approval-decision.ts (pure decidePostAuditAction helper) and test/plan/plan-approval-branch.test.ts (6 tests). Both cam-plan.md copies were updated at Step 9 to reference decidePostAuditAction(readPlanApproval()) after auditor APPROVE. The BLOCK loop (do NOT branch) at line 216 precedes the plan_approval branch decision at line 218 in both copies. The src/plan/ directory is now established as the home for plan-time pure helpers; follow-on stories adding plan-time logic should place helpers there. PlanApproval type and readPlanApproval live in src/config/models.ts (US-001).",
   "officialDocsValidated": [
     {
       "lib": "none",
