@@ -49,7 +49,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "VERTICAL SLICE: dual-copy markdown edit + re-embed + parity test in one cut (the dual-copy+embed invariant fattens this slice; accept it per gotcha 5). DUAL-COPY INVARIANT (patterns.md 'Agent-prompt self-hosting pattern' + 'Epico A issue schema + gate-as-code invariant'): edit BOTH .claude/commands/cam-plan.md AND templates/commands/cam-plan.md (remove the fork prose and add the spec-reading rule in each), preserving the existing intentional command-name divergence (.claude says `bun run typecheck`/`bun test`; templates says generic \"the project's typecheck/test command\"); do NOT byte-equalize the two files. Then run `bun run embed-vendor` to sync src/vendor/_generated.ts; test/embedded.test.ts byte-parity catches drift. Step 6 is at .claude/commands/cam-plan.md:115-149 (## MVP Proposal / ## Launch-ready Proposal / ## Final question with (a)(b)(c)). Step 7 prompt (lines 159-168) currently passes 'Scope approved by operator: <MVP / Launch-ready / Custom>' and 'Stories to include' -- rewrite to pass the grilled spec, not a fork choice. Step 3 (read context, line 87-89) already reads the issue spec for issue_system=none; reinforce that the spec field IS the settled scope. NO em-dash in persisted .md (project rule): use colon/comma/parens. Read docs/agent-readiness.md before editing prompt wording. This story is BLOCKED-BY CAM-107 in spirit (the grill confronts scope at spec-time) but CAM-107 is already shipped, so the spec field exists."
     },

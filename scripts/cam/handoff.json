@@ -1,26 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add [plan] plan_approval accessor (readPlanApproval) defaulting to auto"
+    "id": "US-002",
+    "title": "cam-plan: replace the MVP-vs-launch-ready fork with one proportional plan that reads the grilled spec"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T20:00:00Z",
-  "createdFiles": [
-    "test/config/plan-approval.test.ts"
-  ],
+  "timestamp": "2026-06-27T21:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/config/models.ts"
+    ".claude/commands/cam-plan.md",
+    "templates/commands/cam-plan.md",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added PlanApproval union type and readPlanApproval(configPath?) to src/config/models.ts, mirroring readMergeMode exactly. The [plan] plan_approval key in project.toml is now readable. Next stories that consume this accessor should import from src/config/models.ts.",
+  "nextStoryContext": "US-002 removed the MVP-vs-launch-ready fork from Step 6 of cam-plan and replaced it with a single proportional plan driven by the grilled spec. The Step 7 planner prompt now passes 'Grilled spec' (settled scope) instead of 'Scope approved by operator: MVP/Launch-ready'. Both .claude and templates copies were updated and the embedded _generated.ts was re-synced. US-003 edits subagent-planner.md (both copies) to add vertical-slice decomposition and remove requires:operator story emission.",
   "officialDocsValidated": [
     {
-      "lib": "Bun.TOML",
-      "version": "1.3.x",
-      "url": "https://bun.com/reference/bun/TOML/parse",
-      "fetchedAt": "2026-06-27T20:00:00Z",
-      "status": "ok",
-      "summary": "Bun.TOML.parse(input: string): object confirmed. loadConfig wraps it in try/catch matching our defensive fallback pattern."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
