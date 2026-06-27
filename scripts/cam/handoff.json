@@ -1,22 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Deterministic plan_approval branch decision (operator pauses, auto proceeds) wired into cam-plan"
+    "id": "US-005",
+    "title": "Auto-chaining: in auto mode, flip active:true after branch and auto-dispatch ship on review CLEAN"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T23:00:00Z",
+  "timestamp": "2026-06-27T23:30:00Z",
   "createdFiles": [
-    "src/plan/plan-approval-decision.ts",
-    "test/plan/plan-approval-branch.test.ts"
+    "test/supervisor/auto-chain.test.ts"
   ],
   "modifiedFiles": [
-    ".claude/commands/cam-plan.md",
-    "templates/commands/cam-plan.md",
-    "src/vendor/_generated.ts",
+    "src/supervisor/loop.ts",
+    "src/commands/sidecar.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added src/plan/plan-approval-decision.ts (pure decidePostAuditAction helper) and test/plan/plan-approval-branch.test.ts (6 tests). Both cam-plan.md copies were updated at Step 9 to reference decidePostAuditAction(readPlanApproval()) after auditor APPROVE. The BLOCK loop (do NOT branch) at line 216 precedes the plan_approval branch decision at line 218 in both copies. The src/plan/ directory is now established as the home for plan-time pure helpers; follow-on stories adding plan-time logic should place helpers there. PlanApproval type and readPlanApproval live in src/config/models.ts (US-001).",
+  "nextStoryContext": "US-005 added autoShipFn (RunSupervisorOptions) and flipActiveFn/autoShipFn (RunSidecarLoopOptions) to loop.ts. The sidecar reads planApproval once at startup (src/commands/sidecar.ts, same read-once point as mergeMode). Auto mode wires makeFlipActiveFn + makeAutoShipFn; operator mode leaves both undefined (conditional-injection pattern mirrors runMergeWatchFn). The auto-chain test file lives at test/supervisor/auto-chain.test.ts (8 tests). The flipActiveFn triggers via the sidecar loop after supervisor completes and hasPendingStories() returns true; autoShipFn triggers in runSupervisor review branch when verdict === 'CLEAN'. Both deps are threaded: autoShipFn via supervisorOpts mutation in runSidecarLoop, flipActiveFn lives only in runSidecarLoop. Production makeAutoShipFn sends '/cam-ship Enter' to orchestrator pane via tmux send-keys (reusing buildWorkerReportSendKeysArgv). Production makeFlipActiveFn writes active:true to .claude/cam-loop.local.md preserving other fields.",
   "officialDocsValidated": [
     {
       "lib": "none",

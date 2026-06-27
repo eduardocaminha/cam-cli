@@ -102,7 +102,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "VERTICAL SLICE: sidecar read-once wiring + loop auto-chain branch + tests. REQUIRES US-001 (readPlanApproval). READ-ONCE-AT-STARTUP GOTCHA (spec gotcha 2; patterns.md 'ci-gated orchestrator' + CAM-100): the sidecar reads merge_mode ONCE at src/commands/sidecar.ts:348 (const mergeMode = readMergeMode(join(cwd,'scripts/cam/project.toml'))). Read plan_approval at the SAME point (one line below) and thread it into the loop wiring; changing config mid-session requires a sidecar respawn (document, do not fight it). The auto-ship-on-CLEAN hook lives near the review-verdict handling in src/supervisor/loop.ts:1037-1108 (the action.kind==='review' branch; CLEAN is a TERMINAL_VERDICT, src/supervisor/decide.ts:54). The active:true flip is the cam-next mechanism (src/commands/next.ts overwrites .claude/cam-loop.local.md active:true; patterns.md 'cam next is a pure sidecar trigger'). Inject the auto-chain behavior behind a flag derived from plan_approval so operator mode is a clean no-op (mirror the runMergeWatchFn conditional-injection pattern at sidecar.ts:349-353: only wire when condition holds, leave undefined otherwise -> zero behavior change). Test file: test/supervisor/auto-chain.test.ts with injected fakes (no real tmux). SINGLE-PUSHER + sidecar-supervisor invariants (patterns.md) hold: the deterministic loop owns dispatch, not the LLM."
     },

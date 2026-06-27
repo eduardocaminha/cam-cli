@@ -30,8 +30,9 @@ import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/event
 import { parseStateFile } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
-import { hasSession, projectSessionName, type SpawnFn } from '../tmux/session.ts';
-import { readMergeMode } from '../config/models.ts';
+import { hasSession, projectSessionName, getOrchPaneId, type SpawnFn } from '../tmux/session.ts';
+import { readMergeMode, readPlanApproval } from '../config/models.ts';
+import { buildWorkerReportSendKeysArgv } from '../supervisor/worker-report.ts';
 import {
 	runMergeWatch,
 	MERGE_WATCH_FILENAME,
@@ -93,6 +94,24 @@ export interface SidecarOptions {
 	 * Tests inject makeInMemoryEventLogger().logger to capture events in memory.
 	 */
 	logEventFn?: WorkerEventLogger;
+	/**
+	 * Override the flipActiveFn (US-005).
+	 *
+	 * Production (auto mode): writes active:true to .claude/cam-loop.local.md
+	 * so the sidecar re-triggers after a supervisor run without a human cam-next.
+	 * Production (operator mode): undefined (inert, zero behavior change).
+	 * Tests inject a spy to assert the flip happened.
+	 */
+	flipActiveFn?: RunSidecarLoopOptions['flipActiveFn'];
+	/**
+	 * Override the autoShipFn (US-005).
+	 *
+	 * Production (auto mode): sends '/cam-ship Enter' to the orchestrator pane
+	 * via tmux send-keys so cam-ship runs without a human gate after CLEAN review.
+	 * Production (operator mode): undefined (inert, zero behavior change).
+	 * Tests inject a spy to assert the dispatch happened.
+	 */
+	autoShipFn?: RunSidecarLoopOptions['autoShipFn'];
 	/**
 	 * Override the merge-watch function (US-007).
 	 *
@@ -295,6 +314,72 @@ function makeProductionMergeWatchFn(
 }
 
 // ---------------------------------------------------------------------------
+// Auto-chain production factories (US-005)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the production flipActiveFn closure for auto mode.
+ *
+ * Writes active:true to .claude/cam-loop.local.md, preserving all other
+ * fields from the existing state file (mirrors the cam-next thin-proxy).
+ * Non-fatal on any error: the sidecar continues; the auto-chain may simply
+ * miss one cycle rather than aborting.
+ */
+function makeFlipActiveFn(claudeDir: string, cwd: string): () => void {
+	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
+	return (): void => {
+		try {
+			const now = new Date().toISOString();
+			let body: string;
+			if (existsSync(stateFilePath)) {
+				const contents = readFileSync(stateFilePath, 'utf8');
+				const parsed = parseStateFile(contents);
+				body = renderStateFile({
+					maxIterations: parsed?.max_iterations ?? 50,
+					completionPromise: parsed?.completion_promise ?? 'COMPLETE',
+					startedAt: parsed?.started_at ?? now,
+					pid: parsed?.pid ?? process.pid,
+					active: true,
+					iteration: parsed?.iteration,
+					currentStory: parsed?.current_story,
+					storiesDone: parsed?.stories_done,
+					storiesTotal: parsed?.stories_total,
+					lastActivity: now,
+				});
+			} else {
+				body = renderStateFile({
+					maxIterations: 50,
+					completionPromise: 'COMPLETE',
+					startedAt: now,
+					pid: process.pid,
+					active: true,
+					lastActivity: now,
+				});
+			}
+			writeStateFile(cwd, body, { force: true });
+		} catch {
+			// Non-fatal: sidecar continues to next poll cycle.
+		}
+	};
+}
+
+/**
+ * Build the production autoShipFn closure for auto mode.
+ *
+ * Sends '/cam-ship Enter' to the orchestrator pane via tmux send-keys so
+ * cam ship runs without a human gate after a CLEAN review verdict.
+ * Best-effort: a missing orchestrator pane is a silent no-op.
+ */
+function makeAutoShipFn(sessionName: string, spawnFn: SpawnFn): () => void {
+	return (): void => {
+		const orchPane = getOrchPaneId(sessionName, spawnFn);
+		if (orchPane === null) return; // best-effort: silent no-op
+		const argv = buildWorkerReportSendKeysArgv(orchPane, '/cam-ship');
+		spawnFn('tmux', argv, { stdio: 'ignore' });
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
@@ -352,6 +437,22 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 			? makeProductionMergeWatchFn(cwd, claudeDir, sessionName, logEvent, realSpawnFn)
 			: undefined);
 
+	// US-005: Read plan_approval once at sidecar startup (same read-once point as
+	// mergeMode, CAM-100 lesson). Drives auto-chain wiring: flipActiveFn and
+	// autoShipFn are wired only in auto mode; operator mode leaves them undefined
+	// (conditional-injection pattern, mirrors runMergeWatchFn above).
+	const planApproval = readPlanApproval(join(cwd, 'scripts/cam/project.toml'));
+	const flipActiveFn: RunSidecarLoopOptions['flipActiveFn'] =
+		options.flipActiveFn ??
+		(planApproval === 'auto'
+			? makeFlipActiveFn(claudeDir, cwd)
+			: undefined);
+	const autoShipFn: RunSidecarLoopOptions['autoShipFn'] =
+		options.autoShipFn ??
+		(planApproval === 'auto'
+			? makeAutoShipFn(sessionName, realSpawnFn)
+			: undefined);
+
 	await runSidecarLoop({
 		buildOpts: buildOptsFn,
 		readActive: readActiveFn,
@@ -363,5 +464,7 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		hasSessionFn,
 		logEvent,
 		runMergeWatchFn,
+		flipActiveFn,
+		autoShipFn,
 	});
 }

@@ -321,6 +321,17 @@ export interface RunSupervisorOptions {
 	 * byte-for-byte unchanged.
 	 */
 	notifyOrchestrator?: (line: string) => void;
+	/**
+	 * Auto-ship callback for auto mode (US-005).
+	 *
+	 * When injected (plan_approval === 'auto'), called immediately after a CLEAN
+	 * review verdict to dispatch /cam-ship without a human gate. In production
+	 * this sends '/cam-ship Enter' to the orchestrator pane via tmux send-keys.
+	 *
+	 * Optional: when absent (operator mode or plan_approval != 'auto') the
+	 * review branch is unchanged (zero behavior change for all existing tests).
+	 */
+	autoShipFn?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -1096,6 +1107,14 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				emit('review-verdict-handback', undefined, reviewUuid, handbackDetail);
 			}
 
+			// US-005: Auto-ship on CLEAN in auto mode.
+			// When autoShipFn is injected (plan_approval === 'auto'), call it
+			// immediately after a CLEAN verdict to dispatch /cam-ship without a
+			// human gate. Inert when absent (operator mode or plan_approval != 'auto').
+			if (opts.autoShipFn !== undefined && updatedPrd?.review?.lastVerdict === 'CLEAN') {
+				opts.autoShipFn();
+			}
+
 			// CAM-36: a review iteration is real state-machine progress, so it
 			// breaks any run of consecutive no-progress implement passes. Reset the
 			// streak here so the "consecutive" semantics hold across a review (e.g.
@@ -1203,6 +1222,26 @@ export interface RunSidecarLoopOptions {
 	 * change for existing projects and all tests that do not inject it.
 	 */
 	runMergeWatchFn?: () => Promise<void>;
+	/**
+	 * Auto-chain active:true flip for auto mode (US-005).
+	 *
+	 * When injected (plan_approval === 'auto'), called after the supervisor
+	 * reaches a terminal state AND hasPendingStories() returns true, to flip
+	 * active:true immediately without waiting for a human cam-next call.
+	 * In production this writes active:true to .claude/cam-loop.local.md.
+	 *
+	 * Optional: when absent (operator mode or plan_approval != 'auto') the loop
+	 * calls clearActive() and sleeps as normal (zero behavior change).
+	 */
+	flipActiveFn?: () => void;
+	/**
+	 * Auto-ship callback for auto mode (US-005). When injected, threaded into
+	 * RunSupervisorOptions.autoShipFn so the inner supervisor can call it after
+	 * a CLEAN verdict. See RunSupervisorOptions.autoShipFn for full doc.
+	 *
+	 * Optional: when absent the supervisor runs unchanged.
+	 */
+	autoShipFn?: () => void;
 }
 
 /** Idle polling interval for the sidecar outer loop (2 seconds). */
@@ -1296,6 +1335,13 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 		let result: SupervisorResult;
 		try {
 			const supervisorOpts = opts.buildOpts();
+			// US-005: Thread autoShipFn from RunSidecarLoopOptions into
+			// RunSupervisorOptions so the inner loop can call it after a CLEAN
+			// verdict. Only injected when plan_approval === 'auto'; absent in
+			// operator mode (zero behavior change for existing callers).
+			if (opts.autoShipFn !== undefined) {
+				supervisorOpts.autoShipFn = opts.autoShipFn;
+			}
 			result = await runSupervisorFn(supervisorOpts);
 		} finally {
 			// Release the lock whether the run succeeded or threw.
@@ -1307,6 +1353,15 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 		// state file; clearActive() is the safety net that ensures active:false
 		// even when onProgress was absent or failed.
 		opts.clearActive();
+
+		// US-005: Auto-chain in auto mode. When flipActiveFn is injected
+		// (plan_approval === 'auto') and pending work remains, flip active:true
+		// immediately so the sidecar re-triggers without waiting for a human
+		// cam-next call. Skip the idle sleep on the auto-chain path.
+		if (opts.flipActiveFn !== undefined && opts.hasPendingStories && opts.hasPendingStories()) {
+			opts.flipActiveFn();
+			continue; // head straight back to the active-flag poll
+		}
 
 		// Prevent busy-spin on rapid complete/blocked cycles (e.g. empty PRD).
 		// A short sleep lets the sidecar settle before the next poll.
