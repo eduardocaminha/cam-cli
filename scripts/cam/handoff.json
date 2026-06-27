@@ -1,27 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T13:00:00Z",
+  "timestamp": "2026-06-27T14:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
+    "src/config/models.ts",
+    "src/commands/setup.ts",
     "src/commands/sidecar.ts",
-    "test/notify/resend.test.ts",
+    "src/supervisor/loop.ts",
+    "test/commands/setup.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 wires the production escalateFn path: (1) RunSidecarLoopOptions gains escalateFn?: () => Promise<void>; (2) runSidecarLoop threads it into supervisorOpts.escalateFn before each runSupervisor call (parallel to autoShipFn threading); (3) sidecar.ts reads readResendConfig(join(cwd,'scripts/cam/project.toml')) and builds the escalation closure only when both apiKey and recipient are non-empty; (4) SidecarOptions gains escalateFn injectable for tests; (5) production-wiring oracle tests added to test/notify/resend.test.ts. US-R1-002 (WARNING): Resend API key persisted to git-tracked project.toml instead of env var - diverges from LINEAR_API_KEY-from-env convention and Resend docs.",
+  "nextStoryContext": "US-R1-002 fixes Resend API key security: (1) readResendConfig now prefers RESEND_API_KEY env var (canonical, not git-tracked), falls back to resend_api_key in [notify] project.toml for backward compat; (2) cam init/runSetup no longer writes resend_api_key to the git-tracked project.toml; resend_recipient (non-sensitive) is still persisted; (3) warnIfResendUnconfigured hint updated to reference RESEND_API_KEY env var; (4) stale comments in sidecar.ts and loop.ts updated. Resend official docs confirm RESEND_API_KEY is the canonical env var name.",
   "officialDocsValidated": [
     {
       "lib": "resend",
-      "version": "6.16.0",
+      "version": "current",
       "url": "https://resend.com/docs/send-with-nodejs",
-      "fetchedAt": "2026-06-27T12:25:00Z",
+      "fetchedAt": "2026-06-27T14:00:00Z",
       "status": "ok",
-      "summary": "Validated in US-007. US-R1-001 only wires the production call site; no new API surface. Prior validation still current."
+      "summary": "Resend docs confirm RESEND_API_KEY is the canonical env var name; docs explicitly recommend against hardcoding API keys. Our implementation matches exactly."
     }
   ]
 }

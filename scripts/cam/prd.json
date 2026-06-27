@@ -30,7 +30,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/commands/setup.ts:649]: The Resend API key is persisted to [notify] resend_api_key in scripts/cam/project.toml, which is git-tracked (not in .gitignore nor templates/.gitignore), and the setup hint instructs the operator to put it there. This diverges from the project's LINEAR_API_KEY-from-env convention and from Resend's own docs ('Store your API key in an environment variable rather than hardcoding it'). Recommend reading RESEND_API_KEY from env (best-effort, like LINEAR) or gitignoring the key / storing it under user config."
     },
     {
