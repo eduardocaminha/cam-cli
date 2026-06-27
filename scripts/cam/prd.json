@@ -1,0 +1,206 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-107-grill-spec-layer",
+  "description": "Epico B layer 2 / grill: vendor grill-with-docs skill chain, add /cam-spec command, deterministic spec writer that promotes idea->specified on main.",
+  "issueNumber": 107,
+  "relatedDocs": [
+    "scripts/cam/CLAUDE.md",
+    "src/issues/types.ts",
+    "src/issues/select.ts",
+    "src/issues/graph.ts",
+    "src/commands/issue-file.ts",
+    "src/commands/ship-finalize.ts",
+    "scripts/generate-embedded-vendor.ts",
+    "scripts/cam/issues.schema.json",
+    "docs/recovery-runbook.md",
+    "scripts/cam/patterns.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "mattpocock/skills grill-with-docs",
+      "url": "https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/SKILL.md",
+      "version": "main@2026-06-27",
+      "fetchedAt": "2026-06-27",
+      "summary": "1-line stub: runs /grilling using /domain-modeling. disable-model-invocation:true.",
+      "status": "ok"
+    },
+    {
+      "lib": "mattpocock/skills grilling",
+      "url": "https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md",
+      "version": "main@2026-06-27",
+      "fetchedAt": "2026-06-27",
+      "summary": "Relentless one-question-at-a-time interview; walk each branch of the design tree; recommend an answer per question; explore codebase instead of asking when answerable from code.",
+      "status": "ok"
+    },
+    {
+      "lib": "mattpocock/skills domain-modeling",
+      "url": "https://github.com/mattpocock/skills/blob/main/skills/engineering/domain-modeling/SKILL.md",
+      "version": "main@2026-06-27",
+      "fetchedAt": "2026-06-27",
+      "summary": "Active domain-model discipline: challenge terms vs CONTEXT.md glossary, sharpen fuzzy language, stress-test scenarios, cross-ref code, update CONTEXT.md inline, offer ADRs sparingly. Ships ADR-FORMAT.md + CONTEXT-FORMAT.md. CONTEXT.md is glossary-only, no impl details.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Vendor grill-with-docs skill chain into .claude/ and templates/, re-embed",
+      "description": "As a planner, I need the grill-with-docs skill chain vendored into both the dogfood tree (.claude/skills/) and the downstream tree (templates/skills/) and re-embedded into _generated.ts, so the grill is runtime-readable here and shipped by cam init.",
+      "acceptanceCriteria": [
+        "All 5 skill files exist under .claude/skills/ : grill-with-docs/SKILL.md, grilling/SKILL.md, domain-modeling/SKILL.md, domain-modeling/ADR-FORMAT.md, domain-modeling/CONTEXT-FORMAT.md. [oracle: test -f .claude/skills/grill-with-docs/SKILL.md && test -f .claude/skills/grilling/SKILL.md && test -f .claude/skills/domain-modeling/SKILL.md && test -f .claude/skills/domain-modeling/ADR-FORMAT.md && test -f .claude/skills/domain-modeling/CONTEXT-FORMAT.md]",
+        "The same 5 skill files exist under templates/skills/ with identical relative subpaths. [oracle: test -f templates/skills/grill-with-docs/SKILL.md && test -f templates/skills/grilling/SKILL.md && test -f templates/skills/domain-modeling/SKILL.md && test -f templates/skills/domain-modeling/ADR-FORMAT.md && test -f templates/skills/domain-modeling/CONTEXT-FORMAT.md]",
+        "Each .claude/skills file is byte-identical to its templates/skills counterpart. [oracle: diff -r .claude/skills templates/skills]",
+        "_generated.ts templatesContents carries the grill skill files (templates/ is walked recursively). [oracle: grep -q 'skills/grill-with-docs/SKILL.md' src/vendor/_generated.ts]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Fetch the 5 files verbatim from github.com/mattpocock/skills (skills/engineering/grill-with-docs, skills/productivity/grilling, skills/engineering/domain-modeling). grill-me is NOT in grill-with-docs's dependency chain: SKIP it. Vendored skill .md is consumed by an LLM, so the no-em-dash/no-emoji project rule does NOT apply: copy punctuation verbatim, do not rewrite. Keep .claude/ and templates/ copies byte-identical (journal's recurring invariant; diff -r is the oracle). scripts/generate-embedded-vendor.ts walkFiles() walks templates/ RECURSIVELY so no per-file map edit is needed: just run `bun run embed-vendor` and commit the regenerated src/vendor/_generated.ts. Re-check docs/recovery-runbook.md sec (g) (vendored-file gotcha) before touching vendor pipeline. Lesson: comments do not prove behavior; run embed-vendor:check, do not assume."
+    },
+    {
+      "id": "US-002",
+      "title": "Typed Spec schema + validators in src/issues/spec.ts",
+      "description": "As a developer, I need a typed Spec interface and pure validators so the spec field stops being unknown and downstream writers can validate structured specs and WSJF before committing.",
+      "acceptanceCriteria": [
+        "src/issues/spec.ts exports a Spec interface { acceptanceCriteria: string[]; scope: string; gotchas: string[]; domainTerms: string[] }. [oracle: grep -q 'interface Spec' src/issues/spec.ts]",
+        "IssueEntry.spec is typed as Spec (optional) instead of unknown in src/issues/types.ts. [oracle: grep -q 'spec?: Spec' src/issues/types.ts]",
+        "validateSpec(x) returns { ok: boolean; errors: string[] }, rejecting missing/empty acceptanceCriteria and missing scope. [oracle: bun test]",
+        "validateWsjf(x) returns { ok, errors } and rejects a WsjfScore missing any of the four components value/timeCriticality/riskReduction/jobSize. [oracle: bun test]",
+        "Unit tests cover valid and each invalid shape for both validators. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "biome lint passes (bun run lint). [oracle: bun run lint]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "New module src/issues/spec.ts; test under test/issues/spec.test.ts. Reuse WsjfScore from src/issues/types.ts (do not redefine: import it). Changing IssueEntry.spec from unknown to Spec? may surface type errors at any existing reader of .spec: run `bun run typecheck` and guard with noUncheckedIndexedAccess in mind (array access is T|undefined). Validators are PURE (no I/O), mirroring src/issues/graph.ts checkReferentialIntegrity shape { ok, errors }. Domain term: a 'spec' is the structured deep-spec written by the grill (AC + scope + gotchas + domainTerms), distinct from the free-text description captured at stage:idea."
+    },
+    {
+      "id": "US-003",
+      "title": "Deterministic spec writer specifyIssueOnMain (promote idea->specified on main)",
+      "description": "As the grill flow, I need a deterministic writer that sets spec + blockedBy + wsjf and flips stage idea->specified for an existing issue id, committing on main without touching the work branch, so the grill's structured output lands in the backlog from any branch.",
+      "acceptanceCriteria": [
+        "src/commands/issue-specify.ts exports specifyIssueOnMain that reads the backlog via `git show main:scripts/cam/issues.local.json` and never runs `git checkout` (mirrors issue-file.ts commit-tree-on-main). [oracle: grep -q 'show' src/commands/issue-specify.ts && ! grep -q 'checkout' src/commands/issue-specify.ts]",
+        "It validates the spec (validateSpec) and wsjf (validateWsjf) and returns an error outcome without committing when invalid. [oracle: bun test]",
+        "It guards that the target id exists and is currently stage:'idea' AND status:'open', returning a typed error otherwise (no mutation). [oracle: bun test]",
+        "It runs checkReferentialIntegrity (src/issues/graph.ts) on the post-write backlog and refuses to commit when integrity fails. [oracle: bun test]",
+        "On success it writes spec + blockedBy + wsjf and sets stage:'specified', committed to main via commit-tree plumbing. [oracle: bun test]",
+        "Real-git regression tests exercise the full commit-tree path in a temp repo (mirror issue-file's test style). [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "biome lint passes (bun run lint). [oracle: bun run lint]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "New module src/commands/issue-specify.ts; tests under test/commands/issue-specify.test.ts. CANONICAL pattern to mirror: src/commands/issue-file.ts (createLocalIssueOnMain) -- DI'd synchronous SpawnFn + ClockFn, on-main path (write/add/commit) vs off-main commit-tree plumbing (temp GIT_INDEX_FILE, read-tree, hash-object -w --stdin, update-index --cacheinfo, write-tree, commit-tree -p main, update-ref refs/heads/main). Reference src/commands/ship-finalize.ts for the stage-write approach (it sets stage:'shipped'). Import validateSpec/validateWsjf from US-002, isBlocked/checkReferentialIntegrity from src/issues/graph.ts. Commit msg style: `chore(cam): specify <id>`. NEVER touch the work branch (the whole point: idea filed/specified on main while a feature branch is open). Lesson (issues-local-next-id-multiwriter): a live `cam run` is a concurrent writer of issues.local.json -- read from main, write via plumbing, do not assume working-tree is canonical."
+    },
+    {
+      "id": "US-004",
+      "title": "/cam-spec command markdown (both trees) + CLI seam",
+      "description": "As an operator, I need a /cam-spec <id> command that runs grill-with-docs over an idea and calls the spec writer at the end, plus a CLI entrypoint, so I can deep-spec an idea into stage:specified.",
+      "acceptanceCriteria": [
+        ".claude/commands/cam-spec.md and templates/commands/cam-spec.md both exist and are byte-identical. [oracle: diff .claude/commands/cam-spec.md templates/commands/cam-spec.md]",
+        "Both copies reference the grill-with-docs skill and instruct the operator interview to call the US-003 writer (specifyIssueOnMain) at the end. [oracle: grep -q 'grill-with-docs' templates/commands/cam-spec.md && grep -q 'specifyIssueOnMain' templates/commands/cam-spec.md]",
+        "A CLI seam routes the operator to /cam-spec for an idea id (a `cam spec <id>` subcommand in index.ts OR a `cam issue --grill <id>` thin-proxy, mirroring cam plan/cam issue send-keys injection). [oracle: bun test]",
+        "The CLI seam has a unit test asserting the dispatch shape (issue id parsed, slash injected / writer reachable). [oracle: bun test]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "biome lint passes (bun run lint). [oracle: bun run lint]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "SEAM DECISION (planner picks, document in the command impl): prefer a thin `cam spec <id>` subcommand in index.ts wired to a new src/commands/spec.ts modeled on src/commands/plan.ts (runPlan) -- it injects `/cam-spec <id>` into the orchestrator pane via sendKeysWhenIdle (src/tmux/dispatch.ts), reuses orchestratorAlive/getOrchPaneId/paneCountMutex from src/tmux/session.ts, and respects the 2-pane mutex. The grill is an INTERACTIVE in-session interview (gate humano profundo, like /cam-plan), NOT an autonomous worker: the command .md is prompt-governed, the testable oracle is the dispatch shape + embed parity. GOTCHA (sendkeys-literal-enter-gotcha): send-keys is atomic text+Enter in ONE call, NEVER -l (it makes 'Enter' literal and never submits). index.ts dispatch lives around the 'plan'/'issue' cases (~line 1050-1074). Command .md is LLM-consumed so em-dash/emoji rule does not apply. Re-embed after adding templates/commands/cam-spec.md (`bun run embed-vendor`). Re-read cam-plan.md as the structural template for the command .md."
+    },
+    {
+      "id": "US-005",
+      "title": "CONTEXT.md / ADR location convention for the durable domain model",
+      "description": "As a cam project maintainer, I need the cam-specific path convention for where CONTEXT.md and ADRs live (here and downstream) documented and linked to patterns.md + Mulch, so the durable domain model the grill writes has a stable home.",
+      "acceptanceCriteria": [
+        "scripts/cam/CLAUDE.md documents that the durable domain model lives at a pinned cam location: a CONTEXT.md path plus docs/adr/ for ADRs, for this project and downstream cam projects. [oracle: grep -q 'CONTEXT.md' scripts/cam/CLAUDE.md]",
+        "The note in scripts/cam/CLAUDE.md links the domain model to scripts/cam/patterns.md and to CAM-64 (Mulch knowledge central) as future self-improvement sources. [oracle: grep -q 'CAM-64' scripts/cam/CLAUDE.md]",
+        "The vendored domain-modeling skill copies reference the cam CONTEXT.md/adr path convention (both trees stay byte-identical). [oracle: diff .claude/skills/domain-modeling/SKILL.md templates/skills/domain-modeling/SKILL.md]",
+        "Vendor drift check passes if any skill copy changed (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "The convention note reads clearly and states what is glossary-only vs ADR-worthy. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "docs/adr/ already exists (docs/adr/0001-issue-system-redesign.md); no CONTEXT.md exists yet -- this story pins WHERE it lives (decide: repo-root CONTEXT.md vs scripts/cam/CONTEXT.md; document the choice), not necessarily its full content. The domain-modeling skill already carries the WRITE behavior (CONTEXT.md glossary-only, ADRs sparingly: hard-to-reverse + surprising + real-tradeoff); this story adds the cam PATH convention + a short human-readable note. PROJECT RULE: the note is human-readable persisted .md, so NO em-dash and NO decorative emoji (use colon/comma/parens). If you edit the vendored skill copy to add cam paths, you break byte-identity-with-upstream but MUST keep .claude/<->templates/ byte-identity (diff oracle) and re-embed. Avoid trivially-satisfiable grep: CONTEXT.md already appears nowhere, patterns.md is referenced elsewhere -- assert against the NEW note's file specifically if needed."
+    },
+    {
+      "id": "US-006",
+      "title": "Terminal paths: abandon + merge-into modes in the spec writer",
+      "description": "As the grill flow, I need abandon and merge-into terminal modes in the writer so the grill can close a redundant/furada idea or fold it into another issue, both committed on main.",
+      "acceptanceCriteria": [
+        "specifyIssueOnMain (or a sibling export in issue-specify.ts) supports an 'abandon' mode that sets status:'abandoned' on the target idea, committed on main. [oracle: bun test]",
+        "It supports a 'merge-into <id>' mode that records the merge target, sets status:'abandoned' on the source, and optionally folds the source's blockedBy into the target. [oracle: bun test]",
+        "The merge target id is recorded in the abandoned source's description (issues.schema.json sets additionalProperties:false, so no new field is allowed). [oracle: bun test]",
+        "merge-into validates the target id exists (checkReferentialIntegrity) and refuses to commit on a missing/self target. [oracle: bun test]",
+        "Real-git regression tests cover abandon and merge-into in a temp repo. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "biome lint passes (bun run lint). [oracle: bun run lint]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Extends src/commands/issue-specify.ts (US-003) and its test file. Reuse the SAME commit-tree-on-main plumbing and DI'd SpawnFn; do not duplicate the git wiring (factor a shared helper if needed, but stay surgical). status:'abandoned' is the existing IssueStatus value (src/issues/types.ts). merge-into MUST record the target in the abandoned source's description: scripts/cam/issues.schema.json sets additionalProperties:false (confirmed), so a new top-level field would fail schema validation. Do NOT add an unschema'd field. Commit msg: `chore(cam): abandon <id>` / `chore(cam): merge <id> into <target>`."
+    },
+    {
+      "id": "US-007",
+      "title": "Production-wired spec-written / stage-promoted observability event",
+      "description": "As an operator diagnosing the loop, I need a structured spec-written / stage-promoted event emitted at the real writer call-site so a grill promotion is replayable, not just observable in a test fake.",
+      "acceptanceCriteria": [
+        "The spec writer emits a structured event (e.g. kind 'spec-written' or 'stage-promoted') carrying { id, fromStage, toStage } via the injected event sink. [oracle: bun test]",
+        "The default file event sink is wired at the REAL call-site in src/commands/issue-specify.ts via makeFileEventLogger (the canonical production sink factory in src/supervisor/events.ts), not only injected in a test. [oracle: grep -q 'makeFileEventLogger' src/commands/issue-specify.ts]",
+        "A production-wiring test fails if the sink is left unwired (asserts the default path emits, not just the injected fake). [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "biome lint passes (bun run lint). [oracle: bun run lint]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "Event types live in src/supervisor/events.ts (WorkerEventKind union + appendFileSync default sink to .claude/cam-worker-events.jsonl). Add the new kind to the union and emit from the writer. CRITICAL anti-pattern (CAM-53/89, sidecar-stale-worker-pane / fake-spawn-masks-dead-production): a test that only exercises the INJECTED sink proves nothing about production; the wiring test must drive the DEFAULT (real) sink path so an unwired default fails the gate. The event log is supervisor-owned in the loop, but this writer is operator-invoked (grill), so the writer owns its own emit. Keep the emit a side effect of a successful commit only (do not emit on validation/guard failure)."
+    },
+    {
+      "id": "US-008",
+      "title": "Recovery-runbook entry for the grill / spec flow",
+      "description": "As an operator, I need a recovery-runbook section covering how to re-run a grill, recover a half-written or aborted spec, handle a malformed promoted spec, and where CONTEXT.md/ADRs live, so I can unstick the grill flow without reading source.",
+      "acceptanceCriteria": [
+        "docs/recovery-runbook.md has a new lettered section for the grill/spec flow (CAM-107). [oracle: grep -q 'CAM-107' docs/recovery-runbook.md]",
+        "The section covers: re-running a grill, recovering a half-written/aborted spec, fixing a promotion that landed a malformed spec, and where CONTEXT.md/ADRs live. [oracle: grep -qi 'grill' docs/recovery-runbook.md]",
+        "The section reads clearly and is actionable (concrete commands / file paths, not vague prose). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 8,
+      "passes": false,
+      "requires": null,
+      "notes": "Append a new lettered section to docs/recovery-runbook.md (existing sections run a..o; pick the next free letter and tag it CAM-107). PROJECT RULE: this is human-readable persisted .md, so NO em-dash and NO decorative emoji (colon/comma/parens/period instead). Cross-reference the existing sec (n) CAM-86 (file-on-main) since the spec writer reuses that primitive, and the US-005 CONTEXT.md/adr location. Keep it surgical: document the recovery, do not restate the whole grill design."
+    },
+    {
+      "id": "US-009",
+      "title": "Dogfood: grill one real idea end-to-end to stage:specified",
+      "description": "As the operator, I need to grill one real idea through /cam-spec to stage:specified so the no-arg cam plan gate has a selectable issue, proving the flow end-to-end.",
+      "acceptanceCriteria": [
+        "At least one issue in issues.local.json on main reaches stage:'specified' with status:'open'. [oracle: git show main:scripts/cam/issues.local.json | grep -q '\"specified\"']",
+        "selectPlannableIssue would return that issue (stage:'specified', status:'open', not blocked), making the no-arg cam plan gate non-empty. [oracle: reviewer-judgment]",
+        "The promoted issue carries a valid spec (AC + scope + gotchas + domainTerms) and wsjf with all four components. [oracle: reviewer-judgment]"
+      ],
+      "priority": 9,
+      "passes": false,
+      "requires": "operator",
+      "notes": "OPERATOR CEREMONY: the grill is an interactive in-session interview (16-50 questions, one at a time, codebase-first, recommends answers); it cannot be driven autonomously. The implementer exits BLOCKED_OPERATOR_REQUIRED; the operator hand-runs /cam-spec <id> against a real idea, lands stage:'specified' on main, then flips passes:true and re-runs cam next. This unblocks Epicos C and D and gives `cam plan` (no-arg) a selectable issue (src/issues/select.ts selectPlannableIssue). No mandatory typecheck/test criteria: this story writes no source, only exercises the shipped flow and lands a data change on main."
+    }
+  ]
+}
