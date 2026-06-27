@@ -35,12 +35,15 @@ After the grill-with-docs interview concludes and you have assembled the full `s
 ```typescript
 // Orchestrator executes this in-process (Task subagent or inline):
 import { specifyIssueOnMain } from './src/commands/issue-specify.ts';
+import { spawnSync } from 'node:child_process';
 
-const result = await specifyIssueOnMain({
-  id: '<id>',            // e.g. 'CAM-42'
-  spec: { ... },         // assembled spec from the grill interview
-  wsjf: { ... },         // wsjf scores (value, timeCriticality, riskReduction, jobSize)
-  issuesPath: 'scripts/cam/issues.local.json',
+const result = specifyIssueOnMain({
+  cwd: process.cwd(),          // absolute path to the project root
+  id: '<id>',                  // e.g. 'CAM-42'
+  spec: { ... },               // assembled spec from the grill interview
+  wsjf: { ... },               // wsjf scores (value, timeCriticality, riskReduction, jobSize)
+  spawnFn: (cmd, args, opts) => spawnSync(cmd, args, { ...opts, stdio: 'pipe' }),
+  clock: () => new Date().toISOString(),
 });
 ```
 
