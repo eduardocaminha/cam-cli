@@ -4,6 +4,19 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.8.0] - 2026-06-27
+
+### Added
+
+- [US-004] - Document the non-interactive-init / readline-EOF pattern in patterns.md
+- [US-003] - Deterministic guard test: readline collection flow resolves init defaults on EOF, never hangs
+- [US-002] - Pass --merge-mode immediate in the build-release AC4 init smoke
+- [US-001] - Resolve ask()/askChoice() to a default on readline EOF/close
+
+### Fixed
+
+- [US-R1-001] - address reviewer finding: readableEnded short-circuit in ask()
+
 ## [0.7.0] - 2026-06-26
 
 ### Added
