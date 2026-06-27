@@ -4,6 +4,21 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.10.0] - 2026-06-27
+
+### Added
+
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-008 - Recovery-runbook entry for the grill / spec flow
+- US-007 - Production-wired spec-written / stage-promoted observability event
+- US-006 - Terminal paths: abandon + merge-into modes in the spec writer
+- US-005 - CONTEXT.md / ADR location convention for the durable domain model
+- US-004 - /cam-spec command markdown (both trees) + CLI seam
+- US-003 - Deterministic spec writer specifyIssueOnMain (promote idea->specified on main)
+- US-002 - Typed Spec schema + validators in src/issues/spec.ts
+- US-001 - Vendor grill-with-docs skill chain into .claude/ and templates/, re-embed
+
 ## [0.9.0] - 2026-06-27
 
 ### Added

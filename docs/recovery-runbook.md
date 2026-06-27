@@ -1648,3 +1648,161 @@ terminal states), `src/release/branch-protection.ts` (configureBranchProtection,
 verify+warn fallback), `src/config/models.ts` (readMergeMode),
 `scripts/cam/patterns.md` (merge-watch state machine pattern bullet,
 branch-protection helper bullet, [ship].merge_mode config surface bullet).
+
+## (u) CAM-107: grill / spec flow -- re-running or recovering from a failed promotion
+
+The grill/spec flow turns a `stage:idea` issue into a `stage:specified` issue via the
+`/cam-spec <id>` slash command. `/cam-spec` runs the **grill-with-docs** interview
+chain (`.claude/skills/grill-with-docs/SKILL.md`), then calls `specifyIssueOnMain`
+(`src/commands/issue-specify.ts`) to commit the result directly on `main` without
+touching the working branch. The on-main commit uses the same commit-tree plumbing as
+the `/cam-issue --file-local` flow described in section (n).
+
+### (u.1) Re-running a grill (interview interrupted mid-session)
+
+Symptom: a `/cam-spec <id>` session was interrupted (browser refresh, claude session
+timeout, `cam stop`, etc.) before the grill completed. The issue is still
+`stage:idea` in `issues.local.json` on `main`; no spec was committed.
+
+Because the grill is a stateless conversational loop, recovery is simply re-running it:
+
+1. Confirm the issue is still `stage:idea` and `status:open`:
+
+   ```bash
+   git show main:scripts/cam/issues.local.json | jq '.issues[] | select(.id=="<id>")'
+   ```
+
+2. Re-run the spec command from the orchestrator pane:
+
+   ```
+   /cam-spec <id>
+   ```
+
+   The grill starts from the beginning. There is no partial state to clear.
+
+3. If the orchestrator session is absent:
+
+   ```bash
+   cam run
+   ```
+
+   Then inject:
+
+   ```bash
+   cam spec <id>
+   ```
+
+The grill has no on-disk draft state: a clean re-run is always safe.
+
+### (u.2) Recovering a half-written spec (specifyIssueOnMain never ran)
+
+Symptom: the grill interview finished and the orchestrator assembled a spec object, but
+the `specifyIssueOnMain` call was not reached (the session was killed at the final step,
+or a validation error blocked the write). The issue is still `stage:idea` in
+`issues.local.json` on `main`.
+
+Confirm before re-running:
+
+```bash
+# Stage must still be 'idea':
+git show main:scripts/cam/issues.local.json | jq '.issues[] | select(.id=="<id>") | .stage'
+# Expected: "idea"
+
+# No stale spec commit on main:
+git log --oneline -5 main -- scripts/cam/issues.local.json
+# The most recent commit for this file should NOT be "chore(cam): specify <id>"
+```
+
+Recovery: re-run the grill per (u.1). The spec assembled in the previous session exists
+only in that session's transcript; it is not persisted anywhere on disk.
+
+If you have saved answers from the previous session (e.g. in a text editor), re-entering
+them is faster: the grill stages are operator-driven and accept pasted answers. If
+`specifyIssueOnMain` returned a validation error (e.g. `invalid-spec` or `invalid-wsjf`),
+the error message lists the failing fields. Correct those in the next session.
+
+### (u.3) Fixing a malformed spec (specifyIssueOnMain ran but the spec is wrong)
+
+Symptom: `specifyIssueOnMain` committed successfully and the issue is now
+`stage:specified`, but the spec content is incorrect (wrong title, missing acceptance
+criteria, bad WSJF scores, etc.).
+
+Inspect the current spec:
+
+```bash
+git show main:scripts/cam/issues.local.json \
+  | jq '.issues[] | select(.id=="<id>") | {stage, spec, wsjf}'
+```
+
+**Option A: targeted field fix via commit-tree.**
+
+Use the same commit-tree-to-main steps from section (n) to write a corrected
+`issues.local.json` directly on `main`:
+
+```bash
+# 1. Dump the current state from main:
+git show main:scripts/cam/issues.local.json > /tmp/issues-fix.json
+
+# 2. Edit /tmp/issues-fix.json to correct the spec or wsjf field.
+
+# 3. Apply via commit-tree (mirrors section (n) plumbing):
+TMPDIR=$(mktemp -d)
+GIT_INDEX_FILE="$TMPDIR/index" git read-tree main
+BLOB=$(GIT_INDEX_FILE="$TMPDIR/index" git hash-object -w /tmp/issues-fix.json)
+GIT_INDEX_FILE="$TMPDIR/index" git update-index --add --cacheinfo \
+  "100644,$BLOB,scripts/cam/issues.local.json"
+TREE=$(GIT_INDEX_FILE="$TMPDIR/index" git write-tree)
+PARENT=$(git rev-parse main)
+COMMIT=$(git commit-tree "$TREE" -p "$PARENT" -m "chore(cam): fix spec <id>")
+git update-ref refs/heads/main "$COMMIT"
+git push origin main
+rm -rf "$TMPDIR"
+```
+
+**Option B: re-run the grill from scratch.**
+
+If the spec needs a full revision, first reset the issue back to `stage:idea` using
+Option A above (set `stage` to `"idea"` and remove the `spec`/`wsjf` keys in the JSON),
+then run `/cam-spec <id>` again. `specifyIssueOnMain` guards against issues that are
+not `stage:idea`, so the reset is required before re-running.
+
+Note: a re-promotion produces a new `stage-promoted` event in
+`.claude/cam-worker-events.jsonl`. The prior event is preserved (the log is
+append-only).
+
+**If the malformed spec blocks `/cam-plan`:**
+
+`selectPlannableIssue` (`src/issues/select.ts`) filters on `stage:specified` and
+`status:open`. A missing or corrupt `spec` field surfaces as a planner error. Confirm
+which issue the planner would select:
+
+```bash
+git show main:scripts/cam/issues.local.json \
+  | jq '.issues[] | select(.stage=="specified" and .status=="open")'
+```
+
+Correct the entry before re-running `/cam-plan`.
+
+### (u.4) Where CONTEXT.md and ADRs live
+
+The domain model for any cam-managed project lives at two pinned paths:
+
+- `CONTEXT.md` at the **repo root**: glossary-only. Canonical terminology,
+  bounded-context definitions, and ubiquitous language. No implementation details, no
+  specs, no decisions. Created lazily on the first term that needs a definition.
+
+- `docs/adr/` at the **repo root**: Architectural Decision Records. Write one only when
+  all three gates pass: (1) hard to reverse, (2) surprising without context, (3) the
+  result of a real trade-off with genuine alternatives considered. Created lazily; do not
+  pre-create empty stubs.
+
+The grill-with-docs skill (`.claude/skills/grill-with-docs/SKILL.md`) and the
+domain-modeling skill (`.claude/skills/domain-modeling/SKILL.md`) are the two skills
+that most frequently produce new entries for these files.
+
+Cross-reference: `src/commands/issue-specify.ts` (specifyIssueOnMain, the deterministic
+spec writer), `templates/commands/cam-spec.md` (/cam-spec slash command),
+`.claude/skills/grill-with-docs/SKILL.md` (grill interview chain),
+`src/issues/spec.ts` (validateSpec, validateWsjf),
+section (n) (commit-tree-to-main primitive reused by specifyIssueOnMain),
+`scripts/cam/CLAUDE.md` (Domain Model Convention section).

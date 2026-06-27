@@ -1,3 +1,5 @@
+import type { Spec } from "./spec.ts";
+
 /**
  * Lifecycle stage of an issue in the cam issue system.
  *
@@ -43,7 +45,7 @@ export interface IssueEntry {
 	description?: string;
 	wsjf?: WsjfScore;
 	rank?: number;
-	spec?: unknown;
+	spec?: Spec;
 }
 
 /**

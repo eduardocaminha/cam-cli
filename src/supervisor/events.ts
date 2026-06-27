@@ -76,7 +76,8 @@ export type WorkerEventKind =
 	| 'merge-watch-watching'
 	| 'merge-watch-merged'
 	| 'merge-watch-ci-red'
-	| 'merge-watch-post-merge-done';
+	| 'merge-watch-post-merge-done'
+	| 'stage-promoted';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -208,6 +209,20 @@ export interface MergeWatchPostMergeDoneEventDetail {
 	reason?: string;
 }
 
+/**
+ * 'stage-promoted' event detail: emitted by specifyIssueOnMain (the grill spec
+ * writer) immediately after a successful commit. Carries the issue id and the
+ * stage transition so a grill promotion is replayable from the event log.
+ *   - id: the issue id that was promoted (e.g. 'CAM-42').
+ *   - fromStage: the stage before promotion (always 'idea' for specifyIssueOnMain).
+ *   - toStage: the stage after promotion (always 'specified' for specifyIssueOnMain).
+ */
+export interface StagePromotedEventDetail {
+	id: string;
+	fromStage: string;
+	toStage: string;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -220,6 +235,7 @@ export type WorkerEventDetail =
 	| MergeWatchMergedEventDetail
 	| MergeWatchCiRedEventDetail
 	| MergeWatchPostMergeDoneEventDetail
+	| StagePromotedEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

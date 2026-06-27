@@ -958,7 +958,7 @@
     {
       "id": "CAM-107",
       "title": "Epico B: camada 2 / grill (write-a-prd) — vendoriza grill-with-docs + /cam-spec + promocao idea->specified",
-      "stage": "idea",
+      "stage": "shipped",
       "status": "open",
       "blockedBy": [],
       "createdAt": "2026-06-26T21:25:49.649Z",

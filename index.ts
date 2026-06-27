@@ -31,6 +31,7 @@ import { runIssue } from './src/commands/issue.ts';
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
+import { runSpec } from './src/commands/spec.ts';
 import { runReview } from './src/commands/review.ts';
 import { runShip } from './src/commands/ship.ts';
 import {
@@ -65,6 +66,7 @@ const HELP = renderHelp({
 				{ name: 'config [--show]', description: 'Interactive wizard to set model per phase and backend' },
 				{ name: 'run [options]', description: 'Open or attach the long-lived orchestrator (tmux session)' },
 				{ name: 'plan [--issue <N>]', description: 'Spawn claude + dispatch /cam-plan; APPROVE happens inside the pane' },
+				{ name: 'spec <id>', description: 'Deep-spec an idea (stage:idea) into stage:specified via grill-with-docs interview' },
 				{ name: 'next [options]', description: 'Launch the autonomous loop as a tmux pane in the project session' },
 				{ name: 'review', description: 'Dispatch /cam-review to the live orchestrator (or bootstrap first)' },
 				{ name: 'ship', description: 'Dispatch /cam-ship to the live orchestrator (or bootstrap first)' },
@@ -201,6 +203,39 @@ const PLAN_HELP = renderHelp({
 		'cam plan accepts only an issue number; any other argument is an error.\n' +
 		'Without a number, cam dispatches a bare `/cam-plan` and the planner\n' +
 		'picks the highest-priority open issue itself.',
+});
+
+const SPEC_HELP = renderHelp({
+	title: 'cam spec',
+	tagline: 'Deep-spec an idea issue into stage:specified via grill-with-docs',
+	usage: 'cam spec <id>',
+	sections: [
+		{
+			heading: 'Arguments',
+			entries: [
+				{
+					name: '<id>',
+					description:
+						'Issue id to spec (e.g. CAM-42). The issue must have stage:idea and status:open.',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
+				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
+				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
+				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
+				'3. Sends `/cam-spec <id>` to the orchestrator pane via atomic send-keys.\n' +
+				'4. Returns 0 immediately. The grill-with-docs interview runs inside the pane.\n' +
+				'5. At interview end the orchestrator calls specifyIssueOnMain to promote\n' +
+				'   the issue from stage:idea to stage:specified on main.',
+		},
+	],
+	footer:
+		'cam spec requires exactly one issue id argument (e.g. CAM-42).\n' +
+		'After the interview the issue is stage:specified and plannable via `cam plan`.',
 });
 
 const ISSUE_HELP = renderHelp({
@@ -586,11 +621,55 @@ export function parsePlanArgs(args: string[]): { issue?: number; help: boolean }
 }
 
 /**
+ * Parse `cam spec` args. The command takes exactly one positional argument:
+ * an issue id string (e.g. 'CAM-42' or '42'). A leading prefix is preserved
+ * as-is; a bare integer is accepted and prefixed by the caller.
+ *
+ * Returns `{ id, help: false }` on success, `{ help: true }` on --help/-h,
+ * or `null` on a parse error (the caller prints the usage hint).
+ *
+ * NOTE: This parser does NOT accept `--permission-mode` (US-007 invariant).
+ */
+export function parseSpecArgs(args: string[]): { id?: string; help: boolean } | null {
+	const result: { id?: string; help: boolean } = { help: false };
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i]!;
+		if (arg === '--help' || arg === '-h') {
+			result.help = true;
+			continue;
+		}
+		if (arg.startsWith('-')) {
+			printError(
+				`unknown spec option: ${arg}`,
+				'cam spec takes an issue id, e.g. `cam spec CAM-42`',
+			);
+			return null;
+		}
+		if (result.id !== undefined) {
+			printError(
+				'cam spec: too many arguments',
+				'expected a single issue id, e.g. `cam spec CAM-42`',
+			);
+			return null;
+		}
+		if (arg.length === 0) {
+			printError(
+				'cam spec: empty issue id',
+				'expected an issue id, e.g. `cam spec CAM-42`',
+			);
+			return null;
+		}
+		result.id = arg;
+	}
+	return result;
+}
+
+/**
  * Parse next-specific flags. Accepts `--max-iter N` / `--max-iter=N` and
  * `--completion-promise STR` / `--completion-promise=STR`. Both are
  * optional; defaults applied in `runNext`.
  *
- * NOTE: This parser does NOT accept `--permission-mode` — that's the US-007
+ * NOTE: This parser does NOT accept `--permission-mode` -- that's the US-007
  * acceptance criterion 7 invariant. `test/no-permission-mode-flag.test.ts`
  * greps this file for the literal `--permission-mode` and fails the build
  * if it appears.
@@ -1058,6 +1137,23 @@ async function main(argv: string[]): Promise<number> {
 				return 0;
 			}
 			return runPlan({ issue: parsed.issue });
+		}
+		case 'spec': {
+			const parsed = parseSpecArgs(argv.slice(3));
+			if (parsed === null) {
+				printFatalHint('run `cam spec --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(SPEC_HELP);
+				return 0;
+			}
+			if (!parsed.id) {
+				printError('cam spec: missing issue id', 'usage: cam spec <id>  e.g. cam spec CAM-42');
+				printFatalHint('run `cam spec --help` for usage');
+				return 1;
+			}
+			return runSpec({ id: parsed.id });
 		}
 		case 'issue': {
 			const parsed = parseIssueArgs(argv.slice(3));
