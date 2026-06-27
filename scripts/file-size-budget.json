@@ -1,5 +1,5 @@
 {
-  "_ref": "CAM-101 (US-R3-001 review-fix): raise stale ceilings for setup.ts 650->697 (merge-mode wizard step US-003), src/supervisor/events.ts 290->344 (merge-watch event kinds US-008), src/ui/SetupScreen.tsx 254->290 (merge-mode wizard step US-003), test/vendor/cam-ship-hygiene.test.ts 50->91 (merge-watch hygiene assertions US-R1-001), src/commands/sidecar.ts 384->396 (merge-watch dep wiring US-R1-004). Prior: CAM-101 (US-007 merge-watch): src/commands/sidecar.ts 269->384, src/supervisor/loop.ts 1292->1317, new merge-watch.ts 192, new merge-watch.test.ts 525. CAM-84/88/89/91/78/77/86/79/75 (see git history).",
+  "_ref": "CAM-104 (US-001/US-R1-001): raise setup.ts 697->726 (readline EOF: rl.on(close) default + readableEnded short-circuit in ask/askChoice). Prior: CAM-101 (US-R3-001 review-fix): raise stale ceilings for setup.ts 650->697 (merge-mode wizard step US-003), src/supervisor/events.ts 290->344 (merge-watch event kinds US-008), src/ui/SetupScreen.tsx 254->290 (merge-mode wizard step US-003), test/vendor/cam-ship-hygiene.test.ts 50->91 (merge-watch hygiene assertions US-R1-001), src/commands/sidecar.ts 384->396 (merge-watch dep wiring US-R1-004). Prior: CAM-101 (US-007 merge-watch): src/commands/sidecar.ts 269->384, src/supervisor/loop.ts 1292->1317, new merge-watch.ts 192, new merge-watch.test.ts 525. CAM-84/88/89/91/78/77/86/79/75 (see git history).",
   "scripts/check-all.ts": 171,
   "scripts/check-ci-parity.ts": 176,
   "scripts/check-coverage.ts": 261,
@@ -19,7 +19,7 @@
   "src/commands/retry-monitor.ts": 108,
   "src/commands/review.ts": 197,
   "src/commands/run.ts": 655,
-  "src/commands/setup.ts": 697,
+  "src/commands/setup.ts": 726,
   "src/commands/ship-finalize.ts": 218,
   "src/commands/ship.ts": 197,
   "src/commands/sidecar.ts": 396,

@@ -98,15 +98,15 @@
         "The overall build:release completes (vendor embed + compile + smoke) without the init step hanging. [oracle: reviewer-judgment]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": "operator",
       "notes": "Operator ceremony: slow compile (bun build --compile) + binary smoke + macOS codesign nuance (see global lessons 2026-06-06: ad-hoc re-sign of the compiled artifact). This is the live regression repro on the real binary — the thing that hung 12min. Cannot be verified by an autonomous worker (requires real toolchain + judgment that the smoke exited cleanly). Command: `bun run build:release` (package.json: generate-embedded-vendor then bash scripts/build-release.sh). Implementer for prior stories exits BLOCKED_OPERATOR_REQUIRED here."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:1",
+    "lastVerdict": "CLEAN",
     "findings": [
       {
         "severity": "WARNING",
