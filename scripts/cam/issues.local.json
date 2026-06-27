@@ -1,5 +1,5 @@
 {
-  "next_id": 116,
+  "next_id": 117,
   "issues": [
     {
       "id": "CAM-1",
@@ -1078,6 +1078,15 @@
       "blockedBy": [],
       "createdAt": "2026-06-27T10:53:17.946Z",
       "description": "SUGGESTIONs nao-bloqueantes diferidas do review do CAM-106: (1) selectPlannableFromFile (src/issues/select.ts) retorna undefined em vez de null (o tipo diz IssueEntry|null) e engole todo erro de leitura/parse, confundindo backlog corrompido com vazio; coagir pra null e deixar erro real propagar. (2) Inconsistencia de fonte-de-verdade: selectPlannableFromFile le cwd/scripts/cam/issues.local.json do working tree, enquanto a prosa do cam-plan instrui ler via git show main:; alinhar o seam e a prosa. (3) Dead code: clock/ClockFn em src/commands/ship-finalize.ts ficou orfao apos dropar closedAt (campo required nas options + export ainda existem, callers passam um clock ignorado); remover (toca callers). (4) Observabilidade: o review findings array em prd.json nao e limpo num verdict CLEAN, entao a lista de findings fica stale (mostra o round anterior). Limpar/atualizar no CLEAN."
+    },
+    {
+      "id": "CAM-116",
+      "title": "Epico D2: verificacao comportamental no loop (gate compartilhado + reviewer veredito autoritativo + artifact-of-record no PR)",
+      "stage": "idea",
+      "status": "open",
+      "blockedBy": [],
+      "createdAt": "2026-06-27T13:48:19.817Z",
+      "description": "Da ao loop a capacidade de executar verificacao comportamental e anexar a prova ao PR, eliminando a dependencia de cerimonia do operador (norte do grill 2026-06-27: tudo specified roda sozinho, zero tarefa dependente do operador no loop). MODELO (refina a two-layer verification CAM-56): a verificacao comportamental e um GATE RODAVEL COMPARTILHADO, nao capability exclusiva de um worker. Web (projetos cam-init downstream): Playwright / agent-browser. cam-cli (TUI, sem browser): spawnar tmux real + capture-pane salvo como artifact (dirige o sistema de verdade e captura a prova). O IMPLEMENTER roda o gate na Layer A (corrige com visao, nunca cego, reproduz local). O REVIEWER re-roda independente na Layer B, NAO confia no verde do implementer, e a run DELE produz o artifact-of-record anexado ao PR + veredito autoritativo (so a run do reviewer vira artifact oficial). Tooling compartilhado, veredito independente; o implementer nao ganha capability exclusiva de browser. ONDE TOCAR: tooling de driving (playwright/agent-browser web, tmux-pty cam) nos dois contextos de worker, pipeline artifact->PR (gh), subagent-reviewer (executa + captura + veredito). DEPENDE de CAM-109 (que faz o planner EMITIR criterios reviewer-behavioral; sem eles o tooling nao tem o que executar). BLOQUEIA o auto pleno e o drainer de fila CAM-71. ADR-worthy: verificacao comportamental = gate compartilhado + veredito independente. P2."
     }
   ]
 }
