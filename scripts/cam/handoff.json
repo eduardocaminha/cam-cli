@@ -1,37 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Vendor grill-with-docs skill chain into .claude/ and templates/, re-embed"
+    "id": "US-002",
+    "title": "Typed Spec schema + validators in src/issues/spec.ts"
   },
   "branchName": "cam/CAM-107-grill-spec-layer",
-  "timestamp": "2026-06-27T00:00:00Z",
+  "timestamp": "2026-06-27T01:00:00Z",
   "createdFiles": [
-    ".claude/skills/grill-with-docs/SKILL.md",
-    ".claude/skills/grilling/SKILL.md",
-    ".claude/skills/domain-modeling/SKILL.md",
-    ".claude/skills/domain-modeling/ADR-FORMAT.md",
-    ".claude/skills/domain-modeling/CONTEXT-FORMAT.md",
-    "templates/skills/grill-with-docs/SKILL.md",
-    "templates/skills/grilling/SKILL.md",
-    "templates/skills/domain-modeling/SKILL.md",
-    "templates/skills/domain-modeling/ADR-FORMAT.md",
-    "templates/skills/domain-modeling/CONTEXT-FORMAT.md"
+    "src/issues/spec.ts",
+    "test/issues/spec.test.ts"
   ],
   "modifiedFiles": [
-    "src/vendor/_generated.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "src/issues/types.ts",
+    "scripts/cam/migrate-issues-schema.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 vendored the 5 grill-with-docs skill files into .claude/skills/ and templates/skills/ (byte-identical; diff -r passes). src/vendor/_generated.ts was regenerated and embed-vendor:check passes. The skills are now runtime-readable and will be shipped by cam init. US-002 can proceed without any dependency on these files (spec schema work is independent).",
+  "nextStoryContext": "US-002 created src/issues/spec.ts with the Spec interface (acceptanceCriteria, scope, gotchas, domainTerms) and pure validators validateSpec + validateWsjf (both return { ok, errors }). IssueEntry.spec is now typed as Spec (optional) instead of unknown. migrate-issues-schema.ts was fixed to cast raw.spec correctly (null+undefined guard + as IssueEntry['spec']). Circular type imports between types.ts and spec.ts are type-only (import type) and resolve cleanly. 1762 tests pass, typecheck clean, biome lint clean.",
   "officialDocsValidated": [
     {
-      "lib": "mattpocock/skills (grill-with-docs, grilling, domain-modeling)",
-      "version": "main@2026-06-27",
-      "url": "https://raw.githubusercontent.com/mattpocock/skills/main/skills/engineering/grill-with-docs/SKILL.md",
-      "fetchedAt": "2026-06-27T00:00:00Z",
-      "status": "ok",
-      "summary": "All 5 files fetched verbatim via gh api + curl. grill-with-docs/SKILL.md is a 1-line stub (disable-model-invocation:true, runs /grilling + /domain-modeling). grilling/SKILL.md has 4 paragraphs of interview instructions. domain-modeling/SKILL.md has the full domain-modeling discipline. ADR-FORMAT.md and CONTEXT-FORMAT.md are format guides. grill-me is NOT in the dependency chain (skipped as noted). All files match vendored copies byte-identically."
+      "lib": "none",
+      "version": "n/a",
+      "url": "n/a",
+      "fetchedAt": "2026-06-27T01:00:00Z",
+      "status": "no_external_lib_touched",
+      "summary": "US-002 is pure TypeScript interfaces and validators with no external library dependencies."
     }
   ]
 }

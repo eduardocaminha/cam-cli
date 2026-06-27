@@ -75,7 +75,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New module src/issues/spec.ts; test under test/issues/spec.test.ts. Reuse WsjfScore from src/issues/types.ts (do not redefine: import it). Changing IssueEntry.spec from unknown to Spec? may surface type errors at any existing reader of .spec: run `bun run typecheck` and guard with noUncheckedIndexedAccess in mind (array access is T|undefined). Validators are PURE (no I/O), mirroring src/issues/graph.ts checkReferentialIntegrity shape { ok, errors }. Domain term: a 'spec' is the structured deep-spec written by the grill (AC + scope + gotchas + domainTerms), distinct from the free-text description captured at stage:idea."
     },
