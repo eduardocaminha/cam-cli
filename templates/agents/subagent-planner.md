@@ -60,7 +60,7 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
 
 `officialDocsConsulted`: populated in Step 5 of `/cam-plan`. Use `[]` when the issue touches no external library. Use `status: "fetch_failed"` for entries whose fetch failed.
 
-`requires`: optional. Set `requires: "operator"` for stories whose acceptance criteria need a real-user keypress, OS-level action, real network hit, or human-curated artifact — the implementer exits with `BLOCKED_OPERATOR_REQUIRED` and the loop falls through to the next implementable story.
+`requires`: **never emit `requires: "operator"` stories. Do not emit any story with `requires: "operator"` set.** Ceremonies (real-user keypress, OS-level action, real network hit, human-curated artifact) must be planned as automated acceptance criteria that: (a) name the verification tool (agent-browser / playwright / tmux-pty) and the artifact it produces; (b) include a reviewer-behavioral oracle (e.g. `[oracle: file-assert grep -q 'artifact-of-record' path/to/artifact]`). The `requires` field defaults to `null`.
 
 ## Story Sizing Rules
 
@@ -79,6 +79,8 @@ Each story must be completable in **one Claude Code context window**. Right-size
 ## Story Ordering
 
 Order by dependency (priority 1 = first to implement):
+
+**Decompose feature work by vertical slice.** Each feature story is a tracer bullet that cuts end-to-end through every layer it touches, not one horizontal layer. Internal/refactor/mechanical work stays single-concern. Within a feature, the layer ordering below determines sequencing.
 
 1. **Database**: schema changes, migrations, seed data
 2. **Server**: API routes, server actions, validations
