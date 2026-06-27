@@ -1,10 +1,10 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Record Epico A in the ADR and patterns.md"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-106-issue-schema-state-machine",
-  "timestamp": "2026-06-26T00:30:00Z",
+  "timestamp": "2026-06-26T01:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "docs/adr/0001-issue-system-redesign.md",
@@ -12,12 +12,12 @@
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 is complete. docs/adr/0001-issue-system-redesign.md now has an 'Implementacao Epico A' section listing what CAM-106 shipped (schema, graph helpers, selectPlannableIssue gate, migration script, three-copy cam-plan sync). scripts/cam/patterns.md has a new bullet capturing the gate-as-code invariant (selectPlannableIssue filters stage==='specified', sort rank then id), the three-copy sync requirement, and the rank/id fallback until Epico C. All oracles green, 1743 tests pass, typecheck ok. This is the last story in this PRD: check if any passes:false stories remain; if none, emit PRD_COMPLETE.",
+  "nextStoryContext": "US-R1-001 is done. Corrected sort direction docs in ADR (line 45) and patterns.md (line 128): both now say 'rank ascending (lower rank = higher priority), then id ascending' matching the shipped code in src/issues/select.ts. Next story is US-R1-002: fix the ADR's misdescription of graph helper names (computeBlocked/computeBlocks/isAcyclic/topSortKahn -> isBlocked/deriveBlocks/checkReferentialIntegrity), migration script path (scripts/migrate-issues.ts -> scripts/cam/migrate-issues-schema.ts), hardcoded count '31 abertas para idea', and the premature claim that the live data was migrated (US-008 is still operator-pending).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Docs-only story: appended prose to docs/adr/0001-issue-system-redesign.md and scripts/cam/patterns.md. No external library API exercised."
+      "summary": "Docs-only story: corrected sort direction wording in docs/adr/0001-issue-system-redesign.md and scripts/cam/patterns.md. No external library API exercised."
     }
   ]
 }
