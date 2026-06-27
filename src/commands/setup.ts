@@ -65,24 +65,47 @@ export interface SetupOptions {
 // Readline helpers (used when stdin is not a TTY: tests, CI, pipes)
 // ---------------------------------------------------------------------------
 
-async function ask(question: string): Promise<string> {
-	const rl = createInterface({ input: process.stdin, output: process.stdout });
+export async function ask(
+	question: string,
+	defaultValue = '',
+	input: NodeJS.ReadableStream = process.stdin,
+): Promise<string> {
+	// Short-circuit: if the stream already ended, no future 'end'/'close' will be
+	// re-emitted on a new readline interface. Resolve immediately to the default so
+	// collectViaReadline never hangs when multiple options are undefined on a single
+	// already-consumed EOF stream.
+	// Duck-typed: NodeJS.ReadableStream minimal interface omits readableEnded;
+	// Readable from node:stream does expose it. Check defensively.
+	if ('readableEnded' in input && (input as unknown as { readableEnded: boolean }).readableEnded) {
+		return defaultValue;
+	}
+	const output = input === process.stdin ? process.stdout : undefined;
+	const rl = createInterface({ input, output });
+	let answered = false;
 	return new Promise((resolve) => {
+		rl.on('close', () => {
+			if (!answered) {
+				answered = true;
+				resolve(defaultValue);
+			}
+		});
 		rl.question(question, (answer) => {
+			answered = true;
 			rl.close();
 			resolve(answer.trim());
 		});
 	});
 }
 
-async function askChoice<T extends string>(
+export async function askChoice<T extends string>(
 	question: string,
 	choices: readonly T[],
 	defaultChoice?: T,
+	input: NodeJS.ReadableStream = process.stdin,
 ): Promise<T> {
 	const label = choices.map((c) => (c === defaultChoice ? `[${c}]` : c)).join(' / ');
 	while (true) {
-		const raw = await ask(`${question} (${label}): `);
+		const raw = await ask(`${question} (${label}): `, '', input);
 		if (raw === '' && defaultChoice !== undefined) return defaultChoice;
 		const lower = raw.toLowerCase() as T;
 		if ((choices as readonly string[]).includes(lower)) return lower;
@@ -120,13 +143,17 @@ async function collectSetupAnswers(options: SetupOptions): Promise<SetupAnswers 
 	return collectViaReadline(options);
 }
 
-async function collectViaReadline(options: SetupOptions): Promise<SetupAnswers> {
+export async function collectViaReadline(
+	options: SetupOptions,
+	input: NodeJS.ReadableStream = process.stdin,
+): Promise<SetupAnswers> {
 	const projectMode =
 		options.projectMode ??
 		(await askChoice(
 			'Is this a new project or an existing one?',
 			['new', 'existing'] as const,
 			'existing',
+			input,
 		));
 	const issueSystem =
 		options.issueSystem ??
@@ -134,6 +161,7 @@ async function collectViaReadline(options: SetupOptions): Promise<SetupAnswers> 
 			'Which issue system does this project use?',
 			['linear', 'github', 'none'] as const,
 			'none',
+			input,
 		));
 	const mergeMode =
 		options.mergeMode ??
@@ -141,10 +169,11 @@ async function collectViaReadline(options: SetupOptions): Promise<SetupAnswers> 
 			'Merge mode for cam ship',
 			['immediate', 'ci-gated'] as const,
 			'immediate',
+			input,
 		));
 	let description = options.description ?? '';
 	if (projectMode === 'new' && description === '') {
-		description = await ask('What is this project about? (free-form): ');
+		description = await ask('What is this project about? (free-form): ', '', input);
 	}
 	return { projectMode, issueSystem, mergeMode, description };
 }
