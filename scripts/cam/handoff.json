@@ -1,24 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Selection function selectPlannableIssue (the PRD-readiness gate)"
+    "id": "US-004",
+    "title": "Adopt new schema in the issue writer (issue-file.ts) and ship-finalize reader"
   },
   "branchName": "cam/CAM-106-issue-schema-state-machine",
-  "timestamp": "2026-06-26T23:00:00Z",
-  "createdFiles": [
-    "src/issues/select.ts",
-    "test/issues/select.test.ts"
-  ],
+  "timestamp": "2026-06-26T23:30:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
+    "src/commands/issue-file.ts",
+    "src/commands/ship-finalize.ts",
+    "test/issue-file.test.ts",
+    "test/ship-finalize.test.ts",
+    "knip.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 is complete. src/issues/select.ts provides two exports: selectPlannableIssue (pure, I/O-free: filters stage===specified+status===open+not blocked, sorts by rank asc then numeric-id suffix asc) and selectPlannableFromFile (thin async I/O seam: reads scripts/cam/issues.local.json via Bun.file + delegates to selectPlannableIssue). Test file test/issues/select.test.ts has 20 tests, all passing. The gate-as-code invariant is now implemented (D1 decision from ADR 0001). US-004 adopts the new schema in issue-file.ts and ship-finalize reader. US-006 rewrites cam-plan Step 2 to delegate to selectPlannableFromFile (three-copy sync: .claude/commands/cam-plan.md + templates/commands/cam-plan.md + src/vendor/_generated.ts). US-007 records Epico A in the ADR and patterns.md. Key patterns from this story: numeric-id parse uses id.split('-').at(-1) guarded by Number.isNaN fallback (noUncheckedIndexedAccess); selectPlannableFromFile is deliberately thin (a few lines) to keep aggregate coverage above the ratchet floor. Do NOT compute rank in select.ts (Epico C); only consume it if present.",
+  "nextStoryContext": "US-004 is complete. Both issue-file.ts and ship-finalize.ts now import IssueEntry and IssuesLocalJson from src/issues/types.ts; the local duplicate interfaces are removed. New issues are written with stage:'idea', status:'open', blockedBy:[] (state:'open' and priority write are gone). ship-finalize stamps stage:'shipped' instead of state:'closed' (closedAt dropped; clock param stays in interface for backward compat but is not destructured). knip.json no longer ignores src/issues/types.ts (it is now reachable via two import sites). The next story (US-005) gates on selectPlannableIssue from src/issues/select.ts and should make cam-plan Step 2 delegate to selectPlannableFromFile. Key gotcha: the IssueEntry from types.ts has no index signature and no state/closedAt fields. Any code that reads existing issues.local.json files with old-format entries (state:'open') and casts via JSON.parse as IssuesLocalJson will work fine at runtime since TypeScript casts are not validated; however, unit test fixtures should use the new schema to avoid confusion.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure selection function story: only TypeScript logic importing from the project's own types.ts and graph.ts. No external library API was exercised."
+      "summary": "Pure internal type migration: replaced local IssueEntry/IssuesLocalJson duplicates with imports from src/issues/types.ts. No external library API exercised."
     }
   ]
 }
