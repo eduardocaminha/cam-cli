@@ -95,8 +95,8 @@ function migrateEntry(raw: RawEntry): IssueEntry {
 	if (typeof raw.rank === "number") {
 		entry.rank = raw.rank;
 	}
-	if (raw.spec !== undefined) {
-		entry.spec = raw.spec;
+	if (raw.spec !== null && raw.spec !== undefined) {
+		entry.spec = raw.spec as IssueEntry["spec"];
 	}
 
 	return entry;
