@@ -14,6 +14,7 @@
 
 import type { SpawnSyncReturns } from 'node:child_process';
 import { parseToml } from '../config/toml.ts';
+import type { IssueEntry, IssuesLocalJson } from '../issues/types.ts';
 import { printError } from '../logging/color.ts';
 import { emitOk } from '../logging/screen.ts';
 
@@ -37,18 +38,6 @@ export type ClockFn = () => string;
 // ---------------------------------------------------------------------------
 // Internal shapes
 // ---------------------------------------------------------------------------
-
-interface IssueEntry {
-	id: string;
-	state: string;
-	closedAt?: string;
-	[key: string]: unknown;
-}
-
-interface IssuesLocalJson {
-	next_id: number;
-	issues: IssueEntry[];
-}
 
 interface PrdShape {
 	issueNumber?: number;
@@ -92,8 +81,8 @@ export interface FinalizeCycleCloseResult {
  *   1. Read issue_system + issue_prefix from project.toml.
  *   2. Read issueNumber from prd.json BEFORE removing prd.json.
  *   3. When issue_system == 'none': find the matching entry in issues.local.json
- *      (id == `${issue_prefix}-${issueNumber}`) and set state='closed' +
- *      closedAt=<ISO timestamp>. For github/linear: skip this step.
+ *      (id == `${issue_prefix}-${issueNumber}`) and set stage='shipped'.
+ *      For github/linear: skip this step.
  *   4. Remove scripts/cam/prd.json, scripts/cam/handoff.json, and
  *      scripts/cam/progress.txt via `git rm -f --ignore-unmatch` (the -f flag
  *      overrides git's local-modifications guard, resolving both dirty and
@@ -105,7 +94,7 @@ export interface FinalizeCycleCloseResult {
 export function finalizeCycleClose(
 	options: FinalizeCycleCloseOptions,
 ): FinalizeCycleCloseResult {
-	const { cwd, spawnFn, clock, readProjectToml, readPrd, readIssues, writeIssues } = options;
+	const { cwd, spawnFn, readProjectToml, readPrd, readIssues, writeIssues } = options;
 
 	// 1. Read issue_system and issue_prefix from project.toml
 	const tomlText = readProjectToml();
@@ -151,8 +140,7 @@ export function finalizeCycleClose(
 			);
 			throw new Error(`issue not found in issues.local.json: ${issueId}`);
 		}
-		entry.state = 'closed';
-		entry.closedAt = clock();
+		entry.stage = 'shipped';
 		issueLocalClosed = true;
 		writeIssues(JSON.stringify(issuesData, null, 2) + '\n');
 	}

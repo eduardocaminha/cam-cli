@@ -70,10 +70,19 @@ rm -f scripts/cam/handoff.json
 
 ### Step 2: Pick the issue
 
-- **No argument**: check GitHub for the next open issue (`gh issue list --state open --limit 5`) or ask the user which issue to work on.
-- **With argument** (`$ARGUMENTS`): two accepted forms:
-  - **Issue number** (`70` or `#70`): use that issue directly via `gh issue view 70 --json number,title,body,labels,comments,state,url`.
-  - **Description**: use the text as the spec (no GitHub issue).
+First read the configured backend from `scripts/cam/project.toml`: `issue_system` (`none` | `github` | `linear`; `none` is the local-only backend stored in `scripts/cam/issues.local.json`) and `issue_prefix` (the display/team prefix for `none`/`linear`; default `CAM`).
+
+Note: the `cam plan` CLI only ever passes a bare invocation or an integer `N` (it rejects free text). The `/cam-plan` slash additionally accepts a free-text description.
+
+- **No argument**: plan the highest-priority plannable issue for the backend.
+  - `none`: delegate to `selectPlannableFromFile`. Read `scripts/cam/issues.local.json` via `git show main:scripts/cam/issues.local.json 2>/dev/null || cat scripts/cam/issues.local.json`, filter entries where `stage === 'specified' && status === 'open' && !blocked`, sort by `rank` ascending then numeric id ascending, take the first. If none qualifies, stop with a clear error: "No grill-specified open issues found."
+  - `github`: `gh issue list --state open --limit 5` (pick the top, or ask the user).
+  - `linear`: query the active cycle and take the highest-priority open issue.
+- **Integer argument `N`** (`70` or `#70`): resolve that issue from the backend.
+  - `none`: read `scripts/cam/issues.local.json` and find the issue whose `id == "<issue_prefix>-<N>"` (e.g. `CAM-70`). Use its `title` + `description` as the spec. Stop with a clear error if it is missing or not open. **D2 warning**: if the issue's `stage` is `"idea"` (not yet grill-specified), print: `⚠️  This issue is not grill-specified (stage: idea). Proceeding at operator's discretion.`
+  - `github`: `gh issue view 70 --json number,title,body,labels,comments,state,url`.
+  - `linear`: fetch `<issue_prefix>-<N>` via the Linear API (same path the orchestrator uses).
+- **Free-text description** (anything not an integer; reachable only via the slash, never from `cam plan`): use the text as the spec, with no linked issue.
 
 ### Step 3: Read context
 

@@ -234,7 +234,9 @@ describe('createLocalIssueOnMain — on-main path', () => {
 		expect(parsed.issues).toHaveLength(2);
 		const newEntry = parsed.issues.find((i: { id: string }) => i.id === 'CAM-89');
 		expect(newEntry).toBeDefined();
-		expect(newEntry?.state).toBe('open');
+		expect(newEntry?.stage).toBe('idea');
+		expect(newEntry?.status).toBe('open');
+		expect(newEntry?.blockedBy).toEqual([]);
 		expect(newEntry?.createdAt).toBe(FIXED_TS);
 		expect(newEntry?.title).toBe('Test issue title');
 		// Serialization: JSON.stringify(data, null, 2) + '\n'
@@ -269,7 +271,7 @@ describe('createLocalIssueOnMain — on-main path', () => {
 		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
 	});
 
-	test('includes optional priority field when provided', () => {
+	test('new entry carries stage:idea, status:open, blockedBy:[] regardless of priority arg', () => {
 		const { spawnFn } = makeRecordingSpawn({ branch: 'main' });
 		let writtenText: string | null = null;
 
@@ -286,10 +288,14 @@ describe('createLocalIssueOnMain — on-main path', () => {
 		expect(writtenText).not.toBeNull();
 		const parsed = JSON.parse(writtenText!);
 		const entry = parsed.issues.find((i: { id: string }) => i.id === 'CAM-89');
-		expect(entry?.priority).toBe('P0');
+		// priority is accepted on the options interface but never written into the entry
+		expect(entry?.priority).toBeUndefined();
+		expect(entry?.stage).toBe('idea');
+		expect(entry?.status).toBe('open');
+		expect(entry?.blockedBy).toEqual([]);
 	});
 
-	test('omits priority field when not provided', () => {
+	test('new entry always omits priority (rank supersedes it; Epico C populates rank)', () => {
 		const { spawnFn } = makeRecordingSpawn({ branch: 'main' });
 		let writtenText: string | null = null;
 
@@ -474,7 +480,9 @@ describe('createLocalIssueOnMain — widened SpawnFn: env + input injection', ()
 		const newEntry = parsed.issues.find((i: { id: string }) => i.id === 'CAM-89');
 		expect(newEntry).toBeDefined();
 		expect(newEntry?.title).toBe('Injection test');
-		expect(newEntry?.state).toBe('open');
+		expect(newEntry?.stage).toBe('idea');
+		expect(newEntry?.status).toBe('open');
+		expect(newEntry?.blockedBy).toEqual([]);
 		// Trailing newline
 		expect(hashCall!.options.input!.endsWith('\n')).toBe(true);
 	});
@@ -570,7 +578,9 @@ describe('createLocalIssueOnMain — id allocation from main backlog', () => {
 		expect(input).toBeDefined();
 		const parsed = JSON.parse(input!);
 		const entry = parsed.issues.find((i: { id: string }) => i.id === 'CAM-89');
-		expect(entry?.state).toBe('open');
+		expect(entry?.stage).toBe('idea');
+		expect(entry?.status).toBe('open');
+		expect(entry?.blockedBy).toEqual([]);
 		expect(entry?.createdAt).toBe(FIXED_TS);
 	});
 });

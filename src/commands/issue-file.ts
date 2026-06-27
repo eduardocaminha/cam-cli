@@ -32,6 +32,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseToml } from '../config/toml.ts';
+import type { IssueEntry, IssuesLocalJson } from '../issues/types.ts';
 import { printError } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
@@ -57,25 +58,6 @@ export type SpawnFn = (
 
 /** Returns the current ISO 8601 timestamp string. Injectable for tests. */
 export type ClockFn = () => string;
-
-// ---------------------------------------------------------------------------
-// Internal shapes
-// ---------------------------------------------------------------------------
-
-interface IssueEntry {
-	id: string;
-	title: string;
-	description?: string;
-	state: string;
-	createdAt: string;
-	priority?: string;
-	[key: string]: unknown;
-}
-
-interface IssuesLocalJson {
-	next_id: number;
-	issues: IssueEntry[];
-}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -217,6 +199,10 @@ function checkMainUpToDate(cwd: string, spawnFn: SpawnFn): MainGuardResult {
 /**
  * Allocate the entry, bump next_id, and serialize the backlog.
  * Returns the JSON text (JSON.stringify(data, null, 2) + '\n').
+ *
+ * New entries are created with stage:'idea', status:'open', blockedBy:[].
+ * The optional priority field (still accepted for backward compat) is never
+ * written into the serialized entry (rank supersedes it; Epico C populates rank).
  */
 function appendEntryAndSerialize(
 	backlog: IssuesLocalJson,
@@ -225,10 +211,11 @@ function appendEntryAndSerialize(
 	const newEntry: IssueEntry = {
 		id: entry.id,
 		title: entry.title,
-		state: 'open',
+		stage: 'idea',
+		status: 'open',
+		blockedBy: [],
 		createdAt: entry.createdAt,
 		...(entry.description !== undefined ? { description: entry.description } : {}),
-		...(entry.priority !== undefined ? { priority: entry.priority } : {}),
 	};
 	backlog.next_id = backlog.next_id + 1;
 	backlog.issues.push(newEntry);
