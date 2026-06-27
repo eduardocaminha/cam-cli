@@ -1,5 +1,5 @@
 {
-  "next_id": 122,
+  "next_id": 123,
   "issues": [
     {
       "id": "CAM-1",
@@ -1132,6 +1132,15 @@
       "blockedBy": [],
       "createdAt": "2026-06-27T14:10:55.721Z",
       "description": "Descoberto no ship do CAM-107 (2026-06-27). ship-finalize.ts (backend none) le/escreve a copia working-tree de scripts/cam/issues.local.json DA BRANCH (acha o issue, seta stage:shipped, git add, commit na branch). PROBLEMA: quando issues sao filados direto-no-main durante o ciclo (createLocalIssueOnMain / cam issue --file-local, padrao CAM-86), a copia da branch fica STALE; o finalize commitaria a versao stale + o issue-shipped, e o squash-merge CLOBBERARIA as escritas de main (next_id, novos issues, promocoes). WORKAROUND usado no CAM-107: git merge origin/main na branch ANTES do cam ship --finalize (trouxe o backlog atual; sem overlap de arquivo, merge limpo; backlog verificado intacto pos-merge). FIX: o finalize deve fechar o issue none no MAIN via commit-tree (espelhando createLocalIssueOnMain/specifyIssueOnMain), nao na copia da branch. Assim o backlog nunca entra na branch e o clobber e impossivel por construcao (alinha com CAM-27 hygiene + CAM-86 file-on-main). Manter o git rm de prd.json/handoff.json na branch (esses SAO per-branch). P2."
+    },
+    {
+      "id": "CAM-122",
+      "title": "cam journal append deterministico + fim do jq>budget ad-hoc do orquestrador",
+      "stage": "idea",
+      "status": "open",
+      "blockedBy": [],
+      "createdAt": "2026-06-27T22:07:06.156Z",
+      "description": "Gap de design discutido no ciclo CAM-109 (2026-06-27): o orquestrador e read-only por design (invariante: nunca edita codigo, protege o fluxo worker->review->gates), mas o agent file o responsabiliza pelo journal.md, que exige escrita. Hoje isso se resolve por operador-cola ou por jq>budget.json / shell-write ad-hoc autorizado (o pior padrao: escrita sem gate, fora de qualquer policy). PROPOSTA: mover os artefatos de coordenacao do orquestrador para comandos deterministicos TS (lineage CAM-49/72/86/104, como ship --finalize/--bump e issue --file-local), mantendo a invariante (orquestrador escreve zero; tudo via comando ou worker). ESCOPO: (1) cam journal append: le a entrada via stdin, valida o formato do journal (header + campos obrigatorios), faz append+commit em scripts/cam/journal.md no main; (2) aposentar o jq>budget.json ad-hoc do ship-hygiene: o raise de file-size/coverage vira deterministico no cam ship (ou continua worker-via-story, que ja funciona). FRONTEIRA: codigo revisavel = proibido ao orquestrador; coordenacao (journal/memoria/budget) = via comando, nunca Write nem shell ad-hoc. ALTERNATIVAS REJEITADAS: Write irrestrito ao orquestrador (perde a invariante de qualidade que o two-layer review encarna); write-path PreToolUse hook (mais superficie + fail-open tipo CAM-96). Fundamenta: a leitura (Read/Grep/Glob) do orquestrador esta correta e e essencial; so a escrita precisa do gate. Prioridade P2."
     }
   ]
 }
