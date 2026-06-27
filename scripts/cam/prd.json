@@ -3,7 +3,10 @@
   "branchName": "cam/CAM-122-journal-append",
   "description": "Add cam journal append: a deterministic command that renders and commits one cycle entry to scripts/cam/journal.md on main, replacing the read-only orchestrator's ad-hoc jq-redirect / Write.",
   "issueNumber": 122,
-  "relatedDocs": ["scripts/cam/patterns.md", "docs/recovery-runbook.md"],
+  "relatedDocs": [
+    "scripts/cam/patterns.md",
+    "docs/recovery-runbook.md"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -56,7 +59,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Touches scripts/cam/patterns.md (append a dated bullet in the established `(US-xxx, CAM-122, 2026-06-27)` style), docs/recovery-runbook.md (add a section sibling to `(n) CAM-86: file-on-main backlog filing` at docs/recovery-runbook.md:885), and index.ts (add a JOURNAL_HELP block via renderHelp mirroring ISSUE_HELP at index.ts:241, and a line in the top-level HELP at index.ts:57). No em-dash in persisted .md strings (~/.claude/CLAUDE.md no-em-dash rule); the ONLY allowed em-dash is the journal title format itself, which is product behavior, not doc prose. check:all is `bun scripts/check-all.ts` (package.json), the gate spine (typecheck, test, coverage, file-sizes, dup); run it last. Covers spec AC 9."
     }

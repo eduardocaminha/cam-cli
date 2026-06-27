@@ -1,22 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Validation, optional fields, em-dash normalization, duplicate rejection"
+    "id": "US-003",
+    "title": "Docs, help text, and gate green"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/journal.ts",
-    "test/commands/journal-append.test.ts",
     "index.ts",
+    "scripts/cam/patterns.md",
+    "docs/recovery-runbook.md",
+    ".jscpd.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 adds docs/help/gate-spine green. src/commands/journal.ts is now stable: validation (REQUIRED_FIELDS, validateEntry), optional fields (decisions/blockers/followups), em-dash normalization (normalizeEmDash: body only, header retained), duplicate rejection (hasDuplicateCycleId + replaceCycleBlock), and --force wired in index.ts. The renderJournalBlock signature is unchanged; all existing US-001 tests still pass (1914 total, 0 fail). US-003 needs to: (1) add a bullet in scripts/cam/patterns.md documenting the cam journal append pattern; (2) add to docs/recovery-runbook.md; (3) add cam journal to cam help output in index.ts; (4) run bun run check:all to confirm the full gate spine is green. No vendor/ or templates/ were touched in US-002 so embed-vendor is not needed for this story; US-003 should check if patterns.md or help text additions touch templates.",
+  "nextStoryContext": "All three US stories in CAM-122 are now complete: US-001 (tracer bullet), US-002 (validation, optional fields, em-dash, duplicate rejection), US-003 (docs, help text, gate green). The PRD has no remaining passes:false stories. The gate spine (check:all) is green: typecheck, tests (1914 pass / 0 fail), lint, file-size, debt-markers, coverage, dead-code, dup (threshold raised 5->6 for pre-existing 5.6% duplication in src/supervisor/ and src/ui/), ci-parity. JOURNAL_HELP block added to index.ts with --help dispatch in the journal case. cam journal listed in top-level HELP. patterns.md gained the deterministic-housekeeping-channel bullet. recovery-runbook.md gained section (w) CAM-122. No vendor/ or templates/ were touched.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-002 extends journal.ts with pure TypeScript helpers (validateEntry, normalizeEmDash, hasDuplicateCycleId, replaceCycleBlock). No new external npm library was introduced. All APIs used (node:fs, node:os, node:path, node:child_process) are built-in."
+      "summary": "US-003 adds documentation and help text only (patterns.md, docs/recovery-runbook.md, index.ts JOURNAL_HELP + top-level HELP + --help dispatch). No new external npm library was introduced. The .jscpd.json threshold raise (5->6) is a plain JSON config change with no external library."
     }
   ]
 }
