@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Cam Issue Entry",
+  "description": "Schema for a single entry in issues.local.json managed by cam issue commands.",
+  "type": "object",
+  "required": ["id", "title", "stage", "status", "blockedBy", "createdAt"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Issue identifier, e.g. CAM-42."
+    },
+    "title": {
+      "type": "string",
+      "description": "Short human-readable title."
+    },
+    "stage": {
+      "type": "string",
+      "enum": ["idea", "specified", "planned", "shipped"],
+      "description": "Lifecycle stage: idea -> specified -> planned -> shipped."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["open", "abandoned"],
+      "description": "open = active; abandoned = closed without shipping."
+    },
+    "blockedBy": {
+      "type": "array",
+      "description": "List of issue ids that block this issue.",
+      "items": { "type": "string" }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 creation timestamp."
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional free-text description or motivation."
+    },
+    "wsjf": {
+      "type": "object",
+      "description": "WSJF scoring (Weighted Shortest Job First). Populated in Epico B.",
+      "required": ["value", "timeCriticality", "riskReduction", "jobSize"],
+      "properties": {
+        "value": { "type": "number", "description": "Composite WSJF score." },
+        "timeCriticality": { "type": "number" },
+        "riskReduction": { "type": "number" },
+        "jobSize": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "rank": {
+      "type": "number",
+      "description": "Implementation priority rank. Lower is higher priority. Populated in Epico C."
+    },
+    "spec": {
+      "description": "Structured specification artifact. Shape is defined by Epico B."
+    }
+  },
+  "additionalProperties": false
+}
