@@ -43,7 +43,7 @@
         "Full CI gate passes (bun run check:all -- the enforced spine that includes biome lint, typecheck, test, embed-vendor:check). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "NEW module src/issues/graph.ts; imports IssueEntry from src/issues/types.ts (US-001). Pure functions only (noUncheckedIndexedAccess: backlog lookups via Map/find return T|undefined, always guard). 'blocked is COMPUTED, never stored' (ADR 0001 SS1, issue spec). MINIMAL graph for Epico A: only isBlocked + referential/self-ref checks. Do NOT implement Kahn topo-sort, cycle rejection, or escalation (those are Epico C, CAM-108, explicitly OUT of scope). Test file test/issues/graph.test.ts (mirror src path under test/)."
     },

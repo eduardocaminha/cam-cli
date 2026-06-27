@@ -1,27 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add typed issue schema (stage/status/blockedBy/wsjf?/rank?/spec?) + issues.schema.json"
+    "id": "US-002",
+    "title": "Pure graph helpers: isBlocked, deriveBlocks, referential-integrity check"
   },
   "branchName": "cam/CAM-106-issue-schema-state-machine",
-  "timestamp": "2026-06-26T21:00:00Z",
+  "timestamp": "2026-06-26T22:00:00Z",
   "createdFiles": [
-    "src/issues/types.ts",
-    "templates/scripts/cam/issues.schema.json",
-    "scripts/cam/issues.schema.json"
+    "src/issues/graph.ts",
+    "test/issues/graph.test.ts"
   ],
   "modifiedFiles": [
-    "src/vendor/_generated.ts",
-    "knip.json",
-    "scripts/file-size-budget.json"
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 is complete. src/issues/types.ts is now the single typed source of truth for IssueStage, IssueStatus, IssueEntry, IssuesLocalJson, and WsjfScore. The schema in templates/scripts/cam/issues.schema.json and scripts/cam/issues.schema.json describes a single IssueEntry (not the file wrapper) because the AC3 oracle reads s.properties.stage.enum at the top level. knip.json ignores src/issues/types.ts because no other file imports it yet (later stories in Epico B/C will consume the types). The file-size budget was raised for src/vendor/_generated.ts (41->42, ref CAM-106) due to the new schema entry in templatesContents. Do NOT touch src/issues/types.ts to add wsjf/rank/spec population yet (Epico B/C scope).",
+  "nextStoryContext": "US-002 is complete. src/issues/graph.ts provides three pure functions: isBlocked (returns true when any present, non-shipped dep blocks), deriveBlocks (reverse index Map), and checkReferentialIntegrity (flags missing-id refs and self-refs). All are I/O-free and import only from src/issues/types.ts. US-003 (selectPlannableIssue) imports isBlocked from graph.ts and IssueEntry from types.ts. The test mirror is test/issues/graph.test.ts (18 tests, 0 fail). knip.json still ignores src/issues/types.ts (the entry is a no-op now that graph.ts imports it, but harmless; leave it until a later story cleans up). Do NOT implement Kahn topo-sort, cycle rejection, or escalation in US-003 (those are Epico C, out of scope). US-003 notes warn about the coverage ratchet: keep selectPlannableFromFile thin to preserve the aggregate coverage floor.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Schema-only story: only TypeScript interfaces and JSON schema. No external library API was exercised."
+      "summary": "Pure graph helpers story: only TypeScript logic importing from the project's own types.ts. No external library API was exercised."
     }
   ]
 }
