@@ -114,7 +114,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "SEAM DECISION (planner picks, document in the command impl): prefer a thin `cam spec <id>` subcommand in index.ts wired to a new src/commands/spec.ts modeled on src/commands/plan.ts (runPlan) -- it injects `/cam-spec <id>` into the orchestrator pane via sendKeysWhenIdle (src/tmux/dispatch.ts), reuses orchestratorAlive/getOrchPaneId/paneCountMutex from src/tmux/session.ts, and respects the 2-pane mutex. The grill is an INTERACTIVE in-session interview (gate humano profundo, like /cam-plan), NOT an autonomous worker: the command .md is prompt-governed, the testable oracle is the dispatch shape + embed parity. GOTCHA (sendkeys-literal-enter-gotcha): send-keys is atomic text+Enter in ONE call, NEVER -l (it makes 'Enter' literal and never submits). index.ts dispatch lives around the 'plan'/'issue' cases (~line 1050-1074). Command .md is LLM-consumed so em-dash/emoji rule does not apply. Re-embed after adding templates/commands/cam-spec.md (`bun run embed-vendor`). Re-read cam-plan.md as the structural template for the command .md."
     },
