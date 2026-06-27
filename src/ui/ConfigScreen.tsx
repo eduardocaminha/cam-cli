@@ -147,9 +147,7 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 			{PHASE_STEPS.map((phase, phaseIdx) => {
 				const isActive = stepIdx === phaseIdx;
 				const isDone = stepIdx > phaseIdx;
-
 				if (!isActive && !isDone) return null;
-
 				return (
 					<Section key={phase} heading={PHASE_LABELS[phase]}>
 						{isActive ? (
@@ -161,60 +159,14 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 								onCancel={onCancel}
 							/>
 						) : null}
-						{isDone ? (
-							<ConfirmedChoice label={models[phase] ?? DEFAULTS[phase]} />
-						) : null}
+						{isDone ? <ConfirmedChoice label={models[phase] ?? DEFAULTS[phase]} /> : null}
 					</Section>
 				);
 			})}
 
-			{stepIdx >= PHASE_STEPS.length ? (
-				<Section heading="Backend">
-					{currentStep === 'backend' ? (
-						<Select
-							question="Backend:"
-							options={BACKEND_OPTIONS}
-							defaultValue={DEFAULTS.backend}
-							onChange={handleBackendSelect}
-							onCancel={onCancel}
-						/>
-					) : backend !== undefined ? (
-						<ConfirmedChoice label={backend} />
-					) : null}
-				</Section>
-			) : null}
-
-			{stepIdx >= PHASE_STEPS.length + 1 ? (
-				<Section heading="Merge mode">
-					{currentStep === 'merge-mode' ? (
-						<Select
-							question="How should cam ship merge pull requests?"
-							options={MERGE_MODE_OPTIONS}
-							defaultValue="immediate"
-							onChange={handleMergeModeSelect}
-							onCancel={onCancel}
-						/>
-					) : mergeMode !== undefined ? (
-						<ConfirmedChoice label={mergeModeLabel(mergeMode)} />
-					) : null}
-				</Section>
-			) : null}
-
-			{stepIdx >= PHASE_STEPS.length + 2 ? (
-				<Section heading="Plan approval">
-					{currentStep === 'plan-approval' ? (
-						<Select
-							question="How should cam advance after a plan audit?"
-							options={PLAN_APPROVAL_OPTIONS}
-							defaultValue="auto"
-							onChange={handlePlanApprovalSelect}
-							onCancel={onCancel}
-						/>
-					) : planApproval !== undefined ? (
-						<ConfirmedChoice label={planApprovalLabel(planApproval)} />
-					) : null}
-				</Section>
-			) : null}
+			<BackendSection stepIdx={stepIdx} currentStep={currentStep} backend={backend} onChange={handleBackendSelect} onCancel={onCancel} />
+			<MergeModeSection stepIdx={stepIdx} currentStep={currentStep} mergeMode={mergeMode} onChange={handleMergeModeSelect} onCancel={onCancel} />
+			<PlanApprovalSection stepIdx={stepIdx} currentStep={currentStep} planApproval={planApproval} onChange={handlePlanApprovalSelect} onCancel={onCancel} />
 
 			{currentStep === 'done' ? (
 				<Section heading="Saved" tone="accent">
@@ -231,6 +183,69 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+interface BackendSectionProps {
+	stepIdx: number;
+	currentStep: WizardStep;
+	backend: string | undefined;
+	onChange: (v: string) => void;
+	onCancel: () => void;
+}
+
+function BackendSection({ stepIdx, currentStep, backend, onChange, onCancel }: BackendSectionProps): ReactElement | null {
+	if (stepIdx < PHASE_STEPS.length) return null;
+	return (
+		<Section heading="Backend">
+			{currentStep === 'backend' ? (
+				<Select question="Backend:" options={BACKEND_OPTIONS} defaultValue={DEFAULTS.backend} onChange={onChange} onCancel={onCancel} />
+			) : backend !== undefined ? (
+				<ConfirmedChoice label={backend} />
+			) : null}
+		</Section>
+	);
+}
+
+interface MergeModeSectionProps {
+	stepIdx: number;
+	currentStep: WizardStep;
+	mergeMode: MergeMode | undefined;
+	onChange: (v: MergeMode) => void;
+	onCancel: () => void;
+}
+
+function MergeModeSection({ stepIdx, currentStep, mergeMode, onChange, onCancel }: MergeModeSectionProps): ReactElement | null {
+	if (stepIdx < PHASE_STEPS.length + 1) return null;
+	return (
+		<Section heading="Merge mode">
+			{currentStep === 'merge-mode' ? (
+				<Select question="How should cam ship merge pull requests?" options={MERGE_MODE_OPTIONS} defaultValue="immediate" onChange={onChange} onCancel={onCancel} />
+			) : mergeMode !== undefined ? (
+				<ConfirmedChoice label={mergeModeLabel(mergeMode)} />
+			) : null}
+		</Section>
+	);
+}
+
+interface PlanApprovalSectionProps {
+	stepIdx: number;
+	currentStep: WizardStep;
+	planApproval: PlanApproval | undefined;
+	onChange: (v: PlanApproval) => void;
+	onCancel: () => void;
+}
+
+function PlanApprovalSection({ stepIdx, currentStep, planApproval, onChange, onCancel }: PlanApprovalSectionProps): ReactElement | null {
+	if (stepIdx < PHASE_STEPS.length + 2) return null;
+	return (
+		<Section heading="Plan approval">
+			{currentStep === 'plan-approval' ? (
+				<Select question="How should cam advance after a plan audit?" options={PLAN_APPROVAL_OPTIONS} defaultValue="auto" onChange={onChange} onCancel={onCancel} />
+			) : planApproval !== undefined ? (
+				<ConfirmedChoice label={planApprovalLabel(planApproval)} />
+			) : null}
+		</Section>
+	);
+}
 
 function ConfirmedChoice({ label }: { label: string }): ReactElement {
 	return (

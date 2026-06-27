@@ -402,6 +402,97 @@ function makeAutoShipFn(sessionName: string, spawnFn: SpawnFn): () => void {
 }
 
 // ---------------------------------------------------------------------------
+// Dep-resolution helper (extracted from runSidecar to keep it under the biome
+// cognitive-complexity <=15 and function-length <=80 line limits; CAM-60
+// factory/helper-extraction pattern)
+// ---------------------------------------------------------------------------
+
+interface SidecarLoopDepsCtx {
+	cwd: string;
+	claudeDir: string;
+	prdPath: string;
+	sessionName: string;
+	logEvent: WorkerEventLogger;
+	realSpawnFn: SpawnFn;
+}
+
+interface SidecarLoopDepsResult {
+	readActiveFn: () => boolean | undefined;
+	clearActiveFn: () => void;
+	hasPendingStoriesFn: () => boolean;
+	sleepFn: (ms: number) => void;
+	hasSessionFn: () => boolean;
+	acquireLockFn: NonNullable<SidecarOptions['acquireLockFn']>;
+	buildOptsFn: NonNullable<RunSidecarLoopOptions['buildOpts']>;
+	runMergeWatchFn: RunSidecarLoopOptions['runMergeWatchFn'];
+	flipActiveFn: RunSidecarLoopOptions['flipActiveFn'];
+	autoShipFn: RunSidecarLoopOptions['autoShipFn'];
+	escalateFn: RunSidecarLoopOptions['escalateFn'];
+}
+
+/**
+ * Resolve all injectable sidecar loop deps from SidecarOptions + context.
+ *
+ * Each dep follows the options-injection-or-production-default pattern: when
+ * the option is provided (by tests), use it; otherwise build the real dep.
+ * Extracted so runSidecar stays under the biome cognitive-complexity (<=15)
+ * and function-length (<=80 lines) limits.
+ */
+function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions): SidecarLoopDepsResult {
+	const { cwd, claudeDir, prdPath, sessionName, logEvent, realSpawnFn } = ctx;
+
+	const readActiveFn = options.readActiveFn ?? makeReadActive(claudeDir);
+	const clearActiveFn = options.clearActiveFn ?? makeClearActive(claudeDir, cwd);
+	const hasPendingStoriesFn = options.hasPendingStoriesFn ?? makeHasPendingStories(prdPath);
+	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
+	const hasSessionFn = options.hasSessionFn ?? (() => hasSession(sessionName, realSpawnFn));
+	const acquireLockFn =
+		options.acquireLockFn ??
+		(() => { const built = buildSupervisorOptions(cwd); return built.acquireLock(); });
+	const buildOptsFn =
+		options.buildOptsFn ??
+		(() => { const built = buildSupervisorOptions(cwd); return built.opts; });
+
+	// US-007: Merge-watch wiring for CI-gated ship mode.
+	const mergeMode = readMergeMode(join(cwd, 'scripts/cam/project.toml'));
+	const runMergeWatchFn: RunSidecarLoopOptions['runMergeWatchFn'] =
+		options.runMergeWatchFn ??
+		(mergeMode === 'ci-gated'
+			? makeProductionMergeWatchFn(cwd, claudeDir, sessionName, logEvent, realSpawnFn)
+			: undefined);
+
+	// US-005: plan_approval drives auto-chain wiring (flip + autoShip only in auto
+	// mode; undefined in operator mode = zero behavior change).
+	const planApproval = readPlanApproval(join(cwd, 'scripts/cam/project.toml'));
+	const autoChainProduction = planApproval === 'auto'
+		? { flipActiveFn: makeFlipActiveFn(claudeDir, cwd), autoShipFn: makeAutoShipFn(sessionName, realSpawnFn) }
+		: { flipActiveFn: undefined as RunSidecarLoopOptions['flipActiveFn'], autoShipFn: undefined as RunSidecarLoopOptions['autoShipFn'] };
+	const flipActiveFn = options.flipActiveFn ?? autoChainProduction.flipActiveFn;
+	const autoShipFn = options.autoShipFn ?? autoChainProduction.autoShipFn;
+
+	// US-R1-001: escalateFn from Resend config; only wired when both apiKey and
+	// recipient are non-empty.
+	const resendConfig = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
+	const escalateFn: RunSidecarLoopOptions['escalateFn'] =
+		options.escalateFn ??
+		(resendConfig.apiKey !== '' && resendConfig.recipient !== ''
+			? async () => {
+					await sendEscalation({
+						apiKey: resendConfig.apiKey,
+						recipient: resendConfig.recipient,
+						subject: '[cam] Non-convergence: max review rounds reached',
+						html: '<p><strong>[cam]</strong> The supervisor reached the maximum number of review rounds without a CLEAN verdict. Manual intervention is required.</p>',
+					});
+				}
+			: undefined);
+
+	return {
+		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
+		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, autoShipFn, escalateFn,
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
@@ -419,93 +510,30 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	const claudeDir = join(cwd, '.claude');
 	const prdPath = join(cwd, 'scripts/cam/prd.json');
 
-	const readActiveFn = options.readActiveFn ?? makeReadActive(claudeDir);
-	const clearActiveFn = options.clearActiveFn ?? makeClearActive(claudeDir, cwd);
-	const hasPendingStoriesFn = options.hasPendingStoriesFn ?? makeHasPendingStories(prdPath);
-	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
-
-	// Production hasSession checker: real spawnSync-based SpawnFn.
 	const realSpawnFn: SpawnFn = (cmd, args, spawnOpts) =>
 		spawnSync(cmd, args, spawnOpts as Parameters<typeof spawnSync>[2]);
 	const sessionName = projectSessionName(cwd);
-	const hasSessionFn =
-		options.hasSessionFn ?? (() => hasSession(sessionName, realSpawnFn));
-
-	// Structured event logger: writes sidecar lifecycle events to cam-worker-events.jsonl.
 	const logEvent =
 		options.logEventFn ?? makeFileEventLogger(join(claudeDir, 'cam-worker-events.jsonl'));
 
-	// Lock factory: built from real host.ts unless injected by tests.
-	const acquireLockFn =
-		options.acquireLockFn ??
-		(() => {
-			const built = buildSupervisorOptions(cwd);
-			return built.acquireLock();
-		});
-
-	// buildOpts factory: build RunSupervisorOptions for each sidecar cycle.
-	const buildOptsFn =
-		options.buildOptsFn ??
-		(() => {
-			const built = buildSupervisorOptions(cwd);
-			return built.opts;
-		});
-
-	// US-007: Merge-watch wiring for CI-gated ship mode.
-	const mergeMode = readMergeMode(join(cwd, 'scripts/cam/project.toml'));
-	const runMergeWatchFn: RunSidecarLoopOptions['runMergeWatchFn'] =
-		options.runMergeWatchFn ??
-		(mergeMode === 'ci-gated'
-			? makeProductionMergeWatchFn(cwd, claudeDir, sessionName, logEvent, realSpawnFn)
-			: undefined);
-
-	// US-005: Read plan_approval once at sidecar startup (same read-once point as
-	// mergeMode, CAM-100 lesson). Drives auto-chain wiring: flipActiveFn and
-	// autoShipFn are wired only in auto mode; operator mode leaves them undefined
-	// (conditional-injection pattern, mirrors runMergeWatchFn above).
-	const planApproval = readPlanApproval(join(cwd, 'scripts/cam/project.toml'));
-	const flipActiveFn: RunSidecarLoopOptions['flipActiveFn'] =
-		options.flipActiveFn ??
-		(planApproval === 'auto'
-			? makeFlipActiveFn(claudeDir, cwd)
-			: undefined);
-	const autoShipFn: RunSidecarLoopOptions['autoShipFn'] =
-		options.autoShipFn ??
-		(planApproval === 'auto'
-			? makeAutoShipFn(sessionName, realSpawnFn)
-			: undefined);
-
-	// US-R1-001: Build escalateFn from the Resend config. Only wired when both
-	// RESEND_API_KEY env var and resend_recipient ([notify] project.toml) are non-empty.
-	// When unconfigured, escalateFn is undefined and the MAX_ROUNDS_DEBT terminal
-	// is silent (zero behavior change for projects without Resend configured).
-	const resendConfig = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
-	const escalateFn: RunSidecarLoopOptions['escalateFn'] =
-		options.escalateFn ??
-		(resendConfig.apiKey !== '' && resendConfig.recipient !== ''
-			? async () => {
-					await sendEscalation({
-						apiKey: resendConfig.apiKey,
-						recipient: resendConfig.recipient,
-						subject: '[cam] Non-convergence: max review rounds reached',
-						html: '<p><strong>[cam]</strong> The supervisor reached the maximum number of review rounds without a CLEAN verdict. Manual intervention is required.</p>',
-					});
-				}
-			: undefined);
+	const deps = buildSidecarLoopDeps(
+		{ cwd, claudeDir, prdPath, sessionName, logEvent, realSpawnFn },
+		options,
+	);
 
 	await runSidecarLoop({
-		buildOpts: buildOptsFn,
-		readActive: readActiveFn,
-		clearActive: clearActiveFn,
-		sleep: sleepFn,
-		hasPendingStories: hasPendingStoriesFn,
-		acquireLock: acquireLockFn,
+		buildOpts: deps.buildOptsFn,
+		readActive: deps.readActiveFn,
+		clearActive: deps.clearActiveFn,
+		sleep: deps.sleepFn,
+		hasPendingStories: deps.hasPendingStoriesFn,
+		acquireLock: deps.acquireLockFn,
 		runSupervisorFn: options.runSupervisorFn,
-		hasSessionFn,
+		hasSessionFn: deps.hasSessionFn,
 		logEvent,
-		runMergeWatchFn,
-		flipActiveFn,
-		autoShipFn,
-		escalateFn,
+		runMergeWatchFn: deps.runMergeWatchFn,
+		flipActiveFn: deps.flipActiveFn,
+		autoShipFn: deps.autoShipFn,
+		escalateFn: deps.escalateFn,
 	});
 }
