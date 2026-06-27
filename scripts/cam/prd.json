@@ -135,7 +135,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Docs-only story. Files: docs/adr/0001-issue-system-redesign.md (append an 'Implementacao Epico A' note near the bottom, do NOT rewrite the decision sections) and scripts/cam/patterns.md (append a bullet at the end, never truncate existing). Project rule: NO em-dash in persisted .md (patterns.md bullet + global CLAUDE.md) -- use colon/comma/parens/period. patterns.md is the durable wisdom file read at story start. Cross-reference the three modules (src/issues/types.ts, graph.ts, select.ts) and the three-copy sync gotcha so the next epic's implementer finds them. Do NOT add a templates/ copy of patterns.md (it is repo-local durable, not distributed)."
     },
