@@ -27,6 +27,10 @@ import {
 	createLocalIssueOnMain,
 	type CreateLocalIssueOnMainOptions,
 } from './src/commands/issue-file.ts';
+import {
+	appendJournalEntryOnMain,
+	type JournalCycleEntry,
+} from './src/commands/journal.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
@@ -1321,6 +1325,37 @@ async function main(argv: string[]): Promise<number> {
 				return 0;
 			}
 			return runRetryMonitor({ pane: parsed.pane, pid: parsed.pid });
+		}
+		case 'journal': {
+			// `cam journal append` -- reads a JSON cycle entry on stdin, appends it
+			// to scripts/cam/journal.md on main via commit-tree, prints the sentinel.
+			const subCommand = argv[3];
+			if (subCommand !== 'append') {
+				printFatalHint('Usage: cam journal append  (reads JSON from stdin)');
+				return 1;
+			}
+			const stdinText = await Bun.stdin.text();
+			let journalEntry: JournalCycleEntry;
+			try {
+				journalEntry = JSON.parse(stdinText) as JournalCycleEntry;
+			} catch (err) {
+				printError(`cam journal append: invalid JSON from stdin: ${String(err)}`);
+				return 1;
+			}
+			const journalResult = appendJournalEntryOnMain({
+				cwd: process.cwd(),
+				entry: journalEntry,
+				spawnFn: (cmd, args, opts) =>
+					spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
+			});
+			if (!journalResult.ok) {
+				// printError already fired inside appendJournalEntryOnMain
+				return 1;
+			}
+			process.stdout.write(
+				`CAM_JOURNAL_APPENDED=${journalResult.cycleId} sha=${journalResult.sha}\n`,
+			);
+			return 0;
 		}
 		default:
 			printError(`unknown command: ${command}`);

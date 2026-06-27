@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "cam journal append end-to-end (tracer bullet)"
+  },
+  "createdFiles": [
+    "src/commands/journal.ts",
+    "test/commands/journal-append.test.ts",
+    "test/integration/journal-append-on-main.test.ts"
+  ],
+  "modifiedFiles": [
+    "index.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 extends src/commands/journal.ts with validation (required fields), optional fields (decisions, blockers, followups), em-dash normalization in body fields, and duplicate-cycleId rejection with --force. The base implementation in journal.ts is stable: appendJournalEntryOnMain, renderJournalBlock, checkMainUpToDate, commitTreeToMain, commitOnMain, pushMainBestEffort are all exported and tested. The JournalCycleEntry interface is the input shape; extend it with optional fields. The validation guard order from patterns.md US-003 CAM-107 (line 130) applies: validate pure inputs BEFORE the git show read. Discriminated-union error shape per patterns.md line 130. The --force replace-in-place should locate the existing `## <cycleId> ` block in the journal text and swap it. Em-dash normalization: replace U+2014 in body fields only, not the header line. Integration test for US-001 (test/integration/journal-append-on-main.test.ts) is the regression anchor.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-001 uses only built-in git plumbing (node:child_process spawnSync) and the existing patterns from issue-file.ts. No external npm library was introduced."
+    }
+  ]
+}
