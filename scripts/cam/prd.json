@@ -168,7 +168,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Event types live in src/supervisor/events.ts (WorkerEventKind union + appendFileSync default sink to .claude/cam-worker-events.jsonl). Add the new kind to the union and emit from the writer. CRITICAL anti-pattern (CAM-53/89, sidecar-stale-worker-pane / fake-spawn-masks-dead-production): a test that only exercises the INJECTED sink proves nothing about production; the wiring test must drive the DEFAULT (real) sink path so an unwired default fails the gate. The event log is supervisor-owned in the loop, but this writer is operator-invoked (grill), so the writer owns its own emit. Keep the emit a side effect of a successful commit only (do not emit on validation/guard failure)."
     },

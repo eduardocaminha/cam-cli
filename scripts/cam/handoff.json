@@ -1,23 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Terminal paths: abandon + merge-into modes in the spec writer"
+    "id": "US-007",
+    "title": "Production-wired spec-written / stage-promoted observability event"
   },
   "branchName": "cam/CAM-107-grill-spec-layer",
-  "timestamp": "2026-06-27T12:30:00Z",
+  "timestamp": "2026-06-27T13:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
+    "src/supervisor/events.ts",
     "src/commands/issue-specify.ts",
     "test/commands/issue-specify.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 added abandonIssueOnMain and mergeIssueOnMain as sibling exports in src/commands/issue-specify.ts. Both reuse the same commit-tree-on-main plumbing (commitOnMain / commitTreeToMain / pushMainBestEffort) and DI'd SpawnFn. abandon sets status='abandoned'; merge-into records 'Merged into <targetId>.' in source.description (no new schema field; additionalProperties:false confirmed) and optionally folds blockedBy. Both validated with unit tests and real-git integration tests (45 tests total in the file). US-007 is next: add a production-wired observability event (kind 'spec-written' or 'stage-promoted') to specifyIssueOnMain. Event types live in src/supervisor/events.ts (WorkerEventKind union + makeFileEventLogger). The event must be emitted from the REAL call-site (not just injected fakes) so the production-wiring oracle (grep -q 'makeFileEventLogger' src/commands/issue-specify.ts) passes. Emit only on successful commit, not on guard/validation failure. A production-wiring test must drive the DEFAULT sink path, not only the injected fake, to catch an unwired default.",
+  "nextStoryContext": "US-007 added 'stage-promoted' to WorkerEventKind (events.ts) and StagePromotedEventDetail { id, fromStage, toStage } to the WorkerEventDetail union. specifyIssueOnMain now emits this event on successful commit only, using an injected WorkerEventLogger (eventSink option) that defaults to makeFileEventLogger(<cwd>/.claude/cam-worker-events.jsonl) -- the canonical production sink. emitStagePromoted() is a private helper extracted to keep specifyIssueOnMain under 80 lines (biome noExcessiveLinesPerFunction). Three new tests were added: (1) injected sink captures event on success, (2) no event on guard failure, (3) production-wiring test that omits eventSink and asserts the file gets written. makeOpts() default is a no-op eventSink to prevent filesystem side-effects in unit tests. Real-git integration tests pass eventSink: () => {} to keep tmpdir working trees clean. US-008 is next: add a recovery-runbook entry for the grill / spec flow.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "US-006 extends issue-specify.ts with abandon and merge-into modes. All git plumbing uses the same SpawnFn / node:child_process / node:fs pattern established in prior stories. No new external npm library was touched."
+      "lib": "node:crypto / Bun randomUUID",
+      "version": "Bun 1.3.x",
+      "url": "https://bun.sh/docs/api/utils",
+      "fetchedAt": "2026-06-27T13:00:00Z",
+      "status": "ok",
+      "summary": "import { randomUUID } from 'node:crypto' confirmed as the correct pattern. Bun also exposes Bun.randomUUIDv7() (v7, monotonic) but the codebase convention uses node:crypto randomUUID (v4, as in run.ts). Implementation matches."
     }
   ]
 }
