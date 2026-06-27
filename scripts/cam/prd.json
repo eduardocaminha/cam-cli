@@ -20,30 +20,37 @@
   ],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "CRITICAL [scripts/file-size-budget.json:22]: The full gate spine is RED: `bun run check:all` exits non-zero because `bun scripts/check-file-sizes.ts` reports `src/commands/setup.ts:818 exceeds budget ceiling of 816 lines`. Root cause: US-R1-001 (commit aafbb28, the LAST feature commit) grew setup.ts (warnIfResendUnconfigured gained the resendRecipient param + a wider gate) past the 816 ceiling that US-010 set in commit 5c5ba3b/13ca803, and the budget was never re-raised. The US-R1-001 worker only ran typecheck+tests, so the file-size gate was never exercised mid-PRD. This directly violates US-010 AC5 ('The full gate spine is green. [oracle: named-command bun run check:all]'), which is marked passes:true, and would block `cam ship` (the file-size ratchet gate). Fix mechanically: raise the setup.ts ceiling 816 -> 818 in scripts/file-size-budget.json with a staged top-level _ref note (the check requires raises to carry a tracker ref in the staged diff), OR trim setup.ts by 2 lines. All other check:all stages (typecheck, 1894 tests, embed-vendor, biome lint, debt-markers, coverage, dead-code, dup, ci-parity) are green."
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "notes": "WARNING [src/commands/setup.ts:243]: The US-007 loud non-convergence warning (warnIfResendUnconfigured, setup.ts:243) only checks `resendApiKey === ''`, but the production escalateFn (sidecar.ts:478) only wires when BOTH apiKey AND recipient are non-empty, and resend_recipient is collected ONLY via the --resend-recipient flag (never in the interactive wizard / SetupScreen). So `cam init --plan-approval auto` with RESEND_API_KEY set in the env but no recipient (the only reachable state from interactive init) gets NO loud warning yet escalation is silently disabled, defeating the stated US-007 goal that gateless failures are not silent. Make the warning gate mirror the escalation gate: warn when planApproval==='auto' AND (apiKey==='' OR recipient===''). resendRecipient is already in scope at the call site (setup.ts:604)."
     },
     {
       "id": "US-R2-001",
       "title": "Review round 2 fix 001: address reviewer finding",
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "notes": "WARNING [docs/recovery-runbook.md:1824]: Runbook section (v.1) drifted from the US-R1-002 env-var change. It documents `resend_api_key = \"re_xxxx\"` in [notify] of project.toml as how `cam init` persists the key, and shows `cam init --resend-api-key re_xxxx`. But R1-002 made setup.ts read the key from RESEND_API_KEY env var and NOT persist it (only resend_recipient is written). The runbook now contradicts the in-product warning hint (setup.ts:247 'Set RESEND_API_KEY in your shell environment') and Resend's own docs ('Store your API key in an environment variable; never hardcode'). Worse, the --resend-api-key flag value is never persisted nor read later by readResendConfig, so an operator following that example suppresses the loud warning yet gets NO escalation. Align the runbook with the env-var convention (RESEND_API_KEY in the shell; only resend_recipient in [notify])."
     },
     {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "notes": "CRITICAL [src/commands/sidecar.ts:444]: US-007 Resend escalation is never wired in production. escalateFn (consumed at src/supervisor/loop.ts:1134) is constructed nowhere: buildSupervisorOptions (src/supervisor/host.ts:610-644) never sets it, and runSidecar wires flipActiveFn/autoShipFn but not escalateFn. So readResendConfig (src/config/models.ts:179) and sendEscalation (src/notify/resend.ts:70) are dead code in production: even with [notify] resend_api_key + resend_recipient configured, the MAX_ROUNDS_DEBT terminal sends no email. This contradicts the loud setup warning ('Set resend_api_key ... non-convergence failures will be SILENT'), which implies configuring Resend ends the silence. Follow-up: build escalateFn from readResendConfig + sendEscalation and thread it through RunSidecarLoopOptions -> RunSupervisorOptions.escalateFn."
     },
     {
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "notes": "WARNING [src/commands/setup.ts:649]: The Resend API key is persisted to [notify] resend_api_key in scripts/cam/project.toml, which is git-tracked (not in .gitignore nor templates/.gitignore), and the setup hint instructs the operator to put it there. This diverges from the project's LINEAR_API_KEY-from-env convention and from Resend's own docs ('Store your API key in an environment variable rather than hardcoding it'). Recommend reading RESEND_API_KEY from env (best-effort, like LINEAR) or gitignoring the key / storing it under user config."
     },
@@ -58,7 +65,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "VERTICAL SLICE: type + accessor + tests in one cut. PATH RECONCILIATION GOTCHA: the operator brief and the issue both say 'mirror readMergeMode' and name src/config/toml.ts, BUT readMergeMode, readBackend, readPhaseModel and the MergeMode union actually live in src/config/models.ts (toml.ts is the low-level TOML parse/write primitive with no per-key accessors). Add readPlanApproval to src/config/models.ts next to readMergeMode (models.ts:138-153) so the mirror is real; do NOT scatter a half-accessor into toml.ts. Use loadConfig from ./toml.ts exactly like readMergeMode does. Read scripts/cam/patterns.md bullet '[ship].merge_mode config surface (US-001, CAM-101)' for the exact defensive pattern. Test file mirrors source: test/config/plan-approval.test.ts (point configPath at a tmp fixture, never the real project.toml). noUncheckedIndexedAccess: section access is T|undefined, guard with typeof===object before indexing."
@@ -76,7 +83,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "VERTICAL SLICE: dual-copy markdown edit + re-embed + parity test in one cut (the dual-copy+embed invariant fattens this slice; accept it per gotcha 5). DUAL-COPY INVARIANT (patterns.md 'Agent-prompt self-hosting pattern' + 'Epico A issue schema + gate-as-code invariant'): edit BOTH .claude/commands/cam-plan.md AND templates/commands/cam-plan.md (remove the fork prose and add the spec-reading rule in each), preserving the existing intentional command-name divergence (.claude says `bun run typecheck`/`bun test`; templates says generic \"the project's typecheck/test command\"); do NOT byte-equalize the two files. Then run `bun run embed-vendor` to sync src/vendor/_generated.ts; test/embedded.test.ts byte-parity catches drift. Step 6 is at .claude/commands/cam-plan.md:115-149 (## MVP Proposal / ## Launch-ready Proposal / ## Final question with (a)(b)(c)). Step 7 prompt (lines 159-168) currently passes 'Scope approved by operator: <MVP / Launch-ready / Custom>' and 'Stories to include' -- rewrite to pass the grilled spec, not a fork choice. Step 3 (read context, line 87-89) already reads the issue spec for issue_system=none; reinforce that the spec field IS the settled scope. NO em-dash in persisted .md (project rule): use colon/comma/parens. Read docs/agent-readiness.md before editing prompt wording. This story is BLOCKED-BY CAM-107 in spirit (the grill confronts scope at spec-time) but CAM-107 is already shipped, so the spec field exists."
@@ -94,7 +101,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "VERTICAL SLICE: dual-copy markdown edit + re-embed + parity test. DUAL-COPY INVARIANT (these two files are INTENTIONALLY DIVERGENT, not byte-identical: .claude/ is cam-cli-specific Bun/TS/Ink with Types/config -> Core logic -> Surface ordering at lines 84-87; templates/ is the generic downstream variant with Database -> Server -> Client ordering at lines 83-85): add the vertical-slice rule and the no-requires:operator rule to BOTH copies, each adapted to its own stack and ordering, preserving the existing divergence; do NOT byte-equalize. Then `bun run embed-vendor`. The current requires:operator instruction is at .claude/agents/subagent-planner.md:63 ('Set requires:operator for stories whose acceptance criteria need a real-user keypress...'). Replace it with the no-operator-stories + ceremony-as-automated-criteria rule. The horizontal ordering rule (in .claude/: lines 84-87, '1. Types/config' / '2. Core logic' / '3. Surface'; in templates/: lines 83-85, '1. Database' / '2. Server' / '3. Client') stays as a DEPENDENCY-ORDER hint in each copy, unchanged per copy but add the vertical-slice rule on top: each feature story cuts through type+logic+wiring+test+verification, not one horizontal layer. domainTerms from the spec: 'vertical slice (cam)', 'reviewer-behavioral oracle', 'artifact-of-record'. GOTCHA 6 (spec): the behavioral verification TOOLING (playwright/tmux-pty + artifact->PR) is a separate blocking epic D2; CAM-109 only makes the planner EMIT reviewer-behavioral criteria, not run them. NO em-dash in persisted .md. Note: subagent-planner.md is consumed by an LLM but is a persisted .md tracked on main; follow the project no-em-dash rule per CLAUDE.md exception note (the exception is .claude/agents/*.md may use em-dash; this is a judgment call, keep consistent with the existing file's style). DOC TRACEABILITY (F-05): re-read scripts/cam/patterns.md bullet 'Agent-prompt self-hosting pattern (US-001, 2026-06-16)' (the dual-copy self-hosting invariant) and the docs/agent-readiness.md 'Prioritized gap roadmap' section (planner-quality expectations) before editing."
@@ -113,7 +120,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 8,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "VERTICAL SLICE: TS decision helper + tests + dual-copy markdown wiring + re-embed. REQUIRES US-001 (readPlanApproval). SAFETY-SURFACE-IS-TS GOTCHA (spec gotcha 1; lineage CAM-49/72/86/104 markdown-logic-bug): the branch DECISION must be deterministic TS, not LLM-interpreted markdown. Add a pure helper e.g. src/plan/plan-approval-decision.ts exporting decidePostAuditAction(approval: PlanApproval): { kind: 'pause-operator' } | { kind: 'proceed-branch' } (discriminated union, mirror decideNextAction in src/supervisor/decide.ts for the pure-function-no-IO style). Test file: test/plan/plan-approval-branch.test.ts (inject readPlanApproval via a fixture configPath or call the pure helper directly). cam-plan.md Step 8 (auditor, lines 208-229) -> Step 9 (branch, lines 231-244): after APPROVE, the markdown says 'consult the plan_approval decision (deterministic TS): operator => pause for one plan confirmation before git checkout -b; auto => proceed to branch'. The AUDITOR gate runs in BOTH modes; auto only skips the OPERATOR approval, never the auditor BLOCK (that is US-005/decide untouched). DUAL-COPY: edit both cam-plan.md copies + `bun run embed-vendor`. NO em-dash in persisted .md. AUDITOR-AHEAD-OF-APPROVAL INVARIANT (spec #8 + #12): the auditor BLOCK loop is plan-time and must stay AHEAD of the plan_approval branch decision in BOTH modes; auto only skips the OPERATOR approval, never the auditor BLOCK. In cam-plan.md the Step 8 'do NOT branch' BLOCK re-audit loop (line 229) MUST precede the Step 9 branch (line 231) where decidePostAuditAction is consulted, in both copies. Verify the ordering with grep line-numbers in both copies and add a unit assertion that decidePostAuditAction is only reachable on the post-APPROVE path."
@@ -129,7 +136,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 9,
+      "priority": 10,
       "passes": true,
       "requires": null,
       "notes": "VERTICAL SLICE: sidecar read-once wiring + loop auto-chain branch + tests. REQUIRES US-001 (readPlanApproval). READ-ONCE-AT-STARTUP GOTCHA (spec gotcha 2; patterns.md 'ci-gated orchestrator' + CAM-100): the sidecar reads merge_mode ONCE at src/commands/sidecar.ts:348 (const mergeMode = readMergeMode(join(cwd,'scripts/cam/project.toml'))). Read plan_approval at the SAME point (one line below) and thread it into the loop wiring; changing config mid-session requires a sidecar respawn (document, do not fight it). The auto-ship-on-CLEAN hook lives near the review-verdict handling in src/supervisor/loop.ts:1037-1108 (the action.kind==='review' branch; CLEAN is a TERMINAL_VERDICT, src/supervisor/decide.ts:54). The active:true flip is the cam-next mechanism (src/commands/next.ts overwrites .claude/cam-loop.local.md active:true; patterns.md 'cam next is a pure sidecar trigger'). Inject the auto-chain behavior behind a flag derived from plan_approval so operator mode is a clean no-op (mirror the runMergeWatchFn conditional-injection pattern at sidecar.ts:349-353: only wire when condition holds, leave undefined otherwise -> zero behavior change). Test file: test/supervisor/auto-chain.test.ts with injected fakes (no real tmux). SINGLE-PUSHER + sidecar-supervisor invariants (patterns.md) hold: the deterministic loop owns dispatch, not the LLM."
@@ -145,7 +152,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 10,
+      "priority": 11,
       "passes": true,
       "requires": null,
       "notes": "VERTICAL SLICE: decide.ts/loop.ts terminal logic + tests (absorbs CAM-76 + CAM-95). SAFETY-SURFACE-IS-TS (spec gotcha 1): this terminal is deterministic TS. Current state: decide.ts:51 DEFAULT_MAX_ROUNDS=3, decide.ts:54 TERMINAL_VERDICTS={'CLEAN','MAX_ROUNDS_DEBT'}, decide.ts:109-111 reviewTerminal = roundsCompleted>=maxRounds || terminal-verdict. The loop (src/supervisor/loop.ts:1037-1108) currently dispatches review each iteration; ensure that when roundsCompleted hits maxRounds without CLEAN, the verdict is promoted to MAX_ROUNDS_DEBT (a TERMINAL_VERDICT) and the loop returns a terminal status WITHOUT dispatching another fix/review. SupervisorStatus union is at loop.ts:358 ('complete'|'awaiting-operator'|'blocked'|'max-iterations'); notifyTerminal(status) at loop.ts:537. Decide whether non-convergence reuses an existing terminal status or needs a new one, but the verdict promotion to MAX_ROUNDS_DEBT is the load-bearing signal US-007 keys on. Auditor-no-APPROVE terminal: the auditor loop currently lives in cam-plan.md markdown (Step 8: 'after 3 BLOCKs surface to user'); the DETERMINISTIC terminal here is about the REVIEW/sidecar loop, not the plan-time auditor (that stays plan-time). Keep the seam clean so US-007's escalation fires exactly once on the terminal. Test file: test/supervisor/non-convergence-terminal.test.ts. Read patterns.md 'notifyOrchestrator placement rule' + 'Single-source outcome contract'. ORDER: must precede US-007. ORACLE NOTE (F-01): do NOT grep 'MAX_ROUNDS_DEBT' in loop.ts to prove the seam: loop.ts:317 already has a pre-existing 'MAX_ROUNDS_DEBT' comment, so that grep matches the unmodified tree and proves nothing. The seam must be proven BEHAVIORALLY by test/supervisor/non-convergence-terminal.test.ts (terminal status returned + verdict promoted to MAX_ROUNDS_DEBT + no (maxRounds+1)-th fix dispatched)."
@@ -163,7 +170,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 11,
+      "priority": 12,
       "passes": true,
       "requires": null,
       "notes": "VERTICAL SLICE: new notify client + terminal wiring + config surface (setup/config/Ink) + runbook. REQUIRES US-006 (the terminal it fires on) and US-001 (plan_approval). RESEND IS THE FIRST EXTERNAL RUNTIME DEP (spec gotcha 3): `bun add resend`, isolate behind src/notify/resend.ts, best-effort ONLY. SDK shape (officialDocsConsulted): import { Resend } from 'resend'; const r=new Resend(apiKey); const {data,error}=await r.emails.send({from,to,subject,html}); it returns {data,error}, never throws on API error -- but a network error CAN throw, so wrap in try/catch AND check error. The client takes injectable deps (the Resend constructor / send fn) so test/notify/resend.test.ts mocks it without a real network hit (no requires:operator). Config surface mirrors CAM-101 merge_mode EXACTLY (patterns.md 'Pure-helper extract for headless-testable setup steps', 'Optional 4th opts-bag', '[ship].merge_mode config surface'): setup.ts Step union + OPTIONS + SetupAnswers + collectViaReadline + collectViaInk + parseSetupArgs/--plan-approval flag (CAM-104 'Non-interactive init: mandatory answer + readline EOF rule': a new mandatory answer needs a CLI flag + build-release smoke update + readline 'close' EOF default, or non-interactive init hangs); config.ts mergeConfigChoices persists [plan] plan_approval + Resend keys; Ink SetupScreen.tsx + ConfigScreen.tsx add the selector blocks (Ink success/failure is the glyph, never divider color; verify render via ink-testing-library). Resend recipient/key likely persist to [plan] or a [notify] section in project.toml. LOUD WARNING: auto + unconfigured Resend -> printWarning that non-convergence failures are silent (CAM-104 gotcha: auto-as-default is bold, init MUST warn loudly + the auto safety net is mandatory). Runbook: add a scenario to docs/recovery-runbook.md for the auto pipeline + escalation. NO em-dash in persisted .md (runbook). Quality gate is `bun run check:all` (the full spine)."
@@ -180,7 +187,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 12,
+      "priority": 13,
       "passes": true,
       "requires": null,
       "notes": "ROUND-3 CRITICAL FIX (reviewer, src/supervisor/loop.ts:1439). THE BUG: in auto mode (default) the US-005 auto-chain defeats the US-006 non-convergence hard terminal. At a real MAX_ROUNDS_DEBT terminal, the round-N reviewer's fix stories are still passes:false in prd.json because reviewDispatch creates them at newRound==maxRounds (src/supervisor/review.ts:499-528) BEFORE loop.ts (1119-1147) promotes the verdict to MAX_ROUNDS_DEBT. So makeHasPendingStories (src/commands/sidecar.ts:241, Case a) counts those fix stories as pending, and the auto-chain at loop.ts:1439 (opts.hasPendingStories()===true) flips active:true and continues toward ship instead of stopping cleanly at the non-convergence terminal. DUAL INTERACTION is between US-005 (auto-chain) and US-006 (hard terminal). RECOMMENDED DESIGN (operator-approved 'option X'; the implementer may choose the concrete code shape): when the review reaches the terminal round (newRound==maxRounds) WITHOUT CLEAN, do NOT create orphan fix stories (skip the buildFixStories/userStories rewrite at review.ts:499-528 on the terminal round); promote lastVerdict to MAX_ROUNDS_DEBT FIRST (loop.ts verdict-promotion ordering ~1119-1147); and ensure makeHasPendingStories (sidecar.ts ~241) and decideNextAction (src/supervisor/decide.ts terminal classification, Case 1 line 76 + reviewTerminal lines 109-111) treat a MAX_ROUNDS_DEBT terminal as terminal-with-no-pending, so the auto-chain stops cleanly (and fires the US-007 Resend escalation) instead of advancing to ship. INVARIANT: a MAX_ROUNDS_DEBT terminal must NEVER leave fix stories that make the pipeline look like it still has implementable work (otherwise both makeHasPendingStories Case a AND decideNextAction Case 1 route back to implement/auto-chain). GOTCHA: review.ts:482 ('newRound > maxRounds') only triggers on the round AFTER maxRounds; the offending fix-story creation happens AT newRound==maxRounds (the <= maxRounds path), so the terminal-round skip must guard newRound==maxRounds, not just > maxRounds. ORACLE NOTE: do NOT grep loop.ts for 'MAX_ROUNDS_DEBT' (loop.ts:317 + the existing US-006 block already contain it; the grep matches the unmodified tree and proves nothing); prove the fix BEHAVIORALLY via test/supervisor/non-convergence-autochain.test.ts with injected fakes (no real tmux). Files to touch: src/supervisor/loop.ts (verdict promotion ordering ~1119-1147), src/supervisor/review.ts (fix-story creation ~499-528, skip on terminal round), src/commands/sidecar.ts (makeHasPendingStories ~241), src/supervisor/decide.ts (terminal classification). Read scripts/cam/patterns.md ('Single-source outcome contract', 'notifyOrchestrator placement rule', 'cam next is a pure sidecar trigger') before touching the loop."
@@ -198,7 +205,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 13,
+      "priority": 14,
       "passes": true,
       "requires": null,
       "notes": "ROUND-3 WARNING + 3 SUGGESTIONS cleanup. (1) WARNING docs/recovery-runbook.md (~1910, Option B): the runbook says set [review] max_rounds = 5 in project.toml, but NO code reads [review] max_rounds; maxRounds comes only from prd.review.maxRounds or the CAM_MAX_REVIEW_ROUNDS env var. Rewrite Option B to the real source (verified: grep -rn 'max_rounds' src/ shows no [review].max_rounds reader; readPrd's review.maxRounds + the env var are the only inputs to DEFAULT_MAX_ROUNDS at src/supervisor/decide.ts:51 / loop.ts:1117). (2) SUGGESTION src/commands/setup.ts (~783/804): the --resend-api-key flag is parsed (parseSetupArgs ~804-812) and only feeds options.resendApiKey, which is used solely to suppress warnIfResendUnconfigured via the fallback at setup.ts:605 (process.env['RESEND_API_KEY'] ?? options.resendApiKey ?? ''); it is never persisted (config.ts does not read it) nor read at runtime (readResendConfig at src/config/models.ts:185 reads RESEND_API_KEY env var + backward-compat TOML only). Drop the dead flag entirely (env-var-only) so it cannot silence the warning while leaving escalation unconfigured: remove the parse arm(s), the SetupArgs/SetupAnswers resendApiKey field, and the :605 fallback (read from env only). (3) SUGGESTION scripts/cam/CLAUDE.md: subagent-planner no longer emits requires:operator stories (US-003 shipped that change), but the Stop Condition section (CLAUDE.md:23) still describes operator stories as planner-emitted. Add a note that they are hand-filed only now. CLAUDE.md (scripts/cam/CLAUDE.md) is a SINGLE repo doc with NO template mirror, so the dual-copy+embed rule does NOT apply here. (4) SUGGESTION docs/recovery-runbook.md (~1886): the diagnostic greps cam-supervisor.log for 'Resend escalation', but sendEscalation (src/notify/resend.ts:70) writes to stderr ONLY on failure (the error branch :82 and the catch branch :88); on success it writes nothing. Clarify in the runbook that the grep surfaces only FAILED escalations. NO em-dash in any persisted .md (runbook, CLAUDE.md): use colon/comma/parens per project rule. This story touches docs + setup.ts only, no templates/ or vendor/ (no embed-vendor needed)."
@@ -216,34 +223,22 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 14,
+      "priority": 15,
       "passes": true,
       "requires": null,
       "notes": "PURE REFACTOR, behavior preserved, no budget raise. Recurring CAM-60 biome-complexity class (precedent CAM-86 refactored into helpers, CAM-89 extracted stageAndCommitBump). check:all is green on every gate EXCEPT biome lint, which fails on two functions that grew during this PRD. The per-story workers ran only typecheck+tests (the scripts/cam/CLAUDE.md 'no linter' note is stale; US-009 covers doc fixes but did not touch this) so biome never gated mid-PRD. THIS STORY'S WORKER MUST RUN `bunx biome lint` (and ideally `bun run check:all`), NOT just typecheck+tests, because the whole point is the biome gate and the default worker gate set (typecheck+test) misses it. TWO VIOLATIONS: (1) src/commands/sidecar.ts:417 function runSidecar, cognitive complexity 18 (max 15) AND 88 lines (max 80), grew with the US-005/US-008 wiring (flipActiveFn/autoShipFn/escalateFn/hasPendingStoriesFn dep resolution + the auto-chain / non-convergence safety surface); (2) src/ui/ConfigScreen.tsx:93 function ConfigScreen, cognitive complexity 20 (max 15) AND 98 lines (max 80), grew with the US-007 merge-mode/plan-approval/Resend wizard steps. FIX via helper extraction per patterns.md 'Biome cognitive complexity: use factory/helper extraction not grandfather (CAM-60)': for runSidecar extract a dep-resolution helper (e.g. resolveSidecarDeps / buildSidecarLoopDeps); for ConfigScreen extract step-renderers or a step-dispatch helper. Do NOT add per-file biome overrides (overrides[].includes with noExcessiveCognitiveComplexity:\"off\") -- the override masks future growth (patterns.md CAM-60 US-002). CRITICAL CONSTRAINTS: (a) runSidecar's refactor MUST preserve the US-005 auto-chain + US-008 non-convergence terminal wiring EXACTLY; the US-008 behavioral test (test/supervisor/non-convergence-autochain.test.ts) and ALL existing sidecar tests MUST still pass. (b) Extracting helpers INSIDE the same file RAISES total line count; if sidecar.ts or ConfigScreen.tsx then exceeds its file-size ceiling, that is EXPECTED: the orchestrator will raise the file-size budget (scripts/file-size-budget.json) with the staged top-level _ref CAM-109 at ship-hygiene per patterns.md 'Ratchet gate pattern' + 'cam-ship Step 3 ratchet raise-and-retry' (the gate reads only the staged diff, so the ref must be staged). Prefer extraction into the same module or a sibling helper module as fits the codebase style. This story touches ONLY src/ (sidecar.ts, ConfigScreen.tsx, possibly a new sibling helper module) + tests; NOT templates/ or vendor/, so no embed-vendor:check criterion. biome complexity gotcha (patterns.md CAM-60 US-002): each `??` null-coalescing counts +1 complexity, so collapsing the four `??` dep defaults into one extracted helper is the highest-leverage cut."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 5,
     "lastVerdict": "FIXES_PENDING:1",
     "findings": [
       {
-        "severity": "WARNING",
-        "file": "src/commands/setup.ts",
-        "line": 243,
-        "text": "The US-007 loud non-convergence warning (warnIfResendUnconfigured, setup.ts:243) only checks `resendApiKey === ''`, but the production escalateFn (sidecar.ts:478) only wires when BOTH apiKey AND recipient are non-empty, and resend_recipient is collected ONLY via the --resend-recipient flag (never in the interactive wizard / SetupScreen). So `cam init --plan-approval auto` with RESEND_API_KEY set in the env but no recipient (the only reachable state from interactive init) gets NO loud warning yet escalation is silently disabled, defeating the stated US-007 goal that gateless failures are not silent. Make the warning gate mirror the escalation gate: warn when planApproval==='auto' AND (apiKey==='' OR recipient===''). resendRecipient is already in scope at the call site (setup.ts:604)."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "src/supervisor/loop.ts",
-        "line": 1130,
-        "text": "escalateFn is invoked fire-and-forget via `void (async () => {...})()` and not awaited before `return { status: 'complete' }`. Correct for the long-lived sidecar (event loop stays alive), but the lifetime assumption is implicit; a short-lived caller could drop the email. Consider documenting the assumption or awaiting it."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "src/notify/resend.ts",
-        "line": 44,
-        "text": "Default sender `cam <onboarding@resend.dev>` only delivers to the Resend account owner's own address until a domain is verified; arbitrary recipients fail and the error is swallowed (best-effort by design). Worth a one-line note in the runbook (v.1) so operators do not assume escalation to a third-party address works out of the box."
+        "severity": "CRITICAL",
+        "file": "scripts/file-size-budget.json",
+        "line": 22,
+        "text": "The full gate spine is RED: `bun run check:all` exits non-zero because `bun scripts/check-file-sizes.ts` reports `src/commands/setup.ts:818 exceeds budget ceiling of 816 lines`. Root cause: US-R1-001 (commit aafbb28, the LAST feature commit) grew setup.ts (warnIfResendUnconfigured gained the resendRecipient param + a wider gate) past the 816 ceiling that US-010 set in commit 5c5ba3b/13ca803, and the budget was never re-raised. The US-R1-001 worker only ran typecheck+tests, so the file-size gate was never exercised mid-PRD. This directly violates US-010 AC5 ('The full gate spine is green. [oracle: named-command bun run check:all]'), which is marked passes:true, and would block `cam ship` (the file-size ratchet gate). Fix mechanically: raise the setup.ts ceiling 816 -> 818 in scripts/file-size-budget.json with a staged top-level _ref note (the check requires raises to carry a tracker ref in the staged diff), OR trim setup.ts by 2 lines. All other check:all stages (typecheck, 1894 tests, embed-vendor, biome lint, debt-markers, coverage, dead-code, dup, ci-parity) are green."
       }
     ]
   }
