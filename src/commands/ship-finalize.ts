@@ -81,8 +81,8 @@ export interface FinalizeCycleCloseResult {
  *   1. Read issue_system + issue_prefix from project.toml.
  *   2. Read issueNumber from prd.json BEFORE removing prd.json.
  *   3. When issue_system == 'none': find the matching entry in issues.local.json
- *      (id == `${issue_prefix}-${issueNumber}`) and set state='closed' +
- *      closedAt=<ISO timestamp>. For github/linear: skip this step.
+ *      (id == `${issue_prefix}-${issueNumber}`) and set stage='shipped'.
+ *      For github/linear: skip this step.
  *   4. Remove scripts/cam/prd.json, scripts/cam/handoff.json, and
  *      scripts/cam/progress.txt via `git rm -f --ignore-unmatch` (the -f flag
  *      overrides git's local-modifications guard, resolving both dirty and
