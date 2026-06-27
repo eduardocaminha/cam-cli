@@ -1,25 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-009",
-    "title": "Doc + dead-code cleanup for round-3 WARNING and three suggestions"
+    "id": "US-010",
+    "title": "Refactor runSidecar and ConfigScreen under biome complexity/line limits (pure refactor)"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T19:00:00Z",
+  "timestamp": "2026-06-27T20:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/recovery-runbook.md",
-    "scripts/cam/CLAUDE.md",
-    "src/commands/setup.ts",
-    "test/commands/setup.test.ts",
+    "src/commands/sidecar.ts",
+    "src/ui/ConfigScreen.tsx",
+    "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-009 was a doc + dead-code cleanup story. Four changes: (1) recovery-runbook.md Option B rewritten to point at the real maxRounds sources (prd.review.maxRounds JSON field and CAM_MAX_REVIEW_ROUNDS env var) since no code reads [review] max_rounds from project.toml; (2) recovery-runbook.md Resend escalation grep diagnostic clarified to say it shows only FAILED escalations (sendEscalation writes stderr only on failure; success is silent); (3) src/commands/setup.ts: removed dead --resend-api-key flag (two parse arms, resendApiKey field from SetupOptions and ParsedSetupArgs, and the :605 fallback) - warnIfResendUnconfigured now reads RESEND_API_KEY env var only; (4) scripts/cam/CLAUDE.md Stop Condition: added note that requires:operator stories are hand-filed only (US-003 removed planner emission). New test in setup.test.ts confirms env-var-only path still fires the loud warning. All 1892 tests pass.",
+  "nextStoryContext": "US-010 was a pure biome refactor story. Two violations fixed: (1) runSidecar (sidecar.ts) extracted a buildSidecarLoopDeps helper that absorbs the 12+ ?? and ternary operators, reducing runSidecar complexity from 18 to 2, line count from 88 to 31. (2) ConfigScreen (ConfigScreen.tsx) extracted BackendSection, MergeModeSection, PlanApprovalSection as internal helper components, reducing ConfigScreen complexity from 20 to ~14, lines from 98 to ~67. No per-file biome overrides added (oracle: grep -Eq passes). file-size-budget.json raised sidecar.ts ceiling from 512 to 540 (helper extraction grows file; expected per notes; _ref CAM-109 already present). All 1892 tests pass. bun run check:all exits 0. This was the final story in CAM-109 (US-010 was the last passes:false). The PRD should now be COMPLETE (all non-operator stories pass); run /cam-review to confirm.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story touched docs and setup.ts only. No external library code was introduced or modified."
+      "summary": "Pure biome refactor: extracted buildSidecarLoopDeps (sidecar.ts) and three Section sub-components (ConfigScreen.tsx). No external library code introduced or modified."
     }
   ]
 }
