@@ -1,29 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Typed Spec schema + validators in src/issues/spec.ts"
+    "id": "US-003",
+    "title": "Deterministic spec writer specifyIssueOnMain (promote idea->specified on main)"
   },
   "branchName": "cam/CAM-107-grill-spec-layer",
-  "timestamp": "2026-06-27T01:00:00Z",
+  "timestamp": "2026-06-27T02:00:00Z",
   "createdFiles": [
-    "src/issues/spec.ts",
-    "test/issues/spec.test.ts"
+    "src/commands/issue-specify.ts",
+    "test/commands/issue-specify.test.ts"
   ],
   "modifiedFiles": [
-    "src/issues/types.ts",
-    "scripts/cam/migrate-issues-schema.ts",
-    "scripts/cam/prd.json"
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 created src/issues/spec.ts with the Spec interface (acceptanceCriteria, scope, gotchas, domainTerms) and pure validators validateSpec + validateWsjf (both return { ok, errors }). IssueEntry.spec is now typed as Spec (optional) instead of unknown. migrate-issues-schema.ts was fixed to cast raw.spec correctly (null+undefined guard + as IssueEntry['spec']). Circular type imports between types.ts and spec.ts are type-only (import type) and resolve cleanly. 1762 tests pass, typecheck clean, biome lint clean.",
+  "nextStoryContext": "US-003 created src/commands/issue-specify.ts with specifyIssueOnMain(). It mirrors issue-file.ts commit-tree-to-main plumbing: reads backlog via git show main:scripts/cam/issues.local.json, validates spec (validateSpec from spec.ts) and wsjf (validateWsjf from spec.ts) before reading backlog (fail fast), guards target id exists and stage=idea and status=open, mutates in-memory, runs checkReferentialIntegrity on post-mutation backlog, serializes, and commits on-main or off-main via commit-tree plumbing. Commit msg: chore(cam): specify <id>. Exports SpawnFn, ClockFn, SpecifyIssueOnMainOptions, SpecifyIssueOnMainResult, SpecifyIssueOnMainError, SpecifyIssueOnMainOutcome. 22 tests pass (unit + real-git integration). 1784 total tests pass, typecheck clean, biome lint clean.",
   "officialDocsValidated": [
     {
       "lib": "none",
-      "version": "n/a",
-      "url": "n/a",
-      "fetchedAt": "2026-06-27T01:00:00Z",
       "status": "no_external_lib_touched",
-      "summary": "US-002 is pure TypeScript interfaces and validators with no external library dependencies."
+      "summary": "US-003 is pure TypeScript using only the internal spec.ts validators and graph.ts integrity checker with git plumbing via spawnSync. No external npm library was touched."
     }
   ]
 }

@@ -95,7 +95,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New module src/commands/issue-specify.ts; tests under test/commands/issue-specify.test.ts. CANONICAL pattern to mirror: src/commands/issue-file.ts (createLocalIssueOnMain) -- DI'd synchronous SpawnFn + ClockFn, on-main path (write/add/commit) vs off-main commit-tree plumbing (temp GIT_INDEX_FILE, read-tree, hash-object -w --stdin, update-index --cacheinfo, write-tree, commit-tree -p main, update-ref refs/heads/main). Reference src/commands/ship-finalize.ts for the stage-write approach (it sets stage:'shipped'). Import validateSpec/validateWsjf from US-002, isBlocked/checkReferentialIntegrity from src/issues/graph.ts. Commit msg style: `chore(cam): specify <id>`. NEVER touch the work branch (the whole point: idea filed/specified on main while a feature branch is open). Lesson (issues-local-next-id-multiwriter): a live `cam run` is a concurrent writer of issues.local.json -- read from main, write via plumbing, do not assume working-tree is canonical."
     },
