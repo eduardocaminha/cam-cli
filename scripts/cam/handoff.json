@@ -1,29 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Review round 1 fix 002: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T14:00:00Z",
+  "timestamp": "2026-06-27T15:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/config/models.ts",
-    "src/commands/setup.ts",
-    "src/commands/sidecar.ts",
-    "src/supervisor/loop.ts",
-    "test/commands/setup.test.ts",
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-002 fixes Resend API key security: (1) readResendConfig now prefers RESEND_API_KEY env var (canonical, not git-tracked), falls back to resend_api_key in [notify] project.toml for backward compat; (2) cam init/runSetup no longer writes resend_api_key to the git-tracked project.toml; resend_recipient (non-sensitive) is still persisted; (3) warnIfResendUnconfigured hint updated to reference RESEND_API_KEY env var; (4) stale comments in sidecar.ts and loop.ts updated. Resend official docs confirm RESEND_API_KEY is the canonical env var name.",
+  "nextStoryContext": "US-R2-001 fixes the recovery-runbook.md section (v.1) that contradicted the US-R1-002 env-var change. Key changes: (1) removed the [notify] resend_api_key = 're_xxxx' TOML example (the key is never persisted to project.toml); (2) replaced with 'export RESEND_API_KEY=...' shell env pattern; (3) removed '--resend-api-key re_xxxx' from the cam init example (flag exists but does not persist); (4) updated the warning block to include the full hint text from setup.ts:247 referencing RESEND_API_KEY env var. The runbook now correctly reflects that only resend_recipient is stored in [notify] and RESEND_API_KEY must be in the shell environment.",
   "officialDocsValidated": [
     {
-      "lib": "resend",
-      "version": "current",
-      "url": "https://resend.com/docs/send-with-nodejs",
-      "fetchedAt": "2026-06-27T14:00:00Z",
-      "status": "ok",
-      "summary": "Resend docs confirm RESEND_API_KEY is the canonical env var name; docs explicitly recommend against hardcoding API keys. Our implementation matches exactly."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure documentation fix in docs/recovery-runbook.md. No external library code was touched."
     }
   ]
 }
