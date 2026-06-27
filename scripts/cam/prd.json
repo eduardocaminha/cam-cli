@@ -151,7 +151,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Extends src/commands/issue-specify.ts (US-003) and its test file. Reuse the SAME commit-tree-on-main plumbing and DI'd SpawnFn; do not duplicate the git wiring (factor a shared helper if needed, but stay surgical). status:'abandoned' is the existing IssueStatus value (src/issues/types.ts). merge-into MUST record the target in the abandoned source's description: scripts/cam/issues.schema.json sets additionalProperties:false (confirmed), so a new top-level field would fail schema validation. Do NOT add an unschema'd field. Commit msg: `chore(cam): abandon <id>` / `chore(cam): merge <id> into <target>`."
     },

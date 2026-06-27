@@ -1,25 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "CONTEXT.md / ADR location convention for the durable domain model"
+    "id": "US-006",
+    "title": "Terminal paths: abandon + merge-into modes in the spec writer"
   },
   "branchName": "cam/CAM-107-grill-spec-layer",
-  "timestamp": "2026-06-27T12:00:00Z",
+  "timestamp": "2026-06-27T12:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/CLAUDE.md",
-    ".claude/skills/domain-modeling/SKILL.md",
-    "templates/skills/domain-modeling/SKILL.md",
-    "src/vendor/_generated.ts",
+    "src/commands/issue-specify.ts",
+    "test/commands/issue-specify.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 added the Domain Model Convention section to scripts/cam/CLAUDE.md (pins CONTEXT.md at repo root + docs/adr/ for ADRs, glossary-only vs ADR-worthy criteria, references to patterns.md and CAM-64). Also added a 'Cam project path convention' subsection to both .claude/skills/domain-modeling/SKILL.md and templates/skills/domain-modeling/SKILL.md (byte-identical). embed-vendor was regenerated. No CONTEXT.md was created (convention is lazy-creation). US-006 is next: abandon and merge-into modes in the spec writer (specifyIssueOnMain). The specifyIssueOnMain function in src/issues/specify.ts handles the 'specified' promotion path; abandon should set stage='idea', status='abandoned'; merge-into should merge blockedBy and spec from one issue into another then abandon the source.",
+  "nextStoryContext": "US-006 added abandonIssueOnMain and mergeIssueOnMain as sibling exports in src/commands/issue-specify.ts. Both reuse the same commit-tree-on-main plumbing (commitOnMain / commitTreeToMain / pushMainBestEffort) and DI'd SpawnFn. abandon sets status='abandoned'; merge-into records 'Merged into <targetId>.' in source.description (no new schema field; additionalProperties:false confirmed) and optionally folds blockedBy. Both validated with unit tests and real-git integration tests (45 tests total in the file). US-007 is next: add a production-wired observability event (kind 'spec-written' or 'stage-promoted') to specifyIssueOnMain. Event types live in src/supervisor/events.ts (WorkerEventKind union + makeFileEventLogger). The event must be emitted from the REAL call-site (not just injected fakes) so the production-wiring oracle (grep -q 'makeFileEventLogger' src/commands/issue-specify.ts) passes. Emit only on successful commit, not on guard/validation failure. A production-wiring test must drive the DEFAULT sink path, not only the injected fake, to catch an unwired default.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-005 is a pure documentation story: added convention note to scripts/cam/CLAUDE.md and cam path subsection to the domain-modeling skill. No external npm library was touched."
+      "summary": "US-006 extends issue-specify.ts with abandon and merge-into modes. All git plumbing uses the same SpawnFn / node:child_process / node:fs pattern established in prior stories. No new external npm library was touched."
     }
   ]
 }
