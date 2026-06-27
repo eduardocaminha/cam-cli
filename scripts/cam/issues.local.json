@@ -1,5 +1,5 @@
 {
-  "next_id": 113,
+  "next_id": 114,
   "issues": [
     {
       "id": "CAM-1",
@@ -938,6 +938,14 @@
       "createdAt": "2026-06-26T21:40:09.084Z",
       "description": "Pesquisa/exploracao (nao implementacao imediata): unificar o estado de coordenacao do cam, hoje ESPALHADO (issues.local.json + prd.json + handoff.json + worker-report.json + review-report.json + cam-worker-events.jsonl + journal.md + patterns.md), num unico objeto tipado e queryable por unidade de trabalho. Discussao de design 2026-06-26.\n\nPRIOR ART (Warren, sucessor do Overstory, jayminwest): o PLOT e um objeto de coordenacao tipado e queryable que amarra num so lugar a issue (seeds) + memoria (mulch) + prompts (canopy) + runs + PRs de uma unidade de trabalho. O agente le com plot get e faz plot append de eventos (decision_made/question_posed/artifact_produced); auto-transiciona active->done quando o ultimo filho mergeia. E o substrato que mantem humanos e agentes na mesma pagina. Confirma a direcao: objeto de coordenacao duravel = fonte de verdade unica; o context window do agente e efemero (le do Plot, appenda eventos).\n\nVALOR: hoje o estado disperso do cam dificulta query (qual o estado completo da CAM-X? que runs/PRs/decisoes ela teve?), rehidratacao (o handoff e ad-hoc), e self-improvement (a sabedoria esta em silos). Um Plot-equivalente daria: estado unico por issue, event log por unidade de trabalho, rehidratacao trivial, base pra self-improvement (conecta com a camada CONTEXT.md/ADR do epico B/CAM-107 e o modelo Mulch).\n\nESCOPO DE PESQUISA: minerar o os-eco do Jaymin (Mulch=memoria, Seeds=fila de issues, Canopy=prompts, Plot=coordenacao) e o Warren; avaliar se o cam adota um objeto Plot (schema + plot get/append + auto-transicao) e como ele se relaciona com os epicos A-D (o Plot amarraria o stage/spec/blockedBy/wsjf/rank do epico A + os reports + o journal). Maior e mais greenfield; provavelmente posterior aos epicos A-D.\n\nDEPENDENCIAS: pesquisa pura (sem deps duras). Relacionado aos epicos A (CAM-106, o schema da issue seria parte do Plot), B (CAM-107, CONTEXT.md/ADR ~ Mulch), e a frente 2/3 do backlog de pesquisa (central multirepo + UI Warren). Decisao estrategica: construir incremental vs forkar/estudar o Warren.\n\nPRIORIDADE: P3 (pesquisa/futuro; nao bloqueia o redesign A-D).",
       "priority": "P3"
+    },
+    {
+      "id": "CAM-113",
+      "title": "ship --finalize (none) fecha CAM-0: string issueNumber parseada como inteiro 0",
+      "state": "open",
+      "createdAt": "2026-06-27T00:38:25.197Z",
+      "description": "Descoberto vivo no cycle-close do CAM-104 (2026-06-26). cam ship --finalize imprimiu \"closed CAM-0: removed prd.json...\" e deixou CAM-104 com state=open; CAM-104 foi fechado a mao na branch. CAUSA: o PRD do CAM-104 tinha issueNumber=\"CAM-104\" (string com prefixo) porque a ancoragem do /cam-next so exige issueNumber non-null. O local-close do finalize converte issueNumber pra inteiro (Number(\"CAM-104\") -> NaN -> 0) e tenta fechar \"CAM-0\", inexistente (no-op silencioso), deixando o issue real aberto. AGRAVANTE: o backend none e o default; o schema de exemplo do /cam-plan mostra issueNumber inteiro (42) mas o anchoring nao forca tipo, entao string prefixado passa silenciosamente ate o finalize. FIX (a/ou b): (a) local-close do finalize resolve ids string prefixados: se issueNumber casa /^[A-Z]+-[0-9]+$/, usar como id direto em issues.local.json; senao construir prefix-N do inteiro. (b) alinhar o tipo de issueNumber entre planner (emitir o id no formato do backend) e anchoring/finalize, com validacao. GUARD: teste de cam ship --finalize no backend none com issueNumber string (CAM-NN) que assere o issue NN vira closed (state+closedAt), nao um inexistente CAM-0. ONDE: handler de --finalize (close local do none backend) em src/commands/ship*.ts. CLASSE: parse silencioso que erra pro default (no-op de close deve falhar alto, nao fechar id fantasma). P2: workaround existe (fechar a mao), nao bloqueia ship, mas afeta todo cycle none-backend com issueNumber string.",
+      "priority": 2
     }
   ]
 }
