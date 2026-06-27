@@ -1,5 +1,5 @@
 {
-  "next_id": 119,
+  "next_id": 120,
   "issues": [
     {
       "id": "CAM-1",
@@ -1105,6 +1105,15 @@
       "blockedBy": [],
       "createdAt": "2026-06-27T13:48:53.367Z",
       "description": "Descoberto no dogfood US-009 (grill do CAM-109, 2026-06-27). O fluxo /cam-spec tem DOIS outputs: (1) o spec na issue e (2) a camada CONTEXT.md/ADR (modelo de dominio duravel, o diferenciador do grill-with-docs, US-005 fixou a convencao: CONTEXT.md no root glossary-only + docs/adr/ lazy). O output (1) funciona (specifyIssueOnMain via bun-commit-tree). MAS o output (2) nao tem writer e o orquestrador que roda /cam-spec e READ-ONLY: disallowedTools Edit/Write/NotebookEdit, e o hook do CAM-102 nega spawn de subagente-escritor (implementer/general-purpose DENY; os allowed sao read-only). Escrever a mao via heredoc/-e e hazard (licao CAM-106: heredoc nao-quoted corrompe arquivo). RESULTADO: no grill do CAM-109 os domainTerms foram pro campo spec.domainTerms da issue, mas NENHUM CONTEXT.md/ADR foi escrito, apesar de 2 decisoes ADR-worthy resolvidas (verificacao comportamental = gate compartilhado + veredito independente; pipeline deterministico LLM-nos-pontos-de-julgamento). FIX: um writer deterministico de CONTEXT.md/ADR (bun-commit-tree to main, estilo specifyIssueOnMain) invocado pelo /cam-spec no fim da entrevista, OU um mecanismo sancionado pro orquestrador persistir os docs de dominio sem Edit/Write. P2."
+    },
+    {
+      "id": "CAM-119",
+      "title": "Follow-up CAM-107: cam init nao instala templates/skills/ no projeto downstream",
+      "stage": "idea",
+      "status": "open",
+      "blockedBy": [],
+      "createdAt": "2026-06-27T13:54:43.558Z",
+      "description": "Descoberto no rebuild-smoke do CAM-107 (2026-06-27). US-001 vendorizou a skill chain grill-with-docs em .claude/skills/ + templates/skills/ + embedou no _generated.ts (templatesContents tem as 6 chaves skills/). MAS o cam init NAO escreve templates/skills/ no destino: o smoke de install reportou commands(7)/agents(5)/scripts-cam(4) e NENHUMA linha de skills; setup.ts so menciona skills num prompt-string (linhas ~301-302, instruindo o setup-agent a criar skills sob medida), nao instala os arquivos vendorizados. CONSEQUENCIA: um projeto cam-init downstream recebe o comando .claude/commands/cam-spec.md mas NAO o skill grill-with-docs que ele invoca, entao /cam-spec falha downstream (skill nao encontrado). cam-cli proprio funciona (US-001 escreveu .claude/skills/ direto). FIX: a rotina de install do cam init (setup.ts) deve copiar a subarvore skills/ do templatesContents pro .claude/skills/ do destino, como ja faz com commands/agents/scripts-cam. P2."
     }
   ]
 }
