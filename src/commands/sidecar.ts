@@ -31,7 +31,8 @@ import { parseStateFile } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, type SpawnFn } from '../tmux/session.ts';
-import { readMergeMode, readPlanApproval } from '../config/models.ts';
+import { readMergeMode, readPlanApproval, readResendConfig } from '../config/models.ts';
+import { sendEscalation } from '../notify/resend.ts';
 import { buildWorkerReportSendKeysArgv } from '../supervisor/worker-report.ts';
 import {
 	runMergeWatch,
@@ -124,6 +125,16 @@ export interface SidecarOptions {
 	 * the real implementation automatically.
 	 */
 	runMergeWatchFn?: RunSidecarLoopOptions['runMergeWatchFn'];
+	/**
+	 * Override the escalateFn (US-R1-001).
+	 *
+	 * Production: reads [notify] resend_api_key + resend_recipient from
+	 * project.toml and builds a sendEscalation closure. Absent when Resend is
+	 * unconfigured (both keys must be non-empty).
+	 * Tests: inject a spy to assert the escalation was dispatched without a
+	 * real network hit.
+	 */
+	escalateFn?: RunSidecarLoopOptions['escalateFn'];
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +464,24 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 			? makeAutoShipFn(sessionName, realSpawnFn)
 			: undefined);
 
+	// US-R1-001: Build escalateFn from the Resend config. Only wired when both
+	// resend_api_key and resend_recipient are non-empty in [notify] project.toml.
+	// When unconfigured, escalateFn is undefined and the MAX_ROUNDS_DEBT terminal
+	// is silent (zero behavior change for projects without Resend configured).
+	const resendConfig = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
+	const escalateFn: RunSidecarLoopOptions['escalateFn'] =
+		options.escalateFn ??
+		(resendConfig.apiKey !== '' && resendConfig.recipient !== ''
+			? async () => {
+					await sendEscalation({
+						apiKey: resendConfig.apiKey,
+						recipient: resendConfig.recipient,
+						subject: '[cam] Non-convergence: max review rounds reached',
+						html: '<p><strong>[cam]</strong> The supervisor reached the maximum number of review rounds without a CLEAN verdict. Manual intervention is required.</p>',
+					});
+				}
+			: undefined);
+
 	await runSidecarLoop({
 		buildOpts: buildOptsFn,
 		readActive: readActiveFn,
@@ -466,5 +495,6 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		runMergeWatchFn,
 		flipActiveFn,
 		autoShipFn,
+		escalateFn,
 	});
 }

@@ -7,6 +7,8 @@
 // AC2: Non-convergence terminal fires escalateFn; a forced escalateFn failure
 //      does NOT crash the pipeline (returns 'complete').
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, test, beforeEach } from 'bun:test';
 import { sendEscalation, type ResendSendFn } from '../../src/notify/resend.ts';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
@@ -261,5 +263,41 @@ describe('non-convergence escalation wiring (AC2)', () => {
 
 		const result = await runSupervisor(opts);
 		expect(result.status).toBe('complete');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC3 — Production wiring oracle: escalateFn is wired in sidecar.ts
+//
+// Unit tests that inject escalateFn directly into runSupervisor/runSidecarLoop
+// cannot detect a missing wire in the outer production caller (sidecar.ts).
+// This oracle reads the sidecar.ts source text and asserts the dep fields are
+// present, so the gap can never silently re-emerge.
+// ---------------------------------------------------------------------------
+
+describe('sidecar.ts production wiring oracle - escalateFn (AC3)', () => {
+	const sidecarPath = resolve(import.meta.dir, '..', '..', 'src', 'commands', 'sidecar.ts');
+	const source = readFileSync(sidecarPath, 'utf8');
+
+	test('sidecar.ts imports readResendConfig', () => {
+		expect(source).toContain('readResendConfig');
+	});
+
+	test('sidecar.ts imports sendEscalation', () => {
+		expect(source).toContain('sendEscalation');
+	});
+
+	test('sidecar.ts passes escalateFn to runSidecarLoop', () => {
+		// Isolate the runSidecarLoop call block.
+		const callMatch = source.match(/await runSidecarLoop\(\{[\s\S]*?\}\)/);
+		expect(callMatch).not.toBeNull();
+		expect(callMatch?.[0]).toContain('escalateFn');
+	});
+
+	test('loop.ts threads escalateFn into supervisorOpts', () => {
+		const loopPath = resolve(import.meta.dir, '..', '..', 'src', 'supervisor', 'loop.ts');
+		const loopSource = readFileSync(loopPath, 'utf8');
+		// The threading block assigns supervisorOpts.escalateFn from opts.escalateFn.
+		expect(loopSource).toContain('supervisorOpts.escalateFn = opts.escalateFn');
 	});
 });

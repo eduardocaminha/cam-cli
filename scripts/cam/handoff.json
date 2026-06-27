@@ -1,31 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Best-effort Resend escalation + plan_approval/Resend config surface + runbook"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T12:30:00Z",
-  "createdFiles": [
-    "src/notify/resend.ts",
-    "test/notify/resend.test.ts",
-    "test/commands/setup.test.ts"
-  ],
+  "timestamp": "2026-06-27T13:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
     "src/supervisor/loop.ts",
-    "src/config/models.ts",
-    "src/commands/setup.ts",
-    "src/commands/config.ts",
-    "src/ui/SetupScreen.tsx",
-    "src/ui/ConfigScreen.tsx",
-    "docs/recovery-runbook.md",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md",
-    "test/commands/setup-merge-mode.test.ts",
-    "package.json",
-    "bun.lock"
+    "src/commands/sidecar.ts",
+    "test/notify/resend.test.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 adds: (1) src/notify/resend.ts: best-effort Resend client with injectable sendFn, sendEscalation() never throws; (2) loop.ts RunSupervisorOptions gains escalateFn?: () => Promise<void>, called best-effort in the MAX_ROUNDS_DEBT terminal block; (3) src/config/models.ts gains readResendConfig() reading [notify] resend_api_key + resend_recipient; (4) setup.ts/config.ts gain plan_approval and Resend config surface (planApproval field in SetupOptions, SetupAnswers, ParsedSetupArgs with --plan-approval flag; resendApiKey/resendRecipient in SetupOptions with --resend-api-key/--resend-recipient flags); (5) SetupScreen.tsx and ConfigScreen.tsx add a plan-approval Select step; (6) warnIfResendUnconfigured() exported helper warns when plan_approval=auto and resend unconfigured; (7) docs/recovery-runbook.md section (v) documents the auto pipeline + non-convergence escalation scenario. The resend package v6.16.0 is installed in package.json. Production wiring of escalateFn in host.ts (reading resendConfig and building the escalation call) is NOT yet done -- the sidecar does not yet auto-wire Resend escalations in production; tests only exercise the injectable seam.",
+  "nextStoryContext": "US-R1-001 wires the production escalateFn path: (1) RunSidecarLoopOptions gains escalateFn?: () => Promise<void>; (2) runSidecarLoop threads it into supervisorOpts.escalateFn before each runSupervisor call (parallel to autoShipFn threading); (3) sidecar.ts reads readResendConfig(join(cwd,'scripts/cam/project.toml')) and builds the escalation closure only when both apiKey and recipient are non-empty; (4) SidecarOptions gains escalateFn injectable for tests; (5) production-wiring oracle tests added to test/notify/resend.test.ts. US-R1-002 (WARNING): Resend API key persisted to git-tracked project.toml instead of env var - diverges from LINEAR_API_KEY-from-env convention and Resend docs.",
   "officialDocsValidated": [
     {
       "lib": "resend",
@@ -33,7 +21,7 @@
       "url": "https://resend.com/docs/send-with-nodejs",
       "fetchedAt": "2026-06-27T12:25:00Z",
       "status": "ok",
-      "summary": "v6 API confirmed: import { Resend } from 'resend'; new Resend(apiKey); await r.emails.send({from,to,subject,html}) returns {data,error} (discriminated union, never throws on API errors but can throw on network errors). Implementation matches."
+      "summary": "Validated in US-007. US-R1-001 only wires the production call site; no new API surface. Prior validation still current."
     }
   ]
 }

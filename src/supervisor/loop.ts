@@ -1302,6 +1302,18 @@ export interface RunSidecarLoopOptions {
 	 * Optional: when absent the supervisor runs unchanged.
 	 */
 	autoShipFn?: () => void;
+	/**
+	 * Best-effort escalation callback (US-R1-001).
+	 *
+	 * Threaded into RunSupervisorOptions.escalateFn on each supervisor run so
+	 * the inner loop can call it when the MAX_ROUNDS_DEBT terminal is reached.
+	 * In production this wraps sendEscalation() from src/notify/resend.ts using
+	 * [notify] resend_api_key + resend_recipient from project.toml.
+	 *
+	 * Optional: when absent (Resend unconfigured) the non-convergence terminal
+	 * is unchanged. Zero behavior change for all existing tests.
+	 */
+	escalateFn?: () => Promise<void>;
 }
 
 /** Idle polling interval for the sidecar outer loop (2 seconds). */
@@ -1401,6 +1413,12 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 			// operator mode (zero behavior change for existing callers).
 			if (opts.autoShipFn !== undefined) {
 				supervisorOpts.autoShipFn = opts.autoShipFn;
+			}
+			// US-R1-001: Thread escalateFn into RunSupervisorOptions so the inner
+			// loop can call it when the MAX_ROUNDS_DEBT terminal is reached.
+			// Only wired when [notify] resend_api_key + resend_recipient are set.
+			if (opts.escalateFn !== undefined) {
+				supervisorOpts.escalateFn = opts.escalateFn;
 			}
 			result = await runSupervisorFn(supervisorOpts);
 		} finally {
