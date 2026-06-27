@@ -1,22 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-R2-001",
-    "title": "Review round 2 fix 001: address reviewer finding"
+    "id": "US-008",
+    "title": "Fix auto-chain defeating the MAX_ROUNDS_DEBT non-convergence terminal"
   },
   "branchName": "cam/CAM-109-plan-simplify-plan-approval",
-  "timestamp": "2026-06-27T15:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-27T18:00:00Z",
+  "createdFiles": [
+    "test/supervisor/non-convergence-autochain.test.ts"
+  ],
   "modifiedFiles": [
-    "docs/recovery-runbook.md",
+    "src/supervisor/review.ts",
+    "src/supervisor/decide.ts",
+    "src/commands/sidecar.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R2-001 fixes the recovery-runbook.md section (v.1) that contradicted the US-R1-002 env-var change. Key changes: (1) removed the [notify] resend_api_key = 're_xxxx' TOML example (the key is never persisted to project.toml); (2) replaced with 'export RESEND_API_KEY=...' shell env pattern; (3) removed '--resend-api-key re_xxxx' from the cam init example (flag exists but does not persist); (4) updated the warning block to include the full hint text from setup.ts:247 referencing RESEND_API_KEY env var. The runbook now correctly reflects that only resend_recipient is stored in [notify] and RESEND_API_KEY must be in the shell environment.",
+  "nextStoryContext": "US-008 fixes the DUAL INTERACTION bug where the US-005 auto-chain defeated the US-006 non-convergence hard terminal. Three-layer fix: (1) review.ts: `newRound > maxRounds` changed to `newRound >= maxRounds` so the terminal round (newRound==maxRounds) with FIXES_PENDING skips buildFixStories and sets MAX_ROUNDS_DEBT directly, preventing orphan fix stories; (2) sidecar.ts makeHasPendingStories: added MAX_ROUNDS_DEBT guard before Case (a) so the auto-chain never sees false-pending at the non-convergence terminal; (3) decide.ts decideNextAction: moved review state resolution before Case 1 and added `!verdictIsMaxDebt` guard to Case 1 so orphan stories cannot route back to implement. Existing US-006 non-convergence-terminal tests all still pass. 12 new behavioral oracle tests in test/supervisor/non-convergence-autochain.test.ts cover all 4 ACs.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure documentation fix in docs/recovery-runbook.md. No external library code was touched."
+      "summary": "Pure TypeScript fix in src/supervisor/review.ts, src/supervisor/decide.ts, src/commands/sidecar.ts. No external library code was touched."
     }
   ]
 }
