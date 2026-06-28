@@ -4,6 +4,23 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.12.0] - 2026-06-28
+
+### Added
+
+- [US-R4-001] - add title to journal REQUIRED_FIELDS
+- [US-R3-001] - extract dispatchJournal + parseJournalArgs, replace tautological sentinel test
+- [US-003] - Docs, help text, and gate green
+- [US-002] - Validation, optional fields, em-dash normalization, duplicate rejection
+- [US-001] - cam journal append end-to-end (tracer bullet)
+
+### Fixed
+
+- [US-R2-002] - check git show status in appendJournalEntryOnMain, correct runbook
+- [US-R2-001] - correct doc strings: em-dash normalises to colon not hyphen-space
+- [US-R1-002] - correct decisions/blockers/followups type doc from arrays to strings
+- [US-R1-001] - align render labels with canonical journal corpus
+
 ## [0.11.0] - 2026-06-27
 
 ### Added
