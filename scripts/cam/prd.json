@@ -185,7 +185,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "requires": "US-006",
       "notes": "Real-git integration tests under test/integration/ (mirror the existing test/integration/{issue-file-on-main,ship-finalize-dirty-prd,triage-real-git}.test.ts which set up a real temp git repo). Four behavioral proofs the cutover needs (map to spec AC#2 CAS, AC#3 cross-branch, AC#4 allocateId race, AC#7 migration idempotency). Use real `git init` temp repos (not fakes) - fakes mented in the CAM-55 lesson; the spec's oracles for AC#2/#4/#7 explicitly demand real-git. Existing test/issues/migrate.test.ts covers the pure transform; this adds the real-git atomic/idempotent commit proof. requires US-006 (migration) and transitively US-001 (CAS) + US-003 (allocateId). NO travessao in any persisted assertion strings is not required (test files are code, not human .md docs)."
     }

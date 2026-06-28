@@ -147,8 +147,13 @@ export function commitOnMain(
 // ---------------------------------------------------------------------------
 
 /**
- * Remove repo-relative paths from a temp index via `git update-index --remove`.
+ * Remove repo-relative paths from a temp index via `git update-index --force-remove`.
  * No-op when `paths` is empty.
+ *
+ * Must use `--force-remove` (not `--remove`): `--remove` only drops paths that
+ * are ABSENT from the working tree; `--force-remove` drops them unconditionally
+ * regardless of working-tree state (required for off-main commit-tree plumbing
+ * where the working tree is irrelevant).
  */
 export function removePathsFromIndex(
 	cwd: string,
@@ -157,7 +162,7 @@ export function removePathsFromIndex(
 	indexEnv: Record<string, string>,
 ): void {
 	for (const p of paths) {
-		spawnFn('git', ['-C', cwd, 'update-index', '--remove', p], {
+		spawnFn('git', ['-C', cwd, 'update-index', '--force-remove', p], {
 			encoding: 'utf8',
 			env: indexEnv,
 		});
@@ -283,7 +288,7 @@ export function commitAndCasAttempt(
  * @param spawnFn       Injectable spawnSync for all git subprocess calls.
  * @param tmpPrefix     Prefix for mkdtemp (e.g. 'cam-issue-').
  * @param removals      Optional list of repo-relative paths to remove from the
- *                      tree in the same atomic commit (via update-index --remove).
+ *                      tree in the same atomic commit (via update-index --force-remove).
  *                      Processed after read-tree and before file writes, so any
  *                      file in this list will be absent from the resulting tree
  *                      even if the same path also appears in `files`.

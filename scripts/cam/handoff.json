@@ -1,30 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-009",
-    "title": "No-vestiges verification + full gate spine green"
+    "id": "US-010",
+    "title": "Real-git integration tests: migration, CAS, allocateId race, cross-branch read"
   },
   "branchName": "cam/CAM-90-file-per-issue",
-  "timestamp": "2026-06-28T16:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-28T17:30:00Z",
+  "createdFiles": [
+    "test/integration/issue-dir-real-git.test.ts"
+  ],
   "modifiedFiles": [
-    "src/commands/issue-specify.ts",
-    "src/commands/issue-file.ts",
-    "src/commands/triage.ts",
     "src/git/on-main.ts",
-    "src/issues/alloc.ts",
-    "src/issues/types.ts",
-    "docs/adr/0001-issue-system-redesign.md",
+    "test/issues/migrate-to-dir.test.ts",
     "scripts/cam/patterns.md",
-    "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-009 complete. All 9 user stories in this PRD now pass. Grep sweep: zero issues.local.json and next_id references remain in live surface (src/, docs/adr/, patterns.md, README, vendor/_generated.ts) outside the four documented exceptions. Gate spine green: bun run check:all exits 0. Biome lint fixed by helper extraction (removePathsFromIndex, hashAndIndexFiles, commitAndCasAttempt exported from src/git/on-main.ts; withMergedBlockedBy and buildMergeFiles extracted in issue-specify.ts; writeIssueFile in alloc.ts refactored to use new helpers). File-size budgets raised for two test files grown during US-004 on this branch. All 2050 tests pass. PRD is fully complete: all non-operator stories pass.",
+  "nextStoryContext": "US-010 complete. Six real-git integration tests in test/integration/issue-dir-real-git.test.ts prove: AC#1 migration idempotency (migrateIssuesToDir converts multi-issue array to per-file dir in one atomic commit; re-run is no-op), AC#2 CAS concurrent-commit guard (intercepted update-ref failure triggers re-read+retry, no commit lost), AC#3 allocateId race -- two back-to-back allocations yield distinct sequential ids (2 tests: sequential calls + CAS-retry re-allocation), AC#4 cross-branch read (just-filed issue visible from feature branch via readBacklogFromMain). BUG FIXED: removePathsFromIndex used --remove which silently no-ops when the file exists in the working tree; changed to --force-remove. Unit test assertions in migrate-to-dir.test.ts updated accordingly. All 10 user stories in this PRD now pass. Gate spine: typecheck clean, 2056 tests pass (2050 baseline + 6 new).",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "US-009 touched only internal TypeScript source (grep sweep comment cleanup, biome complexity refactoring) and scripts/file-size-budget.json. No external npm library was exercised."
+      "lib": "git-update-index",
+      "version": "current",
+      "url": "https://git-scm.com/docs/git-update-index",
+      "fetchedAt": "2026-06-28T17:30:00Z",
+      "status": "corrected",
+      "summary": "git-scm docs confirm: --remove only removes a file from the index when it is ABSENT from the working tree; --force-remove removes unconditionally. The removePathsFromIndex function in src/git/on-main.ts was using --remove (wrong) and has been corrected to --force-remove."
     }
   ]
 }

@@ -63,7 +63,7 @@ function makeIssuesLocalJson(entries: IssueEntry[]): string {
 //   git show main:scripts/cam/issues.local.json  -> issuesLocalContent (or fail)
 //   git rev-parse main                            -> MAIN_SHA
 //   git read-tree main                            -> ok
-//   git update-index --remove ...                 -> ok  (records the removal)
+//   git update-index --force-remove ...           -> ok  (records the removal)
 //   git hash-object ...                           -> BLOB_SHA
 //   git update-index --add --cacheinfo ...        -> ok  (records cacheinfo path)
 //   git write-tree                                -> TREE_SHA
@@ -163,7 +163,7 @@ describe("migrateIssuesToDir -- AC#1 atomic commit", () => {
 		expect(hashCalls.length).toBe(entries.length);
 	});
 
-	test("issues.local.json deletion uses update-index --remove", () => {
+	test("issues.local.json deletion uses update-index --force-remove", () => {
 		const entries = [makeEntry("CAM-1"), makeEntry("CAM-2")];
 		const { spawnFn, calls } = makeHappySpawn(makeIssuesLocalJson(entries));
 
@@ -172,20 +172,20 @@ describe("migrateIssuesToDir -- AC#1 atomic commit", () => {
 		const removeCalls = calls.filter(
 			(c) =>
 				c.sub === "update-index" &&
-				c.args.includes("--remove") &&
+				c.args.includes("--force-remove") &&
 				c.args.includes("scripts/cam/issues.local.json"),
 		);
 		expect(removeCalls.length).toBe(1);
 	});
 
-	test("update-index --remove fires before the first hash-object (deletion in same commit)", () => {
+	test("update-index --force-remove fires before the first hash-object (deletion in same commit)", () => {
 		const entries = [makeEntry("CAM-1"), makeEntry("CAM-2")];
 		const { spawnFn, calls } = makeHappySpawn(makeIssuesLocalJson(entries));
 
 		migrateIssuesToDir(CWD, spawnFn);
 
 		const removeIdx = calls.findIndex(
-			(c) => c.sub === "update-index" && c.args.includes("--remove"),
+			(c) => c.sub === "update-index" && c.args.includes("--force-remove"),
 		);
 		const firstHashIdx = calls.findIndex((c) => c.sub === "hash-object");
 
