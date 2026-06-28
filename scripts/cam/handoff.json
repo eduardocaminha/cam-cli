@@ -1,24 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Remove the orphaned commitOnMain helper and its tests"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-133-on-main-writer-ref-only",
-  "timestamp": "2026-06-28T01:00:00.000Z",
+  "timestamp": "2026-06-28T02:00:00.000Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/git/on-main.ts",
-    "test/on-main-multi.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "src/commands/journal.ts",
+    "src/commands/triage.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "All three non-operator stories in this PRD now pass. The on-main writer layer is fully ref-only: commitOnMain has been removed from src/git/on-main.ts and its dead tests deleted from test/on-main-multi.test.ts. The writeFile? optional param threading in issue-specify/journal/triage writer options is intentionally left in place for backward compat (no callers remain post-cutover, but removing it would be a breaking public API change -- defer to a follow-up). PRD is ready for /cam-review.",
+  "nextStoryContext": "US-R1-002 is the next story: stale comments in issue-specify.ts still describe the removed on-main git-add+commit path. The module header (line 8), the function docstrings (specifyIssueOnMain/abandonIssueOnMain/mergeIssueOnMain), and the writeFile? option docs (~lines 85/194/235) need updating to reflect the ref-only commitTreeToMain path. Mechanical comment-only fix; no behavior change.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal dead-code removal: no external npm library touched. Removed commitOnMain export from src/git/on-main.ts and its tests from test/on-main-multi.test.ts."
+      "summary": "Pure internal dead-code removal: removed writeFileSync import and dead const writeFile local from journal.ts and triage.ts. No external npm library touched."
     }
   ]
 }
