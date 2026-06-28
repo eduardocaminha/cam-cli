@@ -4,6 +4,15 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.13.0] - 2026-06-28
+
+### Added
+
+- US-004 - Fix live stale lessons.md references in agents, patterns.md, and HANDOFF.md
+- US-003 - Reconcile CONTEXT.md auto-exists claims to the CAM-118 deterministic writer
+- US-002 - Add routing, naming, and location convention rules to scripts/cam/CLAUDE.md
+- US-001 - Retire lessons.md to lessons.archive.md with deprecation header
+
 ## [0.12.0] - 2026-06-28
 
 ### Added
