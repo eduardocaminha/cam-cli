@@ -1,7 +1,7 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Review round 1 fix 002: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
@@ -10,12 +10,12 @@
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-002 fixed: JOURNAL_HELP (index.ts:307) and docs/recovery-runbook.md now correctly describe decisions/blockers/followups as 'strings' (not 'arrays'). Change is two single-word substitutions with no code or test impact. All review round 1 fixes complete. Gates: typecheck clean, 1914 pass / 0 fail.",
+  "nextStoryContext": "US-R2-001 fixed: JOURNAL_HELP (index.ts:312) and docs/recovery-runbook.md:1964 now correctly say em-dash is normalised 'to a colon' (not 'to a hyphen-space sequence'). Change is two single-phrase substitutions with no code or test impact. Gates: typecheck clean, 1914 pass / 0 fail.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-R1-002 is a two-word doc correction (arrays -> strings) in two files. No external npm library was introduced or exercised."
+      "summary": "US-R2-001 is a two-phrase doc correction (hyphen-space sequence -> colon) in two files. No external npm library was introduced or exercised."
     }
   ]
 }
