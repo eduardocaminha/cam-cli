@@ -1,9 +1,25 @@
 {
   "id": "CAM-85",
   "title": "Supervisor: substituir backoff linear por exponencial com jitter nos retries de no-progress/dead-pane",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-25T15:00:00Z",
-  "description": "O mecanismo atual de retry (CAM-36/38/44) usa backoff LINEAR: NO_PROGRESS_BACKOFF_MS * streak (60s, 120s, block). Total de espera antes de bloquear: 180s. Para rate-limits de curto prazo (tipicamente 1-5 min) o linear e suficiente, mas para rate-limits mais longos ou rajadas de crashes transientes, o exponencial seria mais robusto. FIX: substituir `NO_PROGRESS_BACKOFF_MS * streak` por `min(MAX_BACKOFF_MS, BASE_MS * 2^(streak-1)) + jitter`, onde jitter = aleatorio +/-20% do intervalo calculado. Sugestao de parametros: BASE_MS=60_000, MAX_BACKOFF_MS=300_000 (5min), 3 retries => esperas aproximadas de 60s, 120+jitter, 240+jitter antes de bloquear (~6 min total). O jitter evita thundering herd em multiplas instancias e torna o comportamento mais natural. Notar: sleepFn e injetavel nos testes, entao a mudanca e segura sem tocar nos testes existentes (o no-op sleepFn ja abstrai o wait). Prioridade P3: melhoria incremental; o mecanismo atual resolve a maioria dos casos praticos."
+  "description": "O mecanismo atual de retry (CAM-36/38/44) usa backoff LINEAR: NO_PROGRESS_BACKOFF_MS * streak (60s, 120s, block). Total de espera antes de bloquear: 180s. Para rate-limits de curto prazo (tipicamente 1-5 min) o linear e suficiente, mas para rate-limits mais longos ou rajadas de crashes transientes, o exponencial seria mais robusto. FIX: substituir `NO_PROGRESS_BACKOFF_MS * streak` por `min(MAX_BACKOFF_MS, BASE_MS * 2^(streak-1)) + jitter`, onde jitter = aleatorio +/-20% do intervalo calculado. Sugestao de parametros: BASE_MS=60_000, MAX_BACKOFF_MS=300_000 (5min), 3 retries => esperas aproximadas de 60s, 120+jitter, 240+jitter antes de bloquear (~6 min total). O jitter evita thundering herd em multiplas instancias e torna o comportamento mais natural. Notar: sleepFn e injetavel nos testes, entao a mudanca e segura sem tocar nos testes existentes (o no-op sleepFn ja abstrai o wait). Prioridade P3: melhoria incremental; o mecanismo atual resolve a maioria dos casos praticos.",
+  "spec": {
+    "scope": "O mecanismo atual de retry (CAM-36/38/44) usa backoff LINEAR: NO_PROGRESS_BACKOFF_MS * streak (60s, 120s, block). Total de espera antes de bloquear: 180s. Para rate-limits de curto prazo (tipicamente 1-5 min) o linear e suficiente, mas para rate-limits mais longos ou rajadas de crashes transientes, o exponencial seria mais robusto. FIX: substituir `NO_PROGRESS_BACKOFF_MS * streak` por `min(MAX_BACKOFF_MS, BASE_MS * 2^(streak-1)) + jitter`, onde jitter = aleatorio +/-20% do intervalo calculado. Sugestao de parametros: BASE_MS=60_000, MAX_BACKOFF_MS=300_000 (5min), 3 retries => esperas aproximadas de 60s, 120+jitter, 240+jitter antes de bloquear (~6 min total). O jitter evita thundering herd em multiplas instancias e torna o comportamento mais natural. Notar: sleepFn e injetavel nos testes, entao a mudanca e segura sem tocar nos testes existentes (o no-op sleepFn ja abstrai o wait). Prioridade P3: melhoria incremental; o mecanismo atual resolve a maioria dos casos praticos.",
+    "acceptanceCriteria": [
+      "Retry de no-progress/dead-pane usa backoff exponencial com jitter (BASE 60s, MAX 300s, +/-20%)",
+      "sleepFn injetavel preservado nos testes",
+      "typecheck + tests verdes"
+    ],
+    "gotchas": [],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 2
+  }
 }
