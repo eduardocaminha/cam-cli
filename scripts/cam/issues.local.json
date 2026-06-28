@@ -1136,7 +1136,7 @@
     {
       "id": "CAM-122",
       "title": "cam journal append deterministico + fim do jq>budget ad-hoc do orquestrador",
-      "stage": "specified",
+      "stage": "shipped",
       "status": "open",
       "blockedBy": [],
       "createdAt": "2026-06-27T22:07:06.156Z",
