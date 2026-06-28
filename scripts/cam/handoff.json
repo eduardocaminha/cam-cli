@@ -1,25 +1,30 @@
 {
   "lastCompletedStory": {
-    "id": "US-008",
-    "title": "Docs sweep to file-per-issue (dual-copy + embed)"
+    "id": "US-009",
+    "title": "No-vestiges verification + full gate spine green"
   },
   "branchName": "cam/CAM-90-file-per-issue",
-  "timestamp": "2026-06-28T14:00:00Z",
+  "timestamp": "2026-06-28T16:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/patterns.md",
-    "docs/recovery-runbook.md",
+    "src/commands/issue-specify.ts",
+    "src/commands/issue-file.ts",
+    "src/commands/triage.ts",
+    "src/git/on-main.ts",
+    "src/issues/alloc.ts",
+    "src/issues/types.ts",
     "docs/adr/0001-issue-system-redesign.md",
-    "src/vendor/_generated.ts",
+    "scripts/cam/patterns.md",
+    "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-008 complete. All docs now describe file-per-issue. patterns.md: updated lines 18 (next_id->allocateId model), 45, 77, 78, 130, 142 to reference scripts/cam/issues/CAM-NNNN.json. recovery-runbook.md: sections (h), (n), (u.1)-(u.3) updated from issues.local.json shell commands to per-file equivalents. adr/0001: Epico A note updated to reflect migration complete (CAM-90 US-005). src/vendor/_generated.ts regenerated (0 references to issues.local.json or next_id). All 2050 tests pass. Command docs and agent personas were already clean (updated in US-007). Next story is US-009 (no-vestiges verification + full gate spine green).",
+  "nextStoryContext": "US-009 complete. All 9 user stories in this PRD now pass. Grep sweep: zero issues.local.json and next_id references remain in live surface (src/, docs/adr/, patterns.md, README, vendor/_generated.ts) outside the four documented exceptions. Gate spine green: bun run check:all exits 0. Biome lint fixed by helper extraction (removePathsFromIndex, hashAndIndexFiles, commitAndCasAttempt exported from src/git/on-main.ts; withMergedBlockedBy and buildMergeFiles extracted in issue-specify.ts; writeIssueFile in alloc.ts refactored to use new helpers). File-size budgets raised for two test files grown during US-004 on this branch. All 2050 tests pass. PRD is fully complete: all non-operator stories pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-008 touched only internal Markdown docs (patterns.md, recovery-runbook.md, adr/0001) and src/vendor/_generated.ts (codegen). No external npm library was exercised."
+      "summary": "US-009 touched only internal TypeScript source (grep sweep comment cleanup, biome complexity refactoring) and scripts/file-size-budget.json. No external npm library was exercised."
     }
   ]
 }
