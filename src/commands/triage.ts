@@ -260,7 +260,7 @@ export function runTriage(options: RunTriageOptions): TriageResult {
 	// Guard 0a-0c: abort before any mutation.
 	const guard = checkMainUpToDate(cwd, spawnFn);
 	if (!guard.ok) return guard;
-	const { branchWasMain, localMainSha } = guard;
+	const { localMainSha } = guard;
 
 	// 1. Read backlog from main via per-file primitives (never the working tree).
 	const allIssues = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));

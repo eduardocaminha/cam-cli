@@ -353,7 +353,7 @@ export function appendJournalEntryOnMain(
 	if (!guard.ok) {
 		return guard;
 	}
-	const { branchWasMain, localMainSha } = guard;
+	const { localMainSha } = guard;
 
 	// Step 3: Read journal.md from main (NOT the working tree, CAM-86 / US-006 pattern).
 	const showResult = spawnFn(
