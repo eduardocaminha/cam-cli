@@ -1,5 +1,5 @@
 {
-  "next_id": 126,
+  "next_id": 127,
   "issues": [
     {
       "id": "CAM-1",
@@ -1236,6 +1236,15 @@
       "blockedBy": [],
       "createdAt": "2026-06-28T01:44:33.545Z",
       "description": "O agent file do orquestrador documenta a regra '>50 entries: sumarizar o terco mais antigo + arquivar em journal.archive.md', mas e MANUAL e nunca foi executado (journal.md ja tem ~33 entries / ~400 linhas, crescendo sem bound; CAM-123 identificou a falta de GC como parte do drift). PROPOSTA: cam journal archive, comando deterministico irmao do cam journal append (CAM-122, mesmo modulo src/commands/journal.ts): quando journal.md excede um threshold (default 50 entries), MOVE o terco mais antigo pra scripts/cam/journal.archive.md (cumulativo) + header/ponteiro no journal.md, commit no main via commit-tree (mesma plumbing; CAM-124 extrai o helper). Threshold configuravel, clock injetado. Invocado no cycle-close ou check no boot. DESIGN: MOVER puro (deterministico), nao sumarizar (resumo LLM fica pra follow-up). Correlato CAM-122/123/124. Prioridade P3."
+    },
+    {
+      "id": "CAM-126",
+      "title": "build-release.sh:108 ponteiro stale a lessons.md (repointar pra lessons.archive.md)",
+      "stage": "idea",
+      "status": "open",
+      "blockedBy": [],
+      "createdAt": "2026-06-28T02:34:31.514Z",
+      "description": "O comentario em scripts/build-release.sh:108 (Canonical rule: lessons.md 2026-06-06) ainda aponta pro arquivo aposentado no CAM-123 (renomeado pra lessons.archive.md). O AC#7 do CAM-123 proibia editar .sh (so .md + o rename), entao build-release.sh ficou deliberadamente fora de escopo. Repointar o comentario pra lessons.archive.md. Fix trivial de doc, 1 linha. Surfaceado pelo reviewer do CAM-123 (SUGGESTION nao-bloqueante). P3."
     }
   ]
 }
