@@ -1,9 +1,25 @@
 {
   "id": "CAM-82",
   "title": "cam run: verificar login e subscrição Claude Code no startup antes de iniciar o loop",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-25T15:00:00Z",
-  "description": "Hoje o cam run inicia o loop sem checar se o usuario esta logado e com subscricao ativa. Quando nao esta, o worker-pane morre silencioso pre-sessao (instant-exit sem output), o supervisor cai no no-progress backoff (60s * streak) e so bloqueia apos 3 tentativas (3 min de espera). O operador nao ve nenhuma mensagem util. FIX: no startup do cam run (antes de subir o sidecar e o orchestrator pane), rodar `claude --version` ou equivalente que confirma login e retorna rapido; se falhar, imprimir mensagem clara (\"not logged in: run claude to authenticate\") e sair sem subir o loop. Alternativa mais simples: detectar o instant-exit de qualquer worker no PRIMEIRO dispatch como possivel login-fail e imprimir hint. Prioridade P2: melhora DX drasticamente para novos usuarios e apos expiracao de sessao."
+  "description": "Hoje o cam run inicia o loop sem checar se o usuario esta logado e com subscricao ativa. Quando nao esta, o worker-pane morre silencioso pre-sessao (instant-exit sem output), o supervisor cai no no-progress backoff (60s * streak) e so bloqueia apos 3 tentativas (3 min de espera). O operador nao ve nenhuma mensagem util. FIX: no startup do cam run (antes de subir o sidecar e o orchestrator pane), rodar `claude --version` ou equivalente que confirma login e retorna rapido; se falhar, imprimir mensagem clara (\"not logged in: run claude to authenticate\") e sair sem subir o loop. Alternativa mais simples: detectar o instant-exit de qualquer worker no PRIMEIRO dispatch como possivel login-fail e imprimir hint. Prioridade P2: melhora DX drasticamente para novos usuarios e apos expiracao de sessao.",
+  "spec": {
+    "scope": "Hoje o cam run inicia o loop sem checar se o usuario esta logado e com subscricao ativa. Quando nao esta, o worker-pane morre silencioso pre-sessao (instant-exit sem output), o supervisor cai no no-progress backoff (60s * streak) e so bloqueia apos 3 tentativas (3 min de espera). O operador nao ve nenhuma mensagem util. FIX: no startup do cam run (antes de subir o sidecar e o orchestrator pane), rodar `claude --version` ou equivalente que confirma login e retorna rapido; se falhar, imprimir mensagem clara (\"not logged in: run claude to authenticate\") e sair sem subir o loop. Alternativa mais simples: detectar o instant-exit de qualquer worker no PRIMEIRO dispatch como possivel login-fail e imprimir hint. Prioridade P2: melhora DX drasticamente para novos usuarios e apos expiracao de sessao.",
+    "acceptanceCriteria": [
+      "cam run checa login/subscricao no startup antes de subir sidecar e orchestrator pane",
+      "Em falha imprime mensagem clara e sai sem subir o loop",
+      "typecheck + tests verdes"
+    ],
+    "gotchas": [],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 2
+  }
 }
