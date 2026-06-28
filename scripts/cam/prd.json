@@ -97,43 +97,28 @@
       "passes": true,
       "requires": "US-002",
       "notes": "Touches scripts/cam/patterns.md (append a dated bullet in the established `(US-xxx, CAM-122, 2026-06-27)` style), docs/recovery-runbook.md (add a section sibling to `(n) CAM-86: file-on-main backlog filing` at docs/recovery-runbook.md:885), and index.ts (add a JOURNAL_HELP block via renderHelp mirroring ISSUE_HELP at index.ts:241, and a line in the top-level HELP at index.ts:57). No em-dash in persisted .md strings (~/.claude/CLAUDE.md no-em-dash rule); the ONLY allowed em-dash is the journal title format itself, which is product behavior, not doc prose. check:all is `bun scripts/check-all.ts` (package.json), the gate spine (typecheck, test, coverage, file-sizes, dup); run it last. Covers spec AC 9."
+    },
+    {
+      "id": "US-R4-001",
+      "title": "Review round 4 fix 001: add title to journal REQUIRED_FIELDS",
+      "description": "As a maintainer of the journal format, I need validateEntry to reject a cycle entry missing or empty title, so that the deterministic journal write channel never commits a malformed `## <cycleId> : undefined` header to main and validation stays consistent with the non-optional JournalCycleEntry interface, the cam help text, and the recovery runbook.",
+      "acceptanceCriteria": [
+        "REQUIRED_FIELDS in src/commands/journal.ts includes title; validateEntry rejects a payload missing or empty title with a clear error naming the field, a non-zero exit, and no append (nothing committed, no `: undefined` header written). [oracle: bun test test/commands/journal-append.test.ts]",
+        "The cam help text (index.ts) and docs/recovery-runbook.md required-field list stay consistent with the now-8-field REQUIRED_FIELDS, so validation, interface, help, and docs all agree on 8 required fields including title (no doc/code divergence). [oracle: file-assert the required-field count and list match between REQUIRED_FIELDS in src/commands/journal.ts and the lists in index.ts JOURNAL_HELP and docs/recovery-runbook.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full gate spine passes. [oracle: bun run check:all]"
+      ],
+      "priority": 9,
+      "passes": false,
+      "requires": null,
+      "notes": "Mechanical fix, option (a): ADD 'title' to REQUIRED_FIELDS (src/commands/journal.ts:148-156) so validateEntry rejects a missing/empty title. title is genuinely required: renderJournalBlock renders it into the `## <cycleId> : <title>` header, and a missing title currently emits a `: undefined` header committed to main. This matches the non-optional JournalCycleEntry interface (src/commands/journal.ts:48), the help text (index.ts ~311 already lists title), and docs/recovery-runbook.md (~1985/2001/2036 already say 8 required fields). Do NOT downgrade the docs to 7 fields. Scope is <=2 files: src/commands/journal.ts REQUIRED_FIELDS plus a test asserting missing-title rejection in test/commands/journal-append.test.ts (and a one-line help/doc reconciliation only if a mismatch surfaces; current help+runbook already list 8). OUT of scope (backlog/triaged): the non-null-object guard on JSON.parse at index.ts, the legacy `:`-separator dedup edge case, and the jscpd 3rd-copy extraction follow-up. Do not expand scope."
     }
   ],
   "review": {
-    "roundsCompleted": 3,
-    "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:1",
-    "findings": [
-      {
-        "severity": "WARNING",
-        "file": "test/commands/journal-append.test.ts",
-        "line": 312,
-        "text": "AC5's stdout-sentinel oracle (assert the stdout last line matches /^CAM_JOURNAL_APPENDED=.+ sha=.+$/) is satisfied only by a tautological test (lines 312-320) that builds the literal in the test body and asserts it matches the regex. No test executes the `case 'journal'` dispatch in index.ts, so the actual `process.stdout.write` sentinel emission, the invalid-JSON guard, the unknown-subcommand error, and the --force arg parse are all uncovered. The sibling `issue` command extracted `dispatchIssue` precisely so this is testable. Extract a `dispatchJournal` helper (or add a stdin-injected dispatch test) and assert against real captured stdout."
-      },
-      {
-        "severity": "WARNING",
-        "file": ".jscpd.json",
-        "line": 2,
-        "text": "Non-blocking: dup threshold raised 5->6 to absorb a 3rd verbatim copy of the commit-tree-to-main plumbing (buildIndexEnv/checkMainUpToDate/commitTreeToMain/pushMainBestEffort) now also in journal.ts. PRD-sanctioned (US-001 notes bless copying when extraction is not surgical), so it is not a blocker, but the cleaner long-term path is a follow-up issue to extract a shared on-main helper module rather than loosening the repo-wide gate again."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "index.ts",
-        "line": 1396,
-        "text": "JSON.parse result is cast to JournalCycleEntry with no non-null-object guard; piping `null` parses fine then crashes validateEntry (null[field]) with an unhandled TypeError. It is loud and exits non-zero, but not the clean 'missing required fields' error. Add an `if (typeof entry !== 'object' || entry === null)` guard before the call."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "src/commands/journal.ts",
-        "line": 185,
-        "text": "hasDuplicateCycleId/replaceCycleBlock key on the trailing-space `## <cycleId> ` convention, which matches em-dash-format entries but misses the 19 of 29 legacy entries that use a `: ` separator (e.g. `## cam/CAM-48-...:`). Re-appending such a cycleId would create a duplicate instead of rejecting/replacing. Pre-existing-data edge case only."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "src/commands/journal.ts",
-        "line": 280,
-        "text": "The 'all 33 existing entries use em-dash' justification in the comments (and prd.json notes) is inaccurate: 19 of 29 real entries use a `: ` separator and only 10 use ` — `. The em-dash render still matches the documented Format template and the most-recent entries, so the behavior is fine, but the justifying comment overstates the corpus."
-      }
-    ]
+    "roundsCompleted": 0,
+    "maxRounds": 4,
+    "lastVerdict": null,
+    "findings": []
   }
 }
