@@ -354,7 +354,7 @@ describe('parseJournalArgs', () => {
 // ---------------------------------------------------------------------------
 
 describe('dispatchJournal', () => {
-	test('valid JSON + appendFn ok:true -- writes sentinel to stdout and returns 0', async () => {
+	test('valid JSON + appendFn ok:true -- writes both sentinels to stdout and returns 0', async () => {
 		const stdoutLines: string[] = [];
 		const parsed = parseJournalArgs(['append']);
 		expect(parsed).not.toBeNull();
@@ -368,15 +368,17 @@ describe('dispatchJournal', () => {
 				sha: 'dead123',
 			}),
 			writeStdout: (line) => stdoutLines.push(line),
+			recordCycleTokensFn: () => {}, // no-op: avoid real I/O in this test
 		});
 
 		expect(code).toBe(0);
-		expect(stdoutLines).toHaveLength(1);
-		const sentinel = stdoutLines[0] ?? '';
-		// The actual sentinel emitted by the real dispatch code matches AC5 regex.
-		expect(sentinel).toMatch(/^CAM_JOURNAL_APPENDED=.+ sha=.+\n$/);
-		expect(sentinel).toContain(`CAM_JOURNAL_APPENDED=${SAMPLE_ENTRY.cycleId}`);
-		expect(sentinel).toContain('sha=dead123');
+		// Line 0: CAM_JOURNAL_APPENDED; Line 1: CAM_ORCH_HANDOFF_DUE=true
+		expect(stdoutLines).toHaveLength(2);
+		const journalLine = stdoutLines[0] ?? '';
+		expect(journalLine).toMatch(/^CAM_JOURNAL_APPENDED=.+ sha=.+\n$/);
+		expect(journalLine).toContain(`CAM_JOURNAL_APPENDED=${SAMPLE_ENTRY.cycleId}`);
+		expect(journalLine).toContain('sha=dead123');
+		expect(stdoutLines[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
 	});
 
 	test('invalid JSON from stdin -- returns 1 and no sentinel emitted', async () => {
@@ -437,6 +439,7 @@ describe('dispatchJournal', () => {
 				return { ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'abc' };
 			},
 			writeStdout: () => {},
+			recordCycleTokensFn: () => {}, // no-op: avoid real I/O
 		});
 
 		expect(capturedForce).toBe(true);
@@ -455,6 +458,7 @@ describe('dispatchJournal', () => {
 				return { ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'abc' };
 			},
 			writeStdout: () => {},
+			recordCycleTokensFn: () => {}, // no-op: avoid real I/O
 		});
 
 		expect(capturedForce).toBe(false);
@@ -473,10 +477,97 @@ describe('dispatchJournal', () => {
 				return { ok: true, cycleId: entry.cycleId, sha: 'abc' };
 			},
 			writeStdout: () => {},
+			recordCycleTokensFn: () => {}, // no-op: avoid real I/O
 		});
 
 		expect(capturedEntry?.cycleId).toBe(SAMPLE_ENTRY.cycleId);
 		expect(capturedEntry?.summary).toBe(SAMPLE_ENTRY.summary);
+	});
+
+	// ---------------------------------------------------------------------------
+	// US-002 AC4: both lines emitted in order on success; CAM_ORCH_HANDOFF_DUE
+	// absent on failure
+	// ---------------------------------------------------------------------------
+
+	test('US-002 AC4: success path emits CAM_JOURNAL_APPENDED then CAM_ORCH_HANDOFF_DUE=true in order', async () => {
+		const emitted: string[] = [];
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({
+				ok: true,
+				cycleId: SAMPLE_ENTRY.cycleId,
+				sha: 'sha1234',
+			}),
+			writeStdout: (line) => emitted.push(line),
+			recordCycleTokensFn: () => {}, // no-op: avoid real I/O
+		});
+
+		expect(code).toBe(0);
+		// Exactly two lines emitted
+		expect(emitted).toHaveLength(2);
+		// Line 0: CAM_JOURNAL_APPENDED
+		expect(emitted[0]).toMatch(/^CAM_JOURNAL_APPENDED=/);
+		// Line 1: CAM_ORCH_HANDOFF_DUE=true (unconditional, no threshold)
+		expect(emitted[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
+	});
+
+	test('US-002 AC4: CAM_ORCH_HANDOFF_DUE absent when appendFn returns ok:false', async () => {
+		const emitted: string[] = [];
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: false, reason: 'diverged' as const }),
+			writeStdout: (line) => emitted.push(line),
+			recordCycleTokensFn: () => {}, // no-op: should not be reached
+		});
+
+		expect(code).toBe(1);
+		// No output at all on failure
+		expect(emitted).toHaveLength(0);
+		expect(emitted.join('')).not.toContain('CAM_ORCH_HANDOFF_DUE');
+	});
+
+	test('US-002 AC4: recordCycleTokensFn is called exactly once on success', async () => {
+		let callCount = 0;
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({
+				ok: true,
+				cycleId: SAMPLE_ENTRY.cycleId,
+				sha: 'abc',
+			}),
+			writeStdout: () => {},
+			recordCycleTokensFn: () => { callCount++; },
+		});
+
+		expect(callCount).toBe(1);
+	});
+
+	test('US-002 AC4: recordCycleTokensFn NOT called on appendFn failure', async () => {
+		let callCount = 0;
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: false, reason: 'missing-main' as const }),
+			writeStdout: () => {},
+			recordCycleTokensFn: () => { callCount++; },
+		});
+
+		expect(callCount).toBe(0);
 	});
 });
 
