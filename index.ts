@@ -30,6 +30,7 @@ import {
 import {
 	appendJournalEntryOnMain,
 	type JournalCycleEntry,
+	type AppendJournalEntryOnMainResult,
 } from './src/commands/journal.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runNext } from './src/commands/next.ts';
@@ -1004,6 +1005,88 @@ function _buildBumpOpts(cwd: string) {
 }
 
 // ---------------------------------------------------------------------------
+// cam journal dispatch (exported for unit testing with injectable deps)
+// ---------------------------------------------------------------------------
+
+/**
+ * Discriminated union returned by parseJournalArgs.
+ * - mode === 'append': dispatch the journal append subcommand.
+ * - help === true: caller should print JOURNAL_HELP and exit 0.
+ */
+export type ParsedJournalArgs = { mode: 'append'; force: boolean; help: false } | { mode?: never; help: true };
+
+export function parseJournalArgs(args: string[]): ParsedJournalArgs | null {
+	if (args.includes('--help') || args.includes('-h')) {
+		return { help: true };
+	}
+	const subCommand = args[0];
+	if (subCommand !== 'append') {
+		printFatalHint('Usage: cam journal append [--force]  (reads JSON from stdin)');
+		return null;
+	}
+	const force = args.slice(1).includes('--force');
+	return { mode: 'append', force, help: false };
+}
+
+/** Injectable deps for dispatchJournal -- all optional; production uses real impls. */
+export interface JournalDispatchDeps {
+	/** Injectable stdin reader. Default: `Bun.stdin.text()`. */
+	readStdin?: () => Promise<string>;
+	/**
+	 * Injectable appendJournalEntryOnMain.
+	 * Default: calls the real impl with process.cwd() and a real spawnSync.
+	 */
+	appendFn?: (entry: JournalCycleEntry, force: boolean) => AppendJournalEntryOnMainResult;
+	/** Injectable stdout writer. Default: `process.stdout.write`. */
+	writeStdout?: (line: string) => void;
+}
+
+/**
+ * Route a parsed `cam journal` call.  Exported so unit tests can inject fakes
+ * for stdin, appendFn, and writeStdout to verify sentinel emission, the
+ * invalid-JSON guard, and --force propagation without touching real git or I/O.
+ */
+export async function dispatchJournal(
+	parsed: ParsedJournalArgs,
+	deps?: JournalDispatchDeps,
+): Promise<number> {
+	if (parsed.help) {
+		process.stdout.write(JOURNAL_HELP);
+		return 0;
+	}
+	const readStdin = deps?.readStdin ?? (() => Bun.stdin.text());
+	const writeStdout =
+		deps?.writeStdout ?? ((line: string) => { process.stdout.write(line); });
+
+	const stdinText = await readStdin();
+	let journalEntry: JournalCycleEntry;
+	try {
+		journalEntry = JSON.parse(stdinText) as JournalCycleEntry;
+	} catch (err) {
+		printError(`cam journal append: invalid JSON from stdin: ${String(err)}`);
+		return 1;
+	}
+
+	const journalResult: AppendJournalEntryOnMainResult = deps?.appendFn
+		? deps.appendFn(journalEntry, parsed.force)
+		: appendJournalEntryOnMain({
+				cwd: process.cwd(),
+				entry: journalEntry,
+				spawnFn: (cmd, args, opts) =>
+					spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
+				force: parsed.force,
+		  });
+
+	if (!journalResult.ok) {
+		// printError already fired inside appendJournalEntryOnMain
+		return 1;
+	}
+
+	writeStdout(`CAM_JOURNAL_APPENDED=${journalResult.cycleId} sha=${journalResult.sha}\n`);
+	return 0;
+}
+
+// ---------------------------------------------------------------------------
 // cam issue dispatch (exported for unit testing with injectable deps)
 // ---------------------------------------------------------------------------
 
@@ -1378,42 +1461,13 @@ async function main(argv: string[]): Promise<number> {
 			return runRetryMonitor({ pane: parsed.pane, pid: parsed.pid });
 		}
 		case 'journal': {
-			// `cam journal append [--force]` -- reads a JSON cycle entry on stdin,
-			// appends it to scripts/cam/journal.md on main via commit-tree, prints
-			// the sentinel.  --force replaces a duplicate cycleId entry in place.
-			const subCommand = argv[3];
-			if (subCommand === '--help' || argv.slice(3).includes('--help')) {
+			const parsed = parseJournalArgs(argv.slice(3));
+			if (parsed === null) return 1;
+			if (parsed.help) {
 				process.stdout.write(JOURNAL_HELP);
 				return 0;
 			}
-			if (subCommand !== 'append') {
-				printFatalHint('Usage: cam journal append [--force]  (reads JSON from stdin)');
-				return 1;
-			}
-			const force = argv.slice(4).includes('--force');
-			const stdinText = await Bun.stdin.text();
-			let journalEntry: JournalCycleEntry;
-			try {
-				journalEntry = JSON.parse(stdinText) as JournalCycleEntry;
-			} catch (err) {
-				printError(`cam journal append: invalid JSON from stdin: ${String(err)}`);
-				return 1;
-			}
-			const journalResult = appendJournalEntryOnMain({
-				cwd: process.cwd(),
-				entry: journalEntry,
-				spawnFn: (cmd, args, opts) =>
-					spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
-				force,
-			});
-			if (!journalResult.ok) {
-				// printError already fired inside appendJournalEntryOnMain
-				return 1;
-			}
-			process.stdout.write(
-				`CAM_JOURNAL_APPENDED=${journalResult.cycleId} sha=${journalResult.sha}\n`,
-			);
-			return 0;
+			return dispatchJournal(parsed);
 		}
 		default:
 			printError(`unknown command: ${command}`);

@@ -10,30 +10,37 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R3-001",
+      "title": "Review round 3 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [test/commands/journal-append.test.ts:312]: AC5's stdout-sentinel oracle (assert the stdout last line matches /^CAM_JOURNAL_APPENDED=.+ sha=.+$/) is satisfied only by a tautological test (lines 312-320) that builds the literal in the test body and asserts it matches the regex. No test executes the `case 'journal'` dispatch in index.ts, so the actual `process.stdout.write` sentinel emission, the invalid-JSON guard, the unknown-subcommand error, and the --force arg parse are all uncovered. The sibling `issue` command extracted `dispatchIssue` precisely so this is testable. Extract a `dispatchJournal` helper (or add a stdin-injected dispatch test) and assert against real captured stdout."
+    },
+    {
       "id": "US-R2-001",
       "title": "Review round 2 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "notes": "WARNING [index.ts:312]: Doc/code mismatch: JOURNAL_HELP (index.ts:312) and docs/recovery-runbook.md:1964 both say em-dash (U+2014) is normalised 'to a hyphen-space sequence', but normalizeEmDash (src/commands/journal.ts:175) replaces it with a colon ':' (the unit test at journal-append.test.ts:493 asserts 'A : and'). Correct both doc strings to say the replacement is a colon."
     },
     {
       "id": "US-R2-002",
       "title": "Review round 2 fix 002: address reviewer finding",
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "notes": "WARNING [src/commands/journal.ts:497]: Swallowed git-show error + false runbook claim: appendJournalEntryOnMain reads `git show main:scripts/cam/journal.md` but never checks showResult.status (line 497 does `showResult.stdout ?? ''`). A missing/failed read yields empty content and the command commits a header-less journal (no `# Cam Journal` heading, no `<!-- ENTRIES_BELOW -->` marker). docs/recovery-runbook.md:2019-2020 claims the command 'writes a new file with a standard header block' on first use, which the code does not do. Either check the show status and bootstrap the canonical header, or correct the runbook to state journal.md must pre-exist on main."
     },
     {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "notes": "CRITICAL [src/commands/journal.ts:304]: renderJournalBlock emits `- **Blockers**:` and `- **Followups**:`, but the canonical `## Format` template in scripts/cam/journal.md and all 30 existing entries use `- **Blockers encountered**:` and `- **Follow-ups**:`. CAM-122's stated purpose is a command-guaranteed format; the command guarantees labels that diverge from the entire existing journal corpus and the documented template. The US-002 AC2 test (lines 460-462) asserts the divergent labels, so the green gate does not catch this. Fix the two render labels (and the test assertions) to match canonical."
     },
     {
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "notes": "WARNING [index.ts:307]: JOURNAL_HELP (index.ts:307) and docs/recovery-runbook.md describe optional fields decisions/blockers/followups as \"arrays\", but the JournalCycleEntry schema types them as `string`. Following the docs and piping a JSON array would crash normalizeEmDash (.replace on a non-string). Correct the docs to say string, or accept arrays in the schema."
     },
@@ -51,7 +58,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "New code under src/commands/journal.ts; unit test test/commands/journal-append.test.ts; real-git integration test test/integration/journal-append-on-main.test.ts; index.ts dispatch (mirror the `case 'issue'` -> dispatchIssue --file-local path at index.ts:994-1035, which reads Bun.stdin.text(), JSON.parse, calls the on-main writer, prints a hint, returns exit code). REUSE the commit-tree-to-main plumbing: src/commands/issue-file.ts createLocalIssueOnMain and src/commands/issue-specify.ts specifyIssueOnMain are the templates (widened SpawnFn `{encoding:'utf8'; env?:Record<string,string>; input?:string}`, buildIndexEnv, checkMainUpToDate guard, commitOnMain vs commitTreeToMain, pushMainBestEffort). Factor shared helpers only if it stays surgical; do NOT reinvent the plumbing. Read journal.md from main via `git show main:scripts/cam/journal.md` (patterns.md US-006 CAM-86, line 77), never the working tree. Append after the existing tail, preserving the `<!-- ENTRIES_BELOW -->` marker and the existing entries (canonical format documented in scripts/cam/journal.md `## Format`). Determinism: started/closed come from the input JSON, clock is injected (mirror ship-finalize/specify, patterns.md gotcha); never Date.now()/new Date() for content. The header title em-dash (U+2014) is intentional and structural (all 33 existing entries use it); this story renders it in the title. Real-git integration test pattern: test/integration/issue-file-on-main.test.ts is the exact template (gitAvailable skip guard via spawnSync git --version, mkdtempSync repo, git init + symbolic-ref HEAD refs/heads/main + user config, seed+commit baseline journal.md on main, realSpawnFn forwarding env+input over spawnSync, afterEach rmSync cleanup) (patterns.md US-004 CAM-72, line 44). spawnSync does NOT throw on non-zero exit: check `(result.status ?? 1) !== 0` (patterns.md line 81). This command IS the gated write channel for the read-only orchestrator (the point of CAM-122); it replaces the ad-hoc jq-redirect / Write. Covers spec AC 1, 6, 7, 8."
@@ -68,7 +75,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": "US-001",
       "notes": "Extends src/commands/journal.ts (rendering + validation pure helpers) and test/commands/journal-append.test.ts. Validation guard order mirrors patterns.md US-003 CAM-107 (line 130): validate pure inputs BEFORE the `git show main:scripts/cam/journal.md` read where possible; duplicate-cycleId is a state check against the journal read from main. Discriminated-union error shape: members without `errors` must NOT carry it; callers narrow with `'errors' in result` (patterns.md line 130). Em-dash rule: normalize U+2014 ONLY in the body (Summary/Decisions/Blockers/Followups/Outcome text), NEVER the title (spec gotcha 4: deliberate exception specific to the journal title format, all 33 existing entries use it). Use the same normalization the project applies elsewhere for persisted .md (replace U+2014 with a project-approved substitute per ~/.claude/CLAUDE.md no-em-dash rule; the title is the documented exception). --force replace-in-place: locate the existing `## <cycleId> ` block in the journal text and swap it; do not duplicate. Determinism preserved (no Date.now/new Date). Covers spec AC 2, 3, 4, 5."
@@ -86,46 +93,46 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": true,
       "requires": "US-002",
       "notes": "Touches scripts/cam/patterns.md (append a dated bullet in the established `(US-xxx, CAM-122, 2026-06-27)` style), docs/recovery-runbook.md (add a section sibling to `(n) CAM-86: file-on-main backlog filing` at docs/recovery-runbook.md:885), and index.ts (add a JOURNAL_HELP block via renderHelp mirroring ISSUE_HELP at index.ts:241, and a line in the top-level HELP at index.ts:57). No em-dash in persisted .md strings (~/.claude/CLAUDE.md no-em-dash rule); the ONLY allowed em-dash is the journal title format itself, which is product behavior, not doc prose. check:all is `bun scripts/check-all.ts` (package.json), the gate spine (typecheck, test, coverage, file-sizes, dup); run it last. Covers spec AC 9."
     }
   ],
   "review": {
-    "roundsCompleted": 2,
+    "roundsCompleted": 3,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:2",
+    "lastVerdict": "FIXES_PENDING:1",
     "findings": [
       {
         "severity": "WARNING",
-        "file": "index.ts",
+        "file": "test/commands/journal-append.test.ts",
         "line": 312,
-        "text": "Doc/code mismatch: JOURNAL_HELP (index.ts:312) and docs/recovery-runbook.md:1964 both say em-dash (U+2014) is normalised 'to a hyphen-space sequence', but normalizeEmDash (src/commands/journal.ts:175) replaces it with a colon ':' (the unit test at journal-append.test.ts:493 asserts 'A : and'). Correct both doc strings to say the replacement is a colon."
-      },
-      {
-        "severity": "WARNING",
-        "file": "src/commands/journal.ts",
-        "line": 497,
-        "text": "Swallowed git-show error + false runbook claim: appendJournalEntryOnMain reads `git show main:scripts/cam/journal.md` but never checks showResult.status (line 497 does `showResult.stdout ?? ''`). A missing/failed read yields empty content and the command commits a header-less journal (no `# Cam Journal` heading, no `<!-- ENTRIES_BELOW -->` marker). docs/recovery-runbook.md:2019-2020 claims the command 'writes a new file with a standard header block' on first use, which the code does not do. Either check the show status and bootstrap the canonical header, or correct the runbook to state journal.md must pre-exist on main."
+        "text": "AC5's stdout-sentinel oracle (assert the stdout last line matches /^CAM_JOURNAL_APPENDED=.+ sha=.+$/) is satisfied only by a tautological test (lines 312-320) that builds the literal in the test body and asserts it matches the regex. No test executes the `case 'journal'` dispatch in index.ts, so the actual `process.stdout.write` sentinel emission, the invalid-JSON guard, the unknown-subcommand error, and the --force arg parse are all uncovered. The sibling `issue` command extracted `dispatchIssue` precisely so this is testable. Extract a `dispatchJournal` helper (or add a stdin-injected dispatch test) and assert against real captured stdout."
       },
       {
         "severity": "WARNING",
         "file": ".jscpd.json",
         "line": 2,
-        "text": "Non-blocking (carried from round 1): dup threshold raised 5->6 to absorb a third verbatim copy of the commit-tree-to-main plumbing (buildIndexEnv/checkMainUpToDate/commitTreeToMain/pushMainBestEffort) now also in journal.ts. Follows the existing 2-copy precedent (issue-file.ts + issue-specify.ts); the cleaner path is extracting a shared on-main helper module rather than loosening the repo-wide dup gate."
+        "text": "Non-blocking: dup threshold raised 5->6 to absorb a 3rd verbatim copy of the commit-tree-to-main plumbing (buildIndexEnv/checkMainUpToDate/commitTreeToMain/pushMainBestEffort) now also in journal.ts. PRD-sanctioned (US-001 notes bless copying when extraction is not surgical), so it is not a blocker, but the cleaner long-term path is a follow-up issue to extract a shared on-main helper module rather than loosening the repo-wide gate again."
       },
       {
         "severity": "SUGGESTION",
         "file": "index.ts",
-        "line": 1397,
-        "text": "JSON.parse(stdinText) is cast to JournalCycleEntry with no non-null-object guard; piping `null` parses fine but then crashes validateEntry (entry[field] on null) with an unhandled TypeError instead of a clean error + exit 1."
+        "line": 1396,
+        "text": "JSON.parse result is cast to JournalCycleEntry with no non-null-object guard; piping `null` parses fine then crashes validateEntry (null[field]) with an unhandled TypeError. It is loud and exits non-zero, but not the clean 'missing required fields' error. Add an `if (typeof entry !== 'object' || entry === null)` guard before the call."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/commands/journal.ts",
         "line": 185,
-        "text": "hasDuplicateCycleId relies on the trailing-space `## <cycleId> ` convention. Legacy entries written with a ':' separator (e.g. the existing `## cam/CAM-48-...:` entry) would not be detected as duplicates. Minor pre-existing-data edge case."
+        "text": "hasDuplicateCycleId/replaceCycleBlock key on the trailing-space `## <cycleId> ` convention, which matches em-dash-format entries but misses the 19 of 29 legacy entries that use a `: ` separator (e.g. `## cam/CAM-48-...:`). Re-appending such a cycleId would create a duplicate instead of rejecting/replacing. Pre-existing-data edge case only."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/journal.ts",
+        "line": 280,
+        "text": "The 'all 33 existing entries use em-dash' justification in the comments (and prd.json notes) is inaccurate: 19 of 29 real entries use a `: ` separator and only 10 use ` — `. The em-dash render still matches the documented Format template and the most-recent entries, so the behavior is fine, but the justifying comment overstates the corpus."
       }
     ]
   }

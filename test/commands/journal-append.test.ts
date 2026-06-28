@@ -18,7 +18,7 @@
 //   AC3: em-dash normalization in body fields; header retains em-dash.
 //   AC4: duplicate cycleId rejected without --force; replaced in-place with --force.
 
-import { test, expect } from 'bun:test';
+import { test, expect, describe } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
 import {
 	renderJournalBlock,
@@ -27,6 +27,7 @@ import {
 	type JournalCycleEntry,
 	type AppendJournalEntryOnMainValidationError,
 } from '../../src/commands/journal.ts';
+import { dispatchJournal, parseJournalArgs } from '../../index.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -306,17 +307,186 @@ test('appendJournalEntryOnMain: push failure -- returns ok:true and logs error',
 });
 
 // ---------------------------------------------------------------------------
-// Tests: stdout sentinel format
+// Tests: parseJournalArgs (extracted parser, exercises unknown-subcommand guard
+// and --force arg parse that were previously uncovered)
 // ---------------------------------------------------------------------------
 
-test('CAM_JOURNAL_APPENDED sentinel line format matches expected pattern', () => {
-	// Validate the exact string the caller (index.ts) would print.
-	const cycleId = 'cam/CAM-122-journal-append';
-	const sha = 'dead123';
-	const sentinel = `CAM_JOURNAL_APPENDED=${cycleId} sha=${sha}`;
+describe('parseJournalArgs', () => {
+	test('--help returns { help: true }', () => {
+		expect(parseJournalArgs(['--help'])).toEqual({ help: true });
+	});
 
-	// This is the literal that index.ts writes; verify it matches the AC regex.
-	expect(sentinel).toMatch(/^CAM_JOURNAL_APPENDED=.+ sha=.+$/);
+	test('-h returns { help: true }', () => {
+		expect(parseJournalArgs(['-h'])).toEqual({ help: true });
+	});
+
+	test('append with no flags returns { mode: "append", force: false, help: false }', () => {
+		expect(parseJournalArgs(['append'])).toEqual({ mode: 'append', force: false, help: false });
+	});
+
+	test('append --force returns { mode: "append", force: true, help: false }', () => {
+		expect(parseJournalArgs(['append', '--force'])).toEqual({ mode: 'append', force: true, help: false });
+	});
+
+	test('unknown subcommand returns null (triggers printFatalHint)', () => {
+		const stderrLines: string[] = [];
+		const originalWrite = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string') stderrLines.push(chunk);
+			return true;
+		};
+		try {
+			expect(parseJournalArgs(['unknown'])).toBeNull();
+		} finally {
+			process.stderr.write = originalWrite;
+		}
+	});
+
+	test('no subcommand returns null', () => {
+		const stderrLines: string[] = [];
+		const originalWrite = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string') stderrLines.push(chunk);
+			return true;
+		};
+		try {
+			expect(parseJournalArgs([])).toBeNull();
+		} finally {
+			process.stderr.write = originalWrite;
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: dispatchJournal (exercises sentinel emission, invalid-JSON guard,
+// --force propagation -- all previously uncovered by the tautological test)
+// ---------------------------------------------------------------------------
+
+describe('dispatchJournal', () => {
+	test('valid JSON + appendFn ok:true -- writes sentinel to stdout and returns 0', async () => {
+		const stdoutLines: string[] = [];
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: (_entry, _force) => ({
+				ok: true,
+				cycleId: SAMPLE_ENTRY.cycleId,
+				sha: 'dead123',
+			}),
+			writeStdout: (line) => stdoutLines.push(line),
+		});
+
+		expect(code).toBe(0);
+		expect(stdoutLines).toHaveLength(1);
+		const sentinel = stdoutLines[0] ?? '';
+		// The actual sentinel emitted by the real dispatch code matches AC5 regex.
+		expect(sentinel).toMatch(/^CAM_JOURNAL_APPENDED=.+ sha=.+\n$/);
+		expect(sentinel).toContain(`CAM_JOURNAL_APPENDED=${SAMPLE_ENTRY.cycleId}`);
+		expect(sentinel).toContain('sha=dead123');
+	});
+
+	test('invalid JSON from stdin -- returns 1 and no sentinel emitted', async () => {
+		const stdoutLines: string[] = [];
+		const stderrLines: string[] = [];
+		const originalWrite = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string') stderrLines.push(chunk);
+			return true;
+		};
+
+		try {
+			const parsed = parseJournalArgs(['append']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => '{ not valid json',
+				appendFn: () => ({ ok: true, cycleId: 'x', sha: 'abc' }),
+				writeStdout: (line) => stdoutLines.push(line),
+			});
+
+			expect(code).toBe(1);
+			expect(stdoutLines).toHaveLength(0);
+			// printError should have fired for the invalid JSON
+			expect(stderrLines.join('')).toMatch(/invalid JSON/i);
+		} finally {
+			process.stderr.write = originalWrite;
+		}
+	});
+
+	test('appendFn returns ok:false -- returns 1 and no sentinel emitted', async () => {
+		const stdoutLines: string[] = [];
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: false, reason: 'duplicate-cycleId' as const }),
+			writeStdout: (line) => stdoutLines.push(line),
+		});
+
+		expect(code).toBe(1);
+		expect(stdoutLines).toHaveLength(0);
+	});
+
+	test('--force flag is propagated to appendFn', async () => {
+		let capturedForce: boolean | undefined;
+		const parsed = parseJournalArgs(['append', '--force']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: (_entry, force) => {
+				capturedForce = force;
+				return { ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'abc' };
+			},
+			writeStdout: () => {},
+		});
+
+		expect(capturedForce).toBe(true);
+	});
+
+	test('no --force flag -- force is false in appendFn', async () => {
+		let capturedForce: boolean | undefined;
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: (_entry, force) => {
+				capturedForce = force;
+				return { ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'abc' };
+			},
+			writeStdout: () => {},
+		});
+
+		expect(capturedForce).toBe(false);
+	});
+
+	test('appendFn receives the parsed JSON entry', async () => {
+		let capturedEntry: JournalCycleEntry | undefined;
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: (entry, _force) => {
+				capturedEntry = entry;
+				return { ok: true, cycleId: entry.cycleId, sha: 'abc' };
+			},
+			writeStdout: () => {},
+		});
+
+		expect(capturedEntry?.cycleId).toBe(SAMPLE_ENTRY.cycleId);
+		expect(capturedEntry?.summary).toBe(SAMPLE_ENTRY.summary);
+	});
 });
 
 // ---------------------------------------------------------------------------
