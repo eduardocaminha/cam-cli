@@ -1,30 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Make journal-append and triage on-main writers ref-only"
+    "id": "US-003",
+    "title": "Remove the orphaned commitOnMain helper and its tests"
   },
   "branchName": "cam/CAM-133-on-main-writer-ref-only",
-  "timestamp": "2026-06-28T00:00:00.000Z",
-  "createdFiles": [
-    "test/integration/journal-ref-only.test.ts",
-    "test/integration/triage-ref-only.test.ts"
-  ],
+  "timestamp": "2026-06-28T01:00:00.000Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/journal.ts",
-    "src/commands/triage.ts",
-    "test/commands/journal-append.test.ts",
-    "test/triage.test.ts",
-    "test/integration/journal-append-on-main.test.ts",
+    "src/git/on-main.ts",
+    "test/on-main-multi.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 removes the now-orphaned commitOnMain helper from src/git/on-main.ts (and its tests). Both callers (journal.ts and triage.ts) were converted to commitTreeToMain in US-002; issue-specify.ts callers were converted in US-001. After US-003 the commitOnMain export can be deleted along with its tests. The writeFile? optional on RunTriageOptions and AppendJournalEntryOnMainOptions is retained for backward compat (no callers left, but removing it would be a breaking public API change -- leave for a follow-up).",
+  "nextStoryContext": "All three non-operator stories in this PRD now pass. The on-main writer layer is fully ref-only: commitOnMain has been removed from src/git/on-main.ts and its dead tests deleted from test/on-main-multi.test.ts. The writeFile? optional param threading in issue-specify/journal/triage writer options is intentionally left in place for backward compat (no callers remain post-cutover, but removing it would be a breaking public API change -- defer to a follow-up). PRD is ready for /cam-review.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal git plumbing refactor: no external npm library touched."
+      "summary": "Pure internal dead-code removal: no external npm library touched. Removed commitOnMain export from src/git/on-main.ts and its tests from test/on-main-multi.test.ts."
     }
   ]
 }
