@@ -98,7 +98,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Touch ONLY src/issues/select.ts (selectPlannableFromFile lines 70-81: replace the `${cwd}/scripts/cam/issues.local.json` read + JSON.parse(...).issues with readBacklogFromMain(cwd)). VERIFIED REPO FACTS (do not chase phantom paths): (a) dashboard.ts reads only prd.json + the event log (.claude/cam-worker-events.jsonl), NOT the issues backlog - there is no dashboard issue-listing code path to convert; (b) selectPlannableFromFile has ZERO static importers in src/ (the only grep hit is inside an embedded VALUE in src/vendor/_generated.ts, i.e. the cam-plan.md doc text, not compiled dispatch); (c) the real none-backend read path is the orchestrator's shell command `git show main:scripts/cam/issues.local.json 2>/dev/null || cat scripts/cam/issues.local.json` in cam-plan.md - that is a DOC change owned by US-008, not code. selectPlannableIssue (the pure sort/filter, select.ts lines 28-61) stays unchanged. Keep returning null on read/parse error (thin I/O seam). Maps spec AC#5 (readers). requires US-002 (readBacklogFromMain)."
     },
