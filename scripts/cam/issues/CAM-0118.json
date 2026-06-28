@@ -1,9 +1,25 @@
 {
   "id": "CAM-118",
   "title": "Follow-up CAM-107: writer deterministico de CONTEXT.md/ADR para o /cam-spec (orquestrador e read-only)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-27T13:48:53.367Z",
-  "description": "Descoberto no dogfood US-009 (grill do CAM-109, 2026-06-27). O fluxo /cam-spec tem DOIS outputs: (1) o spec na issue e (2) a camada CONTEXT.md/ADR (modelo de dominio duravel, o diferenciador do grill-with-docs, US-005 fixou a convencao: CONTEXT.md no root glossary-only + docs/adr/ lazy). O output (1) funciona (specifyIssueOnMain via bun-commit-tree). MAS o output (2) nao tem writer e o orquestrador que roda /cam-spec e READ-ONLY: disallowedTools Edit/Write/NotebookEdit, e o hook do CAM-102 nega spawn de subagente-escritor (implementer/general-purpose DENY; os allowed sao read-only). Escrever a mao via heredoc/-e e hazard (licao CAM-106: heredoc nao-quoted corrompe arquivo). RESULTADO: no grill do CAM-109 os domainTerms foram pro campo spec.domainTerms da issue, mas NENHUM CONTEXT.md/ADR foi escrito, apesar de 2 decisoes ADR-worthy resolvidas (verificacao comportamental = gate compartilhado + veredito independente; pipeline deterministico LLM-nos-pontos-de-julgamento). FIX: um writer deterministico de CONTEXT.md/ADR (bun-commit-tree to main, estilo specifyIssueOnMain) invocado pelo /cam-spec no fim da entrevista, OU um mecanismo sancionado pro orquestrador persistir os docs de dominio sem Edit/Write. P2."
+  "description": "Descoberto no dogfood US-009 (grill do CAM-109, 2026-06-27). O fluxo /cam-spec tem DOIS outputs: (1) o spec na issue e (2) a camada CONTEXT.md/ADR (modelo de dominio duravel, o diferenciador do grill-with-docs, US-005 fixou a convencao: CONTEXT.md no root glossary-only + docs/adr/ lazy). O output (1) funciona (specifyIssueOnMain via bun-commit-tree). MAS o output (2) nao tem writer e o orquestrador que roda /cam-spec e READ-ONLY: disallowedTools Edit/Write/NotebookEdit, e o hook do CAM-102 nega spawn de subagente-escritor (implementer/general-purpose DENY; os allowed sao read-only). Escrever a mao via heredoc/-e e hazard (licao CAM-106: heredoc nao-quoted corrompe arquivo). RESULTADO: no grill do CAM-109 os domainTerms foram pro campo spec.domainTerms da issue, mas NENHUM CONTEXT.md/ADR foi escrito, apesar de 2 decisoes ADR-worthy resolvidas (verificacao comportamental = gate compartilhado + veredito independente; pipeline deterministico LLM-nos-pontos-de-julgamento). FIX: um writer deterministico de CONTEXT.md/ADR (bun-commit-tree to main, estilo specifyIssueOnMain) invocado pelo /cam-spec no fim da entrevista, OU um mecanismo sancionado pro orquestrador persistir os docs de dominio sem Edit/Write. P2.",
+  "spec": {
+    "scope": "Descoberto no dogfood US-009 (grill do CAM-109, 2026-06-27). O fluxo /cam-spec tem DOIS outputs: (1) o spec na issue e (2) a camada CONTEXT.md/ADR (modelo de dominio duravel, o diferenciador do grill-with-docs, US-005 fixou a convencao: CONTEXT.md no root glossary-only + docs/adr/ lazy). O output (1) funciona (specifyIssueOnMain via bun-commit-tree). MAS o output (2) nao tem writer e o orquestrador que roda /cam-spec e READ-ONLY: disallowedTools Edit/Write/NotebookEdit, e o hook do CAM-102 nega spawn de subagente-escritor (implementer/general-purpose DENY; os allowed sao read-only). Escrever a mao via heredoc/-e e hazard (licao CAM-106: heredoc nao-quoted corrompe arquivo). RESULTADO: no grill do CAM-109 os domainTerms foram pro campo spec.domainTerms da issue, mas NENHUM CONTEXT.md/ADR foi escrito, apesar de 2 decisoes ADR-worthy resolvidas (verificacao comportamental = gate compartilhado + veredito independente; pipeline deterministico LLM-nos-pontos-de-julgamento). FIX: um writer deterministico de CONTEXT.md/ADR (bun-commit-tree to main, estilo specifyIssueOnMain) invocado pelo /cam-spec no fim da entrevista, OU um mecanismo sancionado pro orquestrador persistir os docs de dominio sem Edit/Write. P2.",
+    "acceptanceCriteria": [
+      "Writer deterministico de CONTEXT.md/ADR (commit-tree to main, estilo specifyIssueOnMain) invocado pelo /cam-spec no fim da entrevista",
+      "O orquestrador read-only persiste os docs de dominio sem Edit/Write",
+      "typecheck + tests verdes"
+    ],
+    "gotchas": [],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 3
+  }
 }
