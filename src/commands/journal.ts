@@ -147,6 +147,7 @@ type MainGuardResult =
 
 const REQUIRED_FIELDS: ReadonlyArray<keyof JournalCycleEntry> = [
 	'cycleId',
+	'title',
 	'started',
 	'closed',
 	'branch',

@@ -675,6 +675,89 @@ test('US-002 AC1: validation fires before git show (no git calls on bad input)',
 });
 
 // ---------------------------------------------------------------------------
+// US-R4-001: title in REQUIRED_FIELDS
+// ---------------------------------------------------------------------------
+
+test('US-R4-001: missing title -- validation error names the field, no git calls fire', () => {
+	const stderrLines: string[] = [];
+	const originalWrite = process.stderr.write.bind(process.stderr);
+	process.stderr.write = (chunk: string | Uint8Array): boolean => {
+		if (typeof chunk === 'string') stderrLines.push(chunk);
+		return true;
+	};
+
+	try {
+		const { spawnFn, calls } = makeFakeSpawnFn({ branch: 'feat/test' });
+
+		const entryMissingTitle: Partial<JournalCycleEntry> = {
+			cycleId: 'cam/CAM-122-journal-append',
+			// title intentionally absent
+			started: '2026-06-27',
+			closed: '2026-06-27',
+			branch: 'cam/CAM-122-journal-append',
+			issue: 'CAM-122',
+			outcome: 'shipped',
+			summary: 'Implements deterministic cam journal append.',
+		};
+
+		const result = appendJournalEntryOnMain({
+			cwd: '/fake/cwd',
+			entry: entryMissingTitle as JournalCycleEntry,
+			spawnFn,
+		});
+
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+
+		expect(result.reason).toBe('validation');
+		expect('errors' in result).toBe(true);
+		const validationError = result as AppendJournalEntryOnMainValidationError;
+		expect(validationError.errors).toContain('title');
+
+		// Error message must name the field
+		const errorOutput = stderrLines.join('');
+		expect(errorOutput).toMatch(/title/);
+
+		// No git calls (validation fires before any git read)
+		const showCall = calls.find((c) => c.args.includes('show'));
+		expect(showCall).toBeUndefined();
+		const commitTreeCall = calls.find((c) => c.args.includes('commit-tree'));
+		expect(commitTreeCall).toBeUndefined();
+	} finally {
+		process.stderr.write = originalWrite;
+	}
+});
+
+test('US-R4-001: empty string title -- validation error names the field', () => {
+	const { spawnFn } = makeFakeSpawnFn({ branch: 'feat/test' });
+
+	const entryEmptyTitle: JournalCycleEntry = {
+		cycleId: 'cam/CAM-122-journal-append',
+		title: '   ', // whitespace-only: must be treated as empty
+		started: '2026-06-27',
+		closed: '2026-06-27',
+		branch: 'cam/CAM-122-journal-append',
+		issue: 'CAM-122',
+		outcome: 'shipped',
+		summary: 'Implements deterministic cam journal append.',
+	};
+
+	const result = appendJournalEntryOnMain({
+		cwd: '/fake/cwd',
+		entry: entryEmptyTitle,
+		spawnFn,
+	});
+
+	expect(result.ok).toBe(false);
+	if (result.ok) return;
+
+	expect(result.reason).toBe('validation');
+	expect('errors' in result).toBe(true);
+	const validationError = result as AppendJournalEntryOnMainValidationError;
+	expect(validationError.errors).toContain('title');
+});
+
+// ---------------------------------------------------------------------------
 // US-002: AC2 -- Optional fields rendered only when present
 // ---------------------------------------------------------------------------
 
