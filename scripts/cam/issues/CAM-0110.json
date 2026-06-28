@@ -1,9 +1,43 @@
 {
   "id": "CAM-110",
   "title": "Epico: lifecycle do orquestrador em loop autonomo (handoff first-class threshold+cycle-boundary; orquestrador decide meta, sidecar executa)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-131",
+    "CAM-132"
+  ],
   "createdAt": "2026-06-26T21:39:22.552Z",
-  "description": "Como o orquestrador gerencia contexto/lifecycle entre ciclos num loop autonomo (plan_approval=auto + ci-gated + auto cam-next). Estende o CAM-23 (self-handoff). Discussao de design 2026-06-26, fundamentada em prior art (Overstory/Warren do Jaymin West + best practices long-running agents 2026).\n\nPESQUISA QUE FUNDAMENTA:\n- Overstory: Coordinator (orquestrador persistente no root) DECOMPÕE objetivos em tasks e orquestra o merge; Supervisor gerencia lifecycle de execucao dos workers. => o orquestrador (Coordinator) e o cerebro que decide O QUE VEM A SEGUIR; o sidecar (Supervisor) dirige a execucao por-ciclo.\n- Anthropic / Addy Osmani / OReilly (long-running agents 2026): tratar context resets como first-class; sumarizacao-como-compactacao NAO basta pra jobs longos, e preciso FULL context reset reconstruindo de um arquivo de handoff estruturado. Autocompaction is not memory: handoffs precisam de control plane local (arquivos). A compaction API da Anthropic usa threshold (default 150k tokens, min 50k).\n- Convergencia da industria: separar model-loop / execution-sandbox / durable-session-log.\n\nDECISOES:\n1. Quem dirige o meta-loop: o ORQUESTRADOR decide a proxima issue (fina, top-ranked specified do epico C) e orquestra o cycle-close; o SIDECAR dirige a execucao por-ciclo. (Corrige a hipotese inicial de sidecar-dono-do-meta-loop.)\n2. Reset de contexto: handoff CAM-23 vira FIRST-CLASS deterministico, disparado por THRESHOLD de tokens MAS alinhado a FRONTEIRA DE CICLO (nunca mid-cycle; nunca reset apos um ciclo trivial). Nao e stop (perde sessao+sidecar), nao e unbounded (incha).\n3. Memoria duravel = journal + backlog + event log + ADR (o Plot-equivalente disperso de hoje); o context window do orquestrador e cache barato de reconstruir do handoff + duraveis.\n\nONDE TOCAR: src/commands/orch-budget.ts + o mecanismo de handoff CAM-23 (.cam-orch-handoff.json), o wrapper cam run (detecta handoff e respawna), o ponto de cycle-close (apos ship/post-merge) pra disparar o handoff alinhado a fronteira, a persona do subagent-orchestrator (decide proxima issue). Testes do trigger threshold+cycle-boundary + rehidratacao.\n\nDEPENDENCIAS: relacionado ao CAM-71 (autonomia end-to-end; e uma fatia da robustez dele) e ao epico C/CAM-108 (o rank define a proxima issue). Estende CAM-23 (ja shipado).\n\nPRIORIDADE: P2. So vira critico quando o full-autonomy (plan_approval=auto + meta-loop) for ligado de verdade."
+  "description": "Como o orquestrador gerencia contexto/lifecycle entre ciclos num loop autonomo (plan_approval=auto + ci-gated + auto cam-next). Estende o CAM-23 (self-handoff). Discussao de design 2026-06-26, fundamentada em prior art (Overstory/Warren do Jaymin West + best practices long-running agents 2026).\n\nPESQUISA QUE FUNDAMENTA:\n- Overstory: Coordinator (orquestrador persistente no root) DECOMPÕE objetivos em tasks e orquestra o merge; Supervisor gerencia lifecycle de execucao dos workers. => o orquestrador (Coordinator) e o cerebro que decide O QUE VEM A SEGUIR; o sidecar (Supervisor) dirige a execucao por-ciclo.\n- Anthropic / Addy Osmani / OReilly (long-running agents 2026): tratar context resets como first-class; sumarizacao-como-compactacao NAO basta pra jobs longos, e preciso FULL context reset reconstruindo de um arquivo de handoff estruturado. Autocompaction is not memory: handoffs precisam de control plane local (arquivos). A compaction API da Anthropic usa threshold (default 150k tokens, min 50k).\n- Convergencia da industria: separar model-loop / execution-sandbox / durable-session-log.\n\nDECISOES:\n1. Quem dirige o meta-loop: o ORQUESTRADOR decide a proxima issue (fina, top-ranked specified do epico C) e orquestra o cycle-close; o SIDECAR dirige a execucao por-ciclo. (Corrige a hipotese inicial de sidecar-dono-do-meta-loop.)\n2. Reset de contexto: handoff CAM-23 vira FIRST-CLASS deterministico, disparado por THRESHOLD de tokens MAS alinhado a FRONTEIRA DE CICLO (nunca mid-cycle; nunca reset apos um ciclo trivial). Nao e stop (perde sessao+sidecar), nao e unbounded (incha).\n3. Memoria duravel = journal + backlog + event log + ADR (o Plot-equivalente disperso de hoje); o context window do orquestrador e cache barato de reconstruir do handoff + duraveis.\n\nONDE TOCAR: src/commands/orch-budget.ts + o mecanismo de handoff CAM-23 (.cam-orch-handoff.json), o wrapper cam run (detecta handoff e respawna), o ponto de cycle-close (apos ship/post-merge) pra disparar o handoff alinhado a fronteira, a persona do subagent-orchestrator (decide proxima issue). Testes do trigger threshold+cycle-boundary + rehidratacao.\n\nDEPENDENCIAS: relacionado ao CAM-71 (autonomia end-to-end; e uma fatia da robustez dele) e ao epico C/CAM-108 (o rank define a proxima issue). Estende CAM-23 (ja shipado).\n\nPRIORIDADE: P2. So vira critico quando o full-autonomy (plan_approval=auto + meta-loop) for ligado de verdade.",
+  "spec": {
+    "scope": "Guarda-chuva do lifecycle do orquestrador no loop autonomo. NAO entrega codigo proprio: decompoe a autonomia inter-ciclo em filhas rastreaveis e fixa as invariantes transversais. DENTRO: a decomposicao (filha A CAM-131 handoff-cycle-boundary + filha B CAM-132 meta-loop inter-ciclo), as arestas blockedBy, e as invariantes de design. FORA: a implementacao de A e B (grilhadas e planejadas como issues proprias), o auto-chain intra-ciclo (CAM-71, reusado como dep de B), e qualquer mudanca no schema do issue-system pra representar epicos.",
+    "acceptanceCriteria": [
+      "Filhas A (CAM-131) e B (CAM-132) existem no backlog como stage:idea, status:open, com titulos que batem com a decomposicao (handoff cycle-boundary; meta-loop inter-ciclo).",
+      "A descricao da filha B (CAM-132) nomeia explicitamente as dependencias textuais CAM-71, CAM-116, CAM-117, CAM-111.",
+      "CAM-110 esta stage:specified com blockedBy exatamente [CAM-131, CAM-132].",
+      "O spec da CAM-110 registra a invariante: um runner deterministico dirige o meta-loop inter-ciclo; o orquestrador LLM entra so nos pontos de julgamento (fila vazia, ciclo bloqueado, empate de rank).",
+      "CAM-110 nao e retornada por selectPlannableIssue enquanto CAM-131 ou CAM-132 estiverem open (bloqueada por construcao)."
+    ],
+    "gotchas": [
+      "O issue-system nao tem stage 'epico': a CAM-110 e specified-as-tracking, bloqueada por construcao, e deve ser fechada manualmente quando as duas filhas shiparem (rollup de epico nao e automatizado; abrir follow-up se o padrao recorrer).",
+      "A capacidade B e distinta da CAM-71 (inter-ciclo vs intra-ciclo); nao duplicar. CAM-71 e dependencia de B, nao e re-criada.",
+      "As arestas blockedBy da filha B so viram estruturadas quando B for grilhada (idea nasce com blockedBy []); ate la vivem no texto da descricao, conforme o padrao do backlog.",
+      "A filha A (CAM-131) e shippavel-ja (sem deps hard), entao ranqueia antes de tudo no triage; e o primeiro retorno concreto do epico. Seu grill ainda precisa definir 'fronteira de ciclo' e 'ciclo trivial' operacionalmente."
+    ],
+    "domainTerms": [
+      "meta-loop (inter-ciclo): encadeamento autonomo de ciclos onde o runner escolhe a proxima issue (top-rank specified do triage) e dispara o proximo ciclo, drenando a fila; distinto do auto-chain intra-ciclo.",
+      "auto-chain intra-ciclo (CAM-71): de plan-approval ate ship numa issue so.",
+      "handoff first-class: reset deterministico de contexto do orquestrador (estende CAM-23) disparado por threshold de tokens mas alinhado a fronteira de ciclo.",
+      "fronteira de ciclo (cycle boundary): o ponto entre o cycle-close (pos-ship/post-merge) e o disparo do proximo plan; unico ponto seguro pra um handoff.",
+      "ciclo trivial: ciclo curto o bastante que um handoff logo apos seria desperdicio (definicao operacional fica pra filha A).",
+      "runner deterministico: o driver TS (familia runSupervisor) que dirige o encadeamento; LLM so nos pontos de julgamento.",
+      "memoria duravel: journal + backlog + event log + ADR, a fonte de verdade; o context window do orquestrador e cache barato reconstruido do handoff + duraveis."
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 3,
+    "riskReduction": 5,
+    "jobSize": 2
+  }
 }

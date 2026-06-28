@@ -1,9 +1,0 @@
-{
-  "id": "CAM-132",
-  "title": "Filha CAM-110: meta-loop inter-ciclo, orquestrador encadeia ciclos drenando a fila (runner deterministico, LLM so julga)",
-  "stage": "idea",
-  "status": "open",
-  "blockedBy": [],
-  "createdAt": "2026-06-28T15:37:12.544Z",
-  "description": "Filha gated da CAM-110 (epico-ancora do lifecycle do orquestrador). O drenador de fila inter-ciclo: apos o cycle-close, escolher a proxima issue (cam triage -> top-rank specified) e disparar o proximo ciclo, sem prompt do operador, ate a fila secar. INVARIANTE (fixada no grill da CAM-110): um runner deterministico dirige o encadeamento; o orquestrador LLM entra so nos pontos de julgamento/excecao (fila vazia -> para e notifica via Resend; ciclo bloqueou -> escala; empate de rank -> decide). DISTINTA da CAM-71 (auto-chain INTRA-ciclo): B e a camada ACIMA. blockedBy textual {CAM-71 (intra-ciclo), CAM-116 (verificacao comportamental), CAM-117 (plan deterministico), CAM-111 (sandbox/safety)} (arestas viram estruturadas no grill desta issue). Toca o runner (familia runSupervisor), o cycle-close e a persona. P2, gated nas deps de seguranca do full-autonomy."
-}
