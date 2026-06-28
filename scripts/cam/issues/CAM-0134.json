@@ -1,9 +1,24 @@
 {
   "id": "CAM-134",
   "title": "Dead code pre-existente: buildMergeDescription em issue-specify.ts (definida, nunca chamada)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T18:06:33.575Z",
-  "description": "Flagged pelo review do CAM-133 (SUGGESTION, fora de escopo do PR). `buildMergeDescription` em src/commands/issue-specify.ts (~line 261) e definida mas nunca chamada; mergeIssueOnMain monta a nota de merge inline em buildMergeFiles. Nao introduzida pelo branch CAM-133, ja estava em main. Escapa do knip porque knip.json exclui 'exports'. Cleanup cirurgico: remover a funcao morta. Verificar que nenhum outro caller existe antes de remover."
+  "description": "Flagged pelo review do CAM-133 (SUGGESTION, fora de escopo do PR). `buildMergeDescription` em src/commands/issue-specify.ts (~line 261) e definida mas nunca chamada; mergeIssueOnMain monta a nota de merge inline em buildMergeFiles. Nao introduzida pelo branch CAM-133, ja estava em main. Escapa do knip porque knip.json exclui 'exports'. Cleanup cirurgico: remover a funcao morta. Verificar que nenhum outro caller existe antes de remover.",
+  "spec": {
+    "scope": "Flagged pelo review do CAM-133 (SUGGESTION, fora de escopo do PR). `buildMergeDescription` em src/commands/issue-specify.ts (~line 261) e definida mas nunca chamada; mergeIssueOnMain monta a nota de merge inline em buildMergeFiles. Nao introduzida pelo branch CAM-133, ja estava em main. Escapa do knip porque knip.json exclui 'exports'. Cleanup cirurgico: remover a funcao morta. Verificar que nenhum outro caller existe antes de remover.",
+    "acceptanceCriteria": [
+      "buildMergeDescription removida de src/commands/issue-specify.ts (dead code, nenhum caller)",
+      "knip + typecheck verdes apos remocao"
+    ],
+    "gotchas": [],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  }
 }
