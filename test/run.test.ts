@@ -604,6 +604,21 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		// so a write-then-instant-exit cannot loop past the cap.
 		expect(cmd.indexOf('[ "$n" -lt "$max" ]')).toBeLessThan(cmd.indexOf('n=$((n + 1))'));
 	});
+
+	it('reads reason with jq before mv, resets n=0 on cycle-close, increments otherwise (US-003)', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		// jq reads the reason field from the handoff BEFORE the mv rename.
+		expect(cmd).toContain(`jq -r '.reason // empty' '${base.handoffMarker}'`);
+		expect(cmd.indexOf('jq')).toBeLessThan(
+			cmd.indexOf(`mv '${base.handoffMarker}'`),
+		);
+		// cycle-close resets the counter so the session never hits the cap due to
+		// normal progress handoffs.
+		expect(cmd).toContain(`[ "$reason" = 'cycle-close' ]`);
+		expect(cmd).toContain('then n=0');
+		// Non-cycle-close (no-progress or unknown) still increments the counter.
+		expect(cmd).toContain('n=$((n + 1))');
+	});
 });
 
 describe('buildOrchestratorBootPrompt (CAM-23 rehydration directive)', () => {
