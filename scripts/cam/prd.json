@@ -114,7 +114,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Extend/replace scripts/cam/migrate-issues-schema.ts (existing CAM-106 schema migration). REPO FACT: 129 issues -> writes CAM-0001.json .. CAM-0129.json; next_id 130 is killed (not carried over). The migration module is the ONE justified place that NAMES issues.local.json (reads it + deletes it) - this is an explicit no-vestiges exception (US-009 excludes it). Build the {path,content} list of N issue files + represent the issues.local.json deletion in the same commit-tree (omit its blob from the new tree / `git update-index --remove`). Idempotency: if issues.local.json is absent and the dir is populated, no-op (no commit). OPERATIONAL GOTCHA (note for orchestrator, nothing to code): run the migration LATE at finalize AFTER `git merge origin/main` into the branch to capture stragglers; and `cam ship --finalize` must run FROM SOURCE on the branch (bun index.ts), NOT the installed binary (which still speaks the OLD array format and would re-create issues.local.json). Maps spec AC#7. requires US-003 (allocateId/padding) and transitively US-001 (multi-file atomic commit + delete)."
     },

@@ -181,6 +181,11 @@ export function commitOnMain(
  * @param localMainSha  Current sha of refs/heads/main (from checkMainUpToDate).
  * @param spawnFn       Injectable spawnSync for all git subprocess calls.
  * @param tmpPrefix     Prefix for mkdtemp (e.g. 'cam-issue-').
+ * @param removals      Optional list of repo-relative paths to remove from the
+ *                      tree in the same atomic commit (via update-index --remove).
+ *                      Processed after read-tree and before file writes, so any
+ *                      file in this list will be absent from the resulting tree
+ *                      even if the same path also appears in `files`.
  */
 export function commitTreeToMain(
 	cwd: string,
@@ -189,6 +194,7 @@ export function commitTreeToMain(
 	localMainSha: string,
 	spawnFn: SpawnFn,
 	tmpPrefix: string,
+	removals?: string[],
 ): string {
 	const tmpDir = mkdtempSync(join(tmpdir(), tmpPrefix));
 	const tempIndex = join(tmpDir, 'index');
@@ -202,6 +208,14 @@ export function commitTreeToMain(
 				encoding: 'utf8',
 				env: buildIndexEnv(tempIndex),
 			});
+
+			// Step 1.5: remove files from the temp index (for migrations/deletions).
+			for (const removal of (removals ?? [])) {
+				spawnFn('git', ['-C', cwd, 'update-index', '--remove', removal], {
+					encoding: 'utf8',
+					env: buildIndexEnv(tempIndex),
+				});
+			}
 
 			// Step 2: hash and index every file.
 			// Atomicity: throw on any failure so write-tree is never reached.

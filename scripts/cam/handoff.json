@@ -1,23 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Convert the readers to readBacklogFromMain"
+    "id": "US-006",
+    "title": "Idempotent atomic migration: array to dir, delete issues.local.json"
   },
   "branchName": "cam/CAM-90-file-per-issue",
-  "timestamp": "2026-06-28T05:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-28T06:00:00Z",
+  "createdFiles": [
+    "test/issues/migrate-to-dir.test.ts"
+  ],
   "modifiedFiles": [
-    "src/issues/select.ts",
-    "test/issues/select.test.ts",
-    "scripts/cam/prd.json"
+    "src/git/on-main.ts",
+    "scripts/cam/migrate-issues-schema.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 complete. selectPlannableFromFile now uses readBacklogFromMain(cwd, spawn?) instead of reading issues.local.json directly. The function is now synchronous (BacklogSpawnFn is injectable for tests). No callers in src/ existed so there are zero cascading changes. All 2037 tests pass. Next story is US-006: idempotent atomic migration from issues.local.json array to per-file dir.",
+  "nextStoryContext": "US-006 complete. commitTreeToMain now accepts optional removals?: string[] (git update-index --remove, applied after read-tree, before file writes). migrateIssuesToDir exported from scripts/cam/migrate-issues-schema.ts: reads issues.local.json from main via git show, builds FileWrite[] (one per issue, 4-digit padded filename, unpadded id field), commits atomically with deletions via commitTreeToMain. Idempotency: if git show returns non-zero (file absent), returns noOp:true with no commit. 13 new unit tests, all 2050 tests pass. Next story is US-007: live migration script (real-git integration test, actual 129-issue commit).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-005 only modified src/issues/select.ts to delegate to readBacklogFromMain (internal module). No external npm library was introduced or exercised."
+      "summary": "US-006 extended src/git/on-main.ts and scripts/cam/migrate-issues-schema.ts. Only internal modules and node:child_process (no new external npm library) were used."
     }
   ]
 }
