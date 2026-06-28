@@ -301,10 +301,10 @@ export function renderJournalBlock(entry: JournalCycleEntry): string {
 		lines.push(`- **Decisions**: ${normalizeEmDash(entry.decisions)}`);
 	}
 	if (entry.blockers !== undefined) {
-		lines.push(`- **Blockers**: ${normalizeEmDash(entry.blockers)}`);
+		lines.push(`- **Blockers encountered**: ${normalizeEmDash(entry.blockers)}`);
 	}
 	if (entry.followups !== undefined) {
-		lines.push(`- **Followups**: ${normalizeEmDash(entry.followups)}`);
+		lines.push(`- **Follow-ups**: ${normalizeEmDash(entry.followups)}`);
 	}
 
 	return lines.join('\n');

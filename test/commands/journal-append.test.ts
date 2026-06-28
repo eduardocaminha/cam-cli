@@ -443,8 +443,8 @@ test('US-002 AC2: optional fields absent -- no Decisions/Blockers/Followups bull
 	const block = renderJournalBlock(SAMPLE_ENTRY); // SAMPLE_ENTRY has no optional fields
 
 	expect(block).not.toContain('**Decisions**');
-	expect(block).not.toContain('**Blockers**');
-	expect(block).not.toContain('**Followups**');
+	expect(block).not.toContain('**Blockers encountered**');
+	expect(block).not.toContain('**Follow-ups**');
 });
 
 test('US-002 AC2: optional fields present -- Decisions/Blockers/Followups bullets appear', () => {
@@ -458,8 +458,8 @@ test('US-002 AC2: optional fields present -- Decisions/Blockers/Followups bullet
 	const block = renderJournalBlock(entryWithOptionals);
 
 	expect(block).toContain('**Decisions**: Use commit-tree for off-main writes.');
-	expect(block).toContain('**Blockers**: None.');
-	expect(block).toContain('**Followups**: Add CAM-123 cleanup story.');
+	expect(block).toContain('**Blockers encountered**: None.');
+	expect(block).toContain('**Follow-ups**: Add CAM-123 cleanup story.');
 });
 
 test('US-002 AC2: only decisions present -- only Decisions bullet rendered', () => {
@@ -467,8 +467,8 @@ test('US-002 AC2: only decisions present -- only Decisions bullet rendered', () 
 	const block = renderJournalBlock(entry);
 
 	expect(block).toContain('**Decisions**: Key decision.');
-	expect(block).not.toContain('**Blockers**');
-	expect(block).not.toContain('**Followups**');
+	expect(block).not.toContain('**Blockers encountered**');
+	expect(block).not.toContain('**Follow-ups**');
 });
 
 // ---------------------------------------------------------------------------
