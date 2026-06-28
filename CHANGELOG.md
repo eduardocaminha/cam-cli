@@ -4,6 +4,16 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.14.0] - 2026-06-28
+
+### Added
+
+- [US-005] - Real-git integration test + full gate spine green
+- [US-004] - `cam triage` deterministic CLI writing rank to main
+- [US-003] - Graph gate: Kahn cycle detection + referential-integrity reuse
+- [US-002] - Pure Kahn topo-sort + WSJF ranking module (src/issues/rank.ts)
+- [US-001] - Extract shared on-main commit-tree helper from 3 verbatim copies
+
 ## [0.13.0] - 2026-06-28
 
 ### Added
