@@ -1,35 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Convert the 4 writers to the file-per-issue dir"
+    "id": "US-005",
+    "title": "Convert the readers to readBacklogFromMain"
   },
   "branchName": "cam/CAM-90-file-per-issue",
-  "timestamp": "2026-06-28T04:00:00Z",
+  "timestamp": "2026-06-28T05:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "src/commands/issue-file.ts",
-    "src/commands/issue-specify.ts",
-    "src/commands/ship-finalize.ts",
-    "src/commands/triage.ts",
-    "src/issues/backlog.ts",
-    "test/commands/issue-specify.test.ts",
-    "test/integration/issue-file-on-main.test.ts",
-    "test/integration/ship-finalize-dirty-prd.test.ts",
-    "test/integration/triage-real-git.test.ts",
-    "test/issue-file.test.ts",
-    "test/ship-finalize-hardening.test.ts",
-    "test/ship-finalize.test.ts",
-    "test/triage.test.ts",
+    "src/issues/select.ts",
+    "test/issues/select.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 complete. All 4 writers (issue-file, issue-specify, triage, ship-finalize) now read/write scripts/cam/issues/CAM-NNNN.json exclusively via the per-file primitives (writeIssueFile, readBacklogFromMain, issueFilePath). issues.local.json is never touched by any writer. The key integration tests were updated from the old array-format (issues.local.json) to the new per-file format (CAM-NNNN.json). index.ts _buildFinalizeOpts uses issueFilePath for both readIssues and writeIssues. Full suite: 2033 pass, 0 fail.",
+  "nextStoryContext": "US-005 complete. selectPlannableFromFile now uses readBacklogFromMain(cwd, spawn?) instead of reading issues.local.json directly. The function is now synchronous (BacklogSpawnFn is injectable for tests). No callers in src/ existed so there are zero cascading changes. All 2037 tests pass. Next story is US-006: idempotent atomic migration from issues.local.json array to per-file dir.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 only modified existing internal modules (git plumbing via injectable SpawnFn, readBacklogFromMain, issueFilePath). No external npm library was introduced."
+      "summary": "US-005 only modified src/issues/select.ts to delegate to readBacklogFromMain (internal module). No external npm library was introduced or exercised."
     }
   ]
 }
