@@ -393,8 +393,8 @@ export function appendJournalEntryOnMain(
 		const updatedContent = replaceCycleBlock(existingContent, entry.cycleId, block);
 		const commitMsg = `chore(cam): journal replace ${entry.cycleId}`;
 		const sha = branchWasMain
-			? commitOnMain(cwd, updatedContent, commitMsg, spawnFn, writeFile, 'scripts/cam/journal.md')
-			: commitTreeToMain(cwd, updatedContent, commitMsg, localMainSha, spawnFn, 'scripts/cam/journal.md', 'cam-journal-');
+			? commitOnMain(cwd, [{ path: 'scripts/cam/journal.md', content: updatedContent }], commitMsg, spawnFn, writeFile)
+			: commitTreeToMain(cwd, [{ path: 'scripts/cam/journal.md', content: updatedContent }], commitMsg, localMainSha, spawnFn, 'cam-journal-');
 		pushMainBestEffort(cwd, spawnFn);
 		return { ok: true, cycleId: entry.cycleId, sha };
 	}
@@ -406,8 +406,8 @@ export function appendJournalEntryOnMain(
 	const commitMsg = `chore(cam): journal append ${entry.cycleId}`;
 
 	const sha = branchWasMain
-		? commitOnMain(cwd, updatedContent, commitMsg, spawnFn, writeFile, 'scripts/cam/journal.md')
-		: commitTreeToMain(cwd, updatedContent, commitMsg, localMainSha, spawnFn, 'scripts/cam/journal.md', 'cam-journal-');
+		? commitOnMain(cwd, [{ path: 'scripts/cam/journal.md', content: updatedContent }], commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, [{ path: 'scripts/cam/journal.md', content: updatedContent }], commitMsg, localMainSha, spawnFn, 'cam-journal-');
 
 	pushMainBestEffort(cwd, spawnFn);
 

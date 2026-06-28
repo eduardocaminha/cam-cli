@@ -1,0 +1,29 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Multi-file atomic on-main commit with compare-and-swap update-ref"
+  },
+  "createdFiles": [
+    "test/on-main-multi.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/git/on-main.ts",
+    "src/commands/issue-file.ts",
+    "src/commands/issue-specify.ts",
+    "src/commands/journal.ts",
+    "src/commands/triage.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 complete. src/git/on-main.ts now exports FileWrite, CAS_MAX_ATTEMPTS, and multi-file-aware commitOnMain/commitTreeToMain. All 4 callers (issue-file, issue-specify, journal, triage) updated to pass 1-element FileWrite lists. CAS_MAX_ATTEMPTS=3 retry loop added to commitTreeToMain's update-ref step. Full suite: 2009 pass, 0 fail.",
+  "officialDocsValidated": [
+    {
+      "lib": "git-update-ref",
+      "version": "current",
+      "url": "https://git-scm.com/docs/git-update-ref",
+      "fetchedAt": "2026-06-28T00:00:00Z",
+      "status": "ok",
+      "summary": "CAS form 'git update-ref <ref> <new> <old>' confirmed: succeeds only when current ref matches old-value, returns non-zero on mismatch. Implementation matches documented semantics."
+    }
+  ]
+}

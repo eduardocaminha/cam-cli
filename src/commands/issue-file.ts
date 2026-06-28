@@ -274,8 +274,8 @@ export function createLocalIssueOnMain(
 	// 6. Commit to main (on-main direct commit or off-main plumbing).
 	const commitMsg = `chore(cam): file ${id} (${title})`;
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-issue-');
+		? commitOnMain(cwd, [{ path: 'scripts/cam/issues.local.json', content: serialized }], commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, [{ path: 'scripts/cam/issues.local.json', content: serialized }], commitMsg, localMainSha, spawnFn, 'cam-issue-');
 
 	// 7. Best-effort push. Rejection is logged explicitly, never swallowed.
 	pushMainBestEffort(cwd, spawnFn);

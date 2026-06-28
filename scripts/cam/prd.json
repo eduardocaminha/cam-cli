@@ -32,7 +32,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Generalize src/git/on-main.ts: commitTreeToMain currently takes a single (serialized, fileGitRelPath); rewrite to accept a list of {path,content} writing each blob via `git hash-object -w --stdin` then `git update-index --add --cacheinfo 100644,<blob>,<path>` into ONE temp index, then ONE write-tree, ONE commit-tree. commitOnMain likewise generalizes to a file list (git add each path, one commit). REPO FACT: today update-ref is a BLIND overwrite (no compare-and-swap) and NO caller has non-ff handling; add CAS via `git update-ref refs/heads/main <new> <old-expected>` (old-expected = localMainSha captured at read time) + bounded retry that re-reads main sha + rebuilds on CAS failure. Keep SpawnFn/buildIndexEnv exports intact; do not break the injectable-spawnFn test seam. Spec gotcha: CAS hardens ALL on-main writers (issue-file, issue-specify, triage, ship-finalize, journal-append), not just id allocation. Maps spec AC#1, AC#2. Tests: test/issue-file.test.ts and test/integration/issue-file-on-main.test.ts exercise this helper; preserve their single-file expectations (parity). Read scripts/cam/patterns.md (on-main helper conventions) before coding."
     },

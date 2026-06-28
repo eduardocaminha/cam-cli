@@ -278,8 +278,8 @@ export function runTriage(options: RunTriageOptions): TriageResult {
 
 	// 6. Commit to main via US-001 shared helper.
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-triage-');
+		? commitOnMain(cwd, [{ path: 'scripts/cam/issues.local.json', content: serialized }], commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, [{ path: 'scripts/cam/issues.local.json', content: serialized }], commitMsg, localMainSha, spawnFn, 'cam-triage-');
 
 	// 7. Best-effort push.
 	pushMainBestEffort(cwd, spawnFn);

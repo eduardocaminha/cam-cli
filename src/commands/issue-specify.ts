@@ -399,8 +399,8 @@ export function specifyIssueOnMain(
 	// Commit to main.
 	const commitMsg = `chore(cam): specify ${id}`;
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-specify-');
+		? commitOnMain(cwd, [{ path: 'scripts/cam/issues.local.json', content: serialized }], commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, [{ path: 'scripts/cam/issues.local.json', content: serialized }], commitMsg, localMainSha, spawnFn, 'cam-specify-');
 
 	// Best-effort push.
 	pushMainBestEffort(cwd, spawnFn);
@@ -450,8 +450,8 @@ export function abandonIssueOnMain(
 	const serialized = JSON.stringify(backlog, null, 2) + '\n';
 	const commitMsg = `chore(cam): abandon ${id}`;
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-specify-');
+		? commitOnMain(cwd, [{ path: 'scripts/cam/issues.local.json', content: serialized }], commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, [{ path: 'scripts/cam/issues.local.json', content: serialized }], commitMsg, localMainSha, spawnFn, 'cam-specify-');
 
 	pushMainBestEffort(cwd, spawnFn);
 	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
@@ -515,8 +515,8 @@ export function mergeIssueOnMain(
 	const serialized = JSON.stringify(backlog, null, 2) + '\n';
 	const commitMsg = `chore(cam): merge ${id} into ${intoId}`;
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-specify-');
+		? commitOnMain(cwd, [{ path: 'scripts/cam/issues.local.json', content: serialized }], commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, [{ path: 'scripts/cam/issues.local.json', content: serialized }], commitMsg, localMainSha, spawnFn, 'cam-specify-');
 
 	pushMainBestEffort(cwd, spawnFn);
 	return { ok: true, id, intoId, committedTo: 'main', sha, branchWasMain };
