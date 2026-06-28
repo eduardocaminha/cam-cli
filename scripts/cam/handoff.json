@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Retire lessons.md to lessons.archive.md with deprecation header"
+  },
+  "branchName": "cam/CAM-123-consolidate-knowledge-layer",
+  "timestamp": "2026-06-27T00:00:00Z",
+  "createdFiles": [
+    "lessons.archive.md"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "lessons.md is gone (renamed to lessons.archive.md via git mv, history preserved). US-002 adds the explicit routing/naming table to scripts/cam/CLAUDE.md; the deprecation header in lessons.archive.md already references that routing table (scripts/cam/CLAUDE.md, US-002), so US-002 should ensure the section header or label in CLAUDE.md matches that reference. The relatedDocs in prd.json still lists 'lessons.md' -- that entry is now stale but harmless; the next implementer should not need to worry about it.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "DOC-only story: git mv rename + deprecation header, no src/ or templates/ changes."
+    }
+  ]
+}

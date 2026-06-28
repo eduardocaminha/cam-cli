@@ -26,7 +26,7 @@
         "The full gate spine is green [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Use `git mv lessons.md lessons.archive.md` so history is preserved (oracle AC#1 already checks lessons.md is gone and archive exists with 'deprecated'). Prepend a deprecation header above the existing line-1 title; the historical entries below stay verbatim (do not edit the chronological body). Header must name: date 2026-06-27, that the file is DEPRECATED/retired, the superseding channels (scripts/cam/journal.md, scripts/cam/patterns.md, memory/), a pointer to the new routing table in scripts/cam/CLAUDE.md (added in US-002), and that future deletion is planned. Follow the no-em-dash / no-decorative-emoji rule for persisted .md (CLAUDE.md global convention). This is a cam-cli-specific exception to the global etapa-dupla; do NOT touch the global ~/.claude/CLAUDE.md (gotcha #4). DOC-only: no command code."
     },
