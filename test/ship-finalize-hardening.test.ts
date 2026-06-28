@@ -34,30 +34,25 @@ const PROJECT_TOML_GITHUB = 'issue_system = "github"\nissue_prefix = "CAM"\n';
 /** prd.json referencing issue CAM-72. */
 const PRD_JSON = JSON.stringify({ issueNumber: 72, branchName: 'cam/CAM-72-test' });
 
-/** issues.local.json WITHOUT a CAM-72 entry (only CAM-71 is present). */
-const ISSUES_WITHOUT_72 = JSON.stringify(
-	{
-		next_id: 73,
-		issues: [
-			{ id: 'CAM-71', title: 'Another', state: 'closed', createdAt: '2026-05-01T00:00:00Z' },
-		],
-	},
+// US-004: per-file format - each CAM-NNNN.json contains a single IssueEntry.
+
+/** CAM-0072.json content (exists). */
+const CAM_72_JSON = JSON.stringify(
+	{ id: 'CAM-72', title: 'Test issue', stage: 'idea', status: 'open', blockedBy: [], createdAt: '2026-06-01T00:00:00Z' },
 	null,
 	2,
 ) + '\n';
 
-/** issues.local.json WITH a CAM-72 entry. */
-const ISSUES_WITH_72 = JSON.stringify(
-	{
-		next_id: 73,
-		issues: [
-			{ id: 'CAM-72', title: 'Test issue', state: 'open', createdAt: '2026-06-01T00:00:00Z' },
-			{ id: 'CAM-71', title: 'Another', state: 'closed', createdAt: '2026-05-01T00:00:00Z' },
-		],
-	},
-	null,
-	2,
-) + '\n';
+/** readIssues that returns CAM_72_JSON for CAM-72, throws for others. */
+function readIssuesWithCam72(issueId: string): string {
+	if (issueId === 'CAM-72') return CAM_72_JSON;
+	throw new Error(`ENOENT: ${issueId} not found`);
+}
+
+/** readIssues that always throws (simulates missing issue file). */
+function readIssuesMissing72(_issueId: string): string {
+	throw new Error('ENOENT: no such file or directory');
+}
 
 /** Minimal passing SpawnSyncReturns<string>. */
 function okResult(status = 0): SpawnSyncReturns<string> {
@@ -101,28 +96,30 @@ function makeOptions(
 		clock,
 		readProjectToml: () => PROJECT_TOML_NONE,
 		readPrd: () => PRD_JSON,
-		readIssues: () => ISSUES_WITH_72,
+		readIssues: readIssuesWithCam72,
 		writeIssues: () => {},
 		...overrides,
 	};
 }
 
 // ---------------------------------------------------------------------------
-// AC1: issue_system == 'none' + issue NOT in issues.local.json => error
+// AC1: issue_system == 'none' + issue file NOT present => error
 // ---------------------------------------------------------------------------
 
-describe('AC1: missing issue in issues.local.json (none backend)', () => {
+describe('AC1: missing issue in issues dir (none backend)', () => {
 	test('throws with a message naming the missing id', () => {
 		const { spawnFn } = makeRecordingSpawn();
 
+		// US-004: readIssues throws ENOENT when the per-file CAM-NNNN.json is absent.
+		// ship-finalize catches it and re-throws with the canonical message.
 		expect(() =>
 			finalizeCycleClose(
 				makeOptions({
 					spawnFn,
-					readIssues: () => ISSUES_WITHOUT_72,
+					readIssues: readIssuesMissing72,
 				}),
 			),
-		).toThrow('issue not found in issues.local.json: CAM-72');
+		).toThrow('issue not found in issues dir: CAM-72');
 	});
 
 	test('rm and commit do NOT proceed when issue is missing', () => {
@@ -132,7 +129,7 @@ describe('AC1: missing issue in issues.local.json (none backend)', () => {
 			finalizeCycleClose(
 				makeOptions({
 					spawnFn,
-					readIssues: () => ISSUES_WITHOUT_72,
+					readIssues: readIssuesMissing72,
 				}),
 			);
 		} catch {

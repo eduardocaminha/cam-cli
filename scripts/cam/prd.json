@@ -83,7 +83,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Touch src/commands/issue-file.ts, src/commands/issue-specify.ts, src/commands/triage.ts, src/commands/ship-finalize.ts, and index.ts (lines ~978-980 _buildFinalizeOpts readIssues/writeIssues). REPO FACT: triage.ts:281-282 currently calls commitOnMain/commitTreeToMain with 'scripts/cam/issues.local.json' after mutating the whole array; rewrite to write rank onto each {specified,open} entry's own file as a {path,content} LIST (US-001 multi-file commit). triage no-op path (changed=0, sha=none) at triage.ts:264 must be preserved. issue-file.ts also currently mentions next_id (counter advance) - remove it; allocateId replaces it. Tests to update: test/issue-file.test.ts, test/commands/issue-specify.test.ts, test/triage.test.ts, test/ship-finalize.test.ts, test/ship-finalize-hardening.test.ts. SPEC GOTCHA: atomic cutover, no dual-format runtime branch - writers are dir-only, the operator filing-freeze (not a runtime if-exists check) bridges main-still-array. Maps spec AC#5 (writers). requires US-003 (allocateId + per-file write) which transitively requires US-001+US-002."
     },

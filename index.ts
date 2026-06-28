@@ -55,6 +55,7 @@ import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './sr
 import { runSidecar } from './src/commands/sidecar.ts';
 import { runTag } from './src/commands/tag.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
+import { issueFilePath } from './src/issues/backlog.ts';
 import { makeFileEventLogger } from './src/supervisor/events.ts';
 import { printError, printFatalHint, printHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
@@ -975,9 +976,9 @@ function _buildFinalizeOpts(cwd: string) {
 		clock: () => new Date().toISOString(),
 		readProjectToml: () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8'),
 		readPrd: () => readFileSync(join(cwd, 'scripts/cam/prd.json'), 'utf8'),
-		readIssues: () => readFileSync(join(cwd, 'scripts/cam/issues.local.json'), 'utf8'),
-		writeIssues: (text: string) =>
-			writeFileSync(join(cwd, 'scripts/cam/issues.local.json'), text, 'utf8'),
+		readIssues: (issueId: string) => readFileSync(join(cwd, issueFilePath(issueId)), 'utf8'),
+		writeIssues: (issueId: string, text: string) =>
+			writeFileSync(join(cwd, issueFilePath(issueId)), text, 'utf8'),
 	};
 }
 

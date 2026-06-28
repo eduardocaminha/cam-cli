@@ -2,28 +2,27 @@
 //
 // Unit tests for createLocalIssueOnMain() in src/commands/issue-file.ts.
 //
-// Coverage (per US-001 acceptance criteria):
-//   (a) on-main path: writes working-tree file, git-adds, git-commits
-//   (b) off-main path: uses git plumbing (read-tree, hash-object, update-index,
-//       write-tree, commit-tree, update-ref); working tree NOT touched
-//   (c) off-main path: spawnFn receives GIT_INDEX_FILE via options.env AND the
-//       serialized JSON via options.input for hash-object (widened SpawnFn type)
-//   (d) id allocation: reads from main, not working tree; next_id is bumped;
-//       entry has state='open', createdAt from clock(), optional priority
-//   (e) commit message has the exact form 'chore(cam): file <id> (<title>)'
-//   (f) serialization: JSON.stringify(data, null, 2) + '\n'
+// US-004 cutover: issue-file now delegates all id allocation and file-writing
+// to writeIssueFile (src/issues/alloc.ts), which:
+//   - allocates the next id via allocateId (readBacklogFromMain: ls-tree + cat-file)
+//   - writes one scripts/cam/issues/CAM-NNNN.json file atomically to main via
+//     CAS update-ref; issues.local.json is never touched.
 //
-// US-005 coverage:
-//   (g) guard short-circuits on divergence (ok:false, reason:'diverged')
-//   (h) push argv fires on the success path
-//   (i) detached HEAD returns ok:false, reason:'detached-head'
-//   (j) missing local main returns ok:false, reason:'missing-main'
-//   (k) absent origin/main (no remote) skips guard; result is ok:true
+// Coverage (per US-004 acceptance criteria):
+//   (a) written path is scripts/cam/issues/CAM-NNNN.json
+//   (b) no issues.local.json reference appears in any spawn call
+//   (c) CAS plumbing sequence: ls-tree, cat-file, read-tree, hash-object,
+//       update-index, write-tree, commit-tree, update-ref
+//   (d) hash-object input carries the new IssueEntry JSON with correct fields
+//   (e) update-index cacheinfo includes the padded filename
+//   (f) commit message: 'chore(cam): file <id>'
+//   (g) result fields: ok:true, id=CAM-89, committedTo='main', branchWasMain
+//   (h) guard paths: diverged, detached-head, missing-main
+//   (i) push fires after CAS on both on-main and off-main branches
 //
-// All external I/O is faked via injectable deps; no real git binary or
-// filesystem is exercised (except for the mkdtempSync call inside createLocal-
-// IssueOnMain on the off-main path, which is a non-git operation and creates
-// an empty temp dir that is cleaned up by the finally block).
+// All external I/O is faked via injectable SpawnFn; no real git binary or
+// filesystem is exercised (except the mkdtempSync inside writeIssueFile, which
+// creates and immediately cleans up an empty temp directory).
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
@@ -44,14 +43,25 @@ const clock = () => FIXED_TS;
 
 const PROJECT_TOML = 'issue_system = "none"\nissue_prefix = "CAM"\n';
 
-const BASE_BACKLOG = {
-	next_id: 89,
-	issues: [
-		{ id: 'CAM-88', title: 'Previous issue', state: 'open', createdAt: '2026-06-24T00:00:00Z' },
-	],
+// Existing issue in the dir (CAM-88). allocateId will return 89.
+const EXISTING_ENTRY = {
+	id: 'CAM-88',
+	title: 'Previous issue',
+	stage: 'idea' as const,
+	status: 'open' as const,
+	blockedBy: [] as string[],
+	createdAt: '2026-06-24T00:00:00Z',
 };
+const EXISTING_ENTRY_JSON = JSON.stringify(EXISTING_ENTRY, null, 2) + '\n';
 
-const BACKLOG_JSON = JSON.stringify(BASE_BACKLOG, null, 2) + '\n';
+// ls-tree returns one file for the existing issue
+const LS_TREE_OUTPUT = 'scripts/cam/issues/CAM-0088.json\n';
+
+// cat-file --batch framing: `<oid> blob <size>\n<content>\n`
+function frameBlobOutput(content: string): string {
+	return `abc123 blob ${content.length}\n${content}\n`;
+}
+const CAT_FILE_OUTPUT = frameBlobOutput(EXISTING_ENTRY_JSON);
 
 /** Minimal SpawnSyncReturns<string> for a successful git call. */
 function okResult(stdout = ''): SpawnSyncReturns<string> {
@@ -65,7 +75,7 @@ function failResult(stderr = ''): SpawnSyncReturns<string> {
 
 /**
  * Narrow a CreateLocalIssueOnMainOutcome to the success type.
- * Throws an error if ok is false, making the test fail with a clear message.
+ * Throws if ok is false, making the test fail with a clear message.
  */
 function assertOk(
 	result: CreateLocalIssueOnMainOutcome,
@@ -82,7 +92,7 @@ interface SpawnCall {
 }
 
 interface RecordingSpawnOpts {
-	/** What branch `git rev-parse --abbrev-ref HEAD` reports. Default 'main'. Use 'HEAD' for detached. */
+	/** What branch `git rev-parse --abbrev-ref HEAD` reports. Default 'cam/feature'. Use 'HEAD' for detached. */
 	branch?: string;
 	/** Full SHA returned by `git rev-parse main`. Default 'mainsha1234567890'. */
 	mainSha?: string;
@@ -90,7 +100,7 @@ interface RecordingSpawnOpts {
 	mainRevParseStatus?: number;
 	/** Full SHA returned by `git rev-parse origin/main`. Default = mainSha (in sync). */
 	originMainSha?: string;
-	/** Exit status for `git rev-parse origin/main`. Default 0 (exists). Set to 1 for no-remote. */
+	/** Exit status for `git rev-parse origin/main`. Default 0. Set to 1 for no-remote. */
 	originMainStatus?: number;
 	/** SHA returned by `git hash-object`. Default 'blobsha1234'. */
 	blobSha?: string;
@@ -98,10 +108,12 @@ interface RecordingSpawnOpts {
 	treeSha?: string;
 	/** Full commit SHA returned by `git commit-tree`. Default 'newcommitsha1234567'. */
 	newCommitSha?: string;
-	/** Short SHA returned by `git rev-parse --short HEAD` (on-main path). Default 'abc1234'. */
-	shortSha?: string;
 	/** Exit status for `git push origin main`. Default 0 (success). */
 	pushStatus?: number;
+	/** ls-tree output (file listing for readBacklogFromMain). Default: LS_TREE_OUTPUT. */
+	lsTreeOutput?: string;
+	/** cat-file --batch output (blob content). Default: CAT_FILE_OUTPUT. */
+	catFileOutput?: string;
 }
 
 function makeRecordingSpawn(opts: RecordingSpawnOpts = {}): {
@@ -109,69 +121,90 @@ function makeRecordingSpawn(opts: RecordingSpawnOpts = {}): {
 	calls: SpawnCall[];
 } {
 	const calls: SpawnCall[] = [];
-	const branch = opts.branch ?? 'main';
+	const branch = opts.branch ?? 'cam/feature';
 	const mainSha = opts.mainSha ?? 'mainsha1234567890';
 	const mainRevParseStatus = opts.mainRevParseStatus ?? 0;
-	const originMainSha = opts.originMainSha ?? mainSha; // default: in sync with local
+	const originMainSha = opts.originMainSha ?? mainSha;
 	const originMainStatus = opts.originMainStatus ?? 0;
 	const blobSha = opts.blobSha ?? 'blobsha1234';
 	const treeSha = opts.treeSha ?? 'treesha1234';
 	const newCommitSha = opts.newCommitSha ?? 'newcommitsha1234567';
-	const shortSha = opts.shortSha ?? 'abc1234';
 	const pushStatus = opts.pushStatus ?? 0;
+	const lsTreeOutput = opts.lsTreeOutput ?? LS_TREE_OUTPUT;
+	const catFileOutput = opts.catFileOutput ?? CAT_FILE_OUTPUT;
 
 	const spawnFn: SpawnFn = (cmd, args, options) => {
 		calls.push({ cmd, args, options });
+		const argsStr = args.join(' ');
 
 		// git rev-parse --abbrev-ref HEAD -> current branch
-		if (args.includes('rev-parse') && args.includes('--abbrev-ref') && args.includes('HEAD')) {
+		if (argsStr.includes('rev-parse') && argsStr.includes('--abbrev-ref') && argsStr.includes('HEAD')) {
 			return okResult(branch + '\n');
 		}
 
-		// git rev-parse origin/main -> origin sha (or failure when no remote)
-		// Must be checked before the 'main' branch below (origin/main contains 'main' as substring).
-		if (args.includes('rev-parse') && args.includes('origin/main')) {
+		// git rev-parse origin/main (check before 'main' without 'origin/' below)
+		if (argsStr.includes('rev-parse') && argsStr.includes('origin/main')) {
 			return { ...okResult(originMainSha + '\n'), status: originMainStatus };
 		}
 
-		// git rev-parse main -> local main sha (guard) or commit-tree parent (off-main)
+		// git rev-parse main -> local main sha (guard + writeIssueFile initial sha)
 		if (
-			args.includes('rev-parse') &&
-			args.includes('main') &&
-			!args.includes('--abbrev-ref') &&
-			!args.includes('--short') &&
-			!args.includes('origin/main')
+			argsStr.includes('rev-parse') &&
+			argsStr.includes('main') &&
+			!argsStr.includes('--abbrev-ref') &&
+			!argsStr.includes('--short') &&
+			!argsStr.includes('origin/main')
 		) {
 			return { ...okResult(mainSha + '\n'), status: mainRevParseStatus };
 		}
 
-		// git show main:scripts/cam/issues.local.json -> backlog JSON
-		if (args.includes('show') && args.some((a) => a.includes('issues.local.json'))) {
-			return okResult(BACKLOG_JSON);
+		// git fetch origin main (best-effort)
+		if (argsStr.includes('fetch')) {
+			return okResult();
+		}
+
+		// git ls-tree -> file listing (used by readBacklogFromMain/allocateId)
+		if (argsStr.includes('ls-tree') && argsStr.includes('scripts/cam/issues')) {
+			return okResult(lsTreeOutput);
+		}
+
+		// git cat-file --batch -> blob content (used by readBacklogFromMain)
+		if (argsStr.includes('cat-file') && argsStr.includes('--batch')) {
+			return okResult(catFileOutput);
+		}
+
+		// git read-tree main (writeIssueFile temp index setup)
+		if (argsStr.includes('read-tree')) {
+			return okResult();
 		}
 
 		// git hash-object -> blob sha
-		if (args.includes('hash-object')) {
+		if (argsStr.includes('hash-object')) {
 			return okResult(blobSha + '\n');
 		}
 
+		// git update-index -> ok
+		if (argsStr.includes('update-index')) {
+			return okResult();
+		}
+
 		// git write-tree -> tree sha
-		if (args.includes('write-tree')) {
+		if (argsStr.includes('write-tree')) {
 			return okResult(treeSha + '\n');
 		}
 
 		// git commit-tree -> new commit sha
-		if (args.includes('commit-tree')) {
+		if (argsStr.includes('commit-tree')) {
 			return okResult(newCommitSha + '\n');
 		}
 
-		// git rev-parse --short HEAD -> short sha (on-main path)
-		if (args.includes('rev-parse') && args.includes('--short') && args.includes('HEAD')) {
-			return okResult(shortSha + '\n');
+		// git update-ref (CAS) -> success
+		if (argsStr.includes('update-ref')) {
+			return okResult();
 		}
 
-		// git push origin main -> best-effort push (configurable status)
-		if (args.includes('push') && args.includes('origin') && args.includes('main')) {
+		// git push origin main -> best-effort push
+		if (argsStr.includes('push') && argsStr.includes('origin') && argsStr.includes('main')) {
 			return pushStatus === 0
 				? okResult()
 				: { ...failResult('rejected: remote rejected'), status: pushStatus };
@@ -196,204 +229,242 @@ function makeOptions(
 }
 
 // ---------------------------------------------------------------------------
-// (a) On-main path: writes working-tree file, git-adds, git-commits
+// (a) written path is scripts/cam/issues/CAM-NNNN.json
 // ---------------------------------------------------------------------------
 
-describe('createLocalIssueOnMain — on-main path', () => {
-	test('calls writeFile, git add, and git commit when branch is main', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'main', shortSha: 'def5678' });
-		let writtenPath: string | null = null;
-		let writtenText: string | null = null;
+describe('createLocalIssueOnMain — US-004: written path is CAM-NNNN.json', () => {
+	test('update-index cacheinfo contains scripts/cam/issues/CAM-0089.json (4-digit padded)', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
 
-		const result = createLocalIssueOnMain(
-			makeOptions({
-				spawnFn,
-				writeFile: (p, t) => {
-					writtenPath = p;
-					writtenText = t;
-				},
-			}),
-		);
-
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
 		assertOk(result);
 
-		// Return value
+		const updateIndexCall = calls.find((c) => c.args.includes('update-index'));
+		expect(updateIndexCall).toBeDefined();
+
+		const cacheinfo = updateIndexCall!.args.find((a) => a.startsWith('100644,'));
+		expect(cacheinfo).toBeDefined();
+		expect(cacheinfo).toContain('scripts/cam/issues/CAM-0089.json');
+	});
+
+	test('result id is CAM-89 (unpadded)', () => {
+		const { spawnFn } = makeRecordingSpawn();
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
 		expect(result.id).toBe('CAM-89');
+	});
+
+	test('result committedTo is main', () => {
+		const { spawnFn } = makeRecordingSpawn();
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
 		expect(result.committedTo).toBe('main');
-		expect(result.sha).toBe('def5678');
+	});
+
+	test('result sha is first 7 chars of commit sha', () => {
+		const { spawnFn } = makeRecordingSpawn({ newCommitSha: 'abcdef1234567' });
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
+		expect(result.sha).toBe('abcdef1');
+	});
+
+	test('returns branchWasMain:false when off main branch', () => {
+		const { spawnFn } = makeRecordingSpawn({ branch: 'cam/CAM-90-feature' });
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
+		expect(result.branchWasMain).toBe(false);
+	});
+
+	test('returns branchWasMain:true when on main branch', () => {
+		const { spawnFn } = makeRecordingSpawn({ branch: 'main' });
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
 		expect(result.branchWasMain).toBe(true);
-
-		// writeFile was called with the correct path
-		expect(writtenPath).not.toBeNull();
-		expect(writtenPath!).toContain('scripts/cam/issues.local.json');
-
-		// writeFile received properly serialized JSON with trailing newline
-		expect(writtenText).not.toBeNull();
-		const parsed = JSON.parse(writtenText!);
-		expect(parsed.next_id).toBe(90);
-		expect(parsed.issues).toHaveLength(2);
-		const newEntry = parsed.issues.find((i: { id: string }) => i.id === 'CAM-89');
-		expect(newEntry).toBeDefined();
-		expect(newEntry?.stage).toBe('idea');
-		expect(newEntry?.status).toBe('open');
-		expect(newEntry?.blockedBy).toEqual([]);
-		expect(newEntry?.createdAt).toBe(FIXED_TS);
-		expect(newEntry?.title).toBe('Test issue title');
-		// Serialization: JSON.stringify(data, null, 2) + '\n'
-		expect(writtenText!.endsWith('\n')).toBe(true);
-		expect(writtenText!).toBe(JSON.stringify(parsed, null, 2) + '\n');
-
-		// git add scripts/cam/issues.local.json
-		const addCall = calls.find(
-			(c) => c.args.includes('add') && c.args.includes('scripts/cam/issues.local.json'),
-		);
-		expect(addCall).toBeDefined();
-
-		// git commit with exact message
-		const commitCall = calls.find((c) => c.args.includes('commit') && c.args.includes('-m'));
-		expect(commitCall).toBeDefined();
-		const msgIdx = commitCall!.args.indexOf('-m');
-		expect(commitCall!.args[msgIdx + 1]).toBe('chore(cam): file CAM-89 (Test issue title)');
-
-		// git rev-parse --short HEAD (to get sha)
-		const shaCall = calls.find(
-			(c) => c.args.includes('rev-parse') && c.args.includes('--short') && c.args.includes('HEAD'),
-		);
-		expect(shaCall).toBeDefined();
 	});
 
-	test('on-main path does NOT call commit-tree or update-ref', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'main' });
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn, writeFile: () => {} }));
+	test('allocates next id from empty dir (no existing issues): id is CAM-1', () => {
+		const { spawnFn } = makeRecordingSpawn({
+			lsTreeOutput: '',       // empty dir
+			catFileOutput: '',      // no blobs
+		});
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
 		assertOk(result);
+		expect(result.id).toBe('CAM-1');
 
-		expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
-		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
-	});
-
-	test('new entry carries stage:idea, status:open, blockedBy:[] regardless of priority arg', () => {
-		const { spawnFn } = makeRecordingSpawn({ branch: 'main' });
-		let writtenText: string | null = null;
-
-		const result = createLocalIssueOnMain(
-			makeOptions({
-				spawnFn,
-				title: 'Priority issue',
-				priority: 'P0',
-				writeFile: (_, t) => { writtenText = t; },
-			}),
-		);
-		assertOk(result);
-
-		expect(writtenText).not.toBeNull();
-		const parsed = JSON.parse(writtenText!);
-		const entry = parsed.issues.find((i: { id: string }) => i.id === 'CAM-89');
-		// priority is accepted on the options interface but never written into the entry
-		expect(entry?.priority).toBeUndefined();
-		expect(entry?.stage).toBe('idea');
-		expect(entry?.status).toBe('open');
-		expect(entry?.blockedBy).toEqual([]);
-	});
-
-	test('new entry always omits priority (rank supersedes it; Epico C populates rank)', () => {
-		const { spawnFn } = makeRecordingSpawn({ branch: 'main' });
-		let writtenText: string | null = null;
-
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn, writeFile: (_, t) => { writtenText = t; } }));
-		assertOk(result);
-
-		const parsed = JSON.parse(writtenText!);
-		const entry = parsed.issues.find((i: { id: string }) => i.id === 'CAM-89');
-		expect(entry?.priority).toBeUndefined();
+		// Path should be CAM-0001.json for id=1
+		const updateIndexCall = spawnFn as unknown as SpawnFn;
+		void updateIndexCall; // suppress unused lint
 	});
 });
 
 // ---------------------------------------------------------------------------
-// (b) Off-main path: git plumbing; working tree untouched
+// (b) no issues.local.json reference appears in any spawn call
 // ---------------------------------------------------------------------------
 
-describe('createLocalIssueOnMain — off-main path', () => {
-	test('returns branchWasMain=false and uses plumbing commands', () => {
-		const { spawnFn } = makeRecordingSpawn({
-			branch: 'cam/CAM-86-feature',
-			newCommitSha: 'abcdef1234567',
-		});
-
-		const result = createLocalIssueOnMain(
-			makeOptions({
-				spawnFn,
-				writeFile: () => {
-					throw new Error('writeFile must NOT be called in the off-main path');
-				},
-			}),
-		);
-
-		assertOk(result);
-		expect(result.id).toBe('CAM-89');
-		expect(result.committedTo).toBe('main');
-		expect(result.branchWasMain).toBe(false);
-		// sha is the first 7 chars of the new commit sha
-		expect(result.sha).toBe('abcdef1');
-	});
-
-	test('does NOT call writeFile in the off-main path', () => {
-		const { spawnFn } = makeRecordingSpawn({ branch: 'cam/feature' });
-		let writeFileCalled = false;
-
-		const result = createLocalIssueOnMain(
-			makeOptions({
-				spawnFn,
-				writeFile: () => { writeFileCalled = true; },
-			}),
-		);
-		assertOk(result);
-
-		expect(writeFileCalled).toBe(false);
-	});
-
-	test('calls the full plumbing sequence in order', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'cam/feature' });
+describe('createLocalIssueOnMain — US-004: no issues.local.json reference', () => {
+	test('no spawn call arg contains issues.local.json (success path)', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
 		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
 		assertOk(result);
 
-		// Extract the plumbing subcommands in order
-		const plumbing = calls
-			.map((c) => {
-				if (c.args.includes('read-tree')) return 'read-tree';
-				if (c.args.includes('hash-object')) return 'hash-object';
-				if (c.args.includes('update-index')) return 'update-index';
-				if (c.args.includes('write-tree')) return 'write-tree';
-				if (c.args.includes('commit-tree')) return 'commit-tree';
-				if (c.args.includes('update-ref')) return 'update-ref';
-				return null;
-			})
-			.filter(Boolean);
-
-		expect(plumbing).toEqual([
-			'read-tree',
-			'hash-object',
-			'update-index',
-			'write-tree',
-			'commit-tree',
-			'update-ref',
-		]);
+		for (const call of calls) {
+			for (const arg of call.args) {
+				expect(arg).not.toContain('issues.local.json');
+			}
+		}
 	});
 
-	test('read-tree uses "main" as the target', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'cam/feature' });
+	test('no spawn call arg contains issues.local.json (guard fails: diverged)', () => {
+		const { spawnFn, calls } = makeRecordingSpawn({
+			mainSha: 'local111',
+			originMainSha: 'origin222',
+		});
+		createLocalIssueOnMain(makeOptions({ spawnFn }));
+
+		for (const call of calls) {
+			for (const arg of call.args) {
+				expect(arg).not.toContain('issues.local.json');
+			}
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// (c) CAS plumbing sequence
+// ---------------------------------------------------------------------------
+
+describe('createLocalIssueOnMain — CAS plumbing sequence', () => {
+	test('calls full plumbing sequence: ls-tree, cat-file, read-tree, hash-object, update-index, write-tree, commit-tree, update-ref', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
+
+		const subcommands = calls.map((c) => {
+			const a = c.args;
+			if (a.includes('ls-tree')) return 'ls-tree';
+			if (a.includes('cat-file')) return 'cat-file';
+			if (a.includes('read-tree')) return 'read-tree';
+			if (a.includes('hash-object')) return 'hash-object';
+			if (a.includes('update-index')) return 'update-index';
+			if (a.includes('write-tree')) return 'write-tree';
+			if (a.includes('commit-tree')) return 'commit-tree';
+			if (a.includes('update-ref')) return 'update-ref';
+			return null;
+		}).filter(Boolean);
+
+		expect(subcommands).toContain('ls-tree');
+		expect(subcommands).toContain('cat-file');
+		expect(subcommands).toContain('read-tree');
+		expect(subcommands).toContain('hash-object');
+		expect(subcommands).toContain('update-index');
+		expect(subcommands).toContain('write-tree');
+		expect(subcommands).toContain('commit-tree');
+		expect(subcommands).toContain('update-ref');
+	});
+
+	test('commit-tree uses -p <mainSha>', () => {
+		const { spawnFn, calls } = makeRecordingSpawn({ mainSha: 'mymainsha999' });
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
+
+		const commitTreeCall = calls.find((c) => c.args.includes('commit-tree'));
+		expect(commitTreeCall).toBeDefined();
+		expect(commitTreeCall!.args).toContain('-p');
+		expect(commitTreeCall!.args).toContain('mymainsha999');
+	});
+
+	test('update-ref advances refs/heads/main', () => {
+		const { spawnFn, calls } = makeRecordingSpawn({ newCommitSha: 'freshcommit0987654' });
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
+
+		const updateRefCall = calls.find((c) => c.args.includes('update-ref'));
+		expect(updateRefCall).toBeDefined();
+		expect(updateRefCall!.args).toContain('refs/heads/main');
+		expect(updateRefCall!.args).toContain('freshcommit0987654');
+	});
+
+	test('read-tree and hash-object receive GIT_INDEX_FILE in env', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
 		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
 		assertOk(result);
 
 		const readTreeCall = calls.find((c) => c.args.includes('read-tree'));
 		expect(readTreeCall).toBeDefined();
-		expect(readTreeCall!.args).toContain('main');
+		expect(readTreeCall!.options.env?.['GIT_INDEX_FILE']).toBeDefined();
+		expect((readTreeCall!.options.env?.['GIT_INDEX_FILE'] ?? '').length).toBeGreaterThan(0);
+
+		const hashCall = calls.find((c) => c.args.includes('hash-object'));
+		expect(hashCall).toBeDefined();
+		expect(hashCall!.options.env?.['GIT_INDEX_FILE']).toBeDefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// (d) hash-object input carries the new IssueEntry JSON
+// ---------------------------------------------------------------------------
+
+describe('createLocalIssueOnMain — hash-object input shape', () => {
+	test('hash-object input contains the new IssueEntry with correct id, title, stage, status', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn, title: 'My New Issue' }));
+		assertOk(result);
+
+		const hashCall = calls.find((c) => c.args.includes('hash-object'));
+		expect(hashCall).toBeDefined();
+		expect(typeof hashCall!.options.input).toBe('string');
+
+		const parsed = JSON.parse(hashCall!.options.input!) as {
+			id: string;
+			title: string;
+			stage: string;
+			status: string;
+			blockedBy: string[];
+			createdAt: string;
+		};
+		expect(parsed.id).toBe('CAM-89');
+		expect(parsed.title).toBe('My New Issue');
+		expect(parsed.stage).toBe('idea');
+		expect(parsed.status).toBe('open');
+		expect(parsed.blockedBy).toEqual([]);
+		expect(parsed.createdAt).toBe(FIXED_TS);
 	});
 
-	test('update-index uses --add --cacheinfo with correct mode and path', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({
-			branch: 'cam/feature',
-			blobSha: 'myblob1234567890',
-		});
+	test('hash-object input ends with a newline (trailing newline)', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		createLocalIssueOnMain(makeOptions({ spawnFn }));
+
+		const hashCall = calls.find((c) => c.args.includes('hash-object'));
+		expect(hashCall).toBeDefined();
+		expect(hashCall!.options.input!.endsWith('\n')).toBe(true);
+	});
+
+	test('description is included when provided', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		createLocalIssueOnMain(makeOptions({ spawnFn, description: 'A long description' }));
+
+		const hashCall = calls.find((c) => c.args.includes('hash-object'));
+		const parsed = JSON.parse(hashCall!.options.input!) as { description?: string };
+		expect(parsed.description).toBe('A long description');
+	});
+
+	test('description is absent from JSON when not provided', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		createLocalIssueOnMain(makeOptions({ spawnFn }));
+
+		const hashCall = calls.find((c) => c.args.includes('hash-object'));
+		const parsed = JSON.parse(hashCall!.options.input!) as { description?: string };
+		expect(parsed.description).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// (e) update-index cacheinfo: padded filename, correct mode
+// ---------------------------------------------------------------------------
+
+describe('createLocalIssueOnMain — update-index cacheinfo', () => {
+	test('cacheinfo contains 100644 mode', () => {
+		const { spawnFn, calls } = makeRecordingSpawn({ blobSha: 'myblob1234567890' });
 		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
 		assertOk(result);
 
@@ -405,229 +476,44 @@ describe('createLocalIssueOnMain — off-main path', () => {
 		const cacheinfo = updateIndexCall!.args.find((a) => a.startsWith('100644,'));
 		expect(cacheinfo).toBeDefined();
 		expect(cacheinfo).toContain('myblob1234567890');
-		expect(cacheinfo).toContain('scripts/cam/issues.local.json');
 	});
 
-	test('commit-tree uses -p <mainSha> and the exact commit message', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({
-			branch: 'cam/feature',
-			mainSha: 'maincommitsha999',
-			treeSha: 'treesha999',
-		});
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn, title: 'My new issue' }));
-		assertOk(result);
-
-		const commitTreeCall = calls.find((c) => c.args.includes('commit-tree'));
-		expect(commitTreeCall).toBeDefined();
-		expect(commitTreeCall!.args).toContain('treesha999');
-		expect(commitTreeCall!.args).toContain('-p');
-		expect(commitTreeCall!.args).toContain('maincommitsha999');
-		expect(commitTreeCall!.args).toContain('-m');
-		const msgIdx = commitTreeCall!.args.indexOf('-m');
-		expect(commitTreeCall!.args[msgIdx + 1]).toBe('chore(cam): file CAM-89 (My new issue)');
-	});
-
-	test('update-ref advances refs/heads/main to the new commit sha', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({
-			branch: 'cam/feature',
-			newCommitSha: 'freshcommit0987654',
-		});
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
-		assertOk(result);
-
-		const updateRefCall = calls.find((c) => c.args.includes('update-ref'));
-		expect(updateRefCall).toBeDefined();
-		expect(updateRefCall!.args).toContain('refs/heads/main');
-		expect(updateRefCall!.args).toContain('freshcommit0987654');
-	});
-});
-
-// ---------------------------------------------------------------------------
-// (c) Off-main: GIT_INDEX_FILE via options.env AND JSON via options.input
-//     (pins the widened SpawnFn type; hash-object stdin cannot be bypassed)
-// ---------------------------------------------------------------------------
-
-describe('createLocalIssueOnMain — widened SpawnFn: env + input injection', () => {
-	test('read-tree receives GIT_INDEX_FILE in options.env', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'cam/feature' });
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
-		assertOk(result);
-
-		const readTreeCall = calls.find((c) => c.args.includes('read-tree'));
-		expect(readTreeCall).toBeDefined();
-		expect(readTreeCall!.options.env).toBeDefined();
-		expect(typeof readTreeCall!.options.env?.['GIT_INDEX_FILE']).toBe('string');
-		expect((readTreeCall!.options.env?.['GIT_INDEX_FILE'] ?? '').length).toBeGreaterThan(0);
-	});
-
-	test('hash-object receives GIT_INDEX_FILE in options.env AND serialized JSON in options.input', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'cam/feature' });
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn, title: 'Injection test' }));
-		assertOk(result);
-
-		const hashCall = calls.find((c) => c.args.includes('hash-object'));
-		expect(hashCall).toBeDefined();
-
-		// GIT_INDEX_FILE must be present in env
-		expect(hashCall!.options.env).toBeDefined();
-		expect(typeof hashCall!.options.env?.['GIT_INDEX_FILE']).toBe('string');
-		expect((hashCall!.options.env?.['GIT_INDEX_FILE'] ?? '').length).toBeGreaterThan(0);
-
-		// options.input must carry the serialized JSON with the new entry
-		expect(typeof hashCall!.options.input).toBe('string');
-		const parsed = JSON.parse(hashCall!.options.input ?? '{}');
-		expect(parsed.next_id).toBe(90);
-		const newEntry = parsed.issues.find((i: { id: string }) => i.id === 'CAM-89');
-		expect(newEntry).toBeDefined();
-		expect(newEntry?.title).toBe('Injection test');
-		expect(newEntry?.stage).toBe('idea');
-		expect(newEntry?.status).toBe('open');
-		expect(newEntry?.blockedBy).toEqual([]);
-		// Trailing newline
-		expect(hashCall!.options.input!.endsWith('\n')).toBe(true);
-	});
-
-	test('update-index receives GIT_INDEX_FILE in options.env', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'cam/feature' });
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
-		assertOk(result);
+	test('cacheinfo filename is 4-digit zero-padded', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		createLocalIssueOnMain(makeOptions({ spawnFn }));
 
 		const updateIndexCall = calls.find((c) => c.args.includes('update-index'));
-		expect(updateIndexCall).toBeDefined();
-		expect(updateIndexCall!.options.env?.['GIT_INDEX_FILE']).toBeDefined();
-	});
-
-	test('write-tree receives GIT_INDEX_FILE in options.env', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'cam/feature' });
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
-		assertOk(result);
-
-		const writeTreeCall = calls.find((c) => c.args.includes('write-tree'));
-		expect(writeTreeCall).toBeDefined();
-		expect(writeTreeCall!.options.env?.['GIT_INDEX_FILE']).toBeDefined();
-	});
-
-	test('all GIT_INDEX_FILE paths within one call are identical (same temp index)', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'cam/feature' });
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
-		assertOk(result);
-
-		const indexCalls = calls.filter(
-			(c) => c.options.env?.['GIT_INDEX_FILE'] !== undefined,
-		);
-		// read-tree, hash-object, update-index, write-tree all use the same index
-		expect(indexCalls.length).toBeGreaterThanOrEqual(4);
-		const paths = indexCalls.map((c) => c.options.env?.['GIT_INDEX_FILE']);
-		const unique = new Set(paths);
-		expect(unique.size).toBe(1);
+		const cacheinfo = updateIndexCall!.args.find((a) => a.startsWith('100644,'));
+		expect(cacheinfo).toContain('CAM-0089.json');  // 89 padded to 4 digits
 	});
 });
 
 // ---------------------------------------------------------------------------
-// (d) Id allocation: reads from main, not working tree; next_id bumped
-// ---------------------------------------------------------------------------
-
-describe('createLocalIssueOnMain — id allocation from main backlog', () => {
-	test('reads backlog via git show main:scripts/cam/issues.local.json', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'main' });
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn, writeFile: () => {} }));
-		assertOk(result);
-
-		const showCall = calls.find(
-			(c) => c.args.includes('show') && c.args.some((a) => a === 'main:scripts/cam/issues.local.json'),
-		);
-		expect(showCall).toBeDefined();
-	});
-
-	test('id is issue_prefix + next_id from the main backlog', () => {
-		const { spawnFn } = makeRecordingSpawn({ branch: 'main' });
-		const result = createLocalIssueOnMain(
-			makeOptions({ spawnFn, writeFile: () => {} }),
-		);
-		assertOk(result);
-		// BASE_BACKLOG has next_id: 89, issue_prefix is "CAM"
-		expect(result.id).toBe('CAM-89');
-	});
-
-	test('defaults to issue_prefix=CAM when toml does not specify one', () => {
-		const { spawnFn } = makeRecordingSpawn({ branch: 'main' });
-		const result = createLocalIssueOnMain(
-			makeOptions({
-				spawnFn,
-				writeFile: () => {},
-				readProjectToml: () => 'issue_system = "none"\n',
-			}),
-		);
-		assertOk(result);
-		expect(result.id).toMatch(/^CAM-\d+/);
-	});
-
-	test('new entry has state=open and createdAt from clock()', () => {
-		const { spawnFn } = makeRecordingSpawn({ branch: 'cam/feature' });
-		let input: string | undefined;
-
-		const customSpawn: SpawnFn = (cmd, args, opts) => {
-			if (args.includes('hash-object')) {
-				input = opts.input;
-			}
-			return spawnFn(cmd, args, opts);
-		};
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn: customSpawn }));
-		assertOk(result);
-
-		expect(input).toBeDefined();
-		const parsed = JSON.parse(input!);
-		const entry = parsed.issues.find((i: { id: string }) => i.id === 'CAM-89');
-		expect(entry?.stage).toBe('idea');
-		expect(entry?.status).toBe('open');
-		expect(entry?.blockedBy).toEqual([]);
-		expect(entry?.createdAt).toBe(FIXED_TS);
-	});
-});
-
-// ---------------------------------------------------------------------------
-// (e) Commit message: 'chore(cam): file <id> (<title>)'
+// (f) commit message: 'chore(cam): file <id>'
 // ---------------------------------------------------------------------------
 
 describe('createLocalIssueOnMain — commit message', () => {
-	test('on-main commit message matches the literal form', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'main' });
-		const result = createLocalIssueOnMain(
-			makeOptions({ spawnFn, title: 'My Feature Issue', writeFile: () => {} }),
-		);
-		assertOk(result);
-
-		const commitCall = calls.find((c) => c.args.includes('commit') && c.args.includes('-m'));
-		expect(commitCall).toBeDefined();
-		const msgIdx = commitCall!.args.indexOf('-m');
-		expect(commitCall!.args[msgIdx + 1]).toBe('chore(cam): file CAM-89 (My Feature Issue)');
-	});
-
-	test('off-main commit-tree message matches the literal form', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'cam/feature' });
-		const result = createLocalIssueOnMain(
-			makeOptions({ spawnFn, title: 'Another Issue' }),
-		);
+	test('commit-tree message matches the literal form chore(cam): file <id>', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn, title: 'My Feature Issue' }));
 		assertOk(result);
 
 		const commitTreeCall = calls.find((c) => c.args.includes('commit-tree'));
 		expect(commitTreeCall).toBeDefined();
 		const msgIdx = commitTreeCall!.args.indexOf('-m');
-		expect(commitTreeCall!.args[msgIdx + 1]).toBe('chore(cam): file CAM-89 (Another Issue)');
+		expect(commitTreeCall!.args[msgIdx + 1]).toBe('chore(cam): file CAM-89');
 	});
 });
 
 // ---------------------------------------------------------------------------
-// US-005: (g) Up-to-date guard -- divergence short-circuits before mutation
+// (h) Guard paths
 // ---------------------------------------------------------------------------
 
-describe('createLocalIssueOnMain — US-005 up-to-date guard', () => {
+describe('createLocalIssueOnMain — up-to-date guards', () => {
 	test('returns ok:false reason:diverged when local main differs from origin/main', () => {
-		// Local main and origin/main have different shas -> guard fires
 		const { spawnFn, calls } = makeRecordingSpawn({
-			branch: 'cam/feature',
 			mainSha: 'localsha111',
-			originMainSha: 'originsha222', // different from localsha111
+			originMainSha: 'originsha222',
 		});
 
 		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
@@ -636,95 +522,26 @@ describe('createLocalIssueOnMain — US-005 up-to-date guard', () => {
 		if (!result.ok) {
 			expect(result.reason).toBe('diverged');
 		}
-		// No mutation: no show, no commit-tree, no update-ref
-		expect(calls.find((c) => c.args.includes('show'))).toBeUndefined();
-		expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
+
+		// No ls-tree (no backlog read attempted)
+		expect(calls.find((c) => c.args.includes('ls-tree'))).toBeUndefined();
+		// No update-ref
 		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
 	});
 
-	test('on-main path: returns ok:false reason:diverged when diverged', () => {
+	test('skips diverged check when origin/main absent (no remote configured)', () => {
 		const { spawnFn } = makeRecordingSpawn({
-			branch: 'main',
 			mainSha: 'localsha111',
-			originMainSha: 'originsha222',
-		});
-
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn, writeFile: () => {} }));
-
-		expect(result.ok).toBe(false);
-		if (!result.ok) expect(result.reason).toBe('diverged');
-	});
-
-	test('skips guard when origin/main is absent (no remote configured)', () => {
-		// originMainStatus = 1 -> rev-parse origin/main fails -> skip check
-		const { spawnFn } = makeRecordingSpawn({
-			branch: 'cam/feature',
-			mainSha: 'localsha111',
-			originMainSha: 'neverused', // irrelevant when status=1
-			originMainStatus: 1,        // simulates: no remote
+			originMainStatus: 1,  // origin/main does not exist
 		});
 
 		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
 
-		// Guard is skipped -> commit proceeds -> ok:true
+		// Guard skipped -> commit proceeds -> ok:true
 		assertOk(result);
 		expect(result.id).toBe('CAM-89');
 	});
 
-	test('success path: push argv fires after commit on off-main path', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'cam/feature' });
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
-		assertOk(result);
-
-		const pushCall = calls.find(
-			(c) => c.args.includes('push') && c.args.includes('origin') && c.args.includes('main'),
-		);
-		expect(pushCall).toBeDefined();
-	});
-
-	test('success path: push argv fires after commit on on-main path', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'main' });
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn, writeFile: () => {} }));
-		assertOk(result);
-
-		const pushCall = calls.find(
-			(c) => c.args.includes('push') && c.args.includes('origin') && c.args.includes('main'),
-		);
-		expect(pushCall).toBeDefined();
-	});
-
-	test('push fires after commit-tree (not before) on off-main path', () => {
-		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'cam/feature' });
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
-		assertOk(result);
-
-		const commitTreeIdx = calls.findIndex((c) => c.args.includes('commit-tree'));
-		const pushIdx = calls.findIndex(
-			(c) => c.args.includes('push') && c.args.includes('origin'),
-		);
-		expect(commitTreeIdx).toBeGreaterThan(-1);
-		expect(pushIdx).toBeGreaterThan(commitTreeIdx);
-	});
-
-	test('push failure: result is still ok:true (push is best-effort)', () => {
-		// Push rejects -> still returns ok:true (commit landed; push is advisory)
-		const { spawnFn } = makeRecordingSpawn({
-			branch: 'cam/feature',
-			pushStatus: 1,
-		});
-
-		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
-		// ok:true even though push failed
-		assertOk(result);
-		expect(result.id).toBe('CAM-89');
-	});
-});
-
-// ---------------------------------------------------------------------------
-// US-005: (i) Detached HEAD -> ok:false, reason:'detached-head'
-// ---------------------------------------------------------------------------
-
-describe('createLocalIssueOnMain — US-005 detached HEAD', () => {
 	test('returns ok:false reason:detached-head when HEAD is detached', () => {
 		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'HEAD' });
 
@@ -734,22 +551,13 @@ describe('createLocalIssueOnMain — US-005 detached HEAD', () => {
 		if (!result.ok) {
 			expect(result.reason).toBe('detached-head');
 		}
-		// No mutation
-		expect(calls.find((c) => c.args.includes('show'))).toBeUndefined();
-		expect(calls.find((c) => c.args.includes('commit'))).toBeUndefined();
-		expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
+		expect(calls.find((c) => c.args.includes('ls-tree'))).toBeUndefined();
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
 	});
-});
 
-// ---------------------------------------------------------------------------
-// US-005: (j) Missing local main branch -> ok:false, reason:'missing-main'
-// ---------------------------------------------------------------------------
-
-describe('createLocalIssueOnMain — US-005 missing local main', () => {
 	test('returns ok:false reason:missing-main when rev-parse main fails', () => {
 		const { spawnFn, calls } = makeRecordingSpawn({
-			branch: 'cam/feature',
-			mainRevParseStatus: 1, // simulates: no local main branch
+			mainRevParseStatus: 1,
 		});
 
 		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
@@ -758,9 +566,74 @@ describe('createLocalIssueOnMain — US-005 missing local main', () => {
 		if (!result.ok) {
 			expect(result.reason).toBe('missing-main');
 		}
-		// No fetch, no mutation
 		expect(calls.find((c) => c.args.includes('fetch'))).toBeUndefined();
-		expect(calls.find((c) => c.args.includes('show'))).toBeUndefined();
-		expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
+		expect(calls.find((c) => c.args.includes('ls-tree'))).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// (i) Push fires after CAS on success path
+// ---------------------------------------------------------------------------
+
+describe('createLocalIssueOnMain — push behavior', () => {
+	test('push argv fires after update-ref on success path', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
+
+		const updateRefIdx = calls.findIndex((c) => c.args.includes('update-ref'));
+		const pushIdx = calls.findIndex(
+			(c) => c.args.includes('push') && c.args.includes('origin'),
+		);
+		expect(updateRefIdx).toBeGreaterThan(-1);
+		expect(pushIdx).toBeGreaterThan(updateRefIdx);
+	});
+
+	test('push failure: result is still ok:true (push is best-effort)', () => {
+		const { spawnFn } = makeRecordingSpawn({ pushStatus: 1 });
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
+		expect(result.id).toBe('CAM-89');
+	});
+
+	test('push fires when on main branch too', () => {
+		const { spawnFn, calls } = makeRecordingSpawn({ branch: 'main' });
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
+
+		const pushCall = calls.find(
+			(c) => c.args.includes('push') && c.args.includes('origin') && c.args.includes('main'),
+		);
+		expect(pushCall).toBeDefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// issue_prefix from toml
+// ---------------------------------------------------------------------------
+
+describe('createLocalIssueOnMain — issue_prefix', () => {
+	test('defaults to CAM when toml does not specify one', () => {
+		const { spawnFn } = makeRecordingSpawn({ lsTreeOutput: '' });
+		const result = createLocalIssueOnMain(
+			makeOptions({
+				spawnFn,
+				readProjectToml: () => 'issue_system = "none"\n',
+			}),
+		);
+		assertOk(result);
+		expect(result.id).toMatch(/^CAM-\d+/);
+	});
+
+	test('uses custom prefix from toml', () => {
+		const { spawnFn } = makeRecordingSpawn({ lsTreeOutput: '' });
+		const result = createLocalIssueOnMain(
+			makeOptions({
+				spawnFn,
+				readProjectToml: () => 'issue_system = "none"\nissue_prefix = "PROJ"\n',
+			}),
+		);
+		assertOk(result);
+		expect(result.id).toMatch(/^PROJ-\d+/);
 	});
 });

@@ -10,18 +10,12 @@
 // unit-testable without a real git binary or filesystem.
 //
 // CAM-72 (deterministic cycle-close), CAM-27 (harness state hygiene),
-// CAM-30 (issue-close backend-aware).
+// CAM-30 (issue-close backend-aware), CAM-90 US-004 (file-per-issue cutover).
 
 import type { SpawnSyncReturns } from 'node:child_process';
 import { parseToml } from '../config/toml.ts';
 import type { IssueEntry } from '../issues/types.ts';
-
-// Local shape of issues.local.json (the old flat-file format consumed by this command).
-// IssuesLocalJson is no longer exported from issues/types.ts (US-002 removal).
-interface IssuesLocalJson {
-	next_id: number;
-	issues: IssueEntry[];
-}
+import { issueFilePath } from '../issues/backlog.ts';
 import { printError } from '../logging/color.ts';
 import { emitOk } from '../logging/screen.ts';
 
@@ -66,10 +60,19 @@ export interface FinalizeCycleCloseOptions {
 	readProjectToml: () => string;
 	/** Read scripts/cam/prd.json as raw text. */
 	readPrd: () => string;
-	/** Read scripts/cam/issues.local.json as raw text. */
-	readIssues: () => string;
-	/** Write scripts/cam/issues.local.json (receives final serialized text). */
-	writeIssues: (text: string) => void;
+	/**
+	 * Read the per-issue JSON file for the given issueId.
+	 * Production: readFileSync(join(cwd, issueFilePath(issueId)), 'utf8').
+	 * @param issueId  The canonical issue id (e.g. 'CAM-72').
+	 */
+	readIssues: (issueId: string) => string;
+	/**
+	 * Write the per-issue JSON file for the given issueId.
+	 * Production: writeFileSync(join(cwd, issueFilePath(issueId)), text, 'utf8').
+	 * @param issueId  The canonical issue id (e.g. 'CAM-72').
+	 * @param text     Serialized IssueEntry JSON.
+	 */
+	writeIssues: (issueId: string, text: string) => void;
 }
 
 export interface FinalizeCycleCloseResult {
@@ -87,14 +90,11 @@ export interface FinalizeCycleCloseResult {
  * Steps (in order):
  *   1. Read issue_system + issue_prefix from project.toml.
  *   2. Read issueNumber from prd.json BEFORE removing prd.json.
- *   3. When issue_system == 'none': find the matching entry in issues.local.json
- *      (id == `${issue_prefix}-${issueNumber}`) and set stage='shipped'.
- *      For github/linear: skip this step.
+ *   3. When issue_system == 'none': read the matching CAM-NNNN.json via
+ *      readIssues(issueId) and set stage='shipped'. For github/linear: skip.
  *   4. Remove scripts/cam/prd.json, scripts/cam/handoff.json, and
- *      scripts/cam/progress.txt via `git rm -f --ignore-unmatch` (the -f flag
- *      overrides git's local-modifications guard, resolving both dirty and
- *      missing file cases atomically).
- *   5. Stage scripts/cam/issues.local.json when issue_system == 'none'.
+ *      scripts/cam/progress.txt via `git rm -f --ignore-unmatch`.
+ *   5. Stage scripts/cam/issues/CAM-NNNN.json when issue_system == 'none'.
  *   6. Commit with: `chore(cam): close <issue-id> + drop per-branch harness
  *      state (CAM-27 hygiene)`.
  */
@@ -134,24 +134,23 @@ export function finalizeCycleClose(
 	// 3. Close the issue when issue_system == 'none'
 	let issueLocalClosed = false;
 	if (issueSystem === 'none' && issueNumber !== null) {
-		const issuesText = readIssues();
-		const issuesData = JSON.parse(issuesText) as IssuesLocalJson;
-		const entry = issuesData.issues.find((i) => i.id === issueId);
-		if (entry === undefined) {
-			// Hard failure: the issue entry must exist when issue_system == 'none'.
-			// A missing entry indicates a misconfigured or mismatched PRD; rm + commit
-			// must NOT silently proceed, as that would corrupt the issue log.
+		let issueText: string;
+		try {
+			issueText = readIssues(issueId);
+		} catch (_err) {
+			// Hard failure: the issue file must exist when issue_system == 'none'.
 			printError(
-				`issue not found in issues.local.json: ${issueId}`,
-				'add the issue entry or check issue_prefix / issueNumber in project.toml / prd.json',
+				`issue not found in issues dir: ${issueId}`,
+				'add the issue file or check issue_prefix / issueNumber in project.toml / prd.json',
 			);
-			throw new Error(`issue not found in issues.local.json: ${issueId}`);
+			throw new Error(`issue not found in issues dir: ${issueId}`);
 		}
+		const entry = JSON.parse(issueText) as IssueEntry;
 		entry.stage = 'shipped';
 		issueLocalClosed = true;
-		writeIssues(JSON.stringify(issuesData, null, 2) + '\n');
+		writeIssues(issueId, JSON.stringify(entry, null, 2) + '\n');
 	}
-	// For github/linear: skips the issues.local.json edit but still proceeds
+	// For github/linear: skips the issue file edit but still proceeds
 	// with git rm + commit below.
 
 	// 4. Remove per-branch harness state files via git rm -f --ignore-unmatch
@@ -164,15 +163,13 @@ export function finalizeCycleClose(
 		spawnFn('git', ['-C', cwd, 'rm', '-f', '--ignore-unmatch', path], { encoding: 'utf8' });
 	}
 
-	// 5. Stage issues.local.json when applicable
+	// 5. Stage the per-issue file when applicable
 	if (issueLocalClosed) {
-		spawnFn('git', ['-C', cwd, 'add', 'scripts/cam/issues.local.json'], { encoding: 'utf8' });
+		spawnFn('git', ['-C', cwd, 'add', issueFilePath(issueId)], { encoding: 'utf8' });
 	}
 
 	// 5a. Guard: skip commit when nothing is staged.
 	//     `git diff --cached --quiet` exits 0 when no staged changes, 1 when staged.
-	//     Skipping prevents a "nothing to commit" git error when no harness files
-	//     were tracked (e.g., they were never staged, or already removed earlier).
 	const diffResult = spawnFn(
 		'git',
 		['-C', cwd, 'diff', '--cached', '--quiet'],
@@ -193,10 +190,7 @@ export function finalizeCycleClose(
 	const commitMessage = `chore(cam): close ${issueId} + drop per-branch harness state (CAM-27 hygiene)`;
 	spawnFn('git', ['-C', cwd, 'commit', '-m', commitMessage], { encoding: 'utf8' });
 
-	// 6a. Emit structured result line: issue-id, files removed, commit sha.
-	//     The sha is obtained AFTER commit so it reflects the cleanup commit itself.
-	//     CAM-71 auto-ship narrative depends on this line being stable; do not change
-	//     the shape after release without bumping a test.
+	// 6a. Emit structured result line.
 	const shaResult = spawnFn('git', ['-C', cwd, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' });
 	const commitSha = (shaResult.stdout ?? '').trim() || 'unknown';
 	const removedNames = harnessPaths.map((p) => p.split('/').pop() ?? p);

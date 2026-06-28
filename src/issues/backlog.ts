@@ -149,6 +149,30 @@ export function readBacklogFromMain(
 }
 
 // ---------------------------------------------------------------------------
+// issueFilePath
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive the repo-relative path for a per-issue JSON file from its id.
+ *
+ * Convention: 4-digit zero-padded numeric suffix in the filename, unpadded id
+ * field inside the JSON (mirrors writeIssueFile in src/issues/alloc.ts).
+ *
+ * Examples:
+ *   'CAM-1'    -> 'scripts/cam/issues/CAM-0001.json'
+ *   'CAM-90'   -> 'scripts/cam/issues/CAM-0090.json'
+ *   'CAM-1000' -> 'scripts/cam/issues/CAM-1000.json'
+ */
+export function issueFilePath(id: string): string {
+	const lastDash = id.lastIndexOf('-');
+	if (lastDash === -1) return `scripts/cam/issues/${id}.json`;
+	const prefix = id.slice(0, lastDash);
+	const n = parseInt(id.slice(lastDash + 1), 10);
+	if (Number.isNaN(n)) return `scripts/cam/issues/${id}.json`;
+	return `scripts/cam/issues/${prefix}-${String(n).padStart(4, '0')}.json`;
+}
+
+// ---------------------------------------------------------------------------
 // allocateId
 // ---------------------------------------------------------------------------
 

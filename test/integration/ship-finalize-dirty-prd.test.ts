@@ -21,7 +21,7 @@
 //       still be removed from the index and disk, and the tree must be clean.
 //   (2) missing-files variant: prd.json/handoff.json never committed; git rm
 //       --ignore-unmatch must be a silent no-op, and the commit must still
-//       succeed via the staged issues.local.json change.
+//       succeed via the staged CAM-0027.json change (US-004 per-file cutover).
 
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -40,6 +40,7 @@ import {
 	finalizeCycleClose,
 	type SpawnFn,
 } from '../../src/commands/ship-finalize.ts';
+import { issueFilePath } from '../../src/issues/backlog.ts';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 // ---------------------------------------------------------------------------
@@ -84,7 +85,7 @@ function makeTmpRepo(): string {
 	run(['config', 'user.email', 'test@example.com']);
 	run(['config', 'user.name', 'Test User']);
 
-	mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
+	mkdirSync(join(dir, 'scripts', 'cam', 'issues'), { recursive: true });
 
 	return dir;
 }
@@ -99,7 +100,7 @@ const realSpawnFn: SpawnFn = (cmd, args, opts) =>
 
 const FIXED_CLOCK = '2026-06-23T12:00:00.000Z';
 
-// project.toml: 'none' backend so issues.local.json is touched (gives the
+// project.toml: 'none' backend so CAM-0027.json is closed (gives the
 // commit something to stage even in the missing-files variant).
 const PROJECT_TOML = 'issue_system = "none"\nissue_prefix = "CAM"\n';
 
@@ -116,14 +117,16 @@ const PRD_JSON_MODIFIED = JSON.stringify({
 // Minimal handoff.json
 const HANDOFF_JSON = JSON.stringify({ lastCompletedStory: { id: 'US-001', title: 'Test' } });
 
-// issues.local.json with one open issue that will be closed
-const ISSUES_JSON =
+// US-004: per-file format -- CAM-0027.json contains a single IssueEntry
+const CAM_27_ENTRY_JSON =
 	JSON.stringify(
 		{
-			next_id: 28,
-			issues: [
-				{ id: 'CAM-27', title: 'Test issue', state: 'open', createdAt: '2026-01-01T00:00:00Z' },
-			],
+			id: 'CAM-27',
+			title: 'Test issue',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: [],
+			createdAt: '2026-01-01T00:00:00Z',
 		},
 		null,
 		2,
@@ -146,11 +149,11 @@ test.skipIf(!gitAvailable)(
 		const run = (args: string[]) =>
 			spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
 
-		// Commit all four required files
+		// Commit all required files (US-004: CAM-0027.json, not issues.local.json)
 		writeFileSync(join(camDir, 'prd.json'), PRD_JSON);
 		writeFileSync(join(camDir, 'handoff.json'), HANDOFF_JSON);
 		writeFileSync(join(camDir, 'project.toml'), PROJECT_TOML);
-		writeFileSync(join(camDir, 'issues.local.json'), ISSUES_JSON);
+		writeFileSync(join(camDir, 'issues', 'CAM-0027.json'), CAM_27_ENTRY_JSON);
 		run(['add', '-A']);
 		run(['commit', '-m', 'chore: initial harness state']);
 
@@ -162,9 +165,8 @@ test.skipIf(!gitAvailable)(
 		const statusBefore = run(['status', '--porcelain']);
 		expect(statusBefore.stdout).toContain('scripts/cam/prd.json');
 
-		const issuesPath = join(camDir, 'issues.local.json');
-
 		// Run finalizeCycleClose with the real git binary
+		// US-004: readIssues/writeIssues use issueFilePath (per-file, not issues.local.json)
 		finalizeCycleClose({
 			cwd: dir,
 			spawnFn: realSpawnFn,
@@ -172,8 +174,8 @@ test.skipIf(!gitAvailable)(
 			readProjectToml: () => readFileSync(join(camDir, 'project.toml'), 'utf8'),
 			// Read the dirty (modified) prd.json from disk, as production would
 			readPrd: () => PRD_JSON_MODIFIED,
-			readIssues: () => readFileSync(issuesPath, 'utf8'),
-			writeIssues: (text) => writeFileSync(issuesPath, text),
+			readIssues: (issueId) => readFileSync(join(dir, issueFilePath(issueId)), 'utf8'),
+			writeIssues: (issueId, text) => writeFileSync(join(dir, issueFilePath(issueId)), text),
 		});
 
 		// (a) git ls-files must be empty: prd.json removed from the index
@@ -207,10 +209,10 @@ test.skipIf(!gitAvailable)(
 		const run = (args: string[]) =>
 			spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
 
-		// Commit only project.toml and issues.local.json; prd.json and handoff.json
+		// Commit only project.toml and CAM-0027.json; prd.json and handoff.json
 		// are intentionally absent (never added to the index)
 		writeFileSync(join(camDir, 'project.toml'), PROJECT_TOML);
-		writeFileSync(join(camDir, 'issues.local.json'), ISSUES_JSON);
+		writeFileSync(join(camDir, 'issues', 'CAM-0027.json'), CAM_27_ENTRY_JSON);
 		run(['add', '-A']);
 		run(['commit', '-m', 'chore: initial commit without harness state']);
 
@@ -218,10 +220,9 @@ test.skipIf(!gitAvailable)(
 		expect(existsSync(join(camDir, 'prd.json'))).toBe(false);
 		expect(existsSync(join(camDir, 'handoff.json'))).toBe(false);
 
-		const issuesPath = join(camDir, 'issues.local.json');
-
 		// finalizeCycleClose must not throw: git rm --ignore-unmatch is a silent
-		// no-op for absent files; issues.local.json still gets staged+committed
+		// no-op for absent files; CAM-0027.json still gets staged+committed
+		// US-004: readIssues/writeIssues use issueFilePath (per-file, not issues.local.json)
 		finalizeCycleClose({
 			cwd: dir,
 			spawnFn: realSpawnFn,
@@ -229,8 +230,8 @@ test.skipIf(!gitAvailable)(
 			readProjectToml: () => readFileSync(join(camDir, 'project.toml'), 'utf8'),
 			// prd.json does not exist on disk; inject the content directly
 			readPrd: () => PRD_JSON,
-			readIssues: () => readFileSync(issuesPath, 'utf8'),
-			writeIssues: (text) => writeFileSync(issuesPath, text),
+			readIssues: (issueId) => readFileSync(join(dir, issueFilePath(issueId)), 'utf8'),
+			writeIssues: (issueId, text) => writeFileSync(join(dir, issueFilePath(issueId)), text),
 		});
 
 		// (a) prd.json was never in the index; ls-files must still be empty
@@ -241,7 +242,7 @@ test.skipIf(!gitAvailable)(
 		expect(existsSync(join(camDir, 'prd.json'))).toBe(false);
 		expect(existsSync(join(camDir, 'handoff.json'))).toBe(false);
 
-		// (c) git status --porcelain must be empty (issues.local.json was staged
+		// (c) git status --porcelain must be empty (CAM-0027.json was staged
 		// and committed via the issue-close path)
 		const statusAfter = run(['status', '--porcelain']);
 		expect(statusAfter.stdout.trim()).toBe('');
