@@ -25,7 +25,7 @@
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/journal.ts (new recordCycleTokens helper + new 'cycle-tokens' WorkerEventKind in src/supervisor/events.ts WorkerEventKind union + a CycleTokensEventDetail interface). Reuse parseTranscriptUsage + orchestratorTranscriptPath from src/transcript/usage.ts (do NOT reinvent token counting). Reuse makeFileEventLogger / WorkerEvent / TokensEventDetail from src/supervisor/events.ts. TokensEventDetail field names are EXACT: inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens (src/supervisor/events.ts:105-115); a worker's per-cycle total = inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens. Do NOT invent abbreviated field names. Per the grilled spec (spec.scope, gotcha #1): orch-budget metric is CUMULATIVE traffic (~5.58M real), so do NOT use a threshold; just record the cumulative session spend as ~tokens-of-cycle (transcript zeros each cycle once CAM-131 lands, per the operator's baseline decision). Worker tokens come from the existing 'tokens' events (storyId+uuid keyed) emitted in src/supervisor/loop.ts:~582; the per-cycle slice is the worker 'tokens' events after the last 'cycle-tokens' event in the cumulative log. Event log path: .claude/cam-worker-events.jsonl (EVENT_LOG_PATH in src/commands/dashboard.ts:50; reader pattern at dashboard.ts:551 split('\\n') + JSON.parse). domainTerms 'tokens-por-ciclo' lives in the issue spec, not in a CONTEXT.md (writer CAM-118 does not exist yet). DECISAO do operador: modelo SIMPLES, sem baseline-marker; analise de delta/media e CAM-136 separado."
     },
