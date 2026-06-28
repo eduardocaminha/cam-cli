@@ -1,9 +1,25 @@
 {
   "id": "CAM-96",
   "title": "Hook orch-agent-allowlist.sh deve fail CLOSED quando jq ausente (deny path)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-26T09:05:14.692Z",
-  "description": "O deny path do .claude/hooks/orch-agent-allowlist.sh constroi o JSON via jq -n sob set -e. Se jq estiver ausente, jq sai ~127 (non-2), que o Claude Code trata como erro nao-bloqueante e o Task spawn PROSSEGUE (fail-OPEN), bypassando o gate inteiro. O extraction read ja guarda com || echo vazio, mas a emissao do deny nao. jq e pre-condicao dura documentada (US-002 + runbook), dentro do envelope aceito, mas um deny gate idealmente falha FECHADO: emitir deny JSON estatico via printf quando jq indisponivel (ou exit 2). Origem: reviewer WARNING no CAM-91 (PR #74), triado nao-bloqueante 2 rounds."
+  "description": "O deny path do .claude/hooks/orch-agent-allowlist.sh constroi o JSON via jq -n sob set -e. Se jq estiver ausente, jq sai ~127 (non-2), que o Claude Code trata como erro nao-bloqueante e o Task spawn PROSSEGUE (fail-OPEN), bypassando o gate inteiro. O extraction read ja guarda com || echo vazio, mas a emissao do deny nao. jq e pre-condicao dura documentada (US-002 + runbook), dentro do envelope aceito, mas um deny gate idealmente falha FECHADO: emitir deny JSON estatico via printf quando jq indisponivel (ou exit 2). Origem: reviewer WARNING no CAM-91 (PR #74), triado nao-bloqueante 2 rounds.",
+  "spec": {
+    "scope": "O deny path do .claude/hooks/orch-agent-allowlist.sh constroi o JSON via jq -n sob set -e. Se jq estiver ausente, jq sai ~127 (non-2), que o Claude Code trata como erro nao-bloqueante e o Task spawn PROSSEGUE (fail-OPEN), bypassando o gate inteiro. O extraction read ja guarda com || echo vazio, mas a emissao do deny nao. jq e pre-condicao dura documentada (US-002 + runbook), dentro do envelope aceito, mas um deny gate idealmente falha FECHADO: emitir deny JSON estatico via printf quando jq indisponivel (ou exit 2). Origem: reviewer WARNING no CAM-91 (PR #74), triado nao-bloqueante 2 rounds.",
+    "acceptanceCriteria": [
+      "orch-agent-allowlist.sh emite deny estatico via printf ou exit 2 quando jq ausente (fail-closed)",
+      "O deny path nao depende mais de jq presente",
+      "test do deny path sem jq"
+    ],
+    "gotchas": [],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 4,
+    "jobSize": 1
+  }
 }
