@@ -1,9 +1,25 @@
 {
   "id": "CAM-95",
   "title": "Promote review verdict to MAX_ROUNDS_DEBT when the loop stops at the cap",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-26T04:14:29.819Z",
-  "description": "When the review loop reaches roundsCompleted == maxRounds, decideNextAction treats review as terminal-by-cap and exits without a confirming round, so review.lastVerdict stays at FIXES_PENDING:N instead of being promoted to MAX_ROUNDS_DEBT (the Step 5.5 safety valve only fires when a round is attempted beyond the cap). This wedges /cam-ship, which only accepts CLEAN or MAX_ROUNDS_DEBT as terminal, and forces a manual maxRounds bump. Recurring: CAM-53 follow-up b, reproduced in CAM-78 (PR #73) where the round-3 fix was already committed but the verdict stayed FIXES_PENDING:1."
+  "description": "When the review loop reaches roundsCompleted == maxRounds, decideNextAction treats review as terminal-by-cap and exits without a confirming round, so review.lastVerdict stays at FIXES_PENDING:N instead of being promoted to MAX_ROUNDS_DEBT (the Step 5.5 safety valve only fires when a round is attempted beyond the cap). This wedges /cam-ship, which only accepts CLEAN or MAX_ROUNDS_DEBT as terminal, and forces a manual maxRounds bump. Recurring: CAM-53 follow-up b, reproduced in CAM-78 (PR #73) where the round-3 fix was already committed but the verdict stayed FIXES_PENDING:1.",
+  "spec": {
+    "scope": "When the review loop reaches roundsCompleted == maxRounds, decideNextAction treats review as terminal-by-cap and exits without a confirming round, so review.lastVerdict stays at FIXES_PENDING:N instead of being promoted to MAX_ROUNDS_DEBT (the Step 5.5 safety valve only fires when a round is attempted beyond the cap). This wedges /cam-ship, which only accepts CLEAN or MAX_ROUNDS_DEBT as terminal, and forces a manual maxRounds bump. Recurring: CAM-53 follow-up b, reproduced in CAM-78 (PR #73) where the round-3 fix was already committed but the verdict stayed FIXES_PENDING:1.",
+    "acceptanceCriteria": [
+      "decideNextAction promove o veredito a MAX_ROUNDS_DEBT quando o loop para no cap (roundsCompleted == maxRounds)",
+      "cam ship aceita o estado terminal sem bump manual de maxRounds",
+      "typecheck + tests verdes"
+    ],
+    "gotchas": [],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 3,
+    "riskReduction": 3,
+    "jobSize": 2
+  }
 }
