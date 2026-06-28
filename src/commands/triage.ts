@@ -32,7 +32,14 @@
 import { writeFileSync } from 'node:fs';
 import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
 import type { SpawnFn } from '../git/on-main.ts';
-import type { IssueEntry, IssuesLocalJson } from '../issues/types.ts';
+import type { IssueEntry } from '../issues/types.ts';
+
+// Local shape of issues.local.json (the old flat-file format consumed by this command).
+// IssuesLocalJson is no longer exported from issues/types.ts (US-002 removal).
+interface IssuesLocalJson {
+	next_id: number;
+	issues: IssueEntry[];
+}
 import { runGraphGate } from '../issues/gate.ts';
 import { rankIssues } from '../issues/rank.ts';
 import type { RankedEntry } from '../issues/rank.ts';

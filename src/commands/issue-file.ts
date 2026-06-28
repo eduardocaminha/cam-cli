@@ -31,7 +31,15 @@ import { writeFileSync } from 'node:fs';
 import { parseToml } from '../config/toml.ts';
 import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
 import type { SpawnFn } from '../git/on-main.ts';
-import type { IssueEntry, IssuesLocalJson } from '../issues/types.ts';
+import type { IssueEntry } from '../issues/types.ts';
+
+// Local shape of issues.local.json (the old flat-file format consumed by this command).
+// The public IssueEntry/IssueStage/IssueStatus/WsjfScore types live in types.ts;
+// IssuesLocalJson is no longer exported from there (US-002 removal).
+interface IssuesLocalJson {
+	next_id: number;
+	issues: IssueEntry[];
+}
 import { printError } from '../logging/color.ts';
 
 // Re-export SpawnFn from the shared module so existing callers do not need

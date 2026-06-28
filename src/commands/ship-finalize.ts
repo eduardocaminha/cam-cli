@@ -14,7 +14,14 @@
 
 import type { SpawnSyncReturns } from 'node:child_process';
 import { parseToml } from '../config/toml.ts';
-import type { IssueEntry, IssuesLocalJson } from '../issues/types.ts';
+import type { IssueEntry } from '../issues/types.ts';
+
+// Local shape of issues.local.json (the old flat-file format consumed by this command).
+// IssuesLocalJson is no longer exported from issues/types.ts (US-002 removal).
+interface IssuesLocalJson {
+	next_id: number;
+	issues: IssueEntry[];
+}
 import { printError } from '../logging/color.ts';
 import { emitOk } from '../logging/screen.ts';
 

@@ -1,4 +1,4 @@
-import type { IssueEntry, IssuesLocalJson } from "./types.ts";
+import type { IssueEntry } from "./types.ts";
 import { isBlocked } from "./graph.ts";
 
 /**
@@ -73,7 +73,7 @@ export async function selectPlannableFromFile(
 	try {
 		const path = `${cwd}/scripts/cam/issues.local.json`;
 		const text = await Bun.file(path).text();
-		const parsed = JSON.parse(text) as IssuesLocalJson;
+		const parsed = JSON.parse(text) as { issues: IssueEntry[] };
 		return selectPlannableIssue(parsed.issues);
 	} catch {
 		return null;

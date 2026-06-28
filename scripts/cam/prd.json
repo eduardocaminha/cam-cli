@@ -49,7 +49,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New primitive in src/issues/ (e.g. src/issues/backlog.ts) consumed by US-005 readers and US-003 allocateId. REPO FACT: readers today use `git show main:scripts/cam/issues.local.json`; replace that single-blob read with the dir read. Use `git ls-tree -r --name-only main scripts/cam/issues/` to enumerate, then feed the blob refs (`main:<path>`) to ONE `git cat-file --batch` and parse the framed output (object-name SP type SP size LF, then size bytes, then LF). Reuse the numericIdSuffix logic shape from src/issues/select.ts (id.split('-').at(-1), guard NaN/undefined per noUncheckedIndexedAccess). Keep IssueEntry/IssueStage/IssueStatus/WsjfScore from src/issues/types.ts; this primitive returns IssueEntry[]. Maps spec AC#3. Domain term: readBacklogFromMain. Read scripts/cam/patterns.md (read-from-main invariant) before coding. GIT CONTRACT (officialDocsConsulted): `git cat-file --batch` reads object names from stdin one-per-line and frames each object as `<oid> SP <type> SP <size> LF<contents>LF` (parse: read the header line, then exactly <size> bytes, then consume the trailing LF). REPO FACT: src/issues/types.ts:54-57 carries `interface IssuesLocalJson { next_id: number; issues: IssueEntry[] }` - this story removes it (the new readBacklogFromMain returns IssueEntry[] directly); keep IssueEntry/IssueStage/IssueStatus/WsjfScore."
     },

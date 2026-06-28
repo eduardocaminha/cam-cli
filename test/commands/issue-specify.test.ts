@@ -25,7 +25,13 @@ import {
 	type MergeIssueOnMainOptions,
 } from '../../src/commands/issue-specify.ts';
 import type { Spec } from '../../src/issues/spec.ts';
-import type { IssueEntry, IssuesLocalJson, WsjfScore } from '../../src/issues/types.ts';
+import type { IssueEntry, WsjfScore } from '../../src/issues/types.ts';
+
+// Local fixture type -- IssuesLocalJson was removed from issues/types.ts in US-002.
+interface IssuesLocalJson {
+	next_id: number;
+	issues: IssueEntry[];
+}
 import type {
 	WorkerEvent,
 	WorkerEventLogger,

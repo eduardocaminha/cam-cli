@@ -27,7 +27,13 @@ import { join } from 'node:path';
 
 import { runTriage } from '../../src/commands/triage.ts';
 import type { SpawnFn } from '../../src/commands/triage.ts';
-import type { IssuesLocalJson } from '../../src/issues/types.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
+
+// Local fixture type -- IssuesLocalJson was removed from issues/types.ts in US-002.
+interface IssuesLocalJson {
+	next_id: number;
+	issues: IssueEntry[];
+}
 
 // ---------------------------------------------------------------------------
 // Skip guard

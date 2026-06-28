@@ -48,10 +48,3 @@ export interface IssueEntry {
 	spec?: Spec;
 }
 
-/**
- * Shape of the issues.local.json file on disk.
- */
-export interface IssuesLocalJson {
-	next_id: number;
-	issues: IssueEntry[];
-}

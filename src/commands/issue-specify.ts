@@ -31,7 +31,14 @@ import { join } from 'node:path';
 import { checkReferentialIntegrity } from '../issues/graph.ts';
 import { validateSpec, validateWsjf } from '../issues/spec.ts';
 import type { Spec } from '../issues/spec.ts';
-import type { IssueEntry, IssuesLocalJson, WsjfScore } from '../issues/types.ts';
+import type { IssueEntry, WsjfScore } from '../issues/types.ts';
+
+// Local shape of issues.local.json (the old flat-file format consumed by this command).
+// IssuesLocalJson is no longer exported from issues/types.ts (US-002 removal).
+interface IssuesLocalJson {
+	next_id: number;
+	issues: IssueEntry[];
+}
 import { printError } from '../logging/color.ts';
 import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
 import type { SpawnFn } from '../git/on-main.ts';

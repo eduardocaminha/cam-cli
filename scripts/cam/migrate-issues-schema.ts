@@ -19,8 +19,14 @@ import type {
 	IssueEntry,
 	IssueStage,
 	IssueStatus,
-	IssuesLocalJson,
 } from "../../src/issues/types.ts";
+
+// Local shape of issues.local.json -- IssuesLocalJson was removed from
+// issues/types.ts in US-002 (replaced by the per-file dir primitive).
+interface IssuesLocalJson {
+	next_id: number;
+	issues: IssueEntry[];
+}
 
 // ---------------------------------------------------------------------------
 // Internal raw-entry type (old schema shape on disk)
