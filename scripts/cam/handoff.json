@@ -1,21 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Make issue-specify on-main writers ref-only (specify/abandon/merge)"
+    "id": "US-002",
+    "title": "Make journal-append and triage on-main writers ref-only"
   },
   "branchName": "cam/CAM-133-on-main-writer-ref-only",
   "timestamp": "2026-06-28T00:00:00.000Z",
   "createdFiles": [
-    "test/integration/issue-specify-ref-only.test.ts"
+    "test/integration/journal-ref-only.test.ts",
+    "test/integration/triage-ref-only.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/issue-specify.ts",
-    "test/commands/issue-specify.test.ts",
+    "src/commands/journal.ts",
+    "src/commands/triage.ts",
+    "test/commands/journal-append.test.ts",
+    "test/triage.test.ts",
+    "test/integration/journal-append-on-main.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 applies the same ref-only pattern to journal-append and triage on-main writers. Look for the same 'branchWasMain ? commitOnMain : commitTreeToMain' ternary in src/commands/journal.ts and the triage writer; replace with unconditional commitTreeToMain. The pattern is now documented in patterns.md ('Always use commitTreeToMain unconditionally in on-main writers'). US-003 then removes the now-orphaned commitOnMain helper from src/git/on-main.ts and its tests.",
+  "nextStoryContext": "US-003 removes the now-orphaned commitOnMain helper from src/git/on-main.ts (and its tests). Both callers (journal.ts and triage.ts) were converted to commitTreeToMain in US-002; issue-specify.ts callers were converted in US-001. After US-003 the commitOnMain export can be deleted along with its tests. The writeFile? optional on RunTriageOptions and AppendJournalEntryOnMainOptions is retained for backward compat (no callers left, but removing it would be a breaking public API change -- leave for a follow-up).",
   "officialDocsValidated": [
     {
       "lib": "none",
