@@ -2016,12 +2016,16 @@ in section (n).
 
 **Symptom: `git show main:scripts/cam/journal.md` fails (file missing)**
 
-The journal file is created on first use. If it is absent from `main`,
-`appendJournalEntryOnMain` writes a new file with a standard header block and
-the first entry. Confirm `main` has the file after the first successful append:
+The journal file must pre-exist on `main` -- it is created by `cam init` from
+the template at `templates/scripts/cam/journal.md`. If it is absent,
+`appendJournalEntryOnMain` exits with reason `journal-missing`.
+
+Restore it by materialising the template manually:
 
 ```bash
-git show main:scripts/cam/journal.md | head -10
+git show origin/main:scripts/cam/journal.md | head -10  # confirm it exists on origin
+git fetch origin main:main                               # sync local main
+git show main:scripts/cam/journal.md | head -10          # confirm local main is up to date
 ```
 
 ### Manual override (operator writes directly)

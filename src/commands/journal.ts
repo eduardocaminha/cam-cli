@@ -99,7 +99,7 @@ export interface AppendJournalEntryOnMainSuccess {
 
 export interface AppendJournalEntryOnMainError {
 	ok: false;
-	reason: 'diverged' | 'detached-head' | 'missing-main' | 'duplicate-cycleId';
+	reason: 'diverged' | 'detached-head' | 'missing-main' | 'duplicate-cycleId' | 'journal-missing';
 }
 
 /**
@@ -494,6 +494,16 @@ export function appendJournalEntryOnMain(
 		['-C', cwd, 'show', 'main:scripts/cam/journal.md'],
 		{ encoding: 'utf8' },
 	);
+	// US-R2-002: check status explicitly. A non-zero exit means the file is absent
+	// from main. We do NOT bootstrap it here -- journal.md is created by `cam init`.
+	if ((showResult.status ?? 1) !== 0) {
+		printError(
+			'journal.md missing on main',
+			'scripts/cam/journal.md must pre-exist on main (created by cam init); ' +
+				'run: git show main:scripts/cam/journal.md to confirm',
+		);
+		return { ok: false, reason: 'journal-missing' };
+	}
 	const existingContent = showResult.stdout ?? '';
 
 	// Step 4: Duplicate-cycleId check (state check against the journal read from main).

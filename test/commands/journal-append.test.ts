@@ -340,6 +340,75 @@ test('appendJournalEntryOnMain: git show reads from main:scripts/cam/journal.md'
 });
 
 // ---------------------------------------------------------------------------
+// US-R2-002: journal-missing guard (git show non-zero status)
+// ---------------------------------------------------------------------------
+
+test('US-R2-002: git show non-zero exit -- returns journal-missing, no commit fires', () => {
+	const stderrLines: string[] = [];
+	const originalWrite = process.stderr.write.bind(process.stderr);
+	process.stderr.write = (chunk: string | Uint8Array): boolean => {
+		if (typeof chunk === 'string') stderrLines.push(chunk);
+		return true;
+	};
+
+	try {
+		// Build a spawnFn that returns exit code 128 for git show (file missing)
+		const calls: Array<{ args: string[] }> = [];
+		const spawnFn: SpawnFn = (
+			cmd,
+			args,
+			options,
+		): ReturnType<SpawnFn> => {
+			calls.push({ args });
+			// rev-parse --abbrev-ref HEAD -> current branch
+			if (args.includes('rev-parse') && args.includes('--abbrev-ref')) {
+				return { stdout: 'feat/test\n', stderr: '', status: 0, pid: 1, output: [], signal: null };
+			}
+			// rev-parse origin/main -> no remote (skip divergence check)
+			if (args.includes('rev-parse') && args.includes('origin/main')) {
+				return { stdout: '', stderr: 'unknown ref', status: 128, pid: 1, output: [], signal: null };
+			}
+			// rev-parse main -> local main sha
+			if (args.includes('rev-parse') && args[args.length - 1] === 'main') {
+				return { stdout: 'abc123\n', stderr: '', status: 0, pid: 1, output: [], signal: null };
+			}
+			// fetch
+			if (args.includes('fetch')) {
+				return { stdout: '', stderr: '', status: 0, pid: 1, output: [], signal: null };
+			}
+			// git show main:scripts/cam/journal.md -> file missing (non-zero)
+			if (args.includes('show') && args.some((a) => a.includes('journal.md'))) {
+				return { stdout: '', stderr: 'fatal: path not found', status: 128, pid: 1, output: [], signal: null };
+			}
+			return { stdout: '', stderr: '', status: 0, pid: 1, output: [], signal: null };
+		};
+
+		const result = appendJournalEntryOnMain({
+			cwd: '/fake/cwd',
+			entry: SAMPLE_ENTRY,
+			spawnFn,
+		});
+
+		// Must return journal-missing
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.reason).toBe('journal-missing');
+
+		// Error message must mention the issue
+		const errorOutput = stderrLines.join('');
+		expect(errorOutput).toMatch(/journal\.md missing|cam init/i);
+
+		// No commit-tree or update-ref must have fired
+		const commitTreeCall = calls.find((c) => c.args.includes('commit-tree'));
+		const updateRefCall = calls.find((c) => c.args.includes('update-ref'));
+		expect(commitTreeCall).toBeUndefined();
+		expect(updateRefCall).toBeUndefined();
+	} finally {
+		process.stderr.write = originalWrite;
+	}
+});
+
+// ---------------------------------------------------------------------------
 // US-002: AC1 -- Required field validation
 // ---------------------------------------------------------------------------
 
