@@ -43,7 +43,7 @@
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts dispatchJournal (~line 1051-1089; the CAM_JOURNAL_APPENDED writeStdout is at index.ts:1087) and/or src/commands/journal.ts. Sequence is load-bearing: journal entry persisted -> US-001 cycle-tokens event persisted -> THEN CAM_ORCH_HANDOFF_DUE=true. Wire the US-001 recordCycleTokens call into the same dispatch path before the signal. orch-budget/threshold STOPS gatilhando (per spec.scope + gotcha #1): src/commands/orch-budget.ts stays as a cost reporter only; do NOT remove it. Keep the existing dispatchJournal injectable-deps pattern (readStdin/appendFn/writeStdout) so the new behavior is testable without real I/O."
     },

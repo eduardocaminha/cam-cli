@@ -1,26 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Registrar tokens-por-ciclo no event log no cycle-close"
+    "id": "US-002",
+    "title": "Emitir sinal incondicional de handoff no journal append"
   },
   "branchName": "cam/CAM-131-handoff-por-ciclo",
   "timestamp": "2026-06-28T00:00:00.000Z",
-  "createdFiles": [
-    "test/commands/journal-record-cycle-tokens.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/journal.ts",
-    "src/supervisor/events.ts",
-    "scripts/file-size-budget.json",
+    "index.ts",
+    "test/commands/journal-append.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 ships recordCycleTokens() in src/commands/journal.ts and CycleTokensEventDetail + cycle-tokens WorkerEventKind in src/supervisor/events.ts. The function is fully injectable (readOrchTranscript, readEventLog, logEvent). The per-cycle slice logic is: sum worker 'tokens' events after the last 'cycle-tokens' event in the event log. Production callers (e.g. cycle-close in the orchestrator) should import recordCycleTokens from src/commands/journal.ts and pass cwd + claudeDir. No wiring in loop.ts or sidecar yet (CAM-136 / future story).",
+  "nextStoryContext": "US-002 wired recordCycleTokens into dispatchJournal (index.ts). The sequence is: appendJournalEntryOnMain -> recordCycleTokens -> writeStdout('CAM_ORCH_HANDOFF_DUE=true'). The injectable recordCycleTokensFn dep on JournalDispatchDeps keeps the path testable without real I/O. US-003 (next story) likely involves the orchestrator reading/reacting to CAM_ORCH_HANDOFF_DUE=true -- look for it in .claude/agents/subagent-orchestrator.md and/or src/commands/journal.ts dispatcher wiring in the orchestrator agent.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story touches only internal modules (journal.ts, events.ts, transcript/usage.ts). No external library."
+      "summary": "Story touches only internal modules (index.ts dispatcher, test). No external library."
     }
   ]
 }
