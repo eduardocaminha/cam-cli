@@ -24,16 +24,11 @@
 //   AC#3 Parity: 1-element list produces the same plumbing sequence as the old
 //     single-file API (read-tree, hash-object, update-index, write-tree,
 //     commit-tree, update-ref).
-//
-//   AC#1/commitOnMain multi-file:
-//     (i) all files are written and staged before the single git commit.
-//     (j) git commit is called exactly once for a multi-file list.
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
 import {
 	commitTreeToMain,
-	commitOnMain,
 	CAS_MAX_ATTEMPTS,
 	type FileWrite,
 	type SpawnFn,
@@ -400,77 +395,5 @@ describe('commitTreeToMain — AC#3 parity: 1-element list = single-file sequenc
 		const result = commitTreeToMain(CWD, [FILE_A], COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-');
 
 		expect(result).toBe(COMMIT_SHA.substring(0, 7));
-	});
-});
-
-// ---------------------------------------------------------------------------
-// commitOnMain multi-file (AC#1 on-main path)
-// ---------------------------------------------------------------------------
-
-describe('commitOnMain — multi-file list', () => {
-	test('(i) writeFile and git add called for each file before the single git commit', () => {
-		const writtenFiles: string[] = [];
-		const calls: Call[] = [];
-
-		const spawnFn: SpawnFn = (cmd, args, options) => {
-			calls.push({ cmd, args: [...args], input: options.input });
-			if (args.includes('rev-parse') && args.includes('--short')) {
-				return ok('abc1234\n');
-			}
-			return ok();
-		};
-
-		commitOnMain(
-			CWD,
-			[FILE_A, FILE_B],
-			COMMIT_MSG,
-			spawnFn,
-			(path) => { writtenFiles.push(path); },
-		);
-
-		// Both files written
-		expect(writtenFiles.some((p) => p.includes(FILE_A.path))).toBe(true);
-		expect(writtenFiles.some((p) => p.includes(FILE_B.path))).toBe(true);
-
-		// Both files staged
-		const addCalls = calls.filter((c) => c.args.includes('add'));
-		const addedPaths = addCalls.flatMap((c) => c.args);
-		expect(addedPaths).toContain(FILE_A.path);
-		expect(addedPaths).toContain(FILE_B.path);
-	});
-
-	test('(j) git commit called exactly once for a 2-file list', () => {
-		const calls: Call[] = [];
-
-		const spawnFn: SpawnFn = (cmd, args, options) => {
-			calls.push({ cmd, args: [...args], input: options.input });
-			if (args.includes('rev-parse') && args.includes('--short')) {
-				return ok('abc1234\n');
-			}
-			return ok();
-		};
-
-		commitOnMain(CWD, [FILE_A, FILE_B], COMMIT_MSG, spawnFn, () => {});
-
-		const commitCalls = calls.filter(
-			(c) => c.args.includes('commit') && !c.args.includes('commit-tree'),
-		);
-		expect(commitCalls.length).toBe(1);
-	});
-
-	test('writeFile receives the absolute path (join(cwd, file.path))', () => {
-		const writtenPaths: string[] = [];
-
-		const spawnFn: SpawnFn = (_, args, options) => {
-			if (args.includes('rev-parse') && args.includes('--short')) return ok('abc1234\n');
-			return ok();
-		};
-
-		commitOnMain(CWD, [FILE_A], COMMIT_MSG, spawnFn, (path) => {
-			writtenPaths.push(path);
-		});
-
-		expect(writtenPaths.length).toBe(1);
-		expect(writtenPaths[0]).toBe(`${CWD}/${FILE_A.path}`);
 	});
 });

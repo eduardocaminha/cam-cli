@@ -2,7 +2,7 @@
 //
 // Shared on-main commit-tree plumbing extracted from the three callers that
 // previously each carried a verbatim copy:
-//   - src/commands/issue-file.ts   (commitTreeToMain + commitOnMain + buildIndexEnv)
+//   - src/commands/issue-file.ts   (commitTreeToMain + buildIndexEnv)
 //   - src/commands/issue-specify.ts (same)
 //   - src/commands/journal.ts       (same)
 //
@@ -15,7 +15,7 @@
 //     byte-behaviorally identical to the pre-extraction code.
 //   - SpawnFn is re-exported here so callers (including triage.ts, US-004)
 //     can import the type from one place.
-//   - US-001 (CAM-90): both helpers now accept a FileWrite[] (list of
+//   - US-001 (CAM-90): commitTreeToMain accepts a FileWrite[] (list of
 //     {path,content} pairs) for atomic multi-file commits.  The 1-element
 //     list is the single-file case and produces the same git sequence.
 //     commitTreeToMain uses compare-and-swap (CAS) on update-ref and retries
@@ -99,47 +99,6 @@ export function buildIndexEnv(tempIndex: string): Record<string, string> {
 	}
 	env['GIT_INDEX_FILE'] = tempIndex;
 	return env;
-}
-
-// ---------------------------------------------------------------------------
-// commitOnMain
-// ---------------------------------------------------------------------------
-
-/**
- * On-main path: write all files to the working tree, git add each one, then
- * git commit with a single commit.  Working tree and HEAD both advance
- * (the normal commit path).
- * Returns the short sha from `git rev-parse --short HEAD`.
- *
- * For the 1-element case this is byte-behaviorally identical to the old
- * single-file signature.
- *
- * @param cwd        Absolute path to the project root (git repo).
- * @param files      List of {path, content} pairs to write and commit.
- *                   All files land in one commit.
- * @param commitMsg  Git commit message.
- * @param spawnFn    Injectable spawnSync for all git subprocess calls.
- * @param writeFile  Injectable file writer (called with the absolute path).
- */
-export function commitOnMain(
-	cwd: string,
-	files: FileWrite[],
-	commitMsg: string,
-	spawnFn: SpawnFn,
-	writeFile: (path: string, text: string) => void,
-): string {
-	for (const file of files) {
-		const filePath = join(cwd, file.path);
-		writeFile(filePath, file.content);
-		spawnFn('git', ['-C', cwd, 'add', file.path], { encoding: 'utf8' });
-	}
-	spawnFn('git', ['-C', cwd, 'commit', '-m', commitMsg], { encoding: 'utf8' });
-	const shaResult = spawnFn(
-		'git',
-		['-C', cwd, 'rev-parse', '--short', 'HEAD'],
-		{ encoding: 'utf8' },
-	);
-	return (shaResult.stdout ?? '').trim();
 }
 
 // ---------------------------------------------------------------------------
