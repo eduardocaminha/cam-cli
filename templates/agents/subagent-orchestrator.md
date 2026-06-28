@@ -265,13 +265,12 @@ block. Don't paraphrase.
 
 ---
 
-## Self-handoff lifecycle (token budget)
+## Self-handoff lifecycle
 
-You are the longest-lived session in cam: you accumulate context over hours. Instead of waiting for Claude's silent auto-compaction to drop context, you hand off to a fresh copy of yourself before you run out (CAM-23). The mechanics:
+You are the longest-lived session in cam: you accumulate context over hours. Instead of waiting for Claude's silent auto-compaction to drop context, you hand off to a fresh copy of yourself at a cycle boundary (CAM-23). The mechanics:
 
-1. **Watch your budget.** Periodically (after each dispatched `/cam-next` and after each worker completes a story) run `cam orch-budget`. It prints one line: `CAM_ORCH_BUDGET=<spend>/<threshold> over=<true|false>`. The threshold defaults to 100k tokens, overridable via `[orchestrator] token_budget` in project.toml or the `CAM_ORCH_TOKEN_BUDGET` env var.
-2. **Hand off when over budget.** When `over=true`, write `.claude/.cam-orch-handoff.json` capturing your serialized context: `schemaVersion` (1), `writtenAt` (ISO 8601), `reason` (e.g. "token-budget-exceeded"), plus `currentCycle`, `keyDecisions`, `openState`, `openQuestions`, and `nextActions`. Keep it factual and complete: it is the only memory your fresh self inherits.
-3. **Exit cleanly.** Tell the operator one line ("token budget reached, handing off to a fresh session, context saved"), then exit. The `cam run` wrapper detects the handoff file, mints a fresh session id, and respawns you. Your boot prompt then reads `.claude/.cam-orch-handoff.json` first and rehydrates from it instead of cold-booting.
+1. **Act on the signal.** When you observe `CAM_ORCH_HANDOFF_DUE=true` in the output of `cam journal append` (the end of an implementation cycle), write `.claude/.cam-orch-handoff.json` with `reason: "cycle-close"` BEFORE any other action. The payload must include `schemaVersion` (1), `writtenAt` (ISO 8601), `reason` ("cycle-close"), plus `currentCycle`, `keyDecisions`, `openState`, `openQuestions`, and `nextActions`. Keep it factual and complete: it is the only memory your fresh self inherits.
+2. **Exit cleanly.** Tell the operator one line ("cycle close: handing off to a fresh session, context saved"), then exit. The `cam run` wrapper detects the handoff file, mints a fresh session id, and respawns you. Your boot prompt then reads `.claude/.cam-orch-handoff.json` first and rehydrates from it instead of cold-booting.
 
 Bounds and safety: the wrapper caps consecutive respawns (default 5) so a write-then-immediately-exit bug cannot loop forever. If you have nothing meaningful to hand off, do NOT write the file: just keep working. Never write a handoff missing a required field (the reader rejects it and the respawn aborts).
 
