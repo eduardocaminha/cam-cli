@@ -1961,7 +1961,7 @@ primitive (same plumbing as `cam issue --file-local`, section (n)).
 2. It pipes the JSON to `cam journal append` via stdin (or with `--force` to
    replace an existing entry for the same cycleId).
 3. `appendJournalEntryOnMain` validates required fields, normalises em-dash
-   characters to a hyphen-space sequence, rejects duplicates (without `--force`),
+   characters to a colon, rejects duplicates (without `--force`),
    and writes the updated markdown to `main` via git plumbing without touching
    the working tree or HEAD branch.
 4. On success the command prints `CAM_JOURNAL_APPENDED=<cycleId> sha=<sha>`

@@ -309,8 +309,8 @@ const JOURNAL_HELP = renderHelp({
 				'   (never from the working tree -- the commit-tree-to-main pattern).\n' +
 				'3. Validates required fields; rejects entries missing cycleId, title,\n' +
 				'   started, closed, branch, issue, outcome, or summary.\n' +
-				'4. Normalises em-dash (U+2014) in the body/summary fields to a hyphen-space\n' +
-				'   sequence per the no-em-dash-in-persisted-md project rule.\n' +
+				'4. Normalises em-dash (U+2014) in the body/summary fields to a colon\n' +
+				'   per the no-em-dash-in-persisted-md project rule.\n' +
 				'5. Without --force: rejects a duplicate cycleId with exit 1.\n' +
 				'   With --force: replaces the existing block in place.\n' +
 				'6. Writes the updated markdown to main via git plumbing (hash-object,\n' +
