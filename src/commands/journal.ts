@@ -16,26 +16,14 @@
 //
 // CAM-122 (cam journal append deterministico + fim do jq>budget ad-hoc).
 
-import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
+import type { SpawnFn } from '../git/on-main.ts';
 import { printError } from '../logging/color.ts';
 
-// ---------------------------------------------------------------------------
-// Injectable dependency types (same shape as issue-file.ts)
-// ---------------------------------------------------------------------------
-
-/**
- * Widened SpawnFn -- same as issue-file.ts.
- * `env`: carries GIT_INDEX_FILE for the off-main commit-tree path.
- * `input`: feeds the updated markdown to `git hash-object -w --stdin`.
- */
-export type SpawnFn = (
-	cmd: string,
-	args: string[],
-	options: { encoding: 'utf8'; env?: Record<string, string>; input?: string },
-) => SpawnSyncReturns<string>;
+// Re-export SpawnFn from the shared module so existing callers do not need
+// to update their import paths.
+export type { SpawnFn };
 
 // ---------------------------------------------------------------------------
 // Journal cycle entry schema
@@ -117,25 +105,6 @@ export type AppendJournalEntryOnMainResult =
 	| AppendJournalEntryOnMainSuccess
 	| AppendJournalEntryOnMainError
 	| AppendJournalEntryOnMainValidationError;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Build a process-env copy augmented with GIT_INDEX_FILE.
- * Filters out undefined values to satisfy `Record<string, string>`.
- */
-function buildIndexEnv(tempIndex: string): Record<string, string> {
-	const env: Record<string, string> = {};
-	for (const [k, v] of Object.entries(process.env)) {
-		if (v !== undefined) {
-			env[k] = v;
-		}
-	}
-	env['GIT_INDEX_FILE'] = tempIndex;
-	return env;
-}
 
 type MainGuardResult =
 	| AppendJournalEntryOnMainError
@@ -323,103 +292,6 @@ function appendBlock(existing: string, block: string): string {
 }
 
 /**
- * On-main path: write the working-tree file, git add, git commit.
- * Returns the short sha from `git rev-parse --short HEAD`.
- */
-function commitOnMain(
-	cwd: string,
-	content: string,
-	commitMsg: string,
-	spawnFn: SpawnFn,
-	writeFile: (path: string, text: string) => void,
-): string {
-	const filePath = join(cwd, 'scripts/cam/journal.md');
-	writeFile(filePath, content);
-	spawnFn('git', ['-C', cwd, 'add', 'scripts/cam/journal.md'], { encoding: 'utf8' });
-	spawnFn('git', ['-C', cwd, 'commit', '-m', commitMsg], { encoding: 'utf8' });
-	const shaResult = spawnFn(
-		'git',
-		['-C', cwd, 'rev-parse', '--short', 'HEAD'],
-		{ encoding: 'utf8' },
-	);
-	return (shaResult.stdout ?? '').trim();
-}
-
-/**
- * Off-main path: git plumbing so the working tree and feature-branch HEAD are
- * left completely untouched. Returns the 7-char short sha of the new commit.
- */
-function commitTreeToMain(
-	cwd: string,
-	content: string,
-	commitMsg: string,
-	localMainSha: string,
-	spawnFn: SpawnFn,
-): string {
-	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-journal-'));
-	const tempIndex = join(tmpDir, 'index');
-
-	try {
-		// read-tree: populate the temp index with the tree at main.
-		spawnFn('git', ['-C', cwd, 'read-tree', 'main'], {
-			encoding: 'utf8',
-			env: buildIndexEnv(tempIndex),
-		});
-
-		// hash-object: write the updated markdown blob to the object store.
-		const hashResult = spawnFn('git', ['-C', cwd, 'hash-object', '-w', '--stdin'], {
-			encoding: 'utf8',
-			env: buildIndexEnv(tempIndex),
-			input: content,
-		});
-		const blobSha = (hashResult.stdout ?? '').trim();
-
-		// update-index: replace the old blob with the new one in the temp index.
-		spawnFn(
-			'git',
-			[
-				'-C',
-				cwd,
-				'update-index',
-				'--add',
-				'--cacheinfo',
-				`100644,${blobSha},scripts/cam/journal.md`,
-			],
-			{
-				encoding: 'utf8',
-				env: buildIndexEnv(tempIndex),
-			},
-		);
-
-		// write-tree: persist the temp index as a tree object.
-		const treeResult = spawnFn('git', ['-C', cwd, 'write-tree'], {
-			encoding: 'utf8',
-			env: buildIndexEnv(tempIndex),
-		});
-		const treeSha = (treeResult.stdout ?? '').trim();
-
-		// commit-tree: create a new commit on top of main.
-		const commitResult = spawnFn(
-			'git',
-			['-C', cwd, 'commit-tree', treeSha, '-p', localMainSha, '-m', commitMsg],
-			{ encoding: 'utf8' },
-		);
-		const newCommitSha = (commitResult.stdout ?? '').trim();
-
-		// update-ref: advance refs/heads/main to the new commit.
-		spawnFn(
-			'git',
-			['-C', cwd, 'update-ref', 'refs/heads/main', newCommitSha],
-			{ encoding: 'utf8' },
-		);
-
-		return newCommitSha.substring(0, 7);
-	} finally {
-		rmSync(tmpDir, { recursive: true, force: true });
-	}
-}
-
-/**
  * Best-effort push of main to origin.
  * A non-zero exit is logged via printError; the caller does not abort.
  */
@@ -521,8 +393,8 @@ export function appendJournalEntryOnMain(
 		const updatedContent = replaceCycleBlock(existingContent, entry.cycleId, block);
 		const commitMsg = `chore(cam): journal replace ${entry.cycleId}`;
 		const sha = branchWasMain
-			? commitOnMain(cwd, updatedContent, commitMsg, spawnFn, writeFile)
-			: commitTreeToMain(cwd, updatedContent, commitMsg, localMainSha, spawnFn);
+			? commitOnMain(cwd, updatedContent, commitMsg, spawnFn, writeFile, 'scripts/cam/journal.md')
+			: commitTreeToMain(cwd, updatedContent, commitMsg, localMainSha, spawnFn, 'scripts/cam/journal.md', 'cam-journal-');
 		pushMainBestEffort(cwd, spawnFn);
 		return { ok: true, cycleId: entry.cycleId, sha };
 	}
@@ -534,8 +406,8 @@ export function appendJournalEntryOnMain(
 	const commitMsg = `chore(cam): journal append ${entry.cycleId}`;
 
 	const sha = branchWasMain
-		? commitOnMain(cwd, updatedContent, commitMsg, spawnFn, writeFile)
-		: commitTreeToMain(cwd, updatedContent, commitMsg, localMainSha, spawnFn);
+		? commitOnMain(cwd, updatedContent, commitMsg, spawnFn, writeFile, 'scripts/cam/journal.md')
+		: commitTreeToMain(cwd, updatedContent, commitMsg, localMainSha, spawnFn, 'scripts/cam/journal.md', 'cam-journal-');
 
 	pushMainBestEffort(cwd, spawnFn);
 

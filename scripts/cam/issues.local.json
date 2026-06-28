@@ -967,7 +967,7 @@
     {
       "id": "CAM-108",
       "title": "Epico C: reprioritizacao cross-list (subagent-triager read-only + topo-sort/WSJF deterministico + gate de grafo)",
-      "stage": "specified",
+      "stage": "shipped",
       "status": "open",
       "blockedBy": [],
       "createdAt": "2026-06-26T21:26:12.138Z",

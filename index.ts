@@ -54,6 +54,7 @@ import { runConfig } from './src/commands/config.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { runSidecar } from './src/commands/sidecar.ts';
 import { runTag } from './src/commands/tag.ts';
+import { runTriage, type TriageResult } from './src/commands/triage.ts';
 import { makeFileEventLogger } from './src/supervisor/events.ts';
 import { printError, printFatalHint, printHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
@@ -1172,6 +1173,43 @@ export async function dispatchIssue(
 	return issueFn();
 }
 
+// ---------------------------------------------------------------------------
+// cam triage dispatch (exported for unit testing with injectable deps)
+// ---------------------------------------------------------------------------
+
+/** Injectable deps for dispatchTriage -- optional; production uses real impl. */
+export interface TriageDispatchDeps {
+	/**
+	 * Inject a fake runTriage wrapper; default: calls the real runTriage with
+	 * process.cwd() and a production spawnSync.
+	 */
+	triageFn?: () => TriageResult;
+}
+
+/**
+ * Route a `cam triage` call.  Always calls runTriage in-process (no tmux needed).
+ * Exported so unit tests can inject a fake triageFn and assert exit codes.
+ */
+export function dispatchTriage(deps?: TriageDispatchDeps): number {
+	const triageFn =
+		deps?.triageFn ??
+		(() =>
+			runTriage({
+				cwd: process.cwd(),
+				spawnFn: (cmd, args, opts) =>
+					spawnSync(cmd, args, {
+						encoding: opts.encoding,
+						...(opts.env !== undefined ? { env: opts.env } : {}),
+						...(opts.input !== undefined ? { input: opts.input } : {}),
+						stdio: 'pipe',
+					}) as SpawnSyncReturns<string>,
+				clock: () => new Date().toISOString(),
+			}));
+
+	const result = triageFn();
+	return result.ok ? 0 : 1;
+}
+
 async function main(argv: string[]): Promise<number> {
 	const command = argv[2];
 	if (!command || command === 'help' || command === '--help' || command === '-h') {
@@ -1468,6 +1506,24 @@ async function main(argv: string[]): Promise<number> {
 				return 0;
 			}
 			return dispatchJournal(parsed);
+		}
+		case 'triage': {
+			const tail = argv.slice(3);
+			if (tail.includes('--help') || tail.includes('-h')) {
+				process.stdout.write(
+					'Usage: cam triage\n' +
+					'  Rank {specified,open} issues from main using WSJF topo-sort.\n' +
+					'  Writes updated ranks to main (off-main commit-tree; no checkout).\n' +
+					'  No-op when ranks are unchanged (idempotent).\n',
+				);
+				return 0;
+			}
+			if (tail.length > 0) {
+				printError(`unknown triage option: ${tail[0]}`);
+				printFatalHint('run `cam triage --help` for usage');
+				return 1;
+			}
+			return dispatchTriage();
 		}
 		default:
 			printError(`unknown command: ${command}`);
