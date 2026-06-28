@@ -56,7 +56,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "File: extend src/issues/rank.ts (or NEW src/issues/gate.ts that composes rank.ts + graph.ts). REUSE src/issues/graph.ts -- it ALREADY has checkReferentialIntegrity (graph.ts:49, flags missing-id + self-ref) and deriveBlocks (graph.ts:23); graph.ts:47 EXPLICITLY defers full cycle-rejection to THIS issue. Do NOT reinvent missing-id/self-ref -- call checkReferentialIntegrity. ADD only Kahn cycle detection: after Kahn drains all in-degree-zero layers, any node with residual non-zero in-degree is on a cycle; reconstruct and name the cycle path (CAM-X -> CAM-Y -> CAM-X) by walking blockedBy among the residual set. Gate return shape: { ok: true } | { ok: false, kind: 'cycle'|'integrity', errors: string[] }. TRANSACTIONAL: the gate runs and must pass BEFORE any rank is computed-for-write/committed; on fail, prior ranks are kept untouched (the gate is a pure check; the no-write guarantee is enforced by US-004 calling the gate before the commit). CROSS-STAGE blocker (specified issue blockedBy an idea/abandoned/non-shipped-non-specified id that IS present in the backlog) is NOT an integrity error and NOT a cycle: it is a satisfied/ignored edge for intra-set Kahn (the blocker is outside {specified,open}) and emits a WARNING, exit 0. Distinguish: missing-id (not in backlog at all) = hard fail via checkReferentialIntegrity; present-but-out-of-set = warn. GOTCHAS: blocks is derived (deriveBlocks), never stored, single-direction (blockedBy is the source of truth). Maps spec AC#3, AC#4, AC#5."
     },

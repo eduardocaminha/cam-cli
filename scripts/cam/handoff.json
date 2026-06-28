@@ -1,25 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Pure Kahn topo-sort + WSJF ranking module (src/issues/rank.ts)"
+    "id": "US-003",
+    "title": "Graph gate: Kahn cycle detection + referential-integrity reuse"
   },
   "branchName": "cam/CAM-108-triage-deterministic-rank",
-  "timestamp": "2026-06-28T15:00:00.000Z",
+  "timestamp": "2026-06-28T16:00:00.000Z",
   "createdFiles": [
-    "src/issues/rank.ts",
-    "test/issues/rank.test.ts"
+    "src/issues/gate.ts",
+    "test/issues/gate.test.ts"
   ],
   "modifiedFiles": [
     "scripts/cam/prd.json",
-    "scripts/cam/handoff.json"
+    "scripts/cam/handoff.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "src/issues/rank.ts exports rankIssues(backlog: IssueEntry[]): RankResult with { ranked, warnings, residualIds }. residualIds is the Kahn residual set (cycle members with in-degree > 0 after exhaustion) -- exposed specifically for US-003's cycle-detection gate. The numericIdSuffix helper is private inside rank.ts (mirrors select.ts). Test coverage: 24 tests across layering, WSJF ordering, id tie-break, missing-wsjf/jobSize<=0 warnings, shipped-blocker handling, and cycle detection.",
+  "nextStoryContext": "src/issues/gate.ts exports runGraphGate(backlog: IssueEntry[]): GateResult. GateResult = { ok: true; warnings: string[] } | { ok: false; kind: 'cycle'|'integrity'; errors: string[]; warnings: string[] }. Three phases: (1) checkReferentialIntegrity hard-fail on missing-id/self-ref, (2) cross-stage blocker warnings, (3) Kahn residualIds from rankIssues for cycle detection + path reconstruction. US-004 (cam triage CLI) must call runGraphGate BEFORE writing any rank; if ok===false, abort without writing. The gate is a pure check -- no I/O, no writes. 22 tests in test/issues/gate.test.ts cover all three phases.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure algorithm story: no external npm library was introduced or changed. rank.ts has zero imports from outside the project."
+      "summary": "Pure algorithm story: no external npm library was introduced or changed. gate.ts imports only from internal modules (./types.ts, ./graph.ts, ./rank.ts)."
     }
   ]
 }
