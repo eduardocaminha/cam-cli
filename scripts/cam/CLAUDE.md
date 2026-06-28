@@ -90,14 +90,14 @@ When a story produces a new insight, route it to exactly one canonical channel u
 
 The durable domain model for any cam-managed project lives at two pinned locations:
 
-- `CONTEXT.md` at the repo root: glossary-only (no implementation details, no specs, no decisions). Created lazily: when the first term is resolved.
+- `CONTEXT.md` at the repo root: active vocabulary channel populated via the CAM-118 deterministic writer. Glossary-only (no implementation details, no specs, no decisions).
 - `docs/adr/` at the repo root: Architectural Decision Records. Created lazily: when the first ADR is needed.
 
 **Glossary-only vs ADR-worthy:**
 - Glossary (`CONTEXT.md`): canonical terminology, bounded-context definitions, and ubiquitous language. Nothing about implementation. No specs, no decisions.
 - ADR (`docs/adr/`): write one only when all three gates pass: (1) hard to reverse, (2) surprising without context, (3) the result of a real trade-off with genuine alternatives considered. If any gate is missing, skip the ADR.
 
-This convention applies to cam-cli itself and to any downstream cam project initialized by `cam init`. Both files are created lazily (do not pre-create empty stubs).
+This convention applies to cam-cli itself and to any downstream cam project initialized by `cam init`. `CONTEXT.md` is populated by the CAM-118 deterministic writer (do not pre-create an empty stub). `docs/adr/` is created lazily: when the first ADR is needed (do not pre-create an empty directory).
 
 **Self-improvement sources:** the domain model cross-references two knowledge layers:
 - `scripts/cam/patterns.md`: durable codebase patterns, gotchas, and invariants (versioned on main, never truncated). Agents read this file at story start to absorb project conventions.
