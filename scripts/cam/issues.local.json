@@ -1,5 +1,5 @@
 {
-  "next_id": 127,
+  "next_id": 128,
   "issues": [
     {
       "id": "CAM-1",
@@ -1284,6 +1284,15 @@
       "blockedBy": [],
       "createdAt": "2026-06-28T02:34:31.514Z",
       "description": "O comentario em scripts/build-release.sh:108 (Canonical rule: lessons.md 2026-06-06) ainda aponta pro arquivo aposentado no CAM-123 (renomeado pra lessons.archive.md). O AC#7 do CAM-123 proibia editar .sh (so .md + o rename), entao build-release.sh ficou deliberadamente fora de escopo. Repointar o comentario pra lessons.archive.md. Fix trivial de doc, 1 linha. Surfaceado pelo reviewer do CAM-123 (SUGGESTION nao-bloqueante). P3."
+    },
+    {
+      "id": "CAM-127",
+      "title": "Epico C Slice 2: cross-list LLM reconciler (subagent-triager) + autonomia (auto-trigger + diff narration + override)",
+      "stage": "idea",
+      "status": "open",
+      "blockedBy": [],
+      "createdAt": "2026-06-28T03:45:50.507Z",
+      "description": "Slice 2 do Epico C (cross-list reprioritizacao); o Slice 1 determinístico e o CAM-108 (Kahn topo-sort + WSJF + gate + cam triage manual). BLOQUEADO POR CAM-108. Escopo Slice 2: (1) subagent-triager NOVO (read-only, classe auditor, entra na allowlist do hook CAM-102): descoberta semantica de arestas blockedBy cross-list que o grill per-issue nao pegou (a issue nova deveria ser bloqueada por uma existente?), LLM fino consumindo as arestas+WSJF que cada grill gravou; o gate deterministico do CAM-108 e a rede de seguranca. (2) auto-trigger na promocao idea->specified (rerankeia o conjunto specified inteiro chamando o nucleo do CAM-108). (3) narracao automatica do diff pro orquestrador (sidecar unico pusher, modelo de handback estruturado CAM-75/78). (4) override persistente do operador: sobrescrever qualquer aresta blockedBy ou componente WSJF, que o triager RESPEITA no proximo rerank (onde guardar o override e decisao de design do grill). (5) escalacao Resend best-effort no hard-fail de ciclo (padrao CAM-109). Toca: .claude/agents + templates/agents + allowlist do hook + embed; trigger pos-specified; src/notify/resend. P2."
     }
   ]
 }
