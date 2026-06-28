@@ -211,7 +211,7 @@ function makeOffMainSpawnFn(
 
 /**
  * Recording spawnFn for the on-main path.
- * On-main: commitOnMain uses writeFile + git add + git commit.
+ * On-main: commitTreeToMain uses git plumbing (same as off-main, ref-only).
  */
 function makeOnMainSpawnFn(entries: IssueEntry[], calls: SpawnCall[]): SpawnFn {
 	const { lsTreeOutput, catFileOutput } = buildBacklogFixture(entries);
@@ -475,36 +475,25 @@ describe('runTriage: AC#4 gate hard-fail', () => {
 // ---------------------------------------------------------------------------
 
 describe('runTriage: on-main path', () => {
-	test('on-main path uses git add + commit (not commit-tree)', () => {
+	test('on-main path uses commit-tree (ref-only), never git add + commit', () => {
 		const calls: SpawnCall[] = [];
-		const written: Array<{ path: string; text: string }> = [];
 
 		const result = runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOnMainSpawnFn([ISSUE_CAM_1], calls),
 			clock: () => '2026-06-28T12:00:00.000Z',
-			writeFile: (path, text) => written.push({ path, text }),
 			writeStdout: () => {},
 		});
 
 		expect(result.ok).toBe(true);
 
-		// on-main: must call git add, NOT commit-tree
-		const hasGitAdd = calls.some((c) => c.args.includes('add'));
+		// on-main: commit-tree MUST be called (ref-only path, same as off-main)
 		const hasCommitTree = calls.some((c) => c.args.includes('commit-tree'));
+		expect(hasCommitTree).toBe(true);
 
-		expect(hasGitAdd).toBe(true);
-		expect(hasCommitTree).toBe(false);
-
-		// writeFile should have been called with the updated per-file JSON
-		expect(written.length).toBeGreaterThan(0);
-		const file = written.find((w) => w.path.includes('scripts/cam/issues/'));
-		expect(file).toBeDefined();
-
-		// Payload is a single IssueEntry (not the old backlog format)
-		const payload = JSON.parse(file!.text) as IssueEntry;
-		expect(payload.id).toBe('CAM-1');
-		expect(payload.rank).toBe(1);
+		// git add must NOT be called (that was the old commitOnMain path, now removed)
+		const hasGitAdd = calls.some((c) => c.args.includes('add'));
+		expect(hasGitAdd).toBe(false);
 	});
 
 	test('on-main: no issues.local.json in any spawn call', () => {

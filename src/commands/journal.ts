@@ -9,7 +9,7 @@
 //   - Off-main path: git plumbing (temp GIT_INDEX_FILE, read-tree, hash-object,
 //     update-index, write-tree, commit-tree, update-ref) so the feature-branch
 //     HEAD and working tree are left completely untouched.
-//   - On-main path: write working-tree file, git add, git commit.
+//   - On-main path: same ref-only commitTreeToMain path as off-main (CAM-133).
 //   - Push to origin main is best-effort: a non-zero exit is logged but the
 //     function returns { ok: true } (the local commit already landed).
 //   - All external dependencies are injectable for unit-testing.
@@ -17,7 +17,7 @@
 // CAM-122 (cam journal append deterministico + fim do jq>budget ad-hoc).
 
 import { writeFileSync } from 'node:fs';
-import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
+import { commitTreeToMain } from '../git/on-main.ts';
 import type { SpawnFn } from '../git/on-main.ts';
 import { printError } from '../logging/color.ts';
 
@@ -66,7 +66,7 @@ export interface AppendJournalEntryOnMainOptions {
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
 	/**
-	 * Injectable file writer (on-main path only).
+	 * Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover).
 	 * Defaults to writeFileSync(path, text, 'utf8').
 	 */
 	writeFile?: (path: string, text: string) => void;
@@ -333,7 +333,7 @@ function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
  *   6. Print `CAM_JOURNAL_APPENDED=<cycleId> sha=<sha>` (done by the caller).
  *   7. Return { ok: true, cycleId, sha }.
  *
- * On-main path (rare): write working-tree file, git add, git commit.
+ * On-main path: same ref-only commitTreeToMain path as off-main (CAM-133).
  */
 export function appendJournalEntryOnMain(
 	options: AppendJournalEntryOnMainOptions,
@@ -392,9 +392,7 @@ export function appendJournalEntryOnMain(
 		const block = renderJournalBlock(entry);
 		const updatedContent = replaceCycleBlock(existingContent, entry.cycleId, block);
 		const commitMsg = `chore(cam): journal replace ${entry.cycleId}`;
-		const sha = branchWasMain
-			? commitOnMain(cwd, [{ path: 'scripts/cam/journal.md', content: updatedContent }], commitMsg, spawnFn, writeFile)
-			: commitTreeToMain(cwd, [{ path: 'scripts/cam/journal.md', content: updatedContent }], commitMsg, localMainSha, spawnFn, 'cam-journal-');
+		const sha = commitTreeToMain(cwd, [{ path: 'scripts/cam/journal.md', content: updatedContent }], commitMsg, localMainSha, spawnFn, 'cam-journal-');
 		pushMainBestEffort(cwd, spawnFn);
 		return { ok: true, cycleId: entry.cycleId, sha };
 	}
@@ -405,9 +403,7 @@ export function appendJournalEntryOnMain(
 
 	const commitMsg = `chore(cam): journal append ${entry.cycleId}`;
 
-	const sha = branchWasMain
-		? commitOnMain(cwd, [{ path: 'scripts/cam/journal.md', content: updatedContent }], commitMsg, spawnFn, writeFile)
-		: commitTreeToMain(cwd, [{ path: 'scripts/cam/journal.md', content: updatedContent }], commitMsg, localMainSha, spawnFn, 'cam-journal-');
+	const sha = commitTreeToMain(cwd, [{ path: 'scripts/cam/journal.md', content: updatedContent }], commitMsg, localMainSha, spawnFn, 'cam-journal-');
 
 	pushMainBestEffort(cwd, spawnFn);
 

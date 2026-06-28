@@ -199,7 +199,7 @@ test.skipIf(!gitAvailable)(
 // ---------------------------------------------------------------------------
 
 test.skipIf(!gitAvailable)(
-	'Case B (on-main): direct commit on main; working-tree journal.md contains new entry',
+	'Case B (on-main): commit-tree path advances main; entry visible via git show; working tree unchanged',
 	() => {
 		const { dir, run, camDir } = makeTmpRepo();
 
@@ -207,7 +207,10 @@ test.skipIf(!gitAvailable)(
 		const branchBefore = (run(['rev-parse', '--abbrev-ref', 'HEAD']).stdout as string).trim();
 		expect(branchBefore).toBe('main');
 
-		const mainSha0 = (run(['rev-parse', 'HEAD']).stdout as string).trim();
+		const mainSha0 = (run(['rev-parse', 'main']).stdout as string).trim();
+
+		// Capture the working-tree journal.md content BEFORE (should not change)
+		const wtBefore = readFileSync(join(camDir, 'journal.md'), 'utf8');
 
 		const result = appendJournalEntryOnMain({
 			cwd: dir,
@@ -220,7 +223,7 @@ test.skipIf(!gitAvailable)(
 		}
 
 		// (a) main advanced by one commit
-		const mainSha1 = (run(['rev-parse', 'HEAD']).stdout as string).trim();
+		const mainSha1 = (run(['rev-parse', 'main']).stdout as string).trim();
 		expect(mainSha1).not.toBe(mainSha0);
 
 		// (b) commit message
@@ -229,16 +232,22 @@ test.skipIf(!gitAvailable)(
 			'chore(cam): journal append cam/CAM-122-journal-append',
 		);
 
-		// (c) working-tree journal.md contains the new entry
-		const wtContent = readFileSync(join(camDir, 'journal.md'), 'utf8');
-		expect(wtContent).toContain('## cam/CAM-122-journal-append — cam journal append deterministico');
-		expect(wtContent).toContain('- **Issue**: CAM-122');
+		// (c) new entry is visible on main via git show (ref-only path)
+		const showResult = run(['show', 'main:scripts/cam/journal.md']);
+		const mainContent = showResult.stdout as string;
+		expect(mainContent).toContain('## cam/CAM-122-journal-append — cam journal append deterministico');
+		expect(mainContent).toContain('- **Issue**: CAM-122');
+		expect(mainContent).toContain('- **Outcome**: shipped');
 		// Old entry preserved
-		expect(wtContent).toContain('## old/cycle — old entry');
+		expect(mainContent).toContain('## old/cycle — old entry');
 
-		// (d) working tree is clean after the commit
-		const status = run(['status', '--porcelain']);
-		expect((status.stdout as string).trim()).toBe('');
+		// (d) working-tree journal.md is NOT modified (commit-tree leaves the working tree untouched)
+		const wtAfter = readFileSync(join(camDir, 'journal.md'), 'utf8');
+		expect(wtAfter).toBe(wtBefore);
+
+		// Note: after a ref-only commit on main, git status --porcelain may show
+		// the index as stale (index behind the advanced HEAD) -- that is the expected
+		// behavior for commitTreeToMain; the working tree content itself is unchanged.
 
 		// (e) result shape
 		expect(result.cycleId).toBe('cam/CAM-122-journal-append');

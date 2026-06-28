@@ -245,33 +245,24 @@ test('appendJournalEntryOnMain: off-main -- hash-object receives the updated jou
 // Tests: on-main path
 // ---------------------------------------------------------------------------
 
-test('appendJournalEntryOnMain: on-main -- uses direct commit, calls git add + commit', () => {
-	const writtenFiles: Array<{ path: string; content: string }> = [];
+test('appendJournalEntryOnMain: on-main -- uses commit-tree (ref-only), never git add + commit', () => {
 	const { spawnFn, calls } = makeFakeSpawnFn({ branch: 'main' });
 
 	const result = appendJournalEntryOnMain({
 		cwd: '/fake/cwd',
 		entry: SAMPLE_ENTRY,
 		spawnFn,
-		writeFile: (path, content) => {
-			writtenFiles.push({ path, content });
-		},
 	});
 
 	expect(result.ok).toBe(true);
 
-	// Direct-commit path: git add should be called
-	const addCall = calls.find((c) => c.args.includes('add') && c.args.some((a) => a.includes('journal.md')));
-	expect(addCall).toBeDefined();
-
-	// commit-tree should NOT be called (that is the off-main path)
+	// commit-tree MUST be called (ref-only path, same as off-main)
 	const commitTreeCall = calls.find((c) => c.args.includes('commit-tree'));
-	expect(commitTreeCall).toBeUndefined();
+	expect(commitTreeCall).toBeDefined();
 
-	// writeFile should have been called with journal.md path
-	expect(writtenFiles).toHaveLength(1);
-	expect(writtenFiles[0]?.path).toContain('journal.md');
-	expect(writtenFiles[0]?.content).toContain('## cam/CAM-122-journal-append — cam journal append deterministico');
+	// git add must NOT be called (that was the old commitOnMain path, now removed)
+	const addCall = calls.find((c) => c.args.includes('add') && c.args.some((a) => a.includes('journal.md')));
+	expect(addCall).toBeUndefined();
 });
 
 // ---------------------------------------------------------------------------

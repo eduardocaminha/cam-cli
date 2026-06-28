@@ -11,7 +11,7 @@
 // Design mirrors src/commands/issue-file.ts:
 //   - Injectable SpawnFn + ClockFn + writeFile.
 //   - checkMainUpToDate guard family (detached-head / missing-main / diverged).
-//   - commitOnMain (on-main path) / commitTreeToMain (off-main path).
+//   - commitTreeToMain (both on-main and off-main; ref-only CAS commit).
 //   - Exported result interface for type-safe test assertions.
 //   - The old array backlog file is never read or written (CAM-90 US-004 cutover).
 //
@@ -33,7 +33,7 @@
 // CAM-108 US-004, CAM-90 US-004 (file-per-issue cutover).
 
 import { writeFileSync } from 'node:fs';
-import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
+import { commitTreeToMain } from '../git/on-main.ts';
 import type { SpawnFn, FileWrite } from '../git/on-main.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { readBacklogFromMain, issueFilePath } from '../issues/backlog.ts';
@@ -71,7 +71,7 @@ export interface RunTriageOptions {
 	 *  in production; tests inject a fixed value.
 	 */
 	clock: ClockFn;
-	/** Injectable file writer (on-main path only).  Defaults to writeFileSync. */
+	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
 	writeFile?: (path: string, text: string) => void;
 	/** Injectable stdout writer.  Defaults to process.stdout.write. */
 	writeStdout?: (line: string) => void;
@@ -288,9 +288,7 @@ export function runTriage(options: RunTriageOptions): TriageResult {
 	// 5. Commit the changed files as one atomic multi-file commit.
 	const commitMsg = `chore(cam): triage ${ranked.length} issues ranked (${changed} changed)`;
 
-	const sha = branchWasMain
-		? commitOnMain(cwd, changedFiles, commitMsg, spawnFn, writeFile)
-		: commitTreeToMain(cwd, changedFiles, commitMsg, localMainSha, spawnFn, 'cam-triage-');
+	const sha = commitTreeToMain(cwd, changedFiles, commitMsg, localMainSha, spawnFn, 'cam-triage-');
 
 	// 6. Best-effort push.
 	pushMainBestEffort(cwd, spawnFn);
