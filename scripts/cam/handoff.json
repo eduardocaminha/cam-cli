@@ -1,26 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Graph gate: Kahn cycle detection + referential-integrity reuse"
+    "id": "US-004",
+    "title": "`cam triage` deterministic CLI writing rank to main"
   },
   "branchName": "cam/CAM-108-triage-deterministic-rank",
-  "timestamp": "2026-06-28T16:00:00.000Z",
+  "timestamp": "2026-06-28T20:00:00.000Z",
   "createdFiles": [
-    "src/issues/gate.ts",
-    "test/issues/gate.test.ts"
+    "src/commands/triage.ts",
+    "test/triage.test.ts"
   ],
   "modifiedFiles": [
+    "index.ts",
     "scripts/cam/prd.json",
-    "scripts/cam/handoff.json",
-    "scripts/cam/patterns.md"
+    "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "src/issues/gate.ts exports runGraphGate(backlog: IssueEntry[]): GateResult. GateResult = { ok: true; warnings: string[] } | { ok: false; kind: 'cycle'|'integrity'; errors: string[]; warnings: string[] }. Three phases: (1) checkReferentialIntegrity hard-fail on missing-id/self-ref, (2) cross-stage blocker warnings, (3) Kahn residualIds from rankIssues for cycle detection + path reconstruction. US-004 (cam triage CLI) must call runGraphGate BEFORE writing any rank; if ok===false, abort without writing. The gate is a pure check -- no I/O, no writes. 22 tests in test/issues/gate.test.ts cover all three phases.",
+  "nextStoryContext": "src/commands/triage.ts exports runTriage(options: RunTriageOptions): TriageResult. TriageResult = TriageSuccessResult | TriageGateFailResult | TriageGuardFailResult. The CLI: (1) checkMainUpToDate guard; (2) reads backlog from main via git show; (3) runGraphGate BEFORE any write; (4) rankIssues; (5) idempotent no-op when ranks unchanged; (6) writes rank onto every {specified,open} entry; (7) commitTreeToMain (off-main) or commitOnMain (on-main); (8) best-effort push; (9) prints sentinel CAM_TRIAGE_RANKED=<n> changed=<m> sha=<sha|none>. 16 in-process tests in test/triage.test.ts cover ordering, idempotency, sentinel output, and gate failures. US-005 (real-git end-to-end proof) must verify: ranks land on main via a real git tmpdir; work-branch HEAD is unchanged; second run is a no-op; all verified via real git commands (not injected fakes).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure algorithm story: no external npm library was introduced or changed. gate.ts imports only from internal modules (./types.ts, ./graph.ts, ./rank.ts)."
+      "summary": "Pure algorithm + git-plumbing story: no external npm library was introduced or changed. triage.ts imports only from internal modules (./gate.ts, ./rank.ts, ../git/on-main.ts, ../issues/types.ts, ../logging/color.ts)."
     }
   ]
 }
