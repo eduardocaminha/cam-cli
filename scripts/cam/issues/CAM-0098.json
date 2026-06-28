@@ -1,9 +1,25 @@
 {
   "id": "CAM-98",
   "title": "rollChangelog insere [X.Y.Z] acima do [Unreleased] antigo em vez de renomear inline",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-26T11:31:45.818Z",
-  "description": "CAM-89 US-004: rollChangelog (src/release/changelog.ts) insere a nova secao ## [X.Y.Z] - data ACIMA do ## [Unreleased] existente em vez de renomear o [Unreleased] inline. Resultado no ship 0.2.0: um ## [Unreleased] vazio no topo + o ## [Unreleased] antigo (conteudo stale CAM-33) preservado abaixo do ## [0.2.0]. A AC dizia fresh empty [Unreleased] acima, mas o corpo velho deveria ter virado o corpo da release (US-006 gera o corpo novo dos commits, entao o [Unreleased] velho deveria ser consumido/descartado, nao preservado). Fix: rollChangelog deve renomear o [Unreleased] existente para [X.Y.Z] (com o corpo gerado por US-006) e inserir um [Unreleased] vazio acima. Doc/transform only + teste. P3."
+  "description": "CAM-89 US-004: rollChangelog (src/release/changelog.ts) insere a nova secao ## [X.Y.Z] - data ACIMA do ## [Unreleased] existente em vez de renomear o [Unreleased] inline. Resultado no ship 0.2.0: um ## [Unreleased] vazio no topo + o ## [Unreleased] antigo (conteudo stale CAM-33) preservado abaixo do ## [0.2.0]. A AC dizia fresh empty [Unreleased] acima, mas o corpo velho deveria ter virado o corpo da release (US-006 gera o corpo novo dos commits, entao o [Unreleased] velho deveria ser consumido/descartado, nao preservado). Fix: rollChangelog deve renomear o [Unreleased] existente para [X.Y.Z] (com o corpo gerado por US-006) e inserir um [Unreleased] vazio acima. Doc/transform only + teste. P3.",
+  "spec": {
+    "scope": "CAM-89 US-004: rollChangelog (src/release/changelog.ts) insere a nova secao ## [X.Y.Z] - data ACIMA do ## [Unreleased] existente em vez de renomear o [Unreleased] inline. Resultado no ship 0.2.0: um ## [Unreleased] vazio no topo + o ## [Unreleased] antigo (conteudo stale CAM-33) preservado abaixo do ## [0.2.0]. A AC dizia fresh empty [Unreleased] acima, mas o corpo velho deveria ter virado o corpo da release (US-006 gera o corpo novo dos commits, entao o [Unreleased] velho deveria ser consumido/descartado, nao preservado). Fix: rollChangelog deve renomear o [Unreleased] existente para [X.Y.Z] (com o corpo gerado por US-006) e inserir um [Unreleased] vazio acima. Doc/transform only + teste. P3.",
+    "acceptanceCriteria": [
+      "rollChangelog renomeia o [Unreleased] existente para [X.Y.Z] e insere um [Unreleased] vazio acima",
+      "Sem [Unreleased] duplicado/stale apos o bump",
+      "Toca src/release/changelog.ts + teste"
+    ],
+    "gotchas": [],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 2
+  }
 }
