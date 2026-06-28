@@ -1,5 +1,5 @@
 {
-  "next_id": 125,
+  "next_id": 126,
   "issues": [
     {
       "id": "CAM-1",
@@ -1193,6 +1193,15 @@
       "blockedBy": [],
       "createdAt": "2026-06-28T01:09:17.735Z",
       "description": "O reviewer do CAM-122 flagou 3x (rounds 1-4): src/commands/journal.ts adicionou a 3a copia verbatim da plumbing commit-tree-to-main (buildIndexEnv/checkMainUpToDate/commitTreeToMain/pushMainBestEffort), que agora vive em issue-file.ts + issue-specify.ts + journal.ts, elevando o jscpd threshold 5->6 (afrouxando o gate repo-wide pela 2a vez; CAM-120 ja registrou o 4->5). PROPOSTA: extrair um modulo helper on-main compartilhado (ex: src/git/on-main.ts) com a plumbing git comum (temp GIT_INDEX_FILE, hash-object -w --stdin, write-tree, commit-tree -p main, update-ref refs/heads/main, best-effort push, checkMainUpToDate guard, a widened SpawnFn {encoding,env,input}), e fazer os 3 call-sites (issue-file createLocalIssueOnMain, issue-specify specifyIssueOnMain, journal appendJournalEntryOnMain) reusarem. Apos a dedup, BAIXAR o jscpd threshold de volta (6->4 ou menos). CUIDADO: cada call-site tem logica especifica que NAO deve ser extraida (issue-file aloca next_id read-from-main, specify valida spec+wsjf, journal renderiza+dedup+force); extrair apenas o nucleo git comum, nao a logica de dominio. Correlato a CAM-120 (dedup jscpd). Prioridade P2: divida de dedup, nao bloqueia ciclos, mas o gate ja foi afrouxado 2x."
+    },
+    {
+      "id": "CAM-125",
+      "title": "cam journal archive: GC deterministico do journal.md (>50 entries -> journal.archive.md)",
+      "stage": "idea",
+      "status": "open",
+      "blockedBy": [],
+      "createdAt": "2026-06-28T01:44:33.545Z",
+      "description": "O agent file do orquestrador documenta a regra '>50 entries: sumarizar o terco mais antigo + arquivar em journal.archive.md', mas e MANUAL e nunca foi executado (journal.md ja tem ~33 entries / ~400 linhas, crescendo sem bound; CAM-123 identificou a falta de GC como parte do drift). PROPOSTA: cam journal archive, comando deterministico irmao do cam journal append (CAM-122, mesmo modulo src/commands/journal.ts): quando journal.md excede um threshold (default 50 entries), MOVE o terco mais antigo pra scripts/cam/journal.archive.md (cumulativo) + header/ponteiro no journal.md, commit no main via commit-tree (mesma plumbing; CAM-124 extrai o helper). Threshold configuravel, clock injetado. Invocado no cycle-close ou check no boot. DESIGN: MOVER puro (deterministico), nao sumarizar (resumo LLM fica pra follow-up). Correlato CAM-122/123/124. Prioridade P3."
     }
   ]
 }
