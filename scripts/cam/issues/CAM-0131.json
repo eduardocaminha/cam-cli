@@ -1,0 +1,9 @@
+{
+  "id": "CAM-131",
+  "title": "Filha CAM-110: handoff first-class com gatilho deterministico alinhado a fronteira de ciclo e skip de ciclo trivial",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-28T15:36:58.633Z",
+  "description": "Carve-out shippavel-ja da CAM-110 (epico-ancora do lifecycle do orquestrador no loop autonomo). Hoje o gatilho do self-handoff (CAM-23) e PROSA na persona ('cheque cam orch-budget apos cada /cam-next') e nao tem nocao de fronteira de ciclo: um handoff pode disparar no meio de um implement-review ou logo apos um ciclo trivial. Escopo: tornar o gatilho deterministico e alinhado a fronteira de ciclo (so no cycle-close, nunca mid-cycle, nunca apos ciclo trivial). Toca src/commands/orch-budget.ts, o mecanismo de handoff (.cam-orch-handoff.json), o ponto de cycle-close (pos-ship/post-merge) e a persona subagent-orchestrator. Sem deps hard; melhora ate o modo interativo. INVARIANTE da CAM-110: handoff first-class alinhado a fronteira de ciclo. Filha shippavel-ja; ranqueia antes das outras no triage. Precisa de grill proprio (definir 'fronteira de ciclo' e 'ciclo trivial' operacionalmente)."
+}
