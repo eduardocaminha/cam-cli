@@ -62,7 +62,7 @@
         "The full gate spine is green [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Edit ONLY scripts/cam/CLAUDE.md, the '## Domain Model Convention' section (lines ~71-86). The stale claim is at line ~75 ('`CONTEXT.md` at the repo root: glossary-only ... Created lazily: when the first term is resolved.') and the lazy-creation reassertion at line ~82 ('Both files are created lazily (do not pre-create empty stubs).'). Reconcile so CONTEXT.md is described as the ACTIVE vocabulary channel POPULATED via the CAM-118 deterministic CONTEXT.md/ADR writer, not a file that auto-exists. Keep docs/adr/ phrasing as-is unless it shares the same false auto-exists claim. Do NOT write or create CONTEXT.md itself (that is CAM-118, out of scope). Do NOT move CONTEXT.md/docs/adr out of repo-root. templates/scripts/cam/CLAUDE.md skeleton lacks this section (verified) so NO templates/ edit and NO embed-vendor. Follow no-em-dash / no-decorative-emoji for persisted .md. Coordinate with US-002 which adds the routing table referencing CONTEXT.md=vocabulary; keep the two CONTEXT.md mentions consistent."
     },

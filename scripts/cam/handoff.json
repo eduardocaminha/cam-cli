@@ -1,7 +1,7 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Add routing, naming, and location convention rules to scripts/cam/CLAUDE.md"
+    "id": "US-003",
+    "title": "Reconcile CONTEXT.md auto-exists claims to the CAM-118 deterministic writer"
   },
   "branchName": "cam/CAM-123-consolidate-knowledge-layer",
   "timestamp": "2026-06-27T00:00:00Z",
@@ -11,12 +11,12 @@
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added the Knowledge-Layer Routing section to scripts/cam/CLAUDE.md (routing table, naming convention, location convention, exception note). The section header is 'Knowledge-Layer Routing'. The deprecation header in lessons.archive.md references this section correctly. US-003 and beyond should read the updated CLAUDE.md to understand routing rules before routing any new insights.",
+  "nextStoryContext": "US-003 updated the Domain Model Convention section in scripts/cam/CLAUDE.md. CONTEXT.md is now described as an active vocabulary channel populated via the CAM-118 deterministic writer (not 'Created lazily'). The 'Both files are created lazily' sentence was split: CONTEXT.md is CAM-118-managed, docs/adr/ remains lazily created. US-004 (Fix live stale lessons.md references) should read the updated Domain Model Convention and the routing table in the Knowledge-Layer Routing section before editing agent/reviewer/patterns references.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "DOC-only story: added Knowledge-Layer Routing section to scripts/cam/CLAUDE.md, no src/ or templates/ changes."
+      "summary": "DOC-only story: reconciled CONTEXT.md auto-exists claims in scripts/cam/CLAUDE.md Domain Model Convention. No src/ or templates/ changes."
     }
   ]
 }
