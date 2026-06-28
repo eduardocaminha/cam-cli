@@ -20,7 +20,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/commands/issue-specify.ts:8]: Stale comments describe the removed on-main path. Module header line 8 ('On-main path: write working-tree file, git add, git commit'), the function docstring (~line 318 same text), and the option docs ('Injectable file writer (on-main path only)' at ~lines 85/194/235) all still describe the git-add+commit path that this PR deleted. The sibling headers in journal.ts and triage.ts WERE updated in the same PR, so issue-specify.ts is internally inconsistent. Violates CLAUDE.md sec 7 (doc maintenance) and the 2026-06-05 lesson on stale comments misleading. Mechanical comment fix."
     },
     {

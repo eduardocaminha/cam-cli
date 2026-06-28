@@ -1,23 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "branchName": "cam/CAM-133-on-main-writer-ref-only",
-  "timestamp": "2026-06-28T02:00:00.000Z",
+  "timestamp": "2026-06-28T02:30:00.000Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/journal.ts",
-    "src/commands/triage.ts",
+    "src/commands/issue-specify.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-002 is the next story: stale comments in issue-specify.ts still describe the removed on-main git-add+commit path. The module header (line 8), the function docstrings (specifyIssueOnMain/abandonIssueOnMain/mergeIssueOnMain), and the writeFile? option docs (~lines 85/194/235) need updating to reflect the ref-only commitTreeToMain path. Mechanical comment-only fix; no behavior change.",
+  "nextStoryContext": "All review round 1 fix stories (US-R1-001, US-R1-002) are now done. The branch should be ready for a fresh review cycle or ship. No more passes:false stories remain in the PRD.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal dead-code removal: removed writeFileSync import and dead const writeFile local from journal.ts and triage.ts. No external npm library touched."
+      "summary": "Pure comment-only fix: updated stale module header, writeFile? option docs, and specifyIssueOnMain docstring in issue-specify.ts to reflect the commitTreeToMain ref-only path (CAM-133). No external npm library touched."
     }
   ]
 }
