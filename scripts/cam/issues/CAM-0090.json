@@ -1,7 +1,7 @@
 {
   "id": "CAM-90",
   "title": "Substituir mecanismo next_id por file-per-issue (scripts/cam/issues/CAM-NNN.json)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-25T15:45:00Z",
