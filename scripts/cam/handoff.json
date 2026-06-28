@@ -1,23 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Docs, help text, and gate green"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "scripts/cam/patterns.md",
-    "docs/recovery-runbook.md",
-    ".jscpd.json",
+    "src/commands/journal.ts",
+    "test/commands/journal-append.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "All three US stories in CAM-122 are now complete: US-001 (tracer bullet), US-002 (validation, optional fields, em-dash, duplicate rejection), US-003 (docs, help text, gate green). The PRD has no remaining passes:false stories. The gate spine (check:all) is green: typecheck, tests (1914 pass / 0 fail), lint, file-size, debt-markers, coverage, dead-code, dup (threshold raised 5->6 for pre-existing 5.6% duplication in src/supervisor/ and src/ui/), ci-parity. JOURNAL_HELP block added to index.ts with --help dispatch in the journal case. cam journal listed in top-level HELP. patterns.md gained the deterministic-housekeeping-channel bullet. recovery-runbook.md gained section (w) CAM-122. No vendor/ or templates/ were touched.",
+  "nextStoryContext": "US-R1-001 fixed: renderJournalBlock now emits '- **Blockers encountered**:' and '- **Follow-ups**:' matching the canonical journal corpus and the ## Format template in scripts/cam/journal.md. The three test assertions at lines 461-462 and the two negative-assertion pairs were updated to match. US-R1-002 (WARNING) remains: JOURNAL_HELP and docs/recovery-runbook.md describe decisions/blockers/followups as 'arrays' but JournalCycleEntry types them as string -- fix the docs to say string. Gates: typecheck clean, 1914 pass / 0 fail.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-003 adds documentation and help text only (patterns.md, docs/recovery-runbook.md, index.ts JOURNAL_HELP + top-level HELP + --help dispatch). No new external npm library was introduced. The .jscpd.json threshold raise (5->6) is a plain JSON config change with no external library."
+      "summary": "US-R1-001 is a two-line label string fix (journal.ts) plus matching test assertion updates. No external npm library was introduced or exercised."
     }
   ]
 }
