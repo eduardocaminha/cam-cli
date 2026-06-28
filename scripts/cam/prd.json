@@ -133,7 +133,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": "US-006",
       "notes": "DESIGN (Option B, operator-approved re-plan): this story carries the ON-BRANCH EXECUTION of the migration (the backlog-loss fix). Run the migration so the branch working tree becomes the complete migrated state: write the N CAM-NNNN.json files into scripts/cam/issues/ + delete scripts/cam/issues.local.json + a normal git add/commit on the branch. If US-006's already-committed code only had the commit-tree-to-main path, add a working-tree/on-branch execution path here reusing the pure transform. THEN the schema + embed work: update scripts/cam/issues.schema.json + templates/scripts/cam/issues.schema.json (dual-copy) to the per-file shape; ensure no templates/scripts/cam/issues.local.json is shipped by cam init; regenerate src/vendor/_generated.ts via `bun run embed-vendor`. REPO FACT: src/vendor/_generated.ts had 5 mentions of issues.local.json (inside embedded VALUES: cam-plan.md, subagent-orchestrator.md, the schema); removing the templates copy + the doc/schema rewrites scrubs them. The embed generator (scripts/generate-embedded-vendor.ts) walks templates/ into templatesContents. test/embedded.test.ts asserts the embed; update it. SPEC GOTCHA: dual-copy + embed rule applies to issues.schema.json (both copies) + regenerate the embed (embed-vendor:check is the gate). Maps spec AC#7 (on-branch migration execution), AC#8, AC#10, AC#11. requires US-006 (the migration code + pure transform this story executes)."
     },

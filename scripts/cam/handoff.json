@@ -1,26 +1,40 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Idempotent atomic migration: array to dir, delete issues.local.json"
+    "id": "US-007",
+    "title": "Migrate branch tree to file-per-issue + per-file schema (both copies) + embed"
   },
   "branchName": "cam/CAM-90-file-per-issue",
-  "timestamp": "2026-06-28T06:00:00Z",
+  "timestamp": "2026-06-28T12:00:00Z",
   "createdFiles": [
-    "test/issues/migrate-to-dir.test.ts"
+    "scripts/cam/issues/CAM-0001.json",
+    "scripts/cam/issues/CAM-0002.json",
+    "scripts/cam/issues/CAM-0003.json"
   ],
   "modifiedFiles": [
-    "src/git/on-main.ts",
-    "scripts/cam/migrate-issues-schema.ts",
+    "scripts/cam/issues/ (129 files created)",
+    "scripts/cam/issues.local.json (deleted)",
+    "scripts/cam/issues.schema.json",
+    "templates/scripts/cam/issues.schema.json",
+    "templates/commands/cam-issue.md",
+    "templates/commands/cam-plan.md",
+    "templates/commands/cam-spec.md",
+    "templates/agents/subagent-orchestrator.md",
+    ".claude/commands/cam-issue.md",
+    ".claude/commands/cam-plan.md",
+    ".claude/commands/cam-spec.md",
+    ".claude/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
+    "test/embedded.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 complete. commitTreeToMain now accepts optional removals?: string[] (git update-index --remove, applied after read-tree, before file writes). migrateIssuesToDir exported from scripts/cam/migrate-issues-schema.ts: reads issues.local.json from main via git show, builds FileWrite[] (one per issue, 4-digit padded filename, unpadded id field), commits atomically with deletions via commitTreeToMain. Idempotency: if git show returns non-zero (file absent), returns noOp:true with no commit. 13 new unit tests, all 2050 tests pass. Next story is US-007: live migration script (real-git integration test, actual 129-issue commit).",
+  "nextStoryContext": "US-007 complete. Branch now has 129 CAM-NNNN.json files in scripts/cam/issues/ (4-digit padded filename, unpadded id field inside JSON). scripts/cam/issues.local.json is deleted. Both schema copies (scripts/cam/ and templates/scripts/cam/) updated to drop issues.local.json description. All template and .claude/ runtime mirrors updated: cam-issue.md, cam-plan.md, cam-spec.md, subagent-orchestrator.md no longer reference issues.local.json or next_id. src/vendor/_generated.ts regenerated (0 references to issues.local.json or next_id). All 2050 tests pass. The PRD is now complete (all non-operator stories pass). The next step is /cam-review.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-006 extended src/git/on-main.ts and scripts/cam/migrate-issues-schema.ts. Only internal modules and node:child_process (no new external npm library) were used."
+      "summary": "US-007 touched only internal JSON/Markdown files and src/vendor/_generated.ts (codegen). No external npm library was exercised."
     }
   ]
 }
