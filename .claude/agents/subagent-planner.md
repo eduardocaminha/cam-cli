@@ -130,7 +130,7 @@ The `notes` field should include:
 
 This is **cam-cli**: the `cam` binary itself, an autonomous Claude Code loop driver. Stack: **Bun >= 1.2 + TypeScript (strict, `noUncheckedIndexedAccess`) + React 19 rendered via Ink 7** for terminal UIs. No database, no HTTP server, no browser. Config is TOML (`src/config/toml.ts`); state is JSON (`prd.json`, `handoff.json`). It shells out to `claude`, `tmux`, `git`, and optionally `gh` / the Linear GraphQL API. Distributed as a single-file binary (`bun build --compile`) with `vendor/` + `claude-code-harness/` embedded at build time.
 
-Read the project's `CLAUDE.md` (root and `scripts/cam/CLAUDE.md`) and `lessons.md` to understand:
+Read the project's `CLAUDE.md` (root and `scripts/cam/CLAUDE.md`), `scripts/cam/patterns.md`, and `scripts/cam/journal.md` to understand:
 - Tech stack and key dependencies (above).
 - Command layout: `index.ts` dispatches subcommands implemented under `src/commands/*` (`init`, `run`, `next`, `plan`, `status`, `dashboard`, `resume`, `stop`, `setup`, `claude`, `retry-monitor`).
 - Domain terms: **orchestrator** (long-lived human-facing agent), **worker** (fresh per-story subagent), **PRD** / **story** / **handoff** / **journal**, **cycle**, **issue system** (`linear` | `github` | `none`, in `project.toml`), **tmux pane/split**.

@@ -1179,7 +1179,7 @@
     {
       "id": "CAM-123",
       "title": "Consolidar o knowledge-layer: aposentar lessons.md + roteamento explicito + cam journal archive + audit advisory",
-      "stage": "specified",
+      "stage": "shipped",
       "status": "open",
       "blockedBy": [],
       "createdAt": "2026-06-27T22:51:49.160Z",

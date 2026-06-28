@@ -68,18 +68,36 @@ When a story reveals a new reusable insight, append a bullet to `scripts/cam/pat
 
 Read `scripts/cam/patterns.md` at story start (step 3 above) so the patterns are in context before you touch files.
 
+## Knowledge-Layer Routing
+
+When a story produces a new insight, route it to exactly one canonical channel using this table:
+
+| Insight type | Canonical channel | Notes |
+|---|---|---|
+| Technical/reusable pattern, library quirk, gotcha | `scripts/cam/patterns.md` | Append a bullet; never truncate |
+| Cycle narrative, structured observation, history | `scripts/cam/journal.md` | One entry per story cycle |
+| Cross-cutting decision, stakeholder policy | `memory/` | One file per decision, named `memory/project_<topic>.md` |
+| Architectural decision (hard-to-reverse + surprising + genuine trade-off) | `docs/adr/` | Write an ADR only when all three gates pass; see Domain Model Convention |
+| Term definition, bounded-context vocabulary | `CONTEXT.md` (repo root) | Glossary-only; no implementation details |
+
+**Naming convention:** UPPERCASE.md (CLAUDE, CONTEXT, README, CHANGELOG, AGENTS) is an external-convention entry-point, visible to humans and tooling that expect a conventional filename. lowercase.md (journal, patterns) is a cam-internal artifact. This casing split is BY DESIGN; do not force single casing.
+
+**Location convention:** `scripts/cam/` is cam-harness knowledge (state files, agent instructions, knowledge-layer artifacts). Repo root plus `docs/` is the project domain model (CONTEXT.md, docs/adr/, README, CHANGELOG). Do not move `journal.md` or `patterns.md` out of `scripts/cam/`, and do not move `CONTEXT.md` or `docs/adr/` into it.
+
+**Exception (cam-cli only):** `lessons.md` has been retired to `lessons.archive.md` (US-001 of CAM-123). New insights go to the channels above, not to `lessons.archive.md`. This retirement is a cam-cli-specific exception to the etapa-dupla convention in the global CLAUDE.md (section 5, "Capture Lessons"), which records both a chronological diary entry AND a canonical-location entry. For non-cam projects the global etapa-dupla rule still applies in full.
+
 ## Domain Model Convention
 
 The durable domain model for any cam-managed project lives at two pinned locations:
 
-- `CONTEXT.md` at the repo root: glossary-only (no implementation details, no specs, no decisions). Created lazily: when the first term is resolved.
+- `CONTEXT.md` at the repo root: active vocabulary channel populated via the CAM-118 deterministic writer. Glossary-only (no implementation details, no specs, no decisions).
 - `docs/adr/` at the repo root: Architectural Decision Records. Created lazily: when the first ADR is needed.
 
 **Glossary-only vs ADR-worthy:**
 - Glossary (`CONTEXT.md`): canonical terminology, bounded-context definitions, and ubiquitous language. Nothing about implementation. No specs, no decisions.
 - ADR (`docs/adr/`): write one only when all three gates pass: (1) hard to reverse, (2) surprising without context, (3) the result of a real trade-off with genuine alternatives considered. If any gate is missing, skip the ADR.
 
-This convention applies to cam-cli itself and to any downstream cam project initialized by `cam init`. Both files are created lazily (do not pre-create empty stubs).
+This convention applies to cam-cli itself and to any downstream cam project initialized by `cam init`. `CONTEXT.md` is populated by the CAM-118 deterministic writer (do not pre-create an empty stub). `docs/adr/` is created lazily: when the first ADR is needed (do not pre-create an empty directory).
 
 **Self-improvement sources:** the domain model cross-references two knowledge layers:
 - `scripts/cam/patterns.md`: durable codebase patterns, gotchas, and invariants (versioned on main, never truncated). Agents read this file at story start to absorb project conventions.
