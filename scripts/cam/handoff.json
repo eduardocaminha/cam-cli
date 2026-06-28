@@ -1,21 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-R3-001",
-    "title": "Review round 3 fix 001: address reviewer finding"
+    "id": "US-R4-001",
+    "title": "Review round 4 fix 001: add title to journal REQUIRED_FIELDS"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
+    "src/commands/journal.ts",
     "test/commands/journal-append.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R3-001 fixed: extracted parseJournalArgs + dispatchJournal from index.ts case 'journal' (mirroring dispatchIssue pattern). Added JournalDispatchDeps with injectable readStdin, appendFn, writeStdout. Replaced the tautological sentinel test (lines 312-320) with 11 real tests covering: parseJournalArgs (help, -h, append, append --force, unknown subcommand, no subcommand) and dispatchJournal (sentinel written to stdout on success, matches AC5 regex, invalid-JSON guard returns 1, appendFn ok:false returns 1, --force propagated, entry parsed and forwarded). Gates: typecheck clean, 1926 pass / 0 fail.",
+  "nextStoryContext": "US-R4-001 fixed: added 'title' to REQUIRED_FIELDS in src/commands/journal.ts (was 7 fields, now 8). validateEntry now rejects a missing or whitespace-only title with a validation error naming the field. Two new tests added: missing title (no git calls fire) and whitespace-only title. help text (index.ts JOURNAL_HELP) and docs/recovery-runbook.md already listed 8 fields including title -- no doc changes needed. Gates: typecheck clean, 1928 pass / 0 fail, check:all exit 0.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-R3-001 is a pure refactor (extract dispatchJournal/parseJournalArgs) + test improvement. No external npm library was introduced or exercised."
+      "summary": "US-R4-001 is a pure mechanical fix (add 'title' to REQUIRED_FIELDS array) plus two new tests. No external npm library was introduced or exercised."
     }
   ]
 }

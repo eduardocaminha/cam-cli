@@ -110,7 +110,7 @@
         "The full gate spine passes. [oracle: bun run check:all]"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mechanical fix, option (a): ADD 'title' to REQUIRED_FIELDS (src/commands/journal.ts:148-156) so validateEntry rejects a missing/empty title. title is genuinely required: renderJournalBlock renders it into the `## <cycleId> : <title>` header, and a missing title currently emits a `: undefined` header committed to main. This matches the non-optional JournalCycleEntry interface (src/commands/journal.ts:48), the help text (index.ts ~311 already lists title), and docs/recovery-runbook.md (~1985/2001/2036 already say 8 required fields). Do NOT downgrade the docs to 7 fields. Scope is <=2 files: src/commands/journal.ts REQUIRED_FIELDS plus a test asserting missing-title rejection in test/commands/journal-append.test.ts (and a one-line help/doc reconciliation only if a mismatch surfaces; current help+runbook already list 8). OUT of scope (backlog/triaged): the non-null-object guard on JSON.parse at index.ts, the legacy `:`-separator dedup edge case, and the jscpd 3rd-copy extraction follow-up. Do not expand scope."
     }
