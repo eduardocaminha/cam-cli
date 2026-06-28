@@ -8,11 +8,11 @@
 //     in scripts/cam/issues/ on main via git ls-tree + cat-file --batch;
 //     never reads from the working tree (which may lag behind main).
 //   - All writes go to a single CAM-NNNN.json file via writeIssueFile (US-003
-//     CAS-hardened on-main commit). issues.local.json is never touched.
+//     CAS-hardened on-main commit). The old array backlog file is never touched.
 //   - All external dependencies are injectable for unit-testing without a real
 //     git binary or filesystem.
 //
-// US-005 additions (preserved from the earlier issues.local.json version):
+// US-005 additions (preserved from the earlier array-backlog version):
 //   - Up-to-date guard: best-effort fetch + local vs origin/main sha comparison;
 //     skip when origin/main is absent (no remote configured).
 //   - Detached HEAD and missing local main branch: clear errors returned as
@@ -179,7 +179,7 @@ function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
  *   3. Best-effort git push origin main.
  *   4. Return { ok: true, id, committedTo: 'main', sha, branchWasMain }.
  *
- * issues.local.json is never read or written.
+ * The old array backlog file is never read or written.
  */
 export function createLocalIssueOnMain(
 	options: CreateLocalIssueOnMainOptions,

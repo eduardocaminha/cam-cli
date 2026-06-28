@@ -9,7 +9,7 @@
 // DESIGN:
 //   - All three copies were byte-identical except for:
 //     (a) the mkdtemp prefix ('cam-issue-' / 'cam-specify-' / 'cam-journal-')
-//     (b) the file path argument ('scripts/cam/issues.local.json' vs
+//     (b) the file path argument ('scripts/cam/issues/CAM-NNNN.json' vs
 //         'scripts/cam/journal.md')
 //   - Both parameters are now explicit arguments so callers stay
 //     byte-behaviorally identical to the pre-extraction code.
@@ -59,7 +59,7 @@ export type SpawnFn = (
 /**
  * Represents one file to include in an atomic on-main commit.
  *
- * @property path     Git-relative path (e.g. 'scripts/cam/issues.local.json').
+ * @property path     Git-relative path (e.g. 'scripts/cam/issues/CAM-0001.json').
  * @property content  File content to hash and index.
  */
 export interface FileWrite {
@@ -143,6 +143,112 @@ export function commitOnMain(
 }
 
 // ---------------------------------------------------------------------------
+// commitTreeToMain helpers (extracted for complexity reduction)
+// ---------------------------------------------------------------------------
+
+/**
+ * Remove repo-relative paths from a temp index via `git update-index --remove`.
+ * No-op when `paths` is empty.
+ */
+export function removePathsFromIndex(
+	cwd: string,
+	paths: string[],
+	spawnFn: SpawnFn,
+	indexEnv: Record<string, string>,
+): void {
+	for (const p of paths) {
+		spawnFn('git', ['-C', cwd, 'update-index', '--remove', p], {
+			encoding: 'utf8',
+			env: indexEnv,
+		});
+	}
+}
+
+/**
+ * Hash and index all files into a temp index.
+ * Throws on the first hash-object or update-index failure so write-tree is
+ * never reached with a partial set (atomicity guarantee).
+ */
+export function hashAndIndexFiles(
+	cwd: string,
+	files: FileWrite[],
+	spawnFn: SpawnFn,
+	indexEnv: Record<string, string>,
+): void {
+	for (const file of files) {
+		const hashResult = spawnFn(
+			'git',
+			['-C', cwd, 'hash-object', '-w', '--stdin'],
+			{ encoding: 'utf8', env: indexEnv, input: file.content },
+		);
+		if ((hashResult.status ?? 1) !== 0) {
+			throw new Error(
+				`git hash-object failed for ${file.path}: ${hashResult.stderr ?? ''}`,
+			);
+		}
+		const blobSha = (hashResult.stdout ?? '').trim();
+		const updateResult = spawnFn(
+			'git',
+			['-C', cwd, 'update-index', '--add', '--cacheinfo', `100644,${blobSha},${file.path}`],
+			{ encoding: 'utf8', env: indexEnv },
+		);
+		if ((updateResult.status ?? 1) !== 0) {
+			throw new Error(
+				`git update-index failed for ${file.path}: ${updateResult.stderr ?? ''}`,
+			);
+		}
+	}
+}
+
+/** Result of a single CAS attempt. */
+type CasAttemptResult =
+	| { success: true; shortSha: string }
+	| { success: false; newMainSha: string };
+
+/**
+ * Write the temp index as a tree, create a commit, and attempt a CAS update-ref.
+ *
+ * On success (update-ref exits 0) returns `{ success: true, shortSha }`.
+ * On CAS failure, re-reads the current main sha and returns
+ * `{ success: false, newMainSha }` so the caller can retry.
+ */
+export function commitAndCasAttempt(
+	cwd: string,
+	currentMainSha: string,
+	commitMsg: string,
+	spawnFn: SpawnFn,
+	indexEnv: Record<string, string>,
+): CasAttemptResult {
+	const treeResult = spawnFn('git', ['-C', cwd, 'write-tree'], {
+		encoding: 'utf8',
+		env: indexEnv,
+	});
+	const treeSha = (treeResult.stdout ?? '').trim();
+
+	const commitResult = spawnFn(
+		'git',
+		['-C', cwd, 'commit-tree', treeSha, '-p', currentMainSha, '-m', commitMsg],
+		{ encoding: 'utf8' },
+	);
+	const newCommitSha = (commitResult.stdout ?? '').trim();
+
+	const updateRefResult = spawnFn(
+		'git',
+		['-C', cwd, 'update-ref', 'refs/heads/main', newCommitSha, currentMainSha],
+		{ encoding: 'utf8' },
+	);
+
+	if ((updateRefResult.status ?? 1) === 0) {
+		return { success: true, shortSha: newCommitSha.substring(0, 7) };
+	}
+
+	const revParseResult = spawnFn('git', ['-C', cwd, 'rev-parse', 'main'], {
+		encoding: 'utf8',
+	});
+	return { success: false, newMainSha: (revParseResult.stdout ?? '').trim() };
+}
+
+// ---------------------------------------------------------------------------
 // commitTreeToMain
 // ---------------------------------------------------------------------------
 
@@ -159,16 +265,11 @@ export function commitOnMain(
  *
  * Sequence per attempt:
  *   1. git read-tree main          -- populate the temp index with main's tree.
- *   2. for each file:
- *      a. git hash-object -w --stdin  -- write blob; content via `input`.
- *         throws if exit code != 0 (atomicity: no partial commit).
- *      b. git update-index --add --cacheinfo 100644,<blob>,<path>
- *         throws if exit code != 0.
- *   3. git write-tree              -- persist the index as a new tree object.
- *   4. git commit-tree <tree> -p <currentMainSha> -m <commitMsg>
- *   5. git update-ref refs/heads/main <newCommit> <currentMainSha>  (CAS)
- *      if exit 0: done.
- *      if exit != 0: re-read main sha, retry from step 1.
+ *   1b. removePathsFromIndex       -- apply optional deletions.
+ *   2. hashAndIndexFiles           -- hash + index all files (throws on error).
+ *   3. commitAndCasAttempt         -- write-tree + commit-tree + CAS update-ref.
+ *      if CAS ok: return short sha.
+ *      if CAS fail: update currentMainSha, retry.
  *
  * For the 1-element list this produces the same sequence as the old
  * single-file implementation (parity guarantee).
@@ -203,101 +304,19 @@ export function commitTreeToMain(
 		let currentMainSha = localMainSha;
 
 		for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
-			// Step 1: populate the temp index with main's current tree.
+			const indexEnv = buildIndexEnv(tempIndex);
+
 			spawnFn('git', ['-C', cwd, 'read-tree', 'main'], {
 				encoding: 'utf8',
-				env: buildIndexEnv(tempIndex),
+				env: indexEnv,
 			});
 
-			// Step 1.5: remove files from the temp index (for migrations/deletions).
-			for (const removal of (removals ?? [])) {
-				spawnFn('git', ['-C', cwd, 'update-index', '--remove', removal], {
-					encoding: 'utf8',
-					env: buildIndexEnv(tempIndex),
-				});
-			}
+			removePathsFromIndex(cwd, removals ?? [], spawnFn, indexEnv);
+			hashAndIndexFiles(cwd, files, spawnFn, indexEnv);
+			const result = commitAndCasAttempt(cwd, currentMainSha, commitMsg, spawnFn, indexEnv);
 
-			// Step 2: hash and index every file.
-			// Atomicity: throw on any failure so write-tree is never reached.
-			for (const file of files) {
-				// 2a. Write the blob to the object store.
-				const hashResult = spawnFn(
-					'git',
-					['-C', cwd, 'hash-object', '-w', '--stdin'],
-					{
-						encoding: 'utf8',
-						env: buildIndexEnv(tempIndex),
-						input: file.content,
-					},
-				);
-				if ((hashResult.status ?? 1) !== 0) {
-					throw new Error(
-						`git hash-object failed for ${file.path}: ${hashResult.stderr ?? ''}`,
-					);
-				}
-				const blobSha = (hashResult.stdout ?? '').trim();
-
-				// 2b. Replace the old blob with the new one in the temp index.
-				const updateIndexResult = spawnFn(
-					'git',
-					[
-						'-C',
-						cwd,
-						'update-index',
-						'--add',
-						'--cacheinfo',
-						`100644,${blobSha},${file.path}`,
-					],
-					{
-						encoding: 'utf8',
-						env: buildIndexEnv(tempIndex),
-					},
-				);
-				if ((updateIndexResult.status ?? 1) !== 0) {
-					throw new Error(
-						`git update-index failed for ${file.path}: ${updateIndexResult.stderr ?? ''}`,
-					);
-				}
-			}
-
-			// Step 3: persist the temp index as a tree object.
-			const treeResult = spawnFn('git', ['-C', cwd, 'write-tree'], {
-				encoding: 'utf8',
-				env: buildIndexEnv(tempIndex),
-			});
-			const treeSha = (treeResult.stdout ?? '').trim();
-
-			// Step 4: create a new commit parented on currentMainSha.
-			const commitResult = spawnFn(
-				'git',
-				['-C', cwd, 'commit-tree', treeSha, '-p', currentMainSha, '-m', commitMsg],
-				{ encoding: 'utf8' },
-			);
-			const newCommitSha = (commitResult.stdout ?? '').trim();
-
-			// Step 5: CAS update-ref.
-			// Passes the expected old sha so git rejects if main advanced.
-			const updateRefResult = spawnFn(
-				'git',
-				['-C', cwd, 'update-ref', 'refs/heads/main', newCommitSha, currentMainSha],
-				{ encoding: 'utf8' },
-			);
-
-			if ((updateRefResult.status ?? 1) === 0) {
-				// CAS succeeded: main now points at newCommitSha.
-				return newCommitSha.substring(0, 7);
-			}
-
-			// CAS failed: another writer advanced main.
-			// Re-read the current sha and retry (unless this was the last attempt).
-			if (attempt < CAS_MAX_ATTEMPTS - 1) {
-				const revParseResult = spawnFn(
-					'git',
-					['-C', cwd, 'rev-parse', 'main'],
-					{ encoding: 'utf8' },
-				);
-				currentMainSha = (revParseResult.stdout ?? '').trim();
-			}
+			if (result.success) return result.shortSha;
+			currentMainSha = result.newMainSha;
 		}
 
 		throw new Error(

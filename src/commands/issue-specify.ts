@@ -9,8 +9,8 @@
 //   - On-main path: write working-tree file, git add, git commit.
 //   - Off-main path: git plumbing (temp GIT_INDEX_FILE, read-tree, hash-object,
 //     update-index, write-tree, commit-tree, update-ref).
-//   - Writes only the target issue's CAM-NNNN.json file; issues.local.json is
-//     never read or written (CAM-90 US-004 per-file cutover).
+//   - Writes only the target issue's CAM-NNNN.json file; the old array backlog
+//     file is never read or written (CAM-90 US-004 per-file cutover).
 //   - All external dependencies are injectable for unit-testing without a real
 //     git binary or filesystem.
 //
@@ -452,6 +452,51 @@ export function abandonIssueOnMain(
 }
 
 /**
+ * Merge source.blockedBy into target.blockedBy, excluding self-refs to target.
+ * Returns the mutated target IssueEntry (or the original when no deps to fold).
+ */
+function withMergedBlockedBy(source: IssueEntry, target: IssueEntry): IssueEntry {
+	const seen = new Set(target.blockedBy);
+	const merged = [...target.blockedBy];
+	for (const depId of source.blockedBy) {
+		if (depId !== target.id && !seen.has(depId)) {
+			merged.push(depId);
+			seen.add(depId);
+		}
+	}
+	return { ...target, blockedBy: merged };
+}
+
+/**
+ * Build the files list for a merge commit.
+ * Always includes the mutated source; appends a mutated target when foldBlockedBy
+ * is true and the source has deps to contribute.
+ */
+function buildMergeFiles(
+	source: IssueEntry,
+	target: IssueEntry,
+	note: string,
+	foldBlockedBy: boolean,
+): FileWrite[] {
+	const mutatedSource: IssueEntry = {
+		...source,
+		status: 'abandoned',
+		description: source.description ? `${source.description}\n\n${note}` : note,
+	};
+	const files: FileWrite[] = [
+		{ path: issueFilePath(source.id), content: JSON.stringify(mutatedSource, null, 2) + '\n' },
+	];
+	if (foldBlockedBy && source.blockedBy.length > 0) {
+		const mutatedTarget = withMergedBlockedBy(source, target);
+		files.push({
+			path: issueFilePath(target.id),
+			content: JSON.stringify(mutatedTarget, null, 2) + '\n',
+		});
+	}
+	return files;
+}
+
+/**
  * Merge a source issue into a target: set source status:'abandoned', record
  * the merge target in source.description, and optionally fold source.blockedBy
  * into target.blockedBy. Committed on main (one atomic commit for all changed files).
@@ -494,31 +539,7 @@ export function mergeIssueOnMain(
 	if (source.status !== 'open') return { ok: false, reason: 'already-abandoned' };
 
 	const note = `Merged into ${intoId}.`;
-	const mutatedSource: IssueEntry = {
-		...source,
-		status: 'abandoned',
-		description: source.description ? `${source.description}\n\n${note}` : note,
-	};
-
-	const files: FileWrite[] = [
-		{ path: issueFilePath(id), content: JSON.stringify(mutatedSource, null, 2) + '\n' },
-	];
-
-	if (foldBlockedBy && source.blockedBy.length > 0) {
-		const seen = new Set(target.blockedBy);
-		const merged = [...target.blockedBy];
-		for (const depId of source.blockedBy) {
-			if (depId !== target.id && !seen.has(depId)) {
-				merged.push(depId);
-				seen.add(depId);
-			}
-		}
-		const mutatedTarget: IssueEntry = { ...target, blockedBy: merged };
-		files.push({
-			path: issueFilePath(intoId),
-			content: JSON.stringify(mutatedTarget, null, 2) + '\n',
-		});
-	}
+	const files = buildMergeFiles(source, target, note, foldBlockedBy);
 
 	const commitMsg = `chore(cam): merge ${id} into ${intoId}`;
 	const sha = branchWasMain

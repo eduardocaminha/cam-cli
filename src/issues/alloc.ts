@@ -29,6 +29,8 @@ import type { IssueEntry, IssueStage, IssueStatus } from './types.ts';
 import {
 	buildIndexEnv,
 	CAS_MAX_ATTEMPTS,
+	hashAndIndexFiles,
+	commitAndCasAttempt,
 	type SpawnFn,
 } from '../git/on-main.ts';
 
@@ -135,83 +137,23 @@ export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResul
 			};
 			const content = JSON.stringify(entry, null, 2) + '\n';
 
-			// (c) Populate the temp index from main's current tree.
+			// (c) Populate the temp index, hash + index the blob, then CAS commit.
+			const indexEnv = buildIndexEnv(tempIndex);
 			spawnFn('git', ['-C', cwd, 'read-tree', 'main'], {
 				encoding: 'utf8',
-				env: buildIndexEnv(tempIndex),
+				env: indexEnv,
 			});
+			hashAndIndexFiles(cwd, [{ path: filename, content }], spawnFn, indexEnv);
 
-			// Hash the new blob into the object store.
-			const hashResult = spawnFn(
-				'git',
-				['-C', cwd, 'hash-object', '-w', '--stdin'],
-				{ encoding: 'utf8', env: buildIndexEnv(tempIndex), input: content },
-			);
-			if ((hashResult.status ?? 1) !== 0) {
-				throw new Error(
-					`writeIssueFile: git hash-object failed for ${filename}: ${hashResult.stderr ?? ''}`,
-				);
-			}
-			const blobSha = (hashResult.stdout ?? '').trim();
-
-			// Add the blob to the temp index at the target path.
-			const updateIndexResult = spawnFn(
-				'git',
-				[
-					'-C', cwd,
-					'update-index', '--add', '--cacheinfo',
-					`100644,${blobSha},${filename}`,
-				],
-				{ encoding: 'utf8', env: buildIndexEnv(tempIndex) },
-			);
-			if ((updateIndexResult.status ?? 1) !== 0) {
-				throw new Error(
-					`writeIssueFile: git update-index failed for ${filename}: ${updateIndexResult.stderr ?? ''}`,
-				);
-			}
-
-			// Write the temp index as a tree object.
-			const treeResult = spawnFn(
-				'git',
-				['-C', cwd, 'write-tree'],
-				{ encoding: 'utf8', env: buildIndexEnv(tempIndex) },
-			);
-			const treeSha = (treeResult.stdout ?? '').trim();
-
-			// Commit the tree parented on the current main sha.
+			// (d) CAS: write-tree + commit-tree + update-ref.
 			const commitMsg = `chore(cam): file ${idUnpadded}`;
-			const commitResult = spawnFn(
-				'git',
-				['-C', cwd, 'commit-tree', treeSha, '-p', currentMainSha, '-m', commitMsg],
-				{ encoding: 'utf8' },
-			);
-			const newCommitSha = (commitResult.stdout ?? '').trim();
-
-			// (d) CAS update-ref: only advances main when it still equals currentMainSha.
-			const updateRefResult = spawnFn(
-				'git',
-				['-C', cwd, 'update-ref', 'refs/heads/main', newCommitSha, currentMainSha],
-				{ encoding: 'utf8' },
-			);
-
-			if ((updateRefResult.status ?? 1) === 0) {
-				// CAS succeeded.
-				return {
-					id: idUnpadded,
-					filename,
-					sha: newCommitSha.substring(0, 7),
-				};
+			const result = commitAndCasAttempt(cwd, currentMainSha, commitMsg, spawnFn, indexEnv);
+			if (result.success) {
+				return { id: idUnpadded, filename, sha: result.shortSha };
 			}
 
-			// (e) CAS failed: another writer advanced main.  Re-read sha and retry.
-			if (attempt < CAS_MAX_ATTEMPTS - 1) {
-				const revParseResult = spawnFn(
-					'git',
-					['-C', cwd, 'rev-parse', 'main'],
-					{ encoding: 'utf8' },
-				);
-				currentMainSha = (revParseResult.stdout ?? '').trim();
-			}
+			// (e) CAS failed: update sha for next attempt.
+			currentMainSha = result.newMainSha;
 		}
 
 		throw new Error(

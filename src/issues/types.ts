@@ -30,7 +30,7 @@ export interface WsjfScore {
 }
 
 /**
- * Single issue entry in issues.local.json.
+ * Single issue entry in the per-file backlog (scripts/cam/issues/CAM-NNNN.json).
  *
  * Required fields form the minimum viable record (Epico A).
  * Optional fields (wsjf, rank, spec) are populated in later epicos.

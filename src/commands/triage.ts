@@ -13,7 +13,7 @@
 //   - checkMainUpToDate guard family (detached-head / missing-main / diverged).
 //   - commitOnMain (on-main path) / commitTreeToMain (off-main path).
 //   - Exported result interface for type-safe test assertions.
-//   - issues.local.json is never read or written (CAM-90 US-004 cutover).
+//   - The old array backlog file is never read or written (CAM-90 US-004 cutover).
 //
 // Flow:
 //   1. checkMainUpToDate guard (abort before any mutation on failure).

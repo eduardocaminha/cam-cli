@@ -168,7 +168,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "requires": "US-008",
       "notes": "This is a verification story: a grep sweep over the enumerated live surface, fixing any straggler the prior stories missed. DESIGN (Option B, operator-approved re-plan): it now verifies the REAL migrated BRANCH tree - scripts/cam/issues/ is populated with the 129 CAM-NNNN.json files and scripts/cam/issues.local.json is gone ON THE BRANCH (US-007 executed the migration on the branch), NOT an empty dir. The grep + 4 exceptions are UNCHANGED; exception (2) issue-content now legitimately has files to exclude (the description/spec prose INSIDE the migrated CAM-NNNN.json files mentions the old model). The FOUR documented exceptions (do NOT flag these): (1) append-only history (scripts/cam/journal.md, journal.archive.md, lessons.archive.md); (2) issue-content fields (the description/spec text INSIDE the CAM-NNNN.json issue files - now present on the branch); (3) the migration module scripts/cam/migrate-issues-schema.ts (must name issues.local.json to read+delete it); (4) historical CHANGELOG.md entries. OPERATIONAL GOTCHA (note for orchestrator): because the branch carries the full migrated tree, the squash-merge is a plain tree replacement (no finalize-migration-to-main dependency for backlog survival); the finalize migration re-run is a pure idempotent straggler-capture. Still, `cam ship --finalize` must run FROM SOURCE on the branch (bun index.ts), not the installed old-format binary, because finalize closes the issue in the NEW per-file format. Maps spec AC#9, AC#12. requires US-008 (docs must be swept before the no-vestiges grep can pass)."
     },
