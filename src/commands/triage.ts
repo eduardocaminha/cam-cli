@@ -32,7 +32,6 @@
 //
 // CAM-108 US-004, CAM-90 US-004 (file-per-issue cutover).
 
-import { writeFileSync } from 'node:fs';
 import { commitTreeToMain } from '../git/on-main.ts';
 import type { SpawnFn, FileWrite } from '../git/on-main.ts';
 import type { IssueEntry } from '../issues/types.ts';
@@ -256,7 +255,6 @@ function printTriageOutput(
  */
 export function runTriage(options: RunTriageOptions): TriageResult {
 	const { cwd, spawnFn } = options;
-	const writeFile = options.writeFile ?? ((p: string, t: string) => writeFileSync(p, t, 'utf8'));
 	const writeStdout = options.writeStdout ?? ((line: string) => { process.stdout.write(line); });
 
 	// Guard 0a-0c: abort before any mutation.

@@ -16,7 +16,6 @@
 //
 // CAM-122 (cam journal append deterministico + fim do jq>budget ad-hoc).
 
-import { writeFileSync } from 'node:fs';
 import { commitTreeToMain } from '../git/on-main.ts';
 import type { SpawnFn } from '../git/on-main.ts';
 import { printError } from '../logging/color.ts';
@@ -65,10 +64,7 @@ export interface AppendJournalEntryOnMainOptions {
 	entry: JournalCycleEntry;
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
-	/**
-	 * Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover).
-	 * Defaults to writeFileSync(path, text, 'utf8').
-	 */
+	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
 	writeFile?: (path: string, text: string) => void;
 	/**
 	 * When true and a duplicate cycleId is detected, replace the existing
@@ -339,8 +335,6 @@ export function appendJournalEntryOnMain(
 	options: AppendJournalEntryOnMainOptions,
 ): AppendJournalEntryOnMainResult {
 	const { cwd, entry, spawnFn } = options;
-	const writeFile =
-		options.writeFile ?? ((p: string, t: string) => writeFileSync(p, t, 'utf8'));
 	const force = options.force ?? false;
 
 	// Step 1: validate pure inputs BEFORE any git calls (fail-fast pattern,
