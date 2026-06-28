@@ -4,6 +4,17 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.16.0] - 2026-06-28
+
+### Added
+
+- [US-R2-001] - Review round 2 fix 001: address reviewer finding
+- [US-R1-002] - Review round 1 fix 002: address reviewer finding
+- [US-R1-001] - Remove orphaned writeFileSync import and dead writeFile local
+- [US-003] - Remove the orphaned commitOnMain helper and its tests
+- [US-002] - Make journal-append and triage on-main writers ref-only
+- [US-001] - Make issue-specify on-main writers ref-only (specify/abandon/merge)
+
 ## [0.15.0] - 2026-06-28
 
 ### Added

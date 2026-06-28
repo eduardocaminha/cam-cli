@@ -6,9 +6,10 @@
 // Design goals (mirrors src/commands/issue-file.ts):
 //   - Backlog is read from main via readBacklogFromMain (ls-tree + cat-file).
 //     Never runs `git checkout` (the working-tree and work branch are untouched).
-//   - On-main path: write working-tree file, git add, git commit.
 //   - Off-main path: git plumbing (temp GIT_INDEX_FILE, read-tree, hash-object,
-//     update-index, write-tree, commit-tree, update-ref).
+//     update-index, write-tree, commit-tree, update-ref) so the feature-branch
+//     HEAD and working tree are left completely untouched.
+//   - On-main path: same ref-only commitTreeToMain path as off-main (CAM-133).
 //   - Writes only the target issue's CAM-NNNN.json file; the old array backlog
 //     file is never read or written (CAM-90 US-004 per-file cutover).
 //   - All external dependencies are injectable for unit-testing without a real
@@ -28,7 +29,6 @@
 // CAM-107 (US-003 grill spec layer), CAM-90 US-004 (file-per-issue cutover).
 
 import { randomUUID } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkReferentialIntegrity } from '../issues/graph.ts';
 import { validateSpec, validateWsjf } from '../issues/spec.ts';
@@ -37,7 +37,7 @@ import type { IssueEntry, WsjfScore } from '../issues/types.ts';
 import { readBacklogFromMain, issueFilePath } from '../issues/backlog.ts';
 import type { BacklogSpawnFn } from '../issues/backlog.ts';
 import { printError } from '../logging/color.ts';
-import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
+import { commitTreeToMain } from '../git/on-main.ts';
 import type { SpawnFn } from '../git/on-main.ts';
 import type { FileWrite } from '../git/on-main.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
@@ -82,10 +82,7 @@ export interface SpecifyIssueOnMainOptions {
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
 	clock: ClockFn;
-	/**
-	 * Injectable file writer (on-main path only).
-	 * Defaults to writeFileSync(path, text, 'utf8').
-	 */
+	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
 	writeFile?: (path: string, text: string) => void;
 	/**
 	 * Injectable event sink for the 'stage-promoted' observability event.
@@ -192,7 +189,7 @@ export interface AbandonIssueOnMainOptions {
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
 	clock: ClockFn;
-	/** Injectable file writer (on-main path only). */
+	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
 	writeFile?: (path: string, text: string) => void;
 }
 
@@ -233,7 +230,7 @@ export interface MergeIssueOnMainOptions {
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
 	clock: ClockFn;
-	/** Injectable file writer (on-main path only). */
+	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
 	writeFile?: (path: string, text: string) => void;
 }
 
@@ -316,8 +313,9 @@ function emitStagePromoted(
  *   6. checkReferentialIntegrity on the mutated backlog -- integrity-error on failure.
  *
  * Commit path: writes only scripts/cam/issues/CAM-NNNN.json (one file).
- *   On-main: write working-tree file, git add, git commit.
- *   Off-main: git plumbing (commit-tree-to-main) so the work branch is untouched.
+ *   Off-main plumbing: commitTreeToMain (temp GIT_INDEX_FILE, read-tree, hash-object,
+ *   update-index, write-tree, commit-tree, update-ref) so the work branch is untouched.
+ *   On-main path: same ref-only commitTreeToMain path as off-main (CAM-133).
  *
  * Commit message: `chore(cam): specify <id>`.
  */
@@ -326,8 +324,6 @@ export function specifyIssueOnMain(
 ): SpecifyIssueOnMainOutcome {
 	const { cwd, id, spec, wsjf, spawnFn, clock } = options;
 	const blockedBy = options.blockedBy ?? [];
-	const writeFile =
-		options.writeFile ?? ((p: string, t: string) => writeFileSync(p, t, 'utf8'));
 
 	// Guard 0: up-to-date check.
 	const guard = checkMainUpToDate(cwd, spawnFn);
@@ -393,11 +389,12 @@ export function specifyIssueOnMain(
 	const filePath = issueFilePath(id);
 	const files: FileWrite[] = [{ path: filePath, content: serialized }];
 
-	// Commit to main.
+	// Commit to main via the ref-only commit-tree path (always, on-main or off-main).
+	// commitTreeToMain derives the tree from `read-tree main` (the real ref), so the
+	// working tree is never touched and stale local-index files cannot silently drop
+	// prior ref-only writes (see CAM-133 regression test).
 	const commitMsg = `chore(cam): specify ${id}`;
-	const sha = branchWasMain
-		? commitOnMain(cwd, files, commitMsg, spawnFn, writeFile)
-		: commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');
+	const sha = commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');
 
 	// Best-effort push.
 	pushMainBestEffort(cwd, spawnFn);
@@ -422,8 +419,6 @@ export function abandonIssueOnMain(
 	options: AbandonIssueOnMainOptions,
 ): AbandonIssueOnMainOutcome {
 	const { cwd, id, spawnFn } = options;
-	const writeFile =
-		options.writeFile ?? ((p: string, t: string) => writeFileSync(p, t, 'utf8'));
 
 	const guard = checkMainUpToDate(cwd, spawnFn);
 	if (!guard.ok) return guard;
@@ -443,9 +438,7 @@ export function abandonIssueOnMain(
 	const files: FileWrite[] = [{ path: filePath, content: serialized }];
 
 	const commitMsg = `chore(cam): abandon ${id}`;
-	const sha = branchWasMain
-		? commitOnMain(cwd, files, commitMsg, spawnFn, writeFile)
-		: commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');
+	const sha = commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');
 
 	pushMainBestEffort(cwd, spawnFn);
 	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
@@ -515,8 +508,6 @@ export function mergeIssueOnMain(
 ): MergeIssueOnMainOutcome {
 	const { cwd, id, intoId, spawnFn } = options;
 	const foldBlockedBy = options.foldBlockedBy ?? false;
-	const writeFile =
-		options.writeFile ?? ((p: string, t: string) => writeFileSync(p, t, 'utf8'));
 
 	const guard = checkMainUpToDate(cwd, spawnFn);
 	if (!guard.ok) return guard;
@@ -542,9 +533,7 @@ export function mergeIssueOnMain(
 	const files = buildMergeFiles(source, target, note, foldBlockedBy);
 
 	const commitMsg = `chore(cam): merge ${id} into ${intoId}`;
-	const sha = branchWasMain
-		? commitOnMain(cwd, files, commitMsg, spawnFn, writeFile)
-		: commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');
+	const sha = commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');
 
 	pushMainBestEffort(cwd, spawnFn);
 	return { ok: true, id, intoId, committedTo: 'main', sha, branchWasMain };

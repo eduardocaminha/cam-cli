@@ -1,7 +1,7 @@
 {
   "id": "CAM-133",
   "title": "Bug on-main writer (P1): specifyIssueOnMain usa commitOnMain (working-tree) e derruba arquivos criados por writeIssueFile ref-only quando o index esta stale vs o ref",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T15:44:11.351Z",
