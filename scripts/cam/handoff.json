@@ -1,22 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Reconcile CONTEXT.md auto-exists claims to the CAM-118 deterministic writer"
+    "id": "US-004",
+    "title": "Fix live stale lessons.md references in agents, patterns.md, and HANDOFF.md"
   },
   "branchName": "cam/CAM-123-consolidate-knowledge-layer",
   "timestamp": "2026-06-27T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/CLAUDE.md",
+    ".claude/agents/subagent-planner.md",
+    ".claude/agents/subagent-reviewer.md",
+    "scripts/cam/patterns.md",
+    "HANDOFF.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 updated the Domain Model Convention section in scripts/cam/CLAUDE.md. CONTEXT.md is now described as an active vocabulary channel populated via the CAM-118 deterministic writer (not 'Created lazily'). The 'Both files are created lazily' sentence was split: CONTEXT.md is CAM-118-managed, docs/adr/ remains lazily created. US-004 (Fix live stale lessons.md references) should read the updated Domain Model Convention and the routing table in the Knowledge-Layer Routing section before editing agent/reviewer/patterns references.",
+  "nextStoryContext": "US-004 repointed all live lessons.md references: subagent-planner now reads scripts/cam/patterns.md and scripts/cam/journal.md instead of lessons.md; subagent-reviewer Ink-glyph pointer now cites lessons.archive.md; patterns.md lines ~14 and ~123 cite lessons.archive.md; HANDOFF.md all three citations now point to lessons.archive.md. No src/ or templates/ changes were made. The next story in the PRD should check prd.json for the next passes:false entry.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "DOC-only story: reconciled CONTEXT.md auto-exists claims in scripts/cam/CLAUDE.md Domain Model Convention. No src/ or templates/ changes."
+      "summary": "DOC-only story: repointed four .md files away from retired lessons.md to lessons.archive.md (or patterns.md+journal.md for the live planner read-path). No src/ or templates/ changes."
     }
   ]
 }
