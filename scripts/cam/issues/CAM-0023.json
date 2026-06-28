@@ -1,0 +1,9 @@
+{
+  "id": "CAM-23",
+  "title": "Orchestrator faz auto-handoff perto de ~100k tokens (janelas de 100k)",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-07T13:10:11Z",
+  "description": "O orquestrador é a sessão mais longa (humano-facing, dura horas/dias) e acumula contexto. Trabalhar em janelas de ~100k tokens: ao se aproximar de 100k tokens, o orquestrador faz um HANDOFF de si mesmo (semelhante ao handoff dos stories) e recomeça numa sessão fresca lendo esse handoff, em vez de depender da auto-compactação silenciosa do Claude (ver CAM-1). O handoff do orquestrador captura: contexto do projeto, ciclo atual, decisões, estado. cam monitora os tokens (via transcript, ver CAM-21) e dispara o handoff no threshold. Em vez de só reagir à compactação do Claude (CAM-1), o cam faz a sua, controlada, então CAM-23 é a estratégia preferida e relaciona/supera o CAM-1. Arquivos: monitor de tokens + handoff do orquestrador + re-spawn no cam run."
+}

@@ -1,0 +1,9 @@
+{
+  "id": "CAM-5",
+  "title": "Sem teto no nível do claude (--max-turns / --max-budget-usd)",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-05T16:24:46Z",
+  "description": "O único limite do loop é o contador de iterações do stop hook. src/commands/next.ts:396 (buildClaudeArgv) passa só --permission-mode + /cam-next, sem --max-turns nem --max-budget-usd. Se o hook não registrar (settings corrompido, sessão fora do fluxo), o loop fica sem freio, e não há nenhum teto de custo. Adicionar guardrails de turns e/ou budget no nível do claude."
+}

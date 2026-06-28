@@ -1,0 +1,9 @@
+{
+  "id": "CAM-17",
+  "title": "Dashboard apertado em pane estreito (~36 col): progress bar e story rows quebram",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-06T12:45:21Z",
+  "description": "Render do dashboard a 36 col (largura do pane do cam run) mostra a barra de progresso (PROGRESS_BAR_WIDTH=22) + labels Progress/Status quebrando linha, e as story rows com glifo/ID grudados e títulos wrapando. Os divisores foram resolvidos (responsivos, commit 223bfc0) e o path do PRD também (CAM-18), mas o conteúdo do SummaryPanel e das rows não cabe num pane tão estreito. Fix recomendado: alargar o pane do dashboard no layout (src/tmux/session.ts, split do dashboard hoje -l 36, ir pra ~55) e ajustar test/tmux-session.test.ts; alternativa: ProgressBar responsiva via stdout.columns + truncar títulos. Arquivos: src/tmux/session.ts e/ou src/ui/Dashboard.tsx."
+}

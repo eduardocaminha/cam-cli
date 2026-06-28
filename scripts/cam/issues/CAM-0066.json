@@ -1,0 +1,9 @@
+{
+  "id": "CAM-66",
+  "title": "Dashboard polish: truncate long story titles (list) + harden the Loop-header ghost",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-16T23:00:00Z",
+  "description": "Two cam dashboard render issues from dogfood 2026-06-16. (1) Story titles overflow: src/ui/Dashboard.tsx renders story.title raw (lines 562/573, no truncation), so long titles wrap and interleave with the per-story token counts, breaking the list layout. Fix (operator chose this approach): truncate the list row to a fixed width with a trailing ellipsis; the full title already shows in the detail subview (the navigable per-story view from CAM-50), so 'enter the story to read all' already works, no PRD schema change. (2) Loop-header ghosting: the 'Loop' section header stacks/duplicates on rapid terminal reflow (seen as many repeated 'Loop' lines). src/commands/dashboard.ts:837-848 already mitigates a single resize by clearing the alt-screen on the resize event, but it still ghosts under a reflow/dispatch storm (intermittent; clean in a later screenshot). Harden it (periodic full-clear, or fix the stale Ink line-count tracking at the old width). Both are pure src/ui/Dashboard.tsx + src/commands/dashboard.ts changes. Source: dogfood screenshots."
+}

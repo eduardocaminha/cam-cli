@@ -1,0 +1,9 @@
+{
+  "id": "CAM-24",
+  "title": "Replan limpa o plano atual por completo (cam plan re-plan)",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-07T13:10:11Z",
+  "description": "Hoje /cam-plan, ao detectar trabalho em andamento, oferece sobrescrever o prd.json, mas NÃO limpa progress.txt nem handoff.json, então sobra estado do plano anterior. Um re-plan de verdade deve descartar o plano atual por completo (prd.json), limpar os docs do ciclo (progress.txt zerado pro bloco de patterns, handoff.json removido) e começar do zero. Hoje esse replan limpo não existe de fato (o menu dizia 'plan / re-plan', corrigido inline pra 'plan an issue'). Definir um modo de replan (ex: /cam-plan --fresh ou cam plan --replan) que faz a limpeza completa antes de gerar o novo PRD. Arquivos: .claude/commands/cam-plan.md (passo de limpeza), possível flag no cam plan."
+}

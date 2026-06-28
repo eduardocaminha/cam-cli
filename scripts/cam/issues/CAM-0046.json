@@ -1,0 +1,9 @@
+{
+  "id": "CAM-46",
+  "title": "Build soft-check: agent-frontmatter skip vaza 'fatal: not a git repository' como Fix hint",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-14T06:00:00Z",
+  "description": "DESCOBERTO no dogfood pos-CAM-15 (2026-06-14), rodando ./scripts/build-release.sh --install. O soft-check hermetico (CAM-15) roda `cam init` num mktemp -d que NAO e repo git. O check de prerequisito agent-frontmatter roda o smoke vendored vendor/check-agent-frontmatter.ts, que em vendor/check-agent-frontmatter.ts:54-59 faz `execSync('git rev-parse --show-toplevel', {encoding:'utf8'})`; fora de um repo git, o PROPRIO git escreve 'fatal: not a git repository (or any of the parent directories): .git' no stderr (execSync nao suprime o stderr do filho), e o catch ainda imprime sua mensagem limpa 'check-agent-frontmatter: not inside a git repo.' + exit 2. O runVendoredSmoke (src/commands/init.ts) captura o stderr e o reportSmoke mostra result.stderr.trim() como o detalhe do skip, entao o `fatal:` cru do git aparece como 'Fix: fatal: not a git repository' num build BEM-SUCEDIDO. Nao e erro (o check conta como skipped no '3/3 passed'), mas parece um erro pra quem le, em todo --install. FIX: suprimir o stderr do git no execSync da deteccao de repo (ex: stdio ['ignore','pipe','ignore'] ou '2>/dev/null'), pra so a mensagem limpa do smoke sobreviver, e o build mostrar 'Fix: check-agent-frontmatter: not inside a git repo.' (claro e acionavel-nao). Arquivo: vendor/check-agent-frontmatter.ts (linha ~55); re-embed (bun run embed-vendor). Cosmetico, P3."
+}

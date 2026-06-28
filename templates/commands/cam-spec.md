@@ -12,11 +12,12 @@ This command is an **interactive operator interview** (human-in-the-loop), not a
 
 1. **Confirm the issue exists and is an idea**:
    ```bash
-   cat scripts/cam/issues.local.json | jq '.issues[] | select(.id == "<id>")'
+   # Derive padded filename, e.g. CAM-42 -> scripts/cam/issues/CAM-0042.json
+   git show main:scripts/cam/issues/<PREFIX>-NNNN.json 2>/dev/null || cat scripts/cam/issues/<PREFIX>-NNNN.json
    ```
    Stop with a clear error if the issue is absent, already `stage:specified`, or not `status:open`.
 
-2. **Confirm you are NOT in the middle of an active autonomous loop** (`active:true` in `.claude/cam-loop.local.md`). A spec interview and an active loop both write to `issues.local.json` via on-main commit-tree plumbing — running them concurrently risks a commit conflict. If the loop is active, ask the operator to pause it (`cam stop` or wait for the current story to finish) before proceeding.
+2. **Confirm you are NOT in the middle of an active autonomous loop** (`active:true` in `.claude/cam-loop.local.md`). A spec interview and an active loop both write to the issues dir via on-main commit-tree plumbing — running them concurrently risks a commit conflict. If the loop is active, ask the operator to pause it (`cam stop` or wait for the current story to finish) before proceeding.
 
 ## Process: grill-with-docs skill chain
 
@@ -58,7 +59,7 @@ On failure:
 
 | Reason | Action |
 |---|---|
-| Issue not found | Stop, print: `<id> not found in issues.local.json` |
+| Issue not found | Stop, print: `<id> not found in scripts/cam/issues/` |
 | Issue not `stage:idea` | Stop, print: `<id> is already stage:<stage> — nothing to do` |
 | Issue not `status:open` | Stop, print: `<id> is not open (status:<status>)` |
 | Spec validation fails | Show the validation errors, ask the operator to correct the answers |

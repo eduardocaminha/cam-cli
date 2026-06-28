@@ -1,0 +1,9 @@
+{
+  "id": "CAM-94",
+  "title": "Narracao terminal-blocked mostra outcome auto-reportado do worker (pode exibir DONE numa story bloqueada)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-26T02:35:16.314Z",
+  "description": "Follow-up advisory do review do CAM-78. Os sites de notifyOrchestrator em terminal-blocked (src/supervisor/loop.ts, ex linhas 910/922/940/951/969/1001) narram formatWorkerReportSummary(report), i.e. o outcome auto-reportado do worker (ex DONE), que pode contradizer a decisao de block do supervisor: o pane do orquestrador pode mostrar [cam] US-XXX DONE numa story que o supervisor de fato bloqueou. Spec-conformant (o PRD lista terminal-blocked como caso de notify) e nao-bloqueante, mas e correcao de correcao de narracao. Fix: nos sites terminal-blocked, narrar o outcome do supervisor (block) em vez do auto-reportado do worker. Arquivo: src/supervisor/loop.ts."
+}

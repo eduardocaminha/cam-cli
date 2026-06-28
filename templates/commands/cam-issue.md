@@ -102,31 +102,18 @@ If `gh auth status` fails → tell the operator to run `gh auth login` and exit.
 ### `none` — local-only
 
 When the project has no external issue system, the orchestrator stores
-issues in `scripts/cam/issues.local.json`. This is intentionally lightweight
-— it lets cam loops work on solo / private projects without forcing a
-Linear/GitHub account.
+issues as individual JSON files in `scripts/cam/issues/`. Each file is named
+`<PREFIX>-NNNN.json` (4-digit zero-padded numeric suffix) and contains a single
+issue object. This is intentionally lightweight — it lets cam loops work on
+solo / private projects without forcing a Linear/GitHub account.
 
-Schema:
-```json
-{
-  "next_id": 1,
-  "issues": [
-    {
-      "id": "CAM-1",
-      "title": "...",
-      "description": "...",
-      "state": "open" | "in_progress" | "closed",
-      "createdAt": "<ISO 8601>"
-    }
-  ]
-}
-```
+Each issue file shape follows `scripts/cam/issues.schema.json`.
 
 Subcommands:
 
 #### `create`
 
-**CONVENTION**: never hand-edit issues.local.json on a feature branch; always file via `cam issue` (it commits to main deterministically).
+**CONVENTION**: never hand-edit issue files on a feature branch; always file via `cam issue` (it commits to main deterministically).
 
 1. Expand the free-text argument into a structured **title** (concise, under 80 chars) and an optional **description** (one or two sentences).
 2. Build a JSON payload with `title` and `description`. Include `priority` (integer 1-4, 1 = urgent) only when the request implies one.
@@ -142,21 +129,21 @@ Subcommands:
 
 #### `get <id>`
 
-Read the backlog from main so a just-filed issue is visible from any checked-out branch,
-with a fallback to the working-tree file when the git read fails:
+Derive the padded filename from the id (e.g. `CAM-42` -> `CAM-0042.json`), then
+read from main so a just-filed issue is visible from any checked-out branch:
 ```bash
-git show main:scripts/cam/issues.local.json 2>/dev/null || cat scripts/cam/issues.local.json
+git show main:scripts/cam/issues/<PREFIX>-NNNN.json 2>/dev/null || cat scripts/cam/issues/<PREFIX>-NNNN.json
 ```
-Parse the JSON, find the issue whose `id` matches `<id>`, print it as JSON.
+Print the issue as JSON.
 
 #### `list`
 
-Read the backlog from main so a just-filed issue is visible from any checked-out branch,
-with a fallback to the working-tree file when the git read fails:
+List all issue files in the directory, read each, and render open issues as a
+markdown table:
 ```bash
-git show main:scripts/cam/issues.local.json 2>/dev/null || cat scripts/cam/issues.local.json
+git ls-tree -r --name-only main scripts/cam/issues/ 2>/dev/null | sort
 ```
-Render the open issues as a markdown table.
+Fallback: `ls scripts/cam/issues/` when git read fails.
 
 Note: a deterministic `cam issue list` CLI command is tracked separately (CAM-74).
 

@@ -1,0 +1,9 @@
+{
+  "id": "CAM-1",
+  "title": "Loop não reage a compaction (PreCompact/PostCompact)",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-05T16:24:46Z",
+  "description": "O loop autônomo roda numa única sessão claude longa, re-injetada turno a turno pelo Stop hook (vendor/cam-loop-stop-hook.sh). Em PRDs longos o transcript estoura o threshold de auto-compact do Claude Code (~contextWindow-13k) e é resumido silenciosamente. cam só registra o hook Stop (src/commands/next.ts:283, buildHooksBlock), nunca PreCompact/PostCompact. Não há estado nem sinal de compaction. Objetivo: detectar compaction (registrar PreCompact/PostCompact via settings.local.json) e reagir, ex: logar, e garantir re-hidratação a partir de prd.json/handoff.json/progress.txt. Prioridade alta: é o gap que morde em PRD grande."
+}

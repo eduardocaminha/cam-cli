@@ -1,0 +1,9 @@
+{
+  "id": "CAM-129",
+  "title": "cam init/setup crasha em non-TTY (Ink raw mode) no build smoke + duplicate React key",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-28T07:04:40.162Z",
+  "description": "REPRO: scripts/build-release.sh --install (0.14.0) roda o soft-check hermetico cam init num tmpdir. claude v2.1.195 instalado, 3/3 prereqs passam, config escrita. Entao crasha com DOIS erros: (1) Encountered two children with the same key (warning React/Ink, keys nao-unicas no render); (2) ERROR Raw mode is not supported on the current process.stdin -> Setup cancelled -> exit 1. ROOT: depois dos prereq-checks (print path), o init/setup renderiza uma tela Ink interativa (src/commands/init.ts:308 render(view) / src/commands/setup.ts:203; src/ui/SetupScreen.tsx usa useInput, que exige raw mode). Em contexto non-TTY (build smoke hermetico, stdin nao e TTY) raw mode nao e suportado -> crash. O CAM-104 corrigiu o path READLINE (ask/askChoice resolvem default no EOF) mas NAO esse path Ink useInput. PRE-EXISTENTE (CAM-108 nao tocou init/setup/ui). FIX: (a) guardar a tela Ink interativa em ink isRawModeSupported / process.stdin.isTTY e degradar pra defaults non-interactive (mesma disciplina do CAM-104, mas pro path Ink); (b) corrigir o duplicate React key no render (chaves unicas); (c) build-release.sh soft-check mascara exit 1 como acceptable on machines without claude, mas claude ESTAVA instalado aqui, entao o mask escondeu um crash real, distinguir claude-ausente de init-crashou (ex: so tolerar non-zero quando o prereq de claude falhou). P2: robustez de build-smoke, nao user-facing (cam init num TTY real funciona). Lineage CAM-104/CAM-15."
+}

@@ -1,0 +1,9 @@
+{
+  "id": "CAM-21",
+  "title": "Tokens gastos no dashboard (orchestrator e por story)",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-07T13:10:11Z",
+  "description": "Mostrar no dashboard quanto cada parte gastou de tokens, lido dos transcripts reais do Claude Code (~/.claude/projects/<proj>/<session>.jsonl; cada msg assistant tem usage: input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens; confirmado por inspeção). MVP: total do ORCHESTRATOR numa linha da seção Loop (ex: tokens 1.2M in / 340k out, ou custo USD). cam precisa identificar o transcript da sessão do orquestrador (cam run não captura o session id hoje; opções: passar um session id na criação e gravar em .claude/.cam-orch-session, ou pegar o transcript mais recente do projeto). Definir o que conta como gasto (o cache domina: cache_read 450k vs input 22k no sample). Per-STORY depende do CAM-22 (workers viram sessões reais): aí cada story é uma sessão, soma do transcript dela, mostrada na seção Stories. Arquivos: src/commands/dashboard.ts (readSnapshot soma o transcript), src/ui/Dashboard.tsx (linhas), src/commands/run.ts (capturar o session id do orquestrador)."
+}

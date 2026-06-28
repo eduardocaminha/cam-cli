@@ -1,0 +1,9 @@
+{
+  "id": "CAM-78",
+  "title": "Sidecar = unico pusher pro orchestrator pane; remover auto-narracao vestigial do cam next; zero double-push",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-25T12:13:51Z",
+  "description": "Parte 3 da unificacao de comunicacao inter-pane (decisao 2026-06-25, ver CAM-75/CAM-77). Push hygiene: o SIDECAR e o UNICO ator que da send-keys pro orchestrator pane, uma narracao por evento terminal. Remove a auto-narracao vestigial do cam next (a thin-proxy injeta o task prompt que colide com o push do sidecar; visivel como \"Implement the next user story... [cam] DONE\" grudado). Garante que nenhum worker/thin-proxy de double-push pro mesmo evento logico. ONDE: src/commands/next.ts (sendKeysWhenIdle narration), src/tmux/dispatch.ts, src/supervisor/host.ts (notifyOrchestrator e o canal unico). Depende dos canais do reviewer (CAM-75) e implementer (CAM-77) ja estarem estruturados."
+}

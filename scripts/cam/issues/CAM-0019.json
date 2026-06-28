@@ -1,0 +1,9 @@
+{
+  "id": "CAM-19",
+  "title": "Chrome unificado do workspace: pane-titles + status bar nos tokens + borda do pane ativo",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-06T12:45:21Z",
+  "description": "cam run ganhou: (a) título fino por-pane no topo via tmux pane-border-status + @cam_label (user option robusto, não sobrescrito pelo claude): orchestrator/dashboard/menu; (b) borda do pane ativo em accent #4EBE7D, inativos em muted #808080; (c) status bar única no rodapé nos design tokens (sem o verde default do tmux): esquerda cam-cli accent, centro hint dim 'click / Ctrl+b switch · exit orchestrator quits', direita 'active: <pane>' via #{@cam_label}; (d) mouse mode on (clicar pra focar). Dashboard: removido o box arredondado, resumo virou Section Loop (state/story/iter/since/branch, igual ao cam status), barra de progresso responsiva (encolhe pra caber em 36 col). Arquivos: src/commands/run.ts (chrome), src/ui/Dashboard.tsx (Loop + barra responsiva), src/ui/Section.tsx (dividerWidth). Verificado: sintaxe das opções tmux + resolução @cam_label/#{T} + render real do dashboard a 36 col. Cobre o CAM-17 parcialmente (a barra não estoura mais); resta o aperto das story rows (glifo/ID grudados, títulos wrapando, altura) no CAM-17."
+}

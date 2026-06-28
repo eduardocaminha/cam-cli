@@ -1,0 +1,9 @@
+{
+  "id": "CAM-9",
+  "title": "cam plan/next viram launchers de pane; rewire de cam next/stop",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-05T16:24:46Z",
+  "description": "cam plan e cam next deixam de ser foreground-interativos no TTY e viram launchers finos: garantem a sessão do projeto e abrem o pane com o trabalho real lá dentro, retornando ao shell. A interação (APPROVE do plan, TUI do next) migra pra dentro da sessão (anexa pra interagir). Ripples: cam next para de criar a sessão tmux 'cam' separada (src/commands/next.ts buildTmuxSplitArgv); cam stop muda a semântica (mira o pane do loop / a sessão do projeto em vez da sessão 'cam')."
+}

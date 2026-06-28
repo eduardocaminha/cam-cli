@@ -1,0 +1,43 @@
+{
+  "id": "CAM-122",
+  "title": "cam journal append deterministico + fim do jq>budget ad-hoc do orquestrador",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-27T22:07:06.156Z",
+  "description": "Gap de design discutido no ciclo CAM-109 (2026-06-27): o orquestrador e read-only por design (invariante: nunca edita codigo, protege o fluxo worker->review->gates), mas o agent file o responsabiliza pelo journal.md, que exige escrita. Hoje isso se resolve por operador-cola ou por jq>budget.json / shell-write ad-hoc autorizado (o pior padrao: escrita sem gate, fora de qualquer policy). PROPOSTA: mover os artefatos de coordenacao do orquestrador para comandos deterministicos TS (lineage CAM-49/72/86/104, como ship --finalize/--bump e issue --file-local), mantendo a invariante (orquestrador escreve zero; tudo via comando ou worker). ESCOPO: (1) cam journal append: le a entrada via stdin, valida o formato do journal (header + campos obrigatorios), faz append+commit em scripts/cam/journal.md no main; (2) aposentar o jq>budget.json ad-hoc do ship-hygiene: o raise de file-size/coverage vira deterministico no cam ship (ou continua worker-via-story, que ja funciona). FRONTEIRA: codigo revisavel = proibido ao orquestrador; coordenacao (journal/memoria/budget) = via comando, nunca Write nem shell ad-hoc. ALTERNATIVAS REJEITADAS: Write irrestrito ao orquestrador (perde a invariante de qualidade que o two-layer review encarna); write-path PreToolUse hook (mais superficie + fail-open tipo CAM-96). Fundamenta: a leitura (Read/Grep/Glob) do orquestrador esta correta e e essencial; so a escrita precisa do gate. Prioridade P2.",
+  "spec": {
+    "scope": "Add cam journal append: a deterministic command that appends one cycle entry to scripts/cam/journal.md. Reads a structured JSON object on stdin (cycleId, started, closed, branch, issue, outcome, summary, optional decisions/blockers/followups) and RENDERS the canonical journal markdown block, then commits it to main via commit-tree (the issue-file/specify family: temp index, write-tree, commit-tree -p main, update-ref), never touching the work branch. The command owns the format: required-field validation, em-dash normalization in the body (kept in the structural title), duplicate-cycleId rejection (--force replaces). Best-effort push to origin main. Invoked manually by the orchestrator at cycle-close: the journal CONTENT is orchestrator-authored synthesis; this replaces only the ad-hoc jq-redirect / Write the read-only orchestrator is forced into today. Scope is journal-only; the budget-raise channel and the broader knowledge-layer consolidation (cam journal archive, audit advisory, lessons.md retirement) are out, tracked in CAM-123.",
+    "acceptanceCriteria": [
+      "cam journal append reads a structured JSON object on stdin and renders the canonical journal block (header line plus the bullet fields started/closed/branch/issue/outcome/summary) appended to scripts/cam/journal.md [oracle: bun test test/commands/journal-append.test.ts]",
+      "Required fields (cycleId, started, closed, branch, issue, outcome, summary) are validated: a missing required field exits non-zero with a clear error and appends nothing [oracle: bun test test/commands/journal-append.test.ts]",
+      "Optional fields (decisions, blockers, followups) render their bullet only when present; an absent optional produces no empty bullet [oracle: bun test test/commands/journal-append.test.ts]",
+      "An em-dash in the rendered body is normalized away per the project rule, while the structural title line keeps its em-dash (consistent with existing entries) [oracle: bun test asserting the rendered body has no U+2014 and the title line retains it]",
+      "A duplicate cycleId (a header for that cycleId already present in journal.md) is rejected with a clear error and no append; the --force flag replaces the existing entry in place [oracle: bun test test/commands/journal-append.test.ts]",
+      "The entry is committed to main via commit-tree (temp GIT_INDEX_FILE, write-tree, commit-tree parent main, update-ref refs/heads/main), never touching the current work branch; the checked-out branch and HEAD are unchanged [oracle: real-git integration test in test/integration asserting main advanced by one commit and the work branch is untouched]",
+      "Push to origin main is best-effort: a push failure prints an error but preserves the local commit and exits 0 [oracle: bun test with an injected spawnFn returning non-zero on push]",
+      "On success the command prints CAM_JOURNAL_APPENDED=cycleId sha=sha as a parseable last line [oracle: bun test asserting the stdout line]",
+      "Typecheck and the full gate spine pass [oracle: bun run check:all]"
+    ],
+    "gotchas": [
+      "Reuse the existing commit-tree-to-main plumbing from src/commands/issue-file.ts (createLocalIssueOnMain) and issue-specify.ts (specifyIssueOnMain); do not reinvent it. The widened SpawnFn shape ({encoding, env, input}) is already documented in patterns.md.",
+      "Read the current journal.md from main via git show main:scripts/cam/journal.md (read-from-main, CAM-86 US-006 pattern), not from the working tree, which can lag on a feature branch.",
+      "The >50-entries archive rule is NOT part of this command (that is cam journal archive, tracked in CAM-123). cam journal append only adds one entry.",
+      "The title em-dash is intentional and structural (all 33 existing entries use it); normalize em-dash ONLY in the body, never the title. This is a deliberate exception to the project no-em-dash rule, specific to the journal title format.",
+      "Do not use Date.now or new Date for content timestamps: started/closed come from the input JSON and clock is injected (mirror ship-finalize/specify), keeping the command deterministic and testable.",
+      "The orchestrator is read-only (Write disallowed) and cannot edit journal.md directly: this command IS the gated write channel that resolves that contradiction (the point of CAM-122)."
+    ],
+    "domainTerms": [
+      "cam journal append: the deterministic command that renders and commits one cycle entry to journal.md on main, replacing the orchestrator ad-hoc jq-redirect / Write.",
+      "cycle entry: the markdown block for one cam cycle (title header plus the started/closed/branch/issue/outcome/summary/decisions/blockers/followups bullets).",
+      "commit-tree-to-main: the git plumbing (hash-object, write-tree, commit-tree parent main, update-ref) that writes a file on main without a checkout and without touching the work branch (the issue-file/specify family).",
+      "orchestrator-authored: the journal content is the orchestrator narrative synthesis of a cycle; the command guarantees the FORMAT, it does not generate the content."
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 3,
+    "riskReduction": 6,
+    "jobSize": 3
+  }
+}

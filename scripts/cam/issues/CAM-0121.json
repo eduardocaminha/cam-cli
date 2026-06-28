@@ -1,0 +1,9 @@
+{
+  "id": "CAM-121",
+  "title": "Harden cam ship --finalize: fechar issue none no main via commit-tree, nao na copia stale da branch",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-27T14:10:55.721Z",
+  "description": "Descoberto no ship do CAM-107 (2026-06-27). ship-finalize.ts (backend none) le/escreve a copia working-tree de scripts/cam/issues.local.json DA BRANCH (acha o issue, seta stage:shipped, git add, commit na branch). PROBLEMA: quando issues sao filados direto-no-main durante o ciclo (createLocalIssueOnMain / cam issue --file-local, padrao CAM-86), a copia da branch fica STALE; o finalize commitaria a versao stale + o issue-shipped, e o squash-merge CLOBBERARIA as escritas de main (next_id, novos issues, promocoes). WORKAROUND usado no CAM-107: git merge origin/main na branch ANTES do cam ship --finalize (trouxe o backlog atual; sem overlap de arquivo, merge limpo; backlog verificado intacto pos-merge). FIX: o finalize deve fechar o issue none no MAIN via commit-tree (espelhando createLocalIssueOnMain/specifyIssueOnMain), nao na copia da branch. Assim o backlog nunca entra na branch e o clobber e impossivel por construcao (alinha com CAM-27 hygiene + CAM-86 file-on-main). Manter o git rm de prd.json/handoff.json na branch (esses SAO per-branch). P2."
+}

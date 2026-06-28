@@ -1,0 +1,9 @@
+{
+  "id": "CAM-93",
+  "title": "cam next: surface write-failure do active:true em vez de falso sucesso",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-26T02:35:14.263Z",
+  "description": "Follow-up advisory do review do CAM-78. Em src/commands/next.ts (~linha 306) o try/catch em volta do write de active:true engole erros de fs e o codigo entao imprime emitOk() + retorna 0 incondicionalmente. Apos o US-001 do CAM-78, esse write virou o UNICO efeito do hit path, entao uma falha silenciosa de escrita gera falso sucesso e o sidecar nunca dispara. Bloco e pre-existente, mas o CAM-78 aumentou a materialidade. Fix: no catch, emitir erro claro + exit nao-zero quando o write lanca. Arquivo: src/commands/next.ts."
+}

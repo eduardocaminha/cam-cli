@@ -1,0 +1,9 @@
+{
+  "id": "CAM-30",
+  "title": "cam-ship nao fecha issue do backend local (none); so fecha GitHub via gh issue close",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-08T15:28:24Z",
+  "description": "PROBLEMA: o /cam-ship so fecha issue do backend GitHub. O Step 6 de .claude/commands/cam-ship.md (\"Close the GitHub issue (if applicable)\") roda gh issue close <N>, mas pro backend local (issue_system=\"none\" em scripts/cam/project.toml) nao ha nenhum passo que vire o state do issue pra \"closed\" em scripts/cam/issues.local.json. RESULTADO: depois que um ciclo de backend local shipa, o issue continua \"open\" no backlog. OBSERVADO 2026-06-08: o CAM-21 ficou \"open\" depois do PR #9 mergear; tive que fechar na mao via PR #10. FIX: tornar o Step 6 do cam-ship backend-aware, espelhando a resolucao que o /cam-plan Step 2 ja faz (CAM-25). Ler issue_system + issue_prefix de project.toml. Para none: achar o issue cujo id == \"<PREFIX>-<N>\" (N = prd.json.issueNumber) em issues.local.json e setar state=\"closed\" (commitar junto, ou via a mesma rota de PR). Para github: gh issue close <N> (como hoje). Para linear: fechar via Linear API. O link e o campo issueNumber do prd.json. Arquivos: .claude/commands/cam-ship.md e templates/commands/cam-ship.md (manter em sincronia; checar embed-vendor se templates/ for embarcado). RELACIONA: CAM-25 (resolucao de id backend-aware, mesmo padrao a reusar)."
+}

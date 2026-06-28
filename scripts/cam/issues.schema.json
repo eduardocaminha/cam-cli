@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Cam Issue Entry",
-  "description": "Schema for a single entry in issues.local.json managed by cam issue commands.",
+  "description": "Schema for a single per-file issue managed by cam issue commands.",
   "type": "object",
   "required": ["id", "title", "stage", "status", "blockedBy", "createdAt"],
   "properties": {

@@ -1,0 +1,9 @@
+{
+  "id": "CAM-59",
+  "title": "CI on macOS + deterministic gate spine (check:all/verify + ci-parity)",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-16T22:30:00Z",
+  "description": "cam has NO CI (.github/workflows absent): the single biggest agentic-readiness gap, cascading ~8 rubric criteria (fast_ci_feedback, build/test_performance_tracking, secret_scanning, automated_security_review, agents_md_validation, code_quality_metrics, release_automation, automated_pr_review). Add a GitHub Actions workflow on macos-latest (so the real-tmux integration tests actually run in CI, not only on the operator laptop; tmux is a macOS-real dependency. Burrow's lesson: an OS-gated test + a Linux-only CI = the test never runs). Steps: setup bun, install tmux, run typecheck + test. Pair it with the fleet-canonical gate spine: a single check:all/verify runner (GATES-as-data ordered manifest, quiet per-gate ok/fail + timing, --bail) and a check:ci-parity gate that parses the workflow bun-run steps and fails if CI invokes anything outside the local manifest (green-locally == green-in-CI). NOTE: hard merge-block via branch protection is unavailable on the free private plan (needs Pro or public repo); value here is the signal + ci-parity. Source: os-eco fleet (warren/seeds/mulch/canopy/plot scripts/check-all.ts + check-ci-parity.ts + .github/workflows/ci.yml). CORRECAO (2026-06-23, dogfood do proprio CAM-59 / PR #65): o repo cam-cli e PUBLICO, nao private. Branch protection / required status checks ESTAO disponiveis; a premissa 'free private plan' / 'needs Pro or public repo' acima esta errada. Habilitar o merge-block de verdade + corrigir docs/agent-readiness.md (branch_protection deixa de ser 'structural fail of the free private plan') rastreado em CAM-73."
+}

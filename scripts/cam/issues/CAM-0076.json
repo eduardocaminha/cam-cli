@@ -1,0 +1,9 @@
+{
+  "id": "CAM-76",
+  "title": "maxRounds nao e terminal duro: o loop dispatcha um (maxRounds+1)-esimo fix em vez de declarar MAX_ROUNDS_DEBT",
+  "stage": "idea",
+  "status": "abandoned",
+  "blockedBy": [],
+  "createdAt": "2026-06-24T21:41:30Z",
+  "description": "ACHADO (dogfood do CAM-53, PR #68): o review chegou em roundsCompleted:3 com maxRounds:3 e lastVerdict FIXES_PENDING:1, mas o supervisor AINDA dispatchou uma 4a fix story (US-R3-001) em vez de converter pro estado terminal MAX_ROUNDS_DEBT. Por scripts/cam/CLAUDE.md o review e terminal quando lastVerdict === 'CLEAN' OU 'MAX_ROUNDS_DEBT'; o cap existe justamente pra estancar um review que nao converge (o whack-a-mole exato que o CAM-53 sofreu, agravado pelo CAM-75: o fix-worker nao recebe o finding e no-opa). O loop em vez disso seguiu gerando fix rounds (R1, R2, R3, indo pro R4) e teria spinado indefinidamente se o operador nao tivesse dado soft-pause (active:false). FIX: enforce maxRounds como terminal DURO: quando um round de review devolve FIXES_PENDING e roundsCompleted >= maxRounds, setar lastVerdict = 'MAX_ROUNDS_DEBT' (terminal) e NAO dispatchar outro fix round; o loop entao sai awaiting-operator/complete-with-debt e o finding restante vira debito documentado. ONDE: a logica de review-round em src/supervisor/loop.ts (o branch que incrementa roundsCompleted e decide dispatchar fixes vs terminar). ACEITE: com maxRounds:N, um review ainda FIXES_PENDING depois de N rounds seta MAX_ROUNDS_DEBT e o supervisor alcanca um estado terminal SEM dispatchar um (N+1)-esimo fix; teste de regressao no supervisor. Prioridade P2: cap de seguranca; o operador tem o workaround de soft-pause, mas o loop deveria auto-terminar. Relaciona: CAM-53 (reproduziu live), CAM-56 (rounds de two-layer verification), CAM-75 (causa-raiz do nao-convergir, mesmo dogfood).\n\nMerged into CAM-109."
+}

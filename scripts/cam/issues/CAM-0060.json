@@ -1,0 +1,9 @@
+{
+  "id": "CAM-60",
+  "title": "Linter (biome) + ratchets: coverage up-only, file-size, debt-marker, dead-code, dup",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-16T22:30:00Z",
+  "description": "cam has no linter/formatter (typecheck is the only static gate) and no ratchets. Adopt the fleet-canonical static layer: (1) biome with --error-on-warnings, cognitive-complexity and max-lines-per-function as ERROR gates (with a grandfather override list for current oversized files); (2) coverage ratchet that only goes UP, floors in a committed budget JSON, lowering a floor requires a tracker reference in the diff; (3) file-size ratchet that only goes DOWN (grandfathered per-file ceilings); (4) debt-marker gate: every TODO/FIXME/HACK/XXX must cite a tracker id (CAM-NNN, #N, or URL) or fail, which mechanically enforces cam's own 'anote pendencias, nao corrija silenciosamente' rule; (5) dead-code (knip) and duplicate-code (jscpd <=4%) gates. All wired into the CAM-59 check:all manifest. Source: warren/seeds/mulch/canopy/plot scripts/check-coverage.ts, check-file-sizes.ts, check-debt-markers.ts, biome.json, .jscpd.json, knip.json."
+}

@@ -1,0 +1,9 @@
+{
+  "id": "CAM-48",
+  "title": "Panes laterais (dashboard/menu) colapsam abaixo da largura legível em terminais estreitos",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-14T14:48:39.563Z",
+  "description": "ensureProjectSession em src/tmux/session.ts faz o split da coluna direita com largura fixa -l 36 contra a sessão virtual -x 220 (~16%). Num client mais estreito (ex: 188 cols no laptop) a coluna encolhe pra 20 cols e o texto quebra. Fix: tornar a coluna responsiva com piso legível via hook window-resized que clampa a largura do dashboard em clamp(window_width * ~20%, min 34, max 52), e nascer já com esse alvo no split. Arquivos: src/tmux/session.ts, test/tmux-session.test.ts."
+}

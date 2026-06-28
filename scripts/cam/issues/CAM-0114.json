@@ -1,0 +1,9 @@
+{
+  "id": "CAM-114",
+  "title": "Corrigir docs stale que afirmam no linter configured (biome + check:all lint vivos desde CAM-60)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-27T10:53:01.898Z",
+  "description": "scripts/cam/CLAUDE.md (secao Quality Gates) e o checklist do subagent-auditor (~item 19) afirmam que nenhum linter esta configurado e que o typecheck e o gate estatico. Falso: biome.json existe e bun run check:all roda o gate de lint (wired no CAM-60/PR #66; o CI roda check:all). O auditor do CAM-106 sinalizou isso como colateral no F-02 (planner emitiu stories sem o gate de lint ate ser corrigido). Corrigir scripts/cam/CLAUDE.md + .claude/agents/subagent-auditor.md (e o mirror em templates/agents/ + re-embed _generated.ts via embed-vendor) pra que planners/auditors sempre incluam bun run check:all/lint como gate."
+}

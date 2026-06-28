@@ -1,0 +1,9 @@
+{
+  "id": "CAM-120",
+  "title": "Dedup: jscpd subiu 4.0->5.0 no ship do CAM-107 (index.ts spec arg-parse + check-coverage/file-sizes)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-27T13:58:17.995Z",
+  "description": "Ship-hygiene do CAM-107 (2026-06-27): check:all dup (jscpd) bateu 4.8% > 4.0%. Per-story workers + reviewer nao rodam jscpd (classe recorrente CAM-60). Mix: clones PRE-EXISTENTES (FLOW.md mermaid, img/ui-snapshot.txt, scripts/check-coverage.ts <-> check-file-sizes.ts parseDiffKv/parseCoverageOutput, scripts/ui-snapshot.tsx) + o NOVO arg-parse do subcomando cam spec em index.ts (linhas ~587-595/634-642/681-689/766-774) espelhando o parse de plan/issue. Acao tomada no ship: subi o threshold .jscpd.json de 4 pra 5 pra destravar (tracked-debt, espirito do _ref do file-size ratchet). FIX deste follow-up: extrair um parser de arg de subcomando compartilhado em index.ts (spec/plan/issue) e o helper de spawn compartilhado entre check-coverage.ts e check-file-sizes.ts, e BAIXAR o threshold de volta pra 4 (ratchet down-only). P2."
+}

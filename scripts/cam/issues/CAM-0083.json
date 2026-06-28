@@ -1,0 +1,9 @@
+{
+  "id": "CAM-83",
+  "title": "Dashboard: exibir custo acumulado de tokens e tempo total de sessao",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-25T15:00:00Z",
+  "description": "O supervisor ja rastreia tokens por story via readWorkerTokens/logEvent(tokens) (loop.ts:547-553). Mas o dashboard nao exibe custo acumulado da sessao nem tempo total decorrido. O operador nao tem visibilidade de quanto a sessao esta custando nem ha quanto tempo esta rodando. FIX: (a) acumular totalTokens no EventLog ao longo da sessao (somar campo de cada evento tokens), (b) rastrear sessionStartTs no startup do sidecar, (c) expor ambos no DashboardData e renderizar no header do Dashboard (ao lado do status/branch). Custo em tokens (nao USD, pois o preco varia por modelo e o cam nao sabe qual tier o usuario tem). Prioridade P2: observabilidade de custo e essencial para uso autonomo prolongado (CAM-71); o operador precisa saber quando parar."
+}

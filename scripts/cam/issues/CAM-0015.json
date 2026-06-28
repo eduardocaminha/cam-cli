@@ -1,0 +1,9 @@
+{
+  "id": "CAM-15",
+  "title": "build-release.sh: soft-check cam init muta o repo e spawna tmux",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-06T12:09:38Z",
+  "description": "O AC4 do scripts/build-release.sh roda cam init no cwd do repo como soft-check de build. Como há claude logado, o Stage 2 (setup) executa de verdade: copia os templates por cima dos arquivos versionados (sobrescreveu os 4 subagents adaptados + scripts/cam/CLAUDE.md, recuperados via git restore) e tenta tmux new-session (falhou exit 1 no log do operador). Verificação de build NÃO pode ter efeito colateral no working tree. Fix robusto: rodar o smoke num cwd temporário descartável (mktemp -d) com --no-tmux, ou trocar o AC4 por um smoke não-mutante (cam --version + cam help + cam status num tmpdir). Nunca rodar cam init (comando mutante) contra o repo. Arquivo: scripts/build-release.sh. EVIDENCIA NOVA (2026-06-11, cerimonia US-003 do CAM-16): rodando ./scripts/build-release.sh --install na maquina do operador, o soft-check invocou cam init (config em cwd temporario, ok) MAS o cam setup rodou contra o REPO: sobrescreveu as copias ativas .claude/agents/*.md (4 arquivos), .claude/commands/cam-plan.md e cam-ship.md (perderia o trabalho do CAM-6 de quality gates concretos se commitado), scripts/cam/project.toml, scripts/cam/journal.md, scripts/cam/CLAUDE.md e .claude/.cam-orchestrator-prompt.txt; criou sessao tmux cam-setup (socket -L cam) com DOIS processos claude vivos consumindo subscricao e deixou .claude/.cam-setup-menu.sh rodando. Recovery manual: git restore dos 10 arquivos + kill do menu + kill-session. O fix precisa cobrir o setup tambem, nao so o init: soft-check inteiro em cwd temporario hermetico, sem tmux, sem agente, ou substituir por flag --smoke que so valida parsing/binario sem efeitos colaterais."
+}

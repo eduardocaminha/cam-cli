@@ -1,0 +1,9 @@
+{
+  "id": "CAM-53",
+  "title": "Menu `cam config`: escolher modelo por fase + backend (claude/codex)",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-15T14:00:00Z",
+  "description": "PROBLEMA: hoje os modelos sao frontmatter model: hardcoded em cada agente (subagent-orchestrator/planner/auditor/reviewer = claude-opus-4-7; subagent-implementer + cam-ship = claude-sonnet-4-6), STALE (o atual e opus-4-8) e sem UI pro operador escolher. OBJETIVO: um menu de config (TUI Ink, estilo das telas existentes em src/ui/) pra escolher POR FASE (orchestrator/planner/auditor/implementer/reviewer/ship) o modelo, E o backend (claude | codex). Persistir no scripts/cam/project.toml (secoes [models] e [backend]), espelhando como o permission_mode ja e lido (src/config/permission-mode.ts, src/config/toml.ts). Os spawns (src/commands/run.ts do orquestrador; o dispatch de worker do supervisor; o /cam-plan etc.) passam a ler o modelo/backend do config em vez de (ou sobrepondo) o frontmatter. QUICK-WIN incluso: os defaults do config (e o frontmatter dos agentes) passam a refletir os modelos atuais (opus-4-8 etc.), corrigindo o stale. PRE-REQUISITO de CAM-54 (o seletor de backend mora aqui). ARQUIVOS: src/config/toml.ts (ler [models]/[backend]), nova UI de menu (src/ui/), comando `cam config` (src/commands/), src/commands/run.ts + supervisor (ler modelo/backend do config), defaults de frontmatter dos agentes. ACEITE: `cam config` abre um menu; escolher modelo por fase persiste no project.toml; os spawns usam o modelo configurado; seletor de backend presente (claude default; codex wirado em CAM-54); defaults nao-stale; typecheck; tests."
+}

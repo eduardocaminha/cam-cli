@@ -1,0 +1,9 @@
+{
+  "id": "CAM-2",
+  "title": "Estado paused inalcançável com o stop hook vendado",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-05T16:24:46Z",
+  "description": "src/commands/status.ts:298 reporta state 'paused' quando active:false, e :408-413 oferece uma seção Next para ele. Mas vendor/cam-loop-stop-hook.sh nunca escreve active:false: ele ou dá rm no state file (COMPLETE/max-iter/corrupção) ou devolve {decision:block} para continuar. O template nasce active:true e nada o rebaixa. Então 'paused' só existe com o plugin oficial cam-loop, não com o fallback vendado. Decidir e alinhar: ou o hook passa a marcar active:false em alguma condição, ou status para de oferecer um estado morto. Barato; é incoerência interna."
+}
