@@ -1,0 +1,89 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-123-consolidate-knowledge-layer",
+  "description": "Consolidate the cam knowledge-layer: retire lessons.md, add explicit routing/naming/location rules to scripts/cam/CLAUDE.md, reconcile CONTEXT.md auto-exists claims to CAM-118, and fix live stale lessons.md references.",
+  "issueNumber": 123,
+  "relatedDocs": [
+    "scripts/cam/CLAUDE.md",
+    "lessons.md",
+    ".claude/agents/subagent-planner.md",
+    ".claude/agents/subagent-reviewer.md",
+    "scripts/cam/patterns.md",
+    "docs/adr/0001-issue-system-redesign.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Retire lessons.md to lessons.archive.md with deprecation header",
+      "description": "As a cam knowledge-layer maintainer, I need lessons.md retired into a clearly-deprecated archive so that agents no longer treat it as a live write channel and the routing of new insights moves to journal.md/patterns.md/memory.",
+      "acceptanceCriteria": [
+        "lessons.md is renamed to lessons.archive.md with a deprecation header naming the date, the superseding channels (journal.md/patterns.md/memory), the routing reference, and the planned future deletion; lessons.md no longer exists at the repo root [oracle: file-assert test ! -f lessons.md && test -f lessons.archive.md && grep -qi deprecated lessons.archive.md]",
+        "The deprecation header records the date 2026-06-27 [oracle: file-assert grep -q '2026-06-27' lessons.archive.md]",
+        "The diff touches only .md files plus the lessons.md rename; no src/ changes and no templates/ changes [oracle: file-assert git diff --stat HEAD shows no src/ and no templates/ paths]",
+        "Typecheck passes (bun run typecheck) [oracle: bun run typecheck]",
+        "Tests pass (bun test) [oracle: bun test]",
+        "The full gate spine is green [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Use `git mv lessons.md lessons.archive.md` so history is preserved (oracle AC#1 already checks lessons.md is gone and archive exists with 'deprecated'). Prepend a deprecation header above the existing line-1 title; the historical entries below stay verbatim (do not edit the chronological body). Header must name: date 2026-06-27, that the file is DEPRECATED/retired, the superseding channels (scripts/cam/journal.md, scripts/cam/patterns.md, memory/), a pointer to the new routing table in scripts/cam/CLAUDE.md (added in US-002), and that future deletion is planned. Follow the no-em-dash / no-decorative-emoji rule for persisted .md (CLAUDE.md global convention). This is a cam-cli-specific exception to the global etapa-dupla; do NOT touch the global ~/.claude/CLAUDE.md (gotcha #4). DOC-only: no command code."
+    },
+    {
+      "id": "US-002",
+      "title": "Add routing, naming, and location convention rules to scripts/cam/CLAUDE.md",
+      "description": "As a cam agent deciding where a new insight belongs, I need an explicit routing table plus naming-convention and location-convention rules in scripts/cam/CLAUDE.md so that each insight type maps deterministically to a canonical channel without re-deriving the split each time.",
+      "acceptanceCriteria": [
+        "scripts/cam/CLAUDE.md contains an explicit routing table mapping each insight type to its canonical channel (patterns.md technical, journal.md cycle-narrative, memory cross-cutting, docs/adr decisions, CONTEXT.md vocabulary) [oracle: file-assert grep the routing rows in scripts/cam/CLAUDE.md]",
+        "scripts/cam/CLAUDE.md documents the naming-convention rule: UPPERCASE.md is an external-convention entry-point (CLAUDE/CONTEXT/README/CHANGELOG/AGENTS), lowercase.md is a cam-internal artifact (journal/patterns) [oracle: file-assert grep the casing rule in scripts/cam/CLAUDE.md]",
+        "scripts/cam/CLAUDE.md documents the location-convention rule: scripts/cam/ is cam-harness knowledge, repo-root plus docs/ is the project domain-model [oracle: file-assert grep the location rule in scripts/cam/CLAUDE.md]",
+        "The routing records that the lessons.md retirement is a project-specific exception to the etapa-dupla convention in the global CLAUDE.md, which still holds for non-cam projects [oracle: file-assert grep the exception note in scripts/cam/CLAUDE.md]",
+        "The diff touches only .md files; no src/ changes and no templates/ changes [oracle: file-assert git diff --stat HEAD shows no src/ and no templates/ paths]",
+        "Typecheck passes (bun run typecheck) [oracle: bun run typecheck]",
+        "Tests pass (bun test) [oracle: bun test]",
+        "The full gate spine is green [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Edit ONLY scripts/cam/CLAUDE.md (the cam agent-instructions file, distinct from the repo-root CLAUDE.md which holds Bun/project instructions). The routing table covers five rows: patterns.md=technical/reusable insight, journal.md=cycle narrative/history, memory/=cross-cutting persistent decisions, docs/adr/=architectural decisions, CONTEXT.md=vocabulary/glossary. Naming rule: UPPERCASE.md (CLAUDE/CONTEXT/README/CHANGELOG/AGENTS) = external-convention entry-point; lowercase.md (journal/patterns) = cam-internal artifact; this casing split is BY DESIGN, do NOT force single casing (gotcha). Location rule: scripts/cam/ = cam-harness knowledge; repo-root + docs/ = project domain-model; do NOT move journal.md/patterns.md out of scripts/cam/ nor CONTEXT.md/docs/adr out of repo-root (the 2-namespace split is correct for downstream cam init projects). Exception note: lessons.md retirement is a cam-cli-specific exception to the global etapa-dupla convention; the global rule still holds for non-cam projects. templates/scripts/cam/CLAUDE.md is a generic skeleton that does NOT carry these sections (verified) so NO templates/ edit and NO embed-vendor. Follow no-em-dash / no-decorative-emoji for persisted .md. DOC-only: no command code (cam journal archive = CAM-125 out of scope)."
+    },
+    {
+      "id": "US-003",
+      "title": "Reconcile CONTEXT.md auto-exists claims to the CAM-118 deterministic writer",
+      "description": "As a cam agent reading the Domain Model Convention, I need CONTEXT.md described as an active vocabulary channel populated via the CAM-118 deterministic writer rather than an auto-existing/lazily-created file so that the instructions stop implying CONTEXT.md self-materializes.",
+      "acceptanceCriteria": [
+        "CONTEXT.md is documented as an active vocabulary channel populated via the CAM-118 deterministic writer, not as an auto-existing file; the stale auto-exists claims in the scripts/cam/CLAUDE.md Domain Model Convention are reconciled to point at CAM-118 [oracle: file-assert grep CONTEXT.md references point to CAM-118 in scripts/cam/CLAUDE.md]",
+        "The 'Created lazily' / auto-exists phrasing in the Domain Model Convention no longer claims CONTEXT.md materializes on its own [oracle: file-assert grep -c 'Created lazily' against the CONTEXT.md line is reconciled in scripts/cam/CLAUDE.md]",
+        "The diff touches only .md files; no src/ changes and no templates/ changes [oracle: file-assert git diff --stat HEAD shows no src/ and no templates/ paths]",
+        "Typecheck passes (bun run typecheck) [oracle: bun run typecheck]",
+        "Tests pass (bun test) [oracle: bun test]",
+        "The full gate spine is green [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Edit ONLY scripts/cam/CLAUDE.md, the '## Domain Model Convention' section (lines ~71-86). The stale claim is at line ~75 ('`CONTEXT.md` at the repo root: glossary-only ... Created lazily: when the first term is resolved.') and the lazy-creation reassertion at line ~82 ('Both files are created lazily (do not pre-create empty stubs).'). Reconcile so CONTEXT.md is described as the ACTIVE vocabulary channel POPULATED via the CAM-118 deterministic CONTEXT.md/ADR writer, not a file that auto-exists. Keep docs/adr/ phrasing as-is unless it shares the same false auto-exists claim. Do NOT write or create CONTEXT.md itself (that is CAM-118, out of scope). Do NOT move CONTEXT.md/docs/adr out of repo-root. templates/scripts/cam/CLAUDE.md skeleton lacks this section (verified) so NO templates/ edit and NO embed-vendor. Follow no-em-dash / no-decorative-emoji for persisted .md. Coordinate with US-002 which adds the routing table referencing CONTEXT.md=vocabulary; keep the two CONTEXT.md mentions consistent."
+    },
+    {
+      "id": "US-004",
+      "title": "Fix live stale lessons.md references in agents, patterns.md, and HANDOFF.md",
+      "description": "As a cam agent following the read-path, I need the live lessons.md references repointed to the retired archive (or to durable channels) so that the planner stops reading a retired file as a live source and the reviewer/patterns/HANDOFF pointers resolve correctly after the rename.",
+      "acceptanceCriteria": [
+        ".claude/agents/subagent-planner.md no longer instructs reading lessons.md as a live source; the read-path is redirected to scripts/cam/patterns.md and scripts/cam/journal.md [oracle: file-assert grep -c 'lessons\\.md' .claude/agents/subagent-planner.md (literal dot) returns 0 AND grep -q 'patterns.md' the read-path line]",
+        ".claude/agents/subagent-reviewer.md repoints the Ink-glyph pointer away from lessons.md to lessons.archive.md or scripts/cam/patterns.md [oracle: file-assert grep -c 'lessons\\.md' .claude/agents/subagent-reviewer.md (literal dot, NOT matching lessons.archive.md) returns 0 AND grep -c 'lessons\\.archive\\.md\\|patterns\\.md' the Ink-glyph line returns >=1]",
+        "scripts/cam/patterns.md repoints both lessons.md pointers (lines ~14 and ~123) to lessons.archive.md [oracle: file-assert grep -c 'lessons\\.md' scripts/cam/patterns.md (literal dot, NOT matching lessons.archive.md) returns 0 AND grep -c 'lessons\\.archive\\.md' scripts/cam/patterns.md returns 2]",
+        "HANDOFF.md repoints all three lessons.md references (line ~3 continuity read-instruction, lines ~46 and ~64 citations) to lessons.archive.md [oracle: file-assert grep -c 'lessons\\.md' HANDOFF.md (literal dot, NOT matching lessons.archive.md) returns 0 AND grep -c 'lessons\\.archive\\.md' HANDOFF.md returns 3]",
+        "The diff touches only .md files; no src/ changes and no templates/ changes [oracle: file-assert git diff --stat HEAD shows no src/ and no templates/ paths]",
+        "Typecheck passes (bun run typecheck) [oracle: bun run typecheck]",
+        "Tests pass (bun test) [oracle: bun test]",
+        "The full gate spine is green [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": "US-003",
+      "notes": "Operator-extended scope (authorized this cycle, beyond the 8 spec ACs): the US-001 rename leaves LIVE stale references. Fix EXACTLY these four files: (1) .claude/agents/subagent-planner.md line ~133 \"Read the project's `CLAUDE.md` (root and `scripts/cam/CLAUDE.md`) and `lessons.md` to understand:\" -> remove lessons.md from the LIVE read-path and redirect to scripts/cam/patterns.md (durable live channel) + scripts/cam/journal.md; do NOT point the planner at the retired archive as a live source. (2) .claude/agents/subagent-reviewer.md line ~60 \"(see `lessons.md` 2026-06-05)\" -> repoint to `lessons.archive.md` (or to scripts/cam/patterns.md where the Ink-glyph rule is recorded at patterns.md:14). (3) scripts/cam/patterns.md lines ~14 and ~123 (\"see `lessons.md` 2026-06-05\" / \"lesson in lessons.md\") -> repoint both to `lessons.archive.md`. (4) HANDOFF.md (repo root, .md, inside AC#7): line ~3 continuity read-instruction \"Le isto + `lessons.md` + `src/design/tokens.ts`\" and lines ~46 and ~64 citations \"(ver `lessons.md` 2026-06-05)\" / \"(licao 2026-06-05, no `lessons.md`)\" -> repoint all three to `lessons.archive.md` (here repoint, do NOT remove: the Ink-glyph lesson backing these lives in the archive, and line 3 is a continuity read alongside src/design/tokens.ts). VERIFICATION (F-03): the \"no bare lessons.md\" half of each oracle is an EXACT-TOKEN / literal-dot check (grep -c 'lessons\\.md' with escaped dot, which does NOT match the substring inside lessons.archive.md), expected 0 per edited file; AND grep -c 'lessons\\.archive\\.md' returns the expected count (patterns.md=2, HANDOFF.md=3, planner/reviewer per repoint). Do NOT touch: scripts/cam/journal.md (append-only history; journal.md:61 \"Documented in lessons.md 2026-06-06\" is a past entry and editing it violates the append-only invariant), scripts/build-release.sh (.sh, AC#7 forbids non-.md), test/*.ts comments (non-.md), scripts/cam/issues.local.json, and the GLOBAL ~/.claude/CLAUDE.md (gotcha #4). Do NOT fold the stale \"no standalone linter\" claim (auditor F-02): tracked as CAM-114, out of scope here; leave scripts/cam/CLAUDE.md Quality Gates untouched beyond US-002. templates/agents/subagent-planner.md and templates/agents/subagent-reviewer.md do NOT mention lessons.md (verified, generic; the runtime .claude/agents/* are the cam-cli-adapted copies) so NO templates/ edit and NO embed-vendor. Follow no-em-dash / no-decorative-emoji for persisted .md."
+    }
+  ]
+}
