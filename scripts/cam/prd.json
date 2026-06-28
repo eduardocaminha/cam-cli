@@ -40,7 +40,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: NEW src/issues/rank.ts. Pure function over IssueEntry[] (src/issues/types.ts): WsjfScore {value,timeCriticality,riskReduction,jobSize}, IssueEntry.blockedBy[]/rank?/stage/status. Universe = {stage:'specified', status:'open'}; idea/shipped/abandoned excluded; 'planned' is defined-but-unreachable today (ignore it -- nothing sets it). Kahn HAND-ROLLED (zero extra dependency, cam ethos): build in-degree over blockedBy edges that point INTO the set; a blockedBy id whose target is stage:'shipped' (or outside the set entirely -- see US-003 cross-stage handling) is a satisfied edge that does not contribute in-degree. Within each in-degree-zero layer: sort WSJF desc, tie-break numeric id asc. Dense 1-based rank assigned in emission order across layers. WSJF = (value+timeCriticality+riskReduction)/jobSize; missing wsjf OR jobSize<=0 => WSJF 0 + push a warning string (return warnings array, do not console.log from the pure fn). Return shape suggestion: { ranked: Array<{id, rank, wsjf, stage}>, warnings: string[] } -- caller (US-004) prints/commits. Mirror select.ts numericIdSuffix (src/issues/select.ts:9-14) for the tie-break: numeric suffix asc, non-parseable => Infinity (sorts last). GOTCHAS: pure/injectable/hermetic (no shelling out, no fs); never divide-by-zero; this is the FIRST writer-side computation of rank (select.ts only reads rank). Cycle detection lives in US-003, not here -- but expose enough structure (e.g. the residual non-zero in-degree set) for US-003's gate to name the cycle. Maps spec AC#1, AC#2."
     },
