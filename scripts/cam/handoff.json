@@ -1,26 +1,35 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "allocateId (max-on-main + 1, CAS re-allocation) and per-file write primitive"
+    "id": "US-004",
+    "title": "Convert the 4 writers to the file-per-issue dir"
   },
   "branchName": "cam/CAM-90-file-per-issue",
-  "timestamp": "2026-06-28T03:00:00Z",
-  "createdFiles": [
-    "src/issues/alloc.ts",
-    "test/issues/alloc.test.ts"
-  ],
+  "timestamp": "2026-06-28T04:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
+    "index.ts",
+    "src/commands/issue-file.ts",
+    "src/commands/issue-specify.ts",
+    "src/commands/ship-finalize.ts",
+    "src/commands/triage.ts",
     "src/issues/backlog.ts",
-    "test/issues/backlog.test.ts",
+    "test/commands/issue-specify.test.ts",
+    "test/integration/issue-file-on-main.test.ts",
+    "test/integration/ship-finalize-dirty-prd.test.ts",
+    "test/integration/triage-real-git.test.ts",
+    "test/issue-file.test.ts",
+    "test/ship-finalize-hardening.test.ts",
+    "test/ship-finalize.test.ts",
+    "test/triage.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 complete. src/issues/backlog.ts now exports allocateId (max-on-main + 1, returns 1 for empty dir, BacklogSpawnFn injectable). src/issues/alloc.ts exports writeIssueFile (CAS retry loop: re-derives id on every attempt so concurrent allocations never collide; 4-digit zero-padded filename, unpadded id field inside). test/issues/alloc.test.ts: 9 new tests covering padding (90->CAM-0090, 1000->CAM-1000), roundtrip, CAS-failure re-allocation, result shape. Full suite: 2034 pass, 0 fail.",
+  "nextStoryContext": "US-004 complete. All 4 writers (issue-file, issue-specify, triage, ship-finalize) now read/write scripts/cam/issues/CAM-NNNN.json exclusively via the per-file primitives (writeIssueFile, readBacklogFromMain, issueFilePath). issues.local.json is never touched by any writer. The key integration tests were updated from the old array-format (issues.local.json) to the new per-file format (CAM-NNNN.json). index.ts _buildFinalizeOpts uses issueFilePath for both readIssues and writeIssues. Full suite: 2033 pass, 0 fail.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-003 only uses git plumbing via injectable SpawnFn and Node.js built-ins (node:fs, node:os, node:path). No external npm library was introduced."
+      "summary": "US-004 only modified existing internal modules (git plumbing via injectable SpawnFn, readBacklogFromMain, issueFilePath). No external npm library was introduced."
     }
   ]
 }
