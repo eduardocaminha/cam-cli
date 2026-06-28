@@ -1,27 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Resetar cap de respawn por progresso no wrapper do cam run"
+    "id": "US-004",
+    "title": "Persona: agir no sinal, escrever reason=cycle-close, remover cadencia advisory"
   },
   "branchName": "cam/CAM-131-handoff-por-ciclo",
   "timestamp": "2026-06-28T00:00:00.000Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/run.ts",
-    "test/run.test.ts",
-    "scripts/file-size-budget.json",
+    ".claude/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added jq-based reason read to buildOrchestratorPaneCommand in src/commands/run.ts. The bash wrapper now reads `.reason // empty` from the handoff file BEFORE renaming it to .consumed.json. When reason == 'cycle-close' it resets n=0; otherwise increments n. US-004 (next story) is 'Emitir reason: cycle-close no handoff do orquestrador' -- it likely touches the orchestrator agent prompt or the handoff-writing path (src/orchestrator/handoff.ts / .claude/agents/subagent-orchestrator.md) to ensure cycle-close is emitted as the reason when the orchestrator completes a normal cycle.",
+  "nextStoryContext": "US-004 updated the Self-handoff lifecycle section of the orchestrator persona in both .claude/agents/subagent-orchestrator.md and templates/agents/subagent-orchestrator.md. The section now instructs: on observing CAM_ORCH_HANDOFF_DUE=true in cam journal append output, write .cam-orch-handoff.json with reason: 'cycle-close' BEFORE any other action. The advisory cam orch-budget cadence (100k token threshold) was removed. All four stories in the PRD now pass (US-001 through US-004). The PRD is complete.",
   "officialDocsValidated": [
     {
-      "lib": "jq",
-      "version": "1.7.x",
-      "url": "https://jqlang.org/manual/",
-      "fetchedAt": "2026-06-28T00:00:00.000Z",
-      "status": "ok",
-      "summary": "jq '.reason // empty' confirmed: absent key returns null, // empty suppresses null output (bash $() gives empty string), -r extracts raw string without quotes. Implementation matches docs."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-004 only edits .md agent prompt files and re-embeds vendor. No external library API was exercised."
     }
   ]
 }

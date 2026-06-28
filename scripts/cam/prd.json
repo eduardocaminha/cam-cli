@@ -81,7 +81,7 @@
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "DUAL-COPY (gotcha #4 + lesson cam-dual-copy-is-per-file): edit .claude/agents/subagent-orchestrator.md (Self-handoff lifecycle section, lines 268-276) AND templates/agents/subagent-orchestrator.md (currently byte-identical: diff confirmed IDENTICAL), THEN run `bun run embed-vendor` to regenerate src/vendor/_generated.ts, else embed-vendor:check fails. The reason string MUST be exactly \"cycle-close\" to match the jq read in US-003. Keep the schema fields the reader requires (schemaVersion:1, writtenAt, reason) and the rich rehydration fields (currentCycle, keyDecisions, openState, openQuestions, nextActions) per src/orchestrator/handoff.ts OrchHandoffPayload. Remove the advisory `cam orch-budget` cadence + 100k threshold prose (lines 272-273). Bounds/anti-loop prose (line 276) stays. docs/recovery-runbook.md has no Self-handoff/cycle-close trigger section to update (verified: only respawn-pane / cycle-close commit prose at lines 318-323, unrelated to the handoff trigger)."
     }
