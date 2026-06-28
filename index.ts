@@ -304,7 +304,7 @@ const JOURNAL_HELP = renderHelp({
 			body:
 				'1. Reads a JSON object from stdin; must match the JournalCycleEntry schema\n' +
 				'   (cycleId, title, started, closed, branch, issue, outcome, summary,\n' +
-				'   and optional decisions, blockers, followups arrays).\n' +
+				'   and optional decisions, blockers, followups strings).\n' +
 				'2. Reads scripts/cam/journal.md from main via `git show main:...`\n' +
 				'   (never from the working tree -- the commit-tree-to-main pattern).\n' +
 				'3. Validates required fields; rejects entries missing cycleId, title,\n' +

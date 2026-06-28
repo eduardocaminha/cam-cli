@@ -1957,7 +1957,7 @@ primitive (same plumbing as `cam issue --file-local`, section (n)).
 
 1. The orchestrator assembles a JSON object matching the `JournalCycleEntry`
    schema (cycleId, title, started, closed, branch, issue, outcome, summary,
-   plus optional decisions, blockers, followups arrays).
+   plus optional decisions, blockers, followups strings).
 2. It pipes the JSON to `cam journal append` via stdin (or with `--force` to
    replace an existing entry for the same cycleId).
 3. `appendJournalEntryOnMain` validates required fields, normalises em-dash
