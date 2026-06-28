@@ -1,40 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Migrate branch tree to file-per-issue + per-file schema (both copies) + embed"
+    "id": "US-008",
+    "title": "Docs sweep to file-per-issue (dual-copy + embed)"
   },
   "branchName": "cam/CAM-90-file-per-issue",
-  "timestamp": "2026-06-28T12:00:00Z",
-  "createdFiles": [
-    "scripts/cam/issues/CAM-0001.json",
-    "scripts/cam/issues/CAM-0002.json",
-    "scripts/cam/issues/CAM-0003.json"
-  ],
+  "timestamp": "2026-06-28T14:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/issues/ (129 files created)",
-    "scripts/cam/issues.local.json (deleted)",
-    "scripts/cam/issues.schema.json",
-    "templates/scripts/cam/issues.schema.json",
-    "templates/commands/cam-issue.md",
-    "templates/commands/cam-plan.md",
-    "templates/commands/cam-spec.md",
-    "templates/agents/subagent-orchestrator.md",
-    ".claude/commands/cam-issue.md",
-    ".claude/commands/cam-plan.md",
-    ".claude/commands/cam-spec.md",
-    ".claude/agents/subagent-orchestrator.md",
+    "scripts/cam/patterns.md",
+    "docs/recovery-runbook.md",
+    "docs/adr/0001-issue-system-redesign.md",
     "src/vendor/_generated.ts",
-    "test/embedded.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 complete. Branch now has 129 CAM-NNNN.json files in scripts/cam/issues/ (4-digit padded filename, unpadded id field inside JSON). scripts/cam/issues.local.json is deleted. Both schema copies (scripts/cam/ and templates/scripts/cam/) updated to drop issues.local.json description. All template and .claude/ runtime mirrors updated: cam-issue.md, cam-plan.md, cam-spec.md, subagent-orchestrator.md no longer reference issues.local.json or next_id. src/vendor/_generated.ts regenerated (0 references to issues.local.json or next_id). All 2050 tests pass. The PRD is now complete (all non-operator stories pass). The next step is /cam-review.",
+  "nextStoryContext": "US-008 complete. All docs now describe file-per-issue. patterns.md: updated lines 18 (next_id->allocateId model), 45, 77, 78, 130, 142 to reference scripts/cam/issues/CAM-NNNN.json. recovery-runbook.md: sections (h), (n), (u.1)-(u.3) updated from issues.local.json shell commands to per-file equivalents. adr/0001: Epico A note updated to reflect migration complete (CAM-90 US-005). src/vendor/_generated.ts regenerated (0 references to issues.local.json or next_id). All 2050 tests pass. Command docs and agent personas were already clean (updated in US-007). Next story is US-009 (no-vestiges verification + full gate spine green).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-007 touched only internal JSON/Markdown files and src/vendor/_generated.ts (codegen). No external npm library was exercised."
+      "summary": "US-008 touched only internal Markdown docs (patterns.md, recovery-runbook.md, adr/0001) and src/vendor/_generated.ts (codegen). No external npm library was exercised."
     }
   ]
 }
