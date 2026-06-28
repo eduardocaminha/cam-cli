@@ -1,9 +1,26 @@
 {
   "id": "CAM-92",
   "title": "Extrair narrateReport() helper no loop.ts (dedup dos ~9 blocos inline de notifyOrchestrator)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-26T02:35:11.986Z",
-  "description": "Follow-up advisory do review do CAM-78 (PR da branch cam/CAM-78-sidecar-sole-pusher). O US-003 ligou a narração do sidecar em ~9 call-sites do src/supervisor/loop.ts, cada um repetindo o bloco `{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }`. O reviewer sugeriu (SUGGESTION, nao-gating) extrair um helper privado (ex: narrateReport()) para legibilidade e single-source. Bonus: encolhe loop.ts e reverte a subida de teto file-size aplicada no ship do CAM-78. Arquivo: src/supervisor/loop.ts."
+  "description": "Follow-up advisory do review do CAM-78 (PR da branch cam/CAM-78-sidecar-sole-pusher). O US-003 ligou a narração do sidecar em ~9 call-sites do src/supervisor/loop.ts, cada um repetindo o bloco `{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }`. O reviewer sugeriu (SUGGESTION, nao-gating) extrair um helper privado (ex: narrateReport()) para legibilidade e single-source. Bonus: encolhe loop.ts e reverte a subida de teto file-size aplicada no ship do CAM-78. Arquivo: src/supervisor/loop.ts.",
+  "spec": {
+    "scope": "Follow-up advisory do review do CAM-78 (PR da branch cam/CAM-78-sidecar-sole-pusher). O US-003 ligou a narração do sidecar em ~9 call-sites do src/supervisor/loop.ts, cada um repetindo o bloco `{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }`. O reviewer sugeriu (SUGGESTION, nao-gating) extrair um helper privado (ex: narrateReport()) para legibilidade e single-source. Bonus: encolhe loop.ts e reverte a subida de teto file-size aplicada no ship do CAM-78. Arquivo: src/supervisor/loop.ts.",
+    "acceptanceCriteria": [
+      "narrateReport() helper privado extraido em src/supervisor/loop.ts",
+      "Os ~9 call-sites de notifyOrchestrator usam o helper",
+      "Reverte a subida de teto file-size do CAM-78 se possivel",
+      "typecheck + tests verdes"
+    ],
+    "gotchas": [],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 2
+  }
 }
