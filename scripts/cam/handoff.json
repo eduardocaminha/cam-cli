@@ -1,21 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/journal.ts",
-    "test/commands/journal-append.test.ts",
+    "index.ts",
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 fixed: renderJournalBlock now emits '- **Blockers encountered**:' and '- **Follow-ups**:' matching the canonical journal corpus and the ## Format template in scripts/cam/journal.md. The three test assertions at lines 461-462 and the two negative-assertion pairs were updated to match. US-R1-002 (WARNING) remains: JOURNAL_HELP and docs/recovery-runbook.md describe decisions/blockers/followups as 'arrays' but JournalCycleEntry types them as string -- fix the docs to say string. Gates: typecheck clean, 1914 pass / 0 fail.",
+  "nextStoryContext": "US-R1-002 fixed: JOURNAL_HELP (index.ts:307) and docs/recovery-runbook.md now correctly describe decisions/blockers/followups as 'strings' (not 'arrays'). Change is two single-word substitutions with no code or test impact. All review round 1 fixes complete. Gates: typecheck clean, 1914 pass / 0 fail.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-R1-001 is a two-line label string fix (journal.ts) plus matching test assertion updates. No external npm library was introduced or exercised."
+      "summary": "US-R1-002 is a two-word doc correction (arrays -> strings) in two files. No external npm library was introduced or exercised."
     }
   ]
 }

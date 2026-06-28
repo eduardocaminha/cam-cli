@@ -20,7 +20,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [index.ts:307]: JOURNAL_HELP (index.ts:307) and docs/recovery-runbook.md describe optional fields decisions/blockers/followups as \"arrays\", but the JournalCycleEntry schema types them as `string`. Following the docs and piping a JSON array would crash normalizeEmDash (.replace on a non-string). Correct the docs to say string, or accept arrays in the schema."
     },
     {
