@@ -1,6 +1,6 @@
 # HANDOFF: testar os fluxos com o vocabulário Ink já alinhado
 
-Documento de continuidade para uma nova conversa numa branch nova. Lê isto + `lessons.md` + `src/design/tokens.ts`. Não precisa reler o histórico de chat.
+Documento de continuidade para uma nova conversa numa branch nova. Lê isto + `lessons.archive.md` + `src/design/tokens.ts`. Não precisa reler o histórico de chat.
 
 ## Onde estamos
 
@@ -43,7 +43,7 @@ Cor num pager/pipe: `FORCE_COLOR=1 bun index.ts <cmd> | less -R`.
 ## Contrato visual a conferir (o que olhar em cada tela)
 
 - Título: accent + bold, col 0, com blank antes.
-- Section heading: bold col 2 + divisor col 2, divisor SEMPRE muted (nunca colorido). Esse é o ponto que já mordeu antes (ver `lessons.md` 2026-06-05): sucesso/falha é sinalizado pelo GLIFO, não pela cor do divisor.
+- Section heading: bold col 2 + divisor col 2, divisor SEMPRE muted (nunca colorido). Esse é o ponto que já mordeu antes (ver `lessons.archive.md` 2026-06-05): sucesso/falha é sinalizado pelo GLIFO, não pela cor do divisor.
 - Conteúdo no col 4 via `emit*`: `emitOk` (✓ accent), `emitWarn` (! warning), `emitMutedHint` (muted), `emitContent` (texto), `emitEntry(name, desc)` (Section "Next").
 - Estado (igual ao Dashboard): idle `◌` muted, active `●` accent, paused `!` warning.
 - Erro fatal que aborta (dependência ausente, parse error): `printError` em stderr, col 0, SEM Section. Decisão travada e confirmada contra o Claude Code (`claude-code-harness/cli/exit.ts`: `cliError` → stderr+exit1, `cliOk` → stdout+exit0; não existe Section "Failed" no print path deles).
@@ -61,7 +61,7 @@ Fonte única do contrato: `src/design/tokens.ts` (palette, glyphs, layout, `DIVI
 
 ## Gotchas
 
-- Verificar o RENDER real, não confiar em comentário de código nem em mental model (lição 2026-06-05, no `lessons.md`). Antes de afirmar/decidir sobre aparência, renderizar e olhar o output.
+- Verificar o RENDER real, não confiar em comentário de código nem em mental model (lição 2026-06-05, no `lessons.archive.md`). Antes de afirmar/decidir sobre aparência, renderizar e olhar o output.
 - `emitEntry` tem coluna de nome de 12 chars; nome maior cola na descrição. Para comando largo (ex: `git reset --hard origin/main`) usar `emitContent`, não `emitEntry`.
 - Sem travessão (—) em arquivo .md persistido (preferência do usuário): dois-pontos, vírgula, parênteses, ponto. Em string de runtime no .ts (mensagem efêmera ao operador) ainda pode.
 - Testes de output capturam `process.stdout.write` com `toContain`/`toMatch` lenientes; mudar glifo/layout normalmente não quebra, mas conferir `bun test`.
