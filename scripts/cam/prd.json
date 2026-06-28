@@ -1,0 +1,97 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-108-triage-deterministic-rank",
+  "description": "Deterministic cross-list reprioritization core: Kahn topo-sort + WSJF ranking module, graph gate, `cam triage` CLI writing rank to issues.local.json on main, and extraction of the shared on-main commit-tree helper (closes CAM-124).",
+  "issueNumber": 108,
+  "relatedDocs": [
+    "scripts/cam/CLAUDE.md",
+    "scripts/cam/patterns.md",
+    "docs/recovery-runbook.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Extract shared on-main commit-tree helper from 3 verbatim copies",
+      "description": "As a cam maintainer, I need the on-main commit-tree plumbing extracted into one shared module so that the 3 verbatim copies collapse to one, the jscpd dup gate stays green when a 4th caller (cam triage) is added, and CAM-124 is closed.",
+      "acceptanceCriteria": [
+        "A single shared module (e.g. src/git/on-main.ts) exports the on-main commit-tree plumbing (temp index, hash-object, update-index, write-tree, commit-tree -p main, update-ref) plus the on-main direct-commit path, with an injectable SpawnFn (env + input fields preserved). [oracle: file-assert grep -q 'commit-tree' src/git/on-main.ts]",
+        "createLocalIssueOnMain (src/commands/issue-file.ts), specifyIssueOnMain/abandonIssueOnMain/mergeIssueOnMain (src/commands/issue-specify.ts), and appendJournalEntryOnMain (src/commands/journal.ts) all import the shared helper; the 3 prior verbatim commitTreeToMain/commitOnMain blocks are removed. [oracle: file-assert grep -L 'function commitTreeToMain' src/commands/issue-file.ts src/commands/issue-specify.ts src/commands/journal.ts shows all three no longer define their own copy]",
+        "All four on-main callers import the single shared module: issue-file, issue-specify, journal, and triage. [oracle: file-assert grep shows the shared module path (e.g. from '.../on-main') imported in src/commands/issue-file.ts, src/commands/issue-specify.ts, src/commands/journal.ts, AND src/commands/triage.ts]",
+        "The 3 refactored callers are byte-behaviorally identical to before the refactor (same git argv sequence, same commit messages, same returned sha shape, same on-main vs off-main branch behavior), proven by parity tests with injected spawnFn. [oracle: bun test (parity tests for issue-file, issue-specify, journal stay green)]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "jscpd dup gate does not regress after dedup. [oracle: bunx jscpd@5 --config .jscpd.json src scripts]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: NEW src/git/on-main.ts (or src/commands/on-main.ts); refactor src/commands/issue-file.ts (commitTreeToMain @255-325, commitOnMain @230-247, buildIndexEnv @115-124), src/commands/issue-specify.ts (commitTreeToMain @195-257, commitOnMain @176-193, buildIndexEnv @118-127), src/commands/journal.ts (commitOnMain @329, commitTreeToMain @352, buildIndexEnv @129). All 3 copies are byte-identical except the mkdtemp prefix ('cam-issue-' / 'cam-specify-' / journal's) and the file path arg (issues.local.json vs journal.md) -- parameterize file path + tmp prefix; the localMainSha is already captured by each caller's checkMainUpToDate guard (leave the guard where it is; only the commit plumbing moves). DO NOT change checkMainUpToDate / pushMainBestEffort behavior. This CLOSES CAM-124. NOTE on the 4-caller import-assert AC: triage.ts is created in US-004, so that criterion's triage.ts arm becomes verifiable once US-004 lands -- the dedup wiring is proven across the chain, not in US-001 alone. GOTCHA: extraction must keep callers byte-behaviorally identical (parity tests are the contract); the dedup is load-bearing because the jscpd gate runs over `src scripts` (scripts/check-all.ts:88) and a 4th verbatim copy (US-004) would trip the configured jscpd threshold (6%, per .jscpd.json). Style template: src/release (pure, injectable SpawnFn). Maps spec AC#9. Re-check relatedDocs scripts/cam/patterns.md (commit-tree-to-main pattern) before coding."
+    },
+    {
+      "id": "US-002",
+      "title": "Pure Kahn topo-sort + WSJF ranking module (src/issues/rank.ts)",
+      "description": "As the cam triage core, I need a pure ranking function that computes a dense 1-based rank over the {stage:specified, status:open} set via Kahn layers ordered by WSJF, so that nothing is ranked before its blocker and high-value-low-effort issues win within an unblocked layer.",
+      "acceptanceCriteria": [
+        "A pure ranking function in src/issues/rank.ts computes a dense 1-based rank over the {stage:specified,status:open} set: Kahn layers over blockedBy edges internal to the set (shipped blockers treated as satisfied and ignored), within each in-degree-zero layer sorted by WSJF descending then numeric id ascending. [oracle: bun test (unit tests for layering, WSJF order, id tie-break)]",
+        "WSJF equals (value plus timeCriticality plus riskReduction) divided by jobSize; a specified issue with missing wsjf or jobSize less-than-or-equal-0 is treated as WSJF 0 (sorts last in its layer) with a warning, never a crash or divide-by-zero. [oracle: bun test (missing-wsjf and jobSize-0 cases assert WSJF 0 plus warn, no throw)]",
+        "Numeric id tie-break matches selectPlannableIssue's numericIdSuffix semantics (numeric suffix ascending, e.g. CAM-9 before CAM-12). [oracle: bun test (id tie-break ordering)]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "File: NEW src/issues/rank.ts. Pure function over IssueEntry[] (src/issues/types.ts): WsjfScore {value,timeCriticality,riskReduction,jobSize}, IssueEntry.blockedBy[]/rank?/stage/status. Universe = {stage:'specified', status:'open'}; idea/shipped/abandoned excluded; 'planned' is defined-but-unreachable today (ignore it -- nothing sets it). Kahn HAND-ROLLED (zero extra dependency, cam ethos): build in-degree over blockedBy edges that point INTO the set; a blockedBy id whose target is stage:'shipped' (or outside the set entirely -- see US-003 cross-stage handling) is a satisfied edge that does not contribute in-degree. Within each in-degree-zero layer: sort WSJF desc, tie-break numeric id asc. Dense 1-based rank assigned in emission order across layers. WSJF = (value+timeCriticality+riskReduction)/jobSize; missing wsjf OR jobSize<=0 => WSJF 0 + push a warning string (return warnings array, do not console.log from the pure fn). Return shape suggestion: { ranked: Array<{id, rank, wsjf, stage}>, warnings: string[] } -- caller (US-004) prints/commits. Mirror select.ts numericIdSuffix (src/issues/select.ts:9-14) for the tie-break: numeric suffix asc, non-parseable => Infinity (sorts last). GOTCHAS: pure/injectable/hermetic (no shelling out, no fs); never divide-by-zero; this is the FIRST writer-side computation of rank (select.ts only reads rank). Cycle detection lives in US-003, not here -- but expose enough structure (e.g. the residual non-zero in-degree set) for US-003's gate to name the cycle. Maps spec AC#1, AC#2."
+    },
+    {
+      "id": "US-003",
+      "title": "Graph gate: Kahn cycle detection + referential-integrity reuse",
+      "description": "As the cam triage safety net, I need a deterministic graph gate that hard-fails transactionally (no rank written) on a cycle, a missing-id, or a self-reference, naming the offending path/edge, while a cross-stage blocker only warns, so that a bad graph never silently corrupts the rank.",
+      "acceptanceCriteria": [
+        "Kahn detects a cycle (nodes whose in-degree never reaches zero); the gate hard-fails, names the cycle path (e.g. CAM-X to CAM-Y to CAM-X), writes NO rank, and reports a non-zero/fail result. [oracle: bun test (cyclic graph rejected, ranks unchanged) plus file-assert the cycle ids appear in the error]",
+        "The gate reuses checkReferentialIntegrity (src/issues/graph.ts) to hard-fail on a blockedBy pointing to a non-existent id or a self-reference, transactionally (no rank written), naming the offending edge. [oracle: bun test (missing-id and self-ref each rejected with no write)]",
+        "A specified issue blockedBy an idea, abandoned, or otherwise non-shipped-non-specified id is ranked by its intra-set position and emits a warning, not a hard fail. [oracle: bun test (cross-stage blocker ranked plus warning, exit 0)]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "File: extend src/issues/rank.ts (or NEW src/issues/gate.ts that composes rank.ts + graph.ts). REUSE src/issues/graph.ts -- it ALREADY has checkReferentialIntegrity (graph.ts:49, flags missing-id + self-ref) and deriveBlocks (graph.ts:23); graph.ts:47 EXPLICITLY defers full cycle-rejection to THIS issue. Do NOT reinvent missing-id/self-ref -- call checkReferentialIntegrity. ADD only Kahn cycle detection: after Kahn drains all in-degree-zero layers, any node with residual non-zero in-degree is on a cycle; reconstruct and name the cycle path (CAM-X -> CAM-Y -> CAM-X) by walking blockedBy among the residual set. Gate return shape: { ok: true } | { ok: false, kind: 'cycle'|'integrity', errors: string[] }. TRANSACTIONAL: the gate runs and must pass BEFORE any rank is computed-for-write/committed; on fail, prior ranks are kept untouched (the gate is a pure check; the no-write guarantee is enforced by US-004 calling the gate before the commit). CROSS-STAGE blocker (specified issue blockedBy an idea/abandoned/non-shipped-non-specified id that IS present in the backlog) is NOT an integrity error and NOT a cycle: it is a satisfied/ignored edge for intra-set Kahn (the blocker is outside {specified,open}) and emits a WARNING, exit 0. Distinguish: missing-id (not in backlog at all) = hard fail via checkReferentialIntegrity; present-but-out-of-set = warn. GOTCHAS: blocks is derived (deriveBlocks), never stored, single-direction (blockedBy is the source of truth). Maps spec AC#3, AC#4, AC#5."
+    },
+    {
+      "id": "US-004",
+      "title": "`cam triage` deterministic CLI writing rank to main",
+      "description": "As an operator, I need a deterministic `cam triage` command that reads {specified,open} from main, computes ranks, runs the gate, and on pass writes rank to every such issue and commits to main via the shared helper (never touching the work branch), printing the ranked order, the diff vs prior, warnings, and a machine sentinel, so that the backlog is reprioritized deterministically and idempotently.",
+      "acceptanceCriteria": [
+        "cam triage runs the gate BEFORE any write and, on gate pass, writes the computed rank onto every {specified,open} issue all-ranks-or-none; the gate-before-write ordering and the rank write are verified in-process with an injected spawnFn (no real git). [oracle: bun test with injected spawnFn asserts gate-runs-before-any-write ordering + rank written to the serialized issues.local.json payload]",
+        "When computed ranks equal current ranks, cam triage performs no write and creates no commit (idempotent no-op), verified in-process with an injected spawnFn. [oracle: bun test asserts a second run with unchanged ranks performs no write/commit (no commit-tree/update-ref spawn call)]",
+        "cam triage prints the resulting ranked order (id, rank, WSJF, stage) plus a diff versus prior rank (up, down, new, unchanged) and any warnings, and emits CAM_TRIAGE_RANKED=<n> changed=<m> sha=<commit-or-none> on success or CAM_TRIAGE_REJECTED=cycle:... on hard-fail. [oracle: file-assert grep the sentinel lines in a captured-stdout test]",
+        "On gate hard-fail (cycle or integrity), cam triage keeps prior ranks, writes no commit, prints CAM_TRIAGE_REJECTED=cycle:..., and exits non-zero. [oracle: bun test (gate-fail path writes no commit, exit 1, sentinel present)]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": "US-003",
+      "notes": "Files: NEW src/commands/triage.ts; wire dispatch in index.ts. cam triage is a DETERMINISTIC CLI (family: cam issue --file-local, cam journal append, cam ship --finalize), NOT a thin-proxy into the orchestrator pane -- it runs in-process and commits to main directly. Mirror src/commands/ship-finalize.ts / issue-file.ts shape (injectable SpawnFn + clock + readers; exported result interface). Dispatch: index.ts switch on argv[2] (the `command` var at index.ts:1194); add `case 'triage':` calling a dispatchTriage() with injectable deps (pattern of dispatchShip @index.ts:941, dispatchJournal @1049, dispatchIssue @1132). cam triage must dispatch as a real in-process command BEFORE any thin-proxy path. Flow: (1) read backlog from main via `git show main:scripts/cam/issues.local.json` (same as issue-file.ts:396), never the working tree; (2) run the US-003 gate; on fail print CAM_TRIAGE_REJECTED=cycle:<path> (or integrity), keep prior ranks, exit 1; (3) on pass compute dense ranks (US-002) for the {specified,open} set; (4) build diff vs each issue's prior rank (up/down/new/unchanged); (5) if NO rank changed => no-op: print no-change line + CAM_TRIAGE_RANKED=<n> changed=0 sha=none, skip the commit (NO empty commit); (6) else write rank onto every {specified,open} entry, serialize JSON.stringify(data,null,2)+'\\n', commit to main via the US-001 shared helper (off-main commit-tree when on a work branch; on-main direct commit when branchWasMain), print ranked order (id,rank,WSJF,stage) + diff + warnings + CAM_TRIAGE_RANKED=<n> changed=<m> sha=<short>. VERIFICATION SPLIT: US-004 is fully verifiable IN-PROCESS (injected spawnFn / fake repo) -- AC#1/AC#2 assert gate-before-write ordering and idempotent no-op via the injected spawn call sequence. The REAL-git end-to-end proof (rank lands on main, work-branch HEAD unchanged, real second-run no-op) is owned EXCLUSIVELY by US-005; do NOT add a real-git test here. GOTCHAS: all-ranks-or-none (transactional: gate before write); idempotent (no-change skips commit); never `git checkout` (work branch + working tree untouched); rank is first written here. Honor the checkMainUpToDate guard family (detached-head/missing-main/diverged) consistent with the other on-main writers. Maps spec AC#6, AC#7, AC#8."
+    },
+    {
+      "id": "US-005",
+      "title": "Real-git integration test + full gate spine green",
+      "description": "As a cam maintainer, I need a real-git integration test proving rank lands on main with the work-branch HEAD unchanged and a second consecutive run produces no new commit, plus confirmation that the full check:all gate (including jscpd dup) is green, so that the deterministic triage core ships without regressing the spine.",
+      "acceptanceCriteria": [
+        "A real-git integration test (against a throwaway repo, not a fake) runs cam triage from a work branch: the computed rank lands on main in issues.local.json and the work-branch HEAD sha is unchanged. [oracle: real-git integration test: rank lands on main, work-branch HEAD unchanged]",
+        "A second consecutive cam triage run on the same backlog produces no new commit (main HEAD sha unchanged between run 1's result and run 2). [oracle: integration test: second consecutive run produces no new commit]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full gate spine is green, including jscpd dup not regressed (the dedup of the commit-tree helper is part of the deliverable). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": "US-004",
+      "notes": "Files: NEW test/integration/triage-real-git.test.ts (or under the existing real-git integration test dir; follow the existing real-git integration test that exercises issue-file/journal on a throwaway `git init` repo so the test is hermetic and self-cleaning). This is the ONLY story that shells out to real git (the modules in US-001..US-004 stay pure/injected; US-004's own ACs are verified in-process). Build a temp repo: git init, seed scripts/cam/issues.local.json with a {specified,open} set on main, create+checkout a work branch, capture work-branch HEAD, run cam triage in-process, assert: (a) rank lands on `git show main:scripts/cam/issues.local.json`; (b) work-branch HEAD sha == captured (untouched); (c) second run: capture main HEAD after run 1, run again, assert main HEAD unchanged (no empty commit). Then run the FULL spine: bun run check:all = bun scripts/check-all.ts (typecheck, test, embed-vendor, lint=biome, file-size, debt-markers, coverage, dead-code, dup=jscpd over `src scripts` at the configured jscpd threshold, ci-parity). Confirm jscpd dup did NOT regress (US-001 dedup + this new code stay under the configured threshold). GOTCHA (universal macOS+Bun lesson): real-git smoke must use a temp cwd, never run a mutating command against the live repo. Maps spec AC#6, AC#7, AC#10."
+    }
+  ]
+}
