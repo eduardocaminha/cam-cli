@@ -1,0 +1,9 @@
+{
+  "id": "CAM-88",
+  "title": "cam init setup-agent: sinalizar `bun run check:all` para adaptacao em projetos downstream nao-cam-cli",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-25T15:51:08Z",
+  "description": "O CAM-79 (PR #70) fez o /cam-ship Step 3 e o template embarcado cam-ship.md rodarem `bun run check:all` como gate. Em cam-cli o check:all e o gate spine canonico (CAM-59/60). Mas em projetos downstream gerados por `cam init` que NAO sao o cam-cli, `bun run check:all` pode nao existir como script (ou agregar gates diferentes), entao o template hardcoda um nome de gate menos auto-evidente que typecheck/test. SUGESTAO advisory do subagent-reviewer no review do CAM-79 (PR #70, round 1 CLEAN): o setup-agent do `cam init` (src/commands/setup.ts, o passo ~7 que adapta os comandos ao projeto destino) deve sinalizar explicitamente `bun run check:all` como ponto de adaptacao, instruindo o agente de setup a mapear pro gate agregado equivalente do projeto destino, ou degradar pra typecheck+test quando nao houver agregado. ONDE: src/commands/setup.ts (prompt do setup-agent); avaliar um comentario de adaptacao em .claude/commands/cam-ship.md / templates espelhado se ajudar. Prioridade P3: NAO e regressao (foi aprovado no PRD do CAM-79 e segue a convencao do cam-next.md que ja hardcoda typecheck/test); e polish de portabilidade do cam init pra projetos nao-cam-cli. Origem: SUGGESTION do reviewer no CAM-79."
+}

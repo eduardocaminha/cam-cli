@@ -1,0 +1,9 @@
+{
+  "id": "CAM-64",
+  "title": "Typed pattern records + outcome-status + decay (mulch model), replacing free-text patterns.md",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-16T22:30:00Z",
+  "description": "cam's scripts/cam/patterns.md is free-text bullets with no structure, no outcome tracking, and no decay: a pattern that later proves wrong is never detected or demoted, and the file grows monotonically. Adopt the mulch expertise-record model: (1) typed records (schema-validated: type, classification tier foundational/tactical/observational, recorded_at, name/description, evidence, dir_anchors = the paths the pattern is about, outcomes[]); (2) outcome-status: append {status: success|failure|partial, recorded_at} whenever a pattern is applied (cam's supervisor/reviewer already produce pass/fail signals to wire in) + confirmation-scoring (successCount + 0.5*partialCount) so unconfirmed patterns sink; (3) decay/demotion as a gate: a cam prune that demotes superseded patterns one tier, archives stale tactical/observational by shelf-life (14d/30d), and (optionally) demotes patterns whose dir_anchors point at files that no longer exist (anchor-decay). This is real 'learning-capture as a gate'. Source: mulch src/schemas/record.ts, src/commands/prune.ts, src/utils/scoring.ts."
+}

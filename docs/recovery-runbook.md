@@ -317,8 +317,8 @@ entry such as `/usr/local/bin`.
 Symptom: the supervisor reached a terminal state (all non-operator stories pass
 and review is CLEAN), but the cycle-close step did not complete. The per-branch
 harness state files (`scripts/cam/prd.json`, `scripts/cam/handoff.json`) are
-still present and tracked in the repo, or `scripts/cam/issues.local.json` still
-shows the issue as open.
+still present and tracked in the repo, or the issue file in `scripts/cam/issues/`
+still shows `stage: "planned"` instead of `stage: "shipped"`.
 
 When it happens: the sidecar exited before running the cycle-close commit,
 or the process crashed mid-finalize.
@@ -333,14 +333,13 @@ What it does (in order):
 
 1. Reads `scripts/cam/project.toml` for `issue_system` and `issue_prefix`.
 2. Reads `scripts/cam/prd.json` for the issue number (before removing it).
-3. When `issue_system == 'none'`: marks the matching entry in
-   `scripts/cam/issues.local.json` as `state: "closed"` with a timestamp.
-   For `github` or `linear`: skips this step (the backend closes the issue via
-   PR merge or explicit API call).
+3. When `issue_system == 'none'`: reads `scripts/cam/issues/<PREFIX>-NNNN.json`
+   and sets `stage: "shipped"` on the entry. For `github` or `linear`: skips
+   this step (the backend closes the issue via PR merge or explicit API call).
 4. Removes `scripts/cam/prd.json`, `scripts/cam/handoff.json`, and
    `scripts/cam/progress.txt` via `git rm -f --ignore-unmatch` (idempotent:
    missing or untracked files are silently skipped).
-5. Stages `issues.local.json` when applicable.
+5. Stages `scripts/cam/issues/<PREFIX>-NNNN.json` when applicable.
 6. Commits: `chore(cam): close <issue-id> + drop per-branch harness state
    (CAM-27 hygiene)`.
 
@@ -357,9 +356,9 @@ git rm -f --ignore-unmatch \
   scripts/cam/handoff.json \
   scripts/cam/progress.txt
 
-# Step 3 (if issue_system == 'none'): edit issues.local.json by hand.
-#   Set "state": "closed" and "closedAt": "<ISO timestamp>" on the matching entry.
-git add scripts/cam/issues.local.json
+# Step 3 (if issue_system == 'none'): edit the per-file issue by hand.
+#   Set "stage": "shipped" on the matching scripts/cam/issues/<PREFIX>-NNNN.json entry.
+git add scripts/cam/issues/<PREFIX>-NNNN.json
 
 # Step 6: commit
 git commit -m "chore(cam): close <issue-id> + drop per-branch harness state (CAM-27 hygiene)"
@@ -884,7 +883,7 @@ capture-pane-is-rendered-markdown bullet).
 
 ## (n) CAM-86: file-on-main backlog filing
 
-Symptom: a `/cam-issue create` call (or a `cam issue --file-local` run) completed without error but the resulting commit landed on a feature branch instead of `main`. The backlog entry (`scripts/cam/issues.local.json`) is thus visible only on that branch; `cam issue get`/`list` and other commands that read from `main` cannot see it.
+Symptom: a `/cam-issue create` call (or a `cam issue --file-local` run) completed without error but the resulting commit landed on a feature branch instead of `main`. The new issue file (`scripts/cam/issues/<PREFIX>-NNNN.json`) is thus visible only on that branch; `cam issue get`/`list` and other commands that read from `main` cannot see it.
 
 This can happen when a worker agent is dispatched from a feature branch and the up-to-date guard in `issue-file.ts` fails silently (e.g. no remote configured), or when a parallel worker commits to the wrong HEAD.
 
@@ -894,7 +893,7 @@ Real case (2026-06-25): a parallel Sonnet filed CAM-81 through CAM-85 and the co
 
 `cam issue --file-local` files a backlog entry directly on `main` without checking out `main`:
 
-1. **Read-from-main allocation**: the current `issues.local.json` is read via `git show main:scripts/cam/issues.local.json` (no checkout needed), so the next-id allocation is always based on the committed state of `main`.
+1. **Read-from-main allocation**: existing issue files are enumerated via `git ls-tree -r --name-only main scripts/cam/issues/` and bulk-read via `git cat-file --batch`, so the next-id allocation (`max(parsed ids) + 1`) is always based on the committed state of `main`.
 2. **Off-main commit-tree path**: a temporary git index file is created (`mkdtempSync` + `GIT_INDEX_FILE`), the new JSON content is hashed via `git hash-object -w --stdin` and staged in the temp index (`git update-index --add --cacheinfo`), and a tree object is built from the temp index (`git write-tree`).
 3. **On-main direct commit**: `git commit-tree <tree> -p $(git rev-parse main) -m "<message>"` creates the commit object with `main` as parent, then `git update-ref refs/heads/main <new-sha>` advances `main` atomically. The current HEAD branch is never touched.
 
@@ -902,7 +901,7 @@ After this flow, `main` has the new entry and the feature branch is unaffected.
 
 ### Recovery: wrong-branch commit
 
-Symptom: `git log main -- scripts/cam/issues.local.json` does NOT show the new entry, but `git log <feature-branch>` does.
+Symptom: `git log main -- scripts/cam/issues/<PREFIX>-NNNN.json` does NOT show the new entry, but `git log <feature-branch>` does.
 
 1. Find the commit SHA on the feature branch:
 
@@ -932,8 +931,8 @@ Symptom: `git log main -- scripts/cam/issues.local.json` does NOT show the new e
 4. Verify `main` has the entry and the feature branch no longer carries a delta:
 
    ```bash
-   git show main:scripts/cam/issues.local.json | jq '.issues[-1]'
-   git diff main..<feature-branch> -- scripts/cam/issues.local.json   # should be empty
+   git show main:scripts/cam/issues/<PREFIX>-NNNN.json | jq '{id, stage, title}'
+   git diff main..<feature-branch> -- scripts/cam/issues/   # should be empty
    ```
 
 ### Recovery: divergent local main
@@ -961,7 +960,7 @@ If your local `main` has diverged from `origin/main` (e.g. the file-on-main comm
    git push origin main
    ```
 
-   If the divergence is in `issues.local.json`, the rebase may surface a conflict. Accept both sides by merging the `issues[]` arrays manually and advancing `next_id` to `max(existing ids) + 1`.
+   If two writers added different issue files to `scripts/cam/issues/` concurrently, the rebase will surface a conflict on those files. Accept both sides: each writer added a distinct `CAM-NNNN.json` file, so both files should be staged after resolving (both survive). The CAS retry in `writeIssueFile` prevents id collisions between concurrent writers at write time; a post-hoc rebase conflict means both files are valid and should both be kept.
 
 4. Confirm the feature branch is still consistent with `main`:
 
@@ -1662,14 +1661,15 @@ the `/cam-issue --file-local` flow described in section (n).
 
 Symptom: a `/cam-spec <id>` session was interrupted (browser refresh, claude session
 timeout, `cam stop`, etc.) before the grill completed. The issue is still
-`stage:idea` in `issues.local.json` on `main`; no spec was committed.
+`stage:idea` in `scripts/cam/issues/` on `main`; no spec was committed.
 
 Because the grill is a stateless conversational loop, recovery is simply re-running it:
 
 1. Confirm the issue is still `stage:idea` and `status:open`:
 
    ```bash
-   git show main:scripts/cam/issues.local.json | jq '.issues[] | select(.id=="<id>")'
+   # e.g. for CAM-42, the filename is CAM-0042.json
+   git show main:scripts/cam/issues/<PREFIX>-NNNN.json | jq '{id, stage, status}'
    ```
 
 2. Re-run the spec command from the orchestrator pane:
@@ -1699,17 +1699,17 @@ The grill has no on-disk draft state: a clean re-run is always safe.
 Symptom: the grill interview finished and the orchestrator assembled a spec object, but
 the `specifyIssueOnMain` call was not reached (the session was killed at the final step,
 or a validation error blocked the write). The issue is still `stage:idea` in
-`issues.local.json` on `main`.
+`scripts/cam/issues/` on `main`.
 
 Confirm before re-running:
 
 ```bash
-# Stage must still be 'idea':
-git show main:scripts/cam/issues.local.json | jq '.issues[] | select(.id=="<id>") | .stage'
+# Stage must still be 'idea' (e.g. for CAM-42, filename is CAM-0042.json):
+git show main:scripts/cam/issues/<PREFIX>-NNNN.json | jq '.stage'
 # Expected: "idea"
 
 # No stale spec commit on main:
-git log --oneline -5 main -- scripts/cam/issues.local.json
+git log --oneline -5 main -- scripts/cam/issues/<PREFIX>-NNNN.json
 # The most recent commit for this file should NOT be "chore(cam): specify <id>"
 ```
 
@@ -1723,34 +1723,34 @@ the error message lists the failing fields. Correct those in the next session.
 
 ### (u.3) Fixing a malformed spec (specifyIssueOnMain ran but the spec is wrong)
 
-Symptom: `specifyIssueOnMain` committed successfully and the issue is now
-`stage:specified`, but the spec content is incorrect (wrong title, missing acceptance
-criteria, bad WSJF scores, etc.).
+Symptom: `specifyIssueOnMain` committed successfully and the issue file in
+`scripts/cam/issues/` is now `stage:specified`, but the spec content is incorrect
+(wrong title, missing acceptance criteria, bad WSJF scores, etc.).
 
-Inspect the current spec:
+Inspect the current spec (e.g. for CAM-42, filename is CAM-0042.json):
 
 ```bash
-git show main:scripts/cam/issues.local.json \
-  | jq '.issues[] | select(.id=="<id>") | {stage, spec, wsjf}'
+git show main:scripts/cam/issues/<PREFIX>-NNNN.json \
+  | jq '{stage, spec, wsjf}'
 ```
 
 **Option A: targeted field fix via commit-tree.**
 
 Use the same commit-tree-to-main steps from section (n) to write a corrected
-`issues.local.json` directly on `main`:
+issue file directly on `main`:
 
 ```bash
-# 1. Dump the current state from main:
-git show main:scripts/cam/issues.local.json > /tmp/issues-fix.json
+# 1. Dump the current file from main:
+git show main:scripts/cam/issues/<PREFIX>-NNNN.json > /tmp/issue-fix.json
 
-# 2. Edit /tmp/issues-fix.json to correct the spec or wsjf field.
+# 2. Edit /tmp/issue-fix.json to correct the spec or wsjf field.
 
 # 3. Apply via commit-tree (mirrors section (n) plumbing):
 TMPDIR=$(mktemp -d)
 GIT_INDEX_FILE="$TMPDIR/index" git read-tree main
-BLOB=$(GIT_INDEX_FILE="$TMPDIR/index" git hash-object -w /tmp/issues-fix.json)
+BLOB=$(GIT_INDEX_FILE="$TMPDIR/index" git hash-object -w /tmp/issue-fix.json)
 GIT_INDEX_FILE="$TMPDIR/index" git update-index --add --cacheinfo \
-  "100644,$BLOB,scripts/cam/issues.local.json"
+  "100644,$BLOB,scripts/cam/issues/<PREFIX>-NNNN.json"
 TREE=$(GIT_INDEX_FILE="$TMPDIR/index" git write-tree)
 PARENT=$(git rev-parse main)
 COMMIT=$(git commit-tree "$TREE" -p "$PARENT" -m "chore(cam): fix spec <id>")
@@ -1774,14 +1774,15 @@ append-only).
 
 `selectPlannableIssue` (`src/issues/select.ts`) filters on `stage:specified` and
 `status:open`. A missing or corrupt `spec` field surfaces as a planner error. Confirm
-which issue the planner would select:
+which issue the planner would select by reading all issue files from main:
 
 ```bash
-git show main:scripts/cam/issues.local.json \
-  | jq '.issues[] | select(.stage=="specified" and .status=="open")'
+git ls-tree -r --name-only main scripts/cam/issues/ \
+  | while read f; do git show main:"$f"; done \
+  | jq -s '.[] | select(.stage=="specified" and .status=="open") | {id, stage, status, rank}'
 ```
 
-Correct the entry before re-running `/cam-plan`.
+Correct the entry using Option A above before re-running `/cam-plan`.
 
 ### (u.4) Where CONTEXT.md and ADRs live
 

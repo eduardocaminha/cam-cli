@@ -1,0 +1,9 @@
+{
+  "id": "CAM-128",
+  "title": "Follow-ups das SUGGESTIONs do review do CAM-108 (triage warnings, biome complexity, clock reservado)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-28T06:59:25.137Z",
+  "description": "3 SUGGESTIONs nao-bloqueantes do review CLEAN do CAM-108 (PR #87). (1) src/commands/triage.ts: assimetria na fonte de warnings, o caminho no-op imprime gateResult.warnings (bloqueadores cross-stage) enquanto o caminho de commit nao imprime de forma consistente; unificar. (2) biome.json: noExcessiveCognitiveComplexity foi DESABILITADO pra src/issues/rank.ts em vez de refatorar runKahn; refatorar runKahn pra sair da supressao do lint-rule. (3) src/commands/triage.ts: RunTriageOptions.clock e required mas nunca lido dentro de runTriage (documentado como reserved-for-future); espelhar o padrao de outros comandos (tornar opcional ou usar). DOC/refactor pequeno, P3."
+}

@@ -36,17 +36,16 @@ const PROJECT_TOML_LINEAR = 'issue_system = "linear"\nissue_prefix = "CAM"\n';
 
 const PRD_JSON = JSON.stringify({ issueNumber: 72, branchName: 'cam/CAM-72-test' });
 
-const ISSUES_LOCAL_JSON = JSON.stringify(
-	{
-		next_id: 73,
-		issues: [
-			{ id: 'CAM-72', title: 'Test issue', stage: 'idea', status: 'open', blockedBy: [], createdAt: '2026-06-01T00:00:00Z' },
-			{ id: 'CAM-71', title: 'Another', stage: 'shipped', status: 'open', blockedBy: [], createdAt: '2026-05-01T00:00:00Z' },
-		],
-	},
-	null,
-	2,
-) + '\n';
+// US-004: per-file format - each CAM-NNNN.json contains a single IssueEntry.
+const CAM_72_ENTRY = {
+	id: 'CAM-72',
+	title: 'Test issue',
+	stage: 'idea',
+	status: 'open',
+	blockedBy: [] as string[],
+	createdAt: '2026-06-01T00:00:00Z',
+};
+const CAM_72_JSON = JSON.stringify(CAM_72_ENTRY, null, 2) + '\n';
 
 /** Minimal passing SpawnSyncReturns<string> for a successful git call. */
 function okResult(): SpawnSyncReturns<string> {
@@ -95,7 +94,10 @@ function makeOptions(
 		clock,
 		readProjectToml: () => PROJECT_TOML_NONE,
 		readPrd: () => PRD_JSON,
-		readIssues: () => ISSUES_LOCAL_JSON,
+		readIssues: (issueId: string) => {
+			if (issueId === 'CAM-72') return CAM_72_JSON;
+			throw new Error(`not found: ${issueId}`);
+		},
 		writeIssues: () => {},
 		...overrides,
 	};
@@ -106,15 +108,19 @@ function makeOptions(
 // ---------------------------------------------------------------------------
 
 describe('finalizeCycleClose — none backend (happy path)', () => {
-	test('closes issue in issues.local.json, rms harness files, and commits', () => {
+	test('closes issue in issues dir (CAM-NNNN.json), rms harness files, and commits', () => {
 		const { spawnFn, calls } = makeRecordingSpawn();
-		let writtenIssues: string | null = null;
+		let writtenIssuesId = '';
+		let writtenIssuesText: string | null = null;
 
 		const result = finalizeCycleClose(
 			makeOptions({
 				spawnFn,
 				readProjectToml: () => PROJECT_TOML_NONE,
-				writeIssues: (text) => { writtenIssues = text; },
+				writeIssues: (issueId: string, text: string) => {
+					writtenIssuesId = issueId;
+					writtenIssuesText = text;
+				},
 			}),
 		);
 
@@ -126,11 +132,13 @@ describe('finalizeCycleClose — none backend (happy path)', () => {
 			'chore(cam): close CAM-72 + drop per-branch harness state (CAM-27 hygiene)',
 		);
 
-		// issues.local.json was written with stage='shipped'
-		expect(writtenIssues).not.toBeNull();
-		const parsed = JSON.parse(writtenIssues!);
-		const entry = parsed.issues.find((i: { id: string }) => i.id === 'CAM-72');
-		expect(entry?.stage).toBe('shipped');
+		// Per-file CAM-0072.json was written with stage='shipped'
+		expect(writtenIssuesId).toBe('CAM-72');
+		expect(writtenIssuesText).not.toBeNull();
+		// US-004: written content is a single IssueEntry (no .issues array)
+		const parsed = JSON.parse(writtenIssuesText!) as { id: string; stage: string };
+		expect(parsed.stage).toBe('shipped');
+		expect(parsed.id).toBe('CAM-72');
 
 		// git rm -f --ignore-unmatch for each harness file
 		const rmCalls = calls.filter(
@@ -145,11 +153,17 @@ describe('finalizeCycleClose — none backend (happy path)', () => {
 		expect(removedPaths).toContain('scripts/cam/handoff.json');
 		expect(removedPaths).toContain('scripts/cam/progress.txt');
 
-		// git add for issues.local.json
+		// US-004: git add for scripts/cam/issues/CAM-0072.json (not issues.local.json)
 		const addCall = calls.find(
-			(c) => c.args.includes('add') && c.args.includes('scripts/cam/issues.local.json'),
+			(c) => c.args.includes('add') && c.args.some((a) => a.includes('scripts/cam/issues/')),
 		);
 		expect(addCall).toBeDefined();
+		// Verify issues.local.json is never referenced
+		for (const call of calls) {
+			for (const arg of call.args) {
+				expect(arg).not.toContain('issues.local.json');
+			}
+		}
 
 		// git commit with exact message
 		const commitCall = calls.find((c) => c.args.includes('commit'));
@@ -185,9 +199,9 @@ describe('finalizeCycleClose — github backend', () => {
 		// issues.local.json should NOT be written
 		expect(writeIssuesCalled).toBe(false);
 
-		// git add for issues.local.json should NOT be called
+		// US-004: git add for scripts/cam/issues/ should NOT be called (github backend skips it)
 		const addIssuesCall = calls.find(
-			(c) => c.args.includes('add') && c.args.includes('scripts/cam/issues.local.json'),
+			(c) => c.args.includes('add') && c.args.some((a) => a.includes('scripts/cam/issues/')),
 		);
 		expect(addIssuesCall).toBeUndefined();
 

@@ -1,0 +1,9 @@
+{
+  "id": "CAM-71",
+  "title": "End-to-end autonomy from plan-approval to ship (auto cam next + auto ship on CLEAN)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-23T13:30:00Z",
+  "description": "Make the cycle fully autonomous AFTER the plan scope-approval, which stays the single human gate. Two manual touchpoints to auto-chain: (1) plan-approval -> auto-trigger the loop: at the end of cam-plan (Step 9, after the operator approves scope at Step 6 and the PRD/branch are committed) auto-flip active:true (the cam next trigger) instead of just printing 'run /cam-next'; (2) review-CLEAN -> auto-ship: when the sidecar reaches the review-CLEAN terminal state (all non-operator stories pass + review CLEAN) auto-trigger /cam-ship (gates + push + PR + close issue) instead of requiring a manual ship. The implement->review middle is already autonomous (sidecar + CAM-58 false-terminal fix). DEPENDS ON CAM-70: auto-ship needs the orchestrator to learn the CLEAN verdict (the reviewer/sidecar->orchestrator hand-back), since /cam-ship is LLM-driven (PR body) and runs in the orchestrator. Auto-ship is outward-facing (push + open PR), so it is an EXPLICIT opt-in behavior (default-on for the full-autonomy operator; a toggle can live in the cam config of CAM-53). Plan scope-approval remains the only place the loop waits for a human. Acceptance: after approving a plan, the cycle runs implement -> review -> ship with no further operator input, opening the PR on a CLEAN review; auto-ship is gated behind an explicit opt-in flag. Source: operator request 2026-06-23."
+}

@@ -1,0 +1,9 @@
+{
+  "id": "CAM-13",
+  "title": "Menu pane do cam run vira menu interativo selecionável (estilo init)",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-05T16:24:46Z",
+  "description": "Hoje o pane direito do cam run (src/commands/run.ts buildRunMenuScript) é uma lista estática. Transformar num menu interativo selecionável (mesmo padrão de seleção das telas Ink do init/setup). Ao selecionar um comando, ele é injetado no pane do orquestrador via tmux send-keys -t <orch-pane> (alvo conhecido, ação disparada pelo humano, não é puppeteering de worker). Decidir tech: loop de teclas em bash (como o setup menu já faz com read -rsn1) vs Ink."
+}

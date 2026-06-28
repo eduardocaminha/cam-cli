@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import type { SpawnSyncReturns } from "node:child_process";
 import type { IssueEntry } from "../../src/issues/types.ts";
-import { selectPlannableIssue } from "../../src/issues/select.ts";
+import { selectPlannableIssue, selectPlannableFromFile } from "../../src/issues/select.ts";
+import type { BacklogSpawnFn } from "../../src/issues/backlog.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -211,5 +213,107 @@ describe("selectPlannableIssue — edge cases", () => {
 		];
 		const result = selectPlannableIssue(backlog);
 		expect(result?.id).toBe("CAM-9");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// selectPlannableFromFile -- dir-backed fixture (injectable spawnFn)
+// ---------------------------------------------------------------------------
+
+/** Minimal SpawnSyncReturns<string> stub. */
+function stubReturn(stdout: string): SpawnSyncReturns<string> {
+	return {
+		stdout,
+		stderr: "",
+		status: 0,
+		output: [],
+		pid: 0,
+		signal: null,
+		error: undefined,
+	};
+}
+
+/**
+ * Build the framed output that `git cat-file --batch` would emit for the
+ * given entries (same format as test/issues/backlog.test.ts).
+ */
+function makeBatchOutput(entries: IssueEntry[]): string {
+	let output = "";
+	for (const entry of entries) {
+		const content = JSON.stringify(entry);
+		const size = Buffer.byteLength(content, "utf8");
+		output += `deadbeef0000000000000000000000000000000000 blob ${size}\n${content}\n`;
+	}
+	return output;
+}
+
+/**
+ * Build a fake BacklogSpawnFn that serves ls-tree paths on the first call
+ * and cat-file batch output on the second call.
+ */
+function makeSpawnFn(entries: IssueEntry[]): BacklogSpawnFn {
+	const paths = entries.map(
+		(e) =>
+			`scripts/cam/issues/CAM-${String(parseInt(e.id.split("-").at(-1) ?? "0", 10)).padStart(4, "0")}.json`,
+	);
+	const lsTreeOut = paths.join("\n") + (paths.length > 0 ? "\n" : "");
+	const batchOut = makeBatchOutput(entries);
+
+	return (_cmd, args, _opts) => {
+		// git -C <cwd> <subCmd> ...  => subCmd is at index 2
+		const subCmd = args[2] ?? "";
+		if (subCmd === "ls-tree") {
+			return stubReturn(lsTreeOut);
+		}
+		if (subCmd === "cat-file") {
+			return stubReturn(batchOut);
+		}
+		return stubReturn("");
+	};
+}
+
+describe("selectPlannableFromFile -- dir-backed fixture", () => {
+	test("returns null when the dir is empty (no issues)", () => {
+		const spawn = makeSpawnFn([]);
+		expect(selectPlannableFromFile("/repo", spawn)).toBeNull();
+	});
+
+	test("returns the single plannable issue from a dir-backed fixture", () => {
+		const entries: IssueEntry[] = [
+			makeIssue({ id: "CAM-7", stage: "idea" }),
+			makeIssue({ id: "CAM-8" }),
+			makeIssue({ id: "CAM-9", stage: "shipped" }),
+		];
+		const spawn = makeSpawnFn(entries);
+		const result = selectPlannableFromFile("/repo", spawn);
+		expect(result?.id).toBe("CAM-8");
+	});
+
+	test("dir-backed result matches array-backed result for an equivalent fixture", () => {
+		// Build a fixture that matches the complex mixed backlog test above.
+		const entries: IssueEntry[] = [
+			makeIssue({ id: "CAM-10", stage: "idea" }),
+			makeIssue({ id: "CAM-11", status: "abandoned" }),
+			makeIssue({ id: "CAM-12", stage: "specified", rank: 2 }),
+			makeIssue({ id: "CAM-9", stage: "specified", rank: 1 }),
+			makeIssue({ id: "CAM-13", blockedBy: ["CAM-12"] }),
+		];
+
+		// Array-backed (pure function):
+		const arrayResult = selectPlannableIssue(entries);
+
+		// Dir-backed (I/O seam with injected spawnFn):
+		const spawn = makeSpawnFn(entries);
+		const dirResult = selectPlannableFromFile("/repo", spawn);
+
+		expect(dirResult?.id).toBe(arrayResult?.id);
+		expect(dirResult?.id).toBe("CAM-9");
+	});
+
+	test("returns null when spawnFn throws", () => {
+		const throwingSpawn: BacklogSpawnFn = () => {
+			throw new Error("git not found");
+		};
+		expect(selectPlannableFromFile("/repo", throwingSpawn)).toBeNull();
 	});
 });

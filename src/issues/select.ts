@@ -1,5 +1,6 @@
-import type { IssueEntry, IssuesLocalJson } from "./types.ts";
+import type { IssueEntry } from "./types.ts";
 import { isBlocked } from "./graph.ts";
+import { readBacklogFromMain, type BacklogSpawnFn } from "./backlog.ts";
 
 /**
  * Parses the numeric suffix from an issue id (e.g. "CAM-12" -> 12).
@@ -61,20 +62,20 @@ export function selectPlannableIssue(
 }
 
 /**
- * I/O seam: reads scripts/cam/issues.local.json from cwd and delegates to
- * selectPlannableIssue. Returns null on any read/parse error.
+ * I/O seam: reads the per-issue dir from main via readBacklogFromMain and
+ * delegates to selectPlannableIssue. Returns null on any read/parse error.
  *
  * This is the ONLY place that couples the pure selection logic to the
  * filesystem. Keep it thin so the untested surface stays minimal.
+ *
+ * @param spawn  Injectable spawnSync (for tests; defaults to the system default).
  */
-export async function selectPlannableFromFile(
+export function selectPlannableFromFile(
 	cwd: string,
-): Promise<IssueEntry | null> {
+	spawn?: BacklogSpawnFn,
+): IssueEntry | null {
 	try {
-		const path = `${cwd}/scripts/cam/issues.local.json`;
-		const text = await Bun.file(path).text();
-		const parsed = JSON.parse(text) as IssuesLocalJson;
-		return selectPlannableIssue(parsed.issues);
+		return selectPlannableIssue(readBacklogFromMain(cwd, spawn));
 	} catch {
 		return null;
 	}

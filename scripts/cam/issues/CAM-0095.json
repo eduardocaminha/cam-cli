@@ -1,0 +1,9 @@
+{
+  "id": "CAM-95",
+  "title": "Promote review verdict to MAX_ROUNDS_DEBT when the loop stops at the cap",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-26T04:14:29.819Z",
+  "description": "When the review loop reaches roundsCompleted == maxRounds, decideNextAction treats review as terminal-by-cap and exits without a confirming round, so review.lastVerdict stays at FIXES_PENDING:N instead of being promoted to MAX_ROUNDS_DEBT (the Step 5.5 safety valve only fires when a round is attempted beyond the cap). This wedges /cam-ship, which only accepts CLEAN or MAX_ROUNDS_DEBT as terminal, and forces a manual maxRounds bump. Recurring: CAM-53 follow-up b, reproduced in CAM-78 (PR #73) where the round-3 fix was already committed but the verdict stayed FIXES_PENDING:1."
+}

@@ -1,20 +1,18 @@
 // src/commands/issue-file.ts
 //
-// createLocalIssueOnMain() -- append a local issue to
-// scripts/cam/issues.local.json directly on main, from any branch.
+// createLocalIssueOnMain() -- file a new issue to
+// scripts/cam/issues/CAM-NNNN.json directly on main, from any branch.
 //
 // Design goals:
-//   - Id allocation is collision-free: the backlog is read from main via
-//     `git show main:scripts/cam/issues.local.json`, never from the working
-//     tree (which may be behind or ahead of main on a feature branch).
-//   - On-main path: write working-tree file, git add, git commit. Simple.
-//   - Off-main path: git plumbing (temp GIT_INDEX_FILE, read-tree, hash-object,
-//     update-index, write-tree, commit-tree, update-ref) so the feature-branch
-//     HEAD and working tree are left completely untouched.
+//   - Id allocation is collision-free: allocateId reads the committed backlog
+//     in scripts/cam/issues/ on main via git ls-tree + cat-file --batch;
+//     never reads from the working tree (which may lag behind main).
+//   - All writes go to a single CAM-NNNN.json file via writeIssueFile (US-003
+//     CAS-hardened on-main commit). The old array backlog file is never touched.
 //   - All external dependencies are injectable for unit-testing without a real
 //     git binary or filesystem.
 //
-// US-005 additions:
+// US-005 additions (preserved from the earlier array-backlog version):
 //   - Up-to-date guard: best-effort fetch + local vs origin/main sha comparison;
 //     skip when origin/main is absent (no remote configured).
 //   - Detached HEAD and missing local main branch: clear errors returned as
@@ -22,16 +20,11 @@
 //   - Best-effort push after commit: non-zero exit is logged via printError,
 //     never silently swallowed.
 //
-// Mirrors src/commands/ship-finalize.ts: same ClockFn type, same injectable-
-// reader style, same exported result interface.
-//
-// CAM-86 (file local issues to main, not the work branch).
+// CAM-90 US-004 (file-per-issue cutover).
 
-import { writeFileSync } from 'node:fs';
 import { parseToml } from '../config/toml.ts';
-import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
+import { writeIssueFile } from '../issues/alloc.ts';
 import type { SpawnFn } from '../git/on-main.ts';
-import type { IssueEntry, IssuesLocalJson } from '../issues/types.ts';
 import { printError } from '../logging/color.ts';
 
 // Re-export SpawnFn from the shared module so existing callers do not need
@@ -52,7 +45,7 @@ export interface CreateLocalIssueOnMainOptions {
 	title: string;
 	/** Optional long description. */
 	description?: string;
-	/** Optional priority (e.g. "P0", "P1"). */
+	/** Optional priority (accepted for backward compat; never written into the entry). */
 	priority?: string;
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
@@ -60,11 +53,6 @@ export interface CreateLocalIssueOnMainOptions {
 	clock: ClockFn;
 	/** Read scripts/cam/project.toml as raw text. */
 	readProjectToml: () => string;
-	/**
-	 * Injectable file writer (on-main path only).
-	 * Defaults to writeFileSync(path, text, 'utf8').
-	 */
-	writeFile?: (path: string, text: string) => void;
 }
 
 /** Successful outcome: issue was allocated, committed to main, and pushed. */
@@ -90,10 +78,6 @@ export type CreateLocalIssueOnMainOutcome =
 // Step helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Successful guard result: the captured branchWasMain flag and the local main
- * sha (reused by the off-main commit-tree path to avoid a second rev-parse).
- */
 type MainGuardResult =
 	| CreateLocalIssueOnMainError
 	| { ok: true; branchWasMain: boolean; localMainSha: string };
@@ -122,7 +106,7 @@ function checkMainUpToDate(cwd: string, spawnFn: SpawnFn): MainGuardResult {
 		return { ok: false, reason: 'detached-head' };
 	}
 
-	// Guard 0b: Verify local main exists; capture sha for reuse in commit-tree.
+	// Guard 0b: Verify local main exists; capture sha for the diverge check.
 	const localMainResult = spawnFn(
 		'git',
 		['-C', cwd, 'rev-parse', 'main'],
@@ -135,11 +119,8 @@ function checkMainUpToDate(cwd: string, spawnFn: SpawnFn): MainGuardResult {
 	const localMainSha = (localMainResult.stdout ?? '').trim();
 
 	// Guard 0c: Best-effort fetch + up-to-date check.
-	// fetch is best-effort: we ignore non-zero exit (e.g. no network, no remote).
 	spawnFn('git', ['-C', cwd, 'fetch', 'origin', 'main'], { encoding: 'utf8' });
 
-	// If origin/main exists, compare it against the local sha.
-	// When the ref is absent (no remote configured), skip the check entirely.
 	const originMainResult = spawnFn(
 		'git',
 		['-C', cwd, 'rev-parse', 'origin/main'],
@@ -160,34 +141,7 @@ function checkMainUpToDate(cwd: string, spawnFn: SpawnFn): MainGuardResult {
 }
 
 /**
- * Allocate the entry, bump next_id, and serialize the backlog.
- * Returns the JSON text (JSON.stringify(data, null, 2) + '\n').
- *
- * New entries are created with stage:'idea', status:'open', blockedBy:[].
- * The optional priority field (still accepted for backward compat) is never
- * written into the serialized entry (rank supersedes it; Epico C populates rank).
- */
-function appendEntryAndSerialize(
-	backlog: IssuesLocalJson,
-	entry: { id: string; title: string; createdAt: string; description?: string; priority?: string },
-): string {
-	const newEntry: IssueEntry = {
-		id: entry.id,
-		title: entry.title,
-		stage: 'idea',
-		status: 'open',
-		blockedBy: [],
-		createdAt: entry.createdAt,
-		...(entry.description !== undefined ? { description: entry.description } : {}),
-	};
-	backlog.next_id = backlog.next_id + 1;
-	backlog.issues.push(newEntry);
-	return JSON.stringify(backlog, null, 2) + '\n';
-}
-
-/**
- * Best-effort push of main to origin. A non-zero exit is logged via printError,
- * never silently swallowed; the caller does not abort (the commit already landed).
+ * Best-effort push of main to origin.
  */
 function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
 	const pushResult = spawnFn(
@@ -208,7 +162,7 @@ function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Append a new issue to scripts/cam/issues.local.json on main.
+ * File a new issue as scripts/cam/issues/CAM-NNNN.json on main.
  *
  * Guard steps (run before any mutation):
  *   0a. Detached HEAD -> return { ok: false, reason: 'detached-head' }.
@@ -217,69 +171,47 @@ function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
  *       from local main -> return { ok: false, reason: 'diverged' }.
  *       If origin/main is absent (no remote), the check is skipped entirely.
  *
- * Steps (off-main path, the common case):
+ * Steps:
  *   1. Read issue_prefix from project.toml.
- *   2. Determine current branch via `git rev-parse --abbrev-ref HEAD`.
- *   3. Read the backlog from main via `git show main:scripts/cam/issues.local.json`.
- *   4. Allocate next_id, build the entry, bump next_id.
- *   5. Serialize with JSON.stringify(data, null, 2) + '\n'.
- *   6. Off-main plumbing: temp GIT_INDEX_FILE, read-tree main, hash-object
- *      -w --stdin (fed the JSON via options.input), update-index --add
- *      --cacheinfo, write-tree, commit-tree -p main, update-ref refs/heads/main.
- *   7. Best-effort git push origin main; log on rejection.
- *   8. Return { ok: true, id, committedTo: 'main', sha, branchWasMain: false }.
+ *   2. Call writeIssueFile (US-003 CAS primitive) which:
+ *      - allocates id via allocateId (max on main + 1)
+ *      - writes scripts/cam/issues/CAM-NNNN.json directly to main via CAS update-ref
+ *   3. Best-effort git push origin main.
+ *   4. Return { ok: true, id, committedTo: 'main', sha, branchWasMain }.
  *
- * On-main path (rare):
- *   - Write working-tree file, git add, git commit.
- *   - Working tree and HEAD both advance (the normal commit path).
+ * The old array backlog file is never read or written.
  */
 export function createLocalIssueOnMain(
 	options: CreateLocalIssueOnMainOptions,
 ): CreateLocalIssueOnMainOutcome {
-	const { cwd, title, description, priority, spawnFn, clock, readProjectToml } = options;
-	const writeFile =
-		options.writeFile ?? ((p: string, t: string) => writeFileSync(p, t, 'utf8'));
+	const { cwd, title, description, spawnFn, clock, readProjectToml } = options;
 
 	// Guards 0a-0c: run before any mutation.
 	const guard = checkMainUpToDate(cwd, spawnFn);
 	if (!guard.ok) {
 		return guard;
 	}
-	const { branchWasMain, localMainSha } = guard;
+	const { branchWasMain } = guard;
 
 	// 1. Read issue_prefix from project.toml.
 	const tomlText = readProjectToml();
 	const config = parseToml(tomlText);
-	const issuePrefix =
+	const prefix =
 		typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
 
-	// 3. Read the backlog from main (NOT the working tree).
-	const showResult = spawnFn(
-		'git',
-		['-C', cwd, 'show', 'main:scripts/cam/issues.local.json'],
-		{ encoding: 'utf8' },
-	);
-	const backlog = JSON.parse(showResult.stdout) as IssuesLocalJson;
-
-	// 4-5. Allocate id, build the entry, bump next_id, serialize.
-	const id = `${issuePrefix}-${backlog.next_id}`;
-	const serialized = appendEntryAndSerialize(backlog, {
-		id,
+	// 2. Allocate id and write the per-file JSON via the CAS primitive.
+	const result = writeIssueFile({
+		cwd,
 		title,
-		createdAt: clock(),
 		description,
-		priority,
+		prefix,
+		createdAt: clock(),
+		spawnFn,
 	});
 
-	// 6. Commit to main (on-main direct commit or off-main plumbing).
-	const commitMsg = `chore(cam): file ${id} (${title})`;
-	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-issue-');
-
-	// 7. Best-effort push. Rejection is logged explicitly, never swallowed.
+	// 3. Best-effort push. Rejection is logged explicitly, never swallowed.
 	pushMainBestEffort(cwd, spawnFn);
 
-	// 8. Return.
-	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
+	// 4. Return.
+	return { ok: true, id: result.id, committedTo: 'main', sha: result.sha, branchWasMain };
 }

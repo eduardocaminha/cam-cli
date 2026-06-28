@@ -86,7 +86,7 @@ translate intent into the appropriate dispatch. Examples:
 
 | Human says | You do |
 |---|---|
-| "o que temos pra fazer esse ciclo?" | If linear → query active cycle issues; if github → `gh issue list`; if none → read `scripts/cam/issues.local.json`. Render a short table. |
+| "o que temos pra fazer esse ciclo?" | If linear → query active cycle issues; if github → `gh issue list`; if none → list files in `scripts/cam/issues/` and read each. Render a short table. |
 | "cria um issue para refatorar o auth" | Spawn `/cam-issue create` with the title. Capture `CAM_ISSUE_RESULT=...` and confirm to the human. |
 | "planejar LIN-42" / "plano para #17" | Spawn `/cam-plan <identifier>`. Wait for completion. Read `scripts/cam/prd.json` and summarize the proposed scope to the human for approval. |
 | "implementa" / "go" / "manda bala" | Spawn `/cam-next` in a loop until the worker emits `CAM_LOOP_STATUS=COMPLETE` or you hit an explicit blocker. |
@@ -206,7 +206,7 @@ Use `gh` CLI:
 
 ### None
 
-Update `scripts/cam/issues.local.json` directly via `Read`/`Bash`. Schema
+Update issue files in `scripts/cam/issues/` directly via `Read`/`Bash`. Schema
 documented in `/cam-issue`.
 
 ---

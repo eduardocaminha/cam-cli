@@ -1,0 +1,9 @@
+{
+  "id": "CAM-77",
+  "title": "Unificar canal do implementer em worker-report.json (fonte unica de outcome); handoff vira so contexto-pra-frente; colapsar cross-check do readWorkerOutcome",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-25T12:13:51Z",
+  "description": "Parte 2 da unificacao de comunicacao inter-pane (decisao 2026-06-25, ver CAM-75/CAM-78). Canal do implementer: tornar worker-report.json a UNICA fonte autoritativa de outcome do sidecar (outcome+story+gates), tirando handoff.json do caminho de outcome (handoff vira SO contexto-pra-frente do proximo agente, duravel/commitado; nunca sinal de controle do sidecar). Demote o sentinel CAM_IMPLEMENTER_STATUS a humano-legivel (nao parseado como gate). Completion-detect via watch do worker-report.json (mantem pane-died + timeout como redes de FALHA, legitimas). Colapsa o cross-check de 3 fontes do readWorkerOutcome (result.ts ~268-424: sentinel + handoff + report) num read autoritativo do report + confirmacao de integridade contra prd.json passes (evento-vs-estado, NAO double-push). Espelha o padrao de report estruturado que o CAM-75 pilota pro reviewer. ONDE: src/supervisor/result.ts (readWorkerOutcome), src/supervisor/loop.ts (poll loop, parseAnySentinel), .claude/agents/subagent-implementer.md (sentinel deixa de ser gate). Modelo de 5 concerns: Evento=worker-report.json, Estado=prd.json, Contexto=handoff.json, Observabilidade=cam-worker-events.jsonl, Sabedoria=patterns.md. Depende do CAM-75 (pilota o padrao)."
+}

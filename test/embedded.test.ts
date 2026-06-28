@@ -292,7 +292,7 @@ describe('templatesContents — none/create uses --file-local in cam-issue promp
 	});
 
 	test('contains the CONVENTION note about never hand-editing on a feature branch', () => {
-		expect(camIssue).toContain('never hand-edit issues.local.json on a feature branch');
+		expect(camIssue).toContain('never hand-edit issue files on a feature branch');
 	});
 });
 

@@ -1,0 +1,9 @@
+{
+  "id": "CAM-7",
+  "title": "Sessão única do projeto como host de todos os comandos do loop",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-05T16:24:46Z",
+  "description": "Hoje cada comando age sozinho: cam plan toma o TTY (PTY), cam next cria uma sessão tmux separada chamada 'cam', cam dashboard é avulso. Mudar para: uma sessão tmux única por projeto (nome estável já existe em src/commands/run.ts projectSessionName = cam-orch-<base>-<hash>) hospeda tudo. Todo comando do loop (issue/plan/next/review/ship/prune) abre um pane DENTRO dessa sessão via tmux split-window -t <sessão>, funcionando mesmo com a sessão detached. A sessão é criada preguiçosamente no primeiro comando, já com o formato completo do cam run (orquestrador + dashboard), então captura tudo desde o início mesmo sem o usuário ter anexado. Núcleo do MVP."
+}

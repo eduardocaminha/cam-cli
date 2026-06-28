@@ -1,0 +1,9 @@
+{
+  "id": "CAM-18",
+  "title": "status/dashboard/resume liam ./prd.json em vez de scripts/cam/prd.json",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-06T12:45:21Z",
+  "description": "src/commands/status.ts, dashboard.ts e resume.ts definiam PRD_PATH=prd.json (raiz do cwd), mas o PRD canônico (planner, stop hook vendor/cam-loop-stop-hook.sh, cam-next/review/ship) é scripts/cam/prd.json. Efeito: cam status, cam dashboard e cam resume nunca enxergavam o PRD do projeto (dashboard mostrava no prd.json found e 0/0 iter mesmo com PRD ativo). dashboard.ts já usava scripts/cam/progress.txt pro progress, só o PRD ficou no path errado. CORRIGIDO: helper compartilhado resolvePrdPath(cwd) em status.ts (canônico-primeiro com fallback pro root legado), usado por status/dashboard/resume (read e write). Verificado por render (dashboard a 36 col agora lista as stories). Regressão em test/status.test.ts; 483 testes verdes."
+}

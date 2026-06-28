@@ -2,37 +2,42 @@
 //
 // runTriage() -- deterministic `cam triage` CLI primitive.
 //
-// Reads {specified,open} issues from main, runs the graph gate (US-003), computes
-// dense ranks via WSJF topo-sort (US-002), diffs vs prior ranks, and (when ranks
-// changed) writes the updated issues.local.json back to main via the US-001
-// shared on-main commit-tree helper.
+// Reads {specified,open} issues from main via readBacklogFromMain (ls-tree +
+// cat-file), runs the graph gate (US-003), computes dense ranks via WSJF
+// topo-sort (US-002), diffs vs prior ranks, and (when ranks changed) writes
+// the updated rank onto each affected CAM-NNNN.json as a MULTI-FILE atomic
+// on-main commit.
 //
 // Design mirrors src/commands/issue-file.ts:
 //   - Injectable SpawnFn + ClockFn + writeFile.
 //   - checkMainUpToDate guard family (detached-head / missing-main / diverged).
 //   - commitOnMain (on-main path) / commitTreeToMain (off-main path).
 //   - Exported result interface for type-safe test assertions.
+//   - The old array backlog file is never read or written (CAM-90 US-004 cutover).
 //
 // Flow:
 //   1. checkMainUpToDate guard (abort before any mutation on failure).
-//   2. git show main:scripts/cam/issues.local.json (read, never working-tree).
+//   2. readBacklogFromMain (ls-tree + cat-file, never working-tree).
 //   3. runGraphGate (US-003) -- pure check, no I/O.  Gate MUST run before any write.
 //   4. rankIssues (US-002) -- compute dense 1-based ranks.
 //   5. Diff each ranked issue vs its prior rank (up / down / new / unchanged).
 //   6. If no rank changed: print informational output + sentinel (changed=0 sha=none),
 //      no commit (idempotent no-op).
-//   7. Write rank onto every {specified,open} entry, serialize, commit to main.
+//   7. Write rank onto each CHANGED {specified,open} entry as a MULTI-FILE
+//      atomic commit (one commit, N files).
 //   8. Best-effort push origin main.
 //   9. Print ranked order, diff, warnings, sentinel.
 //
 // All external I/O is injectable for unit testing without a real git binary.
 //
-// CAM-108 US-004.
+// CAM-108 US-004, CAM-90 US-004 (file-per-issue cutover).
 
 import { writeFileSync } from 'node:fs';
 import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
-import type { SpawnFn } from '../git/on-main.ts';
-import type { IssueEntry, IssuesLocalJson } from '../issues/types.ts';
+import type { SpawnFn, FileWrite } from '../git/on-main.ts';
+import type { IssueEntry } from '../issues/types.ts';
+import { readBacklogFromMain, issueFilePath } from '../issues/backlog.ts';
+import type { BacklogSpawnFn } from '../issues/backlog.ts';
 import { runGraphGate } from '../issues/gate.ts';
 import { rankIssues } from '../issues/rank.ts';
 import type { RankedEntry } from '../issues/rank.ts';
@@ -43,6 +48,14 @@ export type { SpawnFn };
 
 /** Returns the current ISO 8601 timestamp string.  Injectable for tests. */
 export type ClockFn = () => string;
+
+// ---------------------------------------------------------------------------
+// SpawnFn -> BacklogSpawnFn adapter
+// ---------------------------------------------------------------------------
+
+function toBacklogSpawn(spawnFn: SpawnFn): BacklogSpawnFn {
+	return (cmd, args, o) => spawnFn(cmd, args, o);
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -128,11 +141,8 @@ function checkMainUpToDate(cwd: string, spawnFn: SpawnFn): MainGuardResult {
 	const localMainSha = (localMainResult.stdout ?? '').trim();
 
 	// 0c. Best-effort fetch + up-to-date check.
-	// fetch is best-effort: ignore non-zero exit (no network / no remote).
 	spawnFn('git', ['-C', cwd, 'fetch', 'origin', 'main'], { encoding: 'utf8' });
 
-	// If origin/main exists, compare its sha against the local sha.
-	// When origin/main is absent (no remote configured), skip entirely.
 	const originMainResult = spawnFn(
 		'git',
 		['-C', cwd, 'rev-parse', 'origin/main'],
@@ -183,23 +193,38 @@ function computeDiffTag(priorRank: number | undefined, newRank: number): DiffTag
 	return 'unchanged';
 }
 
-/** Computes rank diff vs prior ranks.  Returns changed count and formatted diff lines. */
+/**
+ * Computes rank diff vs prior ranks.
+ * Returns changed count, formatted diff lines, and the list of FileWrite
+ * entries for issues whose rank changed (used for the multi-file commit).
+ */
 function computeRankDiff(
 	ranked: RankedEntry[],
 	issueByIdMap: Map<string, IssueEntry>,
-): { changed: number; diffLines: string[] } {
+): { changed: number; diffLines: string[]; changedFiles: FileWrite[] } {
 	let changed = 0;
 	const diffLines: string[] = [];
+	const changedFiles: FileWrite[] = [];
 	for (const entry of ranked) {
-		const priorRank = issueByIdMap.get(entry.id)?.rank;
+		const issue = issueByIdMap.get(entry.id);
+		const priorRank = issue?.rank;
 		const tag = computeDiffTag(priorRank, entry.rank);
-		if (tag !== 'unchanged') changed++;
+		if (tag !== 'unchanged') {
+			changed++;
+			if (issue !== undefined) {
+				const updated: IssueEntry = { ...issue, rank: entry.rank };
+				changedFiles.push({
+					path: issueFilePath(entry.id),
+					content: JSON.stringify(updated, null, 2) + '\n',
+				});
+			}
+		}
 		const priorStr = priorRank !== undefined ? String(priorRank) : '-';
 		diffLines.push(
 			`  ${entry.id}: ${tag} (prev=${priorStr} now=${entry.rank} wsjf=${entry.wsjf.toFixed(2)} stage=${entry.stage})`,
 		);
 	}
-	return { changed, diffLines };
+	return { changed, diffLines, changedFiles };
 }
 
 /** Prints ranked list, diff lines, warnings, and the sentinel. */
@@ -239,25 +264,20 @@ export function runTriage(options: RunTriageOptions): TriageResult {
 	if (!guard.ok) return guard;
 	const { branchWasMain, localMainSha } = guard;
 
-	// 1. Read backlog from main (never the working tree).
-	const showResult = spawnFn(
-		'git',
-		['-C', cwd, 'show', 'main:scripts/cam/issues.local.json'],
-		{ encoding: 'utf8' },
-	);
-	const backlog = JSON.parse(showResult.stdout) as IssuesLocalJson;
+	// 1. Read backlog from main via per-file primitives (never the working tree).
+	const allIssues = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));
 
 	// 2. Run graph gate BEFORE any write (AC#1 ordering invariant).
-	const gateResult = runGraphGate(backlog.issues);
+	const gateResult = runGraphGate(allIssues);
 	if (!gateResult.ok) {
 		writeStdout(`CAM_TRIAGE_REJECTED=${gateResult.kind}:${gateResult.errors[0] ?? 'unknown'}\n`);
 		return { ok: false, kind: gateResult.kind, errors: gateResult.errors };
 	}
 
 	// 3. Compute dense ranks and diff vs prior ranks.
-	const { ranked, warnings } = rankIssues(backlog.issues);
-	const issueByIdMap = new Map<string, IssueEntry>(backlog.issues.map((e) => [e.id, e]));
-	const { changed, diffLines } = computeRankDiff(ranked, issueByIdMap);
+	const { ranked, warnings } = rankIssues(allIssues);
+	const issueByIdMap = new Map<string, IssueEntry>(allIssues.map((e) => [e.id, e]));
+	const { changed, diffLines, changedFiles } = computeRankDiff(ranked, issueByIdMap);
 
 	// 4. Idempotent no-op: if nothing changed, skip commit (AC#2).
 	if (changed === 0) {
@@ -265,26 +285,17 @@ export function runTriage(options: RunTriageOptions): TriageResult {
 		return { ok: true, ranked: ranked.length, changed: 0, sha: 'none' };
 	}
 
-	// 5. Write rank onto every {specified,open} entry.
-	const newRankMap = new Map(ranked.map((e) => [e.id, e.rank]));
-	for (const issue of backlog.issues) {
-		if (issue.stage === 'specified' && issue.status === 'open') {
-			const newRank = newRankMap.get(issue.id);
-			if (newRank !== undefined) issue.rank = newRank;
-		}
-	}
-	const serialized = JSON.stringify(backlog, null, 2) + '\n';
+	// 5. Commit the changed files as one atomic multi-file commit.
 	const commitMsg = `chore(cam): triage ${ranked.length} issues ranked (${changed} changed)`;
 
-	// 6. Commit to main via US-001 shared helper.
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-triage-');
+		? commitOnMain(cwd, changedFiles, commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, changedFiles, commitMsg, localMainSha, spawnFn, 'cam-triage-');
 
-	// 7. Best-effort push.
+	// 6. Best-effort push.
 	pushMainBestEffort(cwd, spawnFn);
 
-	// 8. Print ranked order, diff, warnings, sentinel (AC#3).
+	// 7. Print ranked order, diff, warnings, sentinel (AC#3).
 	printTriageOutput(writeStdout, ranked, diffLines, warnings, changed, sha);
 
 	return { ok: true, ranked: ranked.length, changed, sha };

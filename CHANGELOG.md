@@ -4,6 +4,25 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.15.0] - 2026-06-28
+
+### Added
+
+- [US-010] - Real-git integration tests: migration, CAS, allocateId race, cross-branch read
+- [US-009] - No-vestiges verification + full gate spine green
+- [US-008] - Docs sweep to file-per-issue (dual-copy + embed)
+- [US-007] - Migrate branch tree to file-per-issue + per-file schema (both copies) + embed
+- [US-006] - Idempotent atomic migration: array to dir, delete issues.local.json
+- [US-005] - Convert the readers to readBacklogFromMain
+- [US-004] - Convert the 4 writers to the file-per-issue dir
+- [US-003] - allocateId (max-on-main + 1, CAS re-allocation) and per-file write primitive
+- [US-002] - readBacklogFromMain primitive (ls-tree + single cat-file --batch, numeric sort)
+- [US-001] - Multi-file atomic on-main commit with compare-and-swap update-ref
+
+### Fixed
+
+- [US-R1-001] - byte-vs-char bug in parseBatchOutput (git cat-file --batch size is bytes)
+
 ## [0.14.0] - 2026-06-28
 
 ### Added

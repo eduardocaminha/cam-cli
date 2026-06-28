@@ -1,0 +1,9 @@
+{
+  "id": "CAM-50",
+  "title": "Dashboard navegável: pane único na coluna direita, Stories navegáveis e detalhe de story",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-14T23:04:02Z",
+  "description": "Fundir o pane do menu no dashboard (pane único na coluna direita). Comandos n/r/s/p/i viram keybar no rodapé do dashboard, despachando via tmux send-keys pro pane do orquestrador; mais d (detail/back) e q (quit). Tornar a seção Stories navegável (setas para cima/baixo + j/k) com a linha selecionada renderizada em fundo verde do tema (theme.ts accent). Enter abre o detalhe do story dentro do mesmo pane: id, titulo, status, acceptance criteria como checklist, notes, e verdict do review; Esc volta pra lista, com keybar contextual no modo detalhe. Alargar o clamp da coluna (clampDashboardWidth do CAM-48) para a linha de tokens nao quebrar, incluindo o sufixo '(Nk cached)'. Status bar: o segmento 'active: <pane>' vai num pill de fundo verde (verde = ativo/selecionado, consistente com o highlight do story). Arquivos esperados: src/ui/Dashboard.tsx, src/ui/Menu.tsx (fundido/removido), src/commands/menu.ts (removido), src/commands/run.ts (setupPanes sem o pane do menu, ajustar status-left), src/tmux/session.ts (isSessionStale de 3 para 2 panes) e os testes correspondentes. Fora de escopo: mouse/right-click."
+}

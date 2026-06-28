@@ -4,11 +4,13 @@
 // by writing spec, wsjf, and blockedBy directly on main, from any branch.
 //
 // Design goals (mirrors src/commands/issue-file.ts):
-//   - Backlog is read from main via `git show main:scripts/cam/issues.local.json`.
+//   - Backlog is read from main via readBacklogFromMain (ls-tree + cat-file).
 //     Never runs `git checkout` (the working-tree and work branch are untouched).
 //   - On-main path: write working-tree file, git add, git commit.
 //   - Off-main path: git plumbing (temp GIT_INDEX_FILE, read-tree, hash-object,
 //     update-index, write-tree, commit-tree, update-ref).
+//   - Writes only the target issue's CAM-NNNN.json file; the old array backlog
+//     file is never read or written (CAM-90 US-004 per-file cutover).
 //   - All external dependencies are injectable for unit-testing without a real
 //     git binary or filesystem.
 //
@@ -23,7 +25,7 @@
 //
 // Commit msg style: `chore(cam): specify <id>`.
 //
-// CAM-107 (US-003 grill spec layer).
+// CAM-107 (US-003 grill spec layer), CAM-90 US-004 (file-per-issue cutover).
 
 import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -31,10 +33,13 @@ import { join } from 'node:path';
 import { checkReferentialIntegrity } from '../issues/graph.ts';
 import { validateSpec, validateWsjf } from '../issues/spec.ts';
 import type { Spec } from '../issues/spec.ts';
-import type { IssueEntry, IssuesLocalJson, WsjfScore } from '../issues/types.ts';
+import type { IssueEntry, WsjfScore } from '../issues/types.ts';
+import { readBacklogFromMain, issueFilePath } from '../issues/backlog.ts';
+import type { BacklogSpawnFn } from '../issues/backlog.ts';
 import { printError } from '../logging/color.ts';
 import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
 import type { SpawnFn } from '../git/on-main.ts';
+import type { FileWrite } from '../git/on-main.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
 import type { WorkerEventLogger } from '../supervisor/events.ts';
 
@@ -44,6 +49,19 @@ export type { SpawnFn };
 
 /** Returns the current ISO 8601 timestamp string. Injectable for tests. */
 export type ClockFn = () => string;
+
+// ---------------------------------------------------------------------------
+// SpawnFn -> BacklogSpawnFn adapter
+// ---------------------------------------------------------------------------
+
+/**
+ * Adapt a SpawnFn (which has the wider {encoding,env?,input?} options) to the
+ * BacklogSpawnFn signature (which only has {encoding,input?}).  The adapter is
+ * safe because SpawnFn is a strict superset.
+ */
+function toBacklogSpawn(spawnFn: SpawnFn): BacklogSpawnFn {
+	return (cmd, args, o) => spawnFn(cmd, args, o);
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -248,24 +266,6 @@ function buildMergeDescription(existing: string | undefined, intoId: string): st
 	return existing ? `${existing}\n\n${note}` : note;
 }
 
-function applyFoldBlockedBy(
-	source: IssueEntry,
-	target: IssueEntry,
-	targetIndex: number,
-	backlog: IssuesLocalJson,
-): void {
-	if (source.blockedBy.length === 0) return;
-	const seen = new Set(target.blockedBy);
-	const merged = [...target.blockedBy];
-	for (const depId of source.blockedBy) {
-		if (depId !== target.id && !seen.has(depId)) {
-			merged.push(depId);
-			seen.add(depId);
-		}
-	}
-	backlog.issues[targetIndex] = { ...target, blockedBy: merged };
-}
-
 // ---------------------------------------------------------------------------
 // Event emission helper
 // ---------------------------------------------------------------------------
@@ -299,7 +299,7 @@ function emitStagePromoted(
 
 /**
  * Promote an issue from stage:'idea' to stage:'specified' by writing spec,
- * wsjf, and blockedBy directly on main.
+ * wsjf, and blockedBy to the issue's CAM-NNNN.json file on main.
  *
  * Guards (in order, before any mutation):
  *   0. Up-to-date guard (detached-head, missing-main, diverged).
@@ -315,7 +315,7 @@ function emitStagePromoted(
  *
  *   6. checkReferentialIntegrity on the mutated backlog -- integrity-error on failure.
  *
- * Commit path (mirrors createLocalIssueOnMain):
+ * Commit path: writes only scripts/cam/issues/CAM-NNNN.json (one file).
  *   On-main: write working-tree file, git add, git commit.
  *   Off-main: git plumbing (commit-tree-to-main) so the work branch is untouched.
  *
@@ -348,21 +348,16 @@ export function specifyIssueOnMain(
 		return { ok: false, reason: 'invalid-wsjf', errors: wsjfResult.errors };
 	}
 
-	// Read backlog from main (never from the working tree).
-	const showResult = spawnFn(
-		'git',
-		['-C', cwd, 'show', 'main:scripts/cam/issues.local.json'],
-		{ encoding: 'utf8' },
-	);
-	const backlog = JSON.parse(showResult.stdout) as IssuesLocalJson;
+	// Read backlog from main via the per-file primitives (never from the working tree).
+	const allIssues = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));
 
 	// Guard 3: target id exists.
-	const entryIndex = backlog.issues.findIndex((e: IssueEntry) => e.id === id);
+	const entryIndex = allIssues.findIndex((e: IssueEntry) => e.id === id);
 	if (entryIndex === -1) {
 		return { ok: false, reason: 'not-found' };
 	}
 
-	const entry = backlog.issues[entryIndex];
+	const entry = allIssues[entryIndex];
 	if (entry === undefined) {
 		return { ok: false, reason: 'not-found' };
 	}
@@ -385,22 +380,24 @@ export function specifyIssueOnMain(
 		blockedBy,
 		stage: 'specified',
 	};
-	backlog.issues[entryIndex] = mutated;
+	allIssues[entryIndex] = mutated;
 
 	// Guard 6: referential integrity of the post-write backlog.
-	const integrity = checkReferentialIntegrity(backlog.issues);
+	const integrity = checkReferentialIntegrity(allIssues);
 	if (!integrity.ok) {
 		return { ok: false, reason: 'integrity-error', errors: integrity.errors };
 	}
 
-	// Serialize.
-	const serialized = JSON.stringify(backlog, null, 2) + '\n';
+	// Serialize only the mutated entry (not the whole backlog).
+	const serialized = JSON.stringify(mutated, null, 2) + '\n';
+	const filePath = issueFilePath(id);
+	const files: FileWrite[] = [{ path: filePath, content: serialized }];
 
 	// Commit to main.
 	const commitMsg = `chore(cam): specify ${id}`;
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-specify-');
+		? commitOnMain(cwd, files, commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');
 
 	// Best-effort push.
 	pushMainBestEffort(cwd, spawnFn);
@@ -412,7 +409,7 @@ export function specifyIssueOnMain(
 }
 
 /**
- * Abandon an issue: set status:'abandoned' and commit on main.
+ * Abandon an issue: set status:'abandoned' and commit the CAM-NNNN.json on main.
  *
  * Guards (in order):
  *   0. Up-to-date (detached-head, missing-main, diverged).
@@ -432,41 +429,83 @@ export function abandonIssueOnMain(
 	if (!guard.ok) return guard;
 	const { branchWasMain, localMainSha } = guard;
 
-	const showResult = spawnFn(
-		'git',
-		['-C', cwd, 'show', 'main:scripts/cam/issues.local.json'],
-		{ encoding: 'utf8' },
-	);
-	const backlog = JSON.parse(showResult.stdout) as IssuesLocalJson;
+	const allIssues = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));
 
-	const entryIndex = backlog.issues.findIndex((e: IssueEntry) => e.id === id);
+	const entryIndex = allIssues.findIndex((e: IssueEntry) => e.id === id);
 	if (entryIndex === -1) return { ok: false, reason: 'not-found' };
-	const entry = backlog.issues[entryIndex];
+	const entry = allIssues[entryIndex];
 	if (entry === undefined) return { ok: false, reason: 'not-found' };
 	if (entry.status !== 'open') return { ok: false, reason: 'already-abandoned' };
 
-	backlog.issues[entryIndex] = { ...entry, status: 'abandoned' };
+	const mutated: IssueEntry = { ...entry, status: 'abandoned' };
+	const serialized = JSON.stringify(mutated, null, 2) + '\n';
+	const filePath = issueFilePath(id);
+	const files: FileWrite[] = [{ path: filePath, content: serialized }];
 
-	const serialized = JSON.stringify(backlog, null, 2) + '\n';
 	const commitMsg = `chore(cam): abandon ${id}`;
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-specify-');
+		? commitOnMain(cwd, files, commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');
 
 	pushMainBestEffort(cwd, spawnFn);
 	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
 }
 
 /**
+ * Merge source.blockedBy into target.blockedBy, excluding self-refs to target.
+ * Returns the mutated target IssueEntry (or the original when no deps to fold).
+ */
+function withMergedBlockedBy(source: IssueEntry, target: IssueEntry): IssueEntry {
+	const seen = new Set(target.blockedBy);
+	const merged = [...target.blockedBy];
+	for (const depId of source.blockedBy) {
+		if (depId !== target.id && !seen.has(depId)) {
+			merged.push(depId);
+			seen.add(depId);
+		}
+	}
+	return { ...target, blockedBy: merged };
+}
+
+/**
+ * Build the files list for a merge commit.
+ * Always includes the mutated source; appends a mutated target when foldBlockedBy
+ * is true and the source has deps to contribute.
+ */
+function buildMergeFiles(
+	source: IssueEntry,
+	target: IssueEntry,
+	note: string,
+	foldBlockedBy: boolean,
+): FileWrite[] {
+	const mutatedSource: IssueEntry = {
+		...source,
+		status: 'abandoned',
+		description: source.description ? `${source.description}\n\n${note}` : note,
+	};
+	const files: FileWrite[] = [
+		{ path: issueFilePath(source.id), content: JSON.stringify(mutatedSource, null, 2) + '\n' },
+	];
+	if (foldBlockedBy && source.blockedBy.length > 0) {
+		const mutatedTarget = withMergedBlockedBy(source, target);
+		files.push({
+			path: issueFilePath(target.id),
+			content: JSON.stringify(mutatedTarget, null, 2) + '\n',
+		});
+	}
+	return files;
+}
+
+/**
  * Merge a source issue into a target: set source status:'abandoned', record
  * the merge target in source.description, and optionally fold source.blockedBy
- * into target.blockedBy. Committed on main.
+ * into target.blockedBy. Committed on main (one atomic commit for all changed files).
  *
  * Guards (in order):
  *   0. Up-to-date (detached-head, missing-main, diverged).
  *   1. id !== intoId -- self-merge on failure.
  *   2. Source id exists -- source-not-found on failure.
- *   3. Target id exists (checkReferentialIntegrity) -- target-not-found on failure.
+ *   3. Target id exists -- target-not-found on failure.
  *   4. Source status is 'open' -- already-abandoned on failure.
  *
  * Commit message: `chore(cam): merge <id> into <intoId>`.
@@ -485,38 +524,27 @@ export function mergeIssueOnMain(
 
 	if (id === intoId) return { ok: false, reason: 'self-merge' };
 
-	const showResult = spawnFn(
-		'git',
-		['-C', cwd, 'show', 'main:scripts/cam/issues.local.json'],
-		{ encoding: 'utf8' },
-	);
-	const backlog = JSON.parse(showResult.stdout) as IssuesLocalJson;
+	const allIssues = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));
 
-	const sourceIndex = backlog.issues.findIndex((e: IssueEntry) => e.id === id);
+	const sourceIndex = allIssues.findIndex((e: IssueEntry) => e.id === id);
 	if (sourceIndex === -1) return { ok: false, reason: 'source-not-found' };
-	const source = backlog.issues[sourceIndex];
+	const source = allIssues[sourceIndex];
 	if (source === undefined) return { ok: false, reason: 'source-not-found' };
 
-	const targetIndex = backlog.issues.findIndex((e: IssueEntry) => e.id === intoId);
+	const targetIndex = allIssues.findIndex((e: IssueEntry) => e.id === intoId);
 	if (targetIndex === -1) return { ok: false, reason: 'target-not-found' };
-	const target = backlog.issues[targetIndex];
+	const target = allIssues[targetIndex];
 	if (target === undefined) return { ok: false, reason: 'target-not-found' };
 
 	if (source.status !== 'open') return { ok: false, reason: 'already-abandoned' };
 
-	backlog.issues[sourceIndex] = {
-		...source,
-		status: 'abandoned',
-		description: buildMergeDescription(source.description, intoId),
-	};
+	const note = `Merged into ${intoId}.`;
+	const files = buildMergeFiles(source, target, note, foldBlockedBy);
 
-	if (foldBlockedBy) applyFoldBlockedBy(source, target, targetIndex, backlog);
-
-	const serialized = JSON.stringify(backlog, null, 2) + '\n';
 	const commitMsg = `chore(cam): merge ${id} into ${intoId}`;
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-specify-');
+		? commitOnMain(cwd, files, commitMsg, spawnFn, writeFile)
+		: commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');
 
 	pushMainBestEffort(cwd, spawnFn);
 	return { ok: true, id, intoId, committedTo: 'main', sha, branchWasMain };

@@ -1,0 +1,9 @@
+{
+  "id": "CAM-20",
+  "title": "Ruído de bash interativo no startup dos panes do cam run",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-06T12:45:21Z",
+  "description": "Os panes do cam run abriam um bash INTERATIVO antes do comando real (via send-keys), imprimindo o aviso do macOS 'default interactive shell is now zsh' + prompt bash-3.2$ + o echo do comando. Ficava visível num flash até o primeiro clear/redraw (mais notável no menu, que não usa alt-screen). CORRIGIDO: ensureProjectSession cria os panes com placeholder silencioso (cat) em vez de bash; run.ts usa respawn-pane -k pra rodar o comando real DIRETO e não-interativo (orquestrador via bash -c, dashboard cam dashboard, menu bash menu.sh). Sem bash interativo = sem aviso/prompt/echo, nem por flash (verificado por captura a ~0.6s). Efeito desejado: q no menu/dashboard fecha o pane (comando sai, pane fecha, tmux reflui a coluna). Padronizada a mensagem de fechar: dashboard e menu agora dizem 'q close pane' (antes divergiam: 'q quit' vs 'q quit this menu' + 'press a key'). Arquivos: src/tmux/session.ts, src/commands/run.ts, src/ui/Dashboard.tsx, test/run.test.ts."
+}

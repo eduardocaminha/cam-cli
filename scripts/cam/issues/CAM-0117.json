@@ -1,0 +1,9 @@
+{
+  "id": "CAM-117",
+  "title": "Epico: fase de plan como runner deterministico dirigido pelo sidecar (LLM so em planner/auditor)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-27T13:48:21.721Z",
+  "description": "Converte a fase de plan de markdown-interpretado-por-LLM (cam-plan.md hoje) num state-machine TS deterministico dirigido pelo sidecar, como runSupervisor/loop.ts ja e pro implement->review->ship->merge. PRINCIPIO (cicatriz do cam CAM-49/72/86/104: bugs de logica-em-markdown sempre consertados movendo pra TS): control-flow, gates, mutacoes e seguranca = TS deterministico; so julgamento irredutivel = subagente LLM. A fase de plan tem so 2 passos irredutiveis (gerar-PRD via planner, auditar via auditor); o resto (pre-flight, pick-issue ja-TS CAM-106, branch plan_approval, branch/commit/push, escalada de nao-convergencia) e deterministico-able. O grill CAM-107 DESTRAVA isso: com spec estruturado de entrada e stories estruturadas de saida, a superficie LLM encolhe pros 2 passos. END-STATE: o sidecar dirige o pipeline INTEIRO (plan->implement->review->ship->merge) spawnando os subagentes nos pontos de julgamento; um unico driver deterministico dono dos gates + escalada; cam-plan thin-proxy so sinaliza a fase. CAM-109 ja torna deterministica a superficie de SEGURANCA do auto; este epico converte a orquestracao de plan inteira. DEPENDE de CAM-109. BLOQUEIA o auto pleno e CAM-71. ADR-worthy: pipeline deterministico, LLM nos pontos de julgamento. P2."
+}

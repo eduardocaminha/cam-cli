@@ -66,20 +66,20 @@ Which option?
 rm -f scripts/cam/handoff.json
 ```
 
-`handoff.json` is the state-primary outcome signal: a leftover from the abandoned issue would name its old `lastCompletedStory` and derail the next `/cam-next`. `prd.json` needs no separate wipe here, the branch step overwrites it with the new plan. Do NOT touch `scripts/cam/issues.local.json` (the persistent backlog) or `scripts/cam/patterns.md` (durable). Run this cleanup ONLY on the explicit option-3 choice, never on options 1 or 2.
+`handoff.json` is the state-primary outcome signal: a leftover from the abandoned issue would name its old `lastCompletedStory` and derail the next `/cam-next`. `prd.json` needs no separate wipe here, the branch step overwrites it with the new plan. Do NOT touch `scripts/cam/issues/` (the persistent backlog) or `scripts/cam/patterns.md` (durable). Run this cleanup ONLY on the explicit option-3 choice, never on options 1 or 2.
 
 ### Step 2: Pick the issue
 
-First read the configured backend from `scripts/cam/project.toml`: `issue_system` (`none` | `github` | `linear`; `none` is the local-only backend stored in `scripts/cam/issues.local.json`) and `issue_prefix` (the display/team prefix for `none`/`linear`; default `CAM`).
+First read the configured backend from `scripts/cam/project.toml`: `issue_system` (`none` | `github` | `linear`; `none` is the local-only backend storing issues as per-file JSON in `scripts/cam/issues/`) and `issue_prefix` (the display/team prefix for `none`/`linear`; default `CAM`).
 
 Note: the `cam plan` CLI only ever passes a bare invocation or an integer `N` (it rejects free text). The `/cam-plan` slash additionally accepts a free-text description.
 
 - **No argument**: plan the highest-priority plannable issue for the backend.
-  - `none`: delegate to `selectPlannableFromFile`. Read `scripts/cam/issues.local.json` via `git show main:scripts/cam/issues.local.json 2>/dev/null || cat scripts/cam/issues.local.json`, filter entries where `stage === 'specified' && status === 'open' && !blocked`, sort by `rank` ascending then numeric id ascending, take the first. If none qualifies, stop with a clear error: "No grill-specified open issues found."
+  - `none`: delegate to `selectPlannableFromFile`. List files via `git ls-tree -r --name-only main scripts/cam/issues/ 2>/dev/null || ls scripts/cam/issues/`, read each file, filter entries where `stage === 'specified' && status === 'open' && !blocked`, sort by `rank` ascending then numeric id ascending, take the first. If none qualifies, stop with a clear error: "No grill-specified open issues found."
   - `github`: `gh issue list --state open --limit 5` (pick the top, or ask the user).
   - `linear`: query the active cycle and take the highest-priority open issue.
 - **Integer argument `N`** (`70` or `#70`): resolve that issue from the backend.
-  - `none`: read `scripts/cam/issues.local.json` and find the issue whose `id == "<issue_prefix>-<N>"` (e.g. `CAM-70`). Use its `title` + `description` as the spec. Stop with a clear error if it is missing or not open. **D2 warning**: if the issue's `stage` is `"idea"` (not yet grill-specified), print: `⚠️  This issue is not grill-specified (stage: idea). Proceeding at operator's discretion.`
+  - `none`: read the per-file issue at `scripts/cam/issues/<issue_prefix>-NNNN.json` (e.g. `CAM-0070.json` for `CAM-70`). Use its `title` + `description` as the spec. Stop with a clear error if it is missing or not open. **D2 warning**: if the issue's `stage` is `"idea"` (not yet grill-specified), print: `⚠️  This issue is not grill-specified (stage: idea). Proceeding at operator's discretion.`
   - `github`: `gh issue view 70 --json number,title,body,labels,comments,state,url`.
   - `linear`: fetch `<issue_prefix>-<N>` via the Linear API (same path the orchestrator uses).
 - **Free-text description** (anything not an integer; reachable only via the slash, never from `cam plan`): use the text as the spec, with no linked issue.

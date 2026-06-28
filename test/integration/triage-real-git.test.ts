@@ -27,7 +27,8 @@ import { join } from 'node:path';
 
 import { runTriage } from '../../src/commands/triage.ts';
 import type { SpawnFn } from '../../src/commands/triage.ts';
-import type { IssuesLocalJson } from '../../src/issues/types.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
+
 
 // ---------------------------------------------------------------------------
 // Skip guard
@@ -70,34 +71,31 @@ const realSpawnFn: SpawnFn = (cmd, args, opts) =>
 
 const FIXED_CLOCK = '2026-06-28T10:00:00.000Z';
 
-/** Seed backlog with two {specified, open} issues with WSJF scores. */
-const SEED_ISSUES: IssuesLocalJson = {
-	next_id: 3,
-	issues: [
-		{
-			id: 'CAM-1',
-			title: 'First issue',
-			stage: 'specified',
-			status: 'open',
-			blockedBy: [],
-			createdAt: '2026-01-01T00:00:00.000Z',
-			wsjf: { value: 8, timeCriticality: 5, riskReduction: 3, jobSize: 2 },
-		},
-		{
-			id: 'CAM-2',
-			title: 'Second issue',
-			stage: 'specified',
-			status: 'open',
-			blockedBy: [],
-			createdAt: '2026-01-02T00:00:00.000Z',
-			wsjf: { value: 4, timeCriticality: 2, riskReduction: 1, jobSize: 2 },
-		},
-	],
+/** Seed backlog: two {specified, open} issues with WSJF scores (per-file format). */
+const SEED_CAM_1: IssueEntry = {
+	id: 'CAM-1',
+	title: 'First issue',
+	stage: 'specified',
+	status: 'open',
+	blockedBy: [],
+	createdAt: '2026-01-01T00:00:00.000Z',
+	wsjf: { value: 8, timeCriticality: 5, riskReduction: 3, jobSize: 2 },
+};
+
+const SEED_CAM_2: IssueEntry = {
+	id: 'CAM-2',
+	title: 'Second issue',
+	stage: 'specified',
+	status: 'open',
+	blockedBy: [],
+	createdAt: '2026-01-02T00:00:00.000Z',
+	wsjf: { value: 4, timeCriticality: 2, riskReduction: 1, jobSize: 2 },
 };
 
 interface RepoHandles {
 	dir: string;
 	camDir: string;
+	issuesDir: string;
 	run: (args: string[]) => { stdout: string; stderr: string; status: number | null };
 }
 
@@ -120,14 +118,17 @@ function makeTmpRepo(): RepoHandles {
 	run(['config', 'user.name', 'Test User']);
 
 	const camDir = join(dir, 'scripts', 'cam');
-	mkdirSync(camDir, { recursive: true });
+	const issuesDir = join(camDir, 'issues');
+	mkdirSync(issuesDir, { recursive: true });
 
-	writeFileSync(join(camDir, 'issues.local.json'), JSON.stringify(SEED_ISSUES, null, 2) + '\n');
+	// US-004: write per-file CAM-NNNN.json (never issues.local.json)
+	writeFileSync(join(issuesDir, 'CAM-0001.json'), JSON.stringify(SEED_CAM_1, null, 2) + '\n');
+	writeFileSync(join(issuesDir, 'CAM-0002.json'), JSON.stringify(SEED_CAM_2, null, 2) + '\n');
 
 	run(['add', '-A']);
 	run(['commit', '-m', 'chore: seed backlog']);
 
-	return { dir, camDir, run };
+	return { dir, camDir, issuesDir, run };
 }
 
 // ---------------------------------------------------------------------------
@@ -159,17 +160,17 @@ test.skipIf(!gitAvailable)(
 			throw new Error(`runTriage failed: ${JSON.stringify(result)}`);
 		}
 
-		// (a) AC#1 sub-a: rank lands on main (not working tree, not the work branch).
-		const mainIssuesRaw = run(['show', 'main:scripts/cam/issues.local.json']).stdout;
-		const mainIssues = JSON.parse(mainIssuesRaw) as IssuesLocalJson;
+		// (a) AC#1 sub-a: rank lands on main via per-file CAM-NNNN.json (not working tree).
+		const cam1Raw = run(['show', 'main:scripts/cam/issues/CAM-0001.json']).stdout;
+		const cam2Raw = run(['show', 'main:scripts/cam/issues/CAM-0002.json']).stdout;
+		const cam1 = JSON.parse(cam1Raw) as IssueEntry;
+		const cam2 = JSON.parse(cam2Raw) as IssueEntry;
 
-		const cam1 = mainIssues.issues.find((e) => e.id === 'CAM-1');
-		const cam2 = mainIssues.issues.find((e) => e.id === 'CAM-2');
-		expect(cam1?.rank).toBeDefined();
-		expect(cam2?.rank).toBeDefined();
+		expect(cam1.rank).toBeDefined();
+		expect(cam2.rank).toBeDefined();
 		// CAM-1 has higher WSJF: (8+5+3)/2=8 vs CAM-2: (4+2+1)/2=3.5, so rank 1 < rank 2.
-		expect(cam1?.rank).toBe(1);
-		expect(cam2?.rank).toBe(2);
+		expect(cam1.rank).toBe(1);
+		expect(cam2.rank).toBe(2);
 
 		// (b) AC#1 sub-b: work-branch HEAD sha is unchanged.
 		const workHeadAfter = run(['rev-parse', 'HEAD']).stdout.trim();

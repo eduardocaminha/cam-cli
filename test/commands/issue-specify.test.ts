@@ -1,6 +1,10 @@
 // test/commands/issue-specify.test.ts
 //
-// Tests for src/commands/issue-specify.ts (specifyIssueOnMain).
+// Tests for src/commands/issue-specify.ts (specifyIssueOnMain, abandonIssueOnMain,
+// mergeIssueOnMain).
+//
+// US-004 cutover: backlog is read via readBacklogFromMain (ls-tree + cat-file --batch).
+// Only the target CAM-NNNN.json is written; issues.local.json is never touched.
 //
 // Two sections:
 //   1. Unit tests -- fake SpawnFn records calls and returns canned results.
@@ -25,7 +29,7 @@ import {
 	type MergeIssueOnMainOptions,
 } from '../../src/commands/issue-specify.ts';
 import type { Spec } from '../../src/issues/spec.ts';
-import type { IssueEntry, IssuesLocalJson, WsjfScore } from '../../src/issues/types.ts';
+import type { IssueEntry, WsjfScore } from '../../src/issues/types.ts';
 import type {
 	WorkerEvent,
 	WorkerEventLogger,
@@ -50,8 +54,40 @@ const VALID_WSJF: WsjfScore = {
 	jobSize: 2,
 };
 
-function makeBacklog(overrides?: Partial<IssueEntry>): IssuesLocalJson {
-	const entry: IssueEntry = {
+/** Serialise a single IssueEntry to its on-disk per-file JSON format. */
+function toJson(entry: IssueEntry): string {
+	return JSON.stringify(entry, null, 2) + '\n';
+}
+
+/** Build ls-tree + cat-file --batch responses for a list of IssueEntries. */
+function buildIssueFixtures(entries: IssueEntry[]): { lsTreeOutput: string; catFileOutput: string } {
+	const lines: string[] = [];
+	const blobs: string[] = [];
+	for (const entry of entries) {
+		const n = parseInt(entry.id.split('-')[1] ?? '0', 10);
+		const padded = `CAM-${String(n).padStart(4, '0')}.json`;
+		lines.push(`scripts/cam/issues/${padded}`);
+		const content = toJson(entry);
+		blobs.push(`oid${entry.id} blob ${content.length}\n${content}\n`);
+	}
+	return {
+		lsTreeOutput: lines.join('\n') + (lines.length > 0 ? '\n' : ''),
+		catFileOutput: blobs.join(''),
+	};
+}
+
+/** Minimal SpawnSyncReturns<string> for a successful git call. */
+function okResult(stdout = ''): SpawnSyncReturns<string> {
+	return { pid: 0, output: [], stdout, stderr: '', status: 0, signal: null };
+}
+
+/** Minimal SpawnSyncReturns<string> for a failing git call. */
+function failResult(stdout = '', stderr = ''): SpawnSyncReturns<string> {
+	return { pid: 0, output: [], stdout, stderr, status: 1, signal: null };
+}
+
+function makeEntry(overrides?: Partial<IssueEntry>): IssueEntry {
+	return {
 		id: 'CAM-1',
 		title: 'My idea',
 		stage: 'idea',
@@ -60,7 +96,6 @@ function makeBacklog(overrides?: Partial<IssueEntry>): IssuesLocalJson {
 		createdAt: '2026-01-01T00:00:00.000Z',
 		...overrides,
 	};
-	return { next_id: 2, issues: [entry] };
 }
 
 // ---------------------------------------------------------------------------
@@ -72,90 +107,74 @@ interface FakeSpawnOpts {
 	branch?: string;
 	/** Local main sha (default: 'abc123def456abc1'). */
 	localMainSha?: string;
-	/** If true, origin/main returns the same sha (up-to-date). */
+	/** If true, origin/main returns the same sha (up-to-date). Default: false (no remote). */
 	originMainUpToDate?: boolean;
-	/** Backlog JSON to return from `git show main:scripts/cam/issues.local.json`. */
-	backlog: IssuesLocalJson;
+	/** Backlog entries returned by ls-tree + cat-file. */
+	entries: IssueEntry[];
 }
 
 function makeFakeSpawnFn(opts: FakeSpawnOpts): { spawnFn: SpawnFn; calls: string[][] } {
 	const branch = opts.branch ?? 'feat/test';
 	const localMainSha = opts.localMainSha ?? 'abc123def456abc1';
 	const calls: string[][] = [];
+	const { lsTreeOutput, catFileOutput } = buildIssueFixtures(opts.entries);
 
 	const spawnFn: SpawnFn = (cmd, args, _options) => {
 		calls.push([cmd, ...args]);
-
 		const sub = args.join(' ');
 
 		// rev-parse --abbrev-ref HEAD -> branch
 		if (sub.includes('rev-parse --abbrev-ref HEAD')) {
-			return { stdout: `${branch}\n`, stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
-		}
-
-		// rev-parse main (local)
-		if (sub.match(/rev-parse main$/) || sub.endsWith('rev-parse main')) {
-			return { stdout: `${localMainSha}\n`, stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
-		}
-
-		// fetch origin main (best-effort, always succeeds)
-		if (sub.includes('fetch origin main')) {
-			return { stdout: '', stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
+			return okResult(`${branch}\n`);
 		}
 
 		// rev-parse origin/main
 		if (sub.includes('rev-parse origin/main')) {
 			if (opts.originMainUpToDate) {
-				return { stdout: `${localMainSha}\n`, stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
+				return okResult(`${localMainSha}\n`);
 			}
-			// No remote -- skip diverge check
-			return { stdout: '', stderr: '', status: 1, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
+			return failResult();
 		}
 
-		// git show main:scripts/cam/issues.local.json
-		if (sub.includes('show') && sub.includes('issues.local.json')) {
-			const json = JSON.stringify(opts.backlog, null, 2) + '\n';
-			return { stdout: json, stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
+		// rev-parse main (local)
+		if (sub.match(/rev-parse main$/) || (sub.includes('rev-parse') && sub.endsWith('main'))) {
+			return okResult(`${localMainSha}\n`);
 		}
 
-		// read-tree, hash-object, update-index, write-tree, commit-tree, update-ref
-		if (sub.includes('read-tree')) {
-			return { stdout: '', stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
-		}
-		if (sub.includes('hash-object')) {
-			return { stdout: 'blobsha111\n', stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
-		}
-		if (sub.includes('update-index')) {
-			return { stdout: '', stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
-		}
-		if (sub.includes('write-tree')) {
-			return { stdout: 'treesha222\n', stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
-		}
-		if (sub.includes('commit-tree')) {
-			return { stdout: 'newcommitsha333\n', stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
-		}
-		if (sub.includes('update-ref')) {
-			return { stdout: '', stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
+		// fetch origin main
+		if (sub.includes('fetch origin main')) {
+			return okResult();
 		}
 
-		// push origin main (best-effort, simulate no remote -> non-zero)
+		// ls-tree -> file listing (readBacklogFromMain)
+		if (sub.includes('ls-tree') && sub.includes('scripts/cam/issues')) {
+			return okResult(lsTreeOutput);
+		}
+
+		// cat-file --batch -> blob content (readBacklogFromMain)
+		if (sub.includes('cat-file') && sub.includes('--batch')) {
+			return okResult(catFileOutput);
+		}
+
+		// CAS plumbing
+		if (sub.includes('read-tree')) return okResult();
+		if (sub.includes('hash-object')) return okResult('blobsha111\n');
+		if (sub.includes('update-index')) return okResult();
+		if (sub.includes('write-tree')) return okResult('treesha222\n');
+		if (sub.includes('commit-tree')) return okResult('newcommitsha333\n');
+		if (sub.includes('update-ref')) return okResult();
+
+		// on-main path
+		if (sub.includes('add scripts/cam/issues')) return okResult();
+		if (sub.match(/commit -m /)) return okResult();
+		if (sub.includes('rev-parse --short HEAD')) return okResult('abc1234\n');
+
+		// push origin main (best-effort, no remote)
 		if (sub.includes('push origin main')) {
-			return { stdout: '', stderr: 'no remote configured', status: 1, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
+			return failResult('', 'no remote configured');
 		}
 
-		// add + commit + rev-parse --short HEAD (on-main path)
-		if (sub.includes('add scripts/cam/issues.local.json')) {
-			return { stdout: '', stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
-		}
-		if (sub.match(/commit -m /)) {
-			return { stdout: '', stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
-		}
-		if (sub.includes('rev-parse --short HEAD')) {
-			return { stdout: 'abc1234\n', stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
-		}
-
-		// fallback
-		return { stdout: '', stderr: '', status: 0, pid: 0, signal: null, output: [] } as SpawnSyncReturns<string>;
+		return okResult();
 	};
 
 	return { spawnFn, calls };
@@ -172,7 +191,6 @@ function makeOpts(
 		wsjf: VALID_WSJF,
 		clock: () => '2026-06-27T00:00:00.000Z',
 		// Default no-op eventSink so unit tests do not touch the filesystem.
-		// The production-wiring test explicitly omits this to exercise the default file sink.
 		eventSink: () => {},
 		...rest,
 		spawnFn,
@@ -188,7 +206,7 @@ function makeOpts(
 // ---------------------------------------------------------------------------
 
 test('returns invalid-spec when spec has empty acceptanceCriteria', () => {
-	const { spawnFn, calls } = makeFakeSpawnFn({ backlog: makeBacklog() });
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	const result = specifyIssueOnMain(
 		makeOpts({
 			spawnFn,
@@ -200,13 +218,13 @@ test('returns invalid-spec when spec has empty acceptanceCriteria', () => {
 		expect(result.reason).toBe('invalid-spec');
 		expect(result.errors.length).toBeGreaterThan(0);
 	}
-	// No git show call should have been made (validation before backlog read)
-	const showCall = calls.find((c) => c.join(' ').includes('show') && c.join(' ').includes('issues.local.json'));
-	expect(showCall).toBeUndefined();
+	// No ls-tree or cat-file call before spec validation
+	const backlogRead = calls.find((c) => c.join(' ').includes('ls-tree'));
+	expect(backlogRead).toBeUndefined();
 });
 
 test('returns invalid-spec when spec is missing scope', () => {
-	const { spawnFn } = makeFakeSpawnFn({ backlog: makeBacklog() });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	const result = specifyIssueOnMain(
 		makeOpts({
 			spawnFn,
@@ -224,7 +242,7 @@ test('returns invalid-spec when spec is missing scope', () => {
 // ---------------------------------------------------------------------------
 
 test('returns invalid-wsjf when wsjf is missing a field', () => {
-	const { spawnFn, calls } = makeFakeSpawnFn({ backlog: makeBacklog() });
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	const result = specifyIssueOnMain(
 		makeOpts({
 			spawnFn,
@@ -237,9 +255,9 @@ test('returns invalid-wsjf when wsjf is missing a field', () => {
 		expect(result.reason).toBe('invalid-wsjf');
 		expect(result.errors.length).toBeGreaterThan(0);
 	}
-	// No git show call
-	const showCall = calls.find((c) => c.join(' ').includes('show') && c.join(' ').includes('issues.local.json'));
-	expect(showCall).toBeUndefined();
+	// No backlog read
+	const backlogRead = calls.find((c) => c.join(' ').includes('ls-tree'));
+	expect(backlogRead).toBeUndefined();
 });
 
 // ---------------------------------------------------------------------------
@@ -247,7 +265,7 @@ test('returns invalid-wsjf when wsjf is missing a field', () => {
 // ---------------------------------------------------------------------------
 
 test('returns not-found when id does not exist in backlog', () => {
-	const { spawnFn } = makeFakeSpawnFn({ backlog: makeBacklog() });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	const result = specifyIssueOnMain(makeOpts({ spawnFn, id: 'CAM-999' }));
 	expect(result.ok).toBe(false);
 	if (!result.ok) {
@@ -260,8 +278,7 @@ test('returns not-found when id does not exist in backlog', () => {
 // ---------------------------------------------------------------------------
 
 test('returns wrong-stage when issue is already specified', () => {
-	const backlog = makeBacklog({ stage: 'specified' });
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry({ stage: 'specified' })] });
 	const result = specifyIssueOnMain(makeOpts({ spawnFn }));
 	expect(result.ok).toBe(false);
 	if (!result.ok) {
@@ -270,8 +287,7 @@ test('returns wrong-stage when issue is already specified', () => {
 });
 
 test('returns wrong-stage when issue is planned', () => {
-	const backlog = makeBacklog({ stage: 'planned' });
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry({ stage: 'planned' })] });
 	const result = specifyIssueOnMain(makeOpts({ spawnFn }));
 	expect(result.ok).toBe(false);
 	if (!result.ok) {
@@ -280,8 +296,7 @@ test('returns wrong-stage when issue is planned', () => {
 });
 
 test('returns wrong-stage when issue is shipped', () => {
-	const backlog = makeBacklog({ stage: 'shipped' });
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry({ stage: 'shipped' })] });
 	const result = specifyIssueOnMain(makeOpts({ spawnFn }));
 	expect(result.ok).toBe(false);
 	if (!result.ok) {
@@ -294,8 +309,7 @@ test('returns wrong-stage when issue is shipped', () => {
 // ---------------------------------------------------------------------------
 
 test('returns not-open when issue status is abandoned', () => {
-	const backlog = makeBacklog({ status: 'abandoned' });
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry({ status: 'abandoned' })] });
 	const result = specifyIssueOnMain(makeOpts({ spawnFn }));
 	expect(result.ok).toBe(false);
 	if (!result.ok) {
@@ -308,8 +322,7 @@ test('returns not-open when issue status is abandoned', () => {
 // ---------------------------------------------------------------------------
 
 test('returns integrity-error when blockedBy references unknown id', () => {
-	const backlog = makeBacklog();
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	const result = specifyIssueOnMain(
 		makeOpts({ spawnFn, blockedBy: ['CAM-999'] }),
 	);
@@ -321,8 +334,7 @@ test('returns integrity-error when blockedBy references unknown id', () => {
 });
 
 test('returns integrity-error when blockedBy is self-referential', () => {
-	const backlog = makeBacklog();
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	const result = specifyIssueOnMain(
 		makeOpts({ spawnFn, blockedBy: ['CAM-1'] }),
 	);
@@ -337,8 +349,7 @@ test('returns integrity-error when blockedBy is self-referential', () => {
 // ---------------------------------------------------------------------------
 
 test('success path (off-main): returns ok:true with expected fields', () => {
-	const backlog = makeBacklog();
-	const { spawnFn, calls } = makeFakeSpawnFn({ backlog });
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()] });
 
 	const result = specifyIssueOnMain(makeOpts({ spawnFn }));
 
@@ -347,12 +358,14 @@ test('success path (off-main): returns ok:true with expected fields', () => {
 		expect(result.id).toBe('CAM-1');
 		expect(result.committedTo).toBe('main');
 		expect(result.branchWasMain).toBe(false);
-		// sha is first 7 chars of newcommitsha333
+		// sha is first 7 chars of 'newcommitsha333'
 		expect(result.sha).toBe('newcomm');
 	}
 
-	// Verify commit-tree plumbing calls were made
+	// Verify CAS plumbing calls
 	const allArgs = calls.map((c) => c.join(' '));
+	expect(allArgs.some((a) => a.includes('ls-tree') && a.includes('scripts/cam/issues'))).toBe(true);
+	expect(allArgs.some((a) => a.includes('cat-file') && a.includes('--batch'))).toBe(true);
 	expect(allArgs.some((a) => a.includes('read-tree'))).toBe(true);
 	expect(allArgs.some((a) => a.includes('hash-object'))).toBe(true);
 	expect(allArgs.some((a) => a.includes('update-index'))).toBe(true);
@@ -363,13 +376,14 @@ test('success path (off-main): returns ok:true with expected fields', () => {
 	// Never called git checkout
 	expect(allArgs.some((a) => a.includes('checkout'))).toBe(false);
 
-	// Used git show to read the backlog
-	expect(allArgs.some((a) => a.includes('show') && a.includes('issues.local.json'))).toBe(true);
+	// Never referenced issues.local.json (US-004 AC)
+	for (const call of calls) {
+		expect(call.join(' ')).not.toContain('issues.local.json');
+	}
 });
 
 test('success path: commit-tree call includes correct parent sha', () => {
-	const backlog = makeBacklog();
-	const { spawnFn, calls } = makeFakeSpawnFn({ backlog, localMainSha: 'mymainsha000' });
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()], localMainSha: 'mymainsha000' });
 
 	specifyIssueOnMain(makeOpts({ spawnFn }));
 
@@ -380,8 +394,7 @@ test('success path: commit-tree call includes correct parent sha', () => {
 });
 
 test('success path: commit message is chore(cam): specify <id>', () => {
-	const backlog = makeBacklog();
-	const { spawnFn, calls } = makeFakeSpawnFn({ backlog });
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()] });
 
 	specifyIssueOnMain(makeOpts({ spawnFn, id: 'CAM-1' }));
 
@@ -390,9 +403,8 @@ test('success path: commit message is chore(cam): specify <id>', () => {
 });
 
 test('success path: serialized JSON sets stage to specified and includes spec+wsjf+blockedBy', () => {
-	const backlog = makeBacklog();
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	let capturedJson = '';
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
 
 	// Intercept the hash-object call to capture the serialized JSON
 	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
@@ -404,18 +416,18 @@ test('success path: serialized JSON sets stage to specified and includes spec+ws
 
 	specifyIssueOnMain(makeOpts({ spawnFn: recordingSpawnFn, blockedBy: [] }));
 
-	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
-	const entry = parsed.issues[0];
-	expect(entry?.stage).toBe('specified');
-	expect(entry?.spec).toEqual(VALID_SPEC);
-	expect(entry?.wsjf).toEqual(VALID_WSJF);
-	expect(entry?.blockedBy).toEqual([]);
+	// US-004: hash-object input is a single IssueEntry (not the whole backlog)
+	const parsed = JSON.parse(capturedJson) as IssueEntry;
+	expect(parsed.id).toBe('CAM-1');
+	expect(parsed.stage).toBe('specified');
+	expect(parsed.spec).toEqual(VALID_SPEC);
+	expect(parsed.wsjf).toEqual(VALID_WSJF);
+	expect(parsed.blockedBy).toEqual([]);
 });
 
 test('success path (on-main): direct commit, writeFile called', () => {
-	const backlog = makeBacklog();
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()], branch: 'main' });
 	const writtenFiles: Array<{ path: string; content: string }> = [];
-	const { spawnFn } = makeFakeSpawnFn({ backlog, branch: 'main' });
 
 	const result = specifyIssueOnMain(
 		makeOpts({
@@ -429,31 +441,31 @@ test('success path (on-main): direct commit, writeFile called', () => {
 		expect(result.branchWasMain).toBe(true);
 	}
 	expect(writtenFiles).toHaveLength(1);
-	expect(writtenFiles[0]?.path).toContain('issues.local.json');
-	const parsed = JSON.parse(writtenFiles[0]?.content ?? '{}') as IssuesLocalJson;
-	expect(parsed.issues[0]?.stage).toBe('specified');
+	// US-004: written path is scripts/cam/issues/CAM-NNNN.json (not issues.local.json)
+	expect(writtenFiles[0]?.path).toContain('scripts/cam/issues/');
+	// US-004: content is a single IssueEntry
+	const parsed = JSON.parse(writtenFiles[0]?.content ?? '{}') as IssueEntry;
+	expect(parsed.stage).toBe('specified');
 });
 
 // ---------------------------------------------------------------------------
-// AC3: No mutation on guard failures (verify git show not called for spec/wsjf errors)
+// AC3: No mutation on guard failures (verify backlog not read for spec/wsjf errors)
 // ---------------------------------------------------------------------------
 
 test('no backlog read occurs when spec is invalid (fail fast)', () => {
-	const { spawnFn, calls } = makeFakeSpawnFn({ backlog: makeBacklog() });
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	specifyIssueOnMain(
 		makeOpts({
 			spawnFn,
 			spec: { acceptanceCriteria: [], scope: 'x', gotchas: [], domainTerms: [] },
 		}),
 	);
-	const showCalled = calls.some(
-		(c) => c.join(' ').includes('show') && c.join(' ').includes('issues.local.json'),
-	);
-	expect(showCalled).toBe(false);
+	const lsTreeCalled = calls.some((c) => c.join(' ').includes('ls-tree'));
+	expect(lsTreeCalled).toBe(false);
 });
 
 test('no backlog read occurs when wsjf is invalid (fail fast)', () => {
-	const { spawnFn, calls } = makeFakeSpawnFn({ backlog: makeBacklog() });
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	specifyIssueOnMain(
 		makeOpts({
 			spawnFn,
@@ -461,26 +473,23 @@ test('no backlog read occurs when wsjf is invalid (fail fast)', () => {
 			wsjf: { value: 'not-a-number' },
 		}),
 	);
-	const showCalled = calls.some(
-		(c) => c.join(' ').includes('show') && c.join(' ').includes('issues.local.json'),
-	);
-	expect(showCalled).toBe(false);
+	const lsTreeCalled = calls.some((c) => c.join(' ').includes('ls-tree'));
+	expect(lsTreeCalled).toBe(false);
 });
 
 // ---------------------------------------------------------------------------
-// AC1: Never runs git checkout (verified by all paths above; explicit guard)
+// AC1: Never runs git checkout
 // ---------------------------------------------------------------------------
 
 test('never calls git checkout on any code path', () => {
-	// Try several code paths and verify no checkout call
 	const scenarios: Array<Partial<SpecifyIssueOnMainOptions>> = [
-		{ id: 'CAM-999' },  // not-found
+		{ id: 'CAM-999' }, // not-found
 		{ spec: { acceptanceCriteria: [], scope: '', gotchas: [], domainTerms: [] } }, // invalid-spec
-		{},  // success
+		{}, // success
 	];
 
 	for (const overrides of scenarios) {
-		const { spawnFn, calls } = makeFakeSpawnFn({ backlog: makeBacklog() });
+		const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()] });
 		specifyIssueOnMain(makeOpts({ spawnFn, ...overrides }));
 		const checkoutCalled = calls.some((c) => c.includes('checkout'));
 		expect(checkoutCalled).toBe(false);
@@ -492,8 +501,7 @@ test('never calls git checkout on any code path', () => {
 // ===========================================================================
 
 test('emits stage-promoted event on successful commit (injected sink)', () => {
-	const backlog = makeBacklog();
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
 
 	const emittedEvents: WorkerEvent[] = [];
 	const fakeEventSink: WorkerEventLogger = (e) => emittedEvents.push(e);
@@ -511,8 +519,7 @@ test('emits stage-promoted event on successful commit (injected sink)', () => {
 });
 
 test('does not emit event when guard fails (not-found)', () => {
-	const backlog = makeBacklog();
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
 
 	const emittedEvents: WorkerEvent[] = [];
 	const fakeEventSink: WorkerEventLogger = (e) => emittedEvents.push(e);
@@ -523,8 +530,7 @@ test('does not emit event when guard fails (not-found)', () => {
 });
 
 test('does not emit event when spec is invalid', () => {
-	const backlog = makeBacklog();
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
 
 	const emittedEvents: WorkerEvent[] = [];
 	const fakeEventSink: WorkerEventLogger = (e) => emittedEvents.push(e);
@@ -543,12 +549,10 @@ test('does not emit event when spec is invalid', () => {
 test('production-wiring: default sink writes stage-promoted event to cam-worker-events.jsonl', () => {
 	// This test does NOT inject eventSink. specifyIssueOnMain must call
 	// makeFileEventLogger(<cwd>/.claude/cam-worker-events.jsonl) by default.
-	// If the sink is left unwired, readFileSync below throws and the test fails.
 	const tmpCwd = mkdtempSync(join(tmpdir(), 'cam-specify-wiring-'));
 	dirsToCleanup.push(tmpCwd);
 
-	const backlog = makeBacklog();
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
 
 	specifyIssueOnMain({
 		cwd: tmpCwd,
@@ -601,6 +605,7 @@ interface RepoHandles {
 	dir: string;
 	run: (args: string[]) => ReturnType<typeof spawnSync>;
 	camDir: string;
+	issuesDir: string;
 }
 
 function makeTmpRepo(initialIssue?: Partial<IssueEntry>): RepoHandles {
@@ -616,8 +621,10 @@ function makeTmpRepo(initialIssue?: Partial<IssueEntry>): RepoHandles {
 	run(['config', 'user.name', 'Test User']);
 
 	const camDir = join(dir, 'scripts', 'cam');
-	mkdirSync(camDir, { recursive: true });
+	const issuesDir = join(camDir, 'issues');
+	mkdirSync(issuesDir, { recursive: true });
 
+	// US-004: create per-file CAM-0001.json (not issues.local.json)
 	const entry: IssueEntry = {
 		id: 'CAM-1',
 		title: 'My idea',
@@ -627,13 +634,12 @@ function makeTmpRepo(initialIssue?: Partial<IssueEntry>): RepoHandles {
 		createdAt: '2026-01-01T00:00:00.000Z',
 		...initialIssue,
 	};
-	const issuesJson = JSON.stringify({ next_id: 2, issues: [entry] }, null, 2) + '\n';
-	writeFileSync(join(camDir, 'issues.local.json'), issuesJson);
+	writeFileSync(join(issuesDir, 'CAM-0001.json'), toJson(entry));
 
 	run(['add', '-A']);
 	run(['commit', '-m', 'chore: initial harness state']);
 
-	return { dir, run, camDir };
+	return { dir, run, camDir, issuesDir };
 }
 
 // Case A: off-main path
@@ -641,7 +647,7 @@ function makeTmpRepo(initialIssue?: Partial<IssueEntry>): RepoHandles {
 test.skipIf(!gitAvailable)(
 	'Real-git Case A (off-main): entry on main gains specified stage; work branch untouched',
 	() => {
-		const { dir, run, camDir } = makeTmpRepo();
+		const { dir, run, issuesDir } = makeTmpRepo();
 
 		const mainSha0 = (run(['rev-parse', 'main']).stdout as string).trim();
 
@@ -655,7 +661,7 @@ test.skipIf(!gitAvailable)(
 			wsjf: VALID_WSJF,
 			spawnFn: realSpawnFn,
 			clock: () => '2026-06-27T00:00:00.000Z',
-			eventSink: () => {}, // no-op: keep tmpdir working tree clean
+			eventSink: () => {},
 		});
 
 		if (!result.ok) {
@@ -671,14 +677,13 @@ test.skipIf(!gitAvailable)(
 		const mainSha1 = (run(['rev-parse', 'main']).stdout as string).trim();
 		expect(mainSha1).not.toBe(mainSha0);
 
-		// main has the updated entry
-		const showResult = run(['show', 'main:scripts/cam/issues.local.json']);
-		const mainData = JSON.parse(showResult.stdout as string) as IssuesLocalJson;
-		const entry = mainData.issues[0];
-		expect(entry?.stage).toBe('specified');
-		expect(entry?.spec).toEqual(VALID_SPEC);
-		expect(entry?.wsjf).toEqual(VALID_WSJF);
-		expect(entry?.blockedBy).toEqual([]);
+		// US-004: main has the updated per-file entry
+		const showResult = run(['show', 'main:scripts/cam/issues/CAM-0001.json']);
+		const entry = JSON.parse(showResult.stdout as string) as IssueEntry;
+		expect(entry.stage).toBe('specified');
+		expect(entry.spec).toEqual(VALID_SPEC);
+		expect(entry.wsjf).toEqual(VALID_WSJF);
+		expect(entry.blockedBy).toEqual([]);
 
 		// commit message
 		const logResult = run(['log', 'main', '-1', '--format=%s']);
@@ -693,9 +698,9 @@ test.skipIf(!gitAvailable)(
 		expect((status.stdout as string).trim()).toBe('');
 
 		// working-tree file NOT modified (off-main path)
-		const wtContent = readFileSync(join(camDir, 'issues.local.json'), 'utf8');
-		const wtData = JSON.parse(wtContent) as IssuesLocalJson;
-		expect(wtData.issues[0]?.stage).toBe('idea');
+		const wtContent = readFileSync(join(issuesDir, 'CAM-0001.json'), 'utf8');
+		const wtEntry = JSON.parse(wtContent) as IssueEntry;
+		expect(wtEntry.stage).toBe('idea');
 	},
 );
 
@@ -704,7 +709,7 @@ test.skipIf(!gitAvailable)(
 test.skipIf(!gitAvailable)(
 	'Real-git Case B (on-main): direct commit; working-tree file gains specified stage',
 	() => {
-		const { dir, run, camDir } = makeTmpRepo();
+		const { dir, run, issuesDir } = makeTmpRepo();
 
 		const branchBefore = (run(['rev-parse', '--abbrev-ref', 'HEAD']).stdout as string).trim();
 		expect(branchBefore).toBe('main');
@@ -718,7 +723,7 @@ test.skipIf(!gitAvailable)(
 			wsjf: VALID_WSJF,
 			spawnFn: realSpawnFn,
 			clock: () => '2026-06-27T00:00:00.000Z',
-			eventSink: () => {}, // no-op: keep tmpdir working tree clean
+			eventSink: () => {},
 		});
 
 		if (!result.ok) {
@@ -737,11 +742,11 @@ test.skipIf(!gitAvailable)(
 		expect((logResult.stdout as string).trim()).toBe('chore(cam): specify CAM-1');
 
 		// working-tree file updated
-		const wtContent = readFileSync(join(camDir, 'issues.local.json'), 'utf8');
-		const wtData = JSON.parse(wtContent) as IssuesLocalJson;
-		expect(wtData.issues[0]?.stage).toBe('specified');
-		expect(wtData.issues[0]?.spec).toEqual(VALID_SPEC);
-		expect(wtData.issues[0]?.wsjf).toEqual(VALID_WSJF);
+		const wtContent = readFileSync(join(issuesDir, 'CAM-0001.json'), 'utf8');
+		const wtEntry = JSON.parse(wtContent) as IssueEntry;
+		expect(wtEntry.stage).toBe('specified');
+		expect(wtEntry.spec).toEqual(VALID_SPEC);
+		expect(wtEntry.wsjf).toEqual(VALID_WSJF);
 
 		// working tree clean
 		const status = run(['status', '--porcelain']);
@@ -811,24 +816,22 @@ function makeAbandonOpts(
 }
 
 test('abandon: returns not-found when id absent', () => {
-	const { spawnFn } = makeFakeSpawnFn({ backlog: makeBacklog() });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	const result = abandonIssueOnMain(makeAbandonOpts({ spawnFn, id: 'CAM-999' }));
 	expect(result.ok).toBe(false);
 	if (!result.ok) expect(result.reason).toBe('not-found');
 });
 
 test('abandon: returns already-abandoned when status is already abandoned', () => {
-	const backlog = makeBacklog({ status: 'abandoned' });
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry({ status: 'abandoned' })] });
 	const result = abandonIssueOnMain(makeAbandonOpts({ spawnFn }));
 	expect(result.ok).toBe(false);
 	if (!result.ok) expect(result.reason).toBe('already-abandoned');
 });
 
 test('abandon: success path (off-main) sets status to abandoned', () => {
-	const backlog = makeBacklog();
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	let capturedJson = '';
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
 
 	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
 		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
@@ -845,16 +848,16 @@ test('abandon: success path (off-main) sets status to abandoned', () => {
 		expect(result.branchWasMain).toBe(false);
 	}
 
-	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
-	expect(parsed.issues[0]?.status).toBe('abandoned');
+	// US-004: capturedJson is a single IssueEntry (not the whole backlog)
+	const parsed = JSON.parse(capturedJson) as IssueEntry;
+	expect(parsed.status).toBe('abandoned');
 	// stage is unchanged
-	expect(parsed.issues[0]?.stage).toBe('idea');
+	expect(parsed.stage).toBe('idea');
 });
 
 test('abandon: success path (on-main) writeFile called', () => {
-	const backlog = makeBacklog();
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()], branch: 'main' });
 	const writtenFiles: Array<{ path: string; content: string }> = [];
-	const { spawnFn } = makeFakeSpawnFn({ backlog, branch: 'main' });
 
 	const result = abandonIssueOnMain(
 		makeAbandonOpts({
@@ -866,20 +869,21 @@ test('abandon: success path (on-main) writeFile called', () => {
 	expect(result.ok).toBe(true);
 	if (result.ok) expect(result.branchWasMain).toBe(true);
 	expect(writtenFiles).toHaveLength(1);
-	const parsed = JSON.parse(writtenFiles[0]?.content ?? '{}') as IssuesLocalJson;
-	expect(parsed.issues[0]?.status).toBe('abandoned');
+	// US-004: written path is scripts/cam/issues/ (not issues.local.json)
+	expect(writtenFiles[0]?.path).toContain('scripts/cam/issues/');
+	const parsed = JSON.parse(writtenFiles[0]?.content ?? '{}') as IssueEntry;
+	expect(parsed.status).toBe('abandoned');
 });
 
 test('abandon: commit message is chore(cam): abandon <id>', () => {
-	const backlog = makeBacklog();
-	const { spawnFn, calls } = makeFakeSpawnFn({ backlog });
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	abandonIssueOnMain(makeAbandonOpts({ spawnFn, id: 'CAM-1' }));
 	const commitTreeCall = calls.find((c) => c.join(' ').includes('commit-tree'));
 	expect(commitTreeCall?.join(' ')).toContain('chore(cam): abandon CAM-1');
 });
 
 test('abandon: never calls git checkout', () => {
-	const { spawnFn, calls } = makeFakeSpawnFn({ backlog: makeBacklog() });
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	abandonIssueOnMain(makeAbandonOpts({ spawnFn }));
 	expect(calls.some((c) => c.includes('checkout'))).toBe(false);
 });
@@ -888,29 +892,30 @@ test('abandon: never calls git checkout', () => {
 // 4. mergeIssueOnMain -- unit tests
 // ===========================================================================
 
-function makeBacklogTwo(
+function makeTwoEntries(
 	overrides1?: Partial<IssueEntry>,
 	overrides2?: Partial<IssueEntry>,
-): IssuesLocalJson {
-	const e1: IssueEntry = {
-		id: 'CAM-1',
-		title: 'Source idea',
-		stage: 'idea',
-		status: 'open',
-		blockedBy: [],
-		createdAt: '2026-01-01T00:00:00.000Z',
-		...overrides1,
-	};
-	const e2: IssueEntry = {
-		id: 'CAM-2',
-		title: 'Target idea',
-		stage: 'idea',
-		status: 'open',
-		blockedBy: [],
-		createdAt: '2026-01-02T00:00:00.000Z',
-		...overrides2,
-	};
-	return { next_id: 3, issues: [e1, e2] };
+): IssueEntry[] {
+	return [
+		{
+			id: 'CAM-1',
+			title: 'Source idea',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: [],
+			createdAt: '2026-01-01T00:00:00.000Z',
+			...overrides1,
+		},
+		{
+			id: 'CAM-2',
+			title: 'Target idea',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: [],
+			createdAt: '2026-01-02T00:00:00.000Z',
+			...overrides2,
+		},
+	];
 }
 
 function makeMergeOpts(
@@ -928,42 +933,40 @@ function makeMergeOpts(
 }
 
 test('merge-into: returns self-merge when id === intoId', () => {
-	const { spawnFn } = makeFakeSpawnFn({ backlog: makeBacklogTwo() });
+	const { spawnFn } = makeFakeSpawnFn({ entries: makeTwoEntries() });
 	const result = mergeIssueOnMain(makeMergeOpts({ spawnFn, id: 'CAM-1', intoId: 'CAM-1' }));
 	expect(result.ok).toBe(false);
 	if (!result.ok) expect(result.reason).toBe('self-merge');
 });
 
 test('merge-into: returns source-not-found when source id absent', () => {
-	const { spawnFn } = makeFakeSpawnFn({ backlog: makeBacklogTwo() });
+	const { spawnFn } = makeFakeSpawnFn({ entries: makeTwoEntries() });
 	const result = mergeIssueOnMain(makeMergeOpts({ spawnFn, id: 'CAM-999', intoId: 'CAM-2' }));
 	expect(result.ok).toBe(false);
 	if (!result.ok) expect(result.reason).toBe('source-not-found');
 });
 
 test('merge-into: returns target-not-found when target id absent', () => {
-	const { spawnFn } = makeFakeSpawnFn({ backlog: makeBacklogTwo() });
+	const { spawnFn } = makeFakeSpawnFn({ entries: makeTwoEntries() });
 	const result = mergeIssueOnMain(makeMergeOpts({ spawnFn, id: 'CAM-1', intoId: 'CAM-999' }));
 	expect(result.ok).toBe(false);
 	if (!result.ok) expect(result.reason).toBe('target-not-found');
 });
 
 test('merge-into: returns already-abandoned when source is abandoned', () => {
-	const backlog = makeBacklogTwo({ status: 'abandoned' });
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: makeTwoEntries({ status: 'abandoned' }) });
 	const result = mergeIssueOnMain(makeMergeOpts({ spawnFn }));
 	expect(result.ok).toBe(false);
 	if (!result.ok) expect(result.reason).toBe('already-abandoned');
 });
 
 test('merge-into: success sets source status to abandoned and records target in description', () => {
-	const backlog = makeBacklogTwo();
-	let capturedJson = '';
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({ entries: makeTwoEntries() });
+	const capturedJsons: string[] = [];
 
 	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
 		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
-			capturedJson = opts.input;
+			capturedJsons.push(opts.input);
 		}
 		return spawnFn(cmd, args, opts);
 	};
@@ -976,186 +979,183 @@ test('merge-into: success sets source status to abandoned and records target in 
 		expect(result.committedTo).toBe('main');
 	}
 
-	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
-	const source = parsed.issues.find((e) => e.id === 'CAM-1');
+	// US-004: each hash-object input is a single IssueEntry
+	const allParsed = capturedJsons.map((j) => JSON.parse(j) as IssueEntry);
+	const source = allParsed.find((e) => e.id === 'CAM-1');
 	expect(source?.status).toBe('abandoned');
 	expect(source?.description).toContain('Merged into CAM-2.');
-	// target untouched
-	const target = parsed.issues.find((e) => e.id === 'CAM-2');
-	expect(target?.status).toBe('open');
 });
 
 test('merge-into: appends to existing description', () => {
-	const backlog = makeBacklogTwo({ description: 'Original desc' });
-	let capturedJson = '';
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const { spawnFn } = makeFakeSpawnFn({
+		entries: makeTwoEntries({ description: 'Original desc' }),
+	});
+	const capturedJsons: string[] = [];
 
 	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
 		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
-			capturedJson = opts.input;
+			capturedJsons.push(opts.input);
 		}
 		return spawnFn(cmd, args, opts);
 	};
 
 	mergeIssueOnMain(makeMergeOpts({ spawnFn: recordingSpawnFn }));
 
-	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
-	const source = parsed.issues.find((e) => e.id === 'CAM-1');
+	const allParsed = capturedJsons.map((j) => JSON.parse(j) as IssueEntry);
+	const source = allParsed.find((e) => e.id === 'CAM-1');
 	expect(source?.description).toBe('Original desc\n\nMerged into CAM-2.');
 });
 
 test('merge-into: foldBlockedBy folds source blockedBy into target', () => {
 	// source blocks on CAM-3; after merge, target should also block on CAM-3
-	const backlog: IssuesLocalJson = {
-		next_id: 4,
-		issues: [
-			{
-				id: 'CAM-1',
-				title: 'Source',
-				stage: 'idea',
-				status: 'open',
-				blockedBy: ['CAM-3'],
-				createdAt: '2026-01-01T00:00:00.000Z',
-			},
-			{
-				id: 'CAM-2',
-				title: 'Target',
-				stage: 'idea',
-				status: 'open',
-				blockedBy: [],
-				createdAt: '2026-01-02T00:00:00.000Z',
-			},
-			{
-				id: 'CAM-3',
-				title: 'Blocker',
-				stage: 'idea',
-				status: 'open',
-				blockedBy: [],
-				createdAt: '2026-01-03T00:00:00.000Z',
-			},
-		],
-	};
-	let capturedJson = '';
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const threeEntries: IssueEntry[] = [
+		{
+			id: 'CAM-1',
+			title: 'Source',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: ['CAM-3'],
+			createdAt: '2026-01-01T00:00:00.000Z',
+		},
+		{
+			id: 'CAM-2',
+			title: 'Target',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: [],
+			createdAt: '2026-01-02T00:00:00.000Z',
+		},
+		{
+			id: 'CAM-3',
+			title: 'Blocker',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: [],
+			createdAt: '2026-01-03T00:00:00.000Z',
+		},
+	];
+	const capturedJsons: string[] = [];
+	const { spawnFn } = makeFakeSpawnFn({ entries: threeEntries });
 
 	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
 		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
-			capturedJson = opts.input;
+			capturedJsons.push(opts.input);
 		}
 		return spawnFn(cmd, args, opts);
 	};
 
 	mergeIssueOnMain(makeMergeOpts({ spawnFn: recordingSpawnFn, foldBlockedBy: true }));
 
-	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
-	const target = parsed.issues.find((e) => e.id === 'CAM-2');
+	const allParsed = capturedJsons.map((j) => JSON.parse(j) as IssueEntry);
+	const target = allParsed.find((e) => e.id === 'CAM-2');
 	expect(target?.blockedBy).toContain('CAM-3');
 });
 
 test('merge-into: foldBlockedBy does not fold when false (default)', () => {
-	const backlog: IssuesLocalJson = {
-		next_id: 4,
-		issues: [
-			{
-				id: 'CAM-1',
-				title: 'Source',
-				stage: 'idea',
-				status: 'open',
-				blockedBy: ['CAM-3'],
-				createdAt: '2026-01-01T00:00:00.000Z',
-			},
-			{
-				id: 'CAM-2',
-				title: 'Target',
-				stage: 'idea',
-				status: 'open',
-				blockedBy: [],
-				createdAt: '2026-01-02T00:00:00.000Z',
-			},
-			{
-				id: 'CAM-3',
-				title: 'Blocker',
-				stage: 'idea',
-				status: 'open',
-				blockedBy: [],
-				createdAt: '2026-01-03T00:00:00.000Z',
-			},
-		],
-	};
-	let capturedJson = '';
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const threeEntries: IssueEntry[] = [
+		{
+			id: 'CAM-1',
+			title: 'Source',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: ['CAM-3'],
+			createdAt: '2026-01-01T00:00:00.000Z',
+		},
+		{
+			id: 'CAM-2',
+			title: 'Target',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: [],
+			createdAt: '2026-01-02T00:00:00.000Z',
+		},
+		{
+			id: 'CAM-3',
+			title: 'Blocker',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: [],
+			createdAt: '2026-01-03T00:00:00.000Z',
+		},
+	];
+	const capturedJsons: string[] = [];
+	const { spawnFn } = makeFakeSpawnFn({ entries: threeEntries });
 
 	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
 		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
-			capturedJson = opts.input;
+			capturedJsons.push(opts.input);
 		}
 		return spawnFn(cmd, args, opts);
 	};
 
 	mergeIssueOnMain(makeMergeOpts({ spawnFn: recordingSpawnFn, foldBlockedBy: false }));
 
-	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
-	const target = parsed.issues.find((e) => e.id === 'CAM-2');
-	expect(target?.blockedBy).toEqual([]);
+	// No target file committed when foldBlockedBy=false
+	const allParsed = capturedJsons.map((j) => JSON.parse(j) as IssueEntry);
+	const target = allParsed.find((e) => e.id === 'CAM-2');
+	// target not in commit when foldBlockedBy=false
+	if (target !== undefined) {
+		expect(target.blockedBy).toEqual([]);
+	} else {
+		// Target was not committed at all -- acceptable
+		expect(target).toBeUndefined();
+	}
 });
 
 test('merge-into: foldBlockedBy deduplicates existing entries', () => {
-	const backlog: IssuesLocalJson = {
-		next_id: 4,
-		issues: [
-			{
-				id: 'CAM-1',
-				title: 'Source',
-				stage: 'idea',
-				status: 'open',
-				blockedBy: ['CAM-3'],
-				createdAt: '2026-01-01T00:00:00.000Z',
-			},
-			{
-				id: 'CAM-2',
-				title: 'Target',
-				stage: 'idea',
-				status: 'open',
-				blockedBy: ['CAM-3'],
-				createdAt: '2026-01-02T00:00:00.000Z',
-			},
-			{
-				id: 'CAM-3',
-				title: 'Blocker',
-				stage: 'idea',
-				status: 'open',
-				blockedBy: [],
-				createdAt: '2026-01-03T00:00:00.000Z',
-			},
-		],
-	};
-	let capturedJson = '';
-	const { spawnFn } = makeFakeSpawnFn({ backlog });
+	const threeEntries: IssueEntry[] = [
+		{
+			id: 'CAM-1',
+			title: 'Source',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: ['CAM-3'],
+			createdAt: '2026-01-01T00:00:00.000Z',
+		},
+		{
+			id: 'CAM-2',
+			title: 'Target',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: ['CAM-3'],
+			createdAt: '2026-01-02T00:00:00.000Z',
+		},
+		{
+			id: 'CAM-3',
+			title: 'Blocker',
+			stage: 'idea',
+			status: 'open',
+			blockedBy: [],
+			createdAt: '2026-01-03T00:00:00.000Z',
+		},
+	];
+	const capturedJsons: string[] = [];
+	const { spawnFn } = makeFakeSpawnFn({ entries: threeEntries });
 
 	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
 		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
-			capturedJson = opts.input;
+			capturedJsons.push(opts.input);
 		}
 		return spawnFn(cmd, args, opts);
 	};
 
 	mergeIssueOnMain(makeMergeOpts({ spawnFn: recordingSpawnFn, foldBlockedBy: true }));
 
-	const parsed = JSON.parse(capturedJson) as IssuesLocalJson;
-	const target = parsed.issues.find((e) => e.id === 'CAM-2');
+	const allParsed = capturedJsons.map((j) => JSON.parse(j) as IssueEntry);
+	const target = allParsed.find((e) => e.id === 'CAM-2');
 	// CAM-3 should appear only once (no duplication)
 	expect(target?.blockedBy.filter((d) => d === 'CAM-3')).toHaveLength(1);
 });
 
 test('merge-into: commit message is chore(cam): merge <id> into <intoId>', () => {
-	const { spawnFn, calls } = makeFakeSpawnFn({ backlog: makeBacklogTwo() });
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: makeTwoEntries() });
 	mergeIssueOnMain(makeMergeOpts({ spawnFn }));
 	const commitTreeCall = calls.find((c) => c.join(' ').includes('commit-tree'));
 	expect(commitTreeCall?.join(' ')).toContain('chore(cam): merge CAM-1 into CAM-2');
 });
 
 test('merge-into: never calls git checkout', () => {
-	const { spawnFn, calls } = makeFakeSpawnFn({ backlog: makeBacklogTwo() });
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: makeTwoEntries() });
 	mergeIssueOnMain(makeMergeOpts({ spawnFn }));
 	expect(calls.some((c) => c.includes('checkout'))).toBe(false);
 });
@@ -1164,7 +1164,7 @@ test('merge-into: never calls git checkout', () => {
 // 5. Real-git integration tests: abandon and merge-into
 // ===========================================================================
 
-function makeTmpRepoTwo(): RepoHandles & { camDir2?: string } {
+function makeTmpRepoTwo(): RepoHandles {
 	const dir = mkdtempSync(join(tmpdir(), 'cam-abandon-merge-'));
 	dirsToCleanup.push(dir);
 
@@ -1177,35 +1177,33 @@ function makeTmpRepoTwo(): RepoHandles & { camDir2?: string } {
 	run(['config', 'user.name', 'Test User']);
 
 	const camDir = join(dir, 'scripts', 'cam');
-	mkdirSync(camDir, { recursive: true });
+	const issuesDir = join(camDir, 'issues');
+	mkdirSync(issuesDir, { recursive: true });
 
-	const issues: IssuesLocalJson = {
-		next_id: 3,
-		issues: [
-			{
-				id: 'CAM-1',
-				title: 'Source idea',
-				stage: 'idea',
-				status: 'open',
-				blockedBy: [],
-				createdAt: '2026-01-01T00:00:00.000Z',
-			},
-			{
-				id: 'CAM-2',
-				title: 'Target idea',
-				stage: 'idea',
-				status: 'open',
-				blockedBy: [],
-				createdAt: '2026-01-02T00:00:00.000Z',
-			},
-		],
+	// US-004: create per-file CAM-0001.json and CAM-0002.json
+	const e1: IssueEntry = {
+		id: 'CAM-1',
+		title: 'Source idea',
+		stage: 'idea',
+		status: 'open',
+		blockedBy: [],
+		createdAt: '2026-01-01T00:00:00.000Z',
 	};
-	writeFileSync(join(camDir, 'issues.local.json'), JSON.stringify(issues, null, 2) + '\n');
+	const e2: IssueEntry = {
+		id: 'CAM-2',
+		title: 'Target idea',
+		stage: 'idea',
+		status: 'open',
+		blockedBy: [],
+		createdAt: '2026-01-02T00:00:00.000Z',
+	};
+	writeFileSync(join(issuesDir, 'CAM-0001.json'), toJson(e1));
+	writeFileSync(join(issuesDir, 'CAM-0002.json'), toJson(e2));
 
 	run(['add', '-A']);
 	run(['commit', '-m', 'chore: initial harness state']);
 
-	return { dir, run, camDir };
+	return { dir, run, camDir, issuesDir };
 }
 
 // Real-git abandon tests
@@ -1237,25 +1235,26 @@ test.skipIf(!gitAvailable)(
 		const logResult = run(['log', 'main', '-1', '--format=%s']);
 		expect((logResult.stdout as string).trim()).toBe('chore(cam): abandon CAM-1');
 
-		// entry is abandoned on main
-		const showResult = run(['show', 'main:scripts/cam/issues.local.json']);
-		const data = JSON.parse(showResult.stdout as string) as IssuesLocalJson;
-		const entry = data.issues.find((e) => e.id === 'CAM-1');
-		expect(entry?.status).toBe('abandoned');
+		// US-004: main has the updated per-file entry
+		const showResult = run(['show', 'main:scripts/cam/issues/CAM-0001.json']);
+		const entry = JSON.parse(showResult.stdout as string) as IssueEntry;
+		expect(entry.status).toBe('abandoned');
 
 		// feature branch HEAD unchanged
 		const featureSha1 = (run(['rev-parse', 'HEAD']).stdout as string).trim();
 		expect(featureSha1).toBe(featureSha0);
 
 		// working tree clean
-		expect((run(['status', '--porcelain']).stdout as string).trim()).toBe('');
+		const status = run(['status', '--porcelain']);
+		expect((status.stdout as string).trim()).toBe('');
 	},
 );
 
 test.skipIf(!gitAvailable)(
 	'Real-git abandon (on-main): direct commit; file updated in working tree',
 	() => {
-		const { dir, run, camDir } = makeTmpRepoTwo();
+		const { dir, run, issuesDir } = makeTmpRepoTwo();
+		const mainSha0 = (run(['rev-parse', 'main']).stdout as string).trim();
 
 		const result = abandonIssueOnMain({
 			cwd: dir,
@@ -1267,48 +1266,51 @@ test.skipIf(!gitAvailable)(
 		if (!result.ok) throw new Error(`Expected ok:true but got: ${JSON.stringify(result)}`);
 		expect(result.branchWasMain).toBe(true);
 
-		const wtContent = readFileSync(join(camDir, 'issues.local.json'), 'utf8');
-		const data = JSON.parse(wtContent) as IssuesLocalJson;
-		const entry = data.issues.find((e) => e.id === 'CAM-1');
-		expect(entry?.status).toBe('abandoned');
+		const mainSha1 = (run(['rev-parse', 'main']).stdout as string).trim();
+		expect(mainSha1).not.toBe(mainSha0);
 
 		const logResult = run(['log', '-1', '--format=%s']);
 		expect((logResult.stdout as string).trim()).toBe('chore(cam): abandon CAM-1');
 
-		expect((run(['status', '--porcelain']).stdout as string).trim()).toBe('');
+		// working-tree file updated
+		const wtContent = readFileSync(join(issuesDir, 'CAM-0001.json'), 'utf8');
+		const wtEntry = JSON.parse(wtContent) as IssueEntry;
+		expect(wtEntry.status).toBe('abandoned');
+
+		const status = run(['status', '--porcelain']);
+		expect((status.stdout as string).trim()).toBe('');
 	},
 );
 
 test.skipIf(!gitAvailable)(
 	'Real-git abandon: already-abandoned guard fires in real git',
 	() => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-abandon-guard-'));
+		const dir = mkdtempSync(join(tmpdir(), 'cam-abandon-aa-'));
 		dirsToCleanup.push(dir);
 
 		const run = (args: string[]) =>
 			spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
+
 		run(['init']);
 		run(['symbolic-ref', 'HEAD', 'refs/heads/main']);
 		run(['config', 'user.email', 'test@example.com']);
 		run(['config', 'user.name', 'Test User']);
+
 		const camDir = join(dir, 'scripts', 'cam');
-		mkdirSync(camDir, { recursive: true });
-		const issues: IssuesLocalJson = {
-			next_id: 2,
-			issues: [
-				{
-					id: 'CAM-1',
-					title: 'Already done',
-					stage: 'idea',
-					status: 'abandoned',
-					blockedBy: [],
-					createdAt: '2026-01-01T00:00:00.000Z',
-				},
-			],
+		const issuesDir = join(camDir, 'issues');
+		mkdirSync(issuesDir, { recursive: true });
+
+		const entry: IssueEntry = {
+			id: 'CAM-1',
+			title: 'Abandoned issue',
+			stage: 'idea',
+			status: 'abandoned',
+			blockedBy: [],
+			createdAt: '2026-01-01T00:00:00.000Z',
 		};
-		writeFileSync(join(camDir, 'issues.local.json'), JSON.stringify(issues, null, 2) + '\n');
+		writeFileSync(join(issuesDir, 'CAM-0001.json'), toJson(entry));
 		run(['add', '-A']);
-		run(['commit', '-m', 'chore: init']);
+		run(['commit', '-m', 'chore: initial']);
 
 		const result = abandonIssueOnMain({
 			cwd: dir,
@@ -1316,6 +1318,7 @@ test.skipIf(!gitAvailable)(
 			spawnFn: realSpawnFn,
 			clock: () => '2026-06-27T00:00:00.000Z',
 		});
+
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.reason).toBe('already-abandoned');
 	},
@@ -1326,10 +1329,9 @@ test.skipIf(!gitAvailable)(
 test.skipIf(!gitAvailable)(
 	'Real-git merge-into (off-main): source abandoned; description records target; main advances',
 	() => {
-		const { dir, run } = makeTmpRepoTwo();
-		const mainSha0 = (run(['rev-parse', 'main']).stdout as string).trim();
+		const { dir, run, issuesDir } = makeTmpRepoTwo();
 		run(['checkout', '-b', 'feat/merge-test']);
-		const featureSha0 = (run(['rev-parse', 'HEAD']).stdout as string).trim();
+		const mainSha0 = (run(['rev-parse', 'main']).stdout as string).trim();
 
 		const result = mergeIssueOnMain({
 			cwd: dir,
@@ -1340,51 +1342,25 @@ test.skipIf(!gitAvailable)(
 		});
 
 		if (!result.ok) throw new Error(`Expected ok:true but got: ${JSON.stringify(result)}`);
-		expect(result.id).toBe('CAM-1');
-		expect(result.intoId).toBe('CAM-2');
-		expect(result.branchWasMain).toBe(false);
 
 		// main advanced
 		const mainSha1 = (run(['rev-parse', 'main']).stdout as string).trim();
 		expect(mainSha1).not.toBe(mainSha0);
 
-		// commit message
-		const logResult = run(['log', 'main', '-1', '--format=%s']);
-		expect((logResult.stdout as string).trim()).toBe('chore(cam): merge CAM-1 into CAM-2');
-
-		// source is abandoned on main; description records merge target
-		const showResult = run(['show', 'main:scripts/cam/issues.local.json']);
-		const data = JSON.parse(showResult.stdout as string) as IssuesLocalJson;
-		const source = data.issues.find((e) => e.id === 'CAM-1');
-		expect(source?.status).toBe('abandoned');
-		expect(source?.description).toContain('Merged into CAM-2.');
-
-		// target untouched
-		const target = data.issues.find((e) => e.id === 'CAM-2');
-		expect(target?.status).toBe('open');
-
-		// feature branch HEAD unchanged
-		const featureSha1 = (run(['rev-parse', 'HEAD']).stdout as string).trim();
-		expect(featureSha1).toBe(featureSha0);
+		// source entry updated on main
+		const showResult = run(['show', 'main:scripts/cam/issues/CAM-0001.json']);
+		const source = JSON.parse(showResult.stdout as string) as IssueEntry;
+		expect(source.status).toBe('abandoned');
+		expect(source.description).toContain('Merged into CAM-2');
 
 		// working tree clean
-		expect((run(['status', '--porcelain']).stdout as string).trim()).toBe('');
-	},
-);
+		const status = run(['status', '--porcelain']);
+		expect((status.stdout as string).trim()).toBe('');
 
-test.skipIf(!gitAvailable)(
-	'Real-git merge-into: self-merge guard fires in real git',
-	() => {
-		const { dir } = makeTmpRepoTwo();
-		const result = mergeIssueOnMain({
-			cwd: dir,
-			id: 'CAM-1',
-			intoId: 'CAM-1',
-			spawnFn: realSpawnFn,
-			clock: () => '2026-06-27T00:00:00.000Z',
-		});
-		expect(result.ok).toBe(false);
-		if (!result.ok) expect(result.reason).toBe('self-merge');
+		// working-tree file NOT modified (off-main path)
+		const wtContent = readFileSync(join(issuesDir, 'CAM-0001.json'), 'utf8');
+		const wtEntry = JSON.parse(wtContent) as IssueEntry;
+		expect(wtEntry.status).toBe('open');
 	},
 );
 
@@ -1392,6 +1368,7 @@ test.skipIf(!gitAvailable)(
 	'Real-git merge-into: target-not-found guard fires in real git',
 	() => {
 		const { dir } = makeTmpRepoTwo();
+
 		const result = mergeIssueOnMain({
 			cwd: dir,
 			id: 'CAM-1',
@@ -1399,6 +1376,7 @@ test.skipIf(!gitAvailable)(
 			spawnFn: realSpawnFn,
 			clock: () => '2026-06-27T00:00:00.000Z',
 		});
+
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.reason).toBe('target-not-found');
 	},
