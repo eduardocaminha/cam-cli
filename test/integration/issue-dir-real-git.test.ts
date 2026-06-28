@@ -478,6 +478,71 @@ test.skipIf(!gitAvailable)(
 );
 
 // ---------------------------------------------------------------------------
+// Accented UTF-8 content (byte-vs-char regression, US-R1-001)
+// ---------------------------------------------------------------------------
+
+test.skipIf(!gitAvailable)(
+	'AC#5: readBacklogFromMain returns all entries when issue titles contain multi-byte UTF-8 (accented Portuguese)',
+	() => {
+		// Regression: git cat-file --batch reports <size> in BYTES, but the old
+		// parseBatchOutput sliced by CHARACTERS.  For blobs containing multi-byte
+		// code points (e.g. "ç"=2 bytes, "ã"=2 bytes), the slice over-read and
+		// JSON.parse failed; subsequent entries were desynchronised and silently
+		// dropped.  Over the real 129-issue repo backlog, 38 entries were lost.
+
+		// Seed: one ASCII issue already committed.
+		const { dir, run } = makeTmpRepo({ seedIssues: [makeIssueEntry('CAM-1')] });
+
+		const mainSha0 = stdout(run(['rev-parse', 'main']));
+
+		// File two issues with accented titles via writeIssueFile (commit to main).
+		const resultA = writeIssueFile({
+			cwd: dir,
+			title: 'migração de configuração',
+			spawnFn: realSpawnFn,
+			createdAt: FIXED_CLOCK,
+		});
+		const resultB = writeIssueFile({
+			cwd: dir,
+			title: 'cancelação e integração contínua',
+			spawnFn: realSpawnFn,
+			createdAt: FIXED_CLOCK,
+		});
+
+		// Verify allocations are sequential after CAM-1.
+		expect(resultA.id).toBe('CAM-2');
+		expect(resultB.id).toBe('CAM-3');
+
+		// main advanced by two commits.
+		const commitCount = stdout(run(['rev-list', '--count', mainSha0 + '..main']));
+		expect(commitCount).toBe('2');
+
+		// readBacklogFromMain must return ALL THREE entries (CAM-1, CAM-2, CAM-3).
+		const backlogSpawnFn = (
+			c: string,
+			a: string[],
+			o: { encoding: 'utf8'; input?: string },
+		) => realSpawnFn(c, a, o);
+
+		const backlog = readBacklogFromMain(dir, backlogSpawnFn);
+
+		expect(backlog).toHaveLength(3);
+
+		// Verify each entry is present with the correct accented title.
+		const byId = Object.fromEntries(backlog.map((e) => [e.id, e]));
+
+		expect(byId['CAM-1']?.title).toBe('Issue CAM-1');
+		expect(byId['CAM-2']?.title).toBe('migração de configuração');
+		expect(byId['CAM-3']?.title).toBe('cancelação e integração contínua');
+
+		// Verify entries are sorted numerically ascending.
+		expect(backlog[0]?.id).toBe('CAM-1');
+		expect(backlog[1]?.id).toBe('CAM-2');
+		expect(backlog[2]?.id).toBe('CAM-3');
+	},
+);
+
+// ---------------------------------------------------------------------------
 // AC#4: Cross-branch read
 // ---------------------------------------------------------------------------
 

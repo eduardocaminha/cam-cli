@@ -14,8 +14,8 @@
 // GIT CONTRACT (cat-file --batch framing):
 //   Input (stdin): one object name per line (e.g. `main:scripts/cam/issues/CAM-001.json`).
 //   Output per object: `<oid> SP <type> SP <size> LF <contents> LF`
-//   Parse: read the header line, take exactly <size> characters of content,
-//   skip the trailing LF.
+//   Parse: read the header line, take exactly <size> BYTES of content,
+//   skip the trailing LF byte.  <size> is always in bytes (not characters).
 //
 // CAM-90 US-002, US-003.
 
@@ -58,16 +58,24 @@ function numericIdSuffix(id: string): number {
  * Each object is framed as:
  *   <oid> SP <type> SP <size> LF <contents> LF
  *
+ * `<size>` is the BYTE length of the blob contents (git contract). This
+ * function therefore operates on a raw Buffer so that slicing is byte-accurate.
+ * Multi-byte UTF-8 characters (e.g. Portuguese accents: ção, migração) are
+ * decoded correctly per-blob via `Buffer.subarray(...).toString('utf8')`.
+ *
  * Returns raw content strings for each "blob" object found. Lines whose type
  * is not "blob" (e.g. "missing") are silently skipped.
  */
-function parseBatchOutput(output: string): string[] {
+function parseBatchOutput(outputBytes: Buffer): string[] {
 	const results: string[] = [];
 	let pos = 0;
-	while (pos < output.length) {
-		const nl = output.indexOf('\n', pos);
+	while (pos < outputBytes.length) {
+		// Locate the next LF byte (0x0A) that terminates the header.
+		// Buffer.indexOf is byte-accurate; 0x0A is never a UTF-8 continuation
+		// byte (those are always >= 0x80), so this scan is safe.
+		const nl = outputBytes.indexOf(0x0a, pos);
 		if (nl === -1) break;
-		const header = output.slice(pos, nl);
+		const header = outputBytes.subarray(pos, nl).toString('utf8');
 		pos = nl + 1;
 
 		// Header format: "<oid> <type> <size>" or "<name> missing"
@@ -78,8 +86,10 @@ function parseBatchOutput(output: string): string[] {
 		const size = sizeStr !== undefined ? parseInt(sizeStr, 10) : NaN;
 		if (Number.isNaN(size)) continue;
 
-		// Read exactly <size> characters of content, then skip the trailing LF.
-		const content = output.slice(pos, pos + size);
+		// Read exactly <size> BYTES of content, then skip the trailing LF byte.
+		// Decoding each slice individually ensures multi-byte UTF-8 characters
+		// in the blob are reconstructed correctly.
+		const content = outputBytes.subarray(pos, pos + size).toString('utf8');
 		pos += size + 1;
 		results.push(content);
 	}
@@ -129,8 +139,11 @@ export function readBacklogFromMain(
 		{ encoding: 'utf8', input: refs },
 	);
 
-	// Parse framed output into raw content strings.
-	const contents = parseBatchOutput(catResult.stdout ?? '');
+	// Convert the UTF-8-decoded string to a Buffer so that parseBatchOutput can
+	// slice by byte offset (matching the byte-length <size> reported by git).
+	// This round-trip is lossless for valid UTF-8 JSON content.
+	const rawBytes = Buffer.from(catResult.stdout ?? '', 'utf8');
+	const contents = parseBatchOutput(rawBytes);
 
 	// Parse each content string as IssueEntry; skip malformed entries silently.
 	const entries: IssueEntry[] = [];

@@ -348,6 +348,87 @@ describe('readBacklogFromMain -- edge cases', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Multi-byte UTF-8 (byte-vs-char correctness)
+// ---------------------------------------------------------------------------
+
+describe('readBacklogFromMain -- multi-byte UTF-8 correctness', () => {
+	// Regression for the byte-vs-char bug: git cat-file --batch reports <size>
+	// in BYTES, but the old implementation sliced by character count.  Any blob
+	// containing multi-byte UTF-8 characters (e.g. Portuguese accents like
+	// "acao", "migração", "ção") was corrupted and then dropped, causing silent
+	// data loss.  These tests confirm byte-accurate slicing is now applied.
+
+	test('entry with accented Portuguese title survives round-trip', () => {
+		// "migração" contains two 2-byte UTF-8 code points: "ç" (U+00E7) and
+		// "ã" (U+00E3).  byteLength=10 but charLength=8.
+		const entry = makeEntry({ id: 'CAM-1', title: 'migração de issues' });
+		const spy: BacklogSpawnFn = (_cmd, args) => {
+			if (args.includes('ls-tree')) {
+				return {
+					...emptyReturn(),
+					stdout: 'scripts/cam/issues/CAM-001.json\n',
+				};
+			}
+			return { ...emptyReturn(), stdout: makeBatchOutput([entry]) };
+		};
+
+		const result = readBacklogFromMain('/fake/cwd', spy);
+		expect(result).toHaveLength(1);
+		expect(result[0]?.title).toBe('migração de issues');
+	});
+
+	test('second entry after multi-byte first entry is not desynchronised', () => {
+		// If byte-vs-char slicing is broken, the position is advanced by the
+		// BYTE count of the first entry but the string has fewer characters,
+		// causing the parser to overshoot and read into the second entry's
+		// header -- corrupting or dropping the second entry.
+		const entry1 = makeEntry({ id: 'CAM-1', title: 'ação de melhoria' });
+		const entry2 = makeEntry({ id: 'CAM-2', title: 'simple ascii title' });
+		const spy: BacklogSpawnFn = (_cmd, args) => {
+			if (args.includes('ls-tree')) {
+				return {
+					...emptyReturn(),
+					stdout:
+						'scripts/cam/issues/CAM-001.json\nscripts/cam/issues/CAM-002.json\n',
+				};
+			}
+			return { ...emptyReturn(), stdout: makeBatchOutput([entry1, entry2]) };
+		};
+
+		const result = readBacklogFromMain('/fake/cwd', spy);
+		expect(result).toHaveLength(2);
+		expect(result[0]?.title).toBe('ação de melhoria');
+		expect(result[1]?.title).toBe('simple ascii title');
+	});
+
+	test('all 3 entries with accents are parsed when byteLength > charLength for all', () => {
+		// Simulates the real-world 129-issue backlog scenario described in the
+		// US-R1-001 notes: entries with accented content were silently dropped.
+		const entries = [
+			makeEntry({ id: 'CAM-1', title: 'cancelação de sessão' }),
+			makeEntry({ id: 'CAM-2', title: 'configuração inicial' }),
+			makeEntry({ id: 'CAM-3', title: 'integração contínua' }),
+		];
+		const spy: BacklogSpawnFn = (_cmd, args) => {
+			if (args.includes('ls-tree')) {
+				return {
+					...emptyReturn(),
+					stdout:
+						'scripts/cam/issues/CAM-001.json\nscripts/cam/issues/CAM-002.json\nscripts/cam/issues/CAM-003.json\n',
+				};
+			}
+			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
+		};
+
+		const result = readBacklogFromMain('/fake/cwd', spy);
+		expect(result).toHaveLength(3);
+		expect(result[0]?.title).toBe('cancelação de sessão');
+		expect(result[1]?.title).toBe('configuração inicial');
+		expect(result[2]?.title).toBe('integração contínua');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // allocateId
 // ---------------------------------------------------------------------------
 

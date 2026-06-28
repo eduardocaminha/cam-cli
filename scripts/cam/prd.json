@@ -21,6 +21,13 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "CRITICAL [src/issues/backlog.ts:82]: parseBatchOutput slices the UTF-8-decoded stdout STRING by `size`, but `git cat-file --batch` frames `<size>` in BYTES (confirmed by git docs). For any blob containing multi-byte UTF-8 (the repo's own issues are full of Portuguese accents: ção, migração, etc.) the slice over-reads, JSON.parse fails on the corrupted slice, and the byte-vs-char offset (`pos += size + 1`) desyncs parsing for every subsequent entry. Empirically, readBacklogFromMain over the real migrated 129-issue backlog returns only 91 entries (38 silently dropped; the first parsed id is CAM-25, not CAM-1). This breaks every compiled consumer: cam triage (ranks a partial backlog), cam spec / issue-specify (target lookup returns not-found for dropped issues), selectPlannableFromFile, and allocateId — which can return a colliding id when the highest-id file is dropped, reintroducing the exact stale-counter/collision bug the CAM-90 redesign was meant to eliminate. Fix: read the cat-file --batch payload as raw bytes (Buffer) and slice by byte offset, decoding each blob slice to utf8 individually. All backlog/alloc/integration tests use ASCII-only content (byteLength === length), so the defect slips every gate; add a multi-byte (accented) fixture to test/issues/backlog.test.ts and a real-git accented-content case to test/integration/issue-dir-real-git.test.ts as part of the fix."
+    },
+    {
       "id": "US-001",
       "title": "Multi-file atomic on-main commit with compare-and-swap update-ref",
       "description": "As a cam maintainer, I need the on-main commit helper to write a LIST of {path,content} files in one atomic commit-tree and advance refs/heads/main via compare-and-swap (old-expected) with a bounded retry loop, so that every on-main writer is hardened against silent last-writer-wins loss and so that triage (N rank files) and the migration (N issue files) can land many files in a single commit.",
@@ -31,7 +38,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Generalize src/git/on-main.ts: commitTreeToMain currently takes a single (serialized, fileGitRelPath); rewrite to accept a list of {path,content} writing each blob via `git hash-object -w --stdin` then `git update-index --add --cacheinfo 100644,<blob>,<path>` into ONE temp index, then ONE write-tree, ONE commit-tree. commitOnMain likewise generalizes to a file list (git add each path, one commit). REPO FACT: today update-ref is a BLIND overwrite (no compare-and-swap) and NO caller has non-ff handling; add CAS via `git update-ref refs/heads/main <new> <old-expected>` (old-expected = localMainSha captured at read time) + bounded retry that re-reads main sha + rebuilds on CAS failure. Keep SpawnFn/buildIndexEnv exports intact; do not break the injectable-spawnFn test seam. Spec gotcha: CAS hardens ALL on-main writers (issue-file, issue-specify, triage, ship-finalize, journal-append), not just id allocation. Maps spec AC#1, AC#2. Tests: test/issue-file.test.ts and test/integration/issue-file-on-main.test.ts exercise this helper; preserve their single-file expectations (parity). Read scripts/cam/patterns.md (on-main helper conventions) before coding."
@@ -48,7 +55,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "New primitive in src/issues/ (e.g. src/issues/backlog.ts) consumed by US-005 readers and US-003 allocateId. REPO FACT: readers today use `git show main:scripts/cam/issues.local.json`; replace that single-blob read with the dir read. Use `git ls-tree -r --name-only main scripts/cam/issues/` to enumerate, then feed the blob refs (`main:<path>`) to ONE `git cat-file --batch` and parse the framed output (object-name SP type SP size LF, then size bytes, then LF). Reuse the numericIdSuffix logic shape from src/issues/select.ts (id.split('-').at(-1), guard NaN/undefined per noUncheckedIndexedAccess). Keep IssueEntry/IssueStage/IssueStatus/WsjfScore from src/issues/types.ts; this primitive returns IssueEntry[]. Maps spec AC#3. Domain term: readBacklogFromMain. Read scripts/cam/patterns.md (read-from-main invariant) before coding. GIT CONTRACT (officialDocsConsulted): `git cat-file --batch` reads object names from stdin one-per-line and frames each object as `<oid> SP <type> SP <size> LF<contents>LF` (parse: read the header line, then exactly <size> bytes, then consume the trailing LF). REPO FACT: src/issues/types.ts:54-57 carries `interface IssuesLocalJson { next_id: number; issues: IssueEntry[] }` - this story removes it (the new readBacklogFromMain returns IssueEntry[] directly); keep IssueEntry/IssueStage/IssueStatus/WsjfScore."
@@ -65,7 +72,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": "US-001",
       "notes": "Add allocateId + writeIssueFile primitives (src/issues/backlog.ts alongside US-002 readBacklogFromMain, or a sibling module). REPO FACT: 129 issues currently exist (CAM-1..CAM-129), next_id was 130 (killed). allocateId = max over readBacklogFromMain ids + 1; on empty dir start at 1. The CAS retry loop lives in US-001's on-main helper; allocateId must re-derive max INSIDE the retry rebuild closure so the loser of a race re-allocates. SPEC GOTCHA (critical): id field stays CAM-NN unpadded; ONLY the filename is 4-digit padded (cosmetic, clean ls). Do NOT pad the id field or PRD/handoff/journal references break. Filename pad: `CAM-` + String(n).padStart(4,'0') + '.json'. Maps spec AC#4, AC#6. Domain term: allocateId. requires US-001 (CAS retry + multi-file commit primitive)."
@@ -82,7 +89,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": "US-003",
       "notes": "Touch src/commands/issue-file.ts, src/commands/issue-specify.ts, src/commands/triage.ts, src/commands/ship-finalize.ts, and index.ts (lines ~978-980 _buildFinalizeOpts readIssues/writeIssues). REPO FACT: triage.ts:281-282 currently calls commitOnMain/commitTreeToMain with 'scripts/cam/issues.local.json' after mutating the whole array; rewrite to write rank onto each {specified,open} entry's own file as a {path,content} LIST (US-001 multi-file commit). triage no-op path (changed=0, sha=none) at triage.ts:264 must be preserved. issue-file.ts also currently mentions next_id (counter advance) - remove it; allocateId replaces it. Tests to update: test/issue-file.test.ts, test/commands/issue-specify.test.ts, test/triage.test.ts, test/ship-finalize.test.ts, test/ship-finalize-hardening.test.ts. SPEC GOTCHA: atomic cutover, no dual-format runtime branch - writers are dir-only, the operator filing-freeze (not a runtime if-exists check) bridges main-still-array. Maps spec AC#5 (writers). requires US-003 (allocateId + per-file write) which transitively requires US-001+US-002."
@@ -97,7 +104,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": "US-002",
       "notes": "Touch ONLY src/issues/select.ts (selectPlannableFromFile lines 70-81: replace the `${cwd}/scripts/cam/issues.local.json` read + JSON.parse(...).issues with readBacklogFromMain(cwd)). VERIFIED REPO FACTS (do not chase phantom paths): (a) dashboard.ts reads only prd.json + the event log (.claude/cam-worker-events.jsonl), NOT the issues backlog - there is no dashboard issue-listing code path to convert; (b) selectPlannableFromFile has ZERO static importers in src/ (the only grep hit is inside an embedded VALUE in src/vendor/_generated.ts, i.e. the cam-plan.md doc text, not compiled dispatch); (c) the real none-backend read path is the orchestrator's shell command `git show main:scripts/cam/issues.local.json 2>/dev/null || cat scripts/cam/issues.local.json` in cam-plan.md - that is a DOC change owned by US-008, not code. selectPlannableIssue (the pure sort/filter, select.ts lines 28-61) stays unchanged. Keep returning null on read/parse error (thin I/O seam). Maps spec AC#5 (readers). requires US-002 (readBacklogFromMain)."
@@ -113,7 +120,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": "US-003",
       "notes": "Extend/replace scripts/cam/migrate-issues-schema.ts (existing CAM-106 schema migration). REPO FACT: 129 issues -> writes CAM-0001.json .. CAM-0129.json; next_id 130 is killed (not carried over). DESIGN (Option B, operator-approved re-plan): the migration's PRIMARY execution is ON THE BRANCH. Keep the PURE transform reusable: read the live backlog (the main array) and produce the N {path,content} issue-file writes PLUS the issues.local.json deletion. That pure transform is applied two ways: (a) PRIMARY = a NORMAL on-branch commit (git add the N files + remove issues.local.json + git commit) so the branch working tree is the complete, self-consistent migrated state - this on-branch EXECUTION happens in the amended US-007; (b) the commit-tree-to-main path (US-001 multi-file atomic commit) is DEMOTED to the finalize idempotent STRAGGLER-CAPTURE only, and under the operator filing-freeze it is a no-op. The migration module is the ONE justified place that NAMES issues.local.json (reads it + deletes it) - explicit no-vestiges exception (US-009 excludes it). Idempotency: if issues.local.json is absent and the dir is populated, no-op (no commit). OPERATIONAL GOTCHA (note for orchestrator): the finalize migration re-run is now a PURE IDEMPOTENT STRAGGLER-CAPTURE (the branch already carries the full migrated tree; the squash-merge is a plain tree replacement, backlog survival does NOT depend on a finalize-migration-to-main step). Still: `cam ship --finalize` must run FROM SOURCE on the branch (bun index.ts), NOT the installed binary, because finalize closes the issue in the NEW per-file format and the installed binary still speaks the OLD array format. US-006's code is already committed; if it only carried the commit-tree-to-main path, US-007's implementer adds the on-branch (working-tree + normal commit) execution path. Maps spec AC#7. requires US-003 (allocateId/padding) and transitively US-001 (multi-file atomic commit + delete)."
@@ -132,7 +139,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": true,
       "requires": "US-006",
       "notes": "DESIGN (Option B, operator-approved re-plan): this story carries the ON-BRANCH EXECUTION of the migration (the backlog-loss fix). Run the migration so the branch working tree becomes the complete migrated state: write the N CAM-NNNN.json files into scripts/cam/issues/ + delete scripts/cam/issues.local.json + a normal git add/commit on the branch. If US-006's already-committed code only had the commit-tree-to-main path, add a working-tree/on-branch execution path here reusing the pure transform. THEN the schema + embed work: update scripts/cam/issues.schema.json + templates/scripts/cam/issues.schema.json (dual-copy) to the per-file shape; ensure no templates/scripts/cam/issues.local.json is shipped by cam init; regenerate src/vendor/_generated.ts via `bun run embed-vendor`. REPO FACT: src/vendor/_generated.ts had 5 mentions of issues.local.json (inside embedded VALUES: cam-plan.md, subagent-orchestrator.md, the schema); removing the templates copy + the doc/schema rewrites scrubs them. The embed generator (scripts/generate-embedded-vendor.ts) walks templates/ into templatesContents. test/embedded.test.ts asserts the embed; update it. SPEC GOTCHA: dual-copy + embed rule applies to issues.schema.json (both copies) + regenerate the embed (embed-vendor:check is the gate). Maps spec AC#7 (on-branch migration execution), AC#8, AC#10, AC#11. requires US-006 (the migration code + pure transform this story executes)."
@@ -151,7 +158,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 8,
+      "priority": 9,
       "passes": true,
       "requires": "US-005",
       "notes": "DUAL-COPY docs: .claude/commands/{cam-issue,cam-plan,cam-spec}.md + templates/commands/*; .claude/agents/subagent-orchestrator.md + templates/agents/subagent-orchestrator.md. Single-copy docs: docs/adr/0001-issue-system-redesign.md, docs/recovery-runbook.md, scripts/cam/patterns.md. Then `bun run embed-vendor` (templates/commands + templates/agents are embedded). REPO FACT: cam-plan.md has 4 issues.local.json references (lines ~69, 73, 78, 82, 89) in the backlog-read flow including the `git show main:scripts/cam/issues.local.json` read instruction - rewrite to `git ls-tree`/readBacklogFromMain dir read. cam-issue.md mentions next_id (counter advance) - rewrite to allocateId. recovery-runbook.md + patterns.md mention next_id reconciliation - rewrite. SPEC GOTCHA: scripts/cam/patterns.md is durable (append, do not truncate) but stale instruction must be corrected. NO travessao / NO emoji in persisted .md (operator convention), EXCEPT .claude/agents/*.md persona files (LLM-consumed, travessao allowed). Maps spec AC#11, feeds AC#9. requires US-005 (readers must exist before docs describe them). Note: subagent-orchestrator.md, cam-issue.md, cam-plan.md, cam-spec.md each have a .claude/ runtime copy AND a templates/ copy - update BOTH. EXPLICIT (F-02): cam-plan.md (both copies) currently instructs the orchestrator to read the none-backend backlog via the shell `git show main:scripts/cam/issues.local.json 2>/dev/null || cat scripts/cam/issues.local.json` (Step 2, ~line 78) - this IS the real none-backend read path (no compiled dispatch reads it). Rewrite it to the dir read (ls-tree + single cat-file --batch, the readBacklogFromMain shape). Also the `Do NOT touch scripts/cam/issues.local.json` cleanup note (~line 69) and the project.toml description (~line 73, `stored in scripts/cam/issues.local.json`) and the integer-N read (~line 82) and Step 8 (~line 89, `the local issues.local.json entry`) must all move to scripts/cam/issues/."
@@ -167,7 +174,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 9,
+      "priority": 10,
       "passes": true,
       "requires": "US-008",
       "notes": "This is a verification story: a grep sweep over the enumerated live surface, fixing any straggler the prior stories missed. DESIGN (Option B, operator-approved re-plan): it now verifies the REAL migrated BRANCH tree - scripts/cam/issues/ is populated with the 129 CAM-NNNN.json files and scripts/cam/issues.local.json is gone ON THE BRANCH (US-007 executed the migration on the branch), NOT an empty dir. The grep + 4 exceptions are UNCHANGED; exception (2) issue-content now legitimately has files to exclude (the description/spec prose INSIDE the migrated CAM-NNNN.json files mentions the old model). The FOUR documented exceptions (do NOT flag these): (1) append-only history (scripts/cam/journal.md, journal.archive.md, lessons.archive.md); (2) issue-content fields (the description/spec text INSIDE the CAM-NNNN.json issue files - now present on the branch); (3) the migration module scripts/cam/migrate-issues-schema.ts (must name issues.local.json to read+delete it); (4) historical CHANGELOG.md entries. OPERATIONAL GOTCHA (note for orchestrator): because the branch carries the full migrated tree, the squash-merge is a plain tree replacement (no finalize-migration-to-main dependency for backlog survival); the finalize migration re-run is a pure idempotent straggler-capture. Still, `cam ship --finalize` must run FROM SOURCE on the branch (bun index.ts), not the installed old-format binary, because finalize closes the issue in the NEW per-file format. Maps spec AC#9, AC#12. requires US-008 (docs must be swept before the no-vestiges grep can pass)."
@@ -184,10 +191,23 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 10,
+      "priority": 11,
       "passes": true,
       "requires": "US-006",
       "notes": "Real-git integration tests under test/integration/ (mirror the existing test/integration/{issue-file-on-main,ship-finalize-dirty-prd,triage-real-git}.test.ts which set up a real temp git repo). Four behavioral proofs the cutover needs (map to spec AC#2 CAS, AC#3 cross-branch, AC#4 allocateId race, AC#7 migration idempotency). Use real `git init` temp repos (not fakes) - fakes mented in the CAM-55 lesson; the spec's oracles for AC#2/#4/#7 explicitly demand real-git. Existing test/issues/migrate.test.ts covers the pure transform; this adds the real-git atomic/idempotent commit proof. requires US-006 (migration) and transitively US-001 (CAS) + US-003 (allocateId). NO travessao in any persisted assertion strings is not required (test files are code, not human .md docs)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "src/issues/backlog.ts",
+        "line": 82,
+        "text": "parseBatchOutput slices the UTF-8-decoded stdout STRING by `size`, but `git cat-file --batch` frames `<size>` in BYTES (confirmed by git docs). For any blob containing multi-byte UTF-8 (the repo's own issues are full of Portuguese accents: ção, migração, etc.) the slice over-reads, JSON.parse fails on the corrupted slice, and the byte-vs-char offset (`pos += size + 1`) desyncs parsing for every subsequent entry. Empirically, readBacklogFromMain over the real migrated 129-issue backlog returns only 91 entries (38 silently dropped; the first parsed id is CAM-25, not CAM-1). This breaks every compiled consumer: cam triage (ranks a partial backlog), cam spec / issue-specify (target lookup returns not-found for dropped issues), selectPlannableFromFile, and allocateId — which can return a colliding id when the highest-id file is dropped, reintroducing the exact stale-counter/collision bug the CAM-90 redesign was meant to eliminate. Fix: read the cat-file --batch payload as raw bytes (Buffer) and slice by byte offset, decoding each blob slice to utf8 individually. All backlog/alloc/integration tests use ASCII-only content (byteLength === length), so the defect slips every gate; add a multi-byte (accented) fixture to test/issues/backlog.test.ts and a real-git accented-content case to test/integration/issue-dir-real-git.test.ts as part of the fix."
+      }
+    ]
+  }
 }
