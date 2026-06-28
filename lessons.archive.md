@@ -1,3 +1,21 @@
+<!--
+DEPRECATED: 2026-06-27
+
+This file is retired and preserved as a read-only archive.
+Do NOT write new entries here; write to the active channels below instead.
+
+Superseding channels:
+  - scripts/cam/journal.md (cycle entries, structured observations)
+  - scripts/cam/patterns.md (durable codebase patterns, gotchas, invariants)
+  - memory/ (project decisions, stakeholder policy)
+
+Routing reference: see the knowledge-layer routing table in scripts/cam/CLAUDE.md
+(added in US-002 of CAM-123).
+
+Planned future deletion: this archive will be removed once all canonical entries
+have been verified absorbed into the superseding channels above.
+-->
+
 # lessons.md (cam-cli)
 
 Diário cronológico de descobertas. A regra acionável de cada entrada vive no local canônico apontado nela.
