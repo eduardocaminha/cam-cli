@@ -25,33 +25,22 @@
 //
 // CAM-107 (US-003 grill spec layer).
 
-import type { SpawnSyncReturns } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkReferentialIntegrity } from '../issues/graph.ts';
 import { validateSpec, validateWsjf } from '../issues/spec.ts';
 import type { Spec } from '../issues/spec.ts';
 import type { IssueEntry, IssuesLocalJson, WsjfScore } from '../issues/types.ts';
 import { printError } from '../logging/color.ts';
+import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
+import type { SpawnFn } from '../git/on-main.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
 import type { WorkerEventLogger } from '../supervisor/events.ts';
 
-// ---------------------------------------------------------------------------
-// Injectable dependency types
-// ---------------------------------------------------------------------------
-
-/**
- * Widened SpawnFn -- matches issue-file.ts SpawnFn exactly.
- * The optional `env` and `input` fields are required by the off-main
- * commit-tree path (GIT_INDEX_FILE and hash-object --stdin respectively).
- */
-export type SpawnFn = (
-	cmd: string,
-	args: string[],
-	options: { encoding: 'utf8'; env?: Record<string, string>; input?: string },
-) => SpawnSyncReturns<string>;
+// Re-export SpawnFn from the shared module so existing callers do not need
+// to update their import paths.
+export type { SpawnFn };
 
 /** Returns the current ISO 8601 timestamp string. Injectable for tests. */
 export type ClockFn = () => string;
@@ -111,21 +100,6 @@ export type SpecifyIssueOnMainOutcome =
 	| SpecifyIssueOnMainResult
 	| SpecifyIssueOnMainError;
 
-// ---------------------------------------------------------------------------
-// Private helpers (mirrors issue-file.ts)
-// ---------------------------------------------------------------------------
-
-function buildIndexEnv(tempIndex: string): Record<string, string> {
-	const env: Record<string, string> = {};
-	for (const [k, v] of Object.entries(process.env)) {
-		if (v !== undefined) {
-			env[k] = v;
-		}
-	}
-	env['GIT_INDEX_FILE'] = tempIndex;
-	return env;
-}
-
 type MainGuardResult =
 	| { ok: false; reason: 'diverged' | 'detached-head' | 'missing-main' }
 	| { ok: true; branchWasMain: boolean; localMainSha: string };
@@ -171,89 +145,6 @@ function checkMainUpToDate(cwd: string, spawnFn: SpawnFn): MainGuardResult {
 	}
 
 	return { ok: true, branchWasMain, localMainSha };
-}
-
-function commitOnMain(
-	cwd: string,
-	serialized: string,
-	commitMsg: string,
-	spawnFn: SpawnFn,
-	writeFile: (path: string, text: string) => void,
-): string {
-	const filePath = join(cwd, 'scripts/cam/issues.local.json');
-	writeFile(filePath, serialized);
-	spawnFn('git', ['-C', cwd, 'add', 'scripts/cam/issues.local.json'], { encoding: 'utf8' });
-	spawnFn('git', ['-C', cwd, 'commit', '-m', commitMsg], { encoding: 'utf8' });
-	const shaResult = spawnFn(
-		'git',
-		['-C', cwd, 'rev-parse', '--short', 'HEAD'],
-		{ encoding: 'utf8' },
-	);
-	return (shaResult.stdout ?? '').trim();
-}
-
-function commitTreeToMain(
-	cwd: string,
-	serialized: string,
-	commitMsg: string,
-	localMainSha: string,
-	spawnFn: SpawnFn,
-): string {
-	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-specify-'));
-	const tempIndex = join(tmpDir, 'index');
-
-	try {
-		spawnFn('git', ['-C', cwd, 'read-tree', 'main'], {
-			encoding: 'utf8',
-			env: buildIndexEnv(tempIndex),
-		});
-
-		const hashResult = spawnFn('git', ['-C', cwd, 'hash-object', '-w', '--stdin'], {
-			encoding: 'utf8',
-			env: buildIndexEnv(tempIndex),
-			input: serialized,
-		});
-		const blobSha = (hashResult.stdout ?? '').trim();
-
-		spawnFn(
-			'git',
-			[
-				'-C',
-				cwd,
-				'update-index',
-				'--add',
-				'--cacheinfo',
-				`100644,${blobSha},scripts/cam/issues.local.json`,
-			],
-			{
-				encoding: 'utf8',
-				env: buildIndexEnv(tempIndex),
-			},
-		);
-
-		const treeResult = spawnFn('git', ['-C', cwd, 'write-tree'], {
-			encoding: 'utf8',
-			env: buildIndexEnv(tempIndex),
-		});
-		const treeSha = (treeResult.stdout ?? '').trim();
-
-		const commitResult = spawnFn(
-			'git',
-			['-C', cwd, 'commit-tree', treeSha, '-p', localMainSha, '-m', commitMsg],
-			{ encoding: 'utf8' },
-		);
-		const newCommitSha = (commitResult.stdout ?? '').trim();
-
-		spawnFn(
-			'git',
-			['-C', cwd, 'update-ref', 'refs/heads/main', newCommitSha],
-			{ encoding: 'utf8' },
-		);
-
-		return newCommitSha.substring(0, 7);
-	} finally {
-		rmSync(tmpDir, { recursive: true, force: true });
-	}
 }
 
 function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
@@ -508,8 +399,8 @@ export function specifyIssueOnMain(
 	// Commit to main.
 	const commitMsg = `chore(cam): specify ${id}`;
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile)
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn);
+		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
+		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-specify-');
 
 	// Best-effort push.
 	pushMainBestEffort(cwd, spawnFn);
@@ -559,8 +450,8 @@ export function abandonIssueOnMain(
 	const serialized = JSON.stringify(backlog, null, 2) + '\n';
 	const commitMsg = `chore(cam): abandon ${id}`;
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile)
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn);
+		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
+		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-specify-');
 
 	pushMainBestEffort(cwd, spawnFn);
 	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
@@ -624,8 +515,8 @@ export function mergeIssueOnMain(
 	const serialized = JSON.stringify(backlog, null, 2) + '\n';
 	const commitMsg = `chore(cam): merge ${id} into ${intoId}`;
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile)
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn);
+		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
+		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-specify-');
 
 	pushMainBestEffort(cwd, spawnFn);
 	return { ok: true, id, intoId, committedTo: 'main', sha, branchWasMain };

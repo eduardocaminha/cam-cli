@@ -24,7 +24,7 @@
         "jscpd dup gate does not regress after dedup. [oracle: bunx jscpd@5 --config .jscpd.json src scripts]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: NEW src/git/on-main.ts (or src/commands/on-main.ts); refactor src/commands/issue-file.ts (commitTreeToMain @255-325, commitOnMain @230-247, buildIndexEnv @115-124), src/commands/issue-specify.ts (commitTreeToMain @195-257, commitOnMain @176-193, buildIndexEnv @118-127), src/commands/journal.ts (commitOnMain @329, commitTreeToMain @352, buildIndexEnv @129). All 3 copies are byte-identical except the mkdtemp prefix ('cam-issue-' / 'cam-specify-' / journal's) and the file path arg (issues.local.json vs journal.md) -- parameterize file path + tmp prefix; the localMainSha is already captured by each caller's checkMainUpToDate guard (leave the guard where it is; only the commit plumbing moves). DO NOT change checkMainUpToDate / pushMainBestEffort behavior. This CLOSES CAM-124. NOTE on the 4-caller import-assert AC: triage.ts is created in US-004, so that criterion's triage.ts arm becomes verifiable once US-004 lands -- the dedup wiring is proven across the chain, not in US-001 alone. GOTCHA: extraction must keep callers byte-behaviorally identical (parity tests are the contract); the dedup is load-bearing because the jscpd gate runs over `src scripts` (scripts/check-all.ts:88) and a 4th verbatim copy (US-004) would trip the configured jscpd threshold (6%, per .jscpd.json). Style template: src/release (pure, injectable SpawnFn). Maps spec AC#9. Re-check relatedDocs scripts/cam/patterns.md (commit-tree-to-main pattern) before coding."
     },

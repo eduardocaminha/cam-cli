@@ -27,34 +27,16 @@
 //
 // CAM-86 (file local issues to main, not the work branch).
 
-import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { writeFileSync } from 'node:fs';
 import { parseToml } from '../config/toml.ts';
+import { commitOnMain, commitTreeToMain } from '../git/on-main.ts';
+import type { SpawnFn } from '../git/on-main.ts';
 import type { IssueEntry, IssuesLocalJson } from '../issues/types.ts';
 import { printError } from '../logging/color.ts';
 
-// ---------------------------------------------------------------------------
-// Injectable dependency types
-// ---------------------------------------------------------------------------
-
-/**
- * Widened SpawnFn -- strict superset of ship-finalize's SpawnFn.
- *
- * The extra optional fields (`env`, `input`) are required by the off-main
- * commit-tree path:
- *   - `env`: carries GIT_INDEX_FILE pointing at the temp index used by
- *     read-tree, hash-object, update-index, and write-tree.
- *   - `input`: feeds the updated JSON to `git hash-object -w --stdin`.
- *
- * Injectable so the unit test can verify both fields without shelling out.
- */
-export type SpawnFn = (
-	cmd: string,
-	args: string[],
-	options: { encoding: 'utf8'; env?: Record<string, string>; input?: string },
-) => SpawnSyncReturns<string>;
+// Re-export SpawnFn from the shared module so existing callers do not need
+// to update their import paths.
+export type { SpawnFn };
 
 /** Returns the current ISO 8601 timestamp string. Injectable for tests. */
 export type ClockFn = () => string;
@@ -103,25 +85,6 @@ export interface CreateLocalIssueOnMainError {
 export type CreateLocalIssueOnMainOutcome =
 	| CreateLocalIssueOnMainResult
 	| CreateLocalIssueOnMainError;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Build a process-env copy augmented with GIT_INDEX_FILE.
- * Filters out undefined values to satisfy `Record<string, string>`.
- */
-function buildIndexEnv(tempIndex: string): Record<string, string> {
-	const env: Record<string, string> = {};
-	for (const [k, v] of Object.entries(process.env)) {
-		if (v !== undefined) {
-			env[k] = v;
-		}
-	}
-	env['GIT_INDEX_FILE'] = tempIndex;
-	return env;
-}
 
 // ---------------------------------------------------------------------------
 // Step helpers
@@ -223,108 +186,6 @@ function appendEntryAndSerialize(
 }
 
 /**
- * On-main path: write the working-tree file, git add, git commit.
- * Working tree and HEAD both advance (the normal commit path).
- * Returns the short sha from `git rev-parse --short HEAD`.
- */
-function commitOnMain(
-	cwd: string,
-	serialized: string,
-	commitMsg: string,
-	spawnFn: SpawnFn,
-	writeFile: (path: string, text: string) => void,
-): string {
-	const filePath = join(cwd, 'scripts/cam/issues.local.json');
-	writeFile(filePath, serialized);
-	spawnFn('git', ['-C', cwd, 'add', 'scripts/cam/issues.local.json'], { encoding: 'utf8' });
-	spawnFn('git', ['-C', cwd, 'commit', '-m', commitMsg], { encoding: 'utf8' });
-	const shaResult = spawnFn(
-		'git',
-		['-C', cwd, 'rev-parse', '--short', 'HEAD'],
-		{ encoding: 'utf8' },
-	);
-	return (shaResult.stdout ?? '').trim();
-}
-
-/**
- * Off-main path: git plumbing so the working tree and feature-branch HEAD are
- * left completely untouched. Uses a temp GIT_INDEX_FILE for read-tree,
- * hash-object, update-index, and write-tree, then commit-tree -p main and
- * update-ref refs/heads/main. Returns the 7-char short sha of the new commit.
- */
-function commitTreeToMain(
-	cwd: string,
-	serialized: string,
-	commitMsg: string,
-	localMainSha: string,
-	spawnFn: SpawnFn,
-): string {
-	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-'));
-	const tempIndex = join(tmpDir, 'index');
-
-	try {
-		// read-tree: populate the temp index with the tree at main.
-		spawnFn('git', ['-C', cwd, 'read-tree', 'main'], {
-			encoding: 'utf8',
-			env: buildIndexEnv(tempIndex),
-		});
-
-		// hash-object: write the updated JSON blob to the object store.
-		// The JSON is fed via options.input (the widened SpawnFn field).
-		const hashResult = spawnFn('git', ['-C', cwd, 'hash-object', '-w', '--stdin'], {
-			encoding: 'utf8',
-			env: buildIndexEnv(tempIndex),
-			input: serialized,
-		});
-		const blobSha = (hashResult.stdout ?? '').trim();
-
-		// update-index: replace the old blob with the new one in the temp index.
-		spawnFn(
-			'git',
-			[
-				'-C',
-				cwd,
-				'update-index',
-				'--add',
-				'--cacheinfo',
-				`100644,${blobSha},scripts/cam/issues.local.json`,
-			],
-			{
-				encoding: 'utf8',
-				env: buildIndexEnv(tempIndex),
-			},
-		);
-
-		// write-tree: persist the temp index as a tree object.
-		const treeResult = spawnFn('git', ['-C', cwd, 'write-tree'], {
-			encoding: 'utf8',
-			env: buildIndexEnv(tempIndex),
-		});
-		const treeSha = (treeResult.stdout ?? '').trim();
-
-		// commit-tree: create a new commit on top of main.
-		// Reuse localMainSha captured in the guard step (avoids a second rev-parse).
-		const commitResult = spawnFn(
-			'git',
-			['-C', cwd, 'commit-tree', treeSha, '-p', localMainSha, '-m', commitMsg],
-			{ encoding: 'utf8' },
-		);
-		const newCommitSha = (commitResult.stdout ?? '').trim();
-
-		// update-ref: advance refs/heads/main to the new commit.
-		spawnFn(
-			'git',
-			['-C', cwd, 'update-ref', 'refs/heads/main', newCommitSha],
-			{ encoding: 'utf8' },
-		);
-
-		return newCommitSha.substring(0, 7);
-	} finally {
-		rmSync(tmpDir, { recursive: true, force: true });
-	}
-}
-
-/**
  * Best-effort push of main to origin. A non-zero exit is logged via printError,
  * never silently swallowed; the caller does not abort (the commit already landed).
  */
@@ -413,8 +274,8 @@ export function createLocalIssueOnMain(
 	// 6. Commit to main (on-main direct commit or off-main plumbing).
 	const commitMsg = `chore(cam): file ${id} (${title})`;
 	const sha = branchWasMain
-		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile)
-		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn);
+		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
+		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-issue-');
 
 	// 7. Best-effort push. Rejection is logged explicitly, never swallowed.
 	pushMainBestEffort(cwd, spawnFn);

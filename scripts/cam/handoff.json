@@ -1,0 +1,29 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Extract shared on-main commit-tree helper from 3 verbatim copies"
+  },
+  "branchName": "cam/CAM-108-triage-deterministic-rank",
+  "timestamp": "2026-06-28T12:00:00.000Z",
+  "createdFiles": [
+    "src/git/on-main.ts"
+  ],
+  "modifiedFiles": [
+    "src/commands/issue-file.ts",
+    "src/commands/issue-specify.ts",
+    "src/commands/journal.ts",
+    "scripts/cam/patterns.md",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [
+    "AC#3 triage.ts import assert is not yet verifiable (triage.ts is created in US-004); the 3-caller wiring is proven, the 4th arm will be confirmed when US-004 lands."
+  ],
+  "nextStoryContext": "src/git/on-main.ts is the shared on-main commit plumbing. SpawnFn is exported and re-exported by each caller. The pattern: import { commitOnMain, commitTreeToMain } from '../git/on-main.ts' + import type { SpawnFn } + export type { SpawnFn }. US-002 and US-003 are unrelated stories; check prd.json for the next priority.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure refactor story: no external npm library was introduced or changed."
+    }
+  ]
+}
