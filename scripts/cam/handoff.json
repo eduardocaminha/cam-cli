@@ -1,21 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-R2-001",
-    "title": "Review round 2 fix 001: address reviewer finding"
+    "id": "US-R2-002",
+    "title": "Review round 2 fix 002: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
+    "src/commands/journal.ts",
     "docs/recovery-runbook.md",
+    "test/commands/journal-append.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R2-001 fixed: JOURNAL_HELP (index.ts:312) and docs/recovery-runbook.md:1964 now correctly say em-dash is normalised 'to a colon' (not 'to a hyphen-space sequence'). Change is two single-phrase substitutions with no code or test impact. Gates: typecheck clean, 1914 pass / 0 fail.",
+  "nextStoryContext": "US-R2-002 fixed: appendJournalEntryOnMain now checks showResult.status after git show; a non-zero exit returns { ok: false, reason: 'journal-missing' } with a helpful error message instead of silently proceeding with empty content. Recovery runbook corrected: 'file is created on first use' changed to 'must pre-exist on main (created by cam init)'. New unit test added (journal-missing guard). Gates: typecheck clean, 1915 pass / 0 fail.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-R2-001 is a two-phrase doc correction (hyphen-space sequence -> colon) in two files. No external npm library was introduced or exercised."
+      "summary": "US-R2-002 is a status-check fix (swallowed spawnFn exit code) and a runbook correction. No external npm library was introduced or exercised."
     }
   ]
 }

@@ -20,7 +20,7 @@
       "id": "US-R2-002",
       "title": "Review round 2 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/commands/journal.ts:497]: Swallowed git-show error + false runbook claim: appendJournalEntryOnMain reads `git show main:scripts/cam/journal.md` but never checks showResult.status (line 497 does `showResult.stdout ?? ''`). A missing/failed read yields empty content and the command commits a header-less journal (no `# Cam Journal` heading, no `<!-- ENTRIES_BELOW -->` marker). docs/recovery-runbook.md:2019-2020 claims the command 'writes a new file with a standard header block' on first use, which the code does not do. Either check the show status and bootstrap the canonical header, or correct the runbook to state journal.md must pre-exist on main."
     },
     {
