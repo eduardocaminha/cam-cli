@@ -1,9 +1,42 @@
 {
   "id": "CAM-131",
   "title": "Filha CAM-110: handoff first-class com gatilho deterministico alinhado a fronteira de ciclo e skip de ciclo trivial",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T15:36:58.633Z",
-  "description": "Carve-out shippavel-ja da CAM-110 (epico-ancora do lifecycle do orquestrador no loop autonomo). Hoje o gatilho do self-handoff (CAM-23) e PROSA na persona ('cheque cam orch-budget apos cada /cam-next') e nao tem nocao de fronteira de ciclo: um handoff pode disparar no meio de um implement-review ou logo apos um ciclo trivial. Escopo: tornar o gatilho deterministico e alinhado a fronteira de ciclo (so no cycle-close, nunca mid-cycle, nunca apos ciclo trivial). Toca src/commands/orch-budget.ts, o mecanismo de handoff (.cam-orch-handoff.json), o ponto de cycle-close (pos-ship/post-merge) e a persona subagent-orchestrator. Sem deps hard; melhora ate o modo interativo. INVARIANTE da CAM-110: handoff first-class alinhado a fronteira de ciclo. Filha shippavel-ja; ranqueia antes das outras no triage. Precisa de grill proprio (definir 'fronteira de ciclo' e 'ciclo trivial' operacionalmente)."
+  "description": "Carve-out shippavel-ja da CAM-110 (epico-ancora do lifecycle do orquestrador no loop autonomo). Hoje o gatilho do self-handoff (CAM-23) e PROSA na persona ('cheque cam orch-budget apos cada /cam-next') e nao tem nocao de fronteira de ciclo: um handoff pode disparar no meio de um implement-review ou logo apos um ciclo trivial. Escopo: tornar o gatilho deterministico e alinhado a fronteira de ciclo (so no cycle-close, nunca mid-cycle, nunca apos ciclo trivial). Toca src/commands/orch-budget.ts, o mecanismo de handoff (.cam-orch-handoff.json), o ponto de cycle-close (pos-ship/post-merge) e a persona subagent-orchestrator. Sem deps hard; melhora ate o modo interativo. INVARIANTE da CAM-110: handoff first-class alinhado a fronteira de ciclo. Filha shippavel-ja; ranqueia antes das outras no triage. Precisa de grill proprio (definir 'fronteira de ciclo' e 'ciclo trivial' operacionalmente).",
+  "spec": {
+    "scope": "Tornar o gatilho do self-handoff do orquestrador (CAM-23) deterministico e alinhado a fronteira de ciclo, substituindo o gatilho advisory atual (hoje o orquestrador-LLM tem que lembrar de rodar cam orch-budget e decidir escrever o handoff; evidencia: uma sessao real chegou a ~145k sem disparar aos 100k). A checagem de budget passa a rodar deterministicamente dentro do appendJournalEntryOnMain (cam journal append, CAM-122), o ultimo ato do cycle-close, garantindo que journal + backlog + event-log ja foram persistidos antes de qualquer reset. Quando o spend (transcript da sessao atual, threshold default 100k configuravel) esta over, o comando emite CAM_ORCH_HANDOFF_DUE=true; a persona do orquestrador instrui a, ao ver esse sinal, serializar o .cam-orch-handoff.json (schema CAM-23 existente, inalterado) e sair antes de qualquer outra acao, deixando o wrapper do cam run respawnar fresh e rehidratar. A decisao (quando) e deterministica; a serializacao (o que salvar) permanece com o LLM (principio CAM-117). DENTRO: a checagem deterministica no journal append, a emissao do sinal, a atualizacao da persona, e testes do gatilho. FORA: o schema do handoff e o respawn/rehydrate (funcionam, CAM-23); o meta-loop inter-ciclo (CAM-132); o auto-chain intra-ciclo (CAM-71); o force-via-harness (follow-up se o LLM ignorar o sinal imperativo); fronteiras fora de pos-ship/post-merge (sessao sem ship conta com a auto-compaction nativa do Claude).",
+    "acceptanceCriteria": [
+      "appendJournalEntryOnMain (cam journal append, CAM-122) checa o spend do orquestrador (transcript da sessao atual vs [orchestrator] token_budget do project.toml, default 100k) DEPOIS de persistir o journal entry, e emite CAM_ORCH_HANDOFF_DUE=true na saida quando spend >= threshold.",
+      "Quando under threshold, o journal append NAO emite o sinal e o cycle-close segue normal.",
+      "O sinal e emitido estritamente APOS o commit do journal entry e da memoria duravel (backlog, event-log), de modo que um handoff disparado pelo sinal nunca perde o registro do ciclo.",
+      "A persona subagent-orchestrator.md instrui: ao observar CAM_ORCH_HANDOFF_DUE=true, escrever um .cam-orch-handoff.json valido (schema CAM-23) e sair antes de qualquer outra acao.",
+      "O schema do handoff, o wrapper de respawn do cam run e a rehidratacao permanecem inalterados (CAM-23).",
+      "Testes: journal append over-threshold emite o sinal; under-threshold nao emite; o sinal e emitido apos o journal estar persistido. clock/spawn injetaveis preservados.",
+      "typecheck + bun test + check:all verdes; embed-vendor:check verde (a persona e dual-copy .claude/agents + templates/agents, exige re-embed)."
+    ],
+    "gotchas": [
+      "O spend e medido no transcript da SESSAO ATUAL (per-uuid) e zera no respawn (uuidgen fresh + reescrita do .cam-orch-session): por isso ciclo trivial dispensa skip explicito; o spend pos-handoff recomeca baixo (so o boot ~25-35k), longe do threshold. Follow-up SE o boot/rehydration inflar perto do threshold (mitigado pelo CAM-125 journal GC).",
+      "A fronteira e so pos-ship/post-merge no MVP (o journal append do cycle-close). Uma sessao longa SEM ship (varios cam-spec, planning puro) nao atinge a fronteira; conta com a auto-compaction nativa do Claude (~150k) como rede; follow-up se morder.",
+      "O sinal e imperativo mas a execucao e do LLM (serializacao irredutivel); se observarmos o LLM ignorar o sinal, escalar pra force-via-harness (follow-up, nao MVP).",
+      "Em ci-gated o journal append roda apos a narracao de post-merge (ciclo realmente fechado); em immediate roda no fim do ship. Em ambos e o ultimo ato, ponto uniforme.",
+      "A persona e dual-copy (.claude/agents/ + templates/agents/); editar exige re-embed (_generated.ts via embed-vendor) ou o embed-vendor:check falha.",
+      "CAM-51 foi abandonado nesta reconciliacao (subsumido por CAM-131); o link reverso vive aqui. O writer deterministico de CONTEXT.md/ADR ainda nao existe (CAM-118), entao os domainTerms vivem no spec; sem ADR proprio (a invariante ja esta no spec do CAM-110 e instancia o CAM-117)."
+    ],
+    "domainTerms": [
+      "fronteira de ciclo (operacional, MVP CAM-131): o appendJournalEntryOnMain do cycle-close (pos-ship em immediate; pos-narracao-de-post-merge em ci-gated), o ultimo ato deterministico onde journal+backlog+event-log ja estao persistidos; unico ponto onde o gatilho de handoff arma.",
+      "ciclo trivial (operacional, MVP CAM-131): nao recebe skip explicito; o reset de transcript per-sessao no respawn ja previne re-disparo logo apos um ciclo barato.",
+      "gatilho deterministico de handoff: a DECISAO (spend>=threshold no cycle-close) e codigo (journal append emite CAM_ORCH_HANDOFF_DUE); a SERIALIZACAO do handoff e do LLM (irredutivel), instancia do principio CAM-117.",
+      "sinal imperativo de handoff (CAM_ORCH_HANDOFF_DUE): linha deterministica emitida pelo journal append over-threshold; a persona trata como ordem de serializar-e-sair antes de qualquer outra acao.",
+      "handoff first-class: reset deterministico de contexto do orquestrador (estende CAM-23), disparado por threshold de tokens mas alinhado a fronteira de ciclo."
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 3,
+    "riskReduction": 4,
+    "jobSize": 3
+  }
 }
