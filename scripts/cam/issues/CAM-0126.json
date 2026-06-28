@@ -1,9 +1,24 @@
 {
   "id": "CAM-126",
   "title": "build-release.sh:108 ponteiro stale a lessons.md (repointar pra lessons.archive.md)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T02:34:31.514Z",
-  "description": "O comentario em scripts/build-release.sh:108 (Canonical rule: lessons.md 2026-06-06) ainda aponta pro arquivo aposentado no CAM-123 (renomeado pra lessons.archive.md). O AC#7 do CAM-123 proibia editar .sh (so .md + o rename), entao build-release.sh ficou deliberadamente fora de escopo. Repointar o comentario pra lessons.archive.md. Fix trivial de doc, 1 linha. Surfaceado pelo reviewer do CAM-123 (SUGGESTION nao-bloqueante). P3."
+  "description": "O comentario em scripts/build-release.sh:108 (Canonical rule: lessons.md 2026-06-06) ainda aponta pro arquivo aposentado no CAM-123 (renomeado pra lessons.archive.md). O AC#7 do CAM-123 proibia editar .sh (so .md + o rename), entao build-release.sh ficou deliberadamente fora de escopo. Repointar o comentario pra lessons.archive.md. Fix trivial de doc, 1 linha. Surfaceado pelo reviewer do CAM-123 (SUGGESTION nao-bloqueante). P3.",
+  "spec": {
+    "scope": "O comentario em scripts/build-release.sh:108 (Canonical rule: lessons.md 2026-06-06) ainda aponta pro arquivo aposentado no CAM-123 (renomeado pra lessons.archive.md). O AC#7 do CAM-123 proibia editar .sh (so .md + o rename), entao build-release.sh ficou deliberadamente fora de escopo. Repointar o comentario pra lessons.archive.md. Fix trivial de doc, 1 linha. Surfaceado pelo reviewer do CAM-123 (SUGGESTION nao-bloqueante). P3.",
+    "acceptanceCriteria": [
+      "O comentario em scripts/build-release.sh:108 aponta pra lessons.archive.md (nao lessons.md)",
+      "Nenhum outro ponteiro stale a lessons.md no .sh"
+    ],
+    "gotchas": [],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  }
 }
