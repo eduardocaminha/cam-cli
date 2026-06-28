@@ -6,9 +6,10 @@
 // Design goals (mirrors src/commands/issue-file.ts):
 //   - Backlog is read from main via readBacklogFromMain (ls-tree + cat-file).
 //     Never runs `git checkout` (the working-tree and work branch are untouched).
-//   - On-main path: write working-tree file, git add, git commit.
 //   - Off-main path: git plumbing (temp GIT_INDEX_FILE, read-tree, hash-object,
-//     update-index, write-tree, commit-tree, update-ref).
+//     update-index, write-tree, commit-tree, update-ref) so the feature-branch
+//     HEAD and working tree are left completely untouched.
+//   - On-main path: same ref-only commitTreeToMain path as off-main (CAM-133).
 //   - Writes only the target issue's CAM-NNNN.json file; the old array backlog
 //     file is never read or written (CAM-90 US-004 per-file cutover).
 //   - All external dependencies are injectable for unit-testing without a real
@@ -81,10 +82,7 @@ export interface SpecifyIssueOnMainOptions {
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
 	clock: ClockFn;
-	/**
-	 * Injectable file writer (on-main path only).
-	 * Defaults to writeFileSync(path, text, 'utf8').
-	 */
+	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
 	writeFile?: (path: string, text: string) => void;
 	/**
 	 * Injectable event sink for the 'stage-promoted' observability event.
@@ -191,7 +189,7 @@ export interface AbandonIssueOnMainOptions {
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
 	clock: ClockFn;
-	/** Injectable file writer (on-main path only). */
+	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
 	writeFile?: (path: string, text: string) => void;
 }
 
@@ -232,7 +230,7 @@ export interface MergeIssueOnMainOptions {
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
 	clock: ClockFn;
-	/** Injectable file writer (on-main path only). */
+	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
 	writeFile?: (path: string, text: string) => void;
 }
 
@@ -315,8 +313,9 @@ function emitStagePromoted(
  *   6. checkReferentialIntegrity on the mutated backlog -- integrity-error on failure.
  *
  * Commit path: writes only scripts/cam/issues/CAM-NNNN.json (one file).
- *   On-main: write working-tree file, git add, git commit.
- *   Off-main: git plumbing (commit-tree-to-main) so the work branch is untouched.
+ *   Off-main plumbing: commitTreeToMain (temp GIT_INDEX_FILE, read-tree, hash-object,
+ *   update-index, write-tree, commit-tree, update-ref) so the work branch is untouched.
+ *   On-main path: same ref-only commitTreeToMain path as off-main (CAM-133).
  *
  * Commit message: `chore(cam): specify <id>`.
  */
