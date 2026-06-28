@@ -1,23 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Retire lessons.md to lessons.archive.md with deprecation header"
+    "id": "US-002",
+    "title": "Add routing, naming, and location convention rules to scripts/cam/CLAUDE.md"
   },
   "branchName": "cam/CAM-123-consolidate-knowledge-layer",
   "timestamp": "2026-06-27T00:00:00Z",
-  "createdFiles": [
-    "lessons.archive.md"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
+    "scripts/cam/CLAUDE.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "lessons.md is gone (renamed to lessons.archive.md via git mv, history preserved). US-002 adds the explicit routing/naming table to scripts/cam/CLAUDE.md; the deprecation header in lessons.archive.md already references that routing table (scripts/cam/CLAUDE.md, US-002), so US-002 should ensure the section header or label in CLAUDE.md matches that reference. The relatedDocs in prd.json still lists 'lessons.md' -- that entry is now stale but harmless; the next implementer should not need to worry about it.",
+  "nextStoryContext": "US-002 added the Knowledge-Layer Routing section to scripts/cam/CLAUDE.md (routing table, naming convention, location convention, exception note). The section header is 'Knowledge-Layer Routing'. The deprecation header in lessons.archive.md references this section correctly. US-003 and beyond should read the updated CLAUDE.md to understand routing rules before routing any new insights.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "DOC-only story: git mv rename + deprecation header, no src/ or templates/ changes."
+      "summary": "DOC-only story: added Knowledge-Layer Routing section to scripts/cam/CLAUDE.md, no src/ or templates/ changes."
     }
   ]
 }

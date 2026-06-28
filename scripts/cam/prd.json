@@ -45,7 +45,7 @@
         "The full gate spine is green [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Edit ONLY scripts/cam/CLAUDE.md (the cam agent-instructions file, distinct from the repo-root CLAUDE.md which holds Bun/project instructions). The routing table covers five rows: patterns.md=technical/reusable insight, journal.md=cycle narrative/history, memory/=cross-cutting persistent decisions, docs/adr/=architectural decisions, CONTEXT.md=vocabulary/glossary. Naming rule: UPPERCASE.md (CLAUDE/CONTEXT/README/CHANGELOG/AGENTS) = external-convention entry-point; lowercase.md (journal/patterns) = cam-internal artifact; this casing split is BY DESIGN, do NOT force single casing (gotcha). Location rule: scripts/cam/ = cam-harness knowledge; repo-root + docs/ = project domain-model; do NOT move journal.md/patterns.md out of scripts/cam/ nor CONTEXT.md/docs/adr out of repo-root (the 2-namespace split is correct for downstream cam init projects). Exception note: lessons.md retirement is a cam-cli-specific exception to the global etapa-dupla convention; the global rule still holds for non-cam projects. templates/scripts/cam/CLAUDE.md is a generic skeleton that does NOT carry these sections (verified) so NO templates/ edit and NO embed-vendor. Follow no-em-dash / no-decorative-emoji for persisted .md. DOC-only: no command code (cam journal archive = CAM-125 out of scope)."
     },
