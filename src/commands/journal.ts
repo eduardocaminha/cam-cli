@@ -16,9 +16,18 @@
 //
 // CAM-122 (cam journal append deterministico + fim do jq>budget ad-hoc).
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { commitTreeToMain } from '../git/on-main.ts';
 import type { SpawnFn } from '../git/on-main.ts';
 import { printError } from '../logging/color.ts';
+import { orchestratorTranscriptPath, parseTranscriptUsage } from '../transcript/usage.ts';
+import {
+	makeFileEventLogger,
+	type CycleTokensEventDetail,
+	type WorkerEventLogger,
+} from '../supervisor/events.ts';
 
 // Re-export SpawnFn from the shared module so existing callers do not need
 // to update their import paths.
@@ -331,6 +340,188 @@ function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
  *
  * On-main path: same ref-only commitTreeToMain path as off-main (CAM-133).
  */
+// ---------------------------------------------------------------------------
+// recordCycleTokens: per-cycle token accounting
+// ---------------------------------------------------------------------------
+
+/** Coerce an unknown JSON value to a number (0 if not a number). */
+function toN(v: unknown): number {
+	return typeof v === 'number' ? v : 0;
+}
+
+/**
+ * Default: read the orchestrator transcript JSONL from disk.
+ * Uses orchestratorTranscriptPath to resolve the path from the session marker.
+ * Returns null when the session marker is absent or the file is unreadable.
+ */
+function defaultReadOrchTranscript(cwd: string, claudeDir: string): string | null {
+	const path = orchestratorTranscriptPath(cwd, claudeDir);
+	if (path === null) return null;
+	try {
+		return readFileSync(path, 'utf8');
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Default: read the event log JSONL from disk.
+ * Returns null when the file is absent or unreadable.
+ */
+function defaultReadEventLog(cwd: string): string | null {
+	const path = join(cwd, '.claude', 'cam-worker-events.jsonl');
+	try {
+		return readFileSync(path, 'utf8');
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Scan log lines for the index of the last 'cycle-tokens' event.
+ * Returns -1 when no such event exists (first cycle).
+ */
+function findLastCycleTokensIdx(lines: string[]): number {
+	let lastIdx = -1;
+	for (let i = 0; i < lines.length; i++) {
+		const raw = lines[i]?.trim();
+		if (!raw) continue;
+		try {
+			const parsed = JSON.parse(raw) as { kind?: unknown };
+			if (parsed.kind === 'cycle-tokens') lastIdx = i;
+		} catch {
+			// skip malformed lines
+		}
+	}
+	return lastIdx;
+}
+
+/**
+ * Extract the worker token total from one 'tokens' event JSON line.
+ * Returns 0 for non-tokens events, malformed lines, or missing detail.
+ */
+function extractTokensFromLine(raw: string): number {
+	try {
+		const parsed = JSON.parse(raw) as { kind?: unknown; detail?: unknown };
+		if (parsed.kind !== 'tokens') return 0;
+		const rawDetail = parsed.detail;
+		if (typeof rawDetail !== 'object' || rawDetail === null || Array.isArray(rawDetail)) return 0;
+		const d = rawDetail as Record<string, unknown>;
+		return toN(d['inputTokens']) + toN(d['outputTokens']) + toN(d['cacheReadTokens']) + toN(d['cacheCreationTokens']);
+	} catch {
+		return 0;
+	}
+}
+
+/**
+ * Sum the total tokens from all worker 'tokens' events in the event log that
+ * appear AFTER the last 'cycle-tokens' event (the per-cycle slice).
+ *
+ * Per-worker total = inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens.
+ * If no 'cycle-tokens' marker exists yet, all 'tokens' events count (first cycle).
+ * Returns 0 when the log is absent or contains no relevant events.
+ */
+function sumWorkerTokensSinceLastCycleClose(logJsonl: string | null): number {
+	if (logJsonl === null) return 0;
+	const lines = logJsonl.split('\n');
+	const startIdx = findLastCycleTokensIdx(lines) + 1;
+	let total = 0;
+	for (let i = startIdx; i < lines.length; i++) {
+		const raw = lines[i]?.trim();
+		if (raw) total += extractTokensFromLine(raw);
+	}
+	return total;
+}
+
+/** Options for recordCycleTokens. All filesystem reads and the event logger are injectable for unit tests. */
+export interface RecordCycleTokensOptions {
+	/** Machine identifier for the cycle (e.g. 'cam/CAM-131-handoff-por-ciclo'). */
+	cycleId: string;
+	/** Issue reference (e.g. 'CAM-131'). */
+	issueNumber: string;
+	/** Absolute path to the project root. */
+	cwd: string;
+	/** Claude config directory (e.g. ~/.claude or CLAUDE_CONFIG_DIR). */
+	claudeDir: string;
+	/**
+	 * Injectable: read the orchestrator transcript JSONL content.
+	 * Default: resolves via orchestratorTranscriptPath(cwd, claudeDir) + readFileSync.
+	 * Returns null when absent or unreadable (orchTokens records 0).
+	 */
+	readOrchTranscript?: () => string | null;
+	/**
+	 * Injectable: read the event log JSONL content.
+	 * Default: reads join(cwd, '.claude', 'cam-worker-events.jsonl') via readFileSync.
+	 * Returns null when absent (workerTokens records 0).
+	 */
+	readEventLog?: () => string | null;
+	/**
+	 * Injectable event logger. Emits the 'cycle-tokens' WorkerEvent.
+	 * Default: makeFileEventLogger for join(cwd, '.claude', 'cam-worker-events.jsonl').
+	 */
+	logEvent?: WorkerEventLogger;
+}
+
+/**
+ * Emit a durable 'cycle-tokens' WorkerEvent to the event log at cycle-close time.
+ *
+ * Computes:
+ *   - orchTokens: cumulative orchestrator session spend (input + cacheCreation + cacheRead)
+ *     from the transcript resolved by orchestratorTranscriptPath.
+ *   - workerTokens: sum of all worker 'tokens' events in the per-cycle slice (events
+ *     appended to the event log after the previous 'cycle-tokens' marker).
+ *   - total: orchTokens + workerTokens.
+ *
+ * When the orchestrator transcript is absent or unreadable, orchTokens is 0 and
+ * the event is still emitted (graceful degradation, not an error).
+ *
+ * All reads (transcript, event log) and the event logger are injectable for
+ * hermetic unit tests that do not touch the real filesystem.
+ */
+export function recordCycleTokens(opts: RecordCycleTokensOptions): void {
+	const { cycleId, issueNumber, cwd, claudeDir } = opts;
+	const eventLogPath = join(cwd, '.claude', 'cam-worker-events.jsonl');
+
+	const readOrchTranscript = opts.readOrchTranscript ?? (() => defaultReadOrchTranscript(cwd, claudeDir));
+	const readEventLog = opts.readEventLog ?? (() => defaultReadEventLog(cwd));
+	const logEvent = opts.logEvent ?? makeFileEventLogger(eventLogPath);
+
+	// Compute orchTokens: cumulative orchestrator session spend (input-side only).
+	let orchTokens = 0;
+	const orchJsonl = readOrchTranscript();
+	if (orchJsonl !== null) {
+		const usage = parseTranscriptUsage(orchJsonl);
+		orchTokens = usage.input + usage.cacheCreation + usage.cacheRead;
+	}
+
+	// Compute workerTokens: per-cycle slice from the event log.
+	const logJsonl = readEventLog();
+	const workerTokens = sumWorkerTokensSinceLastCycleClose(logJsonl);
+
+	// Emit the 'cycle-tokens' event.
+	const recordedAt = new Date().toISOString();
+	const detail: CycleTokensEventDetail = {
+		cycleId,
+		issueNumber,
+		orchTokens,
+		workerTokens,
+		total: orchTokens + workerTokens,
+		recordedAt,
+	};
+
+	logEvent({
+		ts: recordedAt,
+		storyId: undefined,
+		uuid: 'cycle-close',
+		kind: 'cycle-tokens',
+		detail,
+	});
+}
+
+// ---------------------------------------------------------------------------
+// appendJournalEntryOnMain
+// ---------------------------------------------------------------------------
+
 export function appendJournalEntryOnMain(
 	options: AppendJournalEntryOnMainOptions,
 ): AppendJournalEntryOnMainResult {

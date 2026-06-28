@@ -77,7 +77,8 @@ export type WorkerEventKind =
 	| 'merge-watch-merged'
 	| 'merge-watch-ci-red'
 	| 'merge-watch-post-merge-done'
-	| 'stage-promoted';
+	| 'stage-promoted'
+	| 'cycle-tokens';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -223,6 +224,26 @@ export interface StagePromotedEventDetail {
 	toStage: string;
 }
 
+/**
+ * 'cycle-tokens' event detail: emitted at cycle-close time, recording the
+ * per-cycle token spend for both the orchestrator session and all worker sessions
+ * in that cycle. Used by CAM-136 for per-issue token analysis.
+ *   - cycleId: machine identifier for the cycle (e.g. 'cam/CAM-131-handoff-por-ciclo').
+ *   - issueNumber: issue reference (e.g. 'CAM-131').
+ *   - orchTokens: cumulative orchestrator session spend (input + cacheCreation + cacheRead).
+ *   - workerTokens: sum of all worker 'tokens' events in this cycle (per-cycle slice).
+ *   - total: orchTokens + workerTokens.
+ *   - recordedAt: ISO 8601 timestamp when the event was emitted.
+ */
+export interface CycleTokensEventDetail {
+	cycleId: string;
+	issueNumber: string;
+	orchTokens: number;
+	workerTokens: number;
+	total: number;
+	recordedAt: string;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -236,6 +257,7 @@ export type WorkerEventDetail =
 	| MergeWatchCiRedEventDetail
 	| MergeWatchPostMergeDoneEventDetail
 	| StagePromotedEventDetail
+	| CycleTokensEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */
