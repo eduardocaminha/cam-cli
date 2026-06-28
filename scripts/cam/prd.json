@@ -62,7 +62,7 @@
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/commands/run.ts buildOrchestratorPaneCommand (~line 205-239; cap logic at lines 213/216/226, DEFAULT_MAX_ORCH_RESPAWNS at line 163). The bomb being fixed: the current `n >= max(5)` NEVER resets, so per-cycle handoff kills the session at the 6th cycle (gotcha #2). The reason field is read from the handoff at opts.handoffMarker BEFORE the `mv ... .consumed.json` rename. Use jq to extract .reason (operator decision; jq already a dependency per the CAM-91/96 hook). The single-quote escaping helper `q()` must wrap any embedded path. Keep the macOS uuidgen lowercase gotcha (line 222 comment) intact. Reason value 'cycle-close' is written by the persona in US-004; schema field is `reason: string` in src/orchestrator/handoff.ts (OrchHandoffPayload). Test shape: assert on the assembled bash string (run.test.ts pattern), since the wrapper is pure string assembly."
     },

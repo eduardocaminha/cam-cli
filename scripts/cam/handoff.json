@@ -1,23 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Emitir sinal incondicional de handoff no journal append"
+    "id": "US-003",
+    "title": "Resetar cap de respawn por progresso no wrapper do cam run"
   },
   "branchName": "cam/CAM-131-handoff-por-ciclo",
   "timestamp": "2026-06-28T00:00:00.000Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "test/commands/journal-append.test.ts",
+    "src/commands/run.ts",
+    "test/run.test.ts",
+    "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 wired recordCycleTokens into dispatchJournal (index.ts). The sequence is: appendJournalEntryOnMain -> recordCycleTokens -> writeStdout('CAM_ORCH_HANDOFF_DUE=true'). The injectable recordCycleTokensFn dep on JournalDispatchDeps keeps the path testable without real I/O. US-003 (next story) likely involves the orchestrator reading/reacting to CAM_ORCH_HANDOFF_DUE=true -- look for it in .claude/agents/subagent-orchestrator.md and/or src/commands/journal.ts dispatcher wiring in the orchestrator agent.",
+  "nextStoryContext": "US-003 added jq-based reason read to buildOrchestratorPaneCommand in src/commands/run.ts. The bash wrapper now reads `.reason // empty` from the handoff file BEFORE renaming it to .consumed.json. When reason == 'cycle-close' it resets n=0; otherwise increments n. US-004 (next story) is 'Emitir reason: cycle-close no handoff do orquestrador' -- it likely touches the orchestrator agent prompt or the handoff-writing path (src/orchestrator/handoff.ts / .claude/agents/subagent-orchestrator.md) to ensure cycle-close is emitted as the reason when the orchestrator completes a normal cycle.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Story touches only internal modules (index.ts dispatcher, test). No external library."
+      "lib": "jq",
+      "version": "1.7.x",
+      "url": "https://jqlang.org/manual/",
+      "fetchedAt": "2026-06-28T00:00:00.000Z",
+      "status": "ok",
+      "summary": "jq '.reason // empty' confirmed: absent key returns null, // empty suppresses null output (bash $() gives empty string), -r extracts raw string without quotes. Implementation matches docs."
     }
   ]
 }
