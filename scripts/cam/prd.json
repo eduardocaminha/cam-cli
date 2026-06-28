@@ -89,7 +89,7 @@
         "The full gate spine is green, including jscpd dup not regressed (the dedup of the commit-tree helper is part of the deliverable). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "US-004",
       "notes": "Files: NEW test/integration/triage-real-git.test.ts (or under the existing real-git integration test dir; follow the existing real-git integration test that exercises issue-file/journal on a throwaway `git init` repo so the test is hermetic and self-cleaning). This is the ONLY story that shells out to real git (the modules in US-001..US-004 stay pure/injected; US-004's own ACs are verified in-process). Build a temp repo: git init, seed scripts/cam/issues.local.json with a {specified,open} set on main, create+checkout a work branch, capture work-branch HEAD, run cam triage in-process, assert: (a) rank lands on `git show main:scripts/cam/issues.local.json`; (b) work-branch HEAD sha == captured (untouched); (c) second run: capture main HEAD after run 1, run again, assert main HEAD unchanged (no empty commit). Then run the FULL spine: bun run check:all = bun scripts/check-all.ts (typecheck, test, embed-vendor, lint=biome, file-size, debt-markers, coverage, dead-code, dup=jscpd over `src scripts` at the configured jscpd threshold, ci-parity). Confirm jscpd dup did NOT regress (US-001 dedup + this new code stay under the configured threshold). GOTCHA (universal macOS+Bun lesson): real-git smoke must use a temp cwd, never run a mutating command against the live repo. Maps spec AC#6, AC#7, AC#10."
     }

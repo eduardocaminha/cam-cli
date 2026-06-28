@@ -35,6 +35,7 @@ import type { SpawnFn } from '../git/on-main.ts';
 import type { IssueEntry, IssuesLocalJson } from '../issues/types.ts';
 import { runGraphGate } from '../issues/gate.ts';
 import { rankIssues } from '../issues/rank.ts';
+import type { RankedEntry } from '../issues/rank.ts';
 import { printError } from '../logging/color.ts';
 
 // Re-export SpawnFn so callers do not need to chase the import chain.
@@ -182,6 +183,42 @@ function computeDiffTag(priorRank: number | undefined, newRank: number): DiffTag
 	return 'unchanged';
 }
 
+/** Computes rank diff vs prior ranks.  Returns changed count and formatted diff lines. */
+function computeRankDiff(
+	ranked: RankedEntry[],
+	issueByIdMap: Map<string, IssueEntry>,
+): { changed: number; diffLines: string[] } {
+	let changed = 0;
+	const diffLines: string[] = [];
+	for (const entry of ranked) {
+		const priorRank = issueByIdMap.get(entry.id)?.rank;
+		const tag = computeDiffTag(priorRank, entry.rank);
+		if (tag !== 'unchanged') changed++;
+		const priorStr = priorRank !== undefined ? String(priorRank) : '-';
+		diffLines.push(
+			`  ${entry.id}: ${tag} (prev=${priorStr} now=${entry.rank} wsjf=${entry.wsjf.toFixed(2)} stage=${entry.stage})`,
+		);
+	}
+	return { changed, diffLines };
+}
+
+/** Prints ranked list, diff lines, warnings, and the sentinel. */
+function printTriageOutput(
+	writeStdout: (line: string) => void,
+	ranked: RankedEntry[],
+	diffLines: string[],
+	warnings: string[],
+	changed: number,
+	sha: string,
+): void {
+	for (const entry of ranked) {
+		writeStdout(`  rank=${entry.rank} id=${entry.id} wsjf=${entry.wsjf.toFixed(2)} stage=${entry.stage}\n`);
+	}
+	for (const line of diffLines) writeStdout(`${line}\n`);
+	for (const w of warnings) writeStdout(`warning: ${w}\n`);
+	writeStdout(`CAM_TRIAGE_RANKED=${ranked.length} changed=${changed} sha=${sha}\n`);
+}
+
 // ---------------------------------------------------------------------------
 // Core logic
 // ---------------------------------------------------------------------------
@@ -211,79 +248,44 @@ export function runTriage(options: RunTriageOptions): TriageResult {
 	const backlog = JSON.parse(showResult.stdout) as IssuesLocalJson;
 
 	// 2. Run graph gate BEFORE any write (AC#1 ordering invariant).
-	//    If the gate fails, we emit the sentinel and return without touching any file.
 	const gateResult = runGraphGate(backlog.issues);
 	if (!gateResult.ok) {
-		const detail = gateResult.errors[0] ?? 'unknown';
-		writeStdout(`CAM_TRIAGE_REJECTED=${gateResult.kind}:${detail}\n`);
+		writeStdout(`CAM_TRIAGE_REJECTED=${gateResult.kind}:${gateResult.errors[0] ?? 'unknown'}\n`);
 		return { ok: false, kind: gateResult.kind, errors: gateResult.errors };
 	}
 
-	// 3. Compute dense ranks via US-002 WSJF topo-sort.
+	// 3. Compute dense ranks and diff vs prior ranks.
 	const { ranked, warnings } = rankIssues(backlog.issues);
-
-	// 4. Build diff vs prior ranks and count changes.
 	const issueByIdMap = new Map<string, IssueEntry>(backlog.issues.map((e) => [e.id, e]));
-	let changed = 0;
-	const diffLines: string[] = [];
-	for (const entry of ranked) {
-		const issue = issueByIdMap.get(entry.id);
-		const priorRank = issue?.rank;
-		const tag = computeDiffTag(priorRank, entry.rank);
-		if (tag !== 'unchanged') changed++;
-		const priorStr = priorRank !== undefined ? String(priorRank) : '-';
-		diffLines.push(
-			`  ${entry.id}: ${tag} (prev=${priorStr} now=${entry.rank} wsjf=${entry.wsjf.toFixed(2)} stage=${entry.stage})`,
-		);
-	}
+	const { changed, diffLines } = computeRankDiff(ranked, issueByIdMap);
 
-	// 5. Idempotent no-op: if nothing changed, skip commit (AC#2).
+	// 4. Idempotent no-op: if nothing changed, skip commit (AC#2).
 	if (changed === 0) {
-		for (const entry of ranked) {
-			writeStdout(`  rank=${entry.rank} id=${entry.id} wsjf=${entry.wsjf.toFixed(2)} stage=${entry.stage}\n`);
-		}
-		for (const line of diffLines) writeStdout(`${line}\n`);
-		for (const w of gateResult.warnings) writeStdout(`warning: ${w}\n`);
-		writeStdout(`CAM_TRIAGE_RANKED=${ranked.length} changed=0 sha=none\n`);
+		printTriageOutput(writeStdout, ranked, diffLines, gateResult.warnings, 0, 'none');
 		return { ok: true, ranked: ranked.length, changed: 0, sha: 'none' };
 	}
 
-	// 6. Write rank onto every {specified,open} entry (all-ranks-or-none: gate passed above).
+	// 5. Write rank onto every {specified,open} entry.
 	const newRankMap = new Map(ranked.map((e) => [e.id, e.rank]));
 	for (const issue of backlog.issues) {
 		if (issue.stage === 'specified' && issue.status === 'open') {
 			const newRank = newRankMap.get(issue.id);
-			if (newRank !== undefined) {
-				issue.rank = newRank;
-			}
+			if (newRank !== undefined) issue.rank = newRank;
 		}
 	}
 	const serialized = JSON.stringify(backlog, null, 2) + '\n';
 	const commitMsg = `chore(cam): triage ${ranked.length} issues ranked (${changed} changed)`;
 
-	// 7. Commit to main via US-001 shared helper.
-	//    off-main: commit-tree plumbing (feature branch HEAD + working tree untouched).
-	//    on-main: direct commit (working tree and HEAD advance normally).
+	// 6. Commit to main via US-001 shared helper.
 	const sha = branchWasMain
-		? commitOnMain(
-			cwd, serialized, commitMsg, spawnFn, writeFile,
-			'scripts/cam/issues.local.json',
-		)
-		: commitTreeToMain(
-			cwd, serialized, commitMsg, localMainSha, spawnFn,
-			'scripts/cam/issues.local.json', 'cam-triage-',
-		);
+		? commitOnMain(cwd, serialized, commitMsg, spawnFn, writeFile, 'scripts/cam/issues.local.json')
+		: commitTreeToMain(cwd, serialized, commitMsg, localMainSha, spawnFn, 'scripts/cam/issues.local.json', 'cam-triage-');
 
-	// 8. Best-effort push.
+	// 7. Best-effort push.
 	pushMainBestEffort(cwd, spawnFn);
 
-	// 9. Print ranked order, diff, warnings, sentinel (AC#3).
-	for (const entry of ranked) {
-		writeStdout(`  rank=${entry.rank} id=${entry.id} wsjf=${entry.wsjf.toFixed(2)} stage=${entry.stage}\n`);
-	}
-	for (const line of diffLines) writeStdout(`${line}\n`);
-	for (const w of gateResult.warnings) writeStdout(`warning: ${w}\n`);
-	writeStdout(`CAM_TRIAGE_RANKED=${ranked.length} changed=${changed} sha=${sha}\n`);
+	// 8. Print ranked order, diff, warnings, sentinel (AC#3).
+	printTriageOutput(writeStdout, ranked, diffLines, warnings, changed, sha);
 
 	return { ok: true, ranked: ranked.length, changed, sha };
 }
