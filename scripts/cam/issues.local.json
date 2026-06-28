@@ -1261,7 +1261,7 @@
     {
       "id": "CAM-124",
       "title": "Extrair helper on-main compartilhado da commit-tree plumbing (3 copias verbatim)",
-      "stage": "idea",
+      "stage": "shipped",
       "status": "open",
       "blockedBy": [],
       "createdAt": "2026-06-28T01:09:17.735Z",
