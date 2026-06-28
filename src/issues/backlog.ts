@@ -17,7 +17,7 @@
 //   Parse: read the header line, take exactly <size> characters of content,
 //   skip the trailing LF.
 //
-// CAM-90 US-002.
+// CAM-90 US-002, US-003.
 
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
@@ -146,4 +146,37 @@ export function readBacklogFromMain(
 	// Sort numerically ascending by the id's numeric suffix.
 	entries.sort((a, b) => numericIdSuffix(a.id) - numericIdSuffix(b.id));
 	return entries;
+}
+
+// ---------------------------------------------------------------------------
+// allocateId
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive the next issue id as max(parsed ids on main) + 1.
+ * Returns 1 when the backlog directory is empty (no issues yet).
+ *
+ * No stored counter: allocation is derived fresh from the committed backlog on
+ * every call, so a stale in-memory counter can never cause id collisions.
+ *
+ * Design: callers that need CAS-safe allocation MUST call allocateId INSIDE
+ * their retry rebuild closure so that a CAS loser re-derives the max from the
+ * freshly-advanced main ref.  See writeIssueFile (src/issues/alloc.ts).
+ *
+ * @param cwd   Absolute path to the git repo root.
+ * @param spawn Injectable spawnSync (defaults to node:child_process.spawnSync).
+ */
+export function allocateId(
+	cwd: string,
+	spawn: BacklogSpawnFn = spawnSync,
+): number {
+	const entries = readBacklogFromMain(cwd, spawn);
+	let max = 0;
+	for (const entry of entries) {
+		const n = numericIdSuffix(entry.id);
+		if (n !== Infinity && n > max) {
+			max = n;
+		}
+	}
+	return max > 0 ? max + 1 : 1;
 }

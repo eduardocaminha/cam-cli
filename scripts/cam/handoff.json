@@ -1,35 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "readBacklogFromMain primitive (ls-tree + single cat-file --batch, numeric sort)"
+    "id": "US-003",
+    "title": "allocateId (max-on-main + 1, CAS re-allocation) and per-file write primitive"
   },
+  "branchName": "cam/CAM-90-file-per-issue",
+  "timestamp": "2026-06-28T03:00:00Z",
   "createdFiles": [
-    "src/issues/backlog.ts",
-    "test/issues/backlog.test.ts"
+    "src/issues/alloc.ts",
+    "test/issues/alloc.test.ts"
   ],
   "modifiedFiles": [
-    "src/issues/types.ts",
-    "src/issues/select.ts",
-    "src/commands/issue-file.ts",
-    "src/commands/issue-specify.ts",
-    "src/commands/ship-finalize.ts",
-    "src/commands/triage.ts",
-    "scripts/cam/migrate-issues-schema.ts",
-    "test/commands/issue-specify.test.ts",
-    "test/integration/triage-real-git.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "src/issues/backlog.ts",
+    "test/issues/backlog.test.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 complete. src/issues/backlog.ts now exports readBacklogFromMain (O(1) subprocesses: ls-tree + cat-file --batch, numeric sort by id suffix) and BacklogSpawnFn. IssuesLocalJson removed from src/issues/types.ts; all 7 callers (issue-file, triage, issue-specify, ship-finalize, select, migrate-issues-schema, tests) updated with local interface definitions. Full suite: 2021 pass, 0 fail (12 new backlog tests).",
+  "nextStoryContext": "US-003 complete. src/issues/backlog.ts now exports allocateId (max-on-main + 1, returns 1 for empty dir, BacklogSpawnFn injectable). src/issues/alloc.ts exports writeIssueFile (CAS retry loop: re-derives id on every attempt so concurrent allocations never collide; 4-digit zero-padded filename, unpadded id field inside). test/issues/alloc.test.ts: 9 new tests covering padding (90->CAM-0090, 1000->CAM-1000), roundtrip, CAS-failure re-allocation, result shape. Full suite: 2034 pass, 0 fail.",
   "officialDocsValidated": [
     {
-      "lib": "git-cat-file",
-      "version": "current",
-      "url": "https://git-scm.com/docs/git-cat-file",
-      "fetchedAt": "2026-06-28T00:00:00Z",
-      "status": "ok",
-      "summary": "cat-file --batch frame format confirmed: '<oid> SP <type> SP <size> LF <contents> LF'. 'missing' entries emit '<name> missing' (2 parts, no size). Implementation matches documented semantics."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-003 only uses git plumbing via injectable SpawnFn and Node.js built-ins (node:fs, node:os, node:path). No external npm library was introduced."
     }
   ]
 }

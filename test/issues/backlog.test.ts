@@ -15,6 +15,7 @@ import type { SpawnSyncReturns } from 'node:child_process';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import {
 	readBacklogFromMain,
+	allocateId,
 	type BacklogSpawnFn,
 } from '../../src/issues/backlog.ts';
 
@@ -343,5 +344,88 @@ describe('readBacklogFromMain -- edge cases', () => {
 		const result = readBacklogFromMain('/fake/cwd', spy);
 		expect(result).toHaveLength(1);
 		expect(result[0]?.id).toBe('CAM-1');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// allocateId
+// ---------------------------------------------------------------------------
+
+describe('allocateId', () => {
+	test('returns max+1 given a fixture backlog', () => {
+		const entries = [
+			makeEntry({ id: 'CAM-3' }),
+			makeEntry({ id: 'CAM-7' }),
+			makeEntry({ id: 'CAM-12' }),
+		];
+		const spy: BacklogSpawnFn = (_cmd, args) => {
+			if (args.includes('ls-tree')) {
+				return {
+					...emptyReturn(),
+					stdout: entries.map((e) => `scripts/cam/issues/${e.id}.json`).join('\n') + '\n',
+				};
+			}
+			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
+		};
+
+		expect(allocateId('/fake/cwd', spy)).toBe(13);
+	});
+
+	test('returns 1 for an empty backlog (no issues directory)', () => {
+		const spy: BacklogSpawnFn = () => emptyReturn();
+		expect(allocateId('/fake/cwd', spy)).toBe(1);
+	});
+
+	test('returns 1 for an empty issues directory (ls-tree returns nothing)', () => {
+		const spy: BacklogSpawnFn = (_cmd, args) => {
+			if (args.includes('ls-tree')) {
+				return { ...emptyReturn(), stdout: '\n' };
+			}
+			return emptyReturn();
+		};
+		expect(allocateId('/fake/cwd', spy)).toBe(1);
+	});
+
+	test('max is numeric, not lexical: CAM-9 is max when ids are 1,2,9', () => {
+		const entries = [
+			makeEntry({ id: 'CAM-1' }),
+			makeEntry({ id: 'CAM-2' }),
+			makeEntry({ id: 'CAM-9' }),
+		];
+		const spy: BacklogSpawnFn = (_cmd, args) => {
+			if (args.includes('ls-tree')) {
+				return {
+					...emptyReturn(),
+					stdout: 'scripts/cam/issues/CAM-009.json\nscripts/cam/issues/CAM-001.json\nscripts/cam/issues/CAM-002.json\n',
+				};
+			}
+			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
+		};
+		expect(allocateId('/fake/cwd', spy)).toBe(10);
+	});
+
+	test('returns 130 when max id is 129 (real-world REPO FACT)', () => {
+		const entries = Array.from({ length: 129 }, (_, i) =>
+			makeEntry({ id: `CAM-${i + 1}` }),
+		);
+		const paths = entries.map((e) => `scripts/cam/issues/CAM-${String(e.id.split('-')[1]).padStart(4,'0')}.json`).join('\n');
+		const spy: BacklogSpawnFn = (_cmd, args) => {
+			if (args.includes('ls-tree')) {
+				return { ...emptyReturn(), stdout: paths + '\n' };
+			}
+			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
+		};
+		expect(allocateId('/fake/cwd', spy)).toBe(130);
+	});
+
+	test('handles ids above 999 (CAM-1000 -> next is 1001)', () => {
+		const entries = [makeEntry({ id: 'CAM-1000' })];
+		const spy: BacklogSpawnFn = (_cmd, args) => {
+			if (args.includes('ls-tree')) {
+				return { ...emptyReturn(), stdout: 'scripts/cam/issues/CAM-1000.json\n' };
+			}
+			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
+		};
+		expect(allocateId('/fake/cwd', spy)).toBe(1001);
 	});
 });

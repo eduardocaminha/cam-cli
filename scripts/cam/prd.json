@@ -66,7 +66,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Add allocateId + writeIssueFile primitives (src/issues/backlog.ts alongside US-002 readBacklogFromMain, or a sibling module). REPO FACT: 129 issues currently exist (CAM-1..CAM-129), next_id was 130 (killed). allocateId = max over readBacklogFromMain ids + 1; on empty dir start at 1. The CAS retry loop lives in US-001's on-main helper; allocateId must re-derive max INSIDE the retry rebuild closure so the loser of a race re-allocates. SPEC GOTCHA (critical): id field stays CAM-NN unpadded; ONLY the filename is 4-digit padded (cosmetic, clean ls). Do NOT pad the id field or PRD/handoff/journal references break. Filename pad: `CAM-` + String(n).padStart(4,'0') + '.json'. Maps spec AC#4, AC#6. Domain term: allocateId. requires US-001 (CAS retry + multi-file commit primitive)."
     },
