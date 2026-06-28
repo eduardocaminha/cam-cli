@@ -425,8 +425,10 @@ test('success path: serialized JSON sets stage to specified and includes spec+ws
 	expect(parsed.blockedBy).toEqual([]);
 });
 
-test('success path (on-main): direct commit, writeFile called', () => {
-	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()], branch: 'main' });
+test('success path (on-main): ref-only commit via commitTreeToMain; writeFile never called', () => {
+	// CAM-133: even when branchWasMain===true, the commit path is now always
+	// commitTreeToMain (ref-only). writeFile must never be called.
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()], branch: 'main' });
 	const writtenFiles: Array<{ path: string; content: string }> = [];
 
 	const result = specifyIssueOnMain(
@@ -440,12 +442,11 @@ test('success path (on-main): direct commit, writeFile called', () => {
 	if (result.ok) {
 		expect(result.branchWasMain).toBe(true);
 	}
-	expect(writtenFiles).toHaveLength(1);
-	// US-004: written path is scripts/cam/issues/CAM-NNNN.json (not issues.local.json)
-	expect(writtenFiles[0]?.path).toContain('scripts/cam/issues/');
-	// US-004: content is a single IssueEntry
-	const parsed = JSON.parse(writtenFiles[0]?.content ?? '{}') as IssueEntry;
-	expect(parsed.stage).toBe('specified');
+	// ref-only invariant: writeFile is never invoked (working tree untouched)
+	expect(writtenFiles).toHaveLength(0);
+	// commit-tree plumbing is always used (even on-main after the fix)
+	const commitTreeCall = calls.find((c) => c.join(' ').includes('commit-tree'));
+	expect(commitTreeCall).toBeDefined();
 });
 
 // ---------------------------------------------------------------------------
@@ -707,8 +708,10 @@ test.skipIf(!gitAvailable)(
 // Case B: on-main path
 
 test.skipIf(!gitAvailable)(
-	'Real-git Case B (on-main): direct commit; working-tree file gains specified stage',
+	'Real-git Case B (on-main): ref-only commit via commitTreeToMain; working-tree file unchanged',
 	() => {
+		// CAM-133: on-main path now uses commitTreeToMain (ref-only). The main
+		// ref advances, but the working-tree file is never written.
 		const { dir, run, issuesDir } = makeTmpRepo();
 
 		const branchBefore = (run(['rev-parse', '--abbrev-ref', 'HEAD']).stdout as string).trim();
@@ -733,24 +736,25 @@ test.skipIf(!gitAvailable)(
 		expect(result.branchWasMain).toBe(true);
 		expect(result.committedTo).toBe('main');
 
-		// main advanced
-		const mainSha1 = (run(['rev-parse', 'HEAD']).stdout as string).trim();
+		// main ref advanced (via git update-ref, not a working-tree commit)
+		const mainSha1 = (run(['rev-parse', 'main']).stdout as string).trim();
 		expect(mainSha1).not.toBe(mainSha0);
 
 		// commit message
-		const logResult = run(['log', '-1', '--format=%s']);
+		const logResult = run(['log', 'main', '-1', '--format=%s']);
 		expect((logResult.stdout as string).trim()).toBe('chore(cam): specify CAM-1');
 
-		// working-tree file updated
+		// main ref has the updated entry (confirmed via git show)
+		const showResult = run(['show', 'main:scripts/cam/issues/CAM-0001.json']);
+		const mainEntry = JSON.parse(showResult.stdout as string) as IssueEntry;
+		expect(mainEntry.stage).toBe('specified');
+		expect(mainEntry.spec).toEqual(VALID_SPEC);
+		expect(mainEntry.wsjf).toEqual(VALID_WSJF);
+
+		// ref-only invariant: working-tree file is NOT updated
 		const wtContent = readFileSync(join(issuesDir, 'CAM-0001.json'), 'utf8');
 		const wtEntry = JSON.parse(wtContent) as IssueEntry;
-		expect(wtEntry.stage).toBe('specified');
-		expect(wtEntry.spec).toEqual(VALID_SPEC);
-		expect(wtEntry.wsjf).toEqual(VALID_WSJF);
-
-		// working tree clean
-		const status = run(['status', '--porcelain']);
-		expect((status.stdout as string).trim()).toBe('');
+		expect(wtEntry.stage).toBe('idea');
 	},
 );
 
@@ -855,8 +859,10 @@ test('abandon: success path (off-main) sets status to abandoned', () => {
 	expect(parsed.stage).toBe('idea');
 });
 
-test('abandon: success path (on-main) writeFile called', () => {
-	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()], branch: 'main' });
+test('abandon: success path (on-main) ref-only commit; writeFile never called', () => {
+	// CAM-133: even when branchWasMain===true, the commit path is now always
+	// commitTreeToMain (ref-only). writeFile must never be called.
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()], branch: 'main' });
 	const writtenFiles: Array<{ path: string; content: string }> = [];
 
 	const result = abandonIssueOnMain(
@@ -868,11 +874,11 @@ test('abandon: success path (on-main) writeFile called', () => {
 
 	expect(result.ok).toBe(true);
 	if (result.ok) expect(result.branchWasMain).toBe(true);
-	expect(writtenFiles).toHaveLength(1);
-	// US-004: written path is scripts/cam/issues/ (not issues.local.json)
-	expect(writtenFiles[0]?.path).toContain('scripts/cam/issues/');
-	const parsed = JSON.parse(writtenFiles[0]?.content ?? '{}') as IssueEntry;
-	expect(parsed.status).toBe('abandoned');
+	// ref-only invariant: writeFile is never invoked (working tree untouched)
+	expect(writtenFiles).toHaveLength(0);
+	// commit-tree plumbing is always used (even on-main after the fix)
+	const commitTreeCall = calls.find((c) => c.join(' ').includes('commit-tree'));
+	expect(commitTreeCall).toBeDefined();
 });
 
 test('abandon: commit message is chore(cam): abandon <id>', () => {
@@ -1251,8 +1257,10 @@ test.skipIf(!gitAvailable)(
 );
 
 test.skipIf(!gitAvailable)(
-	'Real-git abandon (on-main): direct commit; file updated in working tree',
+	'Real-git abandon (on-main): ref-only commit via commitTreeToMain; working-tree file unchanged',
 	() => {
+		// CAM-133: on-main path now uses commitTreeToMain (ref-only). The main
+		// ref advances, but the working-tree file is never written.
 		const { dir, run, issuesDir } = makeTmpRepoTwo();
 		const mainSha0 = (run(['rev-parse', 'main']).stdout as string).trim();
 
@@ -1266,19 +1274,23 @@ test.skipIf(!gitAvailable)(
 		if (!result.ok) throw new Error(`Expected ok:true but got: ${JSON.stringify(result)}`);
 		expect(result.branchWasMain).toBe(true);
 
+		// main ref advanced (via git update-ref, not a working-tree commit)
 		const mainSha1 = (run(['rev-parse', 'main']).stdout as string).trim();
 		expect(mainSha1).not.toBe(mainSha0);
 
-		const logResult = run(['log', '-1', '--format=%s']);
+		// commit message on main
+		const logResult = run(['log', 'main', '-1', '--format=%s']);
 		expect((logResult.stdout as string).trim()).toBe('chore(cam): abandon CAM-1');
 
-		// working-tree file updated
+		// main ref has the updated entry (confirmed via git show)
+		const showResult = run(['show', 'main:scripts/cam/issues/CAM-0001.json']);
+		const mainEntry = JSON.parse(showResult.stdout as string) as IssueEntry;
+		expect(mainEntry.status).toBe('abandoned');
+
+		// ref-only invariant: working-tree file is NOT updated
 		const wtContent = readFileSync(join(issuesDir, 'CAM-0001.json'), 'utf8');
 		const wtEntry = JSON.parse(wtContent) as IssueEntry;
-		expect(wtEntry.status).toBe('abandoned');
-
-		const status = run(['status', '--porcelain']);
-		expect((status.stdout as string).trim()).toBe('');
+		expect(wtEntry.status).toBe('open');
 	},
 );
 

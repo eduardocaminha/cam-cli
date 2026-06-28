@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Make issue-specify on-main writers ref-only (specify/abandon/merge)"
+  },
+  "branchName": "cam/CAM-133-on-main-writer-ref-only",
+  "timestamp": "2026-06-28T00:00:00.000Z",
+  "createdFiles": [
+    "test/integration/issue-specify-ref-only.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/commands/issue-specify.ts",
+    "test/commands/issue-specify.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 applies the same ref-only pattern to journal-append and triage on-main writers. Look for the same 'branchWasMain ? commitOnMain : commitTreeToMain' ternary in src/commands/journal.ts and the triage writer; replace with unconditional commitTreeToMain. The pattern is now documented in patterns.md ('Always use commitTreeToMain unconditionally in on-main writers'). US-003 then removes the now-orphaned commitOnMain helper from src/git/on-main.ts and its tests.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure internal git plumbing refactor: no external npm library touched."
+    }
+  ]
+}
