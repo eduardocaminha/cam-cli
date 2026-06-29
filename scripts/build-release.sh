@@ -105,8 +105,8 @@ echo "[build-release]   ${ACTUAL}"
 # repo), --no-tmux (no tmux/agent), --existing --issue-system none (skip the
 # interactive setup wizard so it never blocks), </dev/null (belt-and-braces on
 # stdin), and a tmp config. The binary is referenced by an absolute path so the
-# cd does not break resolution. Canonical rule: lessons.md 2026-06-06 (no
-# mutating command in a build smoke); the 2026-06-13 entry records this fix.
+# cd does not break resolution. Canonical rule: lessons.archive.md 2026-06-06
+# (no mutating command in a build smoke); the 2026-06-13 entry records this fix.
 echo "[build-release] invoking init (soft-check, hermetic)"
 SMOKE_DIR="$(mktemp -d)"
 # Clean up the tmpdir on any exit (success OR an earlier abort), so it never leaks.
