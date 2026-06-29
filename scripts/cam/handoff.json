@@ -1,24 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Persona: agir no sinal, escrever reason=cycle-close, remover cadencia advisory"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-131-handoff-por-ciclo",
-  "timestamp": "2026-06-28T00:00:00.000Z",
+  "timestamp": "2026-06-28T03:00:00.000Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-orchestrator.md",
-    "templates/agents/subagent-orchestrator.md",
-    "src/vendor/_generated.ts",
+    "README.md",
+    "FLOW.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 updated the Self-handoff lifecycle section of the orchestrator persona in both .claude/agents/subagent-orchestrator.md and templates/agents/subagent-orchestrator.md. The section now instructs: on observing CAM_ORCH_HANDOFF_DUE=true in cam journal append output, write .cam-orch-handoff.json with reason: 'cycle-close' BEFORE any other action. The advisory cam orch-budget cadence (100k token threshold) was removed. All four stories in the PRD now pass (US-001 through US-004). The PRD is complete.",
+  "nextStoryContext": "US-R1-001 updated README.md (4 locations: lines 11, 118, 167, 294) and FLOW.md (2 locations: lines 78, 179) replacing 'token-budget handoff' with 'cycle-close handoff' (English) and 'handoff de cycle-close' (Portuguese) to match the shipped behavior from US-002/US-004. No code changes; doc-only fix per CLAUDE.md section 7 doc-maintenance convention.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 only edits .md agent prompt files and re-embeds vendor. No external library API was exercised."
+      "summary": "US-R1-001 is a doc-only fix (README.md + FLOW.md). No external library API was exercised."
     }
   ]
 }

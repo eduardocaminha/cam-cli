@@ -10,6 +10,13 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [README.md:11]: README.md (lines 11, 118, 167, 294) and FLOW.md (lines 78, 179) describe the orchestrator respawn trigger as a 'token-budget handoff'. This PR (US-002/US-004) removes the token-budget cadence as the gatilho and replaces it with an unconditional per-cycle 'cycle-close' handoff. Both human-facing docs now describe stale behavior and should be reworded (e.g. 'cycle-close / per-cycle handoff') to match the shipped behavior, per the project doc-maintenance convention (CLAUDE.md section 7)."
+    },
+    {
       "id": "US-001",
       "title": "Registrar tokens-por-ciclo no event log no cycle-close",
       "description": "As the cam orchestrator loop, I need the cycle-close step to persist a durable per-cycle token record (orchestrator session spend + the cycle's worker tokens) so that future per-issue token analysis (CAM-136) has the raw data, before the orchestrator context is reset by the per-cycle handoff.",
@@ -24,7 +31,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/journal.ts (new recordCycleTokens helper + new 'cycle-tokens' WorkerEventKind in src/supervisor/events.ts WorkerEventKind union + a CycleTokensEventDetail interface). Reuse parseTranscriptUsage + orchestratorTranscriptPath from src/transcript/usage.ts (do NOT reinvent token counting). Reuse makeFileEventLogger / WorkerEvent / TokensEventDetail from src/supervisor/events.ts. TokensEventDetail field names are EXACT: inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens (src/supervisor/events.ts:105-115); a worker's per-cycle total = inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens. Do NOT invent abbreviated field names. Per the grilled spec (spec.scope, gotcha #1): orch-budget metric is CUMULATIVE traffic (~5.58M real), so do NOT use a threshold; just record the cumulative session spend as ~tokens-of-cycle (transcript zeros each cycle once CAM-131 lands, per the operator's baseline decision). Worker tokens come from the existing 'tokens' events (storyId+uuid keyed) emitted in src/supervisor/loop.ts:~582; the per-cycle slice is the worker 'tokens' events after the last 'cycle-tokens' event in the cumulative log. Event log path: .claude/cam-worker-events.jsonl (EVENT_LOG_PATH in src/commands/dashboard.ts:50; reader pattern at dashboard.ts:551 split('\\n') + JSON.parse). domainTerms 'tokens-por-ciclo' lives in the issue spec, not in a CONTEXT.md (writer CAM-118 does not exist yet). DECISAO do operador: modelo SIMPLES, sem baseline-marker; analise de delta/media e CAM-136 separado."
@@ -42,7 +49,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: index.ts dispatchJournal (~line 1051-1089; the CAM_JOURNAL_APPENDED writeStdout is at index.ts:1087) and/or src/commands/journal.ts. Sequence is load-bearing: journal entry persisted -> US-001 cycle-tokens event persisted -> THEN CAM_ORCH_HANDOFF_DUE=true. Wire the US-001 recordCycleTokens call into the same dispatch path before the signal. orch-budget/threshold STOPS gatilhando (per spec.scope + gotcha #1): src/commands/orch-budget.ts stays as a cost reporter only; do NOT remove it. Keep the existing dispatchJournal injectable-deps pattern (readStdin/appendFn/writeStdout) so the new behavior is testable without real I/O."
@@ -61,7 +68,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "File: src/commands/run.ts buildOrchestratorPaneCommand (~line 205-239; cap logic at lines 213/216/226, DEFAULT_MAX_ORCH_RESPAWNS at line 163). The bomb being fixed: the current `n >= max(5)` NEVER resets, so per-cycle handoff kills the session at the 6th cycle (gotcha #2). The reason field is read from the handoff at opts.handoffMarker BEFORE the `mv ... .consumed.json` rename. Use jq to extract .reason (operator decision; jq already a dependency per the CAM-91/96 hook). The single-quote escaping helper `q()` must wrap any embedded path. Keep the macOS uuidgen lowercase gotcha (line 222 comment) intact. Reason value 'cycle-close' is written by the persona in US-004; schema field is `reason: string` in src/orchestrator/handoff.ts (OrchHandoffPayload). Test shape: assert on the assembled bash string (run.test.ts pattern), since the wrapper is pure string assembly."
@@ -80,10 +87,23 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "DUAL-COPY (gotcha #4 + lesson cam-dual-copy-is-per-file): edit .claude/agents/subagent-orchestrator.md (Self-handoff lifecycle section, lines 268-276) AND templates/agents/subagent-orchestrator.md (currently byte-identical: diff confirmed IDENTICAL), THEN run `bun run embed-vendor` to regenerate src/vendor/_generated.ts, else embed-vendor:check fails. The reason string MUST be exactly \"cycle-close\" to match the jq read in US-003. Keep the schema fields the reader requires (schemaVersion:1, writtenAt, reason) and the rich rehydration fields (currentCycle, keyDecisions, openState, openQuestions, nextActions) per src/orchestrator/handoff.ts OrchHandoffPayload. Remove the advisory `cam orch-budget` cadence + 100k threshold prose (lines 272-273). Bounds/anti-loop prose (line 276) stays. docs/recovery-runbook.md has no Self-handoff/cycle-close trigger section to update (verified: only respawn-pane / cycle-close commit prose at lines 318-323, unrelated to the handoff trigger)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "README.md",
+        "line": 11,
+        "text": "README.md (lines 11, 118, 167, 294) and FLOW.md (lines 78, 179) describe the orchestrator respawn trigger as a 'token-budget handoff'. This PR (US-002/US-004) removes the token-budget cadence as the gatilho and replaces it with an unconditional per-cycle 'cycle-close' handoff. Both human-facing docs now describe stale behavior and should be reworded (e.g. 'cycle-close / per-cycle handoff') to match the shipped behavior, per the project doc-maintenance convention (CLAUDE.md section 7)."
+      }
+    ]
+  }
 }
