@@ -16,8 +16,9 @@
 // All I/O is injectable via MergeWatchOptions so the state machine is fully
 // unit-testable without a real gh binary or filesystem.
 //
-// US-007 (CAM-101).
+// US-007 (CAM-101). Durable state I/O helpers added in US-002 (CAM-138).
 
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import type { PostMergeOutcome } from './post-merge.ts';
 import type {
 	WorkerEventKind,
@@ -43,6 +44,87 @@ export const DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS = 60_000;
  * 240 polls * 60s = 4 hours.
  */
 export const DEFAULT_MERGE_WATCH_MAX_POLLS = 240;
+
+// ---------------------------------------------------------------------------
+// Durable state I/O helpers (US-002)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read MergeWatchState from a persistent file.
+ *
+ * Returns null when:
+ * - The file does not exist (no watch pending).
+ * - The file contains malformed JSON or a non-object / array value.
+ * - Required fields (prNumber: number, mergedBranch: string) are absent or
+ *   the wrong type.
+ *
+ * A legacy two-field seed { prNumber, mergedBranch } reads back successfully
+ * with pollCount and lastPolledAt absent (undefined), so stepMergeWatch treats
+ * it as fresh (pollCount defaults to 0; absent lastPolledAt bypasses the
+ * throttle check so the first tick polls immediately).
+ *
+ * Never throws.
+ */
+export function readMergeWatchState(filePath: string): MergeWatchState | null {
+	try {
+		if (!existsSync(filePath)) return null;
+		const raw = readFileSync(filePath, 'utf8');
+		const parsed: unknown = JSON.parse(raw);
+		if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+		const obj = parsed as Record<string, unknown>;
+		if (typeof obj['prNumber'] !== 'number' || typeof obj['mergedBranch'] !== 'string') return null;
+		const state: MergeWatchState = {
+			prNumber: obj['prNumber'] as number,
+			mergedBranch: obj['mergedBranch'] as string,
+		};
+		if (typeof obj['pollCount'] === 'number') {
+			state.pollCount = obj['pollCount'] as number;
+		}
+		if (typeof obj['lastPolledAt'] === 'number') {
+			state.lastPolledAt = obj['lastPolledAt'] as number;
+		}
+		return state;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Write MergeWatchState to a persistent file (durable, not consume-on-read).
+ *
+ * Always writes prNumber, mergedBranch, and pollCount (defaulting to 0 when
+ * absent in the state). Writes lastPolledAt only when it is defined (undefined
+ * is omitted from the JSON so a fresh-state read bypasses the throttle check).
+ *
+ * Call after every non-terminal stepMergeWatch tick so the state survives a
+ * sidecar restart. Single-writer assumption: only the sidecar writes this file
+ * in production.
+ */
+export function writeMergeWatchState(filePath: string, state: MergeWatchState): void {
+	const payload: Record<string, unknown> = {
+		prNumber: state.prNumber,
+		mergedBranch: state.mergedBranch,
+		pollCount: state.pollCount ?? 0,
+	};
+	if (state.lastPolledAt !== undefined) {
+		payload['lastPolledAt'] = state.lastPolledAt;
+	}
+	writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+}
+
+/**
+ * Remove the merge-watch state file on a terminal outcome.
+ *
+ * Called when the outcome is merged | closed-not-merged | ci-red | timeout.
+ * Best-effort: does not throw when the file is already absent.
+ */
+export function removeMergeWatchState(filePath: string): void {
+	try {
+		unlinkSync(filePath);
+	} catch {
+		/* best-effort: file may already be absent */
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Types

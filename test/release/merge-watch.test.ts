@@ -19,10 +19,14 @@
 //
 // US-007 (CAM-101).
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, test, expect } from 'bun:test';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 import {
+	readMergeWatchState,
+	writeMergeWatchState,
+	removeMergeWatchState,
 	runMergeWatch,
 	stepMergeWatch,
 	type MergeWatchOptions,
@@ -1101,6 +1105,187 @@ describe('stepMergeWatch', () => {
 		if (result.kind === 'terminal') {
 			expect(result.outcome.kind).toBe('merged');
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Durable state I/O helpers (US-002)
+// ---------------------------------------------------------------------------
+// Tests use a real tmpdir filesystem (not mocks) as required by the oracle:
+//   bun test test/release/merge-watch.test.ts (tmpdir + writeFileSync/readFileSync)
+// ---------------------------------------------------------------------------
+
+describe('merge-watch durable state I/O (US-002)', () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'merge-watch-test-'));
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	// AC1: write + read round-trips all four fields
+	test('AC1: write then read round-trips prNumber, mergedBranch, pollCount, lastPolledAt', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		const state: MergeWatchState = {
+			prNumber: 42,
+			mergedBranch: 'cam/test-branch',
+			pollCount: 7,
+			lastPolledAt: 1_234_567_890_000,
+		};
+
+		writeMergeWatchState(filePath, state);
+		const read = readMergeWatchState(filePath);
+
+		expect(read).not.toBeNull();
+		expect(read?.prNumber).toBe(42);
+		expect(read?.mergedBranch).toBe('cam/test-branch');
+		expect(read?.pollCount).toBe(7);
+		expect(read?.lastPolledAt).toBe(1_234_567_890_000);
+	});
+
+	// AC2a: non-terminal tick keeps file present with updated pollCount/lastPolledAt
+	test('AC2a: continue tick leaves file present with updated counters', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+
+		// Initial write
+		writeMergeWatchState(filePath, {
+			prNumber: 10,
+			mergedBranch: 'cam/branch',
+			pollCount: 2,
+			lastPolledAt: 100,
+		});
+		expect(existsSync(filePath)).toBe(true);
+
+		// Simulate a non-terminal tick: overwrite with updated counters
+		writeMergeWatchState(filePath, {
+			prNumber: 10,
+			mergedBranch: 'cam/branch',
+			pollCount: 3,
+			lastPolledAt: 200,
+		});
+
+		// File must still be present
+		expect(existsSync(filePath)).toBe(true);
+
+		// And the updated values must be readable
+		const read = readMergeWatchState(filePath);
+		expect(read?.pollCount).toBe(3);
+		expect(read?.lastPolledAt).toBe(200);
+	});
+
+	// AC2b: terminal tick removes the file
+	test('AC2b: removeMergeWatchState removes the file (simulates terminal outcome)', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, {
+			prNumber: 10,
+			mergedBranch: 'cam/branch',
+			pollCount: 5,
+			lastPolledAt: 300,
+		});
+		expect(existsSync(filePath)).toBe(true);
+
+		removeMergeWatchState(filePath);
+
+		expect(existsSync(filePath)).toBe(false);
+	});
+
+	// AC3: restart-resume: persisted pollCount/lastPolledAt survive a fresh read
+	test('AC3: restart-resume - write state with pollCount>0, re-read returns the same values', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+
+		writeMergeWatchState(filePath, {
+			prNumber: 99,
+			mergedBranch: 'cam/restart-test',
+			pollCount: 5,
+			lastPolledAt: 1_719_000_000_000,
+		});
+
+		// Simulate a fresh sidecar restart by re-reading the file
+		const resumed = readMergeWatchState(filePath);
+
+		// Must resume from the persisted state, not reset to 0
+		expect(resumed?.pollCount).toBe(5);
+		expect(resumed?.lastPolledAt).toBe(1_719_000_000_000);
+	});
+
+	// AC4a: legacy two-field seed reads back with pollCount/lastPolledAt absent
+	test('AC4a: legacy { prNumber, mergedBranch } seed reads back as fresh (no pollCount)', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+
+		// Write a legacy-style seed (only the two fields the orchestrator originally wrote)
+		writeFileSync(filePath, JSON.stringify({ prNumber: 7, mergedBranch: 'cam/legacy' }), 'utf8');
+
+		const state = readMergeWatchState(filePath);
+
+		expect(state).not.toBeNull();
+		expect(state?.prNumber).toBe(7);
+		expect(state?.mergedBranch).toBe('cam/legacy');
+		// pollCount/lastPolledAt absent -> stepMergeWatch treats as fresh (pollCount ?? 0)
+		expect(state?.pollCount).toBeUndefined();
+		expect(state?.lastPolledAt).toBeUndefined();
+	});
+
+	// AC4b: malformed JSON returns null without throwing
+	test('AC4b: malformed JSON returns null, does not throw', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeFileSync(filePath, 'not valid json!!!', 'utf8');
+
+		expect(() => readMergeWatchState(filePath)).not.toThrow();
+		expect(readMergeWatchState(filePath)).toBeNull();
+	});
+
+	// AC4c: non-object JSON (array) returns null
+	test('AC4c: JSON array returns null', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeFileSync(filePath, JSON.stringify([1, 2, 3]), 'utf8');
+		expect(readMergeWatchState(filePath)).toBeNull();
+	});
+
+	// AC4d: null JSON returns null
+	test('AC4d: JSON null returns null', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeFileSync(filePath, 'null', 'utf8');
+		expect(readMergeWatchState(filePath)).toBeNull();
+	});
+
+	// Missing file returns null
+	test('missing file returns null', () => {
+		const filePath = join(tempDir, 'nonexistent.json');
+		expect(readMergeWatchState(filePath)).toBeNull();
+	});
+
+	// removeMergeWatchState is idempotent (no throw on missing file)
+	test('removeMergeWatchState is idempotent on a missing file', () => {
+		const filePath = join(tempDir, 'nonexistent.json');
+		expect(() => removeMergeWatchState(filePath)).not.toThrow();
+	});
+
+	// writeMergeWatchState with absent pollCount persists pollCount:0
+	test('writeMergeWatchState defaults pollCount to 0 when absent in state', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, { prNumber: 1, mergedBranch: 'cam/b' });
+
+		const read = readMergeWatchState(filePath);
+		expect(read?.pollCount).toBe(0);
+		expect(read?.lastPolledAt).toBeUndefined();
+	});
+
+	// writeMergeWatchState omits lastPolledAt when undefined (so read gives undefined)
+	test('writeMergeWatchState omits lastPolledAt when undefined -> read gets undefined', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, {
+			prNumber: 3,
+			mergedBranch: 'cam/b',
+			pollCount: 1,
+			// lastPolledAt intentionally absent
+		});
+
+		const read = readMergeWatchState(filePath);
+		expect(read?.pollCount).toBe(1);
+		expect(read?.lastPolledAt).toBeUndefined();
 	});
 });
 

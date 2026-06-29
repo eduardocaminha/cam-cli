@@ -39,7 +39,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "File: src/release/merge-watch.ts (add durable read/write helpers near MERGE_WATCH_FILENAME:36; MergeWatchState extended in US-001). The helpers take an explicit file path (join(claudeDir, MERGE_WATCH_FILENAME)) so tests use a tmpdir; do NOT hard-code .claude/. Read helper must tolerate: missing file (no watch), malformed JSON / non-object / array (treat as no watch, best-effort), and the legacy two-field seed (return with pollCount 0). Write helper persists all four fields. This story is the durability seam consumed by US-003's wiring; keep it pure I/O (path in, no scheduling). Gotcha (memory: merge-watch consume-on-read is by-design was the OLD model): the new model is durable, removed only at terminal — do NOT preserve the eager pre-loop delete. Tests: extend test/release/merge-watch.test.ts (it already imports readFileSync/resolve)."
     },

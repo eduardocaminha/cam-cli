@@ -1,7 +1,7 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Replace blocking poll loop with pure stepMergeWatch tick"
+    "id": "US-002",
+    "title": "Persist merge-watch state durably across ticks in .cam-merge-watch.json"
   },
   "branchName": "cam/CAM-138-merge-watch-state-machine",
   "timestamp": "2026-06-29T00:00:00Z",
@@ -10,15 +10,16 @@
     "src/release/merge-watch.ts",
     "test/release/merge-watch.test.ts",
     "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/cam/patterns.md",
+    "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "stepMergeWatch is now exported from src/release/merge-watch.ts. MergeWatchState has optional pollCount and lastPolledAt fields. runMergeWatch still exists (caller: sidecar.ts) and uses a virtual clock internally. The next story (US-002) likely wires stepMergeWatch into the sidecar idle tick with real state persistence to .claude/.cam-merge-watch.json.",
+  "nextStoryContext": "US-002 added three helpers exported from src/release/merge-watch.ts: readMergeWatchState(filePath), writeMergeWatchState(filePath, state), removeMergeWatchState(filePath). The next story (US-003) must use these helpers in makeProductionMergeWatchFn (sidecar.ts:291-350): remove the eager unlink-before-start at ~313-314, call stepMergeWatch once per tick, persist on continue with writeMergeWatchState, and call removeMergeWatchState on terminal outcomes. The outer loop in loop.ts should call the merge-watch step and then immediately proceed to hasSessionFn (non-blocking). sidecar.ts already imports MERGE_WATCH_FILENAME, MergeWatchState, runMergeWatch, GhPollFn, PrStatus from merge-watch.ts; add readMergeWatchState, writeMergeWatchState, removeMergeWatchState, stepMergeWatch, StepMergeWatchOptions to that import.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-001 is a pure TypeScript state machine refactor with no external library surface (gh pollFn is injected and abstracted away)."
+      "summary": "US-002 adds durable read/write helpers using only node:fs built-ins (existsSync, readFileSync, writeFileSync, unlinkSync). No external npm library was introduced."
     }
   ]
 }
