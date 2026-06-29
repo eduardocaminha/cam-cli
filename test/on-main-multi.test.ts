@@ -29,6 +29,7 @@ import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
 import {
 	commitTreeToMain,
+	syncWorktreeIfOnMain,
 	CAS_MAX_ATTEMPTS,
 	type FileWrite,
 	type SpawnFn,
@@ -395,5 +396,173 @@ describe('commitTreeToMain — AC#3 parity: 1-element list = single-file sequenc
 		const result = commitTreeToMain(CWD, [FILE_A], COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-');
 
 		expect(result).toBe(COMMIT_SHA.substring(0, 7));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC#4 syncWorktreeIfOnMain: standalone behavior
+// ---------------------------------------------------------------------------
+
+describe('syncWorktreeIfOnMain', () => {
+	test('no-op when branch is not main', () => {
+		const calls: Call[] = [];
+		const spawnFn: SpawnFn = (cmd, args, options) => {
+			calls.push({ cmd, args: [...args], input: options.input });
+			if (args.includes('--abbrev-ref')) return ok('cam/some-feature\n');
+			return ok();
+		};
+
+		syncWorktreeIfOnMain(CWD, ['scripts/cam/issues/CAM-0001.json'], spawnFn);
+
+		// Only the rev-parse call fires; no restore.
+		expect(calls.find((c) => c.args.includes('restore'))).toBeUndefined();
+		expect(calls.filter((c) => c.args.includes('rev-parse')).length).toBe(1);
+	});
+
+	test('calls git restore --staged --worktree --source=HEAD when on main', () => {
+		const calls: Call[] = [];
+		const spawnFn: SpawnFn = (cmd, args, options) => {
+			calls.push({ cmd, args: [...args], input: options.input });
+			if (args.includes('--abbrev-ref')) return ok('main\n');
+			return ok();
+		};
+
+		const SYNC_PATH = 'scripts/cam/issues/CAM-0001.json';
+		syncWorktreeIfOnMain(CWD, [SYNC_PATH], spawnFn);
+
+		const restoreCall = calls.find((c) => c.args.includes('restore'));
+		expect(restoreCall).toBeDefined();
+		expect(restoreCall!.args).toContain('--staged');
+		expect(restoreCall!.args).toContain('--worktree');
+		expect(restoreCall!.args).toContain('--source=HEAD');
+		expect(restoreCall!.args).toContain('--');
+		expect(restoreCall!.args).toContain(SYNC_PATH);
+	});
+
+	test('best-effort: does not throw on non-zero restore exit', () => {
+		const spawnFn: SpawnFn = (cmd, args, _options) => {
+			if (args.includes('--abbrev-ref')) return ok('main\n');
+			if (args.includes('restore')) return fail('restore error');
+			return ok();
+		};
+
+		expect(() =>
+			syncWorktreeIfOnMain(CWD, ['scripts/cam/issues/CAM-0001.json'], spawnFn),
+		).not.toThrow();
+	});
+
+	test('no-op when paths array is empty (even on main)', () => {
+		const calls: Call[] = [];
+		const spawnFn: SpawnFn = (cmd, args, options) => {
+			calls.push({ cmd, args: [...args], input: options.input });
+			if (args.includes('--abbrev-ref')) return ok('main\n');
+			return ok();
+		};
+
+		syncWorktreeIfOnMain(CWD, [], spawnFn);
+
+		expect(calls.find((c) => c.args.includes('restore'))).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC#5 commitTreeToMain: syncWorktreeIfOnMain wired on the success path
+// ---------------------------------------------------------------------------
+
+describe('commitTreeToMain — AC#5 sync wired on success path', () => {
+	test('calls git restore after successful update-ref when on main', () => {
+		const calls: Call[] = [];
+
+		const spawnFn: SpawnFn = (cmd, args, options) => {
+			calls.push({ cmd, args: [...args], input: options.input });
+			if (args.includes('hash-object')) return ok(BLOB_SHA_1 + '\n');
+			if (args.includes('write-tree')) return ok(TREE_SHA + '\n');
+			if (args.includes('commit-tree')) return ok(COMMIT_SHA + '\n');
+			if (args.includes('update-ref')) return ok();
+			if (args.includes('--abbrev-ref')) return ok('main\n');
+			if (args.includes('rev-parse') && args.includes('main') && !args.includes('--abbrev-ref'))
+				return ok(MAIN_SHA + '\n');
+			return ok();
+		};
+
+		commitTreeToMain(CWD, [FILE_A], COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-');
+
+		const restoreCall = calls.find((c) => c.args.includes('restore'));
+		expect(restoreCall).toBeDefined();
+		expect(restoreCall!.args).toContain('--staged');
+		expect(restoreCall!.args).toContain('--worktree');
+		expect(restoreCall!.args).toContain('--source=HEAD');
+		expect(restoreCall!.args).toContain(FILE_A.path);
+	});
+
+	test('restore does NOT fire when branch is not main (off-main path)', () => {
+		// makeHappySpawn returns '' for --abbrev-ref (catch-all ok()), branch != main.
+		const { spawnFn, calls } = makeHappySpawn();
+
+		commitTreeToMain(CWD, [FILE_A], COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-');
+
+		expect(calls.find((c) => c.args.includes('restore'))).toBeUndefined();
+	});
+
+	test('return value (short sha) is unchanged by the sync step', () => {
+		const spawnFn: SpawnFn = (cmd, args, _options) => {
+			if (args.includes('hash-object')) return ok(BLOB_SHA_1 + '\n');
+			if (args.includes('write-tree')) return ok(TREE_SHA + '\n');
+			if (args.includes('commit-tree')) return ok(COMMIT_SHA + '\n');
+			if (args.includes('update-ref')) return ok();
+			if (args.includes('--abbrev-ref')) return ok('main\n');
+			if (args.includes('rev-parse') && args.includes('main')) return ok(MAIN_SHA + '\n');
+			return ok();
+		};
+
+		const result = commitTreeToMain(CWD, [FILE_A], COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-');
+
+		expect(result).toBe(COMMIT_SHA.substring(0, 7));
+	});
+
+	test('sync scope includes removals paths in addition to file paths', () => {
+		const calls: Call[] = [];
+		const REMOVAL = 'scripts/cam/issues/OLD.json';
+
+		const spawnFn: SpawnFn = (cmd, args, options) => {
+			calls.push({ cmd, args: [...args], input: options.input });
+			if (args.includes('hash-object')) return ok(BLOB_SHA_1 + '\n');
+			if (args.includes('write-tree')) return ok(TREE_SHA + '\n');
+			if (args.includes('commit-tree')) return ok(COMMIT_SHA + '\n');
+			if (args.includes('update-ref')) return ok();
+			if (args.includes('--abbrev-ref')) return ok('main\n');
+			if (args.includes('rev-parse') && args.includes('main') && !args.includes('--abbrev-ref'))
+				return ok(MAIN_SHA + '\n');
+			return ok();
+		};
+
+		commitTreeToMain(CWD, [FILE_A], COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-', [REMOVAL]);
+
+		const restoreCall = calls.find((c) => c.args.includes('restore'));
+		expect(restoreCall).toBeDefined();
+		expect(restoreCall!.args).toContain(FILE_A.path);
+		expect(restoreCall!.args).toContain(REMOVAL);
+	});
+
+	test('restore does NOT fire when CAS fails (only fires on success)', () => {
+		const calls: Call[] = [];
+
+		const spawnFn: SpawnFn = (cmd, args, options) => {
+			calls.push({ cmd, args: [...args], input: options.input });
+			if (args.includes('hash-object')) return ok(BLOB_SHA_1 + '\n');
+			if (args.includes('write-tree')) return ok(TREE_SHA + '\n');
+			if (args.includes('commit-tree')) return ok(COMMIT_SHA + '\n');
+			if (args.includes('update-ref')) return fail('CAS rejected');
+			if (args.includes('--abbrev-ref')) return ok('main\n');
+			if (args.includes('rev-parse') && args.includes('main') && !args.includes('--abbrev-ref'))
+				return ok(MAIN_SHA + '\n');
+			return ok();
+		};
+
+		expect(() =>
+			commitTreeToMain(CWD, [FILE_A], COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-'),
+		).toThrow(/CAS/i);
+
+		expect(calls.find((c) => c.args.includes('restore'))).toBeUndefined();
 	});
 });

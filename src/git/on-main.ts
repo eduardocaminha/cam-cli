@@ -30,6 +30,7 @@ import type { SpawnSyncReturns } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { printWarning } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
 // Shared SpawnFn type
@@ -213,6 +214,61 @@ export function commitAndCasAttempt(
 }
 
 // ---------------------------------------------------------------------------
+// syncWorktreeIfOnMain
+// ---------------------------------------------------------------------------
+
+/**
+ * Sync the working tree for the supplied paths when checked out on main.
+ *
+ * Coherence invariant (mirrors commitTreeToMain's contract):
+ *   - Off-main working tree: left completely untouched (all uncommitted edits
+ *     on the feature branch are preserved).
+ *   - On-main working tree: synced to HEAD after the call via
+ *     `git restore --staged --worktree --source=HEAD -- <paths>`.
+ *
+ * `git restore --staged --worktree --source=HEAD` handles add/mod/del
+ * uniformly (unlike `git checkout HEAD -- <path>` which does NOT remove
+ * files absent from HEAD, so deletions would leak into the worktree).
+ *
+ * Best-effort: a non-zero exit from git restore emits a warning and never
+ * throws, so callers are never blocked by a failed sync.
+ *
+ * Branch is self-detected via `git rev-parse --abbrev-ref HEAD`; callers
+ * do NOT pass branchWasMain.
+ *
+ * @param cwd     Absolute path to the project root (git repo).
+ * @param paths   List of repo-relative paths to sync (files + removals).
+ * @param spawnFn Injectable spawnSync for git subprocess calls.
+ */
+export function syncWorktreeIfOnMain(
+	cwd: string,
+	paths: string[],
+	spawnFn: SpawnFn,
+): void {
+	const branchResult = spawnFn(
+		'git',
+		['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'],
+		{ encoding: 'utf8' },
+	);
+	const branch = (branchResult.stdout ?? '').trim();
+	if (branch !== 'main') return;
+
+	if (paths.length === 0) return;
+
+	const restoreResult = spawnFn(
+		'git',
+		['-C', cwd, 'restore', '--staged', '--worktree', '--source=HEAD', '--', ...paths],
+		{ encoding: 'utf8' },
+	);
+	if ((restoreResult.status ?? 1) !== 0) {
+		printWarning(
+			'syncWorktreeIfOnMain: git restore failed',
+			(restoreResult.stderr ?? '').trim(),
+		);
+	}
+}
+
+// ---------------------------------------------------------------------------
 // commitTreeToMain
 // ---------------------------------------------------------------------------
 
@@ -227,12 +283,19 @@ export function commitAndCasAttempt(
  * the meantime.  On CAS failure the helper re-reads refs/heads/main, rebuilds
  * the tree on the new base, and retries up to CAS_MAX_ATTEMPTS times.
  *
+ * Coherence invariant:
+ *   - Off-main working tree: left completely untouched (feature-branch edits
+ *     are never clobbered).
+ *   - On-main working tree: synced to HEAD after a successful commit via
+ *     syncWorktreeIfOnMain, so the worktree stays coherent with the commit
+ *     just written to refs/heads/main.
+ *
  * Sequence per attempt:
  *   1. git read-tree main          -- populate the temp index with main's tree.
  *   1b. removePathsFromIndex       -- apply optional deletions.
  *   2. hashAndIndexFiles           -- hash + index all files (throws on error).
  *   3. commitAndCasAttempt         -- write-tree + commit-tree + CAS update-ref.
- *      if CAS ok: return short sha.
+ *      if CAS ok: sync worktree (on-main only), then return short sha.
  *      if CAS fail: update currentMainSha, retry.
  *
  * For the 1-element list this produces the same sequence as the old
@@ -279,7 +342,11 @@ export function commitTreeToMain(
 			hashAndIndexFiles(cwd, files, spawnFn, indexEnv);
 			const result = commitAndCasAttempt(cwd, currentMainSha, commitMsg, spawnFn, indexEnv);
 
-			if (result.success) return result.shortSha;
+			if (result.success) {
+				const allPaths = [...files.map((f) => f.path), ...(removals ?? [])];
+				syncWorktreeIfOnMain(cwd, allPaths, spawnFn);
+				return result.shortSha;
+			}
 			currentMainSha = result.newMainSha;
 		}
 

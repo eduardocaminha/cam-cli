@@ -708,10 +708,10 @@ test.skipIf(!gitAvailable)(
 // Case B: on-main path
 
 test.skipIf(!gitAvailable)(
-	'Real-git Case B (on-main): ref-only commit via commitTreeToMain; working-tree file unchanged',
+	'Real-git Case B (on-main): ref-only commit via commitTreeToMain; working-tree file synced to HEAD',
 	() => {
-		// CAM-133: on-main path now uses commitTreeToMain (ref-only). The main
-		// ref advances, but the working-tree file is never written.
+		// CAM-133: on-main path uses commitTreeToMain. After a successful commit,
+		// syncWorktreeIfOnMain syncs the working-tree file to HEAD (coherence invariant).
 		const { dir, run, issuesDir } = makeTmpRepo();
 
 		const branchBefore = (run(['rev-parse', '--abbrev-ref', 'HEAD']).stdout as string).trim();
@@ -751,10 +751,10 @@ test.skipIf(!gitAvailable)(
 		expect(mainEntry.spec).toEqual(VALID_SPEC);
 		expect(mainEntry.wsjf).toEqual(VALID_WSJF);
 
-		// ref-only invariant: working-tree file is NOT updated
+		// working-tree file is synced to HEAD (syncWorktreeIfOnMain coherence invariant)
 		const wtContent = readFileSync(join(issuesDir, 'CAM-0001.json'), 'utf8');
 		const wtEntry = JSON.parse(wtContent) as IssueEntry;
-		expect(wtEntry.stage).toBe('idea');
+		expect(wtEntry.stage).toBe('specified');
 	},
 );
 
@@ -1257,10 +1257,10 @@ test.skipIf(!gitAvailable)(
 );
 
 test.skipIf(!gitAvailable)(
-	'Real-git abandon (on-main): ref-only commit via commitTreeToMain; working-tree file unchanged',
+	'Real-git abandon (on-main): ref-only commit via commitTreeToMain; working-tree file synced to HEAD',
 	() => {
-		// CAM-133: on-main path now uses commitTreeToMain (ref-only). The main
-		// ref advances, but the working-tree file is never written.
+		// CAM-133: on-main path uses commitTreeToMain. After a successful commit,
+		// syncWorktreeIfOnMain syncs the working-tree file to HEAD (coherence invariant).
 		const { dir, run, issuesDir } = makeTmpRepoTwo();
 		const mainSha0 = (run(['rev-parse', 'main']).stdout as string).trim();
 
@@ -1287,10 +1287,10 @@ test.skipIf(!gitAvailable)(
 		const mainEntry = JSON.parse(showResult.stdout as string) as IssueEntry;
 		expect(mainEntry.status).toBe('abandoned');
 
-		// ref-only invariant: working-tree file is NOT updated
+		// working-tree file is synced to HEAD (syncWorktreeIfOnMain coherence invariant)
 		const wtContent = readFileSync(join(issuesDir, 'CAM-0001.json'), 'utf8');
 		const wtEntry = JSON.parse(wtContent) as IssueEntry;
-		expect(wtEntry.status).toBe('open');
+		expect(wtEntry.status).toBe('abandoned');
 	},
 );
 
