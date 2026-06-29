@@ -362,6 +362,73 @@ describe('runNext (thin-proxy, miss path)', () => {
 	});
 });
 
+// --- runNext (write failure path) ------------------------------------------
+
+describe('runNext (write failure path)', () => {
+	test('returns 1 and emits error to stderr when writeFn throws', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-write-fail-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+
+			const capturedStderr: string[] = [];
+			const origStderrWrite = process.stderr.write.bind(process.stderr);
+			process.stderr.write = ((chunk: string | Uint8Array) => {
+				capturedStderr.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+				return true;
+			}) as typeof process.stderr.write;
+
+			let code: number;
+			try {
+				code = await runNext({
+					cwd: dir,
+					tmuxSpawnFn: spawnFn,
+					writeFn: () => { throw new Error('EACCES: permission denied'); },
+				});
+			} finally {
+				process.stderr.write = origStderrWrite;
+			}
+
+			expect(code!).toBe(1);
+			const stderrOutput = capturedStderr.join('');
+			expect(stderrOutput).toContain('cam-loop.local.md');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('does not reach emitOk (no success message) on write failure', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-no-emit-ok-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+
+			const capturedStdout: string[] = [];
+			const origStdoutWrite = process.stdout.write.bind(process.stdout);
+			process.stdout.write = ((chunk: string | Uint8Array) => {
+				capturedStdout.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+				return true;
+			}) as typeof process.stdout.write;
+
+			let code: number;
+			try {
+				code = await runNext({
+					cwd: dir,
+					tmuxSpawnFn: spawnFn,
+					writeFn: () => { throw new Error('write failed'); },
+				});
+			} finally {
+				process.stdout.write = origStdoutWrite;
+			}
+
+			expect(code!).toBe(1);
+			// emitOk writes a ✓ + "Sidecar trigger written" to stdout — must NOT appear
+			const stdoutOutput = capturedStdout.join('');
+			expect(stdoutOutput).not.toContain('Sidecar trigger written');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
 // --- runNext (thin-proxy): pane not found ----------------------------------
 
 describe('runNext (thin-proxy, pane not found)', () => {
