@@ -19,7 +19,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file error-handling fix + its test. jobSize 1 — do NOT inflate scope. File: src/commands/next.ts. The defect is the catch at lines 305-307 (comment 'Non-fatal: the sidecar will still pick up...') followed by unconditional emitOk()+return 0 at lines 309-312. After CAM-78's US-001 made this write the ONLY effect of the hit path, a swallowed write error is a false success and the sidecar never fires. Fix: in the catch, call printError(<clear msg>, <hint>) (printError is already imported from ../logging/color.ts at line 24; mirror the failure-branch shape at lines 251-253 and 259-264: printError(...) -> emitTrailingBlank() -> return 1). Test seam: NextOptions (src/commands/next.ts:136) currently exposes tmuxSpawnFn/bootstrapFn/statFn/sleepFn but NO write seam — the cleanest hermetic injection is to add an optional writeFn seam to NextOptions defaulting to writeStateFile, then have the test pass a writeFn that throws; alternatively point cwd at an unwritable path. Mirror existing test structure in test/next.test.ts (describe blocks, makeFakeTmuxSpawn with orchAlive:true for the hit path, mkdtempSync/rmSync lifecycle). To assert error emission deterministically, capture stderr/console output of printError. Keep the success path (emitOk + emitAttachHint + emitTrailingBlank + return 0) byte-for-byte unchanged. No external library, no vendor/ or templates/ touched, no Ink UI screen."
     }
