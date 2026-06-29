@@ -59,7 +59,7 @@
         "bun run check:all passes green (typecheck + test + embed-vendor + ratchets + biome + ci-parity). [oracle: named-command `bun run check:all`]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file: src/supervisor/observe.ts. Test: test/supervisor/observe.test.ts. Selector contract: src/issues/select.ts selectPlannableIssue(backlog: IssueEntry[]) => IssueEntry | null (and selectPlannableFromFile(cwd, spawn) for the I/O seam, used by US-004). IssueEntry (src/issues/types.ts) carries id, rank?, wsjf?: WsjfScore. The wsjf SCALAR for the event is the `.wsjf` field of computeWsjf's return value (src/issues/rank.ts:49 returns { wsjf, warning }: take `.wsjf`, discard `.warning`); the formula is (value+timeCriticality+riskReduction)/jobSize with missing-wsjf / jobSize<=0 -> 0. computeWsjf is currently PRIVATE: either export it from rank.ts (surgical) and reuse, or replicate the formula with the same guard in observe.ts. Event detail stays {wouldSelect, rank, wsjf:number}. Do NOT couple this fn to the filesystem (keep selectPlannable injected). Dedup state is a plain value passed in/out, NOT a file (CAM-68; spec gotcha). Spec AC#3, AC#5, AC#8 (anti-tautology). Resist preparing any flip/dispatch here (CAM-139 owns that). Read patterns.md for noUncheckedIndexedAccess guards."
     },
