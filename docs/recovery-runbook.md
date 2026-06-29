@@ -1534,7 +1534,7 @@ conclusion (`FAILURE`, `CANCELLED`, `TIMED_OUT`, `ACTION_REQUIRED`,
 absent or all-pending rollup means CI is still running: the loop keeps polling.
 
 The structured events emitted to `.claude/cam-worker-events.jsonl` during a
-merge-watch run are: `merge-watch-watching` (loop start),
+merge-watch run are: `merge-watch-watching` (first gh poll, emitted inside stepMergeWatch on pollCount===0),
 `merge-watch-merged` (on MERGED), `merge-watch-ci-red` (on BLOCKED or CLOSED
 PR), and `merge-watch-post-merge-done` (after post-merge completes).
 

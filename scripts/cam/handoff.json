@@ -1,26 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Add durable-ownership contract one-liner to cam-ship.md (both copies) and re-embed"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-138-merge-watch-state-machine",
   "timestamp": "2026-06-29T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/commands/cam-ship.md",
-    "templates/commands/cam-ship.md",
-    "src/vendor/_generated.ts",
+    "src/release/merge-watch.ts",
+    "src/supervisor/events.ts",
     "docs/recovery-runbook.md",
+    "test/release/merge-watch.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added a durable-ownership contract one-liner to both copies of cam-ship.md (the ci-gated Step 7 block), re-embedded templates into src/vendor/_generated.ts, and corrected the recovery-runbook merge-watch diagnostic note (was 'removed before the loop starts', now 'removed when the loop reaches a terminal outcome'). All four US stories in this PRD are now passes:true. No further non-operator stories remain; emit PRD_COMPLETE if the next story selection returns nothing.",
+  "nextStoryContext": "US-R1-001 fixed the merge-watch-watching event regression: moved the emit from runMergeWatch (legacy blocking wrapper) into stepMergeWatch on the first poll (pollCount===0), so the production one-step-per-tick path in sidecar.ts now emits the event correctly. Updated events.ts comment and recovery-runbook.md to reflect the new emit site. Added two stepMergeWatch tests: one asserting the event IS emitted on first poll, one asserting it is NOT emitted on subsequent polls. 2197 tests pass, all gates green. Check whether US-R1-002 or other review-round-1 fixes remain.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 is a doc-only edit (cam-ship.md ownership contract + recovery-runbook correction + embed-vendor regeneration). No external npm library was introduced or modified."
+      "summary": "US-R1-001 is an internal TypeScript fix (merge-watch.ts, events.ts, recovery-runbook.md, tests). No external npm library was introduced or modified."
     }
   ]
 }

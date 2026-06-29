@@ -1106,6 +1106,48 @@ describe('stepMergeWatch', () => {
 			expect(result.outcome.kind).toBe('merged');
 		}
 	});
+
+	// US-R1-001: 'merge-watch-watching' emitted on first poll (pollCount === 0)
+	test('(US-R1-001) merge-watch-watching emitted on first poll (pollCount=0)', () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'sidecar', kind, detail });
+		};
+		const pollFn: GhPollFn = () => OPEN_CLEAN;
+		const state = legacySeed(99);
+
+		stepMergeWatch(state, 0, pollFn, makeStepOpts({ logEvent }));
+
+		const kinds = events.map((e) => e.kind);
+		expect(kinds).toContain('merge-watch-watching');
+		const watchingEvt = events.find((e) => e.kind === 'merge-watch-watching');
+		expect(watchingEvt).toBeDefined();
+		if (watchingEvt) {
+			const d = watchingEvt.detail as { prNumber: number; mergedBranch: string };
+			expect(d.prNumber).toBe(99);
+			expect(d.mergedBranch).toBe('cam/test-branch');
+		}
+	});
+
+	// US-R1-001: 'merge-watch-watching' NOT emitted on subsequent polls (pollCount > 0)
+	test('(US-R1-001) merge-watch-watching NOT emitted when pollCount > 0', () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'sidecar', kind, detail });
+		};
+		const pollFn: GhPollFn = () => OPEN_CLEAN;
+		const state: MergeWatchState = {
+			prNumber: 88,
+			mergedBranch: 'cam/test-branch',
+			pollCount: 3,
+			lastPolledAt: 0,
+		};
+
+		stepMergeWatch(state, 60_000, pollFn, makeStepOpts({ logEvent, pollIntervalMs: 60_000 }));
+
+		const watchingEvents = events.filter((e) => e.kind === 'merge-watch-watching');
+		expect(watchingEvents.length).toBe(0);
+	});
 });
 
 // ---------------------------------------------------------------------------

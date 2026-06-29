@@ -442,6 +442,17 @@ export function stepMergeWatch(
 		return { kind: 'terminal', outcome: { kind: 'timeout', polls: maxPolls } };
 	}
 
+	// Emit 'merge-watch-watching' on the very first poll (pollCount === 0).
+	// Covers both the production one-step-per-tick path (sidecar.ts ->
+	// stepMergeWatch directly) and the legacy blocking runMergeWatch wrapper.
+	if (pollCount === 0) {
+		const watchingDetail: MergeWatchWatchingEventDetail = {
+			prNumber: state.prNumber,
+			mergedBranch: state.mergedBranch,
+		};
+		opts.logEvent?.('merge-watch-watching', watchingDetail);
+	}
+
 	// Call pollFn exactly once.
 	const status = pollFn(state.prNumber);
 	const newPollCount = pollCount + 1;
@@ -507,9 +518,6 @@ export async function runMergeWatch(opts: MergeWatchOptions): Promise<MergeWatch
 	const sleep = opts.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS;
 	const maxPolls = opts.maxPolls ?? DEFAULT_MERGE_WATCH_MAX_POLLS;
-
-	const watchingDetail: MergeWatchWatchingEventDetail = { prNumber, mergedBranch: opts.mergedBranch };
-	logEvent?.('merge-watch-watching', watchingDetail);
 
 	const stepOpts: StepMergeWatchOptions = {
 		cwd: opts.cwd,
