@@ -1,10 +1,12 @@
 // test/commands/sidecar-meta-loop.test.ts
 //
-// Integration tests for US-004 (CAM-132): wiring the observe drainer into the
-// sidecar idle-tick via runMetaLoopObserveFn.
+// Integration tests for US-004/US-005 (CAM-132): wiring the observe drainer
+// into the sidecar idle-tick via runMetaLoopObserveFn, and drain notification
+// via Resend.
 //
 // These tests drive runSidecarLoop directly (not runSidecar) using injected fakes.
 // They prove:
+//   US-004:
 //   AC#3: off path — no events emitted, selectPlannable spy never called.
 //   AC#4: observe wouldSelect — exactly one 'meta-loop-observe' event with
 //         wouldSelect/rank/wsjf matching the backlog fixture.
@@ -13,6 +15,12 @@
 //   AC#7: quiet during active/paused-mid-cycle — no observe event when active:true or
 //         when active:false + in-flight prd.json (hasPendingStories:true).
 //   AC#9/10: file-assert oracles for loop.ts and sidecar.ts.
+//   US-005:
+//   AC#1: drain notify sent exactly once (sendEscalation spy: call count === 1) when
+//         Resend is configured and a drained event emits.
+//   AC#2: drain subject matches drain message and does NOT contain "Non-convergence".
+//   AC#3: no notification when Resend is unconfigured (sendEscalation spy count === 0).
+//   AC#4: dedup — staying drained across ticks does NOT re-fire the notification.
 //
 // All tests use injected fakes; no real filesystem or tmux access.
 
@@ -23,6 +31,8 @@ import { join } from 'node:path';
 import { runSidecarLoop, type RunSidecarLoopOptions } from '../../src/supervisor/loop.ts';
 import { makeInMemoryEventLogger, type WorkerEventLogger } from '../../src/supervisor/events.ts';
 import { observeDecide, type ObserveState } from '../../src/supervisor/observe.ts';
+import { sendEscalation, type ResendSendFn } from '../../src/notify/resend.ts';
+import { DRAIN_NOTIFY_SUBJECT } from '../../src/commands/sidecar.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 
 // ---------------------------------------------------------------------------
@@ -48,13 +58,17 @@ function makePlannableIssue(id = 'CAM-42'): IssueEntry {
 /**
  * Build a test-injectable runMetaLoopObserveFn using observeDecide.
  * The dedup state is held in closure (mirrors the production factory).
+ *
+ * @param drainNotifyFn Optional drain notification fn; called once on the first
+ *   drained transition (mirrors production makeProductionMetaLoopObserveFn).
  */
 function makeTestObserveFn(
 	getSelected: () => IssueEntry | null,
 	logEvent: WorkerEventLogger,
-): () => void {
+	drainNotifyFn?: () => Promise<void>,
+): () => Promise<void> {
 	let lastState: ObserveState = { kind: 'none' };
-	return (): void => {
+	return async (): Promise<void> => {
 		const selected = getSelected();
 		const result = observeDecide(selected, lastState);
 		if (result !== null) {
@@ -66,6 +80,9 @@ function makeTestObserveFn(
 				kind: 'meta-loop-observe',
 				detail: result.detail,
 			});
+			if ('drained' in result.detail && result.detail.drained === true && drainNotifyFn) {
+				await drainNotifyFn();
+			}
 		}
 	};
 }
@@ -366,5 +383,167 @@ describe('sidecar-meta-loop: file-assert oracles', () => {
 		const helperMatch = src.match(/function makeProductionMetaLoopObserveFn[\s\S]*?\n\}/);
 		expect(helperMatch).not.toBeNull();
 		expect(helperMatch?.[0]).not.toContain('writeFileSync');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-005: Drain notification via Resend
+// ---------------------------------------------------------------------------
+
+describe('sidecar-meta-loop: drain notification (US-005)', () => {
+	// Helper: build a drainNotifyFn backed by a sendEscalation spy.
+	// Returns the spy call records and the drainNotifyFn.
+	function makeDrainNotifyWithSpy(): {
+		sendCalls: Array<{ subject: string; html: string }>;
+		drainNotifyFn: () => Promise<void>;
+	} {
+		const sendCalls: Array<{ subject: string; html: string }> = [];
+		const spySendFn: ResendSendFn = async (params) => {
+			sendCalls.push({ subject: params.subject, html: params.html });
+			return { data: null, error: null };
+		};
+		const drainNotifyFn = async () => {
+			await sendEscalation({
+				apiKey: 'test-api-key',
+				recipient: 'test@example.com',
+				subject: DRAIN_NOTIFY_SUBJECT,
+				html: '<p><strong>[cam]</strong> The meta-loop observer found no plannable issues in the backlog. The project backlog is drained.</p>',
+				sendFn: spySendFn,
+			});
+		};
+		return { sendCalls, drainNotifyFn };
+	}
+
+	test('sendEscalation spy called exactly once when Resend configured and drained event emits', async () => {
+		const { logger } = makeInMemoryEventLogger();
+		const { sendCalls, drainNotifyFn } = makeDrainNotifyWithSpy();
+
+		// Empty backlog -> drained event on first tick
+		const observeFn = makeTestObserveFn(() => null, logger, drainNotifyFn);
+
+		const loopOpts = makeIdleLoopOpts(3, {
+			runMetaLoopObserveFn: observeFn,
+			hasPendingStories: () => false,
+		});
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		// Exactly one call despite 3 ticks (dedup: observeDecide returns null after first drain)
+		expect(sendCalls.length).toBe(1);
+	});
+
+	test('drain email subject matches drain message and does NOT contain Non-convergence', async () => {
+		const { logger } = makeInMemoryEventLogger();
+		const { sendCalls, drainNotifyFn } = makeDrainNotifyWithSpy();
+
+		const observeFn = makeTestObserveFn(() => null, logger, drainNotifyFn);
+
+		const loopOpts = makeIdleLoopOpts(2, {
+			runMetaLoopObserveFn: observeFn,
+			hasPendingStories: () => false,
+		});
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		expect(sendCalls.length).toBe(1);
+		const call = sendCalls[0];
+		// Subject must include the drain text
+		expect(call?.subject).toContain('drained');
+		// Subject must NOT be the non-convergence message
+		expect(call?.subject).not.toMatch(/Non-convergence/);
+	});
+
+	test('no sendEscalation call when Resend is NOT configured (no drainNotifyFn)', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		let sendCallCount = 0;
+
+		// No drainNotifyFn -> unconfigured path (observe still runs + emits, no notify)
+		const observeFn = makeTestObserveFn(
+			() => null,
+			logger,
+			// drainNotifyFn absent: simulates apiKey or recipient empty
+			undefined,
+		);
+
+		const loopOpts = makeIdleLoopOpts(3, {
+			runMetaLoopObserveFn: observeFn,
+			hasPendingStories: () => false,
+		});
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		// Drain event still emits (observe is unaffected)
+		const drainEvents = events.filter(
+			(ev) => ev.kind === 'meta-loop-observe' && (ev.detail as { drained?: boolean }).drained === true,
+		);
+		expect(drainEvents.length).toBe(1);
+
+		// But no notification was sent
+		expect(sendCallCount).toBe(0);
+	});
+
+	test('dedup: staying drained across multiple ticks fires notification exactly once', async () => {
+		const { logger } = makeInMemoryEventLogger();
+		const { sendCalls, drainNotifyFn } = makeDrainNotifyWithSpy();
+
+		// Run 5 idle ticks with empty backlog — first tick drains, next 4 are deduped
+		const observeFn = makeTestObserveFn(() => null, logger, drainNotifyFn);
+
+		const loopOpts = makeIdleLoopOpts(5, {
+			runMetaLoopObserveFn: observeFn,
+			hasPendingStories: () => false,
+		});
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		// Notification fired exactly once for the drain transition, not per-tick
+		expect(sendCalls.length).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-005: File-assert oracles for drain notify
+// ---------------------------------------------------------------------------
+
+describe('sidecar-meta-loop: drain notify file-assert oracles (US-005)', () => {
+	test('sidecar.ts contains drained drain-specific notify fn (AC#1 oracle)', () => {
+		const src = readFileSync(
+			join(import.meta.dir, '../../src/commands/sidecar.ts'),
+			'utf8',
+		);
+		// Drain-specific fn must be present and distinct from escalateFn
+		expect(src).toContain('drained');
+		expect(src).toContain('makeProductionDrainNotifyFn');
+		expect(src).toContain('DRAIN_NOTIFY_SUBJECT');
+	});
+
+	test('sidecar.ts reuses sendEscalation and readResendConfig, not re-implemented (AC#1 oracle)', () => {
+		const src = readFileSync(
+			join(import.meta.dir, '../../src/commands/sidecar.ts'),
+			'utf8',
+		);
+		// sendEscalation is imported (reused, not re-implemented)
+		expect(src).toContain("from '../notify/resend.ts'");
+		expect(src).toContain('sendEscalation');
+		// readResendConfig is used for drain notify (via resendConfig.apiKey / recipient)
+		expect(src).toContain('readResendConfig');
+		// No second Resend client: no 'new Resend(' in sidecar.ts
+		expect(src).not.toContain('new Resend(');
 	});
 });

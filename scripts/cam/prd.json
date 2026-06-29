@@ -101,7 +101,7 @@
         "bun run check:all passes green (typecheck + test + embed-vendor + ratchets + biome + ci-parity). [oracle: named-command `bun run check:all`]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/commands/sidecar.ts. F-03 CORRECTION: do NOT reuse the existing escalateFn closure @475-487 — it is hardcoded to the MAX_ROUNDS_DEBT subject \"[cam] Non-convergence: max review rounds reached\" and reusing it verbatim would send a semantically WRONG, alarming email on a mere drain. Instead build a NEW drain notify fn that reuses readResendConfig (@ src/config/models.ts:185) + sendEscalation (@ src/notify/resend.ts:70, EscalationOptions {apiKey, recipient, subject, html}) with a drain subject/body. The spec gotcha 'nao duplicar cliente Resend' forbids only a SECOND Resend client; reusing readResendConfig + sendEscalation with a drain message satisfies it. The drain notify fn is invoked by the US-004 runMetaLoopObserveFn when its emit is {drained:true} and resendConfig.apiKey!=='' && resendConfig.recipient!==''. Test: extend test/commands/sidecar-meta-loop.test.ts. Inject the sendEscalation seam (spy) + readResendConfig fixture (configured vs empty). The 'configured -> 1 call with drain subject / unconfigured -> 0 calls / subject is NOT Non-convergence' assertions are the NEGATIVE-assertion oracles the spec mandates (not a tautology). Spec AC#6."
     }
