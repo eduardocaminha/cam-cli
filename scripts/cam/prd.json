@@ -20,7 +20,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/supervisor/decide.ts. The terminal-by-cap detection is the `reviewTerminal` computation at lines 116-118 (`roundsCompleted >= maxRounds || (lastVerdict !== null && TERMINAL_VERDICTS.has(lastVerdict))`). decideNextAction is a PURE function (no I/O) per its header contract, so it CANNOT write prd.review; it must SIGNAL the promotion via its return value for the loop (US-002) to persist. Cleanest shape: add an optional typed field (e.g. `promoteVerdictTo?: 'MAX_ROUNDS_DEBT'`) to the `complete` and `await-operator` action variants in the SupervisorAction union, set ONLY when the cap is reached AND lastVerdict is non-null AND NOT in TERMINAL_VERDICTS (i.e. a pending FIXES_PENDING:* value). TERMINAL_VERDICTS = {'CLEAN','MAX_ROUNDS_DEBT'} (decide.ts:54). Do NOT change CLEAN handling and do NOT change the implement/review/blocked branches. Mirror existing decide.test.ts cases (the cap+await-operator+FIXES_PENDING case is already at decide.test.ts:255-265; the complete-at-cap-with-pending case is the new bug case to add). Gotcha (CLAUDE.md): noUncheckedIndexedAccess strict mode is on; keep the union exhaustive. COHERENCE: this is NOT CAM-78's manual cap-bump-to-4 workaround; the fix makes the cap-stop deterministic so no bump is ever needed."
     },

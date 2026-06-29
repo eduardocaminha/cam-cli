@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Signal MAX_ROUNDS_DEBT promotion from decideNextAction at the cap boundary"
+  },
+  "branchName": "cam/CAM-95-promote-cap-stop-to-max-rounds-debt",
+  "timestamp": "2026-06-29T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/decide.ts",
+    "test/supervisor/decide.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added promoteVerdictTo?: 'MAX_ROUNDS_DEBT' to the complete and await-operator variants of SupervisorAction. The next story (US-002) should wire this signal in loop.ts: when decideNextAction returns a terminal action with promoteVerdictTo set, loop.ts must persist MAX_ROUNDS_DEBT as prd.review.lastVerdict before exiting. The pure-function contract in decide.ts was preserved (no I/O). All existing loop.ts call sites still typecheck because promoteVerdictTo is an optional field.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure TypeScript logic change to decide.ts and its tests; no external libraries involved."
+    }
+  ]
+}
