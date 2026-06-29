@@ -1290,31 +1290,126 @@ describe('merge-watch durable state I/O (US-002)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Production wiring oracle: sidecar.ts passes logEvent to runMergeWatch
+// Production wiring oracle: sidecar.ts uses stepMergeWatch + logEvent (US-003)
 // ---------------------------------------------------------------------------
-// The US-008 structured events tests inject logEvent directly into runMergeWatch,
-// making a missing production wire invisible to the test suite. This oracle reads
-// sidecar.ts source text and confirms the argument is present in the call site,
-// so the gap can never silently re-emerge.
+// US-003 replaced the blocking runMergeWatch call with one-step-per-tick via
+// stepMergeWatch. These oracles confirm:
+//   1. stepMergeWatch is called in makeProductionMergeWatchFn.
+//   2. logEvent: is wired in the StepMergeWatchOptions bag (stepOpts).
+//   3. uuid: 'sidecar' is present in the logEvent wrapper.
+//   4. The eager pre-start unlinkSync is gone (only terminal-path removal remains).
 // ---------------------------------------------------------------------------
 
-describe('sidecar.ts production wiring oracle - logEvent passed to runMergeWatch', () => {
+describe('sidecar.ts production wiring oracle - stepMergeWatch + logEvent', () => {
 	const sidecarPath = resolve(import.meta.dir, '..', '..', 'src', 'commands', 'sidecar.ts');
 	const source = readFileSync(sidecarPath, 'utf8');
 
-	// Isolate the runMergeWatch call block in the production ci-gated closure.
-	// The block starts at 'await runMergeWatch({' and ends at the matching '});'.
-	const callMatch = source.match(/await runMergeWatch\(\{[\s\S]*?\}\);/);
+	// Isolate the stepOpts block in the production ci-gated closure.
+	const stepOptsMatch = source.match(/const stepOpts: StepMergeWatchOptions = \{[\s\S]*?\};/);
 
-	test('runMergeWatch call exists in sidecar.ts', () => {
-		expect(callMatch).not.toBeNull();
+	test('stepMergeWatch is called in sidecar.ts (one-step-per-tick)', () => {
+		expect(source).toContain('stepMergeWatch(');
 	});
 
-	test('runMergeWatch call wires logEvent:', () => {
-		expect(callMatch?.[0]).toContain('logEvent:');
+	test('stepOpts block exists in makeProductionMergeWatchFn', () => {
+		expect(stepOptsMatch).not.toBeNull();
+	});
+
+	test('stepOpts wires logEvent:', () => {
+		expect(stepOptsMatch?.[0]).toContain('logEvent:');
 	});
 
 	test('logEvent wrapper uses uuid: sidecar', () => {
-		expect(callMatch?.[0]).toContain("uuid: 'sidecar'");
+		expect(stepOptsMatch?.[0]).toContain("uuid: 'sidecar'");
+	});
+
+	test('eager pre-start unlinkSync is removed from makeProductionMergeWatchFn', () => {
+		// The eager delete "Remove the watch file BEFORE starting" at ~line 314 must
+		// be gone. We grep for the comment that identified it in the old code.
+		expect(source).not.toContain('Remove the watch file BEFORE starting');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Behavioral: file present after non-terminal tick (US-003 AC1 oracle)
+// ---------------------------------------------------------------------------
+// Validates that when the caller uses stepMergeWatch + writeMergeWatchState on
+// a continue result, the state file is still present afterward (CAM-103 fix).
+// ---------------------------------------------------------------------------
+
+describe('file persistence: non-terminal tick leaves file present', () => {
+	let tempDir: string;
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'cam-mw-persist-'));
+	});
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	test('continue result + writeMergeWatchState: file is present after tick', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		// Write a fresh state (no lastPolledAt -> polls immediately)
+		writeMergeWatchState(filePath, { prNumber: 42, mergedBranch: 'cam/feature' });
+
+		// Non-terminal pollFn: returns OPEN+CLEAN
+		const pollFn: GhPollFn = () => OPEN_CLEAN;
+		const state = readMergeWatchState(filePath);
+		expect(state).not.toBeNull();
+
+		const result = stepMergeWatch(state!, 0, pollFn, {
+			cwd: '/fake',
+			postMergeFn: () => ({ ok: false, reason: 'should not be called' }),
+			notifyOrchestrator: () => {},
+		});
+
+		// Non-terminal: caller writes state back.
+		expect(result.kind).toBe('continue');
+		if (result.kind === 'continue') {
+			writeMergeWatchState(filePath, result.state);
+		}
+
+		// File must still exist (not eagerly deleted).
+		expect(existsSync(filePath)).toBe(true);
+		// State is updated with incremented pollCount.
+		const updated = readMergeWatchState(filePath);
+		expect(updated?.prNumber).toBe(42);
+		expect((updated?.pollCount ?? 0)).toBeGreaterThan(0);
+	});
+
+	test('terminal=merged: postMergeFn called exactly once, file absent after removeMergeWatchState', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, { prNumber: 7, mergedBranch: 'cam/ship' });
+
+		let postMergeCalls = 0;
+		const pollFn: GhPollFn = () => ({ state: 'MERGED', mergeStateStatus: 'MERGED' });
+		const state = readMergeWatchState(filePath);
+		expect(state).not.toBeNull();
+
+		const result = stepMergeWatch(state!, 0, pollFn, {
+			cwd: '/fake',
+			postMergeFn: () => {
+				postMergeCalls++;
+				return {
+					ok: true as const,
+					pulledSha: 'abc1234',
+					tag: 'v0.1.0',
+					tagCreated: true,
+					branchPrunedLocal: true,
+					branchPrunedRemote: true,
+				};
+			},
+			notifyOrchestrator: () => {},
+		});
+
+		// Terminal merged: caller removes file.
+		expect(result.kind).toBe('terminal');
+		if (result.kind === 'terminal') {
+			removeMergeWatchState(filePath);
+		}
+
+		// postMergeFn called exactly once by processPollResult inside stepMergeWatch.
+		expect(postMergeCalls).toBe(1);
+		// File must be absent after terminal.
+		expect(existsSync(filePath)).toBe(false);
 	});
 });

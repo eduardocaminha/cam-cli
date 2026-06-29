@@ -1,25 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Persist merge-watch state durably across ticks in .cam-merge-watch.json"
+    "id": "US-003",
+    "title": "Wire one-step-per-tick into the sidecar outer loop and remove eager-delete (closes CAM-103)"
   },
   "branchName": "cam/CAM-138-merge-watch-state-machine",
   "timestamp": "2026-06-29T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/release/merge-watch.ts",
+    "src/commands/sidecar.ts",
     "test/release/merge-watch.test.ts",
+    "test/supervisor/sidecar-loop.test.ts",
+    "scripts/file-size-budget.json",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added three helpers exported from src/release/merge-watch.ts: readMergeWatchState(filePath), writeMergeWatchState(filePath, state), removeMergeWatchState(filePath). The next story (US-003) must use these helpers in makeProductionMergeWatchFn (sidecar.ts:291-350): remove the eager unlink-before-start at ~313-314, call stepMergeWatch once per tick, persist on continue with writeMergeWatchState, and call removeMergeWatchState on terminal outcomes. The outer loop in loop.ts should call the merge-watch step and then immediately proceed to hasSessionFn (non-blocking). sidecar.ts already imports MERGE_WATCH_FILENAME, MergeWatchState, runMergeWatch, GhPollFn, PrStatus from merge-watch.ts; add readMergeWatchState, writeMergeWatchState, removeMergeWatchState, stepMergeWatch, StepMergeWatchOptions to that import.",
+  "nextStoryContext": "US-003 rewrote makeProductionMergeWatchFn in sidecar.ts to use stepMergeWatch (one step per idle tick) instead of the blocking runMergeWatch loop. The eager pre-start unlinkSync is gone. On continue: writeMergeWatchState persists state across restarts. On terminal: removeMergeWatchState removes the file. The outer loop is non-blocking because the closure returns promptly. All three CAM-138 US stories are now passes:true. If there is a next story, it should check the PRD for further work; if all stories pass, emit PRD_COMPLETE.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-002 adds durable read/write helpers using only node:fs built-ins (existsSync, readFileSync, writeFileSync, unlinkSync). No external npm library was introduced."
+      "summary": "US-003 touches only internal functions (stepMergeWatch, readMergeWatchState, writeMergeWatchState, removeMergeWatchState) exported from src/release/merge-watch.ts. No external npm library was introduced or modified."
     }
   ]
 }

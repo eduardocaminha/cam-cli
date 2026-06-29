@@ -13,8 +13,10 @@
 //      the exported runSupervisor (not a re-export or wrapper that drops options).
 //   8. Releases the lock even when runSupervisorFn throws.
 
-import { afterAll, describe, expect, test } from 'bun:test';
-import { unlinkSync, writeFileSync } from 'node:fs';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	runSidecarLoop,
 	type RunSidecarLoopOptions,
@@ -22,6 +24,13 @@ import {
 	type SupervisorResult,
 } from '../../src/supervisor/loop.ts';
 import { makeHasPendingStories } from '../../src/commands/sidecar.ts';
+import {
+	stepMergeWatch,
+	readMergeWatchState,
+	writeMergeWatchState,
+	removeMergeWatchState,
+	type GhPollFn,
+} from '../../src/release/merge-watch.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -346,6 +355,231 @@ describe('runSidecarLoop', () => {
 		for (const key of required) {
 			expect(capturedOpts![key]).toBeDefined();
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-003: one-step-per-tick merge-watch integration tests
+// ---------------------------------------------------------------------------
+//
+// AC2: hasSessionFn called each tick even when merge-watch is mid-progress.
+// AC3: at most one gh poll per runMergeWatchFn invocation.
+// AC4: postMergeFn called exactly once on terminal=merged; stateFile absent.
+// CAM-103: outer loop is not blocked by a non-terminal watch.
+// ---------------------------------------------------------------------------
+
+describe('runSidecarLoop + merge-watch: one-step-per-tick (US-003)', () => {
+	let tempDir: string;
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'cam-sidecar-mw-'));
+	});
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	function makeDummySupervisorOpts(): RunSupervisorOptions {
+		return {
+			spawn: () => ({ stdout: '', exitCode: 0 }),
+			capturePane: () => '',
+			readPrd: () => null,
+			writePrd: () => {},
+			readHandoff: () => null,
+			clock: () => '2026-06-29T00:00:00Z',
+			reviewDispatch: () => ({ status: 'ok', detail: '' }),
+			writeSessionMarker: () => {},
+			isPaneAlive: () => true,
+			workerPaneId: '%2',
+			prdPath: '/fake/prd.json',
+			handoffPath: '/fake/handoff.json',
+			permissionMode: 'bypassPermissions',
+			taskPrompt: 'test',
+			sleepFn: () => {},
+			nowMs: () => 0,
+		};
+	}
+
+	const COMPLETE_RESULT: SupervisorResult = {
+		status: 'complete',
+		iterations: 1,
+		lastOutcome: null,
+	};
+
+	// AC2: hasSessionFn is called on every idle tick, even when runMergeWatchFn is non-terminal.
+	test('AC2: hasSessionFn called each idle tick even when merge-watch returns non-terminal', async () => {
+		const ESCAPE = Symbol('escape');
+		let sleepCount = 0;
+		let hasSessionCalls = 0;
+		let mergeWatchCalls = 0;
+		const NUM_TICKS = 4;
+
+		const loopOpts: RunSidecarLoopOptions = {
+			buildOpts: () => makeDummySupervisorOpts(),
+			readActive: () => false, // always idle
+			clearActive: () => {},
+			hasPendingStories: () => false,
+			acquireLock: () => ({ acquired: true as const, release: () => {} }),
+			runSupervisorFn: async (): Promise<SupervisorResult> => COMPLETE_RESULT,
+			// Non-terminal merge-watch: returns immediately (simulates continue tick)
+			runMergeWatchFn: async () => {
+				mergeWatchCalls++;
+			},
+			// hasSessionFn: counts calls, always returns true (session alive)
+			hasSessionFn: () => {
+				hasSessionCalls++;
+				return true;
+			},
+			sleep: () => {
+				sleepCount++;
+				if (sleepCount >= NUM_TICKS) throw ESCAPE;
+			},
+		};
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		// hasSessionFn must have been called at least once per idle tick.
+		expect(hasSessionCalls).toBeGreaterThanOrEqual(sleepCount);
+		// merge-watch was also called (on each idle tick).
+		expect(mergeWatchCalls).toBeGreaterThan(0);
+		// Loop did not block: it reached at least NUM_TICKS iterations.
+		expect(sleepCount).toBe(NUM_TICKS);
+	});
+
+	// CAM-103: the outer loop is NOT blocked by a non-terminal watch.
+	// Verified by the multi-tick non-blocking test above (reaching NUM_TICKS = 4
+	// ticks proves the loop continued beyond the first merge-watch invocation).
+
+	// AC3: stepMergeWatch calls pollFn at most once per runMergeWatchFn invocation.
+	test('AC3: per-tick pollFn called at most once per runMergeWatchFn invocation', async () => {
+		const ESCAPE = Symbol('escape');
+		let sleepCount = 0;
+		const pollCounts: number[] = []; // one entry per merge-watch invocation
+
+		const stateFilePath = join(tempDir, '.cam-merge-watch.json');
+		// Fresh state: no lastPolledAt -> polls on first tick
+		writeMergeWatchState(stateFilePath, { prNumber: 10, mergedBranch: 'cam/test' });
+
+		// Non-terminal pollFn: OPEN+CLEAN (never terminal)
+		const pollFn: GhPollFn = () => ({ state: 'OPEN', mergeStateStatus: 'CLEAN' });
+
+		const runMergeWatchFn = async () => {
+			// Count pollFn calls for this invocation.
+			let invocationPollCount = 0;
+			const countedPollFn: GhPollFn = (prNumber) => {
+				invocationPollCount++;
+				return pollFn(prNumber);
+			};
+
+			const state = readMergeWatchState(stateFilePath);
+			if (state === null) return;
+
+			const result = stepMergeWatch(state, Date.now(), countedPollFn, {
+				cwd: '/fake',
+				postMergeFn: () => ({ ok: false as const, reason: 'should-not-be-called' }),
+				notifyOrchestrator: () => {},
+				pollIntervalMs: 0, // always poll (throttle disabled for test)
+			});
+			pollCounts.push(invocationPollCount);
+
+			if (result.kind === 'continue') {
+				writeMergeWatchState(stateFilePath, result.state);
+			}
+		};
+
+		const loopOpts: RunSidecarLoopOptions = {
+			buildOpts: () => makeDummySupervisorOpts(),
+			readActive: () => false, // always idle
+			clearActive: () => {},
+			hasPendingStories: () => false,
+			acquireLock: () => ({ acquired: true as const, release: () => {} }),
+			runSupervisorFn: async (): Promise<SupervisorResult> => COMPLETE_RESULT,
+			runMergeWatchFn,
+			sleep: () => {
+				sleepCount++;
+				if (sleepCount >= 3) throw ESCAPE;
+			},
+		};
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		// At least one invocation happened.
+		expect(pollCounts.length).toBeGreaterThan(0);
+		// Every invocation called pollFn at most once.
+		for (const count of pollCounts) {
+			expect(count).toBeLessThanOrEqual(1);
+		}
+	});
+
+	// AC4: on terminal=merged, postMergeFn runs exactly once and the stateFile is absent.
+	test('AC4: terminal=merged: postMergeFn called exactly once, stateFile absent after tick', async () => {
+		const ESCAPE = Symbol('escape');
+		let sleepCount = 0;
+		let postMergeCalls = 0;
+
+		const stateFilePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(stateFilePath, { prNumber: 20, mergedBranch: 'cam/ship' });
+
+		const runMergeWatchFn = async () => {
+			const state = readMergeWatchState(stateFilePath);
+			if (state === null) return;
+
+			// pollFn: MERGED immediately
+			const pollFn: GhPollFn = () => ({ state: 'MERGED', mergeStateStatus: 'MERGED' });
+
+			const result = stepMergeWatch(state, 0, pollFn, {
+				cwd: '/fake',
+				postMergeFn: () => {
+					postMergeCalls++;
+					return {
+						ok: true as const,
+						pulledSha: 'abc1234',
+						tag: 'v0.1.0',
+						tagCreated: true,
+						branchPrunedLocal: true,
+						branchPrunedRemote: true,
+					};
+				},
+				notifyOrchestrator: () => {},
+			});
+
+			if (result.kind === 'continue') {
+				writeMergeWatchState(stateFilePath, result.state);
+			} else {
+				removeMergeWatchState(stateFilePath);
+			}
+		};
+
+		const loopOpts: RunSidecarLoopOptions = {
+			buildOpts: () => makeDummySupervisorOpts(),
+			readActive: () => false, // always idle
+			clearActive: () => {},
+			hasPendingStories: () => false,
+			acquireLock: () => ({ acquired: true as const, release: () => {} }),
+			runSupervisorFn: async (): Promise<SupervisorResult> => COMPLETE_RESULT,
+			runMergeWatchFn,
+			sleep: () => {
+				sleepCount++;
+				if (sleepCount >= 2) throw ESCAPE;
+			},
+		};
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		// postMergeFn must have been called exactly once.
+		expect(postMergeCalls).toBe(1);
+		// stateFile must be absent after the terminal tick.
+		expect(existsSync(stateFilePath)).toBe(false);
 	});
 });
 

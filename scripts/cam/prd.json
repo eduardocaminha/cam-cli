@@ -58,7 +58,7 @@
         "Full quality spine passes including knip dead-code (the removed 240-poll loop leaves no orphan). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Files: src/commands/sidecar.ts (makeProductionMergeWatchFn:291-350 — the eager unlink-before-start is at ~313-314; the error-path unlink at ~309 may stay as best-effort for unparseable garbage; rewrite the closure to: read durable state via US-002 helper, if absent return, else call stepMergeWatch once, persist on continue, remove file on terminal, run postMergeFn inside the merged terminal branch via processPollResult which already does it). src/supervisor/loop.ts (runMergeWatchFn awaited at 1405-1407, BEFORE hasSessionFn at 1424 — keep that ordering; one step per tick means the closure itself must be non-blocking now that the loop is gone). Gotchas (carry from spec): SIDECAR_IDLE_POLL_MS=2s but effective merge-watch cadence must stay ~60s via persisted lastPolledAt throttle (else ~7200 gh calls in 4h). The supervisor lock is NOT held on idle ticks (loop.ts ~1334); rely on single-sidecar invariant (CAM-67) + idempotent post-merge — do NOT add a pid/heartbeat owner guard (spec overrode the title). Tests: test/supervisor/sidecar-loop.test.ts + test/release/merge-watch.test.ts (cases h/i already cover idle-tick invocation gating; extend with multi-tick non-blocking + per-tick <=1 poll + post-merge-once)."
     },

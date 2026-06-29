@@ -35,11 +35,14 @@ import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig } from 
 import { sendEscalation, type ResendSendFn } from '../notify/resend.ts';
 import { buildWorkerReportSendKeysArgv } from '../supervisor/worker-report.ts';
 import {
-	runMergeWatch,
+	stepMergeWatch,
+	readMergeWatchState,
+	writeMergeWatchState,
+	removeMergeWatchState,
 	MERGE_WATCH_FILENAME,
-	type MergeWatchState,
 	type GhPollFn,
 	type PrStatus,
+	type StepMergeWatchOptions,
 } from '../release/merge-watch.ts';
 import { runPostMerge, type SpawnFn as PostMergeSpawnFn } from '../release/post-merge.ts';
 import { observeDecide, type ObserveState } from '../supervisor/observe.ts';
@@ -297,21 +300,17 @@ function makeProductionMergeWatchFn(
 ): () => Promise<void> {
 	return async (): Promise<void> => {
 		const watchFilePath = join(claudeDir, MERGE_WATCH_FILENAME);
-		if (!existsSync(watchFilePath)) return; // no watch pending
 
-		let state: MergeWatchState;
-		try {
-			const raw = readFileSync(watchFilePath, 'utf8');
-			const parsed: unknown = JSON.parse(raw);
-			if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return;
-			state = parsed as MergeWatchState;
-		} catch {
-			try { unlinkSync(watchFilePath); } catch { /* best-effort */ }
+		// Read durable state via US-002 helper. Returns null when the file is
+		// absent or contains malformed JSON (never throws).
+		const state = readMergeWatchState(watchFilePath);
+		if (state === null) {
+			// Absent: no watch pending. Malformed: best-effort garbage collection.
+			if (existsSync(watchFilePath)) {
+				try { unlinkSync(watchFilePath); } catch { /* best-effort */ }
+			}
 			return;
 		}
-
-		// Remove the watch file BEFORE starting to prevent re-entry on sidecar restart.
-		try { unlinkSync(watchFilePath); } catch { /* best-effort */ }
 
 		const ghPollFn: GhPollFn = (prNumber): PrStatus | null => {
 			const result = spawnSync(
@@ -334,18 +333,29 @@ function makeProductionMergeWatchFn(
 
 		const notify = makeNotifyOrchestrator(sessionName, realSpawnFn);
 
-		await runMergeWatch({
-			prNumber: state.prNumber,
-			mergedBranch: state.mergedBranch,
+		// Build step options (scheduling and persistence owned by this caller).
+		const stepOpts: StepMergeWatchOptions = {
 			cwd,
-			pollFn: ghPollFn,
 			postMergeFn: ({ cwd: mergeCwd, mergedBranch }) =>
 				runPostMerge({ cwd: mergeCwd, mergedBranch, spawnFn: postMergeSpawnFn }),
 			notifyOrchestrator: notify,
 			logEvent: (kind, detail) =>
 				logEvent({ ts: new Date().toISOString(), storyId: undefined, uuid: 'sidecar', kind, detail }),
-			sleepFn: (ms) => Bun.sleepSync(ms),
-		});
+		};
+
+		// One step per tick. The outer sidecar loop owns the 2s idle-poll cadence;
+		// the 60s gh-poll throttle is enforced inside stepMergeWatch via lastPolledAt.
+		const result = stepMergeWatch(state, Date.now(), ghPollFn, stepOpts);
+
+		if (result.kind === 'continue') {
+			// Non-terminal: persist updated state (pollCount, lastPolledAt) so the
+			// watch survives a sidecar restart.
+			writeMergeWatchState(watchFilePath, result.state);
+		} else {
+			// Terminal outcome (merged | closed-not-merged | ci-red | timeout):
+			// remove the state file so idle ticks become no-ops.
+			removeMergeWatchState(watchFilePath);
+		}
 	};
 }
 
