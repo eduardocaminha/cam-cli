@@ -1,9 +1,48 @@
 {
   "id": "CAM-132",
   "title": "Filha CAM-110: meta-loop inter-ciclo, orquestrador encadeia ciclos drenando a fila (runner deterministico, LLM so julga)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T15:37:12.544Z",
-  "description": "Filha gated da CAM-110 (epico-ancora do lifecycle do orquestrador). O drenador de fila inter-ciclo: apos o cycle-close, escolher a proxima issue (cam triage -> top-rank specified) e disparar o proximo ciclo, sem prompt do operador, ate a fila secar. INVARIANTE (fixada no grill da CAM-110): um runner deterministico dirige o encadeamento; o orquestrador LLM entra so nos pontos de julgamento/excecao (fila vazia -> para e notifica via Resend; ciclo bloqueou -> escala; empate de rank -> decide). DISTINTA da CAM-71 (auto-chain INTRA-ciclo): B e a camada ACIMA. blockedBy textual {CAM-71 (intra-ciclo), CAM-116 (verificacao comportamental), CAM-117 (plan deterministico), CAM-111 (sandbox/safety)} (arestas viram estruturadas no grill desta issue). Toca o runner (familia runSupervisor), o cycle-close e a persona. P2, gated nas deps de seguranca do full-autonomy."
+  "description": "Filha gated da CAM-110 (epico-ancora do lifecycle do orquestrador). O drenador de fila inter-ciclo: apos o cycle-close, escolher a proxima issue (cam triage -> top-rank specified) e disparar o proximo ciclo, sem prompt do operador, ate a fila secar. INVARIANTE (fixada no grill da CAM-110): um runner deterministico dirige o encadeamento; o orquestrador LLM entra so nos pontos de julgamento/excecao (fila vazia -> para e notifica via Resend; ciclo bloqueou -> escala; empate de rank -> decide). DISTINTA da CAM-71 (auto-chain INTRA-ciclo): B e a camada ACIMA. blockedBy textual {CAM-71 (intra-ciclo), CAM-116 (verificacao comportamental), CAM-117 (plan deterministico), CAM-111 (sandbox/safety)} (arestas viram estruturadas no grill desta issue). Toca o runner (familia runSupervisor), o cycle-close e a persona. P2, gated nas deps de seguranca do full-autonomy.",
+  "spec": {
+    "scope": "Nucleo deterministico observe do meta-loop inter-ciclo (filha do epico CAM-110, fatia B2 decidida no grill 2026-06-29). Entrega o esqueleto seguro e DORMENTE do drainer de fila, sem nenhum disparo. DENTRO: (1) config [loop] meta_loop (off default | observe) com leitura fail-safe; (2) hook no idle-tick do sidecar (runSidecarLoop) gated em meta_loop!=off, que so age quando o loop esta inativo (active:false) e nao ha prd.json em voo; (3) selectPlannableIssue sobre o backlog lido de main + emissao de UM evento estruturado kind:meta-loop-observe ({wouldSelect,rank,wsjf} | {drained:true}); (4) dedup por mudanca-de-selecao; (5) notify-on-drain via reuso do escalateFn/sendEscalation quando Resend configurado; (6) testes. FORA (vai para a issue-filha de auto-dispatch, blockedBy [CAM-117,CAM-111]): o disparo real (flip active, abrir o plan da proxima, drenar ate secar), o mode=auto, o kill-switch runtime dedicado, e a narracao orquestrador-side do evento observe. Invariante CAM-110 preservado: runner deterministico decide; nenhuma acao autonoma neste escopo.",
+    "acceptanceCriteria": [
+      "O config [loop] meta_loop e lido de scripts/cam/project.toml com valores off (default quando ausente) e observe; qualquer valor desconhecido resolve para off (fail-safe, nunca observe por engano). Oracle: named-command (bun test no leitor de config cobrindo ausente/off/observe/desconhecido).",
+      "Em meta_loop=off o idle-tick do sidecar e byte-identico ao comportamento atual: zero chamada a selectPlannableIssue, zero evento novo. Oracle: named-command (unit test injeta selectPlannable fake e assere que NAO e chamado quando off) + reviewer-judgment de que off e no-op real.",
+      "Em meta_loop=observe, loop inativo (active:false) e sem prd.json em voo, o drainer chama selectPlannableIssue sobre o backlog de main e emite exatamente UM evento kind:meta-loop-observe com {wouldSelect,rank,wsjf} quando ha plannable, ou {drained:true} quando a fila secou. Oracle: named-command (integration test com backlog fixture cobrindo os dois casos, assertando o shape do evento).",
+      "O drainer em qualquer modo NAO dispara plan, NAO flipa active, NAO escreve prd.json e NAO muta o backlog: observe e estritamente read-only + emit. Oracle: named-command (test assere ausencia de flipActive e de write de prd) + reviewer-judgment.",
+      "Dedup: ticks consecutivos com a mesma selecao emitem o evento uma unica vez; re-emite so quando wouldSelect muda ou quando transiciona para drained. Oracle: named-command (test: N ticks com mesma selecao resulta em 1 evento).",
+      "Quando drained:true E Resend configurado (apiKey e recipient non-empty), uma notificacao e enviada reusando sendEscalation/escalateFn; sem Resend configurado nenhuma notificacao e enviada (apenas o evento). Oracle: named-command (test com escalateFn injetado: chamado-uma-vez no drain com Resend / nao-chamado sem config).",
+      "bun run check:all passa verde (typecheck + test + embed-vendor + ratchets + biome + ci-parity). Oracle: named-command bun run check:all.",
+      "Os testes novos FALHAM contra o HEAD pre-implementacao (provam que exercitam comportamento novo, nao tautologia). Oracle: reviewer-judgment."
+    ],
+    "gotchas": [
+      "O estado de dedup (ultima selecao emitida) vive in-memory no processo de longa-vida do sidecar; NAO persistir em arquivo (evita mais um marker no working tree, classe CAM-68). Aceitavel re-emitir uma vez apos restart do sidecar.",
+      "selectPlannableIssue DEVE ler o backlog de MAIN (readBacklogFromMain/selectPlannableFromFile), nunca da working tree, pra nao enxergar issues filadas numa branch em voo (invariante on-main, CAM-86/CAM-133).",
+      "meta_loop e project-scoped (scripts/cam/project.toml secao [loop]), NAO o per-user config; nao overloadar CAM_CONFIG_PATH (precedente CAM-53).",
+      "Valor desconhecido de meta_loop resolve para off, nunca observe (fail-safe, postura fail-closed do CAM-96).",
+      "Adicionar meta-loop-observe ao WorkerEventKind e emitir no event log supervisor-owned (.claude/cam-worker-events.jsonl); nao inventar canal/arquivo novo.",
+      "Reusar readResendConfig + escalateFn/sendEscalation ja fiados em buildSidecarLoopDeps; nao duplicar cliente Resend.",
+      "Gatilho fica QUIETO durante ciclo ativo (prd.json presente ou active:true): senao emitiria wouldSelect competindo com o ciclo corrente.",
+      "Resistir a tentacao de ja preparar flip/dispatch aqui: esse e o blast-radius que a fatia B2 isola na filha. observe e so observar.",
+      "FOLLOW-UP de grafo (fora deste escopo): quando este observe core SHIPAR (stage:shipped), o blockedBy do CAM-110 precisa apontar para a filha de auto-dispatch, senao CAM-110 desbloqueia prematuramente (CAM-132 deixa de bloquear ao virar shipped). Nao ha primitivo edit-blockedBy hoje; tratar na hora."
+    ],
+    "domainTerms": [
+      "meta-loop (inter-ciclo): encadeamento autonomo de ciclos onde um runner deterministico escolhe a proxima issue (top-rank specified do triage) e dispara o proximo ciclo, drenando a fila; distinto do auto-chain intra-ciclo (CAM-71).",
+      "nucleo observe: a fatia deterministica e dormente do meta-loop que SO observa (escolhe + emite evento), nunca dispara; shippavel sem as deps de determinismo-do-plan (CAM-117) e safety (CAM-111).",
+      "mode meta_loop: off (no-op, default) | observe (escolhe + emite, read-only) | auto (dispara + drena; fora deste escopo, na filha gated por CAM-117/CAM-111).",
+      "drainer: o componente que, no idle-tick do sidecar, decide a proxima issue plannable; em observe so anuncia, em auto agiria.",
+      "wouldSelect: a issue que o drainer escolheria como proximo ciclo, anunciada em observe sem agir.",
+      "drained: estado de fila vazia (selectPlannableIssue retorna null); sinal acionavel que dispara o notify-on-drain quando Resend configurado.",
+      "notify-on-drain: notificacao Resend quando a fila seca, reusando sendEscalation; em observe disparada so no drain."
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 4,
+    "jobSize": 2
+  }
 }
