@@ -53,7 +53,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: templates/.claude/hooks/orch-agent-allowlist.sh (apply the SAME edit as US-001), src/vendor/_generated.ts (regenerate via `bun run embed-vendor`, do NOT hand-edit), test/embedded.test.ts (add an assertion on templatesContents['.claude/hooks/orch-agent-allowlist.sh']). GOTCHA (memory: cam-dual-copy-is-per-file): the two copies are currently byte-identical (verified via diff -q at spec time) and MUST stay byte-identical; diff before assuming. The embed map key is the relative path '.claude/hooks/orch-agent-allowlist.sh' inside templatesContents (src/templates/embedded.ts). Run `bun run embed-vendor` to regenerate, then `bun run embed-vendor:check` must be green. The embedded byte-parity test in test/embedded.test.ts ('matches every file under templates/ byte-for-byte') already guards parity; add a content-level guard pinning the jq guard string so a future regen that drops it is caught. patterns.md bullet 'cam dual-copy is per-file (CAM-123)' applies."
     },
