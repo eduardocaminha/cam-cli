@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.30.0] - 2026-06-29
+
+### Added
+
+- US-001 - Remove dead buildMergeDescription function
+
 ## [0.29.0] - 2026-06-29
 
 ### Added

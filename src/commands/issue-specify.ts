@@ -255,15 +255,6 @@ export type MergeIssueOnMainOutcome =
 	| MergeIssueOnMainError;
 
 // ---------------------------------------------------------------------------
-// Private helpers for abandon/merge
-// ---------------------------------------------------------------------------
-
-function buildMergeDescription(existing: string | undefined, intoId: string): string {
-	const note = `Merged into ${intoId}.`;
-	return existing ? `${existing}\n\n${note}` : note;
-}
-
-// ---------------------------------------------------------------------------
 // Event emission helper
 // ---------------------------------------------------------------------------
 

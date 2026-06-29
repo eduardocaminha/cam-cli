@@ -1,7 +1,7 @@
 {
   "id": "CAM-134",
   "title": "Dead code pre-existente: buildMergeDescription em issue-specify.ts (definida, nunca chamada)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T18:06:33.575Z",
