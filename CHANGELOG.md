@@ -4,6 +4,15 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.20.0] - 2026-06-29
+
+### Added
+
+- US-004 - Correct stale no-linter claim in subagent-reviewer verify step (.claude/agents)
+- US-003 - Correct stale no-linter claim in subagent-implementer quality gates (.claude/agents)
+- US-002 - Correct stale no-linter claim in subagent-auditor item 19 (.claude/agents)
+- US-001 - Correct stale no-linter claim in scripts/cam/CLAUDE.md Quality Gates
+
 ## [0.19.0] - 2026-06-29
 
 ### Added
