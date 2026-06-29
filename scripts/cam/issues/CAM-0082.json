@@ -1,7 +1,7 @@
 {
   "id": "CAM-82",
   "title": "cam run: verificar login e subscrição Claude Code no startup antes de iniciar o loop",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-25T15:00:00Z",
