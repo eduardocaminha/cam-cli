@@ -19,7 +19,7 @@
         "bun run check:all passes green (typecheck + test + embed-vendor + ratchets + biome + ci-parity). [oracle: named-command `bun run check:all`]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/config/models.ts (add readMetaLoop + MetaLoop type next to readMergeMode @ ~144, readPlanApproval @ ~221). Test: test/config/meta-loop.test.ts (mirror test/config for readMergeMode/readPlanApproval; write tmp fixture project.toml under a tmp dir, pass as configPath). Gotcha: meta_loop is PROJECT-scoped (scripts/cam/project.toml [loop]); do NOT consult per-user config or CAM_CONFIG_PATH (CAM-53; see file header comment lines 4-6). Fail-closed posture: unknown -> off, never observe (CAM-96). Spec AC#1. Read scripts/cam/patterns.md at story start for on-main/config invariants."
     },

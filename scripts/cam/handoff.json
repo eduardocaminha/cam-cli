@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add readMetaLoop config reader (off default | observe, fail-safe)"
+  },
+  "createdFiles": [
+    "test/config/meta-loop.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/config/models.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added MetaLoop type and readMetaLoop() to src/config/models.ts (after readMergeMode, before readPlanApproval). Pattern mirrors readMergeMode/readPlanApproval exactly: try/loadConfig/section-guard/catch-default, configPath override. US-002 adds WorkerEventKind 'meta-loop-observe' and its detail type to src/supervisor/events.ts.",
+  "officialDocsValidated": [
+    {
+      "lib": "Bun.TOML.parse",
+      "version": "1.x",
+      "url": "https://bun.sh/docs/runtime/toml",
+      "fetchedAt": "2026-06-29T00:00:00Z",
+      "status": "ok",
+      "summary": "Bun.TOML.parse() confirmed: throws on invalid TOML (caught by our catch block), returns object with sections as nested objects (config['loop'] access pattern correct). Implementation matches documented API."
+    }
+  ]
+}
