@@ -31,7 +31,7 @@ import { parseStateFile } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, type SpawnFn } from '../tmux/session.ts';
-import { readMergeMode, readPlanApproval, readResendConfig } from '../config/models.ts';
+import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig } from '../config/models.ts';
 import { sendEscalation } from '../notify/resend.ts';
 import { buildWorkerReportSendKeysArgv } from '../supervisor/worker-report.ts';
 import {
@@ -42,6 +42,8 @@ import {
 	type PrStatus,
 } from '../release/merge-watch.ts';
 import { runPostMerge, type SpawnFn as PostMergeSpawnFn } from '../release/post-merge.ts';
+import { observeDecide, type ObserveState } from '../supervisor/observe.ts';
+import { selectPlannableFromFile } from '../issues/select.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -135,6 +137,16 @@ export interface SidecarOptions {
 	 * real network hit.
 	 */
 	escalateFn?: RunSidecarLoopOptions['escalateFn'];
+	/**
+	 * Override the meta-loop observe function (US-004, CAM-132).
+	 *
+	 * Production (meta_loop=observe): a closure that calls selectPlannableFromFile
+	 * on the MAIN backlog, runs observeDecide with in-memory dedup state, and emits
+	 * a 'meta-loop-observe' event via logEvent.
+	 * Production (meta_loop=off, default): undefined (inert, zero behavior change).
+	 * Tests: inject a spy to assert the function was (or was not) called.
+	 */
+	runMetaLoopObserveFn?: RunSidecarLoopOptions['runMetaLoopObserveFn'];
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +440,64 @@ interface SidecarLoopDepsResult {
 	flipActiveFn: RunSidecarLoopOptions['flipActiveFn'];
 	autoShipFn: RunSidecarLoopOptions['autoShipFn'];
 	escalateFn: RunSidecarLoopOptions['escalateFn'];
+	runMetaLoopObserveFn: RunSidecarLoopOptions['runMetaLoopObserveFn'];
+}
+
+/**
+ * Build the production escalateFn closure (US-R1-001).
+ *
+ * Extracted from buildSidecarLoopDeps to reduce its cognitive complexity (biome
+ * noExcessiveCognitiveComplexity, max 15). Not exported: tests inject
+ * options.escalateFn directly.
+ *
+ * Returns undefined when either apiKey or recipient is empty so the non-convergence
+ * terminal stays inert for projects that have not configured Resend.
+ */
+function makeProductionEscalateFn(
+	apiKey: string,
+	recipient: string,
+): RunSidecarLoopOptions['escalateFn'] {
+	if (apiKey === '' || recipient === '') return undefined;
+	return async () => {
+		await sendEscalation({
+			apiKey,
+			recipient,
+			subject: '[cam] Non-convergence: max review rounds reached',
+			html: '<p><strong>[cam]</strong> The supervisor reached the maximum number of review rounds without a CLEAN verdict. Manual intervention is required.</p>',
+		});
+	};
+}
+
+/**
+ * Build the production runMetaLoopObserveFn closure for meta_loop=observe mode
+ * (US-004, CAM-132).
+ *
+ * Extracted from buildSidecarLoopDeps to keep that function under the biome
+ * noExcessiveLinesPerFunction(maxLines=80) limit. Not exported: tests inject
+ * options.runMetaLoopObserveFn directly.
+ *
+ * Dedup state is held in the closure (NOT persisted to any file under .claude
+ * or the working tree per CAM-68 invariant).
+ */
+function makeProductionMetaLoopObserveFn(
+	cwd: string,
+	logEvent: WorkerEventLogger,
+): () => void {
+	let lastState: ObserveState = { kind: 'none' };
+	return (): void => {
+		const selected = selectPlannableFromFile(cwd);
+		const result = observeDecide(selected, lastState);
+		if (result !== null) {
+			lastState = result.newState;
+			logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'meta-loop-observe',
+				detail: result.detail,
+			});
+		}
+	};
 }
 
 /**
@@ -471,24 +541,24 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	const autoShipFn = options.autoShipFn ?? autoChainProduction.autoShipFn;
 
 	// US-R1-001: escalateFn from Resend config; only wired when both apiKey and
-	// recipient are non-empty.
+	// recipient are non-empty. Production logic extracted to makeProductionEscalateFn
+	// to keep buildSidecarLoopDeps under biome cognitive-complexity limit.
 	const resendConfig = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
 	const escalateFn: RunSidecarLoopOptions['escalateFn'] =
-		options.escalateFn ??
-		(resendConfig.apiKey !== '' && resendConfig.recipient !== ''
-			? async () => {
-					await sendEscalation({
-						apiKey: resendConfig.apiKey,
-						recipient: resendConfig.recipient,
-						subject: '[cam] Non-convergence: max review rounds reached',
-						html: '<p><strong>[cam]</strong> The supervisor reached the maximum number of review rounds without a CLEAN verdict. Manual intervention is required.</p>',
-					});
-				}
+		options.escalateFn ?? makeProductionEscalateFn(resendConfig.apiKey, resendConfig.recipient);
+
+	// US-004 / CAM-132: meta-loop observe wiring. undefined when off (default).
+	const metaLoop = readMetaLoop(join(cwd, 'scripts/cam/project.toml'));
+	const runMetaLoopObserveFn: RunSidecarLoopOptions['runMetaLoopObserveFn'] =
+		options.runMetaLoopObserveFn ??
+		(metaLoop === 'observe'
+			? makeProductionMetaLoopObserveFn(cwd, logEvent)
 			: undefined);
 
 	return {
 		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
 		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, autoShipFn, escalateFn,
+		runMetaLoopObserveFn,
 	};
 }
 
@@ -535,5 +605,6 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		flipActiveFn: deps.flipActiveFn,
 		autoShipFn: deps.autoShipFn,
 		escalateFn: deps.escalateFn,
+		runMetaLoopObserveFn: deps.runMetaLoopObserveFn,
 	});
 }

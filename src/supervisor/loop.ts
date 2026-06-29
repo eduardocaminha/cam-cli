@@ -1311,6 +1311,25 @@ export interface RunSidecarLoopOptions {
 	 */
 	runMergeWatchFn?: () => Promise<void>;
 	/**
+	 * Run the meta-loop observer on each idle tick (US-004, CAM-132).
+	 *
+	 * When injected, called inside the active!==true branch ONLY when no PRD
+	 * cycle is in flight (hasPendingStories() returns false, or hasPendingStories
+	 * is absent). This additional gate ensures the observer stays silent when the
+	 * sidecar is paused mid-cycle (active:false + pending stories present).
+	 *
+	 * Production wiring (sidecar.ts): undefined when meta_loop==='off' (default,
+	 * zero behavior change for all existing projects and tests); calls observeDecide
+	 * over selectPlannableFromFile on the MAIN backlog and emits a 'meta-loop-observe'
+	 * event via logEvent when meta_loop==='observe'.
+	 *
+	 * Off path: when absent this tick is a complete no-op. Zero behavior change.
+	 *
+	 * Dedup state lives in a closure inside the production factory (NOT persisted
+	 * to any file under .claude or the working tree).
+	 */
+	runMetaLoopObserveFn?: () => void | Promise<void>;
+	/**
 	 * Auto-chain active:true flip for auto mode (US-005).
 	 *
 	 * When injected (plan_approval === 'auto'), called after the supervisor
@@ -1385,6 +1404,18 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 			// in the common case.
 			if (opts.runMergeWatchFn) {
 				await opts.runMergeWatchFn();
+			}
+
+			// US-004 / CAM-132: meta-loop observer on idle ticks.
+			// Only called when no PRD cycle is in flight:
+			//   hasPendingStories() == false => prd.json absent OR all stories done
+			//   + review terminal. Both are "between cycles" (appropriate for observe).
+			//   When hasPendingStories is absent, treat as "no cycle" (observe allowed).
+			if (opts.runMetaLoopObserveFn) {
+				const prdInFlight = opts.hasPendingStories ? opts.hasPendingStories() : false;
+				if (!prdInFlight) {
+					await opts.runMetaLoopObserveFn();
+				}
 			}
 
 			// Idle: check session health when a checker is wired.
