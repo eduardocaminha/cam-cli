@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.19.0] - 2026-06-29
+
+### Added
+
+- US-001 - Surface active:true write failure in cam next
+
 ## [0.18.0] - 2026-06-29
 
 ### Added
