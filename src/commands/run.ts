@@ -214,6 +214,11 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		`while true; do ` +
 		`claude --permission-mode bypassPermissions --session-id "$sid" --model ${q(model)} "$(cat ${q(opts.promptFile)})"; ` +
 		`if [ -f ${q(opts.handoffMarker)} ] && [ "$n" -lt "$max" ]; then ` +
+		// Read the reason field BEFORE consuming (renaming) the handoff so it is
+		// available for the counter decision. jq is used here per operator decision
+		// (consistent with the CAM-91/96 hook). `// empty` avoids a bare null on
+		// missing field.
+		`reason=$(jq -r '.reason // empty' ${q(opts.handoffMarker)}); ` +
 		`mv ${q(opts.handoffMarker)} ${q(consumed)}; ` +
 		// Lowercase the uuid: macOS `uuidgen` emits UPPERCASE, but claude writes
 		// transcripts with lowercase-uuid filenames (node randomUUID is lowercase),
@@ -221,7 +226,10 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		// the transcript after a respawn and silently disable the budget check.
 		`sid=$(uuidgen | tr 'A-Z' 'a-z'); ` +
 		`printf '%s' "$sid" > ${q(opts.sessionIdMarker)}; ` +
-		`n=$((n + 1)); ` +
+		// A cycle-close handoff (genuine progress) resets the counter so the session
+		// can drain the queue indefinitely. Any other reason increments n (no-progress
+		// backstop preserved: consecutive non-advancing respawns still reach the cap).
+		`if [ "$reason" = 'cycle-close' ]; then n=0; else n=$((n + 1)); fi; ` +
 		`else ` +
 		`if [ "$n" -ge "$max" ]; then echo "cam: orchestrator respawn cap ($max) reached, tearing down"; fi; ` +
 		// Clear the loop state file before kill-session so a clean `/exit` leaves no

@@ -20,6 +20,7 @@ import process from 'node:process';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 import { runDashboardInk } from './src/commands/dashboard.ts';
 import { runInit } from './src/commands/init.ts';
@@ -29,6 +30,7 @@ import {
 } from './src/commands/issue-file.ts';
 import {
 	appendJournalEntryOnMain,
+	recordCycleTokens,
 	type JournalCycleEntry,
 	type AppendJournalEntryOnMainResult,
 } from './src/commands/journal.ts';
@@ -1041,6 +1043,14 @@ export interface JournalDispatchDeps {
 	appendFn?: (entry: JournalCycleEntry, force: boolean) => AppendJournalEntryOnMainResult;
 	/** Injectable stdout writer. Default: `process.stdout.write`. */
 	writeStdout?: (line: string) => void;
+	/**
+	 * Injectable: persist the per-cycle token accounting (US-001 cycle-tokens event).
+	 * Called AFTER CAM_JOURNAL_APPENDED is written and BEFORE CAM_ORCH_HANDOFF_DUE
+	 * is emitted -- sequence is load-bearing (durable memory saved before handoff).
+	 * Default: calls recordCycleTokens with the parsed entry cycleId/issue and
+	 * production cwd/claudeDir.
+	 */
+	recordCycleTokensFn?: () => void;
 }
 
 /**
@@ -1085,6 +1095,23 @@ export async function dispatchJournal(
 	}
 
 	writeStdout(`CAM_JOURNAL_APPENDED=${journalResult.cycleId} sha=${journalResult.sha}\n`);
+
+	// US-002: persist per-cycle token accounting before emitting the handoff signal.
+	// Sequence is load-bearing: journal entry persisted -> cycle-tokens persisted -> THEN handoff.
+	const recordFn =
+		deps?.recordCycleTokensFn ??
+		(() => {
+			recordCycleTokens({
+				cycleId: journalEntry.cycleId,
+				issueNumber: journalEntry.issue,
+				cwd: process.cwd(),
+				claudeDir: process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude'),
+			});
+		});
+	recordFn();
+
+	// Unconditional handoff signal: no token threshold, fired strictly after durable writes.
+	writeStdout('CAM_ORCH_HANDOFF_DUE=true\n');
 	return 0;
 }
 

@@ -1,7 +1,7 @@
 {
   "id": "CAM-131",
   "title": "Filha CAM-110: handoff first-class com gatilho deterministico alinhado a fronteira de ciclo e skip de ciclo trivial",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T15:36:58.633Z",

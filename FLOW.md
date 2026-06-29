@@ -75,7 +75,7 @@ e `issue` são lançadores de pane: abrem um pane novo na sessão e retornam 0
 imediatamente; `next` também é thin-proxy (não abre pane), só liga `active:true` e
 dispara o sidecar (o `runSupervisor` background spawnado pelo `cam run`), que corre o loop.
 Quando o orquestrador (pane 0.0) sai, o wrapper respawna se houver um handoff de
-token-budget pendente, senão destrói a sessão. Quando o PRD fecha com review limpo, o
+cycle-close (por-ciclo) pendente, senão destrói a sessão. Quando o PRD fecha com review limpo, o
 sidecar chega ao terminal, o PR vai via `/cam-ship` e `/cam-prune`
 limpa a branch.
 
@@ -176,7 +176,7 @@ flowchart TD
 ```
 
 Quando o `claude` do pane 0.0 sai, o wrapper do `cam run` respawna o orquestrador
-(rehidratando de um handoff de token-budget) se houver um pendente e dentro do cap
+(rehidratando de um handoff de cycle-close) se houver um pendente e dentro do cap
 de respawns; senao encadeia `; tmux kill-session -t <sessao>` e os 3 panes somem. O
 dashboard (pane 0.1) é sempre visivel enquanto a sessao existe.
 
