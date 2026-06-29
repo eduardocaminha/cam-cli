@@ -51,7 +51,7 @@ import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
  *
  * Merge-watch event kinds (US-008, CAM-101): emitted by the ci-gated merge-watch
  * state machine (src/release/merge-watch.ts) via the injected logEvent seam.
- *   - 'merge-watch-watching': emitted once when the watch loop begins polling.
+ *   - 'merge-watch-watching': emitted once on the first gh poll (pollCount===0), inside stepMergeWatch.
  *   - 'merge-watch-merged': emitted when GitHub reports state==MERGED.
  *   - 'merge-watch-ci-red': emitted on OPEN+BLOCKED (CI failing) or CLOSED.
  *   - 'merge-watch-post-merge-done': emitted after the post-merge step completes.
@@ -168,8 +168,8 @@ export interface OutcomeSourceEventDetail {
 }
 
 /**
- * 'merge-watch-watching' event detail: emitted once when the merge-watch poll
- * loop begins. Allows an operator to identify when monitoring started.
+ * 'merge-watch-watching' event detail: emitted once on the first gh poll
+ * (pollCount===0, inside stepMergeWatch). Allows operator to identify when monitoring started.
  */
 export interface MergeWatchWatchingEventDetail {
 	prNumber: number;

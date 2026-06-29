@@ -16,8 +16,9 @@
 // All I/O is injectable via MergeWatchOptions so the state machine is fully
 // unit-testable without a real gh binary or filesystem.
 //
-// US-007 (CAM-101).
+// US-007 (CAM-101). Durable state I/O helpers added in US-002 (CAM-138).
 
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import type { PostMergeOutcome } from './post-merge.ts';
 import type {
 	WorkerEventKind,
@@ -45,6 +46,87 @@ export const DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS = 60_000;
 export const DEFAULT_MERGE_WATCH_MAX_POLLS = 240;
 
 // ---------------------------------------------------------------------------
+// Durable state I/O helpers (US-002)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read MergeWatchState from a persistent file.
+ *
+ * Returns null when:
+ * - The file does not exist (no watch pending).
+ * - The file contains malformed JSON or a non-object / array value.
+ * - Required fields (prNumber: number, mergedBranch: string) are absent or
+ *   the wrong type.
+ *
+ * A legacy two-field seed { prNumber, mergedBranch } reads back successfully
+ * with pollCount and lastPolledAt absent (undefined), so stepMergeWatch treats
+ * it as fresh (pollCount defaults to 0; absent lastPolledAt bypasses the
+ * throttle check so the first tick polls immediately).
+ *
+ * Never throws.
+ */
+export function readMergeWatchState(filePath: string): MergeWatchState | null {
+	try {
+		if (!existsSync(filePath)) return null;
+		const raw = readFileSync(filePath, 'utf8');
+		const parsed: unknown = JSON.parse(raw);
+		if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+		const obj = parsed as Record<string, unknown>;
+		if (typeof obj['prNumber'] !== 'number' || typeof obj['mergedBranch'] !== 'string') return null;
+		const state: MergeWatchState = {
+			prNumber: obj['prNumber'] as number,
+			mergedBranch: obj['mergedBranch'] as string,
+		};
+		if (typeof obj['pollCount'] === 'number') {
+			state.pollCount = obj['pollCount'] as number;
+		}
+		if (typeof obj['lastPolledAt'] === 'number') {
+			state.lastPolledAt = obj['lastPolledAt'] as number;
+		}
+		return state;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Write MergeWatchState to a persistent file (durable, not consume-on-read).
+ *
+ * Always writes prNumber, mergedBranch, and pollCount (defaulting to 0 when
+ * absent in the state). Writes lastPolledAt only when it is defined (undefined
+ * is omitted from the JSON so a fresh-state read bypasses the throttle check).
+ *
+ * Call after every non-terminal stepMergeWatch tick so the state survives a
+ * sidecar restart. Single-writer assumption: only the sidecar writes this file
+ * in production.
+ */
+export function writeMergeWatchState(filePath: string, state: MergeWatchState): void {
+	const payload: Record<string, unknown> = {
+		prNumber: state.prNumber,
+		mergedBranch: state.mergedBranch,
+		pollCount: state.pollCount ?? 0,
+	};
+	if (state.lastPolledAt !== undefined) {
+		payload['lastPolledAt'] = state.lastPolledAt;
+	}
+	writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+}
+
+/**
+ * Remove the merge-watch state file on a terminal outcome.
+ *
+ * Called when the outcome is merged | closed-not-merged | ci-red | timeout.
+ * Best-effort: does not throw when the file is already absent.
+ */
+export function removeMergeWatchState(filePath: string): void {
+	try {
+		unlinkSync(filePath);
+	} catch {
+		/* best-effort: file may already be absent */
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -54,10 +136,22 @@ export const DEFAULT_MERGE_WATCH_MAX_POLLS = 240;
  *
  * The file is written by the orchestrator (cam-ship.md Step 7 ci-gated branch)
  * and consumed + removed by the sidecar on each idle tick.
+ *
+ * pollCount and lastPolledAt are optional so that a legacy seed state of only
+ * { prNumber, mergedBranch } is accepted and treated as fresh: pollCount starts
+ * at 0 and the first tick polls immediately (no migration, no schemaVersion
+ * field needed).
  */
 export interface MergeWatchState {
 	prNumber: number;
 	mergedBranch: string;
+	/** Number of gh polls performed so far. Absent = 0 (fresh state). */
+	pollCount?: number;
+	/**
+	 * Epoch-ms timestamp of the last poll. Absent = never polled (first tick
+	 * polls immediately, bypassing the throttle check).
+	 */
+	lastPolledAt?: number;
 }
 
 /**
@@ -275,6 +369,127 @@ function processPollResult(
 }
 
 // ---------------------------------------------------------------------------
+// stepMergeWatch: pure single-tick state machine
+// ---------------------------------------------------------------------------
+
+/**
+ * Discriminated result of one stepMergeWatch tick.
+ *
+ * - continue: the state machine is still running; the caller receives the
+ *   updated state and schedules the next tick.
+ * - terminal: a terminal outcome was reached; the caller should stop.
+ */
+export type StepMergeWatchResult =
+	| { kind: 'continue'; state: MergeWatchState }
+	| { kind: 'terminal'; outcome: MergeWatchOutcome };
+
+/**
+ * Options bag for stepMergeWatch.
+ *
+ * Excludes the fields passed as positional arguments (state, now, pollFn) and
+ * excludes scheduling concerns (sleep, clockFn) which belong to the caller.
+ * This keeps stepMergeWatch a pure function: no FS, no sleep, no Date.now().
+ */
+export interface StepMergeWatchOptions {
+	cwd: string;
+	postMergeFn: PostMergeFn;
+	notifyOrchestrator: (line: string) => void;
+	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
+	/** Default: DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS */
+	pollIntervalMs?: number;
+	/** Default: DEFAULT_MERGE_WATCH_MAX_POLLS */
+	maxPolls?: number;
+}
+
+/**
+ * Advance the merge-watch state machine by one tick.
+ *
+ * Pure function: no FS, no sleep, no Date.now(). The caller owns persistence
+ * and scheduling.
+ *
+ * Throttle rule: a tick where now < lastPolledAt + pollIntervalMs does NOT
+ * call pollFn and returns { kind: 'continue', state } (state unchanged).
+ * A tick at/after the interval calls pollFn exactly once, increments pollCount,
+ * and sets lastPolledAt = now.
+ *
+ * Legacy seed: a state with no pollCount/lastPolledAt is treated as fresh.
+ * pollCount defaults to 0 and the first tick always polls (lastPolledAt absent
+ * bypasses the throttle check).
+ */
+export function stepMergeWatch(
+	state: MergeWatchState,
+	now: number,
+	pollFn: GhPollFn,
+	opts: StepMergeWatchOptions,
+): StepMergeWatchResult {
+	const pollCount = state.pollCount ?? 0;
+	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS;
+	const maxPolls = opts.maxPolls ?? DEFAULT_MERGE_WATCH_MAX_POLLS;
+
+	// Throttle: skip if not time to poll yet. When lastPolledAt is absent (legacy
+	// seed or fresh state), always poll on the first tick.
+	const shouldPoll =
+		state.lastPolledAt === undefined || now >= state.lastPolledAt + pollIntervalMs;
+	if (!shouldPoll) {
+		return { kind: 'continue', state };
+	}
+
+	// Timeout: pollCount exhausted before calling pollFn for this tick.
+	if (pollCount >= maxPolls) {
+		opts.notifyOrchestrator(
+			`[cam] merge-watch timeout: PR #${state.prNumber} not yet merged after ${maxPolls} polls`,
+		);
+		return { kind: 'terminal', outcome: { kind: 'timeout', polls: maxPolls } };
+	}
+
+	// Emit 'merge-watch-watching' on the very first poll (pollCount === 0).
+	// Covers both the production one-step-per-tick path (sidecar.ts ->
+	// stepMergeWatch directly) and the legacy blocking runMergeWatch wrapper.
+	if (pollCount === 0) {
+		const watchingDetail: MergeWatchWatchingEventDetail = {
+			prNumber: state.prNumber,
+			mergedBranch: state.mergedBranch,
+		};
+		opts.logEvent?.('merge-watch-watching', watchingDetail);
+	}
+
+	// Call pollFn exactly once.
+	const status = pollFn(state.prNumber);
+	const newPollCount = pollCount + 1;
+	const newLastPolledAt = now;
+
+	if (status === null) {
+		// gh error: silent retry. Advance counters so the throttle fires correctly
+		// on the next tick (the caller will sleep before calling us again).
+		return {
+			kind: 'continue',
+			state: { ...state, pollCount: newPollCount, lastPolledAt: newLastPolledAt },
+		};
+	}
+
+	// Delegate to processPollResult with a reconstructed opts bag.
+	const mergeWatchOpts: MergeWatchOptions = {
+		prNumber: state.prNumber,
+		mergedBranch: state.mergedBranch,
+		cwd: opts.cwd,
+		pollFn,
+		postMergeFn: opts.postMergeFn,
+		notifyOrchestrator: opts.notifyOrchestrator,
+		logEvent: opts.logEvent,
+	};
+	const result = processPollResult(status, mergeWatchOpts);
+	if (result !== null) {
+		return { kind: 'terminal', outcome: result.outcome };
+	}
+
+	// Non-terminal: keep watching with updated counters.
+	return {
+		kind: 'continue',
+		state: { ...state, pollCount: newPollCount, lastPolledAt: newLastPolledAt },
+	};
+}
+
+// ---------------------------------------------------------------------------
 // State machine
 // ---------------------------------------------------------------------------
 
@@ -304,19 +519,33 @@ export async function runMergeWatch(opts: MergeWatchOptions): Promise<MergeWatch
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS;
 	const maxPolls = opts.maxPolls ?? DEFAULT_MERGE_WATCH_MAX_POLLS;
 
-	const watchingDetail: MergeWatchWatchingEventDetail = { prNumber, mergedBranch: opts.mergedBranch };
-	logEvent?.('merge-watch-watching', watchingDetail);
+	const stepOpts: StepMergeWatchOptions = {
+		cwd: opts.cwd,
+		postMergeFn: opts.postMergeFn,
+		notifyOrchestrator: opts.notifyOrchestrator,
+		logEvent: opts.logEvent,
+		pollIntervalMs,
+		maxPolls,
+	};
 
-	for (let poll = 0; poll < maxPolls; poll++) {
-		if (poll > 0) sleep(pollIntervalMs);
-		const status = opts.pollFn(prNumber);
-		if (status === null) continue; // gh error: silent retry
-		const result = processPollResult(status, opts);
-		if (result !== null) return result.outcome;
+	// Use a monotonically increasing virtual clock that advances by pollIntervalMs
+	// on each sleep so the stepMergeWatch throttle check always passes after a
+	// real sleep without requiring a Date.now() call in product code.
+	let state: MergeWatchState = { prNumber, mergedBranch: opts.mergedBranch };
+	let virtualNow = 0;
+	let first = true;
+
+	while (true) {
+		if (!first) {
+			sleep(pollIntervalMs);
+			virtualNow += pollIntervalMs;
+		}
+		first = false;
+
+		const result = stepMergeWatch(state, virtualNow, opts.pollFn, stepOpts);
+		if (result.kind === 'terminal') {
+			return result.outcome;
+		}
+		state = result.state;
 	}
-
-	opts.notifyOrchestrator(
-		`[cam] merge-watch timeout: PR #${prNumber} not yet merged after ${maxPolls} polls`,
-	);
-	return { kind: 'timeout', polls: maxPolls };
 }

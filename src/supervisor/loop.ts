@@ -1300,9 +1300,9 @@ export interface RunSidecarLoopOptions {
 	 *
 	 * When injected, called on each idle tick (active !== true) BEFORE the
 	 * session-health check and idle sleep. The function is responsible for
-	 * checking whether a merge-watch file exists and, if so, running the full
-	 * blocking poll loop (via runMergeWatch) until a terminal outcome is reached.
-	 * If no watch file is present, the function returns immediately (no-op).
+	 * checking whether a merge-watch file exists and, if so, advancing the
+	 * merge-watch state machine by one step (via stepMergeWatch) and returning
+	 * promptly. If no watch file is present, the function returns immediately (no-op).
 	 *
 	 * Only wired by the production sidecar (sidecar.ts) when the project config
 	 * has [ship] merge_mode = "ci-gated". Under "immediate" mode this field is

@@ -1,7 +1,7 @@
 {
   "id": "CAM-138",
   "title": "merge-watch runtime hardening: live-owner guard + bound outer-loop await",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-29T13:46:11.780Z",
