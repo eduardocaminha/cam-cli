@@ -22,7 +22,7 @@
         "Full quality spine passes (bun run check:all). [oracle: named-command bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit src/git/on-main.ts only. Read commitTreeToMain (lines 255-292), the CAS loop (lines 270-284), commitAndCasAttempt's { success: true, shortSha } return (lines 205-206), and the existing docstring (lines 219-254) before writing. The helper must SELF-DETECT the branch (commitTreeToMain does not receive branchWasMain), so gate the sync on `git rev-parse --abbrev-ref HEAD` == 'main'. The on-main target is the literal refs/heads/main; the sync gate is current-branch == main. GOTCHA: `git checkout HEAD -- <path>` does NOT delete files absent from HEAD, so deletions would leak; use `git restore --staged --worktree --source=HEAD -- <paths>` which handles add/mod/del uniformly (verified against the AC#4 deletion fixture in US-002). DO NOT touch the CAS/atomic-commit logic or checkMainUpToDate. branchWasMain is vestigial since CAM-133; self-detecting here may make per-command branchWasMain dead-code (cleanup candidate, NOT required by this story). The off-main code path (HEAD != main) must stay byte-behaviorally identical: the sync branch is inert when current-branch != main. Best-effort warning should use printWarning/printError from src/logging/color.ts (printError writes to process.stderr, printWarning to process.stdout). CI runs `bun run check:all` (biome --error-on-warnings) as the static gate, so no unused imports/vars and run it locally before declaring done."
     },

@@ -1,0 +1,30 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add syncWorktreeIfOnMain helper and wire it as the final step of commitTreeToMain"
+  },
+  "branchName": "cam/CAM-137-sync-worktree-on-main",
+  "timestamp": "2026-06-29T00:00:00.000Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/git/on-main.ts",
+    "test/on-main-multi.test.ts",
+    "test/commands/issue-specify.test.ts",
+    "test/integration/journal-append-on-main.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [
+    "branchWasMain is vestigial since CAM-133 now that syncWorktreeIfOnMain self-detects the branch. Consider a cleanup story to remove it from specifyIssueOnMain/abandonIssueOnMain return shapes (not required by US-001)."
+  ],
+  "nextStoryContext": "US-001 landed syncWorktreeIfOnMain in src/git/on-main.ts. Three integration tests were updated from 'working-tree unchanged' to 'working-tree synced to HEAD' assertions (journal-append-on-main Case B, issue-specify Case B, issue-specify abandon). US-002 requires a dedicated integration test file test/integration/sync-worktree-on-main.test.ts covering add/mod/del/off-main cases with git status --porcelain clean assertions. US-003 requires a unit test that spies on process.stdout.write to assert the printWarning is emitted when git restore fails. The makeHappySpawn helper in test/on-main-multi.test.ts returns '' (empty) for --abbrev-ref by default so the sync is a no-op in existing tests; new on-main unit tests return 'main' to exercise the restore path.",
+  "officialDocsValidated": [
+    {
+      "lib": "git-restore",
+      "url": "https://git-scm.com/docs/git-restore",
+      "fetchedAt": "2026-06-29T00:00:00.000Z",
+      "status": "aligned",
+      "summary": "Confirmed: git restore --staged --worktree --source=HEAD in no-overlay mode removes tracked paths absent from HEAD (handles add/mod/del uniformly). Implementation matches docs."
+    }
+  ]
+}
