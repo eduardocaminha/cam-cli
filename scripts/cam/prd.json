@@ -77,7 +77,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit ONLY .claude/agents/subagent-reviewer.md, the verify step (step 4 under the review procedure), line ~39. Current stale sentence inside that step: '... If the diff touches `vendor/` or `templates/`, also run `bun run embed-vendor:check`. There is no separate lint step in this repo. A full `bun run build:release` ...'. Rewrite the stale sentence to: the project lint/static gate is biome (`biome.json`) via `bun run check:all` / `bun run lint` (wired CAM-60), which CI runs; keep the surrounding sentences (typecheck/test, embed-vendor:check when vendor/templates touched, build:release only for build-pipeline diffs) intact. This is the SAME stale semantic class as F-01, surfaced by the full-repo grep; the reviewer gates the review cycle, so leaving it stale would keep CAM-114's goal half-met. Ground truth: package.json `\"lint\": \"bunx biome lint --error-on-warnings\"`, `\"check:all\": \"bun scripts/check-all.ts\"`, biome.json exists. DUAL-COPY CAVEAT (CAM-123, verified by grep): templates/agents/subagent-reviewer.md IS embedded (keyed 'agents/subagent-reviewer.md' in src/vendor/_generated.ts) BUT carries NO stale linter text, so do NOT edit it and do NOT re-embed; embed-vendor:check is a SAFETY oracle that must stay green. Removal oracle 'no separate lint step' currently matches the real line. Self-hosting: this story explicitly declares the edit to .claude/agents/subagent-reviewer.md (intentional)."
     }

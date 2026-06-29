@@ -1,21 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Correct stale no-linter claim in subagent-implementer quality gates (.claude/agents)"
+    "id": "US-004",
+    "title": "Correct stale no-linter claim in subagent-reviewer verify step (.claude/agents)"
   },
   "branchName": "cam/CAM-114-stale-no-linter-docs",
   "timestamp": "2026-06-29T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-implementer.md"
+    ".claude/agents/subagent-reviewer.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 corrected scripts/cam/CLAUDE.md. US-002 corrected .claude/agents/subagent-auditor.md item 19. US-003 corrected .claude/agents/subagent-implementer.md line ~93: removed 'There is no separate lint command; the typecheck is the static gate. Do not invent one.' and replaced with biome lint IS configured (biome.json) + bun run check:all / bun run lint as the live lint/static gate. Templates mirror was intentionally NOT edited (no stale text; embed-vendor:check stays green). Check remaining stories in prd.json for further stale-linter corrections in other harness docs.",
+  "nextStoryContext": "US-001 corrected scripts/cam/CLAUDE.md. US-002 corrected .claude/agents/subagent-auditor.md item 19. US-003 corrected .claude/agents/subagent-implementer.md line ~93. US-004 corrected .claude/agents/subagent-reviewer.md line ~39: removed 'There is no separate lint step in this repo.' and replaced with the biome lint IS configured (biome.json) + bun run check:all / bun run lint as the live lint/static gate. Templates mirror was intentionally NOT edited (no stale text; embed-vendor:check stays green). All 4 stories in the PRD now pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure docs correction in .claude/agents/subagent-implementer.md line ~93; no external library was exercised."
+      "summary": "Pure docs correction in .claude/agents/subagent-reviewer.md line ~39; no external library was exercised."
     }
   ]
 }
