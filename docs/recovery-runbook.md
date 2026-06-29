@@ -1219,12 +1219,21 @@ The hook registration in `.claude/settings.json`:
      denial is expected behavior. Route the work to the worker pane via `/cam-next`
      instead.
    - If the orchestrator tried to spawn one of the ALLOW types and was still denied,
-     the hook invocation itself may have failed (e.g. `jq` absent, malformed
-     `settings.json`, or the hook file is missing its executable bit):
+     the hook invocation itself may have a problem. Common causes:
+
+     - **jq absent (fail-closed)**: the hook is fail-closed without jq. When `jq` is
+       not on PATH, the hook denies every Task/Agent spawn (static deny, exit 0)
+       rather than failing open or bypassing the gate. Without jq, ALLOW types are
+       denied just like DENY types.
+     - **settings.json malformed**: the hook is registered but cannot parse the
+       payload cleanly.
+     - **executable bit missing**: the hook file is not executable.
+
+     Diagnostic commands:
 
      ```bash
      ls -la .claude/hooks/orch-agent-allowlist.sh   # should show -rwxr-xr-x
-     which jq                                        # must be on PATH
+     which jq                                        # absent = hook denies all (fail-closed)
      cat .claude/settings.json | jq .               # must parse cleanly
      ```
 
