@@ -1,0 +1,65 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-137-sync-worktree-on-main",
+  "description": "On-main writers leave the working tree coherent with HEAD after commitTreeToMain instead of silently desyncing it.",
+  "issueNumber": 137,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add syncWorktreeIfOnMain helper and wire it as the final step of commitTreeToMain",
+      "description": "As a cam operator running an on-main writer (issue-specify, triage, journal) while checked out on main, I need commitTreeToMain to leave the working tree checked-out coherent with HEAD afterward so that I do not silently desync my worktree from the commit it just wrote.",
+      "acceptanceCriteria": [
+        "src/git/on-main.ts exports a function syncWorktreeIfOnMain(cwd, paths, spawnFn) (path-scoped over the supplied paths; gated internally on current-branch == main via git rev-parse --abbrev-ref HEAD). [oracle: grep -q 'export function syncWorktreeIfOnMain' /Users/eduardo/Documents/Projects/cam-cli/src/git/on-main.ts]",
+        "syncWorktreeIfOnMain syncs add/mod/del uniformly using `git restore --staged --worktree --source=HEAD --` on the supplied paths (NOT git reset --hard, so unrelated uncommitted edits are never clobbered). [oracle: grep -q 'restore --staged --worktree --source=HEAD' /Users/eduardo/Documents/Projects/cam-cli/src/git/on-main.ts]",
+        "syncWorktreeIfOnMain is best-effort: a non-zero restore subprocess emits a warning and never throws. [oracle: reviewer-judgment]",
+        "commitTreeToMain calls syncWorktreeIfOnMain as its final step AFTER a successful CAS update-ref (the result.success branch at the return point), passing exactly files-paths concatenated with removals as the path scope. [oracle: reviewer-judgment]",
+        "commitTreeToMain still returns the unchanged 7-char short sha; the sync step never alters the returned value. [oracle: bun test /Users/eduardo/Documents/Projects/cam-cli/test/on-main-multi.test.ts]",
+        "The commitTreeToMain docstring states the coherence invariant: off-main working tree left untouched, on-main working tree synced to HEAD after the call. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: named-command bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit src/git/on-main.ts only. Read commitTreeToMain (lines 255-292), the CAS loop (lines 270-284), commitAndCasAttempt's { success: true, shortSha } return (lines 205-206), and the existing docstring (lines 219-254) before writing. The helper must SELF-DETECT the branch (commitTreeToMain does not receive branchWasMain), so gate the sync on `git rev-parse --abbrev-ref HEAD` == 'main'. The on-main target is the literal refs/heads/main; the sync gate is current-branch == main. GOTCHA: `git checkout HEAD -- <path>` does NOT delete files absent from HEAD, so deletions would leak; use `git restore --staged --worktree --source=HEAD -- <paths>` which handles add/mod/del uniformly (verified against the AC#4 deletion fixture in US-002). DO NOT touch the CAS/atomic-commit logic or checkMainUpToDate. branchWasMain is vestigial since CAM-133; self-detecting here may make per-command branchWasMain dead-code (cleanup candidate, NOT required by this story). The off-main code path (HEAD != main) must stay byte-behaviorally identical: the sync branch is inert when current-branch != main. Best-effort warning should use printWarning/printError from src/logging/color.ts (printError writes to process.stderr, printWarning to process.stdout). CI runs `bun run check:all` (biome --error-on-warnings) as the static gate, so no unused imports/vars and run it locally before declaring done."
+    },
+    {
+      "id": "US-002",
+      "title": "Real-git integration suite: on-main add/mod/del worktree coherence plus off-main regression",
+      "description": "As a maintainer, I need real-git integration coverage proving commitTreeToMain leaves a clean, HEAD-coherent working tree for add/modify/delete when on main, and leaves a feature branch byte-identical when off main, so that the worktree-desync footgun cannot regress.",
+      "acceptanceCriteria": [
+        "A new real-git integration test file exists under test/integration/ that builds a temp git repo checked out on main (mirroring the makeTmpRepo/realSpawnFn harness in test/integration/issue-file-on-main.test.ts). [oracle: file-assert test -f /Users/eduardo/Documents/Projects/cam-cli/test/integration/sync-worktree-on-main.test.ts]",
+        "ADD case: after commitTreeToMain adds a NEW file in a repo checked out on main, the file exists in the working tree with the HEAD content and `git status --porcelain` is empty. [oracle: bun test /Users/eduardo/Documents/Projects/cam-cli/test/integration/sync-worktree-on-main.test.ts]",
+        "MODIFY case: after commitTreeToMain modifies a tracked file on main, the working tree shows the new content and `git status --porcelain` is empty (no staged reversion). [oracle: bun test /Users/eduardo/Documents/Projects/cam-cli/test/integration/sync-worktree-on-main.test.ts]",
+        "DELETE case: after commitTreeToMain removes a path (via the removals arg) on main, the file is absent from the working tree and `git status --porcelain` is empty. [oracle: bun test /Users/eduardo/Documents/Projects/cam-cli/test/integration/sync-worktree-on-main.test.ts]",
+        "REGRESSION (off-main) case: after commitTreeToMain on a feature branch (HEAD != main), the feature-branch working tree and HEAD are unchanged and the write lands only on refs/heads/main. [oracle: bun test /Users/eduardo/Documents/Projects/cam-cli/test/integration/sync-worktree-on-main.test.ts]",
+        "Each on-main case (add/mod/del) is confirmed RED against pre-US-001 HEAD (the porcelain-clean assertion genuinely fails on today's commitTreeToMain, which never touches the worktree) before US-001 lands; the suite passes only after US-001. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: named-command bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "New file test/integration/sync-worktree-on-main.test.ts. Mirror the harness in test/integration/issue-file-on-main.test.ts (lines 39-132): gitAvailable skip guard, dirsToCleanup + afterEach, realSpawnFn that forwards env+input, and a makeTmpRepo that runs git init / symbolic-ref HEAD refs/heads/main / config user. Call commitTreeToMain directly from src/git/on-main.ts (not through a command wrapper) so each AC drives one of add/mod/del/off-main cleanly. The localMainSha arg is `git rev-parse main` from the harness. ASCII fixtures are fine (not byte-parsing). KEY: the existing Case B in issue-file-on-main.test.ts asserts the entry is on main but does NOT assert status --porcelain clean: that omission is exactly the footgun this suite closes, so every on-main case here MUST assert `git status --porcelain` empty. DISCRIMINATION (load-bearing): a test that passes both before and after the fix is worthless here. Before US-001 lands, run the new suite against pre-US-001 HEAD and confirm the porcelain-clean assertions go RED (today's commitTreeToMain never touches the worktree, so the new file is missing / the modified file is stale / the deleted file lingers); record that observation. After US-001, the suite must be GREEN. For the off-main regression case, checkout -b a feature branch first, capture HEAD before/after, and assert the feature HEAD is unchanged while `git show main:<path>` reflects the write. For DELETE, seed a tracked file then pass it in the removals arg and assert it is gone from the worktree. CI runs `bun run check:all` as the static gate."
+    },
+    {
+      "id": "US-003",
+      "title": "Unit test: injected failing sync subprocess keeps commitTreeToMain non-throwing and sha-stable",
+      "description": "As a maintainer, I need a unit test proving the sync step is best-effort, so that a worktree-sync failure never aborts the on-main write nor changes the returned sha.",
+      "acceptanceCriteria": [
+        "A unit test injects a spawnFn that succeeds for the commit-tree/CAS plumbing but FAILS the sync subprocess (git restore), with the branch-detection reporting current-branch == main so the sync branch fires, and asserts commitTreeToMain returns the expected 7-char short sha and does NOT throw. [oracle: bun test /Users/eduardo/Documents/Projects/cam-cli/test/on-main-multi.test.ts]",
+        "The same test captures the warning sink (spy on process.stderr.write for printError, or process.stdout.write for printWarning, per src/logging/color.ts) and asserts a warning is actually emitted when the sync subprocess fails. [oracle: bun test /Users/eduardo/Documents/Projects/cam-cli/test/on-main-multi.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Add to the existing unit suite test/on-main-multi.test.ts (reuse its ok()/fail() SpawnSyncReturns helpers at lines 52-60 and the makeHappySpawn recorder at lines 73-96). For the sync gate to be reached, the injected spawnFn must report current-branch == main for the `git rev-parse --abbrev-ref HEAD` call (so the sync branch fires) AND fail the `git restore` call. Assert the function returns COMMIT_SHA.substring(0,7) and that calling it does not throw (expect(() => ...).not.toThrow()). WARNING CAPTURE: src/git/on-main.ts emits the best-effort warning via printWarning/printError from src/logging/color.ts; printError writes to process.stderr.write and printWarning to process.stdout.write (color.ts lines 105-118), both spy-able in a Bun unit test. Capture the write sink (e.g. monkeypatch process.stderr.write / process.stdout.write around the call, restore in finally) and assert the warning string was written on sync failure. Match the AC to whichever sink US-001 actually uses. Do not add a story for documentation: covered by US-001 docstring AC."
+    }
+  ]
+}
