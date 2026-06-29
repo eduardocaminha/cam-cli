@@ -625,6 +625,23 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 		// --- Handle terminal decisions ---
 		if (action.kind === 'complete') {
+			// US-002: cap-REENTRY promotion. When the loop re-enters with a prd that
+			// already has roundsCompleted >= maxRounds and a non-terminal verdict
+			// (e.g. 'FIXES_PENDING:1'), decideNextAction signals promoteVerdictTo so
+			// the caller persists 'MAX_ROUNDS_DEBT' as the stored verdict BEFORE the
+			// terminal return. This is the missing complement to the US-006 post-review
+			// promotion (loop.ts ~1115-1148): that path fires after a review dispatch;
+			// this path fires on cap-REENTRY when no review round runs this iteration.
+			if (action.promoteVerdictTo === 'MAX_ROUNDS_DEBT') {
+				const promoted: PrdSnapshot = {
+					...prd,
+					review: { ...(prd.review ?? {}), lastVerdict: 'MAX_ROUNDS_DEBT' },
+				};
+				writePrd(promoted);
+				opts.notifyOrchestrator?.(
+					formatReviewVerdictLine(prd.review?.roundsCompleted ?? 0, 'MAX_ROUNDS_DEBT'),
+				);
+			}
 			notifyTerminal('complete');
 			return { status: 'complete', iterations, lastOutcome };
 		}
@@ -632,6 +649,17 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 		if (action.kind === 'await-operator') {
 			// All implementable work is done and reviewed clean; only operator
 			// ceremonies remain. This is a successful terminal state, not a block.
+			// US-002: same cap-REENTRY promotion as the 'complete' branch above.
+			if (action.promoteVerdictTo === 'MAX_ROUNDS_DEBT') {
+				const promoted: PrdSnapshot = {
+					...prd,
+					review: { ...(prd.review ?? {}), lastVerdict: 'MAX_ROUNDS_DEBT' },
+				};
+				writePrd(promoted);
+				opts.notifyOrchestrator?.(
+					formatReviewVerdictLine(prd.review?.roundsCompleted ?? 0, 'MAX_ROUNDS_DEBT'),
+				);
+			}
 			notifyTerminal('awaiting-operator');
 			return {
 				status: 'awaiting-operator',
