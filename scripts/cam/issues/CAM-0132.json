@@ -1,7 +1,7 @@
 {
   "id": "CAM-132",
   "title": "Filha CAM-110: meta-loop inter-ciclo, orquestrador encadeia ciclos drenando a fila (runner deterministico, LLM so julga)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T15:37:12.544Z",
