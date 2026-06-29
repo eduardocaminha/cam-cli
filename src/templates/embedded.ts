@@ -21,7 +21,7 @@ export { templatesContents };
  * Top-level subtrees the templates ship. Used to produce a per-target
  * file count for human-readable output.
  */
-const SUBTREES = ['commands', 'agents', 'scripts/cam', '.claude'] as const;
+const SUBTREES = ['commands', 'agents', 'scripts/cam', '.claude', 'skills'] as const;
 export type TemplateSubtree = (typeof SUBTREES)[number];
 
 /**
@@ -37,6 +37,9 @@ function targetPath(cwd: string, relPath: string): string {
 	}
 	if (relPath.startsWith('scripts/cam/')) {
 		return join(cwd, 'scripts', 'cam', relPath.slice('scripts/cam/'.length));
+	}
+	if (relPath.startsWith('skills/')) {
+		return join(cwd, '.claude', 'skills', relPath.slice('skills/'.length));
 	}
 	if (relPath.startsWith('.claude/')) {
 		return join(cwd, relPath);
@@ -83,6 +86,7 @@ export function materializeTemplates(cwd: string): Record<TemplateSubtree, numbe
 		agents: 0,
 		'scripts/cam': 0,
 		'.claude': 0,
+		skills: 0,
 	};
 	for (const [relPath, contents] of Object.entries(templatesContents)) {
 		const dst = targetPath(cwd, relPath);

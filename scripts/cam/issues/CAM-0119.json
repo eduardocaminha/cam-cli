@@ -1,7 +1,7 @@
 {
   "id": "CAM-119",
   "title": "Follow-up CAM-107: cam init nao instala templates/skills/ no projeto downstream",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-27T13:54:43.558Z",
