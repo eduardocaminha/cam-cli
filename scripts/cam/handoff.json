@@ -1,22 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Route and count the skills/ subtree in the cam init install routine"
+    "id": "US-002",
+    "title": "Lock the downstream grill-with-docs skill install against regression"
   },
   "branchName": "cam/CAM-119-init-installs-skills",
-  "timestamp": "2026-06-29T12:00:00Z",
-  "createdFiles": [
-    "test/setup.test.ts"
-  ],
+  "timestamp": "2026-06-29T12:30:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/templates/embedded.ts",
-    "src/commands/setup.ts",
     "test/embedded.test.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added 'skills' to SUBTREES in embedded.ts and routing in targetPath() + copyTemplates export with skills target. The 5 skill files (domain-modeling/{SKILL,CONTEXT-FORMAT,ADR-FORMAT}.md, grill-with-docs/SKILL.md, grilling/SKILL.md) now land under .claude/skills/ after cam init. File-size-budget ceilings raised for the grown files.",
+  "nextStoryContext": "US-002 added a 4-test regression describe block 'CAM-119: cam init installs the grill-with-docs skill chain downstream' to test/embedded.test.ts. Tests assert byte-parity for all 5 embedded skill files (domain-modeling/{SKILL,CONTEXT-FORMAT,ADR-FORMAT}.md, grill-with-docs/SKILL.md, grilling/SKILL.md) and assert that cam-spec.md references grill-with-docs while the skill is co-installed. File-size budget raised 522->592 for test/embedded.test.ts. PRD is now fully complete (US-001 and US-002 both pass).",
   "officialDocsValidated": [
     {
       "lib": "none",
