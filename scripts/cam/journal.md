@@ -616,3 +616,15 @@ Each entry follows this template:
 - **Decisions**: Premissa verificada AO VIVO antes de planejar (nao stale como o CAM-130): grep confirmou 1 ref bare lessons.md na linha 108 e lessons.md inexistente. Oracle discriminante: grep -Eq '(^|[^.])lessons\.md' (fails-at-HEAD, e lessons.archive.md nao satisfaz falsamente) + count==1.
 - **Blockers encountered**: Nenhum: loop self-drove US-001 + review CLEAN round 1, zero re-arm. Post-merge rodou 1x (CAM-138 holding, 2o ciclo consecutivo validando o state machine). Nit: bump classificou minor (0.28->0.29) porque o commit do fix usa o template feat: do implementer, mesmo sendo doc-only (comportamento deterministico do classifyBump; nao intervim).
 - **Follow-ups**: Pendencias da sessao inalteradas: CAM-142 (gap CAM-137) + 2 SUGGESTIONs do CAM-138 aguardam priorizacao. Proximo por rank: CAM-134 (rank 7, dead-code buildMergeDescription em issue-specify.ts), depois CAM-80 (rank 8), CAM-129 (rank 9).
+
+## cam/CAM-134-remove-dead-buildmergedescription — remove dead code buildMergeDescription de issue-specify.ts
+
+- **Started**: 2026-06-29
+- **Closed**: 2026-06-29
+- **Branch**: cam/CAM-134-remove-dead-buildmergedescription
+- **Issue**: CAM-134
+- **Outcome**: shipped
+- **Summary**: Cleanup cirurgico: removida a funcao buildMergeDescription (src/commands/issue-specify.ts:261), definida mas nunca chamada (mergeIssueOnMain monta a nota de merge inline em :532). Pre-existente em main, flagada como SUGGESTION fora-de-escopo no review do CAM-133. Escapava do knip (knip.json exclui exports) e do tsc (noUnusedLocals:false) por ser privada. Behavior-neutra. 1 story, review CLEAN round 1, 2215 pass, check:all verde. PR #103, v0.30.0.
+- **Decisions**: Premissa verificada ao vivo: grep confirmou 1 hit (so a definicao), zero callers. Oracle discriminante: ! grep -rq buildMergeDescription src/ test/ (fails-at-HEAD) + check:all (o gate que originalmente perdeu o dead code). Nit recorrente: bump minor porque o commit do implementer usa template feat:, mesmo sendo cleanup.
+- **Blockers encountered**: Nenhum: loop self-drove US-001 + review CLEAN round 1, zero re-arm. Post-merge 1x (CAM-138 holding, 3o ciclo consecutivo). 5o ship consecutivo clean na sessao.
+- **Follow-ups**: Pendencias inalteradas: CAM-142 (gap CAM-137) + 2 SUGGESTIONs do CAM-138. Proximo por rank: CAM-80 (rank 8, geometria do worker-pane openPaneInSession), depois CAM-129 (rank 9, cam init non-TTY no build smoke).
