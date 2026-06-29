@@ -1,27 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add checkClaudeAuth preflight with injectable spawn"
+    "id": "US-002",
+    "title": "Wire auth preflight into runRun before session + sidecar spawn"
   },
   "branchName": "cam/CAM-82-run-claude-auth-preflight",
-  "timestamp": "2026-06-29T00:00:00Z",
-  "createdFiles": [
-    "src/commands/run-auth-preflight.ts",
-    "test/commands/run-auth-preflight.test.ts"
-  ],
+  "timestamp": "2026-06-29T01:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
     "src/commands/run.ts",
-    "scripts/file-size-budget.json"
+    "test/run.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "checkClaudeAuth is now exported from src/commands/run.ts (re-export from src/commands/run-auth-preflight.ts). The function is standalone and not yet wired into the runRun preflight flow -- the PRD may add a story to integrate it into cam run's startup. The implementation handles all fail-closed paths: spawn error, ENOENT (via result.error), non-zero exit, empty stdout, unparseable JSON, wrong JSON shape, loggedIn falsy. subscriptionType is surfaced but never gated. File-size budget was updated: run.ts ceiling 663->676, run-auth-preflight.ts 141, test file 208.",
+  "nextStoryContext": "checkClaudeAuth is now fully wired into runRun: it is called after the tmux + orchestrator-file pre-flight checks and BEFORE projectSessionName/setupOrchestratorSession/sidecar spawn. On failure, printError is called and runRun returns 1 without touching tmux. The fake spawn in test/run.test.ts now handles the claude auth status --json probe via the claudeAuth option (default: loggedIn). File-size ceilings updated: run.ts 686, run.test.ts 792. The dry-run path also runs the preflight (recommendation from story notes). If the next story needs to test the preflight independently, import checkClaudeAuth from src/commands/run.ts or directly from src/commands/run-auth-preflight.ts.",
   "officialDocsValidated": [
     {
       "lib": "claude-cli auth status",
       "url": "https://code.claude.com/docs/en/cli-reference",
       "fetchedAt": "2026-06-29T00:00:00Z",
-      "status": "aligned",
-      "summary": "Docs confirm: claude auth status outputs JSON by default; exits 0 when logged in, 1 when not. JSON shape includes loggedIn, authMethod, apiProvider, email, orgId, orgName, subscriptionType. Implementation gates on loggedIn===true and checks exit code, matching documented behavior."
+      "status": "ok",
+      "summary": "Already validated in US-001: claude auth status --json exits 0 when logged in, 1 when not; JSON shape includes loggedIn. US-002 wires the existing checkClaudeAuth into runRun; no new external lib surface was introduced."
     }
   ]
 }

@@ -49,7 +49,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit src/commands/run.ts: insert the preflight call inside runRun after the tmux-available (~523) and subagent-orchestrator.md (~530) checks, BEFORE projectSessionName/setupOrchestratorSession (~557) and the result.created sidecar block (~586). The preflight must use the SAME spawnFn that runRun already resolves from options.spawnFn (default spawnSync) so tests can inject it. Note: the existing makeFakeSpawn in test/run.test.ts only stubs `tmux`; the regression test must inject a spawn that ALSO answers the `claude auth status --json` probe (return loggedIn:true for the pass-path tests; loggedIn:false or non-zero for the new failure test). Add a regression test asserting: failing probe => return code != 0, spawnSidecarFn (inject a recording fake) never called, and no tmux new-session/split-window in spawn.calls. Use printError (src/logging/color.ts, stderr, blank line + destructive bold ✗ + muted hint) for the failure message, matching the existing tmux/orchestrator-file failure paths. Honor CAM_RUN_DRY_RUN ordering: decide whether the dry-run path runs the preflight (recommend yes, so dry-run still validates auth) but keep it consistent with the existing dry-run early-return at ~549."
     }

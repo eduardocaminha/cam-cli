@@ -61,8 +61,15 @@ function makeFakeSpawn(opts: {
 	 * value (a `cat` pane or wrong pane count).
 	 */
 	listPanes?: string;
+	/**
+	 * How to respond to the `claude auth status --json` probe from checkClaudeAuth.
+	 * 'loggedIn'    (default) — stdout JSON with loggedIn:true, status 0.
+	 * 'notLoggedIn'           — stdout JSON with loggedIn:false, status 0.
+	 * 'error'                 — status non-zero (probe fails).
+	 */
+	claudeAuth?: 'loggedIn' | 'notLoggedIn' | 'error';
 } = {}): SpawnFn & { calls: SpawnRecord[] } {
-	const { tmuxAvailable = true, sessionExists = false, listPanes = 'claude\ncam\n' } = opts;
+	const { tmuxAvailable = true, sessionExists = false, listPanes = 'claude\ncam\n', claudeAuth = 'loggedIn' } = opts;
 	const calls: SpawnRecord[] = [];
 	let paneCounter = 0;
 	// kill-session flips this so a stale-path recreate (ensureProjectSession ->
@@ -80,6 +87,15 @@ function makeFakeSpawn(opts: {
 			status: 0,
 			signal: null,
 		};
+
+		if (cmd === 'claude') {
+			// claude auth status --json probe from checkClaudeAuth (US-002).
+			if (claudeAuth === 'error') {
+				result.status = 1;
+			} else {
+				result.stdout = Buffer.from(JSON.stringify({ loggedIn: claudeAuth === 'loggedIn' }));
+			}
+		}
 
 		if (cmd === 'tmux') {
 			// With -L cam prefix: args[0]='-L', args[1]='cam', args[2]=subcommand.
@@ -681,6 +697,54 @@ describe('runRun orch-ready marker (US-FIX-005)', () => {
 
 		const markerPath = join(cwd, '.claude', '.cam-orch-ready');
 		expect(existsSync(markerPath)).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// runRun auth preflight (US-002, CAM-82)
+// ---------------------------------------------------------------------------
+
+describe('runRun auth preflight', () => {
+	it('returns non-zero, skips session creation, and does not spawn the sidecar on auth failure', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false, claudeAuth: 'notLoggedIn' });
+
+		let sidecarSpawned = false;
+		const spawnSidecarFn: SpawnSidecarFn = () => {
+			sidecarSpawned = true;
+			return { pid: 0, kill: () => {} };
+		};
+
+		const code = runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn });
+
+		// Non-zero exit on auth failure.
+		expect(code).not.toBe(0);
+		// spawnSidecarFn must NOT be called: the session-setup path was short-circuited.
+		expect(sidecarSpawned).toBe(false);
+		// No tmux session or pane creation should have been attempted.
+		expect(spawn.calls.find(c => c.args[2] === 'new-session')).toBeUndefined();
+		expect(spawn.calls.find(c => c.args[2] === 'split-window')).toBeUndefined();
+	});
+
+	it('returns non-zero when the auth probe exits with non-zero status', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false, claudeAuth: 'error' });
+
+		const code = runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
+
+		expect(code).not.toBe(0);
+		expect(spawn.calls.find(c => c.args[2] === 'new-session')).toBeUndefined();
+	});
+
+	it('passes through to session creation when auth succeeds (regression guard for existing tests)', () => {
+		const cwd = makeTmpProject();
+		// claudeAuth defaults to 'loggedIn' — normal happy path.
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		const code = runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar });
+
+		expect(code).toBe(0);
+		expect(spawn.calls.find(c => c.args[2] === 'new-session')).toBeDefined();
 	});
 });
 

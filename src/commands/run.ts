@@ -55,6 +55,7 @@ import { writeSidecarPid, removeSidecarPidIfExists } from '../supervisor/sidecar
 import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
+import { checkClaudeAuth } from './run-auth-preflight.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -545,6 +546,15 @@ export function runRun(options: RunOptions = {}): number {
 			'subagent-orchestrator.md not found',
 			'This project has not been initialized — run `cam init` first',
 		);
+		emitTrailingBlank();
+		return 1;
+	}
+
+	// 1b. Claude auth preflight (US-002, CAM-82): confirm the operator is logged
+	// in to Claude Code BEFORE creating any tmux session or spawning the sidecar.
+	const authResult = checkClaudeAuth(spawnFn);
+	if (!authResult.ok) {
+		printError('claude auth preflight failed', authResult.message);
 		emitTrailingBlank();
 		return 1;
 	}
