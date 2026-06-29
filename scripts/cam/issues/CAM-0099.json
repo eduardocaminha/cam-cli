@@ -2,7 +2,7 @@
   "id": "CAM-99",
   "title": "/cam-ship bumpa por default (Conventional Commits decide), sem flag --bump manual",
   "stage": "specified",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-06-26T13:44:43.132Z",
   "description": "Hoje o version bump (CAM-89) e a flag cam ship --bump / /cam-ship --bump, entao o orquestrador tem que LEMBRAR de passar a flag a cada ship. O operador nao quer decidir bump caso a caso (decisao 2026-06-26, ciclo CAM-88). Como o classifyBump ja no-opa quando nao ha commit feat/fix (computeNextVersion retorna a mesma versao -> sem commit de release), tornar o bump INCONDICIONAL no fluxo de ship e seguro: feat->MINOR, fix->PATCH, nada conventional->sem bump. ONDE: templates/commands/cam-ship.md + .claude/commands/cam-ship.md (Step 4 deixa de ser condicional/flag e passa a rodar cam ship --bump sempre), e avaliar o default da CLI cam ship (runShipBump) pra que --no-bump seja o opt-out em vez de --bump ser o opt-in. Substitui a memoria-ponte ship-bump-default (que so existe porque o comportamento nao esta embutido na skill). P3 polish de DX do operador. Origem: pushback do operador no CAM-88.",
