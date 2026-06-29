@@ -1,27 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Wire one-step-per-tick into the sidecar outer loop and remove eager-delete (closes CAM-103)"
+    "id": "US-004",
+    "title": "Add durable-ownership contract one-liner to cam-ship.md (both copies) and re-embed"
   },
   "branchName": "cam/CAM-138-merge-watch-state-machine",
   "timestamp": "2026-06-29T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/sidecar.ts",
-    "test/release/merge-watch.test.ts",
-    "test/supervisor/sidecar-loop.test.ts",
-    "scripts/file-size-budget.json",
+    ".claude/commands/cam-ship.md",
+    "templates/commands/cam-ship.md",
+    "src/vendor/_generated.ts",
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json",
-    "scripts/cam/patterns.md",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 rewrote makeProductionMergeWatchFn in sidecar.ts to use stepMergeWatch (one step per idle tick) instead of the blocking runMergeWatch loop. The eager pre-start unlinkSync is gone. On continue: writeMergeWatchState persists state across restarts. On terminal: removeMergeWatchState removes the file. The outer loop is non-blocking because the closure returns promptly. All three CAM-138 US stories are now passes:true. If there is a next story, it should check the PRD for further work; if all stories pass, emit PRD_COMPLETE.",
+  "nextStoryContext": "US-004 added a durable-ownership contract one-liner to both copies of cam-ship.md (the ci-gated Step 7 block), re-embedded templates into src/vendor/_generated.ts, and corrected the recovery-runbook merge-watch diagnostic note (was 'removed before the loop starts', now 'removed when the loop reaches a terminal outcome'). All four US stories in this PRD are now passes:true. No further non-operator stories remain; emit PRD_COMPLETE if the next story selection returns nothing.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-003 touches only internal functions (stepMergeWatch, readMergeWatchState, writeMergeWatchState, removeMergeWatchState) exported from src/release/merge-watch.ts. No external npm library was introduced or modified."
+      "summary": "US-004 is a doc-only edit (cam-ship.md ownership contract + recovery-runbook correction + embed-vendor regeneration). No external npm library was introduced or modified."
     }
   ]
 }

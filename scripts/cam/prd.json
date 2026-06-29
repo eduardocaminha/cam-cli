@@ -73,7 +73,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Files: .claude/commands/cam-ship.md (write site at ~line 97-103: the printf that writes {prNumber,mergedBranch}) and templates/commands/cam-ship.md (same site). Dual-copy is NOT byte-identical (memory: cam dual-copy is per-file): the templates copy has an extra cam-init adaptation comment near line 34 — diff before editing, add the one-liner to BOTH at the matching Step 7 site. Add the same exact one-liner string to both so the grep oracle matches. After editing templates/, run `bun run embed-vendor` to regenerate src/templates/embedded.ts, then `bun run embed-vendor:check` must pass (scripts/cam/CLAUDE.md: required when a story touches templates/). The .claude/ copy is the live orchestrator copy (not embedded) — both must carry the contract. Doc maintenance: docs/recovery-runbook.md lines ~1543-1547 say the marker is 'removed before the loop starts' — that behavior is inverted by this PRD (now removed only at terminal); update that diagnostic note if it would otherwise mislead (per the project doc-maintenance convention)."
     }
