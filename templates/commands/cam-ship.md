@@ -101,6 +101,7 @@ Steps:
      BRANCH=$(git branch --show-current)
      printf '{"prNumber":%s,"mergedBranch":"%s"}\n' "$PR_NUMBER" "$BRANCH" > .claude/.cam-merge-watch.json
      ```
+     The sidecar enriches and is the owner of `.cam-merge-watch.json` from this point on; the write side must not re-write it (re-writing causes double post-merge).
      Do NOT run pull/tag/prune inline. The sidecar detects the CI-merged event by reading `.claude/.cam-merge-watch.json` on idle ticks and completes post-merge autonomously (pull main, push tag, prune branch only -- it does NOT close the issue or print a summary). For `github` and `linear` backends, close the issue manually after the PR merges (run `gh issue close <N>` or use the Linear UI); the `none` backend was already closed in Step 5. Skip Step 9.
    - **`immediate`**: Continue to Steps 8-9. The orchestrator does the post-merge by hand as today.
 

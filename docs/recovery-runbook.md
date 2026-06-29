@@ -1540,8 +1540,8 @@ PR), and `merge-watch-post-merge-done` (after post-merge completes).
 
 ### Diagnosing a stuck merge-watch
 
-1. Check whether the merge-watch marker is present (it is removed before the
-   loop starts to prevent re-entry):
+1. Check whether the merge-watch marker is present (it is removed when the loop
+   reaches a terminal outcome: merged, CI-red, or timeout):
 
    ```bash
    cat .claude/.cam-merge-watch.json 2>/dev/null || echo "(absent -- loop started or never wrote)"
