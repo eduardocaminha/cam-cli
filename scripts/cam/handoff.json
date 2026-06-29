@@ -1,28 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Real-git integration suite: on-main add/mod/del worktree coherence plus off-main regression"
+    "id": "US-003",
+    "title": "Unit test: injected failing sync subprocess keeps commitTreeToMain non-throwing and sha-stable"
   },
   "branchName": "cam/CAM-137-sync-worktree-on-main",
   "timestamp": "2026-06-29T00:00:00.000Z",
-  "createdFiles": [
-    "test/integration/sync-worktree-on-main.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
+    "test/on-main-multi.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [
     "branchWasMain is vestigial since CAM-133 now that syncWorktreeIfOnMain self-detects the branch. Consider a cleanup story to remove it from specifyIssueOnMain/abandonIssueOnMain return shapes (not required by US-001 or US-002)."
   ],
-  "nextStoryContext": "US-001 landed syncWorktreeIfOnMain in src/git/on-main.ts. US-002 added test/integration/sync-worktree-on-main.test.ts with four cases (ADD/MODIFY/DELETE/off-main regression) all asserting git status --porcelain is empty after commitTreeToMain. All 4 pass. US-003 requires a unit test that spies on process.stdout.write to assert the printWarning is emitted when git restore fails. The makeHappySpawn helper in test/on-main-multi.test.ts returns '' (empty) for --abbrev-ref by default so the sync is a no-op in existing tests; new on-main unit tests should return 'main' to exercise the restore path and a non-zero exit to trigger the warning. Pattern: inject a custom spawnFn that returns a failing status for the 'restore' subcommand and assert printWarning was called.",
+  "nextStoryContext": "All three stories in this PRD now pass. US-003 added one combined test (AC1+AC2) to test/on-main-multi.test.ts: it injects a spawnFn that reports branch=main (so the sync fires) and fails git restore, then asserts non-throw + sha-stable + warning written to process.stdout.write. The monkey-patch pattern (save/restore in finally) is clean and restores stdout after the assertion. Total test count: 24 in test/on-main-multi.test.ts, 2116 across the suite. All quality gates green (check:all).",
   "officialDocsValidated": [
     {
-      "lib": "git-restore",
-      "url": "https://git-scm.com/docs/git-restore",
-      "fetchedAt": "2026-06-29T00:00:00.000Z",
-      "status": "ok",
-      "summary": "Confirmed: git restore --staged --worktree --source=HEAD defaults to no-overlay mode. In no-overlay mode, tracked paths absent from HEAD are removed from the working tree. This confirms the DELETE case works correctly with the current syncWorktreeIfOnMain implementation."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-003 only modifies a unit test file (test/on-main-multi.test.ts). No new external library is exercised in production code."
     }
   ]
 }

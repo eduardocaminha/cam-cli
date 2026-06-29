@@ -566,3 +566,71 @@ describe('commitTreeToMain — AC#5 sync wired on success path', () => {
 		expect(calls.find((c) => c.args.includes('restore'))).toBeUndefined();
 	});
 });
+
+// ---------------------------------------------------------------------------
+// AC#6 commitTreeToMain — failing sync: non-throwing, sha-stable, warning emitted
+// ---------------------------------------------------------------------------
+//
+// Proves the sync step is best-effort: a failing git restore must NOT abort
+// the on-main write nor change the returned sha.  The warning is emitted via
+// printWarning (src/logging/color.ts line 108) which writes to
+// process.stdout.write — captured here by a temporary monkey-patch.
+
+/**
+ * SpawnFn that succeeds for all commit-tree/CAS plumbing, reports the branch
+ * as "main" (so syncWorktreeIfOnMain fires), then FAILS the git restore call.
+ */
+function makeFailingSyncSpawn(): SpawnFn {
+	return (cmd, args, _options) => {
+		if (args.includes('hash-object')) return ok(BLOB_SHA_1 + '\n');
+		if (args.includes('write-tree')) return ok(TREE_SHA + '\n');
+		if (args.includes('commit-tree')) return ok(COMMIT_SHA + '\n');
+		if (args.includes('update-ref')) return ok();
+		// Branch detection: current-branch == main -> sync branch fires.
+		if (args.includes('--abbrev-ref')) return ok('main\n');
+		// CAS re-read (belt-and-suspenders for retry path).
+		if (args.includes('rev-parse') && args.includes('main') && !args.includes('--abbrev-ref'))
+			return ok(MAIN_SHA + '\n');
+		// Sync subprocess: fail restore to exercise best-effort path.
+		if (args.includes('restore')) return fail('simulated restore failure');
+		return ok();
+	};
+}
+
+describe('commitTreeToMain — AC#6 failing sync: non-throwing, sha-stable, warning emitted', () => {
+	test(
+		'(AC1+AC2) does NOT throw, returns expected 7-char sha, AND emits a warning when restore fails',
+		() => {
+			const spawnFn = makeFailingSyncSpawn();
+			const captured: string[] = [];
+
+			// Temporarily monkey-patch process.stdout.write to capture printWarning output.
+			// printWarning writes: "\n✗ <msg>\n" via process.stdout.write (color.ts:108).
+			type StdoutWrite = (chunk: string | Uint8Array) => boolean;
+			const origWrite = process.stdout.write.bind(process.stdout);
+			(process.stdout as unknown as { write: StdoutWrite }).write = (chunk) => {
+				captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+				return true;
+			};
+
+			let result: string | undefined;
+			try {
+				// AC1: must not throw even though git restore fails.
+				expect(() => {
+					result = commitTreeToMain(CWD, [FILE_A], COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-');
+				}).not.toThrow();
+
+				// AC1: returned short sha must be unchanged by the failed sync step.
+				expect(result).toBe(COMMIT_SHA.substring(0, 7));
+			} finally {
+				(process.stdout as unknown as { write: typeof origWrite }).write = origWrite;
+			}
+
+			// AC2: a warning must have been written to stdout.
+			// printWarning calls: process.stdout.write(`\n${...✗ ${msg}...}\n`)
+			// The message passed is 'syncWorktreeIfOnMain: git restore failed'.
+			const combined = captured.join('');
+			expect(combined).toContain('syncWorktreeIfOnMain');
+		},
+	);
+});

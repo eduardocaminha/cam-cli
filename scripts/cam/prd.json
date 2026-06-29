@@ -57,7 +57,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Add to the existing unit suite test/on-main-multi.test.ts (reuse its ok()/fail() SpawnSyncReturns helpers at lines 52-60 and the makeHappySpawn recorder at lines 73-96). For the sync gate to be reached, the injected spawnFn must report current-branch == main for the `git rev-parse --abbrev-ref HEAD` call (so the sync branch fires) AND fail the `git restore` call. Assert the function returns COMMIT_SHA.substring(0,7) and that calling it does not throw (expect(() => ...).not.toThrow()). WARNING CAPTURE: src/git/on-main.ts emits the best-effort warning via printWarning/printError from src/logging/color.ts; printError writes to process.stderr.write and printWarning to process.stdout.write (color.ts lines 105-118), both spy-able in a Bun unit test. Capture the write sink (e.g. monkeypatch process.stderr.write / process.stdout.write around the call, restore in finally) and assert the warning string was written on sync failure. Match the AC to whichever sink US-001 actually uses. Do not add a story for documentation: covered by US-001 docstring AC."
     }
