@@ -1,0 +1,9 @@
+{
+  "id": "CAM-137",
+  "title": "on-main writers sujam a working tree quando rodados estando em main",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-06-29T03:59:46.132Z",
+  "description": "Os on-main writers (commitTreeToMain via src/git/on-main.ts) sao ref-only desde CAM-133: constroem a tree de read-tree main, avancam o ref do main, e NUNCA tocam a working tree/index. Correto quando voce esta numa feature branch (o ponto e escrever no main sem entangle a branch). MAS quando voce esta checked-out EM main e roda um on-main writer (cam triage, cam issue --file-local, cam journal append, cam spec/specify), o ref do main avanca enquanto a working tree + index ficam com os valores ANTIGOS. git status mostra os arquivos escritos como uma REVERSAO staged (index/worktree=valor antigo vs HEAD=valor novo). Riscos: um git commit / git add -A subsequente reverteria a escrita do writer (re-introduz o bug que o writer corrigiu); /cam-prune aborta em arvore suja. Workaround manual: git checkout HEAD -- <paths> apos rodar o writer. OBSERVADO AO VIVO 2026-06-29: cam triage rankeou 26 issues (commit bfc3fe0), deixou os 26 arquivos como reversao staged na working tree do orquestrador (estava em main); sincronizei a mao. Possivel fix: quando a branch atual == a branch alvo do on-main write (tipicamente main), o writer sincroniza working tree/index pro novo tree apos avancar o ref (checkout/reset dos paths escritos), ou no minimo avisa. Prioridade P2 (correctness/UX; nao corrompe o estado canonico, que vive no main HEAD). Relacionado: CAM-133 (on-main writers ref-only), CAM-90 (file-per-issue), CAM-108 (cam triage)."
+}
