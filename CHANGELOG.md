@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.23.0] - 2026-06-29
+
+### Added
+
+- US-001 - Surface branch-prune outcome in post-merge-done event and warn on prune failure
+
 ## [0.22.0] - 2026-06-29
 
 ### Added
