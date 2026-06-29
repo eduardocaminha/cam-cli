@@ -297,12 +297,13 @@ function verifyAgent(): AgentVerifyResult {
 // Template installation
 // ---------------------------------------------------------------------------
 
-function copyTemplates(cwd: string): void {
+export function copyTemplates(cwd: string): void {
 	const counts = materializeTemplates(cwd);
 	const targets: Array<{ subtree: keyof typeof counts; rel: string }> = [
 		{ subtree: 'commands', rel: '.claude/commands' },
 		{ subtree: 'agents', rel: '.claude/agents' },
 		{ subtree: 'scripts/cam', rel: 'scripts/cam' },
+		{ subtree: 'skills', rel: '.claude/skills' },
 	];
 	for (const { subtree, rel } of targets) {
 		printSuccess(`Installed ${counts[subtree]} file(s) → ${rel}`);

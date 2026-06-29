@@ -421,6 +421,41 @@ describe('materializeTemplates — hook is executable after materialization (US-
 	});
 });
 
+describe('materializeTemplates — skills/ subtree routing + count', () => {
+	let cwd: string;
+
+	beforeEach(() => {
+		cwd = mkdtempSync(join(tmpdir(), 'cam-skills-test-'));
+	});
+
+	afterEach(() => {
+		if (cwd && existsSync(cwd)) rmSync(cwd, { recursive: true, force: true });
+	});
+
+	test('5 known skill files exist under .claude/skills/', () => {
+		materializeTemplates(cwd);
+		expect(existsSync(join(cwd, '.claude', 'skills', 'domain-modeling', 'SKILL.md'))).toBe(true);
+		expect(
+			existsSync(join(cwd, '.claude', 'skills', 'domain-modeling', 'CONTEXT-FORMAT.md')),
+		).toBe(true);
+		expect(existsSync(join(cwd, '.claude', 'skills', 'domain-modeling', 'ADR-FORMAT.md'))).toBe(
+			true,
+		);
+		expect(existsSync(join(cwd, '.claude', 'skills', 'grill-with-docs', 'SKILL.md'))).toBe(true);
+		expect(existsSync(join(cwd, '.claude', 'skills', 'grilling', 'SKILL.md'))).toBe(true);
+	});
+
+	test('no skill file is written to the legacy <cwd>/skills/ location', () => {
+		materializeTemplates(cwd);
+		expect(existsSync(join(cwd, 'skills'))).toBe(false);
+	});
+
+	test('per-subtree count map includes skills key equal to 5', () => {
+		const counts = materializeTemplates(cwd);
+		expect(counts.skills).toBe(5);
+	});
+});
+
 describe('materializeEmbedded', () => {
 	let cacheDir: string;
 	let prevCache: string | undefined;
