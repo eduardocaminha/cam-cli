@@ -1,7 +1,7 @@
 {
   "id": "CAM-80",
   "title": "Geometria deterministica do worker-pane: openPaneInSession splita pane explicito (orquestrador) com tamanho fixo, nao o pane ativo (session:0 -v). Pre-req do CAM-65",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-25T14:03:57Z",
