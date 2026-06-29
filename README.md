@@ -8,7 +8,7 @@ long-lived orchestrator agent that drives `/cam-plan`, `/cam-next`,
 Built on Bun + TypeScript. Distributed as a single-file binary built from source.
 
 > **Status:** single-hub dispatch model live. `cam init` scaffolds the project,
-> `cam run` opens the single per-project session (2-pane layout: orchestrator + navigable dashboard), and CLI subcommands (`cam plan`, `cam issue`, `cam spec`, `cam review`, `cam ship`) are thin-proxies that inject into the orchestrator pane via atomic `send-keys`; `cam next` is a pure `active:true` sidecar trigger (no send-keys). Workers run in a titled 3rd pane; completion is push-based (worker writes a report file; the sidecar reads it and emits the `[cam]` narration line to the orchestrator). The orchestrator exit respawns on a token-budget handoff, otherwise tears down the session.
+> `cam run` opens the single per-project session (2-pane layout: orchestrator + navigable dashboard), and CLI subcommands (`cam plan`, `cam issue`, `cam spec`, `cam review`, `cam ship`) are thin-proxies that inject into the orchestrator pane via atomic `send-keys`; `cam next` is a pure `active:true` sidecar trigger (no send-keys). Workers run in a titled 3rd pane; completion is push-based (worker writes a report file; the sidecar reads it and emits the `[cam]` narration line to the orchestrator). The orchestrator exit respawns on a cycle-close handoff, otherwise tears down the session.
 
 ---
 
@@ -115,7 +115,7 @@ cam issue "add dark mode toggle to settings page"
 
 The orchestrator persists between sessions and accumulates project memory
 in `scripts/cam/journal.md`. When the orchestrator exits, the `cam run` wrapper
-respawns it from a token-budget handoff when one is pending, otherwise it tears
+respawns it from a cycle-close handoff when one is pending, otherwise it tears
 down the session. See `.claude/agents/subagent-orchestrator.md` for its full
 system prompt.
 
@@ -164,7 +164,7 @@ The session layout has two permanent panes plus an optional worker pane:
 `cam plan`, `cam issue`, `cam spec`, `cam review`, and `cam ship` are thin-proxies: they detect the active cam session, ensure the orchestrator is idle (`sendKeysWhenIdle`), and inject the corresponding slash command into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `cam run --no-attach` first. If a worker is already running (mutex: 3 panes present), the proxy refuses the dispatch and exits with code 1. From outside the session the proxy prints a contextual hint with the `cam run` attach command (suppressed inside the session). `cam next` is different: it flips `active:true` in the sidecar state file and returns immediately -- no idle check, no send-keys, no slash-command injection.
 
 When the orchestrator process in pane 0.0 exits, the `cam run` wrapper respawns it
-(rehydrating from a token-budget handoff) when one is pending and under the
+(rehydrating from a cycle-close handoff) when one is pending and under the
 respawn cap; otherwise it tears down the entire session (`tmux kill-session`).
 
 ### Recovery runbook: stale tmux server
@@ -291,7 +291,7 @@ Workers always run in the **titled 3rd pane** (created on first dispatch, reused
   project with a 2-pane layout (orchestrator + navigable dashboard). The navigable
   dashboard replaces the old interactive menu: n/r/s/p/i dispatch /cam-* to the
   orchestrator, j/k or arrows browse stories, Enter opens a story detail view.
-  The orchestrator exit respawns on a token-budget handoff, otherwise tears
+  The orchestrator exit respawns on a cycle-close handoff, otherwise tears
   down the session.
 - **Thin pane launchers**: `cam plan`, `cam issue`, and `cam spec` open a pane inside the
   project session and return 0 immediately (suppressing the attach hint when
