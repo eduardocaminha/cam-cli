@@ -19,7 +19,7 @@
         "Tests pass (bun test); behavior is unchanged because the function was never invoked. [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/commands/issue-specify.ts. The dead function is at ~line 261: `function buildMergeDescription(existing: string | undefined, intoId: string): string { ... }`. It is module-PRIVATE (not exported), which is why knip (knip.json excludes 'exports') and tsc (noUnusedLocals:false) both miss it. Verified live: `grep -rn buildMergeDescription src/ test/` returns EXACTLY ONE hit (the definition); ZERO callers. mergeIssueOnMain builds the merge note inline in buildMergeFiles, not via this function. The body references only template-string interpolation (`Merged into ${intoId}.`), no imports or private helpers, so removal orphans nothing; still re-verify via typecheck. Context: flagged as an out-of-scope SUGGESTION during the CAM-133 review; the dead code predates the CAM-133 branch (already in main). Surgical removal only: do NOT touch buildMergeFiles, mergeIssueOnMain, emitStagePromoted, or any other code."
     }

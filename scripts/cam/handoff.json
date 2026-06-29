@@ -1,0 +1,19 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Remove dead buildMergeDescription function"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/issue-specify.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "All stories in this PRD are now passes:true. No further implementation needed.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
