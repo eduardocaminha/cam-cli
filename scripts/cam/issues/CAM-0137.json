@@ -1,9 +1,41 @@
 {
   "id": "CAM-137",
   "title": "on-main writers sujam a working tree quando rodados estando em main",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-29T03:59:46.132Z",
-  "description": "Os on-main writers (commitTreeToMain via src/git/on-main.ts) sao ref-only desde CAM-133: constroem a tree de read-tree main, avancam o ref do main, e NUNCA tocam a working tree/index. Correto quando voce esta numa feature branch (o ponto e escrever no main sem entangle a branch). MAS quando voce esta checked-out EM main e roda um on-main writer (cam triage, cam issue --file-local, cam journal append, cam spec/specify), o ref do main avanca enquanto a working tree + index ficam com os valores ANTIGOS. git status mostra os arquivos escritos como uma REVERSAO staged (index/worktree=valor antigo vs HEAD=valor novo). Riscos: um git commit / git add -A subsequente reverteria a escrita do writer (re-introduz o bug que o writer corrigiu); /cam-prune aborta em arvore suja. Workaround manual: git checkout HEAD -- <paths> apos rodar o writer. OBSERVADO AO VIVO 2026-06-29: cam triage rankeou 26 issues (commit bfc3fe0), deixou os 26 arquivos como reversao staged na working tree do orquestrador (estava em main); sincronizei a mao. Possivel fix: quando a branch atual == a branch alvo do on-main write (tipicamente main), o writer sincroniza working tree/index pro novo tree apos avancar o ref (checkout/reset dos paths escritos), ou no minimo avisa. Prioridade P2 (correctness/UX; nao corrompe o estado canonico, que vive no main HEAD). Relacionado: CAM-133 (on-main writers ref-only), CAM-90 (file-per-issue), CAM-108 (cam triage)."
+  "description": "Os on-main writers (commitTreeToMain via src/git/on-main.ts) sao ref-only desde CAM-133: constroem a tree de read-tree main, avancam o ref do main, e NUNCA tocam a working tree/index. Correto quando voce esta numa feature branch (o ponto e escrever no main sem entangle a branch). MAS quando voce esta checked-out EM main e roda um on-main writer (cam triage, cam issue --file-local, cam journal append, cam spec/specify), o ref do main avanca enquanto a working tree + index ficam com os valores ANTIGOS. git status mostra os arquivos escritos como uma REVERSAO staged (index/worktree=valor antigo vs HEAD=valor novo). Riscos: um git commit / git add -A subsequente reverteria a escrita do writer (re-introduz o bug que o writer corrigiu); /cam-prune aborta em arvore suja. Workaround manual: git checkout HEAD -- <paths> apos rodar o writer. OBSERVADO AO VIVO 2026-06-29: cam triage rankeou 26 issues (commit bfc3fe0), deixou os 26 arquivos como reversao staged na working tree do orquestrador (estava em main); sincronizei a mao. Possivel fix: quando a branch atual == a branch alvo do on-main write (tipicamente main), o writer sincroniza working tree/index pro novo tree apos avancar o ref (checkout/reset dos paths escritos), ou no minimo avisa. Prioridade P2 (correctness/UX; nao corrompe o estado canonico, que vive no main HEAD). Relacionado: CAM-133 (on-main writers ref-only), CAM-90 (file-per-issue), CAM-108 (cam triage).",
+  "spec": {
+    "scope": "Conserta o footgun de worktree-desync dos on-main writers redefinindo o invariante de commitTreeToMain de 'nunca toca a working tree' para 'deixa a working tree checked-out coerente com o HEAD dela apos a chamada'. DENTRO: extrair um helper syncWorktreeIfOnMain(cwd, paths, spawnFn) em src/git/on-main.ts e chama-lo como passo final de commitTreeToMain apos um CAS update-ref bem-sucedido; gate do sync em current-branch == main; path-scoped sobre exatamente files++removals (add/mod/del); best-effort (falha de sync avisa, nunca throwa, nunca muda o sha retornado); atualizar a docstring de commitTreeToMain para o invariante de coerencia. Os 6 call-sites existentes (issue-specify x3, triage, journal x2) e callers futuros herdam o fix do choke-point unico. FORA: a logica de CAS/atomic-commit e o guard checkMainUpToDate (inalterados); o comportamento off-main em feature branch (deve seguir byte-identico, regression-guarded); os casos detached-HEAD e diverged (ja rejeitados pelo guard); qualquer flag ou config nova (o sync e incondicional, gated so pela deteccao de branch); o tratamento de edicoes manuais nao-commitadas nos mesmos paths sendo escritos (o conteudo do writer, lido do main, vence; fora de escopo).",
+    "acceptanceCriteria": [
+      "src/git/on-main.ts exporta um helper syncWorktreeIfOnMain que recebe (cwd, paths, spawnFn) e commitTreeToMain o chama como passo final apos um CAS update-ref bem-sucedido.",
+      "Teste de integracao real-git: apos commitTreeToMain adicionar um arquivo novo num repo checked-out em main, git status --porcelain fica vazio e o arquivo novo existe na working tree com o conteudo do HEAD.",
+      "Teste de integracao real-git: apos commitTreeToMain modificar um arquivo tracked existente em main, a working tree mostra o conteudo novo e git status --porcelain fica vazio (sem reversao staged).",
+      "Teste de integracao real-git: apos commitTreeToMain remover um path (via o arg removals) em main, o arquivo some da working tree e git status --porcelain fica vazio.",
+      "Teste de integracao real-git (regressao): apos commitTreeToMain rodar numa feature branch (HEAD != main), a working tree e o HEAD da feature branch ficam inalterados e a escrita pousa so em refs/heads/main.",
+      "Teste unitario: com um spawnFn injetado que falha o subprocesso de sync, commitTreeToMain ainda retorna o short sha de 7 chars da escrita commitada e nao throwa; um warning e exibido.",
+      "A docstring de commitTreeToMain enuncia o invariante de coerencia (off-main intocada, on-main sincronizada) e nao afirma mais que a working tree e sempre deixada completamente intocada."
+    ],
+    "gotchas": [
+      "O sync DEVE ser path-scoped sobre exatamente files++removals, nunca git reset --hard, para nao clobberar edicoes nao-commitadas e nao-relacionadas na working tree.",
+      "git checkout HEAD -- <path> NAO deleta arquivos ausentes do HEAD; delecoes precisam de uma primitiva que remova a entrada de worktree+index (ex.: git restore --staged --worktree --source=HEAD -- <paths>, que trata add/mod/del de forma uniforme). Verificar contra uma fixture de delecao (AC #4).",
+      "Detached-HEAD e diverged ja sao rejeitados por checkMainUpToDate; o sync so trata attached-HEAD-on-main. Nao re-implementar esses guards.",
+      "O alvo on-main e o literal refs/heads/main; o gate do sync e current-branch == main, nao um alvo configuravel.",
+      "Os testes on-main existentes rodam off-main (HEAD != main), entao o ramo de sync e inerte neles e eles seguem verdes; adicionar fixtures novas que dao checkout em main. Fixtures ASCII servem aqui (nao e path de byte-parsing, diferente do CAM-90).",
+      "Isso renova o proposito de branchWasMain (computado por checkMainUpToDate, behavior-vestigial desde CAM-133). commitTreeToMain pode self-detectar o branch ou consumir branchWasMain; se self-detectar, o branchWasMain por-comando pode virar dead code de vez (cleanup candidato, nao exigido por esta issue)."
+    ],
+    "domainTerms": [
+      "on-main writer: comando que muta estado canonico em refs/heads/main via commit-tree plumbing sem dar checkout em main (issue-file, issue-specify, journal append, triage).",
+      "invariante de coerencia (commitTreeToMain): apos a chamada a working tree checked-out bate com o HEAD dela; off-main fica intocada, on-main fica sincronizada com o ref avancado.",
+      "worktree desync: o estado stale onde refs/heads/main avancou debaixo de uma working tree de main checked-out, deixando index+worktree mostrando a escrita como uma reversao staged.",
+      "path-scoped sync: restaurar apenas os paths escritos/removidos a partir do HEAD, nunca um reset global, para que edicoes nao-relacionadas na working tree sobrevivam."
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 3,
+    "riskReduction": 4,
+    "jobSize": 2
+  }
 }
