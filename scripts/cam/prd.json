@@ -20,7 +20,7 @@
         "Full check gate passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file, doc-only (shell comment) change. ONLY touches scripts/build-release.sh. The exact edit is on line 108: change 'Canonical rule: lessons.md 2026-06-06' to 'Canonical rule: lessons.archive.md 2026-06-06'. Verified live: grep -n lessons scripts/build-release.sh returns exactly one hit at line 108; the comment continues on line 109 ('mutating command in a build smoke); the 2026-06-13 entry records this fix.') which is unaffected. lessons.md no longer exists in the repo (only lessons.archive.md at repo root) per the CAM-123 retirement documented in scripts/cam/CLAUDE.md (AC#7 of CAM-123 forbade editing .sh, so build-release.sh was deliberately left stale). typecheck/bun test are inert for a .sh comment but are listed defensively per agent contract; the DISCRIMINATING oracle is the file-assert grep that must distinguish 'lessons.md' from 'lessons.archive.md' (do not let the archive ref satisfy the bare-lessons.md check). Do NOT touch any code, TS, or other file. Surgical 1-line edit only."
     }
