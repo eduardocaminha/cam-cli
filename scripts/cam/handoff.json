@@ -1,19 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Pure injectable observe decide-fn with dedup + drained detection"
+    "id": "US-004",
+    "title": "Wire observe drainer into the sidecar idle-tick (off byte-identical)"
   },
   "createdFiles": [
-    "src/supervisor/observe.ts",
-    "test/supervisor/observe.test.ts"
+    "test/commands/sidecar-meta-loop.test.ts"
   ],
   "modifiedFiles": [
-    "src/issues/rank.ts",
+    "src/supervisor/loop.ts",
+    "src/commands/sidecar.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added src/supervisor/observe.ts exporting observeDecide(selected: IssueEntry | null, lastState: ObserveState) => ObserveDecideResult | null and the ObserveState/ObserveDecideResult types. computeWsjf was exported (from private) in src/issues/rank.ts for reuse. 13 tests in test/supervisor/observe.test.ts cover AC2-AC5 (plannable path, drained path, dedup, re-emit on change). US-004 (selectPlannableFromFile I/O seam integration) should wire the decide-fn to the real file selector via the injected selectPlannableFromFile from src/issues/select.ts.",
+  "nextStoryContext": "US-004 added runMetaLoopObserveFn to RunSidecarLoopOptions and wired it in the active!==true idle branch of runSidecarLoop, gated on hasPendingStories() to prevent observe during an in-flight PRD cycle. The production factory makeProductionMetaLoopObserveFn in sidecar.ts calls selectPlannableFromFile (MAIN backlog) + observeDecide + logEvent when meta_loop=observe; undefined when off. makeProductionEscalateFn was extracted to keep buildSidecarLoopDeps under biome complexity limit. US-005 (Notify-on-drain via Resend) should build on the meta-loop-observe event emitted by this story.",
   "officialDocsValidated": [
     {
       "lib": "none",
