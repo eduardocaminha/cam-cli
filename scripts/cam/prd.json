@@ -1,0 +1,78 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-96-hook-fail-closed-jq",
+  "description": "Make the DENY path of orch-agent-allowlist.sh fail closed when jq is absent, instead of fail-open (Task/Agent spawn proceeds).",
+  "issueNumber": 96,
+  "relatedDocs": [
+    "docs/recovery-runbook.md",
+    "scripts/cam/CLAUDE.md",
+    ".claude/hooks/orch-agent-allowlist.sh",
+    "test/orch-agent-allowlist.test.ts"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Claude Code PreToolUse hooks",
+      "url": "https://code.claude.com/docs/en/hooks",
+      "version": "2026-06 (live)",
+      "fetchedAt": "2026-06-29T00:00:00Z",
+      "summary": "PreToolUse exit-code semantics: exit 0 + valid JSON stdout -> Claude processes permissionDecision (deny/allow/ask/defer); exit 2 -> blocking error, stdout ignored, stderr fed back, tool BLOCKED; other non-zero (e.g. 127 from a missing jq) -> non-blocking error, tool PROCEEDS (this is the fail-open). Therefore a static printf deny JSON + exit 0, or exit 2, both fail closed.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add fail-closed jq-absence guard to the runtime hook + deny-without-jq test",
+      "description": "As the cam capability gate, I need the runtime allowlist hook to emit a static deny (exit 0) when jq is absent, so that a missing jq denies every Task/Agent spawn instead of failing open and bypassing the whole gate.",
+      "acceptanceCriteria": [
+        "In .claude/hooks/orch-agent-allowlist.sh, AFTER the CAM_SESSION scope gate (line ~31-33) and AFTER the payload=\"$(cat)\" read (line ~36), there is an early guard `if ! command -v jq >/dev/null 2>&1; then ... exit 0; fi` that prints a static deny JSON via printf (not via jq) when jq is unavailable. [oracle: grep -Eq 'command -v jq' .claude/hooks/orch-agent-allowlist.sh]",
+        "The static deny JSON emitted by the printf guard is valid JSON with hookSpecificOutput.hookEventName=\"PreToolUse\" and hookSpecificOutput.permissionDecision=\"deny\". [oracle: file-assert printf '{\"tool_input\":{\"subagent_type\":\"x\"}}' piped to the hook under a jq-free PATH parses as JSON with permissionDecision==\"deny\"; covered by the new test below]",
+        "The existing jq extraction read (line ~42-44), the ALLOW `case` block (line ~47-52), and the trailing `jq -n` deny emission (line ~55-68) remain byte-identical to the pre-change file (surgical: only the new guard and the header comment are added). [oracle: reviewer-judgment]",
+        "The hook header comment block (lines ~17-26) documents the fail-closed-without-jq behavior: when jq is absent the hook emits a static deny and exits 0, denying every spawn. [oracle: grep -Eq 'fail.?closed|denies every|static deny' .claude/hooks/orch-agent-allowlist.sh]",
+        "A new test in test/orch-agent-allowlist.test.ts exercises the deny-without-jq path. Unlike every existing test (which uses test.skipIf(!jqAvailable)), this test RUNS even when jq IS present: it simulates jq-absence by spawning the hook with a restricted PATH that excludes jq (e.g. a mkdtemp dir symlinking only the binaries bash needs, like cat) and invoking via an absolute bash path (/bin/bash HOOK) so bash itself does not need PATH to be resolved. [oracle: grep -Eq 'command -v jq|jq-free|restricted PATH|without jq' test/orch-agent-allowlist.test.ts]",
+        "That new test asserts the result is a valid deny JSON (hookSpecificOutput.permissionDecision===\"deny\") AND exitCode===0. [oracle: bun test test/orch-agent-allowlist.test.ts]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/hooks/orch-agent-allowlist.sh (add guard + header comment), test/orch-agent-allowlist.test.ts (add one deny-without-jq test). Read scripts/cam/patterns.md bullets: 'PreToolUse deny contract + defensive subagent_type read (CAM-91)', 'Bun.spawn stdin/stdout pattern for shell-script integration tests (CAM-91)', 'CAM_SESSION scope-gate pattern for hooks (CAM-102)'. GOTCHA: existing tests skip when jq absent; the NEW test must do the OPPOSITE (run with jq present, simulate absence by spawning with a PATH that excludes jq). Spawn the hook via an absolute bash path (/bin/bash) so bash resolution does not depend on the restricted PATH; the restricted PATH only needs the binaries the hook uses before the guard (cat). The hook still needs CAM_SESSION set (scope gate) for the guard to be reached. Per Claude Code hooks spec (officialDocsConsulted): exit 0 + deny JSON = fail-closed; a missing jq otherwise exits 127 (non-blocking error) and the spawn PROCEEDS (fail-open). The static deny printf must produce the same hookSpecificOutput shape as the jq -n deny. patterns.md: append a bullet on fail-closed-without-jq if a durable insight emerges."
+    },
+    {
+      "id": "US-002",
+      "title": "Mirror the guard into the template copy and re-embed the vendor",
+      "description": "As the cam init template pipeline, I need templates/.claude/hooks/orch-agent-allowlist.sh to carry the same fail-closed guard and the embedded vendor copy to be regenerated, so that newly-initialized projects inherit the fail-closed hook and the drift gate stays green.",
+      "acceptanceCriteria": [
+        "templates/.claude/hooks/orch-agent-allowlist.sh receives the IDENTICAL edit applied to the runtime copy in US-001 (same guard, same header comment change). [oracle: diff -q .claude/hooks/orch-agent-allowlist.sh templates/.claude/hooks/orch-agent-allowlist.sh]",
+        "The two hook copies remain byte-identical after the edit. [oracle: diff -q .claude/hooks/orch-agent-allowlist.sh templates/.claude/hooks/orch-agent-allowlist.sh]",
+        "src/vendor/_generated.ts is regenerated (bun run embed-vendor) so the embedded template hook matches the on-disk template copy. [oracle: bun run embed-vendor:check]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "test/embedded.test.ts asserts the embedded template hook (templatesContents['.claude/hooks/orch-agent-allowlist.sh']) contains the `command -v jq` fail-closed guard, so a future drop of the guard from the embedded copy fails the test. [oracle: grep -Eq 'command -v jq' test/embedded.test.ts]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: templates/.claude/hooks/orch-agent-allowlist.sh (apply the SAME edit as US-001), src/vendor/_generated.ts (regenerate via `bun run embed-vendor`, do NOT hand-edit), test/embedded.test.ts (add an assertion on templatesContents['.claude/hooks/orch-agent-allowlist.sh']). GOTCHA (memory: cam-dual-copy-is-per-file): the two copies are currently byte-identical (verified via diff -q at spec time) and MUST stay byte-identical; diff before assuming. The embed map key is the relative path '.claude/hooks/orch-agent-allowlist.sh' inside templatesContents (src/templates/embedded.ts). Run `bun run embed-vendor` to regenerate, then `bun run embed-vendor:check` must be green. The embedded byte-parity test in test/embedded.test.ts ('matches every file under templates/ byte-for-byte') already guards parity; add a content-level guard pinning the jq guard string so a future regen that drops it is caught. patterns.md bullet 'cam dual-copy is per-file (CAM-123)' applies."
+    },
+    {
+      "id": "US-003",
+      "title": "Update recovery-runbook (q) and hook docs to state fail-closed-without-jq",
+      "description": "As an operator diagnosing a denied spawn, I need docs/recovery-runbook.md section (q) and the hook docs to accurately state that the DENY path fails closed without jq, so that the stale claim that jq-absence bypasses the gate (fail-open) is removed.",
+      "acceptanceCriteria": [
+        "docs/recovery-runbook.md section (q) is updated so it no longer implies jq-absence makes the hook fail open or bypass the gate; the `which jq` diagnostic (lines ~1222-1229) is reframed to state that without jq the hook DENIES every Task/Agent spawn (fail-closed), while jq remains used for the ALLOW/extraction path. [oracle: grep -Eq 'fail.?closed|denies (every|all)|without jq' docs/recovery-runbook.md]",
+        "docs/recovery-runbook.md contains no remaining claim that jq-absence causes the spawn to proceed / fail open / bypass the gate. [oracle: file-assert manual grep confirms no 'fail open' / 'bypass' phrasing tied to jq-absence remains in section (q)]",
+        "If scripts/cam/CLAUDE.md contains any text stating jq as a hard precondition or implying fail-open without jq, it is corrected to match the fail-closed behavior; if no such text exists, the file is left unchanged (verified by grep showing no fail-open-without-jq claim). [oracle: grep -L is not applicable; reviewer-judgment that scripts/cam/CLAUDE.md carries no stale fail-open-without-jq claim]",
+        "The documentation accurately describes the US-001 runtime behavior: DENY path fails closed (static deny, exit 0) when jq is absent; jq is still used for ALLOW/extraction so without it the hook denies everything rather than failing open. [oracle: reviewer-judgment]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Files: docs/recovery-runbook.md section (q) 'CAM-102: orchestrator Task spawn denied by the agent-allowlist hook' (lines ~1140-1311; the jq precondition framing is at the Diagnosing step 3 sub-bullet, lines ~1222-1229: `which jq # must be on PATH`). scripts/cam/CLAUDE.md was grepped at spec time and has NO jq/fail-open text, so likely no change there (leave unchanged if still true; do not invent a claim to edit). This is the CLAUDE.md section 7 doc-maintenance story: behavior changed in US-001, so the doc that describes it must change in the same PRD. Do NOT leave a stale claim that jq-absence bypasses the gate. The hook header comment is already covered by US-001; here only the runbook (and CLAUDE.md if it has the stale claim) is in scope. Knowledge-layer routing: this is a doc fix, not a new pattern; no patterns.md bullet required unless a durable insight emerges."
+    }
+  ]
+}
