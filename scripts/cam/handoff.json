@@ -1,21 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Correct stale no-linter claim in subagent-auditor item 19 (.claude/agents)"
+    "id": "US-003",
+    "title": "Correct stale no-linter claim in subagent-implementer quality gates (.claude/agents)"
   },
   "branchName": "cam/CAM-114-stale-no-linter-docs",
   "timestamp": "2026-06-29T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-auditor.md"
+    ".claude/agents/subagent-implementer.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 corrected scripts/cam/CLAUDE.md. US-002 corrected .claude/agents/subagent-auditor.md item 19: biome lint (biome.json) + bun run check:all / bun run lint is now stated as the live gate CI runs; planners/auditors must require it. The templates/agents/ mirror was intentionally NOT edited (it carries only the generic skeleton). Subsequent stories in this PRD may touch other harness docs; apply the same pattern (correct the runtime .claude/ copy, verify templates/ is generic and untouched, keep embed-vendor:check green).",
+  "nextStoryContext": "US-001 corrected scripts/cam/CLAUDE.md. US-002 corrected .claude/agents/subagent-auditor.md item 19. US-003 corrected .claude/agents/subagent-implementer.md line ~93: removed 'There is no separate lint command; the typecheck is the static gate. Do not invent one.' and replaced with biome lint IS configured (biome.json) + bun run check:all / bun run lint as the live lint/static gate. Templates mirror was intentionally NOT edited (no stale text; embed-vendor:check stays green). Check remaining stories in prd.json for further stale-linter corrections in other harness docs.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure docs correction in .claude/agents/subagent-auditor.md item 19; no external library was exercised."
+      "summary": "Pure docs correction in .claude/agents/subagent-implementer.md line ~93; no external library was exercised."
     }
   ]
 }

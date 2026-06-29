@@ -59,7 +59,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit ONLY .claude/agents/subagent-implementer.md, the gate list under '## What you do for the story' / step 2, line ~93. Current stale bullet: '   - There is **no** separate lint command in this repo; the typecheck is the static gate. Do not invent one.' Rewrite it to: biome lint IS configured (`biome.json`) and `bun run check:all` (which runs `bunx biome lint --error-on-warnings`, wired CAM-60) / `bun run lint` is the live lint/static gate the agent MUST run alongside typecheck and test. Match the corrected wording used in US-001/US-002. This is the auditor's F-01 CRITICAL: this agent actually runs per-story gates and was explicitly told NOT to run lint, directly contradicting CAM-114's goal. Ground truth verified: package.json `\"lint\": \"bunx biome lint --error-on-warnings\"`, `\"check:all\": \"bun scripts/check-all.ts\"`, biome.json exists. DUAL-COPY CAVEAT (CAM-123, verified by grep): templates/agents/subagent-implementer.md IS embedded (keyed 'agents/subagent-implementer.md' in src/vendor/_generated.ts) BUT carries NO stale linter text, so do NOT edit it and do NOT re-embed; embed-vendor:check is a SAFETY oracle that must stay green. Removal oracles grounded against the real line 93: 'no.*separate lint command' and 'Do not invent one' both currently match. Self-hosting: this story explicitly declares the edit to .claude/agents/subagent-implementer.md (intentional)."
     },
