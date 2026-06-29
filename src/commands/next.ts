@@ -167,6 +167,12 @@ export interface NextOptions {
 	sleepFn?: (ms: number) => void;
 	/** Total poll budget for waitForOrchestrator (ms). Default 60 000. */
 	waitTimeoutMs?: number;
+	/**
+	 * Override the function used to write the state file.
+	 * Defaults to `writeStateFile`. Tests inject a throwing function to
+	 * exercise the write-failure error path.
+	 */
+	writeFn?: (cwd: string, body: string, opts: { force?: boolean }) => string;
 }
 
 // --- Internal helpers -------------------------------------------------------
@@ -300,10 +306,15 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 				lastActivity: now,
 			});
 		}
-		writeStateFile(cwd, newBody, { force: true });
+		(options.writeFn ?? writeStateFile)(cwd, newBody, { force: true });
 		emitMutedHint('Sidecar trigger: active:true written to .claude/cam-loop.local.md');
-	} catch {
-		// Non-fatal: the sidecar will still pick up the next active flag write.
+	} catch (err) {
+		printError(
+			'Failed to write active:true to .claude/cam-loop.local.md',
+			err instanceof Error ? err.message : String(err),
+		);
+		emitTrailingBlank();
+		return 1;
 	}
 
 	emitOk(`Sidecar trigger written (active:true); orchestrator pane ${orchPaneId} ready`);
