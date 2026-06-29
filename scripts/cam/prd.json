@@ -1,0 +1,28 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-126-lessons-archive-pointer",
+  "description": "Repoint the stale lessons.md comment pointer in build-release.sh to lessons.archive.md (CAM-123 retirement).",
+  "issueNumber": 126,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Repoint stale lessons.md comment to lessons.archive.md",
+      "description": "As a maintainer reading build-release.sh, I need the canonical-rule comment to point at the file that actually exists (lessons.archive.md) so that the pointer is not stale after the CAM-123 retirement.",
+      "acceptanceCriteria": [
+        "The comment at scripts/build-release.sh:108 references lessons.archive.md (the archived file from CAM-123), not the retired lessons.md. [oracle: file-assert grep -q 'Canonical rule: lessons.archive.md 2026-06-06' scripts/build-release.sh]",
+        "No bare stale pointer to lessons.md (one not part of lessons.archive.md) remains anywhere in scripts/build-release.sh. [oracle: file-assert ! grep -Eq '(^|[^.])lessons\\.md' scripts/build-release.sh]",
+        "Only the pointer text changed: the comment still records the same canonical rule date and intent (no mutating command in a build smoke; 2026-06-13 entry note). [oracle: file-assert grep -q 'no mutating command in a build smoke' scripts/build-release.sh]",
+        "The single lessons reference in the file resolves to the archive file. [oracle: file-assert test \"$(grep -c lessons scripts/build-release.sh)\" -eq 1 && grep -q 'lessons.archive.md' scripts/build-release.sh]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full check gate passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single-file, doc-only (shell comment) change. ONLY touches scripts/build-release.sh. The exact edit is on line 108: change 'Canonical rule: lessons.md 2026-06-06' to 'Canonical rule: lessons.archive.md 2026-06-06'. Verified live: grep -n lessons scripts/build-release.sh returns exactly one hit at line 108; the comment continues on line 109 ('mutating command in a build smoke); the 2026-06-13 entry records this fix.') which is unaffected. lessons.md no longer exists in the repo (only lessons.archive.md at repo root) per the CAM-123 retirement documented in scripts/cam/CLAUDE.md (AC#7 of CAM-123 forbade editing .sh, so build-release.sh was deliberately left stale). typecheck/bun test are inert for a .sh comment but are listed defensively per agent contract; the DISCRIMINATING oracle is the file-assert grep that must distinguish 'lessons.md' from 'lessons.archive.md' (do not let the archive ref satisfy the bare-lessons.md check). Do NOT touch any code, TS, or other file. Surgical 1-line edit only."
+    }
+  ]
+}
