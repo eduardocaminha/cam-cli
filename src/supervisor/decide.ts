@@ -39,11 +39,18 @@ export interface PrdSnapshot {
 export type SupervisorAction =
 	| { kind: 'implement'; storyId: string }
 	| { kind: 'review' }
-	| { kind: 'complete' }
+	/** Terminal: all non-operator stories pass and review is terminal.
+	 *  When the cap was reached with a non-terminal pending verdict (e.g.
+	 *  'FIXES_PENDING:1'), promoteVerdictTo signals the caller must persist
+	 *  'MAX_ROUNDS_DEBT' as the stored lastVerdict (the function itself is pure
+	 *  and cannot write prd.review). Absent when lastVerdict is already terminal
+	 *  ('CLEAN' or 'MAX_ROUNDS_DEBT') or null. */
+	| { kind: 'complete'; promoteVerdictTo?: 'MAX_ROUNDS_DEBT' }
 	/** All implementable work is done and reviewed clean; one or more
 	 *  operator-required ceremonies remain. The autonomous loop stops and hands
-	 *  off to the operator. Carries the ids of the pending operator stories. */
-	| { kind: 'await-operator'; pendingStoryIds: string[] }
+	 *  off to the operator. Carries the ids of the pending operator stories.
+	 *  promoteVerdictTo follows the same contract as the 'complete' variant. */
+	| { kind: 'await-operator'; pendingStoryIds: string[]; promoteVerdictTo?: 'MAX_ROUNDS_DEBT' }
 	/** Degenerate guard: an implementable story exists but has no id. */
 	| { kind: 'blocked-no-implementable' };
 
@@ -122,14 +129,26 @@ export function decideNextAction(prd: PrdSnapshot): SupervisorAction {
 		return { kind: 'review' };
 	}
 
+	// Promotion signal: when the cap is the trigger for review-terminal AND
+	// lastVerdict is a non-null, non-terminal value (e.g. 'FIXES_PENDING:1'),
+	// the caller (loop.ts, US-002) must persist 'MAX_ROUNDS_DEBT' as the stored
+	// lastVerdict. decideNextAction is pure (no I/O), so it signals via the
+	// return value rather than writing prd.review directly.
+	// Not set when lastVerdict is already terminal ('CLEAN' / 'MAX_ROUNDS_DEBT')
+	// or null (nothing to promote).
+	const promoteVerdictTo: 'MAX_ROUNDS_DEBT' | undefined =
+		roundsCompleted >= maxRounds && lastVerdict !== null && !TERMINAL_VERDICTS.has(lastVerdict)
+			? 'MAX_ROUNDS_DEBT'
+			: undefined;
+
 	// --- 3. Review terminal but operator ceremonies remain -> await operator ---
 	if (operatorIncomplete.length > 0) {
 		const pendingStoryIds = operatorIncomplete
 			.map((s) => s.id)
 			.filter((id): id is string => typeof id === 'string' && id.length > 0);
-		return { kind: 'await-operator', pendingStoryIds };
+		return { kind: 'await-operator', pendingStoryIds, promoteVerdictTo };
 	}
 
 	// --- 4. All stories pass (incl. operator) AND review terminal -> complete ---
-	return { kind: 'complete' };
+	return { kind: 'complete', promoteVerdictTo };
 }

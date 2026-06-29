@@ -252,7 +252,7 @@ describe('await-operator', () => {
 		expect(action).toEqual({ kind: 'await-operator', pendingStoryIds: ['US-002'] });
 	});
 
-	test('review cap reached (non-terminal verdict) but operator pending -> await-operator', () => {
+	test('review cap reached (non-terminal verdict) but operator pending -> await-operator with promotion', () => {
 		const prd: PrdSnapshot = {
 			userStories: [
 				makeStory('US-001', 1, true),
@@ -261,7 +261,11 @@ describe('await-operator', () => {
 			review: { roundsCompleted: 3, maxRounds: 3, lastVerdict: 'FIXES_PENDING' },
 		};
 		const action = decideNextAction(prd);
-		expect(action).toEqual({ kind: 'await-operator', pendingStoryIds: ['US-002'] });
+		expect(action).toEqual({
+			kind: 'await-operator',
+			pendingStoryIds: ['US-002'],
+			promoteVerdictTo: 'MAX_ROUNDS_DEBT',
+		});
 	});
 
 	test('multiple operator stories pending -> all ids returned', () => {
@@ -321,7 +325,7 @@ describe('complete', () => {
 		expect(action).toEqual({ kind: 'complete' });
 	});
 
-	test('returns complete when roundsCompleted >= maxRounds (cap row) even if lastVerdict is not terminal', () => {
+	test('returns complete with promotion when roundsCompleted >= maxRounds and lastVerdict is not terminal', () => {
 		const prd: PrdSnapshot = {
 			userStories: [makeStory('US-001', 1, true)],
 			review: {
@@ -331,7 +335,7 @@ describe('complete', () => {
 			},
 		};
 		const action = decideNextAction(prd);
-		expect(action).toEqual({ kind: 'complete' });
+		expect(action).toEqual({ kind: 'complete', promoteVerdictTo: 'MAX_ROUNDS_DEBT' });
 	});
 
 	test('returns complete when roundsCompleted exceeds maxRounds', () => {
@@ -347,7 +351,7 @@ describe('complete', () => {
 		expect(action).toEqual({ kind: 'complete' });
 	});
 
-	test('cap row: uses default maxRounds=3 when review.maxRounds is absent', () => {
+	test('cap row: uses default maxRounds=3 when review.maxRounds is absent, includes promotion for pending verdict', () => {
 		const prd: PrdSnapshot = {
 			userStories: [makeStory('US-001', 1, true)],
 			review: {
@@ -357,7 +361,7 @@ describe('complete', () => {
 			},
 		};
 		const action = decideNextAction(prd);
-		expect(action).toEqual({ kind: 'complete' });
+		expect(action).toEqual({ kind: 'complete', promoteVerdictTo: 'MAX_ROUNDS_DEBT' });
 	});
 
 	test('cap row: default roundsCompleted=0 does not trigger cap when no review block', () => {
@@ -391,5 +395,92 @@ describe('implement takes priority over review/complete', () => {
 		};
 		const action = decideNextAction(prd);
 		expect(action).toEqual({ kind: 'implement', storyId: 'US-002' });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// promoteVerdictTo: MAX_ROUNDS_DEBT promotion signal (US-001 acceptance criteria)
+// ---------------------------------------------------------------------------
+// When the cap is reached and lastVerdict is a non-null, non-terminal value
+// (e.g. 'FIXES_PENDING' or 'FIXES_PENDING:1'), the returned terminal action
+// carries promoteVerdictTo: 'MAX_ROUNDS_DEBT' so the caller (loop.ts) can
+// persist the debt state without decideNextAction doing any I/O.
+
+describe('promoteVerdictTo signal', () => {
+	test('complete at cap with FIXES_PENDING:1 carries promoteVerdictTo', () => {
+		// The new bug case: cap reached with a FIXES_PENDING:K verdict.
+		// The loop must promote the stored verdict to MAX_ROUNDS_DEBT.
+		const prd: PrdSnapshot = {
+			userStories: [makeStory('US-001', 1, true)],
+			review: {
+				roundsCompleted: 3,
+				maxRounds: 3,
+				lastVerdict: 'FIXES_PENDING:1',
+			},
+		};
+		const action = decideNextAction(prd);
+		expect(action).toEqual({ kind: 'complete', promoteVerdictTo: 'MAX_ROUNDS_DEBT' });
+	});
+
+	test('await-operator at cap with FIXES_PENDING:1 carries promoteVerdictTo', () => {
+		const prd: PrdSnapshot = {
+			userStories: [
+				makeStory('US-001', 1, true),
+				makeStory('US-002', 2, false, 'operator'),
+			],
+			review: {
+				roundsCompleted: 3,
+				maxRounds: 3,
+				lastVerdict: 'FIXES_PENDING:1',
+			},
+		};
+		const action = decideNextAction(prd);
+		expect(action).toEqual({
+			kind: 'await-operator',
+			pendingStoryIds: ['US-002'],
+			promoteVerdictTo: 'MAX_ROUNDS_DEBT',
+		});
+	});
+
+	test('complete at cap with CLEAN does NOT carry promoteVerdictTo (already terminal)', () => {
+		const prd: PrdSnapshot = {
+			userStories: [makeStory('US-001', 1, true)],
+			review: { roundsCompleted: 3, maxRounds: 3, lastVerdict: 'CLEAN' },
+		};
+		const action = decideNextAction(prd);
+		expect(action.kind).toBe('complete');
+		// promoteVerdictTo must be absent (undefined) for CLEAN
+		expect((action as { promoteVerdictTo?: string }).promoteVerdictTo).toBeUndefined();
+	});
+
+	test('complete at cap with MAX_ROUNDS_DEBT does NOT carry promoteVerdictTo (already terminal)', () => {
+		const prd: PrdSnapshot = {
+			userStories: [makeStory('US-001', 1, true)],
+			review: { roundsCompleted: 3, maxRounds: 3, lastVerdict: 'MAX_ROUNDS_DEBT' },
+		};
+		const action = decideNextAction(prd);
+		expect(action.kind).toBe('complete');
+		expect((action as { promoteVerdictTo?: string }).promoteVerdictTo).toBeUndefined();
+	});
+
+	test('complete at cap with null lastVerdict does NOT carry promoteVerdictTo (nothing to promote)', () => {
+		const prd: PrdSnapshot = {
+			userStories: [makeStory('US-001', 1, true)],
+			review: { roundsCompleted: 5, maxRounds: 3, lastVerdict: null },
+		};
+		const action = decideNextAction(prd);
+		expect(action.kind).toBe('complete');
+		expect((action as { promoteVerdictTo?: string }).promoteVerdictTo).toBeUndefined();
+	});
+
+	test('review (under cap, FIXES_PENDING) does NOT carry promoteVerdictTo', () => {
+		const prd: PrdSnapshot = {
+			userStories: [makeStory('US-001', 1, true)],
+			review: { roundsCompleted: 2, maxRounds: 3, lastVerdict: 'FIXES_PENDING' },
+		};
+		const action = decideNextAction(prd);
+		expect(action.kind).toBe('review');
+		// review action has no promoteVerdictTo field
+		expect((action as Record<string, unknown>)['promoteVerdictTo']).toBeUndefined();
 	});
 });
