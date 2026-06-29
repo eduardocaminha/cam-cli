@@ -1,7 +1,7 @@
 {
   "id": "CAM-105",
   "title": "Evento merge-watch-post-merge-done omite branchPrunedLocal/Remote (gap de observabilidade do pos-merge autonomo)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-26T20:38:54.605Z",

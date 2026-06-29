@@ -822,6 +822,98 @@ describe('runMergeWatch structured events (US-008)', () => {
 
 		expect(outcome.kind).toBe('merged');
 	});
+
+	test('(US-001) branchPruned fields in event detail + warn narration on prune failure', async () => {
+		// --- Part 1: prune failure case (branchPrunedLocal false) ---
+		const { logger: logger1, events: events1 } = makeInMemoryEventLogger();
+		const logEvent1 = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger1({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'test-uuid', kind, detail });
+		};
+		const notifications1: string[] = [];
+
+		await runMergeWatch({
+			prNumber: 205,
+			mergedBranch: 'cam/test-branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: () => ({
+				ok: true,
+				pulledSha: 'abc123',
+				tag: 'v1.2.3',
+				tagCreated: true,
+				branchPrunedLocal: false, // prune failed locally
+				branchPrunedRemote: true,
+			}),
+			notifyOrchestrator: (line) => notifications1.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+			logEvent: logEvent1,
+		});
+
+		// The done event must carry both prune fields.
+		const doneEvt1 = events1.find((e) => e.kind === 'merge-watch-post-merge-done');
+		expect(doneEvt1).toBeDefined();
+		if (doneEvt1) {
+			const d = doneEvt1.detail as {
+				ok: boolean;
+				branchPrunedLocal?: boolean;
+				branchPrunedRemote?: boolean;
+			};
+			expect(d.ok).toBe(true);
+			expect(d.branchPrunedLocal).toBe(false);
+			expect(d.branchPrunedRemote).toBe(true);
+		}
+
+		// A prune-failure warn narration must be present.
+		const warnLine1 = notifications1.find((n) => n.includes('warn') && n.includes('prune'));
+		expect(warnLine1).toBeDefined();
+
+		// --- Part 2: both-true case must produce ZERO prune-failure warning lines ---
+		const { logger: logger2, events: events2 } = makeInMemoryEventLogger();
+		const logEvent2 = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger2({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'test-uuid', kind, detail });
+		};
+		const notifications2: string[] = [];
+
+		await runMergeWatch({
+			prNumber: 206,
+			mergedBranch: 'cam/test-branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: () => ({
+				ok: true,
+				pulledSha: 'abc123',
+				tag: 'v1.2.3',
+				tagCreated: true,
+				branchPrunedLocal: true,
+				branchPrunedRemote: true,
+			}),
+			notifyOrchestrator: (line) => notifications2.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+			logEvent: logEvent2,
+		});
+
+		// The done event must carry both prune fields as true.
+		const doneEvt2 = events2.find((e) => e.kind === 'merge-watch-post-merge-done');
+		expect(doneEvt2).toBeDefined();
+		if (doneEvt2) {
+			const d = doneEvt2.detail as {
+				ok: boolean;
+				branchPrunedLocal?: boolean;
+				branchPrunedRemote?: boolean;
+			};
+			expect(d.ok).toBe(true);
+			expect(d.branchPrunedLocal).toBe(true);
+			expect(d.branchPrunedRemote).toBe(true);
+		}
+
+		// No prune-failure warning lines when both pruned successfully.
+		const pruneWarnLines2 = notifications2.filter((n) => n.includes('warn') && n.includes('prune'));
+		expect(pruneWarnLines2).toHaveLength(0);
+	});
 });
 
 // ---------------------------------------------------------------------------

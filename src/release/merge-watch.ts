@@ -199,6 +199,18 @@ function hasFailedCheck(rollup: PrCheckRollupEntry[]): boolean {
 // State machine helpers
 // ---------------------------------------------------------------------------
 
+/** Emit a warn narration when either branch-prune leg failed. No-op when both succeeded. */
+function warnOnPruneFailure(
+	prunedLocal: boolean,
+	prunedRemote: boolean,
+	notifyOrchestrator: (line: string) => void,
+): void {
+	if (prunedLocal && prunedRemote) return;
+	const local = prunedLocal ? 'ok' : 'FAILED';
+	const remote = prunedRemote ? 'ok' : 'FAILED';
+	notifyOrchestrator(`[cam] warn: branch prune incomplete (local: ${local}, remote: ${remote})`);
+}
+
 /**
  * Handle one non-null poll result.
  *
@@ -222,8 +234,11 @@ function processPollResult(
 		if (result.ok) {
 			const tagNote = result.tagCreated ? '(tag created)' : '(tag existed)';
 			notifyOrchestrator(`[cam] post-merge complete: ${result.tag} ${tagNote}`);
+			warnOnPruneFailure(result.branchPrunedLocal, result.branchPrunedRemote, notifyOrchestrator);
 			const doneDetail: MergeWatchPostMergeDoneEventDetail = {
 				prNumber, ok: true, tag: result.tag, tagCreated: result.tagCreated,
+				branchPrunedLocal: result.branchPrunedLocal,
+				branchPrunedRemote: result.branchPrunedRemote,
 			};
 			logEvent?.('merge-watch-post-merge-done', doneDetail);
 		} else {

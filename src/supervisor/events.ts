@@ -200,6 +200,8 @@ export interface MergeWatchCiRedEventDetail {
  *   - ok: true if the post-merge step succeeded.
  *   - tag: the semver tag created/found on main (present when ok==true).
  *   - tagCreated: whether the tag was newly created (present when ok==true).
+ *   - branchPrunedLocal: whether the local branch was deleted (present when ok==true).
+ *   - branchPrunedRemote: whether the remote branch was deleted (present when ok==true).
  *   - reason: failure reason string (present when ok==false).
  */
 export interface MergeWatchPostMergeDoneEventDetail {
@@ -207,6 +209,8 @@ export interface MergeWatchPostMergeDoneEventDetail {
 	ok: boolean;
 	tag?: string;
 	tagCreated?: boolean;
+	branchPrunedLocal?: boolean;
+	branchPrunedRemote?: boolean;
 	reason?: string;
 }
 
