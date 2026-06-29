@@ -411,8 +411,17 @@ export function ensureProjectSession(
 /**
  * Split a new pane into an existing project session and run `cmdArgv` in it.
  *
- * Uses `split-window -t <sessionName>:0 -v -d -P -F #{pane_id} -- <arg0> ...`
- * (vertical split, detached so the caller is not immediately switched into it).
+ * Uses `split-window -t <targetPaneId> -v -l 60% -d -P -F #{pane_id} -- <arg0> ...`
+ * where `targetPaneId` is the explicit pane id (e.g. `%0`) of the pane to
+ * split (typically the orchestrator pane). Splitting from a known pane ensures
+ * the new worker pane inherits the orchestrator pane's geometry rather than
+ * inheriting whatever pane happened to be active during a recreate.
+ *
+ * `-l 60%` gives the new (lower) worker pane the larger, readable share of the
+ * orchestrator pane's height. At 50 rows the worker receives ~30 rows; the
+ * percentage scales with terminal height. tmux 3.6a: `-l` accepts a trailing
+ * `%` (confirmed against tmux docs).
+ *
  * `-P -F #{pane_id}` causes tmux to print the stable pane id (%<n>) to stdout.
  *
  * The command is passed as multiple argv elements (tmux multi-arg
@@ -432,13 +441,15 @@ export function openPaneInSession(
 	sessionName: string,
 	cmdArgv: string[],
 	spawnFn: SpawnFn,
+	targetPaneId: string,
 ): string {
 	const result = spawnFn(
 		'tmux',
 		tmuxArgs([
 			'split-window',
-			'-t', `${sessionName}:0`,
+			'-t', targetPaneId,
 			'-v',
+			'-l', '60%',
 			'-d',
 			'-P', '-F', '#{pane_id}',
 			'--',

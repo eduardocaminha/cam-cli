@@ -4,6 +4,13 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.31.0] - 2026-06-29
+
+### Added
+
+- [US-002] - Real-tmux integration test proving deterministic worker-pane geometry on recreate
+- [US-001] - Target the orchestrator pane with an explicit size in openPaneInSession
+
 ## [0.30.0] - 2026-06-29
 
 ### Added

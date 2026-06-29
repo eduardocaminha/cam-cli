@@ -114,7 +114,10 @@ test.skipIf(!tmuxAvailable)(
 		const currentId = readWorkerPaneMarker(claudeDir) ?? initialId;
 		expect(isPaneAlive(currentId)).toBe(false); // confirm dead
 
-		const newId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn);
+		// Resolve the surviving (orch) pane to use as the explicit split target.
+		const orchPaneOut = tmuxRaw(['list-panes', '-t', SESSION, '-F', '#{pane_id}']).stdout.toString().trim();
+		const orchPaneId = orchPaneOut.split('\n')[0] ?? `${SESSION}:0`;
+		const newId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, orchPaneId);
 		writeWorkerPaneMarker(claudeDir, newId);
 		Bun.sleepSync(150);
 
