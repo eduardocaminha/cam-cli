@@ -1,0 +1,48 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-119-init-installs-skills",
+  "description": "cam init must copy the embedded skills/ subtree into the downstream project's .claude/skills/, so /cam-spec's grill-with-docs skill is present after init.",
+  "issueNumber": 119,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Route and count the skills/ subtree in the cam init install routine",
+      "description": "As a downstream operator running cam init, I need the embedded skills/* keys written into .claude/skills/ (mirroring how commands/agents/scripts-cam are installed) and counted in the install summary, so the grill-with-docs skill that .claude/commands/cam-spec.md invokes is present and the summary reports the skills line.",
+      "acceptanceCriteria": [
+        "materializeTemplates in src/templates/embedded.ts routes every templatesContents key prefixed `skills/` to `<cwd>/.claude/skills/<rest>` (not `<cwd>/skills/`); a test runs materializeTemplates against a fresh tempdir and asserts the 5 known skill files exist under .claude/skills/ (skills/domain-modeling/SKILL.md, skills/domain-modeling/CONTEXT-FORMAT.md, skills/domain-modeling/ADR-FORMAT.md, skills/grill-with-docs/SKILL.md, skills/grilling/SKILL.md). [oracle: bun test test/embedded.test.ts]",
+        "No skill file is written to the legacy `<cwd>/skills/` location (the pre-fix fall-through path); the test asserts that path does not exist after materializeTemplates. [oracle: bun test test/embedded.test.ts]",
+        "The per-subtree count map returned by materializeTemplates includes a `skills` key equal to 5 (the number of embedded skills/* keys), and the SUBTREES tuple includes `skills`. [oracle: bun test test/embedded.test.ts]",
+        "copyTemplates in src/commands/setup.ts adds a target entry `{ subtree: 'skills', rel: '.claude/skills' }` so the install summary emits an `Installed 5 file(s) → .claude/skills` line; a unit test invokes the install-summary path (copyTemplates) against a fresh tempdir, captures process.stdout.write, and asserts the captured output contains a line matching `Installed 5 file(s) → .claude/skills`. This runtime oracle fails at pre-fix HEAD (no skills target entry + counts do not track skills, so no such line is emitted) and covers the issue's headline symptom (\"NENHUMA linha de skills\"). [oracle: bun test test/setup.test.ts]",
+        "Secondary guard: the `targets` array in src/commands/setup.ts contains the skills target entry. [oracle: file-assert grep -q \"subtree: 'skills'\" src/commands/setup.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Static/lint gate passes (bun run check:all). [oracle: bun run check:all]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Root cause is two-part, both in src/templates/embedded.ts: (1) targetPath() has no `skills/` branch so the 5 `skills/*` keys fall through to `join(cwd, relPath)` => written to <cwd>/skills/ instead of .claude/skills/; (2) the SUBTREES tuple ('commands','agents','scripts/cam','.claude') omits 'skills', so counts never track them. Fix: add `if (relPath.startsWith('skills/')) return join(cwd, '.claude','skills', relPath.slice('skills/'.length));` to targetPath; add 'skills' to SUBTREES and to the counts Record initializer in materializeTemplates (Record<TemplateSubtree, number>). Surface fix in src/commands/setup.ts copyTemplates() (lines ~300-310): append `{ subtree: 'skills', rel: '.claude/skills' }` to the `targets` array so the printSuccess loop emits the skills line; counts['skills'] is now typed because TemplateSubtree gained 'skills'. The 5 embedded keys are confirmed in src/vendor/_generated.ts (skills/domain-modeling/{SKILL,CONTEXT-FORMAT,ADR-FORMAT}.md, skills/grill-with-docs/SKILL.md, skills/grilling/SKILL.md); the issue text says 6 but on-disk reality is 5, assert 5. Add a `describe('materializeTemplates — skills/ subtree routing + count')` block to test/embedded.test.ts mirroring the existing hook-exec test (beforeEach mkdtempSync, afterEach rmSync, call materializeTemplates(cwd), assert existsSync on .claude/skills/... and !existsSync on cwd/skills/...). NOTE this story only changes src/* (logic + read of templatesContents), it does NOT edit templates/ content, so embed-vendor:check should already be green; it is listed as a gate per agent-instruction mandate (any story in the templates namespace runs it) and as a guard against an accidental template edit. Gotcha (noUncheckedIndexedAccess): guard any array/regex index access. Pattern reference: scripts/cam/patterns.md US-004 hook-exec entry documents the materializeTemplates test shape to mirror. AUDIT FIX (F-01/F-02): criterion #4's old oracle `grep -q \".claude/skills\" src/commands/setup.ts` was tautological — setup.ts:346 (inside buildSetupPrompt's prompt string) already contains the substring `.claude/skills/`, so the grep passed at pre-fix HEAD regardless of the fix, leaving the headline \"smoke reports skills lines installed\" symptom unverified. Replaced with a DISCRIMINATING runtime oracle: a unit test that exercises the install-summary path. copyTemplates is currently a private (non-exported) function at setup.ts:300 — EXPORT it (add `export`) so the test can invoke it directly, OR add a thin exported wrapper; the test captures process.stdout.write (printSuccess writes there via src/logging/color.ts:97) into a buffer, calls copyTemplates(tempdir), and asserts the buffer contains `Installed 5 file(s) → .claude/skills`. printSuccess no-ops under quiet mode (color.ts:95 isQuiet()), so the test must ensure quiet mode is OFF (do not set the quiet env/flag in that test). Place the test in test/setup.test.ts (the setup.ts surface), beforeEach mkdtempSync + afterEach rmSync mirroring the embedded.test.ts pattern. A secondary file-assert guard (criterion #5) greps for the token `subtree: 'skills'`, which is ABSENT at pre-fix HEAD (only the loose `.claude/skills` substring exists today), so it too discriminates against HEAD; do NOT revert it to the loose substring."
+    },
+    {
+      "id": "US-002",
+      "title": "Lock the downstream grill-with-docs skill install against regression",
+      "description": "As a maintainer, I need a regression test asserting that a cam init install into a fresh downstream destination writes the grill-with-docs skill chain under .claude/skills/ from the embedded templatesContents map, so the skill-not-found-downstream failure (cam-spec invokes a skill that was never installed) can never silently reappear.",
+      "acceptanceCriteria": [
+        "A regression test materializes the embedded templates into a fresh tempdir and asserts .claude/skills/grill-with-docs/SKILL.md exists and its contents equal templatesContents['skills/grill-with-docs/SKILL.md'] byte-for-byte. [oracle: bun test test/embedded.test.ts]",
+        "The same test asserts the full domain-modeling skill set lands under .claude/skills/ (SKILL.md, CONTEXT-FORMAT.md, ADR-FORMAT.md) and the grilling skill (.claude/skills/grilling/SKILL.md), covering every embedded skills/* key. [oracle: bun test test/embedded.test.ts]",
+        "The test ties the downstream contract to the invoker: it asserts the installed .claude/commands/cam-spec.md references the grill-with-docs skill (grep for `grill-with-docs`) AND that skill file is co-installed under .claude/skills/, so the command and its dependency are guaranteed to ship together. [oracle: bun test test/embedded.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Static/lint gate passes (bun run check:all). [oracle: bun run check:all]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Pure test-hardening story (no src/ change beyond what US-001 already shipped). Add a `describe('CAM-119: cam init installs the grill-with-docs skill chain downstream')` block to test/embedded.test.ts. Use mkdtempSync(join(tmpdir(),'cam-skills-regress-')) in beforeEach, rmSync in afterEach (mirror the existing materializeTemplates describe blocks at lines ~161 and ~391). Call materializeTemplates(cwd) (it is the install routine copyTemplates delegates to; exercising it directly is the same code path setup.ts runs at line 686). Byte-parity assertion: readFileSync(join(cwd,'.claude','skills','grill-with-docs','SKILL.md'),'utf8') === templatesContents['skills/grill-with-docs/SKILL.md']. The command<->skill link: read templatesContents['commands/cam-spec.md'] (or the materialized .claude/commands/cam-spec.md) and assert it contains 'grill-with-docs' — confirmed present in src/vendor/_generated.ts line 37 (the cam-spec command references the .claude/skills/grill-with-docs/SKILL.md path). The 5 embedded skills keys are enumerated in src/vendor/_generated.ts. Gotcha: templatesContents[key] is `string | undefined` under noUncheckedIndexedAccess; use a `?? ''` fallback or non-null assertion guarded by a prior toBeDefined() as the existing tests do (see lines ~284, ~358). This story depends on US-001 having added the skills/ routing; without it the .claude/skills/ paths would not exist and the test would fail."
+    }
+  ]
+}
