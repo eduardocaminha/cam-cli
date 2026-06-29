@@ -19,7 +19,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/supervisor/loop.ts:1304]: Stale contract comment inverted by US-003: the runMergeWatchFn doc says the closure runs 'the full blocking poll loop (via runMergeWatch) until a terminal outcome is reached', but the entire CAM-103 fix is one-step-per-tick that returns promptly. sidecar.ts:125 similarly says 'runs gh polling via runMergeWatch' (now stepMergeWatch). Per the doc-maintenance convention (CLAUDE.md section 7), update these comments in the same change."
     },
     {

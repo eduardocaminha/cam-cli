@@ -1,26 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "branchName": "cam/CAM-138-merge-watch-state-machine",
   "timestamp": "2026-06-29T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/release/merge-watch.ts",
-    "src/supervisor/events.ts",
-    "docs/recovery-runbook.md",
-    "test/release/merge-watch.test.ts",
+    "src/supervisor/loop.ts",
+    "src/commands/sidecar.ts",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 fixed the merge-watch-watching event regression: moved the emit from runMergeWatch (legacy blocking wrapper) into stepMergeWatch on the first poll (pollCount===0), so the production one-step-per-tick path in sidecar.ts now emits the event correctly. Updated events.ts comment and recovery-runbook.md to reflect the new emit site. Added two stepMergeWatch tests: one asserting the event IS emitted on first poll, one asserting it is NOT emitted on subsequent polls. 2197 tests pass, all gates green. Check whether US-R1-002 or other review-round-1 fixes remain.",
+  "nextStoryContext": "US-R1-002 fixed two stale TSDoc comments: (1) loop.ts:1303-1304 RunSidecarLoopOptions.runMergeWatchFn doc now says 'advancing the merge-watch state machine by one step (via stepMergeWatch) and returning promptly' instead of 'running the full blocking poll loop (via runMergeWatch)'; (2) sidecar.ts:124-125 SidecarOverrides.runMergeWatchFn doc now says 'stepMergeWatch' instead of 'runMergeWatch'. Both US-R1-001 and US-R1-002 are now passes:true. All remaining open stories (SUGGESTIONS) are not required; review verdict was FIXES_PENDING:2 with 2 WARNINGs now addressed. Check whether any more non-operator passes:false stories remain before requesting /cam-review.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-R1-001 is an internal TypeScript fix (merge-watch.ts, events.ts, recovery-runbook.md, tests). No external npm library was introduced or modified."
+      "summary": "US-R1-002 is a pure TSDoc comment fix in two TypeScript files. No external npm library was introduced or modified."
     }
   ]
 }
