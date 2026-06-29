@@ -1,0 +1,27 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-105-post-merge-prune-observability",
+  "description": "merge-watch-post-merge-done event carries branchPrunedLocal/Remote and warns when a branch prune fails.",
+  "issueNumber": 105,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Surface branch-prune outcome in post-merge-done event and warn on prune failure",
+      "description": "As an operator diagnosing a ci-gated ship from the event log, I need the merge-watch-post-merge-done event to carry branchPrunedLocal and branchPrunedRemote (and a narrated warning when either prune failed) so that a failed branch prune is visible in .claude/cam-worker-events.jsonl instead of being masked by ok:true.",
+      "acceptanceCriteria": [
+        "MergeWatchPostMergeDoneEventDetail declares optional branchPrunedLocal and branchPrunedRemote booleans (present on the ok==true path). [oracle: grep -Eq 'branchPrunedLocal\\??: *boolean' /Users/eduardo/Documents/Projects/cam-cli/src/supervisor/events.ts]",
+        "On the merged ok==true path in processPollResult, the constructed doneDetail wires branchPrunedLocal and branchPrunedRemote through from the PostMergeOutcome (result.branchPrunedLocal / result.branchPrunedRemote). [oracle: grep -q 'branchPrunedLocal: result.branchPrunedLocal' /Users/eduardo/Documents/Projects/cam-cli/src/release/merge-watch.ts]",
+        "A behavioral test in the runMergeWatch structured-events block drives the merged path with a PostMergeOutcome where branchPrunedLocal/Remote vary, asserts the emitted MergeWatchPostMergeDoneEventDetail carries both fields, asserts a prune-failure case (a false prune) produces the warn narration via the captured notifyOrchestrator output, AND asserts a both-true case (branchPrunedLocal===true && branchPrunedRemote===true) produces ZERO prune-failure warning lines in the captured notifyOrchestrator output (negative assertion guarding against a spurious-warning regression). Not a tautological grep of source. [oracle: bun test test/release/merge-watch.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full check suite passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/events.ts (MergeWatchPostMergeDoneEventDetail at ~line 205 -- add branchPrunedLocal?/branchPrunedRemote? booleans and extend the doc comment); src/release/merge-watch.ts (processPollResult, ok==true branch ~lines 222-228 -- wire result.branchPrunedLocal/Remote into doneDetail, and add a warn line through notifyOrchestrator when either is false, alongside the existing '[cam] post-merge complete' narration at line 224); test/release/merge-watch.test.ts (add a test in the 'runMergeWatch structured events (US-008)' describe block at ~line 655, mirroring the happy-path test that uses makeInMemoryEventLogger + a postMergeFn returning a PostMergeOutcome -- vary branchPrunedLocal/Remote and capture notifyOrchestrator into a notifications array like test (g) at line 420). runPostMerge in src/release/post-merge.ts ALREADY returns branchPrunedLocal/branchPrunedRemote (lines 207/213/215); the only gap is the emit + narration, do NOT change post-merge.ts return shape. Gotcha: ok==false path keeps {prNumber, ok:false, reason} unchanged (no prune fields). SCOPE BOUNDARY: do NOT touch the git 'branch -d' -> '-D' question at post-merge.ts:205 (latent, out of scope, follow-up). CAM-138 will later refactor runMergeWatch into a per-tick state machine and must preserve these new fields -- keep the change localized to the event detail + emit + narration. Re-check the spec's 2 ACs before coding: (a) event carries the fields, (b) warn on prune failure."
+    }
+  ]
+}
