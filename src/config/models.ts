@@ -205,6 +205,43 @@ export function readResendConfig(configPath?: string): ResendConfig {
 }
 
 /**
+ * The meta-loop mode. `"observe"` enables the inter-cycle drainer;
+ * `"off"` disables it (the default, fail-closed).
+ */
+export type MetaLoop = 'off' | 'observe';
+
+/**
+ * Read the meta-loop mode from the project config. Returns `"observe"` only
+ * when `[loop] meta_loop = "observe"` is set exactly; returns `"off"` in
+ * every other case (missing file, missing section, missing key, malformed
+ * TOML, non-string, or any value other than `"observe"`).
+ *
+ * The default `"off"` is fail-closed: a typo (e.g. `"auto"`, `"OBSERVE"`)
+ * never arms the inter-cycle drainer.
+ *
+ * @param configPath  Override the config file path (default:
+ *                    `scripts/cam/project.toml` resolved from `process.cwd()`).
+ *                    Used by tests to target a tmp fixture without modifying
+ *                    the real project config.
+ */
+export function readMetaLoop(configPath?: string): MetaLoop {
+	const path = configPath ?? defaultProjectConfigPath();
+	try {
+		const config = loadConfig(path);
+		const loopSection = config['loop'];
+		if (loopSection !== undefined && loopSection !== null && typeof loopSection === 'object') {
+			const value = (loopSection as Record<string, unknown>)['meta_loop'];
+			if (value === 'observe') {
+				return 'observe';
+			}
+		}
+	} catch {
+		// Malformed TOML or fs read error: fall back to default.
+	}
+	return 'off';
+}
+
+/**
  * Read the plan approval mode from the project config. Returns `"operator"`
  * only when `[plan] plan_approval = "operator"` is set exactly; returns
  * `"auto"` in every other case (missing file, missing section, missing key,
