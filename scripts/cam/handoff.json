@@ -1,0 +1,27 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add fail-closed jq-absence guard to the runtime hook + deny-without-jq test"
+  },
+  "branchName": "cam/CAM-96-hook-fail-closed-jq",
+  "timestamp": "2026-06-29T12:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/hooks/orch-agent-allowlist.sh",
+    "templates/.claude/hooks/orch-agent-allowlist.sh",
+    "src/vendor/_generated.ts",
+    "test/orch-agent-allowlist.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added a fail-closed jq-absence guard to orch-agent-allowlist.sh. The guard fires after the CAM_SESSION scope gate and after payload=$(cat), before the jq extraction. Static deny JSON is emitted via printf. Templates mirror is byte-identical; embed-vendor was regenerated. Test uses a restricted PATH (jq-free, only cat symlinked) with /bin/bash absolute path. All 2083 tests pass.",
+  "officialDocsValidated": [
+    {
+      "lib": "Claude Code hooks (PreToolUse)",
+      "url": "https://code.claude.com/docs/en/hooks",
+      "fetchedAt": "2026-06-29T12:00:00Z",
+      "status": "aligned",
+      "summary": "PreToolUse deny contract confirmed: exit 0 + hookSpecificOutput JSON deny; non-zero exit (127) is non-blocking (spawn proceeds, fail-open). Our static printf deny guard correctly uses exit 0."
+    }
+  ]
+}

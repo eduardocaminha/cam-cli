@@ -35,7 +35,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/hooks/orch-agent-allowlist.sh (add guard + header comment), test/orch-agent-allowlist.test.ts (add one deny-without-jq test). Read scripts/cam/patterns.md bullets: 'PreToolUse deny contract + defensive subagent_type read (CAM-91)', 'Bun.spawn stdin/stdout pattern for shell-script integration tests (CAM-91)', 'CAM_SESSION scope-gate pattern for hooks (CAM-102)'. GOTCHA: existing tests skip when jq absent; the NEW test must do the OPPOSITE (run with jq present, simulate absence by spawning with a PATH that excludes jq). Spawn the hook via an absolute bash path (/bin/bash) so bash resolution does not depend on the restricted PATH; the restricted PATH only needs the binaries the hook uses before the guard (cat). The hook still needs CAM_SESSION set (scope gate) for the guard to be reached. Per Claude Code hooks spec (officialDocsConsulted): exit 0 + deny JSON = fail-closed; a missing jq otherwise exits 127 (non-blocking error) and the spawn PROCEEDS (fail-open). The static deny printf must produce the same hookSpecificOutput shape as the jq -n deny. patterns.md: append a bullet on fail-closed-without-jq if a durable insight emerges."
     },
