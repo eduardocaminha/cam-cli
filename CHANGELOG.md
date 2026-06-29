@@ -4,6 +4,15 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.17.0] - 2026-06-29
+
+### Added
+
+- [US-004] - Persona: agir no sinal, escrever reason=cycle-close, remover cadencia advisory
+- [US-003] - Resetar cap de respawn por progresso no wrapper do cam run
+- [US-002] - Emitir sinal incondicional de handoff no journal append
+- [US-001] - Registrar tokens-por-ciclo no event log no cycle-close
+
 ## [0.16.0] - 2026-06-28
 
 ### Added
