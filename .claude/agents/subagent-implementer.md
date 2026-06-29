@@ -90,7 +90,7 @@ The two universal mandatory gates are `bun run typecheck` and `bun test`. Their 
    - `bun run typecheck` (= `bunx tsc --noEmit`) — must be zero errors.
    - `bun test` — all tests pass; add/adjust tests under `test/` for new behavior.
    - If the story touched `vendor/` or `templates/`: `bun run embed-vendor` to regenerate, then `bun run embed-vendor:check` must be clean.
-   - There is **no** separate lint command in this repo; the typecheck is the static gate. Do not invent one.
+   - Biome lint IS configured (`biome.json` at repo root): run `bun run check:all` (full quality spine, includes `bunx biome lint --error-on-warnings`) or `bun run lint` as the live lint/static gate alongside typecheck and test.
 3. Commit with message `feat: [Story ID] - [Story Title]`.
 4. Flip `passes: true` for the completed story in `prd.json`.
 5. If you discovered a reusable pattern (a project convention, a library quirk, a gotcha), append a bullet to `scripts/cam/patterns.md`. The per-story factual record (outcome, files, gates) is written by the harness to `.claude/cam-worker-events.jsonl`; you do not write a prose entry.
