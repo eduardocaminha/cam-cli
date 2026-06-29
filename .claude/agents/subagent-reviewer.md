@@ -36,7 +36,7 @@ You are a staff-level code reviewer. Your job: review all changes on the current
 1. Run `git diff main...HEAD --stat` to see all changed files.
 2. Run `git log main..HEAD --oneline` to see all commits.
 3. Read every changed file in full (not just the diff) to understand context.
-4. Verify the project: `bun run typecheck` (must be zero errors) and `bun test`. If the diff touches `vendor/` or `templates/`, also run `bun run embed-vendor:check`. There is no separate lint step in this repo. A full `bun run build:release` is only needed if the diff touches the build pipeline (`scripts/*`, embedding, binary entry).
+4. Verify the project: `bun run typecheck` (must be zero errors) and `bun test`. If the diff touches `vendor/` or `templates/`, also run `bun run embed-vendor:check`. The project lint/static gate is biome (`biome.json`) via `bun run check:all` / `bun run lint` (wired CAM-60), which CI runs. A full `bun run build:release` is only needed if the diff touches the build pipeline (`scripts/*`, embedding, binary entry).
 5. Check each item in the review checklist below against the actual changes.
 6. Report findings using the output format at the bottom.
 

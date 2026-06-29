@@ -1,7 +1,7 @@
 {
   "id": "CAM-114",
   "title": "Corrigir docs stale que afirmam no linter configured (biome + check:all lint vivos desde CAM-60)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-27T10:53:01.898Z",
