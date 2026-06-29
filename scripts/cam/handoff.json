@@ -1,0 +1,29 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Target the orchestrator pane with an explicit size in openPaneInSession"
+  },
+  "branchName": "cam/CAM-80-deterministic-worker-pane-geometry",
+  "timestamp": "2026-06-29T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/tmux/session.ts",
+    "src/supervisor/host.ts",
+    "test/tmux-session.test.ts",
+    "test/integration/ensure-worker-pane-selfheal.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 is the real-tmux oracle for the geometry fix landed in US-001. The argv-shape tests now assert -t <pane-id> and -l 60%, but only a real-tmux round-trip can prove the geometry actually applies. The integration test in ensure-worker-pane-selfheal.test.ts was updated to pass the surviving orch pane as targetPaneId; US-002 may need a dedicated geometry-verification test.",
+  "officialDocsValidated": [
+    {
+      "lib": "tmux",
+      "version": "3.6a",
+      "url": "https://man.openbsd.org/tmux.1",
+      "fetchedAt": "2026-06-29T00:00:00Z",
+      "status": "ok",
+      "summary": "split-window -l accepts trailing % for percentage; -t accepts pane id like %0; -v is default but we specify explicitly; -P -F #{pane_id} prints only the pane id. All confirmed matching implementation."
+    }
+  ]
+}
