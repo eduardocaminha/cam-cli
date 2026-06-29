@@ -19,6 +19,13 @@
 #   exit 0 + JSON stdout:
 #   {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"..."}}
 #
+# Fail-closed without jq:
+#   If jq is absent from PATH, the hook emits a static deny JSON (via printf, not
+#   via jq) and exits 0. This denies every Task/Agent spawn instead of failing open.
+#   Without this guard, a missing jq exits 127, which Claude Code treats as a
+#   non-blocking error (the spawn proceeds). The static deny is produced by printf
+#   so it is available even when jq is absent.
+#
 # Reads the spawned subagent type from three field paths (defensive, per CAM-91 notes):
 #   1. .tool_input.subagent_type  (primary field, Claude hooks spec)
 #   2. .tool_input.agent_type     (alternate field observed in some payload shapes)
@@ -34,6 +41,14 @@ fi
 
 # Read the full PreToolUse payload from stdin.
 payload="$(cat)"
+
+# Fail-closed guard: if jq is absent, deny every spawn via a static printf deny.
+# Without this guard, the jq call below would exit 127 (command not found), which
+# Claude Code treats as a non-blocking error and allows the spawn to proceed (fail-open).
+if ! command -v jq >/dev/null 2>&1; then
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"jq is absent: all Task/Agent spawns are denied (fail-closed without jq)."}}'
+  exit 0
+fi
 
 # Extract the spawned subagent type using the defensive three-path read.
 # jq //  is the alternative operator: falls through on null or false.

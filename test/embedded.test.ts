@@ -371,6 +371,23 @@ describe('templatesContents — settings.json + hook key presence guard (US-004)
 	});
 });
 
+describe('templatesContents — jq fail-closed guard in orch-agent-allowlist.sh (US-002)', () => {
+	// US-002 acceptance criterion: the embedded template hook must contain the
+	// `command -v jq` fail-closed guard so a future regen that drops it fails
+	// this test. Without the guard, a missing jq exits 127 (fail-open). With
+	// it, the hook emits a static deny JSON via printf and exits 0 (fail-closed).
+
+	const hook = templatesContents['.claude/hooks/orch-agent-allowlist.sh'] ?? '';
+
+	test('contains the command -v jq fail-closed guard', () => {
+		expect(hook).toContain('command -v jq');
+	});
+
+	test('contains the static printf deny for jq-absent path', () => {
+		expect(hook).toContain('jq is absent');
+	});
+});
+
 describe('materializeTemplates — hook is executable after materialization (US-004)', () => {
 	// writeFileSync does not preserve the source mode bit. materializeTemplates
 	// must chmod +x any file under .claude/hooks/ so the hook is runnable by
