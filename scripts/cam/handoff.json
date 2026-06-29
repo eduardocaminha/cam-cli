@@ -1,22 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Signal MAX_ROUNDS_DEBT promotion from decideNextAction at the cap boundary"
+    "id": "US-002",
+    "title": "Persist MAX_ROUNDS_DEBT promotion in runSupervisor so cap-reentry exits terminal and ship accepts it"
   },
   "branchName": "cam/CAM-95-promote-cap-stop-to-max-rounds-debt",
   "timestamp": "2026-06-29T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/decide.ts",
-    "test/supervisor/decide.test.ts"
+    "src/supervisor/loop.ts",
+    "test/supervisor/non-convergence-terminal.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added promoteVerdictTo?: 'MAX_ROUNDS_DEBT' to the complete and await-operator variants of SupervisorAction. The next story (US-002) should wire this signal in loop.ts: when decideNextAction returns a terminal action with promoteVerdictTo set, loop.ts must persist MAX_ROUNDS_DEBT as prd.review.lastVerdict before exiting. The pure-function contract in decide.ts was preserved (no I/O). All existing loop.ts call sites still typecheck because promoteVerdictTo is an optional field.",
+  "nextStoryContext": "US-002 wired the cap-REENTRY promotion in loop.ts: when decideNextAction returns complete or await-operator with promoteVerdictTo==='MAX_ROUNDS_DEBT', the loop now writes prd.review.lastVerdict='MAX_ROUNDS_DEBT' and calls notifyOrchestrator BEFORE the terminal return. The US-006 post-review promotion path (loop.ts ~1115-1148) was NOT touched. All 9 tests in test/supervisor/non-convergence-terminal.test.ts pass (5 original US-006 + 4 new US-002). makeHasPendingStories correctly returns false on a promoted prd. Both PRD stories (US-001 and US-002) now have passes:true; the PRD is complete.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure TypeScript logic change to decide.ts and its tests; no external libraries involved."
+      "summary": "Pure TypeScript logic change to loop.ts top-of-loop terminal handlers and corresponding behavioral tests. No external libraries involved; node:fs built-ins (writeFileSync, mkdtempSync, rmSync) used in test fixtures are standard Bun-compatible APIs."
     }
   ]
 }
