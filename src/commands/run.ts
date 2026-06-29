@@ -503,6 +503,19 @@ function spawnSidecarDefault(cwd: string, logPath: string): SidecarProcess {
 }
 
 // ---------------------------------------------------------------------------
+// Claude auth preflight (re-export from sibling module)
+// ---------------------------------------------------------------------------
+
+// Extracted to src/commands/run-auth-preflight.ts to keep this file within
+// its file-size budget. Consumers may import from either location.
+export {
+	checkClaudeAuth,
+	type ClaudeAuthOk,
+	type ClaudeAuthFail,
+	type ClaudeAuthResult,
+} from './run-auth-preflight.ts';
+
+// ---------------------------------------------------------------------------
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
