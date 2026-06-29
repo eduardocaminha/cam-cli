@@ -480,3 +480,14 @@ Each entry follows this template:
 - **Decisions**: Deny estatico via printf+exit 0 (nao exit 2): gracioso, estruturado, mesmo contrato hookSpecificOutput do happy path. Fundamentado na doc oficial do PreToolUse (exit 0+JSON deny bloqueia; non-2 prossegue=fail-open). requires:US-001/US-002 emitidos pelo planner provados INERTES pelo auditor (todo consumidor testa so contra a literal operator; priority 1/2/3 ordena).
 - **Blockers encountered**: Zero em runtime: o loop self-drove US-001->003 + review CLEAN round 1 com zero re-arm; as narrations [cam] e o verdict chegaram ao orquestrador live (CAM-70/78 holding em 0.17.0). Ship-hygiene classe CAM-60: check:all pegou test/embedded.test.ts 487>470 (worker por-story roda so typecheck+tests, nao check:all); ceiling levantado 470->487 com _ref CAM-96 pelo orquestrador (licao orch-no-hardkill: raise no ship-hygiene final). Merge-watch file sumiu uma vez antes do CI verde (sidecar re-poll idempotente, tag existed=no-op); restaurei e o post-merge completou autonomo (pull/tag v0.18.0/prune).
 - **Follow-ups**: Binario instalado segue 0.17.0 (codigo main agora 0.18.0): CAM-96 toca so o hook runtime-read de .claude/ + templates/tests/docs, nada em src/supervisor, entao 0.17.0 e behavior-coerente pro proximo ciclo; rebuild so importa pra propagar o template do hook no cam init downstream (US-002). CAM-65 (reviewer pane lingering pos-CLEAN) reproduzido, matado a mao pre-ship. CAM-137 (worktree-desync dos on-main writers, vivido 4x esta sessao) filado+grelhado+rank 9. Proximo no batch: CAM-93 (rank 2, cam next write-failure).
+
+## cam/CAM-93-next-write-failure-surface — cam next: surface active:true write-failure em vez de falso sucesso
+
+- **Started**: 2026-06-29
+- **Closed**: 2026-06-29
+- **Branch**: cam/CAM-93-next-write-failure-surface
+- **Issue**: CAM-93
+- **Outcome**: shipped
+- **Summary**: Fix de error-handling de jobSize 1 em src/commands/next.ts. O catch (~linha 305) engolia erros de fs do write de active:true e chamava emitOk()+return 0 incondicional: apos o CAM-78 US-001 tornar esse write o UNICO efeito do hit path, uma falha silenciosa reportava falso sucesso e o sidecar nunca disparava. Fix: no catch, printError+return 1, espelhando as outras failure-branches (L251-253, L259-264). Novo writeFn seam em NextOptions para injetar falha deterministica no teste. 2087 pass / 0 fail, review CLEAN round 1. PR #92, v0.19.0.
+- **Decisions**: writeFn DI seam em NextOptions (padrao existente no projeto) em vez de cwd-inescrevivel: mais hermetico e legivel. Ceiling test/next.test.ts levantado 436->473 (_ref CAM-93) no ship-hygiene.
+- **Blockers encountered**: knip cache corrompido (classe CAM-69 redux) na primeira rodada do check:all; limpo e re-run verde. merge-watch consumido pelo sidecar antes de o CI verdar; re-escrito uma vez, post-merge rodou duas vezes (idempotente, tag existed na segunda).
