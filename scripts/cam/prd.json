@@ -70,7 +70,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Files: docs/recovery-runbook.md section (q) 'CAM-102: orchestrator Task spawn denied by the agent-allowlist hook' (lines ~1140-1311; the jq precondition framing is at the Diagnosing step 3 sub-bullet, lines ~1222-1229: `which jq # must be on PATH`). scripts/cam/CLAUDE.md was grepped at spec time and has NO jq/fail-open text, so likely no change there (leave unchanged if still true; do not invent a claim to edit). This is the CLAUDE.md section 7 doc-maintenance story: behavior changed in US-001, so the doc that describes it must change in the same PRD. Do NOT leave a stale claim that jq-absence bypasses the gate. The hook header comment is already covered by US-001; here only the runbook (and CLAUDE.md if it has the stale claim) is in scope. Knowledge-layer routing: this is a doc fix, not a new pattern; no patterns.md bullet required unless a durable insight emerges."
     }

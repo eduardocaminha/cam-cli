@@ -1,24 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Mirror the guard into the template copy and re-embed the vendor"
+    "id": "US-003",
+    "title": "Update recovery-runbook (q) and hook docs to state fail-closed-without-jq"
   },
   "branchName": "cam/CAM-96-hook-fail-closed-jq",
-  "timestamp": "2026-06-29T13:00:00Z",
+  "timestamp": "2026-06-29T14:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "test/embedded.test.ts",
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added a content-level test assertion to test/embedded.test.ts pinning the 'command -v jq' fail-closed guard string in the embedded template hook (templatesContents['.claude/hooks/orch-agent-allowlist.sh']). Both hook copies were already byte-identical (US-001 mirrored them). embed-vendor was already regenerated. All 2085 tests pass.",
+  "nextStoryContext": "US-003 updated docs/recovery-runbook.md section (q) diagnostic step 3 to state that jq absence causes fail-closed behavior (denies every Task/Agent spawn, static deny, exit 0) rather than fail-open or bypass. The 'which jq # must be on PATH' comment was reframed to 'absent = hook denies all (fail-closed)'. scripts/cam/CLAUDE.md had no jq/fail-open text and was left unchanged. All 3 stories in CAM-96 now pass. All 2085 tests pass.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
       "url": "",
-      "fetchedAt": "2026-06-29T13:00:00Z",
-      "summary": "Story only touched test assertions and prd.json. No external libraries exercised."
+      "fetchedAt": "2026-06-29T14:00:00Z",
+      "summary": "Story is a doc-only fix. No external libraries exercised."
     }
   ]
 }
