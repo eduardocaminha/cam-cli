@@ -4,6 +4,13 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.22.0] - 2026-06-29
+
+### Added
+
+- [US-002] - Persist MAX_ROUNDS_DEBT promotion in runSupervisor so cap-reentry exits terminal and ship accepts it
+- [US-001] - Signal MAX_ROUNDS_DEBT promotion from decideNextAction at the cap boundary
+
 ## [0.21.0] - 2026-06-29
 
 ### Added
