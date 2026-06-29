@@ -1,0 +1,27 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-93-next-write-failure-surface",
+  "description": "cam next: surface the active:true write failure with a clear error + non-zero exit instead of a false emitOk()+0 success.",
+  "issueNumber": 93,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Surface active:true write failure in cam next",
+      "description": "As an operator running `cam next`, I need a failed write of active:true to .claude/cam-loop.local.md to produce a clear error and a non-zero exit, so that a silently-swallowed fs failure no longer reports false success while the sidecar never fires.",
+      "acceptanceCriteria": [
+        "The catch block wrapping the active:true write in src/commands/next.ts (currently ~line 305) no longer swallows the error: it emits a clear, human-readable error (via the existing printError helper imported from ../logging/color.ts) naming the failed write to .claude/cam-loop.local.md. [oracle: file-assert grep -c 'Non-fatal: the sidecar will still pick up' src/commands/next.ts returns 0 AND a printError call appears inside the catch wrapping the active:true write]",
+        "On a write failure the function returns a non-zero exit code (1) and does NOT reach the emitOk()/return 0 success path. [oracle: named-command bun test test/next.test.ts]",
+        "A deterministic test injects a write failure (e.g. via an injected write seam or an unwritable cwd) and asserts runNext resolves to a non-zero code AND that an error was emitted (assert on printError output / stderr capture), not emitOk. [oracle: named-command bun test test/next.test.ts]",
+        "The existing happy-path behavior is unchanged: when the write succeeds, runNext still emits ok and returns 0; the existing hit-path tests (e.g. 'returns 0 and writes active:true when orchestrator is alive', 'runNext writes active:true on the hit path') continue to pass. [oracle: named-command bun test test/next.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
+        "Tests pass (bun test). [oracle: named-command bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single-file error-handling fix + its test. jobSize 1 — do NOT inflate scope. File: src/commands/next.ts. The defect is the catch at lines 305-307 (comment 'Non-fatal: the sidecar will still pick up...') followed by unconditional emitOk()+return 0 at lines 309-312. After CAM-78's US-001 made this write the ONLY effect of the hit path, a swallowed write error is a false success and the sidecar never fires. Fix: in the catch, call printError(<clear msg>, <hint>) (printError is already imported from ../logging/color.ts at line 24; mirror the failure-branch shape at lines 251-253 and 259-264: printError(...) -> emitTrailingBlank() -> return 1). Test seam: NextOptions (src/commands/next.ts:136) currently exposes tmuxSpawnFn/bootstrapFn/statFn/sleepFn but NO write seam — the cleanest hermetic injection is to add an optional writeFn seam to NextOptions defaulting to writeStateFile, then have the test pass a writeFn that throws; alternatively point cwd at an unwritable path. Mirror existing test structure in test/next.test.ts (describe blocks, makeFakeTmuxSpawn with orchAlive:true for the hit path, mkdtempSync/rmSync lifecycle). To assert error emission deterministically, capture stderr/console output of printError. Keep the success path (emitOk + emitAttachHint + emitTrailingBlank + return 0) byte-for-byte unchanged. No external library, no vendor/ or templates/ touched, no Ink UI screen."
+    }
+  ]
+}
