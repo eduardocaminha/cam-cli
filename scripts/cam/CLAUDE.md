@@ -42,7 +42,7 @@ Run these before committing. Fix failures before proceeding:
 2. **Tests**: `bun test` (Bun's built-in runner). Test files live under `test/`, mirroring source.
 3. **Vendor drift** (only when a story touches `vendor/` or `templates/`): `bun run embed-vendor:check`. Fails if the embedded copy is stale; regenerate with `bun run embed-vendor`.
 
-**Lint**: no standalone linter (ESLint/Biome/Prettier) is configured in this repo. The typecheck above is the static gate. Do not add a lint command unless a story explicitly introduces one.
+**Lint**: Biome is configured (`biome.json` at repo root). Run `bun run check:all` to execute the full quality spine, which includes `bunx biome lint --error-on-warnings` (also available standalone as `bun run lint`). CI runs `bun run check:all` as the lint/static gate; PRD planners must include it when specifying quality gates.
 
 Do NOT use `--no-verify` to bypass pre-commit hooks. If a hook step is wrong, file a follow-up to fix it. Never skip it for the current story.
 
