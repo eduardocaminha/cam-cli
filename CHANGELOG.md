@@ -4,6 +4,13 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.28.0] - 2026-06-29
+
+### Added
+
+- [US-002] - Wire auth preflight into runRun before session + sidecar spawn
+- [US-001] - Add checkClaudeAuth preflight with injectable spawn
+
 ## [0.27.0] - 2026-06-29
 
 ### Added
