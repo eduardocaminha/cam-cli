@@ -1,0 +1,85 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-114-stale-no-linter-docs",
+  "description": "Correct stale 'no linter configured' claims (biome + bun run check:all is the live lint/static gate, wired CAM-60) across the cam harness docs and agent instructions. NOTE on issue AC#2 divergence: the issue says 'Mirror em templates/agents/ + re-embed _generated.ts', but the templates/ mirrors were verified (diff + grep) to carry NO stale linter text (they are deliberately generic downstream skeletons), so the template mirrors are intentionally NOT edited and _generated.ts is intentionally NOT re-embedded; instead each templates-adjacent story keeps `bun run embed-vendor:check` as a green safety oracle proving the embedded copies stayed in sync. This divergence from the issue text is explicit, not silent.",
+  "issueNumber": 114,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Correct stale no-linter claim in scripts/cam/CLAUDE.md Quality Gates",
+      "description": "As a planner/auditor reading the cam-cli harness instructions, I need the Quality Gates section to state that biome lint + `bun run check:all` is the live lint/static gate (not 'no standalone linter is configured') so that generated PRDs and audits require the lint gate that CI actually runs.",
+      "acceptanceCriteria": [
+        "The stale claim is gone: the Quality Gates section no longer contains the phrase 'no standalone linter'. [oracle: ! grep -q 'no standalone linter' scripts/cam/CLAUDE.md]",
+        "The stale claim is gone: the Quality Gates section no longer asserts the typecheck is 'the static gate' as the lint substitute. [oracle: ! grep -q 'typecheck above is the static gate' scripts/cam/CLAUDE.md]",
+        "The corrected text names the configured biome linter via its config file (absent from the stale text, which only listed 'ESLint/Biome/Prettier' as NOT configured). [oracle: grep -q 'biome.json' scripts/cam/CLAUDE.md]",
+        "The corrected text names `bun run check:all` (or `bun run lint`) as the live lint/static gate. [oracle: grep -q 'check:all' scripts/cam/CLAUDE.md]",
+        "The corrected text states CI runs the lint gate (so planners include it). [oracle: reviewer-judgment]",
+        "templates/scripts/cam/CLAUDE.md was NOT edited (it is a deliberately generic downstream skeleton with the `<project lint command>` placeholder and no stale paragraph). [oracle: grep -q '<project lint command>' templates/scripts/cam/CLAUDE.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit ONLY scripts/cam/CLAUDE.md, the '## Quality Gates' section, line ~45. Current stale line: '**Lint**: no standalone linter (ESLint/Biome/Prettier) is configured in this repo. The typecheck above is the static gate. Do not add a lint command unless a story explicitly introduces one.' Rewrite it to state biome lint is configured (`biome.json` at repo root) and `bun run check:all` (which includes `bunx biome lint --error-on-warnings`, wired CAM-60/PR #66) is the live lint/static gate that CI also runs. Verified ground truth: package.json has `\"lint\": \"bunx biome lint --error-on-warnings\"`, `\"check:all\": \"bun scripts/check-all.ts\"`, and biome.json exists at repo root. The `biome.json` grep oracle discriminates the FIXED text from the stale text on purpose: the old paragraph mentions 'Biome' only inside '(ESLint/Biome/Prettier) is configured' which is being removed, so a plain grep for 'biome' would be tautological. DUAL-COPY CAVEAT (CAM-123): scripts/cam/CLAUDE.md is NOT under templates/ and is NOT in the embed map (walkFiles(TEMPLATES_DIR) in scripts/generate-embedded-vendor.ts only walks templates/). The templates/scripts/cam/CLAUDE.md mirror is a generic skeleton that does NOT contain the stale linter paragraph (verified by diff: it uses `<project lint command>` placeholder). Do NOT edit the template and do NOT re-embed for this story. Keep surgical scope: one paragraph in one file."
+    },
+    {
+      "id": "US-002",
+      "title": "Correct stale no-linter claim in subagent-auditor item 19 (.claude/agents)",
+      "description": "As the PRD auditor (subagent-auditor), I need checklist item 19 ('Quality gates match reality') to assert that biome + `bun run check:all` lint is a live gate planners/auditors must require, instead of flagging any story that demands a lint command as if none is configured, so that the auditor stops penalizing the correct lint gate.",
+      "acceptanceCriteria": [
+        "The stale claim is gone: item 19 no longer says the lint command is 'none is configured'. [oracle: ! grep -q 'none is configured' .claude/agents/subagent-auditor.md]",
+        "Item 19 now names `bun run check:all` (and/or `bun run lint`) as the live lint gate planners/auditors must require. [oracle: grep -q 'check:all' .claude/agents/subagent-auditor.md]",
+        "Item 19 references the configured biome linter via its config file (absent from the current item 19, which mentions no linter at all). [oracle: grep -q 'biome.json' .claude/agents/subagent-auditor.md]",
+        "The non-lint half of item 19 (no browser/E2E/database check for this terminal CLI) is preserved. [oracle: grep -q 'no DB/server/browser' .claude/agents/subagent-auditor.md]",
+        "The templates/agents/subagent-auditor.md mirror was NOT edited: its item 19 remains the generic 'any project-specific invariants you can infer' prompt and never contained the cam-cli 'none is configured' claim (verified by diff). [oracle: grep -q 'project-specific invariants you can infer' templates/agents/subagent-auditor.md]",
+        "Vendor drift check passes, confirming the embedded templates copy is unchanged and in sync (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit ONLY .claude/agents/subagent-auditor.md, checklist item 19 under '### F. Project-specific sanity (cam-cli)', line ~91. Current stale text: '19. **Quality gates match reality**: acceptance criteria use `bun run typecheck` and `bun test` (and `bun run embed-vendor:check` when `vendor/`/`templates/` are touched). Flag any story that demands a `lint` command (none is configured) or a browser/E2E/database check ...'. Rewrite the lint clause: biome lint is configured (`biome.json`) and `bun run check:all` / `bun run lint` IS the live lint gate (wired CAM-60) that CI runs, so planners/auditors must REQUIRE it (not flag it). Keep the browser/E2E/database half intact (still flag those for this terminal CLI; preserve the literal 'no DB/server/browser' phrase). DUAL-COPY CAVEAT (CAM-123, verified by diff): templates/agents/subagent-auditor.md IS in the embed map (it lives under templates/, walked by generate-embedded-vendor.ts and keyed 'agents/subagent-auditor.md' in src/vendor/_generated.ts), BUT its item 19 is the GENERIC skeleton prompt ('Any project-specific invariants you can infer from reading CLAUDE.md or AGENTS.md') and does NOT contain the cam-cli 'none is configured' stale claim. So there is nothing to fix in the template, do NOT edit it, and do NOT re-embed. The embed-vendor:check acceptance criterion here is a SAFETY oracle: it must stay green, proving the template was left untouched and _generated.ts is still in sync. Self-hosting note: this story explicitly declares the edit to .claude/agents/subagent-auditor.md (intentional, per auditor checklist item 23), so it is not harness drift."
+    },
+    {
+      "id": "US-003",
+      "title": "Correct stale no-linter claim in subagent-implementer quality gates (.claude/agents)",
+      "description": "As the implementer agent that runs per-story quality gates, I need my gate list to name biome + `bun run check:all` / `bun run lint` as the live lint/static gate, instead of being told there is no lint command and not to invent one, so that I actually run the lint gate CI runs rather than skipping it.",
+      "acceptanceCriteria": [
+        "The stale claim is gone: the quality-gates list no longer says there is 'no' separate lint command. [oracle: ! grep -q 'no.*separate lint command' .claude/agents/subagent-implementer.md]",
+        "The stale claim is gone: the list no longer instructs the agent 'Do not invent one' (with respect to a lint command). [oracle: ! grep -q 'Do not invent one' .claude/agents/subagent-implementer.md]",
+        "The corrected bullet names the configured biome linter via its config file (absent from the stale text today). [oracle: grep -q 'biome.json' .claude/agents/subagent-implementer.md]",
+        "The corrected bullet names `bun run check:all` (and/or `bun run lint`) as the live lint/static gate the agent must run. [oracle: grep -q 'check:all' .claude/agents/subagent-implementer.md]",
+        "The templates/agents/subagent-implementer.md mirror was NOT edited: it carries no stale linter text (verified by grep). [oracle: ! grep -q 'separate lint command' templates/agents/subagent-implementer.md]",
+        "Vendor drift check passes, confirming the embedded templates copy is unchanged and in sync (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit ONLY .claude/agents/subagent-implementer.md, the gate list under '## What you do for the story' / step 2, line ~93. Current stale bullet: '   - There is **no** separate lint command in this repo; the typecheck is the static gate. Do not invent one.' Rewrite it to: biome lint IS configured (`biome.json`) and `bun run check:all` (which runs `bunx biome lint --error-on-warnings`, wired CAM-60) / `bun run lint` is the live lint/static gate the agent MUST run alongside typecheck and test. Match the corrected wording used in US-001/US-002. This is the auditor's F-01 CRITICAL: this agent actually runs per-story gates and was explicitly told NOT to run lint, directly contradicting CAM-114's goal. Ground truth verified: package.json `\"lint\": \"bunx biome lint --error-on-warnings\"`, `\"check:all\": \"bun scripts/check-all.ts\"`, biome.json exists. DUAL-COPY CAVEAT (CAM-123, verified by grep): templates/agents/subagent-implementer.md IS embedded (keyed 'agents/subagent-implementer.md' in src/vendor/_generated.ts) BUT carries NO stale linter text, so do NOT edit it and do NOT re-embed; embed-vendor:check is a SAFETY oracle that must stay green. Removal oracles grounded against the real line 93: 'no.*separate lint command' and 'Do not invent one' both currently match. Self-hosting: this story explicitly declares the edit to .claude/agents/subagent-implementer.md (intentional)."
+    },
+    {
+      "id": "US-004",
+      "title": "Correct stale no-linter claim in subagent-reviewer verify step (.claude/agents)",
+      "description": "As the reviewer agent that gates the review cycle, I need my verify step to acknowledge that biome + `bun run check:all` / `bun run lint` is a live lint/static gate, instead of asserting there is no separate lint step, so that the reviewer does not treat a story's required lint gate as out-of-place.",
+      "acceptanceCriteria": [
+        "The stale claim is gone: the verify step no longer says 'There is no separate lint step in this repo'. [oracle: ! grep -q 'no separate lint step' .claude/agents/subagent-reviewer.md]",
+        "The corrected verify step names the configured biome linter via its config file (absent from the stale text today). [oracle: grep -q 'biome.json' .claude/agents/subagent-reviewer.md]",
+        "The corrected verify step names `bun run check:all` (and/or `bun run lint`) as the live lint/static gate. [oracle: grep -q 'check:all' .claude/agents/subagent-reviewer.md]",
+        "The templates/agents/subagent-reviewer.md mirror was NOT edited: it carries no stale linter text (verified by grep). [oracle: ! grep -q 'no separate lint step' templates/agents/subagent-reviewer.md]",
+        "Vendor drift check passes, confirming the embedded templates copy is unchanged and in sync (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit ONLY .claude/agents/subagent-reviewer.md, the verify step (step 4 under the review procedure), line ~39. Current stale sentence inside that step: '... If the diff touches `vendor/` or `templates/`, also run `bun run embed-vendor:check`. There is no separate lint step in this repo. A full `bun run build:release` ...'. Rewrite the stale sentence to: the project lint/static gate is biome (`biome.json`) via `bun run check:all` / `bun run lint` (wired CAM-60), which CI runs; keep the surrounding sentences (typecheck/test, embed-vendor:check when vendor/templates touched, build:release only for build-pipeline diffs) intact. This is the SAME stale semantic class as F-01, surfaced by the full-repo grep; the reviewer gates the review cycle, so leaving it stale would keep CAM-114's goal half-met. Ground truth: package.json `\"lint\": \"bunx biome lint --error-on-warnings\"`, `\"check:all\": \"bun scripts/check-all.ts\"`, biome.json exists. DUAL-COPY CAVEAT (CAM-123, verified by grep): templates/agents/subagent-reviewer.md IS embedded (keyed 'agents/subagent-reviewer.md' in src/vendor/_generated.ts) BUT carries NO stale linter text, so do NOT edit it and do NOT re-embed; embed-vendor:check is a SAFETY oracle that must stay green. Removal oracle 'no separate lint step' currently matches the real line. Self-hosting: this story explicitly declares the edit to .claude/agents/subagent-reviewer.md (intentional)."
+    }
+  ]
+}
