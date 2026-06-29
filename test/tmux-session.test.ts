@@ -341,10 +341,10 @@ describe('ensureProjectSession — new session', () => {
 // ---------------------------------------------------------------------------
 
 describe('openPaneInSession', () => {
-	test('calls split-window -t <session>:0 -v -d -P -F #{pane_id} -- with the argv elements spread', () => {
+	test('calls split-window -t <explicit-pane-id> -v -l 60% -d -P -F #{pane_id} -- with the argv elements spread', () => {
 		const spawn = makeFakeSpawn();
 		const cmdArgv = ['claude', '--permission-mode', 'bypassPermissions'];
-		openPaneInSession('cam-orch-myproj-abc123', cmdArgv, spawn);
+		openPaneInSession('cam-orch-myproj-abc123', cmdArgv, spawn, '%0');
 
 		expect(spawn.calls).toHaveLength(1);
 		const call = spawn.calls[0];
@@ -352,9 +352,14 @@ describe('openPaneInSession', () => {
 		expect(call?.args[0]).toBe('-L');
 		expect(call?.args[1]).toBe('cam');
 		expect(call?.args[2]).toBe('split-window');
+		// Must target the explicit pane id, NOT the bare window target.
 		expect(call?.args).toContain('-t');
-		expect(call?.args).toContain('cam-orch-myproj-abc123:0');
+		expect(call?.args).toContain('%0');
+		expect(call?.args).not.toContain('cam-orch-myproj-abc123:0');
 		expect(call?.args).toContain('-v');
+		// Must include explicit size so the worker gets the larger readable share.
+		expect(call?.args).toContain('-l');
+		expect(call?.args).toContain('60%');
 		expect(call?.args).toContain('-d');
 		// Must include -P -F #{pane_id} for stable pane capture.
 		expect(call?.args).toContain('-P');
@@ -372,7 +377,7 @@ describe('openPaneInSession', () => {
 
 	test('returns the captured pane id from stdout', () => {
 		const spawn = makeFakeSpawn();
-		const paneId = openPaneInSession('cam-orch-myproj-abc123', ['claude'], spawn);
+		const paneId = openPaneInSession('cam-orch-myproj-abc123', ['claude'], spawn, '%0');
 		// makeFakeSpawn increments counter for split-window with stdio: pipe.
 		expect(paneId).toBe('%1');
 	});
@@ -386,7 +391,7 @@ describe('openPaneInSession', () => {
 			'bypassPermissions',
 			'/cam-issue create fix; $(echo injected) `whoami` & bad > /tmp/x',
 		];
-		openPaneInSession('cam-orch-test-000000', cmdArgv, spawn);
+		openPaneInSession('cam-orch-test-000000', cmdArgv, spawn, '%0');
 
 		const call = spawn.calls[0];
 		// The free-text element is passed verbatim as one discrete argv element.
@@ -399,7 +404,7 @@ describe('openPaneInSession', () => {
 
 	test('separator -- appears before command elements to guard against flag-like args', () => {
 		const spawn = makeFakeSpawn();
-		openPaneInSession('cam-orch-test-000000', ['claude', '/cam-next'], spawn);
+		openPaneInSession('cam-orch-test-000000', ['claude', '/cam-next'], spawn, '%0');
 
 		const call = spawn.calls[0];
 		const dashDashIdx = call?.args.indexOf('--') ?? -1;

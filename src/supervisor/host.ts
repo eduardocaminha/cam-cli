@@ -372,12 +372,24 @@ export function buildSupervisorOptions(
 		// openPaneInSession does a split-window -v inside the project session and
 		// returns the stable %<n> pane id. We start with 'cat' (silent placeholder)
 		// because the respawn-pane -k call immediately after will replace it.
-		const newId = openPaneInSession(sessionName, ['cat'], (cmd, args, opts) => {
-			return spawnSync(cmd, args, {
+		//
+		// Resolve the orchestrator pane id so the split targets the orch pane
+		// explicitly (giving the worker a stable, readable geometry). Fallback to
+		// the session window target when getOrchPaneId returns null (e.g. orch pane
+		// is also gone).
+		const orchPaneId = getOrchPaneId(sessionName, (cmd, args, opts) =>
+			spawnSync(cmd, args, {
 				stdio: opts?.stdio ?? 'pipe',
 				encoding: 'utf8',
-			} as Parameters<typeof spawnSync>[2]);
-		});
+			} as Parameters<typeof spawnSync>[2]),
+		);
+		const targetPaneId: string = orchPaneId ?? `${sessionName}:0`;
+		const newId = openPaneInSession(sessionName, ['cat'], (cmd, args, opts) =>
+			spawnSync(cmd, args, {
+				stdio: opts?.stdio ?? 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]),
+		targetPaneId);
 		writeWorkerPaneMarker(claudeDir, newId);
 		return newId;
 	};
