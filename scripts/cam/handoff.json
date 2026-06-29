@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Correct stale no-linter claim in scripts/cam/CLAUDE.md Quality Gates"
+  },
+  "branchName": "cam/CAM-114-stale-no-linter-docs",
+  "timestamp": "2026-06-29T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "scripts/cam/CLAUDE.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 corrected the stale Lint paragraph in scripts/cam/CLAUDE.md (Quality Gates section). The templates/scripts/cam/CLAUDE.md was intentionally NOT edited (it is a generic downstream skeleton using <project lint command> placeholder). Subsequent stories in this PRD may touch .claude/agents/ files or other harness docs; verify each for the same stale text pattern.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure docs correction in scripts/cam/CLAUDE.md; no external library was exercised."
+    }
+  ]
+}

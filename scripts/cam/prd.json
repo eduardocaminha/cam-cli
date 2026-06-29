@@ -21,7 +21,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit ONLY scripts/cam/CLAUDE.md, the '## Quality Gates' section, line ~45. Current stale line: '**Lint**: no standalone linter (ESLint/Biome/Prettier) is configured in this repo. The typecheck above is the static gate. Do not add a lint command unless a story explicitly introduces one.' Rewrite it to state biome lint is configured (`biome.json` at repo root) and `bun run check:all` (which includes `bunx biome lint --error-on-warnings`, wired CAM-60/PR #66) is the live lint/static gate that CI also runs. Verified ground truth: package.json has `\"lint\": \"bunx biome lint --error-on-warnings\"`, `\"check:all\": \"bun scripts/check-all.ts\"`, and biome.json exists at repo root. The `biome.json` grep oracle discriminates the FIXED text from the stale text on purpose: the old paragraph mentions 'Biome' only inside '(ESLint/Biome/Prettier) is configured' which is being removed, so a plain grep for 'biome' would be tautological. DUAL-COPY CAVEAT (CAM-123): scripts/cam/CLAUDE.md is NOT under templates/ and is NOT in the embed map (walkFiles(TEMPLATES_DIR) in scripts/generate-embedded-vendor.ts only walks templates/). The templates/scripts/cam/CLAUDE.md mirror is a generic skeleton that does NOT contain the stale linter paragraph (verified by diff: it uses `<project lint command>` placeholder). Do NOT edit the template and do NOT re-embed for this story. Keep surgical scope: one paragraph in one file."
     },
