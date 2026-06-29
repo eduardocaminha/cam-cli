@@ -31,7 +31,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New unit test file: test/commands/run-auth-preflight.test.ts (mirror the injected-spawn fake in test/run.test.ts and the spawnSync claude pattern in src/commands/init.ts validateClaude/lookupOnPath ~lines 76-118). Put the preflight in src/commands/run.ts (or a small sibling module imported by run.ts). Use the SpawnFn type from src/tmux/session.ts (the same DI seam RunOptions.spawnFn already uses). The probe must NOT use `claude -p` (forbidden, memory: subscription-only) and must NOT use `claude --version` (does not check auth). JSON shape verified live (claude 2.1.195): {loggedIn, authMethod, apiProvider, email, orgId, orgName, subscriptionType}. Guard array/JSON-field access for noUncheckedIndexedAccess. Use spawnSync with encoding:'utf8' (or pipe stdio) so stdout is readable, mirroring init.ts. Fail-closed default: if login cannot be confirmed for ANY reason, return fail."
     },

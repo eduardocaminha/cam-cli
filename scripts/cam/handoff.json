@@ -1,0 +1,27 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add checkClaudeAuth preflight with injectable spawn"
+  },
+  "branchName": "cam/CAM-82-run-claude-auth-preflight",
+  "timestamp": "2026-06-29T00:00:00Z",
+  "createdFiles": [
+    "src/commands/run-auth-preflight.ts",
+    "test/commands/run-auth-preflight.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/commands/run.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "checkClaudeAuth is now exported from src/commands/run.ts (re-export from src/commands/run-auth-preflight.ts). The function is standalone and not yet wired into the runRun preflight flow -- the PRD may add a story to integrate it into cam run's startup. The implementation handles all fail-closed paths: spawn error, ENOENT (via result.error), non-zero exit, empty stdout, unparseable JSON, wrong JSON shape, loggedIn falsy. subscriptionType is surfaced but never gated. File-size budget was updated: run.ts ceiling 663->676, run-auth-preflight.ts 141, test file 208.",
+  "officialDocsValidated": [
+    {
+      "lib": "claude-cli auth status",
+      "url": "https://code.claude.com/docs/en/cli-reference",
+      "fetchedAt": "2026-06-29T00:00:00Z",
+      "status": "aligned",
+      "summary": "Docs confirm: claude auth status outputs JSON by default; exits 0 when logged in, 1 when not. JSON shape includes loggedIn, authMethod, apiProvider, email, orgId, orgName, subscriptionType. Implementation gates on loggedIn===true and checks exit code, matching documented behavior."
+    }
+  ]
+}
