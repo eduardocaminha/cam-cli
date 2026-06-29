@@ -16,6 +16,8 @@
 // CAM_SESSION is unset) and locally (where it may be set inside a cam session).
 
 import { test, expect, describe } from 'bun:test';
+import { mkdtempSync, symlinkSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const jqAvailable = Bun.which('jq') !== null;
@@ -324,4 +326,50 @@ describe('orch-agent-allowlist.sh', () => {
 			assertDeny(result);
 		},
 	);
+
+	// --- Fail-closed without jq ---
+	// This test DOES NOT use test.skipIf(!jqAvailable).
+	// It runs even when jq IS present on the system: it simulates jq-absence by
+	// spawning the hook with a restricted PATH that excludes jq (jq-free PATH).
+	// The hook is invoked via an absolute /bin/bash path so bash itself does not
+	// need to be on the restricted PATH. Only cat is symlinked in (needed by the
+	// hook before the command -v jq guard fires).
+	test('scoped: deny-without-jq (jq-free restricted PATH) yields static deny + exit 0', async () => {
+		const fakeBinDir = mkdtempSync(join(tmpdir(), 'cam-test-nojq-'));
+		try {
+			// Symlink only cat into the fake bin dir — that is the sole binary the
+			// hook uses before the command -v jq guard (payload="$(cat)").
+			const catPath = Bun.which('cat') ?? '/bin/cat';
+			symlinkSync(catPath, join(fakeBinDir, 'cat'));
+
+			// jq-free env: PATH contains only the fake bin dir, so command -v jq fails.
+			// CAM_SESSION must be set so the scope gate is passed before the guard fires.
+			const jqFreeEnv: Record<string, string> = {
+				PATH: fakeBinDir,
+				CAM_SESSION: 'test-session',
+			};
+
+			const payload = JSON.stringify({ tool_input: { subagent_type: 'x' } });
+			// Use an absolute bash path so bash resolution does not depend on the restricted PATH.
+			const proc = Bun.spawn(['/bin/bash', HOOK_SCRIPT], {
+				stdin: new TextEncoder().encode(payload),
+				stdout: 'pipe',
+				stderr: 'pipe',
+				env: jqFreeEnv,
+			});
+			const [stdoutText, exitCode] = await Promise.all([
+				new Response(proc.stdout).text(),
+				proc.exited,
+			]);
+
+			// The static deny guard must exit 0 and emit a valid deny JSON via printf.
+			expect(exitCode).toBe(0);
+			const parsed = JSON.parse(stdoutText.trim()) as {
+				hookSpecificOutput?: { permissionDecision?: string };
+			};
+			expect(parsed.hookSpecificOutput?.permissionDecision).toBe('deny');
+		} finally {
+			rmSync(fakeBinDir, { recursive: true, force: true });
+		}
+	});
 });
