@@ -934,7 +934,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 							storyId: outcome.storyId,
 							detail: `push-verification failed: ${pushCheck.detail}`,
 						};
-						{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
+						opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
 						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}
@@ -946,7 +946,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				outcome.kind === 'fail' ||
 				outcome.kind === 'unknown'
 			) {
-				{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
+				opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
 				notifyTerminal('blocked');
 				return { status: 'blocked', iterations, lastOutcome };
 			}
@@ -964,7 +964,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						storyId: outcome.storyId,
 						detail: `finalize aborted, gates failed for ${outcome.storyId}: ${gate.detail}`,
 					};
-					{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
+					opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
 					notifyTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
@@ -975,7 +975,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						storyId: outcome.storyId,
 						detail: `finalize failed for ${outcome.storyId}: ${fin.detail}`,
 					};
-					{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
+					opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
 					notifyTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
@@ -993,7 +993,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			}
 
 			if (outcome.kind === 'incomplete') {
-				{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
+				opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
 				notifyTerminal('blocked');
 				return { status: 'blocked', iterations, lastOutcome };
 			}
@@ -1025,7 +1025,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						// live state file (US-001 clear-on-exit). Every other terminal
 						// return in this loop does this; the no-progress block is a
 						// real terminal exit too.
-						{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
+						opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
 						notifyTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
 					}

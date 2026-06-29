@@ -41,7 +41,8 @@ import type {
 	HandoffSnapshot,
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
-import type { WorkerReport } from '../../src/supervisor/worker-report.ts';
+import { formatWorkerReportSummary, type WorkerReport } from '../../src/supervisor/worker-report.ts';
+import { readFileSync } from 'node:fs';
 import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
@@ -2805,5 +2806,160 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 		expect(result.status).toBe('max-iterations');
 		// notifyOrchestrator must NOT be called on a no-progress retry.
 		expect(notified.length).toBe(0);
+	});
+
+	// -------------------------------------------------------------------------
+	// US-001 (CAM-94): blocked-narration at terminal-blocked implement sites
+	// -------------------------------------------------------------------------
+
+	describe('US-001 (CAM-94): terminal-blocked narration uses lastOutcome.detail, not formatWorkerReportSummary', () => {
+		test('AC2: BLOCKED_QUALITY report -> notifyOrchestrator reflects BLOCKED, not formatWorkerReportSummary on a DONE report', async () => {
+			// Drive the implement branch to site 949 (outcome.kind === blocked) via
+			// an injected BLOCKED_QUALITY worker report. Assert:
+			//   - notifyOrchestrator fires exactly once
+			//   - the line matches [cam] ... BLOCKED: <detail>
+			//   - the line does NOT equal formatWorkerReportSummary applied to a DONE report
+			const prd_impl = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: false }],
+			});
+
+			const blockedReport: WorkerReport = {
+				outcome: 'BLOCKED_QUALITY',
+				story: 'US-001',
+				gates: { typecheck: 'fail: 2 errors', tests: '0 pass / 5 fail' },
+				notes: 'tests failed',
+			};
+
+			// A hypothetical DONE report on the same story: formatWorkerReportSummary
+			// on this would include the word "DONE". The blocked narration must not
+			// equal this string.
+			const doneReport: WorkerReport = {
+				outcome: 'DONE',
+				story: 'US-001',
+				gates: { typecheck: 'ok', tests: '5 pass / 0 fail' },
+				notes: 'none',
+			};
+
+			const notified: string[] = [];
+
+			const opts = makeBaseOpts({
+				readPrd: () => prd_impl,
+				readHandoff: () => null,
+				capturePane: (_paneId) => UNKNOWN_PANE,
+				readWorkerReport: () => blockedReport,
+				workerReportPath: '/fake/worker-report.json',
+				notifyOrchestrator: (line) => {
+					notified.push(line);
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			expect(notified.length).toBe(1);
+			// Must follow the [cam] ... BLOCKED: <detail> pattern.
+			expect(notified[0]).toMatch(/^\[cam\].*BLOCKED:/);
+			// Must NOT equal formatWorkerReportSummary on a DONE report.
+			expect(notified[0]).not.toBe(formatWorkerReportSummary(doneReport));
+		});
+
+		test('AC3: worker report says DONE but prd not flipped -> blocked narration does not contain "DONE"', async () => {
+			// Drive the implement branch to site 996 (outcome.kind === incomplete,
+			// no runGates/finalizeStory). readWorkerOutcome gets a DONE report but
+			// prd.json always shows passes:false, so outcome.kind = incomplete.
+			// The narrated line must not contain the substring "DONE".
+			const prd_never_passing = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: false }],
+			});
+
+			const doneReport: WorkerReport = {
+				outcome: 'DONE',
+				story: 'US-001',
+				gates: { typecheck: 'ok', tests: '5 pass / 0 fail' },
+				notes: 'none',
+			};
+
+			const notified: string[] = [];
+
+			const opts = makeBaseOpts({
+				readPrd: () => prd_never_passing,
+				readHandoff: () => null,
+				capturePane: (_paneId) => UNKNOWN_PANE,
+				readWorkerReport: () => doneReport,
+				workerReportPath: '/fake/worker-report.json',
+				notifyOrchestrator: (line) => {
+					notified.push(line);
+				},
+				// No runGates / finalizeStory -> hits the plain incomplete terminal.
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			expect(notified.length).toBe(1);
+			// Must follow the [cam] ... BLOCKED: pattern.
+			expect(notified[0]).toMatch(/^\[cam\].*BLOCKED:/);
+			// Must NOT contain the substring "DONE" (the worker report's outcome value).
+			expect(notified[0]).not.toContain('DONE');
+		});
+
+		test('AC5: genuine DONE advance -> notifyOrchestrator narrates formatWorkerReportSummary (happy path unchanged)', async () => {
+			// Drive a genuine advance: story advances from passes:false to passes:true.
+			// The genuine-advance site (line ~1047) must still call
+			// formatWorkerReportSummary(r), not the new BLOCKED pattern.
+			const prd_impl = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: false }],
+			});
+			const prd_done_clean = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+			let prdCall = 0;
+
+			const fakeReport: WorkerReport = {
+				outcome: 'DONE',
+				story: 'US-001',
+				gates: { typecheck: 'ok', tests: '5 pass / 0 fail' },
+				notes: 'none',
+			};
+
+			const notified: string[] = [];
+
+			const opts = makeBaseOpts({
+				readPrd: () => {
+					prdCall++;
+					// Call 1: top of iter 1 -> passes:false (implement action).
+					// Call 2+: fileReader in readWorkerOutcome + top of iter 2 -> done+clean.
+					return prdCall <= 1 ? prd_impl : prd_done_clean;
+				},
+				readHandoff: () => null,
+				capturePane: (_paneId) => UNKNOWN_PANE,
+				readWorkerReport: () => fakeReport,
+				workerReportPath: '/fake/worker-report.json',
+				notifyOrchestrator: (line) => {
+					notified.push(line);
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			// Genuine-advance notify fires once (not on the review-complete path).
+			expect(notified.length).toBe(1);
+			// Must equal the worker-report summary (happy path unchanged).
+			expect(notified[0]).toBe(formatWorkerReportSummary(fakeReport));
+		});
+
+		test('AC7: formatWorkerReportSummary call-site count in loop.ts equals 3 (happy-path only)', () => {
+			// File-assert: after the fix, formatWorkerReportSummary is called only at
+			// the three happy-path sites (supervisor-finalized-pass continue, genuine
+			// advance, PRD_COMPLETE). The six terminal-blocked sites no longer call it.
+			const src = readFileSync(
+				new URL('../../src/supervisor/loop.ts', import.meta.url).pathname,
+				'utf-8',
+			);
+			const count = src.split('formatWorkerReportSummary(').length - 1;
+			expect(count).toBe(3);
+		});
 	});
 });

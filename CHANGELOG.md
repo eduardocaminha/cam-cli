@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.21.0] - 2026-06-29
+
+### Added
+
+- US-001 - Narrate supervisor block outcome at terminal-blocked notify sites
+
 ## [0.20.0] - 2026-06-29
 
 ### Added
