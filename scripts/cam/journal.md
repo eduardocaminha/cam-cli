@@ -628,3 +628,15 @@ Each entry follows this template:
 - **Decisions**: Premissa verificada ao vivo: grep confirmou 1 hit (so a definicao), zero callers. Oracle discriminante: ! grep -rq buildMergeDescription src/ test/ (fails-at-HEAD) + check:all (o gate que originalmente perdeu o dead code). Nit recorrente: bump minor porque o commit do implementer usa template feat:, mesmo sendo cleanup.
 - **Blockers encountered**: Nenhum: loop self-drove US-001 + review CLEAN round 1, zero re-arm. Post-merge 1x (CAM-138 holding, 3o ciclo consecutivo). 5o ship consecutivo clean na sessao.
 - **Follow-ups**: Pendencias inalteradas: CAM-142 (gap CAM-137) + 2 SUGGESTIONs do CAM-138. Proximo por rank: CAM-80 (rank 8, geometria do worker-pane openPaneInSession), depois CAM-129 (rank 9, cam init non-TTY no build smoke).
+
+## cam/CAM-80-deterministic-worker-pane-geometry — geometria deterministica do worker-pane (pane explicito + tamanho)
+
+- **Started**: 2026-06-29
+- **Closed**: 2026-06-30
+- **Branch**: cam/CAM-80-deterministic-worker-pane-geometry
+- **Issue**: CAM-80
+- **Outcome**: shipped
+- **Summary**: openPaneInSession criava o worker-pane via split-window -t <session>:0 -v (mira a JANELA, sem flag de tamanho), entao o tmux splitava o pane ATIVO 50/50; num recreate com a dashboard ativa o worker nascia 49x24 ilegivel. Fix: mira o pane explicito do orquestrador (getOrchPaneId, resolvido local no host.ts) com -l 60%, deterministico em create e recreate independente do pane ativo. Pre-req do CAM-65 (que torna todo dispatch um recreate). 2 stories, review CLEAN round 1, 2216 pass, check:all verde. PR #104, v0.31.0.
+- **Decisions**: Planner corrigiu o spec: UNICO call site de producao e host.ts ensureWorkerPaneFn (run.ts NAO cria o worker pane; loop.ts:278 e so JSDoc), entao 1 site a threadar, nao 2; orch pane id resolvido local via getOrchPaneId, sem plumbing novo por run.ts/CreatedPaneIds. Geometria: split vertical, worker pega ~60% (precedente -l <size> ja existe no dashboard split de ensureProjectSession). tmux 3.6a aceita -l 60% (man page + officialDocsConsulted). US-002 = teste REAL-tmux OS-gated (display-message), NAO argv-shape fake (licao CAM-55 'fakes mentem'): ativa pane nao-orquestrador, recria o worker, assert geometria canonica.
+- **Blockers encountered**: Nenhum: loop self-drove US-001->002->review CLEAN round 1, zero re-arm. Post-merge 1x (CAM-138 holding, 4o ciclo consecutivo). 6o ship consecutivo clean. Auditor APPROVE round 1 (0 critical/important, 1 suggestion F-01 DEFERIDA: o fallback do getOrchPaneId==null nas notes oferece <session>:0, que reintroduziria o bug no path degradado raro; reviewer e backstop, core path testado).
+- **Follow-ups**: Pendencias: CAM-142 (gap CAM-137), 2 SUGGESTIONs do CAM-138, e agora F-01 do CAM-80 (fallback determinismo no path orch-pane-ausente). CAM-65 (fecha worker-pane ocioso) agora desbloqueado pelo CAM-80. Proximo por rank: CAM-129 (rank 9, cam init crasha non-TTY/Ink raw mode no build smoke + dup), depois CAM-92 (rank 15, extrair narrateReport helper).
