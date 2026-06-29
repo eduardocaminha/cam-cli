@@ -40,7 +40,7 @@
         "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Pure test-hardening story (no src/ change beyond what US-001 already shipped). Add a `describe('CAM-119: cam init installs the grill-with-docs skill chain downstream')` block to test/embedded.test.ts. Use mkdtempSync(join(tmpdir(),'cam-skills-regress-')) in beforeEach, rmSync in afterEach (mirror the existing materializeTemplates describe blocks at lines ~161 and ~391). Call materializeTemplates(cwd) (it is the install routine copyTemplates delegates to; exercising it directly is the same code path setup.ts runs at line 686). Byte-parity assertion: readFileSync(join(cwd,'.claude','skills','grill-with-docs','SKILL.md'),'utf8') === templatesContents['skills/grill-with-docs/SKILL.md']. The command<->skill link: read templatesContents['commands/cam-spec.md'] (or the materialized .claude/commands/cam-spec.md) and assert it contains 'grill-with-docs' — confirmed present in src/vendor/_generated.ts line 37 (the cam-spec command references the .claude/skills/grill-with-docs/SKILL.md path). The 5 embedded skills keys are enumerated in src/vendor/_generated.ts. Gotcha: templatesContents[key] is `string | undefined` under noUncheckedIndexedAccess; use a `?? ''` fallback or non-null assertion guarded by a prior toBeDefined() as the existing tests do (see lines ~284, ~358). This story depends on US-001 having added the skills/ routing; without it the .claude/skills/ paths would not exist and the test would fail."
     }

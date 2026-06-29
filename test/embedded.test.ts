@@ -456,6 +456,76 @@ describe('materializeTemplates — skills/ subtree routing + count', () => {
 	});
 });
 
+describe('CAM-119: cam init installs the grill-with-docs skill chain downstream', () => {
+	// Regression guard: asserts that materializeTemplates (the install routine
+	// exercised by `cam init`) writes the grill-with-docs skill chain and every
+	// embedded skills/* file under .claude/skills/, and that the cam-spec
+	// command ships together with its grill-with-docs skill dependency. Prevents
+	// the skill-not-found-downstream failure (cam-spec invokes a skill that was
+	// never installed) from silently reappearing.
+	let cwd: string;
+
+	beforeEach(() => {
+		cwd = mkdtempSync(join(tmpdir(), 'cam-skills-regress-'));
+	});
+
+	afterEach(() => {
+		if (cwd && existsSync(cwd)) rmSync(cwd, { recursive: true, force: true });
+	});
+
+	test('grill-with-docs/SKILL.md is installed and matches embedded byte-for-byte', () => {
+		materializeTemplates(cwd);
+		const installed = readFileSync(
+			join(cwd, '.claude', 'skills', 'grill-with-docs', 'SKILL.md'),
+			'utf8',
+		);
+		const embedded = templatesContents['skills/grill-with-docs/SKILL.md'] ?? '';
+		expect(embedded).toBeTruthy();
+		expect(installed).toBe(embedded);
+	});
+
+	test('full domain-modeling skill set lands under .claude/skills/ byte-for-byte', () => {
+		materializeTemplates(cwd);
+		const dmBase = join(cwd, '.claude', 'skills', 'domain-modeling');
+		const names = ['SKILL.md', 'CONTEXT-FORMAT.md', 'ADR-FORMAT.md'] as const;
+		for (const name of names) {
+			expect(existsSync(join(dmBase, name))).toBe(true);
+			const installed = readFileSync(join(dmBase, name), 'utf8');
+			const embedded = templatesContents[`skills/domain-modeling/${name}`] ?? '';
+			expect(embedded).toBeTruthy();
+			expect(installed).toBe(embedded);
+		}
+	});
+
+	test('grilling/SKILL.md is installed and matches embedded byte-for-byte', () => {
+		materializeTemplates(cwd);
+		const installed = readFileSync(
+			join(cwd, '.claude', 'skills', 'grilling', 'SKILL.md'),
+			'utf8',
+		);
+		const embedded = templatesContents['skills/grilling/SKILL.md'] ?? '';
+		expect(embedded).toBeTruthy();
+		expect(installed).toBe(embedded);
+	});
+
+	test('cam-spec.md references grill-with-docs AND the skill is co-installed', () => {
+		materializeTemplates(cwd);
+		// The embedded command template references the skill.
+		const camSpecEmbedded = templatesContents['commands/cam-spec.md'] ?? '';
+		expect(camSpecEmbedded).toContain('grill-with-docs');
+		// The materialized command under .claude/commands/ also references it.
+		const installedSpec = readFileSync(
+			join(cwd, '.claude', 'commands', 'cam-spec.md'),
+			'utf8',
+		);
+		expect(installedSpec).toContain('grill-with-docs');
+		// The skill dependency is co-installed under .claude/skills/.
+		expect(
+			existsSync(join(cwd, '.claude', 'skills', 'grill-with-docs', 'SKILL.md')),
+		).toBe(true);
+	});
+});
+
 describe('materializeEmbedded', () => {
 	let cacheDir: string;
 	let prevCache: string | undefined;
