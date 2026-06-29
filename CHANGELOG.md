@@ -4,6 +4,13 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.26.0] - 2026-06-29
+
+### Added
+
+- [US-002] - Lock the downstream grill-with-docs skill install against regression
+- [US-001] - Route and count the skills/ subtree in the cam init install routine
+
 ## [0.25.0] - 2026-06-29
 
 ### Added
