@@ -4,6 +4,16 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.25.0] - 2026-06-29
+
+### Added
+
+- [US-005] - Notify-on-drain via a drain-specific Resend message (reuse client, not the escalateFn)
+- [US-004] - Wire observe drainer into the sidecar idle-tick (off byte-identical)
+- [US-003] - Pure injectable observe decide-fn with dedup + drained detection
+- [US-002] - Add 'meta-loop-observe' WorkerEventKind and detail type
+- [US-001] - Add readMetaLoop config reader (off default | observe, fail-safe)
+
 ## [0.24.0] - 2026-06-29
 
 ### Added

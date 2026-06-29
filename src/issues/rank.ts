@@ -46,7 +46,7 @@ function numericIdSuffix(id: string): number {
  * could not be computed (missing wsjf field or jobSize <= 0).
  * In both failure cases, wsjf is 0 so the issue sorts last in its layer.
  */
-function computeWsjf(issue: IssueEntry): { wsjf: number; warning: string | null } {
+export function computeWsjf(issue: IssueEntry): { wsjf: number; warning: string | null } {
 	if (issue.wsjf === undefined) {
 		return {
 			wsjf: 0,

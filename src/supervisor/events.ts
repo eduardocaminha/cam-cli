@@ -78,7 +78,8 @@ export type WorkerEventKind =
 	| 'merge-watch-ci-red'
 	| 'merge-watch-post-merge-done'
 	| 'stage-promoted'
-	| 'cycle-tokens';
+	| 'cycle-tokens'
+	| 'meta-loop-observe';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -248,6 +249,18 @@ export interface CycleTokensEventDetail {
 	recordedAt: string;
 }
 
+/**
+ * 'meta-loop-observe' event detail: emitted by the meta-loop observer to record
+ * what the drainer would select next (or that the queue is empty), without
+ * performing any mutation. Discriminated union of two shapes:
+ *   - { wouldSelect, rank, wsjf }: a plannable issue was found at the given rank
+ *     with the given computed WSJF scalar (not the WsjfScore object).
+ *   - { drained: true }: the queue is empty (no plannable issue remains).
+ */
+export type MetaLoopObserveEventDetail =
+	| { wouldSelect: string; rank: number; wsjf: number }
+	| { drained: true };
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -262,6 +275,7 @@ export type WorkerEventDetail =
 	| MergeWatchPostMergeDoneEventDetail
 	| StagePromotedEventDetail
 	| CycleTokensEventDetail
+	| MetaLoopObserveEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

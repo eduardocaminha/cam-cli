@@ -31,8 +31,8 @@ import { parseStateFile } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, type SpawnFn } from '../tmux/session.ts';
-import { readMergeMode, readPlanApproval, readResendConfig } from '../config/models.ts';
-import { sendEscalation } from '../notify/resend.ts';
+import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig } from '../config/models.ts';
+import { sendEscalation, type ResendSendFn } from '../notify/resend.ts';
 import { buildWorkerReportSendKeysArgv } from '../supervisor/worker-report.ts';
 import {
 	runMergeWatch,
@@ -42,6 +42,8 @@ import {
 	type PrStatus,
 } from '../release/merge-watch.ts';
 import { runPostMerge, type SpawnFn as PostMergeSpawnFn } from '../release/post-merge.ts';
+import { observeDecide, type ObserveState } from '../supervisor/observe.ts';
+import { selectPlannableFromFile } from '../issues/select.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -135,6 +137,18 @@ export interface SidecarOptions {
 	 * real network hit.
 	 */
 	escalateFn?: RunSidecarLoopOptions['escalateFn'];
+	/**
+	 * Override the meta-loop observe function (US-004/US-005, CAM-132).
+	 *
+	 * Production (meta_loop=observe): a closure that calls selectPlannableFromFile
+	 * on the MAIN backlog, runs observeDecide with in-memory dedup state, emits
+	 * a 'meta-loop-observe' event via logEvent, and sends a drain notification via
+	 * Resend when the backlog empties (US-005, if Resend is configured).
+	 * Production (meta_loop=off, default): undefined (inert, zero behavior change).
+	 * Tests: inject a spy (built via makeTestObserveFn in the test file) to assert
+	 * observe+drain notification behavior without real filesystem or network access.
+	 */
+	runMetaLoopObserveFn?: RunSidecarLoopOptions['runMetaLoopObserveFn'];
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +442,116 @@ interface SidecarLoopDepsResult {
 	flipActiveFn: RunSidecarLoopOptions['flipActiveFn'];
 	autoShipFn: RunSidecarLoopOptions['autoShipFn'];
 	escalateFn: RunSidecarLoopOptions['escalateFn'];
+	runMetaLoopObserveFn: RunSidecarLoopOptions['runMetaLoopObserveFn'];
+}
+
+// ---------------------------------------------------------------------------
+// Drain notification (US-005, CAM-132)
+// ---------------------------------------------------------------------------
+
+/**
+ * Subject line for drain-specific Resend emails.
+ * Exported so tests can assert against the canonical string without
+ * hardcoding it, and so file-assert oracles can verify its presence.
+ */
+export const DRAIN_NOTIFY_SUBJECT = '[cam] Backlog drained: no plannable issues remain';
+
+/**
+ * Build the drain-notify closure (US-005, CAM-132).
+ *
+ * Reuses readResendConfig + sendEscalation with a drain-specific subject/body.
+ * NOT the escalateFn closure (which carries the non-convergence subject).
+ * No second Resend client is instantiated: sendEscalation builds the client
+ * internally from apiKey when sendFn is absent.
+ *
+ * Returns undefined when apiKey or recipient is empty so the drain path is
+ * inert for projects that have not configured Resend.
+ *
+ * @param sendFn Injectable send function for unit tests (avoids real network).
+ */
+function makeProductionDrainNotifyFn(
+	apiKey: string,
+	recipient: string,
+	sendFn?: ResendSendFn,
+): (() => Promise<void>) | undefined {
+	if (apiKey === '' || recipient === '') return undefined;
+	return async () => {
+		await sendEscalation({
+			apiKey,
+			recipient,
+			subject: DRAIN_NOTIFY_SUBJECT,
+			html: '<p><strong>[cam]</strong> The meta-loop observer found no plannable issues in the backlog. The project backlog is drained.</p>',
+			sendFn,
+		});
+	};
+}
+
+/**
+ * Build the production escalateFn closure (US-R1-001).
+ *
+ * Extracted from buildSidecarLoopDeps to reduce its cognitive complexity (biome
+ * noExcessiveCognitiveComplexity, max 15). Not exported: tests inject
+ * options.escalateFn directly.
+ *
+ * Returns undefined when either apiKey or recipient is empty so the non-convergence
+ * terminal stays inert for projects that have not configured Resend.
+ */
+function makeProductionEscalateFn(
+	apiKey: string,
+	recipient: string,
+): RunSidecarLoopOptions['escalateFn'] {
+	if (apiKey === '' || recipient === '') return undefined;
+	return async () => {
+		await sendEscalation({
+			apiKey,
+			recipient,
+			subject: '[cam] Non-convergence: max review rounds reached',
+			html: '<p><strong>[cam]</strong> The supervisor reached the maximum number of review rounds without a CLEAN verdict. Manual intervention is required.</p>',
+		});
+	};
+}
+
+/**
+ * Build the production runMetaLoopObserveFn closure for meta_loop=observe mode
+ * (US-004/US-005, CAM-132).
+ *
+ * Extracted from buildSidecarLoopDeps to keep that function under the biome
+ * noExcessiveLinesPerFunction(maxLines=80) limit. Not exported: tests inject
+ * options.runMetaLoopObserveFn directly.
+ *
+ * Dedup state is held in the closure (NOT persisted to any file under .claude
+ * or the working tree per CAM-68 invariant).
+ *
+ * Internally builds the drain notify fn from apiKey/recipient so that
+ * buildSidecarLoopDeps avoids an extra ?? expression (complexity budget).
+ * When apiKey or recipient is empty, drainNotify is undefined (inert).
+ */
+function makeProductionMetaLoopObserveFn(
+	cwd: string,
+	logEvent: WorkerEventLogger,
+	resendApiKey: string,
+	resendRecipient: string,
+): () => Promise<void> {
+	const drainNotifyFn = makeProductionDrainNotifyFn(resendApiKey, resendRecipient);
+	let lastState: ObserveState = { kind: 'none' };
+	return async (): Promise<void> => {
+		const selected = selectPlannableFromFile(cwd);
+		const result = observeDecide(selected, lastState);
+		if (result !== null) {
+			lastState = result.newState;
+			logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'meta-loop-observe',
+				detail: result.detail,
+			});
+			// US-005: send drain notification once when the backlog empties.
+			if ('drained' in result.detail && result.detail.drained === true && drainNotifyFn) {
+				await drainNotifyFn();
+			}
+		}
+	};
 }
 
 /**
@@ -471,24 +595,26 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	const autoShipFn = options.autoShipFn ?? autoChainProduction.autoShipFn;
 
 	// US-R1-001: escalateFn from Resend config; only wired when both apiKey and
-	// recipient are non-empty.
+	// recipient are non-empty. Production logic extracted to makeProductionEscalateFn
+	// to keep buildSidecarLoopDeps under biome cognitive-complexity limit.
 	const resendConfig = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
 	const escalateFn: RunSidecarLoopOptions['escalateFn'] =
-		options.escalateFn ??
-		(resendConfig.apiKey !== '' && resendConfig.recipient !== ''
-			? async () => {
-					await sendEscalation({
-						apiKey: resendConfig.apiKey,
-						recipient: resendConfig.recipient,
-						subject: '[cam] Non-convergence: max review rounds reached',
-						html: '<p><strong>[cam]</strong> The supervisor reached the maximum number of review rounds without a CLEAN verdict. Manual intervention is required.</p>',
-					});
-				}
+		options.escalateFn ?? makeProductionEscalateFn(resendConfig.apiKey, resendConfig.recipient);
+
+	// US-004/US-005 / CAM-132: meta-loop observe wiring. undefined when off (default).
+	// Drain notify (US-005) is built inside makeProductionMetaLoopObserveFn to keep
+	// buildSidecarLoopDeps under the biome complexity ceiling.
+	const metaLoop = readMetaLoop(join(cwd, 'scripts/cam/project.toml'));
+	const runMetaLoopObserveFn: RunSidecarLoopOptions['runMetaLoopObserveFn'] =
+		options.runMetaLoopObserveFn ??
+		(metaLoop === 'observe'
+			? makeProductionMetaLoopObserveFn(cwd, logEvent, resendConfig.apiKey, resendConfig.recipient)
 			: undefined);
 
 	return {
 		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
 		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, autoShipFn, escalateFn,
+		runMetaLoopObserveFn,
 	};
 }
 
@@ -535,5 +661,6 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		flipActiveFn: deps.flipActiveFn,
 		autoShipFn: deps.autoShipFn,
 		escalateFn: deps.escalateFn,
+		runMetaLoopObserveFn: deps.runMetaLoopObserveFn,
 	});
 }
