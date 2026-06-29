@@ -19,7 +19,7 @@
         "Full check suite passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/events.ts (MergeWatchPostMergeDoneEventDetail at ~line 205 -- add branchPrunedLocal?/branchPrunedRemote? booleans and extend the doc comment); src/release/merge-watch.ts (processPollResult, ok==true branch ~lines 222-228 -- wire result.branchPrunedLocal/Remote into doneDetail, and add a warn line through notifyOrchestrator when either is false, alongside the existing '[cam] post-merge complete' narration at line 224); test/release/merge-watch.test.ts (add a test in the 'runMergeWatch structured events (US-008)' describe block at ~line 655, mirroring the happy-path test that uses makeInMemoryEventLogger + a postMergeFn returning a PostMergeOutcome -- vary branchPrunedLocal/Remote and capture notifyOrchestrator into a notifications array like test (g) at line 420). runPostMerge in src/release/post-merge.ts ALREADY returns branchPrunedLocal/branchPrunedRemote (lines 207/213/215); the only gap is the emit + narration, do NOT change post-merge.ts return shape. Gotcha: ok==false path keeps {prNumber, ok:false, reason} unchanged (no prune fields). SCOPE BOUNDARY: do NOT touch the git 'branch -d' -> '-D' question at post-merge.ts:205 (latent, out of scope, follow-up). CAM-138 will later refactor runMergeWatch into a per-tick state machine and must preserve these new fields -- keep the change localized to the event detail + emit + narration. Re-check the spec's 2 ACs before coding: (a) event carries the fields, (b) warn on prune failure."
     }
