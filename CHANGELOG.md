@@ -4,6 +4,13 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.18.0] - 2026-06-29
+
+### Added
+
+- US-002 - Mirror the guard into the template copy and re-embed the vendor
+- US-001 - Add fail-closed jq-absence guard to the runtime hook + deny-without-jq test
+
 ## [0.17.0] - 2026-06-29
 
 ### Added
