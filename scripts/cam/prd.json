@@ -3,7 +3,10 @@
   "branchName": "cam/CAM-132-meta-loop-observe",
   "description": "Dormant observe core of the inter-cycle meta-loop: config flag, observe event, pure decide-fn, idle-tick wiring, notify-on-drain. Read-only, no dispatch.",
   "issueNumber": 132,
-  "relatedDocs": ["scripts/cam/patterns.md", "docs/recovery-runbook.md"],
+  "relatedDocs": [
+    "scripts/cam/patterns.md",
+    "docs/recovery-runbook.md"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -36,7 +39,7 @@
         "bun run check:all passes green (typecheck + test + embed-vendor + ratchets + biome + ci-parity). [oracle: named-command `bun run check:all`]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/supervisor/events.ts (add kind to WorkerEventKind union @ ~59-81; add MetaLoopObserveEventDetail interface near the other *EventDetail types ~225-249; add it to the WorkerEventDetail union @ ~252-265). Test: test/supervisor/meta-loop-event.test.ts. The detail SHAPE is fixed by spec AC#3: {wouldSelect,rank,wsjf} | {drained:true}. wsjf is a SCALAR number here (the computed WSJF), not the WsjfScore object. Emitted to the supervisor-owned log .claude/cam-worker-events.jsonl (do not invent a new channel; spec gotcha). Spec AC#3."
     },
