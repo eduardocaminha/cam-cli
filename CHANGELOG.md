@@ -4,6 +4,17 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.27.0] - 2026-06-29
+
+### Added
+
+- [US-R1-002] - Review round 1 fix 002: address reviewer finding
+- [US-R1-001] - Review round 1 fix 001: address reviewer finding
+- [US-004] - Add durable-ownership contract one-liner to cam-ship.md (both copies) and re-embed
+- [US-003] - Wire one-step-per-tick into the sidecar outer loop and remove eager-delete (closes CAM-103)
+- [US-002] - Persist merge-watch state durably across ticks in .cam-merge-watch.json
+- [US-001] - Replace blocking poll loop with pure stepMergeWatch tick
+
 ## [0.26.0] - 2026-06-29
 
 ### Added
