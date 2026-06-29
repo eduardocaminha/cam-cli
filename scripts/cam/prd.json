@@ -3,7 +3,9 @@
   "branchName": "cam/CAM-138-merge-watch-state-machine",
   "description": "Refactor runMergeWatch from a blocking 240-poll (4h) loop into a one-step-per-tick state machine with durable state in .cam-merge-watch.json, so the sidecar outer loop never blocks (absorbs CAM-103) and a restart resumes from persisted state.",
   "issueNumber": 138,
-  "relatedDocs": ["docs/recovery-runbook.md"],
+  "relatedDocs": [
+    "docs/recovery-runbook.md"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -20,7 +22,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/release/merge-watch.ts (runMergeWatch:301-322 holds the for-loop; processPollResult:223-275 must be preserved verbatim; MergeWatchOptions:114-151; MergeWatchOutcome:154-158; DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS=60000 and DEFAULT_MERGE_WATCH_MAX_POLLS=240 at :39/:45). Extend MergeWatchState (merge-watch.ts:58-61) with optional pollCount?: number and lastPolledAt?: number so the legacy two-field seed type-checks. Clock injection: pass `now` as a number arg to stepMergeWatch (repo pattern is `clock: () => ...`; product code uses injected clock, NOT Date.now() per the workflow lint ban). stepMergeWatch must be pure: no FS, no sleep, no Date.now(); the caller owns persistence and scheduling. Keep runMergeWatch's signature working OR delete it if no caller remains (knit via check:all dead-code gate in US-003); confirm with `grep -rn runMergeWatch src`. Tests: test/release/merge-watch.test.ts already injects fakes (sleepFn, pollFn, postMergeFn, in-memory logEvent) — extend the same harness with a clock and a pollFn call-counter. Gotcha (scripts/cam/CLAUDE.md): check:all runs knip; leaving the old loop as dead-code fails the gate (handled when wiring lands)."
     },

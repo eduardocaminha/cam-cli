@@ -24,7 +24,10 @@ import { resolve } from 'node:path';
 import { describe, test, expect } from 'bun:test';
 import {
 	runMergeWatch,
+	stepMergeWatch,
 	type MergeWatchOptions,
+	type MergeWatchState,
+	type StepMergeWatchOptions,
 	type GhPollFn,
 	type PostMergeFn,
 	type PrStatus,
@@ -913,6 +916,191 @@ describe('runMergeWatch structured events (US-008)', () => {
 		// No prune-failure warning lines when both pruned successfully.
 		const pruneWarnLines2 = notifications2.filter((n) => n.includes('warn') && n.includes('prune'));
 		expect(pruneWarnLines2).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// stepMergeWatch unit tests (US-001)
+// ---------------------------------------------------------------------------
+// These tests drive stepMergeWatch directly with an injected clock (now: number)
+// and a call-count spy on pollFn. No sleep, no filesystem, no real time.
+// ---------------------------------------------------------------------------
+
+describe('stepMergeWatch', () => {
+	/** Build a minimal StepMergeWatchOptions with overrides. */
+	function makeStepOpts(overrides: Partial<StepMergeWatchOptions> = {}): StepMergeWatchOptions {
+		const notifications: string[] = [];
+		return {
+			cwd: '/fake/cwd',
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: (line) => notifications.push(line),
+			pollIntervalMs: 60_000,
+			maxPolls: 240,
+			...overrides,
+		};
+	}
+
+	/** Build a legacy seed state (only prNumber + mergedBranch, no counters). */
+	function legacySeed(prNumber = 42): MergeWatchState {
+		return { prNumber, mergedBranch: 'cam/test-branch' };
+	}
+
+	// AC2a: throttle blocks when now < lastPolledAt + pollIntervalMs
+	test('(AC2a) tick where now < lastPolledAt+pollIntervalMs does not call pollFn', () => {
+		let pollCalls = 0;
+		const pollFn: GhPollFn = () => {
+			pollCalls++;
+			return MERGED;
+		};
+		const state: MergeWatchState = {
+			prNumber: 1,
+			mergedBranch: 'cam/b',
+			pollCount: 1,
+			lastPolledAt: 1000,
+		};
+		const opts = makeStepOpts({ pollIntervalMs: 60_000, maxPolls: 240 });
+
+		// now = 1000 + 59_999 < 1000 + 60_000 -> throttled
+		const result = stepMergeWatch(state, 1000 + 59_999, pollFn, opts);
+
+		expect(result.kind).toBe('continue');
+		if (result.kind === 'continue') {
+			// State must be unchanged (no poll)
+			expect(result.state).toStrictEqual(state);
+		}
+		expect(pollCalls).toBe(0);
+	});
+
+	// AC2b: tick at/after interval calls pollFn exactly once and updates state
+	test('(AC2b) tick at interval calls pollFn once and increments pollCount+lastPolledAt', () => {
+		let pollCalls = 0;
+		const pollFn: GhPollFn = () => {
+			pollCalls++;
+			return OPEN_CLEAN; // non-terminal
+		};
+		const state: MergeWatchState = {
+			prNumber: 2,
+			mergedBranch: 'cam/b',
+			pollCount: 3,
+			lastPolledAt: 1000,
+		};
+		const opts = makeStepOpts({ pollIntervalMs: 60_000, maxPolls: 240 });
+
+		// now = 1000 + 60_000 = exactly at interval boundary
+		const result = stepMergeWatch(state, 1000 + 60_000, pollFn, opts);
+
+		expect(pollCalls).toBe(1);
+		expect(result.kind).toBe('continue');
+		if (result.kind === 'continue') {
+			expect(result.state.pollCount).toBe(4);
+			expect(result.state.lastPolledAt).toBe(1000 + 60_000);
+		}
+	});
+
+	// AC3: legacy seed state polls immediately on first tick
+	test('(AC3) legacy seed { prNumber, mergedBranch } polls immediately on first tick', () => {
+		let pollCalls = 0;
+		const pollFn: GhPollFn = () => {
+			pollCalls++;
+			return OPEN_CLEAN;
+		};
+		const state = legacySeed(10);
+		// lastPolledAt is absent -> throttle bypassed regardless of now
+		const result = stepMergeWatch(state, 0, pollFn, makeStepOpts({ pollIntervalMs: 60_000 }));
+
+		expect(pollCalls).toBe(1);
+		expect(result.kind).toBe('continue');
+		if (result.kind === 'continue') {
+			expect(result.state.pollCount).toBe(1);
+			expect(result.state.lastPolledAt).toBe(0);
+		}
+	});
+
+	// AC4: OPEN+BLOCKED+pending check returns continue (not terminal)
+	test('(AC4) OPEN_BLOCKED_PENDING yields continue (not ci-red)', () => {
+		let pollCalls = 0;
+		const pollFn: GhPollFn = () => {
+			pollCalls++;
+			return OPEN_BLOCKED_PENDING;
+		};
+		const state = legacySeed(20);
+		const result = stepMergeWatch(state, 0, pollFn, makeStepOpts());
+
+		expect(pollCalls).toBe(1);
+		expect(result.kind).toBe('continue');
+	});
+
+	// AC5: timeout when pollCount reaches maxPolls
+	test('(AC5) timeout terminal when pollCount reaches maxPolls', () => {
+		let pollCalls = 0;
+		const pollFn: GhPollFn = () => {
+			pollCalls++;
+			return OPEN_CLEAN;
+		};
+		const opts = makeStepOpts({ maxPolls: 3, pollIntervalMs: 1 });
+
+		// Drive pollCount to 3 (which equals maxPolls=3) -> next tick is timeout
+		let state: MergeWatchState = legacySeed(30);
+		let virtualNow = 0;
+
+		// Tick 0: lastPolledAt=undefined -> polls, pollCount->1
+		let r = stepMergeWatch(state, virtualNow, pollFn, opts);
+		expect(r.kind).toBe('continue');
+		if (r.kind === 'continue') state = r.state;
+		virtualNow += 1;
+
+		// Tick 1: polls, pollCount->2
+		r = stepMergeWatch(state, virtualNow, pollFn, opts);
+		expect(r.kind).toBe('continue');
+		if (r.kind === 'continue') state = r.state;
+		virtualNow += 1;
+
+		// Tick 2: polls, pollCount->3
+		r = stepMergeWatch(state, virtualNow, pollFn, opts);
+		expect(r.kind).toBe('continue');
+		if (r.kind === 'continue') state = r.state;
+		virtualNow += 1;
+
+		// Tick 3: pollCount===maxPolls=3 -> timeout terminal (pollFn NOT called)
+		const pollCallsBefore = pollCalls;
+		r = stepMergeWatch(state, virtualNow, pollFn, opts);
+		expect(r.kind).toBe('terminal');
+		if (r.kind === 'terminal') {
+			expect(r.outcome.kind).toBe('timeout');
+			if (r.outcome.kind === 'timeout') {
+				expect(r.outcome.polls).toBe(3);
+			}
+		}
+		// pollFn must NOT have been called on the timeout tick
+		expect(pollCalls).toBe(pollCallsBefore);
+	});
+
+	// Extra: gh error (null) on first tick returns continue with updated counters
+	test('gh error (null) on first tick returns continue with pollCount incremented', () => {
+		const pollFn: GhPollFn = () => null;
+		const state = legacySeed(50);
+		const result = stepMergeWatch(state, 0, pollFn, makeStepOpts());
+
+		expect(result.kind).toBe('continue');
+		if (result.kind === 'continue') {
+			expect(result.state.pollCount).toBe(1);
+			expect(result.state.lastPolledAt).toBe(0);
+		}
+	});
+
+	// Extra: MERGED on first tick returns terminal immediately
+	test('MERGED on first tick returns terminal merged outcome', () => {
+		const pollFn: GhPollFn = () => MERGED;
+		const state = legacySeed(60);
+		const notifications: string[] = [];
+		const result = stepMergeWatch(state, 0, pollFn, makeStepOpts({
+			notifyOrchestrator: (l) => notifications.push(l),
+		}));
+
+		expect(result.kind).toBe('terminal');
+		if (result.kind === 'terminal') {
+			expect(result.outcome.kind).toBe('merged');
+		}
 	});
 });
 
