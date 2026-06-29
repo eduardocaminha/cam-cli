@@ -1,7 +1,7 @@
 {
   "id": "CAM-94",
   "title": "Narracao terminal-blocked mostra outcome auto-reportado do worker (pode exibir DONE numa story bloqueada)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-26T02:35:16.314Z",
