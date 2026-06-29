@@ -1,18 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Add 'meta-loop-observe' WorkerEventKind and detail type"
+    "id": "US-003",
+    "title": "Pure injectable observe decide-fn with dedup + drained detection"
   },
   "createdFiles": [
-    "test/supervisor/meta-loop-event.test.ts"
+    "src/supervisor/observe.ts",
+    "test/supervisor/observe.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/events.ts",
+    "src/issues/rank.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added 'meta-loop-observe' to WorkerEventKind and exported MetaLoopObserveEventDetail (discriminated union: {wouldSelect:string, rank:number, wsjf:number} | {drained:true}) from src/supervisor/events.ts. It is now part of the WorkerEventDetail union. The test lives at test/supervisor/meta-loop-event.test.ts. file-size-budget.json ceiling for events.ts raised 386->400 (CAM-132 US-002 tracker ref in _ref field). US-003 should wire this event kind into the meta-loop observer implementation.",
+  "nextStoryContext": "US-003 added src/supervisor/observe.ts exporting observeDecide(selected: IssueEntry | null, lastState: ObserveState) => ObserveDecideResult | null and the ObserveState/ObserveDecideResult types. computeWsjf was exported (from private) in src/issues/rank.ts for reuse. 13 tests in test/supervisor/observe.test.ts cover AC2-AC5 (plannable path, drained path, dedup, re-emit on change). US-004 (selectPlannableFromFile I/O seam integration) should wire the decide-fn to the real file selector via the injected selectPlannableFromFile from src/issues/select.ts.",
   "officialDocsValidated": [
     {
       "lib": "none",
