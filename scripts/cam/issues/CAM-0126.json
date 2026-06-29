@@ -1,7 +1,7 @@
 {
   "id": "CAM-126",
   "title": "build-release.sh:108 ponteiro stale a lessons.md (repointar pra lessons.archive.md)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T02:34:31.514Z",
