@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Route and count the skills/ subtree in the cam init install routine"
+  },
+  "branchName": "cam/CAM-119-init-installs-skills",
+  "timestamp": "2026-06-29T12:00:00Z",
+  "createdFiles": [
+    "test/setup.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/templates/embedded.ts",
+    "src/commands/setup.ts",
+    "test/embedded.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added 'skills' to SUBTREES in embedded.ts and routing in targetPath() + copyTemplates export with skills target. The 5 skill files (domain-modeling/{SKILL,CONTEXT-FORMAT,ADR-FORMAT}.md, grill-with-docs/SKILL.md, grilling/SKILL.md) now land under .claude/skills/ after cam init. File-size-budget ceilings raised for the grown files.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
