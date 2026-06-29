@@ -491,3 +491,14 @@ Each entry follows this template:
 - **Summary**: Fix de error-handling de jobSize 1 em src/commands/next.ts. O catch (~linha 305) engolia erros de fs do write de active:true e chamava emitOk()+return 0 incondicional: apos o CAM-78 US-001 tornar esse write o UNICO efeito do hit path, uma falha silenciosa reportava falso sucesso e o sidecar nunca disparava. Fix: no catch, printError+return 1, espelhando as outras failure-branches (L251-253, L259-264). Novo writeFn seam em NextOptions para injetar falha deterministica no teste. 2087 pass / 0 fail, review CLEAN round 1. PR #92, v0.19.0.
 - **Decisions**: writeFn DI seam em NextOptions (padrao existente no projeto) em vez de cwd-inescrevivel: mais hermetico e legivel. Ceiling test/next.test.ts levantado 436->473 (_ref CAM-93) no ship-hygiene.
 - **Blockers encountered**: knip cache corrompido (classe CAM-69 redux) na primeira rodada do check:all; limpo e re-run verde. merge-watch consumido pelo sidecar antes de o CI verdar; re-escrito uma vez, post-merge rodou duas vezes (idempotente, tag existed na segunda).
+
+## cam/CAM-114-stale-no-linter-docs — Corrigir docs stale 'no linter configured' (biome + check:all vivos desde CAM-60)
+
+- **Started**: 2026-06-29
+- **Closed**: 2026-06-29
+- **Branch**: cam/CAM-114-stale-no-linter-docs
+- **Issue**: CAM-114
+- **Outcome**: shipped
+- **Summary**: DOC-only: corrige a claim stale 'no linter configured / typecheck e o gate estatico' em 4 arquivos de instrucao do harness. Desde CAM-60 (PR #66) biome.json existe e bun run check:all roda gate de lint (CI roda check:all), mas planner/auditor/implementer/reviewer ainda eram instruidos que nao havia linter (implementer e reviewer EXPLICITAMENTE mandados a NAO rodar lint, minando o gate). 4 stories, um arquivo cada: US-001 scripts/cam/CLAUDE.md:45, US-002 subagent-auditor.md:91, US-003 subagent-implementer.md:93, US-004 subagent-reviewer.md:39. Review CLEAN round 1. PR #93, v0.20.0.
+- **Decisions**: AC#2 do issue (editar mirror templates/ + re-embed _generated.ts) INTENCIONALMENTE nao implementado: planner verificou que os templates/ sao skeletons genericos sem o texto stale; embed-vendor:check fica como safety oracle verde. Divergencia documentada na description do PRD (nao silenciosa).
+- **Blockers encountered**: Auditor BLOCKou round 1 num CRITICAL real (classe two-layer): o spec enumerava 2 sites mas o stale vivia em 3 (.claude/agents/subagent-implementer.md:93 omitido, o mais consequente pois roda os gates por-story). Planner adicionou US-003 e o full-repo grep dele achou um 4o site (subagent-reviewer.md:39) que o auditor tambem perdeu, adicionado como US-004. Re-audit APPROVE (escopo completo, oracles discriminam). Merge-watch consumido antes do CI verdar 1x (classe CAM-103); re-escrito, post-merge autonomo.
