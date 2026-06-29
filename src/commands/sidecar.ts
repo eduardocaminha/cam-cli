@@ -121,8 +121,8 @@ export interface SidecarOptions {
 	/**
 	 * Override the merge-watch function (US-007).
 	 *
-	 * Production (ci-gated mode): reads .claude/.cam-merge-watch.json, runs
-	 * gh polling via runMergeWatch, narrates via notifyOrchestrator.
+	 * Production (ci-gated mode): reads .claude/.cam-merge-watch.json, advances
+	 * the poll state one step via stepMergeWatch, narrates via notifyOrchestrator.
 	 * Production (immediate mode): undefined (inert, zero behavior change).
 	 * Tests: inject a fake to drive MERGED / CI-red paths without real gh calls.
 	 *
