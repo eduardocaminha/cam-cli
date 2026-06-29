@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Replace blocking poll loop with pure stepMergeWatch tick"
+  },
+  "branchName": "cam/CAM-138-merge-watch-state-machine",
+  "timestamp": "2026-06-29T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/release/merge-watch.ts",
+    "test/release/merge-watch.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "stepMergeWatch is now exported from src/release/merge-watch.ts. MergeWatchState has optional pollCount and lastPolledAt fields. runMergeWatch still exists (caller: sidecar.ts) and uses a virtual clock internally. The next story (US-002) likely wires stepMergeWatch into the sidecar idle tick with real state persistence to .claude/.cam-merge-watch.json.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-001 is a pure TypeScript state machine refactor with no external library surface (gh pollFn is injected and abstracted away)."
+    }
+  ]
+}
