@@ -1,23 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Wire observe drainer into the sidecar idle-tick (off byte-identical)"
+    "id": "US-005",
+    "title": "Notify-on-drain via a drain-specific Resend message (reuse client, not the escalateFn)"
   },
-  "createdFiles": [
-    "test/commands/sidecar-meta-loop.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
     "src/commands/sidecar.ts",
+    "test/commands/sidecar-meta-loop.test.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added runMetaLoopObserveFn to RunSidecarLoopOptions and wired it in the active!==true idle branch of runSidecarLoop, gated on hasPendingStories() to prevent observe during an in-flight PRD cycle. The production factory makeProductionMetaLoopObserveFn in sidecar.ts calls selectPlannableFromFile (MAIN backlog) + observeDecide + logEvent when meta_loop=observe; undefined when off. makeProductionEscalateFn was extracted to keep buildSidecarLoopDeps under biome complexity limit. US-005 (Notify-on-drain via Resend) should build on the meta-loop-observe event emitted by this story.",
+  "nextStoryContext": "US-005 added DRAIN_NOTIFY_SUBJECT, makeProductionDrainNotifyFn, and updated makeProductionMetaLoopObserveFn (now async, accepts resendApiKey/resendRecipient, builds drainNotifyFn internally) in sidecar.ts. The drain notify fn reuses readResendConfig + sendEscalation with the drain subject/body; no second Resend client is instantiated. Tests extended makeTestObserveFn to accept optional drainNotifyFn and be async, with 6 new US-005 drain notification test cases covering: configured->1 call, drain subject not Non-convergence, unconfigured->0 calls, dedup->1 call across 5 ticks, and 2 file-assert oracles. File-size budget raised: sidecar.ts 611->667, test/commands/sidecar-meta-loop.test.ts 371->550.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "resend",
+      "version": "current",
+      "url": "https://resend.com/docs/api-reference/emails/send-email",
+      "fetchedAt": "2026-06-29T00:00:00Z",
+      "status": "ok",
+      "summary": "Resend emails.send() requires from, to, subject. Returns { data: { id }, error: null } on success. Our sendEscalation wrapper correctly checks error!==null, passes from/to/subject/html, and injects a sendFn for tests. API confirmed matches implementation."
     }
   ]
 }
