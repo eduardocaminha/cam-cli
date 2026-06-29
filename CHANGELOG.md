@@ -4,6 +4,14 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.24.0] - 2026-06-29
+
+### Added
+
+- US-003 - Unit test: injected failing sync subprocess keeps commitTreeToMain non-throwing and sha-stable
+- US-002 - Real-git integration suite: on-main add/mod/del worktree coherence plus off-main regression
+- US-001 - Add syncWorktreeIfOnMain helper and wire it as the final step of commitTreeToMain
+
 ## [0.23.0] - 2026-06-29
 
 ### Added
