@@ -258,9 +258,9 @@ export function SetupScreen({ prefilled, onDone, onCancel }: SetupScreenProps): 
 						</Box>
 					</Section>
 					<Section heading="Next">
-						<NextCommand name="cam run" hint="open or attach the orchestrator" />
-						<NextCommand name="cam plan" hint="plan an issue and create a PRD" />
-						<NextCommand name="cam help" hint="list available commands" />
+						<NextCommand key="cam-run" name="cam run" hint="open or attach the orchestrator" />
+						<NextCommand key="cam-plan" name="cam plan" hint="plan an issue and create a PRD" />
+						<NextCommand key="cam-help" name="cam help" hint="list available commands" />
 					</Section>
 				</>
 			) : null}
