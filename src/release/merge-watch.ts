@@ -293,16 +293,21 @@ function hasFailedCheck(rollup: PrCheckRollupEntry[]): boolean {
 // State machine helpers
 // ---------------------------------------------------------------------------
 
-/** Emit a warn narration when either branch-prune leg failed. No-op when both succeeded. */
+/**
+ * Return a prune-status suffix to fold into the completion line.
+ * Returns an empty string when both legs succeeded (no sub-status appended).
+ * When either leg failed, returns a non-empty suffix so the single
+ * notifyOrchestrator call on the success path carries the prune result.
+ * Pure builder: does NOT call notifyOrchestrator directly (coalesce invariant).
+ */
 function warnOnPruneFailure(
 	prunedLocal: boolean,
 	prunedRemote: boolean,
-	notifyOrchestrator: (line: string) => void,
-): void {
-	if (prunedLocal && prunedRemote) return;
+): string {
+	if (prunedLocal && prunedRemote) return '';
 	const local = prunedLocal ? 'ok' : 'FAILED';
 	const remote = prunedRemote ? 'ok' : 'FAILED';
-	notifyOrchestrator(`[cam] warn: branch prune incomplete (local: ${local}, remote: ${remote})`);
+	return ` (warn: prune local ${local}, remote ${remote})`;
 }
 
 /**
@@ -327,8 +332,12 @@ function processPollResult(
 		const result = postMergeFn({ cwd, mergedBranch });
 		if (result.ok) {
 			const tagNote = result.tagCreated ? '(tag created)' : '(tag existed)';
-			notifyOrchestrator(`[cam] post-merge complete: ${result.tag} ${tagNote}`);
-			warnOnPruneFailure(result.branchPrunedLocal, result.branchPrunedRemote, notifyOrchestrator);
+			// Coalesce: fold prune sub-status into a single completion line.
+			// warnOnPruneFailure is a pure builder (returns string, no side-effects)
+			// so there is EXACTLY ONE notifyOrchestrator call on the success path
+			// (back-to-back send-keys would race in the orchestrator Ink prompt).
+			const pruneSuffix = warnOnPruneFailure(result.branchPrunedLocal, result.branchPrunedRemote);
+			notifyOrchestrator(`[cam] post-merge complete: ${result.tag} ${tagNote}${pruneSuffix}`);
 			const doneDetail: MergeWatchPostMergeDoneEventDetail = {
 				prNumber, ok: true, tag: result.tag, tagCreated: result.tagCreated,
 				branchPrunedLocal: result.branchPrunedLocal,

@@ -62,7 +62,7 @@
         "Aggregate quality gate passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/release/merge-watch.ts (warnOnPruneFailure lines 296-306; processPollResult MERGED branch 323-345; double narration is lines 330-331) and scripts/cam/patterns.md. Refactor warnOnPruneFailure(prunedLocal, prunedRemote) to RETURN a string suffix (empty when both ok) instead of calling notifyOrchestrator; concatenate it into the line 330 `[cam] post-merge complete: <tag> <tagNote>` narration so there is one send-keys. GOTCHA from spec: do NOT reintroduce a second notifyOrchestrator on the MERGED-success path; the orchestrator Ink prompt does not absorb back-to-back send-keys (see patterns.md 'Single-pusher invariant' and 'notifyOrchestrator placement rule' bullets, plus memory sendkeys-literal-enter-gotcha). The post-merge-FAILED path (line 339) is a single narration already; leave it. notifyOrchestrator is the same seam from makeNotifyOrchestrator (src/supervisor/host.ts:193-204) -- do not invent a new channel. Append the patterns.md bullet using dois-pontos/commas, no travessao, no emoji (human-readable doc convention)."
     },
