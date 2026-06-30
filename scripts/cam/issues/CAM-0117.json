@@ -1,9 +1,46 @@
 {
   "id": "CAM-117",
   "title": "Epico: fase de plan como runner deterministico dirigido pelo sidecar (LLM so em planner/auditor)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-27T13:48:21.721Z",
-  "description": "Converte a fase de plan de markdown-interpretado-por-LLM (cam-plan.md hoje) num state-machine TS deterministico dirigido pelo sidecar, como runSupervisor/loop.ts ja e pro implement->review->ship->merge. PRINCIPIO (cicatriz do cam CAM-49/72/86/104: bugs de logica-em-markdown sempre consertados movendo pra TS): control-flow, gates, mutacoes e seguranca = TS deterministico; so julgamento irredutivel = subagente LLM. A fase de plan tem so 2 passos irredutiveis (gerar-PRD via planner, auditar via auditor); o resto (pre-flight, pick-issue ja-TS CAM-106, branch plan_approval, branch/commit/push, escalada de nao-convergencia) e deterministico-able. O grill CAM-107 DESTRAVA isso: com spec estruturado de entrada e stories estruturadas de saida, a superficie LLM encolhe pros 2 passos. END-STATE: o sidecar dirige o pipeline INTEIRO (plan->implement->review->ship->merge) spawnando os subagentes nos pontos de julgamento; um unico driver deterministico dono dos gates + escalada; cam-plan thin-proxy so sinaliza a fase. CAM-109 ja torna deterministica a superficie de SEGURANCA do auto; este epico converte a orquestracao de plan inteira. DEPENDE de CAM-109. BLOQUEIA o auto pleno e CAM-71. ADR-worthy: pipeline deterministico, LLM nos pontos de julgamento. P2."
+  "description": "Converte a fase de plan de markdown-interpretado-por-LLM (cam-plan.md hoje) num state-machine TS deterministico dirigido pelo sidecar, como runSupervisor/loop.ts ja e pro implement->review->ship->merge. PRINCIPIO (cicatriz do cam CAM-49/72/86/104: bugs de logica-em-markdown sempre consertados movendo pra TS): control-flow, gates, mutacoes e seguranca = TS deterministico; so julgamento irredutivel = subagente LLM. A fase de plan tem so 2 passos irredutiveis (gerar-PRD via planner, auditar via auditor); o resto (pre-flight, pick-issue ja-TS CAM-106, branch plan_approval, branch/commit/push, escalada de nao-convergencia) e deterministico-able. O grill CAM-107 DESTRAVA isso: com spec estruturado de entrada e stories estruturadas de saida, a superficie LLM encolhe pros 2 passos. END-STATE: o sidecar dirige o pipeline INTEIRO (plan->implement->review->ship->merge) spawnando os subagentes nos pontos de julgamento; um unico driver deterministico dono dos gates + escalada; cam-plan thin-proxy so sinaliza a fase. CAM-109 ja torna deterministica a superficie de SEGURANCA do auto; este epico converte a orquestracao de plan inteira. DEPENDE de CAM-109. BLOQUEIA o auto pleno e CAM-71. ADR-worthy: pipeline deterministico, LLM nos pontos de julgamento. P2.",
+  "spec": {
+    "scope": "Converter a fase de plan de markdown-interpretado-por-LLM (cam-plan.md) num runner TS DETERMINISTICO dirigido pelo sidecar, como loop.ts ja dirige implement->review->ship->merge. Principio (cicatriz CAM-49/72/86/104: bugs de logic-in-markdown sempre consertados movendo p/ TS): control-flow, gates, mutacoes e escalacao = TS deterministico; so julgamento irredutivel = subagente LLM (planner, auditor). O runner e dono de pre-flight, pick-issue (selectPlannableFromFile, CAM-106 ja-TS), gate de plan_approval, branch/commit/push, loop de BLOCK->re-plan, e escalacao; spawna planner+auditor como sessoes TUI worker-pane (mesmo mecanismo do implementer/reviewer) com handback por arquivo. INCREMENTAL: o runner produz PRD+branch e flipa active:true p/ o loop.ts existente assumir (NAO e reescrita big-bang de driver unico). Colapsa cam-plan.md Steps 3-8 nos 2 spawns de subagente. Depende de CAM-109 (shipped). Fundacao de CAM-139 (drain inter-ciclo) e absorve a metade 'plan->flip active' do CAM-71.",
+    "acceptanceCriteria": [
+      "Runner TS deterministico (sidecar-driven, em src/supervisor ou src/commands/sidecar.ts) executa a fase de plan ponta-a-ponta sem o LLM do orquestrador interpretar cam-plan.md: pre-flight -> pick-issue -> spawn planner -> spawn auditor -> gate plan_approval -> branch/commit/push -> flip active:true.",
+      "Planner e auditor rodam como sessoes TUI worker-pane spawnadas pelo sidecar (estilo buildWorkerArgv, claude --agent subagent-planner|subagent-auditor), NAO via Task() do orquestrador e NAO via claude -p. Produzem saida estruturada por arquivo (prd.json do planner; JSON de veredito do auditor) que o runner le (handback file-based, como worker-report.json).",
+      "Pre-flight (checkout main, pull, prune branches cam/* mergeadas, check de working-tree limpo, typecheck, test) roda deterministico em TS; falha halta com erro claro ANTES de qualquer spawn de planner.",
+      "Pick-issue usa selectPlannableFromFile (CAM-106); sem-issue-plannavel e terminal limpo, nao crash.",
+      "BLOCK do auditor dispara loop deterministico de re-plan: re-spawna o planner com os findings do audit, re-audita; cap em N rounds (default 2); na nao-convergencia, escala pro operador (pausa + notify), nunca loopa infinito. Espelha o FIXES_PENDING->re-implement + terminal MAX_ROUNDS do loop.ts.",
+      "Gate plan_approval: 'auto' -> runner commita o PRD auditado + branch e flipa active:true sem pausa de operador (plan->implement continuo). 'operator' -> runner pausa, notifica o orquestrador com o resumo do PRD auditado, espera aprovacao explicita, entao commita+flipa.",
+      "Conflito de in-progress-work (prd.json com passes:false, ou em branch cam/*) detectado deterministico e ESCALADO pro operador (continue/ship/abandon), nunca auto-decidido.",
+      "No plan bem-sucedido (APPROVE + aprovacao satisfeita), o runner commita o PRD + cria a branch + flipa active:true p/ o loop.ts existente assumir implement->review->ship->merge.",
+      "cam-plan.md reduzido a thin phase-signal (ou removido em favor de cam plan -> sidecar); os prompts subagent-planner.md / subagent-auditor.md ficam inalterados (LLM irredutivel).",
+      "Invariantes de spawn preservados p/ os spawns de planner/auditor: env -u CLAUDECODE (nesting CAM-43), --session-id lowercase (CAM-23), atomic send-keys (CAM-55), mutex (1 worker-pane por vez).",
+      "Unidades deterministicas testadas (spawnFn injetavel): gating do pre-flight, cap+escalacao do BLOCK->re-plan, branching do plan_approval, escalacao de in-progress. bun run check:all passa.",
+      "ADR registra 'fase de plan = runner deterministico do sidecar; LLM so nos pontos de julgamento planner/auditor'."
+    ],
+    "gotchas": [
+      "claude -p e proibido (subscription-only, no-claude-p-subscription-only); planner/auditor TEM que ser sessoes TUI worker-pane, nao headless -p. Saida estruturada via arquivo (prd.json, audit JSON), parseada deterministico, nao stdout-scraping.",
+      "O auditor ja emite JSON estrito (prompt dele). O runner le esse JSON do arquivo de handback, NAO do scrollback do pane (sentinel-parse fragility, supervisor-sentinel-parse-fragility).",
+      "Este runner flipa active:true no sucesso do plan, o que ABSORVE a metade 'plan-approval -> auto-flip active' do CAM-71. CAM-71 estreita p/ so auto-ship-on-review-CLEAN; reconciliar quando CAM-71 for specado.",
+      "Boundary INCREMENTAL: NAO reescrever o implement->review->ship->merge do runSupervisor; handoff via active:true. Driver-unico e end-state, nao este entregavel.",
+      "O mutex (1 worker-pane) agora cobre tambem os spawns de planner/auditor; fase de plan e loop de implement nao podem spawnar concorrente na mesma sessao.",
+      "Epico grande: provavel split do PRD (esqueleto do runner + spawn-rewrite do planner/auditor vs gates/BLOCK-loop/escalacao) p/ nao estourar 3 rounds de review (prd-size-vs-review-convergence).",
+      "O gate plan_approval=operator agora reve o PRD AUDITADO COMPLETO (nao o sketch pre-PRD do Step 6 de hoje): mudanca de comportamento deliberada p/ determinismo."
+    ],
+    "domainTerms": [
+      "plan-runner",
+      "judgment point",
+      "handback"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 3
+  }
 }
