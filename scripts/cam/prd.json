@@ -16,6 +16,13 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/ui/InitScreen.tsx:190]: US-002 fix is a no-op for the warning it targets. Adding explicit keys to the three STATIC sibling <NextCommand> elements (InitScreen.tsx:190-192, SetupScreen.tsx:261-263) cannot affect React's 'Encountered two children with the same key' warning: static JSX siblings are reconciled positionally and never collide. Verified two ways: (a) React docs (react.dev/learn/rendering-lists) state the warning applies only to array/map siblings with duplicate keys; (b) live ink-testing-library reproduction through the real Section component showed 0 same-key warnings for BOTH the pre-fix (no keys) and post-fix (with keys) renders. Consequences: (1) US-002 AC2 ('the non-unique key source is identified') is unmet, no such source exists in these screens; (2) the duplicate-key assertion in test/ui/init-setup-screen-keys.test.ts (afterAll, keyWarnings===[]) passes identically with or without the fix, so it is not a meaningful regression guard for the claimed behavior; (3) the durable patterns.md entry (US-002, CAM-129) asserts a false mechanism that will mislead future agents. The PRD explicitly required reproducing the warning before editing. Action: locate a real duplicate-key warning in cam init/setup and fix the actual source with a test that fails when reverted; OR close US-002 as already-clean and correct/remove the misleading patterns.md entry."
+    },
+    {
       "id": "US-001",
       "title": "Gate init/setup interactivity on stdin raw-mode, not only stdout.isTTY",
       "description": "As an operator running cam init or cam setup in a non-TTY-stdin context (build smoke, pipe), I need the interactivity gate to also require raw mode on stdin so the Ink path is only taken when useInput can actually attach, degrading to the non-interactive print/readline path otherwise (no crash).",
@@ -28,7 +35,7 @@
         "Lint/check-all passes. [oracle: bun run check:all]",
         "Tests pass. [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/init.ts (line 244 isInteractive const), src/commands/setup.ts (lines 122-124 isInteractiveTTY). Both gates currently read only `Boolean(process.stdout.isTTY) && !process.env[CI]`. The root cause (verified in the issue): the Ink `useInput` (SetupScreen.tsx:103, and the Select component used by the init InitScreen flow) needs raw mode on process.stdin, but the gate checks stdout. Same discipline as CAM-104, which only fixed the readline path (ask/askChoice resolve defaults on EOF) and left the Ink path unguarded. Add stdin.isTTY (or Ink's isRawModeSupported) to BOTH gate conditions so the non-interactive fallback (runInitLinear / collectViaReadline) is chosen when raw mode is missing. Existing gate/interactivity tests live in test/interactivity/interactivity.test.ts; readline-EOF precedent in test/setup-collection-eof.test.ts and test/setup-readline-eof.test.ts. Read scripts/cam/patterns.md at story start. Do NOT add a --permission-mode flag. Vertical slice: this is the logic change plus its unit test; no UI file touched here. Test seam: extract the gate into an exported pure predicate (e.g. taking {stdoutIsTTY, stdinIsRawCapable, ci}) OR stub process.stdin.isTTY / process.stdout.isTTY around the test — injecting a stream into collectViaReadline does NOT cover the TTY gate (test/setup-collection-eof.test.ts only exercises readline, not the gate)."
@@ -45,7 +52,7 @@
         "Lint/check-all passes. [oracle: bun run check:all]",
         "Tests pass. [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/ui/SetupScreen.tsx, src/ui/InitScreen.tsx. The implementer MUST reproduce first (render via ink-testing-library and capture the console warning) to locate the actual non-unique key before editing; do not guess. Candidates to inspect: InitScreen keys its check rows by key={c.id} (unique if buildInteractiveChecks ids stay unique in src/commands/init.ts:313); Select keys options by key={opt.value}; Splash keys wordmark rows by key={i}. The duplicate most likely surfaces in the SetupScreen render tree (multiple sibling <Section> blocks each wrapping fragments) or in the init createElement(Box, props, Splash, InitScreen) positional-children composition (src/commands/init.ts:296-307) where variadic createElement children are not auto-keyed like JSX arrays. Gotcha (lessons 2026-06-05): comments in InitScreen claim divisor-color semantics that the runtime does not honor; verify behavior by rendering, never by trusting the comment. Read scripts/cam/patterns.md at story start. ink-testing-library is already a devDependency; precedent screen tests in test/interactivity/interactivity.test.ts."
@@ -62,10 +69,23 @@
         "Lint/check-all passes. [oracle: bun run check:all]",
         "Tests pass. [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "File: scripts/build-release.sh (soft-check block, lines ~110-120; the `if (cd ... init ...); then ... else rc=$?; echo '... non-zero is acceptable ...'` arm). The mask hid a real crash in this issue because claude WAS installed yet init still exited 1 (the Ink raw-mode crash). Approach: probe the claude prerequisite (e.g. `command -v claude` or run `cam init` and inspect whether the only failure was the claude check) and only tolerate non-zero when claude is genuinely absent; otherwise `exit ${rc}`. The guard test is a static-source test (reads the script text, no compiled binary) per test/build-release-smoke.test.ts header. Canonical build-smoke rule (lessons 2026-06-06): a build smoke must never run a mutating command against the repo (the hermetic tmpdir + flags already enforce this; preserve them). Read scripts/cam/patterns.md at story start. With US-001 landed, init in the smoke takes the print path and exits 0 when claude is present, so this story's stricter gate will not produce false build failures."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/ui/InitScreen.tsx",
+        "line": 190,
+        "text": "US-002 fix is a no-op for the warning it targets. Adding explicit keys to the three STATIC sibling <NextCommand> elements (InitScreen.tsx:190-192, SetupScreen.tsx:261-263) cannot affect React's 'Encountered two children with the same key' warning: static JSX siblings are reconciled positionally and never collide. Verified two ways: (a) React docs (react.dev/learn/rendering-lists) state the warning applies only to array/map siblings with duplicate keys; (b) live ink-testing-library reproduction through the real Section component showed 0 same-key warnings for BOTH the pre-fix (no keys) and post-fix (with keys) renders. Consequences: (1) US-002 AC2 ('the non-unique key source is identified') is unmet, no such source exists in these screens; (2) the duplicate-key assertion in test/ui/init-setup-screen-keys.test.ts (afterAll, keyWarnings===[]) passes identically with or without the fix, so it is not a meaningful regression guard for the claimed behavior; (3) the durable patterns.md entry (US-002, CAM-129) asserts a false mechanism that will mislead future agents. The PRD explicitly required reproducing the warning before editing. Action: locate a real duplicate-key warning in cam init/setup and fix the actual source with a test that fails when reverted; OR close US-002 as already-clean and correct/remove the misleading patterns.md entry."
+      }
+    ]
+  }
 }

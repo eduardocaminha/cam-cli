@@ -1,20 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "build-release.sh soft-check distinguishes missing-claude from init-crash"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/build-release.sh",
-    "test/build-release-smoke.test.ts"
+    "scripts/cam/patterns.md",
+    "test/ui/init-setup-screen-keys.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "All three stories in this PRD are now complete (US-001 raw-mode guard, US-002 duplicate React key fix, US-003 build-release soft-check). No further non-operator stories remain with passes:false. The sidecar should detect PRD_COMPLETE or route to review.",
+  "nextStoryContext": "All four stories in this PRD are now complete (US-R1-001 pattern correction, US-001 raw-mode guard, US-002 static-key no-op, US-003 build-release soft-check). The review finding has been addressed: the false patterns.md entry for US-002 was replaced with a correct entry explaining that React duplicate-key warnings only fire on dynamic array renders, not static siblings. The screens are confirmed clean. No further non-operator stories remain with passes:false.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-003 touched only scripts/build-release.sh (bash, no external lib) and its static-source test. The change uses the POSIX shell built-in `command -v` to probe claude presence; no npm/bun package involved."
+      "summary": "US-R1-001 touched only scripts/cam/patterns.md (corrected a false mechanism entry) and test/ui/init-setup-screen-keys.test.ts (updated header comment). No external library was added, changed, or consulted."
     }
   ]
 }
