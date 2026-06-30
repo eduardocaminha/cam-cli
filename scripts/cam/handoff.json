@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Gate init/setup interactivity on stdin raw-mode, not only stdout.isTTY"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/init.ts",
+    "src/commands/setup.ts",
+    "test/interactivity/interactivity.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 fixes the duplicate React key in the Ink init/setup wizard render. The relevant files are src/ui/InitScreen.tsx and src/ui/SetupScreen.tsx. Look for list-rendered children without stable unique keys (typically a Box or Section rendered with createElement where multiple children share the same implicit key). The ink-testing-library pattern for asserting no console.error is already established in test/interactivity/interactivity.test.ts: use beforeAll to spy on console.error and afterAll to restore.",
+  "officialDocsValidated": [
+    {
+      "lib": "ink",
+      "version": "7.x",
+      "url": "https://github.com/vadimdemedes/ink",
+      "fetchedAt": "2026-06-29T00:00:00Z",
+      "status": "ok",
+      "summary": "Ink docs (via gh api) confirm: useStdin().isRawModeSupported is the Ink-native boolean for detecting raw mode support; setRawMode will throw unless the current stdin supports raw mode. process.stdin.isTTY is the correct command-level gate (falsy in piped/non-TTY contexts). Our implementation of isInitInteractiveGate and isSetupInteractiveGate using Boolean(process.stdin.isTTY) correctly routes to the non-interactive fallback when raw mode is unavailable, matching the Ink-recommended pattern."
+    }
+  ]
+}
