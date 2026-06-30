@@ -1,26 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "specSource/derivedFrom schema + hand-rolled validators"
+    "id": "US-002",
+    "title": "Filing flags --fast-track / --derived-from with hard guardrails + WSJF resolution"
   },
   "branchName": "cam/CAM-144-fast-track-plan-ready",
-  "timestamp": "2026-06-30T20:00:00Z",
+  "timestamp": "2026-06-30T21:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/issues.schema.json",
-    "src/issues/spec.ts",
-    "src/issues/types.ts",
-    "test/issues/spec.test.ts"
+    "index.ts",
+    "src/commands/issue-file.ts",
+    "src/issues/alloc.ts",
+    "test/issue-dispatch.test.ts",
+    "test/issue-file.test.ts",
+    "test/issues/alloc.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added specSource and derivedFrom to the schema and IssueEntry. The validateSpecSource function lives in src/issues/spec.ts. US-002 adds --fast-track and --derived-from flags to the cam issue filing command; it should import validateSpecSource to enforce guardrails at filing time. The three plannability predicate sites (select.ts:34, rank.ts:154, gate.ts:150) remain UNCHANGED per Option Y -- do not touch them.",
+  "nextStoryContext": "US-002 added --fast-track and --derived-from flags to cam issue --file-local. parseIssueArgs now returns { mode:'file-local', fastTrack:boolean, derivedFrom:string[] }. createLocalIssueOnMain has a new applyFastTrackGuardrails helper that runs 4 hard guardrails (validateSpecSource + WSJF resolvability) and inherits WSJF from the first parent with wsjf when specSource==='derived' and no explicit wsjf is provided. writeIssueFile now accepts specSource/derivedFrom/wsjf and builds the entry via buildIssueEntry helper (keeps complexity under 15). The syncWorktreeIfOnMain path is preserved (CAM-142 regression guard). The three plannability predicate sites (select.ts, rank.ts, gate.ts) were NOT touched per Option Y from US-001.",
   "officialDocsValidated": [
     {
-      "lib": "json-schema-draft-07",
-      "url": "https://json-schema.org/draft-07/json-schema-validation",
-      "fetchedAt": "2026-06-30T20:00:00Z",
-      "status": "ok",
-      "summary": "draft-07 if/then within allOf confirmed: each conditional is independent per branch, required keyword inside then is valid. Schema structure matches the spec."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "All changes are in internal modules (spec.ts validators, backlog.ts reader, alloc.ts writer, issue-file.ts commands). No external library API was exercised."
     }
   ]
 }

@@ -42,7 +42,7 @@
         "The full spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (parseIssueArgs ParsedIssueArgs union ~L605, dispatchIssue ~L1161, _buildCreateIssueOpts ~L1134 — the stdin payload + flags must thread through), src/commands/issue-file.ts (createLocalIssueOnMain: add guardrail validation before writeIssueFile, mirror checkMainUpToDate→validate→mutate order; read parent issue for WSJF inheritance via readBacklogFromMain), src/issues/alloc.ts (writeIssueFile WriteIssueFileOptions: add specSource/derivedFrom/wsjf, set stage when fast-track), test/issue-dispatch.test.ts (argv parse — gotcha: argv-shape tests do NOT prove tmux semantics, but this is the in-process --file-local path so injectable fakes are fine), test/issue-file.test.ts, test/issues/alloc.test.ts. Gotcha #2: WSJF inheritance is a SUGGESTED DEFAULT (overridable), NOT a binding copy — a derived fix can be more time-critical than its parent (CAM-143 footgun vs CAM-142 feature). Gotcha #4: writeIssueFile is the CAM-90 CAS primitive; since CAM-142 it syncs the worktree after CAS, do not regress that. Reuse the US-001 validator for the hard pre-commit guardrail. The ranker missing-wsjf sort-last+warning (src/issues/rank.ts computeWsjf) stays as a legacy/integrity net only — do NOT make it the designed WSJF path. No content-heuristic auto-marking; explicit flags only (spec criterion #8)."
     },
