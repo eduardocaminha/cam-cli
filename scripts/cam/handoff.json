@@ -1,25 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Fix the duplicate React key in the init/setup Ink render"
+    "id": "US-003",
+    "title": "build-release.sh soft-check distinguishes missing-claude from init-crash"
   },
-  "createdFiles": [
-    "test/ui/init-setup-screen-keys.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/ui/InitScreen.tsx",
-    "src/ui/SetupScreen.tsx"
+    "scripts/build-release.sh",
+    "test/build-release-smoke.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 updates scripts/build-release.sh so the init soft-check only tolerates a non-zero exit when the claude prerequisite genuinely failed, rather than blanket-ignoring any non-zero. With US-001 landed the Ink raw-mode crash is gone; with this story the remaining mask (the 'non-zero is acceptable' comment/arm) is replaced by a claude-specific gate. The static-source test in test/build-release-smoke.test.ts also needs updating: the assertion matching '/non-zero is acceptable/' must be replaced to assert the new claude-prerequisite branching logic. Approach: probe 'command -v claude' (or run cam init and grep its output for the claude check) and only tolerate non-zero when claude is absent.",
+  "nextStoryContext": "All three stories in this PRD are now complete (US-001 raw-mode guard, US-002 duplicate React key fix, US-003 build-release soft-check). No further non-operator stories remain with passes:false. The sidecar should detect PRD_COMPLETE or route to review.",
   "officialDocsValidated": [
     {
-      "lib": "react",
-      "version": "19.x",
-      "url": "https://react.dev/learn/rendering-lists#keeping-list-items-in-order-with-key",
-      "fetchedAt": "2026-06-30T00:00:00Z",
-      "status": "ok",
-      "summary": "React docs confirm: explicit keys are required for list-rendered children (.map()), must be unique among siblings, and stable across renders. Static JSX siblings benefit from explicit keys when rendered inside conditional arrays (Box children) to give React stable reconciliation anchors. The fix adds key='cam-run', key='cam-plan', key='cam-help' to NextCommand siblings in both InitScreen and SetupScreen 'Next' sections, matching this recommendation."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-003 touched only scripts/build-release.sh (bash, no external lib) and its static-source test. The change uses the POSIX shell built-in `command -v` to probe claude presence; no npm/bun package involved."
     }
   ]
 }

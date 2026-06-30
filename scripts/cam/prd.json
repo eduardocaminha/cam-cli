@@ -63,7 +63,7 @@
         "Tests pass. [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: scripts/build-release.sh (soft-check block, lines ~110-120; the `if (cd ... init ...); then ... else rc=$?; echo '... non-zero is acceptable ...'` arm). The mask hid a real crash in this issue because claude WAS installed yet init still exited 1 (the Ink raw-mode crash). Approach: probe the claude prerequisite (e.g. `command -v claude` or run `cam init` and inspect whether the only failure was the claude check) and only tolerate non-zero when claude is genuinely absent; otherwise `exit ${rc}`. The guard test is a static-source test (reads the script text, no compiled binary) per test/build-release-smoke.test.ts header. Canonical build-smoke rule (lessons 2026-06-06): a build smoke must never run a mutating command against the repo (the hermetic tmpdir + flags already enforce this; preserve them). Read scripts/cam/patterns.md at story start. With US-001 landed, init in the smoke takes the print path and exits 0 when claude is present, so this story's stricter gate will not produce false build failures."
     }
