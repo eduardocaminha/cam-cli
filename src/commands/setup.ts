@@ -119,8 +119,27 @@ export async function askChoice<T extends string>(
 // Answer collection — Ink wizard when interactive, readline otherwise
 // ---------------------------------------------------------------------------
 
+/**
+ * Pure gate predicate for the setup interactive path. Exported for unit tests.
+ *
+ * The Ink path (SetupScreen) uses useInput which needs raw mode on stdin.
+ * Returning false routes to collectViaReadline (no crash) when stdin is not a
+ * raw-capable TTY (e.g. build smoke: stdout TTY, stdin piped from /dev/null).
+ */
+export function isSetupInteractiveGate(
+	stdoutIsTTY: boolean,
+	stdinIsTTY: boolean,
+	ci: string | undefined,
+): boolean {
+	return stdoutIsTTY && stdinIsTTY && !ci;
+}
+
 function isInteractiveTTY(): boolean {
-	return Boolean(process.stdout.isTTY) && !process.env['CI'];
+	return isSetupInteractiveGate(
+		Boolean(process.stdout.isTTY),
+		Boolean(process.stdin.isTTY),
+		process.env['CI'],
+	);
 }
 
 async function collectSetupAnswers(options: SetupOptions): Promise<SetupAnswers | null> {

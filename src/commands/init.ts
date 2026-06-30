@@ -228,6 +228,21 @@ export interface InitOptions {
 }
 
 /**
+ * Pure gate predicate for the init interactive path. Exported for unit tests.
+ *
+ * The Ink path (InitScreen) calls useInput which needs raw mode on stdin.
+ * Returning false routes to runInitLinear (no crash) when stdin is not a
+ * raw-capable TTY (e.g. build smoke: stdout TTY, stdin piped from /dev/null).
+ */
+export function isInitInteractiveGate(
+	stdoutIsTTY: boolean,
+	stdinIsTTY: boolean,
+	ci: string | undefined,
+): boolean {
+	return stdoutIsTTY && stdinIsTTY && !ci;
+}
+
+/**
  * Run the full `cam init` flow. Returns the process exit code.
  *
  * Calls into `mergeIntoConfig` for the writer step, so tests can drive the
@@ -241,7 +256,11 @@ export interface InitOptions {
  */
 export async function runInit(options: InitOptions = {}): Promise<number> {
 	const configPath = options.configPath ?? defaultConfigPath();
-	const isInteractive = Boolean(process.stdout.isTTY) && !process.env.CI;
+	const isInteractive = isInitInteractiveGate(
+		Boolean(process.stdout.isTTY),
+		Boolean(process.stdin.isTTY),
+		process.env.CI,
+	);
 	if (!isInteractive) {
 		return runInitLinear(configPath);
 	}
