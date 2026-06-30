@@ -1,9 +1,42 @@
 {
   "id": "CAM-139",
   "title": "auto-dispatch inter-ciclo: o drainer dispara o plan da proxima issue e drena a fila ate secar (mode=auto + kill-switch runtime + notify-on-stop)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-29T17:21:26.138Z",
-  "description": "Fatia B2 (grill CAM-132, 2026-06-29): o pedaco PERIGOSO do meta-loop inter-ciclo, isolado do nucleo observe (CAM-132). Liga o auto-dispatch desatendido: quando meta_loop=auto, o drainer (idle-tick do sidecar) nao so observa mas DISPARA o plan da proxima issue plannable, encadeia plan->implement->review->ship->merge (reusando os primitives flip/autoShip/escalate ja no sidecar) e drena a fila ate secar, parando+notificando (Resend) na fila vazia ou escalando em ciclo bloqueado. Adiciona o mode=auto ao enum [loop] meta_loop e um kill-switch runtime dedicado (matar um drain em voo sem matar a sessao).\n\nblockedBy (estrutural, vira aresta quando esta issue for grilhada): CAM-117 (fase de plan deterministica dirigida pelo sidecar: o disparo desatendido exige plan determinístico, nao LLM-interativo) e CAM-111 (sandbox/safety do worker: autonomia sem gate humano por ciclo precisa de contencao). Relacionados textuais: CAM-71 (auto-chain intra-ciclo, ja quase todo no sidecar via flipActiveFn/autoShipFn) e CAM-116 (verificacao comportamental, mata cerimonia-de-operador que travaria o drain).\n\nREWIRE DE GRAFO ao shipar: esta issue substitui o CAM-132 no blockedBy do epico CAM-110 (hoje [CAM-131, CAM-132]); quando o observe core CAM-132 shipar (stage:shipped), CAM-110 desbloquearia prematuramente, entao CAM-110 deve passar a apontar para ESTA issue. Nao ha primitivo edit-blockedBy hoje.\n\nInvariante CAM-110: runner deterministico dirige o encadeamento; o orquestrador LLM entra so nos pontos de julgamento (fila vazia, ciclo bloqueado, empate de rank). P2, gated nas deps de seguranca do full-autonomy."
+  "description": "Fatia B2 (grill CAM-132, 2026-06-29): o pedaco PERIGOSO do meta-loop inter-ciclo, isolado do nucleo observe (CAM-132). Liga o auto-dispatch desatendido: quando meta_loop=auto, o drainer (idle-tick do sidecar) nao so observa mas DISPARA o plan da proxima issue plannable, encadeia plan->implement->review->ship->merge (reusando os primitives flip/autoShip/escalate ja no sidecar) e drena a fila ate secar, parando+notificando (Resend) na fila vazia ou escalando em ciclo bloqueado. Adiciona o mode=auto ao enum [loop] meta_loop e um kill-switch runtime dedicado (matar um drain em voo sem matar a sessao).\n\nblockedBy (estrutural, vira aresta quando esta issue for grilhada): CAM-117 (fase de plan deterministica dirigida pelo sidecar: o disparo desatendido exige plan determinístico, nao LLM-interativo) e CAM-111 (sandbox/safety do worker: autonomia sem gate humano por ciclo precisa de contencao). Relacionados textuais: CAM-71 (auto-chain intra-ciclo, ja quase todo no sidecar via flipActiveFn/autoShipFn) e CAM-116 (verificacao comportamental, mata cerimonia-de-operador que travaria o drain).\n\nREWIRE DE GRAFO ao shipar: esta issue substitui o CAM-132 no blockedBy do epico CAM-110 (hoje [CAM-131, CAM-132]); quando o observe core CAM-132 shipar (stage:shipped), CAM-110 desbloquearia prematuramente, entao CAM-110 deve passar a apontar para ESTA issue. Nao ha primitivo edit-blockedBy hoje.\n\nInvariante CAM-110: runner deterministico dirige o encadeamento; o orquestrador LLM entra so nos pontos de julgamento (fila vazia, ciclo bloqueado, empate de rank). P2, gated nas deps de seguranca do full-autonomy.",
+  "spec": {
+    "scope": "Ligar o auto-dispatch inter-ciclo DESATENDIDO (a peca perigosa do meta-loop, isolada do observe-core CAM-132). Com [loop] meta_loop=auto, o idle-tick do sidecar nao so OBSERVA a proxima issue plannavel mas DISPACHA o plan dela (via o plan-runner deterministico CAM-117), encadeia plan->implement->review->ship->merge (reusa flipActiveFn/autoShipFn/escalateFn/merge-watch ja no sidecar), e drena a fila ate secar: para (drain-notify best-effort Resend) na fila vazia, ou escala em ciclo bloqueado. Adiciona 'auto' ao enum MetaLoop + um kill-switch runtime dedicado (para o drain in-flight no proximo boundary de ciclo, sem matar a sessao). HARD PRECONDITIONS (fail-closed, recusa drenar senao): worker container ativo (CAM-111) + plan_approval=auto. Resend e notify best-effort (dispara se configurado, soft-warn se nao), NAO e precondition (decisao do operador 2026-06-30). Invariante (CAM-110): o runner deterministico encadeia; o LLM entra so nos judgment points (fila vazia, ciclo bloqueado).",
+    "acceptanceCriteria": [
+      "Enum MetaLoop estendido p/ 'off' | 'observe' | 'auto'; readMetaLoop parseia 'auto' (hoje so 'observe', models.ts:211).",
+      "Em meta_loop=auto, o idle-tick DISPACHA a proxima plannavel (selectPlannableFromFile): invoca o plan-runner deterministico (CAM-117), que encadeia implement->review->ship->merge via os primitivos existentes flipActiveFn/autoShipFn/escalateFn/merge-watch; ao completar o ciclo, o tick pega a proxima plannavel e repete ate secar.",
+      "HARD PRECONDITIONS checadas antes de iniciar um drain (fail-closed): (a) worker container ativo (CAM-111); (b) plan_approval=auto. Faltando qualquer, meta_loop=auto recusa drenar com erro claro; NAO drena degradado.",
+      "Resend NAO e hard precondition: o drain segue sem ele; notify-on-stop/escalate dispara best-effort SE Resend configurado, e um soft-warn e emitido se nao (espelha o aviso do init).",
+      "Kill-switch runtime dedicado para o drain in-flight no proximo boundary seguro (ciclo completo) SEM matar o sidecar/sessao (distinto do cam stop, que SIGTERMa o sidecar inteiro). Checado a cada tick + entre ciclos.",
+      "Judgment points (so aqui LLM/operador): fila vazia -> stop + drain-notify best-effort (scaffolding CAM-132); ciclo bloqueado (MAX_ROUNDS_DEBT ou hard block) -> escalate (pausa + notify best-effort). Rank-tie e resolvido deterministico (desempate por numeric id em selectPlannableIssue), nao e judgment point.",
+      "No ship do CAM-139: o blockedBy do CAM-110 [CAM-131, CAM-132] e rewirado trocando CAM-132 por CAM-139 (senao CAM-110 desbloqueia prematuro, CAM-132 ja shipado). Sem primitivo edit-blockedBy hoje -> passo manual/follow-up no ship.",
+      "Unidades deterministicas testadas (spawnFn/clock injetaveis): gating de precondition (recusa sem CAM-111 / plan_approval=auto), dispatch-tick pega+encadeia, kill-switch para no boundary, escalacao de judgment-point. bun run check:all passa.",
+      "ADR registra 'drain inter-ciclo desatendido: runner deterministico encadeia ciclos; LLM so nos judgment points; hard-gated na rede de seguranca'."
+    ],
+    "gotchas": [
+      "E a peca PERIGOSA (encadeamento desatendido, sem gate humano por ciclo). As hard-preconditions (CAM-111 container + plan_approval=auto) sao a rede de seguranca; nunca deixar drenar sem elas (fail-closed).",
+      "blockedBy CAM-117 (plan-runner deterministico: dispatch desatendido exige plan deterministico, nao LLM-interativo) + CAM-111 (sandbox/safety). Ambos specified, ainda nao shipados: CAM-139 nao pode ser PLANEJADO ate eles shiparem.",
+      "O kill-switch tem que ser distinto do cam stop (SIGTERM do sidecar inteiro); para SO o drain, num boundary seguro de ciclo, deixando a sessao viva pro operador.",
+      "Resend e observabilidade, nao safety (decisao do operador 2026-06-30): nao gatear o drain nele; so best-effort notify + soft-warn.",
+      "REWIRE do CAM-110 no ship (sem primitivo edit-blockedBy); senao CAM-110 desbloqueia prematuro porque CAM-132 ja esta shipped.",
+      "Reusar o scaffolding observe existente (runMetaLoopObserveFn, DRAIN_NOTIFY_SUBJECT, escalateFn, sendEscalation): 'auto' ESTENDE observe (observe->dispatch), nao substitui."
+    ],
+    "domainTerms": [
+      "drain",
+      "dispatch-tick",
+      "kill-switch"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 3
+  }
 }
