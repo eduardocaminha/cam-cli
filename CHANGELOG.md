@@ -4,6 +4,15 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.32.0] - 2026-06-30
+
+### Added
+
+- [US-R1-001] - correct false duplicate-key pattern entry from US-002
+- [US-003] - build-release.sh soft-check distinguishes missing-claude from init-crash
+- [US-002] - Fix the duplicate React key in the init/setup Ink render
+- [US-001] - Gate init/setup interactivity on stdin raw-mode, not only stdout.isTTY
+
 ## [0.31.0] - 2026-06-29
 
 ### Added
