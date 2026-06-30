@@ -1,21 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Classify remote prune by end-state in runPostMerge"
+    "id": "US-002",
+    "title": "Classify local prune by end-state and force-delete with `git branch -D`"
   },
   "createdFiles": [],
   "modifiedFiles": [
     "src/release/post-merge.ts",
     "test/release/post-merge.test.ts",
-    "scripts/cam/prd.json"
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added checkAndPruneRemoteBranch helper (ls-remote pre-check -> end-state classification). The US-002 story (local branch prune: classify by end-state too, i.e. check if branch still exists after -d) follows the exact same pattern. The SpawnFn signature is unchanged; the happySpawn fake in post-merge.test.ts now fully models ls-remote. Step 5 in runPostMerge was replaced by a single call to the helper.",
+  "nextStoryContext": "US-002 added checkAndPruneLocalBranch helper (rev-parse pre-check -> force delete via -D -> rev-parse post-check -> end-state classification). Mirrors checkAndPruneRemoteBranch exactly. happySpawn fake now models rev-parse --verify --quiet refs/heads/<branch> calls (pre and post, with a lsRemoteCallCount-style counter). Default revParseLocalPreStatus=128 means branch already absent (no -D called). Tests that need the delete path must pass revParseLocalPreStatus:0. The next story (US-003) addresses narration coalescing in the supervisor.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "US-001 is pure git CLI + TypeScript; no NPM library was added or modified."
+      "lib": "git-rev-parse",
+      "version": "current",
+      "url": "https://git-scm.com/docs/git-rev-parse",
+      "fetchedAt": "2026-06-30T00:00:00Z",
+      "status": "ok",
+      "summary": "git rev-parse --verify --quiet exits non-zero + empty stdout when ref is absent; SHA on stdout on success. Implementation matches: absent = (status !== 0) || (stdout.trim() === '')."
     }
   ]
 }

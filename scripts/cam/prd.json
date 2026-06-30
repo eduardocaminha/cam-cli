@@ -42,7 +42,7 @@
         "Aggregate quality gate passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/release/post-merge.ts (Step 4 local delete is lines 204-207; branchPrunedLocal derivation line 207). Switch `-d` to `-D` and re-derive branchPrunedLocal from a `git rev-parse --verify --quiet refs/heads/<mergedBranch>` end-state check (status non-zero / empty stdout => absent => pruned). GOTCHA from spec: `git branch -D` (force) is SAFE ONLY because post-merge runs from the confirmed MERGED state (processPollResult status.state === 'MERGED' in merge-watch.ts); preserve that invariant, do not call this primitive from any non-MERGED path. Empirically the local branch is often already absent at post-merge (pruned by the next cycle's /cam-plan pre-flight), so the force-delete matters mainly in the branch-present case. Check test/integration/post-merge-on-main.test.ts (it references the old `branch -d` semantics) and keep it consistent with the `-D` switch. Depends on US-001 (same file, sequential edits). FAKES-LIE HAZARD (auditor F-02): the -d -> -D switch BREAKS the pre-existing assertion at test/release/post-merge.test.ts:188 (test branch deleted locally and remotely), whose localDelete finder asserts c.args.includes(-d) (line ~193): change it to -D. Also extend the same happySpawn/makeSpawnFn fakes (lines 32-80) to model git rev-parse --verify --quiet refs/heads/<mergedBranch> (present AND absent cases) and git branch -D, since they currently return the status-0 empty-stdout default. US-002 keeps its OWN bun test/check:all green by owning these edits here, not deferring to US-004."
     },
