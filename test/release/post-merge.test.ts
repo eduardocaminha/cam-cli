@@ -84,6 +84,10 @@ interface HappySpawnOpts {
 	tagListReturnsTag?: boolean;
 	tagCreateStatus?: number;
 	tagPushStatus?: number;
+	/**
+	 * Exit status for `git branch -D <branch>` (US-002: force delete).
+	 * Only relevant when revParseLocalPreStatus is 0 (branch present).
+	 */
 	branchDeleteLocalStatus?: number;
 	/** Only relevant when lsRemotePreEmpty is false (branch present path). */
 	branchDeleteRemoteStatus?: number;
@@ -103,6 +107,20 @@ interface HappySpawnOpts {
 	 *   false => non-empty stdout (branch still present => not pruned).
 	 */
 	lsRemotePostEmpty?: boolean;
+	/**
+	 * Exit status for the rev-parse --verify --quiet refs/heads/<branch> PRE-check
+	 * (US-002 local end-state classification).
+	 * Default 128 = branch absent => already pruned, no -D delete needed.
+	 * 0 = branch present => proceed to force-delete + post-check.
+	 */
+	revParseLocalPreStatus?: number;
+	/**
+	 * Exit status for the rev-parse --verify --quiet refs/heads/<branch> POST-check
+	 * (US-002 local end-state classification).
+	 * Default 128 = branch absent after delete => branchPrunedLocal:true.
+	 * 0 = branch still present => branchPrunedLocal:false.
+	 */
+	revParseLocalPostStatus?: number;
 }
 
 /** Build a standard happy-path SpawnFn. Caller provides per-command overrides. */
@@ -113,6 +131,8 @@ function happySpawn(
 	// Track ls-remote call count inside the closure so pre-check and post-check
 	// can return different values (each happySpawn() call resets the counter).
 	let lsRemoteCallCount = 0;
+	// Track rev-parse --verify --quiet refs/heads/ call count (US-002 local end-state).
+	let revParseLocalCallCount = 0;
 
 	return (cmd, args, _o) => {
 		if (calls) calls.push({ cmd, args: [...args] });
@@ -125,9 +145,28 @@ function happySpawn(
 		if (args.includes('pull') && args.includes('origin') && args.includes('main')) {
 			return fakeSpawn({ status: 0 });
 		}
-		// rev-parse HEAD
-		if (args.includes('rev-parse') && args.includes('HEAD')) {
+		// rev-parse HEAD (plain HEAD, not refs/heads)
+		if (args.includes('rev-parse') && args.includes('HEAD') && !args.includes('--verify')) {
 			return fakeSpawn({ stdout: `${FAKE_SHA}\n`, status: 0 });
+		}
+		// rev-parse --verify --quiet refs/heads/<branch> (US-002: local end-state classification)
+		if (
+			args.includes('rev-parse') &&
+			args.includes('--verify') &&
+			args.includes('--quiet') &&
+			args.some((a) => a === `refs/heads/${FAKE_BRANCH}`)
+		) {
+			revParseLocalCallCount += 1;
+			if (revParseLocalCallCount === 1) {
+				// Pre-check: default 128 = absent (branch already pruned).
+				const status = opts.revParseLocalPreStatus ?? 128;
+				const stdout = status === 0 ? `${FAKE_SHA}\n` : '';
+				return fakeSpawn({ status, stdout });
+			}
+			// Post-delete check: default 128 = absent (deleted successfully).
+			const status = opts.revParseLocalPostStatus ?? 128;
+			const stdout = status === 0 ? `${FAKE_SHA}\n` : '';
+			return fakeSpawn({ status, stdout });
 		}
 		// tag -l <tag>
 		if (args.includes('tag') && args.includes('-l') && args.includes(FAKE_TAG)) {
@@ -141,8 +180,8 @@ function happySpawn(
 		if (args.includes('push') && args.includes('origin') && args.includes(FAKE_TAG)) {
 			return fakeSpawn({ status: opts.tagPushStatus ?? 0 });
 		}
-		// branch -d <branch>
-		if (args.includes('branch') && args.includes('-d') && args.includes(FAKE_BRANCH)) {
+		// branch -D <branch> (US-002: force delete)
+		if (args.includes('branch') && args.includes('-D') && args.includes(FAKE_BRANCH)) {
 			return fakeSpawn({ status: opts.branchDeleteLocalStatus ?? 0 });
 		}
 		// push origin --delete <branch>
@@ -250,14 +289,17 @@ describe('runPostMerge -- happy path', () => {
 		expect(pushTagCall).toBeDefined();
 	});
 
-	test('branch deleted locally and push --delete called when branch is present on origin', () => {
+	test('branch force-deleted locally (-D) and push --delete called when both branches are present', () => {
 		const calls: SpawnCall[] = [];
-		// Use lsRemotePreEmpty:false so the pre-check reports branch present =>
-		// push --delete is attempted (post-check defaults to empty = pruned).
-		runPostMerge(baseOpts({ spawnFn: happySpawn({ lsRemotePreEmpty: false }, calls) }));
+		// revParseLocalPreStatus:0 => local branch present => -D is invoked.
+		// lsRemotePreEmpty:false => remote branch present => push --delete is attempted.
+		runPostMerge(baseOpts({
+			spawnFn: happySpawn({ revParseLocalPreStatus: 0, lsRemotePreEmpty: false }, calls),
+		}));
 
+		// US-002: must use -D (force), not -d
 		const localDelete = calls.find(
-			(c) => c.args.includes('branch') && c.args.includes('-d') && c.args.includes(FAKE_BRANCH),
+			(c) => c.args.includes('branch') && c.args.includes('-D') && c.args.includes(FAKE_BRANCH),
 		);
 		expect(localDelete).toBeDefined();
 
@@ -449,14 +491,21 @@ describe('runPostMerge -- tag error paths', () => {
 // ---------------------------------------------------------------------------
 
 describe('runPostMerge -- branch prune best-effort', () => {
-	test('branchPrunedLocal is false when local delete fails, result still ok:true', () => {
+	test('branchPrunedLocal is false when branch is still present after force-delete attempt, result still ok:true', () => {
+		// US-002: classify by end-state. Branch present before AND after the -D attempt => false.
 		const result = runPostMerge(
-			baseOpts({ spawnFn: happySpawn({ branchDeleteLocalStatus: 1 }) }),
+			baseOpts({
+				spawnFn: happySpawn({
+					revParseLocalPreStatus: 0,  // branch present
+					branchDeleteLocalStatus: 1, // -D exits non-zero
+					revParseLocalPostStatus: 0, // still present after failed delete
+				}),
+			}),
 		);
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		expect(result.branchPrunedLocal).toBe(false);
-		// Remote should still succeed.
+		// Remote should still succeed (default: branch already absent on remote).
 		expect(result.branchPrunedRemote).toBe(true);
 	});
 
@@ -475,11 +524,13 @@ describe('runPostMerge -- branch prune best-effort', () => {
 	});
 
 	test('result is ok:true even when both branch prunes fail', () => {
-		// Local: branch -d fails. Remote: branch present, delete attempted, still present.
+		// Local: branch present, -D attempted, still present after. Remote: present, delete attempted, still present.
 		const result = runPostMerge(
 			baseOpts({
 				spawnFn: happySpawn({
-					branchDeleteLocalStatus: 1,
+					revParseLocalPreStatus: 0,  // local branch present
+					branchDeleteLocalStatus: 1, // -D exits non-zero
+					revParseLocalPostStatus: 0, // still present after failed delete
 					lsRemotePreEmpty: false,
 					lsRemotePostEmpty: false,
 				}),
@@ -619,6 +670,102 @@ describe('runPostMerge -- remote prune end-state classification (US-001)', () =>
 		expect(content).toContain('spawnFn');
 		// No direct child_process import should exist (SpawnFn is injectable).
 		expect(content).not.toContain("require('child_process')");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: local prune end-state classification (US-002)
+// ---------------------------------------------------------------------------
+
+describe('runPostMerge -- local prune end-state classification (US-002)', () => {
+	test('AC1/AC3: branch already absent before delete => branchPrunedLocal:true, no branch -D called', () => {
+		// Default revParseLocalPreStatus:128 => branch absent => already pruned.
+		const calls: SpawnCall[] = [];
+		const result = runPostMerge(baseOpts({ spawnFn: happySpawn({}, calls) }));
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.branchPrunedLocal).toBe(true);
+
+		// No force-delete should be attempted when branch is already absent.
+		const localDeleteCall = calls.find(
+			(c) => c.args.includes('branch') && c.args.includes('-D') && c.args.includes(FAKE_BRANCH),
+		);
+		expect(localDeleteCall).toBeUndefined();
+	});
+
+	test('AC4: branch present, force-deleted (-D invoked), absent after => branchPrunedLocal:true', () => {
+		// revParseLocalPreStatus:0 => present. revParseLocalPostStatus:128 (default) => absent after delete.
+		const calls: SpawnCall[] = [];
+		const result = runPostMerge(
+			baseOpts({ spawnFn: happySpawn({ revParseLocalPreStatus: 0 }, calls) }),
+		);
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.branchPrunedLocal).toBe(true);
+
+		// -D must have been called.
+		const localDeleteCall = calls.find(
+			(c) => c.args.includes('branch') && c.args.includes('-D') && c.args.includes(FAKE_BRANCH),
+		);
+		expect(localDeleteCall).toBeDefined();
+
+		// Two rev-parse calls: pre-check (present) and post-check (absent).
+		const revParseCalls = calls.filter(
+			(c) =>
+				c.args.includes('rev-parse') &&
+				c.args.includes('--verify') &&
+				c.args.includes('--quiet'),
+		);
+		expect(revParseCalls.length).toBe(2);
+	});
+
+	test('AC2: branchPrunedLocal derived from end-state, not -D exit code (delete fails but branch absent)', () => {
+		// -D exits non-zero, but post-check shows branch absent => still branchPrunedLocal:true.
+		const result = runPostMerge(
+			baseOpts({
+				spawnFn: happySpawn({
+					revParseLocalPreStatus: 0,  // branch present
+					branchDeleteLocalStatus: 1, // -D exits non-zero
+					// revParseLocalPostStatus defaults to 128 (absent) => pruned true
+				}),
+			}),
+		);
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		// End-state says absent; result must be true regardless of -D exit code.
+		expect(result.branchPrunedLocal).toBe(true);
+	});
+
+	test('uses -D (force delete), not -d (source oracle)', async () => {
+		const content = await Bun.file(
+			new URL('../../src/release/post-merge.ts', import.meta.url),
+		).text();
+		// AC1 grep oracle: '-D' must be present in the source
+		expect(content).toContain("'-D'");
+		// -d (soft delete) must NOT be used for the local branch delete
+		expect(content).not.toContain("'-d'");
+	});
+
+	test('branchPrunedLocal:false does not abort result (result still ok:true)', () => {
+		// Branch present, delete fails, still present after: branchPrunedLocal:false but ok:true.
+		const result = runPostMerge(
+			baseOpts({
+				spawnFn: happySpawn({
+					revParseLocalPreStatus: 0,
+					branchDeleteLocalStatus: 1,
+					revParseLocalPostStatus: 0,
+				}),
+			}),
+		);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.branchPrunedLocal).toBe(false);
+		// Other fields intact
+		expect(result.tag).toBe(FAKE_TAG);
+		expect(result.tagCreated).toBe(true);
 	});
 });
 
