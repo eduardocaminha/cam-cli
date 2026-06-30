@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "specSource/derivedFrom schema + hand-rolled validators"
+  },
+  "branchName": "cam/CAM-144-fast-track-plan-ready",
+  "timestamp": "2026-06-30T20:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "scripts/cam/issues.schema.json",
+    "src/issues/spec.ts",
+    "src/issues/types.ts",
+    "test/issues/spec.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added specSource and derivedFrom to the schema and IssueEntry. The validateSpecSource function lives in src/issues/spec.ts. US-002 adds --fast-track and --derived-from flags to the cam issue filing command; it should import validateSpecSource to enforce guardrails at filing time. The three plannability predicate sites (select.ts:34, rank.ts:154, gate.ts:150) remain UNCHANGED per Option Y -- do not touch them.",
+  "officialDocsValidated": [
+    {
+      "lib": "json-schema-draft-07",
+      "url": "https://json-schema.org/draft-07/json-schema-validation",
+      "fetchedAt": "2026-06-30T20:00:00Z",
+      "status": "ok",
+      "summary": "draft-07 if/then within allOf confirmed: each conditional is independent per branch, required keyword inside then is valid. Schema structure matches the spec."
+    }
+  ]
+}

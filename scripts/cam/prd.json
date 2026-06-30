@@ -22,7 +22,7 @@
         "The full spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/cam/issues.schema.json (draft-07, additionalProperties:false at root, uses required+enum), src/issues/types.ts (IssueEntry), src/issues/spec.ts (mirror validateSpec/validateWsjf shape: ValidationResult {ok, errors}), test/issues/spec.test.ts. PROJECT HAND-ROLLS validation, no ajv: the schema is data (used for docs + as the JSON-schema if/then guardrail layer), the TS validator is the runtime gate. Both layers must encode the same 4 invariants (gotcha: keep them in sync, do not let the schema and the validator drift). noUncheckedIndexedAccess: guard array/optional access. specSource is a TOTAL discriminator with absent⟹grill (settled, gotcha #1). derivedFrom is string[] (a fix can consolidate several parents, gotcha #3). HARD MUST-NOT (operator-flagged): do NOT touch the plannability predicate at select.ts:34 / rank.ts:154 / gate.ts:150 — Option Y changes only the meaning of specified."
     },
