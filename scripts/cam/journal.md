@@ -640,3 +640,15 @@ Each entry follows this template:
 - **Decisions**: Planner corrigiu o spec: UNICO call site de producao e host.ts ensureWorkerPaneFn (run.ts NAO cria o worker pane; loop.ts:278 e so JSDoc), entao 1 site a threadar, nao 2; orch pane id resolvido local via getOrchPaneId, sem plumbing novo por run.ts/CreatedPaneIds. Geometria: split vertical, worker pega ~60% (precedente -l <size> ja existe no dashboard split de ensureProjectSession). tmux 3.6a aceita -l 60% (man page + officialDocsConsulted). US-002 = teste REAL-tmux OS-gated (display-message), NAO argv-shape fake (licao CAM-55 'fakes mentem'): ativa pane nao-orquestrador, recria o worker, assert geometria canonica.
 - **Blockers encountered**: Nenhum: loop self-drove US-001->002->review CLEAN round 1, zero re-arm. Post-merge 1x (CAM-138 holding, 4o ciclo consecutivo). 6o ship consecutivo clean. Auditor APPROVE round 1 (0 critical/important, 1 suggestion F-01 DEFERIDA: o fallback do getOrchPaneId==null nas notes oferece <session>:0, que reintroduziria o bug no path degradado raro; reviewer e backstop, core path testado).
 - **Follow-ups**: Pendencias: CAM-142 (gap CAM-137), 2 SUGGESTIONs do CAM-138, e agora F-01 do CAM-80 (fallback determinismo no path orch-pane-ausente). CAM-65 (fecha worker-pane ocioso) agora desbloqueado pelo CAM-80. Proximo por rank: CAM-129 (rank 9, cam init crasha non-TTY/Ink raw mode no build smoke + dup), depois CAM-92 (rank 15, extrair narrateReport helper).
+
+## cam/CAM-129-init-rawmode-guard — init/setup stdin raw-mode gate + build-smoke soft-check honesty
+
+- **Started**: 2026-06-29
+- **Closed**: 2026-06-30
+- **Branch**: cam/CAM-129-init-rawmode-guard
+- **Issue**: CAM-129
+- **Outcome**: shipped
+- **Summary**: Gated cam init/setup interactivity on stdin raw-mode (not only stdout.isTTY) so the Ink useInput path degrades to the print/readline fallback in non-TTY-stdin contexts (the hermetic build smoke), fixing the Raw mode is not supported crash. Also made build-release.sh soft-check distinguish a missing claude prerequisite from a genuine init crash. Shipped as v0.32.0 via PR #105.
+- **Decisions**: Gate extracted to an exported pure predicate so tests assert the non-interactive branch without touching real process streams. US-002 (duplicate React key) closed as already-clean: the warning does not reproduce in these screens (static JSX siblings reconcile positionally; the only dynamic render, checks.map, already uses unique ids). US-R1-001 corrected the false patterns.md entry that US-002 had introduced.
+- **Blockers encountered**: Review round 1 flagged US-002 as a no-op fix (adding keys to static siblings cannot affect the same-key warning, verified via React docs + live ink-testing-library repro). Resolved by fix-story US-R1-001 (close as already-clean + correct the pattern entry); review round 2 CLEAN.
+- **Follow-ups**: Next in rank: CAM-92 (narrateReport helper, rank 15). Still open from prior cycles: CAM-142 (gap CAM-137), CAM-138 SUGGESTIONs (writeMergeWatchState best-effort, runMergeWatch dead-code), CAM-80 F-01 (orch-pane-absent determinism fallback).
