@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Sync the worktree after writeIssueFile CAS success"
+  },
+  "branchName": "cam/CAM-142-writeissuefile-worktree-sync",
+  "timestamp": "2026-06-30T12:00:00.000Z",
+  "createdFiles": [
+    "test/integration/write-issue-file-worktree-sync.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/issues/alloc.ts",
+    "test/integration/issue-specify-ref-only.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-142) is the only story in this PRD. PRD is complete. syncWorktreeIfOnMain is now called in writeIssueFile (alloc.ts) after CAS success, closing the staged-deletion footgun for the 7th on-main writer. The issue-specify-ref-only.test.ts precondition was updated from toBe(false) to toBe(true) because writeIssueFile now syncs the working tree -- this is correct behavior and the regression guard still holds.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
