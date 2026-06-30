@@ -1,7 +1,13 @@
 // test/ui/init-setup-screen-keys.test.ts
 //
-// US-002: Verify no duplicate-React-key warnings are emitted when the
-// init/setup Ink screens render. Covers:
+// US-R1-001 (corrects US-002): Verify no duplicate-React-key warnings are
+// emitted when the init/setup Ink screens render. The screens are already
+// clean: the only dynamic render (checks.map keyed by c.id) uses unique ids by
+// design; static NextCommand siblings are reconciled positionally and can never
+// produce a duplicate-key warning. This test guards against future regressions
+// (e.g. a new dynamic render introducing duplicate key values).
+//
+// Covers:
 //   - InitScreen success path: checks complete, "All set" + "Next" sections visible.
 //   - InitScreen failure path: one check fails, "Failed" section + ✗ glyph visible.
 //   - SetupScreen existing-project path: all wizard steps completed via keyboard.
