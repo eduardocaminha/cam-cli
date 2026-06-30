@@ -1,24 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "ADR documenting the two-door plan-readiness decision"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-144-fast-track-plan-ready",
-  "timestamp": "2026-06-30T22:00:00Z",
-  "createdFiles": [
-    "docs/adr/0002-fast-track-plan-ready.md",
-    "test/adr-0002-fast-track.test.ts"
-  ],
+  "timestamp": "2026-06-30T23:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
+    "docs/adr/0002-fast-track-plan-ready.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 created docs/adr/0002-fast-track-plan-ready.md documenting the two-door plan-readiness decision: specSource:grill (Porta 1, ADR 0001 path unchanged) and specSource:derived/operator (Porta 2, born-ready, --fast-track flag). ADR follows 0001 style (Status/Data/Revisao header + Contexto/Decisao/Consequencias/Alternativas descartadas sections). A file-assert test was added at test/adr-0002-fast-track.test.ts asserting section headings, CAM-107, specSource, and absence of em-dash. All 4 stories in the PRD now pass:true. The PRD should be ready for review.",
+  "nextStoryContext": "US-R1-001 corrected ADR 0002 WSJF section (two edits): (1) line 32 guardrail changed from 'hard binding, nao sugestao; sobrescrita requer flags explicitosno CLI' to 'default sugerido (overridable); sobrescrita via campo wsjf explicito no payload JSON do stdin'; (2) line 47 rejected alternative renamed from 'WSJF inheritance overridable (soft binding)' (which was actually adopted) to 'WSJF inheritance imutavel (hard binding sem override)' (what was actually rejected), with updated rationale. All 5 stories in the PRD now pass:true. PRD is complete and ready for review.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 created only a markdown ADR file and a bun:test file-assert test. No external library API was exercised."
+      "summary": "US-R1-001 corrected only a markdown ADR file. No external library API was exercised."
     }
   ]
 }
