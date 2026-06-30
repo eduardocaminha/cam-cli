@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.33.0] - 2026-06-30
+
+### Added
+
+- US-001 - Sync the worktree after writeIssueFile CAS success
+
 ## [0.32.0] - 2026-06-30
 
 ### Added
