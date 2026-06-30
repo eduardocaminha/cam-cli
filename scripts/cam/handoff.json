@@ -1,17 +1,15 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Coalesce post-merge narration + prune sub-status into one notifyOrchestrator line"
+    "id": "US-004",
+    "title": "Unit tests for end-state prune classification and coalesced narration"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/release/merge-watch.ts",
     "test/release/merge-watch.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 refactored warnOnPruneFailure in merge-watch.ts into a pure builder returning a string suffix (no notifyOrchestrator call inside). processPollResult now makes EXACTLY ONE notifyOrchestrator call on the MERGED success path, folding the prune sub-status into the [cam] post-merge complete: ... line. The suffix format is ' (warn: prune local <ok|FAILED>, remote <ok|FAILED>)' when either leg failed; empty string when both pruned. Five new tests in test/release/merge-watch.test.ts cover AC1 (exactly one completion line), AC3 (prune sub-status present/absent), AC4 (no second call), AC5 (logEvent detail unchanged). The existing (US-001) test still passes because the merged completion line contains 'warn' + 'prune'. US-004 is next: unit tests for end-state prune classification and coalesced narration (post-merge.ts SpawnFn tests).",
+  "nextStoryContext": "US-004 adds two changes to test/release/merge-watch.test.ts: (1) updates the '(US-001) branchPruned fields...' test Part 1 to use the coalesced-single-line contract: exactly one notification line must contain both the tag ('v1.2.3') and the prune sub-status ('prune'), and there must be no standalone warn line (a separate line with 'warn'+'prune' but without the tag); (2) adds a new '(US-004/AC5)' test that uses makeSeqPollFn([MERGED]) and a custom postMergeFn returning branchPrunedLocal:false to assert that notifications.filter(n => n.includes('v1.2.3') && n.includes('prune')).toHaveLength(1). AC1-4 were already fully covered by existing tests added in US-001/US-002 (post-merge.test.ts). All 2287 tests pass, typecheck clean, check:all exits 0. All four stories in the PRD now pass.",
   "officialDocsValidated": [
     {
       "lib": "none",

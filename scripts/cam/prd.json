@@ -82,7 +82,7 @@
         "Aggregate quality gate passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/release/post-merge.test.ts (remote/local end-state + `-D` cases; reuse the existing makeSpawnFn/happySpawn helpers and SpawnCall recorder at lines 32-80) and test/release/merge-watch.test.ts (coalesced single-narration case; the existing test at ~line 833 Part 1 expects a separate warn line and MUST be updated to assert the prune status is folded into the one completion line, with exactly one notify call). Use the injectable SpawnFn for post-merge and the in-memory notifyOrchestrator collector + makeSeqPollFn([MERGED]) already present in merge-watch.test.ts. These tests are the behavioral oracle for US-001/US-002/US-003 (each of those stories also keeps its own bun test green); this story consolidates and completes the 5 spec-mandated AC cases. No new test runner or dependency."
     }
