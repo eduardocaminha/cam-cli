@@ -872,9 +872,21 @@ describe('runMergeWatch structured events (US-008)', () => {
 			expect(d.branchPrunedRemote).toBe(true);
 		}
 
-		// A prune-failure warn narration must be present.
-		const warnLine1 = notifications1.find((n) => n.includes('warn') && n.includes('prune'));
-		expect(warnLine1).toBeDefined();
+		// Coalesced-single-line contract (US-003/US-004): the prune sub-status must be
+		// folded into the same completion line that carries the tag, not emitted as a
+		// separate notifyOrchestrator call. Exactly one notification line must contain
+		// both the tag ('v1.2.3') and the prune sub-status ('prune').
+		const completionLinesWithPrune1 = notifications1.filter(
+			(n) => n.includes('v1.2.3') && n.includes('prune'),
+		);
+		expect(completionLinesWithPrune1).toHaveLength(1);
+		const completionLine1 = completionLinesWithPrune1[0];
+		expect(completionLine1).toContain('warn');
+		// No standalone warn line (a line with 'warn'+'prune' but NOT the tag).
+		const standaloneWarnLines1 = notifications1.filter(
+			(n) => n.includes('warn') && n.includes('prune') && !n.includes('v1.2.3'),
+		);
+		expect(standaloneWarnLines1).toHaveLength(0);
 
 		// --- Part 2: both-true case must produce ZERO prune-failure warning lines ---
 		const { logger: logger2, events: events2 } = makeInMemoryEventLogger();
@@ -920,6 +932,43 @@ describe('runMergeWatch structured events (US-008)', () => {
 		// No prune-failure warning lines when both pruned successfully.
 		const pruneWarnLines2 = notifications2.filter((n) => n.includes('warn') && n.includes('prune'));
 		expect(pruneWarnLines2).toHaveLength(0);
+	});
+
+	test('(US-004/AC5) post-merge with prune-incomplete: exactly one notify call contains tag + prune sub-status', async () => {
+		const notifications: string[] = [];
+
+		await runMergeWatch({
+			prNumber: 207,
+			mergedBranch: 'cam/test-branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: () => ({
+				ok: true,
+				pulledSha: 'abc123',
+				tag: 'v1.2.3',
+				tagCreated: true,
+				branchPrunedLocal: false, // prune incomplete
+				branchPrunedRemote: true,
+			}),
+			notifyOrchestrator: (line) => notifications.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+		});
+
+		// EXACTLY ONE notifyOrchestrator call must contain both the tag and the prune
+		// sub-status. This verifies the coalesce invariant: warnOnPruneFailure() folds
+		// the prune result into the single '[cam] post-merge complete:...' line rather
+		// than emitting a second '[cam] warn: prune ...' call (the old two-call pattern).
+		const linesWithTagAndPrune = notifications.filter(
+			(n) => n.includes('v1.2.3') && n.includes('prune'),
+		);
+		expect(linesWithTagAndPrune).toHaveLength(1);
+		const combinedLine = linesWithTagAndPrune[0];
+		expect(combinedLine).toBeDefined();
+		if (combinedLine) {
+			expect(combinedLine).toContain('warn');
+		}
 	});
 });
 
