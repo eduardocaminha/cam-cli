@@ -62,6 +62,13 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
 
 `requires`: **never emit `requires: "operator"` stories. Do not emit any story with `requires: "operator"` set.** Ceremonies (real-user keypress, OS-level action, real network hit, human-curated artifact) must be planned as automated acceptance criteria that: (a) name the verification tool (agent-browser / playwright / tmux-pty) and the artifact it produces; (b) include a reviewer-behavioral oracle (e.g. `[oracle: file-assert grep -q 'artifact-of-record' path/to/artifact]`). The `requires` field defaults to `null`.
 
+## Spec Sourcing
+
+The orchestrator's Task prompt includes a `specSource` field that tells you how to treat the spec:
+
+- **`"grill"` (or absent)**: the `Spec` field is the settled scope. Do not re-litigate decisions already made at grill time. Use it verbatim to guide story decomposition.
+- **`"derived"` or `"operator"`**: the spec is a proposed scope derived from a parent issue. Use `title` + `description` as the proposed scope. When `derivedFrom` is present in the Task prompt, **read each parent issue** to understand the ancestor scope, decisions, and constraints before generating stories. The planner refines HOW, not WHAT.
+
 ## Story Sizing Rules
 
 Each story must be completable in **one Claude Code context window**. Right-sized stories touch 1-3 files each.
