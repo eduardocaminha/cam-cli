@@ -46,7 +46,7 @@
         "Tests pass. [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/ui/SetupScreen.tsx, src/ui/InitScreen.tsx. The implementer MUST reproduce first (render via ink-testing-library and capture the console warning) to locate the actual non-unique key before editing; do not guess. Candidates to inspect: InitScreen keys its check rows by key={c.id} (unique if buildInteractiveChecks ids stay unique in src/commands/init.ts:313); Select keys options by key={opt.value}; Splash keys wordmark rows by key={i}. The duplicate most likely surfaces in the SetupScreen render tree (multiple sibling <Section> blocks each wrapping fragments) or in the init createElement(Box, props, Splash, InitScreen) positional-children composition (src/commands/init.ts:296-307) where variadic createElement children are not auto-keyed like JSX arrays. Gotcha (lessons 2026-06-05): comments in InitScreen claim divisor-color semantics that the runtime does not honor; verify behavior by rendering, never by trusting the comment. Read scripts/cam/patterns.md at story start. ink-testing-library is already a devDependency; precedent screen tests in test/interactivity/interactivity.test.ts."
     },
