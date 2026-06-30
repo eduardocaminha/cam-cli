@@ -29,7 +29,7 @@ O `specSource` e o discriminador canonico: o `/cam-plan` (Step 2) e o `subagent-
 Guardrails duros para a Porta 2:
 
 - `--fast-track` so aceita `stage:specified`. Nao existe `--fast-track --stage idea`; a combinacao e rejeitada com erro.
-- WSJF inheritance (`derived`): `wsjf` e herdado do pai quando o filho nao fornece scores proprios (hard binding, nao sugestao); sobrescrita requer flags explicitosno CLI.
+- WSJF inheritance (`derived`): `wsjf` do pai e herdado como default sugerido quando o filho nao fornece scores proprios (overridable); sobrescrita via campo `wsjf` explicito no payload JSON do stdin.
 - O `/cam-plan` Step 2 emite um sinal explicito ("non-grilled spec") quando `specSource != "grill"`, visivel ao operador antes de qualquer commit de plano.
 - O subagent-auditor permanece obrigatorio nos dois caminhos; um plano derivado de spec nao-grillada ainda passa pelo gate de auditoria.
 
@@ -44,6 +44,6 @@ Guardrails duros para a Porta 2:
 ## Alternativas descartadas
 
 - **Opcao X: `grillExempt` flag que mantinha `stage:idea`**: o flag seria interpretado pelo `/cam-plan` como excecao ad-hoc sem semantica clara. `stage:idea` continuaria significando "nao-especificado", o que contradiria a condicao de PRD-readiness (`stage:specified`). Rejeitada: semantica quebrada, discriminador fraco.
-- **WSJF inheritance overridable (soft binding)**: permitir que o filho sobrescreva silenciosamente o WSJF do pai sem flag explicito abria espaco para manipulacao de prioridade sem rastreabilidade. Rejeitada: o hard binding com override-explícito preserva auditabilidade e forca intencionalidade.
+- **WSJF inheritance imutavel (hard binding sem override)**: herdar o WSJF do pai como valor fixo, rejeitando qualquer campo `wsjf` explicito no payload JSON do filho. Rejeitada: decomposicoes granulares podem ter prioridade distinta do pai; fornecer `wsjf` explicito no stdin e um ato intencional e rastreavel, nao um vetor de manipulacao silenciosa. O default sugerido com override-explicito preserva auditabilidade sem bloquear casos legitimos.
 - **Guardrails suaves (warnings, nao erros)**: avisar mas nao bloquear `--fast-track --stage idea` causaria inconsistencia de estado (issue idea mas filed como specified). Rejeitada: hard error e o unico contrato confiavel.
 - **Grill obrigatorio para todos os casos**: correto em principio, mas impraticavel para trabalho derivado (sub-tarefas de uma issue ja-grillada passariam pelo mesmo gate do pai, dobrando o custo sem dobrar o rigor). Rejeitada: burocracia sem ganho proporcional.
