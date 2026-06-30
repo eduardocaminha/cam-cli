@@ -1,9 +1,42 @@
 {
   "id": "CAM-116",
   "title": "Epico D2: verificacao comportamental no loop (gate compartilhado + reviewer veredito autoritativo + artifact-of-record no PR)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-27T13:48:19.817Z",
-  "description": "Da ao loop a capacidade de executar verificacao comportamental e anexar a prova ao PR, eliminando a dependencia de cerimonia do operador (norte do grill 2026-06-27: tudo specified roda sozinho, zero tarefa dependente do operador no loop). MODELO (refina a two-layer verification CAM-56): a verificacao comportamental e um GATE RODAVEL COMPARTILHADO, nao capability exclusiva de um worker. Web (projetos cam-init downstream): Playwright / agent-browser. cam-cli (TUI, sem browser): spawnar tmux real + capture-pane salvo como artifact (dirige o sistema de verdade e captura a prova). O IMPLEMENTER roda o gate na Layer A (corrige com visao, nunca cego, reproduz local). O REVIEWER re-roda independente na Layer B, NAO confia no verde do implementer, e a run DELE produz o artifact-of-record anexado ao PR + veredito autoritativo (so a run do reviewer vira artifact oficial). Tooling compartilhado, veredito independente; o implementer nao ganha capability exclusiva de browser. ONDE TOCAR: tooling de driving (playwright/agent-browser web, tmux-pty cam) nos dois contextos de worker, pipeline artifact->PR (gh), subagent-reviewer (executa + captura + veredito). DEPENDE de CAM-109 (que faz o planner EMITIR criterios reviewer-behavioral; sem eles o tooling nao tem o que executar). BLOQUEIA o auto pleno e o drainer de fila CAM-71. ADR-worthy: verificacao comportamental = gate compartilhado + veredito independente. P2."
+  "description": "Da ao loop a capacidade de executar verificacao comportamental e anexar a prova ao PR, eliminando a dependencia de cerimonia do operador (norte do grill 2026-06-27: tudo specified roda sozinho, zero tarefa dependente do operador no loop). MODELO (refina a two-layer verification CAM-56): a verificacao comportamental e um GATE RODAVEL COMPARTILHADO, nao capability exclusiva de um worker. Web (projetos cam-init downstream): Playwright / agent-browser. cam-cli (TUI, sem browser): spawnar tmux real + capture-pane salvo como artifact (dirige o sistema de verdade e captura a prova). O IMPLEMENTER roda o gate na Layer A (corrige com visao, nunca cego, reproduz local). O REVIEWER re-roda independente na Layer B, NAO confia no verde do implementer, e a run DELE produz o artifact-of-record anexado ao PR + veredito autoritativo (so a run do reviewer vira artifact oficial). Tooling compartilhado, veredito independente; o implementer nao ganha capability exclusiva de browser. ONDE TOCAR: tooling de driving (playwright/agent-browser web, tmux-pty cam) nos dois contextos de worker, pipeline artifact->PR (gh), subagent-reviewer (executa + captura + veredito). DEPENDE de CAM-109 (que faz o planner EMITIR criterios reviewer-behavioral; sem eles o tooling nao tem o que executar). BLOQUEIA o auto pleno e o drainer de fila CAM-71. ADR-worthy: verificacao comportamental = gate compartilhado + veredito independente. P2.",
+  "spec": {
+    "scope": "Dar ao loop a capacidade de RODAR verificacao comportamental (drivar o sistema real, nao so unit tests) e anexar a prova ao PR, eliminando a dependencia de cerimonia do operador (norte do grill 2026-06-27: tudo specified roda sozinho, zero tarefa dependente do operador no loop). MODELO (refina two-layer CAM-56): verificacao comportamental e um GATE RODAVEL COMPARTILHADO, nao capability exclusiva de um worker. Pro cam-cli (TUI, sem browser): construido sobre a suite test/integration/ de tmux-real existente, drivando o cam real numa sessao tmux + capture-pane salvo como artifact-of-record. O IMPLEMENTER roda o gate no Layer A (corrige-com-visao, reproduz local; NAO e a run oficial). O REVIEWER re-roda independente no Layer B; a run DELE produz o artifact-of-record (capture-pane texto -> PR-comment no ship) + o veredito autoritativo (falha do gate na run do reviewer = hard-constraint FAIL -> FIXES_PENDING). Tooling compartilhado, veredito independente. ESCOPO: gate tmux do PROPRIO cam-cli primeiro; o tooling web (playwright/agent-browser) pros projetos cam-init downstream e follow-up separado. Depende de CAM-109 (planner ja emite o oracle comportamental por-story).",
+    "acceptanceCriteria": [
+      "Gate comportamental compartilhado (construido SOBRE test/integration/ tmux-real, nao um driver from-scratch) driva o cam real numa sessao tmux, captura o pane, e asserta o oracle comportamental por-story (o [oracle: ...] do CAM-109); invocavel tanto pelo implementer quanto pelo reviewer worker.",
+      "O implementer roda o gate no Layer A pra auto-corrigir (reproduz local, corrige com visao); a run do implementer NAO e o artifact oficial.",
+      "O reviewer re-roda o gate independente no Layer B; o capture-pane do reviewer e escrito como artifact-of-record (arquivo produzido pelo reviewer, referenciado do review-report.json).",
+      "Falha do gate comportamental na run do REVIEWER e um hard-constraint FAIL no veredito do reviewer -> FIXES_PENDING (integrado ao mecanismo de 8-criterios + hard-constraints existente).",
+      "O artifact-of-record (capture-pane texto) e anexado ao PR como comentario labelado artifact-of-record no momento do ship (gh pr comment); NAO e commitado no repo.",
+      "O gate comportamental roda como parte do loop (fase de review), nao so no CI.",
+      "Testes unit/integration cobrem: o runnable do gate mapeia um oracle de story p/ drive+capture+assert real-tmux; o gate-fail do reviewer produz FIXES_PENDING; o arquivo de artifact e produzido. bun run check:all passa.",
+      "ADR registra 'verificacao comportamental = gate rodavel compartilhado + veredito independente do reviewer + artifact-of-record'."
+    ],
+    "gotchas": [
+      "Depende do oracle comportamental por-story do CAM-109 (shipped): sem o oracle o gate nao tem o que drivar/assertar. O planner.md ja o emite (nome da tool agent-browser/playwright/tmux-pty + artifact + oracle reviewer-behavioral).",
+      "So a run do REVIEWER e o artifact-of-record; a run Layer-A do implementer e auto-correcao, nunca oficial (nao confiar no verde do implementer, two-layer CAM-56).",
+      "Interacao CAM-117: o reviewer ja roda como worker-pane session dispatchada pelo sidecar; o gate roda dentro dessa sessao.",
+      "Interacao CAM-111: sob o container do worker, o gate (spawn tmux + cam) roda DENTRO do container (tmux-on-Linux ok), MAS tmux usa unix-socket e o seccomp/sandbox pode bloquea-lo: risco real a verificar (o gate comportamental pode nao rodar sob container estrito). O artifact escrito num path do repo bind-montado chega ao host, e o ship anexa.",
+      "capture-pane e texto pro cam-cli; web downstream precisa de artifact de imagem (tooling + follow-up separados).",
+      "Nao commitar o artifact no repo (transiente); so PR-comment.",
+      "Preservar o contrato do sentinel terminal <review> + review-report.json (CAM-70/CAM-117); o artifact e aditivo, nao substitui."
+    ],
+    "domainTerms": [
+      "behavioral gate",
+      "artifact-of-record",
+      "Layer A / Layer B"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 3
+  }
 }
