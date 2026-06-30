@@ -4,6 +4,15 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.35.0] - 2026-06-30
+
+### Added
+
+- US-004 - Unit tests for end-state prune classification and coalesced narration
+- US-003 - Coalesce post-merge narration + prune sub-status into one notifyOrchestrator line
+- US-002 - Classify local prune by end-state and force-delete with git branch -D
+- US-001 - Classify remote prune by end-state in runPostMerge
+
 ## [0.34.0] - 2026-06-30
 
 ### Added

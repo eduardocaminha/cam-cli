@@ -157,6 +157,99 @@ function performTagStep(
 	return { tagCreated: true };
 }
 
+/**
+ * Determine whether the local branch is pruned, using rev-parse end-state
+ * classification instead of the delete command's exit code.
+ *
+ * Logic (US-002):
+ *   1. Pre-check via `git rev-parse --verify --quiet refs/heads/<branch>`:
+ *      - Non-zero exit or empty stdout => branch already absent => return true.
+ *   2. Branch present (exit 0, non-empty stdout): run `git branch -D <branch>`
+ *      (force delete; safe only from a confirmed-MERGED state).
+ *   3. Post-delete rev-parse check: absent => return true, present => false.
+ *
+ * SAFETY NOTE: `git branch -D` (force) is safe ONLY because runPostMerge is
+ * invoked after processPollResult confirms state === 'MERGED'. Never call this
+ * helper from a non-MERGED path.
+ */
+function checkAndPruneLocalBranch(
+	spawnFn: SpawnFn,
+	cwd: string,
+	mergedBranch: string,
+): boolean {
+	const revParseArgs = [
+		'-C', cwd, 'rev-parse', '--verify', '--quiet', `refs/heads/${mergedBranch}`,
+	];
+
+	const preCheck = spawnFn('git', revParseArgs, { encoding: 'utf8' });
+	const preAbsent =
+		(preCheck.status ?? 1) !== 0 || (preCheck.stdout ?? '').trim() === '';
+
+	if (preAbsent) {
+		// Branch already absent locally: consider it pruned.
+		return true;
+	}
+
+	// Branch is present: force-delete it (idempotent when already merged to main).
+	spawnFn('git', ['-C', cwd, 'branch', '-D', mergedBranch], { encoding: 'utf8' });
+
+	// Derive result from post-delete end-state (not from the delete exit code).
+	const postCheck = spawnFn('git', revParseArgs, { encoding: 'utf8' });
+	return (postCheck.status ?? 1) !== 0 || (postCheck.stdout ?? '').trim() === '';
+}
+
+/**
+ * Determine whether the remote branch is pruned, using ls-remote end-state
+ * classification instead of the delete command's exit code.
+ *
+ * Logic (US-001):
+ *   1. Pre-check via `git ls-remote --heads origin <branch>`:
+ *      - Empty output (exit 0) => branch already absent => return true (AC1, AC4).
+ *      - Non-zero exit (network/auth error) => fall back to delete + exit code (AC3).
+ *   2. Non-empty output (exit 0) => branch present: run delete, then re-derive
+ *      from a post-delete ls-remote check (branch absent => true) (AC2).
+ *      If the post-check itself errors, fall back to the delete exit code.
+ */
+function checkAndPruneRemoteBranch(
+	spawnFn: SpawnFn,
+	cwd: string,
+	mergedBranch: string,
+): boolean {
+	const preCheck = spawnFn(
+		'git', ['-C', cwd, 'ls-remote', '--heads', 'origin', mergedBranch],
+		{ encoding: 'utf8' },
+	);
+
+	if ((preCheck.status ?? 1) !== 0) {
+		// ls-remote error (network/auth): fall through to delete + classify on exit code.
+		const del = spawnFn(
+			'git', ['-C', cwd, 'push', 'origin', '--delete', mergedBranch],
+			{ encoding: 'utf8' },
+		);
+		return (del.status ?? 1) === 0;
+	}
+
+	if ((preCheck.stdout ?? '').trim() === '') {
+		// Branch already absent on the remote: consider it pruned without deleting.
+		return true;
+	}
+
+	// Branch is present: attempt delete, then re-derive from end-state.
+	const del = spawnFn(
+		'git', ['-C', cwd, 'push', 'origin', '--delete', mergedBranch],
+		{ encoding: 'utf8' },
+	);
+	const postCheck = spawnFn(
+		'git', ['-C', cwd, 'ls-remote', '--heads', 'origin', mergedBranch],
+		{ encoding: 'utf8' },
+	);
+	if ((postCheck.status ?? 1) !== 0) {
+		// Cannot verify post-delete end-state: fall back to delete exit code.
+		return (del.status ?? 1) === 0;
+	}
+	return (postCheck.stdout ?? '').trim() === '';
+}
+
 // ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
@@ -201,16 +294,14 @@ export function runPostMerge(opts: PostMergeOptions): PostMergeOutcome {
 	const { tagCreated } = tagStepResult;
 
 	// Step 4: Delete merged branch locally (best-effort, non-fatal).
-	const deleteLocalResult = spawnFn(
-		'git', ['-C', cwd, 'branch', '-d', mergedBranch], { encoding: 'utf8' },
-	);
-	const branchPrunedLocal = (deleteLocalResult.status ?? 1) === 0;
+	// End-state classification via rev-parse avoids false failure when the local
+	// branch was already absent (often pruned by the next cycle's pre-flight).
+	const branchPrunedLocal = checkAndPruneLocalBranch(spawnFn, cwd, mergedBranch);
 
 	// Step 5: Delete merged branch on origin (best-effort, non-fatal).
-	const deleteRemoteResult = spawnFn(
-		'git', ['-C', cwd, 'push', 'origin', '--delete', mergedBranch], { encoding: 'utf8' },
-	);
-	const branchPrunedRemote = (deleteRemoteResult.status ?? 1) === 0;
+	// End-state classification via ls-remote pre-check avoids false 'remote: FAILED'
+	// when GitHub already auto-deleted the head branch on merge (ci-gated mode).
+	const branchPrunedRemote = checkAndPruneRemoteBranch(spawnFn, cwd, mergedBranch);
 
 	return { ok: true, pulledSha, tag, tagCreated, branchPrunedLocal, branchPrunedRemote };
 }

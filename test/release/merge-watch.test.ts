@@ -872,9 +872,21 @@ describe('runMergeWatch structured events (US-008)', () => {
 			expect(d.branchPrunedRemote).toBe(true);
 		}
 
-		// A prune-failure warn narration must be present.
-		const warnLine1 = notifications1.find((n) => n.includes('warn') && n.includes('prune'));
-		expect(warnLine1).toBeDefined();
+		// Coalesced-single-line contract (US-003/US-004): the prune sub-status must be
+		// folded into the same completion line that carries the tag, not emitted as a
+		// separate notifyOrchestrator call. Exactly one notification line must contain
+		// both the tag ('v1.2.3') and the prune sub-status ('prune').
+		const completionLinesWithPrune1 = notifications1.filter(
+			(n) => n.includes('v1.2.3') && n.includes('prune'),
+		);
+		expect(completionLinesWithPrune1).toHaveLength(1);
+		const completionLine1 = completionLinesWithPrune1[0];
+		expect(completionLine1).toContain('warn');
+		// No standalone warn line (a line with 'warn'+'prune' but NOT the tag).
+		const standaloneWarnLines1 = notifications1.filter(
+			(n) => n.includes('warn') && n.includes('prune') && !n.includes('v1.2.3'),
+		);
+		expect(standaloneWarnLines1).toHaveLength(0);
 
 		// --- Part 2: both-true case must produce ZERO prune-failure warning lines ---
 		const { logger: logger2, events: events2 } = makeInMemoryEventLogger();
@@ -920,6 +932,43 @@ describe('runMergeWatch structured events (US-008)', () => {
 		// No prune-failure warning lines when both pruned successfully.
 		const pruneWarnLines2 = notifications2.filter((n) => n.includes('warn') && n.includes('prune'));
 		expect(pruneWarnLines2).toHaveLength(0);
+	});
+
+	test('(US-004/AC5) post-merge with prune-incomplete: exactly one notify call contains tag + prune sub-status', async () => {
+		const notifications: string[] = [];
+
+		await runMergeWatch({
+			prNumber: 207,
+			mergedBranch: 'cam/test-branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: () => ({
+				ok: true,
+				pulledSha: 'abc123',
+				tag: 'v1.2.3',
+				tagCreated: true,
+				branchPrunedLocal: false, // prune incomplete
+				branchPrunedRemote: true,
+			}),
+			notifyOrchestrator: (line) => notifications.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+		});
+
+		// EXACTLY ONE notifyOrchestrator call must contain both the tag and the prune
+		// sub-status. This verifies the coalesce invariant: warnOnPruneFailure() folds
+		// the prune result into the single '[cam] post-merge complete:...' line rather
+		// than emitting a second '[cam] warn: prune ...' call (the old two-call pattern).
+		const linesWithTagAndPrune = notifications.filter(
+			(n) => n.includes('v1.2.3') && n.includes('prune'),
+		);
+		expect(linesWithTagAndPrune).toHaveLength(1);
+		const combinedLine = linesWithTagAndPrune[0];
+		expect(combinedLine).toBeDefined();
+		if (combinedLine) {
+			expect(combinedLine).toContain('warn');
+		}
 	});
 });
 
@@ -1369,6 +1418,168 @@ describe('sidecar.ts production wiring oracle - stepMergeWatch + logEvent', () =
 		// The eager delete "Remove the watch file BEFORE starting" at ~line 314 must
 		// be gone. We grep for the comment that identified it in the old code.
 		expect(source).not.toContain('Remove the watch file BEFORE starting');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-003: coalesced completion + prune sub-status (AC1, AC3, AC4)
+// ---------------------------------------------------------------------------
+// These tests enforce the single-notifyOrchestrator invariant on the MERGED
+// success path: exactly one completion line, prune sub-status folded in.
+// ---------------------------------------------------------------------------
+
+describe('US-003: coalesced completion + prune sub-status', () => {
+	test('AC1/AC4: success path (both pruned) emits EXACTLY ONE completion narration', async () => {
+		const notifications: string[] = [];
+
+		await runMergeWatch({
+			prNumber: 300,
+			mergedBranch: 'cam/feature',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: () => ({
+				ok: true,
+				pulledSha: 'abc',
+				tag: 'v1.0.0',
+				tagCreated: true,
+				branchPrunedLocal: true,
+				branchPrunedRemote: true,
+			}),
+			notifyOrchestrator: (line) => notifications.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+		});
+
+		// Exactly one 'post-merge complete' line (the COMPLETION line).
+		const completionLines = notifications.filter((n) => n.includes('post-merge complete'));
+		expect(completionLines).toHaveLength(1);
+		// No separate prune-warn line (it is folded into the completion line).
+		const warnLines = notifications.filter((n) => n.includes('warn') && n.includes('prune'));
+		expect(warnLines).toHaveLength(0);
+	});
+
+	test('AC1/AC4: success path (prune failed) still emits EXACTLY ONE completion narration', async () => {
+		const notifications: string[] = [];
+
+		await runMergeWatch({
+			prNumber: 301,
+			mergedBranch: 'cam/feature',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: () => ({
+				ok: true,
+				pulledSha: 'abc',
+				tag: 'v1.0.0',
+				tagCreated: false,
+				branchPrunedLocal: false, // prune failed
+				branchPrunedRemote: true,
+			}),
+			notifyOrchestrator: (line) => notifications.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+		});
+
+		// Still exactly one 'post-merge complete' line (coalesced, not split).
+		const completionLines = notifications.filter((n) => n.includes('post-merge complete'));
+		expect(completionLines).toHaveLength(1);
+	});
+
+	test('AC3: prune failure sub-status folded into the single completion line', async () => {
+		const notifications: string[] = [];
+
+		await runMergeWatch({
+			prNumber: 302,
+			mergedBranch: 'cam/feature',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: () => ({
+				ok: true,
+				pulledSha: 'abc',
+				tag: 'v2.0.0',
+				tagCreated: true,
+				branchPrunedLocal: false,
+				branchPrunedRemote: false,
+			}),
+			notifyOrchestrator: (line) => notifications.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+		});
+
+		// The completion line must contain prune sub-status with local+remote info.
+		const completionLine = notifications.find((n) => n.includes('post-merge complete'));
+		expect(completionLine).toBeDefined();
+		expect(completionLine).toContain('prune');
+		expect(completionLine).toContain('local');
+		expect(completionLine).toContain('remote');
+		expect(completionLine).toContain('FAILED');
+	});
+
+	test('AC3: when both pruned, completion line carries NO prune sub-status', async () => {
+		const notifications: string[] = [];
+
+		await runMergeWatch({
+			prNumber: 303,
+			mergedBranch: 'cam/feature',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: () => ({
+				ok: true,
+				pulledSha: 'abc',
+				tag: 'v3.0.0',
+				tagCreated: true,
+				branchPrunedLocal: true,
+				branchPrunedRemote: true,
+			}),
+			notifyOrchestrator: (line) => notifications.push(line),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+		});
+
+		const completionLine = notifications.find((n) => n.includes('post-merge complete'));
+		expect(completionLine).toBeDefined();
+		// No prune sub-status when both succeeded.
+		expect(completionLine).not.toContain('prune');
+		expect(completionLine).not.toContain('warn');
+	});
+
+	test('AC5: logEvent post-merge-done still carries branchPrunedLocal/Remote', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'test', kind, detail });
+		};
+
+		await runMergeWatch({
+			prNumber: 304,
+			mergedBranch: 'cam/feature',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: () => ({
+				ok: true,
+				pulledSha: 'abc',
+				tag: 'v4.0.0',
+				tagCreated: true,
+				branchPrunedLocal: false,
+				branchPrunedRemote: true,
+			}),
+			notifyOrchestrator: () => {},
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+			logEvent,
+		});
+
+		const doneEvt = events.find((e) => e.kind === 'merge-watch-post-merge-done');
+		expect(doneEvt).toBeDefined();
+		if (doneEvt) {
+			const d = doneEvt.detail as { ok: boolean; branchPrunedLocal?: boolean; branchPrunedRemote?: boolean };
+			expect(d.ok).toBe(true);
+			expect(d.branchPrunedLocal).toBe(false);
+			expect(d.branchPrunedRemote).toBe(true);
+		}
 	});
 });
 
