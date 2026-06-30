@@ -1,25 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Gate init/setup interactivity on stdin raw-mode, not only stdout.isTTY"
+    "id": "US-002",
+    "title": "Fix the duplicate React key in the init/setup Ink render"
   },
-  "createdFiles": [],
+  "createdFiles": [
+    "test/ui/init-setup-screen-keys.test.ts"
+  ],
   "modifiedFiles": [
-    "src/commands/init.ts",
-    "src/commands/setup.ts",
-    "test/interactivity/interactivity.test.ts",
-    "scripts/file-size-budget.json"
+    "src/ui/InitScreen.tsx",
+    "src/ui/SetupScreen.tsx"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 fixes the duplicate React key in the Ink init/setup wizard render. The relevant files are src/ui/InitScreen.tsx and src/ui/SetupScreen.tsx. Look for list-rendered children without stable unique keys (typically a Box or Section rendered with createElement where multiple children share the same implicit key). The ink-testing-library pattern for asserting no console.error is already established in test/interactivity/interactivity.test.ts: use beforeAll to spy on console.error and afterAll to restore.",
+  "nextStoryContext": "US-003 updates scripts/build-release.sh so the init soft-check only tolerates a non-zero exit when the claude prerequisite genuinely failed, rather than blanket-ignoring any non-zero. With US-001 landed the Ink raw-mode crash is gone; with this story the remaining mask (the 'non-zero is acceptable' comment/arm) is replaced by a claude-specific gate. The static-source test in test/build-release-smoke.test.ts also needs updating: the assertion matching '/non-zero is acceptable/' must be replaced to assert the new claude-prerequisite branching logic. Approach: probe 'command -v claude' (or run cam init and grep its output for the claude check) and only tolerate non-zero when claude is absent.",
   "officialDocsValidated": [
     {
-      "lib": "ink",
-      "version": "7.x",
-      "url": "https://github.com/vadimdemedes/ink",
-      "fetchedAt": "2026-06-29T00:00:00Z",
+      "lib": "react",
+      "version": "19.x",
+      "url": "https://react.dev/learn/rendering-lists#keeping-list-items-in-order-with-key",
+      "fetchedAt": "2026-06-30T00:00:00Z",
       "status": "ok",
-      "summary": "Ink docs (via gh api) confirm: useStdin().isRawModeSupported is the Ink-native boolean for detecting raw mode support; setRawMode will throw unless the current stdin supports raw mode. process.stdin.isTTY is the correct command-level gate (falsy in piped/non-TTY contexts). Our implementation of isInitInteractiveGate and isSetupInteractiveGate using Boolean(process.stdin.isTTY) correctly routes to the non-interactive fallback when raw mode is unavailable, matching the Ink-recommended pattern."
+      "summary": "React docs confirm: explicit keys are required for list-rendered children (.map()), must be unique among siblings, and stable across renders. Static JSX siblings benefit from explicit keys when rendered inside conditional arrays (Box children) to give React stable reconciliation anchors. The fix adds key='cam-run', key='cam-plan', key='cam-help' to NextCommand siblings in both InitScreen and SetupScreen 'Next' sections, matching this recommendation."
     }
   ]
 }
