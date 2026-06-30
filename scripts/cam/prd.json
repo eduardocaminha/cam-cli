@@ -1,0 +1,71 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-129-init-rawmode-guard",
+  "description": "Guard the init/setup Ink interactive path on stdin raw-mode support, fix the duplicate React key in the wizard render, and make the build-release soft-check distinguish a missing claude from an init crash.",
+  "issueNumber": 129,
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "ink",
+      "url": "https://github.com/vadimdemedes/ink",
+      "version": "^7",
+      "fetchedAt": "2026-06-29T00:00:00Z",
+      "summary": "Ink exposes useStdin().isRawModeSupported, a boolean determining whether the current stdin supports setRawMode. useInput requires raw mode on process.stdin; in an environment without raw mode the interactive path throws 'Raw mode is not supported on the current process.stdin'. Recommended pattern: gate on isRawModeSupported (or process.stdin.isTTY at the command level) and fall back to a non-interactive component, consistent with the CAM-104 readline discipline.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Gate init/setup interactivity on stdin raw-mode, not only stdout.isTTY",
+      "description": "As an operator running cam init or cam setup in a non-TTY-stdin context (build smoke, pipe), I need the interactivity gate to also require raw mode on stdin so the Ink path is only taken when useInput can actually attach, degrading to the non-interactive print/readline path otherwise (no crash).",
+      "acceptanceCriteria": [
+        "The init gate at src/commands/init.ts also requires stdin to support raw mode (e.g. adds Boolean(process.stdin.isTTY) to the existing stdout.isTTY && !CI condition); when raw mode is unavailable runInit returns the runInitLinear print path instead of runInitInteractive. [oracle: file-assert grep -nE 'process\\.stdin\\.isTTY|isRawModeSupported' src/commands/init.ts]",
+        "The setup gate isInteractiveTTY() at src/commands/setup.ts also requires stdin raw-mode support, so collectSetupAnswers picks collectViaReadline (not collectViaInk) when raw mode is unavailable. [oracle: file-assert grep -nE 'process\\.stdin\\.isTTY|isRawModeSupported' src/commands/setup.ts]",
+        "A unit test drives the gate decision with stdin raw-mode unavailable and asserts the non-interactive branch is selected (init -> linear print path; setup -> readline collection), mirroring the CAM-104 readline-EOF discipline. [oracle: bun test test/interactivity/interactivity.test.ts]",
+        "Running init with stdin not a raw-capable TTY (the build-smoke shape: stdout TTY allowed, stdin </dev/null) does not throw 'Raw mode is not supported' and exits via the print path. [oracle: bun test]",
+        "Typecheck passes. [oracle: bun run typecheck]",
+        "Lint/check-all passes. [oracle: bun run check:all]",
+        "Tests pass. [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/init.ts (line 244 isInteractive const), src/commands/setup.ts (lines 122-124 isInteractiveTTY). Both gates currently read only `Boolean(process.stdout.isTTY) && !process.env[CI]`. The root cause (verified in the issue): the Ink `useInput` (SetupScreen.tsx:103, and the Select component used by the init InitScreen flow) needs raw mode on process.stdin, but the gate checks stdout. Same discipline as CAM-104, which only fixed the readline path (ask/askChoice resolve defaults on EOF) and left the Ink path unguarded. Add stdin.isTTY (or Ink's isRawModeSupported) to BOTH gate conditions so the non-interactive fallback (runInitLinear / collectViaReadline) is chosen when raw mode is missing. Existing gate/interactivity tests live in test/interactivity/interactivity.test.ts; readline-EOF precedent in test/setup-collection-eof.test.ts and test/setup-readline-eof.test.ts. Read scripts/cam/patterns.md at story start. Do NOT add a --permission-mode flag. Vertical slice: this is the logic change plus its unit test; no UI file touched here. Test seam: extract the gate into an exported pure predicate (e.g. taking {stdoutIsTTY, stdinIsRawCapable, ci}) OR stub process.stdin.isTTY / process.stdout.isTTY around the test — injecting a stream into collectViaReadline does NOT cover the TTY gate (test/setup-collection-eof.test.ts only exercises readline, not the gate)."
+    },
+    {
+      "id": "US-002",
+      "title": "Fix the duplicate React key in the init/setup Ink render",
+      "description": "As a developer rendering the init/setup wizard, I need every list-rendered child to have a unique React key so Ink stops emitting the 'Encountered two children with the same key' warning during render.",
+      "acceptanceCriteria": [
+        "The 'Encountered two children with the same key' warning no longer appears when the init/setup screens render: an ink-testing-library test renders the offending screen and asserts no duplicate-key warning is emitted to console.error/stderr. [oracle: bun test]",
+        "The non-unique key source is identified and given a stable unique key in src/ui/SetupScreen.tsx and/or src/ui/InitScreen.tsx (the list whose children share a key). [oracle: reviewer-judgment]",
+        "Verify the screen renders correctly via ink-testing-library: the rendered frame still shows the expected sections and the success/failure glyph (the ✓/✗ glyph, never divider color). [oracle: bun test]",
+        "Typecheck passes. [oracle: bun run typecheck]",
+        "Lint/check-all passes. [oracle: bun run check:all]",
+        "Tests pass. [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/ui/SetupScreen.tsx, src/ui/InitScreen.tsx. The implementer MUST reproduce first (render via ink-testing-library and capture the console warning) to locate the actual non-unique key before editing; do not guess. Candidates to inspect: InitScreen keys its check rows by key={c.id} (unique if buildInteractiveChecks ids stay unique in src/commands/init.ts:313); Select keys options by key={opt.value}; Splash keys wordmark rows by key={i}. The duplicate most likely surfaces in the SetupScreen render tree (multiple sibling <Section> blocks each wrapping fragments) or in the init createElement(Box, props, Splash, InitScreen) positional-children composition (src/commands/init.ts:296-307) where variadic createElement children are not auto-keyed like JSX arrays. Gotcha (lessons 2026-06-05): comments in InitScreen claim divisor-color semantics that the runtime does not honor; verify behavior by rendering, never by trusting the comment. Read scripts/cam/patterns.md at story start. ink-testing-library is already a devDependency; precedent screen tests in test/interactivity/interactivity.test.ts."
+    },
+    {
+      "id": "US-003",
+      "title": "build-release.sh soft-check distinguishes missing-claude from init-crash",
+      "description": "As a release engineer, I need the build-release.sh init soft-check to only tolerate a non-zero exit when the claude prerequisite genuinely failed, so a real init crash (with claude installed) surfaces as a build failure instead of being masked as 'acceptable on machines without claude installed'.",
+      "acceptanceCriteria": [
+        "scripts/build-release.sh no longer treats every non-zero init exit as acceptable: the soft-check only tolerates a non-zero exit attributable to a missing/failing claude prerequisite, and aborts the build (non-zero) on any other init failure. [oracle: file-assert grep -nE 'claude' scripts/build-release.sh]",
+        "The static-source guard in test/build-release-smoke.test.ts is updated/extended to assert the soft-check branches on the claude prerequisite (not a blanket non-zero tolerance) while preserving the existing hermetic invariants (mktemp tmpdir, --no-tmux, --existing, --issue-system none, </dev/null, ${BIN_ABS}, trap cleanup). Specifically, the existing test/build-release-smoke.test.ts assertion matching /non-zero is acceptable/ (around line 83) MUST be updated to assert the soft-check branches on the claude prerequisite instead, so it does not break when AC3 removes that comment string. [oracle: bun test test/build-release-smoke.test.ts]",
+        "The blanket comment 'non-zero is acceptable on machines without claude installed' is replaced by logic/comment that distinguishes claude-absent from init-crashed. [oracle: file-assert grep -q 'claude' scripts/build-release.sh]",
+        "Typecheck passes. [oracle: bun run typecheck]",
+        "Lint/check-all passes. [oracle: bun run check:all]",
+        "Tests pass. [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "File: scripts/build-release.sh (soft-check block, lines ~110-120; the `if (cd ... init ...); then ... else rc=$?; echo '... non-zero is acceptable ...'` arm). The mask hid a real crash in this issue because claude WAS installed yet init still exited 1 (the Ink raw-mode crash). Approach: probe the claude prerequisite (e.g. `command -v claude` or run `cam init` and inspect whether the only failure was the claude check) and only tolerate non-zero when claude is genuinely absent; otherwise `exit ${rc}`. The guard test is a static-source test (reads the script text, no compiled binary) per test/build-release-smoke.test.ts header. Canonical build-smoke rule (lessons 2026-06-06): a build smoke must never run a mutating command against the repo (the hermetic tmpdir + flags already enforce this; preserve them). Read scripts/cam/patterns.md at story start. With US-001 landed, init in the smoke takes the print path and exits 0 when claude is present, so this story's stricter gate will not produce false build failures."
+    }
+  ]
+}
