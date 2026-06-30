@@ -1,25 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "/cam-plan spec-sourcing by specSource + honest non-grilled signal"
+    "id": "US-004",
+    "title": "ADR documenting the two-door plan-readiness decision"
   },
   "branchName": "cam/CAM-144-fast-track-plan-ready",
-  "timestamp": "2026-06-30T21:30:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-06-30T22:00:00Z",
+  "createdFiles": [
+    "docs/adr/0002-fast-track-plan-ready.md",
+    "test/adr-0002-fast-track.test.ts"
+  ],
   "modifiedFiles": [
-    ".claude/commands/cam-plan.md",
-    "templates/commands/cam-plan.md",
-    ".claude/agents/subagent-planner.md",
-    "templates/agents/subagent-planner.md",
-    "src/vendor/_generated.ts"
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 replaced the stage:idea D2 warning in /cam-plan Step 2 (none backend, integer arg) with specSource-driven spec sourcing: specSource=grill (or absent) uses the spec field verbatim (do-not-re-litigate); specSource=derived/operator uses title+description as proposed scope and prints a non-grilled signal, passing derivedFrom to the subagent-planner. Step 7 prompt now includes Spec(specSource) and derivedFrom fields. subagent-planner.md gained a Spec Sourcing section instructing it to read derivedFrom parent issues when specSource is derived. Both .claude/ and templates/ copies were updated (wording deltas preserved). src/vendor/_generated.ts was regenerated. Dual-copy pattern: .claude has bun-specific commands (bun run typecheck, bun test) while templates uses generic phrasing; the Spec Sourcing section is verbatim in .claude but omits cam-specific file paths (scripts/cam/issues/*.json) in templates. US-004 is next: ADR documenting the two-door plan-readiness decision.",
+  "nextStoryContext": "US-004 created docs/adr/0002-fast-track-plan-ready.md documenting the two-door plan-readiness decision: specSource:grill (Porta 1, ADR 0001 path unchanged) and specSource:derived/operator (Porta 2, born-ready, --fast-track flag). ADR follows 0001 style (Status/Data/Revisao header + Contexto/Decisao/Consequencias/Alternativas descartadas sections). A file-assert test was added at test/adr-0002-fast-track.test.ts asserting section headings, CAM-107, specSource, and absence of em-dash. All 4 stories in the PRD now pass:true. The PRD should be ready for review.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "All changes are in markdown instruction files (.claude/commands/cam-plan.md, templates/commands/cam-plan.md, .claude/agents/subagent-planner.md, templates/agents/subagent-planner.md) and the generated src/vendor/_generated.ts. No external library API was exercised."
+      "summary": "US-004 created only a markdown ADR file and a bun:test file-assert test. No external library API was exercised."
     }
   ]
 }

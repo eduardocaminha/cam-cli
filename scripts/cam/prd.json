@@ -77,7 +77,7 @@
         "The full spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: docs/adr/0002-fast-track-plan-ready.md (NEW; docs/adr/0001-issue-system-redesign.md ALREADY EXISTS — the spec calls this the 'first ADR' meaning the first ADR for THIS decision; number it 0002 to follow the existing 0001, do not overwrite 0001), plus a small file-assert test under test/. ADR 3-gate convention + Domain Model Convention live in scripts/cam/CLAUDE.md (read as project context): write an ADR only when all three gates pass (hard-to-reverse + surprising + genuine trade-off) — this decision passes all three. Follow the style of 0001 (Status/Data/Contexto/Decisao/Consequencias/Alternativas descartadas sections). DOC CONVENTION (global CLAUDE.md, Eduardo 2026-05-20): no em-dash and no decorative emoji in human-readable persisted .md; substitute colon/comma/parenthesis/period. This decision revises, does NOT delete, ADR 0001's 'grill is the singular human gate' point (CAM-107)."
     }
