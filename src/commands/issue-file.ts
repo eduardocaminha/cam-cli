@@ -24,6 +24,10 @@
 
 import { parseToml } from '../config/toml.ts';
 import { writeIssueFile } from '../issues/alloc.ts';
+import { readBacklogFromMain } from '../issues/backlog.ts';
+import type { BacklogSpawnFn } from '../issues/backlog.ts';
+import { validateSpecSource } from '../issues/spec.ts';
+import type { WsjfScore } from '../issues/types.ts';
 import type { SpawnFn } from '../git/on-main.ts';
 import { printError } from '../logging/color.ts';
 
@@ -47,6 +51,20 @@ export interface CreateLocalIssueOnMainOptions {
 	description?: string;
 	/** Optional priority (accepted for backward compat; never written into the entry). */
 	priority?: string;
+	/**
+	 * Source of the spec, derived from CLI flags:
+	 *   'operator' (from --fast-track) or 'derived' (from --derived-from).
+	 * When present, guardrails are enforced and stage is set to 'specified'.
+	 * Absent on normal filing (no flags) -- stage stays 'idea'.
+	 */
+	specSource?: 'grill' | 'derived' | 'operator';
+	/** Parent issue ids parsed from --derived-from (required when specSource === 'derived'). */
+	derivedFrom?: string[];
+	/**
+	 * Explicit WSJF scores from stdin JSON. When absent on the --derived-from path,
+	 * WSJF is inherited from the first parent that has a wsjf field (suggested default).
+	 */
+	wsjf?: WsjfScore;
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
@@ -67,7 +85,7 @@ export interface CreateLocalIssueOnMainResult {
 /** Guard or error outcome: no commit was made. */
 export interface CreateLocalIssueOnMainError {
 	ok: false;
-	reason: 'diverged' | 'detached-head' | 'missing-main';
+	reason: 'diverged' | 'detached-head' | 'missing-main' | 'guardrail-failed';
 }
 
 export type CreateLocalIssueOnMainOutcome =
@@ -157,6 +175,75 @@ function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
 	}
 }
 
+/**
+ * Adapt SpawnFn (which has optional env) to BacklogSpawnFn (no env param).
+ * SpawnFn's options are a strict superset of BacklogSpawnFn's, so the adapter
+ * is safe: callers pass { encoding, input? } and the underlying SpawnFn accepts
+ * those fields unchanged.
+ */
+function toBacklogSpawn(spawnFn: SpawnFn): BacklogSpawnFn {
+	return (cmd, args, o) => spawnFn(cmd, args, o);
+}
+
+/** Result of applyFastTrackGuardrails: resolved WSJF on success, reason on failure. */
+type FastTrackGuardrailResult =
+	| { ok: true; resolvedWsjf: WsjfScore }
+	| { ok: false; reason: 'guardrail-failed' };
+
+/**
+ * Run all 4 hard pre-commit guardrails for a fast-track filing and resolve WSJF.
+ *
+ *   Guardrail 1: specSource-required -- caller guarantees specSource is present.
+ *   Guardrail 2: derivedFrom-when-derived -- validateSpecSource invariant 2.
+ *   Guardrail 3: description-non-empty-when-fast-track -- validateSpecSource invariant 3.
+ *   Guardrail 4: WSJF-resolvable -- explicit wsjf wins; falls back to parent inheritance
+ *                for --derived-from; refuses when unresolvable.
+ *
+ * Extracted from createLocalIssueOnMain to keep complexity below the biome limit.
+ */
+function applyFastTrackGuardrails(
+	specSource: string,
+	derivedFrom: string[] | undefined,
+	description: string | undefined,
+	wsjf: WsjfScore | undefined,
+	cwd: string,
+	spawnFn: SpawnFn,
+): FastTrackGuardrailResult {
+	// Guardrails 2 + 3: validateSpecSource mirrors specifyIssueOnMain validate-before-mutate order.
+	const vResult = validateSpecSource({ specSource, derivedFrom, description });
+	if (!vResult.ok) {
+		for (const err of vResult.errors) {
+			printError('fast-track guardrail', err);
+		}
+		return { ok: false, reason: 'guardrail-failed' };
+	}
+
+	// Guardrail 4: WSJF resolution.
+	// Explicit wsjf from stdin JSON takes priority (SUGGESTED default is overridable per Gotcha #2).
+	let resolvedWsjf = wsjf;
+	if (resolvedWsjf === undefined && specSource === 'derived' && derivedFrom !== undefined && derivedFrom.length > 0) {
+		// Inherit WSJF from the first parent that has a wsjf field.
+		const backlog = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));
+		for (const parentId of derivedFrom) {
+			const parent = backlog.find((e) => e.id === parentId);
+			if (parent?.wsjf !== undefined) {
+				resolvedWsjf = parent.wsjf;
+				break;
+			}
+		}
+	}
+
+	if (resolvedWsjf === undefined) {
+		printError(
+			'WSJF unresolvable',
+			'provide explicit wsjf in stdin JSON, or use --derived-from naming a parent with wsjf',
+		);
+		return { ok: false, reason: 'guardrail-failed' };
+	}
+
+	return { ok: true, resolvedWsjf };
+}
+
 // ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
@@ -184,7 +271,7 @@ function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
 export function createLocalIssueOnMain(
 	options: CreateLocalIssueOnMainOptions,
 ): CreateLocalIssueOnMainOutcome {
-	const { cwd, title, description, spawnFn, clock, readProjectToml } = options;
+	const { cwd, title, description, specSource, derivedFrom, wsjf, spawnFn, clock, readProjectToml } = options;
 
 	// Guards 0a-0c: run before any mutation.
 	const guard = checkMainUpToDate(cwd, spawnFn);
@@ -192,6 +279,17 @@ export function createLocalIssueOnMain(
 		return guard;
 	}
 	const { branchWasMain } = guard;
+
+	// Fast-track guardrails -- only when specSource is provided (--fast-track /
+	// --derived-from flag was used). Normal filing (no flags) bypasses all guards.
+	let resolvedWsjf: WsjfScore | undefined;
+	if (specSource !== undefined) {
+		const guardrail = applyFastTrackGuardrails(specSource, derivedFrom, description, wsjf, cwd, spawnFn);
+		if (!guardrail.ok) {
+			return guardrail;
+		}
+		resolvedWsjf = guardrail.resolvedWsjf;
+	}
 
 	// 1. Read issue_prefix from project.toml.
 	const tomlText = readProjectToml();
@@ -207,6 +305,9 @@ export function createLocalIssueOnMain(
 		prefix,
 		createdAt: clock(),
 		spawnFn,
+		...(specSource !== undefined ? { specSource } : {}),
+		...(derivedFrom !== undefined && derivedFrom.length > 0 ? { derivedFrom } : {}),
+		...(resolvedWsjf !== undefined ? { wsjf: resolvedWsjf } : {}),
 	});
 
 	// 3. Best-effort push. Rejection is logged explicitly, never swallowed.

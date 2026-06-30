@@ -46,5 +46,7 @@ export interface IssueEntry {
 	wsjf?: WsjfScore;
 	rank?: number;
 	spec?: Spec;
+	specSource?: "grill" | "derived" | "operator";
+	derivedFrom?: string[];
 }
 

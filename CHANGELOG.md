@@ -4,6 +4,16 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.34.0] - 2026-06-30
+
+### Added
+
+- [US-R1-001] - correct ADR 0002 WSJF section to match overridable-default contract
+- [US-004] - ADR documenting the two-door plan-readiness decision
+- [US-003] - /cam-plan spec-sourcing by specSource + honest non-grilled signal
+- [US-002] - Filing flags --fast-track / --derived-from with hard guardrails + WSJF resolution
+- [US-001] - specSource/derivedFrom schema + hand-rolled validators
+
 ## [0.33.0] - 2026-06-30
 
 ### Added

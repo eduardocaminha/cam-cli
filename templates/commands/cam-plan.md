@@ -79,7 +79,9 @@ Note: the `cam plan` CLI only ever passes a bare invocation or an integer `N` (i
   - `github`: `gh issue list --state open --limit 5` (pick the top, or ask the user).
   - `linear`: query the active cycle and take the highest-priority open issue.
 - **Integer argument `N`** (`70` or `#70`): resolve that issue from the backend.
-  - `none`: read the per-file issue at `scripts/cam/issues/<issue_prefix>-NNNN.json` (e.g. `CAM-0070.json` for `CAM-70`). Use its `title` + `description` as the spec. Stop with a clear error if it is missing or not open. **D2 warning**: if the issue's `stage` is `"idea"` (not yet grill-specified), print: `⚠️  This issue is not grill-specified (stage: idea). Proceeding at operator's discretion.`
+  - `none`: read the per-file issue at `scripts/cam/issues/<issue_prefix>-NNNN.json` (e.g. `CAM-0070.json` for `CAM-70`). Stop with a clear error if it is missing or not open. Source the spec by `specSource`:
+    - **`"grill"` (or field absent, back-compat)**: use the `spec` field as the settled scope. Do not re-litigate scope already decided at grill time.
+    - **`"derived"` or `"operator"`**: use `title` + `description` as the proposed scope (WHAT is settled, HOW is refined by the planner). Print a non-grilled signal: `⚠️  Non-grilled spec (specSource: <value>, from <derivedFrom>); treating description as proposed scope.` Pass `derivedFrom` to the subagent-planner (Step 7) so it can read the parent issue(s) for context.
   - `github`: `gh issue view 70 --json number,title,body,labels,comments,state,url`.
   - `linear`: fetch `<issue_prefix>-<N>` via the Linear API (same path the orchestrator uses).
 - **Free-text description** (anything not an integer; reachable only via the slash, never from `cam plan`): use the text as the spec, with no linked issue.
@@ -145,7 +147,8 @@ Task(
   description="Generate PRD",
   prompt="""
 Issue: #<N> — <title>
-Grilled spec: <spec field from the issue; already settled at spec-time, do not re-litigate>
+Spec (specSource: <grill|derived|operator>): <when specSource is "grill" or absent: include the `spec` field verbatim, note "already settled at spec-time, do not re-litigate"; when "derived"/"operator": include title+description as proposed scope>
+derivedFrom: <parent issue id(s) — include only when specSource is "derived" or "operator" and the field is non-empty>
 Stories approved by operator: <list from Step 6 approval>
 Related docs: <list from Step 4>
 Official docs consulted: <list from Step 5>

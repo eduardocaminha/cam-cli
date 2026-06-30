@@ -228,6 +228,7 @@ function makeOptions(
 	};
 }
 
+
 // ---------------------------------------------------------------------------
 // (a) written path is scripts/cam/issues/CAM-NNNN.json
 // ---------------------------------------------------------------------------
@@ -635,5 +636,198 @@ describe('createLocalIssueOnMain — issue_prefix', () => {
 		);
 		assertOk(result);
 		expect(result.id).toMatch(/^PROJ-\d+/);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-002: Fast-track guardrails (pre-commit, validate-before-mutate)
+// ---------------------------------------------------------------------------
+
+// Helper: silence stderr for guardrail-refusal tests
+function withSilentStderr<T>(fn: () => T): T {
+	const original = process.stderr.write.bind(process.stderr);
+	process.stderr.write = (() => true) as typeof process.stderr.write;
+	try {
+		return fn();
+	} finally {
+		process.stderr.write = original;
+	}
+}
+
+describe('createLocalIssueOnMain — fast-track guardrails (US-002)', () => {
+	test('--fast-track with empty description REFUSES (non-ok, no commit)', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = withSilentStderr(() =>
+			createLocalIssueOnMain(
+				makeOptions({
+					spawnFn,
+					specSource: 'operator' as const,
+					description: '',  // empty string is rejected
+					wsjf: { value: 5, timeCriticality: 3, riskReduction: 2, jobSize: 4 },
+				}),
+			)
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('guardrail-failed');
+		}
+		// No mutation: update-ref must not have been called
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
+	});
+
+	test('--fast-track (operator) with valid description + wsjf files at stage:specified', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = createLocalIssueOnMain(
+			makeOptions({
+				spawnFn,
+				specSource: 'operator' as const,
+				description: 'A non-empty description',
+				wsjf: { value: 8, timeCriticality: 5, riskReduction: 3, jobSize: 4 },
+			}),
+		);
+		assertOk(result);
+
+		// hash-object input must have stage:'specified' and specSource:'operator'
+		const hashCall = calls.find((c) => c.args.includes('hash-object'));
+		expect(hashCall).toBeDefined();
+		const entry = JSON.parse(hashCall!.options.input!) as {
+			stage: string;
+			specSource: string;
+			wsjf: { value: number; timeCriticality: number; riskReduction: number; jobSize: number };
+		};
+		expect(entry.stage).toBe('specified');
+		expect(entry.specSource).toBe('operator');
+		expect(entry.wsjf).toEqual({ value: 8, timeCriticality: 5, riskReduction: 3, jobSize: 4 });
+	});
+
+	test('--derived-from naming a parent with no wsjf AND no explicit wsjf REFUSES', () => {
+		// The existing CAT_FILE_OUTPUT returns CAM-88 without a wsjf field.
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = withSilentStderr(() =>
+			createLocalIssueOnMain(
+				makeOptions({
+					spawnFn,
+					specSource: 'derived' as const,
+					derivedFrom: ['CAM-88'],
+					description: 'A fix derived from CAM-88',
+					// No explicit wsjf; parent CAM-88 has no wsjf either -> unresolvable
+				}),
+			)
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('guardrail-failed');
+		}
+		// No mutation committed
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
+	});
+
+	test('--derived-from inherits parent wsjf when explicit wsjf is absent', () => {
+		// Override cat-file output so CAM-88 has a wsjf field.
+		const parentWithWsjf = {
+			id: 'CAM-88',
+			title: 'Parent issue',
+			stage: 'specified' as const,
+			status: 'open' as const,
+			blockedBy: [] as string[],
+			createdAt: '2026-06-24T00:00:00Z',
+			wsjf: { value: 10, timeCriticality: 7, riskReduction: 4, jobSize: 3 },
+		};
+		const parentJson = JSON.stringify(parentWithWsjf, null, 2) + '\n';
+		const parentCatFileOutput = `abc123 blob ${parentJson.length}\n${parentJson}\n`;
+
+		const { spawnFn, calls } = makeRecordingSpawn({ catFileOutput: parentCatFileOutput });
+		const result = createLocalIssueOnMain(
+			makeOptions({
+				spawnFn,
+				specSource: 'derived' as const,
+				derivedFrom: ['CAM-88'],
+				description: 'A fix derived from CAM-88',
+				// No explicit wsjf -- should inherit parent's wsjf
+			}),
+		);
+		assertOk(result);
+
+		// hash-object input must have stage:'specified', specSource:'derived',
+		// derivedFrom:['CAM-88'], and the inherited wsjf
+		const hashCall = calls.find((c) => c.args.includes('hash-object'));
+		expect(hashCall).toBeDefined();
+		const entry = JSON.parse(hashCall!.options.input!) as {
+			stage: string;
+			specSource: string;
+			derivedFrom: string[];
+			wsjf: { value: number; timeCriticality: number; riskReduction: number; jobSize: number };
+		};
+		expect(entry.stage).toBe('specified');
+		expect(entry.specSource).toBe('derived');
+		expect(entry.derivedFrom).toEqual(['CAM-88']);
+		expect(entry.wsjf).toEqual({ value: 10, timeCriticality: 7, riskReduction: 4, jobSize: 3 });
+	});
+
+	test('--derived-from with explicit wsjf overrides parent wsjf', () => {
+		const parentWithWsjf = {
+			id: 'CAM-88',
+			title: 'Parent issue',
+			stage: 'specified' as const,
+			status: 'open' as const,
+			blockedBy: [] as string[],
+			createdAt: '2026-06-24T00:00:00Z',
+			wsjf: { value: 2, timeCriticality: 2, riskReduction: 1, jobSize: 5 },
+		};
+		const parentJson = JSON.stringify(parentWithWsjf, null, 2) + '\n';
+		const parentCatFileOutput = `abc123 blob ${parentJson.length}\n${parentJson}\n`;
+
+		const { spawnFn, calls } = makeRecordingSpawn({ catFileOutput: parentCatFileOutput });
+		const explicitWsjf = { value: 10, timeCriticality: 9, riskReduction: 8, jobSize: 2 };
+		const result = createLocalIssueOnMain(
+			makeOptions({
+				spawnFn,
+				specSource: 'derived' as const,
+				derivedFrom: ['CAM-88'],
+				description: 'A high-priority fix',
+				wsjf: explicitWsjf,  // explicit overrides parent
+			}),
+		);
+		assertOk(result);
+
+		const hashCall = calls.find((c) => c.args.includes('hash-object'));
+		const entry = JSON.parse(hashCall!.options.input!) as {
+			wsjf: { value: number; timeCriticality: number; riskReduction: number; jobSize: number };
+		};
+		// Must use the explicit wsjf, not the parent's lower-priority wsjf
+		expect(entry.wsjf).toEqual(explicitWsjf);
+	});
+
+	test('--derived-from with missing derivedFrom field REFUSES', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		// specSource:'derived' but derivedFrom is empty -- invariant violation
+		const result = withSilentStderr(() =>
+			createLocalIssueOnMain(
+				makeOptions({
+					spawnFn,
+					specSource: 'derived' as const,
+					derivedFrom: [],  // empty: validation fails
+					description: 'A fix',
+					wsjf: { value: 5, timeCriticality: 3, riskReduction: 2, jobSize: 4 },
+				}),
+			)
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('guardrail-failed');
+		}
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
+	});
+
+	test('normal filing (no specSource) bypasses all guardrails and files at stage:idea', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		// No specSource, no description, no wsjf -- should file normally at stage:idea
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
+
+		const hashCall = calls.find((c) => c.args.includes('hash-object'));
+		const entry = JSON.parse(hashCall!.options.input!) as { stage: string; specSource?: string };
+		expect(entry.stage).toBe('idea');
+		expect(entry.specSource).toBeUndefined();
 	});
 });

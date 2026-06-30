@@ -1,14 +1,16 @@
 // test/issue-dispatch.test.ts
 //
-// Unit tests for dispatchIssue (US-003: cam issue --file-local CLI surface).
+// Unit tests for dispatchIssue and parseIssueArgs.
 //
-// Coverage (per US-003 acceptance criteria):
-//   (a) parseIssueArgs recognizes --file-local and returns { mode: 'file-local' }
-//       distinct from the free-text { mode: 'text' } shape.
-//   (b) dispatchIssue routes --file-local to fileLocalFn BEFORE runIssueFn.
-//   (c) The --file-local path NEVER calls the runIssue thin-proxy.
-//   (d) The text path calls runIssueFn and NOT fileLocalFn.
-//   (e) Exit codes are forwarded from the injected fakes.
+// Coverage:
+//   (a) parseIssueArgs recognizes --file-local and returns { mode: 'file-local',
+//       fastTrack, derivedFrom } (US-002 extension of US-003).
+//   (b) --fast-track sets fastTrack:true; --derived-from parses comma-separated
+//       ids into derivedFrom; both flags are mutually exclusive.
+//   (c) dispatchIssue routes --file-local to fileLocalFn BEFORE runIssueFn.
+//   (d) The --file-local path NEVER calls the runIssue thin-proxy.
+//   (e) The text path calls runIssueFn and NOT fileLocalFn.
+//   (f) Exit codes are forwarded from the injected fakes.
 //
 // All external I/O is faked via injectable deps (fileLocalFn, runIssueFn).
 // No real stdin, git, or tmux is exercised.
@@ -16,16 +18,31 @@
 import { describe, expect, test } from 'bun:test';
 import { parseIssueArgs, dispatchIssue } from '../index.ts';
 
+// Suppress stderr for tests that expect errors.
+function withSilentStderr<T>(fn: () => T): T {
+	const original = process.stderr.write.bind(process.stderr);
+	process.stderr.write = (() => true) as typeof process.stderr.write;
+	try {
+		return fn();
+	} finally {
+		process.stderr.write = original;
+	}
+}
+
 // ---------------------------------------------------------------------------
-// parseIssueArgs: --file-local mode recognition
+// parseIssueArgs: --file-local mode recognition (US-003 baseline)
 // ---------------------------------------------------------------------------
 
 describe('parseIssueArgs: --file-local recognition', () => {
-	test('recognizes --file-local and returns { mode: file-local, help: false }', () => {
+	test('recognizes --file-local and returns { mode: file-local, fastTrack: false, derivedFrom: [], help: false }', () => {
 		const result = parseIssueArgs(['--file-local']);
 		expect(result).not.toBeNull();
 		expect(result?.mode).toBe('file-local');
 		expect(result?.help).toBe(false);
+		if (result?.mode === 'file-local') {
+			expect(result.fastTrack).toBe(false);
+			expect(result.derivedFrom).toEqual([]);
+		}
 	});
 
 	test('free-text path returns { mode: text, text: <arg>, help: false }', () => {
@@ -38,15 +55,9 @@ describe('parseIssueArgs: --file-local recognition', () => {
 		expect(result?.help).toBe(false);
 	});
 
-	test('--file-local with extra arg returns null (unexpected argument)', () => {
-		const original = process.stderr.write.bind(process.stderr);
-		process.stderr.write = (() => true) as typeof process.stderr.write;
-		try {
-			const result = parseIssueArgs(['--file-local', 'extra']);
-			expect(result).toBeNull();
-		} finally {
-			process.stderr.write = original;
-		}
+	test('--file-local with unknown extra arg returns null (unexpected argument)', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['--file-local', 'extra']));
+		expect(result).toBeNull();
 	});
 
 	test('--file-local is distinct from the free-text { text } shape', () => {
@@ -68,13 +79,63 @@ describe('parseIssueArgs: --file-local recognition', () => {
 	});
 
 	test('empty args still returns null', () => {
-		const original = process.stderr.write.bind(process.stderr);
-		process.stderr.write = (() => true) as typeof process.stderr.write;
-		try {
-			expect(parseIssueArgs([])).toBeNull();
-		} finally {
-			process.stderr.write = original;
+		const result = withSilentStderr(() => parseIssueArgs([]));
+		expect(result).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseIssueArgs: --fast-track flag (US-002)
+// ---------------------------------------------------------------------------
+
+describe('parseIssueArgs: --fast-track', () => {
+	test('--file-local --fast-track returns fastTrack:true derivedFrom:[]', () => {
+		const result = parseIssueArgs(['--file-local', '--fast-track']);
+		expect(result?.mode).toBe('file-local');
+		if (result?.mode === 'file-local') {
+			expect(result.fastTrack).toBe(true);
+			expect(result.derivedFrom).toEqual([]);
 		}
+	});
+
+	test('--file-local --fast-track preserves mode:file-local', () => {
+		const result = parseIssueArgs(['--file-local', '--fast-track']);
+		expect(result?.mode).toBe('file-local');
+		expect(result?.help).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseIssueArgs: --derived-from flag (US-002)
+// ---------------------------------------------------------------------------
+
+describe('parseIssueArgs: --derived-from', () => {
+	test('--file-local --derived-from CAM-42 returns derivedFrom:["CAM-42"]', () => {
+		const result = parseIssueArgs(['--file-local', '--derived-from', 'CAM-42']);
+		expect(result?.mode).toBe('file-local');
+		if (result?.mode === 'file-local') {
+			expect(result.fastTrack).toBe(false);
+			expect(result.derivedFrom).toEqual(['CAM-42']);
+		}
+	});
+
+	test('--derived-from accepts comma-separated list: CAM-42,CAM-43', () => {
+		const result = parseIssueArgs(['--file-local', '--derived-from', 'CAM-42,CAM-43']);
+		if (result?.mode === 'file-local') {
+			expect(result.derivedFrom).toEqual(['CAM-42', 'CAM-43']);
+		}
+	});
+
+	test('--derived-from without a value returns null', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['--file-local', '--derived-from']));
+		expect(result).toBeNull();
+	});
+
+	test('--fast-track and --derived-from together return null (mutually exclusive)', () => {
+		const result = withSilentStderr(() =>
+			parseIssueArgs(['--file-local', '--fast-track', '--derived-from', 'CAM-42'])
+		);
+		expect(result).toBeNull();
 	});
 });
 
@@ -88,7 +149,7 @@ describe('dispatchIssue: routing isolation', () => {
 		let runIssueCalled = false;
 
 		await dispatchIssue(
-			{ mode: 'file-local', help: false },
+			{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
 			{
 				fileLocalFn: async () => {
 					fileLocalCalled = true;
@@ -130,7 +191,7 @@ describe('dispatchIssue: routing isolation', () => {
 
 	test('--file-local returns 0 when fileLocalFn succeeds', async () => {
 		const code = await dispatchIssue(
-			{ mode: 'file-local', help: false },
+			{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
 			{
 				fileLocalFn: async () => 0,
 				runIssueFn: async () => 99,
@@ -141,7 +202,7 @@ describe('dispatchIssue: routing isolation', () => {
 
 	test('--file-local returns 1 when fileLocalFn fails', async () => {
 		const code = await dispatchIssue(
-			{ mode: 'file-local', help: false },
+			{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
 			{
 				fileLocalFn: async () => 1,
 				runIssueFn: async () => 0,
@@ -170,5 +231,29 @@ describe('dispatchIssue: routing isolation', () => {
 			},
 		);
 		expect(code).toBe(1);
+	});
+
+	test('--file-local with --fast-track still routes to fileLocalFn', async () => {
+		let fileLocalCalled = false;
+		await dispatchIssue(
+			{ mode: 'file-local', fastTrack: true, derivedFrom: [], help: false },
+			{
+				fileLocalFn: async () => { fileLocalCalled = true; return 0; },
+				runIssueFn: async () => 99,
+			},
+		);
+		expect(fileLocalCalled).toBe(true);
+	});
+
+	test('--file-local with --derived-from still routes to fileLocalFn', async () => {
+		let fileLocalCalled = false;
+		await dispatchIssue(
+			{ mode: 'file-local', fastTrack: false, derivedFrom: ['CAM-42'], help: false },
+			{
+				fileLocalFn: async () => { fileLocalCalled = true; return 0; },
+				runIssueFn: async () => 99,
+			},
+		);
+		expect(fileLocalCalled).toBe(true);
 	});
 });
