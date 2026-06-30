@@ -77,9 +77,9 @@ describe('build-release.sh AC4 soft-check is hermetic (CAM-15)', () => {
 		expect(script).toMatch(/trap\s+'rm -rf "\$\{SMOKE_DIR:-\}"'\s+EXIT/);
 	});
 
-	test('a non-zero soft-check exit does not abort the build (AC4 semantics preserved)', () => {
-		// The invocation is guarded by an `if ...; then ... else ... fi` so a
-		// non-zero exit is logged, not fatal (machines without claude installed).
-		expect(script).toMatch(/non-zero is acceptable/);
+	test('the soft-check branches on the claude prerequisite, not blanket non-zero tolerance (US-003)', () => {
+		// Probes `command -v claude`; absent = tolerated, installed + crash = build aborts.
+		expect(script).toContain('command -v claude');
+		expect(script).toMatch(/real init crash/);
 	});
 });

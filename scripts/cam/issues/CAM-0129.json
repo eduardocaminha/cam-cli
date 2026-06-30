@@ -1,7 +1,7 @@
 {
   "id": "CAM-129",
   "title": "cam init/setup crasha em non-TTY (Ink raw mode) no build smoke + duplicate React key",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T07:04:40.162Z",

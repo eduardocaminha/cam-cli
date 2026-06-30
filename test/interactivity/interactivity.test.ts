@@ -43,8 +43,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
+import { isInitInteractiveGate, runInit } from '../../src/commands/init.ts';
+import { isSetupInteractiveGate, collectViaReadline } from '../../src/commands/setup.ts';
 import { runStatus, parseStateFile, buildStatusReport } from '../../src/commands/status.ts';
 
 // --- Setup -----------------------------------------------------------------
@@ -454,5 +457,84 @@ pid: ${process.pid}
 		const report = buildStatusReport({ cwd: tmpDir });
 		expect(report.state).toBe('active');
 		expect(report.iteration).toEqual({ current: ITERATION_BEFORE, max: 30 });
+	});
+});
+
+// --- Test 5: Raw-mode gate decision ----------------------------------------
+
+describe('Test 5: Init and setup interactivity gate — non-interactive path when stdin raw-mode unavailable', () => {
+	// Pure predicate tests: no TTY, no process, no network.
+
+	test('isInitInteractiveGate returns false when stdin is not a TTY (build-smoke shape: stdout TTY, stdin piped)', () => {
+		// Mimics: cam init run with stdout attached to a terminal but stdin
+		// redirected from /dev/null (build smoke). Gate must return false so
+		// runInitLinear is chosen rather than the Ink path that would crash with
+		// "Raw mode is not supported".
+		expect(isInitInteractiveGate(true, false, undefined)).toBe(false);
+	});
+
+	test('isInitInteractiveGate returns false when stdout is not a TTY', () => {
+		expect(isInitInteractiveGate(false, true, undefined)).toBe(false);
+	});
+
+	test('isInitInteractiveGate returns false when CI env is set (even with both TTYs)', () => {
+		expect(isInitInteractiveGate(true, true, '1')).toBe(false);
+	});
+
+	test('isInitInteractiveGate returns true only when both stdout and stdin are TTYs and CI is absent', () => {
+		expect(isInitInteractiveGate(true, true, undefined)).toBe(true);
+	});
+
+	test('isSetupInteractiveGate returns false when stdin is not a TTY (build-smoke shape)', () => {
+		// Mimics the same scenario for setup: Ink SetupScreen uses useInput
+		// which needs raw-mode stdin; gate must fall back to collectViaReadline.
+		expect(isSetupInteractiveGate(true, false, undefined)).toBe(false);
+	});
+
+	test('isSetupInteractiveGate returns false when CI env is set', () => {
+		expect(isSetupInteractiveGate(true, true, '1')).toBe(false);
+	});
+
+	test('isSetupInteractiveGate returns true only when both TTYs and no CI', () => {
+		expect(isSetupInteractiveGate(true, true, undefined)).toBe(true);
+	});
+
+	test('runInit in test environment (stdin not a raw-capable TTY) does not throw and exits via the linear print path', async () => {
+		// In bun test, process.stdin.isTTY is undefined (falsy) → gate returns
+		// false → runInitLinear is selected → no Ink render, no raw-mode crash.
+		const tmpWorkDir = mkdtempSync(join(tmpdir(), 'cam-gate-init-test-'));
+		const prevConfigPath = process.env.CAM_CONFIG_PATH;
+		process.env.CAM_CONFIG_PATH = join(tmpWorkDir, 'config.toml');
+		try {
+			// Must resolve (not reject) with a number exit code — proves the
+			// linear path ran without throwing "Raw mode is not supported".
+			const exitCode = await runInit();
+			expect(typeof exitCode).toBe('number');
+		} finally {
+			if (prevConfigPath === undefined) delete process.env.CAM_CONFIG_PATH;
+			else process.env.CAM_CONFIG_PATH = prevConfigPath;
+			rmSync(tmpWorkDir, { recursive: true, force: true });
+		}
+	});
+
+	test('setup gate=false routes to collectViaReadline: returns configured answers on EOF', async () => {
+		// When isSetupInteractiveGate returns false, collectSetupAnswers picks
+		// collectViaReadline. Drive it directly with a pre-filled options bag
+		// (no readline prompts needed) to prove the readline path handles the
+		// non-interactive case and returns valid answers.
+		const eofStream = new Readable({ read() { this.push(null); } });
+		const answers = await collectViaReadline(
+			{
+				projectMode: 'existing',
+				issueSystem: 'none',
+				mergeMode: 'immediate',
+				planApproval: 'auto',
+			},
+			eofStream,
+		);
+		expect(answers.projectMode).toBe('existing');
+		expect(answers.issueSystem).toBe('none');
+		expect(answers.mergeMode).toBe('immediate');
+		expect(answers.planApproval).toBe('auto');
 	});
 });
