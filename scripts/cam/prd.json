@@ -1,0 +1,85 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-144-fast-track-plan-ready",
+  "description": "Fast-track plan-ready: issues born settled (derived fixes, operator nice-to-haves) file directly at stage:specified with a specSource discriminator, reaching /cam-plan without the grill.",
+  "issueNumber": 144,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "specSource/derivedFrom schema + hand-rolled validators",
+      "description": "As a cam maintainer, I need the issue schema and the hand-rolled validators to recognize specSource (grill|derived|operator) and derivedFrom so a stage:specified issue can declare it reached plan-readiness without a grill, with the discriminator's invariants enforced as data.",
+      "acceptanceCriteria": [
+        "issues.schema.json adds `specSource` (enum \"grill\"|\"derived\"|\"operator\") and `derivedFrom` (array of string). An if/then conditional REQUIRES specSource when stage===\"specified\"; another REQUIRES derivedFrom with minItems>=1 when specSource===\"derived\"; another REQUIRES non-empty description when specSource is \"derived\" or \"operator\". An absent specSource on a pre-existing specified issue is tolerated by the validator (treated as \"grill\"). Smoke: grep -q 'specSource' confirms the string is present. [oracle: grep -q 'specSource' /Users/eduardo/Documents/Projects/cam-cli/scripts/cam/issues.schema.json]",
+        "The BINDING oracle for the schema-shape correctness is a schema-validation test in test/issues/spec.test.ts that exercises each if/then conditional (specSource-required-on-specified; derivedFrom-required-when-derived; description-required-when-derived-or-operator) AND the absent-specSource-treated-as-grill back-compat, not merely the grep smoke check. [oracle: bun test test/issues/spec.test.ts]",
+        "src/issues/types.ts adds `specSource?: \"grill\"|\"derived\"|\"operator\"` and `derivedFrom?: string[]` to IssueEntry. [oracle: grep -q 'specSource' /Users/eduardo/Documents/Projects/cam-cli/src/issues/types.ts]",
+        "src/issues/spec.ts gains a hand-rolled validator (mirroring validateSpec/validateWsjf style, returning {ok, errors}) that enforces the 4 invariants: specSource-required-on-specified (absent⟹grill back-compat), specSource is one of the 3 enum values, derivedFrom non-empty when specSource===\"derived\" (and absent/empty otherwise), description non-empty when specSource in {derived, operator}. [oracle: bun test test/issues/spec.test.ts]",
+        "Option Y invariant: the 3 plannability filter sites keep the `stage === \"specified\"` predicate UNCHANGED (Option Y redefines the MEANING of specified, never the predicate) at src/issues/select.ts:34 (`issue.stage === \"specified\" &&`), src/issues/rank.ts:154 (`(issue) => issue.stage === \"specified\" && issue.status === \"open\",`), and src/issues/gate.ts:150 (`backlog.filter((e) => e.stage === \"specified\" && e.status === \"open\").map((e) => e.id),`); this story does not modify those files. [oracle: git diff --quiet src/issues/select.ts src/issues/rank.ts src/issues/gate.ts (no change to the three predicate sites)]",
+        "Unit tests cover: each invariant pass and fail case; absent-specSource-on-specified treated as grill (passes); specSource===\"derived\" without derivedFrom fails; specSource===\"operator\" with empty description fails; a valid grill/derived/operator entry each passes. [oracle: bun test test/issues/spec.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/cam/issues.schema.json (draft-07, additionalProperties:false at root, uses required+enum), src/issues/types.ts (IssueEntry), src/issues/spec.ts (mirror validateSpec/validateWsjf shape: ValidationResult {ok, errors}), test/issues/spec.test.ts. PROJECT HAND-ROLLS validation, no ajv: the schema is data (used for docs + as the JSON-schema if/then guardrail layer), the TS validator is the runtime gate. Both layers must encode the same 4 invariants (gotcha: keep them in sync, do not let the schema and the validator drift). noUncheckedIndexedAccess: guard array/optional access. specSource is a TOTAL discriminator with absent⟹grill (settled, gotcha #1). derivedFrom is string[] (a fix can consolidate several parents, gotcha #3). HARD MUST-NOT (operator-flagged): do NOT touch the plannability predicate at select.ts:34 / rank.ts:154 / gate.ts:150 — Option Y changes only the meaning of specified."
+    },
+    {
+      "id": "US-002",
+      "title": "Filing flags --fast-track / --derived-from with hard guardrails + WSJF resolution",
+      "description": "As an orchestrator filing a derived fix or an operator nice-to-have, I need `cam issue --file-local --fast-track` and `--derived-from CAM-NNN[,CAM-MMM]` to file the issue directly at stage:specified with the right specSource/derivedFrom, resolving WSJF (explicit or parent-inherited) and refusing pre-commit when any guardrail is violated, so born-ready work reaches /cam-plan without ceremony but cannot become a rigor shortcut.",
+      "acceptanceCriteria": [
+        "parseIssueArgs (index.ts) accepts `--fast-track` and `--derived-from CAM-NNN[,CAM-MMM]` on the --file-local path; `--fast-track`⟹specSource:operator, `--derived-from`⟹specSource:derived with derivedFrom parsed from the comma-separated list; default filing with NO flag stays stage:idea (alloc.ts:95 default untouched). [oracle: bun test test/issue-dispatch.test.ts]",
+        "writeIssueFile (src/issues/alloc.ts) accepts specSource/derivedFrom/wsjf options and, when filing fast-track, sets stage:'specified' and writes specSource + derivedFrom into the IssueEntry, then syncs the worktree post-CAS (CAM-142 syncWorktreeIfOnMain path preserved, no staged-deletion). [oracle: bun test test/issues/alloc.test.ts]",
+        "WSJF is resolved at filing: explicit scores on stdin are accepted; with --derived-from and omitted scores, a SUGGESTED (overridable) WSJF is inherited from the parent issue read from main; filing REFUSES with a clear error message and non-zero exit when WSJF is unresolvable (no explicit scores AND no parent-with-wsjf). [oracle: bun test test/issue-file.test.ts]",
+        "All 4 guardrails are enforced HARD pre-commit in createLocalIssueOnMain (src/commands/issue-file.ts), mirroring specifyIssueOnMain's validate-before-mutate order: specSource-required, derivedFrom-when-derived, description-non-empty-when-fast-track, WSJF-resolvable. A violation returns a non-ok outcome (no commit), printError fires, dispatch exits non-zero. [oracle: bun test test/issue-file.test.ts]",
+        "Refusal tests prove: --derived-from naming a parent that has no wsjf and no explicit scores REFUSES (non-zero, no commit); --fast-track with empty description REFUSES; a valid --fast-track files at stage:specified with specSource:operator; a valid --derived-from inherits parent wsjf and files at stage:specified with specSource:derived + derivedFrom. [oracle: bun test test/issue-file.test.ts]",
+        "Boundary: fast-track is set ONLY via the explicit --fast-track / --derived-from flags (no content-heuristic auto-marking); the reviewer-SUGGESTION auto-filer is explicitly OUT of scope (separate follow-up issue that consumes this fast-track). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: index.ts (parseIssueArgs ParsedIssueArgs union ~L605, dispatchIssue ~L1161, _buildCreateIssueOpts ~L1134 — the stdin payload + flags must thread through), src/commands/issue-file.ts (createLocalIssueOnMain: add guardrail validation before writeIssueFile, mirror checkMainUpToDate→validate→mutate order; read parent issue for WSJF inheritance via readBacklogFromMain), src/issues/alloc.ts (writeIssueFile WriteIssueFileOptions: add specSource/derivedFrom/wsjf, set stage when fast-track), test/issue-dispatch.test.ts (argv parse — gotcha: argv-shape tests do NOT prove tmux semantics, but this is the in-process --file-local path so injectable fakes are fine), test/issue-file.test.ts, test/issues/alloc.test.ts. Gotcha #2: WSJF inheritance is a SUGGESTED DEFAULT (overridable), NOT a binding copy — a derived fix can be more time-critical than its parent (CAM-143 footgun vs CAM-142 feature). Gotcha #4: writeIssueFile is the CAM-90 CAS primitive; since CAM-142 it syncs the worktree after CAS, do not regress that. Reuse the US-001 validator for the hard pre-commit guardrail. The ranker missing-wsjf sort-last+warning (src/issues/rank.ts computeWsjf) stays as a legacy/integrity net only — do NOT make it the designed WSJF path. No content-heuristic auto-marking; explicit flags only (spec criterion #8)."
+    },
+    {
+      "id": "US-003",
+      "title": "/cam-plan spec-sourcing by specSource + honest non-grilled signal",
+      "description": "As the orchestrator running /cam-plan, I need the command to source the spec by specSource (grill ⟹ use the settled spec field do-not-re-litigate; derived/operator ⟹ use title+description as proposed scope and pass derivedFrom to the planner), and to print an honest non-grilled signal in place of the now-moot stage:idea D2 warning, so fast-tracked issues plan correctly while the grilled-spec contract stays intact.",
+      "acceptanceCriteria": [
+        ".claude/commands/cam-plan.md sources the spec by specSource: \"grill\" (or absent, back-compat) ⟹ use the `spec` field as settled (do-not-re-litigate contract intact); \"derived\"/\"operator\" ⟹ use title+description as proposed scope (WHAT settled, HOW refined by planner); derivedFrom is passed to subagent-planner which reads the parent issue(s) for context; the auditor Step 8 backstop is described as unchanged. Smoke: grep -q 'specSource'; binding correctness is the embed/template parity test below. [oracle: grep -q 'specSource' /Users/eduardo/Documents/Projects/cam-cli/.claude/commands/cam-plan.md]",
+        "The stage:idea D2 warning (cam-plan.md:82) is replaced by an honest non-grilled signal for derived/operator specs, e.g. \"non-grilled spec (specSource: derived, from CAM-NNN); treating description as proposed scope\". [oracle: grep -q 'non-grilled' /Users/eduardo/Documents/Projects/cam-cli/.claude/commands/cam-plan.md]",
+        "templates/commands/cam-plan.md receives the matching spec-sourcing + non-grilled-signal change, preserving the existing intentional .claude-vs-template wording deltas (the project's dual-copy is per-file, not byte-identical). [oracle: grep -q 'specSource' /Users/eduardo/Documents/Projects/cam-cli/templates/commands/cam-plan.md]",
+        "subagent-planner instructions (.claude/agents/subagent-planner.md + templates/agents/subagent-planner.md) document that derivedFrom parent issue(s) must be read for context when specSource is derived. [oracle: grep -q 'derivedFrom' /Users/eduardo/Documents/Projects/cam-cli/.claude/agents/subagent-planner.md]",
+        "Vendor drift check passes after re-embedding (bun run embed-vendor then bun run embed-vendor:check): src/vendor/_generated.ts reflects the edited cam-plan.md + subagent-planner.md copies (this is the binding oracle for the doc changes, not the single-token greps above). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test), including the embed/template byte-parity test. [oracle: bun test test/embedded.test.ts]",
+        "The full spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/commands/cam-plan.md (D2 warning at line 82; the 'none' issue-source step), templates/commands/cam-plan.md, .claude/agents/subagent-planner.md, templates/agents/subagent-planner.md, src/vendor/_generated.ts (REGENERATED, never hand-edited — run `bun run embed-vendor`). Gotcha: cam dual-copy is per-file, NOT uniformly byte-identical (.claude vs templates have intentional wording deltas like 'bun run typecheck' vs 'the project's typecheck command'); diff before editing, edit BOTH copies, do not collapse the deltas. test/embedded.test.ts asserts codegen byte-parity for both EMBEDDED_CONTENTS and templatesContents — it WILL fail if _generated.ts is stale, so re-run embed-vendor after editing any shipped artifact. The grilled-spec 'do not re-litigate' contract for specSource:grill must stay verbatim. This story touches templates/ ⟹ embed-vendor:check is mandatory."
+    },
+    {
+      "id": "US-004",
+      "title": "ADR documenting the two-door plan-readiness decision",
+      "description": "As a future cam maintainer, I need an ADR in docs/adr/ recording that plan-readiness now has two doors (grilled OR born-ready), revising the CAM-107 'grill is the singular human gate' decision, with the alternatives and consequences captured, so the surprising redefinition of stage:specified is explained with its trade-offs.",
+      "acceptanceCriteria": [
+        "A new ADR file under docs/adr/ (e.g. docs/adr/0002-fast-track-plan-ready.md) documents the decision per the 3-gate ADR convention in scripts/cam/CLAUDE.md: it states the decision (Option Y: file-as-specified with a specSource discriminator), the context (revises ADR 0001 / CAM-107 'grill is the singular human gate'; PRD-readiness now has two doors), the alternatives considered (X grillExempt-flag-stays-idea vs Y file-as-specified; binding vs overridable WSJF inheritance; soft vs hard guardrails), and the consequences (speed for derived work, rigor-skip mitigated by hard guardrails + auditor backstop + explicit-only marking). [oracle: file-assert test in test/ greps the new ADR for the required section headings (Decisao/Decision, Contexto/Context, Alternativas/Alternatives, Consequencias/Consequences) and the strings 'CAM-107' and 'specSource']",
+        "The ADR prose contains no em-dash and no decorative emoji (project doc convention; use colon/comma/parenthesis/period instead). [oracle: file-assert grep -L for the em-dash character in the new ADR file]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: docs/adr/0002-fast-track-plan-ready.md (NEW; docs/adr/0001-issue-system-redesign.md ALREADY EXISTS — the spec calls this the 'first ADR' meaning the first ADR for THIS decision; number it 0002 to follow the existing 0001, do not overwrite 0001), plus a small file-assert test under test/. ADR 3-gate convention + Domain Model Convention live in scripts/cam/CLAUDE.md (read as project context): write an ADR only when all three gates pass (hard-to-reverse + surprising + genuine trade-off) — this decision passes all three. Follow the style of 0001 (Status/Data/Contexto/Decisao/Consequencias/Alternativas descartadas sections). DOC CONVENTION (global CLAUDE.md, Eduardo 2026-05-20): no em-dash and no decorative emoji in human-readable persisted .md; substitute colon/comma/parenthesis/period. This decision revises, does NOT delete, ADR 0001's 'grill is the singular human gate' point (CAM-107)."
+    }
+  ]
+}
