@@ -61,7 +61,7 @@
         "The full spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-plan.md (D2 warning at line 82; the 'none' issue-source step), templates/commands/cam-plan.md, .claude/agents/subagent-planner.md, templates/agents/subagent-planner.md, src/vendor/_generated.ts (REGENERATED, never hand-edited — run `bun run embed-vendor`). Gotcha: cam dual-copy is per-file, NOT uniformly byte-identical (.claude vs templates have intentional wording deltas like 'bun run typecheck' vs 'the project's typecheck command'); diff before editing, edit BOTH copies, do not collapse the deltas. test/embedded.test.ts asserts codegen byte-parity for both EMBEDDED_CONTENTS and templatesContents — it WILL fail if _generated.ts is stale, so re-run embed-vendor after editing any shipped artifact. The grilled-spec 'do not re-litigate' contract for specSource:grill must stay verbatim. This story touches templates/ ⟹ embed-vendor:check is mandatory."
     },

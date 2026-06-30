@@ -1,26 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Filing flags --fast-track / --derived-from with hard guardrails + WSJF resolution"
+    "id": "US-003",
+    "title": "/cam-plan spec-sourcing by specSource + honest non-grilled signal"
   },
   "branchName": "cam/CAM-144-fast-track-plan-ready",
-  "timestamp": "2026-06-30T21:00:00Z",
+  "timestamp": "2026-06-30T21:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "src/commands/issue-file.ts",
-    "src/issues/alloc.ts",
-    "test/issue-dispatch.test.ts",
-    "test/issue-file.test.ts",
-    "test/issues/alloc.test.ts"
+    ".claude/commands/cam-plan.md",
+    "templates/commands/cam-plan.md",
+    ".claude/agents/subagent-planner.md",
+    "templates/agents/subagent-planner.md",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added --fast-track and --derived-from flags to cam issue --file-local. parseIssueArgs now returns { mode:'file-local', fastTrack:boolean, derivedFrom:string[] }. createLocalIssueOnMain has a new applyFastTrackGuardrails helper that runs 4 hard guardrails (validateSpecSource + WSJF resolvability) and inherits WSJF from the first parent with wsjf when specSource==='derived' and no explicit wsjf is provided. writeIssueFile now accepts specSource/derivedFrom/wsjf and builds the entry via buildIssueEntry helper (keeps complexity under 15). The syncWorktreeIfOnMain path is preserved (CAM-142 regression guard). The three plannability predicate sites (select.ts, rank.ts, gate.ts) were NOT touched per Option Y from US-001.",
+  "nextStoryContext": "US-003 replaced the stage:idea D2 warning in /cam-plan Step 2 (none backend, integer arg) with specSource-driven spec sourcing: specSource=grill (or absent) uses the spec field verbatim (do-not-re-litigate); specSource=derived/operator uses title+description as proposed scope and prints a non-grilled signal, passing derivedFrom to the subagent-planner. Step 7 prompt now includes Spec(specSource) and derivedFrom fields. subagent-planner.md gained a Spec Sourcing section instructing it to read derivedFrom parent issues when specSource is derived. Both .claude/ and templates/ copies were updated (wording deltas preserved). src/vendor/_generated.ts was regenerated. Dual-copy pattern: .claude has bun-specific commands (bun run typecheck, bun test) while templates uses generic phrasing; the Spec Sourcing section is verbatim in .claude but omits cam-specific file paths (scripts/cam/issues/*.json) in templates. US-004 is next: ADR documenting the two-door plan-readiness decision.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "All changes are in internal modules (spec.ts validators, backlog.ts reader, alloc.ts writer, issue-file.ts commands). No external library API was exercised."
+      "summary": "All changes are in markdown instruction files (.claude/commands/cam-plan.md, templates/commands/cam-plan.md, .claude/agents/subagent-planner.md, templates/agents/subagent-planner.md) and the generated src/vendor/_generated.ts. No external library API was exercised."
     }
   ]
 }
