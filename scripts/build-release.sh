@@ -91,11 +91,10 @@ echo "[build-release]   ${ACTUAL}"
 
 # --- Sanity: AC4 (init runs, soft-checks) ----------------------------------
 # `cam init` validates PATH for claude + runs vendored smokes. On the dev
-# machine these pass; on a CI box they may fail (no claude binary). We log but
-# DON'T abort on non-zero — the acceptance criterion is "runs the validator
-# without erroring", which we interpret as "the binary executes and exits
-# cleanly with structured diagnostics", not "every check passes on every
-# machine".
+# machine these pass; on a CI box they may fail (no claude binary). We log and
+# conditionally abort on non-zero depending on whether claude is installed:
+#   - claude absent from PATH: non-zero is acceptable (machine without claude).
+#   - claude present but init still fails: real init crash -- abort the build.
 #
 # CAM-15: the soft-check MUST be hermetic. `cam init` chains `runSetup`, which
 # copies templates over the cwd's versioned files and (without --no-tmux)
@@ -116,7 +115,14 @@ if (cd "${SMOKE_DIR}" && CAM_CONFIG_PATH="${SMOKE_DIR}/config.toml" "${BIN_ABS}"
 	echo "[build-release]   init: ok (hermetic tmpdir, no tmux)"
 else
 	rc=$?
-	echo "[build-release]   init: exit ${rc} (non-zero is acceptable on machines without claude installed)"
+	# Distinguish claude-absent (acceptable) from a real init crash (fatal).
+	# Only tolerate non-zero when claude is genuinely missing from PATH.
+	if command -v claude >/dev/null 2>&1; then
+		echo "[build-release] ERROR: init exited ${rc} with claude installed -- real init crash, not a missing-claude skip" >&2
+		exit "${rc}"
+	else
+		echo "[build-release]   init: exit ${rc} (claude not in PATH, soft-check skipped)"
+	fi
 fi
 
 # --- Install (--install) ---------------------------------------------------
