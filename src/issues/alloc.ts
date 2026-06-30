@@ -31,6 +31,7 @@ import {
 	CAS_MAX_ATTEMPTS,
 	hashAndIndexFiles,
 	commitAndCasAttempt,
+	syncWorktreeIfOnMain,
 	type SpawnFn,
 } from '../git/on-main.ts';
 
@@ -149,6 +150,7 @@ export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResul
 			const commitMsg = `chore(cam): file ${idUnpadded}`;
 			const result = commitAndCasAttempt(cwd, currentMainSha, commitMsg, spawnFn, indexEnv);
 			if (result.success) {
+				syncWorktreeIfOnMain(cwd, [filename], spawnFn);
 				return { id: idUnpadded, filename, sha: result.shortSha };
 			}
 
