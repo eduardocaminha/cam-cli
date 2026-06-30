@@ -139,10 +139,13 @@ test.skipIf(!gitAvailable)(
 		const filesBefore = (lsBefore.stdout as string).trim().split('\n').filter(Boolean);
 		expect(filesBefore).toHaveLength(2);
 
-		// Verify the staleness: the two files exist on main but NOT in the working tree.
-		// This is the precondition that makes the bug reproducible.
-		expect(existsSync(join(dir, 'scripts', 'cam', 'issues', 'CAM-0001.json'))).toBe(false);
-		expect(existsSync(join(dir, 'scripts', 'cam', 'issues', 'CAM-0002.json'))).toBe(false);
+		// Since US-001/CAM-142 (writeIssueFile worktree-sync fix), writeIssueFile calls
+		// syncWorktreeIfOnMain after each CAS success, so the files ARE present in the
+		// working tree. The pre-CAM-142 staleness condition no longer applies here;
+		// the regression guard below (filesAfter.toHaveLength(2)) still validates that
+		// specifyIssueOnMain does not drop files from main's tree.
+		expect(existsSync(join(dir, 'scripts', 'cam', 'issues', 'CAM-0001.json'))).toBe(true);
+		expect(existsSync(join(dir, 'scripts', 'cam', 'issues', 'CAM-0002.json'))).toBe(true);
 
 		// Step 3: specifyIssueOnMain for CAM-1 while checked out on main.
 		// PRE-FIX: commitOnMain staged only the written file from the stale working

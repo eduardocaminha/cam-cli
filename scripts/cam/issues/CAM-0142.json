@@ -1,7 +1,7 @@
 {
   "id": "CAM-142",
   "title": "writeIssueFile (cam issue --file-local) bypassa o choke-point do CAM-137 e nao sincroniza a worktree on-main",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-29T21:27:37.083Z",
