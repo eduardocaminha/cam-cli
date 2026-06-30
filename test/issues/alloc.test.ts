@@ -449,6 +449,133 @@ describe('writeIssueFile -- result shape', () => {
 });
 
 // ---------------------------------------------------------------------------
+// US-002: specSource / derivedFrom / wsjf written into IssueEntry
+// ---------------------------------------------------------------------------
+
+describe('writeIssueFile -- specSource / derivedFrom / wsjf (US-002)', () => {
+	test('specSource:operator sets stage to specified in written JSON', () => {
+		let writtenContent = '';
+		const { spy } = makeSpawnFn([]);
+		const wrappedSpy: SpawnFn = (_cmd, args, opts) => {
+			if (args[2] === 'hash-object') { writtenContent = opts.input ?? ''; }
+			return spy(_cmd, args, opts);
+		};
+
+		writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Fast-track operator issue',
+			description: 'A description',
+			specSource: 'operator',
+			wsjf: { value: 5, timeCriticality: 3, riskReduction: 2, jobSize: 4 },
+			createdAt: '2026-06-30T00:00:00Z',
+			spawnFn: wrappedSpy,
+		});
+
+		const entry = JSON.parse(writtenContent) as {
+			stage: string;
+			specSource: string;
+			wsjf: { value: number };
+		};
+		expect(entry.stage).toBe('specified');
+		expect(entry.specSource).toBe('operator');
+		expect(entry.wsjf.value).toBe(5);
+	});
+
+	test('specSource:derived sets stage to specified in written JSON', () => {
+		let writtenContent = '';
+		const { spy } = makeSpawnFn([]);
+		const wrappedSpy: SpawnFn = (_cmd, args, opts) => {
+			if (args[2] === 'hash-object') { writtenContent = opts.input ?? ''; }
+			return spy(_cmd, args, opts);
+		};
+
+		writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Derived fix',
+			description: 'A fix derived from parent',
+			specSource: 'derived',
+			derivedFrom: ['CAM-42'],
+			wsjf: { value: 8, timeCriticality: 6, riskReduction: 5, jobSize: 3 },
+			createdAt: '2026-06-30T00:00:00Z',
+			spawnFn: wrappedSpy,
+		});
+
+		const entry = JSON.parse(writtenContent) as {
+			stage: string;
+			specSource: string;
+			derivedFrom: string[];
+			wsjf: { value: number };
+		};
+		expect(entry.stage).toBe('specified');
+		expect(entry.specSource).toBe('derived');
+		expect(entry.derivedFrom).toEqual(['CAM-42']);
+		expect(entry.wsjf.value).toBe(8);
+	});
+
+	test('no specSource keeps default stage:idea and omits specSource from JSON', () => {
+		let writtenContent = '';
+		const { spy } = makeSpawnFn([]);
+		const wrappedSpy: SpawnFn = (_cmd, args, opts) => {
+			if (args[2] === 'hash-object') { writtenContent = opts.input ?? ''; }
+			return spy(_cmd, args, opts);
+		};
+
+		writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Normal idea issue',
+			createdAt: '2026-06-30T00:00:00Z',
+			spawnFn: wrappedSpy,
+		});
+
+		const entry = JSON.parse(writtenContent) as { stage: string; specSource?: string };
+		expect(entry.stage).toBe('idea');
+		expect(entry.specSource).toBeUndefined();
+	});
+
+	test('wsjf is omitted from JSON when not provided', () => {
+		let writtenContent = '';
+		const { spy } = makeSpawnFn([]);
+		const wrappedSpy: SpawnFn = (_cmd, args, opts) => {
+			if (args[2] === 'hash-object') { writtenContent = opts.input ?? ''; }
+			return spy(_cmd, args, opts);
+		};
+
+		writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Normal idea issue',
+			createdAt: '2026-06-30T00:00:00Z',
+			spawnFn: wrappedSpy,
+		});
+
+		const entry = JSON.parse(writtenContent) as { wsjf?: unknown };
+		expect(entry.wsjf).toBeUndefined();
+	});
+
+	test('empty derivedFrom array is omitted from JSON', () => {
+		let writtenContent = '';
+		const { spy } = makeSpawnFn([]);
+		const wrappedSpy: SpawnFn = (_cmd, args, opts) => {
+			if (args[2] === 'hash-object') { writtenContent = opts.input ?? ''; }
+			return spy(_cmd, args, opts);
+		};
+
+		writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Operator issue with empty derivedFrom',
+			description: 'A description',
+			specSource: 'operator',
+			derivedFrom: [],  // empty: should be omitted from JSON
+			wsjf: { value: 3, timeCriticality: 2, riskReduction: 1, jobSize: 2 },
+			createdAt: '2026-06-30T00:00:00Z',
+			spawnFn: wrappedSpy,
+		});
+
+		const entry = JSON.parse(writtenContent) as { derivedFrom?: string[] };
+		expect(entry.derivedFrom).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Internal helper
 // ---------------------------------------------------------------------------
 

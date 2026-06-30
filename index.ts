@@ -58,6 +58,7 @@ import { runSidecar } from './src/commands/sidecar.ts';
 import { runTag } from './src/commands/tag.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
 import { issueFilePath } from './src/issues/backlog.ts';
+import type { WsjfScore } from './src/issues/types.ts';
 import { makeFileEventLogger } from './src/supervisor/events.ts';
 import { printError, printFatalHint, printHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
@@ -600,11 +601,13 @@ const RESUME_HELP = renderHelp({
  * Discriminated union returned by parseIssueArgs.
  * - mode === 'text': free-text thin-proxy path (existing behaviour).
  * - mode === 'file-local': deterministic in-process path (US-003).
+ *     fastTrack: true when --fast-track was passed (specSource: operator).
+ *     derivedFrom: non-empty when --derived-from was passed (specSource: derived).
  * - help === true: caller should print ISSUE_HELP and exit 0.
  */
 export type ParsedIssueArgs =
 	| { mode: 'text'; text: string; help: false }
-	| { mode: 'file-local'; help: false }
+	| { mode: 'file-local'; fastTrack: boolean; derivedFrom: string[]; help: false }
 	| { mode?: never; help: true };
 
 export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
@@ -612,12 +615,36 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 		return { help: true };
 	}
 	if (args.includes('--file-local')) {
+		let fastTrack = false;
+		const derivedFrom: string[] = [];
+
 		const rest = args.filter((a) => a !== '--file-local');
-		if (rest.length > 0) {
-			printError(`unexpected argument: ${rest[0]!}`);
+		for (let i = 0; i < rest.length; i++) {
+			const arg = rest[i]!;
+			if (arg === '--fast-track') {
+				fastTrack = true;
+			} else if (arg === '--derived-from') {
+				const val = rest[i + 1];
+				if (val === undefined || val.startsWith('-')) {
+					printError('--derived-from requires a value (e.g. CAM-123 or CAM-123,CAM-124)');
+					return null;
+				}
+				derivedFrom.push(...val.split(',').map((s) => s.trim()).filter(Boolean));
+				i++;
+			} else {
+				printError(`unexpected argument: ${arg}`);
+				return null;
+			}
+		}
+
+		// --fast-track and --derived-from are mutually exclusive: each implies a
+		// distinct specSource ('operator' vs 'derived') and cannot be combined.
+		if (fastTrack && derivedFrom.length > 0) {
+			printError('--fast-track and --derived-from are mutually exclusive');
 			return null;
 		}
-		return { mode: 'file-local', help: false };
+
+		return { mode: 'file-local', fastTrack, derivedFrom, help: false };
 	}
 	const text = args[0];
 	if (text === undefined || text.trim().length === 0) {
@@ -1130,16 +1157,20 @@ export interface IssueDispatchDeps {
 	runIssueFn?: () => Promise<number>;
 }
 
-/** Build production CreateLocalIssueOnMainOptions from project root + parsed stdin JSON. */
+/** Build production CreateLocalIssueOnMainOptions from project root + parsed stdin JSON + CLI flags. */
 function _buildCreateIssueOpts(
 	cwd: string,
-	parsedStdin: { title: string; description?: string; priority?: string },
+	parsedStdin: { title: string; description?: string; priority?: string; wsjf?: WsjfScore },
+	flags?: { specSource?: 'grill' | 'derived' | 'operator'; derivedFrom?: string[] },
 ): CreateLocalIssueOnMainOptions {
 	return {
 		cwd,
 		title: parsedStdin.title,
 		...(parsedStdin.description !== undefined ? { description: parsedStdin.description } : {}),
 		...(parsedStdin.priority !== undefined ? { priority: parsedStdin.priority } : {}),
+		...(parsedStdin.wsjf !== undefined ? { wsjf: parsedStdin.wsjf } : {}),
+		...(flags?.specSource !== undefined ? { specSource: flags.specSource } : {}),
+		...(flags?.derivedFrom !== undefined && flags.derivedFrom.length > 0 ? { derivedFrom: flags.derivedFrom } : {}),
 		spawnFn: (cmd, args, opts) =>
 			spawnSync(cmd, args, {
 				encoding: opts.encoding,
@@ -1167,20 +1198,31 @@ export async function dispatchIssue(
 			deps?.fileLocalFn ??
 			(async () => {
 				const stdinText = await Bun.stdin.text();
-				let stdinData: { title: string; description?: string; priority?: string };
+				let stdinData: { title: string; description?: string; priority?: string; wsjf?: WsjfScore };
 				try {
 					stdinData = JSON.parse(stdinText) as {
 						title: string;
 						description?: string;
 						priority?: string;
+						wsjf?: WsjfScore;
 					};
 				} catch (err) {
 					printError(`cam issue --file-local: invalid JSON from stdin: ${String(err)}`);
 					return 1;
 				}
+				// Derive specSource from CLI flags (never from content heuristics).
+				const specSource: 'operator' | 'derived' | undefined = parsed.fastTrack
+					? 'operator'
+					: parsed.derivedFrom.length > 0
+						? 'derived'
+						: undefined;
+				const flags = {
+					...(specSource !== undefined ? { specSource } : {}),
+					...(parsed.derivedFrom.length > 0 ? { derivedFrom: parsed.derivedFrom } : {}),
+				};
 				try {
 					const result = createLocalIssueOnMain(
-						_buildCreateIssueOpts(process.cwd(), stdinData),
+						_buildCreateIssueOpts(process.cwd(), stdinData, flags),
 					);
 					if (!result.ok) {
 						// printError already fired inside createLocalIssueOnMain

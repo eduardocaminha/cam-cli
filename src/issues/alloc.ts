@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { allocateId, type BacklogSpawnFn } from './backlog.ts';
-import type { IssueEntry, IssueStage, IssueStatus } from './types.ts';
+import type { IssueEntry, IssueStage, IssueStatus, WsjfScore } from './types.ts';
 import {
 	buildIndexEnv,
 	CAS_MAX_ATTEMPTS,
@@ -59,6 +59,16 @@ export interface WriteIssueFileOptions {
 	createdAt?: string;
 	/** Id prefix (e.g. 'CAM'). Defaults to 'CAM'. */
 	prefix?: string;
+	/**
+	 * Source of the spec: 'operator' (fast-track via --fast-track flag) or
+	 * 'derived' (fast-track via --derived-from flag). When present and equal to
+	 * 'operator' or 'derived', the filed issue is set to stage:'specified'.
+	 */
+	specSource?: 'grill' | 'derived' | 'operator';
+	/** Parent issue ids (when specSource === 'derived'). */
+	derivedFrom?: string[];
+	/** WSJF scoring resolved at filing time. */
+	wsjf?: WsjfScore;
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
 }
@@ -70,6 +80,43 @@ export interface WriteIssueFileResult {
 	filename: string;
 	/** 7-char short sha of the new commit on main. */
 	sha: string;
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build an IssueEntry for the CAS retry loop.
+ * Extracted to keep writeIssueFile below biome's cognitive-complexity ceiling.
+ */
+function buildIssueEntry(
+	id: string,
+	title: string,
+	baseStage: IssueStage,
+	status: IssueStatus,
+	blockedBy: string[],
+	createdAt: string,
+	description: string | undefined,
+	specSource: 'grill' | 'derived' | 'operator' | undefined,
+	derivedFrom: string[] | undefined,
+	wsjf: WsjfScore | undefined,
+): IssueEntry {
+	// Fast-track issues are born stage:'specified'; others use the caller-supplied default.
+	const stage: IssueStage =
+		specSource === 'derived' || specSource === 'operator' ? 'specified' : baseStage;
+	return {
+		id,
+		title,
+		stage,
+		status,
+		blockedBy,
+		createdAt,
+		...(description !== undefined ? { description } : {}),
+		...(specSource !== undefined ? { specSource } : {}),
+		...(derivedFrom !== undefined && derivedFrom.length > 0 ? { derivedFrom } : {}),
+		...(wsjf !== undefined ? { wsjf } : {}),
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -98,8 +145,12 @@ export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResul
 		description,
 		createdAt,
 		prefix = 'CAM',
+		specSource,
+		derivedFrom,
+		wsjf,
 		spawnFn,
 	} = opts;
+
 
 	// Adapter: allows passing SpawnFn to allocateId (which expects BacklogSpawnFn).
 	// SpawnFn's options { encoding, env?, input? } is a strict superset of
@@ -127,15 +178,10 @@ export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResul
 
 			// (b) Build the IssueEntry.  id field is UNPADDED.
 			const now = createdAt ?? new Date().toISOString();
-			const entry: IssueEntry = {
-				id: idUnpadded,
-				title,
-				stage,
-				status,
-				blockedBy,
-				createdAt: now,
-				...(description !== undefined ? { description } : {}),
-			};
+			const entry = buildIssueEntry(
+				idUnpadded, title, stage, status, blockedBy, now,
+				description, specSource, derivedFrom, wsjf,
+			);
 			const content = JSON.stringify(entry, null, 2) + '\n';
 
 			// (c) Populate the temp index, hash + index the blob, then CAS commit.
