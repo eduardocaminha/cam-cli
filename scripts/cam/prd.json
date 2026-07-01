@@ -86,7 +86,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file: .devcontainer/devcontainer.json. Depends on US-001 (Dockerfile) and US-002 (init-firewall.sh). Official-doc facts to re-check (officialDocsConsulted 'Claude Code dev containers'): firewall capabilities NET_ADMIN+NET_RAW go in runArgs; remoteUser must be non-root; persist ~/.claude via a named volume (docs example: source=claude-code-config,target=/home/node/.claude,type=volume; the reference uses ${devcontainerId} to isolate per project); containerEnv is where DISABLE_AUTOUPDATER=1 + CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 go; do NOT mount host ~/.ssh or cred files (use repo-scoped/short-lived tokens; that token wiring is Half B / CAM-150, NOT this story). The devcontainer.json JSON-parse oracle strips // and /* */ comments before JSON.parse because devcontainer.json is conventionally JSONC. CI is macos-latest with no Docker: do NOT add any criterion that runs `devcontainer up` or docker. Not a .ts file, not under vendor/templates: no embed-vendor impact."
     },
