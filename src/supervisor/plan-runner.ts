@@ -34,9 +34,11 @@ import type { PlanPreflightResult } from './plan-preflight.ts';
 import type { PlanVerdictReport } from './plan-verdict-report.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
+import type { PlanApproval } from '../config/models.ts';
 import { buildPlannerWorkerArgv, buildAuditorWorkerArgv } from './plan-argv.ts';
 import { readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
+import { decidePostAuditAction } from '../plan/plan-approval-decision.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -416,4 +418,144 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 		return { kind: 'audit-approved', issue, report };
 	}
 	return { kind: 'audit-blocked', issue, report };
+}
+
+// ---------------------------------------------------------------------------
+// Post-audit action (US-006)
+// ---------------------------------------------------------------------------
+
+/**
+ * Discriminated result returned by runPostAuditAction.
+ *
+ * branch-created         - proceed-branch path: branch created, prd.json
+ *                          committed, active:true flipped.
+ * awaiting-operator-approval - pause-operator path: no branch/commit/flip.
+ * escalated              - audit-blocked path: escalateFn + notifyFn called,
+ *                          no branch/commit/flip.
+ * no-action              - planResult was neither audit-approved nor
+ *                          audit-blocked (e.g. preflight-failed, timeout).
+ */
+export type PostAuditActionResult =
+	| { kind: 'branch-created'; branchName: string }
+	| { kind: 'awaiting-operator-approval' }
+	| { kind: 'escalated' }
+	| { kind: 'no-action' };
+
+/** Options for runPostAuditAction. All side effects are injected. */
+export interface RunPostAuditOptions {
+	/** Result from a prior runPlanPhase call. */
+	planResult: PlanPhaseResult;
+	/**
+	 * Spawn a shell command (loop.ts SpawnFn shape).
+	 * Used for git checkout -b, git add, git commit.
+	 */
+	spawnFn: SpawnFn;
+	/**
+	 * Writes active:true to .claude/cam-loop.local.md so the sidecar loop
+	 * picks up implementation without a human cam-next. Called exactly once
+	 * on the proceed-branch path. Mirror of makeFlipActiveFn in sidecar.ts.
+	 */
+	flipActiveFn: () => void;
+	/** Feature branch name to create from current HEAD (from prd.branchName). */
+	branchName: string;
+	/**
+	 * Returns the plan_approval config value. Production: () => readPlanApproval().
+	 * Tests inject a constant-returning closure to control the path.
+	 */
+	readPlanApprovalFn: () => PlanApproval;
+	/**
+	 * Best-effort email/pager alert on audit-blocked. Never throws (contract
+	 * mirrors makeProductionEscalateFn / sendEscalation in src/notify/resend.ts).
+	 * Absent when Resend is unconfigured.
+	 */
+	escalateFn?: () => Promise<void>;
+	/**
+	 * Best-effort orchestrator-pane push on audit-blocked.
+	 * Mirrors the notifyOrchestrator seam in RunSupervisorOptions.
+	 * Absent when no orchestrator session is running.
+	 */
+	notifyFn?: (msg: string) => void;
+}
+
+/**
+ * Execute the post-audit action after runPlanPhase returns.
+ *
+ * On audit-approved + proceed-branch (auto mode):
+ *   1. git checkout -b <branchName>  (branch BEFORE commit - cam-plan.md Step 9)
+ *   2. git add scripts/cam/prd.json
+ *   3. git commit -m "chore(cam): commit audited prd.json"
+ *   4. flipActiveFn()                (flip active:true for sidecar loop)
+ *   Returns { kind: 'branch-created', branchName }.
+ *
+ * On audit-approved + pause-operator (operator mode, Half A scope):
+ *   Returns { kind: 'awaiting-operator-approval' }. No branch/commit/flip.
+ *
+ * On audit-blocked:
+ *   Calls notifyFn (pane push) then fires escalateFn (best-effort, not awaited).
+ *   Returns { kind: 'escalated' }. No branch/commit/flip. No re-plan (CAM-151).
+ *
+ * On any other planResult kind:
+ *   Returns { kind: 'no-action' }.
+ *
+ * Design: all git calls go through the injected spawnFn; exit-code guard fires
+ * a throw on non-zero exit (spawnSync exit-status guard, patterns.md US-R1-001).
+ * escalateFn is fire-and-forget (void, never awaited) per its best-effort contract.
+ */
+export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionResult {
+	const {
+		planResult,
+		spawnFn,
+		flipActiveFn,
+		branchName,
+		readPlanApprovalFn,
+		escalateFn,
+		notifyFn,
+	} = opts;
+
+	// audit-blocked: escalate and bail; no branch/commit/flip (AC3, AC4)
+	if (planResult.kind === 'audit-blocked') {
+		notifyFn?.(`[cam] plan BLOCK: ${planResult.report.summary}`);
+		if (escalateFn !== undefined) {
+			void escalateFn(); // best-effort: fire-and-forget, never throws by contract
+		}
+		return { kind: 'escalated' };
+	}
+
+	// Non-approved: nothing to do
+	if (planResult.kind !== 'audit-approved') {
+		return { kind: 'no-action' };
+	}
+
+	// audit-approved: decide based on plan_approval config (AC1, AC2, AC4)
+	const action = decidePostAuditAction(readPlanApprovalFn());
+
+	if (action.kind === 'pause-operator') {
+		return { kind: 'awaiting-operator-approval' }; // AC2
+	}
+
+	// proceed-branch: create branch BEFORE committing prd.json (AC1, cam-plan.md Step 9)
+	const checkoutResult = spawnFn('git', ['checkout', '-b', branchName]);
+	if ((checkoutResult.exitCode ?? 1) !== 0) {
+		throw new Error(
+			`git checkout -b ${branchName} failed (exit ${checkoutResult.exitCode ?? 'null'})`,
+		);
+	}
+
+	const addResult = spawnFn('git', ['add', 'scripts/cam/prd.json']);
+	if ((addResult.exitCode ?? 1) !== 0) {
+		throw new Error(
+			`git add scripts/cam/prd.json failed (exit ${addResult.exitCode ?? 'null'})`,
+		);
+	}
+
+	const commitResult = spawnFn('git', ['commit', '-m', 'chore(cam): commit audited prd.json']);
+	if ((commitResult.exitCode ?? 1) !== 0) {
+		throw new Error(
+			`git commit failed (exit ${commitResult.exitCode ?? 'null'})`,
+		);
+	}
+
+	flipActiveFn(); // flip active:true so the sidecar loop dispatches implementation (AC1)
+
+	return { kind: 'branch-created', branchName }; // AC1
 }

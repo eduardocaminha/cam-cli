@@ -110,7 +110,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "INCREMENTAL BOUNDARY (spec point 5): do NOT rewrite runSupervisor/runSidecarLoop; hand off to the existing loop.ts via active:true. Reuse decidePostAuditAction(readPlanApproval()) from src/plan/plan-approval-decision.ts (CAM-109) VERBATIM. For flipActiveFn, mirror makeFlipActiveFn in src/commands/sidecar.ts (writes active:true to .claude/cam-loop.local.md preserving other fields via renderStateFile/writeStateFile). For escalateFn on BLOCK, mirror the sidecar escalateFn seam (makeProductionEscalateFn / sendEscalation in src/notify/resend.ts, best-effort never-throws) plus a notifyOrchestrator-style pane push. Branch create BEFORE prd commit (cam-plan.md Step 9 'Create the branch BEFORE committing prd.json so it never lands on main'). Use spawnSync exit-status guard (patterns.md US-R1-001). Half A implements the auto proceed-branch path only; operator gate + BLOCK->re-plan loop are CAM-151."
     },
