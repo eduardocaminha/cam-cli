@@ -32,7 +32,7 @@ import { parseStateFile, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
-import { runPlanPhase } from '../supervisor/plan-runner.ts';
+import { runPlanPhase, runPostAuditAction } from '../supervisor/plan-runner.ts';
 import { makeReadPlanVerdict } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig } from '../config/models.ts';
@@ -627,13 +627,18 @@ function makeProductionMetaLoopObserveFn(
 }
 
 /**
- * Build the production runPlanPhaseFn closure (US-002, CAM-151).
+ * Build the production runPlanPhaseFn closure (US-002/US-R1-001, CAM-151).
  *
  * Wires runPlanPhase with all deps: plannerPaneId (read fresh from marker each
  * call), paneCountMutexFn (session.ts paneCountMutex), selectIssueFn
  * (selectPlannableFromFile), preflightFn (runPlanPreflight), readPlanVerdictFn
  * (makeReadPlanVerdict), spawnFn (loop.ts SpawnFn shape), isPaneAlive,
  * sleepFn, genUuid (randomUUID lowercased per CAM-23), and clock.
+ *
+ * After runPlanPhase returns, calls runPostAuditAction with the PlanPhaseResult
+ * (ADR 0006 section Decisao point 3): on APPROVE+auto this creates the feature
+ * branch, commits prd.json, and flips phase:implementing so the sidecar loop
+ * dispatches the first implementer worker.
  *
  * Extracted from buildSidecarLoopDeps to keep that function under the biome
  * cognitive-complexity (<=15) and function-length (<=80 lines) limits.
@@ -690,7 +695,7 @@ function makeProductionPlanPhaseFn(
 			};
 		};
 
-		runPlanPhase({
+		const planResult = runPlanPhase({
 			spawnFn: loopSpawnFn,
 			isPaneAlive,
 			sleepFn: (ms) => Bun.sleepSync(ms),
@@ -710,6 +715,38 @@ function makeProductionPlanPhaseFn(
 			plannerPaneId,
 			paneCountMutexFn: () => paneCountMutex(sessionName, realSpawnFn),
 			logEvent,
+		});
+
+		// Read branchName from prd.json (written by the planner during the plan phase).
+		let branchName = '';
+		try {
+			const prdRaw = JSON.parse(
+				readFileSync(join(cwd, 'scripts/cam/prd.json'), 'utf8'),
+			) as { branchName?: string };
+			branchName = prdRaw.branchName ?? '';
+		} catch { /* fallback: empty string; runPostAuditAction no-ops on no-approved result */ }
+
+		// Build escalateFn from Resend config (same pattern as buildSidecarLoopDeps).
+		const resendCfg = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
+		const postAuditEscalateFn = (resendCfg.apiKey !== '' && resendCfg.recipient !== '')
+			? async (): Promise<void> => {
+				await sendEscalation({
+					apiKey: resendCfg.apiKey,
+					recipient: resendCfg.recipient,
+					subject: '[cam] Plan BLOCK: audit rejected the planning output',
+					html: '<p><strong>[cam]</strong> The plan auditor blocked the planning phase. Manual intervention required.</p>',
+				});
+			}
+			: undefined;
+
+		runPostAuditAction({
+			planResult,
+			spawnFn: loopSpawnFn,
+			setPhaseFn: makeSetPhaseFn(claudeDir, cwd),
+			branchName,
+			readPlanApprovalFn: () => readPlanApproval(join(cwd, 'scripts/cam/project.toml')),
+			escalateFn: postAuditEscalateFn,
+			notifyFn: makeNotifyOrchestrator(sessionName, realSpawnFn),
 		});
 	};
 }

@@ -21,8 +21,14 @@
 //  16.  proceed-branch: git checkout -b fails -> throws (spawnSync exit-status guard).
 //  17.  proceed-branch: git add fails -> throws.
 //  18.  proceed-branch: git commit fails -> throws.
+// Production wiring oracle (US-R1-001):
+//  19.  sidecar.ts imports runPostAuditAction from plan-runner.ts.
+//  20.  sidecar.ts calls runPostAuditAction inside makeProductionPlanPhaseFn.
+//  21.  sidecar.ts wires setPhaseFn, branchName, readPlanApprovalFn in the call.
 
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
 	runPostAuditAction,
 	type RunPostAuditOptions,
@@ -381,5 +387,39 @@ describe('runPostAuditAction', () => {
 			'no-action',
 		];
 		expect(kinds.every((k) => typeof k === 'string')).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Production wiring oracle (US-R1-001)
+//
+// Unit tests that inject runPlanPhaseFn directly into runSidecarLoop cannot
+// detect a missing runPostAuditAction call in the outer production caller
+// (makeProductionPlanPhaseFn in sidecar.ts). This source-text oracle catches
+// that gap independently of injection tests.
+// ---------------------------------------------------------------------------
+
+describe('sidecar.ts production wiring oracle - runPostAuditAction (US-R1-001)', () => {
+	const sidecarPath = resolve(import.meta.dir, '..', '..', '..', 'src', 'commands', 'sidecar.ts');
+	const source = readFileSync(sidecarPath, 'utf8');
+
+	test('sidecar.ts imports runPostAuditAction from plan-runner.ts', () => {
+		expect(source).toContain('runPostAuditAction');
+		expect(source).toContain("from '../supervisor/plan-runner.ts'");
+	});
+
+	test('makeProductionPlanPhaseFn calls runPostAuditAction', () => {
+		// Isolate the makeProductionPlanPhaseFn function body.
+		const fnMatch = source.match(/function makeProductionPlanPhaseFn[\s\S]*?^\}/m);
+		expect(fnMatch).not.toBeNull();
+		expect(fnMatch?.[0]).toContain('runPostAuditAction(');
+	});
+
+	test('runPostAuditAction call wires setPhaseFn, branchName, readPlanApprovalFn', () => {
+		const callMatch = source.match(/runPostAuditAction\(\{[\s\S]*?\}\)/);
+		expect(callMatch).not.toBeNull();
+		expect(callMatch?.[0]).toContain('setPhaseFn');
+		expect(callMatch?.[0]).toContain('branchName');
+		expect(callMatch?.[0]).toContain('readPlanApprovalFn');
 	});
 });
