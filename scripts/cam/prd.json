@@ -26,7 +26,7 @@
         "Tests pass. [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "6 hand-edited files + 1 generated file. Edit .claude/skills/grill-with-docs/SKILL.md (insert after line 7 delegation line), .claude/commands/cam-plan.md (Step 6 starts line 117; insert the scope/story-contextualized clause after line 119), .claude/agents/subagent-orchestrator.md (Output style section starts line 252; insert after the 'When proposing an action' bullet at line 260-261). For grill-with-docs and subagent-orchestrator the .claude/ and templates/ copies are CURRENTLY byte-identical: mirror the edit exactly. For cam-plan.md the two copies DIFFER (cam-dual-copy-is-per-file pattern, scripts/cam/patterns.md): locate '### Step 6' in EACH copy independently and insert at the matching anchor; do NOT byte-copy one onto the other. Then run `bun run embed-vendor` (NOT the :check variant) to regenerate src/vendor/_generated.ts. Clause wording must mirror the CLAUDE.md Rule 1 'Recommend on merits' language but stay in English and use 'recommendation' vocabulary (no 'grill', for CAM-146 rename-neutrality). Do NOT touch vendored .claude/skills/grilling or .claude/skills/domain-modeling (mattpocock upstream; the wrapper we own carries the guidance)."
     },

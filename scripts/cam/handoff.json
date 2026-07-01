@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Insert the merit-over-cost clause into all 3 surfaces and regenerate the embed"
+  },
+  "branchName": "cam/CAM-145-recommend-by-merit",
+  "timestamp": "2026-06-30T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/skills/grill-with-docs/SKILL.md",
+    "templates/skills/grill-with-docs/SKILL.md",
+    ".claude/commands/cam-plan.md",
+    "templates/commands/cam-plan.md",
+    ".claude/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 inserted the 'engineering merit' clause in all 3 surfaces and regenerated the embed. US-002 must now add a parity test in test/embedded.test.ts asserting the clause is present in the 3 embedded shipped copies via templatesContents[key]. The clause marker to assert is 'engineering merit'. Follow the existing describe blocks (lines 120-160) as template. Key note: the two cam-plan.md copies intentionally differ (cam-dual-copy-is-per-file pattern) — US-002 does not need to worry about that; it only tests the embedded copies via templatesContents.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
