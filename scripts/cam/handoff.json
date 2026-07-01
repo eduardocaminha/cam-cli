@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add plan-verdict-report module (auditor structured exit file)"
+  },
+  "branchName": "cam/CAM-117-plan-runner",
+  "timestamp": "2026-07-01T00:00:00Z",
+  "createdFiles": [
+    "src/supervisor/plan-verdict-report.ts",
+    "test/supervisor/plan/plan-verdict-report.test.ts"
+  ],
+  "modifiedFiles": [
+    ".gitignore",
+    "templates/.gitignore",
+    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added src/supervisor/plan-verdict-report.ts with PlanVerdictReport interface, PlanVerdictFinding interface, PLAN_VERDICT_REPORT_FILENAME constant, and makeReadPlanVerdict(cwd) factory. Both .gitignore and templates/.gitignore now include scripts/cam/plan-verdict-report.json (symmetric to review-report.json). embed-vendor regenerated after templates/.gitignore change. The next story should wire makeReadPlanVerdict into the plan-runner dispatch loop (Half B).",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
