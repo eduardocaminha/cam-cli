@@ -12,7 +12,7 @@ FROM oven/bun:1.2-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git nodejs npm \
-        sudo iptables ipset dnsutils curl \
+        sudo iptables ipset dnsmasq dnsutils curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Grant the bun user passwordless sudo for the firewall init script only.
@@ -26,6 +26,21 @@ RUN npm install -g @anthropic-ai/claude-code@2.1.197
 
 # Disable the auto-updater so the pinned CLI version is never replaced at runtime
 ENV DISABLE_AUTOUPDATER=1
+
+# Configure git HTTPS credential helper for github.com (US-003, CAM-150).
+# The helper script reads $GITHUB_TOKEN at credential-request time (runtime);
+# it never writes a credential file to disk (unlike credential.helper=store,
+# which would write a host cred file and violate the no-cred-file policy).
+# Username is the literal string x-access-token (GitHub HTTPS token convention).
+# No SSH key mount is used; git push/fetch authenticates over HTTPS only.
+RUN echo '#!/bin/sh' > /usr/local/bin/git-credential-github-token \
+    && echo 'echo username=x-access-token' >> /usr/local/bin/git-credential-github-token \
+    && echo 'printf "password=%s\n" "${GITHUB_TOKEN}"' >> /usr/local/bin/git-credential-github-token \
+    && chmod +x /usr/local/bin/git-credential-github-token \
+    && git config --file /home/bun/.gitconfig \
+          credential.https://github.com.helper \
+          /usr/local/bin/git-credential-github-token \
+    && chown bun:bun /home/bun/.gitconfig
 
 # Switch to non-root user (the oven/bun image ships with a pre-created bun user)
 USER bun

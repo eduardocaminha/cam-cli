@@ -2962,4 +2962,132 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 			expect(count).toBe(3);
 		});
 	});
+
+	// US-005: preflightContainerFn seam tests (B-1 observe-only)
+	describe('US-005: preflightContainerFn injectable seam (B-1 observe-only)', () => {
+		/**
+		 * Shared helper: build a one-story PRD + matching report that drives
+		 * the loop to 'complete' in one iteration.
+		 */
+		function oneStoryBase(): Partial<RunSupervisorOptions> {
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+			const fakeReport: WorkerReport = {
+				outcome: 'DONE',
+				story: 'US-001',
+				gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+				notes: 'none',
+			};
+			let prdCall = 0;
+			return {
+				readPrd: () => {
+					prdCall++;
+					return prdCall <= 1 ? prd_impl : prd_done;
+				},
+				readHandoff: () => makeHandoff('US-001'),
+				capturePane: (_paneId) => donePane('US-001'),
+				readWorkerReport: () => fakeReport,
+			};
+		}
+
+		test('AC3a: preflightContainerFn called before respawn-pane dispatch', async () => {
+			const callOrder: string[] = [];
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				spawn: (_cmd, args) => {
+					if (args.includes('respawn-pane')) callOrder.push('respawn-pane');
+					return { stdout: '', exitCode: 0 };
+				},
+				preflightContainerFn: () => {
+					callOrder.push('preflight');
+					return { ready: true };
+				},
+			});
+
+			await runSupervisor(opts);
+
+			const preflightIdx = callOrder.indexOf('preflight');
+			const respawnIdx = callOrder.indexOf('respawn-pane');
+			expect(preflightIdx).toBeGreaterThanOrEqual(0);
+			expect(respawnIdx).toBeGreaterThanOrEqual(0);
+			expect(preflightIdx).toBeLessThan(respawnIdx);
+		});
+
+		test('AC3b + AC2: not-ready preflight does not block host spawn (dispatch still happens)', async () => {
+			let respawnPaneCalled = false;
+			let preflightCalled = false;
+
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				spawn: (_cmd, args) => {
+					if (args.includes('respawn-pane')) respawnPaneCalled = true;
+					return { stdout: '', exitCode: 0 };
+				},
+				preflightContainerFn: () => {
+					preflightCalled = true;
+					return { ready: false, reason: 'daemon-unreachable' };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(preflightCalled).toBe(true);
+			expect(respawnPaneCalled).toBe(true);
+			expect(result.status).toBe('complete');
+		});
+
+		test('AC4: absent preflightContainerFn leaves loop behavior unchanged', async () => {
+			let respawnPaneCalled = false;
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				spawn: (_cmd, args) => {
+					if (args.includes('respawn-pane')) respawnPaneCalled = true;
+					return { stdout: '', exitCode: 0 };
+				},
+				// preflightContainerFn intentionally absent
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			expect(respawnPaneCalled).toBe(true);
+		});
+
+		test('AC1: preflight result logged as container-preflight event (not-ready)', async () => {
+			const { logger, events } = makeInMemoryEventLogger();
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				logEvent: logger,
+				preflightContainerFn: () => ({ ready: false, reason: 'image-missing' as const }),
+			});
+
+			await runSupervisor(opts);
+
+			const preflightEvents = events.filter((e) => e.kind === 'container-preflight');
+			expect(preflightEvents.length).toBe(1);
+			const detail = preflightEvents[0]?.detail as { ready: boolean; reason?: string };
+			expect(detail?.ready).toBe(false);
+			expect(detail?.reason).toBe('image-missing');
+		});
+
+		test('preflight result logged as container-preflight event (ready)', async () => {
+			const { logger, events } = makeInMemoryEventLogger();
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				logEvent: logger,
+				preflightContainerFn: () => ({ ready: true }),
+			});
+
+			await runSupervisor(opts);
+
+			const preflightEvents = events.filter((e) => e.kind === 'container-preflight');
+			expect(preflightEvents.length).toBe(1);
+			const detail = preflightEvents[0]?.detail as { ready: boolean; reason?: string };
+			expect(detail?.ready).toBe(true);
+			expect(detail?.reason).toBeUndefined();
+		});
+	});
 });

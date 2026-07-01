@@ -1,7 +1,7 @@
 {
   "id": "CAM-150",
   "title": "Worker isolation Half B: route worker spawn through the dev container",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-01T10:09:27.024Z",

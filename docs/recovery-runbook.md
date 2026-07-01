@@ -2119,25 +2119,92 @@ script declares exactly seven domains:
 | `api.anthropic.com` | Claude API (worker LLM calls) |
 | `claude.ai` | Claude web (authentication flows) |
 | `platform.claude.com` | Claude platform endpoints |
-| `github.com` | git push/fetch, gh CLI |
-| `*.github.com` | GitHub sub-services (codeload, uploads, objects, API) |
+| `github.com` | git push/fetch, gh CLI (dnsmasq subdomain matching also covers *.github.com) |
 | `registry.npmjs.org` | npm/bun package registry |
-| `raw.githubusercontent.com` | raw file downloads from GitHub |
+| `raw.githubusercontent.com` | raw file fetches from GitHub (scripts, assets) |
+| `objects.githubusercontent.com` | Git LFS object host (git push/fetch with LFS) |
 
-DNS resolution (UDP + TCP port 53) is always permitted so the ipset can resolve
-domain names to IPs at container start. SSH (port 22) outbound to allowlisted
-IPs is permitted for git-over-SSH.
+**DNS-firewall implementation: dnsmasq with dynamic ipset**
 
-To cross-check the live allowlist against this table:
+The script uses dnsmasq with `--ipset` directives instead of a one-shot
+`dig`-and-populate pass. On every DNS answer for an allowlisted domain, dnsmasq
+inserts the resolved IPs into the `allowed-domains` ipset automatically. This
+means CDN-backed hosts (such as `api.anthropic.com`) remain reachable even when
+the CDN rotates IPs over the lifetime of a long-running container; a frozen ipset
+populated at startup would silently block traffic after any such rotation.
+
+DNS resolution (UDP + TCP port 53) is always permitted so dnsmasq can forward
+upstream queries. SSH (port 22) outbound to allowlisted IPs is permitted for
+git-over-SSH.
+
+To cross-check the live allowlist against this table (the `--ipset` directives
+are the real egress source of truth; `ALLOWED_DOMAINS` mirrors them 1-to-1):
 
 ```bash
+# Show the --ipset domain args (actual egress control):
+grep -oP '(?<=--ipset=/)([^/]+)(?=/allowed-domains)' .devcontainer/init-firewall.sh
+# Show the ALLOWED_DOMAINS array (must match the --ipset set exactly):
 grep -A 12 'ALLOWED_DOMAINS=(' .devcontainer/init-firewall.sh
 ```
 
-If a new domain is needed, update `ALLOWED_DOMAINS` in `init-firewall.sh` AND
-update the table above AND the corresponding ADR
-(`docs/adr/0003-worker-isolation-boundary-dev-container.md` Consequencias
+If a new domain is needed, update both `ALLOWED_DOMAINS` AND the `--ipset`
+directives in `init-firewall.sh`, update the table above, AND the corresponding
+ADR (`docs/adr/0003-worker-isolation-boundary-dev-container.md` Consequencias
 section). Adding a domain is a deliberate architectural decision.
+
+### Credential provisioning
+
+Two tokens must be present in the sidecar environment before workers can operate
+inside the container. Both are read from `.env` at the project root and injected
+into the container via `containerEnv` in `.devcontainer/devcontainer.json`.
+
+**GITHUB_TOKEN**
+
+Create a fine-grained personal access token (PAT) scoped to the `cam-cli`
+repository with `Contents: Read and Write` permission. This token is used by the
+worker for `git push`, `gh` CLI calls, and GitHub API operations during story
+dispatch. Create it at: GitHub Settings > Developer settings > Personal access
+tokens > Fine-grained tokens.
+
+Add to `.env` at the project root:
+
+```
+GITHUB_TOKEN=github_pat_...
+```
+
+Security constraints:
+
+- NEVER use a broad host-level token scoped to all repositories; the PAT must be
+  scoped to `cam-cli` only.
+- NEVER mount `~/.ssh` or any SSH key into the container; use HTTPS with
+  `GITHUB_TOKEN` for all git operations.
+- NEVER mount host credential-store files (`~/.netrc`, `~/.gitconfig` with
+  credential helpers) into the container.
+
+**CLAUDE_CODE_OAUTH_TOKEN**
+
+Obtain the token by running `claude setup-token` in the host terminal and copying
+the resulting value. This token authenticates the worker's LLM calls without
+requiring an interactive browser flow inside the container.
+
+Add to `.env` at the project root:
+
+```
+CLAUDE_CODE_OAUTH_TOKEN=...
+```
+
+**Claude auth volume fallback**
+
+The devcontainer mounts a named Docker volume at `/home/bun/.claude` (the default
+Claude Code config directory). If `CLAUDE_CODE_OAUTH_TOKEN` is absent, Claude Code
+falls back to cached auth state in this volume, populated by a prior `claude login`
+run inside the container. The named volume persists across container restarts so
+the operator does not need to re-authenticate every time. Prefer
+`CLAUDE_CODE_OAUTH_TOKEN` for unattended automation: the token is explicit and
+auditable; the volume fallback is a convenience for interactive development only.
+
+Cross-reference: `.devcontainer/devcontainer.json` (`containerEnv` and volume
+mount definitions), `.env` (not committed; must be created by the operator).
 
 ### Docker dependency
 

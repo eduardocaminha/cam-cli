@@ -15,7 +15,7 @@
 //   makeClearWorkerReport(cwd)            -> ClearWorkerReport
 //   makeNotifyOrchestrator(sessionName, spawnFn) -> (line) => void
 
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -42,6 +42,7 @@ import { renderStateFile, writeStateFile } from '../commands/next.ts';
 import { WORKER_REPORT_FILENAME, buildWorkerReportSendKeysArgv } from './worker-report.ts';
 import type { ReviewReport } from './review-report.ts';
 import { REVIEW_REPORT_FILENAME } from './review-report.ts';
+import { preflightWorkerContainer } from './preflight-container.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -553,6 +554,32 @@ export function buildSupervisorOptions(
 	const readWorkerReport = makeReadWorkerReport(cwd);
 	const clearWorkerReport = makeClearWorkerReport(cwd);
 
+	// US-005 / B-1: production container preflight seam.
+	// Uses real Docker probe (spawnSync) and real filesystem stat. CI has no Docker
+	// installed, so the probe will return daemon-unreachable -- that is fine because
+	// in B-1 the result is observed only and never gates the host spawn.
+	const preflightContainerFn: RunSupervisorOptions['preflightContainerFn'] = () =>
+		preflightWorkerContainer({
+			probe: (args) => {
+				const result = spawnSync('docker', args, {
+					stdio: 'pipe',
+					encoding: 'utf8',
+				} as Parameters<typeof spawnSync>[2]);
+				return {
+					stdout: typeof result.stdout === 'string' ? result.stdout : '',
+					exitCode: result.status ?? 1,
+				};
+			},
+			statFn: (path) => {
+				try {
+					const s = statSync(path);
+					return { mtimeMs: s.mtimeMs };
+				} catch {
+					return null;
+				}
+			},
+		});
+
 	// US-002: build the notifyOrchestrator closure that resolves the orch pane
 	// and sends the verdict line via send-keys. Uses a spawnSync adapter that
 	// matches the TmuxSpawnFn signature (returns SpawnSyncReturns, not the
@@ -653,6 +680,8 @@ export function buildSupervisorOptions(
 		sleepFn: (ms) => {
 			Bun.sleepSync(ms);
 		},
+		// US-005 / B-1: container preflight seam (observe-only; does not gate spawn).
+		preflightContainerFn,
 	};
 
 	return {
