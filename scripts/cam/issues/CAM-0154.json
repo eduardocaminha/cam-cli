@@ -1,0 +1,19 @@
+{
+  "id": "CAM-154",
+  "title": "plan-runner honra plan_issue: cam plan --issue N planeja a issue N (nao top-of-queue)",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-01T22:57:52.503Z",
+  "description": "Bug de correcao confirmado no plan-runner ao vivo (0.41.0), follow-up (a) do CAM-151. O runPlanPhaseFn de producao (sidecar.ts:724) monta selectIssueFn: () => selectPlannableFromFile(cwd), que so recebe cwd e ignora o plan_issue escrito por `cam plan --issue N` / `/cam-plan N`. Resultado: `cam plan --issue 149` escreve plan_issue:CAM-149 no .claude/cam-loop.local.md mas o sidecar planeja o top-of-queue por rank, silenciosamente a issue errada.\n\nFIX (cirurgico): threadar plan_issue -> selectIssueFn. Ler plan_issue do loop-state (ja parseado em status.ts) no ponto onde runPlanPhaseFn e montado (makeProductionPlanPhaseFn, sidecar.ts:651+); quando setado, resolver a issue especifica (validando stage:specified && status:open && nao-blocked, com erro claro se invalida/inexistente); quando null, cair no top-of-queue selectPlannableFromFile(cwd) atual (comportamento inalterado). Provavel forma: selectPlannableFromFile(cwd, targetId?) ou um selectById + reuso da validacao de plannable de select.ts. Cobrir com teste: plan_issue setado -> planeja essa issue; plan_issue null -> planeja top-of-queue; plan_issue apontando issue nao-plannable -> erro/escalacao, nunca fallback silencioso pra outra issue.\n\nMOTIVACAO: (1) cam plan --issue N e comando shipado que hoje mente; (2) pre-requisito do CAM-139 (o drainer dispara o plan de uma issue ESPECIFICA, nao funciona sem targeting). Escopo cirurgico, NAO confundir com CAM-153 (gates cluster do plan-runner: gate generico, cam resume, BLOCK->re-plan, plan_approval=operator, in-progress-conflict). Rebuild do sidecar obrigatorio pos-merge pra ativar. Deriva do CAM-151.",
+  "specSource": "derived",
+  "derivedFrom": [
+    "CAM-151"
+  ],
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 3,
+    "riskReduction": 3,
+    "jobSize": 1
+  }
+}
