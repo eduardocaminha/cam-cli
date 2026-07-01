@@ -1,27 +1,33 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add worker-container orchestration module (build + run one long-lived container) with credential env threading"
+    "id": "US-002",
+    "title": "Parity test: TS docker-run args match .devcontainer/devcontainer.json (no runtime JSONC parse)"
   },
   "branchName": "cam/CAM-150-worker-container-substrate",
-  "timestamp": "2026-07-01T12:00:00Z",
+  "timestamp": "2026-07-01T12:30:00Z",
   "createdFiles": [
     "src/supervisor/worker-container.ts",
-    "test/supervisor/worker-container.test.ts"
+    "test/supervisor/worker-container.test.ts",
+    "test/supervisor/worker-container-parity.test.ts"
   ],
   "modifiedFiles": [
     "scripts/cam/prd.json",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 (B-1 substrate) is complete. The worker-container module is inert: loop.ts and plan-runner.ts do NOT import it. US-002 is the JSON->argv parity assertion story (verify that buildDockerRunArgv mirrors every devcontainer.json field exactly). The injectable ContainerSpawnFn seam follows the same DockerProbe pattern from preflight-container.ts. The workspace bind-mount source is the workspaceFolder parameter (callers pass the real cwd). Name-only -e token threading confirmed by Docker docs: if the host env var is unset, the container var is also unset (not an error).",
+  "nextStoryContext": "US-001 (inert TS substrate) and US-002 (parity test) are complete. US-003 configures git HTTPS auth inside the container using GITHUB_TOKEN (x-access-token form or URL rewrite), touching .devcontainer/Dockerfile and/or .devcontainer/init-firewall.sh. Key constraint: no ~/.ssh mount, no ~/.git-credentials file (both are negated oracles in AC). The intended mechanism is a git credential helper or `url.insteadOf` rewrite that reads $GITHUB_TOKEN at runtime. The .devcontainer/ directory is NOT embedded/vendored so no embed-vendor step needed. If adding a shell-invocation test, use test.skipIf(Bun.which('bash') === null) for CI safety.",
   "officialDocsValidated": [
     {
       "lib": "docker-cli",
       "url": "https://docs.docker.com/reference/cli/docker/container/run/",
       "fetchedAt": "2026-07-01T12:00:00Z",
       "status": "aligned",
-      "summary": "Name-only -e VARNAME form confirmed: inherits from host env; unset host var = unset container var. Implementation is correct."
+      "summary": "Name-only -e VARNAME form confirmed: inherits from host env; unset host var = unset container var. Implementation is correct. (Carried from US-001.)"
+    },
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-002 uses only node:fs readFileSync and node:path join (standard built-ins) plus bun:test. No new external library introduced."
     }
   ]
 }
