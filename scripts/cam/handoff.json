@@ -1,25 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Wire auto-mode post-audit action: commit PRD, create branch, flip active:true; escalate on BLOCK"
+    "id": "US-007",
+    "title": "Record ADR 0004: plan phase as deterministic sidecar runner"
   },
   "branchName": "cam/CAM-117-plan-runner",
-  "timestamp": "2026-07-01T02:00:00Z",
+  "timestamp": "2026-07-01T03:00:00Z",
   "createdFiles": [
-    "test/supervisor/plan/plan-runner-postaudit.test.ts"
+    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md"
   ],
   "modifiedFiles": [
-    "src/supervisor/plan-runner.ts",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 added runPostAuditAction(opts) and PostAuditActionResult/RunPostAuditOptions types to src/supervisor/plan-runner.ts, plus the new test file (28 tests). It also added imports for decidePostAuditAction from plan-approval-decision.ts and PlanApproval type from config/models.ts. The next story (US-007) should write the ADR at docs/adr/0004-plan-phase-deterministic-sidecar-runner.md documenting the plan phase as a deterministic sidecar runner. No new modules are required - it's a docs-only story. The ADR must follow 0003 format, contain no em-dash/emoji, reference CAM-151 for Half B forward references, and pass all quality gates.",
+  "nextStoryContext": "US-007 wrote docs/adr/0004-plan-phase-deterministic-sidecar-runner.md documenting the plan phase as a deterministic TS sidecar runner. All 7 stories in the CAM-117 PRD now have passes:true. The full quality spine (check:all) is green. The PRD is complete: no further stories remain with passes:false.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-006 is purely internal: extends plan-runner.ts with runPostAuditAction using internal types (SpawnFn from loop.ts, PlanApproval from config/models.ts, decidePostAuditAction from plan-approval-decision.ts). No external library API was exercised."
+      "summary": "US-007 is a docs-only story: writes an ADR markdown file. No external library API was exercised."
     }
   ]
 }

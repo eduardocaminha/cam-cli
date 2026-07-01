@@ -127,7 +127,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Follow docs/adr/0003-worker-isolation-boundary-dev-container.md format precedent EXACTLY (the new ADR is 0004). Apply the ADR three-gate test from scripts/cam/CLAUDE.md 'Domain Model Convention': hard-to-reverse (the plan phase moves from LLM-orchestrated /cam-plan Task subagents to a deterministic sidecar runner spawning panes) + surprising-without-context (the planner/auditor are now panes not Task subagents, reversing the patterns.md 'Pane worker vs Task subagent' dividing line for the plan phase) + genuine-trade-off (deterministic runner loses LLM flexibility in orchestrating the plan flow, gains the deterministic guards). No em-dash / no decorative emoji in persisted .md (global CLAUDE.md rule + patterns.md 'No em-dash in persisted .md'). docs/adr/ is not under vendor/ or templates/, so no embed-vendor run needed."
     }
