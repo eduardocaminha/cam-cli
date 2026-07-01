@@ -29,6 +29,7 @@
 
 import { decideNextAction, DEFAULT_MAX_ROUNDS } from './decide.ts';
 import type { PrdSnapshot } from './decide.ts';
+import type { LoopPhase } from '../commands/status.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
@@ -1399,6 +1400,36 @@ export interface RunSidecarLoopOptions {
 	 * is unchanged. Zero behavior change for all existing tests.
 	 */
 	escalateFn?: () => Promise<void>;
+	/**
+	 * Read the current loop phase from cam-loop.local.md (US-002, CAM-151).
+	 *
+	 * Returns undefined when the file is absent, unparseable, or the phase field
+	 * is not present. Used to detect phase:'planning' and dispatch the plan runner
+	 * as a sibling branch of the idle and implement paths.
+	 *
+	 * Production wiring (sidecar.ts): makeReadLoopPhase(claudeDir).
+	 * Tests inject a controlled sequence or a constant-returning closure.
+	 *
+	 * Optional: when absent the planning detection path is fully inert, preserving
+	 * zero behavior change for all existing tests.
+	 */
+	readLoopPhaseFn?: () => LoopPhase | undefined;
+	/**
+	 * Run the plan phase deterministically (US-002, CAM-151).
+	 *
+	 * When injected AND readLoopPhaseFn() returns 'planning', called once per tick.
+	 * Wraps runPlanPhase with all deps wired: pane-count mutex check (Step 3),
+	 * planner spawn (Step 4), planner poll (Step 5), auditor spawn (Step 6),
+	 * auditor poll (Step 7).
+	 *
+	 * Production wiring (sidecar.ts): a closure over runPlanPhase(...) with
+	 * plannerPaneId, paneCountMutexFn, selectIssueFn, preflightFn, spawnFn,
+	 * isPaneAlive, sleepFn, genUuid, and clock all threaded in.
+	 *
+	 * Optional: when absent, phase:planning is silently ignored (zero behavior
+	 * change for all existing tests that do not inject readLoopPhaseFn).
+	 */
+	runPlanPhaseFn?: () => void | Promise<void>;
 }
 
 /** Idle polling interval for the sidecar outer loop (2 seconds). */
@@ -1432,6 +1463,19 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 
 	while (true) {
 		const active = opts.readActive();
+
+		// US-002 / CAM-151: plan-phase branch (sibling of the idle and implement
+		// branches; mutually exclusive via the phase enum). phase:planning derives
+		// active:false, so this guard MUST precede the active!==true idle check to
+		// avoid silently falling into the idle path on a planning tick.
+		// The pane-count mutex check lives inside runPlanPhaseFn (mirrors Step 3 of
+		// runPlanPhase), so no separate mutex call is needed here.
+		const loopPhase = opts.readLoopPhaseFn?.();
+		if (loopPhase === 'planning' && opts.runPlanPhaseFn !== undefined) {
+			await opts.runPlanPhaseFn();
+			opts.sleep(idlePollMs);
+			continue;
+		}
 
 		if (active !== true) {
 			// US-007: run the merge-watch when ci-gated mode is active and a watch
