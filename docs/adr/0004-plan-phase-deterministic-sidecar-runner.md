@@ -13,7 +13,7 @@ Tres gates definem quando uma decisao merece um ADR:
 
 2. **Surpreendente sem contexto**: o padrao documentado em `scripts/cam/patterns.md` ("Pane worker vs Task subagent") estabelece que o planner e o auditor sao Task subagents dentro do fluxo interativo do `/cam-plan`. No runner deterministico, ambos passam a rodar como panes tmux interativos, exatamente como o implementer e o reviewer. Para quem le `plan-runner.ts` sem este ADR, o dispatch via `respawn-pane -k` parece inconsistente com o padrao estabelecido. A justificativa e que o dispatcher agora e o sidecar deterministico (nao o LLM orquestrador), o que inverte o criterio de escolha: quando o sidecar e o driver, pane e correto pelos mesmos motivos que o implementer usa pane.
 
-3. **Trade-off genuino**: o runner deterministico perde a flexibilidade do LLM para orquestrar o fluxo de planejamento (interpretacao de erros nao previstos, reformulacao de perguntas ao operador, etc.). Em troca, ganha as mesmas garantias deterministicas do loop de implementacao: limite de tentativas (`MAX_PLANNER_POLLS`, `MAX_AUDITOR_POLLS`), isolamento de falha via pane kill/respawn, sinal de conclusao via arquivo de report (nao via scrollback parsing), e logica de roteamento pos-auditoria em TypeScript puro (`decidePostAuditAction`).
+3. **Trade-off genuino**: o runner deterministico perde a flexibilidade do LLM para orquestrar o fluxo de planejamento (interpretacao de erros nao previstos, reformulacao de perguntas ao operador, etc.). Em troca, ganha as mesmas garantias deterministicas do loop de implementacao: limite de tentativas via timeout (`plannerTimeoutMs`, `auditorTimeoutMs` em `RunPlanPhaseOptions`, default `DEFAULT_PLAN_TIMEOUT_MS` = 30 min), isolamento de falha via pane kill/respawn, sinal de conclusao via arquivo de report (nao via scrollback parsing), e logica de roteamento pos-auditoria em TypeScript puro (`decidePostAuditAction`).
 
 ## Decisao
 
@@ -23,7 +23,7 @@ O runner executa tres fases em sequencia:
 
 1. **Pre-flight** (`runPlanPreflight`): verifica arvore git limpa, branch de origem resolvida, gh disponivel, e poda branches `cam/` ja mergeados. Falha em qualquer verificacao obrigatoria encerra o runner sem spawnar panes.
 
-2. **Ciclo planner/auditor** (`runPlannerAuditorCycle`): o planner e spawned como pane tmux interativo; o runner polls ate detectar o sinal de conclusao (arquivo de report ou sentinel). Em seguida o auditor e spawned no mesmo pane; o runner polls pelo veredicto (APPROVE ou BLOCK). O LLM de cada pane e configuravel via `[models]` em `project.toml` e injetado via frontmatter rewrite antes do spawn.
+2. **Ciclo planner/auditor** (interno ao `runPlanPhase` via helpers `pollPlannerDeath` / `pollAuditorReport`): o planner e spawned como pane tmux interativo; o runner polls ate detectar o sinal de conclusao (prd.json escrito ou pane morto). Em seguida o auditor e spawned no mesmo pane; o runner polls pelo veredicto (APPROVE ou BLOCK) via `plan-verdict-report.json`. O LLM de cada pane e configuravel via `[models]` em `project.toml` e injetado via frontmatter rewrite antes do spawn.
 
 3. **Acao pos-auditoria** (`runPostAuditAction`): quando o veredicto e APPROVE, o runner (a) faz commit do `prd.json` no branch atual, (b) cria o branch `cam/<issue-id>-<slug>` via `git checkout -b`, e (c) escreve `active: true` no estado do sidecar (`cam-loop.local.md`). Essa sequencia e o hand-off incremental para o loop de implementacao em `loop.ts`: o sidecar detecta `active: true` na proxima tick e despacha o implementer.
 
@@ -35,7 +35,7 @@ A divisoria "pane vs Task subagent" de `patterns.md` e refinada: Task subagent e
 - **LLM sem loop de reformulacao**: se o planner ou o auditor travar ou encerrarem com erro, o runner reporta `BLOCK` sem tentativa de reformulacao. O operador precisa re-invocar `/cam-plan` manualmente. O BLOCK->re-plan loop automatico e um forward reference (CAM-151).
 - **plan_approval gate ausente**: a decisao de aprovar o escopo antes de spawnar o planner permanece no LLM orquestrador (Step 6 do `cam-plan.md`). A gate deterministica `decidePostAuditAction` roda apenas pos-auditoria. Um gate de `plan_approval` configuravel via `project.toml` e um forward reference (CAM-151).
 - **Conflito de trabalho em progresso**: o runner nao detecta branches `cam/` ativos com commits nao mergeados ao criar um novo branch. Deteccao de in-progress-work conflict e um forward reference (CAM-151).
-- **Sinal de conclusao por arquivo de report**: o planner e o auditor devem escrever um arquivo de report (`scripts/cam/worker-report.json`) ao encerrar. O runner le esse arquivo como sinal primario (mesmo contrato do implementer). O sentinel no scrollback e fallback.
+- **Sinais de conclusao distintos por fase**: o planner sinaliza conclusao escrevendo `scripts/cam/prd.json` (lido via `readPlannerReportFn`); o auditor sinaliza conclusao escrevendo `scripts/cam/plan-verdict-report.json` (lido via `readPlanVerdictFn`). Em ambos os casos o runner le o arquivo como sinal primario; morte do pane e fallback. `scripts/cam/worker-report.json` e o canal do implementer e do reviewer, nao do planner ou do auditor.
 
 ## Alternativas descartadas
 
