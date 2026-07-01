@@ -1,23 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Add ADR 0003 and recovery-runbook container section"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-111-worker-container",
-  "timestamp": "2026-07-01T17:00:00Z",
-  "createdFiles": [
-    "docs/adr/0003-worker-isolation-boundary-dev-container.md"
-  ],
+  "timestamp": "2026-07-01T18:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "docs/recovery-runbook.md",
+    ".devcontainer/Dockerfile",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 added docs/adr/0003-worker-isolation-boundary-dev-container.md (Portuguese, ADR format: Status/Data/Contexto/Decisao/Consequencias/Alternativas descartadas; no em-dash; names all four alternatives: bash-sandbox, sandbox-runtime, VM, cloud-Daytona). docs/recovery-runbook.md gained section (x) CAM-111 documenting the container model (3 isolation layers: filesystem bind-mount, default-deny egress firewall, non-root cam-worker uid 1001), the exact firewall allowlist (7 domains: api.anthropic.com, claude.ai, platform.claude.com, github.com, *.github.com, registry.npmjs.org, raw.githubusercontent.com), the Docker dependency (preflight checks daemon + image-present), and troubleshooting steps. Forward reference to CAM-150 for fail-closed spawn. No TS files touched; no embed-vendor needed. All quality gates green: typecheck clean, 2299 pass / 0 fail, check:all clean.",
+  "nextStoryContext": "US-R1-001 fixed the CRITICAL Dockerfile bug: oven/bun:1.2-slim ships only bun (no Node.js or npm). Added nodejs and npm to the apt-get install line alongside git, and corrected the incorrect comment 'bun and node are provided by the base image' to 'oven/bun:1.2-slim ships only bun; Node.js is not included'. The RUN npm install -g @anthropic-ai/claude-code@2.1.197 line is now valid. Next story US-R1-002 needs to add sudo and firewall tooling (iptables, ipset, dnsutils, curl) to the apt-get install and grant the bun user passwordless sudo, so init-firewall.sh can actually run at container start.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "oven/bun Docker image",
+      "version": "1.2-slim",
+      "url": "https://hub.docker.com/r/oven/bun",
+      "fetchedAt": "2026-07-01T18:00:00Z",
+      "status": "ok",
+      "summary": "oven/bun:1.2-slim ships only the bun runtime (no Node.js, no npm). Confirmed by reviewer finding and imbios/bun-node existing specifically to bundle bun+node. Fix (apt-get install nodejs npm) is correct."
     }
   ]
 }
