@@ -6,9 +6,9 @@
 
 FROM oven/bun:1.2-slim
 
-# Install git (bun and node are provided by the base image)
+# Install git and Node.js/npm (oven/bun:1.2-slim ships only bun; Node.js is not included)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
+    && apt-get install -y --no-install-recommends git nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Install pinned Claude Code CLI
