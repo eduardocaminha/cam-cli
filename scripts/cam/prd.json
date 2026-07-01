@@ -53,7 +53,7 @@
       "id": "US-R1-004",
       "title": "Review round 1 fix 004: address reviewer finding",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [.devcontainer/devcontainer.json:18]: postStartCommand uses the absolute path `/workspace/.devcontainer/init-firewall.sh`, but no `workspaceFolder`/`workspaceMount` is set, so the repo bind-mounts at the devcontainer default `/workspaces/cam-cli`. The `/workspace/...` path (matching only the Dockerfile WORKDIR, which does not govern the mount) will not resolve at container start. Fix: set `workspaceFolder`/`workspaceMount` to `/workspace`, or reference `${containerWorkspaceFolder}`/a relative path."
     },
     {

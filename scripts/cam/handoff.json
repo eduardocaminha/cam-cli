@@ -1,18 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-003",
-    "title": "Review round 1 fix 003: address reviewer finding"
+    "id": "US-R1-004",
+    "title": "Review round 1 fix 004: address reviewer finding"
   },
   "branchName": "cam/CAM-111-worker-container",
-  "timestamp": "2026-07-01T20:00:00Z",
+  "timestamp": "2026-07-01T21:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/adr/0003-worker-isolation-boundary-dev-container.md",
-    "docs/recovery-runbook.md",
+    ".devcontainer/devcontainer.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-003 fixed the doc inconsistency: ADR line 26 and recovery-runbook.md line 2094 both incorrectly described the container user as 'cam-worker' (uid 1001). Changed both to 'bun' (uid 1000), matching the actual Dockerfile (USER bun) and devcontainer.json (remoteUser: 'bun'). No further doc fixes in scope for the review round. Check prd.json for any remaining passes:false stories.",
+  "nextStoryContext": "US-R1-004 fixed devcontainer.json: added workspaceMount (source=${localWorkspaceFolder},target=/workspace,type=bind) and workspaceFolder (/workspace). Without these, devcontainer mounts at /workspaces/cam-cli by default, so postStartCommand path /workspace/.devcontainer/init-firewall.sh (and the sudoers rule in Dockerfile) would not resolve. Check prd.json for any remaining passes:false stories.",
   "officialDocsValidated": [
     {
       "lib": "none",
