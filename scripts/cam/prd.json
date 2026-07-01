@@ -112,7 +112,7 @@
         "check:all passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "src/supervisor/review.ts (makeReviewDispatch already turns FIXES_PENDING:N + findings into US-RX-NNN stories via buildFixStories; the gate-fail arrives as a CRITICAL ReviewFinding in review-report.json, so most work is prompt-side + a test proving the end-to-end path). .claude/agents/subagent-reviewer.md + templates mirror (add gate-fail to the Layer B Verdict hard-constraint rule at ~line 107-115), then embed-vendor. Do NOT invent a parallel mechanism (spec AC4): integrate into the 8-criteria + hard-constraints. Preserve terminal <review> sentinel + review-report.json contract (CAM-70/CAM-117, spec gotcha 7). Test lives in test/supervisor/review.test.ts."
     },

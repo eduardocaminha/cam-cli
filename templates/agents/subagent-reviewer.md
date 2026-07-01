@@ -127,6 +127,7 @@ A **hard-constraint** failure automatically FAILs the ENTIRE verdict, regardless
 - Won't compile (typecheck exits non-zero, or build fails)
 - A required acceptance criterion is completely unimplemented
 - A security violation (hardcoded secret, untrusted shell-string interpolation, path traversal)
+- A behavioral gate FAIL at Layer B: one or more tmux-drivable oracle directives in the story's `acceptanceCriteria` failed during the reviewer's independent re-run. Report each failed oracle as a CRITICAL finding in `review-report.json` and emit `FIXES_PENDING:N`. This hard-constraint is integrated into the 8-criteria findings channel; it does NOT introduce a separate verdict field or a parallel gate-verdict path.
 
 The soft rubric count (N of 8 criteria satisfied) is for triage priority only. A hard-constraint FAIL cannot be promoted to PASS even if 7 of 8 soft criteria are green.
 
