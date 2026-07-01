@@ -1,43 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "DNS-based firewall rewrite (dnsmasq + ipset) in init-firewall.sh; fix LFS host"
+    "id": "US-005",
+    "title": "Wire preflightWorkerContainer() into the dispatch decision point (result available, gates nothing live)"
   },
   "branchName": "cam/CAM-150-worker-container-substrate",
-  "timestamp": "2026-07-01T14:00:00Z",
-  "createdFiles": [
-    "test/supervisor/worker-container-firewall.test.ts"
-  ],
+  "timestamp": "2026-07-01T15:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    ".devcontainer/init-firewall.sh",
-    ".devcontainer/Dockerfile",
+    "src/supervisor/events.ts",
+    "src/supervisor/host.ts",
+    "src/supervisor/loop.ts",
+    "test/supervisor/loop.test.ts",
+    "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 through US-004 are complete. US-005 is the next story (check prd.json for details). The devcontainer now has a dnsmasq-based firewall (init-firewall.sh) that dynamically populates the allowed-domains ipset via DNS interception, and the Dockerfile installs dnsmasq. The ALLOWED_DOMAINS list is exactly 7 entries (unchanged from US-001). The LFS host is correctly objects.githubusercontent.com. The .devcontainer/ directory is NOT embedded/vendored so no embed-vendor step is needed for devcontainer changes.",
+  "nextStoryContext": "US-001 through US-005 are complete. US-005 (B-1) wired preflightContainerFn as an OPTIONAL dep on RunSupervisorOptions (loop.ts). The dep calls preflightWorkerContainer() before the respawn-pane dispatch and logs the PreflightResult via logEvent as a 'container-preflight' event. The host spawn is UNCHANGED (B-1 is observe-only). Production wiring in host.ts uses real spawnSync('docker', ...) as the probe and statSync as statFn. US-006 (B-2, CAM-152) is the next story: it should flip this fail-closed using escalateFn when preflight is not-ready. The injectable seam (preflightContainerFn) already exists as the extension point.",
   "officialDocsValidated": [
     {
       "lib": "docker-cli",
-      "url": "https://docs.docker.com/reference/cli/docker/container/run/",
-      "fetchedAt": "2026-07-01T12:00:00Z",
-      "status": "aligned",
-      "summary": "Carried from US-001/US-002: name-only -e VARNAME form confirmed. Implementation is correct."
-    },
-    {
-      "lib": "git-credential",
-      "version": "current",
-      "url": "https://git-scm.com/docs/git-credential",
-      "fetchedAt": "2026-07-01T13:00:00Z",
-      "status": "ok",
-      "summary": "Carried from US-003: Git credential helper protocol confirmed. x-access-token as username with GITHUB_TOKEN as password is correct for GitHub HTTPS PAT auth."
-    },
-    {
-      "lib": "dnsmasq",
-      "version": "current",
-      "url": "https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html",
-      "fetchedAt": "2026-07-01T14:00:00Z",
-      "status": "ok",
-      "summary": "dnsmasq --ipset subdomain matching confirmed: --ipset=/github.com/setname covers github.com AND all *.github.com subdomains (same as --address matching). Sets must exist before dnsmasq starts (we do ipset create before starting dnsmasq). --no-resolv and --no-poll flags confirmed correct."
+      "url": "https://docs.docker.com/reference/cli/docker/image/inspect/",
+      "fetchedAt": "2026-07-01T15:00:00Z",
+      "status": "fetch_failed",
+      "summary": "Docker CLI docs page did not document exit codes for 'docker image inspect' when image is missing. Implementation relies on empirically known behavior: exit 0 when image exists, non-zero otherwise. preflight-container.ts was already unit-tested in prior story."
     }
   ]
 }
