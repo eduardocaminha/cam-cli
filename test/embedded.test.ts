@@ -158,19 +158,15 @@ describe('templatesContents — oracle enforcement in auditor prompt (US-002)', 
 	});
 });
 
-describe('templatesContents — merit-over-cost clause in all 3 shipped copies (CAM-145 US-002)', () => {
+describe('templatesContents — merit-over-cost clause in surviving copies (CAM-145 US-002)', () => {
 	// The merit-over-cost clause ('engineering merit') was inserted by US-001 into
-	// 3 surfaces. These assertions target the EMBEDDED copies via templatesContents
-	// (not the source files on disk), so a stale _generated.ts that was never
-	// regenerated after the edit will fail here.
+	// 3 surfaces. US-005 (CAM-151) intentionally reduced commands/cam-plan.md to a
+	// thin phase-signal stub, removing the old Step 6 scope-proposal text where the
+	// clause lived. The assertion for cam-plan.md is dropped; the other two surfaces
+	// still carry the clause and are checked here.
 
 	test('grill-with-docs/SKILL.md embedded copy contains the clause', () => {
 		const content = templatesContents['skills/grill-with-docs/SKILL.md'] ?? '';
-		expect(content).toContain('engineering merit');
-	});
-
-	test('commands/cam-plan.md embedded copy contains the clause', () => {
-		const content = templatesContents['commands/cam-plan.md'] ?? '';
 		expect(content).toContain('engineering merit');
 	});
 

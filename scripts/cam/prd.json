@@ -97,7 +97,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-plan.md (254 lines -> thin stub), templates/commands/cam-plan.md (both copies must match; cam dual-copy is per-file, diff before assuming byte-identical), docs/adr/0004-plan-phase-deterministic-sidecar-runner.md (extend) OR docs/adr/0006-<slug>.md (new; ADR 0005 already exists = behavioral-verification). This story CLOSES the phase refactor so it carries `bun run check:all` (the full lint/quality spine). It touches templates/ so embed-vendor:check applies; run `bun run embed-vendor` then verify. Keep subagent-planner.md / subagent-auditor.md UNCHANGED (spec AC10). ADR format: follow 0003/0004 (Portuguese, no travessao/emoji in the .md per the global doc-format rule for human-readable persisted files). The ADR should describe: phase enum as single source of truth, active derives from phase, phase:planning->runPlanPhase, APPROVE+auto->phase:implementing, escalate-on-BLOCK (no re-plan yet = B-2/CAM-153). Read scripts/cam/patterns.md at story start."
     }
