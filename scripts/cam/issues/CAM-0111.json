@@ -1,7 +1,7 @@
 {
   "id": "CAM-111",
   "title": "Epico: sandbox do worker (Fase 1 native /sandbox no worker; Fase 2 Sandcastle worktree-por-agente) — safety do full-autonomy",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-26T21:39:47.316Z",
