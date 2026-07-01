@@ -64,7 +64,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file: .devcontainer/init-firewall.sh (additive shell script). Model on the Anthropic reference init-firewall.sh (github.com/anthropics/claude-code/blob/main/.devcontainer/init-firewall.sh) but TRIM the allowlist to EXACTLY the seven domains the operator specified: api.anthropic.com, claude.ai, platform.claude.com, github.com, *.github.com, registry.npmjs.org, raw.githubusercontent.com. Put those seven in ONE dedicated allowlist block (a bash ALLOWED_DOMAINS array or a here-doc) so the exact-count oracle can verify there is no stray 8th domain. Official-doc facts to re-check (officialDocsConsulted 'Claude Code network config'): api.anthropic.com/claude.ai/platform.claude.com/raw.githubusercontent.com are the Anthropic-side needs; github.com covers git push/fetch; registry.npmjs.org covers the npm CLI install; downloads.claude.ai + storage.googleapis.com are explicitly NOT needed for a pinned npm CLI (do not add them). The firewall needs NET_ADMIN+NET_RAW (granted in US-003 devcontainer.json runArgs). Do NOT run iptables in any test or CI step: CI is macos-latest with no Docker and no root; the live-firewall smoke is an operator/local ceremony, not a CI gate. Verification here is file-assert grep for the exact domain set plus a count-equals-7 assert on the allowlist block. Not a .ts file and not under vendor/templates: no biome/knip/embed-vendor impact."
     },

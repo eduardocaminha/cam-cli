@@ -1,25 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add pinned non-root worker Dockerfile"
+    "id": "US-002",
+    "title": "Add egress default-deny firewall script"
   },
   "branchName": "cam/CAM-111-worker-container",
-  "timestamp": "2026-07-01T12:00:00Z",
+  "timestamp": "2026-07-01T13:00:00Z",
   "createdFiles": [
-    ".devcontainer/Dockerfile"
+    ".devcontainer/Dockerfile",
+    ".devcontainer/init-firewall.sh"
   ],
   "modifiedFiles": [
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 created .devcontainer/Dockerfile using oven/bun:1.2-slim as base image (provides bun + node), installs git explicitly, pins @anthropic-ai/claude-code@2.1.197, sets DISABLE_AUTOUPDATER=1, and switches to non-root USER bun. CI is macos-latest with no Docker: any story that adds devcontainer.json or build/run steps must guard against Docker-absent CI. The non-root user is 'bun' (pre-created in oven/bun images). All quality gates (typecheck, bun test 2290 pass, check:all exit 0) were green. US-002 is next.",
+  "nextStoryContext": "US-002 added .devcontainer/init-firewall.sh: idempotent default-deny egress firewall using iptables + ipset. Allowlist is exactly 7 domains declared in a single ALLOWED_DOMAINS bash array: api.anthropic.com, claude.ai, platform.claude.com, github.com, *.github.com, registry.npmjs.org, raw.githubusercontent.com. No downloads.claude.ai or storage.googleapis.com. Script flushes all chains before applying (idempotent), sets -P OUTPUT DROP, and includes a self-verify step (allowed domain reachable + blocked domain denied). Requires NET_ADMIN+NET_RAW capabilities (to be granted by US-003 devcontainer.json runArgs). CI is macos-latest with no Docker: do NOT run iptables in tests. All quality gates green (2290 pass / 0 fail). US-003 is next (devcontainer.json).",
   "officialDocsValidated": [
     {
-      "lib": "@anthropic-ai/claude-code",
-      "url": "https://docs.anthropic.com/en/docs/claude-code/devcontainer",
-      "fetchedAt": "2026-07-01T12:00:00Z",
-      "status": "aligned",
-      "summary": "Docs confirm: pin via npm install -g @anthropic-ai/claude-code@X.Y.Z, set DISABLE_AUTOUPDATER=1, use non-root remoteUser/USER. Implementation matches on all three points."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-002 is a pure shell script (iptables/ipset system tools); no JS/TS external library was touched."
     }
   ]
 }
