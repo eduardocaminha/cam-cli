@@ -32,7 +32,7 @@ import { parseStateFile, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
-import { runPlanPhase, runPostAuditAction } from '../supervisor/plan-runner.ts';
+import { runPlanPhase, runPostAuditAction, type PostAuditActionResult } from '../supervisor/plan-runner.ts';
 import { makeReadPlanVerdict } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig } from '../config/models.ts';
@@ -627,6 +627,27 @@ function makeProductionMetaLoopObserveFn(
 }
 
 /**
+ * Transition the loop phase out of 'planning' after a non-implementing
+ * post-audit result (US-R1-002, CAM-151).
+ *
+ * branch-created: setPhaseFn('implementing') was already called inside
+ * runPostAuditAction; nothing to do here.
+ * awaiting-operator-approval: write 'awaiting-operator' so the operator can
+ * trigger the next step manually.
+ * escalated / no-action: write 'idle' to stop the re-entry loop.
+ *
+ * Extracted from makeProductionPlanPhaseFn to keep its closure under the
+ * biome noExcessiveLinesPerFunction limit (80 lines).
+ */
+function exitPhaseAfterPlan(
+	result: PostAuditActionResult,
+	setPhase: (phase: LoopPhase) => void,
+): void {
+	if (result.kind === 'branch-created') return;
+	setPhase(result.kind === 'awaiting-operator-approval' ? 'awaiting-operator' : 'idle');
+}
+
+/**
  * Build the production runPlanPhaseFn closure (US-002/US-R1-001, CAM-151).
  *
  * Wires runPlanPhase with all deps: plannerPaneId (read fresh from marker each
@@ -739,7 +760,7 @@ function makeProductionPlanPhaseFn(
 			}
 			: undefined;
 
-		runPostAuditAction({
+		const postAuditResult = runPostAuditAction({
 			planResult,
 			spawnFn: loopSpawnFn,
 			setPhaseFn: makeSetPhaseFn(claudeDir, cwd),
@@ -748,6 +769,7 @@ function makeProductionPlanPhaseFn(
 			escalateFn: postAuditEscalateFn,
 			notifyFn: makeNotifyOrchestrator(sessionName, realSpawnFn),
 		});
+		exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(claudeDir, cwd)); // US-R1-002
 	};
 }
 

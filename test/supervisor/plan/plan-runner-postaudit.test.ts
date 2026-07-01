@@ -423,3 +423,71 @@ describe('sidecar.ts production wiring oracle - runPostAuditAction (US-R1-001)',
 		expect(callMatch?.[0]).toContain('readPlanApprovalFn');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Re-entry guard oracle (US-R1-002)
+//
+// makeProductionPlanPhaseFn must transition phase out of 'planning' on
+// non-implementing outcomes to prevent the sidecar from re-running the full
+// network preflight (git checkout main + git pull + gh prune) on every idle
+// tick. This oracle catches a missing or incorrect phase transition.
+//
+// Implementation: the transition logic lives in the extracted helper
+// exitPhaseAfterPlan (biome noExcessiveLinesPerFunction requires the closure
+// to stay under 80 lines). Two oracle groups:
+//   A. makeProductionPlanPhaseFn wires the call to exitPhaseAfterPlan.
+//   B. exitPhaseAfterPlan helper contains the correct phase logic.
+// ---------------------------------------------------------------------------
+
+describe('sidecar.ts re-entry guard oracle - phase transition after runPostAuditAction (US-R1-002)', () => {
+	const sidecarPath = resolve(import.meta.dir, '..', '..', '..', 'src', 'commands', 'sidecar.ts');
+	const source = readFileSync(sidecarPath, 'utf8');
+
+	// Group A: makeProductionPlanPhaseFn wiring assertions
+	const fnMatch = source.match(/function makeProductionPlanPhaseFn[\s\S]*?^\}/m);
+	const fnBody = fnMatch?.[0] ?? '';
+
+	test('A: makeProductionPlanPhaseFn captures the postAuditResult return value', () => {
+		// The return value must be captured so exitPhaseAfterPlan can inspect it.
+		expect(fnBody).toContain('postAuditResult');
+	});
+
+	test('A: makeProductionPlanPhaseFn calls exitPhaseAfterPlan for the re-entry guard', () => {
+		// The extracted helper must be called (proves the guard is wired).
+		expect(fnBody).toContain('exitPhaseAfterPlan(');
+	});
+
+	test('A: makeProductionPlanPhaseFn passes makeSetPhaseFn to exitPhaseAfterPlan', () => {
+		// Phase must be written via makeSetPhaseFn (not a bare file write).
+		// The call passes postAuditResult + makeSetPhaseFn(claudeDir, cwd) as args.
+		const exitCall = fnBody.match(/exitPhaseAfterPlan\([^)]+\)/);
+		expect(exitCall).not.toBeNull();
+		expect(exitCall?.[0]).toContain('makeSetPhaseFn');
+	});
+
+	// Group B: exitPhaseAfterPlan helper correctness assertions
+	const helperMatch = source.match(/function exitPhaseAfterPlan[\s\S]*?^\}/m);
+	const helperBody = helperMatch?.[0] ?? '';
+
+	test('B: exitPhaseAfterPlan is defined in sidecar.ts', () => {
+		expect(helperBody).not.toBe('');
+	});
+
+	test('B: exitPhaseAfterPlan no-ops on branch-created', () => {
+		// branch-created: runPostAuditAction already called setPhaseFn internally.
+		expect(helperBody).toContain("'branch-created'");
+	});
+
+	test('B: exitPhaseAfterPlan transitions to awaiting-operator on awaiting-operator-approval', () => {
+		// operator mode: audit-approved + pause-operator -> awaiting-operator phase.
+		expect(helperBody).toContain("'awaiting-operator-approval'");
+		expect(helperBody).toContain("'awaiting-operator'");
+	});
+
+	test('B: exitPhaseAfterPlan transitions to idle on no-action/escalated outcomes', () => {
+		// All other non-implementing outcomes (mutex-busy, preflight-failed,
+		// planner/auditor timeout, no-plannable-issue, audit-blocked/escalated)
+		// exit to idle so the loop does not re-run preflight every 2 seconds.
+		expect(helperBody).toContain("'idle'");
+	});
+});

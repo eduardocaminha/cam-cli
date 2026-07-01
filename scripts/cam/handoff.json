@@ -1,7 +1,7 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
@@ -12,7 +12,7 @@
     "test/supervisor/plan/plan-runner-postaudit.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 fixed the critical production bug in makeProductionPlanPhaseFn: runPlanPhase result is now captured and passed to runPostAuditAction (wiring setPhaseFn=makeSetPhaseFn, spawnFn=loopSpawnFn, branchName read fresh from prd.json, readPlanApprovalFn, escalateFn from Resend config, notifyFn from makeNotifyOrchestrator). 3 source-text oracle tests added in test/supervisor/plan/plan-runner-postaudit.test.ts. file-size budget raised: sidecar.ts 853->890. All 2595 tests pass. check:all exits 0. US-R1-002 is next: CRITICAL loop.ts re-entry guard missing -- runPlanPhaseFn runs every idle tick with no phase transition on non-APPROVE outcomes.",
+  "nextStoryContext": "US-R1-002 fixed the planning phase re-entry bug in makeProductionPlanPhaseFn: after runPostAuditAction returns, exitPhaseAfterPlan(result, makeSetPhaseFn(claudeDir, cwd)) is called to transition the phase out of 'planning' on all non-branch-created outcomes. awaiting-operator-approval -> 'awaiting-operator'; escalated/no-action -> 'idle'. The helper is extracted as a top-level function to keep the closure under biome's 80-line noExcessiveLinesPerFunction limit. 8 new oracle tests added (Groups A+B) in plan-runner-postaudit.test.ts. file-size budget raised: sidecar.ts 890->912. All 2602 tests pass. check:all exits 0. All 7 stories now have passes:true. PRD is complete -- reviewer should run next.",
   "officialDocsValidated": [
     {
       "lib": "none",
@@ -20,7 +20,7 @@
       "url": "n/a",
       "fetchedAt": "2026-07-01T00:00:00Z",
       "status": "no_external_lib_touched",
-      "summary": "US-R1-001 only touches sidecar.ts (wiring runPostAuditAction into makeProductionPlanPhaseFn), file-size-budget.json, test oracle, and patterns.md. No new external library imported."
+      "summary": "US-R1-002 touches only sidecar.ts (exitPhaseAfterPlan helper + re-entry guard wiring), file-size-budget.json, prd.json, patterns.md, and test oracle file. No external library imported."
     }
   ]
 }

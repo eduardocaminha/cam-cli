@@ -19,7 +19,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [src/supervisor/loop.ts:1474]: The sidecar planning branch re-invokes runPlanPhaseFn on EVERY idle tick with no re-entry guard and no phase transition on non-APPROVE outcomes. Because nothing in production writes a phase other than 'planning' after a plan runs (finding #1), readLoopPhaseFn() keeps returning 'planning', so runPlanPhaseFn is re-run every idlePollMs (2s) forever. Each run executes runPlanPreflight -> `git checkout main` + `git pull origin main` (network) + gh prune. Once a plan leaves scripts/cam/prd.json uncommitted in the tree (which happens on APPROVE+operator, on audit-blocked/escalated, and on the current APPROVE+auto path since runPostAuditAction is never called), preflight fails the clean-tree check and the sidecar busy-loops git/gh network calls indefinitely. On the audit-blocked path this is an unbounded auto-re-plan loop that contradicts ADR 0006 ('re-plan automatico pendente ... B-2/CAM-153; no auto re-plan'). Fix: on non-implementing outcomes (mutex-busy, preflight-failed, planner/auditor timeout, audit-blocked/escalated, awaiting-operator-approval) transition phase out of 'planning' (idle or awaiting-operator) and/or add a re-entry backoff so the branch does not re-run the full network preflight every tick. NOTE: the sidecar-loop tests mask this by injecting a hardcoded phase sequence ['planning','idle','idle'] and a spy runPlanPhaseFn, so the always-planning production behavior is never exercised."
     },
     {
