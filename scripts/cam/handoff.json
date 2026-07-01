@@ -1,22 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Insert the merit-over-cost clause into all 3 surfaces and regenerate the embed"
+    "id": "US-002",
+    "title": "Add a parity test asserting the clause in the 3 embedded shipped copies"
   },
   "branchName": "cam/CAM-145-recommend-by-merit",
   "timestamp": "2026-06-30T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/skills/grill-with-docs/SKILL.md",
-    "templates/skills/grill-with-docs/SKILL.md",
-    ".claude/commands/cam-plan.md",
-    "templates/commands/cam-plan.md",
-    ".claude/agents/subagent-orchestrator.md",
-    "templates/agents/subagent-orchestrator.md",
-    "src/vendor/_generated.ts"
+    "test/embedded.test.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 inserted the 'engineering merit' clause in all 3 surfaces and regenerated the embed. US-002 must now add a parity test in test/embedded.test.ts asserting the clause is present in the 3 embedded shipped copies via templatesContents[key]. The clause marker to assert is 'engineering merit'. Follow the existing describe blocks (lines 120-160) as template. Key note: the two cam-plan.md copies intentionally differ (cam-dual-copy-is-per-file pattern) — US-002 does not need to worry about that; it only tests the embedded copies via templatesContents.",
+  "nextStoryContext": "US-002 added a parity test in test/embedded.test.ts (new describe block 'CAM-145 US-002') asserting the merit-over-cost clause ('engineering merit') is present in the 3 embedded shipped copies via templatesContents: skills/grill-with-docs/SKILL.md, commands/cam-plan.md, agents/subagent-orchestrator.md. All 3 tests pass. The file-size budget for test/embedded.test.ts was raised 592->614 (ref CAM-145 US-002). No further stories remain in this PRD with passes:false and requires!='operator'.",
   "officialDocsValidated": [
     {
       "lib": "none",
