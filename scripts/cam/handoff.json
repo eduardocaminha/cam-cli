@@ -1,25 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "branchName": "cam/CAM-111-worker-container",
-  "timestamp": "2026-07-01T18:00:00Z",
+  "timestamp": "2026-07-01T19:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     ".devcontainer/Dockerfile",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 fixed the CRITICAL Dockerfile bug: oven/bun:1.2-slim ships only bun (no Node.js or npm). Added nodejs and npm to the apt-get install line alongside git, and corrected the incorrect comment 'bun and node are provided by the base image' to 'oven/bun:1.2-slim ships only bun; Node.js is not included'. The RUN npm install -g @anthropic-ai/claude-code@2.1.197 line is now valid. Next story US-R1-002 needs to add sudo and firewall tooling (iptables, ipset, dnsutils, curl) to the apt-get install and grant the bun user passwordless sudo, so init-firewall.sh can actually run at container start.",
+  "nextStoryContext": "US-R1-002 fixed the WARNING about missing sudo/firewall tooling: added sudo, iptables, ipset, dnsutils, curl to the apt-get install block, and added a scoped sudoers drop-in (/etc/sudoers.d/bun-firewall) granting the bun user NOPASSWD access to exactly '/bin/bash /workspace/.devcontainer/init-firewall.sh'. Next story US-R1-003 needs to fix the doc/ADR inconsistency: the ADR and recovery-runbook.md incorrectly refer to the container user as 'cam-worker' (uid 1001) when the Dockerfile uses USER bun (uid 1000). Fix docs/adr/0003-worker-isolation-boundary-dev-container.md and docs/recovery-runbook.md to say 'bun' instead of 'cam-worker'.",
   "officialDocsValidated": [
     {
-      "lib": "oven/bun Docker image",
-      "version": "1.2-slim",
-      "url": "https://hub.docker.com/r/oven/bun",
-      "fetchedAt": "2026-07-01T18:00:00Z",
+      "lib": "sudoers(5) Linux man page",
+      "version": "Linux man-pages",
+      "url": "https://man7.org/linux/man-pages/man5/sudoers.5.html",
+      "fetchedAt": "2026-07-01T19:00:00Z",
       "status": "ok",
-      "summary": "oven/bun:1.2-slim ships only the bun runtime (no Node.js, no npm). Confirmed by reviewer finding and imbios/bun-node existing specifically to bundle bun+node. Fix (apt-get install nodejs npm) is correct."
+      "summary": "Confirmed: 'bun ALL=(root) NOPASSWD: /bin/bash /workspace/.devcontainer/init-firewall.sh' is valid sudoers syntax. When arguments are specified, the user may only run that exact command+arguments. sudo bash <path> resolves bash to /bin/bash before matching rules, so the entry correctly gates the postStartCommand."
     }
   ]
 }

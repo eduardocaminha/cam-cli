@@ -39,7 +39,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [.devcontainer/devcontainer.json:18]: postStartCommand runs `sudo bash .../init-firewall.sh`, but the image installs neither `sudo` nor the firewall tooling the script needs (`iptables`, `ipset`, `dnsutils`/dig, `curl`). The reference Claude Code Dockerfile installs these and grants passwordless sudo for the non-root user. As written, the firewall (the network-isolation layer) can never apply in the built image."
     },
     {
