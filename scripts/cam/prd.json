@@ -80,7 +80,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Touches .devcontainer/Dockerfile and/or .devcontainer/init-firewall.sh (choose one canonical place: git config --global credential helper for github.com over https, reading $GITHUB_TOKEN as x-access-token). Spec Q3: HTTPS + fine-grained repo-scoped GITHUB_TOKEN via containerEnv; NEVER ~/.ssh / host cred file / broad host gh token. .devcontainer/ is NOT embedded/vendored (only vendor/ + templates/ are per scripts/generate-embedded-vendor.ts), so NO embed-vendor:check needed. If asserting via a real shell-script invocation, use test.skipIf when the shell is absent (patterns.md 'Bun.spawn stdin/stdout pattern' + 'anti-shadow-mock' CAM-55: do not re-implement the script logic in TS). The token flows in via US-001's `-e GITHUB_TOKEN`; this story only wires how git USES it inside the container. F-03: `git config credential.helper store` is DISALLOWED here: it materializes ~/.git-credentials on disk, which would trip the US-003 crit-2 negated `.git-credentials` oracle and collide with crit-1. The intended mechanism is an x-access-token:$GITHUB_TOKEN https URL rewrite (git config --global url.'https://x-access-token:${GITHUB_TOKEN}@github.com/'.insteadOf 'https://github.com/') or an in-memory / env-reading credential helper that never writes a cred file. This keeps crit-1 (positive: token-authenticated https push) and crit-2 (negated: no ~/.ssh, no ~/.git-credentials file) non-colliding by construction."
     },
