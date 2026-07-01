@@ -4,6 +4,21 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.38.0] - 2026-07-01
+
+### Added
+
+- [US-006] - Wire auto-mode post-audit action: commit PRD, create branch, flip active:true; escalate on BLOCK
+- [US-005] - Add the deterministic plan-runner driver (pick-issue, spawn planner, spawn auditor, read verdict)
+- [US-004] - Add deterministic plan pre-flight in TS
+- [US-003] - Add pure argv builders for planner and auditor worker panes
+- [US-002] - Auditor writes structured verdict file (self-hosting agent-prompt edit)
+- [US-001] - Add plan-verdict-report module (auditor structured exit file)
+
+### Fixed
+
+- [US-R1-001] - add readPlannerReportFn to break planner poll on prd.json written
+
 ## [0.37.0] - 2026-07-01
 
 ### Added
