@@ -20,7 +20,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [docs/adr/0004-plan-phase-deterministic-sidecar-runner.md:38]: ADR 0004 (US-007) contradicts the implemented code. Line 38 states the planner and auditor write 'scripts/cam/worker-report.json' as the primary completion signal, but US-001/US-002 established scripts/cam/plan-verdict-report.json as the auditor channel, and the planner has no report-file check at all in the runner. It also references symbols that do not exist: runPlannerAuditorCycle (line 26) and MAX_PLANNER_POLLS/MAX_AUDITOR_POLLS (line 16); the code uses inline logic in runPlanPhase with DEFAULT_PLAN_TIMEOUT_MS / plannerTimeoutMs / auditorTimeoutMs. A persisted architecture doc should match the code (global CLAUDE.md rule 7, Doc Maintenance)."
     },
     {
