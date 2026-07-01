@@ -1,19 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "runPostAuditAction flips phase:implementing on APPROVE+auto; keeps escalate-on-BLOCK"
+    "id": "US-004",
+    "title": "cam plan N thin-proxy writes phase:planning + plan_issue instead of injecting markdown"
   },
-  "createdFiles": [
-    "test/commands/sidecar-set-phase.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/plan-runner.ts",
-    "src/commands/sidecar.ts",
-    "test/supervisor/plan/plan-runner-postaudit.test.ts",
+    "src/commands/plan.ts",
+    "test/plan.test.ts",
+    "test/attach-hint.test.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 retargeted runPostAuditAction to use setPhaseFn: (phase: LoopPhase) => void instead of flipActiveFn: () => void. Key changes: (1) plan-runner.ts gained LoopPhase import and renamed flipActiveFn -> setPhaseFn in RunPostAuditOptions; the call site is now setPhaseFn('implementing'). (2) sidecar.ts exported a new makeSetPhaseFn(claudeDir, cwd): (phase: LoopPhase) => void factory that writes phase:<value> to .claude/cam-loop.local.md preserving all other fields; makeFlipActiveFn was simplified to delegate to makeSetPhaseFn('implementing'). (3) test/supervisor/plan/plan-runner-postaudit.test.ts updated all flipActiveFn/flipCount references to setPhaseFn/setPhaseCalls with phase-value assertions (AC5). (4) New test/commands/sidecar-set-phase.test.ts tests makeSetPhaseFn production behavior (AC2). file-size-budget.json raised sidecar.ts 840->853. All 2587 tests pass. The next story (US-004) should build on this injectable setPhaseFn seam for the plan-phase loop integration or other post-audit wiring.",
+  "nextStoryContext": "US-004 replaced the send-keys /cam-plan injection in runPlan with a state-file write: phase:planning + plan_issue:<id> to .claude/cam-loop.local.md (mirroring runNext's active:true write). Key changes: (1) plan.ts rewrote runPlan to use buildPlanningBody/writeStateFile instead of sendKeysWhenIdle; added selectPlannableIssue from issues/select.ts (new module) with F-01 contract: specific-N validation halts on missing/non-plannable issue (never falls back to top-of-queue). (2) test/plan.test.ts rewrote all tests to assert state-file write semantics (phase, plan_issue fields) and F-01 behavior. (3) test/attach-hint.test.ts fixed to inject readBacklogFn because runPlan in an empty tmpdir now calls readBacklogFromMain which returns []. (4) file-size-budget.json raised plan.ts ceiling. The next story (US-005) reduces cam-plan.md (both .claude/commands/ and templates/commands/ copies) to a thin phase-signal stub (<60 lines), runs bun run embed-vendor to regen the embedded copy, and writes ADR 0006 documenting the phase-enum state machine.",
   "officialDocsValidated": [
     {
       "lib": "none",
@@ -21,7 +19,7 @@
       "url": "n/a",
       "fetchedAt": "2026-07-01T00:00:00Z",
       "status": "no_external_lib_touched",
-      "summary": "US-003 only touches cam-cli internals (plan-runner.ts, sidecar.ts, status.ts) and Bun/Node built-ins. No external library exercised."
+      "summary": "US-004 only touches cam-cli internals (plan.ts, next.ts, sidecar.ts, issues/select.ts) and Bun/Node built-ins. No external library exercised."
     }
   ]
 }

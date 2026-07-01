@@ -78,7 +78,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/plan.ts (runPlan ~lines 112-199; drop the sendKeysWhenIdle markdown injection, add a phase:planning + plan_issue writer mirroring runNext's active:true writer in src/commands/next.ts ~lines 280-318), index.ts (case 'plan' ~lines 1375-1386, keep runPlan dispatch). The liveness/bootstrap/mutex preamble in runPlan can stay; the change is the SEND step: replace the /cam-plan send-keys with a state-file write (phase:planning + plan_issue). CRITICAL (F-01): when a specific N is passed, the validator MUST resolve THAT specific issue (an issue-exists / is-issue-N-plannable check on the passed N, e.g. read scripts/cam/issues/CAM-<N>.json or the local issues store and assert stage/status make it plannable) and halt clean if issue N is missing / not open / not plannable. It must NOT fall back to selectPlannableFromFile(cwd), which returns the highest-priority plannable issue (top-of-queue), NOT a lookup by N — falling back would silently plan some OTHER issue instead of halting (spec AC3). A bare `cam plan` with no N still uses the top-plannable selection (selectPlannableFromFile); that path is unchanged. Validate BEFORE writing the signal so an invalid N never writes a partial phase:planning signal. The /cam-plan stub (US-005) and this CLI path must converge on writing the SAME signal (spec gotcha: 'orchestrator /cam-plan thin stub and CLI cam plan must converge'). Read scripts/cam/patterns.md at story start."
     },
