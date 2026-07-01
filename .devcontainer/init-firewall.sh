@@ -13,14 +13,17 @@ set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # Allowlist -- EXACTLY 7 domains; do not add an 8th without updating this comment.
+# Each entry below corresponds 1-to-1 with a dnsmasq --ipset directive further down.
+# Note: dnsmasq --ipset=/github.com/allowed-domains covers github.com AND all
+# *.github.com subdomains, so *.github.com is NOT a separate array entry here.
 # ---------------------------------------------------------------------------
 ALLOWED_DOMAINS=(
   "api.anthropic.com"
   "claude.ai"
   "platform.claude.com"
   "github.com"
-  "*.github.com"
   "registry.npmjs.org"
+  "raw.githubusercontent.com"
   "objects.githubusercontent.com"
 )
 

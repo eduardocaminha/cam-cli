@@ -4,7 +4,7 @@
 //
 // These tests mirror the acceptance-criteria oracles:
 //   AC1 - init-firewall.sh uses dnsmasq --ipset (dynamic CDN-safe resolution)
-//   AC2 - ALLOWED_DOMAINS equals exactly the 7 required hosts (host-set equivalence)
+//   AC2 - --ipset domain args equal exactly the 7 required hosts (F-02: egress source of truth)
 //   AC3 - objects.githubusercontent.com is present (correct Git LFS host)
 //   AC4 - objects.github.com does NOT appear as a bare subdomain (wrong LFS host absent)
 //   AC5 - Self-verify block is preserved
@@ -41,7 +41,25 @@ function parseAllowedDomains(script: string): string[] {
 	return match[1]
 		.split('\n')
 		.map((line) => line.trim().replace(/^"|"$/g, ''))
-		.filter((line) => line.length > 0);
+		.filter((line) => line.length > 0 && !line.startsWith('#'));
+}
+
+// ---------------------------------------------------------------------------
+// Helper: parse dnsmasq --ipset domain args from init-firewall.sh
+//
+// Per F-02, the --ipset directives are the real egress source of truth.
+// This parser extracts every domain arg from "--ipset=/DOMAIN/allowed-domains"
+// lines (non-comment lines only), which is the only set that actually
+// controls egress.
+// ---------------------------------------------------------------------------
+function parseIpsetDomains(script: string): string[] {
+	// Strip comment lines first so we don't match --ipset references inside # comments.
+	const nonCommentLines = script
+		.split('\n')
+		.filter((line) => !line.trimStart().startsWith('#'))
+		.join('\n');
+	const matches = [...nonCommentLines.matchAll(/--ipset=\/([^/]+)\/allowed-domains/g)];
+	return matches.flatMap((m) => (m[1] !== undefined ? [m[1]] : []));
 }
 
 // ---------------------------------------------------------------------------
@@ -66,10 +84,13 @@ describe('firewall uses dnsmasq for dynamic IP resolution (AC1)', () => {
 // ---------------------------------------------------------------------------
 // AC2: 7-domain allowlist semantics preserved (host-set equivalence)
 //
-// The test parses ALLOWED_DOMAINS from the script and asserts host-set equality
-// with the 7 required hosts. A dnsmasq rewrite may fold github.com + *.github.com
-// into one --ipset directive, so host-set equivalence (not line count) is asserted.
-// A dropped OR added domain causes this test to fail.
+// Per F-02: the test parses the dnsmasq --ipset domain args (the real egress
+// source of truth) and asserts host-set equality with the 7 required hosts.
+// A dropped OR added --ipset directive causes this test to fail.
+//
+// Note: dnsmasq --ipset=/github.com/allowed-domains covers github.com AND all
+// *.github.com subdomains, so *.github.com is NOT a separate --ipset entry.
+// raw.githubusercontent.com is required for fetching raw GitHub content.
 // ---------------------------------------------------------------------------
 
 const REQUIRED_HOSTS = new Set([
@@ -77,28 +98,40 @@ const REQUIRED_HOSTS = new Set([
 	'claude.ai',
 	'platform.claude.com',
 	'github.com',
-	'*.github.com',
 	'registry.npmjs.org',
+	'raw.githubusercontent.com',
 	'objects.githubusercontent.com',
 ]);
 
 describe('7-domain allowlist semantics preserved - host-set equivalence (AC2)', () => {
-	test('ALLOWED_DOMAINS parsed from init-firewall.sh equals exactly the 7 required hosts', () => {
-		const parsed = parseAllowedDomains(initFirewallContent);
+	test('--ipset domain args parsed from init-firewall.sh equals exactly the 7 required hosts (F-02)', () => {
+		const parsed = parseIpsetDomains(initFirewallContent);
 		const parsedSet = new Set(parsed);
 
 		const missing = [...REQUIRED_HOSTS].filter((h) => !parsedSet.has(h));
 		const extra = [...parsedSet].filter((h) => !REQUIRED_HOSTS.has(h));
 
-		// Missing domains: required but not in the script
+		// Missing domains: required but not in --ipset directives
 		expect(missing).toEqual([]);
-		// Extra domains: in the script but not in the required set
+		// Extra domains: in --ipset directives but not in the required set
 		expect(extra).toEqual([]);
 	});
 
-	test('ALLOWED_DOMAINS has exactly 7 entries', () => {
-		const parsed = parseAllowedDomains(initFirewallContent);
+	test('--ipset directives have exactly 7 domain entries (F-02)', () => {
+		const parsed = parseIpsetDomains(initFirewallContent);
 		expect(parsed).toHaveLength(7);
+	});
+
+	test('ALLOWED_DOMAINS array matches --ipset domain args (single source of truth)', () => {
+		const allowedDomains = new Set(parseAllowedDomains(initFirewallContent));
+		const ipsetDomains = new Set(parseIpsetDomains(initFirewallContent));
+
+		const inAllowedNotIpset = [...allowedDomains].filter((h) => !ipsetDomains.has(h));
+		const inIpsetNotAllowed = [...ipsetDomains].filter((h) => !allowedDomains.has(h));
+
+		// Any drift between ALLOWED_DOMAINS and --ipset directives fails this test.
+		expect(inAllowedNotIpset).toEqual([]);
+		expect(inIpsetNotAllowed).toEqual([]);
 	});
 
 	test('count-of-7 comment guard is intact in init-firewall.sh', () => {

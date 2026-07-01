@@ -2119,9 +2119,9 @@ script declares exactly seven domains:
 | `api.anthropic.com` | Claude API (worker LLM calls) |
 | `claude.ai` | Claude web (authentication flows) |
 | `platform.claude.com` | Claude platform endpoints |
-| `github.com` | git push/fetch, gh CLI |
-| `*.github.com` | GitHub sub-services (codeload, uploads, objects, API) |
+| `github.com` | git push/fetch, gh CLI (dnsmasq subdomain matching also covers *.github.com) |
 | `registry.npmjs.org` | npm/bun package registry |
+| `raw.githubusercontent.com` | raw file fetches from GitHub (scripts, assets) |
 | `objects.githubusercontent.com` | Git LFS object host (git push/fetch with LFS) |
 
 **DNS-firewall implementation: dnsmasq with dynamic ipset**
@@ -2137,15 +2137,19 @@ DNS resolution (UDP + TCP port 53) is always permitted so dnsmasq can forward
 upstream queries. SSH (port 22) outbound to allowlisted IPs is permitted for
 git-over-SSH.
 
-To cross-check the live allowlist against this table:
+To cross-check the live allowlist against this table (the `--ipset` directives
+are the real egress source of truth; `ALLOWED_DOMAINS` mirrors them 1-to-1):
 
 ```bash
+# Show the --ipset domain args (actual egress control):
+grep -oP '(?<=--ipset=/)([^/]+)(?=/allowed-domains)' .devcontainer/init-firewall.sh
+# Show the ALLOWED_DOMAINS array (must match the --ipset set exactly):
 grep -A 12 'ALLOWED_DOMAINS=(' .devcontainer/init-firewall.sh
 ```
 
-If a new domain is needed, update `ALLOWED_DOMAINS` in `init-firewall.sh` AND
-update the table above AND the corresponding ADR
-(`docs/adr/0003-worker-isolation-boundary-dev-container.md` Consequencias
+If a new domain is needed, update both `ALLOWED_DOMAINS` AND the `--ipset`
+directives in `init-firewall.sh`, update the table above, AND the corresponding
+ADR (`docs/adr/0003-worker-isolation-boundary-dev-container.md` Consequencias
 section). Adding a domain is a deliberate architectural decision.
 
 ### Credential provisioning
