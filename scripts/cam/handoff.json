@@ -1,27 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Add tested Docker preflight helper (uncalled)"
+    "id": "US-005",
+    "title": "Add ADR 0003 and recovery-runbook container section"
   },
   "branchName": "cam/CAM-111-worker-container",
-  "timestamp": "2026-07-01T16:00:00Z",
+  "timestamp": "2026-07-01T17:00:00Z",
   "createdFiles": [
-    "src/supervisor/preflight-container.ts",
-    "test/supervisor/preflight-container.test.ts"
+    "docs/adr/0003-worker-isolation-boundary-dev-container.md"
   ],
   "modifiedFiles": [
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added src/supervisor/preflight-container.ts exporting preflightWorkerContainer(opts: PreflightWorkerContainerOptions): PreflightResult. The discriminated union is: { ready: true } | { ready: false; reason: 'daemon-unreachable' | 'image-missing' | 'image-stale' }. Injectable seam: opts.probe (DockerProbe = (args: string[]) => { stdout: string; exitCode: number }). Optional opts.statFn (StatFn = (path: string) => { mtimeMs: number } | null) enables the stale check by comparing image creation time from 'docker image inspect <tag> --format={{.Created}}' against Dockerfile mtime. Default imageTag is 'cam-worker:latest'; default dockerfilePath is '.devcontainer/Dockerfile'. NOT wired into dispatch path (host.ts / loop.ts / worker-argv.ts untouched). 9 unit tests all green; full check:all green (2299 pass / 0 fail). Next story is US-005 (Add ADR 0003 and recovery-runbook container section): documentation-only, no TS files, no embed-vendor needed.",
+  "nextStoryContext": "US-005 added docs/adr/0003-worker-isolation-boundary-dev-container.md (Portuguese, ADR format: Status/Data/Contexto/Decisao/Consequencias/Alternativas descartadas; no em-dash; names all four alternatives: bash-sandbox, sandbox-runtime, VM, cloud-Daytona). docs/recovery-runbook.md gained section (x) CAM-111 documenting the container model (3 isolation layers: filesystem bind-mount, default-deny egress firewall, non-root cam-worker uid 1001), the exact firewall allowlist (7 domains: api.anthropic.com, claude.ai, platform.claude.com, github.com, *.github.com, registry.npmjs.org, raw.githubusercontent.com), the Docker dependency (preflight checks daemon + image-present), and troubleshooting steps. Forward reference to CAM-150 for fail-closed spawn. No TS files touched; no embed-vendor needed. All quality gates green: typecheck clean, 2299 pass / 0 fail, check:all clean.",
   "officialDocsValidated": [
     {
-      "lib": "docker-cli",
-      "version": "current (2026-07-01)",
-      "url": "https://docs.docker.com/reference/cli/docker/info/",
-      "fetchedAt": "2026-07-01T16:00:00Z",
-      "status": "ok",
-      "summary": "Docker CLI docs confirm 'docker info' displays system-wide daemon info. Exit-code 0 on success / non-zero on failure is empirically established (standard shell script idiom). 'docker image inspect <tag>' exits 0 when image is local, non-zero when absent. '--format={{.Created}}' returns the ISO-8601 creation timestamp. Implementation correctly uses these as daemon-reachable and image-present probes."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
