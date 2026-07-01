@@ -1,24 +1,30 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Add egress default-deny firewall script"
+    "id": "US-003",
+    "title": "Add devcontainer.json wiring the image, firewall, and non-root user"
   },
   "branchName": "cam/CAM-111-worker-container",
-  "timestamp": "2026-07-01T13:00:00Z",
+  "timestamp": "2026-07-01T14:00:00Z",
   "createdFiles": [
     ".devcontainer/Dockerfile",
-    ".devcontainer/init-firewall.sh"
+    ".devcontainer/init-firewall.sh",
+    ".devcontainer/devcontainer.json"
   ],
   "modifiedFiles": [
     "scripts/cam/prd.json"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "US-002 added .devcontainer/init-firewall.sh: idempotent default-deny egress firewall using iptables + ipset. Allowlist is exactly 7 domains declared in a single ALLOWED_DOMAINS bash array: api.anthropic.com, claude.ai, platform.claude.com, github.com, *.github.com, registry.npmjs.org, raw.githubusercontent.com. No downloads.claude.ai or storage.googleapis.com. Script flushes all chains before applying (idempotent), sets -P OUTPUT DROP, and includes a self-verify step (allowed domain reachable + blocked domain denied). Requires NET_ADMIN+NET_RAW capabilities (to be granted by US-003 devcontainer.json runArgs). CI is macos-latest with no Docker: do NOT run iptables in tests. All quality gates green (2290 pass / 0 fail). US-003 is next (devcontainer.json).",
+  "openQuestions": [
+    "AC4 oracle uses grep -Eq with a negative lookahead (?!root) which macOS BSD grep/ugrep does not support in ERE mode. The implementation is correct (remoteUser is 'bun', not root); the oracle needs to be verified on the CI environment (macos-latest) or use grep -P for the check."
+  ],
+  "nextStoryContext": "US-003 added .devcontainer/devcontainer.json. The file uses strict JSON (no comments), references the local Dockerfile via build.dockerfile, grants NET_ADMIN+NET_RAW in runArgs, sets remoteUser to 'bun' (matching the Dockerfile USER bun, from oven/bun:1.2-slim base), mounts a named volume 'claude-code-config' at /home/bun/.claude, sets DISABLE_AUTOUPDATER=1 and CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 in containerEnv, and runs postStartCommand 'sudo bash /workspace/.devcontainer/init-firewall.sh'. No .ssh mounts. Note: the bun user (from the oven/bun:1.2-slim base) has home dir /home/bun, NOT /home/node as the reference devcontainer.json uses. All quality gates green (2290 pass / 0 fail). Next story is US-004 (Docker preflight helper).",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "US-002 is a pure shell script (iptables/ipset system tools); no JS/TS external library was touched."
+      "lib": "Claude Code devcontainer",
+      "version": "current (2026-07-01)",
+      "url": "https://code.claude.com/docs/en/devcontainer",
+      "fetchedAt": "2026-07-01T14:00:00Z",
+      "status": "ok",
+      "summary": "Official docs confirm: runArgs for NET_ADMIN+NET_RAW, remoteUser non-root, named volume for ~/.claude (reference uses source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume), containerEnv for DISABLE_AUTOUPDATER+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, postStartCommand for firewall init. Our implementation uses 'bun' user (not 'node') matching the oven/bun:1.2-slim base image USER directive. Reference uses /home/node; we use /home/bun."
     }
   ]
 }
