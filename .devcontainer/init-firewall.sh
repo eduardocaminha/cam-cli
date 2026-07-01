@@ -4,6 +4,11 @@
 # Prerequisites: NET_ADMIN + NET_RAW capabilities (granted via devcontainer.json runArgs).
 # This script is idempotent: run it multiple times safely; it flushes its own rules first.
 # Do NOT invoke from CI (macos-latest, no Docker, no root). Operator/local ceremony only.
+#
+# DNS strategy: dnsmasq with --ipset directives resolves allowlisted domains and
+# inserts the returned IPs into the allowed-domains ipset on every DNS answer.
+# This survives CDN IP rotation over the lifetime of a long-running container --
+# unlike a one-shot dig+ipset pass that would freeze IPs at startup.
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
@@ -22,7 +27,8 @@ ALLOWED_DOMAINS=(
 echo "==> init-firewall: ${#ALLOWED_DOMAINS[@]} allowed domains"
 
 # ---------------------------------------------------------------------------
-# Idempotent reset: flush all chains and destroy any previous ipset.
+# Idempotent reset: flush all chains, destroy any previous ipset,
+# and stop a previous dnsmasq-cam instance if one is running.
 # ---------------------------------------------------------------------------
 iptables -F
 iptables -X
@@ -31,27 +37,49 @@ iptables -t nat -X
 iptables -t mangle -F
 iptables -t mangle -X
 ipset destroy allowed-domains 2>/dev/null || true
+if [[ -f /var/run/dnsmasq-cam.pid ]]; then
+  kill "$(cat /var/run/dnsmasq-cam.pid)" 2>/dev/null || true
+  rm -f /var/run/dnsmasq-cam.pid
+fi
 
 # ---------------------------------------------------------------------------
-# Build ipset of allowed IPs via DNS resolution.
+# Create the ipset (empty at start; dnsmasq populates it on every DNS answer).
 # ---------------------------------------------------------------------------
 ipset create allowed-domains hash:net
 
-for domain in "${ALLOWED_DOMAINS[@]}"; do
-  if [[ "$domain" == \** ]]; then
-    # Wildcard: resolve well-known subdomains for the base (e.g. *.github.com).
-    base="${domain#\*.}"
-    for sub in "api.$base" "codeload.$base" "uploads.$base" "objects.$base"; do
-      while IFS= read -r ip; do
-        [[ -n "$ip" ]] && ipset add allowed-domains "$ip" 2>/dev/null || true
-      done < <(dig +short A "$sub" 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+){3}$')
-    done
-  else
-    while IFS= read -r ip; do
-      [[ -n "$ip" ]] && ipset add allowed-domains "$ip" 2>/dev/null || true
-    done < <(dig +short A "$domain" 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+){3}$')
-  fi
-done
+# ---------------------------------------------------------------------------
+# Start dnsmasq with --ipset directives for dynamic CDN-rotation-safe resolution.
+#
+# dnsmasq inserts each resolved IP into the allowed-domains ipset automatically
+# as DNS answers arrive, keeping the ipset current across CDN IP changes.
+#
+# Subdomain semantics: --ipset=/github.com/allowed-domains covers github.com
+# AND every *.github.com subdomain (dnsmasq subdomain matching is inclusive),
+# so github.com + *.github.com collapse into a single directive.
+#
+# LFS note: objects.githubusercontent.com is the correct Git LFS object host
+# (the legacy bare subdomain of github.com is not a valid LFS host).
+# ---------------------------------------------------------------------------
+dnsmasq \
+  --listen-address=127.0.0.1 \
+  --port=53 \
+  --no-resolv \
+  --no-poll \
+  --server=8.8.8.8 \
+  --server=8.8.4.4 \
+  --ipset=/api.anthropic.com/allowed-domains \
+  --ipset=/claude.ai/allowed-domains \
+  --ipset=/platform.claude.com/allowed-domains \
+  --ipset=/github.com/allowed-domains \
+  --ipset=/registry.npmjs.org/allowed-domains \
+  --ipset=/raw.githubusercontent.com/allowed-domains \
+  --ipset=/objects.githubusercontent.com/allowed-domains \
+  --pid-file=/var/run/dnsmasq-cam.pid \
+  --log-facility=/dev/null
+
+# Point the container resolver at the local dnsmasq instance so every DNS
+# lookup flows through dnsmasq and triggers ipset insertion.
+echo "nameserver 127.0.0.1" > /etc/resolv.conf
 
 # ---------------------------------------------------------------------------
 # Default-deny policy (DROP everything; allowlist is the only exception).
@@ -73,7 +101,7 @@ iptables -A INPUT  -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
 # ---------------------------------------------------------------------------
-# Allow DNS outbound (UDP + TCP port 53) -- required for domain resolution.
+# Allow DNS outbound (UDP + TCP port 53) -- required for dnsmasq upstream queries.
 # ---------------------------------------------------------------------------
 iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
 iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT

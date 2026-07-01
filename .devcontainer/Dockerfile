@@ -12,7 +12,7 @@ FROM oven/bun:1.2-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git nodejs npm \
-        sudo iptables ipset dnsutils curl \
+        sudo iptables ipset dnsmasq dnsutils curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Grant the bun user passwordless sudo for the firewall init script only.
