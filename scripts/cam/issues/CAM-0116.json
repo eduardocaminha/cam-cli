@@ -1,7 +1,7 @@
 {
   "id": "CAM-116",
   "title": "Epico D2: verificacao comportamental no loop (gate compartilhado + reviewer veredito autoritativo + artifact-of-record no PR)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-27T13:48:19.817Z",
