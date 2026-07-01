@@ -23,7 +23,7 @@ O container fornece tres camadas de isolamento:
 
 1. **Filesystem**: o repositorio e montado como bind-mount read-write; nao ha acesso ao restante do host.
 2. **Rede (default-deny)**: firewall de egresso via `iptables` + `ipset` (script `.devcontainer/init-firewall.sh`), sete dominios permitidos (ver `docs/recovery-runbook.md` secao (x)).
-3. **Usuario nao-root**: `cam-worker` (uid 1001) minimiza o blast radius de uma falha de execucao.
+3. **Usuario nao-root**: `bun` (uid 1000) minimiza o blast radius de uma falha de execucao.
 
 O preflight deterministico (`src/supervisor/preflight-container.ts`) verifica daemon Docker ativo e imagem `cam-worker:latest` presente antes de qualquer dispatch. Se o preflight falhar, o sidecar nao tenta spawnar o worker.
 

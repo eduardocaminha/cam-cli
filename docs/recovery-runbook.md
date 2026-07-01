@@ -2091,7 +2091,7 @@ Three isolation layers:
    applied by `.devcontainer/init-firewall.sh` at container start. Only the
    seven allowlisted domains below are reachable; all other outbound connections
    are dropped.
-3. **Non-root user**: the worker runs as `cam-worker` (uid 1001). Root is not
+3. **Non-root user**: the worker runs as `bun` (uid 1000). Root is not
    available inside the container during normal operation.
 
 The image tag is `cam-worker:latest`. Build it once from the project root:
