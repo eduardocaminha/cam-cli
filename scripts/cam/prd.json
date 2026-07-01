@@ -150,7 +150,7 @@
         "check:all passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "docs/adr/0005-behavioral-verification-shared-gate.md (follow the 0004 format: Status/Data, Contexto, three gates, Decisao, Consequencias, Alternativas descartadas). No em-dash / no decorative emoji in persisted human .md (global CLAUDE.md 2026-05-20 rule; ADRs are human-readable, unlike agent .md). ADR-worthy per CAM-0116.json AC8 and the Knowledge-Layer Routing table (hard-to-reverse + surprising + genuine trade-off all hold). Reference CAM-56 (two-layer), CAM-109 (oracle emission), CAM-152 (container defer)."
     }

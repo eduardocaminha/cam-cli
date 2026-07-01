@@ -1,27 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Attach the reviewer artifact-of-record to the PR at ship (gh pr comment)"
+    "id": "US-007",
+    "title": "ADR: behavioral verification = shared runnable gate + independent reviewer verdict + artifact-of-record"
   },
   "branchName": "cam/CAM-116-behavioral-verification-gate",
-  "timestamp": "2026-07-01T05:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-01T06:00:00Z",
+  "createdFiles": [
+    "docs/adr/0005-behavioral-verification-shared-gate.md"
+  ],
   "modifiedFiles": [
-    ".claude/commands/cam-ship.md",
-    "templates/commands/cam-ship.md",
-    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 added an artifact-of-record ship step to both .claude/commands/cam-ship.md and templates/commands/cam-ship.md. The step is placed after the PR body template block and before the **Merge mode** subsection, ensuring it runs on both immediate and ci-gated merge modes. It captures PR_NUMBER via 'gh pr view --json number --jq .number', then guards on the presence of scripts/cam/review-artifact.txt, prepends a '**artifact-of-record**' label header into a tmp file, and posts via 'gh pr comment $PR_NUMBER --body-file /tmp/cam-artifact-comment.txt || true' (best-effort: failure does not abort ship). The artifact is never committed to the repo (gitignored). src/vendor/_generated.ts was regenerated. All file-assert oracles pass.",
+  "nextStoryContext": "US-007 created docs/adr/0005-behavioral-verification-shared-gate.md following the 0004 format (Status/Data, Contexto with three ADR gates, Decisao, Consequencias, Alternativas descartadas). The ADR records: behavioral verification is a shared runnable gate (src/supervisor/behavioral-gate.ts + test/integration tmux-real harness), invoked independently by implementer (Layer A, self-correct, non-official) and reviewer (Layer B, authoritative verdict). The reviewer's capture is written to scripts/cam/review-artifact.txt (gitignored) and posted as a PR comment at ship time. The ADR walks all three gates (hard-to-reverse, surprising-without-context, genuine-trade-off), records the rejected alternative (implementer-exclusive verification trusting implementer's green), and notes two deferred concerns: web image artifacts (playwright/agent-browser) and container/seccomp unix-socket question (CAM-152). All file-assert oracles pass. No em-dash, no decorative emoji.",
   "officialDocsValidated": [
     {
-      "lib": "gh CLI",
-      "version": "current",
-      "url": "https://cli.github.com/manual/gh_pr_comment",
-      "fetchedAt": "2026-07-01T05:00:00Z",
-      "status": "ok",
-      "summary": "Confirmed: gh pr comment accepts --body-file (-F) for reading body from a file; PR number is a positional arg. Usage 'gh pr comment \"$PR_NUMBER\" --body-file <file>' matches the documented API."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-007 is a documentation-only story (ADR write). No external library was exercised."
     }
   ]
 }
