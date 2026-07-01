@@ -46,7 +46,7 @@
       "id": "US-R1-003",
       "title": "Review round 1 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [docs/adr/0003-worker-isolation-boundary-dev-container.md:26]: ADR (line 26) and recovery-runbook.md (line 2094) state the container user is `cam-worker` (uid 1001), but the Dockerfile uses `USER bun` and devcontainer.json uses `remoteUser: \"bun\"` / `/home/bun/.claude` (uid 1000, per the patterns.md bullet). Persisted docs describe a user that does not exist; an operator cross-checking `docker inspect ... .Config.User` per the runbook would be misled. Fix docs to say `bun` (uid 1000)."
     },
     {

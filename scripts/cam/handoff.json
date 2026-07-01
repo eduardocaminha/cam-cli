@@ -1,25 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Review round 1 fix 002: address reviewer finding"
+    "id": "US-R1-003",
+    "title": "Review round 1 fix 003: address reviewer finding"
   },
   "branchName": "cam/CAM-111-worker-container",
-  "timestamp": "2026-07-01T19:00:00Z",
+  "timestamp": "2026-07-01T20:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".devcontainer/Dockerfile",
+    "docs/adr/0003-worker-isolation-boundary-dev-container.md",
+    "docs/recovery-runbook.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-002 fixed the WARNING about missing sudo/firewall tooling: added sudo, iptables, ipset, dnsutils, curl to the apt-get install block, and added a scoped sudoers drop-in (/etc/sudoers.d/bun-firewall) granting the bun user NOPASSWD access to exactly '/bin/bash /workspace/.devcontainer/init-firewall.sh'. Next story US-R1-003 needs to fix the doc/ADR inconsistency: the ADR and recovery-runbook.md incorrectly refer to the container user as 'cam-worker' (uid 1001) when the Dockerfile uses USER bun (uid 1000). Fix docs/adr/0003-worker-isolation-boundary-dev-container.md and docs/recovery-runbook.md to say 'bun' instead of 'cam-worker'.",
+  "nextStoryContext": "US-R1-003 fixed the doc inconsistency: ADR line 26 and recovery-runbook.md line 2094 both incorrectly described the container user as 'cam-worker' (uid 1001). Changed both to 'bun' (uid 1000), matching the actual Dockerfile (USER bun) and devcontainer.json (remoteUser: 'bun'). No further doc fixes in scope for the review round. Check prd.json for any remaining passes:false stories.",
   "officialDocsValidated": [
     {
-      "lib": "sudoers(5) Linux man page",
-      "version": "Linux man-pages",
-      "url": "https://man7.org/linux/man-pages/man5/sudoers.5.html",
-      "fetchedAt": "2026-07-01T19:00:00Z",
-      "status": "ok",
-      "summary": "Confirmed: 'bun ALL=(root) NOPASSWD: /bin/bash /workspace/.devcontainer/init-firewall.sh' is valid sudoers syntax. When arguments are specified, the user may only run that exact command+arguments. sudo bash <path> resolves bash to /bin/bash before matching rules, so the entry correctly gates the postStartCommand."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
