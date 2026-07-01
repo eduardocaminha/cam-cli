@@ -27,7 +27,24 @@ O container fornece tres camadas de isolamento:
 
 O preflight deterministico (`src/supervisor/preflight-container.ts`) verifica daemon Docker ativo e imagem `cam-worker:latest` presente antes de qualquer dispatch. Se o preflight falhar, o sidecar nao tenta spawnar o worker.
 
-O fail-closed spawn (recusar dispatch quando o container nao esta pronto) sera documentado na Half B (CAM-150), quando a logica de spawn condicional existir. Este ADR documenta apenas o modelo de container e a firewall; o comportamento de recuperacao de falha de spawn e um forward reference.
+O fail-closed spawn (recusar dispatch quando o container nao esta pronto) sera documentado na Half B (CAM-152), quando a logica de spawn condicional existir. Este ADR documenta o modelo de container, a firewall e o modelo de credencial; o comportamento de recuperacao de falha de spawn e um forward reference para CAM-152.
+
+## Modelo de credencial
+
+O worker usa autenticacao HTTPS com tokens explicitamente provisionados -- nao SSH nem credenciais do host.
+
+Dois tokens sao obrigatorios no ambiente do sidecar (`.env` na raiz, injetados via `containerEnv` em `.devcontainer/devcontainer.json`):
+
+- **GITHUB_TOKEN**: PAT de grano fino, escopo `cam-cli`, permissao `Contents: Read and Write`. Usado pelo worker para `git push` e chamadas `gh`. NUNCA usar o token geral do host. NUNCA montar `~/.ssh` nem credenciais do host no container.
+- **CLAUDE_CODE_OAUTH_TOKEN**: obtido via `claude setup-token` no terminal do host. Autentica as chamadas LLM sem fluxo interativo dentro do container. O volume Docker nomeado `~/.claude` (montado em `/home/bun/.claude`) serve de fallback de auth quando o token esta ausente.
+
+O modelo HTTPS-token (sem SSH) e a escolha deliberada: SSH dentro do container exigiria montar chaves do host (ampliando blast radius) ou gerar chaves efemeras (complexidade de rotacao). HTTPS com PAT de escopo restrito minimiza o acesso e e auditavel.
+
+## Substrato inerte ate CAM-152 (B-2)
+
+O substrato containerizado descrito neste ADR esta inerte na B-1 (CAM-150): o preflight deterministico (`src/supervisor/preflight-container.ts`) roda e loga o resultado antes de cada dispatch, mas o spawn do worker ainda ocorre no host via `respawn-pane -k` tmux convencional. Nenhum worker e executado dentro do container enquanto CAM-152 nao mergear.
+
+A logica de spawn fail-closed sera implementada na B-2 (CAM-152). O seam de injecao (`preflightContainerFn` em `RunSupervisorOptions`) ja existe; a B-2 completa a ligacao entre o preflight e o dispatch.
 
 ## Consequencias
 

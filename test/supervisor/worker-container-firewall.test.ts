@@ -79,7 +79,7 @@ const REQUIRED_HOSTS = new Set([
 	'github.com',
 	'*.github.com',
 	'registry.npmjs.org',
-	'raw.githubusercontent.com',
+	'objects.githubusercontent.com',
 ]);
 
 describe('7-domain allowlist semantics preserved - host-set equivalence (AC2)', () => {

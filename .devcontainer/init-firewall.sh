@@ -21,7 +21,7 @@ ALLOWED_DOMAINS=(
   "github.com"
   "*.github.com"
   "registry.npmjs.org"
-  "raw.githubusercontent.com"
+  "objects.githubusercontent.com"
 )
 
 echo "==> init-firewall: ${#ALLOWED_DOMAINS[@]} allowed domains"
