@@ -4,6 +4,18 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.40.0] - 2026-07-01
+
+### Added
+
+- [US-007] - ADR: behavioral verification = shared runnable gate + independent reviewer verdict + artifact-of-record
+- [US-006] - Attach the reviewer artifact-of-record to the PR at ship (gh pr comment)
+- [US-005] - Reviewer gate-fail is a hard-constraint FAIL producing FIXES_PENDING
+- [US-004] - Reviewer re-runs the gate at Layer B and writes the artifact-of-record
+- [US-003] - Implementer runs the gate at Layer A to self-correct
+- [US-002] - Shared runnable behavioral gate: drive real cam in tmux, capture, assert
+- [US-001] - Parse the per-story behavioral oracle from a PRD story
+
 ## [0.39.0] - 2026-07-01
 
 ### Added
