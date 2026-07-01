@@ -1,28 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Add deterministic plan pre-flight in TS"
+    "id": "US-005",
+    "title": "Add the deterministic plan-runner driver (pick-issue, spawn planner, spawn auditor, read verdict)"
   },
   "branchName": "cam/CAM-117-plan-runner",
-  "timestamp": "2026-07-01T00:00:00Z",
+  "timestamp": "2026-07-01T01:00:00Z",
   "createdFiles": [
-    "src/supervisor/plan-preflight.ts",
-    "test/supervisor/plan/plan-preflight.test.ts"
+    "src/supervisor/plan-runner.ts",
+    "test/supervisor/plan/plan-runner.test.ts"
   ],
   "modifiedFiles": [
     "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added src/supervisor/plan-preflight.ts with runPlanPreflight({ cwd, spawnFn, ghAvailable? }). Returns { ok: true } | { ok: false; step: string; detail: string }. Steps: git checkout main, git pull origin main, prune merged cam/* branches (best-effort, ghAvailable injectable), git status --porcelain, bun run typecheck, bun test. 24 tests in test/supervisor/plan/plan-preflight.test.ts. The next story should integrate this pre-flight into the plan-runner dispatch path.",
+  "nextStoryContext": "US-005 added src/supervisor/plan-runner.ts with runPlanPhase(opts). Returns discriminated union: preflight-failed | no-plannable-issue | mutex-busy | planner-timeout | auditor-timeout | audit-approved | audit-blocked. All side effects injected (spawnFn, isPaneAlive, sleepFn, genUuid, selectIssueFn, readPlanVerdictFn, preflightFn, clock, plannerPaneId, paneCountMutexFn). genUuid() is .toLowerCase() (CAM-23). @cam_label set BEFORE respawn-pane. paneCountMutexFn is an injected closure (avoids session.ts/loop.ts SpawnFn type mismatch). Verdict read from plan-verdict-report.json ONLY (never capture-pane). 37 tests in test/supervisor/plan/plan-runner.test.ts. The next story (US-006) should wire runPlanPhase into the sidecar/loop or cam-plan flow and implement the post-audit actions (commit/branch/flip prd.json on audit-approved).",
   "officialDocsValidated": [
     {
-      "lib": "bun",
-      "version": "1.3.x",
-      "url": "https://bun.sh/docs/api/utils",
-      "fetchedAt": "2026-07-01T00:00:00Z",
-      "status": "ok",
-      "summary": "Bun.which(bin) confirmed: returns string (path) when found, null when not found. Implementation uses !== null correctly."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-005 is purely internal: integrates plan-preflight.ts, plan-argv.ts, plan-verdict-report.ts, select.ts, loop.ts types, config/models.ts, and logging/spawn-resolution.ts. No external library API was exercised."
     }
   ]
 }

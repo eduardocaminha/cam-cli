@@ -92,7 +92,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mirror the dep-injected driver shape of makeReviewDispatch in src/supervisor/review.ts (spawn/capturePane/isPaneAlive/sleepFn/now injected; poll loop that breaks on report-file present OR pane-death OR timeout). Reuse: selectPlannableFromFile (src/issues/select.ts), buildPlannerWorkerArgv/buildAuditorWorkerArgv (US-003), makeReadPlanVerdict (US-001), runPlanPreflight (US-004). Spawn invariants (patterns.md): env -u via workerEnvPrefix (in US-003 argv), lowercase --session-id (CAM-23 'macos-uuidgen-uppercase': lowercase the genUuid() output), @cam_label set BEFORE respawn (patterns.md '@cam_label pane-labeling'), paneCountMutex from src/tmux/session.ts (1 worker-pane at a time now also covers planner/auditor). Read the verdict from the FILE only (patterns.md 'capture-pane is rendered markdown' + 'supervisor-sentinel-parse-fragility'): never parse the auditor pane scrollback. Emit spawn-resolution events via emitSpawnResolution (phase 'planner'/'auditor') like loop.ts/review.ts. This story does NOT wire the post-audit commit/branch/flip (that is US-006) and does NOT implement a BLOCK->re-plan loop (CAM-151 Half B). NOTE for auditor: this is a pane worker here (deterministic-loop-driven), which is the correct home per patterns.md 'Pane worker vs Task subagent' now that the sidecar (not the LLM /cam-plan flow) drives the plan phase."
     },

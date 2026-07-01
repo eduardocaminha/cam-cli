@@ -1,0 +1,419 @@
+// src/supervisor/plan-runner.ts
+//
+// Deterministic plan-runner driver (US-005, CAM-117).
+//
+// Provides runPlanPhase(opts): a pure, dep-injected function that executes
+// the full plan phase in sequence:
+//   1. Pre-flight checks (delegate to injected preflightFn).
+//   2. Pick the highest-priority plannable issue (delegate to selectIssueFn).
+//   3. Assert the pane-count mutex (no spawn when session is busy).
+//   4. Spawn the planner pane (respawn-pane -k, buildPlannerWorkerArgv).
+//   5. Poll until the planner pane dies.
+//   6. Spawn the auditor pane (respawn-pane -k, buildAuditorWorkerArgv).
+//   7. Poll until plan-verdict-report.json is present (readPlanVerdictFn).
+//   8. Return a discriminated result.
+//
+// Design decisions:
+//   - All side effects (tmux spawns, FS reads, sleep, clock) are injected.
+//   - paneCountMutexFn is injected so tests avoid the session.ts SpawnFn
+//     type mismatch (SpawnSyncReturns vs the loop.ts SpawnFn shape).
+//     Production callers wire it as `() => paneCountMutex(sessionName, tmuxSpawnFn)`.
+//   - genUuid() output is .toLowerCase() (CAM-23: macOS uuidgen is uppercase).
+//   - @cam_label is set BEFORE each respawn-pane (patterns.md '@cam_label pane-labeling').
+//   - The auditor verdict is read ONLY from the report file (never from capture-pane,
+//     patterns.md 'capture-pane is rendered markdown').
+//   - emitSpawnResolution is called before each respawn (patterns.md 'Spawn-resolution emitter').
+//   - This module does NOT wire the post-audit commit/branch/flip (US-006)
+//     and does NOT implement a BLOCK->re-plan loop (CAM-151 Half B).
+//   - Cognitive complexity is managed via factory/helper extraction (patterns.md
+//     'Biome cognitive complexity: use factory/helper extraction not grandfather').
+
+import type { SpawnFn, IsPaneAlive } from './loop.ts';
+import type { WorkerEventLogger } from './events.ts';
+import type { PlanPreflightResult } from './plan-preflight.ts';
+import type { PlanVerdictReport } from './plan-verdict-report.ts';
+import type { IssueEntry } from '../issues/types.ts';
+import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
+import { buildPlannerWorkerArgv, buildAuditorWorkerArgv } from './plan-argv.ts';
+import { readPhaseModel, readBackend } from '../config/models.ts';
+import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Default planner task prompt (can be overridden via opts.plannerTaskPrompt). */
+export const DEFAULT_PLANNER_TASK_PROMPT =
+	'Plan the next issue from the backlog per your AGENT.md. Write the resulting PRD to scripts/cam/prd.json.';
+
+/** Default auditor task prompt (can be overridden via opts.auditorTaskPrompt). */
+export const DEFAULT_AUDITOR_TASK_PROMPT =
+	'Audit the generated plan per your AGENT.md. Write your verdict to scripts/cam/plan-verdict-report.json.';
+
+/** Default polling interval between pane/file checks (ms). */
+export const DEFAULT_PLAN_POLL_INTERVAL_MS = 5_000;
+
+/** Default per-phase timeout: 30 minutes (matches review.ts DEFAULT_REVIEW_TIMEOUT_MS). */
+export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
+
+// ---------------------------------------------------------------------------
+// Result type
+// ---------------------------------------------------------------------------
+
+/**
+ * Discriminated result returned by runPlanPhase.
+ *
+ * Required by AC1 (at least these four):
+ *   preflight-failed     - preflightFn returned ok:false; no pane spawned.
+ *   no-plannable-issue   - selectIssueFn returned null; no pane spawned.
+ *   audit-approved       - auditor wrote APPROVE; caller may proceed.
+ *   audit-blocked        - auditor wrote BLOCK; caller must not proceed.
+ *
+ * Additional kinds:
+ *   mutex-busy           - pane-count mutex was 'busy'; no pane spawned (AC5).
+ *   planner-timeout      - planner pane still alive after plannerTimeoutMs.
+ *   auditor-timeout      - plan-verdict-report.json absent when auditor died or timed out.
+ */
+export type PlanPhaseResult =
+	| { kind: 'preflight-failed'; step: string; detail: string }
+	| { kind: 'no-plannable-issue' }
+	| { kind: 'mutex-busy' }
+	| { kind: 'planner-timeout' }
+	| { kind: 'auditor-timeout' }
+	| { kind: 'audit-approved'; issue: IssueEntry; report: PlanVerdictReport }
+	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport };
+
+// ---------------------------------------------------------------------------
+// Options
+// ---------------------------------------------------------------------------
+
+/**
+ * Mutex state type mirroring PaneMutexState from src/tmux/session.ts.
+ * Duplicated here to avoid importing the session.ts SpawnFn type, which
+ * is incompatible with the loop.ts SpawnFn shape (SpawnSyncReturns vs
+ * { stdout: string; exitCode: number | null }).
+ */
+export type PlanMutexState = 'available' | 'busy';
+
+/** Options for runPlanPhase. All side effects are injected. */
+export interface RunPlanPhaseOptions {
+	// -------------------------------------------------------------------------
+	// Core injected deps (AC1) - all side effects route through these
+	// -------------------------------------------------------------------------
+
+	/** Spawn a shell command (loop.ts SpawnFn shape). */
+	spawnFn: SpawnFn;
+
+	/** Check whether a tmux pane is still alive (IsPaneAlive from loop.ts). */
+	isPaneAlive: IsPaneAlive;
+
+	/** Sleep between polling ticks. Tests inject a no-op. */
+	sleepFn: (ms: number) => void;
+
+	/** Generate a UUID (lowercased by runPlanPhase; CAM-23). */
+	genUuid: () => string;
+
+	/**
+	 * Pick the highest-priority plannable issue. Delegates to
+	 * selectPlannableFromFile (src/issues/select.ts); returns null when the
+	 * backlog is empty or all issues are blocked/non-specified.
+	 */
+	selectIssueFn: () => IssueEntry | null;
+
+	/**
+	 * Read the auditor's structured verdict report from plan-verdict-report.json.
+	 * Returns null on any read/parse error (graceful degradation). Never throws.
+	 * Mirrors makeReadPlanVerdict from plan-verdict-report.ts.
+	 */
+	readPlanVerdictFn: () => PlanVerdictReport | null;
+
+	/**
+	 * Run the deterministic plan pre-flight checks. Returns PlanPreflightResult
+	 * (same discriminated union as runPlanPreflight in plan-preflight.ts).
+	 */
+	preflightFn: () => PlanPreflightResult;
+
+	/**
+	 * Monotonic-ish clock in ms (Date.now equivalent). Injectable for tests so
+	 * they can simulate timeout conditions without real waits.
+	 */
+	clock: () => number;
+
+	// -------------------------------------------------------------------------
+	// Pane infrastructure
+	// -------------------------------------------------------------------------
+
+	/**
+	 * The tmux pane ID used as the worker slot for both the planner and auditor.
+	 * Mirrors workerPaneId in loop.ts RunSupervisorOptions.
+	 */
+	plannerPaneId: string;
+
+	/**
+	 * Returns the current pane-count mutex state for the session.
+	 *
+	 * 'available' = session has exactly 2 panes (orch + dashboard); safe to
+	 * spawn the 3rd pane. 'busy' = 1, 3, or more panes; must NOT spawn.
+	 *
+	 * Production wiring: `() => paneCountMutex(sessionName, tmuxSpawnFn)`
+	 * (paneCountMutex from src/tmux/session.ts, tmuxSpawnFn is the node:child_process
+	 * SpawnSyncReturns-returning adapter). Injecting as a closure avoids the
+	 * SpawnFn shape mismatch between session.ts and loop.ts.
+	 *
+	 * Tests inject a fake that returns 'available' or 'busy' as needed.
+	 */
+	paneCountMutexFn: () => PlanMutexState;
+
+	// -------------------------------------------------------------------------
+	// Optional config
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Claude permission mode forwarded to the spawned claude processes. NEVER a
+	 * cam CLI flag. Required so planner/auditor can run tools unprompted.
+	 * Defaults to 'bypassPermissions'.
+	 */
+	permissionMode?: string;
+
+	/** Task prompt sent to the planner. Defaults to DEFAULT_PLANNER_TASK_PROMPT. */
+	plannerTaskPrompt?: string;
+
+	/** Task prompt sent to the auditor. Defaults to DEFAULT_AUDITOR_TASK_PROMPT. */
+	auditorTaskPrompt?: string;
+
+	/** Polling interval in ms. Default: DEFAULT_PLAN_POLL_INTERVAL_MS (5s). */
+	pollIntervalMs?: number;
+
+	/** Per-planner deadline in ms. Default: DEFAULT_PLAN_TIMEOUT_MS (30 min). */
+	plannerTimeoutMs?: number;
+
+	/** Per-auditor deadline in ms. Default: DEFAULT_PLAN_TIMEOUT_MS (30 min). */
+	auditorTimeoutMs?: number;
+
+	/**
+	 * Structured worker event logger. When provided, spawn-resolution events are
+	 * persisted via the event log (same pattern as loop.ts and review.ts).
+	 */
+	logEvent?: WorkerEventLogger;
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers (extracted to satisfy biome complexity limits)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build an injectable writeEvent closure for emitSpawnResolution.
+ * Returns undefined when logEvent is absent so the emitter skips persistence.
+ */
+function makeEventWriter(
+	logEvent: WorkerEventLogger | undefined,
+	uuid: string,
+): ((e: SpawnResolutionEvent) => void) | undefined {
+	if (logEvent === undefined) return undefined;
+	return (e: SpawnResolutionEvent) =>
+		logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid,
+			kind: 'spawn-resolution',
+			detail: e,
+		});
+}
+
+/**
+ * Resolve model/backend, emit spawn-resolution, build the argv shell string,
+ * set @cam_label on the pane, and spawn the planner worker via respawn-pane -k.
+ *
+ * @cam_label is set BEFORE respawn-pane (AC5, patterns.md '@cam_label pane-labeling').
+ * genUuid() output is lowercased (CAM-23: macOS uuidgen is uppercase).
+ * Returns the lowercased uuid (for the event log if needed).
+ */
+function resolveAndSpawnPlanner(
+	spawnFn: SpawnFn,
+	plannerPaneId: string,
+	genUuid: () => string,
+	taskPrompt: string,
+	permissionMode: string,
+	logEvent: WorkerEventLogger | undefined,
+): string {
+	const uuid = genUuid().toLowerCase();
+	const model = readPhaseModel('planner');
+	const backend = readBackend();
+	emitSpawnResolution({ phase: 'planner', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
+	const shell = buildPlannerWorkerArgv({ uuid, taskPrompt, permissionMode, model });
+	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'planner']);
+	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, shell]);
+	return uuid;
+}
+
+/**
+ * Resolve model/backend, emit spawn-resolution, build the argv shell string,
+ * set @cam_label on the pane, and spawn the auditor worker via respawn-pane -k.
+ *
+ * @cam_label is set BEFORE respawn-pane (AC5, patterns.md '@cam_label pane-labeling').
+ * genUuid() output is lowercased (CAM-23: macOS uuidgen is uppercase).
+ * Returns the lowercased uuid.
+ */
+function resolveAndSpawnAuditor(
+	spawnFn: SpawnFn,
+	plannerPaneId: string,
+	genUuid: () => string,
+	taskPrompt: string,
+	permissionMode: string,
+	logEvent: WorkerEventLogger | undefined,
+): string {
+	const uuid = genUuid().toLowerCase();
+	const model = readPhaseModel('auditor');
+	const backend = readBackend();
+	emitSpawnResolution({ phase: 'auditor', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
+	const shell = buildAuditorWorkerArgv({ uuid, taskPrompt, permissionMode, model });
+	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'auditor']);
+	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, shell]);
+	return uuid;
+}
+
+/**
+ * Poll until the planner pane dies or the deadline fires.
+ * Returns true when the pane died naturally; false on timeout (after killing the pane).
+ */
+function pollPlannerDeath(
+	isPaneAlive: IsPaneAlive,
+	sleepFn: (ms: number) => void,
+	clock: () => number,
+	spawnFn: SpawnFn,
+	plannerPaneId: string,
+	pollIntervalMs: number,
+	plannerTimeoutMs: number,
+): boolean {
+	const start = clock();
+	while (isPaneAlive(plannerPaneId)) {
+		sleepFn(pollIntervalMs);
+		if (clock() - start >= plannerTimeoutMs) {
+			spawnFn('tmux', [
+				'-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, 'echo planner-timeout',
+			]);
+			return false;
+		}
+	}
+	return true;
+}
+
+/** Internal result from the auditor poll loop. */
+type AuditorPollResult =
+	| { ok: true; report: PlanVerdictReport }
+	| { ok: false };
+
+/**
+ * Poll until plan-verdict-report.json is present, the auditor pane dies, or
+ * the deadline fires. Returns { ok: true, report } on success; { ok: false }
+ * on pane-death-without-report or timeout (after killing the pane on timeout).
+ *
+ * The verdict is read via readPlanVerdictFn ONLY - never from capture-pane
+ * (patterns.md 'capture-pane is rendered markdown').
+ */
+function pollAuditorReport(
+	isPaneAlive: IsPaneAlive,
+	sleepFn: (ms: number) => void,
+	clock: () => number,
+	spawnFn: SpawnFn,
+	readPlanVerdictFn: () => PlanVerdictReport | null,
+	plannerPaneId: string,
+	pollIntervalMs: number,
+	auditorTimeoutMs: number,
+): AuditorPollResult {
+	const start = clock();
+	while (true) {
+		sleepFn(pollIntervalMs);
+		const verdict = readPlanVerdictFn();
+		if (verdict !== null) return { ok: true, report: verdict };
+		if (!isPaneAlive(plannerPaneId)) return { ok: false };
+		if (clock() - start >= auditorTimeoutMs) {
+			spawnFn('tmux', [
+				'-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, 'echo auditor-timeout',
+			]);
+			return { ok: false };
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runPlanPhase
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute the full plan phase deterministically.
+ *
+ * Returns a PlanPhaseResult discriminated union. The caller (US-006) is
+ * responsible for acting on the result (commit, branch, flip prd.json on
+ * audit-approved; re-plan loop on audit-blocked via CAM-151 Half B).
+ *
+ * Pure over its injected deps: all side effects are routed through the
+ * options object so the test suite can assert exact spawn sequences,
+ * session-id case, label ordering, and timeout behavior.
+ */
+export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
+	const {
+		spawnFn, isPaneAlive, sleepFn, genUuid,
+		selectIssueFn, readPlanVerdictFn, preflightFn, clock,
+		plannerPaneId, paneCountMutexFn,
+	} = opts;
+
+	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
+	const plannerTaskPrompt = opts.plannerTaskPrompt ?? DEFAULT_PLANNER_TASK_PROMPT;
+	const auditorTaskPrompt = opts.auditorTaskPrompt ?? DEFAULT_AUDITOR_TASK_PROMPT;
+	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_PLAN_POLL_INTERVAL_MS;
+	const plannerTimeoutMs = opts.plannerTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
+	const auditorTimeoutMs = opts.auditorTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
+	const logEvent = opts.logEvent;
+
+	// Step 1: Pre-flight checks (AC2)
+	const preflight = preflightFn();
+	if (!preflight.ok) {
+		return { kind: 'preflight-failed', step: preflight.step, detail: preflight.detail };
+	}
+
+	// Step 2: Pick plannable issue (AC3)
+	const issue = selectIssueFn();
+	if (issue === null) {
+		return { kind: 'no-plannable-issue' };
+	}
+
+	// Step 3: Assert pane-count mutex (AC5)
+	// Production wiring: () => paneCountMutex(sessionName, tmuxSpawnFn)
+	if (paneCountMutexFn() === 'busy') {
+		return { kind: 'mutex-busy' };
+	}
+
+	// Step 4: Spawn planner pane (AC4, AC5)
+	// resolveAndSpawnPlanner: reads model/backend, emits spawn-resolution,
+	// builds argv, sets @cam_label 'planner', runs respawn-pane -k.
+	resolveAndSpawnPlanner(spawnFn, plannerPaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent);
+
+	// Step 5: Poll until planner pane dies (AC4)
+	const plannerDied = pollPlannerDeath(isPaneAlive, sleepFn, clock, spawnFn, plannerPaneId, pollIntervalMs, plannerTimeoutMs);
+	if (!plannerDied) {
+		return { kind: 'planner-timeout' };
+	}
+
+	// Step 6: Spawn auditor pane (AC4, AC5)
+	// resolveAndSpawnAuditor: reads model/backend, emits spawn-resolution,
+	// builds argv, sets @cam_label 'auditor', runs respawn-pane -k.
+	resolveAndSpawnAuditor(spawnFn, plannerPaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent);
+
+	// Step 7: Poll until plan-verdict-report.json present (AC4)
+	// Verdict read from FILE ONLY - never from capture-pane (patterns.md).
+	const auditorResult = pollAuditorReport(
+		isPaneAlive, sleepFn, clock, spawnFn,
+		readPlanVerdictFn, plannerPaneId, pollIntervalMs, auditorTimeoutMs,
+	);
+
+	if (!auditorResult.ok) {
+		return { kind: 'auditor-timeout' };
+	}
+
+	const report = auditorResult.report;
+	if (report.verdict === 'APPROVE') {
+		return { kind: 'audit-approved', issue, report };
+	}
+	return { kind: 'audit-blocked', issue, report };
+}
