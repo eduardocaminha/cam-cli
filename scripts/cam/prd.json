@@ -23,7 +23,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/status.ts (LoopState interface + parseStateFile, ~lines 91-251), src/commands/next.ts (renderStateFile ~lines 73-106), vendor/cam-loop.local.md.tmpl. Name the loop-phase type LoopPhase to avoid collision with the existing model-`Phase` type (src/config/models.ts line 22, which is orchestrator|planner|auditor|... for [models] config). `active` MUST derive from phase===implementing; do NOT keep an independent active field as the source of truth (spec AC1). Keep back-compat: a state file with only `active: true|false` (no phase) must still parse (map active:true->implementing, else idle). Read scripts/cam/patterns.md at story start. This story touches vendor/ so the embed-vendor:check gate applies. Gotcha: renderStateFile substitutes {{KEY}} literal placeholders from the template; add a {{PHASE}} (and plan_issue) placeholder consistently in both the template and renderStateFile."
     },

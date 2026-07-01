@@ -22,6 +22,7 @@ import process from 'node:process';
 
 import { readEmbedded } from '../vendor/embedded.ts';
 import { printError } from '../logging/color.ts';
+import type { LoopPhase } from './status.ts';
 import {
 	emitAttachHint,
 	emitMutedHint,
@@ -69,18 +70,29 @@ const STATE_FILE_PATH = '.claude/cam-loop.local.md';
  *
  * Kept as an exported utility so the supervisor (loop.ts) and tests can
  * still use it even though `runNext` is now a thin-proxy.
+ *
+ * `phase` is the single source of truth for the `active` field:
+ *   - When `phase` is provided, `active` is derived as `phase === 'implementing'`.
+ *   - When `phase` is absent, it is derived from the legacy `active` flag
+ *     (`true` -> `implementing`, `false` -> `idle`), preserving backward compat
+ *     for all existing callers that only pass `active`.
  */
 export function renderStateFile(input: {
 	maxIterations: number;
 	completionPromise: string;
 	startedAt: string;
 	pid: number;
+	/** Loop lifecycle phase (US-001 CAM-151). When provided, `active` is derived from it. */
+	phase?: LoopPhase;
+	/** Legacy active flag — used only when `phase` is absent (back-compat). */
 	active?: boolean;
 	iteration?: number;
 	currentStory?: string | null;
 	storiesDone?: number;
 	storiesTotal?: number;
 	lastActivity?: string;
+	/** Optional issue ref associated with an in-progress plan (e.g. "CAM-151"). */
+	plan_issue?: string | null;
 }): string {
 	const tmpl = readEmbedded('cam-loop.local.md.tmpl');
 	const promiseYaml =
@@ -91,8 +103,19 @@ export function renderStateFile(input: {
 		input.currentStory != null && input.currentStory.length > 0
 			? `"${input.currentStory.replace(/"/g, '\\"')}"`
 			: 'null';
+	// Derive effective phase and active from the inputs (US-001 CAM-151).
+	// When `phase` is provided, it is the source of truth; `active` derives from it.
+	// When `phase` is absent, derive it from the legacy `active` flag for back-compat.
+	const effectivePhase: LoopPhase =
+		input.phase ?? (input.active !== false ? 'implementing' : 'idle');
+	const effectiveActive = effectivePhase === 'implementing';
+	const planIssueYaml =
+		input.plan_issue != null && input.plan_issue.length > 0
+			? `"${input.plan_issue.replace(/"/g, '\\"')}"`
+			: 'null';
 	return tmpl
-		.replace('{{ACTIVE}}', String(input.active ?? true))
+		.replace('{{ACTIVE}}', String(effectiveActive))
+		.replace('{{PHASE}}', effectivePhase)
 		.replace('{{ITERATION}}', String(input.iteration ?? 1))
 		.replace('{{MAX_ITERATIONS}}', String(input.maxIterations))
 		.replace('{{COMPLETION_PROMISE_YAML}}', promiseYaml)
@@ -102,6 +125,7 @@ export function renderStateFile(input: {
 		.replace('{{STORIES_DONE}}', String(input.storiesDone ?? 0))
 		.replace('{{STORIES_TOTAL}}', String(input.storiesTotal ?? 0))
 		.replace('{{LAST_ACTIVITY}}', input.lastActivity ?? input.startedAt)
+		.replace('{{PLAN_ISSUE_YAML}}', planIssueYaml)
 		.replace('{{PROMPT}}', '');
 }
 

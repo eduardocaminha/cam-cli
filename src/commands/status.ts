@@ -83,13 +83,48 @@ export function resolvePrdPath(cwd: string): string {
 // --- Types -----------------------------------------------------------------
 
 /**
+ * The loop lifecycle phases. This is the single source of truth for what the
+ * cam loop is doing. `active` DERIVES from `phase === 'implementing'`.
+ *
+ * Named `LoopPhase` to avoid collision with the orchestrator/planner/auditor/...
+ * `Phase` type in `src/config/models.ts`.
+ */
+export type LoopPhase = 'idle' | 'planning' | 'implementing' | 'awaiting-operator' | 'shipping';
+
+/** All valid LoopPhase values (used for validation during parse). */
+const LOOP_PHASES: readonly LoopPhase[] = [
+	'idle',
+	'planning',
+	'implementing',
+	'awaiting-operator',
+	'shipping',
+];
+
+/**
  * Parsed shape of the YAML frontmatter in `.claude/cam-loop.local.md`. The
  * plugin defines all keys; we treat each as optional so a partially-written
  * state file (e.g. one whose loop crashed mid-flush) still parses cleanly and
  * the operator gets a useful status report instead of a parse error.
  */
 export interface LoopState {
+	/**
+	 * Derived from `phase === 'implementing'`. When `phase` is present this
+	 * field is ALWAYS the derived value; the raw `active:` frontmatter field
+	 * is ignored. When `phase` is absent (legacy state files), `active` comes
+	 * from the raw `active: true|false` value for backward compat.
+	 */
 	active?: boolean;
+	/**
+	 * The current loop lifecycle phase. Single source of truth from which
+	 * `active` is derived. Absent in state files written before US-001 of
+	 * CAM-151 (backward-compat: those files use the raw `active` field).
+	 */
+	phase?: LoopPhase;
+	/**
+	 * Optional issue ref associated with the in-progress plan (e.g. "CAM-151").
+	 * Absent when not in a planning phase.
+	 */
+	plan_issue?: string;
 	iteration?: number;
 	max_iterations?: number;
 	completion_promise?: string | null;
@@ -220,7 +255,25 @@ export function parseStateFile(contents: string): LoopState | null {
 	if (parsed === null || typeof parsed !== 'object') return null;
 	const obj = parsed as Record<string, unknown>;
 	const out: LoopState = {};
-	if (typeof obj['active'] === 'boolean') out.active = obj['active'];
+
+	// --- Phase (new field, US-001 CAM-151) ------------------------------------
+	// When `phase` is present and valid, `active` is DERIVED from it.
+	// When absent (legacy files), fall back to the raw `active: true|false` field.
+	const rawPhase = obj['phase'];
+	if (typeof rawPhase === 'string' && (LOOP_PHASES as readonly string[]).includes(rawPhase)) {
+		out.phase = rawPhase as LoopPhase;
+		// active MUST derive from phase; ignore the raw `active:` field.
+		out.active = out.phase === 'implementing';
+	} else {
+		// Legacy back-compat: no `phase` field -- read raw `active`.
+		if (typeof obj['active'] === 'boolean') out.active = obj['active'];
+	}
+
+	// --- plan_issue (new optional field, US-001 CAM-151) ----------------------
+	if (typeof obj['plan_issue'] === 'string' && obj['plan_issue'].length > 0) {
+		out.plan_issue = obj['plan_issue'];
+	}
+
 	if (typeof obj['iteration'] === 'number') out.iteration = obj['iteration'];
 	if (typeof obj['max_iterations'] === 'number') out.max_iterations = obj['max_iterations'];
 	if (obj['completion_promise'] === null) {

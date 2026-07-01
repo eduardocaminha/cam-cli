@@ -24,6 +24,7 @@ import {
 	DEFAULT_MAX_ITERATIONS,
 	DEFAULT_COMPLETION_PROMISE,
 } from '../src/commands/next.ts';
+import { parseStateFile, type LoopPhase } from '../src/commands/status.ts';
 import { type SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
 import yaml from 'js-yaml';
 
@@ -162,6 +163,87 @@ describe('renderStateFile', () => {
 
 	test('DEFAULT_COMPLETION_PROMISE is "COMPLETE"', () => {
 		expect(DEFAULT_COMPLETION_PROMISE).toBe('COMPLETE');
+	});
+});
+
+// --- Phase round-trip (US-001, CAM-151) ------------------------------------
+
+describe('renderStateFile + parseStateFile round-trip: phase field', () => {
+	const phases: LoopPhase[] = ['idle', 'planning', 'implementing', 'awaiting-operator', 'shipping'];
+
+	for (const phase of phases) {
+		test(`phase "${phase}" survives render->parse; active === (phase === 'implementing')`, () => {
+			const rendered = renderStateFile({
+				maxIterations: 30,
+				completionPromise: 'COMPLETE',
+				startedAt: '2026-07-01T00:00:00Z',
+				pid: 1,
+				phase,
+			});
+			// The rendered output must contain the phase literal.
+			expect(rendered).toContain(`phase: ${phase}`);
+
+			const parsed = parseStateFile(rendered);
+			expect(parsed).not.toBeNull();
+			expect(parsed?.phase).toBe(phase);
+			expect(parsed?.active).toBe(phase === 'implementing');
+		});
+	}
+
+	test('plan_issue round-trips when set', () => {
+		const rendered = renderStateFile({
+			maxIterations: 30,
+			completionPromise: 'COMPLETE',
+			startedAt: '2026-07-01T00:00:00Z',
+			pid: 1,
+			phase: 'planning',
+			plan_issue: 'CAM-151',
+		});
+		const parsed = parseStateFile(rendered);
+		expect(parsed?.plan_issue).toBe('CAM-151');
+	});
+
+	test('plan_issue is absent from parsed state when not set (null input)', () => {
+		const rendered = renderStateFile({
+			maxIterations: 30,
+			completionPromise: 'COMPLETE',
+			startedAt: '2026-07-01T00:00:00Z',
+			pid: 1,
+			phase: 'implementing',
+			plan_issue: null,
+		});
+		const parsed = parseStateFile(rendered);
+		expect(parsed?.plan_issue).toBeUndefined();
+	});
+
+	test('legacy back-compat: active:true (no phase) parses as active:true, no phase field', () => {
+		const body = ['---', 'active: true', 'iteration: 1', 'max_iterations: 30', '---', ''].join('\n');
+		const parsed = parseStateFile(body);
+		expect(parsed?.active).toBe(true);
+		expect(parsed?.phase).toBeUndefined();
+	});
+
+	test('legacy back-compat: active:false (no phase) parses as active:false, no phase field', () => {
+		const body = ['---', 'active: false', 'iteration: 1', 'max_iterations: 30', '---', ''].join('\n');
+		const parsed = parseStateFile(body);
+		expect(parsed?.active).toBe(false);
+		expect(parsed?.phase).toBeUndefined();
+	});
+
+	test('when phase and active conflict, phase wins (active derived from phase)', () => {
+		// phase:idle + active:true in the frontmatter -> active should be false (from phase)
+		const body = [
+			'---',
+			'active: true',
+			'phase: idle',
+			'iteration: 1',
+			'max_iterations: 30',
+			'---',
+			'',
+		].join('\n');
+		const parsed = parseStateFile(body);
+		expect(parsed?.phase).toBe('idle');
+		expect(parsed?.active).toBe(false); // derived from phase, not from raw active:true
 	});
 });
 

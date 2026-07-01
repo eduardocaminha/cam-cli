@@ -1,0 +1,27 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add loop-phase enum as single source of truth; active derives from phase"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/status.ts",
+    "src/commands/next.ts",
+    "vendor/cam-loop.local.md.tmpl",
+    "src/vendor/_generated.ts",
+    "test/next.test.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added LoopPhase enum (idle|planning|implementing|awaiting-operator|shipping) to LoopState in status.ts; parseStateFile derives active from phase when phase is present; renderStateFile in next.ts emits phase: and plan_issue: using {{PHASE}} and {{PLAN_ISSUE_YAML}} template placeholders; vendor template updated and re-embedded. All callers that pass active:boolean without phase still work (backward compat via phase derivation). Round-trip tests added in test/next.test.ts. The next story can now use LoopPhase and plan_issue fields.",
+  "officialDocsValidated": [
+    {
+      "lib": "js-yaml",
+      "version": "4.x",
+      "url": "https://github.com/nodeca/js-yaml",
+      "fetchedAt": "2026-07-01T00:00:00Z",
+      "status": "ok",
+      "summary": "load() returns null for YAML null, JS string for strings, JS boolean for booleans. Implementation correctly uses typeof checks to distinguish types; plan_issue:null in YAML yields JS null, skipped by typeof guard."
+    }
+  ]
+}
