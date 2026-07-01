@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add pinned non-root worker Dockerfile"
+  },
+  "branchName": "cam/CAM-111-worker-container",
+  "timestamp": "2026-07-01T12:00:00Z",
+  "createdFiles": [
+    ".devcontainer/Dockerfile"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 created .devcontainer/Dockerfile using oven/bun:1.2-slim as base image (provides bun + node), installs git explicitly, pins @anthropic-ai/claude-code@2.1.197, sets DISABLE_AUTOUPDATER=1, and switches to non-root USER bun. CI is macos-latest with no Docker: any story that adds devcontainer.json or build/run steps must guard against Docker-absent CI. The non-root user is 'bun' (pre-created in oven/bun images). All quality gates (typecheck, bun test 2290 pass, check:all exit 0) were green. US-002 is next.",
+  "officialDocsValidated": [
+    {
+      "lib": "@anthropic-ai/claude-code",
+      "url": "https://docs.anthropic.com/en/docs/claude-code/devcontainer",
+      "fetchedAt": "2026-07-01T12:00:00Z",
+      "status": "aligned",
+      "summary": "Docs confirm: pin via npm install -g @anthropic-ai/claude-code@X.Y.Z, set DISABLE_AUTOUPDATER=1, use non-root remoteUser/USER. Implementation matches on all three points."
+    }
+  ]
+}

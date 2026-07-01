@@ -43,7 +43,7 @@
         "Full quality spine passes including biome lint, knip, jscpd, file-size, and coverage ratchets (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file: .devcontainer/Dockerfile (additive; no existing devcontainer dir, this creates it). Pin the CLI to the version currently installed/current: @anthropic-ai/claude-code@2.1.197 (verified via `npm view @anthropic-ai/claude-code version` and `claude --version` on 2026-07-01). Official-doc facts to re-check (relatedDoc: officialDocsConsulted 'Claude Code dev containers'): the docs explicitly say to pin via `npm install -g @anthropic-ai/claude-code@X.Y.Z` AND set DISABLE_AUTOUPDATER=1 INSTEAD of the auto-updating Dev Container Feature; remoteUser/USER must be non-root (CLI rejects bypass as root). Keep this image minimal (Simplicity First): bun + git + node + pinned CLI + non-root user only; no speculative tools. This is a plain Dockerfile, NOT a .ts source file, so no biome/knip/coverage impact and no vendor/templates touch (embed-vendor:check NOT required). CI is macos-latest with NO Docker: do NOT add any criterion that builds or runs the image. .devcontainer/ is a project-domain file, not cam-harness state, so it lives at repo root not under scripts/cam/."
     },
