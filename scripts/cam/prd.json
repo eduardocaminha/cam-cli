@@ -1,0 +1,158 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-116-behavioral-verification-gate",
+  "description": "Behavioral verification in the loop: a shared runnable tmux gate driven by both implementer (Layer A) and reviewer (Layer B), the reviewer's run producing the authoritative verdict + an artifact-of-record capture attached to the PR at ship.",
+  "issueNumber": 116,
+  "relatedDocs": [
+    "scripts/cam/issues/CAM-0116.json",
+    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "gh",
+      "url": "https://cli.github.com/manual/gh_pr_comment",
+      "version": "current",
+      "fetchedAt": "2026-07-01T00:00:00Z",
+      "summary": "gh pr comment takes the PR as a positional arg ([<number>|<url>|<branch>]) and reads the comment body from a file via -F/--body-file (use '-' for stdin). Confirms the artifact-of-record can be posted from a file at ship without inlining text.",
+      "status": "ok"
+    },
+    {
+      "lib": "tmux",
+      "url": "https://man.openbsd.org/tmux.1",
+      "version": "current",
+      "fetchedAt": "2026-07-01T00:00:00Z",
+      "summary": "capture-pane -p prints the pane buffer to stdout; -S - captures full scrollback. send-keys drives the pane. Confirms the existing test/integration/ private-socket harness (swapSocketSpawn over -L cam) is the right substrate for the behavioral gate; no new flags needed.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Parse the per-story behavioral oracle from a PRD story",
+      "description": "As the loop, I need a pure parser that extracts the [oracle: ...] directive the CAM-109 planner emits on each acceptanceCriterion, so the shared gate has a machine-readable target (tool + command/assert) to drive and assert against.",
+      "acceptanceCriteria": [
+        "A pure exported function in src/supervisor/behavioral-gate.ts reads a PRD story's acceptanceCriteria and returns the parsed oracle directives (kind + payload) for each criterion carrying an [oracle: ...] suffix; criteria without an oracle yield no directive. [oracle: bun test]",
+        "The parser recognizes the three oracle kinds the CAM-109 planner emits (named-command, file-assert, reviewer-judgment) and, for tmux-driven criteria, exposes the verification tool name (tmux-pty) and the artifact reference the criterion names. [oracle: bun test]",
+        "A criterion whose oracle text is malformed or absent returns a typed 'no runnable oracle' result rather than throwing (graceful: an unparseable oracle never crashes the gate). [oracle: bun test]",
+        "The ReviewFinding/ReviewReport contract in src/supervisor/review-report.ts is not modified by this story (parser is read-only over the PRD). [oracle: file-assert git diff --quiet src/supervisor/review-report.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New file src/supervisor/behavioral-gate.ts, test under test/supervisor/behavioral-gate.test.ts. The [oracle: <kind-or-command>] convention is emitted by the CAM-109 planner (see the planner agent prompt + this PRD's own criteria for the exact suffix shape). Only PARSE here; driving+asserting is US-002. Respect noUncheckedIndexedAccess on regex capture groups (patterns.md). Keep the parser pure (no I/O), mirroring parseReviewVerdict in src/supervisor/review.ts."
+    },
+    {
+      "id": "US-002",
+      "title": "Shared runnable behavioral gate: drive real cam in tmux, capture, assert",
+      "description": "As both the implementer and the reviewer worker, I need a single runnable gate that spawns real cam in a private-socket tmux session, captures the pane, and asserts a story's behavioral oracle, so the same tooling verifies behavior at Layer A and Layer B (shared tooling, independent invocation).",
+      "acceptanceCriteria": [
+        "src/supervisor/behavioral-gate.ts exports a runnable that, given a parsed oracle (US-001), drives real cam in a tmux session on a PRIVATE socket (the swapSocketSpawn/-L pattern from test/integration/tmux-introspect.test.ts), captures the pane text, asserts the oracle, and returns a typed { passed, capturedPane, detail } result. [oracle: bun test]",
+        "The gate is built ON TOP OF the existing test/integration/ tmux-real harness (reuses new-session + capture-pane + private-socket isolation), NOT a new tmux driver: an integration test drives the gate against a real tmux session and asserts pass on a satisfied oracle and fail on an unsatisfied one, skipping when tmux is absent (test.skipIf). [oracle: grep -q 'skipIf' test/integration/behavioral-gate.test.ts]",
+        "The gate returns the captured pane text as a string on its result so the caller can persist it as an artifact; it never spawns against the live 'cam' socket (isolation guard: the socket name is injectable and defaults to a private test socket, never bare 'cam'). [oracle: bun test]",
+        "The gate runs on the HOST-spawn path (tmux + cam on the host); no container/unix-socket-under-seccomp compat is scoped here (CAM-152 is deliberately unshipped, workers run on the host). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "check:all passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "src/supervisor/behavioral-gate.ts (extend US-001), integration test test/integration/behavioral-gate.test.ts modeled on test/integration/tmux-introspect.test.ts (TEST_SOCK constant, swapSocketSpawn SpawnFn that rewrites '-L cam' -> private socket, spawnSync('tmux',['-V']).status===0 skip guard, kill-server in before/afterEach). Reuse the harness; do NOT write a from-scratch driver (spec constraint + CAM-55 anti-shadow-mock lesson in patterns.md: a unit fake that returns expected output cannot catch tmux-real bugs). Injectable spawnFn/socket so unit paths do not touch real tmux. Host-run only per CAM-0116.json gotcha on CAM-111/152."
+    },
+    {
+      "id": "US-003",
+      "title": "Implementer runs the gate at Layer A to self-correct",
+      "description": "As the implementer worker, I need to run the shared behavioral gate at Layer A to reproduce a story's behavior locally and fix-with-vision, with an explicit rule that my run is NOT the official artifact, so I self-correct before the reviewer independently verifies.",
+      "acceptanceCriteria": [
+        "The subagent-implementer agent prompt instructs the implementer to run the shared behavioral gate (US-002) at Layer A for any story whose acceptanceCriteria carry a tmux-drivable [oracle: ...], reproduce the behavior locally, and fix-with-vision before declaring the story done. [oracle: file-assert grep -qi 'behavioral gate' .claude/agents/subagent-implementer.md]",
+        "The prompt states explicitly that the implementer's Layer A gate run is self-correction only and is NOT the artifact-of-record (only the reviewer's Layer B run is official). [oracle: file-assert grep -qi 'not the artifact-of-record' .claude/agents/subagent-implementer.md]",
+        "Both the runtime copy (.claude/agents/subagent-implementer.md) and the cam-init template (templates/agents/subagent-implementer.md) carry the identical instruction (self-hosting: edit both). [oracle: file-assert grep -qi 'behavioral gate' templates/agents/subagent-implementer.md]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": ".claude/agents/subagent-implementer.md AND templates/agents/subagent-implementer.md, then bun run embed-vendor + verify with embed-vendor:check (patterns.md 'Agent-prompt self-hosting pattern': edit both copies then re-embed; the templatesContents byte-parity test in test/embedded.test.ts catches drift). Layer A framing = 'reproduce local, fix-with-vision, NOT official' from CAM-56 two-layer (spec gotcha 2). No src logic change; the gate runnable already exists (US-002). Keep the em-dash rule off .md persisted for humans, but agent .md are LLM-consumed (CLAUDE.md exception)."
+    },
+    {
+      "id": "US-004",
+      "title": "Reviewer re-runs the gate at Layer B and writes the artifact-of-record",
+      "description": "As the reviewer worker, I need to independently re-run the behavioral gate at Layer B and write my capture-pane output as the artifact-of-record file referenced from review-report.json, so the official evidence comes from the reviewer's run, never the implementer's green.",
+      "acceptanceCriteria": [
+        "The subagent-reviewer agent prompt instructs the reviewer to independently re-run the shared behavioral gate (US-002) at Layer B for each tmux-drivable story oracle, NOT trusting the implementer's Layer A result. [oracle: file-assert grep -qi 'independently re-run' .claude/agents/subagent-reviewer.md]",
+        "The reviewer writes its capture-pane output to a dedicated artifact-of-record file (a new REVIEW_ARTIFACT_FILENAME constant in src/supervisor/review-report.ts) and records that path in review-report.json via a new optional field on the ReviewReport type. [oracle: grep -q 'REVIEW_ARTIFACT_FILENAME' src/supervisor/review-report.ts]",
+        "The ReviewReport type gains an optional artifact-reference field (e.g. artifactOfRecord?: string) that is the relative path to the capture file; a report without it (CLEAN, no tmux oracle) still parses (backward compatible). [oracle: bun test]",
+        "The artifact-of-record file (scripts/cam/review-artifact.txt) is gitignored in BOTH .gitignore and templates/.gitignore (ephemeral, never committed, symmetric to review-report.json). [oracle: file-assert grep -q 'review-artifact.txt' .gitignore]",
+        "Both the runtime and template copies of the reviewer agent prompt carry the Layer B re-run + artifact-write instruction. [oracle: file-assert grep -qi 'artifact-of-record' templates/agents/subagent-reviewer.md]",
+        "The reviewer prompt's write-exception wording (the 'ONLY permitted write' Constraints clause ~line 28 AND the 'single permitted exception' Exit-report clause ~line 168) is updated to name BOTH scripts/cam/review-report.json AND the artifact-of-record file (scripts/cam/review-artifact.txt) as permitted writes, resolving the READ-ONLY self-contradiction, in both the runtime and template copies. [oracle: file-assert grep -q 'review-artifact.txt' .claude/agents/subagent-reviewer.md && grep -q 'review-artifact.txt' templates/agents/subagent-reviewer.md]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "src/supervisor/review-report.ts: add `export const REVIEW_ARTIFACT_FILENAME = 'scripts/cam/review-artifact.txt';` (pinned literal, symmetric to REVIEW_REPORT_FILENAME) and an optional `artifactOfRecord?: string` field on ReviewReport. This EXACT string 'scripts/cam/review-artifact.txt' is the single source: US-006 hardcodes it in --body-file, the .gitignore entry matches it, and the reviewer writes it. .claude/agents/subagent-reviewer.md + templates/agents/subagent-reviewer.md: (a) add the Layer B independent re-run + artifact-write instruction; (b) F-01: the reviewer prompt currently says review-report.json is the ONLY permitted write (Constraints ~line 28) / the single permitted exception (Exit-report protocol ~line 168) to the READ-ONLY constraint. The artifact-of-record is a SECOND permitted write, so BOTH clauses must be widened to name review-report.json AND scripts/cam/review-artifact.txt, else the prompt self-contradicts. Then bun run embed-vendor + embed-vendor:check (patterns.md self-hosting + templatesContents byte-parity test in test/embedded.test.ts). .gitignore + templates/.gitignore add scripts/cam/review-artifact.txt. Only the reviewer's run is the artifact-of-record (spec gotcha 2). Reviewer stays READ-ONLY for source (Edit/NotebookEdit disallowed); Write only for the two ephemeral files. Preserve the <review> sentinel + review-report.json contract (spec gotcha 7): artifact is ADDITIVE."
+    },
+    {
+      "id": "US-005",
+      "title": "Reviewer gate-fail is a hard-constraint FAIL producing FIXES_PENDING",
+      "description": "As the loop, I need a behavioral-gate FAIL on the REVIEWER's run to be a hard-constraint FAIL in the existing reviewer verdict mechanism so it drives FIXES_PENDING, integrated into the 8-criteria + hard-constraints machinery rather than a parallel path.",
+      "acceptanceCriteria": [
+        "The subagent-reviewer prompt lists a behavioral-gate FAIL (the reviewer's Layer B run) as a hard-constraint that automatically FAILs the entire verdict, integrated into the existing hard-constraint rule (not a new parallel mechanism); the reviewer emits <review>FIXES_PENDING:N</review> with the gate failure as a CRITICAL finding. [oracle: file-assert grep -qi 'behavioral gate' .claude/agents/subagent-reviewer.md]",
+        "makeReviewDispatch (src/supervisor/review.ts) surfaces a reviewer FIXES_PENDING verdict driven by a gate-fail finding as a normal FIXES_PENDING outcome (US-RX-NNN fix stories created, prd.review.lastVerdict='FIXES_PENDING:N'), with a unit test that feeds a review-report.json whose findings include a CRITICAL behavioral-gate failure and asserts the FIXES_PENDING prd write + fix-story creation. [oracle: bun test]",
+        "A CLEAN reviewer run (gate passed) is unaffected: lastVerdict='CLEAN', no fix stories, existing tests remain green. [oracle: bun test]",
+        "The change reuses the existing FIXES_PENDING plumbing in review.ts (buildFixStories, the findings channel) and does NOT introduce a second verdict enum or a parallel gate-verdict field on prd.review. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "check:all passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "src/supervisor/review.ts (makeReviewDispatch already turns FIXES_PENDING:N + findings into US-RX-NNN stories via buildFixStories; the gate-fail arrives as a CRITICAL ReviewFinding in review-report.json, so most work is prompt-side + a test proving the end-to-end path). .claude/agents/subagent-reviewer.md + templates mirror (add gate-fail to the Layer B Verdict hard-constraint rule at ~line 107-115), then embed-vendor. Do NOT invent a parallel mechanism (spec AC4): integrate into the 8-criteria + hard-constraints. Preserve terminal <review> sentinel + review-report.json contract (CAM-70/CAM-117, spec gotcha 7). Test lives in test/supervisor/review.test.ts."
+    },
+    {
+      "id": "US-006",
+      "title": "Attach the reviewer artifact-of-record to the PR at ship (gh pr comment)",
+      "description": "As the ship flow, I need the reviewer's artifact-of-record capture attached to the PR as a labeled comment at ship time so the behavioral evidence lands on the PR without being committed to the repo.",
+      "acceptanceCriteria": [
+        "The /cam-ship command (cam-ship.md) posts the reviewer's artifact-of-record file (scripts/cam/review-artifact.txt, the REVIEW_ARTIFACT_FILENAME literal from US-004) to the PR as a comment labeled 'artifact-of-record' via gh pr comment <N> --body-file, only when the artifact file is present. [oracle: file-assert grep -q 'artifact-of-record' .claude/commands/cam-ship.md]",
+        "The artifact-post step is placed immediately after gh pr create / auto-merge (~line 76) and BEFORE the 'Merge mode' subsection (~line 95), so it runs on BOTH merge modes: the ci-gated branch (which says 'Skip Step 9') still attaches the artifact-of-record. An oracle asserts the gh-pr-comment line precedes the 'Merge mode' heading in both cam-ship.md copies. [oracle: file-assert bash -c 'for f in .claude/commands/cam-ship.md templates/commands/cam-ship.md; do awk \"/gh pr comment/{c=NR} /Merge mode/{m=NR} END{exit !(c>0 && m>0 && c<m)}\" \"$f\" || exit 1; done']",
+        "The ship step uses gh pr comment --body-file (not inline --body) so the capture text is passed from the file, and is best-effort (a missing artifact file or a gh failure does not abort the ship). [oracle: file-assert grep -q 'gh pr comment' .claude/commands/cam-ship.md]",
+        "The artifact is NOT committed to the repo: the step reads the gitignored artifact file and posts it as a PR comment only (spec: transiente, so PR-comment only). [oracle: reviewer-judgment]",
+        "Both the runtime copy (.claude/commands/cam-ship.md) and the cam-init template (templates/commands/cam-ship.md) carry the identical artifact-of-record ship step. [oracle: file-assert grep -q 'artifact-of-record' templates/commands/cam-ship.md]",
+        "The existing ship steps (verify PRD complete, check:all gate, bump, finalize, push, gh pr create, both merge modes) are preserved and the new step is additive. [oracle: reviewer-judgment]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": ".claude/commands/cam-ship.md + templates/commands/cam-ship.md. F-02 PLACEMENT (load-bearing): this project runs merge_mode=ci-gated (project.toml), and the ci-gated branch in cam-ship.md ends with 'Skip Step 9'. If the artifact-post is placed in the immediate-only path or after the merge-mode subsection it NEVER runs on ci-gated (the artifact would never be posted here). So place the step right after gh pr create / auto-merge (~line 76) and BEFORE the 'Merge mode' subsection (~line 95): `PR_NUMBER=$(gh pr view --json number --jq '.number')` (same pattern as the existing ci-gated block), then a guard `[ -f scripts/cam/review-artifact.txt ] && gh pr comment \"$PR_NUMBER\" --body-file scripts/cam/review-artifact.txt || true` with an 'artifact-of-record' label header prepended. Best-effort like the auto-merge line (never abort ship). Path = the REVIEW_ARTIFACT_FILENAME literal 'scripts/cam/review-artifact.txt' from US-004 (same string as the reviewer writer + gitignore entry). Then bun run embed-vendor + embed-vendor:check (patterns.md self-hosting; cam-ship gate is 'bun run check:all' per US-001 CAM-79). gh pr comment reads the body from -F/--body-file with the PR as positional arg (officialDocsConsulted gh entry)."
+    },
+    {
+      "id": "US-007",
+      "title": "ADR: behavioral verification = shared runnable gate + independent reviewer verdict + artifact-of-record",
+      "description": "As a future maintainer, I need an ADR recording that behavioral verification is a shared runnable gate with an independent reviewer verdict and a reviewer-produced artifact-of-record, so the Layer A/Layer B split and the artifact-on-PR (not committed) decision are captured with their trade-offs.",
+      "acceptanceCriteria": [
+        "A new ADR under docs/adr/ (next sequence number after 0004) records the decision: behavioral verification is a SHARED runnable gate (built on the test/integration tmux-real harness), invoked by both implementer (Layer A, self-correct, non-official) and reviewer (Layer B, authoritative), with the reviewer's capture as the artifact-of-record posted to the PR (not committed). [oracle: file-assert test -f docs/adr/0005-behavioral-verification-shared-gate.md]",
+        "The ADR walks the three ADR gates (hard to reverse, surprising without context, genuine trade-off) per the Domain Model Convention, and records the rejected alternative of an implementer-exclusive verification capability (why shared-tooling/independent-verdict was chosen over trusting the implementer's green). [oracle: reviewer-judgment]",
+        "The ADR notes the deferred concerns: web downstream image artifacts (playwright/agent-browser follow-up) and the container/seccomp unix-socket question (CAM-152), consistent with the spec gotchas. [oracle: file-assert grep -qi 'CAM-152' docs/adr/0005-behavioral-verification-shared-gate.md]",
+        "The ADR contains no em-dash and no decorative emoji (persisted human-readable .md project rule). [oracle: file-assert bash -c '! grep -q \"\\xe2\\x80\\x94\" docs/adr/0005-behavioral-verification-shared-gate.md']",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "check:all passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "docs/adr/0005-behavioral-verification-shared-gate.md (follow the 0004 format: Status/Data, Contexto, three gates, Decisao, Consequencias, Alternativas descartadas). No em-dash / no decorative emoji in persisted human .md (global CLAUDE.md 2026-05-20 rule; ADRs are human-readable, unlike agent .md). ADR-worthy per CAM-0116.json AC8 and the Knowledge-Layer Routing table (hard-to-reverse + surprising + genuine trade-off all hold). Reference CAM-56 (two-layer), CAM-109 (oracle emission), CAM-152 (container defer)."
+    }
+  ]
+}
