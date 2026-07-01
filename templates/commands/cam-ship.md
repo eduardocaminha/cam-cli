@@ -93,6 +93,15 @@ Steps:
    <anything reviewers should know>
    ```
 
+   Post the reviewer artifact-of-record as a PR comment (best-effort -- missing file or `gh` failure does not abort ship):
+   ```bash
+   PR_NUMBER=$(gh pr view --json number --jq '.number')
+   if [ -f scripts/cam/review-artifact.txt ]; then
+     { printf '**artifact-of-record**\n\n'; cat scripts/cam/review-artifact.txt; } > /tmp/cam-artifact-comment.txt
+     gh pr comment "$PR_NUMBER" --body-file /tmp/cam-artifact-comment.txt || true
+   fi
+   ```
+
    **Merge mode** (read `scripts/cam/project.toml [ship] merge_mode`; default: `immediate`):
 
    - **`ci-gated`**: After `gh pr create` above, write the merge-watch state file so the sidecar can poll for CI completion:
