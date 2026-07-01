@@ -6,10 +6,20 @@
 
 FROM oven/bun:1.2-slim
 
-# Install git and Node.js/npm (oven/bun:1.2-slim ships only bun; Node.js is not included)
+# Install git, Node.js/npm, and firewall tooling.
+# oven/bun:1.2-slim ships only bun; Node.js is not included.
+# sudo, iptables, ipset, dnsutils (dig), and curl are required by init-firewall.sh.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git nodejs npm \
+    && apt-get install -y --no-install-recommends \
+        git nodejs npm \
+        sudo iptables ipset dnsutils curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Grant the bun user passwordless sudo for the firewall init script only.
+# postStartCommand in devcontainer.json runs: sudo bash /workspace/.devcontainer/init-firewall.sh
+RUN echo "bun ALL=(root) NOPASSWD: /bin/bash /workspace/.devcontainer/init-firewall.sh" \
+        > /etc/sudoers.d/bun-firewall \
+    && chmod 0440 /etc/sudoers.d/bun-firewall
 
 # Install pinned Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code@2.1.197
