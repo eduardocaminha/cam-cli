@@ -45,7 +45,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file src/supervisor/worker-container.ts + test/supervisor/worker-container.test.ts. Mirror the injectable-probe idiom of src/supervisor/preflight-container.ts (DockerProbe/spawnFn seam; CI is macos-latest with NO Docker daemon, so tests MUST use a fake). Use `-e GITHUB_TOKEN` name-only form (officialDocsConsulted[0]: name-only -e inherits from shell env). Values live in the sidecar env (Bun auto-loads .env). Read .devcontainer/devcontainer.json (relatedDocs) for the exact runArgs/mounts/volume/remoteUser/containerEnv the argv must mirror; the actual JSON->argv parity assertion is US-002. Follow patterns.md 'Bun runtime' (Bun.spawn/Bun.$) and 'noUncheckedIndexedAccess'. Keep the builder PURE (string/argv in, argv out); side-effecting run goes through the injected spawnFn (patterns.md 'Widened SpawnFn' / preflight probe idiom). This is inert substrate like CAM-111 Half A: do NOT wire into any dispatch site."
     },
