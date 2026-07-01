@@ -130,6 +130,27 @@ export interface RunPlanPhaseOptions {
 	readPlanVerdictFn: () => PlanVerdictReport | null;
 
 	/**
+	 * Detect whether the planner has written prd.json (the planner's completion
+	 * signal). Returns non-null when prd.json is present and readable; null
+	 * otherwise. Never throws.
+	 *
+	 * Required to break the planner poll loop when the pane is still alive
+	 * (interactive TUI workers do not self-exit; the driver kills them via
+	 * respawn-pane -k after detecting the report, per the implementer/reviewer
+	 * session model). Without this dep, pollPlannerDeath loops until
+	 * plannerTimeoutMs (30 min) and returns planner-timeout, never spawning
+	 * the auditor (US-R1-001).
+	 *
+	 * Mirrors readReviewReport in review.ts (patterns.md 'Review-report.json
+	 * reader dep-injection pattern'). The prd.json content is not inspected
+	 * by the poll loop; only presence (non-null) matters.
+	 *
+	 * Optional for backward compat with tests that simulate pane death instead.
+	 * Production callers MUST inject this so the happy path does not time out.
+	 */
+	readPlannerReportFn?: () => unknown | null;
+
+	/**
 	 * Run the deterministic plan pre-flight checks. Returns PlanPreflightResult
 	 * (same discriminated union as runPlanPreflight in plan-preflight.ts).
 	 */
@@ -275,8 +296,20 @@ function resolveAndSpawnAuditor(
 }
 
 /**
- * Poll until the planner pane dies or the deadline fires.
- * Returns true when the pane died naturally; false on timeout (after killing the pane).
+ * Poll until the planner completes (prd.json written OR pane dies) or the
+ * deadline fires. Returns true on completion; false on timeout (after killing
+ * the pane).
+ *
+ * Completion is detected by two signals (in priority order, mirroring
+ * review.ts makeReviewDispatch):
+ *   1. readPlannerReportFn() !== null  – prd.json written (primary signal).
+ *      The pane is still alive; respawn-pane -k at Step 6 (auditor spawn)
+ *      will kill it. Explicit kill not needed here.
+ *   2. !isPaneAlive(plannerPaneId)     – pane died naturally (fallback).
+ *
+ * Without signal (1), interactive TUI workers (claude sessions) never
+ * self-exit, so isPaneAlive stays true until plannerTimeoutMs and the
+ * happy path returns planner-timeout (US-R1-001 critical bug).
  */
 function pollPlannerDeath(
 	isPaneAlive: IsPaneAlive,
@@ -286,10 +319,24 @@ function pollPlannerDeath(
 	plannerPaneId: string,
 	pollIntervalMs: number,
 	plannerTimeoutMs: number,
+	readPlannerReportFn?: () => unknown | null,
 ): boolean {
 	const start = clock();
-	while (isPaneAlive(plannerPaneId)) {
+	while (true) {
 		sleepFn(pollIntervalMs);
+
+		// Primary completion signal: prd.json written by the planner.
+		// Check BEFORE pane-death so we can detect completion even if the pane
+		// exits right after writing (mirrors review.ts readReviewReport pattern).
+		if (readPlannerReportFn !== undefined && readPlannerReportFn() !== null) {
+			return true;
+		}
+
+		// Fallback: pane died naturally (e.g. non-interactive mode, test injection).
+		if (!isPaneAlive(plannerPaneId)) {
+			return true;
+		}
+
 		if (clock() - start >= plannerTimeoutMs) {
 			spawnFn('tmux', [
 				'-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, 'echo planner-timeout',
@@ -297,7 +344,6 @@ function pollPlannerDeath(
 			return false;
 		}
 	}
-	return true;
 }
 
 /** Internal result from the auditor poll loop. */
@@ -357,7 +403,7 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 	const {
 		spawnFn, isPaneAlive, sleepFn, genUuid,
 		selectIssueFn, readPlanVerdictFn, preflightFn, clock,
-		plannerPaneId, paneCountMutexFn,
+		plannerPaneId, paneCountMutexFn, readPlannerReportFn,
 	} = opts;
 
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
@@ -391,8 +437,12 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 	// builds argv, sets @cam_label 'planner', runs respawn-pane -k.
 	resolveAndSpawnPlanner(spawnFn, plannerPaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent);
 
-	// Step 5: Poll until planner pane dies (AC4)
-	const plannerDied = pollPlannerDeath(isPaneAlive, sleepFn, clock, spawnFn, plannerPaneId, pollIntervalMs, plannerTimeoutMs);
+	// Step 5: Poll until prd.json written OR planner pane dies (AC4, US-R1-001).
+	// readPlannerReportFn is the primary signal; isPaneAlive is the fallback.
+	const plannerDied = pollPlannerDeath(
+		isPaneAlive, sleepFn, clock, spawnFn,
+		plannerPaneId, pollIntervalMs, plannerTimeoutMs, readPlannerReportFn,
+	);
 	if (!plannerDied) {
 		return { kind: 'planner-timeout' };
 	}

@@ -146,6 +146,65 @@ function makeOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: makeOpts variant with pane-always-alive for US-R1-001 tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds opts where isPaneAlive always returns true (pane never dies).
+ * readPlannerReportFn signals completion after `reportAfterTicks` ticks.
+ * Used to prove the primary completion signal (prd.json) is checked, not
+ * only pane death (US-R1-001 critical bug: without the file check, the
+ * poll loop would run until plannerTimeoutMs and return planner-timeout).
+ */
+function makeOptsAlwaysAlive(reportAfterTicks: number): {
+	opts: RunPlanPhaseOptions;
+	calls: TmuxCall[];
+	reportReadCount: number;
+} {
+	const calls: TmuxCall[] = [];
+	let reportReadCount = 0;
+	let plannerTickCount = 0;
+
+	const spawnFn: SpawnFn = (cmd, args) => {
+		calls.push({ cmd, args });
+		return { stdout: '', exitCode: 0 };
+	};
+
+	const opts: RunPlanPhaseOptions = {
+		spawnFn,
+		isPaneAlive: () => true, // pane NEVER dies; completion must come from readPlannerReportFn
+		sleepFn: () => {},
+		genUuid: (() => {
+			let n = 0;
+			return () => `UUID-${++n}`;
+		})(),
+		selectIssueFn: () => MOCK_ISSUE,
+		readPlanVerdictFn: () => APPROVE_REPORT,
+		preflightFn: () => PREFLIGHT_OK,
+		clock: (() => {
+			let t = 0;
+			return () => (t += 100);
+		})(),
+		plannerPaneId: '%3',
+		paneCountMutexFn: () => 'available',
+		pollIntervalMs: 1,
+		plannerTimeoutMs: 999_999,
+		auditorTimeoutMs: 999_999,
+		readPlannerReportFn: () => {
+			reportReadCount++;
+			plannerTickCount++;
+			// Return non-null (simulating prd.json written) after reportAfterTicks ticks
+			if (plannerTickCount >= reportAfterTicks) {
+				return { branchName: 'cam/test', userStories: [] };
+			}
+			return null;
+		},
+	};
+
+	return { opts, calls, reportReadCount };
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -616,5 +675,85 @@ describe('runPlanPhase', () => {
 		});
 		runPlanPhase(opts);
 		expect(readCount).toBeGreaterThan(0);
+	});
+
+	// -------------------------------------------------------------------------
+	// US-R1-001: primary completion signal is prd.json, not pane death (AC4)
+	//
+	// These tests prove the critical bug fix: the planner poll must break when
+	// readPlannerReportFn()!==null even when isPaneAlive remains true.
+	// The old code (pollPlannerDeath: while isPaneAlive) would loop until
+	// plannerTimeoutMs=999_999 and return planner-timeout on the happy path.
+	// -------------------------------------------------------------------------
+	test('US-R1-001: happy path completes via readPlannerReportFn even when pane never dies', () => {
+		// isPaneAlive always true; readPlannerReportFn signals completion after 1 tick
+		const { opts } = makeOptsAlwaysAlive(1);
+		const result = runPlanPhase(opts);
+		// Must be audit-approved, NOT planner-timeout
+		expect(result.kind).toBe('audit-approved');
+	});
+
+	test('US-R1-001: readPlannerReportFn is checked during planner poll', () => {
+		const { opts, calls: _c } = makeOptsAlwaysAlive(1);
+		// runPlanPhase must call readPlannerReportFn at least once
+		let readCalled = false;
+		const wrappedOpts: RunPlanPhaseOptions = {
+			...opts,
+			readPlannerReportFn: () => {
+				readCalled = true;
+				return { branchName: 'cam/test', userStories: [] };
+			},
+		};
+		runPlanPhase(wrappedOpts);
+		expect(readCalled).toBe(true);
+	});
+
+	test('US-R1-001: auditor is spawned when readPlannerReportFn signals completion (pane still alive)', () => {
+		// The auditor spawn (respawn-pane with subagent-auditor) MUST happen
+		// even though isPaneAlive never returns false.
+		const { opts, calls } = makeOptsAlwaysAlive(1);
+		runPlanPhase(opts);
+		const auditorRespawn = calls.find(
+			(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-auditor')),
+		);
+		expect(auditorRespawn).toBeDefined();
+	});
+
+	test('US-R1-001: readPlannerReportFn checked before isPaneAlive (primary signal priority)', () => {
+		// Report signals completion on tick 1; pane never dies.
+		// Verify we do NOT get planner-timeout (which the old code would produce).
+		const { opts } = makeOptsAlwaysAlive(1);
+		const result = runPlanPhase(opts);
+		expect(result.kind).not.toBe('planner-timeout');
+	});
+
+	test('US-R1-001: without readPlannerReportFn and pane never dying -> planner-timeout', () => {
+		// Proves the dep is necessary: omitting it with always-alive pane hits timeout.
+		let tick = 0;
+		const { opts } = makeOpts({
+			isPaneAlive: () => true,
+			clock: () => (tick += 1_000_000),
+			plannerTimeoutMs: 1,
+			// readPlannerReportFn intentionally absent
+		});
+		const result = runPlanPhase(opts);
+		expect(result.kind).toBe('planner-timeout');
+	});
+
+	test('US-R1-001: readPlannerReportFn called multiple times if report not ready on first tick', () => {
+		// Report returns null for first 2 ticks, then non-null on tick 3.
+		// This ensures the poll loop keeps checking, not just once.
+		const { opts } = makeOptsAlwaysAlive(3);
+		let checkCount = 0;
+		const wrappedOpts: RunPlanPhaseOptions = {
+			...opts,
+			readPlannerReportFn: () => {
+				checkCount++;
+				return checkCount >= 3 ? { branchName: 'cam/test' } : null;
+			},
+		};
+		runPlanPhase(wrappedOpts);
+		// Should have been called at least 3 times
+		expect(checkCount).toBeGreaterThanOrEqual(3);
 	});
 });
