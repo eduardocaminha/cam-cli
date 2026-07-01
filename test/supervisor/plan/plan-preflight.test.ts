@@ -1,0 +1,402 @@
+// test/supervisor/plan/plan-preflight.test.ts
+//
+// Unit tests for src/supervisor/plan-preflight.ts (US-004, CAM-117).
+//
+// Coverage:
+//   1.  Happy path: all steps succeed, returns { ok: true }.
+//   2.  Happy path: exactly the five required-step calls are made in order.
+//   3.  git-checkout-main failure -> { ok: false, step: 'git-checkout-main' }.
+//   4.  First-fail-only: no git pull call when checkout fails.
+//   5.  git-pull failure -> { ok: false, step: 'git-pull' }.
+//   6.  First-fail-only: no later steps when pull fails.
+//   7.  clean-tree: non-empty porcelain output -> { ok: false, step: 'clean-tree' }.
+//   8.  First-fail-only: no typecheck/bun-test calls when tree is dirty.
+//   9.  typecheck failure -> { ok: false, step: 'typecheck' }.
+//  10.  First-fail-only: no bun test call when typecheck fails.
+//  11.  bun-test failure -> { ok: false, step: 'bun-test' }.
+//  12.  Prune step: skipped entirely when ghAvailable=false (no gh calls).
+//  13.  Prune step: lists cam/* branches and checks PR status when gh available.
+//  14.  Prune step: deletes branch when gh reports a merged PR number.
+//  15.  Prune step: best-effort -- for-each-ref failure does not halt pre-flight.
+//  16.  Argv shape: git checkout main.
+//  17.  Argv shape: git pull origin main.
+//  18.  Argv shape: git status --porcelain.
+//  19.  Argv shape: bun run typecheck.
+//  20.  Argv shape: bun test.
+//  21.  Argv shape: gh pr list --head <branch> --state merged --json number --jq .[0].number.
+
+import { describe, expect, test } from 'bun:test';
+import {
+	runPlanPreflight,
+	type PlanPreflightSpawnFn,
+} from '../../../src/supervisor/plan-preflight.ts';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+type SpawnCall = { bin: string; args: string[] };
+
+/** Creates a fake spawnFn that records calls and returns responses in sequence. */
+function makeFakeSpawn(responses: Array<{ exitCode: number; stdout: string }>) {
+	const calls: SpawnCall[] = [];
+	let idx = 0;
+	const fn: PlanPreflightSpawnFn = (bin, args) => {
+		calls.push({ bin, args });
+		const resp = responses[idx++] ?? { exitCode: 0, stdout: '' };
+		return resp;
+	};
+	return { fn, calls };
+}
+
+/**
+ * All-pass response sequence for the five required steps, with ghAvailable=false
+ * (no prune calls injected).
+ */
+function allPassResponses(): Array<{ exitCode: number; stdout: string }> {
+	return [
+		{ exitCode: 0, stdout: '' }, // git checkout main
+		{ exitCode: 0, stdout: '' }, // git pull origin main
+		{ exitCode: 0, stdout: '' }, // git status --porcelain (empty = clean)
+		{ exitCode: 0, stdout: '' }, // bun run typecheck
+		{ exitCode: 0, stdout: '' }, // bun test
+	];
+}
+
+const SAMPLE_CWD = '/tmp/test-repo';
+
+// ---------------------------------------------------------------------------
+// Happy path
+// ---------------------------------------------------------------------------
+
+describe('runPlanPreflight — happy path', () => {
+	test('returns { ok: true } when all required steps pass', () => {
+		const { fn } = makeFakeSpawn(allPassResponses());
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result).toEqual({ ok: true });
+	});
+
+	test('calls all five required steps in order with ghAvailable=false', () => {
+		const { fn, calls } = makeFakeSpawn(allPassResponses());
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+
+		expect(calls.length).toBe(5);
+		expect(calls[0]).toEqual({ bin: 'git', args: ['checkout', 'main'] });
+		expect(calls[1]).toEqual({ bin: 'git', args: ['pull', 'origin', 'main'] });
+		expect(calls[2]).toEqual({ bin: 'git', args: ['status', '--porcelain'] });
+		expect(calls[3]).toEqual({ bin: 'bun', args: ['run', 'typecheck'] });
+		expect(calls[4]).toEqual({ bin: 'bun', args: ['test'] });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Required step failures (discriminated union + first-fail-only)
+// ---------------------------------------------------------------------------
+
+describe('runPlanPreflight — git-checkout-main failure', () => {
+	test('returns { ok: false, step: "git-checkout-main" } on non-zero exit', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 1, stdout: 'error: pathspec main did not match any file(s)' },
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.step).toBe('git-checkout-main');
+			expect(result.detail).toContain('main');
+		}
+	});
+
+	test('does not call git pull when checkout fails (first-fail-only)', () => {
+		const { fn, calls } = makeFakeSpawn([{ exitCode: 1, stdout: '' }]);
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(calls.length).toBe(1);
+	});
+});
+
+describe('runPlanPreflight — git-pull failure', () => {
+	test('returns { ok: false, step: "git-pull" } on non-zero exit', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' }, // checkout ok
+			{ exitCode: 1, stdout: 'fatal: unable to access remote' }, // pull fails
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.step).toBe('git-pull');
+		}
+	});
+
+	test('does not run later steps when pull fails', () => {
+		const { fn, calls } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 1, stdout: '' },
+		]);
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(calls.length).toBe(2);
+	});
+});
+
+describe('runPlanPreflight — clean-tree failure', () => {
+	test('returns { ok: false, step: "clean-tree" } when porcelain output is non-empty', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' }, // checkout
+			{ exitCode: 0, stdout: '' }, // pull
+			{ exitCode: 0, stdout: ' M src/foo.ts\n?? src/bar.ts\n' }, // dirty tree
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.step).toBe('clean-tree');
+			expect(result.detail).toContain('foo.ts');
+		}
+	});
+
+	test('does not run typecheck or bun test when tree is dirty', () => {
+		const { fn, calls } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: ' M src/foo.ts\n' },
+		]);
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		// Only: checkout, pull, status (3 total); no typecheck or bun test
+		expect(calls.length).toBe(3);
+		expect(calls[2]).toEqual({ bin: 'git', args: ['status', '--porcelain'] });
+	});
+});
+
+describe('runPlanPreflight — typecheck failure', () => {
+	test('returns { ok: false, step: "typecheck" } on non-zero exit', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' }, // checkout
+			{ exitCode: 0, stdout: '' }, // pull
+			{ exitCode: 0, stdout: '' }, // status clean
+			{ exitCode: 1, stdout: 'error TS2345: Argument type is not assignable' },
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.step).toBe('typecheck');
+		}
+	});
+
+	test('does not run bun test when typecheck fails', () => {
+		const { fn, calls } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 1, stdout: '' },
+		]);
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		// checkout, pull, status, typecheck (4); no bun test
+		expect(calls.length).toBe(4);
+	});
+});
+
+describe('runPlanPreflight — bun-test failure', () => {
+	test('returns { ok: false, step: "bun-test" } on non-zero exit', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' }, // checkout
+			{ exitCode: 0, stdout: '' }, // pull
+			{ exitCode: 0, stdout: '' }, // status clean
+			{ exitCode: 0, stdout: '' }, // typecheck
+			{ exitCode: 1, stdout: '1 fail / 0 pass' }, // bun test fails
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.step).toBe('bun-test');
+			expect(result.detail).toContain('fail');
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Branch prune step (best-effort, step 3)
+// ---------------------------------------------------------------------------
+
+describe('runPlanPreflight — branch prune step', () => {
+	test('skips all gh calls when ghAvailable=false', () => {
+		const { fn, calls } = makeFakeSpawn(allPassResponses());
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		const ghCalls = calls.filter((c) => c.bin === 'gh');
+		expect(ghCalls.length).toBe(0);
+	});
+
+	test('lists cam/* branches via git for-each-ref when gh is available', () => {
+		const { fn, calls } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' }, // checkout
+			{ exitCode: 0, stdout: '' }, // pull
+			// prune step: for-each-ref returns one branch (not merged)
+			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n' },
+			{ exitCode: 0, stdout: '' }, // gh pr list -> empty (not merged)
+			// required steps
+			{ exitCode: 0, stdout: '' }, // status
+			{ exitCode: 0, stdout: '' }, // typecheck
+			{ exitCode: 0, stdout: '' }, // bun test
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
+		expect(result).toEqual({ ok: true });
+
+		const forEachRefCall = calls.find(
+			(c) => c.bin === 'git' && c.args.includes('for-each-ref'),
+		);
+		expect(forEachRefCall).toBeDefined();
+		expect(forEachRefCall?.args).toContain('refs/heads/cam/');
+	});
+
+	test('passes --head <branch> to gh pr list', () => {
+		const { fn, calls } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n' },
+			{ exitCode: 0, stdout: '' }, // gh pr list -> not merged
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+		]);
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
+
+		const ghCall = calls.find((c) => c.bin === 'gh');
+		expect(ghCall?.args).toContain('--head');
+		expect(ghCall?.args).toContain('cam/CAM-001-feature');
+		expect(ghCall?.args).toContain('--state');
+		expect(ghCall?.args).toContain('merged');
+	});
+
+	test('calls git branch -D when gh pr list returns a merged PR number', () => {
+		const { fn, calls } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' }, // checkout
+			{ exitCode: 0, stdout: '' }, // pull
+			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n' }, // for-each-ref
+			{ exitCode: 0, stdout: '42\n' }, // gh pr list -> PR 42 merged
+			{ exitCode: 0, stdout: '' }, // git branch -D
+			// required steps
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+		]);
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
+
+		const deleteCalls = calls.filter(
+			(c) => c.bin === 'git' && c.args[0] === 'branch' && c.args[1] === '-D',
+		);
+		expect(deleteCalls.length).toBe(1);
+		expect(deleteCalls[0]?.args).toContain('cam/CAM-001-feature');
+	});
+
+	test('does NOT delete branch when gh pr list returns empty (not merged)', () => {
+		const { fn, calls } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n' },
+			{ exitCode: 0, stdout: '' }, // empty output -> no merged PR
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+		]);
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
+
+		const deleteCalls = calls.filter(
+			(c) => c.bin === 'git' && c.args[0] === 'branch' && c.args[1] === '-D',
+		);
+		expect(deleteCalls.length).toBe(0);
+	});
+
+	test('prune failure (for-each-ref fails) does NOT halt pre-flight', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' }, // checkout
+			{ exitCode: 0, stdout: '' }, // pull
+			{ exitCode: 1, stdout: '' }, // for-each-ref fails -> prune skipped silently
+			// required steps
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
+		expect(result).toEqual({ ok: true });
+	});
+
+	test('prune with no cam/* branches (empty for-each-ref output) still passes', () => {
+		const { fn, calls } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' }, // for-each-ref returns empty
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
+		expect(result).toEqual({ ok: true });
+		// No gh calls should have been made (no branches to check)
+		const ghCalls = calls.filter((c) => c.bin === 'gh');
+		expect(ghCalls.length).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Argv shape assertions
+// ---------------------------------------------------------------------------
+
+describe('runPlanPreflight — argv shapes', () => {
+	test('git checkout main: bin=git args=["checkout","main"]', () => {
+		const { fn, calls } = makeFakeSpawn([{ exitCode: 1, stdout: '' }]);
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(calls[0]).toEqual({ bin: 'git', args: ['checkout', 'main'] });
+	});
+
+	test('git pull: bin=git args=["pull","origin","main"]', () => {
+		const { fn, calls } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 1, stdout: '' },
+		]);
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(calls[1]).toEqual({ bin: 'git', args: ['pull', 'origin', 'main'] });
+	});
+
+	test('git status: bin=git args=["status","--porcelain"]', () => {
+		const { fn, calls } = makeFakeSpawn(allPassResponses());
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		const statusCall = calls.find((c) => c.bin === 'git' && c.args[0] === 'status');
+		expect(statusCall?.args).toEqual(['status', '--porcelain']);
+	});
+
+	test('typecheck: bin=bun args=["run","typecheck"]', () => {
+		const { fn, calls } = makeFakeSpawn(allPassResponses());
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		const tcCall = calls.find((c) => c.bin === 'bun' && c.args.includes('typecheck'));
+		expect(tcCall?.args).toEqual(['run', 'typecheck']);
+	});
+
+	test('bun test: bin=bun args=["test"]', () => {
+		const { fn, calls } = makeFakeSpawn(allPassResponses());
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		const testCall = calls.find((c) => c.bin === 'bun' && c.args[0] === 'test');
+		expect(testCall?.args).toEqual(['test']);
+	});
+
+	test('gh pr list: uses --json number --jq .[0].number', () => {
+		const { fn, calls } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: 'cam/CAM-005-branch\n' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '' },
+		]);
+		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
+		const ghCall = calls.find((c) => c.bin === 'gh');
+		expect(ghCall?.args).toEqual([
+			'pr',
+			'list',
+			'--head',
+			'cam/CAM-005-branch',
+			'--state',
+			'merged',
+			'--json',
+			'number',
+			'--jq',
+			'.[0].number',
+		]);
+	});
+});
