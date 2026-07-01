@@ -1,22 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add plan-verdict-report module (auditor structured exit file)"
+    "id": "US-002",
+    "title": "Auditor writes structured verdict file (self-hosting agent-prompt edit)"
   },
   "branchName": "cam/CAM-117-plan-runner",
   "timestamp": "2026-07-01T00:00:00Z",
-  "createdFiles": [
-    "src/supervisor/plan-verdict-report.ts",
-    "test/supervisor/plan/plan-verdict-report.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    ".gitignore",
-    "templates/.gitignore",
+    ".claude/agents/subagent-auditor.md",
+    "templates/agents/subagent-auditor.md",
     "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added src/supervisor/plan-verdict-report.ts with PlanVerdictReport interface, PlanVerdictFinding interface, PLAN_VERDICT_REPORT_FILENAME constant, and makeReadPlanVerdict(cwd) factory. Both .gitignore and templates/.gitignore now include scripts/cam/plan-verdict-report.json (symmetric to review-report.json). embed-vendor regenerated after templates/.gitignore change. The next story should wire makeReadPlanVerdict into the plan-runner dispatch loop (Half B).",
+  "nextStoryContext": "US-002 added Write to subagent-auditor tools frontmatter, updated Constraints to allow only the plan-verdict-report.json write, and added Exit report protocol section mirroring the reviewer pattern. Both .claude/agents/subagent-auditor.md and templates/agents/subagent-auditor.md were edited and embed-vendor regenerated. The next story should wire makeReadPlanVerdict into the plan-runner dispatch loop (plan-runner Half B stories, if any).",
   "officialDocsValidated": [
     {
       "lib": "none",

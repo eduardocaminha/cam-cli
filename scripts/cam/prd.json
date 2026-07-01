@@ -39,7 +39,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "INTENTIONAL SELF-HOSTING (declare in commit msg per patterns.md 'Agent-prompt self-hosting pattern' US-001 CAM-16): this story deliberately edits .claude/agents/subagent-auditor.md AND templates/agents/subagent-auditor.md, then runs `bun run embed-vendor` to sync src/vendor/_generated.ts. The `templatesContents` byte-parity test in test/embedded.test.ts catches drift. Precedent: CAM-75 US-001 added `Write` to subagent-reviewer.md tools for review-report.json (patterns.md 'Structured reviewer exit report pattern'). Keep the auditor READ-ONLY for source code (no Edit/NotebookEdit); Write is the single exception, only for the verdict file. Verdict values must be exactly 'APPROVE'/'BLOCK' to match US-001's shape guard. Do NOT change the audit checklist logic (surgical: only the output-channel + tools frontmatter)."
     },
