@@ -1,26 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Reviewer gate-fail is a hard-constraint FAIL producing FIXES_PENDING"
+    "id": "US-006",
+    "title": "Attach the reviewer artifact-of-record to the PR at ship (gh pr comment)"
   },
   "branchName": "cam/CAM-116-behavioral-verification-gate",
-  "timestamp": "2026-07-01T04:30:00Z",
+  "timestamp": "2026-07-01T05:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-reviewer.md",
-    "templates/agents/subagent-reviewer.md",
+    ".claude/commands/cam-ship.md",
+    "templates/commands/cam-ship.md",
     "src/vendor/_generated.ts",
-    "test/supervisor/review.test.ts",
-    "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 integrated behavioral-gate FAIL as a hard-constraint into the existing hard-constraint rule in both .claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md. The new bullet reads: 'A behavioral gate FAIL at Layer B: one or more tmux-drivable oracle directives in the story's acceptanceCriteria failed during the reviewer's independent re-run. Report each failed oracle as a CRITICAL finding in review-report.json and emit FIXES_PENDING:N. This hard-constraint is integrated into the 8-criteria findings channel; it does NOT introduce a separate verdict field or a parallel gate-verdict path.' No changes to review.ts were needed: the existing makeReviewDispatch already routes file-based CRITICAL findings through buildFixStories -> FIXES_PENDING:N. 5 new tests were added to test/supervisor/review.test.ts (describe block 'makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)'). file-size budget raised from 1220->1425 for test/supervisor/review.test.ts (CAM-116 US-005 ref). Vendor was re-embedded. The file-assert oracle 'grep -qi behavioral gate .claude/agents/subagent-reviewer.md' passes.",
+  "nextStoryContext": "US-006 added an artifact-of-record ship step to both .claude/commands/cam-ship.md and templates/commands/cam-ship.md. The step is placed after the PR body template block and before the **Merge mode** subsection, ensuring it runs on both immediate and ci-gated merge modes. It captures PR_NUMBER via 'gh pr view --json number --jq .number', then guards on the presence of scripts/cam/review-artifact.txt, prepends a '**artifact-of-record**' label header into a tmp file, and posts via 'gh pr comment $PR_NUMBER --body-file /tmp/cam-artifact-comment.txt || true' (best-effort: failure does not abort ship). The artifact is never committed to the repo (gitignored). src/vendor/_generated.ts was regenerated. All file-assert oracles pass.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Story only edited agent prompt .md files, added unit tests to test/supervisor/review.test.ts, updated file-size-budget.json, and re-embedded vendor. No external library was exercised."
+      "lib": "gh CLI",
+      "version": "current",
+      "url": "https://cli.github.com/manual/gh_pr_comment",
+      "fetchedAt": "2026-07-01T05:00:00Z",
+      "status": "ok",
+      "summary": "Confirmed: gh pr comment accepts --body-file (-F) for reading body from a file; PR number is a positional arg. Usage 'gh pr comment \"$PR_NUMBER\" --body-file <file>' matches the documented API."
     }
   ]
 }

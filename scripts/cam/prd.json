@@ -132,7 +132,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": ".claude/commands/cam-ship.md + templates/commands/cam-ship.md. F-02 PLACEMENT (load-bearing): this project runs merge_mode=ci-gated (project.toml), and the ci-gated branch in cam-ship.md ends with 'Skip Step 9'. If the artifact-post is placed in the immediate-only path or after the merge-mode subsection it NEVER runs on ci-gated (the artifact would never be posted here). So place the step right after gh pr create / auto-merge (~line 76) and BEFORE the 'Merge mode' subsection (~line 95): `PR_NUMBER=$(gh pr view --json number --jq '.number')` (same pattern as the existing ci-gated block), then a guard `[ -f scripts/cam/review-artifact.txt ] && gh pr comment \"$PR_NUMBER\" --body-file scripts/cam/review-artifact.txt || true` with an 'artifact-of-record' label header prepended. Best-effort like the auto-merge line (never abort ship). Path = the REVIEW_ARTIFACT_FILENAME literal 'scripts/cam/review-artifact.txt' from US-004 (same string as the reviewer writer + gitignore entry). Then bun run embed-vendor + embed-vendor:check (patterns.md self-hosting; cam-ship gate is 'bun run check:all' per US-001 CAM-79). gh pr comment reads the body from -F/--body-file with the PR as positional arg (officialDocsConsulted gh entry)."
     },
