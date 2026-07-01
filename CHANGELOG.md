@@ -4,6 +4,19 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.41.0] - 2026-07-01
+
+### Added
+
+- [US-R2-001] - Review round 2 fix 001: address reviewer finding
+- [US-R1-002] - Review round 1 fix 002: address reviewer finding
+- [US-R1-001] - Wire runPostAuditAction into makeProductionPlanPhaseFn
+- [US-005] - Reduce cam-plan.md to thin phase-signal stub; regen embed; ADR 0006
+- [US-004] - cam plan N thin-proxy writes phase:planning + plan_issue instead of injecting markdown
+- [US-003] - runPostAuditAction flips phase:implementing on APPROVE+auto; keeps escalate-on-BLOCK
+- [US-002] - Wire phase:planning detection into the sidecar outer loop to invoke runPlanPhase
+- [US-001] - Add loop-phase enum as single source of truth; active derives from phase
+
 ## [0.40.0] - 2026-07-01
 
 ### Added
