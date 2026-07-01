@@ -1,23 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Add pure argv builders for planner and auditor worker panes"
+    "id": "US-004",
+    "title": "Add deterministic plan pre-flight in TS"
   },
   "branchName": "cam/CAM-117-plan-runner",
   "timestamp": "2026-07-01T00:00:00Z",
   "createdFiles": [
-    "src/supervisor/plan-argv.ts",
-    "test/supervisor/plan/plan-argv.test.ts"
+    "src/supervisor/plan-preflight.ts",
+    "test/supervisor/plan/plan-preflight.test.ts"
   ],
   "modifiedFiles": [
-    "scripts/cam/prd.json"
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added src/supervisor/plan-argv.ts with buildPlannerWorkerArgv and buildAuditorWorkerArgv. Both are pure argv builders mirroring the implementer/reviewer pattern: workerEnvPrefix() + claude --permission-mode --session-id --model --agent '<prompt>'. No -p, no --output-format. 30 tests in test/supervisor/plan/plan-argv.test.ts. The next story (US-004) should add the deterministic plan pre-flight in TS.",
+  "nextStoryContext": "US-004 added src/supervisor/plan-preflight.ts with runPlanPreflight({ cwd, spawnFn, ghAvailable? }). Returns { ok: true } | { ok: false; step: string; detail: string }. Steps: git checkout main, git pull origin main, prune merged cam/* branches (best-effort, ghAvailable injectable), git status --porcelain, bun run typecheck, bun test. 24 tests in test/supervisor/plan/plan-preflight.test.ts. The next story should integrate this pre-flight into the plan-runner dispatch path.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "bun",
+      "version": "1.3.x",
+      "url": "https://bun.sh/docs/api/utils",
+      "fetchedAt": "2026-07-01T00:00:00Z",
+      "status": "ok",
+      "summary": "Bun.which(bin) confirmed: returns string (path) when found, null when not found. Implementation uses !== null correctly."
     }
   ]
 }

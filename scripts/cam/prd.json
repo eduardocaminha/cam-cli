@@ -73,7 +73,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Port the LLM-driven Step 0 of cam-plan.md (git checkout main / git pull origin main / prune merged cam/* / git status / typecheck / tests) into deterministic TS. Precedents: src/supervisor/preflight-container.ts (discriminated-union PreflightResult shape + injectable probe seam) and host.ts runGates (spawnSync 'bun' ['run','typecheck'] then ['test']). Use the spawnSync exit-status guard (patterns.md US-R1-001): spawnSync does NOT throw on non-zero; check `(result.status ?? 1) !== 0`. Prune loop mirrors cam-plan.md Step 0.2: `git for-each-ref refs/heads/cam/` + `gh pr list --head <b> --state merged`; skip silently if `gh` absent (Bun.which('gh') === null or spawn ENOENT). Keep the pure gating logic separate from the git argv so tests assert argv shape with no network. This is HAPPY-PATH only: in-progress-work conflict detection is OUT OF SCOPE (CAM-151 Half B)."
     },
