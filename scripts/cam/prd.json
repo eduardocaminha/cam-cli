@@ -39,7 +39,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file src/supervisor/behavioral-gate.ts, test under test/supervisor/behavioral-gate.test.ts. The [oracle: <kind-or-command>] convention is emitted by the CAM-109 planner (see the planner agent prompt + this PRD's own criteria for the exact suffix shape). Only PARSE here; driving+asserting is US-002. Respect noUncheckedIndexedAccess on regex capture groups (patterns.md). Keep the parser pure (no I/O), mirroring parseReviewVerdict in src/supervisor/review.ts."
     },

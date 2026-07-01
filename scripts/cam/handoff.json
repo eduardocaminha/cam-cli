@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Parse the per-story behavioral oracle from a PRD story"
+  },
+  "branchName": "cam/CAM-116-behavioral-verification-gate",
+  "timestamp": "2026-07-01T00:00:00Z",
+  "createdFiles": [
+    "src/supervisor/behavioral-gate.ts",
+    "test/supervisor/behavioral-gate.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 delivered parseOracleDirectives (src/supervisor/behavioral-gate.ts). The function returns CriterionOracle[] (criterionIndex + OracleDirective) for criteria carrying [oracle: ...] suffixes; criteria without an oracle are silently skipped. The regex uses a greedy leading .* to anchor to the LAST [oracle:] occurrence in the string (important: criterion prose can contain example [oracle: ...] text). OracleDirective is a discriminated union: named-command (command), file-assert (command), reviewer-judgment, tmux-pty (toolName + artifactRef), no-oracle (raw). US-002 (driving + asserting) can import directly from src/supervisor/behavioral-gate.ts.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure parser using only TypeScript built-ins and regex. No external library exercised."
+    }
+  ]
+}
