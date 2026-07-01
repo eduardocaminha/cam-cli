@@ -4,6 +4,18 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.39.0] - 2026-07-01
+
+### Added
+
+- [US-R1-001] - Fix allowlist drift: reconcile ALLOWED_DOMAINS, --ipset directives, runbook, and test REQUIRED_HOSTS as single source of truth
+- [US-006] - Docs: recovery-runbook credential + DNS-firewall section and ADR for the containerized substrate + credential model
+- [US-005] - Wire preflightWorkerContainer() into the dispatch decision point (result available, gates nothing live)
+- [US-004] - DNS-based firewall rewrite (dnsmasq + ipset) in init-firewall.sh; fix LFS host
+- [US-003] - Container git HTTPS + token credential configuration (no ~/.ssh, no host cred file)
+- [US-002] - Parity test: TS docker-run args match .devcontainer/devcontainer.json (no runtime JSONC parse)
+- [US-001] - Add worker-container orchestration module (build + run one long-lived container) with credential env threading
+
 ## [0.38.0] - 2026-07-01
 
 ### Added
