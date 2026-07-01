@@ -1,0 +1,53 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-145-recommend-by-merit",
+  "description": "Bake a 'recommend by engineering merit, not execution cost' clause into 3 cam-owned recommendation surfaces (grill-with-docs skill, cam-plan Step 6, orchestrator Output style), regen the embed, and guard it with a parity test.",
+  "issueNumber": 145,
+  "relatedDocs": ["scripts/cam/patterns.md"],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Insert the merit-over-cost clause into all 3 surfaces and regenerate the embed",
+      "description": "As a cam maintainer, I need the 'recommend by engineering merit, not execution cost' clause baked into the 3 cam-owned recommendation surfaces (both the .claude/ working copy and the templates/ embed-source copy of each) and the embed regenerated, so that every cam user inherits the guidance and the shipped binary carries it.",
+      "acceptanceCriteria": [
+        "The clause is present in .claude/skills/grill-with-docs/SKILL.md, in English, inserted AFTER the delegation line ('Run a /grilling session, using the /domain-modeling skill.'), and conveys: rank recommendations by engineering merit (quality, launch-readiness), never by execution cost; effort/v1/future/complexity never downgrade what you recommend; high cost is a separate factor noted AFTER the recommendation; quality-within-scope not gold-plating (scope stays minimal, Simplicity). [oracle: file-assert grep -qi 'engineering merit' .claude/skills/grill-with-docs/SKILL.md]",
+        "The same clause is present byte-identically in templates/skills/grill-with-docs/SKILL.md (this copy is currently byte-identical to the .claude/ copy; keep it identical). [oracle: named-command diff .claude/skills/grill-with-docs/SKILL.md templates/skills/grill-with-docs/SKILL.md]",
+        "The clause (contextualized to scope/story recommendations) is present in .claude/commands/cam-plan.md within Step 6 (the 'Present scope proposal' section, anchored after line 119 'Do not re-litigate scope...'), in English. [oracle: file-assert grep -qi 'engineering merit' .claude/commands/cam-plan.md]",
+        "The same Step 6 clause is present in templates/commands/cam-plan.md; the implementer located Step 6 in EACH copy and inserted per-file (these two copies DIFFER and must NOT be byte-copied onto each other). [oracle: file-assert grep -qi 'engineering merit' templates/commands/cam-plan.md]",
+        "The clause (contextualized to general-conversation recommendations) is present in .claude/agents/subagent-orchestrator.md within the 'Output style' section (after line 261, alongside the existing 'When proposing an action' bullet), in English. [oracle: file-assert grep -qi 'engineering merit' .claude/agents/subagent-orchestrator.md]",
+        "The same clause is present byte-identically in templates/agents/subagent-orchestrator.md (this copy is currently byte-identical to the .claude/ copy; keep it identical). [oracle: named-command diff .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md]",
+        "The clause text introduces NO 'grill' vocabulary (uses 'recommendation'/'recommend'), so it stays rename-neutral for the CAM-146 grill->spec rebase. [oracle: file-assert grep -q 'engineering merit' .claude/agents/subagent-orchestrator.md .claude/commands/cam-plan.md .claude/skills/grill-with-docs/SKILL.md && ! grep -in 'grill' .claude/agents/subagent-orchestrator.md | grep -i 'merit\\|recommend']",
+        "The vendored skills .claude/skills/grilling/ and .claude/skills/domain-modeling/ are unmodified. [oracle: named-command git diff --quiet -- .claude/skills/grilling .claude/skills/domain-modeling]",
+        "src/vendor/_generated.ts is regenerated and the embedded shipped copies of all 3 artifacts contain the clause. [oracle: named-command bun run embed-vendor && grep -c 'engineering merit' src/vendor/_generated.ts]",
+        "Vendor drift check passes. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes. [oracle: bun run typecheck]",
+        "Lint passes. [oracle: bun run lint]",
+        "Tests pass. [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "6 hand-edited files + 1 generated file. Edit .claude/skills/grill-with-docs/SKILL.md (insert after line 7 delegation line), .claude/commands/cam-plan.md (Step 6 starts line 117; insert the scope/story-contextualized clause after line 119), .claude/agents/subagent-orchestrator.md (Output style section starts line 252; insert after the 'When proposing an action' bullet at line 260-261). For grill-with-docs and subagent-orchestrator the .claude/ and templates/ copies are CURRENTLY byte-identical: mirror the edit exactly. For cam-plan.md the two copies DIFFER (cam-dual-copy-is-per-file pattern, scripts/cam/patterns.md): locate '### Step 6' in EACH copy independently and insert at the matching anchor; do NOT byte-copy one onto the other. Then run `bun run embed-vendor` (NOT the :check variant) to regenerate src/vendor/_generated.ts. Clause wording must mirror the CLAUDE.md Rule 1 'Recommend on merits' language but stay in English and use 'recommendation' vocabulary (no 'grill', for CAM-146 rename-neutrality). Do NOT touch vendored .claude/skills/grilling or .claude/skills/domain-modeling (mattpocock upstream; the wrapper we own carries the guidance)."
+    },
+    {
+      "id": "US-002",
+      "title": "Add a parity test asserting the clause in the 3 embedded shipped copies",
+      "description": "As a cam maintainer, I need a parity test (CAM-49/68/79 class) that asserts the merit-over-cost clause is present in the embedded shipped copies of all 3 artifacts, so that a future edit that drops the clause or forgets to regenerate the embed fails CI.",
+      "acceptanceCriteria": [
+        "test/embedded.test.ts contains a new describe block that reads the embedded shipped copies via templatesContents['skills/grill-with-docs/SKILL.md'], templatesContents['commands/cam-plan.md'], and templatesContents['agents/subagent-orchestrator.md'] and asserts each toContain the clause marker ('engineering merit'). [oracle: file-assert grep -q \"templatesContents\\['skills/grill-with-docs/SKILL.md'\\]\" test/embedded.test.ts]",
+        "The new tests pass against the embed produced in US-001. [oracle: named-command bun test test/embedded.test.ts]",
+        "The test would FAIL if any of the 3 embedded copies lacked the clause (assertion targets the embedded copy, not the source .md on disk). [oracle: reviewer-judgment]",
+        "Vendor drift check passes. [oracle: bun run embed-vendor:check]",
+        "Full gate suite passes. [oracle: bun run check:all]",
+        "Typecheck passes. [oracle: bun run typecheck]",
+        "Lint passes. [oracle: bun run lint]",
+        "Tests pass. [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Add to test/embedded.test.ts (follow the existing 'oracle contract in planner prompt (US-001)' / 'oracle enforcement in auditor prompt (US-002)' describe blocks at lines 120-160 as the template). Assert against the EMBEDDED copies via `templatesContents[key]` (imported from ../src/templates/embedded.ts), NOT against files read from disk: the whole point is to catch a stale _generated.ts. Keys: 'skills/grill-with-docs/SKILL.md', 'commands/cam-plan.md', 'agents/subagent-orchestrator.md'. Use a stable substring of the clause ('engineering merit') as the marker so the test survives light wording edits. This is a test-authoring story, not a behavior change; check:all is the top-level gate (runs typecheck, test, embed-vendor, lint, file-size, debt-markers, coverage, dead-code, dup, ci-parity)."
+    }
+  ]
+}
