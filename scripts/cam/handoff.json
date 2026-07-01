@@ -1,18 +1,15 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Review round 1 fix 002: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/sidecar.ts",
-    "scripts/file-size-budget.json",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md",
-    "test/supervisor/plan/plan-runner-postaudit.test.ts"
+    "docs/adr/0006-phase-enum-loop-state-machine.md",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-002 fixed the planning phase re-entry bug in makeProductionPlanPhaseFn: after runPostAuditAction returns, exitPhaseAfterPlan(result, makeSetPhaseFn(claudeDir, cwd)) is called to transition the phase out of 'planning' on all non-branch-created outcomes. awaiting-operator-approval -> 'awaiting-operator'; escalated/no-action -> 'idle'. The helper is extracted as a top-level function to keep the closure under biome's 80-line noExcessiveLinesPerFunction limit. 8 new oracle tests added (Groups A+B) in plan-runner-postaudit.test.ts. file-size budget raised: sidecar.ts 890->912. All 2602 tests pass. check:all exits 0. All 7 stories now have passes:true. PRD is complete -- reviewer should run next.",
+  "nextStoryContext": "US-R2-001 fixed the factual error in ADR 0006 section 4 ('BLOCK escalation'). The old bullet incorrectly claimed that pause-operator calls escalateFn and maintains phase:planning. The corrected section now has two sub-bullets: (a) pause-operator returns awaiting-operator-approval with no escalateFn call, exitPhaseAfterPlan transitions to awaiting-operator; (b) audit-blocked calls escalateFn and returns escalated, exitPhaseAfterPlan transitions to idle. Both paths are explicit that phase:planning is never maintained. All 2602 tests pass. check:all exits 0. All 8 stories now have passes:true. The remaining reviewer findings (rounds 1+2) are SUGGESTION severity (no WARNING or CRITICAL). PRD is complete -- reviewer should run next.",
   "officialDocsValidated": [
     {
       "lib": "none",
@@ -20,7 +17,7 @@
       "url": "n/a",
       "fetchedAt": "2026-07-01T00:00:00Z",
       "status": "no_external_lib_touched",
-      "summary": "US-R1-002 touches only sidecar.ts (exitPhaseAfterPlan helper + re-entry guard wiring), file-size-budget.json, prd.json, patterns.md, and test oracle file. No external library imported."
+      "summary": "US-R2-001 touches only docs/adr/0006-phase-enum-loop-state-machine.md (doc-only fix) and prd.json (passes:true flip). No external library imported."
     }
   ]
 }

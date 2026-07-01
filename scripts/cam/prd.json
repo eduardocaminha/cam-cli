@@ -9,16 +9,23 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [docs/adr/0006-phase-enum-loop-state-machine.md:30]: ADR 0006 section 4 ('BLOCK escalation') factually contradicts the code shipped on this same branch. It states that on the `pause-operator` action runPostAuditAction 'chama escalateFn ... e mantem phase: planning'. Both claims are wrong post US-R1-002: (a) escalateFn is called only on the audit-blocked path (returns 'escalated'), NOT on pause-operator (returns 'awaiting-operator-approval' with no escalate); (b) no path keeps phase:planning any more, because exitPhaseAfterPlan (src/commands/sidecar.ts) transitions the phase out of 'planning' on every non-branch-created outcome (audit-blocked/escalated -> idle; pause-operator -> awaiting-operator). Fix the ADR to separate the two paths and remove the 'mantem phase: planning' claim so the canonical design record matches exitPhaseAfterPlan. Doc-maintenance defect in the ADR US-005 was required to author."
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "notes": "CRITICAL [src/commands/sidecar.ts:693]: The production plan phase never acts on the audit result: makeProductionPlanPhaseFn calls runPlanPhase({...}) and DISCARDS the returned PlanPhaseResult (closure typed () => void). runPostAuditAction has NO production call site (grep confirms it is referenced only in comments, its own definition, and the unit test). Consequently, on APPROVE+auto the code never checks out the feature branch, never commits scripts/cam/prd.json, and never calls setPhaseFn('implementing'). The plan phase never hands off to the implement loop. This defeats the PRD's stated goal ('make the plan phase live') and directly contradicts ADR 0006 section Decisao point 3 (introduced by this same branch), which documents APPROVE+auto -> runPostAuditAction -> setPhaseFn('implementing') -> sidecar dispatches the first implementer as implemented in CAM-151. Fix: capture runPlanPhase's result in makeProductionPlanPhaseFn and invoke runPostAuditAction (wiring setPhaseFn=makeSetPhaseFn, spawnFn, branchName from prd.branchName, readPlanApprovalFn, escalateFn, notifyFn)."
     },
     {
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "notes": "CRITICAL [src/supervisor/loop.ts:1474]: The sidecar planning branch re-invokes runPlanPhaseFn on EVERY idle tick with no re-entry guard and no phase transition on non-APPROVE outcomes. Because nothing in production writes a phase other than 'planning' after a plan runs (finding #1), readLoopPhaseFn() keeps returning 'planning', so runPlanPhaseFn is re-run every idlePollMs (2s) forever. Each run executes runPlanPreflight -> `git checkout main` + `git pull origin main` (network) + gh prune. Once a plan leaves scripts/cam/prd.json uncommitted in the tree (which happens on APPROVE+operator, on audit-blocked/escalated, and on the current APPROVE+auto path since runPostAuditAction is never called), preflight fails the clean-tree check and the sidecar busy-loops git/gh network calls indefinitely. On the audit-blocked path this is an unbounded auto-re-plan loop that contradicts ADR 0006 ('re-plan automatico pendente ... B-2/CAM-153; no auto re-plan'). Fix: on non-implementing outcomes (mutex-busy, preflight-failed, planner/auditor timeout, audit-blocked/escalated, awaiting-operator-approval) transition phase out of 'planning' (idle or awaiting-operator) and/or add a re-entry backoff so the branch does not re-run the full network preflight every tick. NOTE: the sidecar-loop tests mask this by injecting a hardcoded phase sequence ['planning','idle','idle'] and a spy runPlanPhaseFn, so the always-planning production behavior is never exercised."
     },
@@ -36,7 +43,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/status.ts (LoopState interface + parseStateFile, ~lines 91-251), src/commands/next.ts (renderStateFile ~lines 73-106), vendor/cam-loop.local.md.tmpl. Name the loop-phase type LoopPhase to avoid collision with the existing model-`Phase` type (src/config/models.ts line 22, which is orchestrator|planner|auditor|... for [models] config). `active` MUST derive from phase===implementing; do NOT keep an independent active field as the source of truth (spec AC1). Keep back-compat: a state file with only `active: true|false` (no phase) must still parse (map active:true->implementing, else idle). Read scripts/cam/patterns.md at story start. This story touches vendor/ so the embed-vendor:check gate applies. Gotcha: renderStateFile substitutes {{KEY}} literal placeholders from the template; add a {{PHASE}} (and plan_issue) placeholder consistently in both the template and renderStateFile."
@@ -55,7 +62,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (runSidecarLoop ~lines 1425-1546 + RunSidecarLoopOptions ~1270-1402), src/commands/sidecar.ts (makeReadActive ~166, buildSidecarLoopDeps ~575, runSidecar ~644). WIRE runPlanPhase from src/supervisor/plan-runner.ts (do NOT recreate it; it is the Half A skeleton, already exported). Mirror the active:true gate structure: the phase:planning branch is a sibling of the `if (active !== true)` idle branch and the active:true work branch. Keep runSupervisor's implement->review->ship logic untouched (spec gotcha: 'do not rewrite runSupervisor'; only change how the active gate is SOURCED). paneCountMutexFn production wiring: () => paneCountMutex(sessionName, tmuxSpawnFn) from src/tmux/session.ts. The spawn invariants live in buildPlannerWorkerArgv/buildAuditorWorkerArgv (src/supervisor/plan-argv.ts) and resolveAndSpawnPlanner/Auditor in plan-runner.ts (already implemented; assert them still hold via the injected spawnFn spy). Read scripts/cam/patterns.md at story start."
@@ -73,7 +80,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts (runPostAuditAction ~lines 554-611; RunPostAuditOptions ~495-528), src/commands/sidecar.ts (makeFlipActiveFn ~374 becomes/gains a setPhase('implementing') writer). The current runPostAuditAction takes flipActiveFn: () => void and calls it to flip active:true; retarget it to a setPhaseFn (or repurpose flipActiveFn to write phase:implementing) so the flip goes through the phase enum, not a bare active field. Keep the branch-BEFORE-commit ordering (git checkout -b then git add then git commit; cam-plan.md Step 9). Keep the audit-blocked escalate path exactly as Half A (notifyFn then void escalateFn); NO re-plan loop (that is B-2/CAM-153). decidePostAuditAction lives in src/plan/plan-approval-decision.ts (unchanged). Read scripts/cam/patterns.md at story start."
@@ -91,7 +98,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/plan.ts (runPlan ~lines 112-199; drop the sendKeysWhenIdle markdown injection, add a phase:planning + plan_issue writer mirroring runNext's active:true writer in src/commands/next.ts ~lines 280-318), index.ts (case 'plan' ~lines 1375-1386, keep runPlan dispatch). The liveness/bootstrap/mutex preamble in runPlan can stay; the change is the SEND step: replace the /cam-plan send-keys with a state-file write (phase:planning + plan_issue). CRITICAL (F-01): when a specific N is passed, the validator MUST resolve THAT specific issue (an issue-exists / is-issue-N-plannable check on the passed N, e.g. read scripts/cam/issues/CAM-<N>.json or the local issues store and assert stage/status make it plannable) and halt clean if issue N is missing / not open / not plannable. It must NOT fall back to selectPlannableFromFile(cwd), which returns the highest-priority plannable issue (top-of-queue), NOT a lookup by N — falling back would silently plan some OTHER issue instead of halting (spec AC3). A bare `cam plan` with no N still uses the top-plannable selection (selectPlannableFromFile); that path is unchanged. Validate BEFORE writing the signal so an invalid N never writes a partial phase:planning signal. The /cam-plan stub (US-005) and this CLI path must converge on writing the SAME signal (spec gotcha: 'orchestrator /cam-plan thin stub and CLI cam plan must converge'). Read scripts/cam/patterns.md at story start."
@@ -110,40 +117,46 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-plan.md (254 lines -> thin stub), templates/commands/cam-plan.md (both copies must match; cam dual-copy is per-file, diff before assuming byte-identical), docs/adr/0004-plan-phase-deterministic-sidecar-runner.md (extend) OR docs/adr/0006-<slug>.md (new; ADR 0005 already exists = behavioral-verification). This story CLOSES the phase refactor so it carries `bun run check:all` (the full lint/quality spine). It touches templates/ so embed-vendor:check applies; run `bun run embed-vendor` then verify. Keep subagent-planner.md / subagent-auditor.md UNCHANGED (spec AC10). ADR format: follow 0003/0004 (Portuguese, no travessao/emoji in the .md per the global doc-format rule for human-readable persisted files). The ADR should describe: phase enum as single source of truth, active derives from phase, phase:planning->runPlanPhase, APPROVE+auto->phase:implementing, escalate-on-BLOCK (no re-plan yet = B-2/CAM-153). Read scripts/cam/patterns.md at story start."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:2",
+    "lastVerdict": "FIXES_PENDING:1",
     "findings": [
       {
-        "severity": "CRITICAL",
-        "file": "src/commands/sidecar.ts",
-        "line": 693,
-        "text": "The production plan phase never acts on the audit result: makeProductionPlanPhaseFn calls runPlanPhase({...}) and DISCARDS the returned PlanPhaseResult (closure typed () => void). runPostAuditAction has NO production call site (grep confirms it is referenced only in comments, its own definition, and the unit test). Consequently, on APPROVE+auto the code never checks out the feature branch, never commits scripts/cam/prd.json, and never calls setPhaseFn('implementing'). The plan phase never hands off to the implement loop. This defeats the PRD's stated goal ('make the plan phase live') and directly contradicts ADR 0006 section Decisao point 3 (introduced by this same branch), which documents APPROVE+auto -> runPostAuditAction -> setPhaseFn('implementing') -> sidecar dispatches the first implementer as implemented in CAM-151. Fix: capture runPlanPhase's result in makeProductionPlanPhaseFn and invoke runPostAuditAction (wiring setPhaseFn=makeSetPhaseFn, spawnFn, branchName from prd.branchName, readPlanApprovalFn, escalateFn, notifyFn)."
+        "severity": "WARNING",
+        "file": "docs/adr/0006-phase-enum-loop-state-machine.md",
+        "line": 30,
+        "text": "ADR 0006 section 4 ('BLOCK escalation') factually contradicts the code shipped on this same branch. It states that on the `pause-operator` action runPostAuditAction 'chama escalateFn ... e mantem phase: planning'. Both claims are wrong post US-R1-002: (a) escalateFn is called only on the audit-blocked path (returns 'escalated'), NOT on pause-operator (returns 'awaiting-operator-approval' with no escalate); (b) no path keeps phase:planning any more, because exitPhaseAfterPlan (src/commands/sidecar.ts) transitions the phase out of 'planning' on every non-branch-created outcome (audit-blocked/escalated -> idle; pause-operator -> awaiting-operator). Fix the ADR to separate the two paths and remove the 'mantem phase: planning' claim so the canonical design record matches exitPhaseAfterPlan. Doc-maintenance defect in the ADR US-005 was required to author."
       },
       {
-        "severity": "CRITICAL",
+        "severity": "SUGGESTION",
+        "file": "src/commands/sidecar.ts",
+        "line": 724,
+        "text": "`cam plan N` (plan.ts) validates a specific issue N (F-01) and writes plan_issue=N to the state file, but the sidecar's production plan runner ignores plan_issue: makeProductionPlanPhaseFn wires selectIssueFn=() => selectPlannableFromFile(cwd), which returns the TOP-of-queue plannable issue, not issue N. So `cam plan 42` may validate 42 yet plan a different, higher-priority issue. This matches the PRD (US-002 AC5 explicitly specifies selectPlannableFromFile), so it is spec-consistent, but the two paths do not truly converge on the specific-N semantics. Candidate for B-2/CAM-153."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/sidecar.ts",
+        "line": 634,
+        "text": "The US-R1-002 fix (exitPhaseAfterPlan result->phase mapping) is covered only by source-text grep oracles in test/supervisor/plan/plan-runner-postaudit.test.ts (assert the helper body contains 'idle'/'awaiting-operator'/'branch-created'), not by a behavioral test. Those grep oracles catch removal of the wiring but not a wrong mapping. exitPhaseAfterPlan is a pure fn of (PostAuditActionResult, setPhase); exporting it would allow a small behavioral test asserting each outcome writes the correct phase."
+      },
+      {
+        "severity": "SUGGESTION",
         "file": "src/supervisor/loop.ts",
         "line": 1474,
-        "text": "The sidecar planning branch re-invokes runPlanPhaseFn on EVERY idle tick with no re-entry guard and no phase transition on non-APPROVE outcomes. Because nothing in production writes a phase other than 'planning' after a plan runs (finding #1), readLoopPhaseFn() keeps returning 'planning', so runPlanPhaseFn is re-run every idlePollMs (2s) forever. Each run executes runPlanPreflight -> `git checkout main` + `git pull origin main` (network) + gh prune. Once a plan leaves scripts/cam/prd.json uncommitted in the tree (which happens on APPROVE+operator, on audit-blocked/escalated, and on the current APPROVE+auto path since runPostAuditAction is never called), preflight fails the clean-tree check and the sidecar busy-loops git/gh network calls indefinitely. On the audit-blocked path this is an unbounded auto-re-plan loop that contradicts ADR 0006 ('re-plan automatico pendente ... B-2/CAM-153; no auto re-plan'). Fix: on non-implementing outcomes (mutex-busy, preflight-failed, planner/auditor timeout, audit-blocked/escalated, awaiting-operator-approval) transition phase out of 'planning' (idle or awaiting-operator) and/or add a re-entry backoff so the branch does not re-run the full network preflight every tick. NOTE: the sidecar-loop tests mask this by injecting a hardcoded phase sequence ['planning','idle','idle'] and a spy runPlanPhaseFn, so the always-planning production behavior is never exercised."
+        "text": "The planning branch `await opts.runPlanPhaseFn()` has no try/catch, and runPostAuditAction throws on git failure (e.g. `git checkout -b <branch>` when the branch already exists). An uncaught throw crashes runSidecarLoop before exitPhaseAfterPlan runs, leaving phase='planning'. This is consistent with the existing implement-path throw propagation and is an edge case (re-plan / pre-existing branch = B-2/CAM-153), but a fresh-plan crash-then-restart could re-enter planning. Consider wrapping runPlanPhaseFn in a try/catch that forces phase->idle on error."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/commands/status.ts",
         "line": 460,
-        "text": "buildStatusReport derives state via `state.active === false ? 'paused' : 'active'`. Since active derives to false for phase:planning, `cam status` reports 'paused' while the loop is actively planning, which is misleading. Consider mapping the LoopPhase to a distinct status label (e.g. 'planning'). Out of PRD scope (no AC covers status rendering of the planning phase); cosmetic."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "src/commands/sidecar.ts",
-        "line": 654,
-        "text": "makeProductionPlanPhaseFn falls back to a hardcoded plannerPaneId '%2' when the worker-pane marker is absent (`readWorkerPaneMarker(claudeDir) ?? '%2'`). A stale/guessed pane id could respawn into the wrong pane. The implement path uses the ensureWorkerPane self-heal (CAM-57) rather than a hardcoded id; consider mirroring that here. Minor robustness; marker is normally present."
+        "text": "buildStatusReport derives state via `state.active === false ? 'paused' : 'active'`; since active derives to false for phase:planning, `cam status` reports 'paused' while the loop is actively planning. Cosmetic, out of PRD scope (carried over from round-1 SUGGESTION); consider mapping LoopPhase to a distinct 'planning' status label."
       }
     ]
   }
