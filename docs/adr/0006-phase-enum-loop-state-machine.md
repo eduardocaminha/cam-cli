@@ -27,7 +27,13 @@ A maquina de estados tem cinco transicoes principais:
 
 3. **APPROVE + auto**: `runPostAuditAction` e chamado com a acao `proceed-branch`. Ele (a) faz checkout do branch feature, (b) commita `prd.json`, e (c) chama `setPhaseFn('implementing')`. Isso escreve `phase: implementing` no arquivo de estado. Na proxima tick, `active` deriva para `true` e o sidecar despacha o primeiro implementer.
 
-4. **BLOCK escalation**: quando `runPostAuditAction` recebe a acao `pause-operator` (modo aprovacao manual), ele chama `escalateFn` (em `sidecar.ts`: escreve uma mensagem de escalacao para o orquestrador e mantem `phase: planning`). O re-plan automatico apos BLOCK e um forward reference (B-2/CAM-153): no estado atual o operador precisa re-invocar `/cam-plan` manualmente.
+4. **pause-operator e audit-blocked**: dois caminhos distintos pos-auditoria sem criacao de branch.
+
+   - **pause-operator** (modo aprovacao manual): `runPostAuditAction` recebe `action.kind === 'pause-operator'` e retorna `{ kind: 'awaiting-operator-approval' }` sem chamar `escalateFn`. Em seguida, `exitPhaseAfterPlan` transiciona `phase: awaiting-operator`. O loop fica parado ate o operador aprovar e re-invocar `/cam-plan`.
+
+   - **audit-blocked** (auditor rejeita): `runPostAuditAction` recebe `planResult.kind === 'audit-blocked'`, chama `escalateFn` (em `sidecar.ts`: envia mensagem de escalacao ao orquestrador via `sendEscalation`) e retorna `{ kind: 'escalated' }`. Em seguida, `exitPhaseAfterPlan` transiciona `phase: idle`. O re-plan automatico apos BLOCK e um forward reference (B-2/CAM-153): no estado atual o operador precisa re-invocar `/cam-plan` manualmente.
+
+   Em ambos os caminhos `phase: planning` e abandonado (nunca mantido): `exitPhaseAfterPlan` garante que toda saida de `runPostAuditAction` que nao seja `branch-created` transiciona para fora de `planning`.
 
 5. **Implementing**: enquanto `phase: implementing`, o sidecar despacha o implementer (e depois o reviewer) via o loop existente em `loop.ts`. Quando `decideNextAction` retorna `complete` ou `awaiting-operator`, o sidecar escreve `phase: idle` (ou `awaiting-operator`) e para.
 
