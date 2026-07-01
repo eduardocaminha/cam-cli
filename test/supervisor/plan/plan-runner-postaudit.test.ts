@@ -1,25 +1,26 @@
 // test/supervisor/plan/plan-runner-postaudit.test.ts
 //
-// Unit tests for runPostAuditAction in src/supervisor/plan-runner.ts (US-006, CAM-117).
+// Unit tests for runPostAuditAction in src/supervisor/plan-runner.ts (US-003, CAM-151).
 //
-// Coverage (matches AC1-AC3):
+// Coverage (matches AC1-AC5):
 //   1.  proceed-branch: branch-create git call precedes prd-commit git call (AC1).
-//   2.  proceed-branch: flipActiveFn is called exactly once (AC1).
+//   2.  proceed-branch: setPhaseFn called exactly once with 'implementing' (AC1, AC5).
 //   3.  proceed-branch: returns { kind: 'branch-created', branchName } (AC1).
 //   4.  proceed-branch: git checkout -b uses the supplied branchName (AC1).
 //   5.  proceed-branch: git add targets scripts/cam/prd.json (AC1).
 //   6.  proceed-branch: git commit fires after git add (AC1).
-//   7.  pause-operator: returns { kind: 'awaiting-operator-approval' } (AC2).
-//   8.  pause-operator: no branch/commit/flip calls (AC2).
+//   7.  pause-operator: returns { kind: 'awaiting-operator-approval' } (AC4).
+//   8.  pause-operator: no branch/commit/setPhase calls (AC4).
 //   9.  audit-blocked: returns { kind: 'escalated' } (AC3).
 //  10.  audit-blocked: escalateFn called (AC3).
 //  11.  audit-blocked: notifyFn called with [cam] plan BLOCK prefix (AC3).
-//  12.  audit-blocked: no branch/commit/flip calls (AC3).
-//  13.  non-approved planResult: returns { kind: 'no-action' }.
-//  14.  non-approved planResult: no branch/commit/flip/escalate calls.
-//  15.  proceed-branch: git checkout -b fails -> throws (spawnSync exit-status guard).
-//  16.  proceed-branch: git add fails -> throws.
-//  17.  proceed-branch: git commit fails -> throws.
+//  12.  audit-blocked: no branch/commit/setPhase calls (AC3).
+//  13.  audit-blocked: setPhaseFn called zero times (AC5).
+//  14.  non-approved planResult: returns { kind: 'no-action' }.
+//  15.  non-approved planResult: no branch/commit/setPhase/escalate calls.
+//  16.  proceed-branch: git checkout -b fails -> throws (spawnSync exit-status guard).
+//  17.  proceed-branch: git add fails -> throws.
+//  18.  proceed-branch: git commit fails -> throws.
 
 import { describe, expect, test } from 'bun:test';
 import {
@@ -32,6 +33,7 @@ import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-report.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanApproval } from '../../../src/config/models.ts';
+import type { LoopPhase } from '../../../src/commands/status.ts';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -102,12 +104,12 @@ interface GitCall {
 function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 	opts: RunPostAuditOptions;
 	gitCalls: GitCall[];
-	flipCount: { n: number };
+	setPhaseCalls: LoopPhase[];
 	escalateCalled: { n: number };
 	notifyMessages: string[];
 } {
 	const gitCalls: GitCall[] = [];
-	const flipCount = { n: 0 };
+	const setPhaseCalls: LoopPhase[] = [];
 	const escalateCalled = { n: 0 };
 	const notifyMessages: string[] = [];
 
@@ -119,7 +121,7 @@ function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 	const opts: RunPostAuditOptions = {
 		planResult: APPROVED_RESULT,
 		spawnFn,
-		flipActiveFn: () => { flipCount.n++; },
+		setPhaseFn: (phase) => { setPhaseCalls.push(phase); },
 		branchName: BRANCH_NAME,
 		readPlanApprovalFn: (): PlanApproval => 'auto',
 		escalateFn: async () => { escalateCalled.n++; },
@@ -127,7 +129,7 @@ function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 		...overrides,
 	};
 
-	return { opts, gitCalls, flipCount, escalateCalled, notifyMessages };
+	return { opts, gitCalls, setPhaseCalls, escalateCalled, notifyMessages };
 }
 
 // ---------------------------------------------------------------------------
@@ -205,10 +207,11 @@ describe('runPostAuditAction', () => {
 		expect(addIdx).toBeLessThan(commitIdx);
 	});
 
-	test('proceed-branch: flipActiveFn called exactly once (AC1)', () => {
-		const { opts, flipCount } = makeOpts();
+	test('proceed-branch: setPhaseFn called exactly once with "implementing" (AC1, AC5)', () => {
+		const { opts, setPhaseCalls } = makeOpts();
 		runPostAuditAction(opts);
-		expect(flipCount.n).toBe(1);
+		expect(setPhaseCalls.length).toBe(1);
+		expect(setPhaseCalls[0]).toBe('implementing');
 	});
 
 	test('proceed-branch: three git calls total: checkout, add, commit (AC1)', () => {
@@ -241,10 +244,10 @@ describe('runPostAuditAction', () => {
 		expect(gitCalls.length).toBe(0);
 	});
 
-	test('pause-operator: flipActiveFn NOT called (AC2)', () => {
-		const { opts, flipCount } = makeOpts({ readPlanApprovalFn: () => 'operator' });
+	test('pause-operator: setPhaseFn NOT called (AC4)', () => {
+		const { opts, setPhaseCalls } = makeOpts({ readPlanApprovalFn: () => 'operator' });
 		runPostAuditAction(opts);
-		expect(flipCount.n).toBe(0);
+		expect(setPhaseCalls.length).toBe(0);
 	});
 
 	test('pause-operator: escalateFn NOT called (AC2)', async () => {
@@ -291,10 +294,10 @@ describe('runPostAuditAction', () => {
 		expect(gitCalls.length).toBe(0);
 	});
 
-	test('audit-blocked: flipActiveFn NOT called (AC3)', () => {
-		const { opts, flipCount } = makeOpts({ planResult: BLOCKED_RESULT });
+	test('audit-blocked: setPhaseFn called zero times (AC3, AC5)', () => {
+		const { opts, setPhaseCalls } = makeOpts({ planResult: BLOCKED_RESULT });
 		runPostAuditAction(opts);
-		expect(flipCount.n).toBe(0);
+		expect(setPhaseCalls.length).toBe(0);
 	});
 
 	test('audit-blocked: absent escalateFn is safe (AC3 best-effort)', () => {
@@ -325,13 +328,13 @@ describe('runPostAuditAction', () => {
 		expect(result.kind).toBe('no-action');
 	});
 
-	test('non-approved: no git/flip/escalate calls', () => {
-		const { opts, gitCalls, flipCount, escalateCalled } = makeOpts({
+	test('non-approved: no git/setPhase/escalate calls', () => {
+		const { opts, gitCalls, setPhaseCalls, escalateCalled } = makeOpts({
 			planResult: PREFLIGHT_FAILED_RESULT,
 		});
 		runPostAuditAction(opts);
 		expect(gitCalls.length).toBe(0);
-		expect(flipCount.n).toBe(0);
+		expect(setPhaseCalls.length).toBe(0);
 		expect(escalateCalled.n).toBe(0);
 	});
 

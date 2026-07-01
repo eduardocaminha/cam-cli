@@ -409,16 +409,18 @@ function makeProductionMergeWatchFn(
 // ---------------------------------------------------------------------------
 
 /**
- * Build the production flipActiveFn closure for auto mode.
+ * Build the production setPhaseFn closure for plan-phase handoff (US-003, CAM-151).
  *
- * Writes active:true to .claude/cam-loop.local.md, preserving all other
- * fields from the existing state file (mirrors the cam-next thin-proxy).
- * Non-fatal on any error: the sidecar continues; the auto-chain may simply
+ * Writes phase:<value> to .claude/cam-loop.local.md, preserving all other
+ * fields from the existing state file. Used by runPostAuditAction on the
+ * proceed-branch path to flip phase to 'implementing' so the sidecar loop
+ * dispatches the implementer worker without a human cam-next.
+ * Non-fatal on any error: the sidecar continues; the phase flip may simply
  * miss one cycle rather than aborting.
  */
-function makeFlipActiveFn(claudeDir: string, cwd: string): () => void {
+export function makeSetPhaseFn(claudeDir: string, cwd: string): (phase: LoopPhase) => void {
 	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
-	return (): void => {
+	return (phase: LoopPhase): void => {
 		try {
 			const now = new Date().toISOString();
 			let body: string;
@@ -430,7 +432,7 @@ function makeFlipActiveFn(claudeDir: string, cwd: string): () => void {
 					completionPromise: parsed?.completion_promise ?? 'COMPLETE',
 					startedAt: parsed?.started_at ?? now,
 					pid: parsed?.pid ?? process.pid,
-					active: true,
+					phase,
 					iteration: parsed?.iteration,
 					currentStory: parsed?.current_story,
 					storiesDone: parsed?.stories_done,
@@ -443,7 +445,7 @@ function makeFlipActiveFn(claudeDir: string, cwd: string): () => void {
 					completionPromise: 'COMPLETE',
 					startedAt: now,
 					pid: process.pid,
-					active: true,
+					phase,
 					lastActivity: now,
 				});
 			}
@@ -452,6 +454,19 @@ function makeFlipActiveFn(claudeDir: string, cwd: string): () => void {
 			// Non-fatal: sidecar continues to next poll cycle.
 		}
 	};
+}
+
+/**
+ * Build the production flipActiveFn closure for auto mode.
+ *
+ * Delegates to makeSetPhaseFn with 'implementing', so the state file carries
+ * phase:implementing (active derives to true) rather than the legacy active:true
+ * field. Preserves all other fields from the existing state file.
+ * Non-fatal on any error (same contract as makeSetPhaseFn).
+ */
+function makeFlipActiveFn(claudeDir: string, cwd: string): () => void {
+	const setPhase = makeSetPhaseFn(claudeDir, cwd);
+	return (): void => setPhase('implementing');
 }
 
 /**
