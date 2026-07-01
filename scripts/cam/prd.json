@@ -1,0 +1,105 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-151-plan-runner-make-live",
+  "description": "CAM-117 Half B / B-1: make the plan phase live via a phase-enum loop state machine that sources active; wire runPlanPhase into the sidecar outer loop; cam plan N writes phase:planning; reduce cam-plan.md to a thin stub.",
+  "issueNumber": 151,
+  "relatedDocs": [
+    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add loop-phase enum as single source of truth; active derives from phase",
+      "description": "As the cam loop state model, I need a `phase` enum (idle|planning|implementing|awaiting-operator|shipping) plus an optional `plan_issue` field in .claude/cam-loop.local.md, with the `active` bool DERIVED from `phase === 'implementing'`, so that a single loop-phase field drives every gate consumer and no independent `active` field exists.",
+      "acceptanceCriteria": [
+        "A `LoopPhase` type (idle|planning|implementing|awaiting-operator|shipping) is exported and used by the loop-state model; it does NOT collide with the existing model-`Phase` type in src/config/models.ts. [oracle: grep -q 'LoopPhase' src/commands/status.ts]",
+        "parseStateFile parses a `phase` frontmatter field into LoopState and parses an optional `plan_issue` field; when `phase` is absent it falls back to deriving idle/implementing from a legacy `active: true|false` value so old state files still parse. [oracle: bun test]",
+        "The parsed LoopState derives `active === (phase === 'implementing')`; every consumer that reads `active` sees the derived value (no independent active field is trusted). [oracle: bun test]",
+        "renderStateFile writes a `phase:` line (and `plan_issue:` when set) to the state file body; the vendored template vendor/cam-loop.local.md.tmpl carries the `phase` placeholder. [oracle: grep -q 'phase' vendor/cam-loop.local.md.tmpl]",
+        "A round-trip render->parse test asserts each of the five phase values survives, and that phase:implementing yields active:true while every other phase yields active:false. [oracle: bun test]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/status.ts (LoopState interface + parseStateFile, ~lines 91-251), src/commands/next.ts (renderStateFile ~lines 73-106), vendor/cam-loop.local.md.tmpl. Name the loop-phase type LoopPhase to avoid collision with the existing model-`Phase` type (src/config/models.ts line 22, which is orchestrator|planner|auditor|... for [models] config). `active` MUST derive from phase===implementing; do NOT keep an independent active field as the source of truth (spec AC1). Keep back-compat: a state file with only `active: true|false` (no phase) must still parse (map active:true->implementing, else idle). Read scripts/cam/patterns.md at story start. This story touches vendor/ so the embed-vendor:check gate applies. Gotcha: renderStateFile substitutes {{KEY}} literal placeholders from the template; add a {{PHASE}} (and plan_issue) placeholder consistently in both the template and renderStateFile."
+    },
+    {
+      "id": "US-002",
+      "title": "Wire phase:planning detection into the sidecar outer loop to invoke runPlanPhase",
+      "description": "As the sidecar outer loop, I need to detect `phase: planning` (+ plan_issue) on an idle tick and deterministically invoke runPlanPhase (the CAM-117 Half A skeleton) under the pane mutex, mirroring how active:true drives the implement loop, so that the plan phase runs sidecar-driven with no orchestrator-LLM markdown interpretation.",
+      "acceptanceCriteria": [
+        "makeReadActive in src/commands/sidecar.ts returns the DERIVED active value (phase==='implementing') from the parsed state, not an independent active field. [oracle: bun test]",
+        "runSidecarLoop (src/supervisor/loop.ts) reads the loop phase; when phase==='planning' it invokes an injected runPlanPhaseFn deterministically (mutually exclusive with the active:true implement path via the phase enum), and the implement->review->ship path in runSupervisor is left INTACT. [oracle: bun test with injected loop file]",
+        "The plan-phase branch is gated by the pane-count mutex so no spawn happens when the session is busy (mutex-busy is a clean no-op, mirroring runPlanPhase Step 3). [oracle: bun test]",
+        "runPlanPhaseFn is injectable in RunSidecarLoopOptions with a spy so a unit test asserts it is called exactly once on a phase:planning tick and NOT called on a phase:idle or phase:implementing tick. [oracle: bun test]",
+        "The production sidecar (runSidecar in src/commands/sidecar.ts) wires runPlanPhaseFn to a closure over the real runPlanPhase, threading plannerPaneId, paneCountMutexFn (() => paneCountMutex(sessionName, tmuxSpawnFn)), selectIssueFn (selectPlannableFromFile), preflightFn, and the injectable spawn/clock/sleep/genUuid deps. [oracle: grep -q 'runPlanPhase' src/commands/sidecar.ts]",
+        "Spawn invariants for the plan-phase planner/auditor spawns are preserved and asserted: env -u CLAUDECODE (CAM-43), lowercase --session-id (CAM-23), atomic send-keys (CAM-55), single worker-pane mutex (CAM-55). [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/loop.ts (runSidecarLoop ~lines 1425-1546 + RunSidecarLoopOptions ~1270-1402), src/commands/sidecar.ts (makeReadActive ~166, buildSidecarLoopDeps ~575, runSidecar ~644). WIRE runPlanPhase from src/supervisor/plan-runner.ts (do NOT recreate it; it is the Half A skeleton, already exported). Mirror the active:true gate structure: the phase:planning branch is a sibling of the `if (active !== true)` idle branch and the active:true work branch. Keep runSupervisor's implement->review->ship logic untouched (spec gotcha: 'do not rewrite runSupervisor'; only change how the active gate is SOURCED). paneCountMutexFn production wiring: () => paneCountMutex(sessionName, tmuxSpawnFn) from src/tmux/session.ts. The spawn invariants live in buildPlannerWorkerArgv/buildAuditorWorkerArgv (src/supervisor/plan-argv.ts) and resolveAndSpawnPlanner/Auditor in plan-runner.ts (already implemented; assert them still hold via the injected spawnFn spy). Read scripts/cam/patterns.md at story start."
+    },
+    {
+      "id": "US-003",
+      "title": "runPostAuditAction flips phase:implementing on APPROVE+auto; keeps escalate-on-BLOCK",
+      "description": "As the post-audit action, I need APPROVE + plan_approval=auto (decidePostAuditAction/readPlanApproval) to commit the PRD + create the branch + flip the loop phase to `implementing` (so the existing implement->review->ship loop takes over), while auditor BLOCK still escalates to the operator with no auto re-plan, so that the plan phase hands off deterministically to the implement loop.",
+      "acceptanceCriteria": [
+        "On audit-approved + proceed-branch (auto mode), runPostAuditAction commits scripts/cam/prd.json, creates the feature branch via git checkout -b, and flips the loop phase to `implementing` (via an injected setPhaseFn, replacing the prior flip of a bare active:true field). [oracle: bun test]",
+        "The production flip writes phase:implementing to .claude/cam-loop.local.md (which the derived active reads as true), preserving all other state-file fields. [oracle: bun test]",
+        "On audit-blocked, runPostAuditAction still calls notifyFn + escalateFn (best-effort, fire-and-forget) and does NOT commit/branch/flip and does NOT re-plan (B-2 out of scope). [oracle: bun test]",
+        "On audit-approved + pause-operator (operator mode), runPostAuditAction returns without commit/branch/flip (Half A behavior retained; the operator gate is B-2). [oracle: bun test]",
+        "A unit test with an injected spawnFn spy and setPhaseFn spy asserts the exact git call sequence (checkout -b before commit) and that setPhaseFn was called exactly once with 'implementing' on the auto path and zero times on the BLOCK path. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/plan-runner.ts (runPostAuditAction ~lines 554-611; RunPostAuditOptions ~495-528), src/commands/sidecar.ts (makeFlipActiveFn ~374 becomes/gains a setPhase('implementing') writer). The current runPostAuditAction takes flipActiveFn: () => void and calls it to flip active:true; retarget it to a setPhaseFn (or repurpose flipActiveFn to write phase:implementing) so the flip goes through the phase enum, not a bare active field. Keep the branch-BEFORE-commit ordering (git checkout -b then git add then git commit; cam-plan.md Step 9). Keep the audit-blocked escalate path exactly as Half A (notifyFn then void escalateFn); NO re-plan loop (that is B-2/CAM-153). decidePostAuditAction lives in src/plan/plan-approval-decision.ts (unchanged). Read scripts/cam/patterns.md at story start."
+    },
+    {
+      "id": "US-004",
+      "title": "cam plan N thin-proxy writes phase:planning + plan_issue instead of injecting markdown",
+      "description": "As the operator, I need `cam plan N` to write `phase: planning` + a plan_issue id to the loop file (the deterministic plan signal the sidecar polls) instead of injecting the /cam-plan markdown flow into the orchestrator pane, and a no-plannable / invalid issue to halt clean rather than crash, so that the CLI and the /cam-plan stub converge on the same phase signal.",
+      "acceptanceCriteria": [
+        "runPlan (src/commands/plan.ts) writes phase:planning + plan_issue=N to .claude/cam-loop.local.md (via renderStateFile/writeStateFile) instead of send-keys-injecting the /cam-plan markdown request. [oracle: bun test]",
+        "`cam plan N` with a valid issue id returns 0 and the resulting state file parses with phase==='planning' and plan_issue===N. [oracle: bun test]",
+        "`cam plan N` with a specific N whose issue is missing / not open / not plannable halts clean (prints a clear error and returns non-zero) and does NOT fall back to the top-of-queue selectPlannableFromFile pick nor write a partial phase:planning signal; a bare `cam plan` with no N still uses the top-plannable selection unchanged. [oracle: bun test]",
+        "index.ts still dispatches `case 'plan'` to runPlan with the parsed issue; the --help path is unchanged. [oracle: grep -q 'runPlan' index.ts]",
+        "No --permission-mode CLI flag is introduced (enforced by the existing no-permission-mode-flag guard test). [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/plan.ts (runPlan ~lines 112-199; drop the sendKeysWhenIdle markdown injection, add a phase:planning + plan_issue writer mirroring runNext's active:true writer in src/commands/next.ts ~lines 280-318), index.ts (case 'plan' ~lines 1375-1386, keep runPlan dispatch). The liveness/bootstrap/mutex preamble in runPlan can stay; the change is the SEND step: replace the /cam-plan send-keys with a state-file write (phase:planning + plan_issue). CRITICAL (F-01): when a specific N is passed, the validator MUST resolve THAT specific issue (an issue-exists / is-issue-N-plannable check on the passed N, e.g. read scripts/cam/issues/CAM-<N>.json or the local issues store and assert stage/status make it plannable) and halt clean if issue N is missing / not open / not plannable. It must NOT fall back to selectPlannableFromFile(cwd), which returns the highest-priority plannable issue (top-of-queue), NOT a lookup by N — falling back would silently plan some OTHER issue instead of halting (spec AC3). A bare `cam plan` with no N still uses the top-plannable selection (selectPlannableFromFile); that path is unchanged. Validate BEFORE writing the signal so an invalid N never writes a partial phase:planning signal. The /cam-plan stub (US-005) and this CLI path must converge on writing the SAME signal (spec gotcha: 'orchestrator /cam-plan thin stub and CLI cam plan must converge'). Read scripts/cam/patterns.md at story start."
+    },
+    {
+      "id": "US-005",
+      "title": "Reduce cam-plan.md to a thin phase-signal stub; regen embed; ADR + close refactor",
+      "description": "As the orchestrator's /cam-plan slash command, I need cam-plan.md (both .claude/commands/ and templates/commands/ copies) reduced to a thin phase-signal + narration stub with the 10-step control-flow removed (now in runPlanPhase), the embed regenerated, and the phase-enum loop state machine recorded in an ADR, so that the plan control-flow has a single deterministic home in TS and the decision is documented.",
+      "acceptanceCriteria": [
+        "Both .claude/commands/cam-plan.md and templates/commands/cam-plan.md are reduced to a thin stub that writes the phase:planning signal + narrates; the 10-step control-flow (git preflight loop, in-progress check, Task-subagent planner/auditor orchestration) is gone. [oracle: file-assert bash -c 'test $(wc -l < .claude/commands/cam-plan.md) -lt 60 && test $(wc -l < templates/commands/cam-plan.md) -lt 60']",
+        "The stub converges with the `cam plan N` CLI path on writing the same phase:planning signal (both are documented as signal-writers, not markdown control-flow). [oracle: grep -qi 'phase' .claude/commands/cam-plan.md]",
+        "subagent-planner.md and subagent-auditor.md prompts are UNCHANGED (no diff to those two files). [oracle: file-assert git diff --quiet HEAD -- .claude/agents/subagent-planner.md .claude/agents/subagent-auditor.md]",
+        "The embed is regenerated (bun run embed-vendor) and vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "An ADR records the phase-enum loop state machine (extend ADR 0004 or add a new ADR following the 0003/0004 format; note ADR 0005 is taken so a new file is 0006). [oracle: file-assert bash -c 'grep -rqi \"phase\" docs/adr/0004-plan-phase-deterministic-sidecar-runner.md || ls docs/adr/0006-*.md']",
+        "The full quality spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/commands/cam-plan.md (254 lines -> thin stub), templates/commands/cam-plan.md (both copies must match; cam dual-copy is per-file, diff before assuming byte-identical), docs/adr/0004-plan-phase-deterministic-sidecar-runner.md (extend) OR docs/adr/0006-<slug>.md (new; ADR 0005 already exists = behavioral-verification). This story CLOSES the phase refactor so it carries `bun run check:all` (the full lint/quality spine). It touches templates/ so embed-vendor:check applies; run `bun run embed-vendor` then verify. Keep subagent-planner.md / subagent-auditor.md UNCHANGED (spec AC10). ADR format: follow 0003/0004 (Portuguese, no travessao/emoji in the .md per the global doc-format rule for human-readable persisted files). The ADR should describe: phase enum as single source of truth, active derives from phase, phase:planning->runPlanPhase, APPROVE+auto->phase:implementing, escalate-on-BLOCK (no re-plan yet = B-2/CAM-153). Read scripts/cam/patterns.md at story start."
+    }
+  ]
+}
