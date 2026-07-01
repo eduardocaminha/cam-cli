@@ -60,7 +60,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts (runPostAuditAction ~lines 554-611; RunPostAuditOptions ~495-528), src/commands/sidecar.ts (makeFlipActiveFn ~374 becomes/gains a setPhase('implementing') writer). The current runPostAuditAction takes flipActiveFn: () => void and calls it to flip active:true; retarget it to a setPhaseFn (or repurpose flipActiveFn to write phase:implementing) so the flip goes through the phase enum, not a bare active field. Keep the branch-BEFORE-commit ordering (git checkout -b then git add then git commit; cam-plan.md Step 9). Keep the audit-blocked escalate path exactly as Half A (notifyFn then void escalateFn); NO re-plan loop (that is B-2/CAM-153). decidePostAuditAction lives in src/plan/plan-approval-decision.ts (unchanged). Read scripts/cam/patterns.md at story start."
     },
