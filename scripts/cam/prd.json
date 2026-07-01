@@ -10,6 +10,20 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "CRITICAL [src/supervisor/plan-runner.ts:281]: US-005 AC4 requires the planner poll to break when 'the pane dies OR prd.json is written', but pollPlannerDeath (lines 281-301) only breaks on pane death; RunPlanPhaseOptions injects no prd.json/report reader at all. The US-005 notes say to mirror makeReviewDispatch in review.ts, whose poll breaks on readReviewReport()!==null (review.ts:380-384) OR pane death (388). Because interactive-TUI workers do not self-exit (the driver kills them via respawn-pane -k after detecting the report file, per the implementer/reviewer session model), the happy path will loop isPaneAlive=true until plannerTimeoutMs (30 min) and return planner-timeout, never spawning the auditor. plan-runner.test.ts masks this by simulating pane death after 1 tick, so green tests do not prove the AC4 completion path."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [docs/adr/0004-plan-phase-deterministic-sidecar-runner.md:38]: ADR 0004 (US-007) contradicts the implemented code. Line 38 states the planner and auditor write 'scripts/cam/worker-report.json' as the primary completion signal, but US-001/US-002 established scripts/cam/plan-verdict-report.json as the auditor channel, and the planner has no report-file check at all in the runner. It also references symbols that do not exist: runPlannerAuditorCycle (line 26) and MAX_PLANNER_POLLS/MAX_AUDITOR_POLLS (line 16); the code uses inline logic in runPlanPhase with DEFAULT_PLAN_TIMEOUT_MS / plannerTimeoutMs / auditorTimeoutMs. A persisted architecture doc should match the code (global CLAUDE.md rule 7, Doc Maintenance)."
+    },
+    {
       "id": "US-001",
       "title": "Add plan-verdict-report module (auditor structured exit file)",
       "description": "As the deterministic plan-runner, I need a structured file channel for the auditor's verdict so I can parse APPROVE/BLOCK from a JSON file (deterministic) instead of pane scrollback (rendered markdown is unparseable, per the supervisor-sentinel-parse-fragility invariant).",
@@ -21,7 +35,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Mirror src/supervisor/review-report.ts (CAM-75) EXACTLY: ReviewReport/REVIEW_REPORT_FILENAME + makeReadReviewReport-in-host.ts is the precedent shape. IMPORTANT (F-01): mirror the auditor's REAL output field names from .claude/agents/subagent-auditor.md 'Output format' block: top-level { verdict, summary, findings, metrics }, and each finding is { id, category, severity, storyId, description, suggestion } - the finding text field is `description`, NOT `text`. Carry id/category/storyId?/suggestion? and the top-level `summary` so findings round-trip into Half B (CAM-151 re-plan loop feeds findings back to the planner) with no schema change. `metrics` is optional to model (Half A does not branch on it). Apply the 'JSON reader shape guards: validate discriminator fields, not just typeof' pattern (patterns.md US-R2-001): guard `!Array.isArray(parsed) && (parsed.verdict === 'APPROVE' || parsed.verdict === 'BLOCK')` before the cast - the load-bearing `verdict` discriminator is the ONLY value Half A branches on; keep it exactly as-is. Since .gitignore edits do not touch vendor/ or embedded code, no embed-vendor run is needed for the .gitignore change; but templates/.gitignore IS under templates/ so run `bun run embed-vendor` and confirm embed-vendor:check (folded into check:all). This is the structured-handback channel from patterns.md 'capture-pane is rendered markdown'."
@@ -38,7 +52,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "INTENTIONAL SELF-HOSTING (declare in commit msg per patterns.md 'Agent-prompt self-hosting pattern' US-001 CAM-16): this story deliberately edits .claude/agents/subagent-auditor.md AND templates/agents/subagent-auditor.md, then runs `bun run embed-vendor` to sync src/vendor/_generated.ts. The `templatesContents` byte-parity test in test/embedded.test.ts catches drift. Precedent: CAM-75 US-001 added `Write` to subagent-reviewer.md tools for review-report.json (patterns.md 'Structured reviewer exit report pattern'). Keep the auditor READ-ONLY for source code (no Edit/NotebookEdit); Write is the single exception, only for the verdict file. Verdict values must be exactly 'APPROVE'/'BLOCK' to match US-001's shape guard. Do NOT change the audit checklist logic (surgical: only the output-channel + tools frontmatter)."
@@ -55,7 +69,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Mirror buildReviewerWorkerArgv in src/supervisor/review.ts and buildImplementerWorkerArgv in src/supervisor/worker-argv.ts (both pure, no I/O). Reuse workerEnvPrefix() and the shellEscape helper pattern from those files (do NOT reimplement the env-strip list). readPhaseModel('planner')/readPhaseModel('auditor') from src/config/models.ts are read at spawn time by the CALLER (US-005), not baked in here; here just accept an optional model with DEFAULTS.planner/DEFAULTS.auditor fallback. Spawn invariants from patterns.md: env -u (CAM-43), --session-id must be lowercased by the caller (CAM-23, 'macOS uuidgen uppercase'), atomic send-keys is a caller concern (CAM-55)."
@@ -72,7 +86,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Port the LLM-driven Step 0 of cam-plan.md (git checkout main / git pull origin main / prune merged cam/* / git status / typecheck / tests) into deterministic TS. Precedents: src/supervisor/preflight-container.ts (discriminated-union PreflightResult shape + injectable probe seam) and host.ts runGates (spawnSync 'bun' ['run','typecheck'] then ['test']). Use the spawnSync exit-status guard (patterns.md US-R1-001): spawnSync does NOT throw on non-zero; check `(result.status ?? 1) !== 0`. Prune loop mirrors cam-plan.md Step 0.2: `git for-each-ref refs/heads/cam/` + `gh pr list --head <b> --state merged`; skip silently if `gh` absent (Bun.which('gh') === null or spawn ENOENT). Keep the pure gating logic separate from the git argv so tests assert argv shape with no network. This is HAPPY-PATH only: in-progress-work conflict detection is OUT OF SCOPE (CAM-151 Half B)."
@@ -91,7 +105,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Mirror the dep-injected driver shape of makeReviewDispatch in src/supervisor/review.ts (spawn/capturePane/isPaneAlive/sleepFn/now injected; poll loop that breaks on report-file present OR pane-death OR timeout). Reuse: selectPlannableFromFile (src/issues/select.ts), buildPlannerWorkerArgv/buildAuditorWorkerArgv (US-003), makeReadPlanVerdict (US-001), runPlanPreflight (US-004). Spawn invariants (patterns.md): env -u via workerEnvPrefix (in US-003 argv), lowercase --session-id (CAM-23 'macos-uuidgen-uppercase': lowercase the genUuid() output), @cam_label set BEFORE respawn (patterns.md '@cam_label pane-labeling'), paneCountMutex from src/tmux/session.ts (1 worker-pane at a time now also covers planner/auditor). Read the verdict from the FILE only (patterns.md 'capture-pane is rendered markdown' + 'supervisor-sentinel-parse-fragility'): never parse the auditor pane scrollback. Emit spawn-resolution events via emitSpawnResolution (phase 'planner'/'auditor') like loop.ts/review.ts. This story does NOT wire the post-audit commit/branch/flip (that is US-006) and does NOT implement a BLOCK->re-plan loop (CAM-151 Half B). NOTE for auditor: this is a pane worker here (deterministic-loop-driven), which is the correct home per patterns.md 'Pane worker vs Task subagent' now that the sidecar (not the LLM /cam-plan flow) drives the plan phase."
@@ -109,7 +123,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 6,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "INCREMENTAL BOUNDARY (spec point 5): do NOT rewrite runSupervisor/runSidecarLoop; hand off to the existing loop.ts via active:true. Reuse decidePostAuditAction(readPlanApproval()) from src/plan/plan-approval-decision.ts (CAM-109) VERBATIM. For flipActiveFn, mirror makeFlipActiveFn in src/commands/sidecar.ts (writes active:true to .claude/cam-loop.local.md preserving other fields via renderStateFile/writeStateFile). For escalateFn on BLOCK, mirror the sidecar escalateFn seam (makeProductionEscalateFn / sendEscalation in src/notify/resend.ts, best-effort never-throws) plus a notifyOrchestrator-style pane push. Branch create BEFORE prd commit (cam-plan.md Step 9 'Create the branch BEFORE committing prd.json so it never lands on main'). Use spawnSync exit-status guard (patterns.md US-R1-001). Half A implements the auto proceed-branch path only; operator gate + BLOCK->re-plan loop are CAM-151."
@@ -126,10 +140,41 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 7,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "Follow docs/adr/0003-worker-isolation-boundary-dev-container.md format precedent EXACTLY (the new ADR is 0004). Apply the ADR three-gate test from scripts/cam/CLAUDE.md 'Domain Model Convention': hard-to-reverse (the plan phase moves from LLM-orchestrated /cam-plan Task subagents to a deterministic sidecar runner spawning panes) + surprising-without-context (the planner/auditor are now panes not Task subagents, reversing the patterns.md 'Pane worker vs Task subagent' dividing line for the plan phase) + genuine-trade-off (deterministic runner loses LLM flexibility in orchestrating the plan flow, gains the deterministic guards). No em-dash / no decorative emoji in persisted .md (global CLAUDE.md rule + patterns.md 'No em-dash in persisted .md'). docs/adr/ is not under vendor/ or templates/, so no embed-vendor run needed."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:2",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "src/supervisor/plan-runner.ts",
+        "line": 281,
+        "text": "US-005 AC4 requires the planner poll to break when 'the pane dies OR prd.json is written', but pollPlannerDeath (lines 281-301) only breaks on pane death; RunPlanPhaseOptions injects no prd.json/report reader at all. The US-005 notes say to mirror makeReviewDispatch in review.ts, whose poll breaks on readReviewReport()!==null (review.ts:380-384) OR pane death (388). Because interactive-TUI workers do not self-exit (the driver kills them via respawn-pane -k after detecting the report file, per the implementer/reviewer session model), the happy path will loop isPaneAlive=true until plannerTimeoutMs (30 min) and return planner-timeout, never spawning the auditor. plan-runner.test.ts masks this by simulating pane death after 1 tick, so green tests do not prove the AC4 completion path."
+      },
+      {
+        "severity": "WARNING",
+        "file": "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md",
+        "line": 38,
+        "text": "ADR 0004 (US-007) contradicts the implemented code. Line 38 states the planner and auditor write 'scripts/cam/worker-report.json' as the primary completion signal, but US-001/US-002 established scripts/cam/plan-verdict-report.json as the auditor channel, and the planner has no report-file check at all in the runner. It also references symbols that do not exist: runPlannerAuditorCycle (line 26) and MAX_PLANNER_POLLS/MAX_AUDITOR_POLLS (line 16); the code uses inline logic in runPlanPhase with DEFAULT_PLAN_TIMEOUT_MS / plannerTimeoutMs / auditorTimeoutMs. A persisted architecture doc should match the code (global CLAUDE.md rule 7, Doc Maintenance)."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/plan-runner.ts",
+        "line": 407,
+        "text": "After pollAuditorReport returns a verdict, runPlanPhase returns without killing the auditor pane, leaving it alive (3 panes). The next runPlanPhase would then see paneCountMutexFn()==='busy' and return mutex-busy until the pane is reclaimed. Consider an explicit respawn-pane -k on success or documenting that the caller (US-006/loop wiring) owns pane teardown."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md",
+        "line": 24,
+        "text": "The ADR pre-flight description (line 24) omits the typecheck and bun test steps that runPlanPreflight actually runs, and lists 'branch de origem resolvida, gh disponivel' which are not distinct pre-flight steps. Align the ADR with runPlanPreflight's real six-step sequence."
+      }
+    ]
+  }
 }

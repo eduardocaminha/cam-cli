@@ -1,24 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Record ADR 0004: plan phase as deterministic sidecar runner"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-117-plan-runner",
-  "timestamp": "2026-07-01T03:00:00Z",
-  "createdFiles": [
-    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md"
-  ],
+  "timestamp": "2026-07-01T03:30:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
+    "src/supervisor/plan-runner.ts",
+    "test/supervisor/plan/plan-runner.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/handoff.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 wrote docs/adr/0004-plan-phase-deterministic-sidecar-runner.md documenting the plan phase as a deterministic TS sidecar runner. All 7 stories in the CAM-117 PRD now have passes:true. The full quality spine (check:all) is green. The PRD is complete: no further stories remain with passes:false.",
+  "nextStoryContext": "US-R1-001 fixed the critical bug in pollPlannerDeath: added readPlannerReportFn?: () => unknown | null to RunPlanPhaseOptions. The poll now breaks when prd.json is written (primary signal) OR when the pane dies (fallback), mirroring the review.ts readReviewReport pattern. 6 new tests prove the AC4 completion path without pane death. The remaining story is US-R1-002 (WARNING: ADR 0004 contradicts the implemented code - references wrong symbols and wrong report filename).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-007 is a docs-only story: writes an ADR markdown file. No external library API was exercised."
+      "summary": "US-R1-001 is an internal bug fix: mirrors the readReviewReport pattern from review.ts into plan-runner.ts. No external library API was exercised."
     }
   ]
 }
