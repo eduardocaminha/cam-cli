@@ -56,7 +56,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mirror buildReviewerWorkerArgv in src/supervisor/review.ts and buildImplementerWorkerArgv in src/supervisor/worker-argv.ts (both pure, no I/O). Reuse workerEnvPrefix() and the shellEscape helper pattern from those files (do NOT reimplement the env-strip list). readPhaseModel('planner')/readPhaseModel('auditor') from src/config/models.ts are read at spawn time by the CALLER (US-005), not baked in here; here just accept an optional model with DEFAULTS.planner/DEFAULTS.auditor fallback. Spawn invariants from patterns.md: env -u (CAM-43), --session-id must be lowercased by the caller (CAM-23, 'macOS uuidgen uppercase'), atomic send-keys is a caller concern (CAM-55)."
     },

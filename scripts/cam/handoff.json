@@ -1,19 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Auditor writes structured verdict file (self-hosting agent-prompt edit)"
+    "id": "US-003",
+    "title": "Add pure argv builders for planner and auditor worker panes"
   },
   "branchName": "cam/CAM-117-plan-runner",
   "timestamp": "2026-07-01T00:00:00Z",
-  "createdFiles": [],
+  "createdFiles": [
+    "src/supervisor/plan-argv.ts",
+    "test/supervisor/plan/plan-argv.test.ts"
+  ],
   "modifiedFiles": [
-    ".claude/agents/subagent-auditor.md",
-    "templates/agents/subagent-auditor.md",
-    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added Write to subagent-auditor tools frontmatter, updated Constraints to allow only the plan-verdict-report.json write, and added Exit report protocol section mirroring the reviewer pattern. Both .claude/agents/subagent-auditor.md and templates/agents/subagent-auditor.md were edited and embed-vendor regenerated. The next story should wire makeReadPlanVerdict into the plan-runner dispatch loop (plan-runner Half B stories, if any).",
+  "nextStoryContext": "US-003 added src/supervisor/plan-argv.ts with buildPlannerWorkerArgv and buildAuditorWorkerArgv. Both are pure argv builders mirroring the implementer/reviewer pattern: workerEnvPrefix() + claude --permission-mode --session-id --model --agent '<prompt>'. No -p, no --output-format. 30 tests in test/supervisor/plan/plan-argv.test.ts. The next story (US-004) should add the deterministic plan pre-flight in TS.",
   "officialDocsValidated": [
     {
       "lib": "none",
