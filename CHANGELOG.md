@@ -4,6 +4,13 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.36.0] - 2026-07-01
+
+### Added
+
+- [US-002] - Add a parity test asserting the clause in the 3 embedded shipped copies
+- [US-001] - Insert the merit-over-cost clause into all 3 surfaces and regenerate the embed
+
 ## [0.35.0] - 2026-06-30
 
 ### Added

@@ -158,6 +158,28 @@ describe('templatesContents — oracle enforcement in auditor prompt (US-002)', 
 	});
 });
 
+describe('templatesContents — merit-over-cost clause in all 3 shipped copies (CAM-145 US-002)', () => {
+	// The merit-over-cost clause ('engineering merit') was inserted by US-001 into
+	// 3 surfaces. These assertions target the EMBEDDED copies via templatesContents
+	// (not the source files on disk), so a stale _generated.ts that was never
+	// regenerated after the edit will fail here.
+
+	test('grill-with-docs/SKILL.md embedded copy contains the clause', () => {
+		const content = templatesContents['skills/grill-with-docs/SKILL.md'] ?? '';
+		expect(content).toContain('engineering merit');
+	});
+
+	test('commands/cam-plan.md embedded copy contains the clause', () => {
+		const content = templatesContents['commands/cam-plan.md'] ?? '';
+		expect(content).toContain('engineering merit');
+	});
+
+	test('agents/subagent-orchestrator.md embedded copy contains the clause', () => {
+		const content = templatesContents['agents/subagent-orchestrator.md'] ?? '';
+		expect(content).toContain('engineering merit');
+	});
+});
+
 describe('materializeTemplates — .gitignore is merged, never clobbered', () => {
 	// CAM-55 round-2 review: `templates/.gitignore` lands at the project root.
 	// A blind overwrite would destroy a downstream project's existing
