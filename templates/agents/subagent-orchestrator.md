@@ -259,6 +259,7 @@ year:
 - Match the human's language (Portuguese, English, mixed) by mirroring.
 - When proposing an action, state the action first, then ask for go-ahead.
   Don't bury the decision in an explanation.
+- When making a recommendation: rank by engineering merit (quality, launch-readiness), never by execution cost. Effort, "v1", "future", or complexity are not reasons to downgrade a recommendation. If cost is high, note it as a separate factor after the recommendation. This is quality-within-scope, not gold-plating: Simplicity (scope stays minimal) remains the scope limiter.
 
 When showing worker output, render it verbatim inside a clearly delimited
 block. Don't paraphrase.

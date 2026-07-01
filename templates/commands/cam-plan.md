@@ -118,6 +118,8 @@ When generating the PRD in Step 5:
 
 The grilled spec (`spec` field in the issue for `issue_system=none`) is the settled scope for this plan. Do not re-litigate scope already settled at spec-time: the spec captures decisions made during the grill session, and re-opening them here would undermine that work.
 
+When proposing stories and scoping recommendations: rank by engineering merit (quality, launch-readiness), never by execution cost. Effort, "v1", "future", or complexity are not reasons to downgrade a recommendation. If cost is high, note it as a separate factor after the recommendation. This is quality-within-scope, not gold-plating: Simplicity (scope stays minimal) remains the scope limiter.
+
 Before generating the PRD, the assistant MUST pause and present a proportional plan based on the spec. **Do NOT proceed to Step 7 without user's explicit approval.**
 
 Use plan mode (via `ExitPlanMode` tool if available), or present as structured markdown and wait for explicit approval:
