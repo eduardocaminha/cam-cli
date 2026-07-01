@@ -136,7 +136,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Touches docs/recovery-runbook.md (section (x), lines 2076+; extend, do not rewrite) and docs/adr/0003-worker-isolation-boundary-dev-container.md (extend the forward-reference at line 30 that already points to CAM-150). ADR gates: hard-to-reverse + surprising + genuine trade-off (all pass for the credential model). NO em-dash / NO emoji in persisted .md (global CLAUDE.md 2026-05-20 + patterns.md 'No em-dash'). Keep the 7-domain table (runbook lines 2117-2125) consistent with the US-004 rewrite (objects.githubusercontent.com). Note the B-1/B-2 split explicitly so a reader knows the spawn is still on host until CAM-152. This is the doc-maintenance concern for the whole PRD (grill spec item 6)."
     }

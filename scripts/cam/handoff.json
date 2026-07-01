@@ -1,28 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Wire preflightWorkerContainer() into the dispatch decision point (result available, gates nothing live)"
+    "id": "US-006",
+    "title": "Docs: recovery-runbook credential + DNS-firewall section and ADR for the containerized substrate + credential model"
   },
   "branchName": "cam/CAM-150-worker-container-substrate",
-  "timestamp": "2026-07-01T15:00:00Z",
+  "timestamp": "2026-07-01T16:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/events.ts",
-    "src/supervisor/host.ts",
-    "src/supervisor/loop.ts",
-    "test/supervisor/loop.test.ts",
-    "scripts/file-size-budget.json",
+    "docs/recovery-runbook.md",
+    "docs/adr/0003-worker-isolation-boundary-dev-container.md",
+    ".devcontainer/init-firewall.sh",
+    "test/supervisor/worker-container-firewall.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 through US-005 are complete. US-005 (B-1) wired preflightContainerFn as an OPTIONAL dep on RunSupervisorOptions (loop.ts). The dep calls preflightWorkerContainer() before the respawn-pane dispatch and logs the PreflightResult via logEvent as a 'container-preflight' event. The host spawn is UNCHANGED (B-1 is observe-only). Production wiring in host.ts uses real spawnSync('docker', ...) as the probe and statSync as statFn. US-006 (B-2, CAM-152) is the next story: it should flip this fail-closed using escalateFn when preflight is not-ready. The injectable seam (preflightContainerFn) already exists as the extension point.",
+  "nextStoryContext": "All 6 stories in the PRD are now passes:true. The PRD is complete. US-006 extended docs/recovery-runbook.md section (x) with a credential-provisioning subsection (GITHUB_TOKEN fine-grained PAT + CLAUDE_CODE_OAUTH_TOKEN via claude setup-token, both injected via containerEnv) and a dnsmasq DNS-firewall explanation. The ADR (0003) was extended with the credential model (HTTPS token, no SSH) and an explicit inert-substrate note referencing CAM-152 (B-2) as the story that will flip the fail-closed dispatch. The 7-domain table was updated from raw.githubusercontent.com to objects.githubusercontent.com (the correct Git LFS host per US-004 intent). The next action is /cam-review.",
   "officialDocsValidated": [
     {
-      "lib": "docker-cli",
-      "url": "https://docs.docker.com/reference/cli/docker/image/inspect/",
-      "fetchedAt": "2026-07-01T15:00:00Z",
-      "status": "fetch_failed",
-      "summary": "Docker CLI docs page did not document exit codes for 'docker image inspect' when image is missing. Implementation relies on empirically known behavior: exit 0 when image exists, non-zero otherwise. preflight-container.ts was already unit-tested in prior story."
+      "lib": "dnsmasq",
+      "version": "current",
+      "url": "https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html",
+      "fetchedAt": "2026-07-01T16:00:00Z",
+      "status": "ok",
+      "summary": "dnsmasq --ipset confirmed: places resolved IP addresses into the named Netfilter ipset on every DNS answer, dynamically. Domain matching covers subdomains. ipset must exist before dnsmasq starts (script does ipset create before dnsmasq invocation). Implementation is correct."
     }
   ]
 }
