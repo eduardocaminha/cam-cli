@@ -74,7 +74,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": ".claude/agents/subagent-implementer.md AND templates/agents/subagent-implementer.md, then bun run embed-vendor + verify with embed-vendor:check (patterns.md 'Agent-prompt self-hosting pattern': edit both copies then re-embed; the templatesContents byte-parity test in test/embedded.test.ts catches drift). Layer A framing = 'reproduce local, fix-with-vision, NOT official' from CAM-56 two-layer (spec gotcha 2). No src logic change; the gate runnable already exists (US-002). Keep the em-dash rule off .md persisted for humans, but agent .md are LLM-consumed (CLAUDE.md exception)."
     },

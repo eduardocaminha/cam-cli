@@ -1,24 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Shared runnable behavioral gate: drive real cam in tmux, capture, assert"
+    "id": "US-003",
+    "title": "Implementer runs the gate at Layer A to self-correct"
   },
   "branchName": "cam/CAM-116-behavioral-verification-gate",
-  "timestamp": "2026-07-01T02:00:00Z",
-  "createdFiles": [
-    "test/integration/behavioral-gate.test.ts"
-  ],
+  "timestamp": "2026-07-01T03:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/behavioral-gate.ts",
+    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-implementer.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 delivered runBehavioralGate in src/supervisor/behavioral-gate.ts. The function accepts an OracleDirective and RunBehavioralGateOpts (injectable spawnFn + socketName + cwd + timeoutMs). It returns BehavioralGateResult { passed, capturedPane, detail }. Default socket is BEHAVIORAL_GATE_SOCKET ('cam-behavioral-gate'), never bare 'cam'. Non-runnable oracle kinds (reviewer-judgment, no-oracle, tmux-pty) return passed:false immediately. named-command and file-assert run in a private tmux session: creates session with '-L socketName', sends command + exit-code marker ('CAMGATE_N') via send-keys, polls capture-pane in 300ms ticks until marker found or timeout, kills session in finally. Helpers extracted to stay under biome complexity limit 15: resolveNonRunnableResult (handles 3 early-return cases) and pollForExitCode (the while-loop poll). Integration test at test/integration/behavioral-gate.test.ts: uses TEST_SOCK='cam-it-gate', kill-server in beforeEach/afterEach, test.skipIf(!tmuxAvailable) for real-tmux cases. US-003 can import runBehavioralGate and BEHAVIORAL_GATE_SOCKET from src/supervisor/behavioral-gate.ts.",
+  "nextStoryContext": "US-003 added the 'Behavioral gate (Layer A) — self-correction' section to both the runtime agent prompt (.claude/agents/subagent-implementer.md) and the cam-init template (templates/agents/subagent-implementer.md). The section instructs the implementer to call runBehavioralGate (src/supervisor/behavioral-gate.ts) for any tmux-drivable [oracle: ...] in acceptanceCriteria, fix-with-vision on failure, and explicitly states the Layer A run is self-correction only and NOT the artifact-of-record. Vendor was re-embedded (src/vendor/_generated.ts). The next story (US-004 or higher priority) can reference the behavioral gate machinery from US-002/US-003 as ready-to-use.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Gate runner uses only node:child_process (stdlib spawnSync) and Bun built-ins (Bun.sleepSync). No external library exercised."
+      "summary": "Story only edited agent prompt .md files and re-embedded vendor. No external library exercised."
     }
   ]
 }
