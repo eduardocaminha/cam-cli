@@ -94,7 +94,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "src/supervisor/review-report.ts: add `export const REVIEW_ARTIFACT_FILENAME = 'scripts/cam/review-artifact.txt';` (pinned literal, symmetric to REVIEW_REPORT_FILENAME) and an optional `artifactOfRecord?: string` field on ReviewReport. This EXACT string 'scripts/cam/review-artifact.txt' is the single source: US-006 hardcodes it in --body-file, the .gitignore entry matches it, and the reviewer writes it. .claude/agents/subagent-reviewer.md + templates/agents/subagent-reviewer.md: (a) add the Layer B independent re-run + artifact-write instruction; (b) F-01: the reviewer prompt currently says review-report.json is the ONLY permitted write (Constraints ~line 28) / the single permitted exception (Exit-report protocol ~line 168) to the READ-ONLY constraint. The artifact-of-record is a SECOND permitted write, so BOTH clauses must be widened to name review-report.json AND scripts/cam/review-artifact.txt, else the prompt self-contradicts. Then bun run embed-vendor + embed-vendor:check (patterns.md self-hosting + templatesContents byte-parity test in test/embedded.test.ts). .gitignore + templates/.gitignore add scripts/cam/review-artifact.txt. Only the reviewer's run is the artifact-of-record (spec gotcha 2). Reviewer stays READ-ONLY for source (Edit/NotebookEdit disallowed); Write only for the two ephemeral files. Preserve the <review> sentinel + review-report.json contract (spec gotcha 7): artifact is ADDITIVE."
     },

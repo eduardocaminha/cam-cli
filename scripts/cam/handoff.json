@@ -1,24 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Implementer runs the gate at Layer A to self-correct"
+    "id": "US-004",
+    "title": "Reviewer re-runs the gate at Layer B and writes the artifact-of-record"
   },
   "branchName": "cam/CAM-116-behavioral-verification-gate",
-  "timestamp": "2026-07-01T03:00:00Z",
+  "timestamp": "2026-07-01T03:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-implementer.md",
-    "templates/agents/subagent-implementer.md",
+    "src/supervisor/review-report.ts",
+    ".claude/agents/subagent-reviewer.md",
+    "templates/agents/subagent-reviewer.md",
+    ".gitignore",
+    "templates/.gitignore",
     "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added the 'Behavioral gate (Layer A) — self-correction' section to both the runtime agent prompt (.claude/agents/subagent-implementer.md) and the cam-init template (templates/agents/subagent-implementer.md). The section instructs the implementer to call runBehavioralGate (src/supervisor/behavioral-gate.ts) for any tmux-drivable [oracle: ...] in acceptanceCriteria, fix-with-vision on failure, and explicitly states the Layer A run is self-correction only and NOT the artifact-of-record. Vendor was re-embedded (src/vendor/_generated.ts). The next story (US-004 or higher priority) can reference the behavioral gate machinery from US-002/US-003 as ready-to-use.",
+  "nextStoryContext": "US-004 added REVIEW_ARTIFACT_FILENAME ('scripts/cam/review-artifact.txt') constant and artifactOfRecord?: string field to ReviewReport in src/supervisor/review-report.ts. Both runtime (.claude/agents/subagent-reviewer.md) and template (templates/agents/subagent-reviewer.md) reviewer agent prompts now instruct the reviewer to independently re-run the behavioral gate at Layer B (not trusting the implementer's Layer A result), write capture output to scripts/cam/review-artifact.txt as the artifact-of-record, and record the path in review-report.json via the artifactOfRecord field. Both Constraints and Exit-report clauses in both prompt copies now name both permitted write files (review-report.json AND review-artifact.txt). Both .gitignore and templates/.gitignore now include scripts/cam/review-artifact.txt. Vendor was re-embedded (src/vendor/_generated.ts). The next story can rely on REVIEW_ARTIFACT_FILENAME being the single source of truth for the artifact path.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story only edited agent prompt .md files and re-embedded vendor. No external library exercised."
+      "summary": "Story only edited agent prompt .md files, TypeScript type/constant additions in review-report.ts, and gitignore entries. No external library was exercised."
     }
   ]
 }
