@@ -118,7 +118,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Touches src/supervisor/loop.ts (implement branch, near the shellCmd/respawn-pane dispatch at ~line 692-733), src/supervisor/host.ts (wire the production preflightContainerFn using the real DockerProbe over spawnSync + statFn over node:fs), and test/supervisor/loop.test.ts (fake preflight dep). preflightWorkerContainer already exists at src/supervisor/preflight-container.ts:87 (exported, unit-tested, currently uncalled). Add an OPTIONAL dep to RunSupervisorOptions (interface at loop.ts:167; mirror the ensureWorkerPane/escalateFn optional-seam pattern at loop.ts:286/350) so absent dep = backward-compatible no-op. CRITICAL (grill split): B-1 does NOT make this fail-closed. The result is observed only (log it via the existing logEvent sink, patterns.md 'Spawn-resolution emitter'); the host spawn is UNCHANGED. B-2 (CAM-152) is the story that turns not-ready into escalate+blocked (uses escalateFn at loop.ts:350/1162). Do NOT wrap the spawn in docker exec and do NOT add no-host-fallback here (both are OUT OF SCOPE -> CAM-152). CI has no Docker: production wiring is fine (preflight just returns daemon-unreachable), tests use a fake dep."
     },

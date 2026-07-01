@@ -79,7 +79,8 @@ export type WorkerEventKind =
 	| 'merge-watch-post-merge-done'
 	| 'stage-promoted'
 	| 'cycle-tokens'
-	| 'meta-loop-observe';
+	| 'meta-loop-observe'
+	| 'container-preflight';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -261,6 +262,19 @@ export type MetaLoopObserveEventDetail =
 	| { wouldSelect: string; rank: number; wsjf: number }
 	| { drained: true };
 
+/**
+ * 'container-preflight' event detail: emitted once per implement dispatch
+ * immediately before the respawn-pane call (B-1 observe-only; B-2 / CAM-152
+ * will flip this fail-closed). The result is logged for observability without
+ * gating or altering the host spawn in B-1.
+ *   - ready: true when daemon is reachable and the image is present/current.
+ *   - reason: set only when ready=false ('daemon-unreachable' | 'image-missing' | 'image-stale').
+ */
+export interface ContainerPreflightEventDetail {
+	ready: boolean;
+	reason?: string;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -276,6 +290,7 @@ export type WorkerEventDetail =
 	| StagePromotedEventDetail
 	| CycleTokensEventDetail
 	| MetaLoopObserveEventDetail
+	| ContainerPreflightEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

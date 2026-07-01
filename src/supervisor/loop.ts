@@ -36,7 +36,8 @@ import { readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { formatReviewVerdictLine, formatWorkerReportSummary, type WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
-import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail, OutcomeSourceEventDetail } from './events.ts';
+import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail, OutcomeSourceEventDetail, ContainerPreflightEventDetail } from './events.ts';
+import type { PreflightResult } from './preflight-container.ts';
 
 // ---------------------------------------------------------------------------
 // Injected dependency types
@@ -348,6 +349,21 @@ export interface RunSupervisorOptions {
 	 * that do not inject this callback pass byte-for-byte unchanged.
 	 */
 	escalateFn?: () => Promise<void>;
+	/**
+	 * Container preflight seam (US-005 / B-1 observe-only).
+	 *
+	 * When injected, called once per implement dispatch immediately before the
+	 * respawn-pane call. The PreflightResult is emitted to the logEvent sink as a
+	 * 'container-preflight' event for observability. In B-1 the result does NOT
+	 * gate, block, or alter the live host spawn: the worker always dispatches on
+	 * the host regardless of ready/reason. B-2 (CAM-152) will flip this
+	 * fail-closed using escalateFn.
+	 *
+	 * Optional: when absent (existing callers / tests that do not inject this dep)
+	 * the loop behavior is byte-for-byte unchanged. The seam is the testable
+	 * injection point; production wiring lives in host.ts.
+	 */
+	preflightContainerFn?: () => PreflightResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -537,6 +553,8 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const clearWorkerReport = opts.clearWorkerReport;
 	// Passed to readWorkerOutcome for the worker-report-fallback branch.
 	const workerReportPath = opts.workerReportPath;
+	// US-005 / B-1: container preflight seam. Observed-only in B-1; does not gate.
+	const preflightContainerFn = opts.preflightContainerFn;
 
 	// --- US-001 progress tracking helpers ---
 	// Compute done/total counts from a PRD snapshot (non-operator stories only).
@@ -716,6 +734,26 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// triggering a false-positive on the first poll tick of the new run.
 			// Best-effort: clearWorkerReport handles the no-file case gracefully.
 			clearWorkerReport?.();
+
+			// US-005 / B-1: container preflight (observe-only, never gates in B-1).
+			// Call the injectable seam so the PreflightResult is available before dispatch.
+			// The result is threaded into the logEvent sink for observability; the host
+			// spawn is UNCHANGED regardless of ready/reason (fail-closed is CAM-152 / B-2).
+			if (preflightContainerFn !== undefined) {
+				const preflightResult = preflightContainerFn();
+				if (logEvent !== undefined) {
+					const preflightDetail: ContainerPreflightEventDetail = preflightResult.ready
+						? { ready: true }
+						: { ready: false, reason: preflightResult.reason };
+					logEvent({
+						ts: clock(),
+						storyId: advisoryStoryId,
+						uuid,
+						kind: 'container-preflight',
+						detail: preflightDetail,
+					});
+				}
+			}
 
 			// US-007: emit structured {phase, model, backend} spawn-resolution event.
 			// writeEvent bridges into the structured worker event log (logEvent sink).
