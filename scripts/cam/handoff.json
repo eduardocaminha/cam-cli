@@ -1,30 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Add devcontainer.json wiring the image, firewall, and non-root user"
+    "id": "US-004",
+    "title": "Add tested Docker preflight helper (uncalled)"
   },
   "branchName": "cam/CAM-111-worker-container",
-  "timestamp": "2026-07-01T14:00:00Z",
+  "timestamp": "2026-07-01T16:00:00Z",
   "createdFiles": [
-    ".devcontainer/Dockerfile",
-    ".devcontainer/init-firewall.sh",
-    ".devcontainer/devcontainer.json"
+    "src/supervisor/preflight-container.ts",
+    "test/supervisor/preflight-container.test.ts"
   ],
   "modifiedFiles": [
     "scripts/cam/prd.json"
   ],
-  "openQuestions": [
-    "AC4 oracle uses grep -Eq with a negative lookahead (?!root) which macOS BSD grep/ugrep does not support in ERE mode. The implementation is correct (remoteUser is 'bun', not root); the oracle needs to be verified on the CI environment (macos-latest) or use grep -P for the check."
-  ],
-  "nextStoryContext": "US-003 added .devcontainer/devcontainer.json. The file uses strict JSON (no comments), references the local Dockerfile via build.dockerfile, grants NET_ADMIN+NET_RAW in runArgs, sets remoteUser to 'bun' (matching the Dockerfile USER bun, from oven/bun:1.2-slim base), mounts a named volume 'claude-code-config' at /home/bun/.claude, sets DISABLE_AUTOUPDATER=1 and CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 in containerEnv, and runs postStartCommand 'sudo bash /workspace/.devcontainer/init-firewall.sh'. No .ssh mounts. Note: the bun user (from the oven/bun:1.2-slim base) has home dir /home/bun, NOT /home/node as the reference devcontainer.json uses. All quality gates green (2290 pass / 0 fail). Next story is US-004 (Docker preflight helper).",
+  "openQuestions": [],
+  "nextStoryContext": "US-004 added src/supervisor/preflight-container.ts exporting preflightWorkerContainer(opts: PreflightWorkerContainerOptions): PreflightResult. The discriminated union is: { ready: true } | { ready: false; reason: 'daemon-unreachable' | 'image-missing' | 'image-stale' }. Injectable seam: opts.probe (DockerProbe = (args: string[]) => { stdout: string; exitCode: number }). Optional opts.statFn (StatFn = (path: string) => { mtimeMs: number } | null) enables the stale check by comparing image creation time from 'docker image inspect <tag> --format={{.Created}}' against Dockerfile mtime. Default imageTag is 'cam-worker:latest'; default dockerfilePath is '.devcontainer/Dockerfile'. NOT wired into dispatch path (host.ts / loop.ts / worker-argv.ts untouched). 9 unit tests all green; full check:all green (2299 pass / 0 fail). Next story is US-005 (Add ADR 0003 and recovery-runbook container section): documentation-only, no TS files, no embed-vendor needed.",
   "officialDocsValidated": [
     {
-      "lib": "Claude Code devcontainer",
+      "lib": "docker-cli",
       "version": "current (2026-07-01)",
-      "url": "https://code.claude.com/docs/en/devcontainer",
-      "fetchedAt": "2026-07-01T14:00:00Z",
+      "url": "https://docs.docker.com/reference/cli/docker/info/",
+      "fetchedAt": "2026-07-01T16:00:00Z",
       "status": "ok",
-      "summary": "Official docs confirm: runArgs for NET_ADMIN+NET_RAW, remoteUser non-root, named volume for ~/.claude (reference uses source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume), containerEnv for DISABLE_AUTOUPDATER+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, postStartCommand for firewall init. Our implementation uses 'bun' user (not 'node') matching the oven/bun:1.2-slim base image USER directive. Reference uses /home/node; we use /home/bun."
+      "summary": "Docker CLI docs confirm 'docker info' displays system-wide daemon info. Exit-code 0 on success / non-zero on failure is empirically established (standard shell script idiom). 'docker image inspect <tag>' exits 0 when image is local, non-zero when absent. '--format={{.Created}}' returns the ISO-8601 creation timestamp. Implementation correctly uses these as daemon-reachable and image-present probes."
     }
   ]
 }

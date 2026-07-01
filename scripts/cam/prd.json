@@ -104,7 +104,7 @@
         "Full quality spine passes: biome lint clean, knip finds no new dead code (the exported helper is reachable via the test entry point), jscpd under threshold, file-size within budget, coverage ratchet holds (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files: src/supervisor/preflight-container.ts + test/supervisor/preflight-container.test.ts. This maps to issue acceptance criterion 9 (preflight checks Docker available + worker image built/current before dispatch), but WIRING it into dispatch is Half B (CAM-150): do NOT touch src/supervisor/worker-argv.ts or host.ts spawn logic. Follow the injectable-dep pattern used across the codebase (patterns.md: makeNotifyOrchestrator factory, sidecar-pid signal-0 probe, makeReadWorkerReport null-on-error). Inject the docker-probe as a dependency (e.g. a `probe: (args: string[]) => { stdout: string; exitCode: number }` seam) so the unit test asserts behavior with a fake and never touches a real daemon (CI is macos-latest with NO Docker). Structured result: discriminated union { ready: true } | { ready: false; reason: 'daemon-unreachable' | 'image-missing' | 'image-stale' } mirrors the { ok:false; reason } union pattern in patterns.md (US-005 CAM-86). Docker daemon probe idiom: `docker info` exit 0 = reachable; `docker image inspect <tag>` exit 0 = built. Guard noUncheckedIndexedAccess on any argv/regex parse. knip: an exported-but-uncalled function is fine because test/**/*.ts is a knip entry point (patterns.md knip grandfathering bullet). The real image-build + live preflight against a running daemon is an operator/local ceremony, NOT part of this story's oracles."
     },
