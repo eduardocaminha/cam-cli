@@ -2072,3 +2072,139 @@ Cross-reference: `src/commands/journal.ts` (appendJournalEntryOnMain, renderJour
 validateEntry, normalizeEmDash, hasDuplicateCycleId, replaceCycleBlock),
 section (n) (commit-tree-to-main primitive),
 `scripts/cam/patterns.md` (cam journal append: deterministic housekeeping channel bullet).
+
+## (x) CAM-111: worker container model, firewall allowlist, and Docker dependency
+
+The cam worker runs inside a local dev container (`.devcontainer/Dockerfile` +
+`.devcontainer/devcontainer.json`). This section documents the container model,
+the exact firewall allowlist, and the Docker dependency so an operator can
+cross-check the live configuration. The architectural rationale is in
+`docs/adr/0003-worker-isolation-boundary-dev-container.md`.
+
+### Container model
+
+Three isolation layers:
+
+1. **Filesystem**: the repository is bind-mounted read-write into the container.
+   No other host directories are accessible.
+2. **Network (default-deny)**: an `iptables` + `ipset` egress firewall is
+   applied by `.devcontainer/init-firewall.sh` at container start. Only the
+   seven allowlisted domains below are reachable; all other outbound connections
+   are dropped.
+3. **Non-root user**: the worker runs as `cam-worker` (uid 1001). Root is not
+   available inside the container during normal operation.
+
+The image tag is `cam-worker:latest`. Build it once from the project root:
+
+```bash
+docker build .devcontainer -t cam-worker:latest
+```
+
+The image must exist and the Docker daemon must be reachable before the sidecar
+dispatches any worker. The preflight helper (`src/supervisor/preflight-container.ts`,
+called before each dispatch) checks both; a failed preflight blocks the dispatch
+without retrying.
+
+Fail-closed spawn behavior (refusing dispatch when the container is not ready)
+will be documented in Half B (CAM-150) once the conditional spawn logic is
+implemented. This section covers setup and verification only.
+
+### Firewall allowlist
+
+The allowlist is managed exclusively by `.devcontainer/init-firewall.sh`. The
+script declares exactly seven domains:
+
+| Domain | Purpose |
+|---|---|
+| `api.anthropic.com` | Claude API (worker LLM calls) |
+| `claude.ai` | Claude web (authentication flows) |
+| `platform.claude.com` | Claude platform endpoints |
+| `github.com` | git push/fetch, gh CLI |
+| `*.github.com` | GitHub sub-services (codeload, uploads, objects, API) |
+| `registry.npmjs.org` | npm/bun package registry |
+| `raw.githubusercontent.com` | raw file downloads from GitHub |
+
+DNS resolution (UDP + TCP port 53) is always permitted so the ipset can resolve
+domain names to IPs at container start. SSH (port 22) outbound to allowlisted
+IPs is permitted for git-over-SSH.
+
+To cross-check the live allowlist against this table:
+
+```bash
+grep -A 12 'ALLOWED_DOMAINS=(' .devcontainer/init-firewall.sh
+```
+
+If a new domain is needed, update `ALLOWED_DOMAINS` in `init-firewall.sh` AND
+update the table above AND the corresponding ADR
+(`docs/adr/0003-worker-isolation-boundary-dev-container.md` Consequencias
+section). Adding a domain is a deliberate architectural decision.
+
+### Docker dependency
+
+The firewall script requires two Linux capabilities:
+
+- `NET_ADMIN`: to set iptables policies and rules.
+- `NET_RAW`: to manipulate raw sockets (ipset).
+
+Both are granted via `runArgs` in `.devcontainer/devcontainer.json`. On macOS
+and Windows, Docker Desktop provides a Linux VM internally; the capabilities
+work as expected inside that VM. On native Linux, the host kernel must allow
+these capabilities for the container user.
+
+**Symptom: `preflight-container` returns `daemon-unreachable`**
+
+The Docker daemon is not running or is not accessible to the current user.
+
+```bash
+docker info          # should print daemon info; non-zero exit means daemon is down
+systemctl start docker   # Linux systemd
+open -a Docker           # macOS Docker Desktop
+```
+
+**Symptom: `preflight-container` returns `image-missing`**
+
+The `cam-worker:latest` image does not exist locally. Build it:
+
+```bash
+docker build .devcontainer -t cam-worker:latest
+```
+
+**Symptom: `preflight-container` returns `image-stale`**
+
+The image creation timestamp predates the `Dockerfile` mtime. The Dockerfile
+was modified after the last build. Rebuild:
+
+```bash
+docker build .devcontainer -t cam-worker:latest
+```
+
+**Symptom: firewall self-verify fails (allowed domain unreachable)**
+
+`init-firewall.sh` performs a self-verify step after applying rules. If
+`api.anthropic.com` is unreachable after the rules are applied, the script
+exits non-zero. Common causes:
+
+- DNS is blocked: confirm UDP/TCP port 53 is not filtered upstream.
+- IP for `api.anthropic.com` changed between DNS resolution and the curl check:
+  rerun `init-firewall.sh` to refresh the ipset.
+- The ipset is empty (dig not installed): install `dnsutils` (Debian/Ubuntu) or
+  `bind-utils` (Fedora/Alpine) inside the container image.
+
+**Symptom: firewall self-verify fails (blocked domain reachable)**
+
+`example.com` is reachable after the firewall is applied, meaning the
+default-deny policy did not take effect. Verify that `NET_ADMIN` capability is
+granted:
+
+```bash
+docker inspect <container_id> | jq '.[0].HostConfig.CapAdd'
+# expected: ["NET_ADMIN","NET_RAW"]
+```
+
+If the capability is absent, stop the container and re-create it from the
+devcontainer (VS Code: "Reopen in Container"; CLI: `devcontainer up`).
+
+Cross-reference: `.devcontainer/init-firewall.sh` (firewall script),
+`.devcontainer/devcontainer.json` (capability grants, non-root user config),
+`src/supervisor/preflight-container.ts` (preflight helper),
+`docs/adr/0003-worker-isolation-boundary-dev-container.md` (architectural rationale).
