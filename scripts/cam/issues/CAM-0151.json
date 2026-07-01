@@ -1,7 +1,7 @@
 {
   "id": "CAM-151",
   "title": "CAM-117 Half B: plan-runner gates + BLOCK->re-plan loop + escalation",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-01T10:35:43.227Z",

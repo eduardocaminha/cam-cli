@@ -134,11 +134,21 @@ describe('runPlan attach hint', () => {
 		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 
+		// Inject a plannable issue so runPlan reaches emitAttachHint.
+		// Without this, readBacklogFromMain hits git in a tmpdir (returns [])
+		// and runPlan exits with error before the hint is emitted.
+		const readBacklogFn = () => [
+			{ id: 'CAM-1', title: 'Test', stage: 'specified' as const, status: 'open' as const, blockedBy: [], createdAt: '2026-01-01T00:00:00Z' },
+		];
+		const writeFn = () => '';
+
 		const output = await captureStdout(() =>
 			runPlan({
 				cwd: tmpDir,
 				tmuxSpawnFn,
 				env: {},
+				readBacklogFn,
+				writeFn,
 			}),
 		);
 
@@ -151,11 +161,18 @@ describe('runPlan attach hint', () => {
 		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 
+		const readBacklogFn = () => [
+			{ id: 'CAM-1', title: 'Test', stage: 'specified' as const, status: 'open' as const, blockedBy: [], createdAt: '2026-01-01T00:00:00Z' },
+		];
+		const writeFn = () => '';
+
 		const output = await captureStdout(() =>
 			runPlan({
 				cwd: tmpDir,
 				tmuxSpawnFn,
 				env: { TMUX: '/tmp/tmux-1/default,1234,0', CAM_SESSION: sessionName },
+				readBacklogFn,
+				writeFn,
 			}),
 		);
 

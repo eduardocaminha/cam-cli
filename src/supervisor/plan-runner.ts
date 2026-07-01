@@ -35,6 +35,7 @@ import type { PlanVerdictReport } from './plan-verdict-report.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
 import type { PlanApproval } from '../config/models.ts';
+import type { LoopPhase } from '../commands/status.ts';
 import { buildPlannerWorkerArgv, buildAuditorWorkerArgv } from './plan-argv.ts';
 import { readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
@@ -501,11 +502,12 @@ export interface RunPostAuditOptions {
 	 */
 	spawnFn: SpawnFn;
 	/**
-	 * Writes active:true to .claude/cam-loop.local.md so the sidecar loop
-	 * picks up implementation without a human cam-next. Called exactly once
-	 * on the proceed-branch path. Mirror of makeFlipActiveFn in sidecar.ts.
+	 * Writes phase:<value> to .claude/cam-loop.local.md so the sidecar loop
+	 * picks up the correct phase. Called exactly once on the proceed-branch
+	 * path with 'implementing' so the loop dispatches the implementer worker.
+	 * Production: makeSetPhaseFn(claudeDir, cwd) in sidecar.ts.
 	 */
-	flipActiveFn: () => void;
+	setPhaseFn: (phase: LoopPhase) => void;
 	/** Feature branch name to create from current HEAD (from prd.branchName). */
 	branchName: string;
 	/**
@@ -534,7 +536,7 @@ export interface RunPostAuditOptions {
  *   1. git checkout -b <branchName>  (branch BEFORE commit - cam-plan.md Step 9)
  *   2. git add scripts/cam/prd.json
  *   3. git commit -m "chore(cam): commit audited prd.json"
- *   4. flipActiveFn()                (flip active:true for sidecar loop)
+ *   4. setPhaseFn('implementing')    (flip phase to implementing for sidecar loop)
  *   Returns { kind: 'branch-created', branchName }.
  *
  * On audit-approved + pause-operator (operator mode, Half A scope):
@@ -555,7 +557,7 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 	const {
 		planResult,
 		spawnFn,
-		flipActiveFn,
+		setPhaseFn,
 		branchName,
 		readPlanApprovalFn,
 		escalateFn,
@@ -605,7 +607,7 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		);
 	}
 
-	flipActiveFn(); // flip active:true so the sidecar loop dispatches implementation (AC1)
+	setPhaseFn('implementing'); // flip phase to implementing so the sidecar loop dispatches implementation (AC1)
 
 	return { kind: 'branch-created', branchName }; // AC1
 }

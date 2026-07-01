@@ -1,27 +1,34 @@
 // test/supervisor/plan/plan-runner-postaudit.test.ts
 //
-// Unit tests for runPostAuditAction in src/supervisor/plan-runner.ts (US-006, CAM-117).
+// Unit tests for runPostAuditAction in src/supervisor/plan-runner.ts (US-003, CAM-151).
 //
-// Coverage (matches AC1-AC3):
+// Coverage (matches AC1-AC5):
 //   1.  proceed-branch: branch-create git call precedes prd-commit git call (AC1).
-//   2.  proceed-branch: flipActiveFn is called exactly once (AC1).
+//   2.  proceed-branch: setPhaseFn called exactly once with 'implementing' (AC1, AC5).
 //   3.  proceed-branch: returns { kind: 'branch-created', branchName } (AC1).
 //   4.  proceed-branch: git checkout -b uses the supplied branchName (AC1).
 //   5.  proceed-branch: git add targets scripts/cam/prd.json (AC1).
 //   6.  proceed-branch: git commit fires after git add (AC1).
-//   7.  pause-operator: returns { kind: 'awaiting-operator-approval' } (AC2).
-//   8.  pause-operator: no branch/commit/flip calls (AC2).
+//   7.  pause-operator: returns { kind: 'awaiting-operator-approval' } (AC4).
+//   8.  pause-operator: no branch/commit/setPhase calls (AC4).
 //   9.  audit-blocked: returns { kind: 'escalated' } (AC3).
 //  10.  audit-blocked: escalateFn called (AC3).
 //  11.  audit-blocked: notifyFn called with [cam] plan BLOCK prefix (AC3).
-//  12.  audit-blocked: no branch/commit/flip calls (AC3).
-//  13.  non-approved planResult: returns { kind: 'no-action' }.
-//  14.  non-approved planResult: no branch/commit/flip/escalate calls.
-//  15.  proceed-branch: git checkout -b fails -> throws (spawnSync exit-status guard).
-//  16.  proceed-branch: git add fails -> throws.
-//  17.  proceed-branch: git commit fails -> throws.
+//  12.  audit-blocked: no branch/commit/setPhase calls (AC3).
+//  13.  audit-blocked: setPhaseFn called zero times (AC5).
+//  14.  non-approved planResult: returns { kind: 'no-action' }.
+//  15.  non-approved planResult: no branch/commit/setPhase/escalate calls.
+//  16.  proceed-branch: git checkout -b fails -> throws (spawnSync exit-status guard).
+//  17.  proceed-branch: git add fails -> throws.
+//  18.  proceed-branch: git commit fails -> throws.
+// Production wiring oracle (US-R1-001):
+//  19.  sidecar.ts imports runPostAuditAction from plan-runner.ts.
+//  20.  sidecar.ts calls runPostAuditAction inside makeProductionPlanPhaseFn.
+//  21.  sidecar.ts wires setPhaseFn, branchName, readPlanApprovalFn in the call.
 
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
 	runPostAuditAction,
 	type RunPostAuditOptions,
@@ -32,6 +39,7 @@ import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-report.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanApproval } from '../../../src/config/models.ts';
+import type { LoopPhase } from '../../../src/commands/status.ts';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -102,12 +110,12 @@ interface GitCall {
 function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 	opts: RunPostAuditOptions;
 	gitCalls: GitCall[];
-	flipCount: { n: number };
+	setPhaseCalls: LoopPhase[];
 	escalateCalled: { n: number };
 	notifyMessages: string[];
 } {
 	const gitCalls: GitCall[] = [];
-	const flipCount = { n: 0 };
+	const setPhaseCalls: LoopPhase[] = [];
 	const escalateCalled = { n: 0 };
 	const notifyMessages: string[] = [];
 
@@ -119,7 +127,7 @@ function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 	const opts: RunPostAuditOptions = {
 		planResult: APPROVED_RESULT,
 		spawnFn,
-		flipActiveFn: () => { flipCount.n++; },
+		setPhaseFn: (phase) => { setPhaseCalls.push(phase); },
 		branchName: BRANCH_NAME,
 		readPlanApprovalFn: (): PlanApproval => 'auto',
 		escalateFn: async () => { escalateCalled.n++; },
@@ -127,7 +135,7 @@ function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 		...overrides,
 	};
 
-	return { opts, gitCalls, flipCount, escalateCalled, notifyMessages };
+	return { opts, gitCalls, setPhaseCalls, escalateCalled, notifyMessages };
 }
 
 // ---------------------------------------------------------------------------
@@ -205,10 +213,11 @@ describe('runPostAuditAction', () => {
 		expect(addIdx).toBeLessThan(commitIdx);
 	});
 
-	test('proceed-branch: flipActiveFn called exactly once (AC1)', () => {
-		const { opts, flipCount } = makeOpts();
+	test('proceed-branch: setPhaseFn called exactly once with "implementing" (AC1, AC5)', () => {
+		const { opts, setPhaseCalls } = makeOpts();
 		runPostAuditAction(opts);
-		expect(flipCount.n).toBe(1);
+		expect(setPhaseCalls.length).toBe(1);
+		expect(setPhaseCalls[0]).toBe('implementing');
 	});
 
 	test('proceed-branch: three git calls total: checkout, add, commit (AC1)', () => {
@@ -241,10 +250,10 @@ describe('runPostAuditAction', () => {
 		expect(gitCalls.length).toBe(0);
 	});
 
-	test('pause-operator: flipActiveFn NOT called (AC2)', () => {
-		const { opts, flipCount } = makeOpts({ readPlanApprovalFn: () => 'operator' });
+	test('pause-operator: setPhaseFn NOT called (AC4)', () => {
+		const { opts, setPhaseCalls } = makeOpts({ readPlanApprovalFn: () => 'operator' });
 		runPostAuditAction(opts);
-		expect(flipCount.n).toBe(0);
+		expect(setPhaseCalls.length).toBe(0);
 	});
 
 	test('pause-operator: escalateFn NOT called (AC2)', async () => {
@@ -291,10 +300,10 @@ describe('runPostAuditAction', () => {
 		expect(gitCalls.length).toBe(0);
 	});
 
-	test('audit-blocked: flipActiveFn NOT called (AC3)', () => {
-		const { opts, flipCount } = makeOpts({ planResult: BLOCKED_RESULT });
+	test('audit-blocked: setPhaseFn called zero times (AC3, AC5)', () => {
+		const { opts, setPhaseCalls } = makeOpts({ planResult: BLOCKED_RESULT });
 		runPostAuditAction(opts);
-		expect(flipCount.n).toBe(0);
+		expect(setPhaseCalls.length).toBe(0);
 	});
 
 	test('audit-blocked: absent escalateFn is safe (AC3 best-effort)', () => {
@@ -325,13 +334,13 @@ describe('runPostAuditAction', () => {
 		expect(result.kind).toBe('no-action');
 	});
 
-	test('non-approved: no git/flip/escalate calls', () => {
-		const { opts, gitCalls, flipCount, escalateCalled } = makeOpts({
+	test('non-approved: no git/setPhase/escalate calls', () => {
+		const { opts, gitCalls, setPhaseCalls, escalateCalled } = makeOpts({
 			planResult: PREFLIGHT_FAILED_RESULT,
 		});
 		runPostAuditAction(opts);
 		expect(gitCalls.length).toBe(0);
-		expect(flipCount.n).toBe(0);
+		expect(setPhaseCalls.length).toBe(0);
 		expect(escalateCalled.n).toBe(0);
 	});
 
@@ -378,5 +387,107 @@ describe('runPostAuditAction', () => {
 			'no-action',
 		];
 		expect(kinds.every((k) => typeof k === 'string')).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Production wiring oracle (US-R1-001)
+//
+// Unit tests that inject runPlanPhaseFn directly into runSidecarLoop cannot
+// detect a missing runPostAuditAction call in the outer production caller
+// (makeProductionPlanPhaseFn in sidecar.ts). This source-text oracle catches
+// that gap independently of injection tests.
+// ---------------------------------------------------------------------------
+
+describe('sidecar.ts production wiring oracle - runPostAuditAction (US-R1-001)', () => {
+	const sidecarPath = resolve(import.meta.dir, '..', '..', '..', 'src', 'commands', 'sidecar.ts');
+	const source = readFileSync(sidecarPath, 'utf8');
+
+	test('sidecar.ts imports runPostAuditAction from plan-runner.ts', () => {
+		expect(source).toContain('runPostAuditAction');
+		expect(source).toContain("from '../supervisor/plan-runner.ts'");
+	});
+
+	test('makeProductionPlanPhaseFn calls runPostAuditAction', () => {
+		// Isolate the makeProductionPlanPhaseFn function body.
+		const fnMatch = source.match(/function makeProductionPlanPhaseFn[\s\S]*?^\}/m);
+		expect(fnMatch).not.toBeNull();
+		expect(fnMatch?.[0]).toContain('runPostAuditAction(');
+	});
+
+	test('runPostAuditAction call wires setPhaseFn, branchName, readPlanApprovalFn', () => {
+		const callMatch = source.match(/runPostAuditAction\(\{[\s\S]*?\}\)/);
+		expect(callMatch).not.toBeNull();
+		expect(callMatch?.[0]).toContain('setPhaseFn');
+		expect(callMatch?.[0]).toContain('branchName');
+		expect(callMatch?.[0]).toContain('readPlanApprovalFn');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Re-entry guard oracle (US-R1-002)
+//
+// makeProductionPlanPhaseFn must transition phase out of 'planning' on
+// non-implementing outcomes to prevent the sidecar from re-running the full
+// network preflight (git checkout main + git pull + gh prune) on every idle
+// tick. This oracle catches a missing or incorrect phase transition.
+//
+// Implementation: the transition logic lives in the extracted helper
+// exitPhaseAfterPlan (biome noExcessiveLinesPerFunction requires the closure
+// to stay under 80 lines). Two oracle groups:
+//   A. makeProductionPlanPhaseFn wires the call to exitPhaseAfterPlan.
+//   B. exitPhaseAfterPlan helper contains the correct phase logic.
+// ---------------------------------------------------------------------------
+
+describe('sidecar.ts re-entry guard oracle - phase transition after runPostAuditAction (US-R1-002)', () => {
+	const sidecarPath = resolve(import.meta.dir, '..', '..', '..', 'src', 'commands', 'sidecar.ts');
+	const source = readFileSync(sidecarPath, 'utf8');
+
+	// Group A: makeProductionPlanPhaseFn wiring assertions
+	const fnMatch = source.match(/function makeProductionPlanPhaseFn[\s\S]*?^\}/m);
+	const fnBody = fnMatch?.[0] ?? '';
+
+	test('A: makeProductionPlanPhaseFn captures the postAuditResult return value', () => {
+		// The return value must be captured so exitPhaseAfterPlan can inspect it.
+		expect(fnBody).toContain('postAuditResult');
+	});
+
+	test('A: makeProductionPlanPhaseFn calls exitPhaseAfterPlan for the re-entry guard', () => {
+		// The extracted helper must be called (proves the guard is wired).
+		expect(fnBody).toContain('exitPhaseAfterPlan(');
+	});
+
+	test('A: makeProductionPlanPhaseFn passes makeSetPhaseFn to exitPhaseAfterPlan', () => {
+		// Phase must be written via makeSetPhaseFn (not a bare file write).
+		// The call passes postAuditResult + makeSetPhaseFn(claudeDir, cwd) as args.
+		const exitCall = fnBody.match(/exitPhaseAfterPlan\([^)]+\)/);
+		expect(exitCall).not.toBeNull();
+		expect(exitCall?.[0]).toContain('makeSetPhaseFn');
+	});
+
+	// Group B: exitPhaseAfterPlan helper correctness assertions
+	const helperMatch = source.match(/function exitPhaseAfterPlan[\s\S]*?^\}/m);
+	const helperBody = helperMatch?.[0] ?? '';
+
+	test('B: exitPhaseAfterPlan is defined in sidecar.ts', () => {
+		expect(helperBody).not.toBe('');
+	});
+
+	test('B: exitPhaseAfterPlan no-ops on branch-created', () => {
+		// branch-created: runPostAuditAction already called setPhaseFn internally.
+		expect(helperBody).toContain("'branch-created'");
+	});
+
+	test('B: exitPhaseAfterPlan transitions to awaiting-operator on awaiting-operator-approval', () => {
+		// operator mode: audit-approved + pause-operator -> awaiting-operator phase.
+		expect(helperBody).toContain("'awaiting-operator-approval'");
+		expect(helperBody).toContain("'awaiting-operator'");
+	});
+
+	test('B: exitPhaseAfterPlan transitions to idle on no-action/escalated outcomes', () => {
+		// All other non-implementing outcomes (mutex-busy, preflight-failed,
+		// planner/auditor timeout, no-plannable-issue, audit-blocked/escalated)
+		// exit to idle so the loop does not re-run preflight every 2 seconds.
+		expect(helperBody).toContain("'idle'");
 	});
 });
