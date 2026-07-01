@@ -1,27 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Reviewer re-runs the gate at Layer B and writes the artifact-of-record"
+    "id": "US-005",
+    "title": "Reviewer gate-fail is a hard-constraint FAIL producing FIXES_PENDING"
   },
   "branchName": "cam/CAM-116-behavioral-verification-gate",
-  "timestamp": "2026-07-01T03:30:00Z",
+  "timestamp": "2026-07-01T04:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/review-report.ts",
     ".claude/agents/subagent-reviewer.md",
     "templates/agents/subagent-reviewer.md",
-    ".gitignore",
-    "templates/.gitignore",
     "src/vendor/_generated.ts",
+    "test/supervisor/review.test.ts",
+    "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added REVIEW_ARTIFACT_FILENAME ('scripts/cam/review-artifact.txt') constant and artifactOfRecord?: string field to ReviewReport in src/supervisor/review-report.ts. Both runtime (.claude/agents/subagent-reviewer.md) and template (templates/agents/subagent-reviewer.md) reviewer agent prompts now instruct the reviewer to independently re-run the behavioral gate at Layer B (not trusting the implementer's Layer A result), write capture output to scripts/cam/review-artifact.txt as the artifact-of-record, and record the path in review-report.json via the artifactOfRecord field. Both Constraints and Exit-report clauses in both prompt copies now name both permitted write files (review-report.json AND review-artifact.txt). Both .gitignore and templates/.gitignore now include scripts/cam/review-artifact.txt. Vendor was re-embedded (src/vendor/_generated.ts). The next story can rely on REVIEW_ARTIFACT_FILENAME being the single source of truth for the artifact path.",
+  "nextStoryContext": "US-005 integrated behavioral-gate FAIL as a hard-constraint into the existing hard-constraint rule in both .claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md. The new bullet reads: 'A behavioral gate FAIL at Layer B: one or more tmux-drivable oracle directives in the story's acceptanceCriteria failed during the reviewer's independent re-run. Report each failed oracle as a CRITICAL finding in review-report.json and emit FIXES_PENDING:N. This hard-constraint is integrated into the 8-criteria findings channel; it does NOT introduce a separate verdict field or a parallel gate-verdict path.' No changes to review.ts were needed: the existing makeReviewDispatch already routes file-based CRITICAL findings through buildFixStories -> FIXES_PENDING:N. 5 new tests were added to test/supervisor/review.test.ts (describe block 'makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)'). file-size budget raised from 1220->1425 for test/supervisor/review.test.ts (CAM-116 US-005 ref). Vendor was re-embedded. The file-assert oracle 'grep -qi behavioral gate .claude/agents/subagent-reviewer.md' passes.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story only edited agent prompt .md files, TypeScript type/constant additions in review-report.ts, and gitignore entries. No external library was exercised."
+      "summary": "Story only edited agent prompt .md files, added unit tests to test/supervisor/review.test.ts, updated file-size-budget.json, and re-embedded vendor. No external library was exercised."
     }
   ]
 }
