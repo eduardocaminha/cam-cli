@@ -22,7 +22,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mirror src/supervisor/review-report.ts (CAM-75) EXACTLY: ReviewReport/REVIEW_REPORT_FILENAME + makeReadReviewReport-in-host.ts is the precedent shape. IMPORTANT (F-01): mirror the auditor's REAL output field names from .claude/agents/subagent-auditor.md 'Output format' block: top-level { verdict, summary, findings, metrics }, and each finding is { id, category, severity, storyId, description, suggestion } - the finding text field is `description`, NOT `text`. Carry id/category/storyId?/suggestion? and the top-level `summary` so findings round-trip into Half B (CAM-151 re-plan loop feeds findings back to the planner) with no schema change. `metrics` is optional to model (Half A does not branch on it). Apply the 'JSON reader shape guards: validate discriminator fields, not just typeof' pattern (patterns.md US-R2-001): guard `!Array.isArray(parsed) && (parsed.verdict === 'APPROVE' || parsed.verdict === 'BLOCK')` before the cast - the load-bearing `verdict` discriminator is the ONLY value Half A branches on; keep it exactly as-is. Since .gitignore edits do not touch vendor/ or embedded code, no embed-vendor run is needed for the .gitignore change; but templates/.gitignore IS under templates/ so run `bun run embed-vendor` and confirm embed-vendor:check (folded into check:all). This is the structured-handback channel from patterns.md 'capture-pane is rendered markdown'."
     },
