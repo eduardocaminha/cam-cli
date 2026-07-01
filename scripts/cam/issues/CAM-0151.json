@@ -1,0 +1,9 @@
+{
+  "id": "CAM-151",
+  "title": "CAM-117 Half B: plan-runner gates + BLOCK->re-plan loop + escalation",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-01T10:35:43.227Z",
+  "description": "Part 2 of CAM-117 (deterministic plan-runner). Half A delivers the runner skeleton + planner/auditor worker-pane spawn + file-based handback + happy-path auto-mode (APPROVE -> commit PRD + branch + flip active:true); on auditor BLOCK it escalates to the operator with no auto re-plan. Half B adds the gates/escalation cluster: (1) deterministic BLOCK->re-plan loop (re-spawn planner with the auditor findings, cap N=2 rounds, escalate to operator on non-convergence, never infinite-loop; mirrors loop.ts FIXES_PENDING->re-implement + MAX_ROUNDS terminal); (2) plan_approval=operator gate that reviews the FULL audited PRD (pause + notify orchestrator + wait for explicit approval, then commit+flip); (3) in-progress-work conflict detection (prd.json with passes:false, or on a cam/* branch) escalated to operator (continue/ship/abandon), never auto-decided; (4) reduce cam-plan.md to a thin phase-signal (control-flow now in TS). Depends on CAM-117 Half A. Split done on engineering merit per CAM-117 spec gotcha #6 + prd-size-vs-review-convergence lesson."
+}
