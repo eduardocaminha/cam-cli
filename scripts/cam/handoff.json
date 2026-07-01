@@ -1,19 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Container git HTTPS + token credential configuration (no ~/.ssh, no host cred file)"
+    "id": "US-004",
+    "title": "DNS-based firewall rewrite (dnsmasq + ipset) in init-firewall.sh; fix LFS host"
   },
   "branchName": "cam/CAM-150-worker-container-substrate",
-  "timestamp": "2026-07-01T13:00:00Z",
+  "timestamp": "2026-07-01T14:00:00Z",
   "createdFiles": [
-    "test/supervisor/worker-container-git-cred.test.ts"
+    "test/supervisor/worker-container-firewall.test.ts"
   ],
   "modifiedFiles": [
+    ".devcontainer/init-firewall.sh",
     ".devcontainer/Dockerfile",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001, US-002, US-003 are complete. US-004 is the DNS-based firewall rewrite for init-firewall.sh: replace the current dig+ipset static resolution with a dnsmasq + ipset dynamic approach, and fix the LFS host (objects.githubusercontent.com or similar). The init-firewall.sh currently uses dig to resolve IPs at startup into an ipset; US-004 rewrites this to use dnsmasq for live DNS interception. The .devcontainer/ directory is NOT embedded/vendored so no embed-vendor step needed. Key constraint: the firewall self-verify (api.anthropic.com reachable, example.com blocked) must still pass after the rewrite.",
+  "nextStoryContext": "US-001 through US-004 are complete. US-005 is the next story (check prd.json for details). The devcontainer now has a dnsmasq-based firewall (init-firewall.sh) that dynamically populates the allowed-domains ipset via DNS interception, and the Dockerfile installs dnsmasq. The ALLOWED_DOMAINS list is exactly 7 entries (unchanged from US-001). The LFS host is correctly objects.githubusercontent.com. The .devcontainer/ directory is NOT embedded/vendored so no embed-vendor step is needed for devcontainer changes.",
   "officialDocsValidated": [
     {
       "lib": "docker-cli",
@@ -28,7 +29,15 @@
       "url": "https://git-scm.com/docs/git-credential",
       "fetchedAt": "2026-07-01T13:00:00Z",
       "status": "ok",
-      "summary": "Git credential helper protocol confirmed: helper outputs key=value pairs (username, password) on stdout. x-access-token as username with GITHUB_TOKEN as password is correct for GitHub HTTPS PAT auth. credential.https://github.com.helper scoping is valid and restricts the helper to github.com HTTPS only."
+      "summary": "Carried from US-003: Git credential helper protocol confirmed. x-access-token as username with GITHUB_TOKEN as password is correct for GitHub HTTPS PAT auth."
+    },
+    {
+      "lib": "dnsmasq",
+      "version": "current",
+      "url": "https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html",
+      "fetchedAt": "2026-07-01T14:00:00Z",
+      "status": "ok",
+      "summary": "dnsmasq --ipset subdomain matching confirmed: --ipset=/github.com/setname covers github.com AND all *.github.com subdomains (same as --address matching). Sets must exist before dnsmasq starts (we do ipset create before starting dnsmasq). --no-resolv and --no-poll flags confirmed correct."
     }
   ]
 }
