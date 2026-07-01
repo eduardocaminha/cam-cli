@@ -1,24 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Parse the per-story behavioral oracle from a PRD story"
+    "id": "US-002",
+    "title": "Shared runnable behavioral gate: drive real cam in tmux, capture, assert"
   },
   "branchName": "cam/CAM-116-behavioral-verification-gate",
-  "timestamp": "2026-07-01T00:00:00Z",
+  "timestamp": "2026-07-01T02:00:00Z",
   "createdFiles": [
-    "src/supervisor/behavioral-gate.ts",
-    "test/supervisor/behavioral-gate.test.ts"
+    "test/integration/behavioral-gate.test.ts"
   ],
   "modifiedFiles": [
+    "src/supervisor/behavioral-gate.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 delivered parseOracleDirectives (src/supervisor/behavioral-gate.ts). The function returns CriterionOracle[] (criterionIndex + OracleDirective) for criteria carrying [oracle: ...] suffixes; criteria without an oracle are silently skipped. The regex uses a greedy leading .* to anchor to the LAST [oracle:] occurrence in the string (important: criterion prose can contain example [oracle: ...] text). OracleDirective is a discriminated union: named-command (command), file-assert (command), reviewer-judgment, tmux-pty (toolName + artifactRef), no-oracle (raw). US-002 (driving + asserting) can import directly from src/supervisor/behavioral-gate.ts.",
+  "nextStoryContext": "US-002 delivered runBehavioralGate in src/supervisor/behavioral-gate.ts. The function accepts an OracleDirective and RunBehavioralGateOpts (injectable spawnFn + socketName + cwd + timeoutMs). It returns BehavioralGateResult { passed, capturedPane, detail }. Default socket is BEHAVIORAL_GATE_SOCKET ('cam-behavioral-gate'), never bare 'cam'. Non-runnable oracle kinds (reviewer-judgment, no-oracle, tmux-pty) return passed:false immediately. named-command and file-assert run in a private tmux session: creates session with '-L socketName', sends command + exit-code marker ('CAMGATE_N') via send-keys, polls capture-pane in 300ms ticks until marker found or timeout, kills session in finally. Helpers extracted to stay under biome complexity limit 15: resolveNonRunnableResult (handles 3 early-return cases) and pollForExitCode (the while-loop poll). Integration test at test/integration/behavioral-gate.test.ts: uses TEST_SOCK='cam-it-gate', kill-server in beforeEach/afterEach, test.skipIf(!tmuxAvailable) for real-tmux cases. US-003 can import runBehavioralGate and BEHAVIORAL_GATE_SOCKET from src/supervisor/behavioral-gate.ts.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure parser using only TypeScript built-ins and regex. No external library exercised."
+      "summary": "Gate runner uses only node:child_process (stdlib spawnSync) and Bun built-ins (Bun.sleepSync). No external library exercised."
     }
   ]
 }

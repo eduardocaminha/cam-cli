@@ -57,7 +57,7 @@
         "check:all passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "src/supervisor/behavioral-gate.ts (extend US-001), integration test test/integration/behavioral-gate.test.ts modeled on test/integration/tmux-introspect.test.ts (TEST_SOCK constant, swapSocketSpawn SpawnFn that rewrites '-L cam' -> private socket, spawnSync('tmux',['-V']).status===0 skip guard, kill-server in before/afterEach). Reuse the harness; do NOT write a from-scratch driver (spec constraint + CAM-55 anti-shadow-mock lesson in patterns.md: a unit fake that returns expected output cannot catch tmux-real bugs). Injectable spawnFn/socket so unit paths do not touch real tmux. Host-run only per CAM-0116.json gotcha on CAM-111/152."
     },
