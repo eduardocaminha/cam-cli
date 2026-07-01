@@ -1,28 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Docs: recovery-runbook credential + DNS-firewall section and ADR for the containerized substrate + credential model"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/CAM-150-worker-container-substrate",
-  "timestamp": "2026-07-01T16:00:00Z",
+  "timestamp": "2026-07-01T17:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/recovery-runbook.md",
-    "docs/adr/0003-worker-isolation-boundary-dev-container.md",
     ".devcontainer/init-firewall.sh",
+    "docs/recovery-runbook.md",
     "test/supervisor/worker-container-firewall.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "All 6 stories in the PRD are now passes:true. The PRD is complete. US-006 extended docs/recovery-runbook.md section (x) with a credential-provisioning subsection (GITHUB_TOKEN fine-grained PAT + CLAUDE_CODE_OAUTH_TOKEN via claude setup-token, both injected via containerEnv) and a dnsmasq DNS-firewall explanation. The ADR (0003) was extended with the credential model (HTTPS token, no SSH) and an explicit inert-substrate note referencing CAM-152 (B-2) as the story that will flip the fail-closed dispatch. The 7-domain table was updated from raw.githubusercontent.com to objects.githubusercontent.com (the correct Git LFS host per US-004 intent). The next action is /cam-review.",
+  "nextStoryContext": "US-R1-001 fixed the allowlist drift in the firewall substrate: ALLOWED_DOMAINS, dnsmasq --ipset directives, runbook domain table, and test REQUIRED_HOSTS are now a single source of truth (7 entries each: api.anthropic.com, claude.ai, platform.claude.com, github.com, registry.npmjs.org, raw.githubusercontent.com, objects.githubusercontent.com). The test now parses --ipset domain args (not just ALLOWED_DOMAINS) per F-02, and a new cross-set drift test catches any future divergence. The runbook cross-check command also shows both the --ipset and ALLOWED_DOMAINS views. All 18 firewall tests pass. All remaining stories in prd.json are passes:true. The next action is /cam-review.",
   "officialDocsValidated": [
     {
       "lib": "dnsmasq",
       "version": "current",
       "url": "https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html",
-      "fetchedAt": "2026-07-01T16:00:00Z",
+      "fetchedAt": "2026-07-01T17:00:00Z",
       "status": "ok",
-      "summary": "dnsmasq --ipset confirmed: places resolved IP addresses into the named Netfilter ipset on every DNS answer, dynamically. Domain matching covers subdomains. ipset must exist before dnsmasq starts (script does ipset create before dnsmasq invocation). Implementation is correct."
+      "summary": "dnsmasq --ipset domain matching confirmed inclusive: --ipset=/github.com/set covers github.com AND all *.github.com subdomains (same rules as --address, full-label matching). The design assumption (github.com covers *.github.com, no separate *.github.com entry needed) is correct per official docs."
     }
   ]
 }
