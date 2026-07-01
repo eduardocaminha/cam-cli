@@ -42,7 +42,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (runSidecarLoop ~lines 1425-1546 + RunSidecarLoopOptions ~1270-1402), src/commands/sidecar.ts (makeReadActive ~166, buildSidecarLoopDeps ~575, runSidecar ~644). WIRE runPlanPhase from src/supervisor/plan-runner.ts (do NOT recreate it; it is the Half A skeleton, already exported). Mirror the active:true gate structure: the phase:planning branch is a sibling of the `if (active !== true)` idle branch and the active:true work branch. Keep runSupervisor's implement->review->ship logic untouched (spec gotcha: 'do not rewrite runSupervisor'; only change how the active gate is SOURCED). paneCountMutexFn production wiring: () => paneCountMutex(sessionName, tmuxSpawnFn) from src/tmux/session.ts. The spawn invariants live in buildPlannerWorkerArgv/buildAuditorWorkerArgv (src/supervisor/plan-argv.ts) and resolveAndSpawnPlanner/Auditor in plan-runner.ts (already implemented; assert them still hold via the injected spawnFn spy). Read scripts/cam/patterns.md at story start."
     },
