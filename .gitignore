@@ -68,6 +68,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 scripts/cam/worker-report.json
 # Ephemeral per-review structured findings report (US-001, CAM-75; read by supervisor, never committed)
 scripts/cam/review-report.json
+# Ephemeral Layer B behavioral gate capture-pane artifact-of-record (US-004, CAM-116; written by reviewer, never committed)
+scripts/cam/review-artifact.txt
 # Ephemeral per-plan-audit verdict report (US-001, CAM-117; read by plan-runner, never committed)
 scripts/cam/plan-verdict-report.json
 # Per-run gate timing output written by check-all.ts --json (US-004, CAM-59); read by CI step summary

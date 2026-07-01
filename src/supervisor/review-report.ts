@@ -35,6 +35,13 @@ export interface ReviewReport {
 	verdict: string;
 	/** Zero or more findings; empty array when verdict is CLEAN. */
 	findings: ReviewFinding[];
+	/**
+	 * Relative path to the capture-pane artifact-of-record written by the reviewer's
+	 * Layer B behavioral gate run. Absent when no tmux-drivable oracle was present
+	 * (CLEAN with no oracles). Backward compatible: parsers that omit this field
+	 * still parse correctly.
+	 */
+	artifactOfRecord?: string;
 }
 
 /**
@@ -43,3 +50,12 @@ export interface ReviewReport {
  * The file is ephemeral and must NOT be committed (gitignored).
  */
 export const REVIEW_REPORT_FILENAME = 'scripts/cam/review-report.json';
+
+/**
+ * Relative path (from repo root) where the reviewer writes its Layer B
+ * behavioral gate capture-pane output as the artifact-of-record.
+ * Pinned literal: US-006 references this path in --body-file, .gitignore
+ * entries match it, and the reviewer writes it when a tmux oracle was run.
+ * The file is ephemeral and must NOT be committed (gitignored).
+ */
+export const REVIEW_ARTIFACT_FILENAME = 'scripts/cam/review-artifact.txt';

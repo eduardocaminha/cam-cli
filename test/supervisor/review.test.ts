@@ -1217,3 +1217,205 @@ describe('makeReadReviewReport: verdict shape guard (US-R2-001 regression)', () 
 		expect(warnings[0]).toContain('missing or malformed');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// US-005: behavioral-gate FAIL as a hard-constraint FAIL producing FIXES_PENDING
+//
+// Proves that a CRITICAL behavioral-gate finding in review-report.json routes
+// through the existing FIXES_PENDING plumbing in makeReviewDispatch:
+//   - readReviewReport returns { verdict: 'FIXES_PENDING:N', findings: [CRITICAL gate-fail] }
+//   - dispatch returns status='ok', lastVerdict='FIXES_PENDING:N', N fix stories created
+//   - each fix story carries the gate-fail finding text in its notes
+//   - CLEAN when gate passed is unaffected: lastVerdict='CLEAN', no fix stories
+//
+// No new verdict enum or parallel gate-verdict field on prd.review is needed
+// (AC4): the behavioral-gate FAIL is just a CRITICAL ReviewFinding that travels
+// through the ordinary file-based findings channel.
+// ---------------------------------------------------------------------------
+
+describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)', () => {
+	const SAMPLE_UUID = 'bbbbcccc-dddd-eeee-ffff-000011112222';
+
+	test('CRITICAL behavioral-gate finding in review-report.json -> FIXES_PENDING:1 + fix story created', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const gateFinding = {
+			severity: 'CRITICAL',
+			text: 'Layer B behavioral gate FAIL: oracle [bun test] exited non-zero (3 tests failed)',
+		};
+		const opts = makeDispatchOpts({
+			paneText: 'Reviewing... (no <review> tag before file arrives)',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({
+				verdict: 'FIXES_PENDING:1',
+				findings: [gateFinding],
+			}),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		// Gate fail drives FIXES_PENDING via the normal findings channel.
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('FIXES_PENDING:1');
+		expect(written?.review?.roundsCompleted).toBe(1);
+
+		// Fix story created carrying the behavioral-gate finding in notes.
+		const stories = written?.userStories ?? [];
+		const fixStory = stories.find((s) => s.id === 'US-R1-001');
+		expect(fixStory).toBeDefined();
+		expect(fixStory?.passes).toBe(false);
+		expect(fixStory?.notes).toContain('CRITICAL');
+		expect(fixStory?.notes).toContain('Layer B behavioral gate FAIL');
+	});
+
+	test('CRITICAL behavioral-gate finding with oracle name included in notes', () => {
+		// Proves that the specific oracle command name reaches the fix-story notes,
+		// so the implementer worker knows which oracle to re-run.
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const gateFinding = {
+			severity: 'CRITICAL',
+			text: "Layer B behavioral gate FAIL: oracle [file-assert grep -qi 'behavioral gate' .claude/agents/subagent-reviewer.md] exited non-zero",
+		};
+		const opts = makeDispatchOpts({
+			paneText: 'no tag',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({
+				verdict: 'FIXES_PENDING:1',
+				findings: [gateFinding],
+			}),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('FIXES_PENDING:1');
+
+		const fixStory = (written?.userStories ?? []).find((s) => s.id === 'US-R1-001');
+		expect(fixStory?.notes).toContain('file-assert');
+		expect(fixStory?.notes).toContain('behavioral gate');
+	});
+
+	test('multiple gate failures -> FIXES_PENDING:N with one fix story per failing oracle', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const findings = [
+			{
+				severity: 'CRITICAL',
+				text: 'Layer B behavioral gate FAIL: oracle [bun run typecheck] exited non-zero',
+			},
+			{
+				severity: 'CRITICAL',
+				text: 'Layer B behavioral gate FAIL: oracle [bun test] produced 2 failures',
+			},
+		];
+		const opts = makeDispatchOpts({
+			paneText: 'no tag',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({
+				verdict: 'FIXES_PENDING:2',
+				findings,
+			}),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('FIXES_PENDING:2');
+
+		const fixStories = (written?.userStories ?? []).filter((s) => s.id?.startsWith('US-R1-'));
+		expect(fixStories.length).toBe(2);
+		expect(fixStories[0]?.notes).toContain('bun run typecheck');
+		expect(fixStories[1]?.notes).toContain('bun test');
+	});
+
+	test('CLEAN verdict when gate passed: lastVerdict=CLEAN, no fix stories, unaffected (AC3)', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const opts = makeDispatchOpts({
+			paneText: 'no tag',
+			prd: makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			// Gate passed: CLEAN with no findings.
+			readReviewReport: () => ({
+				verdict: 'CLEAN',
+				findings: [],
+			}),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('CLEAN');
+		expect(written?.review?.roundsCompleted).toBe(1);
+
+		// No fix stories created when gate passes.
+		const fixStories = (written?.userStories ?? []).filter((s) => s.id?.startsWith('US-R'));
+		expect(fixStories.length).toBe(0);
+
+		// Original story preserved unchanged.
+		const existingStory = written?.userStories?.find((s) => s.id === 'US-001');
+		expect(existingStory).toBeDefined();
+	});
+
+	test('prd.review.findings carries the gate-fail finding (AC2: prd write assertion)', () => {
+		// Verifies the complete end-to-end prd write contract:
+		//   review-report.json with a behavioral-gate CRITICAL finding
+		//   -> prd.review.lastVerdict='FIXES_PENDING:N'
+		//   -> prd.review.findings carries the verbatim gate-fail finding
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const gateFinding = {
+			severity: 'CRITICAL',
+			text: 'Layer B behavioral gate FAIL: oracle [bun run check:all] exited non-zero',
+		};
+		const opts = makeDispatchOpts({
+			paneText: 'no tag',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({
+				verdict: 'FIXES_PENDING:1',
+				findings: [gateFinding],
+			}),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+
+		// lastVerdict set correctly.
+		expect(written?.review?.lastVerdict).toBe('FIXES_PENDING:1');
+
+		// prd.review.findings carries the verbatim gate-fail finding.
+		const persistedFindings = written?.review?.findings;
+		expect(persistedFindings).toBeDefined();
+		expect(persistedFindings?.length).toBe(1);
+		expect(persistedFindings?.[0]?.severity).toBe('CRITICAL');
+		expect(persistedFindings?.[0]?.text).toBe(
+			'Layer B behavioral gate FAIL: oracle [bun run check:all] exited non-zero',
+		);
+	});
+});

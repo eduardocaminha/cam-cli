@@ -83,6 +83,16 @@ A gate is a **named-command + exitCode 0**: the gate is the command itself, not 
 
 The two universal mandatory gates are `bun run typecheck` and `bun test`. Their documented shape lives in `src/supervisor/worker-report.ts` (the `gates: { typecheck, tests }` fields). The shape is intentionally kept as simple string fields: the named-command + exitCode concept is defined here as a policy, and the string values (`"ok"`, `"fail: <detail>"`, `"<N> pass / <M> fail"`) already express pass/fail without adding a structured record per gate.
 
+## Behavioral gate (Layer A) — self-correction
+
+When a story's `acceptanceCriteria` include a tmux-drivable oracle directive (`[oracle: named-command ...]` or `[oracle: file-assert ...]`), you MUST run the shared behavioral gate at **Layer A** before declaring the story done:
+
+1. For each oracle directive in the story's `acceptanceCriteria`, use `runBehavioralGate` (from `src/supervisor/behavioral-gate.ts`, delivered in US-002) to reproduce the behavior locally in a private tmux session.
+2. If the gate fails, inspect `result.detail` and `result.capturedPane` (fix-with-vision), correct the implementation, and re-run until the oracle passes.
+3. Non-runnable oracle kinds (`reviewer-judgment`, `no-oracle`, `tmux-pty`) return `passed: false` immediately — skip them and move on.
+
+**The implementer's Layer A gate run is self-correction only and is NOT the artifact-of-record.** The reviewer runs the same oracles independently at Layer B; that Layer B run is the official verification artifact. Your Layer A run is a local sanity check — not a replacement for quality gates (typecheck, tests, embed-vendor:check).
+
 ## What you do for the story
 
 1. Implement the chosen story and only that story.

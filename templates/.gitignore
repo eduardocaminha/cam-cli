@@ -4,6 +4,9 @@ scripts/cam/worker-report.json
 # Ephemeral per-review structured findings report written by the reviewer agent (US-001, CAM-75).
 # Never commit this file: it is overwritten on each review invocation.
 scripts/cam/review-report.json
+# Ephemeral Layer B behavioral gate capture-pane artifact-of-record written by the reviewer agent (US-004).
+# Never commit this file: it is overwritten on each review invocation.
+scripts/cam/review-artifact.txt
 # Ephemeral per-plan-audit verdict report written by the auditor agent (US-001, CAM-117).
 # Never commit this file: it is overwritten on each plan-audit invocation.
 scripts/cam/plan-verdict-report.json
