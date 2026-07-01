@@ -62,7 +62,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "New file test/supervisor/worker-container-parity.test.ts. Parity idiom precedent: patterns.md CAM-49/68/79 (ci-parity, tmux-introspect) and scripts/check-ci-parity.ts. devcontainer.json is plain JSON here (no comments), so JSON.parse in the test is fine, but the invariant to encode is 'drift fails': read the JSON, derive the expected fragments, assert each is present in the US-001 argv. Do NOT add a runtime JSONC parser to src (grill Q1: no runtime JSONC parse; drift caught at test time). Keep prod code depending only on the constants in worker-container.ts; the JSON is the source of truth that the test cross-checks."
     },
