@@ -107,7 +107,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": "US-005",
       "notes": "Edit BOTH .claude/commands/cam-ship.md and templates/commands/cam-ship.md (agent-prompt self-hosting, CAM-70/US-001 pattern), then run bun run embed-vendor to regenerate src/vendor/_generated.ts and verify with bun run embed-vendor:check. The two copies are NOT byte-identical: templates/ carries a templates-only <!-- cam-init: adaptation point --> marker (CAM-88); apply the semantic edits to both, leave that marker only in templates/. The ci-gated Step 7 currently does a raw printf clobber ({prNumber, mergedBranch}); change it to preserve issueId (jq read-modify-write; jq is already used in this file). test/embedded.test.ts templatesContents parity test catches drift. Final integration story: run check:all here to satisfy the full-spine AC; raise any file-size ratchets grown by US-003/US-004/US-005 with _ref CAM-121 per the cam-ship Step 3 ratchet procedure."
     }
