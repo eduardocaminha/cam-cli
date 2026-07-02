@@ -4,6 +4,13 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.44.0] - 2026-07-02
+
+### Added
+
+- [US-002] - subagent-planner honors an explicit target issue id (both copies + re-embed)
+- [US-001] - Thread the selected issue id into the planner task prompt (runner authoritative)
+
 ## [0.43.0] - 2026-07-02
 
 ### Added
