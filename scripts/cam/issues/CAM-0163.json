@@ -1,0 +1,9 @@
+{
+  "id": "CAM-163",
+  "title": "orchestrator recycle backstop: token de OCUPACAO (parseContextOccupancy) no watcher (split de CAM-162)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-02T23:16:11.260Z",
+  "description": "Fatia separada do CAM-162 (blocked-by CAM-162). O token backstop de OCUPACAO no watcher de recycle do orquestrador: safety deterministico que forca um recycle (via o mesmo marker/watcher da CAM-162) se a ocupacao ATUAL do contexto passar de um teto, evitando auto-compactacao silenciosa num ciclo patologicamente longo. CRITICAL aprendido no plan-audit (r2): NAO reusar parseTranscriptUsage/computeOrchBudget (somam trafego cumulativo cross-request, ~5.58M/sessao real journal.md:469); comparado a um teto de janela isso force-recicla todo boot ate o cap e brica (misfire CAM-23). Precisa de um primitivo NOVO parseContextOccupancy = tokens INPUT+cache da ULTIMA request (uso corrente), e uma constante nomeada de janela do Opus (nao existe mapping model->window no codebase). Depende do watcher (src/commands/orch-recycle-watch.ts) e do marker da CAM-162, entao so planejar/mergear depois dela. Fora de escopo: o mecanismo de recycle (CAM-162)."
+}
