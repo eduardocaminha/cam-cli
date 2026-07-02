@@ -9,6 +9,13 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/commands/ship-finalize.ts:155]: finalizeCycleClose stashes the resolved issueId into .cam-merge-watch.json unconditionally (only gated by `issueId !== null`), whereas the pre-PR finalize gated its local issue-close by `issueSystem === 'none'`. Because the ci-gated sidecar (sidecar.ts:406) passes `closeIssueId: state.issueId` into runPostMerge with no backend gate, a github/linear backend project in ci-gated merge mode will now attempt closeIssueOnMain against the none-backend store scripts/cam/issues/<id>.json, get 'not-found', and emit a spurious printError + issueCloseFailed=true event where before there was silence. This contradicts US-004 AC5 ('github and linear backends are unchanged ... no regression') and US-005 AC3 ('closeIssueId absent (github/linear ...)'). cam-cli itself (backend=none) is unaffected. The AC5 github/linear tests use a no-op stashFn default so they do not observe the stash and cannot catch this. Fix: gate `stashFn(issueId)` behind `issueSystem === 'none'` in finalizeCycleClose so github/linear never thread an issueId (also avoids leaving a stray .cam-merge-watch.json in immediate mode)."
+    },
+    {
       "id": "US-001",
       "title": "Add resolveIssueId helper (string or numeric issueNumber, never <prefix>-0)",
       "description": "As the cam ship pipeline, I need a single pure resolver that turns a prd.issueNumber (a full string id like 'CAM-154' OR a bare number like 42) into the canonical issue id, returning null instead of a phantom '<prefix>-0' when it cannot resolve, so every downstream close path anchors to the real issue.",
@@ -20,7 +27,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "New file src/issues/resolve-id.ts + test/issues/resolve-id.test.ts. Match string ids with /^[A-Z]+-[0-9]+$/ and return verbatim; compose numeric as `${prefix}-${n}`. This is the CAM-113 root-cause fix (ship-finalize.ts:131 typeof==='number' guard rejects the anchored string id -> null -> '<prefix>-0'). noUncheckedIndexedAccess: guard regex .exec() results. Signature accepts number | string | null | undefined; prefix is a param (do NOT read project.toml here)."
@@ -36,7 +43,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "src/release/merge-watch.ts (MergeWatchState interface, readMergeWatchState/writeMergeWatchState, new stashIssueIdInMergeWatch) + test/release/merge-watch.test.ts. MERGE_WATCH_FILENAME already exists. KEEP readMergeWatchState's existing prNumber:number + mergedBranch:string requirement (returns null otherwise); only ADD issueId as optional. Follow the JSON-reader shape-guard pattern (validate discriminator fields, not just typeof object). Single-writer assumption holds. Shared-state schema change that US-004 (write) and US-005 (read) depend on."
@@ -53,7 +60,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "src/commands/issue-specify.ts (mirror abandonIssueOnMain: reuse checkMainUpToDate, readBacklogFromMain(toBacklogSpawn(spawnFn)), commitTreeToMain(..., 'cam-specify-'), pushMainBestEffort) + tests in test/issue-specify.test.ts (real-git integration + unit fakes per CAM-72 pattern). Add CloseIssueOnMainOptions/Outcome types mirroring the Abandon* discriminated unions. Commit message: chore(cam): close <id> (shipped). GOTCHA (CAM-133): commitTreeToMain reads the tree from read-tree main, never the working tree; do NOT readFileSync the working-tree issue copy. spawnSync exit-status guard is already inside commitTreeToMain. issue-specify.ts is 531 lines with no explicit file-size budget entry; if check:all trips a ceiling, US-006 raises it with _ref CAM-121."
@@ -71,7 +78,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": "US-002",
       "notes": "src/commands/ship-finalize.ts + index.ts (_buildFinalizeOpts wiring) + test/ship-finalize.test.ts & test/ship-finalize-hardening.test.ts. Widen PrdShape.issueNumber to number | string (CAM-113 root: /cam-next anchoring writes the FULL string id; the old typeof==='number' guard rejected it). Remove the readIssues/writeIssues close path and prefer removing those options + updating index.ts wiring. Inject a stashFn/writeMergeWatch seam so tests never touch fs; capture issueNumber at ship-finalize.ts ~114-131 BEFORE the git rm. Depends on US-001 (resolveIssueId, done earlier by priority) and US-002 (stashIssueIdInMergeWatch). Update FinalizeCycleCloseResult (the none close no longer happens here; drop issueLocalClosed=true semantics). ship-finalize.ts budget is 218 (currently 206); if the refactor exceeds it, US-006 raises with _ref CAM-121."
@@ -88,7 +95,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": "US-003",
       "notes": "src/release/post-merge.ts (add closeIssueId + injectable closeIssueFn seam defaulting to closeIssueOnMain; invoke AFTER checkAndPruneRemoteBranch, on main after the Step-0 checkout + Step-1 pull so commitTreeToMain reads the right ref) + src/commands/sidecar.ts (the postMergeFn closure at ~line 405 already has state in scope: pass closeIssueId: state.issueId) + test/release/post-merge.test.ts. Depends on US-003 (closeIssueOnMain) and US-002 (state.issueId). Keep runPostMerge's git-only steps unchanged; the close is an additive final step. Emit a post-merge event on close failure (see src/supervisor/events.ts merge-watch-post-merge-done detail)."
@@ -106,10 +113,29 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": "US-005",
       "notes": "Edit BOTH .claude/commands/cam-ship.md and templates/commands/cam-ship.md (agent-prompt self-hosting, CAM-70/US-001 pattern), then run bun run embed-vendor to regenerate src/vendor/_generated.ts and verify with bun run embed-vendor:check. The two copies are NOT byte-identical: templates/ carries a templates-only <!-- cam-init: adaptation point --> marker (CAM-88); apply the semantic edits to both, leave that marker only in templates/. The ci-gated Step 7 currently does a raw printf clobber ({prNumber, mergedBranch}); change it to preserve issueId (jq read-modify-write; jq is already used in this file). test/embedded.test.ts templatesContents parity test catches drift. Final integration story: run check:all here to satisfy the full-spine AC; raise any file-size ratchets grown by US-003/US-004/US-005 with _ref CAM-121 per the cam-ship Step 3 ratchet procedure."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/commands/ship-finalize.ts",
+        "line": 155,
+        "text": "finalizeCycleClose stashes the resolved issueId into .cam-merge-watch.json unconditionally (only gated by `issueId !== null`), whereas the pre-PR finalize gated its local issue-close by `issueSystem === 'none'`. Because the ci-gated sidecar (sidecar.ts:406) passes `closeIssueId: state.issueId` into runPostMerge with no backend gate, a github/linear backend project in ci-gated merge mode will now attempt closeIssueOnMain against the none-backend store scripts/cam/issues/<id>.json, get 'not-found', and emit a spurious printError + issueCloseFailed=true event where before there was silence. This contradicts US-004 AC5 ('github and linear backends are unchanged ... no regression') and US-005 AC3 ('closeIssueId absent (github/linear ...)'). cam-cli itself (backend=none) is unaffected. The AC5 github/linear tests use a no-op stashFn default so they do not observe the stash and cannot catch this. Fix: gate `stashFn(issueId)` behind `issueSystem === 'none'` in finalizeCycleClose so github/linear never thread an issueId (also avoids leaving a stray .cam-merge-watch.json in immediate mode)."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/issue-specify.ts",
+        "line": 514,
+        "text": "closeIssueOnMain has thorough unit-fake coverage but no dedicated real-git integration test (test/integration/), which the US-003 notes suggested ('real-git integration + unit fakes per CAM-72 pattern'). The shared commitTreeToMain plumbing is already exercised by issue-specify-ref-only.test.ts (specify/abandon use the identical ref-only call), so the git-behavior risk is largely covered; a stage:'shipped' real-git assertion would still be a small robustness win."
+      }
+    ]
+  }
 }

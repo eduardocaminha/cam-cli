@@ -322,6 +322,23 @@ describe('AC5 (US-004): github backend — git rm + commit, no issue file', () =
 			'chore(cam): close CAM-72 + drop per-branch harness state (CAM-27 hygiene)',
 		);
 	});
+
+	test('stashFn is NOT called for github backend (US-R1-001: no spurious closeIssueOnMain)', () => {
+		const stashedIds: string[] = [];
+		const { spawnFn } = makeRecordingSpawn();
+
+		finalizeCycleClose(
+			makeOptions({
+				spawnFn,
+				readProjectToml: () => PROJECT_TOML_GITHUB,
+				stashFn: (id) => stashedIds.push(id),
+			}),
+		);
+
+		// stashFn must NOT be called for github: github closes its own issue
+		// via the external system, not via closeIssueOnMain on the local store.
+		expect(stashedIds).toHaveLength(0);
+	});
 });
 
 describe('AC5 (US-004): linear backend — git rm + commit, no issue file', () => {
@@ -345,6 +362,23 @@ describe('AC5 (US-004): linear backend — git rm + commit, no issue file', () =
 		);
 		expect(rmCalls.length).toBe(3);
 		expect(calls.find((c) => c.args.includes('commit'))).toBeDefined();
+	});
+
+	test('stashFn is NOT called for linear backend (US-R1-001: no spurious closeIssueOnMain)', () => {
+		const stashedIds: string[] = [];
+		const { spawnFn } = makeRecordingSpawn();
+
+		finalizeCycleClose(
+			makeOptions({
+				spawnFn,
+				readProjectToml: () => PROJECT_TOML_LINEAR,
+				stashFn: (id) => stashedIds.push(id),
+			}),
+		);
+
+		// stashFn must NOT be called for linear: linear closes its own issue
+		// via the external system, not via closeIssueOnMain on the local store.
+		expect(stashedIds).toHaveLength(0);
 	});
 });
 

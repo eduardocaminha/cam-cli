@@ -72,7 +72,9 @@ export interface FinalizeCycleCloseOptions {
 	 * is removed, so the post-merge close path can close the issue without
 	 * re-reading prd.json.
 	 *
-	 * Called only when a valid issueId is resolved from prd.issueNumber.
+	 * Called only when a valid issueId is resolved AND issueSystem === 'none'.
+	 * github/linear backends close their own issues via the external system;
+	 * stashing for them would cause a spurious closeIssueOnMain 'not-found' error.
 	 * Production: stashIssueIdInMergeWatch(join(cwd, '.claude', MERGE_WATCH_FILENAME), issueId).
 	 */
 	stashFn: (issueId: string) => void;
@@ -95,8 +97,9 @@ export interface FinalizeCycleCloseResult {
  *   2. Read issueNumber from prd.json BEFORE removing prd.json.
  *   2a. Resolve issueId via resolveIssueId. Fail loud if issueNumber is
  *       non-null/undefined but unresolvable (never stashes a phantom '<prefix>-0').
- *   3. Call stashFn(issueId) when a valid issueId is available, BEFORE
- *       the prd.json git rm, so the post-merge close path can find it.
+ *   3. Call stashFn(issueId) when a valid issueId is available AND
+ *       issueSystem === 'none', BEFORE the prd.json git rm, so the
+ *       post-merge close path can find it. github/linear skip this step.
  *   4. Remove scripts/cam/prd.json, scripts/cam/handoff.json, and
  *       scripts/cam/progress.txt via `git rm -f --ignore-unmatch`.
  *   5. Commit with: `chore(cam): close <issue-id> + drop per-branch harness
@@ -152,7 +155,12 @@ export function finalizeCycleClose(
 	// 3. Stash the resolved issueId into .cam-merge-watch.json BEFORE git rm,
 	//    so the post-merge close path can close the issue without re-reading
 	//    prd.json (which will be gone after the rm).
-	if (issueId !== null) {
+	//    ONLY for the 'none' backend: github and linear close their own issues
+	//    via the external system, NOT via closeIssueOnMain on the local store.
+	//    Stashing for non-none backends would cause runPostMerge to call
+	//    closeIssueOnMain against the none-backend store, producing a spurious
+	//    'not-found' error (US-R1-001 fix).
+	if (issueId !== null && issueSystem === 'none') {
 		stashFn(issueId);
 	}
 

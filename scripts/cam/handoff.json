@@ -1,23 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Update cam-ship.md for the relocated post-merge close (both merge modes)"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/pr-121-post-merge-issue-close",
-  "timestamp": "2026-07-02T00:00:00Z",
+  "timestamp": "2026-07-02T12:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/commands/cam-ship.md",
-    "templates/commands/cam-ship.md",
-    "src/vendor/_generated.ts"
+    "src/commands/ship-finalize.ts",
+    "test/ship-finalize.test.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 updated both cam-ship.md copies (intentional self-hosting pattern). Three semantic changes: (1) Step 5 finalize description: no longer says it closes the none issue inline; now says it stashes the issueId into .cam-merge-watch.json for post-merge close. (2) Step 7 ci-gated: replaced printf clobber with jq read-modify-write (WATCH=$(cat .claude/.cam-merge-watch.json 2>/dev/null || printf '{}') | jq '. + {prNumber, mergedBranch}') to preserve the stashed issueId; description updated to say sidecar closes the none issue via closeIssueOnMain using the stashed issueId. (3) Step 8 immediate: added none-backend inline closeIssueOnMain call (mirroring cam-spec.md specifyIssueOnMain pattern) reading issueId from .cam-merge-watch.json, then removing the watch file. bun run embed-vendor re-synced src/vendor/_generated.ts. All oracles passed (stash in both files, issueId and closeIssueOnMain in .claude/ copy). check:all green (2757 pass).",
+  "nextStoryContext": "US-R1-001 fixed a spurious closeIssueOnMain regression for github/linear backends. Root cause: finalizeCycleClose called stashFn(issueId) unconditionally whenever issueId !== null, regardless of issueSystem. The sidecar then passed closeIssueId: state.issueId to runPostMerge with no backend gate, causing a not-found error on the none-backend store for github/linear projects. Fix: gated stashFn behind issueSystem === 'none' in ship-finalize.ts line 155. Two new test assertions added to AC5 (github+linear) to catch this regression in future. file-size budget raised: test/ship-finalize.test.ts 507->541 (ref: CAM-121 US-R1-001). check:all green (2759 pass).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story touches only markdown documentation files (cam-ship.md copies) and the vendor embed. No external library exercised."
+      "summary": "Story is a pure in-house bug fix in ship-finalize.ts. No external library exercised."
     }
   ]
 }
