@@ -1,26 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Planner-produced-no-prd is a failure: escalate to idle, never spawn the auditor"
+    "id": "US-004",
+    "title": "Guard empty/whitespace branchName in runPostAuditAction (never git checkout -b '')"
   },
   "branchName": "cam/CAM-155-plan-runner-hardening",
-  "timestamp": "2026-07-02T02:00:00Z",
+  "timestamp": "2026-07-02T03:00:00Z",
   "createdFiles": [
-    "test/plan-runner-no-prd.test.ts",
-    "test/integration/plan-runner-no-prd.test.ts"
+    "test/plan-runner-empty-branch.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/plan-runner.ts",
-    "test/supervisor/plan/plan-runner.test.ts",
-    "scripts/file-size-budget.json"
+    "src/supervisor/plan-runner.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added 'planner-failed' to PlanPhaseResult union in plan-runner.ts. Two new helpers: isPlannerNoPrd (guard after pollPlannerDeath: pane died without prd.json -> return planner-failed, auditor NEVER spawned) and resolveLivePaneId (extracted ternary for ensureWorkerPane fallback, reduces runPlanPhase complexity + lines). runPostAuditAction handles 'planner-failed': calls notifyFn best-effort, skips escalateFn, returns no-action (phase exits to idle via exitPhaseAfterPlan). Two test files prove AC1 (15 unit tests) and AC2/AC3 (1 behavioral oracle with real tmux, private socket cam-it-noprd). All quality gates pass (2621 tests, typecheck clean, check:all exit 0).",
+  "nextStoryContext": "US-004 added an empty-branch guard in runPostAuditAction (before the git checkout -b call on the proceed-branch path): when branchName.trim()==='' it calls notifyFn best-effort and returns no-action, which exitPhaseAfterPlan maps to idle. The git calls were extracted into a helper executeGitProceedBranch to keep runPostAuditAction under biome's cognitive-complexity limit (was at 15 with the new if, extracted to bring it back to ~7). New test file: test/plan-runner-empty-branch.test.ts with 26 unit tests proving AC1 (empty/whitespace branchName: no git checkout, notifyFn called, no-action result, maps to idle), AC2 (recording spawnFn never sees checkout -b with empty arg), AC3 (sidecar fallback branchName='' escalates cleanly). All quality gates pass (2647 tests, typecheck clean, check:all exit 0).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "All changes are in internal cam-cli modules (plan-runner.ts helpers, test files). No external npm library was added or changed."
+      "summary": "All changes are in internal cam-cli modules (plan-runner.ts guard + test file). No external npm library was added or changed."
     }
   ]
 }

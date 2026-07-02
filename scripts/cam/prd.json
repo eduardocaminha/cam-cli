@@ -75,7 +75,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts (runPostAuditAction ~556-613: add a guard at the top of the proceed-branch branch, after decidePostAuditAction returns proceed-branch and BEFORE the `git checkout -b` spawnFn call: if branchName.trim()==='' -> notifyFn?.(...) + return an idle-mapped result). No sidecar.ts change needed (branchName='' already arrives from the :742-748 fallback). test/plan-runner-empty-branch.test.ts. Independent of US-002/003 but ordered after them in the same file. patterns.md 'spawnSync exit-status guard' (this replaces the throw-on-exit-128 with a pre-check)."
     },
