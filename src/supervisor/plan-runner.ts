@@ -28,6 +28,7 @@
 //   - Cognitive complexity is managed via factory/helper extraction (patterns.md
 //     'Biome cognitive complexity: use factory/helper extraction not grandfather').
 
+import { join } from 'node:path';
 import type { SpawnFn, IsPaneAlive } from './loop.ts';
 import type { WorkerEventLogger } from './events.ts';
 import type { PlanPreflightResult } from './plan-preflight.ts';
@@ -76,6 +77,8 @@ export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
  *   mutex-busy           - pane-count mutex was 'busy'; no pane spawned (AC5).
  *   planner-timeout      - planner pane still alive after plannerTimeoutMs.
  *   auditor-timeout      - plan-verdict-report.json absent when auditor died or timed out.
+ *   planner-failed       - planner poll ended but readPlannerReportFn returned null (no
+ *                          prd.json written); auditor is NEVER spawned (US-003, CAM-155).
  */
 export type PlanPhaseResult =
 	| { kind: 'preflight-failed'; step: string; detail: string }
@@ -83,6 +86,7 @@ export type PlanPhaseResult =
 	| { kind: 'mutex-busy' }
 	| { kind: 'planner-timeout' }
 	| { kind: 'auditor-timeout' }
+	| { kind: 'planner-failed' }
 	| { kind: 'audit-approved'; issue: IssueEntry; report: PlanVerdictReport }
 	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport };
 
@@ -219,6 +223,41 @@ export interface RunPlanPhaseOptions {
 	 * persisted via the event log (same pattern as loop.ts and review.ts).
 	 */
 	logEvent?: WorkerEventLogger;
+
+	/**
+	 * Clear stale plan-verdict-report.json and prd.json before the plan phase
+	 * starts (AC1, US-002, CAM-155). Called at the very top of runPlanPhase,
+	 * before preflight, so a stale APPROVE verdict cannot contaminate the new run
+	 * and so prd.json absence is detectable as 'planner produced nothing'.
+	 *
+	 * Best-effort: no-op on missing files, never throws. Mirrors
+	 * makeClearReviewReport in host.ts ('Review-report.json reader dep-injection').
+	 * Optional for backward compat with tests that do not inject it.
+	 */
+	clearStalePlanArtifactsFn?: () => void;
+
+	/**
+	 * Ensure a live worker pane exists before each spawn. Returns the live pane id.
+	 *
+	 * When provided, called BEFORE spawning the planner AND BEFORE spawning the
+	 * auditor. The RETURNED id is threaded into set-option/respawn-pane/poll calls
+	 * (never the static plannerPaneId or a stale marker). When absent, plannerPaneId
+	 * is used directly (backward compat for tests that simulate pane death).
+	 *
+	 * Mirrors the ensureWorkerPane dep in RunSupervisorOptions (patterns.md
+	 * 'ensureWorkerPane self-heal (CAM-57)'). Production wiring in
+	 * makeProductionPlanPhaseFn (sidecar.ts): re-reads the marker fresh,
+	 * isPaneAlive probe, openPaneInSession when dead/missing, writeWorkerPaneMarker.
+	 */
+	ensureWorkerPane?: () => string;
+
+	/**
+	 * Path to the .claude directory. Used to derive per-worker out-log paths for
+	 * the tmux pipe-pane call that captures each spawn's pane output (AC4). When
+	 * absent, pipe-pane is skipped (backward compat for tests that do not inject
+	 * a claudeDir). Scoped to plan-runner spawns only; loop.ts is NOT modified.
+	 */
+	claudeDir?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +285,8 @@ function makeEventWriter(
 
 /**
  * Resolve model/backend, emit spawn-resolution, build the argv shell string,
- * set @cam_label on the pane, and spawn the planner worker via respawn-pane -k.
+ * set @cam_label on the pane, spawn the planner worker via respawn-pane -k,
+ * and pipe pane output to a per-worker out-log (AC4) when claudeDir is provided.
  *
  * @cam_label is set BEFORE respawn-pane (AC5, patterns.md '@cam_label pane-labeling').
  * genUuid() output is lowercased (CAM-23: macOS uuidgen is uppercase).
@@ -259,6 +299,7 @@ function resolveAndSpawnPlanner(
 	taskPrompt: string,
 	permissionMode: string,
 	logEvent: WorkerEventLogger | undefined,
+	claudeDir?: string,
 ): string {
 	const uuid = genUuid().toLowerCase();
 	const model = readPhaseModel('planner');
@@ -267,12 +308,18 @@ function resolveAndSpawnPlanner(
 	const shell = buildPlannerWorkerArgv({ uuid, taskPrompt, permissionMode, model });
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'planner']);
 	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, shell]);
+	// AC4: pipe pane output to a per-worker out-log so silent no-ops are diagnosable.
+	if (claudeDir !== undefined) {
+		const outLog = join(claudeDir, `cam-plan-out-planner-${uuid}.log`);
+		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', plannerPaneId, `cat >> ${outLog}`]);
+	}
 	return uuid;
 }
 
 /**
  * Resolve model/backend, emit spawn-resolution, build the argv shell string,
- * set @cam_label on the pane, and spawn the auditor worker via respawn-pane -k.
+ * set @cam_label on the pane, spawn the auditor worker via respawn-pane -k,
+ * and pipe pane output to a per-worker out-log (AC4) when claudeDir is provided.
  *
  * @cam_label is set BEFORE respawn-pane (AC5, patterns.md '@cam_label pane-labeling').
  * genUuid() output is lowercased (CAM-23: macOS uuidgen is uppercase).
@@ -285,6 +332,7 @@ function resolveAndSpawnAuditor(
 	taskPrompt: string,
 	permissionMode: string,
 	logEvent: WorkerEventLogger | undefined,
+	claudeDir?: string,
 ): string {
 	const uuid = genUuid().toLowerCase();
 	const model = readPhaseModel('auditor');
@@ -293,7 +341,33 @@ function resolveAndSpawnAuditor(
 	const shell = buildAuditorWorkerArgv({ uuid, taskPrompt, permissionMode, model });
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'auditor']);
 	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, shell]);
+	// AC4: pipe pane output to a per-worker out-log so silent no-ops are diagnosable.
+	if (claudeDir !== undefined) {
+		const outLog = join(claudeDir, `cam-plan-out-auditor-${uuid}.log`);
+		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', plannerPaneId, `cat >> ${outLog}`]);
+	}
 	return uuid;
+}
+
+/**
+ * Return true when the planner poll ended without prd.json being written.
+ *
+ * pollPlannerDeath exits via EITHER the report signal (non-null) OR pane-death.
+ * A fresh re-call of readPlannerReportFn distinguishes: undefined = absent dep
+ * (backward-compat); non-null = prd.json written (happy path); null = no prd.json
+ * (planner-failed). Extracted to satisfy biome complexity limits (US-003, CAM-155).
+ */
+function isPlannerNoPrd(readPlannerReportFn?: () => unknown | null): boolean {
+	return readPlannerReportFn !== undefined && readPlannerReportFn() === null;
+}
+
+/**
+ * Resolve the live worker pane id.
+ * Calls ensureWorkerPane() when available (self-heal, CAM-57); falls back to staticId.
+ * Extracted to avoid code duplication for planner and auditor spawns.
+ */
+function resolveLivePaneId(ensureWorkerPane: (() => string) | undefined, staticId: string): string {
+	return ensureWorkerPane !== undefined ? ensureWorkerPane() : staticId;
 }
 
 /**
@@ -405,6 +479,7 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 		spawnFn, isPaneAlive, sleepFn, genUuid,
 		selectIssueFn, readPlanVerdictFn, preflightFn, clock,
 		plannerPaneId, paneCountMutexFn, readPlannerReportFn,
+		ensureWorkerPane, claudeDir, clearStalePlanArtifactsFn,
 	} = opts;
 
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
@@ -414,6 +489,11 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 	const plannerTimeoutMs = opts.plannerTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
 	const auditorTimeoutMs = opts.auditorTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
 	const logEvent = opts.logEvent;
+
+	// Clear stale artifacts from any previous plan run (AC1, US-002).
+	// Runs BEFORE preflight so a stale APPROVE verdict cannot contaminate the
+	// new run and so prd.json absence is detectable as 'planner produced nothing'.
+	clearStalePlanArtifactsFn?.();
 
 	// Step 1: Pre-flight checks (AC2)
 	const preflight = preflightFn();
@@ -433,31 +513,28 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 		return { kind: 'mutex-busy' };
 	}
 
-	// Step 4: Spawn planner pane (AC4, AC5)
-	// resolveAndSpawnPlanner: reads model/backend, emits spawn-resolution,
-	// builds argv, sets @cam_label 'planner', runs respawn-pane -k.
-	resolveAndSpawnPlanner(spawnFn, plannerPaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent);
+	// Step 4: Spawn planner pane — label 'planner' then respawn-pane -k (AC4, AC5).
+	const plannerLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
+	resolveAndSpawnPlanner(spawnFn, plannerLivePaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent, claudeDir);
 
-	// Step 5: Poll until prd.json written OR planner pane dies (AC4, US-R1-001).
-	// readPlannerReportFn is the primary signal; isPaneAlive is the fallback.
+	// Step 5: Poll planner — primary signal: prd.json written; fallback: pane dies.
 	const plannerDied = pollPlannerDeath(
 		isPaneAlive, sleepFn, clock, spawnFn,
-		plannerPaneId, pollIntervalMs, plannerTimeoutMs, readPlannerReportFn,
+		plannerLivePaneId, pollIntervalMs, plannerTimeoutMs, readPlannerReportFn,
 	);
-	if (!plannerDied) {
-		return { kind: 'planner-timeout' };
-	}
+	if (!plannerDied) return { kind: 'planner-timeout' };
 
-	// Step 6: Spawn auditor pane (AC4, AC5)
-	// resolveAndSpawnAuditor: reads model/backend, emits spawn-resolution,
-	// builds argv, sets @cam_label 'auditor', runs respawn-pane -k.
-	resolveAndSpawnAuditor(spawnFn, plannerPaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent);
+	// US-003: Guard — re-check if prd.json was actually written (Bug 4-adjacent).
+	if (isPlannerNoPrd(readPlannerReportFn)) return { kind: 'planner-failed' };
 
-	// Step 7: Poll until plan-verdict-report.json present (AC4)
-	// Verdict read from FILE ONLY - never from capture-pane (patterns.md).
+	// Step 6: Spawn auditor pane — label 'auditor' then respawn-pane -k (AC4, AC5).
+	const auditorLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
+	resolveAndSpawnAuditor(spawnFn, auditorLivePaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent, claudeDir);
+
+	// Step 7: Poll auditor — verdict from FILE ONLY, never from capture-pane.
 	const auditorResult = pollAuditorReport(
 		isPaneAlive, sleepFn, clock, spawnFn,
-		readPlanVerdictFn, plannerPaneId, pollIntervalMs, auditorTimeoutMs,
+		readPlanVerdictFn, auditorLivePaneId, pollIntervalMs, auditorTimeoutMs,
 	);
 
 	if (!auditorResult.ok) {
@@ -530,6 +607,44 @@ export interface RunPostAuditOptions {
 }
 
 /**
+ * Execute the three git calls for the proceed-branch path:
+ *   checkout -b -> add prd.json -> commit -> setPhaseFn('implementing')
+ *
+ * Extracted from runPostAuditAction to keep that function under the biome
+ * cognitive-complexity limit (US-004, CAM-155). All exit-code checks follow
+ * the spawnSync exit-status guard pattern (patterns.md US-R1-001).
+ */
+function executeGitProceedBranch(
+	spawnFn: SpawnFn,
+	branchName: string,
+	setPhaseFn: (phase: LoopPhase) => void,
+): PostAuditActionResult {
+	const checkoutResult = spawnFn('git', ['checkout', '-b', branchName]);
+	if ((checkoutResult.exitCode ?? 1) !== 0) {
+		throw new Error(
+			`git checkout -b ${branchName} failed (exit ${checkoutResult.exitCode ?? 'null'})`,
+		);
+	}
+
+	const addResult = spawnFn('git', ['add', 'scripts/cam/prd.json']);
+	if ((addResult.exitCode ?? 1) !== 0) {
+		throw new Error(
+			`git add scripts/cam/prd.json failed (exit ${addResult.exitCode ?? 'null'})`,
+		);
+	}
+
+	const commitResult = spawnFn('git', ['commit', '-m', 'chore(cam): commit audited prd.json']);
+	if ((commitResult.exitCode ?? 1) !== 0) {
+		throw new Error(
+			`git commit failed (exit ${commitResult.exitCode ?? 'null'})`,
+		);
+	}
+
+	setPhaseFn('implementing');
+	return { kind: 'branch-created', branchName };
+}
+
+/**
  * Execute the post-audit action after runPlanPhase returns.
  *
  * On audit-approved + proceed-branch (auto mode):
@@ -549,8 +664,8 @@ export interface RunPostAuditOptions {
  * On any other planResult kind:
  *   Returns { kind: 'no-action' }.
  *
- * Design: all git calls go through the injected spawnFn; exit-code guard fires
- * a throw on non-zero exit (spawnSync exit-status guard, patterns.md US-R1-001).
+ * Design: all git calls go through the injected spawnFn via executeGitProceedBranch;
+ * exit-code guard fires a throw on non-zero exit (patterns.md US-R1-001).
  * escalateFn is fire-and-forget (void, never awaited) per its best-effort contract.
  */
 export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionResult {
@@ -563,6 +678,14 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		escalateFn,
 		notifyFn,
 	} = opts;
+
+	// planner-failed: planner produced no prd.json; notify best-effort, no escalate
+	// (US-003, CAM-155). Do NOT fire escalateFn: a transient planner no-op is not an
+	// operator-alert condition. Phase exits to idle via the no-action return (AC2).
+	if (planResult.kind === 'planner-failed') {
+		notifyFn?.('[cam] plan failed: planner exited without writing prd.json');
+		return { kind: 'no-action' };
+	}
 
 	// audit-blocked: escalate and bail; no branch/commit/flip (AC3, AC4)
 	if (planResult.kind === 'audit-blocked') {
@@ -585,29 +708,14 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		return { kind: 'awaiting-operator-approval' }; // AC2
 	}
 
+	// empty-branch guard (US-004, CAM-155): a missing/invalid prd.json in the sidecar
+	// yields branchName=''; running `git checkout -b ''` exits 128 and throws, detonating
+	// the plan phase. Pre-check here so a missing PRD escalates cleanly to idle.
+	if (branchName.trim() === '') {
+		notifyFn?.('[cam] plan skipped: branchName is empty (prd.json absent or invalid)');
+		return { kind: 'no-action' };
+	}
+
 	// proceed-branch: create branch BEFORE committing prd.json (AC1, cam-plan.md Step 9)
-	const checkoutResult = spawnFn('git', ['checkout', '-b', branchName]);
-	if ((checkoutResult.exitCode ?? 1) !== 0) {
-		throw new Error(
-			`git checkout -b ${branchName} failed (exit ${checkoutResult.exitCode ?? 'null'})`,
-		);
-	}
-
-	const addResult = spawnFn('git', ['add', 'scripts/cam/prd.json']);
-	if ((addResult.exitCode ?? 1) !== 0) {
-		throw new Error(
-			`git add scripts/cam/prd.json failed (exit ${addResult.exitCode ?? 'null'})`,
-		);
-	}
-
-	const commitResult = spawnFn('git', ['commit', '-m', 'chore(cam): commit audited prd.json']);
-	if ((commitResult.exitCode ?? 1) !== 0) {
-		throw new Error(
-			`git commit failed (exit ${commitResult.exitCode ?? 'null'})`,
-		);
-	}
-
-	setPhaseFn('implementing'); // flip phase to implementing so the sidecar loop dispatches implementation (AC1)
-
-	return { kind: 'branch-created', branchName }; // AC1
+	return executeGitProceedBranch(spawnFn, branchName, setPhaseFn);
 }

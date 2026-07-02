@@ -4,6 +4,16 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.42.0] - 2026-07-02
+
+### Added
+
+- [US-005] - Crash-proof the plan phase: try/catch forces phase:idle, sidecar survives any exception
+- [US-004] - Guard empty/whitespace branchName in runPostAuditAction (never git checkout -b '')
+- [US-003] - Planner-produced-no-prd is a failure: escalate to idle, never spawn the auditor
+- [US-002] - Clear stale plan-verdict-report.json and prd.json at plan-phase start
+- [US-001] - Ensure a live worker-pane before planner/auditor spawn (+ per-worker out-log)
+
 ## [0.41.0] - 2026-07-01
 
 ### Added

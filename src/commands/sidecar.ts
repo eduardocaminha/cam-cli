@@ -31,9 +31,9 @@ import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/event
 import { parseStateFile, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
-import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
-import { runPlanPhase, runPostAuditAction, type PostAuditActionResult } from '../supervisor/plan-runner.ts';
-import { makeReadPlanVerdict } from '../supervisor/plan-verdict-report.ts';
+import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
+import { runPlanPhase, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult } from '../supervisor/plan-runner.ts';
+import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig } from '../config/models.ts';
 import { sendEscalation, type ResendSendFn } from '../notify/resend.ts';
@@ -648,13 +648,139 @@ function exitPhaseAfterPlan(
 }
 
 /**
+ * Build the isPaneAlive probe + ensureWorkerPane self-heal closure for the plan
+ * phase (US-001, CAM-155).
+ *
+ * Mirrors host.ts ensureWorkerPaneFn (patterns.md 'ensureWorkerPane self-heal
+ * CAM-57'): re-reads the marker fresh on each call, probes isPaneAlive, and when
+ * dead calls openPaneInSession targeting the orchestrator pane (CAM-80 geometry),
+ * then writeWorkerPaneMarker.
+ *
+ * Extracted from makeProductionPlanPhaseFn closure to keep that function under
+ * biome's noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
+ * extraction pattern). Not exported: tests inject options.runPlanPhaseFn directly.
+ */
+function makePlanPaneHelpers(
+	claudeDir: string,
+	sessionName: string,
+): { isPaneAlive: IsPaneAlive; ensureWorkerPane: () => string } {
+	const isPaneAlive: IsPaneAlive = (paneId) => {
+		const r = spawnSync(
+			'tmux',
+			['-L', 'cam', 'display-message', '-p', '-t', paneId, '#{pane_dead}'],
+			{ stdio: 'pipe', encoding: 'utf8' } as Parameters<typeof spawnSync>[2],
+		);
+		if (r.status !== 0) return false;
+		return (typeof r.stdout === 'string' ? r.stdout.trim() : '') === '0';
+	};
+	const ensureWorkerPane = (): string => {
+		const currentId = readWorkerPaneMarker(claudeDir) ?? '%2';
+		if (isPaneAlive(currentId)) return currentId;
+		const orchPaneId = getOrchPaneId(sessionName, (cmd, args, opts) =>
+			spawnSync(cmd, args, {
+				stdio: opts?.stdio ?? 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]),
+		);
+		const targetPaneId = orchPaneId ?? `${sessionName}:0`;
+		const newId = openPaneInSession(
+			sessionName,
+			['cat'],
+			(cmd, args, opts) =>
+				spawnSync(cmd, args, {
+					stdio: opts?.stdio ?? 'pipe',
+					encoding: 'utf8',
+				} as Parameters<typeof spawnSync>[2]),
+			targetPaneId,
+		);
+		writeWorkerPaneMarker(claudeDir, newId);
+		return newId;
+	};
+	return { isPaneAlive, ensureWorkerPane };
+}
+
+/**
+ * Build a clearStalePlanArtifacts function for the given cwd (US-002, CAM-155).
+ *
+ * Removes both:
+ *   - `<cwd>/scripts/cam/plan-verdict-report.json` (stale auditor verdict)
+ *   - `<cwd>/scripts/cam/prd.json` (stale planner output)
+ *
+ * Best-effort: no-op on missing files, never throws.
+ * Mirrors makeClearReviewReport in host.ts (patterns.md 'Review-report.json
+ * reader dep-injection pattern').
+ */
+function makeClearStalePlanArtifacts(cwd: string): () => void {
+	const verdictPath = join(cwd, PLAN_VERDICT_REPORT_FILENAME);
+	const prdPath = join(cwd, 'scripts/cam/prd.json');
+	return () => {
+		try {
+			if (existsSync(verdictPath)) unlinkSync(verdictPath);
+		} catch { /* best-effort */ }
+		try {
+			if (existsSync(prdPath)) unlinkSync(prdPath);
+		} catch { /* best-effort */ }
+	};
+}
+
+/**
+ * Run the post-audit actions after runPlanPhase returns (US-005, CAM-155).
+ *
+ * Extracted from makeProductionPlanPhaseFn to keep the outer closure and
+ * outer function under biome's noExcessiveLinesPerFunction(maxLines=80) limit.
+ * Reads branchName from prd.json, builds escalateFn from Resend config, calls
+ * runPostAuditAction, and flips the phase via exitPhaseAfterPlan.
+ */
+interface PostPlanActionsOpts {
+	planResult: PlanPhaseResult;
+	cwd: string;
+	claudeDir: string;
+	sessionName: string;
+	loopSpawnFn: LoopSpawnFn;
+	realSpawnFn: SpawnFn;
+}
+function runPostPlanActions(o: PostPlanActionsOpts): void {
+	let branchName = '';
+	try {
+		const prdRaw = JSON.parse(
+			readFileSync(join(o.cwd, 'scripts/cam/prd.json'), 'utf8'),
+		) as { branchName?: string };
+		branchName = prdRaw.branchName ?? '';
+	} catch { /* fallback: empty string; runPostAuditAction no-ops on no-approved result */ }
+
+	const resendCfg = readResendConfig(join(o.cwd, 'scripts/cam/project.toml'));
+	const escalateFn = (resendCfg.apiKey !== '' && resendCfg.recipient !== '')
+		? async (): Promise<void> => {
+			await sendEscalation({
+				apiKey: resendCfg.apiKey,
+				recipient: resendCfg.recipient,
+				subject: '[cam] Plan BLOCK: audit rejected the planning output',
+				html: '<p><strong>[cam]</strong> The plan auditor blocked the planning phase. Manual intervention required.</p>',
+			});
+		}
+		: undefined;
+
+	const postAuditResult = runPostAuditAction({
+		planResult: o.planResult,
+		spawnFn: o.loopSpawnFn,
+		setPhaseFn: makeSetPhaseFn(o.claudeDir, o.cwd),
+		branchName,
+		readPlanApprovalFn: () => readPlanApproval(join(o.cwd, 'scripts/cam/project.toml')),
+		escalateFn,
+		notifyFn: makeNotifyOrchestrator(o.sessionName, o.realSpawnFn),
+	});
+	exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(o.claudeDir, o.cwd)); // US-R1-002
+}
+
+/**
  * Build the production runPlanPhaseFn closure (US-002/US-R1-001, CAM-151).
  *
  * Wires runPlanPhase with all deps: plannerPaneId (read fresh from marker each
  * call), paneCountMutexFn (session.ts paneCountMutex), selectIssueFn
  * (selectPlannableFromFile), preflightFn (runPlanPreflight), readPlanVerdictFn
- * (makeReadPlanVerdict), spawnFn (loop.ts SpawnFn shape), isPaneAlive,
- * sleepFn, genUuid (randomUUID lowercased per CAM-23), and clock.
+ * (makeReadPlanVerdict), spawnFn (loop.ts SpawnFn shape), isPaneAlive (and
+ * ensureWorkerPane for self-heal, AC1/AC2 US-001), sleepFn, genUuid (randomUUID
+ * lowercased per CAM-23), and clock.
  *
  * After runPlanPhase returns, calls runPostAuditAction with the PlanPhaseResult
  * (ADR 0006 section Decisao point 3): on APPROVE+auto this creates the feature
@@ -676,6 +802,10 @@ function makeProductionPlanPhaseFn(
 	realSpawnFn: SpawnFn,
 ): () => void {
 	return (): void => {
+		// US-005 (CAM-155): outermost safety net -- any exception from runPlanPhase or
+		// runPostAuditAction is caught here, logged, and the phase is forced back to
+		// idle so the sidecar loop can continue. Never rethrows.
+		try {
 		// Read the plannerPaneId fresh on each call (mirrors ensureWorkerPane pattern).
 		const plannerPaneId = readWorkerPaneMarker(claudeDir) ?? '%2';
 
@@ -692,17 +822,6 @@ function makeProductionPlanPhaseFn(
 			};
 		};
 
-		// Build isPaneAlive using the same tmux display-message probe as host.ts.
-		const isPaneAlive: IsPaneAlive = (paneId) => {
-			const r = spawnSync(
-				'tmux',
-				['-L', 'cam', 'display-message', '-p', '-t', paneId, '#{pane_dead}'],
-				{ stdio: 'pipe', encoding: 'utf8' } as Parameters<typeof spawnSync>[2],
-			);
-			if (r.status !== 0) return false;
-			return (typeof r.stdout === 'string' ? r.stdout.trim() : '') === '0';
-		};
-
 		// Build the preflight spawnFn (PlanPreflightSpawnFn shape: no stdio opt).
 		const preflightSpawnFn: PlanPreflightSpawnFn = (bin, args) => {
 			const r = spawnSync(bin, args, {
@@ -715,6 +834,10 @@ function makeProductionPlanPhaseFn(
 				exitCode: r.status ?? 1,
 			};
 		};
+
+		// Build isPaneAlive + ensureWorkerPane (AC1/AC2, US-001). Extracted to
+		// makePlanPaneHelpers to keep this closure under biome's 80-line limit.
+		const { isPaneAlive, ensureWorkerPane } = makePlanPaneHelpers(claudeDir, sessionName);
 
 		const planResult = runPlanPhase({
 			spawnFn: loopSpawnFn,
@@ -736,40 +859,25 @@ function makeProductionPlanPhaseFn(
 			plannerPaneId,
 			paneCountMutexFn: () => paneCountMutex(sessionName, realSpawnFn),
 			logEvent,
+			ensureWorkerPane,
+			claudeDir,
+			clearStalePlanArtifactsFn: makeClearStalePlanArtifacts(cwd),
 		});
 
-		// Read branchName from prd.json (written by the planner during the plan phase).
-		let branchName = '';
-		try {
-			const prdRaw = JSON.parse(
-				readFileSync(join(cwd, 'scripts/cam/prd.json'), 'utf8'),
-			) as { branchName?: string };
-			branchName = prdRaw.branchName ?? '';
-		} catch { /* fallback: empty string; runPostAuditAction no-ops on no-approved result */ }
-
-		// Build escalateFn from Resend config (same pattern as buildSidecarLoopDeps).
-		const resendCfg = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
-		const postAuditEscalateFn = (resendCfg.apiKey !== '' && resendCfg.recipient !== '')
-			? async (): Promise<void> => {
-				await sendEscalation({
-					apiKey: resendCfg.apiKey,
-					recipient: resendCfg.recipient,
-					subject: '[cam] Plan BLOCK: audit rejected the planning output',
-					html: '<p><strong>[cam]</strong> The plan auditor blocked the planning phase. Manual intervention required.</p>',
-				});
-			}
-			: undefined;
-
-		const postAuditResult = runPostAuditAction({
-			planResult,
-			spawnFn: loopSpawnFn,
-			setPhaseFn: makeSetPhaseFn(claudeDir, cwd),
-			branchName,
-			readPlanApprovalFn: () => readPlanApproval(join(cwd, 'scripts/cam/project.toml')),
-			escalateFn: postAuditEscalateFn,
-			notifyFn: makeNotifyOrchestrator(sessionName, realSpawnFn),
-		});
-		exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(claudeDir, cwd)); // US-R1-002
+		// Post-audit phase: read branchName, build escalateFn, run post-audit
+		// action. Extracted to runPostPlanActions to keep this closure under
+		// biome's noExcessiveLinesPerFunction(maxLines=80) limit.
+		runPostPlanActions({ planResult, cwd, claudeDir, sessionName, loopSpawnFn, realSpawnFn });
+		} catch (err: unknown) {
+			logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'sidecar-exit',
+				detail: { reason: 'plan-phase-crash', error: err instanceof Error ? err.message : String(err) },
+			});
+			makeSetPhaseFn(claudeDir, cwd)('idle');
+		}
 	};
 }
 

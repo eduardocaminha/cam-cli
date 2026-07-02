@@ -1472,7 +1472,19 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 		// runPlanPhase), so no separate mutex call is needed here.
 		const loopPhase = opts.readLoopPhaseFn?.();
 		if (loopPhase === 'planning' && opts.runPlanPhaseFn !== undefined) {
-			await opts.runPlanPhaseFn();
+			// US-005 (CAM-155): outer guard -- a throwing injected runPlanPhaseFn cannot
+			// kill the loop. loop.ts has no phase-setter; phase->idle lives in the closure.
+			try {
+				await opts.runPlanPhaseFn();
+			} catch (err: unknown) {
+				opts.logEvent?.({
+					ts: new Date().toISOString(),
+					storyId: undefined,
+					uuid: 'sidecar',
+					kind: 'sidecar-exit',
+					detail: { reason: 'plan-phase-crash-outer', error: err instanceof Error ? err.message : String(err) },
+				});
+			}
 			opts.sleep(idlePollMs);
 			continue;
 		}
