@@ -49,6 +49,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .claude/.cam-sidecar.pid
 .claude/.cam-orch-handoff.json
 .claude/.cam-orch-handoff.consumed.json
+.claude/.cam-orch-recycle
 # Runtime per-story supervisor artifacts: session markers + durable out-logs (CAM-22/CAM-32)
 .claude/.cam-worker-*.session
 .claude/.cam-worker-out-*.log

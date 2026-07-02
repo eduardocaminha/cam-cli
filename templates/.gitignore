@@ -19,3 +19,4 @@ scripts/cam/plan-verdict-report.json
 .claude/.cam-sidecar.pid
 .claude/.cam-orch-handoff.json
 .claude/.cam-orch-handoff.consumed.json
+.claude/.cam-orch-recycle
