@@ -1,7 +1,7 @@
 {
   "id": "CAM-157",
   "title": "plan-runner ignora o issue selecionado: planner re-seleciona top-of-queue (cam plan --issue N planeja o errado)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T12:10:30.159Z",
