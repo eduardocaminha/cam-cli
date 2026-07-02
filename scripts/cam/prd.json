@@ -3,7 +3,11 @@
   "branchName": "cam/pr-162-orch-recycle-core",
   "description": "Autonomous orchestrator recycle CORE: cycle-close arms a dedicated marker, a wrapper-owned watcher SIGTERMs the orchestrator claude, and the fresh respawn rehydrates via an explicit signal (CAM-141 fix), removing the manual /exit.",
   "issueNumber": 162,
-  "relatedDocs": ["FLOW.md", "README.md", "docs/recovery-runbook.md"],
+  "relatedDocs": [
+    "FLOW.md",
+    "README.md",
+    "docs/recovery-runbook.md"
+  ],
   "officialDocsConsulted": [
     {
       "lib": "Claude Code (hooks)",
@@ -38,7 +42,7 @@
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (add the constant beside ORCH_SESSION_MARKER, ~line 508), .gitignore (root, near the .cam-orch-handoff entries lines 50-51), templates/.gitignore (near lines 20-21), src/commands/stop.ts (add [claudeDir, ORCH_RECYCLE_MARKER] to the marker-removal loop ~line 419-425 and to the comment block ~411-414). templates/.gitignore IS embedded in src/vendor/_generated.ts (the '.gitignore' key), so run `bun run embed-vendor` then `bun run embed-vendor:check`. Read patterns.md: 'Per-session marker set + cam stop cleanup (US-002, CAM-67)' -- every new lifecycle marker MUST be a named export constant AND added to performStop's loop."
     },

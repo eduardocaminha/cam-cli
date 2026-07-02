@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add recycle-marker constant, symmetric gitignore, and stop cleanup"
+  },
+  "branchName": "cam/pr-162-orch-recycle-core",
+  "timestamp": "2026-07-02T12:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/tmux/session.ts",
+    ".gitignore",
+    "templates/.gitignore",
+    "src/commands/stop.ts",
+    "src/vendor/_generated.ts",
+    "test/stop-markers.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "ORCH_RECYCLE_MARKER = '.cam-orch-recycle' is now exported from src/tmux/session.ts (beside ORCH_SESSION_MARKER), gitignored in both root .gitignore and templates/.gitignore, and removed by cam stop. The file-size budgets for stop.ts (522->525), session.ts (570->579), and test/stop-markers.test.ts (149->152) were raised in scripts/file-size-budget.json with CAM-162 US-001 ref.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
