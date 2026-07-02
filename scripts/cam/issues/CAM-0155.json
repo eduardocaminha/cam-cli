@@ -1,0 +1,19 @@
+{
+  "id": "CAM-155",
+  "title": "P0: plan-runner nao funciona em producao (worker-pane nunca criado + cascata de crash do sidecar)",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-02T02:34:38.421Z",
+  "description": "P0 descoberto no primeiro run real do plan-runner deterministico (0.41.0 make-live do CAM-151). A fase de plan nao consegue spawnar seus workers e, quando eles no-opam, a falha vira crash do sidecar. Reproduzido deterministicamente 2x (nao e transiente). Diagnostico completo:\n\nBUG 4 (raiz): makeProductionPlanPhaseFn (sidecar.ts:680) monta plannerPaneId = readWorkerPaneMarker(claudeDir) ?? '%2' e o plan-runner spawna planner/auditor com `tmux -L cam respawn-pane -k -t <plannerPaneId>` (plan-runner.ts:268-269, 294-295). Ele ASSUME que o worker-pane ja existe e nunca o cria. No momento do plan nao ha worker-pane (o loop.ts cria via ensureWorkerPane durante o implement e fecha depois), entao respawn-pane mira um pane inexistente ('%2' ou marker stale), o claude nunca sobe, e nenhum transcript e criado. O loop.ts tem ensureWorkerPane; o plan-runner NAO tem equivalente. FIX: antes de spawnar planner e auditor, garantir/criar o worker-pane (espelhar ensureWorkerPane do loop.ts: cria o 3o pane com a geometria CAM-80 se ausente, grava o marker .cam-worker-pane, e so entao respawn-pane -k). Cobrir com teste de integracao tmux-real: apos runPlanPhase spawnar, o worker-pane existe e roda claude.\n\nBUG 4-adjacente (logica): apos o planner poll quebrar, se o planner NAO produziu prd.json (readPlannerReportFn null E pane morto), o runner tratou como sucesso e spawnou o auditor mesmo assim (observado: planner e auditor spawn-resolution 5s de intervalo, sem prd.json). FIX: planner-sem-prd = planner-failure -> escalar/exitPhaseAfterPlan(idle), nunca prosseguir pro auditor.\n\nBUG 2 (stale verdict): o plan-runner nao limpa plan-verdict-report.json antes de spawnar o auditor. Um verdict de run anterior e lido como APPROVE fresco (readPlanVerdictFn, sidecar.ts:724). FIX: unlink plan-verdict-report.json (e checar/limpar prd.json stale) no inicio de runPlanPhase, ANTES de spawnar o planner/auditor (espelha clearReviewReport do loop.ts). Cobrir: verdict de run anterior nao contamina o run atual.\n\nBUG 3 (empty branch): runPostAuditAction le branchName do prd.json (sidecar.ts ~744); com prd.json ausente/invalido, branchName vem '' e roda `git checkout -b ''` -> exit 128. FIX: se prd.json ausente/invalido OU branchName vazio/whitespace, escalar limpo (phase:idle + notify), NUNCA executar checkout com branch vazio. Cobrir: post-audit com prd.json ausente escala, nao crasha.\n\nBUG 1 (crash mata sidecar): runPlanPhaseFn (a closure de producao em sidecar.ts) nao tem try/catch; a excecao do bug 3 subiu pelo outer loop (Dj) e matou o sidecar (= follow-up (b) do CAM-151). FIX: envolver a invocacao de runPlanPhaseFn no outer loop (ou a closure) em try/catch que forca phase->idle e loga, para que nenhuma excecao da fase de plan derrube o supervisor.\n\nOBSERVABILIDADE (should-have): o spawn do plan-runner nao redireciona a saida do pane pra um out-log (o loop.ts cria .cam-worker-out-<uuid>.log). A ausencia disso cegou o diagnostico. FIX: espelhar o out-log por-worker no spawn de planner/auditor.\n\nIMPACTO: a fase de plan deterministica nunca funcionou em producao; bloqueia CAM-154 (targeting) e toda a trilha do drainer (CAM-149/152/139). Rebuild do sidecar obrigatorio pos-merge. Este fix precisa ser conduzido pelo loop de implement (loop.ts), pois a fase de plan esta quebrada. Deriva do CAM-151.",
+  "specSource": "derived",
+  "derivedFrom": [
+    "CAM-151"
+  ],
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 5,
+    "riskReduction": 4,
+    "jobSize": 2
+  }
+}
