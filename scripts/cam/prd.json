@@ -54,7 +54,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "src/commands/issue-specify.ts (mirror abandonIssueOnMain: reuse checkMainUpToDate, readBacklogFromMain(toBacklogSpawn(spawnFn)), commitTreeToMain(..., 'cam-specify-'), pushMainBestEffort) + tests in test/issue-specify.test.ts (real-git integration + unit fakes per CAM-72 pattern). Add CloseIssueOnMainOptions/Outcome types mirroring the Abandon* discriminated unions. Commit message: chore(cam): close <id> (shipped). GOTCHA (CAM-133): commitTreeToMain reads the tree from read-tree main, never the working tree; do NOT readFileSync the working-tree issue copy. spawnSync exit-status guard is already inside commitTreeToMain. issue-specify.ts is 531 lines with no explicit file-size budget entry; if check:all trips a ceiling, US-006 raises it with _ref CAM-121."
     },

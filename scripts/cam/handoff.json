@@ -1,22 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Thread an issueId through the merge-watch state schema"
+    "id": "US-003",
+    "title": "Add closeIssueOnMain on-main commit-tree close primitive"
   },
   "branchName": "cam/pr-121-post-merge-issue-close",
   "timestamp": "2026-07-02T00:00:00Z",
-  "createdFiles": [],
+  "createdFiles": [
+    "test/issue-specify.test.ts"
+  ],
   "modifiedFiles": [
-    "src/release/merge-watch.ts",
-    "test/release/merge-watch.test.ts"
+    "src/commands/issue-specify.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added issueId?: string to MergeWatchState, stashIssueIdInMergeWatch helper (src/release/merge-watch.ts), and updated read/writeMergeWatchState to parse/re-emit the field. An issueId-only file still returns null from readMergeWatchState (prNumber required), so the sidecar stays inert until the PR is created. US-001's resolveIssueId helper lives at src/issues/resolve-id.ts. US-003 (if present) likely wires stashIssueIdInMergeWatch into the ship flow before PR creation. US-004/US-005 depend on issueId being present in the merged state for the post-merge close path.",
+  "nextStoryContext": "US-003 added closeIssueOnMain() to src/commands/issue-specify.ts (mirrors abandonIssueOnMain: checkMainUpToDate guard, readBacklogFromMain, commitTreeToMain with 'cam-specify-' prefix, pushMainBestEffort). The function sets stage:'shipped' on the target issue and returns { ok: false, reason: 'not-found' } when the id is absent. Types exported: CloseIssueOnMainOptions, CloseIssueOnMainResult, CloseIssueOnMainError, CloseIssueOnMainOutcome. Tests at test/issue-specify.test.ts (18 unit tests, all pass). The close primitive is now ready for US-004 to wire into the post-merge flow (closeIssueOnMain called from runPostMerge using the issueId threaded via .cam-merge-watch.json from US-002).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure in-house schema change to merge-watch state; no external library exercised."
+      "summary": "Pure internal git plumbing extension (mirrors abandonIssueOnMain); no external library exercised."
     }
   ]
 }
