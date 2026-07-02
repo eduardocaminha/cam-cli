@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Thread plan_issue into the plan-runner issue selection"
+  },
+  "branchName": "cam/CAM-154-plan-issue-targeting",
+  "timestamp": "2026-07-02T00:00:00Z",
+  "createdFiles": [
+    "test/commands/sidecar-read-plan-issue.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/issues/select.ts",
+    "src/commands/sidecar.ts",
+    "test/issues/select.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added selectPlannableById and selectPlanTargetFromFile to src/issues/select.ts (target-aware selectors that never fall back to top-of-queue on a non-plannable or absent target). Also added makeReadPlanIssue to src/commands/sidecar.ts (mirrors makeReadLoopPhase pattern). makeProductionPlanPhaseFn now reads plan_issue fresh on each invocation and threads it into selectPlanTargetFromFile. The meta-loop observer (makeProductionMetaLoopObserveFn) still uses selectPlannableFromFile correctly (not a plan-phase selector). Both imports coexist in sidecar.ts. All 2684 tests pass, check:all clean. Budget raised: sidecar.ts 1020->1045.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Purely internal code: select.ts and sidecar.ts use only node:fs, node:path builtins. No new external library touched."
+    }
+  ]
+}
