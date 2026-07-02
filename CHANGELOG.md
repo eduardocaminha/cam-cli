@@ -4,6 +4,13 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.46.0] - 2026-07-02
+
+### Added
+
+- [US-002] - Emit plan-preflight-failed worker event
+- [US-001] - Gitignore cam-plan-out pipe-pane logs
+
 ## [0.45.0] - 2026-07-02
 
 ### Added

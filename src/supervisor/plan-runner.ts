@@ -517,6 +517,13 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 	// Step 1: Pre-flight checks (AC2)
 	const preflight = preflightFn();
 	if (!preflight.ok) {
+		logEvent?.({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'plan-preflight',
+			kind: 'plan-preflight-failed',
+			detail: { step: preflight.step, detail: preflight.detail },
+		});
 		return { kind: 'preflight-failed', step: preflight.step, detail: preflight.detail };
 	}
 

@@ -52,6 +52,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Runtime per-story supervisor artifacts: session markers + durable out-logs (CAM-22/CAM-32)
 .claude/.cam-worker-*.session
 .claude/.cam-worker-out-*.log
+# CAM-158: pipe-pane logs written by runPlanPhase (planner/auditor sessions)
+.claude/cam-plan-out-*.log
 # Runtime supervisor markers written by `cam plan` / `cam next` (CAM-22)
 .claude/.cam-worker-pane
 .claude/cam-loop.local.md
