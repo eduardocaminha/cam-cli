@@ -58,7 +58,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-001 (pane must actually spawn to observe planner completion) and US-002 (stale prd.json must be cleared so 'no prd' is real). Files: src/supervisor/plan-runner.ts (add 'planner-failed' to PlanPhaseResult union; in runPlanPhase after pollPlannerDeath returns, if readPlannerReportFn===undefined || readPlannerReportFn()===null return {kind:'planner-failed'}; add a branch in runPostAuditAction for planner-failed -> notifyFn + return a result mapped to idle), src/commands/sidecar.ts (exitPhaseAfterPlan ~642-648 already maps escalated/no-action -> 'idle'; ensure planner-failed routes there), test/plan-runner-no-prd.test.ts + test/integration/plan-runner-no-prd.test.ts. On the happy path pollPlannerDeath returned true BECAUSE readPlannerReportFn()!=null, so the re-check proceeds to the auditor; only the pane-died-without-prd path yields planner-failed. patterns.md 'Poll-loop staleness + shape guard'."
     },
