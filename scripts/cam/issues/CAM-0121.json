@@ -1,9 +1,42 @@
 {
   "id": "CAM-121",
   "title": "Harden cam ship --finalize: fechar issue none no main via commit-tree, nao na copia stale da branch",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-27T14:10:55.721Z",
-  "description": "Descoberto no ship do CAM-107 (2026-06-27). ship-finalize.ts (backend none) le/escreve a copia working-tree de scripts/cam/issues.local.json DA BRANCH (acha o issue, seta stage:shipped, git add, commit na branch). PROBLEMA: quando issues sao filados direto-no-main durante o ciclo (createLocalIssueOnMain / cam issue --file-local, padrao CAM-86), a copia da branch fica STALE; o finalize commitaria a versao stale + o issue-shipped, e o squash-merge CLOBBERARIA as escritas de main (next_id, novos issues, promocoes). WORKAROUND usado no CAM-107: git merge origin/main na branch ANTES do cam ship --finalize (trouxe o backlog atual; sem overlap de arquivo, merge limpo; backlog verificado intacto pos-merge). FIX: o finalize deve fechar o issue none no MAIN via commit-tree (espelhando createLocalIssueOnMain/specifyIssueOnMain), nao na copia da branch. Assim o backlog nunca entra na branch e o clobber e impossivel por construcao (alinha com CAM-27 hygiene + CAM-86 file-on-main). Manter o git rm de prd.json/handoff.json na branch (esses SAO per-branch). P2."
+  "description": "Descoberto no ship do CAM-107 (2026-06-27). ship-finalize.ts (backend none) le/escreve a copia working-tree de scripts/cam/issues.local.json DA BRANCH (acha o issue, seta stage:shipped, git add, commit na branch). PROBLEMA: quando issues sao filados direto-no-main durante o ciclo (createLocalIssueOnMain / cam issue --file-local, padrao CAM-86), a copia da branch fica STALE; o finalize commitaria a versao stale + o issue-shipped, e o squash-merge CLOBBERARIA as escritas de main (next_id, novos issues, promocoes). WORKAROUND usado no CAM-107: git merge origin/main na branch ANTES do cam ship --finalize (trouxe o backlog atual; sem overlap de arquivo, merge limpo; backlog verificado intacto pos-merge). FIX: o finalize deve fechar o issue none no MAIN via commit-tree (espelhando createLocalIssueOnMain/specifyIssueOnMain), nao na copia da branch. Assim o backlog nunca entra na branch e o clobber e impossivel por construcao (alinha com CAM-27 hygiene + CAM-86 file-on-main). Manter o git rm de prd.json/handoff.json na branch (esses SAO per-branch). P2.",
+  "spec": {
+    "scope": "Fix cam ship's none-backend issue-close so it (1) resolves the target issue id correctly whether prd.issueNumber is a string id ('CAM-154') or a number (42), never falling back to the phantom '<prefix>-0', and fails loud when unresolvable [subsumes CAM-113]; and (2) closes the issue in the POST-MERGE step (on main, after the PR squash-merges) via the commit-tree on-main plumbing, NOT in ship-finalize on the branch [subsumes CAM-121]. Relocating the close eliminates two failure modes by construction: the branch working-tree copy going stale vs main (clobber on squash-merge) and the pre-merge push to main that puts the open PR BEHIND under strict branch protection. Keep ship-finalize's git rm of per-branch state (prd.json/handoff.json/progress.txt) on the branch. Thread the resolved issue id into the merge-watch state (.cam-merge-watch.json) at ship time (BEFORE prd.json is removed) so post-merge can close it in BOTH merge_mode=ci-gated (runPostMerge/sidecar) and merge_mode=immediate (orchestrator inline post-merge). Out of scope: github/linear close logic (they already close-after-merge; only verify non-regression); the plan/targeting path; CAM-153. When this ships, close both CAM-121 and CAM-113.",
+    "acceptanceCriteria": [
+      "The none-backend closer resolves a string prd.issueNumber matching /^[A-Z]+-[0-9]+$/ to that exact issue id, and a numeric prd.issueNumber to `${issuePrefix}-${n}`; it NEVER produces `${issuePrefix}-0` from a non-null issueNumber. [oracle: bun test]",
+      "When prd.issueNumber is present but cannot be resolved to an existing issue file, the close fails loud (non-zero exit or explicit error event), never a silent no-op labelled `${issuePrefix}-0`. [oracle: bun test]",
+      "ship-finalize no longer writes stage:shipped to any issue file; it only removes per-branch state (prd.json/handoff.json/progress.txt) and commits the cycle-close on the branch. [oracle: bun test asserting finalize leaves the target issue status/stage untouched]",
+      "After a none-backend PR squash-merges, the post-merge step sets the target issue stage:shipped on main via commitTreeToMain (mirroring specifyIssueOnMain/abandonIssueOnMain), for BOTH merge_mode=ci-gated (runPostMerge, src/release/post-merge.ts) and merge_mode=immediate (orchestrator inline post-merge). [oracle: bun test both paths]",
+      "The resolved target issue id is threaded into the merge-watch state (.cam-merge-watch.json) at ship time, before ship-finalize removes prd.json, so post-merge closes it without re-reading prd.json. [oracle: bun test]",
+      "No pre-merge push to main occurs for the issue-close (the close runs only post-merge), so a shipped none-backend PR never goes BEHIND because of the close. [oracle: bun test / code inspection]",
+      "github and linear backends are unchanged (they already close-after-merge); no regression in their close path. [oracle: bun test]",
+      "Full quality spine passes (bun run check:all)."
+    ],
+    "gotchas": [
+      "REAL MECHANISM (grounded in source, more precise than the CAM-113 hypothesis): ship-finalize.ts:44 types issueNumber as `number` and line 131 does `typeof prd.issueNumber === 'number' ? prd.issueNumber : null`. /cam-next anchoring writes issueNumber as a FULL STRING id ('CAM-154') because it only requires non-null (not a numeric type). The typeof guard rejects the string -> null -> issueId `${prefix}-0` ('CAM-0') -> close skipped and 'closed CAM-0' printed. Match on the full string id; never Number()-parse.",
+      "Capture prd.issueNumber BEFORE ship-finalize's git rm removes prd.json (finalize reads it at ship-finalize.ts:114-131 today; the relocated flow must capture it at ship time and stash it in .cam-merge-watch.json).",
+      "Close-on-main MUST use commitTreeToMain (as in specifyIssueOnMain/abandonIssueOnMain), which derives the tree from the main ref, never the working-tree copy, so a stale branch index cannot clobber it (CAM-133 regression pattern).",
+      "Two merge modes need the close: ci-gated close runs inside runPostMerge (sidecar, src/release/post-merge.ts); immediate close runs in the orchestrator inline post-merge. Do not fix only one path.",
+      "Keep the per-branch git rm of prd.json/handoff.json/progress.txt in ship-finalize; those ARE per-branch state and must NOT move to main.",
+      "Why post-merge and not finalize: any pre-merge push to main under strict branch protection puts the open PR BEHIND (this is exactly the failure the manual CAM-113 workaround caused). Post-merge close avoids it by construction."
+    ],
+    "domainTerms": [
+      "ship-finalize (src/commands/ship-finalize.ts): deterministic cycle-close primitive; today closes the none issue on the branch and git-rm's per-branch harness state.",
+      "post-merge / runPostMerge (src/release/post-merge.ts): sidecar step after a ci-gated squash-merge; pulls main, pushes the version tag, prunes the branch; does NOT close issues today.",
+      "commit-tree on-main write: ref-only write to the main ref via commitTreeToMain, never touching the working tree (used by specifyIssueOnMain / abandonIssueOnMain / createLocalIssueOnMain).",
+      "BEHIND (gh mergeStateStatus): the PR branch is behind base main; under strict required-status-checks it blocks auto-merge until update-branch."
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 3,
+    "riskReduction": 3,
+    "jobSize": 2
+  }
 }
