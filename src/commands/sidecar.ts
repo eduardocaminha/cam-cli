@@ -50,7 +50,7 @@ import {
 } from '../release/merge-watch.ts';
 import { runPostMerge, type SpawnFn as PostMergeSpawnFn } from '../release/post-merge.ts';
 import { observeDecide, type ObserveState } from '../supervisor/observe.ts';
-import { selectPlannableFromFile } from '../issues/select.ts';
+import { selectPlannableFromFile, selectPlanTargetFromFile } from '../issues/select.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -217,6 +217,27 @@ export function makeReadLoopPhase(claudeDir: string): () => LoopPhase | undefine
 			const contents = readFileSync(stateFilePath, 'utf8');
 			const parsed = parseStateFile(contents);
 			return parsed?.phase;
+		} catch {
+			return undefined;
+		}
+	};
+}
+
+/**
+ * Read plan_issue from .claude/cam-loop.local.md (US-001, CAM-154).
+ * Returns the plan_issue string when present and non-empty; undefined when the
+ * file is absent, unparseable, or has no plan_issue field.
+ *
+ * Exported for testability (AC4, US-001).
+ */
+export function makeReadPlanIssue(claudeDir: string): () => string | undefined {
+	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
+	return () => {
+		try {
+			if (!existsSync(stateFilePath)) return undefined;
+			const contents = readFileSync(stateFilePath, 'utf8');
+			const parsed = parseStateFile(contents);
+			return parsed?.plan_issue ?? undefined;
 		} catch {
 			return undefined;
 		}
@@ -801,6 +822,8 @@ function makeProductionPlanPhaseFn(
 	logEvent: WorkerEventLogger,
 	realSpawnFn: SpawnFn,
 ): () => void {
+	// Build the plan_issue reader once (US-001, CAM-154); called fresh each invocation.
+	const readPlanIssueFn = makeReadPlanIssue(claudeDir);
 	return (): void => {
 		// US-005 (CAM-155): outermost safety net -- any exception from runPlanPhase or
 		// runPostAuditAction is caught here, logged, and the phase is forced back to
@@ -808,6 +831,8 @@ function makeProductionPlanPhaseFn(
 		try {
 		// Read the plannerPaneId fresh on each call (mirrors ensureWorkerPane pattern).
 		const plannerPaneId = readWorkerPaneMarker(claudeDir) ?? '%2';
+		// Read plan_issue fresh on each invocation (US-001, CAM-154).
+		const planIssue = readPlanIssueFn();
 
 		// Build a loop.ts-compatible SpawnFn wrapping spawnSync with cwd.
 		const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
@@ -844,7 +869,7 @@ function makeProductionPlanPhaseFn(
 			isPaneAlive,
 			sleepFn: (ms) => Bun.sleepSync(ms),
 			genUuid: () => randomUUID(),
-			selectIssueFn: () => selectPlannableFromFile(cwd),
+			selectIssueFn: () => selectPlanTargetFromFile(cwd, planIssue),
 			readPlanVerdictFn: makeReadPlanVerdict(cwd),
 			readPlannerReportFn: () => {
 				// Completion signal: prd.json written by the planner.
