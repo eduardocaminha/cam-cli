@@ -1,7 +1,7 @@
 {
   "id": "CAM-113",
   "title": "ship --finalize (none) fecha CAM-0: string issueNumber parseada como inteiro 0",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-27T00:38:25.197Z",
