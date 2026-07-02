@@ -1,0 +1,9 @@
+{
+  "id": "CAM-162",
+  "title": "Orchestrator self-exit no cycle-close: injetar /exit apos handoff pra fechar o loop autonomo (completa CAM-23)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-02T20:00:04.178Z",
+  "description": "CAM-23 (shipped) entregou token-monitor + handoff-writer + wrapper-respawn-on-exit (while loop em src/commands/run.ts que respawna quando o claude sai). MAS o passo 'orchestrator EXITS itself' ficou so como prosa no agent file (.claude/agents/subagent-orchestrator.md, Self-handoff Step 2: 'then exit') sem mecanismo concreto; o modelo nunca executa, entao o respawn SEMPRE dependeu do operador dar /exit (ou a sessao morrer). Confirmado: nao ha nenhum codigo que injete /exit no orquestrador (grep so bate docs embedados). FIX: no cycle-close (CAM_ORCH_HANDOFF_DUE=true), depois de escrever o handoff + a linha de resumo, o orquestrador injeta /exit no proprio pane (tmux send-keys -t <orch-pane> '/exit' Enter, mesmo padrao send-keys do sidecar makeAutoShipFn) pra o wrapper respawnar determinístico. Atualizar subagent-orchestrator.md Self-handoff Step 2 com o mecanismo concreto (+ templates/ + re-embed vendor). Design a decidir no spec/grill: (a) reconciliar trigger token(~100k, CAM-23) vs cycle-close(agent file); (b) trade-off: follow-up do operador no cycle-close cai na sessao fresca -- self-exit imediato vs esperar idle/confirmacao; (c) resolver o orch-pane id de forma robusta (via getOrchPaneId, socket tmux -L cam). Relaciona CAM-141 (respawn cold-boota). P2."
+}
