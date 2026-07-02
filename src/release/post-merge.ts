@@ -19,8 +19,14 @@
 // US-006 (CAM-101).
 
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { printError, printSuccess } from '../logging/color.ts';
+import {
+	closeIssueOnMain,
+	type CloseIssueOnMainOutcome,
+	type SpawnFn as CloseSpawnFn,
+} from '../commands/issue-specify.ts';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency types (same pattern as ship-finalize.ts / tag.ts)
@@ -43,6 +49,13 @@ export type SpawnFn = (
  */
 export type ReadVersionFileFn = (absolutePath: string) => string;
 
+/**
+ * Injectable seam for closing the target issue on main.
+ * Defaults to closeIssueOnMain from issue-specify.ts.
+ * Tests inject a function that returns a canned outcome.
+ */
+export type CloseIssueFn = (cwd: string, id: string) => CloseIssueOnMainOutcome;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -59,6 +72,17 @@ export interface PostMergeOptions {
 	 * When absent, falls back to readFileSync (production default).
 	 */
 	readVersionFile?: ReadVersionFileFn;
+	/**
+	 * Issue id to close after the tag and branch prune succeed (e.g. "CAM-121").
+	 * When absent, no close is attempted and behavior is unchanged.
+	 */
+	closeIssueId?: string;
+	/**
+	 * Injectable seam for closing the target issue on main.
+	 * Defaults to closeIssueOnMain (production default).
+	 * Inject a stub in tests to avoid real git operations.
+	 */
+	closeIssueFn?: CloseIssueFn;
 }
 
 export type PostMergeOutcome =
@@ -74,6 +98,12 @@ export type PostMergeOutcome =
 			branchPrunedLocal: boolean;
 			/** true = remote branch deleted successfully. */
 			branchPrunedRemote: boolean;
+			/**
+			 * Result of closing the target issue on main (present when closeIssueId
+			 * was supplied). When ok:false, the close failed (e.g. not-found) and
+			 * runPostMerge emitted a printError; the git steps all succeeded.
+			 */
+			closeResult?: CloseIssueOnMainOutcome;
 	  }
 	| { ok: false; reason: string };
 
@@ -251,6 +281,50 @@ function checkAndPruneRemoteBranch(
 }
 
 // ---------------------------------------------------------------------------
+// Close-issue step helper + production default for closeIssueFn
+// ---------------------------------------------------------------------------
+
+/**
+ * Perform the optional issue-close step (Step 6 of runPostMerge).
+ * Extracted to keep runPostMerge under the biome 15-complexity limit.
+ */
+function performCloseStep(
+	cwd: string,
+	closeIssueId: string,
+	closeIssueFnArg: CloseIssueFn | undefined,
+): CloseIssueOnMainOutcome {
+	const closeFn = closeIssueFnArg ?? defaultCloseIssueFn;
+	const result = closeFn(cwd, closeIssueId);
+	if (!result.ok) {
+		printError(
+			`close issue ${closeIssueId} failed: ${result.reason}`,
+			'issue was not marked shipped; please close manually',
+		);
+	}
+	return result;
+}
+
+/**
+ * Production default CloseIssueFn: wraps closeIssueOnMain with a real spawnSync.
+ * Used when closeIssueFn is absent but closeIssueId is present.
+ * Tests always inject a stub so this path is never exercised in unit tests.
+ */
+function defaultCloseIssueFn(closeCwd: string, id: string): CloseIssueOnMainOutcome {
+	const closeSpawnFn: CloseSpawnFn = (cmd, args, opts) =>
+		spawnSync(cmd, args, {
+			encoding: opts.encoding,
+			...(opts.env !== undefined ? { env: opts.env } : {}),
+			...(opts.input !== undefined ? { input: opts.input } : {}),
+		}) as SpawnSyncReturns<string>;
+	return closeIssueOnMain({
+		cwd: closeCwd,
+		id,
+		spawnFn: closeSpawnFn,
+		clock: () => new Date().toISOString(),
+	});
+}
+
+// ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
 
@@ -303,5 +377,19 @@ export function runPostMerge(opts: PostMergeOptions): PostMergeOutcome {
 	// when GitHub already auto-deleted the head branch on merge (ci-gated mode).
 	const branchPrunedRemote = checkAndPruneRemoteBranch(spawnFn, cwd, mergedBranch);
 
-	return { ok: true, pulledSha, tag, tagCreated, branchPrunedLocal, branchPrunedRemote };
+	// Step 6: Close the target issue on main (optional, additive, non-fatal to git steps).
+	// Runs after all git steps so commitTreeToMain reads the correct main HEAD.
+	const closeResult = opts.closeIssueId !== undefined
+		? performCloseStep(cwd, opts.closeIssueId, opts.closeIssueFn)
+		: undefined;
+
+	return {
+		ok: true,
+		pulledSha,
+		tag,
+		tagCreated,
+		branchPrunedLocal,
+		branchPrunedRemote,
+		...(closeResult !== undefined ? { closeResult } : {}),
+	};
 }

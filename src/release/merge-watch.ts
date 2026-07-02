@@ -367,6 +367,26 @@ function warnOnPruneFailure(
 }
 
 /**
+ * Build the post-merge-done event detail for a successful (ok:true) result.
+ * Extracted from processPollResult to keep it under the biome 15-complexity limit.
+ * Records issueCloseFailed when closeResult indicates a close failure (US-005).
+ */
+function buildSuccessPostMergeDoneDetail(
+	prNumber: number,
+	result: Extract<PostMergeOutcome, { ok: true }>,
+): MergeWatchPostMergeDoneEventDetail {
+	const detail: MergeWatchPostMergeDoneEventDetail = {
+		prNumber, ok: true, tag: result.tag, tagCreated: result.tagCreated,
+		branchPrunedLocal: result.branchPrunedLocal,
+		branchPrunedRemote: result.branchPrunedRemote,
+	};
+	if (result.closeResult !== undefined && !result.closeResult.ok) {
+		detail.issueCloseFailed = true;
+	}
+	return detail;
+}
+
+/**
  * Handle one non-null poll result.
  *
  * Returns `{ outcome }` when the state machine should stop (terminal outcome),
@@ -394,11 +414,7 @@ function processPollResult(
 			// (back-to-back send-keys would race in the orchestrator Ink prompt).
 			const pruneSuffix = warnOnPruneFailure(result.branchPrunedLocal, result.branchPrunedRemote);
 			notifyOrchestrator(`[cam] post-merge complete: ${result.tag} ${tagNote}${pruneSuffix}`);
-			const doneDetail: MergeWatchPostMergeDoneEventDetail = {
-				prNumber, ok: true, tag: result.tag, tagCreated: result.tagCreated,
-				branchPrunedLocal: result.branchPrunedLocal,
-				branchPrunedRemote: result.branchPrunedRemote,
-			};
+			const doneDetail = buildSuccessPostMergeDoneDetail(prNumber, result);
 			logEvent?.('merge-watch-post-merge-done', doneDetail);
 		} else {
 			notifyOrchestrator(`[cam] post-merge failed: ${result.reason}`);
