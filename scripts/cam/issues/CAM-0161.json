@@ -1,0 +1,9 @@
+{
+  "id": "CAM-161",
+  "title": "cam ship --finalize: issueId some vezes nao entra no merge-watch (race com sidecar idle)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-02T19:26:51.154Z",
+  "description": "cam ship --finalize chama stashFn(issueId) pra escrever .claude/.cam-merge-watch.json com {issueId}. Mas o sidecar idle (poll 2s) pode deletar o arquivo logo apos a escrita (consume-on-read, sidecar.ts), antes que o passo pos-PR leia-e-enriqueca com prNumber+mergedBranch. Resultado: WATCH vira {} via fallback e o jq grava {prNumber, mergedBranch} sem issueId. Post-merge: closeIssueOnMain nao e acionado. Vivido no ship do CAM-158: corrigi manualmente. Fix: finalize grava issueId num arquivo separado nao-consumido pelo sidecar (ex: .cam-issue-stash.json), e o step pos-PR le dali pra montar o merge-watch completo. P2 -- falha silenciosa, nao trava o ship mas mata o post-merge automatico."
+}
