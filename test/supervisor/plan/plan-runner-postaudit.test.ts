@@ -408,11 +408,19 @@ describe('sidecar.ts production wiring oracle - runPostAuditAction (US-R1-001)',
 		expect(source).toContain("from '../supervisor/plan-runner.ts'");
 	});
 
-	test('makeProductionPlanPhaseFn calls runPostAuditAction', () => {
-		// Isolate the makeProductionPlanPhaseFn function body.
+	test('makeProductionPlanPhaseFn delegates to runPostPlanActions', () => {
+		// US-005 (CAM-155): the post-audit logic was extracted to runPostPlanActions
+		// to keep makeProductionPlanPhaseFn under the biome 80-line limit.
 		const fnMatch = source.match(/function makeProductionPlanPhaseFn[\s\S]*?^\}/m);
 		expect(fnMatch).not.toBeNull();
-		expect(fnMatch?.[0]).toContain('runPostAuditAction(');
+		expect(fnMatch?.[0]).toContain('runPostPlanActions(');
+	});
+
+	test('runPostPlanActions calls runPostAuditAction', () => {
+		// runPostAuditAction lives inside the runPostPlanActions helper.
+		const helperMatch = source.match(/function runPostPlanActions[\s\S]*?^\}/m);
+		expect(helperMatch).not.toBeNull();
+		expect(helperMatch?.[0]).toContain('runPostAuditAction(');
 	});
 
 	test('runPostAuditAction call wires setPhaseFn, branchName, readPlanApprovalFn', () => {
@@ -443,24 +451,27 @@ describe('sidecar.ts re-entry guard oracle - phase transition after runPostAudit
 	const sidecarPath = resolve(import.meta.dir, '..', '..', '..', 'src', 'commands', 'sidecar.ts');
 	const source = readFileSync(sidecarPath, 'utf8');
 
-	// Group A: makeProductionPlanPhaseFn wiring assertions
-	const fnMatch = source.match(/function makeProductionPlanPhaseFn[\s\S]*?^\}/m);
-	const fnBody = fnMatch?.[0] ?? '';
+	// Group A: runPostPlanActions wiring assertions
+	// US-005 (CAM-155): the post-audit logic was extracted from makeProductionPlanPhaseFn
+	// into runPostPlanActions to keep the closure under biome's 80-line limit.
+	// makeProductionPlanPhaseFn now delegates to runPostPlanActions.
+	const postPlanHelperMatch = source.match(/function runPostPlanActions[\s\S]*?^\}/m);
+	const postPlanHelperBody = postPlanHelperMatch?.[0] ?? '';
 
-	test('A: makeProductionPlanPhaseFn captures the postAuditResult return value', () => {
+	test('A: runPostPlanActions captures the postAuditResult return value', () => {
 		// The return value must be captured so exitPhaseAfterPlan can inspect it.
-		expect(fnBody).toContain('postAuditResult');
+		expect(postPlanHelperBody).toContain('postAuditResult');
 	});
 
-	test('A: makeProductionPlanPhaseFn calls exitPhaseAfterPlan for the re-entry guard', () => {
+	test('A: runPostPlanActions calls exitPhaseAfterPlan for the re-entry guard', () => {
 		// The extracted helper must be called (proves the guard is wired).
-		expect(fnBody).toContain('exitPhaseAfterPlan(');
+		expect(postPlanHelperBody).toContain('exitPhaseAfterPlan(');
 	});
 
-	test('A: makeProductionPlanPhaseFn passes makeSetPhaseFn to exitPhaseAfterPlan', () => {
+	test('A: runPostPlanActions passes makeSetPhaseFn to exitPhaseAfterPlan', () => {
 		// Phase must be written via makeSetPhaseFn (not a bare file write).
 		// The call passes postAuditResult + makeSetPhaseFn(claudeDir, cwd) as args.
-		const exitCall = fnBody.match(/exitPhaseAfterPlan\([^)]+\)/);
+		const exitCall = postPlanHelperBody.match(/exitPhaseAfterPlan\([^)]+\)/);
 		expect(exitCall).not.toBeNull();
 		expect(exitCall?.[0]).toContain('makeSetPhaseFn');
 	});

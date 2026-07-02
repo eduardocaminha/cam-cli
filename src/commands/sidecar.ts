@@ -32,7 +32,7 @@ import { parseStateFile, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
-import { runPlanPhase, runPostAuditAction, type PostAuditActionResult } from '../supervisor/plan-runner.ts';
+import { runPlanPhase, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult } from '../supervisor/plan-runner.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig } from '../config/models.ts';
@@ -724,6 +724,55 @@ function makeClearStalePlanArtifacts(cwd: string): () => void {
 }
 
 /**
+ * Run the post-audit actions after runPlanPhase returns (US-005, CAM-155).
+ *
+ * Extracted from makeProductionPlanPhaseFn to keep the outer closure and
+ * outer function under biome's noExcessiveLinesPerFunction(maxLines=80) limit.
+ * Reads branchName from prd.json, builds escalateFn from Resend config, calls
+ * runPostAuditAction, and flips the phase via exitPhaseAfterPlan.
+ */
+interface PostPlanActionsOpts {
+	planResult: PlanPhaseResult;
+	cwd: string;
+	claudeDir: string;
+	sessionName: string;
+	loopSpawnFn: LoopSpawnFn;
+	realSpawnFn: SpawnFn;
+}
+function runPostPlanActions(o: PostPlanActionsOpts): void {
+	let branchName = '';
+	try {
+		const prdRaw = JSON.parse(
+			readFileSync(join(o.cwd, 'scripts/cam/prd.json'), 'utf8'),
+		) as { branchName?: string };
+		branchName = prdRaw.branchName ?? '';
+	} catch { /* fallback: empty string; runPostAuditAction no-ops on no-approved result */ }
+
+	const resendCfg = readResendConfig(join(o.cwd, 'scripts/cam/project.toml'));
+	const escalateFn = (resendCfg.apiKey !== '' && resendCfg.recipient !== '')
+		? async (): Promise<void> => {
+			await sendEscalation({
+				apiKey: resendCfg.apiKey,
+				recipient: resendCfg.recipient,
+				subject: '[cam] Plan BLOCK: audit rejected the planning output',
+				html: '<p><strong>[cam]</strong> The plan auditor blocked the planning phase. Manual intervention required.</p>',
+			});
+		}
+		: undefined;
+
+	const postAuditResult = runPostAuditAction({
+		planResult: o.planResult,
+		spawnFn: o.loopSpawnFn,
+		setPhaseFn: makeSetPhaseFn(o.claudeDir, o.cwd),
+		branchName,
+		readPlanApprovalFn: () => readPlanApproval(join(o.cwd, 'scripts/cam/project.toml')),
+		escalateFn,
+		notifyFn: makeNotifyOrchestrator(o.sessionName, o.realSpawnFn),
+	});
+	exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(o.claudeDir, o.cwd)); // US-R1-002
+}
+
+/**
  * Build the production runPlanPhaseFn closure (US-002/US-R1-001, CAM-151).
  *
  * Wires runPlanPhase with all deps: plannerPaneId (read fresh from marker each
@@ -753,6 +802,10 @@ function makeProductionPlanPhaseFn(
 	realSpawnFn: SpawnFn,
 ): () => void {
 	return (): void => {
+		// US-005 (CAM-155): outermost safety net -- any exception from runPlanPhase or
+		// runPostAuditAction is caught here, logged, and the phase is forced back to
+		// idle so the sidecar loop can continue. Never rethrows.
+		try {
 		// Read the plannerPaneId fresh on each call (mirrors ensureWorkerPane pattern).
 		const plannerPaneId = readWorkerPaneMarker(claudeDir) ?? '%2';
 
@@ -811,38 +864,20 @@ function makeProductionPlanPhaseFn(
 			clearStalePlanArtifactsFn: makeClearStalePlanArtifacts(cwd),
 		});
 
-		// Read branchName from prd.json (written by the planner during the plan phase).
-		let branchName = '';
-		try {
-			const prdRaw = JSON.parse(
-				readFileSync(join(cwd, 'scripts/cam/prd.json'), 'utf8'),
-			) as { branchName?: string };
-			branchName = prdRaw.branchName ?? '';
-		} catch { /* fallback: empty string; runPostAuditAction no-ops on no-approved result */ }
-
-		// Build escalateFn from Resend config (same pattern as buildSidecarLoopDeps).
-		const resendCfg = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
-		const postAuditEscalateFn = (resendCfg.apiKey !== '' && resendCfg.recipient !== '')
-			? async (): Promise<void> => {
-				await sendEscalation({
-					apiKey: resendCfg.apiKey,
-					recipient: resendCfg.recipient,
-					subject: '[cam] Plan BLOCK: audit rejected the planning output',
-					html: '<p><strong>[cam]</strong> The plan auditor blocked the planning phase. Manual intervention required.</p>',
-				});
-			}
-			: undefined;
-
-		const postAuditResult = runPostAuditAction({
-			planResult,
-			spawnFn: loopSpawnFn,
-			setPhaseFn: makeSetPhaseFn(claudeDir, cwd),
-			branchName,
-			readPlanApprovalFn: () => readPlanApproval(join(cwd, 'scripts/cam/project.toml')),
-			escalateFn: postAuditEscalateFn,
-			notifyFn: makeNotifyOrchestrator(sessionName, realSpawnFn),
-		});
-		exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(claudeDir, cwd)); // US-R1-002
+		// Post-audit phase: read branchName, build escalateFn, run post-audit
+		// action. Extracted to runPostPlanActions to keep this closure under
+		// biome's noExcessiveLinesPerFunction(maxLines=80) limit.
+		runPostPlanActions({ planResult, cwd, claudeDir, sessionName, loopSpawnFn, realSpawnFn });
+		} catch (err: unknown) {
+			logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'sidecar-exit',
+				detail: { reason: 'plan-phase-crash', error: err instanceof Error ? err.message : String(err) },
+			});
+			makeSetPhaseFn(claudeDir, cwd)('idle');
+		}
 	};
 }
 
