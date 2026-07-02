@@ -50,6 +50,24 @@ import { decidePostAuditAction } from '../plan/plan-approval-decision.ts';
 export const DEFAULT_PLANNER_TASK_PROMPT =
 	'Plan the next issue from the backlog per your AGENT.md. Write the resulting PRD to scripts/cam/prd.json.';
 
+/**
+ * Build a target-aware planner task prompt for a specific issue id.
+ *
+ * The generated prompt names the exact issue id and instructs the planner
+ * not to re-select from the backlog, so the spawned planner plans THAT
+ * exact issue rather than independently picking top-of-queue (the root cause
+ * of CAM-157).
+ *
+ * Pure helper exported for unit testing (AC1, AC2 of US-001 CAM-157).
+ */
+export function buildPlannerTaskPrompt(issueId: string): string {
+	return (
+		`Plan issue ${issueId} specifically per your AGENT.md. ` +
+		`Do not re-select from the backlog; plan ONLY ${issueId}. ` +
+		`Write the resulting PRD to scripts/cam/prd.json.`
+	);
+}
+
 /** Default auditor task prompt (can be overridden via opts.auditorTaskPrompt). */
 export const DEFAULT_AUDITOR_TASK_PROMPT =
 	'Audit the generated plan per your AGENT.md. Write your verdict to scripts/cam/plan-verdict-report.json.';
@@ -483,7 +501,8 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 	} = opts;
 
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
-	const plannerTaskPrompt = opts.plannerTaskPrompt ?? DEFAULT_PLANNER_TASK_PROMPT;
+	// NOTE: plannerTaskPrompt is resolved AFTER issue selection (below) so it can
+	// be built from the selected issue.id (CAM-157 root-cause fix).
 	const auditorTaskPrompt = opts.auditorTaskPrompt ?? DEFAULT_AUDITOR_TASK_PROMPT;
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_PLAN_POLL_INTERVAL_MS;
 	const plannerTimeoutMs = opts.plannerTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
@@ -506,6 +525,11 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 	if (issue === null) {
 		return { kind: 'no-plannable-issue' };
 	}
+
+	// Build the target-aware planner task prompt AFTER the null-check, from
+	// the selected issue.id. The opts.plannerTaskPrompt override is honored for
+	// backward compat with tests that inject a fixed prompt (AC3, CAM-157).
+	const plannerTaskPrompt = opts.plannerTaskPrompt ?? buildPlannerTaskPrompt(issue.id);
 
 	// Step 3: Assert pane-count mutex (AC5)
 	// Production wiring: () => paneCountMutex(sessionName, tmuxSpawnFn)

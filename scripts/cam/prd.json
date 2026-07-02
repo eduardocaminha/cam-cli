@@ -11,6 +11,7 @@
   "userStories": [
     {
       "id": "US-001",
+      "passes": true,
       "title": "Thread the selected issue id into the planner task prompt (runner authoritative)",
       "description": "As the cam sidecar, I need runPlanPhase to build a target-aware planner task prompt from the issue that selectIssueFn chose, so the spawned planner plans that exact issue instead of self-selecting top-of-queue, and PRD.issueNumber comes out correct.",
       "acceptanceCriteria": [
@@ -25,7 +26,6 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
       "requires": null,
       "notes": "ROOT CAUSE: src/supervisor/plan-runner.ts ~486 resolves plannerTaskPrompt = opts.plannerTaskPrompt ?? DEFAULT_PLANNER_TASK_PROMPT BEFORE the issue is selected (~505), then discards the selected `issue` (only null-checked) and spawns with the generic prompt at ~518. Move prompt-building AFTER selection: build a target-aware prompt from issue.id (add a small pure helper, e.g. buildPlannerTaskPrompt(issueId), exported for unit testing), preserving the opts.plannerTaskPrompt override. Numeric id derivation can reuse the split('-').at(-1) pattern from src/issues/select.ts numericIdSuffix. E2E pattern: mirror test/integration/plan-runner-no-prd.test.ts and plan-runner-pane-spawn.test.ts (private socket swapSocketSpawn, respawn-pane stub, real isPaneAlive, no-op sleepFn) but the stub must WRITE scripts/cam/prd.json echoing the id parsed from the prompt so the runner->prompt->prd.json chain is exercised end-to-end (the missing gate: existing unit tests mocked selectIssueFn and never drove the planner-obeys path; fakes-mentem class). ship-finalize.ts reads `typeof prd.issueNumber === 'number'`, so issueNumber must be numeric. Do NOT reintroduce claude -p (CAM-42) or a --permission-mode CLI flag. Read scripts/cam/patterns.md (spawnSync exit-status guard, real-git/real-tmux integration test pattern) before coding."
     },
