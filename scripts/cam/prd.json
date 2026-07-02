@@ -1,0 +1,44 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-158-plan-preflight-hardening",
+  "description": "Harden the plan pre-flight path: gitignore the planner/auditor pipe-pane logs and emit a plan-preflight-failed observability event.",
+  "issueNumber": 158,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Gitignore cam-plan-out pipe-pane logs",
+      "description": "As a cam operator, I need the planner/auditor pipe-pane logs to be gitignored so that a leftover cam-plan-out log never makes `git status --porcelain` non-empty and false-halts the next `cam plan` at the clean-tree pre-flight step.",
+      "acceptanceCriteria": [
+        "`.gitignore` (repo root) contains a `.claude/cam-plan-out-*.log` pattern placed next to the existing `.claude/.cam-worker-out-*.log` line, mirroring the CAM-68 escaped-runtime-marker convention. [oracle: grep -qF '.claude/cam-plan-out-*.log' .gitignore]",
+        "A planner/auditor pipe-pane log path (e.g. `.claude/cam-plan-out-planner-abc.log`) is treated as ignored by git, so it never appears in `git status --porcelain`. [oracle: git check-ignore .claude/cam-plan-out-planner-abc.log]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine green (bun run check:all), no --no-verify. [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit `.gitignore` at repo ROOT only. Add `.claude/cam-plan-out-*.log` immediately after the existing `.claude/.cam-worker-out-*.log` (line ~54), with a `# CAM-158:` comment mirroring the CAM-68 convention. GOTCHA: the orphan logs are written by runPlanPhase's pipe-pane at src/supervisor/plan-runner.ts:331 and :365 via join(claudeDir, `cam-plan-out-planner-<uuid>.log`) / `cam-plan-out-auditor-<uuid>.log` -- the filename has NO leading dot (unlike `.cam-worker-out-*.log`), so the pattern is `.claude/cam-plan-out-*.log`, NOT `.claude/.cam-plan-out-*.log`. OUT OF SCOPE: do NOT touch templates/.gitignore (it does not carry the `.cam-worker-out` line; the plan-out logs are a cam-repo runtime artifact, not a downstream-init concern, so there is no templates/ edit and no vendor-drift check for this story). No retroactive rm of orphan logs: `git status --porcelain` does not list gitignored files, so the single gitignore line fully resolves the clean-tree false-halt (none exist today; gitignore makes them invisible to git status)."
+    },
+    {
+      "id": "US-002",
+      "title": "Emit plan-preflight-failed worker event",
+      "description": "As a cam operator, I need runPlanPhase to emit a `plan-preflight-failed` event when the pre-flight blocks, so that I can distinguish 'preflight barred the run' from 'nothing happened' in cam-worker-events.jsonl.",
+      "acceptanceCriteria": [
+        "`WorkerEventKind` (src/supervisor/events.ts) includes the `'plan-preflight-failed'` member. [oracle: grep -q \"'plan-preflight-failed'\" src/supervisor/events.ts]",
+        "When runPlanPhase's preflightFn returns {ok:false, step, detail}, exactly one `plan-preflight-failed` event is emitted via the already-wired logEvent sink with detail {step, detail}, BEFORE the {kind:'preflight-failed'} return; proven by a unit test injecting a failing preflightFn and a fake logEvent that asserts the event and its step. [oracle: bun test test/supervisor/plan/plan-runner.test.ts]",
+        "When preflightFn returns {ok:true}, no `plan-preflight-failed` event is emitted; proven by a negative unit test. [oracle: bun test test/supervisor/plan/plan-runner.test.ts]",
+        "runPlanPreflight stays a pure function: src/supervisor/plan-preflight.ts emits no event and references neither logEvent nor WorkerEventLogger. [oracle: ! grep -Eq 'logEvent|WorkerEventLogger' src/supervisor/plan-preflight.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine green (bun run check:all), no --no-verify. [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Two files. (1) src/supervisor/events.ts: extend the CLOSED WorkerEventKind union (lines 59-83) with `'plan-preflight-failed'` -- the union is closed, so tsc fails on the emit until the member is added. The detail can be a plain `{ step, detail }` object: it is already covered by the existing `Record<string, unknown>` member of WorkerEventDetail (parity with 'sidecar-exit', which uses the free-form map and has NO dedicated detail interface), so a dedicated interface is optional, not required. (2) src/supervisor/plan-runner.ts: inside runPlanPhase's `if (!preflight.ok)` block (~lines 518-521), emit via the already-threaded `logEvent` (opts.logEvent declared line 243, bound to `const logEvent` at line 510; already used by makeEventWriter for spawn-resolution ~line 289) BEFORE the `return { kind: 'preflight-failed', ... }`. Shape: logEvent?.({ ts: new Date().toISOString(), storyId: undefined, uuid: <sentinel>, kind: 'plan-preflight-failed', detail: { step: preflight.step, detail: preflight.detail } }). No worker uuid exists at preflight time (genUuid runs later for the planner), so use '' or a fixed 'plan-preflight' sentinel, consistent with storyId: undefined. GOTCHA: runPlanPreflight (src/supervisor/plan-preflight.ts) is a PURE function -- do NOT emit from inside it; emit only at the runPlanPhase caller where logEvent is in scope. GOTCHA: noUncheckedIndexedAccess is on, but inside `if (!preflight.ok)` TS narrows preflight to the `{ ok:false; step; detail }` member, so .step/.detail are safe. Tests: add cases to test/supervisor/plan/plan-runner.test.ts -- inject preflightFn returning {ok:false, step:'clean-tree', detail:'...'} plus a fake logEvent (array capture or makeInMemoryEventLogger from events.ts) and assert exactly one 'plan-preflight-failed' event carrying the right step; the negative case injects {ok:true} (with the existing passing selectIssueFn / paneCountMutexFn stubs) and asserts zero such events. Reuse the existing test's fake-dep wiring. Read scripts/cam/patterns.md 'Spawn-resolution emitter pattern (US-007, CAM-53)' for the logEvent-at-caller precedent."
+    }
+  ]
+}
