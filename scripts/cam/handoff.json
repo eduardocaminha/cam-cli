@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Ensure a live worker-pane before planner/auditor spawn (+ per-worker out-log)"
+  },
+  "branchName": "cam/CAM-155-plan-runner-hardening",
+  "timestamp": "2026-07-02T00:00:00Z",
+  "createdFiles": [
+    "test/integration/plan-runner-pane-spawn.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/plan-runner.ts",
+    "src/commands/sidecar.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 wired ensureWorkerPane into the plan-runner: makePlanPaneHelpers factory (sidecar.ts) builds isPaneAlive + ensureWorkerPane mirroring host.ts ensureWorkerPaneFn. ensureWorkerPane is called before spawning both the planner AND auditor (returns live pane id each time). pipe-pane out-log is added after each spawn when claudeDir is provided. Integration test plan-runner-pane-spawn.test.ts uses private tmux socket (cam-it-plan-spawn). Budget raised: sidecar.ts 912->960 (tracker CAM-155). All quality gates pass (2604/2604 tests, typecheck clean, check:all exit 0).",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "All changes are in internal cam-cli helpers and tmux shell commands. No external npm library was added or changed."
+    }
+  ]
+}
