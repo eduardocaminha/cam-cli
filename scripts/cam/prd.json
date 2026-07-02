@@ -89,7 +89,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "src/release/post-merge.ts (add closeIssueId + injectable closeIssueFn seam defaulting to closeIssueOnMain; invoke AFTER checkAndPruneRemoteBranch, on main after the Step-0 checkout + Step-1 pull so commitTreeToMain reads the right ref) + src/commands/sidecar.ts (the postMergeFn closure at ~line 405 already has state in scope: pass closeIssueId: state.issueId) + test/release/post-merge.test.ts. Depends on US-003 (closeIssueOnMain) and US-002 (state.issueId). Keep runPostMerge's git-only steps unchanged; the close is an additive final step. Emit a post-merge event on close failure (see src/supervisor/events.ts merge-watch-post-merge-done detail)."
     },
