@@ -1,24 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add resolveIssueId helper (string or numeric issueNumber, never <prefix>-0)"
+    "id": "US-002",
+    "title": "Thread an issueId through the merge-watch state schema"
   },
   "branchName": "cam/pr-121-post-merge-issue-close",
   "timestamp": "2026-07-02T00:00:00Z",
-  "createdFiles": [
-    "src/issues/resolve-id.ts",
-    "test/issues/resolve-id.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/prd.json"
+    "src/release/merge-watch.ts",
+    "test/release/merge-watch.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 adds an optional issueId?: string field to MergeWatchState (src/release/merge-watch.ts) and a stashIssueIdInMergeWatch helper. The resolveIssueId helper from US-001 is now available at src/issues/resolve-id.ts and is ready to wire into finalizeCycleClose (US-004). Reminder: readMergeWatchState must still return null for issueId-only files (no prNumber) to keep the sidecar inert.",
+  "nextStoryContext": "US-002 added issueId?: string to MergeWatchState, stashIssueIdInMergeWatch helper (src/release/merge-watch.ts), and updated read/writeMergeWatchState to parse/re-emit the field. An issueId-only file still returns null from readMergeWatchState (prNumber required), so the sidecar stays inert until the PR is created. US-001's resolveIssueId helper lives at src/issues/resolve-id.ts. US-003 (if present) likely wires stashIssueIdInMergeWatch into the ship flow before PR creation. US-004/US-005 depend on issueId being present in the merged state for the post-merge close path.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure in-house helper; no external library exercised."
+      "summary": "Pure in-house schema change to merge-watch state; no external library exercised."
     }
   ]
 }
