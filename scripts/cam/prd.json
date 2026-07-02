@@ -1,0 +1,100 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/CAM-155-plan-runner-hardening",
+  "description": "P0: harden the deterministic plan-runner so it spawns a real worker-pane, fails cleanly on planner no-op, clears stale reports, guards empty branch names, and never crashes the sidecar.",
+  "issueNumber": "CAM-155",
+  "relatedDocs": [
+    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md",
+    "docs/adr/0006-phase-enum-loop-state-machine.md",
+    "scripts/cam/patterns.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Ensure a live worker-pane before planner/auditor spawn (+ per-worker out-log)",
+      "description": "As the sidecar, I need the plan-runner to create/verify a live worker-pane before it respawns the planner and auditor (mirroring loop.ts ensureWorkerPane), and to capture each spawn's pane output to a per-worker out-log, so the plan phase actually starts claude in a real pane instead of respawning a nonexistent '%2'/stale marker (Bug 4 root + observability).",
+      "acceptanceCriteria": [
+        "RunPlanPhaseOptions gains an ensureWorkerPane dep and runPlanPhase resolves the worker-pane id via it before spawning the planner AND before spawning the auditor, threading the RETURNED id into set-option/respawn-pane/poll calls (never the static '%2' or a stale marker). [oracle: grep -q 'ensureWorkerPane' src/supervisor/plan-runner.ts]",
+        "makeProductionPlanPhaseFn wires a real ensureWorkerPane that mirrors host.ts ensureWorkerPaneFn: re-read the marker fresh, isPaneAlive probe, openPaneInSession targeting the orchestrator pane (CAM-80 geometry) when dead/missing, then writeWorkerPaneMarker. [oracle: grep -q 'openPaneInSession' src/commands/sidecar.ts]",
+        "Behavioral oracle (REAL tmux, private socket, mirrors test/integration/ensure-worker-pane-selfheal.test.ts): a new integration test drives the ensure-pane + planner respawn against a live tmux session with a stand-in worker command; it asserts a NEW pane is created and alive (pane_dead=='0'), the respawn-pane -k target equals the created pane id read back from the marker (NOT '%2'), and the stand-in command actually executed in-pane (a sentinel file it writes exists), proving the respawn landed on a real live pane. [oracle: bun test test/integration/plan-runner-pane-spawn.test.ts]",
+        "Each planner/auditor spawn pipes its pane output to a per-worker out-log file (tmux pipe-pane) so a future silent no-op is diagnosable. [oracle: grep -q 'pipe-pane' src/supervisor/plan-runner.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "ROOT P0 (nothing else matters if the pane never spawns). Mirror host.ts:367-396 ensureWorkerPaneFn and loop.ts:718-725 (ensureWorkerPane before respawn). Files: src/supervisor/plan-runner.ts (add ensureWorkerPane to RunPlanPhaseOptions; resolve pane id once via it and pass to resolveAndSpawnPlanner/resolveAndSpawnAuditor/pollPlannerDeath/pollAuditorReport; add pipe-pane out-log in the two spawn helpers), src/commands/sidecar.ts (makeProductionPlanPhaseFn ~671-774: build ensureWorkerPaneFn from readWorkerPaneMarker + isPaneAlive + getOrchPaneId + openPaneInSession + writeWorkerPaneMarker; import openPaneInSession/writeWorkerPaneMarker from ../tmux/session.ts), test/integration/plan-runner-pane-spawn.test.ts. GOTCHA (fakes mentem): respawn-pane against a nonexistent pane is a SILENT no-op; only real tmux catches this class (patterns.md 'ensureWorkerPane self-heal (CAM-57)', 'tmux mangles TAB / key on @cam_label', worker-pane-geometry.test.ts). Use the swapSocketSpawn private-socket adapter. paneCountMutex needs exactly 2 panes ('available') at Step 3, BEFORE ensureWorkerPane creates the 3rd. SCOPING NOTE: loop.ts does NOT currently create a .cam-worker-out log (the issue's reference to it is aspirational); introduce the pipe-pane out-log for the plan-runner spawns ONLY, scoped to claudeDir; do NOT refactor loop.ts. Real claude/transcript end-to-end can only be confirmed by operator dogfood post-merge (rebuild required); the integration stand-in is the CI-checkable proxy."
+    },
+    {
+      "id": "US-002",
+      "title": "Clear stale plan-verdict-report.json and prd.json at plan-phase start",
+      "description": "As the sidecar, I need runPlanPhase to unlink any stale plan-verdict-report.json and stale prd.json at the very start (before preflight/spawn), mirroring loop.ts clearReviewReport, so a verdict or PRD left over from a previous run cannot be read as a fresh APPROVE or a false planner-completion signal (Bug 2).",
+      "acceptanceCriteria": [
+        "runPlanPhase clears stale plan-verdict-report.json AND stale prd.json before any pane spawn (before preflight), via an injected clear dep (mirrors the clearReviewReport seam). [oracle: grep -qi 'clear' src/supervisor/plan-runner.ts]",
+        "Production wiring in sidecar.ts unlinks both scripts/cam/plan-verdict-report.json (via PLAN_VERDICT_REPORT_FILENAME) and scripts/cam/prd.json best-effort (mirrors host.ts makeClearReviewReport: no-op on missing file, never throws). [oracle: grep -q 'PLAN_VERDICT_REPORT_FILENAME' src/commands/sidecar.ts]",
+        "Unit test: a plan-verdict-report.json with verdict 'APPROVE' written before runPlanPhase does NOT contaminate the run: after the clear, readPlanVerdictFn returns null until the auditor writes a fresh verdict. [oracle: bun test test/plan-runner-clear-stale.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Prerequisite for US-003: clearing the stale prd.json is what makes 'planner produced no prd' detectable (readPlannerReportFn keys on prd.json presence). Mirror host.ts makeClearReviewReport (:161-172). Files: src/supervisor/plan-runner.ts (add clearStalePlanArtifactsFn dep, call at the top of runPlanPhase before Step 1 preflight), src/commands/sidecar.ts (wire it using PLAN_VERDICT_REPORT_FILENAME from plan-verdict-report.ts + join(cwd,'scripts/cam/prd.json')), test/plan-runner-clear-stale.test.ts. SAFETY: this only runs in phase:planning (a between-cycles state); the planner writes a fresh prd.json during the phase and branchName is read from prd.json AFTER runPlanPhase in sidecar.ts (:742-748), so clearing at start is safe. patterns.md 'Review-report.json reader dep-injection', 'JSON reader shape guards'."
+    },
+    {
+      "id": "US-003",
+      "title": "Planner-produced-no-prd is a failure: escalate to idle, never spawn the auditor",
+      "description": "As the sidecar, when the planner pane completes/dies WITHOUT writing prd.json, I need runPlanPhase to return a planner-failed result and the post-audit path to escalate to phase:idle (with a best-effort orchestrator notify), never proceeding to spawn the auditor, so a no-op planner can no longer be misread as success (Bug 4-adjacent).",
+      "acceptanceCriteria": [
+        "runPlanPhase returns a distinct 'planner-failed' PlanPhaseResult kind when the planner poll ends and readPlannerReportFn is undefined or returns null (no prd.json), and the auditor is NEVER spawned in that case. [oracle: bun test test/plan-runner-no-prd.test.ts]",
+        "runPostAuditAction handles 'planner-failed': it calls notifyFn best-effort, does NOT create a branch/commit, does NOT fire escalateFn (avoid email noise on a transient no-op), and the phase-exit maps to 'idle'. [oracle: bun test test/plan-runner-no-prd.test.ts]",
+        "Behavioral oracle (REAL tmux, private socket, real .claude/cam-loop.local.md): drive the production plan-phase closure with a planner stand-in that exits WITHOUT writing prd.json; assert (a) the auditor pane is never spawned (no '@cam_label auditor' set-option, no 2nd respawn), (b) the phase file flips to 'idle', and (c) NO exception is thrown. [oracle: bun test test/integration/plan-runner-no-prd.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Depends on US-001 (pane must actually spawn to observe planner completion) and US-002 (stale prd.json must be cleared so 'no prd' is real). Files: src/supervisor/plan-runner.ts (add 'planner-failed' to PlanPhaseResult union; in runPlanPhase after pollPlannerDeath returns, if readPlannerReportFn===undefined || readPlannerReportFn()===null return {kind:'planner-failed'}; add a branch in runPostAuditAction for planner-failed -> notifyFn + return a result mapped to idle), src/commands/sidecar.ts (exitPhaseAfterPlan ~642-648 already maps escalated/no-action -> 'idle'; ensure planner-failed routes there), test/plan-runner-no-prd.test.ts + test/integration/plan-runner-no-prd.test.ts. On the happy path pollPlannerDeath returned true BECAUSE readPlannerReportFn()!=null, so the re-check proceeds to the auditor; only the pane-died-without-prd path yields planner-failed. patterns.md 'Poll-loop staleness + shape guard'."
+    },
+    {
+      "id": "US-004",
+      "title": "Guard empty/whitespace branchName in runPostAuditAction (never git checkout -b '')",
+      "description": "As the sidecar, I need runPostAuditAction to escalate cleanly (best-effort notify, phase:idle) when branchName is empty/whitespace (e.g. prd.json absent/invalid), instead of running `git checkout -b ''` which exits 128 and throws, so a missing PRD can no longer detonate the plan phase (Bug 3).",
+      "acceptanceCriteria": [
+        "On the proceed-branch path, when branchName.trim() is empty, runPostAuditAction does NOT invoke `git checkout -b` (nor add/commit); it calls notifyFn best-effort and returns a result mapped to phase 'idle'. [oracle: bun test test/plan-runner-empty-branch.test.ts]",
+        "Unit test with a recording spawnFn: audit-approved + proceed-branch + branchName='' (and '   ') asserts spawnFn is NEVER called with ['git','checkout','-b',...], no exception is thrown, and the result maps to idle. [oracle: bun test test/plan-runner-empty-branch.test.ts]",
+        "Regression: the sidecar branchName-read fallback (prd.json absent/invalid -> branchName='') flows into runPostAuditAction and escalates cleanly without crashing. [oracle: bun test test/plan-runner-empty-branch.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/plan-runner.ts (runPostAuditAction ~556-613: add a guard at the top of the proceed-branch branch, after decidePostAuditAction returns proceed-branch and BEFORE the `git checkout -b` spawnFn call: if branchName.trim()==='' -> notifyFn?.(...) + return an idle-mapped result). No sidecar.ts change needed (branchName='' already arrives from the :742-748 fallback). test/plan-runner-empty-branch.test.ts. Independent of US-002/003 but ordered after them in the same file. patterns.md 'spawnSync exit-status guard' (this replaces the throw-on-exit-128 with a pre-check)."
+    },
+    {
+      "id": "US-005",
+      "title": "Crash-proof the plan phase: try/catch forces phase:idle, sidecar survives any exception",
+      "description": "As the sidecar, I need the production plan-phase closure to catch ANY exception from runPlanPhase/runPostAuditAction, log it, and force phase->idle, and the outer runSidecarLoop planning branch to be exception-safe, so no plan-phase error can propagate up the outer loop and kill the sidecar (Bug 1 / CAM-151 follow-up (b)).",
+      "acceptanceCriteria": [
+        "makeProductionPlanPhaseFn's returned closure wraps its body in try/catch: on any thrown exception it logs a structured event and calls setPhaseFn('idle'), then returns normally (never rethrows). [oracle: bun test test/plan-phase-crash-safety.test.ts]",
+        "Behavioral oracle: injecting a runPlanPhaseFn that throws into runSidecarLoop's planning branch does not reject or terminate the loop; it is caught/logged and the loop proceeds to the next tick (sidecar survives). [oracle: bun test test/plan-phase-crash-safety.test.ts]",
+        "With a throwing plan-phase dep and a real temp .claude/cam-loop.local.md, the phase file ends as 'idle' after the closure runs. [oracle: bun test test/plan-phase-crash-safety.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Outermost safety net; implemented last so it wraps the graceful-exit paths added in US-002..004. Files: src/commands/sidecar.ts (makeProductionPlanPhaseFn ~678-773: wrap the closure body in try/catch; the closure already has makeSetPhaseFn(claudeDir,cwd) in scope for setPhase('idle'); log via logEvent with a 'sidecar-exit'-style detail), src/supervisor/loop.ts (~1474-1477: defensive try/catch around `await opts.runPlanPhaseFn()` so a throwing injected fn cannot reject the loop -- loop.ts has no phase-setter, so it only catches+logs+continues; phase->idle lives in the closure), test/plan-phase-crash-safety.test.ts. Belt-and-suspenders (recommend-on-merits): closure sets idle; loop guard prevents any future/test injected fn from killing the loop. patterns.md 'Sidecar-supervisor invariant', 'Sidecar self-exit via startup-grace latch'."
+    }
+  ]
+}
