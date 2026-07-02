@@ -1,7 +1,7 @@
 {
   "id": "CAM-154",
   "title": "plan-runner honra plan_issue: cam plan --issue N planeja a issue N (nao top-of-queue)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-01T22:57:52.503Z",
