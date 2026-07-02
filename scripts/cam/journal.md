@@ -784,3 +784,15 @@ Each entry follows this template:
 - **Decisions**: Planned via bare cam plan (CAM-154 was top-of-queue at rank 9). plan_approval=auto cascaded straight to ship. issueNumber came out as the STRING 'CAM-154'.
 - **Blockers encountered**: Self-inflicted PR BEHIND: I closed CAM-154 on main by hand (CAM-113 workaround, since finalize closed the phantom CAM-0 because issueNumber was the string 'CAM-154') BEFORE the PR merged, which advanced main; cleared with gh pr update-branch. Sequencing lesson: do the manual close only AFTER merge, or fix CAM-113.
 - **Follow-ups**: Dogfooding revealed CAM-154 shipped FUNCTIONALLY INCOMPLETE (fixed by CAM-157): the selector was threaded but the planner still ignores it. Auditor findings F-01 (bare-plan pins the CLI-time top id) and F-02 (distinct escalation for sidecar-rejected targets) folded into CAM-157 scope.
+
+## cam/CAM-157-plan-runner-authoritative-target — plan-runner authoritative target (planner obeys the selected issue)
+
+- **Started**: 2026-07-02
+- **Closed**: 2026-07-02
+- **Branch**: cam/CAM-157-plan-runner-authoritative-target
+- **Issue**: CAM-157
+- **Outcome**: shipped (PR #117, v0.44.0, merged+tagged; sidecar rebuilt to 0.44.0)
+- **Summary**: Completes CAM-154. Root cause: runPlanPhase selected the target issue (selectIssueFn) but spawned the planner with the generic DEFAULT_PLANNER_TASK_PROMPT, so the subagent-planner re-selected top-of-queue and cam plan --issue N planned the WRONG issue. US-001 threads the selected issue.id into the planner task prompt and adds a real-tmux e2e regression test (plan-runner-target-obey) asserting prd.issueNumber == target: the gate that let CAM-154 ship broken (unit tests mocked selectIssueFn). US-002 makes subagent-planner honor an explicit target id (both .claude/ and templates/ copies + re-embed). 2695 pass, CLEAN round 1.
+- **Decisions**: Filed as P1 (a shipped feature that did not work). Operator directive: no gambiarras, robust root-cause fix, shortcuts only to unblock. Planned via bare cam plan after ranking CAM-157 to rank 1: legitimate (it genuinely was the top priority; bare-plan picking top-of-queue is designed behavior, not a workaround for the broken --issue). issueNumber came out NUMERIC (157) -> finalize closed correctly, no CAM-113/BEHIND.
+- **Blockers encountered**: First cam plan 121 attempt halted silently: runPlanPreflight clean-tree failed on 2 orphan .claude/cam-plan-out-*.log files left by the prior cycle (not gitignored). Isolated by probing the selector (correct) then reading the preflight. Filed CAM-158 (gitignore) and CAM-159 (preflight halt emits no event).
+- **Follow-ups**: Validated in production after rebuild: cam plan 121 planned CAM-121 (issueNumber 121), not top-of-queue CAM-85. CAM-158 and CAM-159 open. cam plan takes a POSITIONAL number (cam plan 121); there is no --issue flag.
