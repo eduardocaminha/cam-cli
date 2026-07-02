@@ -80,3 +80,57 @@ export function selectPlannableFromFile(
 		return null;
 	}
 }
+
+/**
+ * Target-aware plannable selector (US-001, CAM-154).
+ *
+ * Given a target issue id, returns that exact IssueEntry when it is present in
+ * the backlog AND qualifies as plannable (stage === 'specified', status === 'open',
+ * not blocked by an unshipped dependency).
+ *
+ * Returns null (NEVER falls back to top-of-queue) when:
+ *   - the id is absent from the backlog, or
+ *   - the id is present but the issue is not plannable.
+ *
+ * Match is by exact id string equality, NOT by numeric suffix.
+ */
+export function selectPlannableById(
+	backlog: IssueEntry[],
+	targetId: string,
+): IssueEntry | null {
+	const entry = backlog.find((issue) => issue.id === targetId);
+	if (entry === undefined) return null;
+	const plannable =
+		entry.stage === "specified" &&
+		entry.status === "open" &&
+		!isBlocked(entry, backlog);
+	return plannable ? entry : null;
+}
+
+/**
+ * File-backed target-aware selector (US-001, CAM-154).
+ *
+ * When targetId is a non-empty string, delegates to selectPlannableById (never
+ * falls back to top-of-queue on non-plannable/absent target).
+ * When targetId is undefined or null, delegates to selectPlannableIssue
+ * (preserving existing bare `cam plan` behavior: top-of-queue).
+ *
+ * Returns null on any read/parse error (never throws).
+ *
+ * @param spawn  Injectable spawnSync (for tests; defaults to the system default).
+ */
+export function selectPlanTargetFromFile(
+	cwd: string,
+	targetId: string | undefined | null,
+	spawn?: BacklogSpawnFn,
+): IssueEntry | null {
+	try {
+		const backlog = readBacklogFromMain(cwd, spawn);
+		if (targetId != null && targetId.length > 0) {
+			return selectPlannableById(backlog, targetId);
+		}
+		return selectPlannableIssue(backlog);
+	} catch {
+		return null;
+	}
+}

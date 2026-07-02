@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.43.0] - 2026-07-02
+
+### Added
+
+- [US-001] - Thread plan_issue into the plan-runner issue selection
+
 ## [0.42.0] - 2026-07-02
 
 ### Added

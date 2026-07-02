@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { SpawnSyncReturns } from "node:child_process";
 import type { IssueEntry } from "../../src/issues/types.ts";
-import { selectPlannableIssue, selectPlannableFromFile } from "../../src/issues/select.ts";
+import {
+	selectPlannableIssue,
+	selectPlannableFromFile,
+	selectPlannableById,
+	selectPlanTargetFromFile,
+} from "../../src/issues/select.ts";
 import type { BacklogSpawnFn } from "../../src/issues/backlog.ts";
 
 // ---------------------------------------------------------------------------
@@ -315,5 +320,143 @@ describe("selectPlannableFromFile -- dir-backed fixture", () => {
 			throw new Error("git not found");
 		};
 		expect(selectPlannableFromFile("/repo", throwingSpawn)).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// selectPlannableById -- target-aware selector (US-001, CAM-154)
+// ---------------------------------------------------------------------------
+
+describe("selectPlannableById", () => {
+	test("returns the exact issue when plannable", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", rank: 5 }),
+			makeIssue({ id: "CAM-9", rank: 1 }), // top-of-queue winner
+		];
+		// CAM-1 is plannable but not top-of-queue; should return it anyway.
+		const result = selectPlannableById(backlog, "CAM-1");
+		expect(result?.id).toBe("CAM-1");
+	});
+
+	test("returns null when target id is absent from the backlog", () => {
+		const backlog: IssueEntry[] = [makeIssue({ id: "CAM-1" })];
+		expect(selectPlannableById(backlog, "CAM-999")).toBeNull();
+	});
+
+	test("returns null when target issue has wrong stage (not plannable)", () => {
+		const backlog: IssueEntry[] = [makeIssue({ id: "CAM-1", stage: "idea" })];
+		expect(selectPlannableById(backlog, "CAM-1")).toBeNull();
+	});
+
+	test("returns null when target issue has wrong status (abandoned)", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", status: "abandoned" }),
+		];
+		expect(selectPlannableById(backlog, "CAM-1")).toBeNull();
+	});
+
+	test("returns null when target issue is blocked by an unshipped dep", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", stage: "specified" }),
+			makeIssue({ id: "CAM-2", blockedBy: ["CAM-1"] }),
+		];
+		// CAM-2 is blocked; never falls back to CAM-1.
+		expect(selectPlannableById(backlog, "CAM-2")).toBeNull();
+	});
+
+	test("NEVER falls back to a different issue when target is non-plannable", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", rank: 1 }), // plannable top-of-queue
+			makeIssue({ id: "CAM-2", stage: "idea" }), // non-plannable target
+		];
+		// Must return null, not CAM-1.
+		expect(selectPlannableById(backlog, "CAM-2")).toBeNull();
+	});
+
+	test("matches on exact id string equality, not numeric suffix", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "PRJ-1" }),
+			makeIssue({ id: "CAM-1" }),
+		];
+		// "CAM-1" !== "PRJ-1" even though numeric suffix is the same.
+		expect(selectPlannableById(backlog, "PRJ-1")?.id).toBe("PRJ-1");
+	});
+
+	test("returns null for an empty backlog", () => {
+		expect(selectPlannableById([], "CAM-1")).toBeNull();
+	});
+
+	test("returns entry when target is unblocked after its dep ships", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", stage: "shipped" }),
+			makeIssue({ id: "CAM-2", blockedBy: ["CAM-1"] }),
+		];
+		expect(selectPlannableById(backlog, "CAM-2")?.id).toBe("CAM-2");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// selectPlanTargetFromFile -- file-backed target-aware selector (US-001, CAM-154)
+// ---------------------------------------------------------------------------
+
+describe("selectPlanTargetFromFile -- no targetId (preserves top-of-queue)", () => {
+	test("undefined targetId returns top-of-queue", () => {
+		const entries: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", rank: 2 }),
+			makeIssue({ id: "CAM-2", rank: 1 }),
+		];
+		const spawn = makeSpawnFn(entries);
+		const result = selectPlanTargetFromFile("/repo", undefined, spawn);
+		expect(result?.id).toBe("CAM-2"); // top-of-queue (rank 1)
+	});
+
+	test("null targetId returns top-of-queue", () => {
+		const entries: IssueEntry[] = [makeIssue({ id: "CAM-5", rank: 1 })];
+		const spawn = makeSpawnFn(entries);
+		const result = selectPlanTargetFromFile("/repo", null, spawn);
+		expect(result?.id).toBe("CAM-5");
+	});
+
+	test("returns null when no plannable issues exist and targetId is undefined", () => {
+		const entries: IssueEntry[] = [makeIssue({ id: "CAM-1", stage: "idea" })];
+		const spawn = makeSpawnFn(entries);
+		expect(selectPlanTargetFromFile("/repo", undefined, spawn)).toBeNull();
+	});
+});
+
+describe("selectPlanTargetFromFile -- with targetId (target-aware)", () => {
+	test("non-empty targetId returns the exact plannable issue", () => {
+		const entries: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", rank: 5 }),
+			makeIssue({ id: "CAM-9", rank: 1 }),
+		];
+		const spawn = makeSpawnFn(entries);
+		const result = selectPlanTargetFromFile("/repo", "CAM-1", spawn);
+		expect(result?.id).toBe("CAM-1");
+	});
+
+	test("non-empty targetId returns null when target is non-plannable (NEVER falls back)", () => {
+		const entries: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", rank: 1 }), // top-of-queue, plannable
+			makeIssue({ id: "CAM-2", stage: "idea" }), // non-plannable target
+		];
+		const spawn = makeSpawnFn(entries);
+		// Must not fall back to CAM-1.
+		expect(selectPlanTargetFromFile("/repo", "CAM-2", spawn)).toBeNull();
+	});
+
+	test("non-empty targetId returns null when absent from backlog (NEVER falls back)", () => {
+		const entries: IssueEntry[] = [makeIssue({ id: "CAM-1", rank: 1 })];
+		const spawn = makeSpawnFn(entries);
+		expect(selectPlanTargetFromFile("/repo", "CAM-999", spawn)).toBeNull();
+	});
+
+	test("returns null when spawnFn throws (error safety)", () => {
+		const throwingSpawn: BacklogSpawnFn = () => {
+			throw new Error("git not found");
+		};
+		expect(
+			selectPlanTargetFromFile("/repo", "CAM-1", throwingSpawn),
+		).toBeNull();
 	});
 });
