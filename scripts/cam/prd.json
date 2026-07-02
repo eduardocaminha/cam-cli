@@ -3,7 +3,9 @@
   "branchName": "cam/pr-121-post-merge-issue-close",
   "description": "Relocate the none-backend issue-close from ship-finalize (branch) to the post-merge step on main, with robust string/number issueNumber resolution (never <prefix>-0) threaded via .cam-merge-watch.json; subsumes CAM-113.",
   "issueNumber": 121,
-  "relatedDocs": ["docs/recovery-runbook.md"],
+  "relatedDocs": [
+    "docs/recovery-runbook.md"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -35,7 +37,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "src/release/merge-watch.ts (MergeWatchState interface, readMergeWatchState/writeMergeWatchState, new stashIssueIdInMergeWatch) + test/release/merge-watch.test.ts. MERGE_WATCH_FILENAME already exists. KEEP readMergeWatchState's existing prNumber:number + mergedBranch:string requirement (returns null otherwise); only ADD issueId as optional. Follow the JSON-reader shape-guard pattern (validate discriminator fields, not just typeof object). Single-writer assumption holds. Shared-state schema change that US-004 (write) and US-005 (read) depend on."
     },
