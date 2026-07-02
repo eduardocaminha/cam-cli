@@ -772,3 +772,15 @@ Each entry follows this template:
 - **Decisions**: Discovered while attempting to plan CAM-154 (plan_issue targeting). The plan phase had never run in prod (CAM-151 was planned via the old flow). Bootstrapped the fix through the working implement loop: planner and auditor spawned via Task (bypassing the broken plan phase), auditor APPROVE 0crit/0imp. Reprioritized CAM-154 to rank:9 top-of-queue (plan_issue not yet honored). Kept plan_approval=auto.
 - **Blockers encountered**: The sidecar crashed twice on the git-checkout-b-empty path before diagnosis. Neutralized by clearing the stale verdict and resetting phase:idle; a controlled retry confirmed the worker no-op was structural (missing ensureWorkerPane), not a transient rate-limit.
 - **Follow-ups**: MANDATORY sidecar rebuild done (0.42.0, restarted, idling clean); the fix and the CAM-116 gate are now live. CAM-154 (plan_issue targeting, rank:9 top-of-queue) is next and cam plan should now work end-to-end. CAM-113 confirmed live: ship --finalize closed CAM-0 (parsed string issueNumber as int), so CAM-155 was closed manually (stage:shipped). CAM-156 filed: push-verification false-BLOCKED by stale expected-ref (US-005 push had landed; verification used the prior story HEAD). Drainer B-trail remaining: CAM-149 (ship-runner), CAM-152 (B-2 spawn-flip), CAM-139 (drainer).
+
+## cam/CAM-154-plan-issue-targeting — plan_issue targeting (selector + reader)
+
+- **Started**: 2026-07-02
+- **Closed**: 2026-07-02
+- **Branch**: cam/CAM-154-plan-issue-targeting
+- **Issue**: CAM-154
+- **Outcome**: shipped (PR #116, v0.43.0, merged+tagged)
+- **Summary**: First end-to-end validation of the CAM-155 plan-phase fix: planner -> prd.json -> auditor APPROVE -> branch -> implement -> review CLEAN, all deterministic, worker-pane spawned for real. US-001 threaded plan_issue into the plan-runner selectIssueFn via a target-aware selector (selectPlannableById + selectPlanTargetFromFile) and a makeReadPlanIssue loop-state reader; never silent-falls-back to top-of-queue (returns null -> clean halt on a non-plannable target). 2684 pass, CLEAN round 1.
+- **Decisions**: Planned via bare cam plan (CAM-154 was top-of-queue at rank 9). plan_approval=auto cascaded straight to ship. issueNumber came out as the STRING 'CAM-154'.
+- **Blockers encountered**: Self-inflicted PR BEHIND: I closed CAM-154 on main by hand (CAM-113 workaround, since finalize closed the phantom CAM-0 because issueNumber was the string 'CAM-154') BEFORE the PR merged, which advanced main; cleared with gh pr update-branch. Sequencing lesson: do the manual close only AFTER merge, or fix CAM-113.
+- **Follow-ups**: Dogfooding revealed CAM-154 shipped FUNCTIONALLY INCOMPLETE (fixed by CAM-157): the selector was threaded but the planner still ignores it. Auditor findings F-01 (bare-plan pins the CLI-time top id) and F-02 (distinct escalation for sidecar-rejected targets) folded into CAM-157 scope.
