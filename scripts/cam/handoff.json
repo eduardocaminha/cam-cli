@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add resolveIssueId helper (string or numeric issueNumber, never <prefix>-0)"
+  },
+  "branchName": "cam/pr-121-post-merge-issue-close",
+  "timestamp": "2026-07-02T00:00:00Z",
+  "createdFiles": [
+    "src/issues/resolve-id.ts",
+    "test/issues/resolve-id.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 adds an optional issueId?: string field to MergeWatchState (src/release/merge-watch.ts) and a stashIssueIdInMergeWatch helper. The resolveIssueId helper from US-001 is now available at src/issues/resolve-id.ts and is ready to wire into finalizeCycleClose (US-004). Reminder: readMergeWatchState must still return null for issueId-only files (no prNumber) to keep the sidecar inert.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure in-house helper; no external library exercised."
+    }
+  ]
+}
