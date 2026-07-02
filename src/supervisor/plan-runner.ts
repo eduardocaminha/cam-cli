@@ -607,6 +607,44 @@ export interface RunPostAuditOptions {
 }
 
 /**
+ * Execute the three git calls for the proceed-branch path:
+ *   checkout -b -> add prd.json -> commit -> setPhaseFn('implementing')
+ *
+ * Extracted from runPostAuditAction to keep that function under the biome
+ * cognitive-complexity limit (US-004, CAM-155). All exit-code checks follow
+ * the spawnSync exit-status guard pattern (patterns.md US-R1-001).
+ */
+function executeGitProceedBranch(
+	spawnFn: SpawnFn,
+	branchName: string,
+	setPhaseFn: (phase: LoopPhase) => void,
+): PostAuditActionResult {
+	const checkoutResult = spawnFn('git', ['checkout', '-b', branchName]);
+	if ((checkoutResult.exitCode ?? 1) !== 0) {
+		throw new Error(
+			`git checkout -b ${branchName} failed (exit ${checkoutResult.exitCode ?? 'null'})`,
+		);
+	}
+
+	const addResult = spawnFn('git', ['add', 'scripts/cam/prd.json']);
+	if ((addResult.exitCode ?? 1) !== 0) {
+		throw new Error(
+			`git add scripts/cam/prd.json failed (exit ${addResult.exitCode ?? 'null'})`,
+		);
+	}
+
+	const commitResult = spawnFn('git', ['commit', '-m', 'chore(cam): commit audited prd.json']);
+	if ((commitResult.exitCode ?? 1) !== 0) {
+		throw new Error(
+			`git commit failed (exit ${commitResult.exitCode ?? 'null'})`,
+		);
+	}
+
+	setPhaseFn('implementing');
+	return { kind: 'branch-created', branchName };
+}
+
+/**
  * Execute the post-audit action after runPlanPhase returns.
  *
  * On audit-approved + proceed-branch (auto mode):
@@ -626,8 +664,8 @@ export interface RunPostAuditOptions {
  * On any other planResult kind:
  *   Returns { kind: 'no-action' }.
  *
- * Design: all git calls go through the injected spawnFn; exit-code guard fires
- * a throw on non-zero exit (spawnSync exit-status guard, patterns.md US-R1-001).
+ * Design: all git calls go through the injected spawnFn via executeGitProceedBranch;
+ * exit-code guard fires a throw on non-zero exit (patterns.md US-R1-001).
  * escalateFn is fire-and-forget (void, never awaited) per its best-effort contract.
  */
 export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionResult {
@@ -670,29 +708,14 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		return { kind: 'awaiting-operator-approval' }; // AC2
 	}
 
+	// empty-branch guard (US-004, CAM-155): a missing/invalid prd.json in the sidecar
+	// yields branchName=''; running `git checkout -b ''` exits 128 and throws, detonating
+	// the plan phase. Pre-check here so a missing PRD escalates cleanly to idle.
+	if (branchName.trim() === '') {
+		notifyFn?.('[cam] plan skipped: branchName is empty (prd.json absent or invalid)');
+		return { kind: 'no-action' };
+	}
+
 	// proceed-branch: create branch BEFORE committing prd.json (AC1, cam-plan.md Step 9)
-	const checkoutResult = spawnFn('git', ['checkout', '-b', branchName]);
-	if ((checkoutResult.exitCode ?? 1) !== 0) {
-		throw new Error(
-			`git checkout -b ${branchName} failed (exit ${checkoutResult.exitCode ?? 'null'})`,
-		);
-	}
-
-	const addResult = spawnFn('git', ['add', 'scripts/cam/prd.json']);
-	if ((addResult.exitCode ?? 1) !== 0) {
-		throw new Error(
-			`git add scripts/cam/prd.json failed (exit ${addResult.exitCode ?? 'null'})`,
-		);
-	}
-
-	const commitResult = spawnFn('git', ['commit', '-m', 'chore(cam): commit audited prd.json']);
-	if ((commitResult.exitCode ?? 1) !== 0) {
-		throw new Error(
-			`git commit failed (exit ${commitResult.exitCode ?? 'null'})`,
-		);
-	}
-
-	setPhaseFn('implementing'); // flip phase to implementing so the sidecar loop dispatches implementation (AC1)
-
-	return { kind: 'branch-created', branchName }; // AC1
+	return executeGitProceedBranch(spawnFn, branchName, setPhaseFn);
 }
