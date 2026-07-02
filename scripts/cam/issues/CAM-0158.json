@@ -1,9 +1,9 @@
 {
   "id": "CAM-158",
-  "title": "cam-plan-out-*.log nao gitignored: logs orfaos do planner/auditor travam o clean-tree preflight do proximo plan",
+  "title": "plan-preflight hardening: gitignore cam-plan-out logs + emit plan-preflight-failed event (subsume CAM-159)",
   "stage": "idea",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T12:10:32.443Z",
-  "description": "runPlanPhase escreve .claude/cam-plan-out-{planner,auditor}-<uuid>.log (pipe-pane do stdout do worker-pane). Esses arquivos ficam untracked apos o ciclo (ship --finalize git-rm so prd.json/handoff.json/progress.txt, nao os .log). O .gitignore cobre .claude/.cam-worker-out-*.log mas NAO .claude/cam-plan-out-*. Efeito: git status --porcelain fica nao-vazio -> runPlanPreflight (src/supervisor/plan-preflight.ts) falha no step clean-tree -> o proximo cam plan halta sem spawnar planner. Descoberto dogfoodando CAM-121: o primeiro dispatch halt-ou por causa dos 2 .log deixados pelo ciclo CAM-154. FIX: adicionar .claude/cam-plan-out-* ao .gitignore (espelhar o padrao existente do .cam-worker-out-*.log, CAM-68). P2."
+  "description": "Guarda-chuva de robustez do plan pre-flight, subsumindo CAM-159. Duas correcoes vistas dogfoodando CAM-121 (um cam plan haltou silencioso). (1) GITIGNORE: runPlanPhase escreve .claude/cam-plan-out-{planner,auditor}-<uuid>.log (pipe-pane do stdout do worker-pane); ship --finalize nao os git-rm; o .gitignore cobre .cam-worker-out-*.log mas NAO cam-plan-out-*. Efeito: git status --porcelain nao-vazio -> runPlanPreflight step clean-tree falha -> proximo cam plan halta sem spawnar planner. FIX: adicionar .claude/cam-plan-out-*.log ao .gitignore (espelhar .cam-worker-out-*.log, CAM-68). (2) OBSERVABILIDADE (ex-CAM-159): quando preflightFn retorna {ok:false,step,detail} dentro de runPlanPhase (plan-runner.ts:519), nenhum evento e emitido em cam-worker-events.jsonl; o operador nao distingue 'preflight barrou' de 'nada aconteceu'. FIX: emitir kind:'plan-preflight-failed' detail:{step,detail} via o logEvent ja presente, na paridade com sidecar-exit/spawn-resolution; estender a union WorkerEventKind (fechada). runPlanPreflight e funcao pura: nao emitir de dentro dela. P2."
 }
