@@ -1,0 +1,9 @@
+{
+  "id": "CAM-158",
+  "title": "cam-plan-out-*.log nao gitignored: logs orfaos do planner/auditor travam o clean-tree preflight do proximo plan",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-02T12:10:32.443Z",
+  "description": "runPlanPhase escreve .claude/cam-plan-out-{planner,auditor}-<uuid>.log (pipe-pane do stdout do worker-pane). Esses arquivos ficam untracked apos o ciclo (ship --finalize git-rm so prd.json/handoff.json/progress.txt, nao os .log). O .gitignore cobre .claude/.cam-worker-out-*.log mas NAO .claude/cam-plan-out-*. Efeito: git status --porcelain fica nao-vazio -> runPlanPreflight (src/supervisor/plan-preflight.ts) falha no step clean-tree -> o proximo cam plan halta sem spawnar planner. Descoberto dogfoodando CAM-121: o primeiro dispatch halt-ou por causa dos 2 .log deixados pelo ciclo CAM-154. FIX: adicionar .claude/cam-plan-out-* ao .gitignore (espelhar o padrao existente do .cam-worker-out-*.log, CAM-68). P2."
+}
