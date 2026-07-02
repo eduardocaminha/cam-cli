@@ -19,7 +19,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file src/issues/resolve-id.ts + test/issues/resolve-id.test.ts. Match string ids with /^[A-Z]+-[0-9]+$/ and return verbatim; compose numeric as `${prefix}-${n}`. This is the CAM-113 root-cause fix (ship-finalize.ts:131 typeof==='number' guard rejects the anchored string id -> null -> '<prefix>-0'). noUncheckedIndexedAccess: guard regex .exec() results. Signature accepts number | string | null | undefined; prefix is a param (do NOT read project.toml here)."
     },
