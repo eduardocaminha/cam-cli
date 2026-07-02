@@ -1,9 +1,42 @@
 {
   "id": "CAM-157",
   "title": "plan-runner ignora o issue selecionado: planner re-seleciona top-of-queue (cam plan --issue N planeja o errado)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T12:10:30.159Z",
-  "description": "Follow-up P1 do CAM-154. runPlanPhase (src/supervisor/plan-runner.ts) chama selectIssueFn() (ja threadado com plan_issue via selectPlanTargetFromFile no sidecar.ts:872) mas so usa o resultado pro gate no-plannable-issue (null -> halt); o issue escolhido NAO e passado pro planner. resolveAndSpawnPlanner (plan-runner.ts:518) spawna o planner com o prompt generico DEFAULT_PLANNER_TASK_PROMPT ('Plan the next issue from the backlog...'), entao o subagent-planner re-seleciona top-of-queue sozinho. Resultado: cam plan --issue N (e /cam-plan N) planejam o top-of-queue, nao N. Descoberto dogfoodando o proprio CAM-154: cam plan 121 (plan_issue=CAM-121) planejou CAM-85 (top-of-queue rank 10). FIX: threadar o issue.id selecionado no taskPrompt do planner (ex: 'Plan issue CAM-121 per your AGENT.md. Write the PRD to scripts/cam/prd.json.') e/ou fazer o subagent-planner honrar um id explicito; garantir que issueNumber sai correto (hoje sai null quando plan_issue nao bate com o auto-select do planner: sinal do mismatch). GUARD: teste e2e (nao so unit com selectIssueFn mockado) que assere PRD.issueNumber == issue targetado. CLASSE: fakes-mentem, 2684 unit tests passaram (selector+reader isolados) mas o e2e do planner nunca foi validado. P1: feature shipada (CAM-154 v0.43.0) que nao faz o que promete."
+  "description": "Follow-up P1 do CAM-154. runPlanPhase (src/supervisor/plan-runner.ts) chama selectIssueFn() (ja threadado com plan_issue via selectPlanTargetFromFile no sidecar.ts:872) mas so usa o resultado pro gate no-plannable-issue (null -> halt); o issue escolhido NAO e passado pro planner. resolveAndSpawnPlanner (plan-runner.ts:518) spawna o planner com o prompt generico DEFAULT_PLANNER_TASK_PROMPT ('Plan the next issue from the backlog...'), entao o subagent-planner re-seleciona top-of-queue sozinho. Resultado: cam plan --issue N (e /cam-plan N) planejam o top-of-queue, nao N. Descoberto dogfoodando o proprio CAM-154: cam plan 121 (plan_issue=CAM-121) planejou CAM-85 (top-of-queue rank 10). FIX: threadar o issue.id selecionado no taskPrompt do planner (ex: 'Plan issue CAM-121 per your AGENT.md. Write the PRD to scripts/cam/prd.json.') e/ou fazer o subagent-planner honrar um id explicito; garantir que issueNumber sai correto (hoje sai null quando plan_issue nao bate com o auto-select do planner: sinal do mismatch). GUARD: teste e2e (nao so unit com selectIssueFn mockado) que assere PRD.issueNumber == issue targetado. CLASSE: fakes-mentem, 2684 unit tests passaram (selector+reader isolados) mas o e2e do planner nunca foi validado. P1: feature shipada (CAM-154 v0.43.0) que nao faz o que promete.",
+  "spec": {
+    "scope": "Make the deterministic plan-runner AUTHORITATIVE over WHICH issue is planned: the issue chosen by selectIssueFn (target-aware via plan_issue, per CAM-154) MUST be the issue the planner actually plans. Today runPlanPhase (src/supervisor/plan-runner.ts ~505) calls selectIssueFn() only for the no-plannable-issue gate and then spawns the planner (resolveAndSpawnPlanner ~518) with the generic DEFAULT_PLANNER_TASK_PROMPT ('Plan the next issue from the backlog per your AGENT.md'), discarding the selected issue. The subagent-planner therefore re-selects top-of-queue itself, so cam plan --issue N (and /cam-plan N) plan the WRONG issue. Fix: thread the selected issue id into the planner task prompt so the planner plans THAT issue, and update subagent-planner to honor an explicit target id (plan exactly that issue, set PRD.issueNumber to it, never re-select from the backlog). This also makes bare cam plan deterministic (runner selects top-of-queue, planner obeys). Out of scope: the plan_issue reader/selector (already correct, CAM-154); clean-tree preflight log-hygiene (CAM-158); preflight observability (CAM-159); finalize/close work (CAM-121/CAM-113).",
+    "acceptanceCriteria": [
+      "runPlanPhase passes the selectIssueFn()-chosen issue id into the planner spawn (resolveAndSpawnPlanner / buildPlannerWorkerArgv), instead of a target-blind generic prompt. [oracle: bun test + grep -qE 'issue\\.id|selectedIssue|targetId' the spawn path]",
+      "The planner task prompt names the exact issue id to plan and instructs it not to re-select from the backlog (e.g. 'Plan issue <ID> specifically ...'). [oracle: bun test on the built taskPrompt/argv]",
+      "subagent-planner honors an explicit target issue id: it plans that issue and sets PRD.issueNumber to that id, and does NOT self-select top-of-queue when a target is provided. [oracle: prompt-contract / e2e test]",
+      "E2E regression (the one unit tests missed): with plan_issue set to a specified issue that is NOT top-of-queue, the resulting scripts/cam/prd.json has issueNumber === that target (not the top-of-queue issue). Drive the runner with a planner stub that echoes the prompt's target id into prd.json. [oracle: bun test]",
+      "Bare cam plan (no target) still plans the runner's top-of-queue selection and PRD.issueNumber === that issue, with no null issueNumber. [oracle: bun test]",
+      "When selectIssueFn returns null, no planner is spawned (no-plannable-issue halt unchanged). [oracle: bun test]",
+      "If subagent-planner is edited in .claude/agents/ and/or templates/, the embedded copy is regenerated and embed-vendor:check passes. [oracle: bun run embed-vendor:check]",
+      "Full quality spine passes (bun run check:all)."
+    ],
+    "gotchas": [
+      "ROOT CAUSE (grounded in source): plan-runner.ts ~505 does `const issue = selectIssueFn()` then only null-checks it; resolveAndSpawnPlanner (~518) is called with plannerTaskPrompt (= DEFAULT_PLANNER_TASK_PROMPT, plan-runner.ts:50) and the `issue` variable is discarded. The planner self-selects top-of-queue.",
+      "issueNumber:null symptom: observed live when plan_issue (CAM-121) != the planner's self-selected top-of-queue (CAM-85). The planner appears to derive issueNumber only when its self-selection matches; making the planner authoritative on the PASSED id removes the ambiguity and yields a correct issueNumber.",
+      "Make the RUNNER authoritative (it already selects correctly via selectPlanTargetFromFile); the planner must OBEY the passed id, not re-select. This is the correct deterministic-runner architecture.",
+      "TWO surfaces to change: (1) src/supervisor/plan-runner.ts (build the taskPrompt from the selected issue id; thread it through resolveAndSpawnPlanner -> buildPlannerWorkerArgv), and (2) the subagent-planner agent instructions (.claude/agents/subagent-planner.md AND templates/agents/subagent-planner.md) to honor an explicit target id. cam dual-copy is per-file: diff before assuming byte-identical, and run embed-vendor:check when templates change.",
+      "CAM-154 threaded plan_issue into selectIssueFn but stopped there; this story completes the chain selectIssueFn -> planner prompt -> planner obeys.",
+      "The MISSING GATE that let CAM-154 ship broken: unit tests mocked selectIssueFn (so the planner-obeys path was never exercised). The new e2e AC (issueNumber == target) is the durable guard; keep it (fakes-mentem class).",
+      "Self-modification: the running sidecar drives the plan of this issue with the OLD (buggy) plan-runner. Planning CAM-157 uses bare cam plan (top-of-queue), NOT --issue, so the targeting bug does not affect planning it. The fix takes effect only after post-merge rebuild+reinstall+restart of the sidecar."
+    ],
+    "domainTerms": [
+      "selectIssueFn: the runner's injected issue selector (production: selectPlanTargetFromFile(cwd, plan_issue)); returns the IssueEntry to plan, or null.",
+      "DEFAULT_PLANNER_TASK_PROMPT (plan-runner.ts:50): the generic, target-blind planner prompt that causes the subagent-planner to self-select top-of-queue.",
+      "runner-authoritative selection: the deterministic plan-runner (not the planner subagent) decides which issue is planned; the planner obeys."
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 4,
+    "riskReduction": 3,
+    "jobSize": 2
+  }
 }
