@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Gitignore cam-plan-out pipe-pane logs"
+  },
+  "branchName": "cam/pr-158-plan-preflight-hardening",
+  "timestamp": "2026-07-02T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [".gitignore"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added .claude/cam-plan-out-*.log to .gitignore (no leading dot, unlike .cam-worker-out-*.log). US-002 must extend WorkerEventKind in src/supervisor/events.ts with 'plan-preflight-failed' and emit from the if(!preflight.ok) block in runPlanPhase (src/supervisor/plan-runner.ts) BEFORE the return. The logEvent dep is already wired at line ~510 of plan-runner.ts.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
