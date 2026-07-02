@@ -28,6 +28,7 @@
 //   - Cognitive complexity is managed via factory/helper extraction (patterns.md
 //     'Biome cognitive complexity: use factory/helper extraction not grandfather').
 
+import { join } from 'node:path';
 import type { SpawnFn, IsPaneAlive } from './loop.ts';
 import type { WorkerEventLogger } from './events.ts';
 import type { PlanPreflightResult } from './plan-preflight.ts';
@@ -219,6 +220,29 @@ export interface RunPlanPhaseOptions {
 	 * persisted via the event log (same pattern as loop.ts and review.ts).
 	 */
 	logEvent?: WorkerEventLogger;
+
+	/**
+	 * Ensure a live worker pane exists before each spawn. Returns the live pane id.
+	 *
+	 * When provided, called BEFORE spawning the planner AND BEFORE spawning the
+	 * auditor. The RETURNED id is threaded into set-option/respawn-pane/poll calls
+	 * (never the static plannerPaneId or a stale marker). When absent, plannerPaneId
+	 * is used directly (backward compat for tests that simulate pane death).
+	 *
+	 * Mirrors the ensureWorkerPane dep in RunSupervisorOptions (patterns.md
+	 * 'ensureWorkerPane self-heal (CAM-57)'). Production wiring in
+	 * makeProductionPlanPhaseFn (sidecar.ts): re-reads the marker fresh,
+	 * isPaneAlive probe, openPaneInSession when dead/missing, writeWorkerPaneMarker.
+	 */
+	ensureWorkerPane?: () => string;
+
+	/**
+	 * Path to the .claude directory. Used to derive per-worker out-log paths for
+	 * the tmux pipe-pane call that captures each spawn's pane output (AC4). When
+	 * absent, pipe-pane is skipped (backward compat for tests that do not inject
+	 * a claudeDir). Scoped to plan-runner spawns only; loop.ts is NOT modified.
+	 */
+	claudeDir?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +270,8 @@ function makeEventWriter(
 
 /**
  * Resolve model/backend, emit spawn-resolution, build the argv shell string,
- * set @cam_label on the pane, and spawn the planner worker via respawn-pane -k.
+ * set @cam_label on the pane, spawn the planner worker via respawn-pane -k,
+ * and pipe pane output to a per-worker out-log (AC4) when claudeDir is provided.
  *
  * @cam_label is set BEFORE respawn-pane (AC5, patterns.md '@cam_label pane-labeling').
  * genUuid() output is lowercased (CAM-23: macOS uuidgen is uppercase).
@@ -259,6 +284,7 @@ function resolveAndSpawnPlanner(
 	taskPrompt: string,
 	permissionMode: string,
 	logEvent: WorkerEventLogger | undefined,
+	claudeDir?: string,
 ): string {
 	const uuid = genUuid().toLowerCase();
 	const model = readPhaseModel('planner');
@@ -267,12 +293,18 @@ function resolveAndSpawnPlanner(
 	const shell = buildPlannerWorkerArgv({ uuid, taskPrompt, permissionMode, model });
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'planner']);
 	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, shell]);
+	// AC4: pipe pane output to a per-worker out-log so silent no-ops are diagnosable.
+	if (claudeDir !== undefined) {
+		const outLog = join(claudeDir, `cam-plan-out-planner-${uuid}.log`);
+		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', plannerPaneId, `cat >> ${outLog}`]);
+	}
 	return uuid;
 }
 
 /**
  * Resolve model/backend, emit spawn-resolution, build the argv shell string,
- * set @cam_label on the pane, and spawn the auditor worker via respawn-pane -k.
+ * set @cam_label on the pane, spawn the auditor worker via respawn-pane -k,
+ * and pipe pane output to a per-worker out-log (AC4) when claudeDir is provided.
  *
  * @cam_label is set BEFORE respawn-pane (AC5, patterns.md '@cam_label pane-labeling').
  * genUuid() output is lowercased (CAM-23: macOS uuidgen is uppercase).
@@ -285,6 +317,7 @@ function resolveAndSpawnAuditor(
 	taskPrompt: string,
 	permissionMode: string,
 	logEvent: WorkerEventLogger | undefined,
+	claudeDir?: string,
 ): string {
 	const uuid = genUuid().toLowerCase();
 	const model = readPhaseModel('auditor');
@@ -293,6 +326,11 @@ function resolveAndSpawnAuditor(
 	const shell = buildAuditorWorkerArgv({ uuid, taskPrompt, permissionMode, model });
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'auditor']);
 	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, shell]);
+	// AC4: pipe pane output to a per-worker out-log so silent no-ops are diagnosable.
+	if (claudeDir !== undefined) {
+		const outLog = join(claudeDir, `cam-plan-out-auditor-${uuid}.log`);
+		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', plannerPaneId, `cat >> ${outLog}`]);
+	}
 	return uuid;
 }
 
@@ -405,6 +443,7 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 		spawnFn, isPaneAlive, sleepFn, genUuid,
 		selectIssueFn, readPlanVerdictFn, preflightFn, clock,
 		plannerPaneId, paneCountMutexFn, readPlannerReportFn,
+		ensureWorkerPane, claudeDir,
 	} = opts;
 
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
@@ -434,30 +473,39 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 	}
 
 	// Step 4: Spawn planner pane (AC4, AC5)
+	// Resolve a live pane id via ensureWorkerPane (AC1). When ensureWorkerPane is
+	// absent (backward compat for tests), fall back to the static plannerPaneId.
 	// resolveAndSpawnPlanner: reads model/backend, emits spawn-resolution,
-	// builds argv, sets @cam_label 'planner', runs respawn-pane -k.
-	resolveAndSpawnPlanner(spawnFn, plannerPaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent);
+	// builds argv, sets @cam_label 'planner', runs respawn-pane -k, pipes out-log.
+	const plannerLivePaneId = ensureWorkerPane !== undefined ? ensureWorkerPane() : plannerPaneId;
+	resolveAndSpawnPlanner(spawnFn, plannerLivePaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent, claudeDir);
 
 	// Step 5: Poll until prd.json written OR planner pane dies (AC4, US-R1-001).
 	// readPlannerReportFn is the primary signal; isPaneAlive is the fallback.
+	// Use plannerLivePaneId (the ensured id) for all poll calls.
 	const plannerDied = pollPlannerDeath(
 		isPaneAlive, sleepFn, clock, spawnFn,
-		plannerPaneId, pollIntervalMs, plannerTimeoutMs, readPlannerReportFn,
+		plannerLivePaneId, pollIntervalMs, plannerTimeoutMs, readPlannerReportFn,
 	);
 	if (!plannerDied) {
 		return { kind: 'planner-timeout' };
 	}
 
 	// Step 6: Spawn auditor pane (AC4, AC5)
+	// Re-resolve the live pane id via ensureWorkerPane (the planner may have died
+	// and a new pane may have been created). When ensureWorkerPane is absent, fall
+	// back to the static plannerPaneId.
 	// resolveAndSpawnAuditor: reads model/backend, emits spawn-resolution,
-	// builds argv, sets @cam_label 'auditor', runs respawn-pane -k.
-	resolveAndSpawnAuditor(spawnFn, plannerPaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent);
+	// builds argv, sets @cam_label 'auditor', runs respawn-pane -k, pipes out-log.
+	const auditorLivePaneId = ensureWorkerPane !== undefined ? ensureWorkerPane() : plannerPaneId;
+	resolveAndSpawnAuditor(spawnFn, auditorLivePaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent, claudeDir);
 
 	// Step 7: Poll until plan-verdict-report.json present (AC4)
 	// Verdict read from FILE ONLY - never from capture-pane (patterns.md).
+	// Use auditorLivePaneId for poll calls.
 	const auditorResult = pollAuditorReport(
 		isPaneAlive, sleepFn, clock, spawnFn,
-		readPlanVerdictFn, plannerPaneId, pollIntervalMs, auditorTimeoutMs,
+		readPlanVerdictFn, auditorLivePaneId, pollIntervalMs, auditorTimeoutMs,
 	);
 
 	if (!auditorResult.ok) {

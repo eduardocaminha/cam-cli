@@ -31,7 +31,7 @@ import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/event
 import { parseStateFile, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
-import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
+import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
 import { runPlanPhase, runPostAuditAction, type PostAuditActionResult } from '../supervisor/plan-runner.ts';
 import { makeReadPlanVerdict } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
@@ -648,13 +648,66 @@ function exitPhaseAfterPlan(
 }
 
 /**
+ * Build the isPaneAlive probe + ensureWorkerPane self-heal closure for the plan
+ * phase (US-001, CAM-155).
+ *
+ * Mirrors host.ts ensureWorkerPaneFn (patterns.md 'ensureWorkerPane self-heal
+ * CAM-57'): re-reads the marker fresh on each call, probes isPaneAlive, and when
+ * dead calls openPaneInSession targeting the orchestrator pane (CAM-80 geometry),
+ * then writeWorkerPaneMarker.
+ *
+ * Extracted from makeProductionPlanPhaseFn closure to keep that function under
+ * biome's noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
+ * extraction pattern). Not exported: tests inject options.runPlanPhaseFn directly.
+ */
+function makePlanPaneHelpers(
+	claudeDir: string,
+	sessionName: string,
+): { isPaneAlive: IsPaneAlive; ensureWorkerPane: () => string } {
+	const isPaneAlive: IsPaneAlive = (paneId) => {
+		const r = spawnSync(
+			'tmux',
+			['-L', 'cam', 'display-message', '-p', '-t', paneId, '#{pane_dead}'],
+			{ stdio: 'pipe', encoding: 'utf8' } as Parameters<typeof spawnSync>[2],
+		);
+		if (r.status !== 0) return false;
+		return (typeof r.stdout === 'string' ? r.stdout.trim() : '') === '0';
+	};
+	const ensureWorkerPane = (): string => {
+		const currentId = readWorkerPaneMarker(claudeDir) ?? '%2';
+		if (isPaneAlive(currentId)) return currentId;
+		const orchPaneId = getOrchPaneId(sessionName, (cmd, args, opts) =>
+			spawnSync(cmd, args, {
+				stdio: opts?.stdio ?? 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]),
+		);
+		const targetPaneId = orchPaneId ?? `${sessionName}:0`;
+		const newId = openPaneInSession(
+			sessionName,
+			['cat'],
+			(cmd, args, opts) =>
+				spawnSync(cmd, args, {
+					stdio: opts?.stdio ?? 'pipe',
+					encoding: 'utf8',
+				} as Parameters<typeof spawnSync>[2]),
+			targetPaneId,
+		);
+		writeWorkerPaneMarker(claudeDir, newId);
+		return newId;
+	};
+	return { isPaneAlive, ensureWorkerPane };
+}
+
+/**
  * Build the production runPlanPhaseFn closure (US-002/US-R1-001, CAM-151).
  *
  * Wires runPlanPhase with all deps: plannerPaneId (read fresh from marker each
  * call), paneCountMutexFn (session.ts paneCountMutex), selectIssueFn
  * (selectPlannableFromFile), preflightFn (runPlanPreflight), readPlanVerdictFn
- * (makeReadPlanVerdict), spawnFn (loop.ts SpawnFn shape), isPaneAlive,
- * sleepFn, genUuid (randomUUID lowercased per CAM-23), and clock.
+ * (makeReadPlanVerdict), spawnFn (loop.ts SpawnFn shape), isPaneAlive (and
+ * ensureWorkerPane for self-heal, AC1/AC2 US-001), sleepFn, genUuid (randomUUID
+ * lowercased per CAM-23), and clock.
  *
  * After runPlanPhase returns, calls runPostAuditAction with the PlanPhaseResult
  * (ADR 0006 section Decisao point 3): on APPROVE+auto this creates the feature
@@ -692,17 +745,6 @@ function makeProductionPlanPhaseFn(
 			};
 		};
 
-		// Build isPaneAlive using the same tmux display-message probe as host.ts.
-		const isPaneAlive: IsPaneAlive = (paneId) => {
-			const r = spawnSync(
-				'tmux',
-				['-L', 'cam', 'display-message', '-p', '-t', paneId, '#{pane_dead}'],
-				{ stdio: 'pipe', encoding: 'utf8' } as Parameters<typeof spawnSync>[2],
-			);
-			if (r.status !== 0) return false;
-			return (typeof r.stdout === 'string' ? r.stdout.trim() : '') === '0';
-		};
-
 		// Build the preflight spawnFn (PlanPreflightSpawnFn shape: no stdio opt).
 		const preflightSpawnFn: PlanPreflightSpawnFn = (bin, args) => {
 			const r = spawnSync(bin, args, {
@@ -715,6 +757,10 @@ function makeProductionPlanPhaseFn(
 				exitCode: r.status ?? 1,
 			};
 		};
+
+		// Build isPaneAlive + ensureWorkerPane (AC1/AC2, US-001). Extracted to
+		// makePlanPaneHelpers to keep this closure under biome's 80-line limit.
+		const { isPaneAlive, ensureWorkerPane } = makePlanPaneHelpers(claudeDir, sessionName);
 
 		const planResult = runPlanPhase({
 			spawnFn: loopSpawnFn,
@@ -736,6 +782,8 @@ function makeProductionPlanPhaseFn(
 			plannerPaneId,
 			paneCountMutexFn: () => paneCountMutex(sessionName, realSpawnFn),
 			logEvent,
+			ensureWorkerPane,
+			claudeDir,
 		});
 
 		// Read branchName from prd.json (written by the planner during the plan phase).
