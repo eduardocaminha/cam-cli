@@ -1,7 +1,7 @@
 {
   "id": "CAM-158",
   "title": "plan-preflight hardening: gitignore cam-plan-out logs + emit plan-preflight-failed event (subsume CAM-159)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T12:10:32.443Z",
