@@ -1,0 +1,9 @@
+{
+  "id": "CAM-156",
+  "title": "push-verification reporta false BLOCKED por expected-ref stale (push ja aterrissou)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-02T05:03:33.772Z",
+  "description": "Descoberto no ciclo do CAM-155 (2026-07-02). A push-verification do supervisor (verificacao origin-synced pos-worker, linhagem CAM-33) reportou US-005 como BLOCKED com: `git push failed: [remote rejected] cam/CAM-155-plan-runner-hardening (cannot lock ref ...: is at c6e32f7 but expected 265ee2a)`. Mas o push do worker JA tinha aterrissado (origin == local == c6e32f7); o `expected 265ee2a` era o HEAD do US-004 (a ultima ref que o supervisor registrou como sincada), i.e. a verificacao usou um expected-ref STALE e tentou um push/lease contra ele, que o remote rejeitou porque ja estava em c6e32f7. Evidencia no event log: kind:pushed {sha:'', pushed:false, ok:false, detail:'...is at c6e32f7 but expected 265ee2a'}.\n\nIMPACTO: benigno neste ciclo (o loop prosseguiu pro review, que deu CLEAN, e o branch estava de fato sincado), mas um false BLOCKED pode halt um ciclo ou enganar a narracao em outro timing. A push-verification deve reconhecer 'remote ja == local HEAD' como sucesso (re-fetch + comparar HEAD vs origin) em vez de force-push/lease contra um expected-ref stale que nao foi atualizado apos o push do proprio worker.\n\nREPRO: story cujo push do worker aterrissa e a verificacao subsequente usa o HEAD da story ANTERIOR como expected. Fix: atualizar o expected-ref apos o push do worker, ou tratar origin==localHEAD como synced-ok. Investigar onde a push-verification computa o expected-ref (provavel em loop.ts/host.ts push-verify path). P2."
+}
