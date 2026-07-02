@@ -1,0 +1,9 @@
+{
+  "id": "CAM-157",
+  "title": "plan-runner ignora o issue selecionado: planner re-seleciona top-of-queue (cam plan --issue N planeja o errado)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-02T12:10:30.159Z",
+  "description": "Follow-up P1 do CAM-154. runPlanPhase (src/supervisor/plan-runner.ts) chama selectIssueFn() (ja threadado com plan_issue via selectPlanTargetFromFile no sidecar.ts:872) mas so usa o resultado pro gate no-plannable-issue (null -> halt); o issue escolhido NAO e passado pro planner. resolveAndSpawnPlanner (plan-runner.ts:518) spawna o planner com o prompt generico DEFAULT_PLANNER_TASK_PROMPT ('Plan the next issue from the backlog...'), entao o subagent-planner re-seleciona top-of-queue sozinho. Resultado: cam plan --issue N (e /cam-plan N) planejam o top-of-queue, nao N. Descoberto dogfoodando o proprio CAM-154: cam plan 121 (plan_issue=CAM-121) planejou CAM-85 (top-of-queue rank 10). FIX: threadar o issue.id selecionado no taskPrompt do planner (ex: 'Plan issue CAM-121 per your AGENT.md. Write the PRD to scripts/cam/prd.json.') e/ou fazer o subagent-planner honrar um id explicito; garantir que issueNumber sai correto (hoje sai null quando plan_issue nao bate com o auto-select do planner: sinal do mismatch). GUARD: teste e2e (nao so unit com selectIssueFn mockado) que assere PRD.issueNumber == issue targetado. CLASSE: fakes-mentem, 2684 unit tests passaram (selector+reader isolados) mas o e2e do planner nunca foi validado. P1: feature shipada (CAM-154 v0.43.0) que nao faz o que promete."
+}
