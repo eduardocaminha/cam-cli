@@ -1,0 +1,9 @@
+{
+  "id": "CAM-159",
+  "title": "runPlanPreflight falha silenciosa: clean-tree/checkout/pull halt sem event log, operador nao ve o porque",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-02T12:10:34.751Z",
+  "description": "Quando runPlanPreflight (src/supervisor/plan-preflight.ts) retorna {ok:false, step, detail}, o plan phase halta (phase->idle) sem emitir nenhum evento em .claude/cam-worker-events.jsonl. Diferente de spawn-resolution / no-plannable-issue / sidecar-exit (plan-phase-crash), o operador que vigia o loop nao distingue 'preflight barrou' de 'nada aconteceu'. Descoberto dogfoodando CAM-121: o halt nao logou nada; foi preciso ler o codigo do preflight pra achar o step clean-tree. FIX: emitir um evento (ex: kind:'plan-preflight-failed', detail:{step, detail}) no caminho de falha do preflight, em makeProductionPlanPhaseFn (sidecar.ts) ou runPlanPhase. P3 observabilidade."
+}
