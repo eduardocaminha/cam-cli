@@ -1,7 +1,7 @@
 {
   "id": "CAM-159",
   "title": "runPlanPreflight falha silenciosa: clean-tree/checkout/pull halt sem event log, operador nao ve o porque",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T12:10:34.751Z",
