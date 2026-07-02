@@ -1,12 +1,12 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Ensure a live worker-pane before planner/auditor spawn (+ per-worker out-log)"
+    "id": "US-002",
+    "title": "Clear stale plan-verdict-report.json and prd.json at plan-phase start"
   },
   "branchName": "cam/CAM-155-plan-runner-hardening",
-  "timestamp": "2026-07-02T00:00:00Z",
+  "timestamp": "2026-07-02T01:00:00Z",
   "createdFiles": [
-    "test/integration/plan-runner-pane-spawn.test.ts"
+    "test/plan-runner-clear-stale.test.ts"
   ],
   "modifiedFiles": [
     "src/supervisor/plan-runner.ts",
@@ -14,12 +14,12 @@
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 wired ensureWorkerPane into the plan-runner: makePlanPaneHelpers factory (sidecar.ts) builds isPaneAlive + ensureWorkerPane mirroring host.ts ensureWorkerPaneFn. ensureWorkerPane is called before spawning both the planner AND auditor (returns live pane id each time). pipe-pane out-log is added after each spawn when claudeDir is provided. Integration test plan-runner-pane-spawn.test.ts uses private tmux socket (cam-it-plan-spawn). Budget raised: sidecar.ts 912->960 (tracker CAM-155). All quality gates pass (2604/2604 tests, typecheck clean, check:all exit 0).",
+  "nextStoryContext": "US-002 added clearStalePlanArtifactsFn to RunPlanPhaseOptions (plan-runner.ts) and calls it at the very top of runPlanPhase before preflight. Production wiring in sidecar.ts extracts makeClearStalePlanArtifacts(cwd) helper (mirrors host.ts makeClearReviewReport) which unlinks both PLAN_VERDICT_REPORT_FILENAME and scripts/cam/prd.json best-effort. File-size budget raised: sidecar.ts 960->985 (tracker CAM-155). All quality gates pass (2605/2605 tests, typecheck clean, check:all exit 0). Next story US-003 uses the prd.json clearing to detect planner-no-prd as a distinct failure: readPlannerReportFn returning null after the phase means the planner produced nothing.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "All changes are in internal cam-cli helpers and tmux shell commands. No external npm library was added or changed."
+      "summary": "All changes are in internal cam-cli helpers and built-in node:fs (existsSync, unlinkSync). No external npm library was added or changed."
     }
   ]
 }

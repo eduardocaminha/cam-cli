@@ -222,6 +222,18 @@ export interface RunPlanPhaseOptions {
 	logEvent?: WorkerEventLogger;
 
 	/**
+	 * Clear stale plan-verdict-report.json and prd.json before the plan phase
+	 * starts (AC1, US-002, CAM-155). Called at the very top of runPlanPhase,
+	 * before preflight, so a stale APPROVE verdict cannot contaminate the new run
+	 * and so prd.json absence is detectable as 'planner produced nothing'.
+	 *
+	 * Best-effort: no-op on missing files, never throws. Mirrors
+	 * makeClearReviewReport in host.ts ('Review-report.json reader dep-injection').
+	 * Optional for backward compat with tests that do not inject it.
+	 */
+	clearStalePlanArtifactsFn?: () => void;
+
+	/**
 	 * Ensure a live worker pane exists before each spawn. Returns the live pane id.
 	 *
 	 * When provided, called BEFORE spawning the planner AND BEFORE spawning the
@@ -443,7 +455,7 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 		spawnFn, isPaneAlive, sleepFn, genUuid,
 		selectIssueFn, readPlanVerdictFn, preflightFn, clock,
 		plannerPaneId, paneCountMutexFn, readPlannerReportFn,
-		ensureWorkerPane, claudeDir,
+		ensureWorkerPane, claudeDir, clearStalePlanArtifactsFn,
 	} = opts;
 
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
@@ -453,6 +465,11 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 	const plannerTimeoutMs = opts.plannerTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
 	const auditorTimeoutMs = opts.auditorTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
 	const logEvent = opts.logEvent;
+
+	// Clear stale artifacts from any previous plan run (AC1, US-002).
+	// Runs BEFORE preflight so a stale APPROVE verdict cannot contaminate the
+	// new run and so prd.json absence is detectable as 'planner produced nothing'.
+	clearStalePlanArtifactsFn?.();
 
 	// Step 1: Pre-flight checks (AC2)
 	const preflight = preflightFn();

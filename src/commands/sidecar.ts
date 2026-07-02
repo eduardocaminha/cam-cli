@@ -33,7 +33,7 @@ import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
 import { runPlanPhase, runPostAuditAction, type PostAuditActionResult } from '../supervisor/plan-runner.ts';
-import { makeReadPlanVerdict } from '../supervisor/plan-verdict-report.ts';
+import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig } from '../config/models.ts';
 import { sendEscalation, type ResendSendFn } from '../notify/resend.ts';
@@ -700,6 +700,30 @@ function makePlanPaneHelpers(
 }
 
 /**
+ * Build a clearStalePlanArtifacts function for the given cwd (US-002, CAM-155).
+ *
+ * Removes both:
+ *   - `<cwd>/scripts/cam/plan-verdict-report.json` (stale auditor verdict)
+ *   - `<cwd>/scripts/cam/prd.json` (stale planner output)
+ *
+ * Best-effort: no-op on missing files, never throws.
+ * Mirrors makeClearReviewReport in host.ts (patterns.md 'Review-report.json
+ * reader dep-injection pattern').
+ */
+function makeClearStalePlanArtifacts(cwd: string): () => void {
+	const verdictPath = join(cwd, PLAN_VERDICT_REPORT_FILENAME);
+	const prdPath = join(cwd, 'scripts/cam/prd.json');
+	return () => {
+		try {
+			if (existsSync(verdictPath)) unlinkSync(verdictPath);
+		} catch { /* best-effort */ }
+		try {
+			if (existsSync(prdPath)) unlinkSync(prdPath);
+		} catch { /* best-effort */ }
+	};
+}
+
+/**
  * Build the production runPlanPhaseFn closure (US-002/US-R1-001, CAM-151).
  *
  * Wires runPlanPhase with all deps: plannerPaneId (read fresh from marker each
@@ -784,6 +808,7 @@ function makeProductionPlanPhaseFn(
 			logEvent,
 			ensureWorkerPane,
 			claudeDir,
+			clearStalePlanArtifactsFn: makeClearStalePlanArtifacts(cwd),
 		});
 
 		// Read branchName from prd.json (written by the planner during the plan phase).

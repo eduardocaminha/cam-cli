@@ -41,7 +41,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Prerequisite for US-003: clearing the stale prd.json is what makes 'planner produced no prd' detectable (readPlannerReportFn keys on prd.json presence). Mirror host.ts makeClearReviewReport (:161-172). Files: src/supervisor/plan-runner.ts (add clearStalePlanArtifactsFn dep, call at the top of runPlanPhase before Step 1 preflight), src/commands/sidecar.ts (wire it using PLAN_VERDICT_REPORT_FILENAME from plan-verdict-report.ts + join(cwd,'scripts/cam/prd.json')), test/plan-runner-clear-stale.test.ts. SAFETY: this only runs in phase:planning (a between-cycles state); the planner writes a fresh prd.json during the phase and branchName is read from prd.json AFTER runPlanPhase in sidecar.ts (:742-748), so clearing at start is safe. patterns.md 'Review-report.json reader dep-injection', 'JSON reader shape guards'."
     },
