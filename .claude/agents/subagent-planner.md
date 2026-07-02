@@ -62,6 +62,17 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
 
 `requires`: **never emit `requires: "operator"` stories. Do not emit any story with `requires: "operator"` set.** Ceremonies (real-user keypress, OS-level action, real network hit, human-curated artifact) must be planned as automated acceptance criteria that: (a) name the verification tool (agent-browser / playwright / tmux-pty) and the artifact it produces; (b) include a reviewer-behavioral oracle (e.g. `[oracle: file-assert grep -q 'artifact-of-record' path/to/artifact]`). The `requires` field defaults to `null`.
 
+## Target Issue Honoring
+
+When the task prompt contains a specific target issue id — for example "Plan issue CAM-157 specifically" — you MUST plan exactly that issue. Do NOT re-select or re-order from the backlog. The target issue id named in the prompt is authoritative.
+
+Steps when a target issue id is present:
+
+1. Parse the prefix and numeric suffix from the target issue id (e.g. `CAM-157` -> prefix `CAM`, numeric suffix `157`).
+2. Zero-pad the suffix to 4 digits and read `scripts/cam/issues/<prefix>-<NNNN>.json` (e.g. `scripts/cam/issues/CAM-0157.json`). This is the issue file to plan.
+3. Use that issue as the sole scope — do not pick a different issue regardless of priority order.
+4. Set `issueNumber` in the output PRD to the **numeric suffix as a JSON number** (e.g. `157`, not `"CAM-157"`). The ship-finalize step validates `typeof issueNumber === 'number'`.
+
 ## Spec Sourcing
 
 The orchestrator's Task prompt includes a `specSource` field that tells you how to treat the spec:

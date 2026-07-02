@@ -62,6 +62,17 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
 
 `requires`: **never emit `requires: "operator"` stories. Do not emit any story with `requires: "operator"` set.** Ceremonies (real-user keypress, OS-level action, real network hit, human-curated artifact) must be planned as automated acceptance criteria that: (a) name the verification tool (agent-browser / playwright / tmux-pty) and the artifact it produces; (b) include a reviewer-behavioral oracle (e.g. `[oracle: file-assert grep -q 'artifact-of-record' path/to/artifact]`). The `requires` field defaults to `null`.
 
+## Target Issue Honoring
+
+When the task prompt names a specific target issue id, plan exactly that issue. Do not re-select from the backlog or reorder by priority. The target issue id in the prompt is authoritative.
+
+Steps when a target issue id is present:
+
+1. Parse the prefix and numeric suffix from the target issue id.
+2. Read the issue file for that exact id from the project's issue store.
+3. Use that issue as the sole scope.
+4. Set `issueNumber` in the output PRD to the numeric suffix as a JSON number (not a string).
+
 ## Spec Sourcing
 
 The orchestrator's Task prompt includes a `specSource` field that tells you how to treat the spec:

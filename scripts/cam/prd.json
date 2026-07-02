@@ -42,7 +42,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "TWO copies to edit: .claude/agents/subagent-planner.md (cam-cli runtime, what the sidecar-spawned planner actually reads via --agent subagent-planner) AND templates/agents/subagent-planner.md (downstream cam init source of truth, embedded into src/vendor/_generated.ts). These two files ALREADY DIVERGE (the .claude copy is cam-cli-specific, the templates copy is generic) so diff before editing and do NOT try to make them byte-identical (patterns.md 'cam dual-copy is per-file'). embed-vendor embeds templates/, not .claude/, so only the templates edit requires re-embed; edit both, then run `bun run embed-vendor` and verify with `bun run embed-vendor:check` (self-hosting pattern, patterns.md 'Agent-prompt self-hosting'). Issue file naming: filename is 4-digit zero-padded (CAM-0157.json) but the `id` field inside is unpadded (CAM-157); the prompt from US-001 passes the unpadded id, so the honor-instruction must tell the planner to pad when resolving the file (padStart(4,'0'), per src/issues/backlog.ts:185). issueNumber must be the numeric suffix (157), matching ship-finalize.ts `typeof === 'number'`. No em-dash in the .md prose that is human-facing; agent-instruction files may use em-dash/emoji freely (global CLAUDE.md exception)."
     }

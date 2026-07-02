@@ -1,25 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Thread the selected issue id into the planner task prompt (runner authoritative)"
+    "id": "US-002",
+    "title": "subagent-planner honors an explicit target issue id (both copies + re-embed)"
   },
   "branchName": "cam/CAM-157-plan-runner-authoritative-target",
-  "timestamp": "2026-07-02T03:00:00Z",
-  "createdFiles": [
-    "test/plan-runner-target-prompt.test.ts",
-    "test/integration/plan-runner-target-obey.test.ts"
-  ],
+  "timestamp": "2026-07-02T04:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/plan-runner.ts",
+    ".claude/agents/subagent-planner.md",
+    "templates/agents/subagent-planner.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 adds buildPlannerTaskPrompt(issueId) as an exported helper in src/supervisor/plan-runner.ts. The planner task prompt is now built AFTER issue selection (post-null-check), from issue.id. US-002 (subagent-planner honors explicit target issue id) must update both templates/agents/subagent-planner.md and .claude/agents/subagent-planner.md to read the target from the prompt and obey it. The E2E chain is: sidecar picks CAM-157 -> buildPlannerTaskPrompt('CAM-157') -> prompt reaches planner agent -> planner reads 'Plan issue CAM-157 specifically' -> sets prd.json.issueNumber=157. The runner side is done (US-001); the agent-prompt side (US-002) is next.",
+  "nextStoryContext": "US-002 adds 'Target Issue Honoring' sections to both .claude/agents/subagent-planner.md (cam-cli-specific, with file-path padding and issueNumber number-type details) and templates/agents/subagent-planner.md (generic downstream wording). The embedded copy (src/vendor/_generated.ts) was regenerated via bun run embed-vendor. The full E2E chain is now complete: sidecar picks CAM-157 -> buildPlannerTaskPrompt('CAM-157') produces 'Plan issue CAM-157 specifically...' -> planner reads the section and plans scripts/cam/issues/CAM-0157.json -> sets prd.json.issueNumber=157. No further stories remain in this PRD with passes:false and requires!=operator.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal refactor: moved plannerTaskPrompt resolution after selectIssueFn() + added buildPlannerTaskPrompt helper. No external library exercised."
+      "summary": "Pure agent-prompt text edits and embed-vendor regeneration. No external library exercised."
     }
   ]
 }
