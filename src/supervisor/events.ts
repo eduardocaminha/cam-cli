@@ -80,7 +80,8 @@ export type WorkerEventKind =
 	| 'stage-promoted'
 	| 'cycle-tokens'
 	| 'meta-loop-observe'
-	| 'container-preflight';
+	| 'container-preflight'
+	| 'plan-preflight-failed';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';

@@ -29,6 +29,7 @@ import {
 	type PlanPhaseResult,
 	type PlanMutexState,
 } from '../../../src/supervisor/plan-runner.ts';
+import { makeInMemoryEventLogger } from '../../../src/supervisor/events.ts';
 import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-report.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
@@ -275,6 +276,31 @@ describe('runPlanPhase', () => {
 		const { opts, calls } = makeOpts({ preflightFn: () => PREFLIGHT_FAIL });
 		runPlanPhase(opts);
 		expect(calls.length).toBe(0);
+	});
+
+	// -------------------------------------------------------------------------
+	// plan-preflight-failed event (US-002, CAM-158)
+	// -------------------------------------------------------------------------
+	test('preflight failure emits exactly one plan-preflight-failed event with correct step', () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const { opts } = makeOpts({
+			preflightFn: () => PREFLIGHT_FAIL,
+			logEvent: logger,
+		});
+		runPlanPhase(opts);
+		const failEvents = events.filter((e) => e.kind === 'plan-preflight-failed');
+		expect(failEvents.length).toBe(1);
+		const detail = failEvents[0]?.detail as { step: string; detail: string };
+		expect(detail.step).toBe('typecheck');
+		expect(detail.detail).toBe('error TS2345');
+	});
+
+	test('preflight success emits no plan-preflight-failed event', () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const { opts } = makeOpts({ logEvent: logger });
+		runPlanPhase(opts);
+		const failEvents = events.filter((e) => e.kind === 'plan-preflight-failed');
+		expect(failEvents.length).toBe(0);
 	});
 
 	// -------------------------------------------------------------------------
