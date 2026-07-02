@@ -1,14 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Gitignore cam-plan-out pipe-pane logs"
+    "id": "US-002",
+    "title": "Emit plan-preflight-failed worker event"
   },
   "branchName": "cam/pr-158-plan-preflight-hardening",
   "timestamp": "2026-07-02T00:00:00Z",
   "createdFiles": [],
-  "modifiedFiles": [".gitignore"],
+  "modifiedFiles": [
+    "src/supervisor/events.ts",
+    "src/supervisor/plan-runner.ts",
+    "test/supervisor/plan/plan-runner.test.ts",
+    "scripts/file-size-budget.json"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added .claude/cam-plan-out-*.log to .gitignore (no leading dot, unlike .cam-worker-out-*.log). US-002 must extend WorkerEventKind in src/supervisor/events.ts with 'plan-preflight-failed' and emit from the if(!preflight.ok) block in runPlanPhase (src/supervisor/plan-runner.ts) BEFORE the return. The logEvent dep is already wired at line ~510 of plan-runner.ts.",
+  "nextStoryContext": "US-002 added 'plan-preflight-failed' to WorkerEventKind (events.ts line ~83) and emits via logEvent?. in runPlanPhase's if(!preflight.ok) block (plan-runner.ts ~line 519) with uuid 'plan-preflight' and detail {step, detail}. plan-preflight.ts remains pure (no logEvent reference). Budget raised 421->422 with CAM-158 ref. This PRD is now complete (US-001 and US-002 both pass).",
   "officialDocsValidated": [
     {
       "lib": "none",
