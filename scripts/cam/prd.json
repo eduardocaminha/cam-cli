@@ -92,7 +92,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Outermost safety net; implemented last so it wraps the graceful-exit paths added in US-002..004. Files: src/commands/sidecar.ts (makeProductionPlanPhaseFn ~678-773: wrap the closure body in try/catch; the closure already has makeSetPhaseFn(claudeDir,cwd) in scope for setPhase('idle'); log via logEvent with a 'sidecar-exit'-style detail), src/supervisor/loop.ts (~1474-1477: defensive try/catch around `await opts.runPlanPhaseFn()` so a throwing injected fn cannot reject the loop -- loop.ts has no phase-setter, so it only catches+logs+continues; phase->idle lives in the closure), test/plan-phase-crash-safety.test.ts. Belt-and-suspenders (recommend-on-merits): closure sets idle; loop guard prevents any future/test injected fn from killing the loop. patterns.md 'Sidecar-supervisor invariant', 'Sidecar self-exit via startup-grace latch'."
     }
