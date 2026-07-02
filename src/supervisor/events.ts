@@ -214,6 +214,12 @@ export interface MergeWatchPostMergeDoneEventDetail {
 	branchPrunedLocal?: boolean;
 	branchPrunedRemote?: boolean;
 	reason?: string;
+	/**
+	 * true when the post-merge git steps all succeeded (ok:true) but the issue
+	 * close returned not-found or another error (US-005). The close failure is
+	 * also surfaced via printError in runPostMerge.
+	 */
+	issueCloseFailed?: boolean;
 }
 
 /**

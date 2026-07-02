@@ -1,7 +1,7 @@
 {
   "id": "CAM-121",
   "title": "Harden cam ship --finalize: fechar issue none no main via commit-tree, nao na copia stale da branch",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-27T14:10:55.721Z",

@@ -17,6 +17,7 @@
 // unit-testable without a real gh binary or filesystem.
 //
 // US-007 (CAM-101). Durable state I/O helpers added in US-002 (CAM-138).
+// issueId threading + stashIssueIdInMergeWatch added in US-002 (CAM-121 PRD).
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import type { PostMergeOutcome } from './post-merge.ts';
@@ -83,6 +84,9 @@ export function readMergeWatchState(filePath: string): MergeWatchState | null {
 		if (typeof obj['lastPolledAt'] === 'number') {
 			state.lastPolledAt = obj['lastPolledAt'] as number;
 		}
+		if (typeof obj['issueId'] === 'string') {
+			state.issueId = obj['issueId'] as string;
+		}
 		return state;
 	} catch {
 		return null;
@@ -109,6 +113,9 @@ export function writeMergeWatchState(filePath: string, state: MergeWatchState): 
 	if (state.lastPolledAt !== undefined) {
 		payload['lastPolledAt'] = state.lastPolledAt;
 	}
+	if (state.issueId !== undefined) {
+		payload['issueId'] = state.issueId;
+	}
 	writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
 }
 
@@ -126,6 +133,45 @@ export function removeMergeWatchState(filePath: string): void {
 	}
 }
 
+/**
+ * Stash an issueId into the merge-watch state file (read-modify-write).
+ *
+ * Called before the PR is created so both the sidecar (ci-gated) and the
+ * orchestrator (immediate) can close the issue after merge without re-reading
+ * prd.json.
+ *
+ * Behaviour:
+ * - If the file does not exist, creates it with just { issueId }.
+ * - If the file exists and contains a JSON object, preserves all existing
+ *   fields (prNumber, mergedBranch, pollCount, etc.) and adds/overwrites
+ *   issueId.
+ * - If the file exists but contains malformed JSON or a non-object, starts
+ *   fresh with { issueId } (best-effort recovery; the sidecar will still
+ *   return null from readMergeWatchState until prNumber is written).
+ *
+ * readMergeWatchState still returns null for issueId-only files (prNumber
+ * absent), so stashing before the PR is created keeps the sidecar inert.
+ *
+ * Single-writer assumption holds (same as the rest of this module).
+ * Never throws.
+ */
+export function stashIssueIdInMergeWatch(filePath: string, issueId: string): void {
+	let existing: Record<string, unknown> = {};
+	try {
+		if (existsSync(filePath)) {
+			const content = readFileSync(filePath, 'utf8');
+			const parsed: unknown = JSON.parse(content);
+			if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+				existing = parsed as Record<string, unknown>;
+			}
+		}
+	} catch {
+		/* ignore read/parse errors: start from empty object */
+	}
+	existing['issueId'] = issueId;
+	writeFileSync(filePath, JSON.stringify(existing, null, 2), 'utf8');
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -141,6 +187,10 @@ export function removeMergeWatchState(filePath: string): void {
  * { prNumber, mergedBranch } is accepted and treated as fresh: pollCount starts
  * at 0 and the first tick polls immediately (no migration, no schemaVersion
  * field needed).
+ *
+ * issueId is optional and may be stashed before the PR is created (US-002).
+ * readMergeWatchState still returns null when prNumber is absent, so an
+ * issueId-only file keeps the sidecar inert until the PR number is written.
  */
 export interface MergeWatchState {
 	prNumber: number;
@@ -152,6 +202,12 @@ export interface MergeWatchState {
 	 * polls immediately, bypassing the throttle check).
 	 */
 	lastPolledAt?: number;
+	/**
+	 * Resolved target issue id (e.g. "CAM-121"). Written by stashIssueIdInMergeWatch
+	 * before the PR is created so the post-merge close path can close the issue
+	 * without re-reading prd.json.
+	 */
+	issueId?: string;
 }
 
 /**
@@ -311,6 +367,26 @@ function warnOnPruneFailure(
 }
 
 /**
+ * Build the post-merge-done event detail for a successful (ok:true) result.
+ * Extracted from processPollResult to keep it under the biome 15-complexity limit.
+ * Records issueCloseFailed when closeResult indicates a close failure (US-005).
+ */
+function buildSuccessPostMergeDoneDetail(
+	prNumber: number,
+	result: Extract<PostMergeOutcome, { ok: true }>,
+): MergeWatchPostMergeDoneEventDetail {
+	const detail: MergeWatchPostMergeDoneEventDetail = {
+		prNumber, ok: true, tag: result.tag, tagCreated: result.tagCreated,
+		branchPrunedLocal: result.branchPrunedLocal,
+		branchPrunedRemote: result.branchPrunedRemote,
+	};
+	if (result.closeResult !== undefined && !result.closeResult.ok) {
+		detail.issueCloseFailed = true;
+	}
+	return detail;
+}
+
+/**
  * Handle one non-null poll result.
  *
  * Returns `{ outcome }` when the state machine should stop (terminal outcome),
@@ -338,11 +414,7 @@ function processPollResult(
 			// (back-to-back send-keys would race in the orchestrator Ink prompt).
 			const pruneSuffix = warnOnPruneFailure(result.branchPrunedLocal, result.branchPrunedRemote);
 			notifyOrchestrator(`[cam] post-merge complete: ${result.tag} ${tagNote}${pruneSuffix}`);
-			const doneDetail: MergeWatchPostMergeDoneEventDetail = {
-				prNumber, ok: true, tag: result.tag, tagCreated: result.tagCreated,
-				branchPrunedLocal: result.branchPrunedLocal,
-				branchPrunedRemote: result.branchPrunedRemote,
-			};
+			const doneDetail = buildSuccessPostMergeDoneDetail(prNumber, result);
 			logEvent?.('merge-watch-post-merge-done', doneDetail);
 		} else {
 			notifyOrchestrator(`[cam] post-merge failed: ${result.reason}`);

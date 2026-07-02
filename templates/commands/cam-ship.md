@@ -51,7 +51,7 @@ Steps:
 
 5. **Cycle-close hygiene (backend-aware close + harness reset) -- before push.**
 
-   Run the finalize command. It reads the issue backend from `scripts/cam/project.toml`, closes the local issue (when `issue_system = "none"`), removes per-branch harness state (`prd.json`, `handoff.json`, `progress.txt`) via `git rm -f --ignore-unmatch`, and commits everything in a single cycle-close commit.
+   Run the finalize command. It reads the issue backend from `scripts/cam/project.toml`, removes per-branch harness state (`prd.json`, `handoff.json`, `progress.txt`) via `git rm -f --ignore-unmatch`, and commits everything in a single cycle-close commit. For the `none` backend, it stashes the issueId into `.cam-merge-watch.json` instead of closing the issue directly on the branch; the actual close happens post-merge.
 
    ```bash
    cam ship --finalize
@@ -104,22 +104,41 @@ Steps:
 
    **Merge mode** (read `scripts/cam/project.toml [ship] merge_mode`; default: `immediate`):
 
-   - **`ci-gated`**: After `gh pr create` above, write the merge-watch state file so the sidecar can poll for CI completion:
+   - **`ci-gated`**: After `gh pr create` above, enrich the merge-watch state file with the PR number and branch (read-modify-write to preserve the issueId stashed by `cam ship --finalize`):
      ```bash
      PR_NUMBER=$(gh pr view --json number --jq '.number')
      BRANCH=$(git branch --show-current)
-     printf '{"prNumber":%s,"mergedBranch":"%s"}\n' "$PR_NUMBER" "$BRANCH" > .claude/.cam-merge-watch.json
+     WATCH=$(cat .claude/.cam-merge-watch.json 2>/dev/null || printf '{}')
+     printf '%s' "$WATCH" | jq --argjson pr "$PR_NUMBER" --arg branch "$BRANCH" \
+       '. + {"prNumber": $pr, "mergedBranch": $branch}' > .claude/.cam-merge-watch.json
      ```
-     The sidecar enriches and is the owner of `.cam-merge-watch.json` from this point on; the write side must not re-write it (re-writing causes double post-merge).
-     Do NOT run pull/tag/prune inline. The sidecar detects the CI-merged event by reading `.claude/.cam-merge-watch.json` on idle ticks and completes post-merge autonomously (pull main, push tag, prune branch only -- it does NOT close the issue or print a summary). For `github` and `linear` backends, close the issue manually after the PR merges (run `gh issue close <N>` or use the Linear UI); the `none` backend was already closed in Step 5. Skip Step 9.
+     The sidecar is the owner of `.cam-merge-watch.json` from this point on; the write side must not re-write it (re-writing causes double post-merge).
+     Do NOT run pull/tag/prune inline. The sidecar detects the CI-merged event by reading `.claude/.cam-merge-watch.json` on idle ticks and completes post-merge autonomously (pull main, push tag, prune branch, and -- for the `none` backend -- close the issue via `closeIssueOnMain` using the stashed issueId). For `github` and `linear` backends, close the issue manually after the PR merges (run `gh issue close <N>` or use the Linear UI). Skip Step 9.
    - **`immediate`**: Continue to Steps 8-9. The orchestrator does the post-merge by hand as today.
 
-8. **Close the `github` / `linear` backend issue (if applicable).** The `none` backend was already closed by `cam ship --finalize` in Step 5; for the others:
-   ```bash
-   # github:
-   gh issue close <N> --reason completed --comment "Shipped via PR #<PR>"
-   # linear: transition <issue_prefix>-<N> to Done via the Linear API.
-   ```
+8. **Close the issue (per backend).**
+
+   - **`none` backend**: read the stashed issueId from `.cam-merge-watch.json`, call `closeIssueOnMain` inline, then remove the watch file:
+     ```typescript
+     // Orchestrator runs this inline (mirroring the cam-spec.md specifyIssueOnMain pattern):
+     import { closeIssueOnMain } from './src/commands/issue-specify.ts';
+     import { spawnSync } from 'node:child_process';
+     import { readFileSync, unlinkSync } from 'node:fs';
+
+     const watch = JSON.parse(readFileSync('.claude/.cam-merge-watch.json', 'utf8'));
+     const result = closeIssueOnMain({
+       cwd: process.cwd(),
+       id: watch.issueId,
+       spawnFn: (cmd, args, opts) => spawnSync(cmd, args, { ...opts, stdio: 'pipe' }),
+       clock: () => new Date().toISOString(),
+     });
+     if (result.ok) unlinkSync('.claude/.cam-merge-watch.json');
+     ```
+   - **`github` backend**:
+     ```bash
+     gh issue close <N> --reason completed --comment "Shipped via PR #<PR>"
+     ```
+   - **`linear` backend**: transition `<issue_prefix>-<N>` to Done via the Linear API.
 
 9. **Print summary**:
    ```

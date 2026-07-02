@@ -480,6 +480,72 @@ function buildMergeFiles(
 	return files;
 }
 
+// ---------------------------------------------------------------------------
+// Close mode types (shipped)
+// ---------------------------------------------------------------------------
+
+export interface CloseIssueOnMainOptions {
+	/** Absolute path to the project root (git repo). */
+	cwd: string;
+	/** Id of the issue to close (set stage:'shipped'). */
+	id: string;
+	/** Injectable spawnSync for all git subprocess calls. */
+	spawnFn: SpawnFn;
+	/** Injectable clock -- returns ISO 8601 timestamp. */
+	clock: ClockFn;
+	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
+	writeFile?: (path: string, text: string) => void;
+}
+
+export interface CloseIssueOnMainResult {
+	ok: true;
+	id: string;
+	committedTo: 'main';
+	sha: string;
+	branchWasMain: boolean;
+}
+
+export type CloseIssueOnMainError =
+	| { ok: false; reason: 'diverged' | 'detached-head' | 'missing-main' }
+	| { ok: false; reason: 'not-found' };
+
+export type CloseIssueOnMainOutcome = CloseIssueOnMainResult | CloseIssueOnMainError;
+
+/**
+ * Close an issue by setting stage:'shipped' and committing the CAM-NNNN.json on main.
+ *
+ * Guards (in order):
+ *   0. Up-to-date (detached-head, missing-main, diverged).
+ *   1. Target id exists -- not-found on failure (never a silent ok).
+ *
+ * Commit message: `chore(cam): close <id> (shipped)`.
+ */
+export function closeIssueOnMain(options: CloseIssueOnMainOptions): CloseIssueOnMainOutcome {
+	const { cwd, id, spawnFn } = options;
+
+	const guard = checkMainUpToDate(cwd, spawnFn);
+	if (!guard.ok) return guard;
+	const { branchWasMain, localMainSha } = guard;
+
+	const allIssues = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));
+
+	const entryIndex = allIssues.findIndex((e: IssueEntry) => e.id === id);
+	if (entryIndex === -1) return { ok: false, reason: 'not-found' };
+	const entry = allIssues[entryIndex];
+	if (entry === undefined) return { ok: false, reason: 'not-found' };
+
+	const mutated: IssueEntry = { ...entry, stage: 'shipped' };
+	const serialized = JSON.stringify(mutated, null, 2) + '\n';
+	const filePath = issueFilePath(id);
+	const files: FileWrite[] = [{ path: filePath, content: serialized }];
+
+	const commitMsg = `chore(cam): close ${id} (shipped)`;
+	const sha = commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');
+
+	pushMainBestEffort(cwd, spawnFn);
+	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
+}
+
 /**
  * Merge a source issue into a target: set source status:'abandoned', record
  * the merge target in source.description, and optionally fold source.blockedBy

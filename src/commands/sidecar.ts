@@ -403,7 +403,7 @@ function makeProductionMergeWatchFn(
 		const stepOpts: StepMergeWatchOptions = {
 			cwd,
 			postMergeFn: ({ cwd: mergeCwd, mergedBranch }) =>
-				runPostMerge({ cwd: mergeCwd, mergedBranch, spawnFn: postMergeSpawnFn }),
+				runPostMerge({ cwd: mergeCwd, mergedBranch, spawnFn: postMergeSpawnFn, closeIssueId: state.issueId }),
 			notifyOrchestrator: notify,
 			logEvent: (kind, detail) =>
 				logEvent({ ts: new Date().toISOString(), storyId: undefined, uuid: 'sidecar', kind, detail }),

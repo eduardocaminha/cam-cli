@@ -782,3 +782,153 @@ describe('runPostMerge -- no release log writes', () => {
 		expect(content.toLowerCase()).not.toContain('journal');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Tests: issue close path (US-005)
+// ---------------------------------------------------------------------------
+
+import type { CloseIssueOnMainOutcome } from '../../src/commands/issue-specify.ts';
+
+describe('runPostMerge -- issue close path (US-005)', () => {
+	test('AC1: when closeIssueId present and close succeeds, closeResult is included in outcome', () => {
+		const fakeCloseResult: CloseIssueOnMainOutcome = {
+			ok: true, id: 'CAM-121', committedTo: 'main', sha: 'closesha', branchWasMain: true,
+		};
+		const closeIssueFn = (_cwd: string, _id: string) => fakeCloseResult;
+
+		const result = runPostMerge(baseOpts({ closeIssueId: 'CAM-121', closeIssueFn }));
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.closeResult).toBeDefined();
+		expect(result.closeResult?.ok).toBe(true);
+	});
+
+	test('AC1: closeIssueFn is called with correct cwd and closeIssueId', () => {
+		const calls: Array<{ cwd: string; id: string }> = [];
+		const closeIssueFn = (cwd: string, id: string): CloseIssueOnMainOutcome => {
+			calls.push({ cwd, id });
+			return { ok: true, id, committedTo: 'main', sha: 'sha', branchWasMain: true };
+		};
+
+		runPostMerge(baseOpts({ closeIssueId: 'CAM-121', closeIssueFn }));
+
+		expect(calls.length).toBe(1);
+		expect(calls[0]?.cwd).toBe(FAKE_CWD);
+		expect(calls[0]?.id).toBe('CAM-121');
+	});
+
+	test('AC1: close is called AFTER tag and branch prune (ordering)', () => {
+		const callOrder: string[] = [];
+		const spawnFn: SpawnFn = (cmd, args, _o) => {
+			if (args.includes('checkout') && args.includes('main')) return fakeSpawn();
+			if (args.includes('pull')) return fakeSpawn();
+			if (args.includes('rev-parse') && args.includes('HEAD') && !args.includes('--verify')) {
+				return fakeSpawn({ stdout: `${FAKE_SHA}\n` });
+			}
+			if (args.includes('tag') && args.includes('-l')) return fakeSpawn({ stdout: '' });
+			if (args.includes('tag') && args.includes(FAKE_TAG) && !args.includes('-l')) {
+				callOrder.push('tag-create');
+				return fakeSpawn();
+			}
+			if (args.includes('push') && args.includes('origin') && args.includes(FAKE_TAG)) {
+				callOrder.push('tag-push');
+				return fakeSpawn();
+			}
+			return fakeSpawn();
+		};
+		const closeIssueFn = (cwd: string, id: string): CloseIssueOnMainOutcome => {
+			callOrder.push('close');
+			return { ok: true, id, committedTo: 'main', sha: 'sha', branchWasMain: true };
+		};
+
+		runPostMerge(baseOpts({ spawnFn, closeIssueId: 'CAM-121', closeIssueFn }));
+
+		// tag-push must come before close
+		const tagPushIdx = callOrder.indexOf('tag-push');
+		const closeIdx = callOrder.indexOf('close');
+		expect(tagPushIdx).toBeGreaterThanOrEqual(0);
+		expect(closeIdx).toBeGreaterThan(tagPushIdx);
+	});
+
+	test('AC2: close returns not-found => closeResult.ok is false, overall ok is still true', () => {
+		const fakeCloseResult: CloseIssueOnMainOutcome = { ok: false, reason: 'not-found' };
+		const closeIssueFn = (_cwd: string, _id: string) => fakeCloseResult;
+
+		const result = runPostMerge(baseOpts({ closeIssueId: 'CAM-121', closeIssueFn }));
+
+		// Overall git steps succeeded; ok:true
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		// closeResult surfaces the failure
+		expect(result.closeResult?.ok).toBe(false);
+		if (result.closeResult?.ok === false) {
+			expect(result.closeResult.reason).toBe('not-found');
+		}
+	});
+
+	test('AC2: close failure does not cause a silent success (closeResult is present and not ok)', () => {
+		// Confirm closeResult is defined and has ok:false (never absent/undefined on failure)
+		const closeIssueFn = (_cwd: string, _id: string): CloseIssueOnMainOutcome =>
+			({ ok: false, reason: 'not-found' });
+
+		const result = runPostMerge(baseOpts({ closeIssueId: 'CAM-121', closeIssueFn }));
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		// Must NOT be undefined (that would be silent success)
+		expect(result.closeResult).toBeDefined();
+		expect(result.closeResult?.ok).toBe(false);
+	});
+
+	test('AC3: when closeIssueId is absent, no closeResult and behavior unchanged', () => {
+		const calls: Array<{ cwd: string; id: string }> = [];
+		const closeIssueFn = (cwd: string, id: string): CloseIssueOnMainOutcome => {
+			calls.push({ cwd, id });
+			return { ok: true, id, committedTo: 'main', sha: 'sha', branchWasMain: true };
+		};
+
+		// No closeIssueId in opts
+		const result = runPostMerge(baseOpts({ closeIssueFn }));
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		// closeIssueFn must not be called
+		expect(calls.length).toBe(0);
+		// closeResult must be absent
+		expect(result.closeResult).toBeUndefined();
+	});
+
+	test('AC3: when closeIssueId is absent, other result fields are intact (no regression)', () => {
+		const result = runPostMerge(baseOpts());
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.pulledSha).toBe(FAKE_SHA);
+		expect(result.tag).toBe(FAKE_TAG);
+		expect(result.tagCreated).toBe(true);
+		expect(result.branchPrunedLocal).toBe(true);
+		expect(result.branchPrunedRemote).toBe(true);
+		expect(result.closeResult).toBeUndefined();
+	});
+
+	test('AC1: git steps aborting early (pull fails) means closeIssueFn is never called', () => {
+		const calls: Array<{ cwd: string; id: string }> = [];
+		const closeIssueFn = (cwd: string, id: string): CloseIssueOnMainOutcome => {
+			calls.push({ cwd, id });
+			return { ok: true, id, committedTo: 'main', sha: 'sha', branchWasMain: true };
+		};
+		const spawnFn: SpawnFn = (cmd, args, _o) => {
+			if (args.includes('pull')) return fakeSpawn({ status: 1 });
+			return fakeSpawn();
+		};
+
+		const result = runPostMerge(baseOpts({ spawnFn, closeIssueId: 'CAM-121', closeIssueFn }));
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('pull-failed');
+		}
+		expect(calls.length).toBe(0);
+	});
+});

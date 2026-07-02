@@ -27,6 +27,7 @@ import {
 	readMergeWatchState,
 	writeMergeWatchState,
 	removeMergeWatchState,
+	stashIssueIdInMergeWatch,
 	runMergeWatch,
 	stepMergeWatch,
 	type MergeWatchOptions,
@@ -1664,5 +1665,196 @@ describe('file persistence: non-terminal tick leaves file present', () => {
 		expect(postMergeCalls).toBe(1);
 		// File must be absent after terminal.
 		expect(existsSync(filePath)).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-002 (CAM-121 PRD): issueId threading in MergeWatchState
+// ---------------------------------------------------------------------------
+// AC1: issueId survives every read/write round-trip.
+// AC2: stashIssueIdInMergeWatch creates / read-modify-writes the file.
+// AC3: readMergeWatchState returns null for issueId-only files (no prNumber).
+// ---------------------------------------------------------------------------
+
+describe('MergeWatchState issueId round-trip (US-002)', () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'cam-mw-issueid-'));
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	// AC1a: issueId written and read back correctly
+	test('AC1a: issueId survives writeMergeWatchState / readMergeWatchState round-trip', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		const state: MergeWatchState = {
+			prNumber: 42,
+			mergedBranch: 'cam/feature',
+			pollCount: 3,
+			lastPolledAt: 1_000_000,
+			issueId: 'CAM-121',
+		};
+
+		writeMergeWatchState(filePath, state);
+		const read = readMergeWatchState(filePath);
+
+		expect(read).not.toBeNull();
+		expect(read?.prNumber).toBe(42);
+		expect(read?.mergedBranch).toBe('cam/feature');
+		expect(read?.pollCount).toBe(3);
+		expect(read?.lastPolledAt).toBe(1_000_000);
+		expect(read?.issueId).toBe('CAM-121');
+	});
+
+	// AC1b: issueId absent in state -> not present in written JSON and reads back undefined
+	test('AC1b: issueId absent -> read back as undefined', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, { prNumber: 1, mergedBranch: 'cam/b' });
+
+		const read = readMergeWatchState(filePath);
+		expect(read?.issueId).toBeUndefined();
+
+		// Also verify it is not in the raw JSON
+		const raw = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+		expect('issueId' in raw).toBe(false);
+	});
+
+	// AC1c: issueId survives a non-terminal tick (write -> stepMergeWatch -> write result -> read)
+	test('AC1c: issueId survives a non-terminal tick round-trip', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		const initial: MergeWatchState = {
+			prNumber: 9,
+			mergedBranch: 'cam/feature',
+			issueId: 'CAM-121',
+		};
+		writeMergeWatchState(filePath, initial);
+
+		const pollFn: GhPollFn = () => OPEN_CLEAN;
+		const state = readMergeWatchState(filePath);
+		expect(state?.issueId).toBe('CAM-121');
+
+		const result = stepMergeWatch(state!, 0, pollFn, {
+			cwd: '/fake',
+			postMergeFn: () => ({ ok: false, reason: 'not called' }),
+			notifyOrchestrator: () => {},
+		});
+
+		expect(result.kind).toBe('continue');
+		if (result.kind === 'continue') {
+			writeMergeWatchState(filePath, result.state);
+		}
+
+		const after = readMergeWatchState(filePath);
+		expect(after?.issueId).toBe('CAM-121');
+	});
+
+	// AC3: readMergeWatchState returns null for issueId-only file (pre-PR stash)
+	test('AC3: issueId-only file (no prNumber) -> readMergeWatchState returns null', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeFileSync(filePath, JSON.stringify({ issueId: 'CAM-121' }), 'utf8');
+
+		const state = readMergeWatchState(filePath);
+		expect(state).toBeNull();
+	});
+
+	// AC3b: issueId present alongside prNumber -> reads correctly (not null)
+	test('AC3b: issueId + prNumber present -> not null, issueId accessible', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeFileSync(
+			filePath,
+			JSON.stringify({ prNumber: 5, mergedBranch: 'cam/b', issueId: 'CAM-42' }),
+			'utf8',
+		);
+
+		const state = readMergeWatchState(filePath);
+		expect(state).not.toBeNull();
+		expect(state?.issueId).toBe('CAM-42');
+	});
+});
+
+describe('stashIssueIdInMergeWatch (US-002)', () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'cam-mw-stash-'));
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	// AC2a: creates the file when absent
+	test('AC2a: creates file when absent with issueId only', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		expect(existsSync(filePath)).toBe(false);
+
+		stashIssueIdInMergeWatch(filePath, 'CAM-121');
+
+		expect(existsSync(filePath)).toBe(true);
+		const raw = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+		expect(raw['issueId']).toBe('CAM-121');
+		// File is issueId-only: readMergeWatchState returns null (sidecar stays inert)
+		expect(readMergeWatchState(filePath)).toBeNull();
+	});
+
+	// AC2b: preserves existing prNumber, mergedBranch, pollCount when file already has them
+	test('AC2b: preserves prNumber, mergedBranch, pollCount from existing file', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, {
+			prNumber: 77,
+			mergedBranch: 'cam/existing-branch',
+			pollCount: 5,
+			lastPolledAt: 999_000,
+		});
+
+		stashIssueIdInMergeWatch(filePath, 'CAM-121');
+
+		const state = readMergeWatchState(filePath);
+		expect(state).not.toBeNull();
+		expect(state?.prNumber).toBe(77);
+		expect(state?.mergedBranch).toBe('cam/existing-branch');
+		expect(state?.pollCount).toBe(5);
+		expect(state?.lastPolledAt).toBe(999_000);
+		expect(state?.issueId).toBe('CAM-121');
+	});
+
+	// AC2c: overwrites an existing issueId
+	test('AC2c: overwrites an existing issueId', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, {
+			prNumber: 10,
+			mergedBranch: 'cam/b',
+			issueId: 'CAM-001',
+		});
+
+		stashIssueIdInMergeWatch(filePath, 'CAM-121');
+
+		const state = readMergeWatchState(filePath);
+		expect(state?.issueId).toBe('CAM-121');
+	});
+
+	// AC2d: handles malformed JSON in existing file gracefully (creates fresh { issueId })
+	test('AC2d: malformed JSON -> creates fresh file with issueId only', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeFileSync(filePath, 'INVALID JSON{{{{', 'utf8');
+
+		stashIssueIdInMergeWatch(filePath, 'CAM-121');
+
+		expect(existsSync(filePath)).toBe(true);
+		const raw = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+		expect(raw['issueId']).toBe('CAM-121');
+	});
+
+	// AC2e: idempotent for the same issueId
+	test('AC2e: idempotent - calling twice with same issueId leaves issueId unchanged', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		stashIssueIdInMergeWatch(filePath, 'CAM-121');
+		stashIssueIdInMergeWatch(filePath, 'CAM-121');
+
+		const raw = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+		expect(raw['issueId']).toBe('CAM-121');
 	});
 });

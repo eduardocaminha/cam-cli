@@ -4,6 +4,18 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.45.0] - 2026-07-02
+
+### Added
+
+- US-R1-001 - Gate stashFn behind issueSystem=none in finalizeCycleClose
+- US-006 - Update cam-ship.md for the relocated post-merge close (both merge modes)
+- US-005 - Close the none-backend issue on main in the ci-gated post-merge
+- US-004 - Stop closing the issue in ship-finalize; stash the resolved issueId instead
+- US-003 - Add closeIssueOnMain on-main commit-tree close primitive
+- US-002 - Thread an issueId through the merge-watch state schema
+- US-001 - Add resolveIssueId helper (string or numeric issueNumber, never <prefix>-0)
+
 ## [0.44.0] - 2026-07-02
 
 ### Added
