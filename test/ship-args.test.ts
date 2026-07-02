@@ -60,7 +60,6 @@ function fakeResult(): FinalizeCycleCloseResult {
 	return {
 		issueId: 'CAM-72',
 		issueBackend: 'none',
-		issueLocalClosed: false,
 		commitMessage: 'chore(cam): close CAM-72 + drop per-branch harness state (CAM-27 hygiene)',
 	};
 }

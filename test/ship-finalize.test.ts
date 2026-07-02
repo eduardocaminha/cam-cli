@@ -2,18 +2,16 @@
 //
 // Unit tests for finalizeCycleClose() in src/commands/ship-finalize.ts.
 //
-// Coverage (per US-001 acceptance criteria):
-//   (a) none-backend happy path: issue closed in issues.local.json + git rm +
-//       commit
-//   (b) github-backend: issues.local.json NOT touched; git rm + commit still
-//       run
-//   (c) linear-backend: same as (b)
-//   (d) dirty-prd.json case: prd.json still removed via
-//       `git rm -f --ignore-unmatch` even when git would normally refuse to rm
-//       a modified file
-//
-// All external I/O is faked via injectable deps; no real git binary or
-// filesystem is exercised.
+// Coverage (US-004 acceptance criteria):
+//   AC1: issue-writer seam is never invoked (readIssues/writeIssues removed
+//        from options); issue file is byte-for-byte untouched after a run.
+//   AC2: prd.json, handoff.json, progress.txt removed via git rm + commit
+//        (unchanged behavior from prior impl).
+//   AC3: resolveIssueId called for both numeric and string issueNumber;
+//        stashFn called with resolved id BEFORE any git rm call;
+//        unresolvable but non-null issueNumber throws (never stashes '<prefix>-0').
+//   AC4: no git push to main in any spawn call.
+//   AC5: github and linear backends unchanged (git rm + commit, no issue file).
 
 import { describe, expect, test } from 'bun:test';
 import {
@@ -34,18 +32,10 @@ const PROJECT_TOML_NONE = 'issue_system = "none"\nissue_prefix = "CAM"\n';
 const PROJECT_TOML_GITHUB = 'issue_system = "github"\nissue_prefix = "CAM"\n';
 const PROJECT_TOML_LINEAR = 'issue_system = "linear"\nissue_prefix = "CAM"\n';
 
-const PRD_JSON = JSON.stringify({ issueNumber: 72, branchName: 'cam/CAM-72-test' });
-
-// US-004: per-file format - each CAM-NNNN.json contains a single IssueEntry.
-const CAM_72_ENTRY = {
-	id: 'CAM-72',
-	title: 'Test issue',
-	stage: 'idea',
-	status: 'open',
-	blockedBy: [] as string[],
-	createdAt: '2026-06-01T00:00:00Z',
-};
-const CAM_72_JSON = JSON.stringify(CAM_72_ENTRY, null, 2) + '\n';
+/** prd.json with numeric issueNumber (classic form). */
+const PRD_JSON_NUMERIC = JSON.stringify({ issueNumber: 72, branchName: 'cam/CAM-72-test' });
+/** prd.json with string issueNumber (CAM-113: /cam-next anchoring writes full string id). */
+const PRD_JSON_STRING = JSON.stringify({ issueNumber: 'CAM-72', branchName: 'cam/CAM-72-test' });
 
 /** Minimal passing SpawnSyncReturns<string> for a successful git call. */
 function okResult(): SpawnSyncReturns<string> {
@@ -61,12 +51,12 @@ interface SpawnCall {
  * Build a SpawnFn that records every call and returns success.
  *
  * For `git diff --cached --quiet` the returned status controls the
- * "nothing staged" guard introduced in US-005:
+ * "nothing staged" guard:
  *   status 1 (default) = staged changes present  => commit proceeds
  *   status 0            = no staged changes        => commit is skipped
  *
  * For `git rev-parse --short HEAD` the returned stdout is `revParseSha`
- * (default 'abc1234'), reflecting the new structured-result-line emit (US-006).
+ * (default 'abc1234').
  */
 function makeRecordingSpawn(opts: { diffCachedStatus?: number; revParseSha?: string } = {}): { spawnFn: SpawnFn; calls: SpawnCall[] } {
 	const calls: SpawnCall[] = [];
@@ -93,52 +83,72 @@ function makeOptions(
 		cwd: '/fake/project',
 		clock,
 		readProjectToml: () => PROJECT_TOML_NONE,
-		readPrd: () => PRD_JSON,
-		readIssues: (issueId: string) => {
-			if (issueId === 'CAM-72') return CAM_72_JSON;
-			throw new Error(`not found: ${issueId}`);
-		},
-		writeIssues: () => {},
+		readPrd: () => PRD_JSON_NUMERIC,
+		stashFn: () => {},
 		...overrides,
 	};
 }
 
 // ---------------------------------------------------------------------------
-// (a) none-backend happy path
+// AC1: issue-writer seam is never invoked
 // ---------------------------------------------------------------------------
 
-describe('finalizeCycleClose — none backend (happy path)', () => {
-	test('closes issue in issues dir (CAM-NNNN.json), rms harness files, and commits', () => {
-		const { spawnFn, calls } = makeRecordingSpawn();
-		let writtenIssuesId = '';
-		let writtenIssuesText: string | null = null;
+describe('AC1 (US-004): finalizeCycleClose never reads or writes any issues/ file', () => {
+	test('none backend: stashFn called; no readIssues/writeIssues in options', () => {
+		// The interface no longer has readIssues / writeIssues fields.
+		// Verify stashFn IS called with the resolved id.
+		const stashedIds: string[] = [];
+		const { spawnFn } = makeRecordingSpawn();
 
-		const result = finalizeCycleClose(
+		finalizeCycleClose(
 			makeOptions({
 				spawnFn,
 				readProjectToml: () => PROJECT_TOML_NONE,
-				writeIssues: (issueId: string, text: string) => {
-					writtenIssuesId = issueId;
-					writtenIssuesText = text;
-				},
+				stashFn: (id) => stashedIds.push(id),
 			}),
 		);
 
-		// Return value
-		expect(result.issueId).toBe('CAM-72');
-		expect(result.issueBackend).toBe('none');
-		expect(result.issueLocalClosed).toBe(true);
-		expect(result.commitMessage).toBe(
-			'chore(cam): close CAM-72 + drop per-branch harness state (CAM-27 hygiene)',
+		expect(stashedIds).toEqual(['CAM-72']);
+	});
+
+	test('stashFn is called with the resolved id before any git rm call', () => {
+		const callOrder: string[] = [];
+		const { spawnFn, calls } = makeRecordingSpawn();
+
+		// Wrap spawnFn to record rm order
+		const wrappingSpawn: SpawnFn = (cmd, args, o) => {
+			if (args.includes('rm')) callOrder.push('git-rm');
+			return spawnFn(cmd, args, o);
+		};
+
+		finalizeCycleClose(
+			makeOptions({
+				spawnFn: wrappingSpawn,
+				stashFn: () => callOrder.push('stash'),
+			}),
 		);
 
-		// Per-file CAM-0072.json was written with stage='shipped'
-		expect(writtenIssuesId).toBe('CAM-72');
-		expect(writtenIssuesText).not.toBeNull();
-		// US-004: written content is a single IssueEntry (no .issues array)
-		const parsed = JSON.parse(writtenIssuesText!) as { id: string; stage: string };
-		expect(parsed.stage).toBe('shipped');
-		expect(parsed.id).toBe('CAM-72');
+		// stash MUST appear before the first git rm
+		const stashIdx = callOrder.indexOf('stash');
+		const firstRmIdx = callOrder.indexOf('git-rm');
+		expect(stashIdx).toBeGreaterThanOrEqual(0);
+		expect(firstRmIdx).toBeGreaterThanOrEqual(0);
+		expect(stashIdx).toBeLessThan(firstRmIdx);
+
+		// ensure calls were actually recorded
+		expect(calls.length).toBeGreaterThan(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC2: git rm + commit still runs (unchanged)
+// ---------------------------------------------------------------------------
+
+describe('AC2 (US-004): git rm + commit unchanged for none backend', () => {
+	test('rms prd.json, handoff.json, progress.txt and commits', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+
+		const result = finalizeCycleClose(makeOptions({ spawnFn }));
 
 		// git rm -f --ignore-unmatch for each harness file
 		const rmCalls = calls.filter(
@@ -153,112 +163,222 @@ describe('finalizeCycleClose — none backend (happy path)', () => {
 		expect(removedPaths).toContain('scripts/cam/handoff.json');
 		expect(removedPaths).toContain('scripts/cam/progress.txt');
 
-		// US-004: git add for scripts/cam/issues/CAM-0072.json (not issues.local.json)
-		const addCall = calls.find(
-			(c) => c.args.includes('add') && c.args.some((a) => a.includes('scripts/cam/issues/')),
-		);
-		expect(addCall).toBeDefined();
-		// Verify issues.local.json is never referenced
-		for (const call of calls) {
-			for (const arg of call.args) {
-				expect(arg).not.toContain('issues.local.json');
-			}
-		}
-
-		// git commit with exact message
-		const commitCall = calls.find((c) => c.args.includes('commit'));
-		expect(commitCall).toBeDefined();
-		const msgIndex = commitCall!.args.indexOf('-m');
-		expect(commitCall!.args[msgIndex + 1]).toBe(
-			'chore(cam): close CAM-72 + drop per-branch harness state (CAM-27 hygiene)',
-		);
-	});
-});
-
-// ---------------------------------------------------------------------------
-// (b) github-backend: skip issues.local.json; still rm + commit
-// ---------------------------------------------------------------------------
-
-describe('finalizeCycleClose — github backend', () => {
-	test('does NOT touch issues.local.json but still rms harness files and commits', () => {
-		const { spawnFn, calls } = makeRecordingSpawn();
-		let writeIssuesCalled = false;
-
-		const result = finalizeCycleClose(
-			makeOptions({
-				spawnFn,
-				readProjectToml: () => PROJECT_TOML_GITHUB,
-				writeIssues: () => { writeIssuesCalled = true; },
-			}),
-		);
-
-		// issueLocalClosed must be false for github
-		expect(result.issueBackend).toBe('github');
-		expect(result.issueLocalClosed).toBe(false);
-
-		// issues.local.json should NOT be written
-		expect(writeIssuesCalled).toBe(false);
-
-		// US-004: git add for scripts/cam/issues/ should NOT be called (github backend skips it)
-		const addIssuesCall = calls.find(
-			(c) => c.args.includes('add') && c.args.some((a) => a.includes('scripts/cam/issues/')),
-		);
-		expect(addIssuesCall).toBeUndefined();
-
-		// git rm -f --ignore-unmatch should still be called for harness files
-		const rmCalls = calls.filter(
-			(c) =>
-				c.args.includes('rm') &&
-				c.args.includes('-f') &&
-				c.args.includes('--ignore-unmatch'),
-		);
-		expect(rmCalls.length).toBe(3);
-
-		// commit should still happen
+		// commit happens
 		const commitCall = calls.find((c) => c.args.includes('commit'));
 		expect(commitCall).toBeDefined();
 		expect(result.commitMessage).toBe(
 			'chore(cam): close CAM-72 + drop per-branch harness state (CAM-27 hygiene)',
 		);
 	});
+
+	test('no git add for any scripts/cam/issues/ path', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+
+		finalizeCycleClose(makeOptions({ spawnFn }));
+
+		const addIssuesCall = calls.find(
+			(c) => c.args.includes('add') && c.args.some((a) => a.includes('scripts/cam/issues/')),
+		);
+		expect(addIssuesCall).toBeUndefined();
+	});
 });
 
 // ---------------------------------------------------------------------------
-// (c) linear-backend: same behaviour as github
+// AC3: resolveIssueId (string AND numeric), stash BEFORE git rm, fail loud
 // ---------------------------------------------------------------------------
 
-describe('finalizeCycleClose — linear backend', () => {
-	test('does NOT touch issues.local.json but still rms harness files and commits', () => {
+describe('AC3 (US-004): resolveIssueId + stash behavior', () => {
+	test('numeric issueNumber: resolves to CAM-72 and stashes', () => {
+		const stashedIds: string[] = [];
+		const { spawnFn } = makeRecordingSpawn();
+
+		const result = finalizeCycleClose(
+			makeOptions({
+				spawnFn,
+				readPrd: () => PRD_JSON_NUMERIC,
+				stashFn: (id) => stashedIds.push(id),
+			}),
+		);
+
+		expect(result.issueId).toBe('CAM-72');
+		expect(stashedIds).toEqual(['CAM-72']);
+	});
+
+	test('string issueNumber (CAM-72): resolves correctly and stashes', () => {
+		const stashedIds: string[] = [];
+		const { spawnFn } = makeRecordingSpawn();
+
+		const result = finalizeCycleClose(
+			makeOptions({
+				spawnFn,
+				readPrd: () => PRD_JSON_STRING,
+				stashFn: (id) => stashedIds.push(id),
+			}),
+		);
+
+		expect(result.issueId).toBe('CAM-72');
+		expect(stashedIds).toEqual(['CAM-72']);
+	});
+
+	test('issueNumber=0 (invalid): throws and never stashes', () => {
+		const stashedIds: string[] = [];
+		const { spawnFn } = makeRecordingSpawn();
+
+		expect(() =>
+			finalizeCycleClose(
+				makeOptions({
+					spawnFn,
+					readPrd: () => JSON.stringify({ issueNumber: 0 }),
+					stashFn: (id) => stashedIds.push(id),
+				}),
+			),
+		).toThrow();
+
+		expect(stashedIds).toHaveLength(0);
+	});
+
+	test('issueNumber absent (null/undefined): stashFn not called, no throw', () => {
+		const stashedIds: string[] = [];
+		const { spawnFn } = makeRecordingSpawn();
+
+		const result = finalizeCycleClose(
+			makeOptions({
+				spawnFn,
+				readPrd: () => JSON.stringify({ branchName: 'cam/foo' }),
+				stashFn: (id) => stashedIds.push(id),
+			}),
+		);
+
+		// No stash when there is no issueNumber
+		expect(stashedIds).toHaveLength(0);
+		expect(result.issueId).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC4: no git push to main in any spawn call
+// ---------------------------------------------------------------------------
+
+describe('AC4 (US-004): no git push to main', () => {
+	test('none backend: no spawn call is a git push to main', () => {
 		const { spawnFn, calls } = makeRecordingSpawn();
-		let writeIssuesCalled = false;
+
+		finalizeCycleClose(makeOptions({ spawnFn, readProjectToml: () => PROJECT_TOML_NONE }));
+
+		const pushToMainCall = calls.find(
+			(c) =>
+				c.args.includes('push') &&
+				(c.args.includes('main') || c.args.some((a) => a.endsWith('/main'))),
+		);
+		expect(pushToMainCall).toBeUndefined();
+	});
+
+	test('github backend: no spawn call is a git push to main', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+
+		finalizeCycleClose(makeOptions({ spawnFn, readProjectToml: () => PROJECT_TOML_GITHUB }));
+
+		const pushToMainCall = calls.find(
+			(c) =>
+				c.args.includes('push') &&
+				(c.args.includes('main') || c.args.some((a) => a.endsWith('/main'))),
+		);
+		expect(pushToMainCall).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC5: github and linear backends unchanged (git rm + commit, no issue file)
+// ---------------------------------------------------------------------------
+
+describe('AC5 (US-004): github backend — git rm + commit, no issue file', () => {
+	test('does NOT touch any issues/ file, still rms harness files and commits', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+
+		const result = finalizeCycleClose(
+			makeOptions({
+				spawnFn,
+				readProjectToml: () => PROJECT_TOML_GITHUB,
+			}),
+		);
+
+		expect(result.issueBackend).toBe('github');
+
+		// No git add for issues/
+		const addIssuesCall = calls.find(
+			(c) => c.args.includes('add') && c.args.some((a) => a.includes('scripts/cam/issues/')),
+		);
+		expect(addIssuesCall).toBeUndefined();
+
+		// git rm still runs
+		const rmCalls = calls.filter(
+			(c) => c.args.includes('rm') && c.args.includes('-f') && c.args.includes('--ignore-unmatch'),
+		);
+		expect(rmCalls.length).toBe(3);
+
+		// commit still happens
+		expect(calls.find((c) => c.args.includes('commit'))).toBeDefined();
+		expect(result.commitMessage).toBe(
+			'chore(cam): close CAM-72 + drop per-branch harness state (CAM-27 hygiene)',
+		);
+	});
+});
+
+describe('AC5 (US-004): linear backend — git rm + commit, no issue file', () => {
+	test('does NOT touch any issues/ file, still rms harness files and commits', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
 
 		const result = finalizeCycleClose(
 			makeOptions({
 				spawnFn,
 				readProjectToml: () => PROJECT_TOML_LINEAR,
-				writeIssues: () => { writeIssuesCalled = true; },
 			}),
 		);
 
 		expect(result.issueBackend).toBe('linear');
-		expect(result.issueLocalClosed).toBe(false);
-		expect(writeIssuesCalled).toBe(false);
-
+		const addIssuesCall = calls.find(
+			(c) => c.args.includes('add') && c.args.some((a) => a.includes('scripts/cam/issues/')),
+		);
+		expect(addIssuesCall).toBeUndefined();
 		const rmCalls = calls.filter(
-			(c) =>
-				c.args.includes('rm') &&
-				c.args.includes('-f') &&
-				c.args.includes('--ignore-unmatch'),
+			(c) => c.args.includes('rm') && c.args.includes('-f') && c.args.includes('--ignore-unmatch'),
 		);
 		expect(rmCalls.length).toBe(3);
-
-		const commitCall = calls.find((c) => c.args.includes('commit'));
-		expect(commitCall).toBeDefined();
+		expect(calls.find((c) => c.args.includes('commit'))).toBeDefined();
 	});
 });
 
 // ---------------------------------------------------------------------------
-// (e) structured result line (US-006): emitOk with issue-id, files, sha
+// dirty-prd.json: `git rm -f --ignore-unmatch` must be used
+// ---------------------------------------------------------------------------
+
+describe('dirty prd.json case', () => {
+	test('prd.json is still removed via git rm -f --ignore-unmatch even if dirty', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+
+		finalizeCycleClose(makeOptions({ spawnFn }));
+
+		const prdRmCall = calls.find(
+			(c) =>
+				c.args.includes('rm') &&
+				c.args.includes('-f') &&
+				c.args.includes('--ignore-unmatch') &&
+				c.args.includes('scripts/cam/prd.json'),
+		);
+		expect(prdRmCall).toBeDefined();
+
+		expect(prdRmCall!.args).toContain('-f');
+		expect(prdRmCall!.args).toContain('--ignore-unmatch');
+		const rmIdx = prdRmCall!.args.indexOf('rm');
+		const fIdx = prdRmCall!.args.indexOf('-f');
+		const ignoreIdx = prdRmCall!.args.indexOf('--ignore-unmatch');
+		expect(rmIdx).toBeLessThan(fIdx);
+		expect(fIdx).toBeLessThan(ignoreIdx);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// structured result line (emitOk assertions)
 // ---------------------------------------------------------------------------
 
 /** Strip ANSI escape codes from a string for plain-text assertions. */
@@ -267,7 +387,7 @@ function stripAnsi(s: string): string {
 	return s.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
-describe('finalizeCycleClose — structured result line (US-006)', () => {
+describe('finalizeCycleClose — structured result line', () => {
 	test('happy path (none backend) emits line with issue-id, removed files, and sha', () => {
 		const captured: string[] = [];
 		const origWrite = process.stdout.write.bind(process.stdout);
@@ -284,7 +404,7 @@ describe('finalizeCycleClose — structured result line (US-006)', () => {
 				makeOptions({
 					spawnFn,
 					readProjectToml: () => PROJECT_TOML_NONE,
-					writeIssues: () => {},
+					stashFn: () => {},
 				}),
 			);
 		} catch (e) {
@@ -352,7 +472,6 @@ describe('finalizeCycleClose — structured result line (US-006)', () => {
 		}
 
 		const plain = stripAnsi(captured.join(''));
-		// Must not be silent: some output that mentions "skipped" or "already closed"
 		expect(plain.length).toBeGreaterThan(0);
 		const lower = plain.toLowerCase();
 		expect(lower.includes('skipped') || lower.includes('already closed')).toBe(true);
@@ -383,43 +502,5 @@ describe('finalizeCycleClose — structured result line (US-006)', () => {
 		expect(plain.length).toBeGreaterThan(0);
 		const lower = plain.toLowerCase();
 		expect(lower.includes('skipped') || lower.includes('nothing staged')).toBe(true);
-	});
-});
-
-// ---------------------------------------------------------------------------
-// (d) dirty-prd.json case: `git rm -f --ignore-unmatch` must be in spawn calls
-// ---------------------------------------------------------------------------
-
-describe('finalizeCycleClose — dirty prd.json case', () => {
-	test('prd.json is still removed via git rm -f --ignore-unmatch even if dirty', () => {
-		// Simulate a scenario where the prd.json has local modifications (git
-		// would normally refuse a plain `git rm`). The -f flag overrides this.
-		// We verify that the exact invocation `['rm', '-f', '--ignore-unmatch', ...]`
-		// appears in the recorded spawn calls for prd.json.
-		const { spawnFn, calls } = makeRecordingSpawn();
-
-		finalizeCycleClose(makeOptions({ spawnFn }));
-
-		// The critical assertion: rm uses BOTH -f AND --ignore-unmatch
-		const prdRmCall = calls.find(
-			(c) =>
-				c.args.includes('rm') &&
-				c.args.includes('-f') &&
-				c.args.includes('--ignore-unmatch') &&
-				c.args.includes('scripts/cam/prd.json'),
-		);
-		expect(prdRmCall).toBeDefined();
-
-		// Verify the exact arg order that satisfies the oracle grep
-		// grep -nE "'rm'.*'-f'.*'--ignore-unmatch'|'rm', '-f', '--ignore-unmatch'"
-		// The implementation has: ['git', '-C', cwd, 'rm', '-f', '--ignore-unmatch', path]
-		// which satisfies the grep pattern 'rm', '-f', '--ignore-unmatch' in source.
-		expect(prdRmCall!.args).toContain('-f');
-		expect(prdRmCall!.args).toContain('--ignore-unmatch');
-		const rmIdx = prdRmCall!.args.indexOf('rm');
-		const fIdx = prdRmCall!.args.indexOf('-f');
-		const ignoreIdx = prdRmCall!.args.indexOf('--ignore-unmatch');
-		expect(rmIdx).toBeLessThan(fIdx);
-		expect(fIdx).toBeLessThan(ignoreIdx);
 	});
 });

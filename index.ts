@@ -57,7 +57,10 @@ import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './sr
 import { runSidecar } from './src/commands/sidecar.ts';
 import { runTag } from './src/commands/tag.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
-import { issueFilePath } from './src/issues/backlog.ts';
+import {
+	stashIssueIdInMergeWatch,
+	MERGE_WATCH_FILENAME,
+} from './src/release/merge-watch.ts';
 import type { WsjfScore } from './src/issues/types.ts';
 import { makeFileEventLogger } from './src/supervisor/events.ts';
 import { printError, printFatalHint, printHint } from './src/logging/color.ts';
@@ -1005,9 +1008,8 @@ function _buildFinalizeOpts(cwd: string) {
 		clock: () => new Date().toISOString(),
 		readProjectToml: () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8'),
 		readPrd: () => readFileSync(join(cwd, 'scripts/cam/prd.json'), 'utf8'),
-		readIssues: (issueId: string) => readFileSync(join(cwd, issueFilePath(issueId)), 'utf8'),
-		writeIssues: (issueId: string, text: string) =>
-			writeFileSync(join(cwd, issueFilePath(issueId)), text, 'utf8'),
+		stashFn: (issueId: string) =>
+			stashIssueIdInMergeWatch(join(cwd, '.claude', MERGE_WATCH_FILENAME), issueId),
 	};
 }
 

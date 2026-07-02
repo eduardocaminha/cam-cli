@@ -16,12 +16,14 @@
 // test/integration/tmux-introspect.test.ts: it skips cleanly when the git
 // binary is absent.
 //
+// US-004 update: finalizeCycleClose no longer reads or writes any issues/ file.
+// The stashFn seam is injectable (fake used here to avoid touching the fs).
+//
 // Two test cases:
 //   (1) dirty-prd scenario: prd.json committed then locally modified; must
 //       still be removed from the index and disk, and the tree must be clean.
 //   (2) missing-files variant: prd.json/handoff.json never committed; git rm
-//       --ignore-unmatch must be a silent no-op, and the commit must still
-//       succeed via the staged CAM-0027.json change (US-004 per-file cutover).
+//       --ignore-unmatch is a silent no-op; function returns noOp (nothing staged).
 
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -40,7 +42,6 @@ import {
 	finalizeCycleClose,
 	type SpawnFn,
 } from '../../src/commands/ship-finalize.ts';
-import { issueFilePath } from '../../src/issues/backlog.ts';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 // ---------------------------------------------------------------------------
@@ -100,8 +101,7 @@ const realSpawnFn: SpawnFn = (cmd, args, opts) =>
 
 const FIXED_CLOCK = '2026-06-23T12:00:00.000Z';
 
-// project.toml: 'none' backend so CAM-0027.json is closed (gives the
-// commit something to stage even in the missing-files variant).
+// project.toml: 'none' backend
 const PROJECT_TOML = 'issue_system = "none"\nissue_prefix = "CAM"\n';
 
 // Baseline prd.json committed to the repo
@@ -116,21 +116,6 @@ const PRD_JSON_MODIFIED = JSON.stringify({
 
 // Minimal handoff.json
 const HANDOFF_JSON = JSON.stringify({ lastCompletedStory: { id: 'US-001', title: 'Test' } });
-
-// US-004: per-file format -- CAM-0027.json contains a single IssueEntry
-const CAM_27_ENTRY_JSON =
-	JSON.stringify(
-		{
-			id: 'CAM-27',
-			title: 'Test issue',
-			stage: 'idea',
-			status: 'open',
-			blockedBy: [],
-			createdAt: '2026-01-01T00:00:00Z',
-		},
-		null,
-		2,
-	) + '\n';
 
 // Expected commit message produced by finalizeCycleClose for issueNumber=27
 const EXPECTED_COMMIT_MSG =
@@ -149,11 +134,10 @@ test.skipIf(!gitAvailable)(
 		const run = (args: string[]) =>
 			spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
 
-		// Commit all required files (US-004: CAM-0027.json, not issues.local.json)
+		// Commit harness state files (no issues/ file -- US-004: finalize no longer writes it)
 		writeFileSync(join(camDir, 'prd.json'), PRD_JSON);
 		writeFileSync(join(camDir, 'handoff.json'), HANDOFF_JSON);
 		writeFileSync(join(camDir, 'project.toml'), PROJECT_TOML);
-		writeFileSync(join(camDir, 'issues', 'CAM-0027.json'), CAM_27_ENTRY_JSON);
 		run(['add', '-A']);
 		run(['commit', '-m', 'chore: initial harness state']);
 
@@ -165,8 +149,8 @@ test.skipIf(!gitAvailable)(
 		const statusBefore = run(['status', '--porcelain']);
 		expect(statusBefore.stdout).toContain('scripts/cam/prd.json');
 
-		// Run finalizeCycleClose with the real git binary
-		// US-004: readIssues/writeIssues use issueFilePath (per-file, not issues.local.json)
+		// Run finalizeCycleClose with the real git binary.
+		// US-004: stashFn is a no-op seam (no fs write to merge-watch needed here).
 		finalizeCycleClose({
 			cwd: dir,
 			spawnFn: realSpawnFn,
@@ -174,8 +158,7 @@ test.skipIf(!gitAvailable)(
 			readProjectToml: () => readFileSync(join(camDir, 'project.toml'), 'utf8'),
 			// Read the dirty (modified) prd.json from disk, as production would
 			readPrd: () => PRD_JSON_MODIFIED,
-			readIssues: (issueId) => readFileSync(join(dir, issueFilePath(issueId)), 'utf8'),
-			writeIssues: (issueId, text) => writeFileSync(join(dir, issueFilePath(issueId)), text),
+			stashFn: () => {},
 		});
 
 		// (a) git ls-files must be empty: prd.json removed from the index
@@ -201,7 +184,7 @@ test.skipIf(!gitAvailable)(
 // ---------------------------------------------------------------------------
 
 test.skipIf(!gitAvailable)(
-	'missing-files variant: prd.json/handoff.json absent; finalizeCycleClose runs cleanly',
+	'missing-files variant: prd.json/handoff.json absent; finalizeCycleClose returns noOp (nothing to stage)',
 	() => {
 		const dir = makeTmpRepo();
 		const camDir = join(dir, 'scripts', 'cam');
@@ -209,10 +192,9 @@ test.skipIf(!gitAvailable)(
 		const run = (args: string[]) =>
 			spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
 
-		// Commit only project.toml and CAM-0027.json; prd.json and handoff.json
-		// are intentionally absent (never added to the index)
+		// Commit only project.toml; prd.json and handoff.json are intentionally
+		// absent (never added to the index).
 		writeFileSync(join(camDir, 'project.toml'), PROJECT_TOML);
-		writeFileSync(join(camDir, 'issues', 'CAM-0027.json'), CAM_27_ENTRY_JSON);
 		run(['add', '-A']);
 		run(['commit', '-m', 'chore: initial commit without harness state']);
 
@@ -221,34 +203,23 @@ test.skipIf(!gitAvailable)(
 		expect(existsSync(join(camDir, 'handoff.json'))).toBe(false);
 
 		// finalizeCycleClose must not throw: git rm --ignore-unmatch is a silent
-		// no-op for absent files; CAM-0027.json still gets staged+committed
-		// US-004: readIssues/writeIssues use issueFilePath (per-file, not issues.local.json)
-		finalizeCycleClose({
+		// no-op for absent files. With US-004 there is no issue-file staging,
+		// so nothing is staged and the function returns noOp: true.
+		const result = finalizeCycleClose({
 			cwd: dir,
 			spawnFn: realSpawnFn,
 			clock: () => FIXED_CLOCK,
 			readProjectToml: () => readFileSync(join(camDir, 'project.toml'), 'utf8'),
 			// prd.json does not exist on disk; inject the content directly
 			readPrd: () => PRD_JSON,
-			readIssues: (issueId) => readFileSync(join(dir, issueFilePath(issueId)), 'utf8'),
-			writeIssues: (issueId, text) => writeFileSync(join(dir, issueFilePath(issueId)), text),
+			stashFn: () => {},
 		});
 
-		// (a) prd.json was never in the index; ls-files must still be empty
-		const lsFiles = run(['ls-files', 'scripts/cam/prd.json']);
-		expect(lsFiles.stdout.trim()).toBe('');
+		// (a) noOp: true -- nothing staged, commit was skipped
+		expect(result.noOp).toBe(true);
 
-		// (b) prd.json and handoff.json still absent from the working tree
+		// (b) prd.json still absent from the working tree
 		expect(existsSync(join(camDir, 'prd.json'))).toBe(false);
 		expect(existsSync(join(camDir, 'handoff.json'))).toBe(false);
-
-		// (c) git status --porcelain must be empty (CAM-0027.json was staged
-		// and committed via the issue-close path)
-		const statusAfter = run(['status', '--porcelain']);
-		expect(statusAfter.stdout.trim()).toBe('');
-
-		// (d) HEAD commit message has the expected form
-		const logMsg = run(['log', '-1', '--format=%s']);
-		expect(logMsg.stdout.trim()).toBe(EXPECTED_COMMIT_MSG);
 	},
 );

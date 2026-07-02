@@ -2,20 +2,26 @@
 //
 // finalizeCycleClose() -- deterministic cycle-close primitive.
 //
-// Closes the tracked issue in the configured backend, removes per-branch
-// harness state files (prd.json, handoff.json, progress.txt) via
-// `git rm -f --ignore-unmatch`, and commits the cleanup.
+// Resolves the target issue id, stashes it into .cam-merge-watch.json so
+// the post-merge close path can close the issue without re-reading prd.json,
+// then removes per-branch harness state files (prd.json, handoff.json,
+// progress.txt) via `git rm -f --ignore-unmatch` and commits the cleanup.
+//
+// Issue-close (setting stage:'shipped' in the local issues/ file) is NO LONGER
+// done here. The close is deferred to closeIssueOnMain (issue-specify.ts),
+// which runs on main after the branch merges. This prevents squash-merge from
+// clobbering the backlog write.
 //
 // All external dependencies are injectable so the function is fully
 // unit-testable without a real git binary or filesystem.
 //
 // CAM-72 (deterministic cycle-close), CAM-27 (harness state hygiene),
-// CAM-30 (issue-close backend-aware), CAM-90 US-004 (file-per-issue cutover).
+// CAM-30 (issue-close backend-aware), CAM-90 US-004 (file-per-issue cutover),
+// CAM-121 PRD US-004 (defer close to post-merge, stash issueId in merge-watch).
 
 import type { SpawnSyncReturns } from 'node:child_process';
 import { parseToml } from '../config/toml.ts';
-import type { IssueEntry } from '../issues/types.ts';
-import { issueFilePath } from '../issues/backlog.ts';
+import { resolveIssueId } from '../issues/resolve-id.ts';
 import { printError } from '../logging/color.ts';
 import { emitOk } from '../logging/screen.ts';
 
@@ -41,7 +47,8 @@ export type ClockFn = () => string;
 // ---------------------------------------------------------------------------
 
 interface PrdShape {
-	issueNumber?: number;
+	/** Numeric issue number OR full string id (e.g. 'CAM-154'). CAM-113 root: /cam-next may write the full string id. */
+	issueNumber?: number | string;
 	[key: string]: unknown;
 }
 
@@ -61,24 +68,20 @@ export interface FinalizeCycleCloseOptions {
 	/** Read scripts/cam/prd.json as raw text. */
 	readPrd: () => string;
 	/**
-	 * Read the per-issue JSON file for the given issueId.
-	 * Production: readFileSync(join(cwd, issueFilePath(issueId)), 'utf8').
-	 * @param issueId  The canonical issue id (e.g. 'CAM-72').
+	 * Stash the resolved issue id into .cam-merge-watch.json BEFORE prd.json
+	 * is removed, so the post-merge close path can close the issue without
+	 * re-reading prd.json.
+	 *
+	 * Called only when a valid issueId is resolved from prd.issueNumber.
+	 * Production: stashIssueIdInMergeWatch(join(cwd, '.claude', MERGE_WATCH_FILENAME), issueId).
 	 */
-	readIssues: (issueId: string) => string;
-	/**
-	 * Write the per-issue JSON file for the given issueId.
-	 * Production: writeFileSync(join(cwd, issueFilePath(issueId)), text, 'utf8').
-	 * @param issueId  The canonical issue id (e.g. 'CAM-72').
-	 * @param text     Serialized IssueEntry JSON.
-	 */
-	writeIssues: (issueId: string, text: string) => void;
+	stashFn: (issueId: string) => void;
 }
 
 export interface FinalizeCycleCloseResult {
-	issueId: string;
+	/** Resolved issue id (e.g. 'CAM-72'), or null when prd.issueNumber was absent. */
+	issueId: string | null;
 	issueBackend: string;
-	issueLocalClosed: boolean;
 	commitMessage: string;
 	/** true when the function exited cleanly without committing (prd absent, nothing staged). */
 	noOp?: boolean;
@@ -90,18 +93,23 @@ export interface FinalizeCycleCloseResult {
  * Steps (in order):
  *   1. Read issue_system + issue_prefix from project.toml.
  *   2. Read issueNumber from prd.json BEFORE removing prd.json.
- *   3. When issue_system == 'none': read the matching CAM-NNNN.json via
- *      readIssues(issueId) and set stage='shipped'. For github/linear: skip.
+ *   2a. Resolve issueId via resolveIssueId. Fail loud if issueNumber is
+ *       non-null/undefined but unresolvable (never stashes a phantom '<prefix>-0').
+ *   3. Call stashFn(issueId) when a valid issueId is available, BEFORE
+ *       the prd.json git rm, so the post-merge close path can find it.
  *   4. Remove scripts/cam/prd.json, scripts/cam/handoff.json, and
- *      scripts/cam/progress.txt via `git rm -f --ignore-unmatch`.
- *   5. Stage scripts/cam/issues/CAM-NNNN.json when issue_system == 'none'.
- *   6. Commit with: `chore(cam): close <issue-id> + drop per-branch harness
- *      state (CAM-27 hygiene)`.
+ *       scripts/cam/progress.txt via `git rm -f --ignore-unmatch`.
+ *   5. Commit with: `chore(cam): close <issue-id> + drop per-branch harness
+ *       state (CAM-27 hygiene)`.
+ *
+ * Note: the issue file (scripts/cam/issues/<id>.json) is NEVER read or
+ * written here. Issue-close is deferred to closeIssueOnMain (issue-specify.ts)
+ * which runs on main after the squash-merge lands.
  */
 export function finalizeCycleClose(
 	options: FinalizeCycleCloseOptions,
 ): FinalizeCycleCloseResult {
-	const { cwd, spawnFn, readProjectToml, readPrd, readIssues, writeIssues } = options;
+	const { cwd, spawnFn, readProjectToml, readPrd, stashFn } = options;
 
 	// 1. Read issue_system and issue_prefix from project.toml
 	const tomlText = readProjectToml();
@@ -120,38 +128,33 @@ export function finalizeCycleClose(
 	} catch (_err) {
 		emitOk('cycle already closed: prd.json absent, finalize skipped');
 		return {
-			issueId: `${issuePrefix}-0`,
+			issueId: null,
 			issueBackend: issueSystem,
-			issueLocalClosed: false,
 			commitMessage: '',
 			noOp: true,
 		};
 	}
 	const prd = JSON.parse(prdText) as PrdShape;
-	const issueNumber = typeof prd.issueNumber === 'number' ? prd.issueNumber : null;
-	const issueId = issueNumber !== null ? `${issuePrefix}-${issueNumber}` : `${issuePrefix}-0`;
 
-	// 3. Close the issue when issue_system == 'none'
-	let issueLocalClosed = false;
-	if (issueSystem === 'none' && issueNumber !== null) {
-		let issueText: string;
-		try {
-			issueText = readIssues(issueId);
-		} catch (_err) {
-			// Hard failure: the issue file must exist when issue_system == 'none'.
-			printError(
-				`issue not found in issues dir: ${issueId}`,
-				'add the issue file or check issue_prefix / issueNumber in project.toml / prd.json',
-			);
-			throw new Error(`issue not found in issues dir: ${issueId}`);
-		}
-		const entry = JSON.parse(issueText) as IssueEntry;
-		entry.stage = 'shipped';
-		issueLocalClosed = true;
-		writeIssues(issueId, JSON.stringify(entry, null, 2) + '\n');
+	// 2a. Resolve issueId via resolveIssueId (string OR numeric issueNumber).
+	//     Fail loud when issueNumber is present but unresolvable -- prevents
+	//     stashing a phantom '<prefix>-0' into the merge-watch file.
+	const rawIssueNumber = prd.issueNumber;
+	const issueId = resolveIssueId(rawIssueNumber, issuePrefix);
+	if (rawIssueNumber !== null && rawIssueNumber !== undefined && issueId === null) {
+		printError(
+			`cannot resolve issueId for issueNumber=${String(rawIssueNumber)}`,
+			'check issueNumber in prd.json: must be a positive integer or a well-formed id (e.g. CAM-72)',
+		);
+		throw new Error(`cannot resolve issueId for issueNumber=${String(rawIssueNumber)}`);
 	}
-	// For github/linear: skips the issue file edit but still proceeds
-	// with git rm + commit below.
+
+	// 3. Stash the resolved issueId into .cam-merge-watch.json BEFORE git rm,
+	//    so the post-merge close path can close the issue without re-reading
+	//    prd.json (which will be gone after the rm).
+	if (issueId !== null) {
+		stashFn(issueId);
+	}
 
 	// 4. Remove per-branch harness state files via git rm -f --ignore-unmatch
 	const harnessPaths = [
@@ -163,12 +166,7 @@ export function finalizeCycleClose(
 		spawnFn('git', ['-C', cwd, 'rm', '-f', '--ignore-unmatch', path], { encoding: 'utf8' });
 	}
 
-	// 5. Stage the per-issue file when applicable
-	if (issueLocalClosed) {
-		spawnFn('git', ['-C', cwd, 'add', issueFilePath(issueId)], { encoding: 'utf8' });
-	}
-
-	// 5a. Guard: skip commit when nothing is staged.
+	// 4a. Guard: skip commit when nothing is staged.
 	//     `git diff --cached --quiet` exits 0 when no staged changes, 1 when staged.
 	const diffResult = spawnFn(
 		'git',
@@ -180,27 +178,26 @@ export function finalizeCycleClose(
 		return {
 			issueId,
 			issueBackend: issueSystem,
-			issueLocalClosed,
 			commitMessage: '',
 			noOp: true,
 		};
 	}
 
-	// 6. Commit
-	const commitMessage = `chore(cam): close ${issueId} + drop per-branch harness state (CAM-27 hygiene)`;
+	// 5. Commit
+	const labelId = issueId ?? `${issuePrefix}-unknown`;
+	const commitMessage = `chore(cam): close ${labelId} + drop per-branch harness state (CAM-27 hygiene)`;
 	spawnFn('git', ['-C', cwd, 'commit', '-m', commitMessage], { encoding: 'utf8' });
 
-	// 6a. Emit structured result line.
+	// 5a. Emit structured result line.
 	const shaResult = spawnFn('git', ['-C', cwd, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' });
 	const commitSha = (shaResult.stdout ?? '').trim() || 'unknown';
 	const removedNames = harnessPaths.map((p) => p.split('/').pop() ?? p);
 	const backendNote = issueSystem !== 'none' ? ` (issue-close: ${issueSystem})` : '';
-	emitOk(`closed ${issueId}${backendNote}: removed ${removedNames.join(', ')}`, `sha ${commitSha}`);
+	emitOk(`closed ${labelId}${backendNote}: removed ${removedNames.join(', ')}`, `sha ${commitSha}`);
 
 	return {
 		issueId,
 		issueBackend: issueSystem,
-		issueLocalClosed,
 		commitMessage,
 	};
 }
