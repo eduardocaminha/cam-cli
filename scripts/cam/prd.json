@@ -72,7 +72,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "src/commands/ship-finalize.ts + index.ts (_buildFinalizeOpts wiring) + test/ship-finalize.test.ts & test/ship-finalize-hardening.test.ts. Widen PrdShape.issueNumber to number | string (CAM-113 root: /cam-next anchoring writes the FULL string id; the old typeof==='number' guard rejected it). Remove the readIssues/writeIssues close path and prefer removing those options + updating index.ts wiring. Inject a stashFn/writeMergeWatch seam so tests never touch fs; capture issueNumber at ship-finalize.ts ~114-131 BEFORE the git rm. Depends on US-001 (resolveIssueId, done earlier by priority) and US-002 (stashIssueIdInMergeWatch). Update FinalizeCycleCloseResult (the none close no longer happens here; drop issueLocalClosed=true semantics). ship-finalize.ts budget is 218 (currently 206); if the refactor exceeds it, US-006 raises with _ref CAM-121."
     },

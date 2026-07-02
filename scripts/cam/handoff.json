@@ -1,23 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Add closeIssueOnMain on-main commit-tree close primitive"
+    "id": "US-004",
+    "title": "Stop closing the issue in ship-finalize; stash the resolved issueId instead"
   },
   "branchName": "cam/pr-121-post-merge-issue-close",
   "timestamp": "2026-07-02T00:00:00Z",
-  "createdFiles": [
-    "test/issue-specify.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/issue-specify.ts"
+    "src/commands/ship-finalize.ts",
+    "index.ts",
+    "test/ship-finalize.test.ts",
+    "test/ship-finalize-hardening.test.ts",
+    "test/integration/ship-finalize-dirty-prd.test.ts",
+    "test/ship-args.test.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added closeIssueOnMain() to src/commands/issue-specify.ts (mirrors abandonIssueOnMain: checkMainUpToDate guard, readBacklogFromMain, commitTreeToMain with 'cam-specify-' prefix, pushMainBestEffort). The function sets stage:'shipped' on the target issue and returns { ok: false, reason: 'not-found' } when the id is absent. Types exported: CloseIssueOnMainOptions, CloseIssueOnMainResult, CloseIssueOnMainError, CloseIssueOnMainOutcome. Tests at test/issue-specify.test.ts (18 unit tests, all pass). The close primitive is now ready for US-004 to wire into the post-merge flow (closeIssueOnMain called from runPostMerge using the issueId threaded via .cam-merge-watch.json from US-002).",
+  "nextStoryContext": "US-004 refactored finalizeCycleClose in src/commands/ship-finalize.ts: removed readIssues/writeIssues seams (no more issue file writes at finalize time), added stashFn injectable that calls stashIssueIdInMergeWatch before the prd.json git rm. PrdShape.issueNumber widened to number|string (CAM-113 root: /cam-next writes full string id). resolveIssueId (US-001) resolves both forms; unresolvable but non-null issueNumber throws. FinalizeCycleCloseResult.issueLocalClosed removed; issueId is now string|null. index.ts _buildFinalizeOpts updated: removed readIssues/writeIssues, added stashFn wiring via stashIssueIdInMergeWatch+MERGE_WATCH_FILENAME from merge-watch.ts. Integration test updated: dirty-prd test now uses stashFn seam; missing-files variant now expects noOp (no issue-file staging = nothing to commit). Tests: 2749 pass, 0 fail. check:all green. The full post-merge close flow is now: finalize stashes issueId -> branch merges -> closeIssueOnMain (US-003) closes the issue on main. US-005 and beyond wire closeIssueOnMain into runPostMerge.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal git plumbing extension (mirrors abandonIssueOnMain); no external library exercised."
+      "summary": "Story wires internal primitives only (resolveIssueId from US-001, stashIssueIdInMergeWatch from US-002, node:child_process spawnSync abstraction). No external library exercised."
     }
   ]
 }
