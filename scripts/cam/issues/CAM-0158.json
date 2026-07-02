@@ -1,9 +1,35 @@
 {
   "id": "CAM-158",
   "title": "plan-preflight hardening: gitignore cam-plan-out logs + emit plan-preflight-failed event (subsume CAM-159)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T12:10:32.443Z",
-  "description": "Guarda-chuva de robustez do plan pre-flight, subsumindo CAM-159. Duas correcoes vistas dogfoodando CAM-121 (um cam plan haltou silencioso). (1) GITIGNORE: runPlanPhase escreve .claude/cam-plan-out-{planner,auditor}-<uuid>.log (pipe-pane do stdout do worker-pane); ship --finalize nao os git-rm; o .gitignore cobre .cam-worker-out-*.log mas NAO cam-plan-out-*. Efeito: git status --porcelain nao-vazio -> runPlanPreflight step clean-tree falha -> proximo cam plan halta sem spawnar planner. FIX: adicionar .claude/cam-plan-out-*.log ao .gitignore (espelhar .cam-worker-out-*.log, CAM-68). (2) OBSERVABILIDADE (ex-CAM-159): quando preflightFn retorna {ok:false,step,detail} dentro de runPlanPhase (plan-runner.ts:519), nenhum evento e emitido em cam-worker-events.jsonl; o operador nao distingue 'preflight barrou' de 'nada aconteceu'. FIX: emitir kind:'plan-preflight-failed' detail:{step,detail} via o logEvent ja presente, na paridade com sidecar-exit/spawn-resolution; estender a union WorkerEventKind (fechada). runPlanPreflight e funcao pura: nao emitir de dentro dela. P2."
+  "description": "Guarda-chuva de robustez do plan pre-flight, subsumindo CAM-159. Duas correcoes vistas dogfoodando CAM-121 (um cam plan haltou silencioso). (1) GITIGNORE: runPlanPhase escreve .claude/cam-plan-out-{planner,auditor}-<uuid>.log (pipe-pane do stdout do worker-pane); ship --finalize nao os git-rm; o .gitignore cobre .cam-worker-out-*.log mas NAO cam-plan-out-*. Efeito: git status --porcelain nao-vazio -> runPlanPreflight step clean-tree falha -> proximo cam plan halta sem spawnar planner. FIX: adicionar .claude/cam-plan-out-*.log ao .gitignore (espelhar .cam-worker-out-*.log, CAM-68). (2) OBSERVABILIDADE (ex-CAM-159): quando preflightFn retorna {ok:false,step,detail} dentro de runPlanPhase (plan-runner.ts:519), nenhum evento e emitido em cam-worker-events.jsonl; o operador nao distingue 'preflight barrou' de 'nada aconteceu'. FIX: emitir kind:'plan-preflight-failed' detail:{step,detail} via o logEvent ja presente, na paridade com sidecar-exit/spawn-resolution; estender a union WorkerEventKind (fechada). runPlanPreflight e funcao pura: nao emitir de dentro dela. P2.",
+  "spec": {
+    "acceptanceCriteria": [
+      "`.gitignore` contains a pattern matching `.claude/cam-plan-out-planner-<uuid>.log` and `.claude/cam-plan-out-auditor-<uuid>.log`, mirroring the existing `.claude/.cam-worker-out-*.log` convention (CAM-68).",
+      "With such a file present in `.claude/`, `git status --porcelain` produces no output (test: create the file and assert empty porcelain, or assert the ignore rule via `git check-ignore`).",
+      "`WorkerEventKind` (src/supervisor/events.ts) includes `'plan-preflight-failed'`.",
+      "When runPlanPhase's preflightFn returns {ok:false, step, detail}, a `plan-preflight-failed` event is emitted via the existing logEvent sink with detail:{step, detail} BEFORE the {kind:'preflight-failed'} return; verified by a unit test injecting a failing preflightFn and a fake logEvent asserting the event is logged with the right step.",
+      "When preflightFn returns {ok:true}, no `plan-preflight-failed` event is emitted (negative test).",
+      "`bun run check:all` green (typecheck + biome + tests); no `--no-verify`."
+    ],
+    "scope": "Two robustness fixes to the plan pre-flight path, both surfaced dogfooding CAM-121 (a cam plan halted silently). (1) Add `.claude/cam-plan-out-*.log` to .gitignore so the planner/auditor pipe-pane logs (cam-plan-out-{planner,auditor}-<uuid>.log, written by runPlanPhase) stop leaving untracked files that make `git status --porcelain` non-empty and trip the clean-tree preflight step. (2) Emit a `plan-preflight-failed` WorkerEvent when runPlanPhase's preflightFn returns ok:false, at parity with the existing sidecar-exit / spawn-resolution events, so the operator can distinguish 'preflight blocked' from 'nothing happened'. In-scope: the .gitignore line, the event emit inside runPlanPhase at the detection point (~line 519) reusing the already-wired logEvent, and adding the new kind to the WorkerEventKind union. Out-of-scope: any human-visible live surface beyond the event log (follow-up if the jsonl proves insufficient); retroactive rm of existing orphan logs (none exist, and gitignore makes them invisible to git status).",
+    "gotchas": [
+      "WorkerEventKind is a CLOSED union (src/supervisor/events.ts:59); adding the kind requires extending the type or tsc fails.",
+      "runPlanPhase already receives logEvent?: WorkerEventLogger (plan-runner.ts:243) and uses it for spawn-resolution; reuse it, do not thread a new sink.",
+      "runPlanPreflight is a PURE function (no side effects); do not emit from inside it, emit at the caller (runPlanPhase) where logEvent is available.",
+      "git status --porcelain does NOT list gitignored files, so the gitignore line fully resolves the clean-tree false-halt; no rm step needed.",
+      "gitignore pattern: orphan files always end in .log; mirror .cam-worker-out-*.log exactly (.claude/cam-plan-out-*.log).",
+      "noUncheckedIndexedAccess is on: guard array/regex-group access."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 8,
+    "riskReduction": 5,
+    "jobSize": 2
+  }
 }
