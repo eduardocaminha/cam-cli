@@ -808,3 +808,14 @@ Each entry follows this template:
 - **Decisions**: Planned via cam plan 121 (targeting works post-CAM-157: issueNumber 121). Close deferred to post-merge for both ci-gated (runPostMerge) and immediate (cam-ship.md inline closeIssueOnMain) modes. Stash gated by issueSystem===none so github/linear are untouched.
 - **Blockers encountered**: Review round 1 FIXES_PENDING:1 caught a REAL github/linear regression: finalize stashed the issueId gated only by issueId!=null, so a non-none backend in ci-gated mode would call closeIssueOnMain against the none store and get a spurious not-found. US-R1-001 gated the stash behind issueSystem===none. Tests missed it (the AC5 github/linear tests used a no-op stashFn default).
 - **Follow-ups**: This PR's own ship ran the OLD finalize (installed binary was 0.44.0) -> closed CAM-121 on the branch (issueNumber numeric, clean, no BEHIND); the new stash+post-merge path activates for future ships after the 0.45.0 rebuild (done). CAM-158 (gitignore cam-plan-out logs) and CAM-159 (preflight halt observability) remain open. Operational: hand-spawn the sidecar via nohup+disown, never the harness run_in_background (it gets reaped).
+
+## cam/CAM-158-plan-preflight-hardening — plan-preflight hardening: gitignore logs + emit preflight-failed event (subsume CAM-159)
+
+- **Started**: 2026-07-02
+- **Closed**: 2026-07-02
+- **Branch**: cam/pr-158-plan-preflight-hardening
+- **Issue**: CAM-158
+- **Outcome**: shipped (PR #119, v0.46.0, merged+tagged; sidecar rebuilt to 0.46.0)
+- **Summary**: Dois fixes de robustez no plan pre-flight surfacados dogfooding CAM-121. US-001: .gitignore ganha .claude/cam-plan-out-*.log (espelho do .cam-worker-out-*.log, CAM-68), impedindo que logs do pipe-pane do planner/auditor sujam git status --porcelain e tripeiem o step clean-tree. US-002: WorkerEventKind ganha 'plan-preflight-failed'; runPlanPhase emite o evento via logEvent existente quando preflightFn retorna ok:false, paridade com sidecar-exit/spawn-resolution. CAM-159 subsuido e fechado. 2761 pass, check:all verde, review CLEAN round 1.
+- **Decisions**: Planejado via cam plan 158 (targeting ok, numeric issueNumber, sem BEHIND). Auditor APROVOU com 2 suggestions nao-bloqueantes: F-01 cosmtico, F-02 (templates/.gitignore, filado como CAM-160). Ship: race condition merge-watch -- finalizeFn escreveu {issueId} mas sidecar idle deletou (consume-on-read) antes do step pos-PR; corrigi manualmente; filei CAM-161 pro fix de raiz. Post-merge automatico fechou CAM-158 (stage:shipped); CAM-159 fechado manualmente.
+- **Blockers encountered**: Race condition merge-watch: issueId perdido na escritadel race com sidecar poll; workaround manual na ship. CAM-161 filado.
