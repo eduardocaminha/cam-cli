@@ -642,6 +642,7 @@ describe('runPlanPhase', () => {
 			'mutex-busy',
 			'planner-timeout',
 			'auditor-timeout',
+			'planner-failed',
 			'audit-approved',
 			'audit-blocked',
 		];

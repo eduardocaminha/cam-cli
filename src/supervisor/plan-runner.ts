@@ -77,6 +77,8 @@ export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
  *   mutex-busy           - pane-count mutex was 'busy'; no pane spawned (AC5).
  *   planner-timeout      - planner pane still alive after plannerTimeoutMs.
  *   auditor-timeout      - plan-verdict-report.json absent when auditor died or timed out.
+ *   planner-failed       - planner poll ended but readPlannerReportFn returned null (no
+ *                          prd.json written); auditor is NEVER spawned (US-003, CAM-155).
  */
 export type PlanPhaseResult =
 	| { kind: 'preflight-failed'; step: string; detail: string }
@@ -84,6 +86,7 @@ export type PlanPhaseResult =
 	| { kind: 'mutex-busy' }
 	| { kind: 'planner-timeout' }
 	| { kind: 'auditor-timeout' }
+	| { kind: 'planner-failed' }
 	| { kind: 'audit-approved'; issue: IssueEntry; report: PlanVerdictReport }
 	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport };
 
@@ -347,6 +350,27 @@ function resolveAndSpawnAuditor(
 }
 
 /**
+ * Return true when the planner poll ended without prd.json being written.
+ *
+ * pollPlannerDeath exits via EITHER the report signal (non-null) OR pane-death.
+ * A fresh re-call of readPlannerReportFn distinguishes: undefined = absent dep
+ * (backward-compat); non-null = prd.json written (happy path); null = no prd.json
+ * (planner-failed). Extracted to satisfy biome complexity limits (US-003, CAM-155).
+ */
+function isPlannerNoPrd(readPlannerReportFn?: () => unknown | null): boolean {
+	return readPlannerReportFn !== undefined && readPlannerReportFn() === null;
+}
+
+/**
+ * Resolve the live worker pane id.
+ * Calls ensureWorkerPane() when available (self-heal, CAM-57); falls back to staticId.
+ * Extracted to avoid code duplication for planner and auditor spawns.
+ */
+function resolveLivePaneId(ensureWorkerPane: (() => string) | undefined, staticId: string): string {
+	return ensureWorkerPane !== undefined ? ensureWorkerPane() : staticId;
+}
+
+/**
  * Poll until the planner completes (prd.json written OR pane dies) or the
  * deadline fires. Returns true on completion; false on timeout (after killing
  * the pane).
@@ -489,37 +513,25 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 		return { kind: 'mutex-busy' };
 	}
 
-	// Step 4: Spawn planner pane (AC4, AC5)
-	// Resolve a live pane id via ensureWorkerPane (AC1). When ensureWorkerPane is
-	// absent (backward compat for tests), fall back to the static plannerPaneId.
-	// resolveAndSpawnPlanner: reads model/backend, emits spawn-resolution,
-	// builds argv, sets @cam_label 'planner', runs respawn-pane -k, pipes out-log.
-	const plannerLivePaneId = ensureWorkerPane !== undefined ? ensureWorkerPane() : plannerPaneId;
+	// Step 4: Spawn planner pane — label 'planner' then respawn-pane -k (AC4, AC5).
+	const plannerLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
 	resolveAndSpawnPlanner(spawnFn, plannerLivePaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent, claudeDir);
 
-	// Step 5: Poll until prd.json written OR planner pane dies (AC4, US-R1-001).
-	// readPlannerReportFn is the primary signal; isPaneAlive is the fallback.
-	// Use plannerLivePaneId (the ensured id) for all poll calls.
+	// Step 5: Poll planner — primary signal: prd.json written; fallback: pane dies.
 	const plannerDied = pollPlannerDeath(
 		isPaneAlive, sleepFn, clock, spawnFn,
 		plannerLivePaneId, pollIntervalMs, plannerTimeoutMs, readPlannerReportFn,
 	);
-	if (!plannerDied) {
-		return { kind: 'planner-timeout' };
-	}
+	if (!plannerDied) return { kind: 'planner-timeout' };
 
-	// Step 6: Spawn auditor pane (AC4, AC5)
-	// Re-resolve the live pane id via ensureWorkerPane (the planner may have died
-	// and a new pane may have been created). When ensureWorkerPane is absent, fall
-	// back to the static plannerPaneId.
-	// resolveAndSpawnAuditor: reads model/backend, emits spawn-resolution,
-	// builds argv, sets @cam_label 'auditor', runs respawn-pane -k, pipes out-log.
-	const auditorLivePaneId = ensureWorkerPane !== undefined ? ensureWorkerPane() : plannerPaneId;
+	// US-003: Guard — re-check if prd.json was actually written (Bug 4-adjacent).
+	if (isPlannerNoPrd(readPlannerReportFn)) return { kind: 'planner-failed' };
+
+	// Step 6: Spawn auditor pane — label 'auditor' then respawn-pane -k (AC4, AC5).
+	const auditorLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
 	resolveAndSpawnAuditor(spawnFn, auditorLivePaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent, claudeDir);
 
-	// Step 7: Poll until plan-verdict-report.json present (AC4)
-	// Verdict read from FILE ONLY - never from capture-pane (patterns.md).
-	// Use auditorLivePaneId for poll calls.
+	// Step 7: Poll auditor — verdict from FILE ONLY, never from capture-pane.
 	const auditorResult = pollAuditorReport(
 		isPaneAlive, sleepFn, clock, spawnFn,
 		readPlanVerdictFn, auditorLivePaneId, pollIntervalMs, auditorTimeoutMs,
@@ -628,6 +640,14 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		escalateFn,
 		notifyFn,
 	} = opts;
+
+	// planner-failed: planner produced no prd.json; notify best-effort, no escalate
+	// (US-003, CAM-155). Do NOT fire escalateFn: a transient planner no-op is not an
+	// operator-alert condition. Phase exits to idle via the no-action return (AC2).
+	if (planResult.kind === 'planner-failed') {
+		notifyFn?.('[cam] plan failed: planner exited without writing prd.json');
+		return { kind: 'no-action' };
+	}
 
 	// audit-blocked: escalate and bail; no branch/commit/flip (AC3, AC4)
 	if (planResult.kind === 'audit-blocked') {
