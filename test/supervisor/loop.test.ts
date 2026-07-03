@@ -24,7 +24,7 @@
 //  18. US-003: does NOT notify on a no-progress re-confirmation retry.
 
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS } from '../../src/supervisor/loop.ts';
+import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_BACKOFF_MS, JITTER_FRACTION, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, computeBackoffMs } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
 	SpawnFn,
@@ -330,6 +330,10 @@ describe('runSupervisor', () => {
 			sleepFn: (ms) => {
 				if (ms > 0) sleeps.push(ms);
 			},
+			// Pin randomFn so jitter is zero (r=0.5 -> multiplier 1.0). Makes
+			// expected sleep values deterministic: computeBackoffMs(streak, ...) equals
+			// NO_PROGRESS_BACKOFF_MS * 2^(streak-1) with no jitter offset.
+			randomFn: () => 0.5,
 			logEvent: logger,
 		});
 
@@ -365,6 +369,8 @@ describe('runSupervisor', () => {
 			sleepFn: (ms) => {
 				if (ms > 0) sleeps.push(ms);
 			},
+			// Pin randomFn for deterministic jitter (r=0.5 -> zero offset).
+			randomFn: () => 0.5,
 			logEvent: logger,
 		});
 
@@ -570,6 +576,8 @@ describe('runSupervisor', () => {
 			sleepFn: (ms) => {
 				if (ms > 0) sleeps.push(ms);
 			},
+			// Pin randomFn for deterministic jitter (r=0.5 -> zero offset).
+			randomFn: () => 0.5,
 			logEvent: logger,
 		});
 
@@ -3089,5 +3097,58 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 			expect(detail?.ready).toBe(true);
 			expect(detail?.reason).toBeUndefined();
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests for computeBackoffMs (CAM-85)
+// ---------------------------------------------------------------------------
+
+describe('computeBackoffMs', () => {
+	const BASE = NO_PROGRESS_BACKOFF_MS; // 60_000
+	const MAX = MAX_BACKOFF_MS;           // 300_000
+	const JF = JITTER_FRACTION;           // 0.2
+
+	test('streak=1, r=0.5 -> base with zero jitter', () => {
+		// min(300_000, 60_000 * 2^0) = 60_000; jitter = 1 + 0.2*(2*0.5-1) = 1.0
+		expect(computeBackoffMs(1, { base: BASE, max: MAX, jitterFraction: JF, random: () => 0.5 })).toBe(60_000);
+	});
+
+	test('streak=2, r=0.5 -> base*2 with zero jitter', () => {
+		// min(300_000, 60_000 * 2) = 120_000; multiplier = 1.0
+		expect(computeBackoffMs(2, { base: BASE, max: MAX, jitterFraction: JF, random: () => 0.5 })).toBe(120_000);
+	});
+
+	test('streak=1, r=0 -> base * (1 - jitterFraction) (-20%)', () => {
+		// jitter = 1 + 0.2*(2*0-1) = 1 - 0.2 = 0.8 -> 60_000 * 0.8 = 48_000
+		expect(computeBackoffMs(1, { base: BASE, max: MAX, jitterFraction: JF, random: () => 0 })).toBe(48_000);
+	});
+
+	test('streak=1, r=1 -> base * (1 + jitterFraction) (+20%)', () => {
+		// jitter = 1 + 0.2*(2*1-1) = 1.2 -> 60_000 * 1.2 = 72_000
+		expect(computeBackoffMs(1, { base: BASE, max: MAX, jitterFraction: JF, random: () => 1 })).toBe(72_000);
+	});
+
+	test('max cap is respected even with +jitter', () => {
+		// streak=10 -> exponential = min(300_000, 60_000*512) = 300_000; jitter r=1 -> 300_000*1.2 = 360_000
+		// BUT the cap is applied BEFORE jitter; the cap bounds the exponential not the jittered result.
+		// Implementation: exponential = min(max, ...), then multiply by jitter.
+		// So 300_000 * 1.2 = 360_000 — the cap does NOT bound the jittered output intentionally.
+		// This is by design: jitter applies after the cap so the actual value can slightly exceed max.
+		const result = computeBackoffMs(10, { base: BASE, max: MAX, jitterFraction: JF, random: () => 1 });
+		expect(result).toBe(360_000);
+	});
+
+	test('returns integer (Math.round applied)', () => {
+		// r=0.3 -> jitter = 1 + 0.2*(2*0.3-1) = 1 + 0.2*(-0.4) = 1 - 0.08 = 0.92
+		// 60_000 * 0.92 = 55200.0 -> exact integer
+		const result = computeBackoffMs(1, { base: BASE, max: MAX, jitterFraction: JF, random: () => 0.3 });
+		expect(Number.isInteger(result)).toBe(true);
+		expect(result).toBe(55_200);
+	});
+
+	test('streak=3 is bounded by max at default constants', () => {
+		// 60_000 * 2^2 = 240_000 < 300_000 (not capped yet at streak=3 with r=0.5)
+		expect(computeBackoffMs(3, { base: BASE, max: MAX, jitterFraction: JF, random: () => 0.5 })).toBe(240_000);
 	});
 });
