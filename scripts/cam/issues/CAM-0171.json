@@ -1,7 +1,7 @@
 {
   "id": "CAM-171",
   "title": "Supervisor: subir retry cap (3->4) para realizar a janela de backoff de 240s prometida pelo CAM-85",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T11:52:26.581Z",
