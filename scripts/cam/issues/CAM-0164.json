@@ -1,0 +1,11 @@
+{
+  "id": "CAM-164",
+  "title": "Empirical validation: real claude exits cleanly on SIGTERM (AC13 ceremony for CAM-162)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [
+    "CAM-162"
+  ],
+  "createdAt": "2026-07-02T00:00:00.000Z",
+  "description": "AC13 of CAM-162 US-004 requires empirical validation that a REAL claude process (not just the fake-claude used in the automated integration test) exits cleanly on SIGTERM. The integration test proves the mechanism deterministically with a fake-claude; this ceremony validates the real binary behaves identically. Steps: (1) start cam run in a fresh project after CAM-162 is merged and binary rebuilt; (2) arm the recycle marker via cam journal append --cycle-close (or write .claude/.cam-orch-recycle directly); (3) observe that claude exits cleanly (bash wrapper logs the handoff-written exit, not a crash/hang); (4) verify the bash wrapper respawns a fresh claude session with a new UUID in .cam-orch-session. Mark done after operator completes the manual ceremony and confirms clean SIGTERM behavior."
+}

@@ -89,6 +89,14 @@ export interface SidecarProcess {
  */
 export type SpawnSidecarFn = (cwd: string, logPath: string) => SidecarProcess;
 
+/**
+ * Factory that spawns the recycle watcher as a background child process.
+ * Same interface and lifecycle contract as SpawnSidecarFn.
+ * The real default redirects stdout+stderr to .claude/cam-recycle-watcher.log.
+ * Tests inject a fake that records the invocation and returns a no-op handle.
+ */
+export type SpawnWatcherFn = (cwd: string, logPath: string) => SidecarProcess;
+
 export interface RunOptions {
 	noAttach?: boolean;
 	cwd?: string;
@@ -103,6 +111,14 @@ export interface RunOptions {
 	 * stdout+stderr redirected to .claude/cam-supervisor.log.
 	 */
 	spawnSidecarFn?: SpawnSidecarFn;
+	/**
+	 * Injectable recycle watcher spawn function for unit tests.
+	 * Default: spawn `cam orch-recycle-watch` as a background Bun child process
+	 * alongside the sidecar, with stdout+stderr redirected to
+	 * .claude/cam-recycle-watcher.log. Killed in the same cleanup handler as
+	 * the sidecar on SIGINT/SIGTERM.
+	 */
+	spawnWatcherFn?: SpawnWatcherFn;
 }
 
 export interface ParsedRunArgs {
@@ -504,6 +520,37 @@ function spawnSidecarDefault(cwd: string, logPath: string): SidecarProcess {
 }
 
 // ---------------------------------------------------------------------------
+// Recycle watcher spawn (real production implementation)
+// ---------------------------------------------------------------------------
+
+/**
+ * Real production implementation of SpawnWatcherFn.
+ *
+ * Spawns `cam orch-recycle-watch` as a background Bun child process alongside
+ * the sidecar, with stdout+stderr redirected to `logPath`
+ * (.claude/cam-recycle-watcher.log). Same lifecycle contract as
+ * spawnSidecarDefault: NOT detached, shares cam run's process group, killed
+ * in the SIGINT/SIGTERM cleanup handler.
+ */
+function spawnWatcherDefault(cwd: string, logPath: string): SidecarProcess {
+	const logFd = openSync(logPath, 'a');
+	const proc = Bun.spawn(['cam', 'orch-recycle-watch'], {
+		cwd,
+		stdio: ['ignore', logFd, logFd],
+	});
+	return {
+		pid: proc.pid,
+		kill: () => {
+			try {
+				proc.kill();
+			} catch {
+				// best-effort
+			}
+		},
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Claude auth preflight (re-export from sibling module)
 // ---------------------------------------------------------------------------
 
@@ -619,6 +666,14 @@ export function runRun(options: RunOptions = {}): number {
 		writeSidecarPid(join(cwd, '.claude'), sidecarProc.pid);
 		emitMutedHint(`Sidecar supervisor started (log: .claude/cam-supervisor.log)`);
 
+		// Spawn the recycle watcher alongside the sidecar (US-004). It polls for
+		// ORCH_RECYCLE_MARKER, SIGTERMs the orchestrator claude process when found,
+		// and removes the marker (consume-once). Killed in the same cleanup handler.
+		const watcherLogPath = join(cwd, '.claude', 'cam-recycle-watcher.log');
+		const spawnWatcherFn = options.spawnWatcherFn ?? spawnWatcherDefault;
+		const watcherProc = spawnWatcherFn(cwd, watcherLogPath);
+		emitMutedHint(`Recycle watcher started (log: .claude/cam-recycle-watcher.log)`);
+
 		let cleaned = false;
 		const cleanup = () => {
 			if (cleaned) return;
@@ -630,6 +685,7 @@ export function runRun(options: RunOptions = {}): number {
 			}
 			removeSidecarPidIfExists(join(cwd, '.claude'));
 			sidecarProc.kill();
+			watcherProc.kill();
 		};
 		process.once('SIGINT', () => {
 			cleanup();

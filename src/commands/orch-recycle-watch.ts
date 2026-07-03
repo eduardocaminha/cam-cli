@@ -105,9 +105,16 @@ function makeResolvePidFn(): (sessionId: string) => number | null {
 		if ((result.status ?? 1) !== 0) return null;
 		const raw = typeof result.stdout === 'string' ? result.stdout.trim() : '';
 		if (raw.length === 0) return null;
-		// pgrep may return multiple PIDs (one per line); take the first.
-		const firstLine = raw.split('\n')[0] ?? '';
-		const pid = parseInt(firstLine, 10);
+		// pgrep may return multiple PIDs (one per line). The bash respawn-wrapper has
+		// the session UUID baked into its -c argument (sid='<uuid>'), so pgrep matches
+		// both the wrapper shell AND the child claude process. The bash wrapper has the
+		// lower PID (started first); the child claude has the higher PID (started after).
+		// We MUST SIGTERM the child claude, not the wrapper: SIGTERMing the wrapper
+		// would kill bash immediately with no chance for the respawn loop to fire.
+		// Taking the LAST line (highest PID) selects the child claude process.
+		const lines = raw.split('\n').filter((l) => l.trim().length > 0);
+		const lastLine = lines[lines.length - 1] ?? '';
+		const pid = parseInt(lastLine, 10);
 		return Number.isFinite(pid) && pid > 0 ? pid : null;
 	};
 }
