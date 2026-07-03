@@ -1,0 +1,48 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-165-orch-recycle-ps-pid-resolve",
+  "description": "Resolve the orchestrator claude child pid via ps ppid-walk (immune to claude 2.1.200 process-title rewrite) so auto-recycle SIGTERM lands on macOS; drop pgrep from the resolution path plus stale --help/comment/eslint-disable cruft.",
+  "issueNumber": 165,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Resolve orchestrator pid via ps ppid-walk (drop pgrep)",
+      "description": "As the auto-recycle watcher, I need to resolve the orchestrator claude child pid via the kernel proc table (ps by ppid) instead of pgrep, so the recycle SIGTERM lands on macOS even though claude 2.1.200 rewrites its own process-title (which blinds pgrep in every mode).",
+      "acceptanceCriteria": [
+        "resolveChildViaPgrep and every pgrep call leave the pid-resolution path; makeResolvePidFn resolves the wrapper's child via `ps -ax -o pid=,ppid=` filtered by ppid==wrapperPid (kernel proc table, immune to process-title rewrite). [oracle: grep -q 'pid=,ppid=' src/commands/orch-recycle-watch.ts]",
+        "No pgrep remains in the orch-recycle-watch source (pgrep may only appear in the integration test to document the failure mode). [oracle: ! grep -qi pgrep src/commands/orch-recycle-watch.ts]",
+        "The resolution expects exactly 1 child at the recycle-tick: 0 children emits the existing unresolved-pid event and does NOT SIGTERM; >1 children selects the highest pid (newest) and records the ambiguity. An injectable spawnFn seam for the ps call (alongside resolvePidFn/killFn) is preserved for tests. [oracle: bun test test/commands/orch-recycle-pid-fns.test.ts]",
+        "readWrapperPid (reading .cam-orch-pid / ORCH_PID_MARKER) is unchanged; only the wrapperPid->childPid step switches from pgrep to ps. [oracle: bun test test/commands/orch-recycle-pid-fns.test.ts]",
+        "Unit tests cover the ps-parse guards (0 lines / 1 line / >1 lines, non-numeric ppid, no-match, space-padded columns) via an injected spawnFn, in the spirit of the existing RC-* / RW-* matrix. [oracle: bun test test/commands/orch-recycle-pid-fns.test.ts]",
+        "The real-process integration test (test/integration/orch-recycle-pid-resolve.test.ts) uses a child stand-in that rewrites its own process-title (a bun script setting process.title) and proves as hard assertions that (b) the ps ppid-walk resolves the child by ppid despite the title rewrite and (c) a real SIGTERM terminates it; it also asserts (a) pgrep -P is blind to the title-rewritten child where the stand-in reproduces that blindness. A plain `sleep` stand-in (which does not rewrite its title) is NOT acceptable. [oracle: bun test test/integration/orch-recycle-pid-resolve.test.ts]",
+        "The stale header claim 'Responds to --help when invoked directly' is removed from src/commands/orch-recycle-watch.ts (no --help guard exists; index.ts routes straight into the poll loop). [oracle: ! grep -q 'Responds to --help' src/commands/orch-recycle-watch.ts]",
+        "Every mechanism-describing comment that still says pgrep is corrected in the same commit as the fix: the header/docstrings in src/commands/orch-recycle-watch.ts and the dispatch comment at index.ts (~line 1628) now describe the ps ppid-walk. [oracle: ! grep -qi pgrep index.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static gate passes (bun run check:all, the exact CI spine; no --no-verify). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "PRIMARY files: src/commands/orch-recycle-watch.ts (replace resolveChildViaPgrep ~176-192 with a resolveChildViaPs helper; rewire makeResolvePidFn ~194-201; update the header block lines 9-19 + the resolvePidFn docstring lines 63-70 + the runOrchRecycleWatch docstring ~326-339 which all name pgrep); index.ts:1626-1629 (dispatch comment describing `pgrep -f <session-uuid>`). TEST files: test/commands/orch-recycle-pid-fns.test.ts (replace the RC-* pgrep guard matrix with ps-parse guards using an injected spawnFn; keep the RW-* readWrapperPid cases), test/integration/orch-recycle-pid-resolve.test.ts (rewrite to a title-rewriting bun stand-in). SPEC (grill, settled): the fix is ps-based ppid-walk, NOT the pgrep -n / --session-id from the issue `description` (that was discarded because pgrep is BLIND, not slow, to the title-rewritten process). GOTCHAS: `ps -ax -o pid=,ppid=` is BSD (macOS) syntax and also works on Linux procps; columns arrive space-padded, trim before parseInt; guard noUncheckedIndexedAccess on split()/regex-group access. The wrapper runs claude in FOREGROUND (run.ts:248) so there is exactly 1 long-lived child at the recycle-tick: deterministic, no heuristic; do NOT background claude to capture $! (breaks stdin/SIGTTIN, rejected in CAM-173). ps strictly dominates pgrep: do NOT reintroduce pgrep as a fallback. A `sleep` stand-in gives FALSE confidence (it does not rewrite its title, so pgrep -P works in the test and fails in prod): the CAM-173 lesson is that a green real-tmux ceremony masked the broken live path. comment-vs-runtime lesson (patterns.md / lessons.archive 2026-06-05): update the mechanism comments in the same commit as the fix. Reuse the existing injectable-spawnFn seam pattern (US-R1-001) and the readWrapperPid guard style. Read scripts/cam/patterns.md ('Real-git/real-process integration test pattern', 'spawnSync exit-status guard', 'noUncheckedIndexedAccess') and the CAM-173 journal entries (scripts/cam/journal.md, cam/pr-173-orch-pid-resolve + the cam-171-ship journal 'Blockers encountered') for the full root-cause history. EMPIRICAL CAVEAT for the integration test: if a bun process.title rewrite does not reproduce pgrep -P blindness in the test/CI environment, keep the ps-resolves-by-ppid + real-SIGTERM assertions as the load-bearing proof and treat the pgrep-blindness assertion as best-effort documentation; never gate CI on an environment-dependent pgrep behavior."
+    },
+    {
+      "id": "US-002",
+      "title": "Remove inert eslint-disable no-constant-condition directives",
+      "description": "As a maintainer, I need the stale `// eslint-disable-next-line no-constant-condition` comments removed from the two infinite poll/retry loops, because the project lints with Biome and the ESLint directive is inert cruft that misleads readers.",
+      "acceptanceCriteria": [
+        "The inert `// eslint-disable-next-line no-constant-condition` directive is removed from src/commands/orch-recycle-watch.ts (above the poll `while (true)` loop) and from src/retry/launcher.ts (above the retry `while (true)` loop). [oracle: ! grep -rq 'eslint-disable-next-line no-constant-condition' src/commands/orch-recycle-watch.ts src/retry/launcher.ts]",
+        "The ported MIT header block at the top of src/retry/launcher.ts is preserved intact. [oracle: grep -q 'License: MIT' src/retry/launcher.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static gate passes (bun run check:all); removing the directives keeps the gate green. [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/commands/orch-recycle-watch.ts:360, src/retry/launcher.ts:132. These are ESLint directives (`// eslint-disable-next-line`), NOT Biome `// biome-ignore` suppressions, so Biome neither honors nor tracks them: removal produces no suppressions/unused warning (unlike the stale biome-ignore case in patterns.md / CAM-60). Biome's noConstantCondition does not flag the `while (true)` infinite-loop idiom, so deleting the comment keeps `bun run check:all` green; if Biome unexpectedly flags it, surface the finding (do NOT re-add ESLint syntax, and do NOT refactor the loop shape without cause). Do not touch the MIT header block (lines 1-6) in launcher.ts. Requires US-001 because both stories edit src/commands/orch-recycle-watch.ts; run this hygiene pass after the substantive fix lands. NOTE: the live end-to-end auto-recycle validation over the rebuilt binary (cycle-close -> watcher resolves pid via ps -> SIGTERM VIA watcher -> wrapper respawn -> rehydrate) is an operator ceremony filed separately via /cam-issue per the issue spec; it is NOT a story in this PRD, and the US-001 title-rewriting integration test is its automated proxy."
+    }
+  ]
+}
