@@ -59,7 +59,7 @@
         "Full quality spine passes (bun run check:all), no --no-verify. [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "File: src/commands/orch-recycle-watch.ts (extend OrchRecycleWatchOptions + the tick); test: test/orch-recycle-watch.test.ts (unit with injected deps; the existing real-process proof lives in test/integration/orch-recycle-watch.test.ts, do not regress it). Add injectable seams: readOccupancyFn (prod: read orchestratorTranscriptPath(cwd, claudeDir) from src/transcript/usage.ts + parseContextOccupancy; null when transcript absent), armMarkerFn (prod: writeFileSync(join(claudeDir, ORCH_RECYCLE_MARKER), '', 'utf8') -- mirror index.ts:1181), plus contextWindow + backstopFraction (prod: orchestratorContextWindow() + ORCH_CONTEXT_BACKSTOP_FRACTION from US-002). In the tick: check backstop FIRST (if over, armMarkerFn), THEN run existing handleOneTick so the armed marker drives SIGTERM+consume-once through one unified path. Watcher cwd is the project root (spawned by run.ts:549), so readPhaseModel's default project.toml path resolves; no run.ts change needed (deps are built inside runOrchRecycleWatch). OUT OF SCOPE: the recycle/respawn/rehydrate mechanism itself (CAM-162); a backstop firing without a fresh handoff cold-boots on respawn, which is CAM-162 cold-start-safe behavior. Keep biome cognitive-complexity under 15 (extract a checkBackstop helper if needed, CAM-60 pattern). No templates/ touch, so no vendor re-embed."
     }
