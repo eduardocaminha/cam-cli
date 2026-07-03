@@ -1,24 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add parseContextOccupancy primitive (last-request occupancy, not cumulative)"
+    "id": "US-002",
+    "title": "Add model->context-window mapping, backstop fraction, and over-backstop decision"
   },
   "branchName": "cam/CAM-163-orch-context-backstop",
-  "timestamp": "2026-07-03T00:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-03T01:00:00Z",
+  "createdFiles": [
+    "src/orchestrator/context-window.ts",
+    "test/orchestrator/context-window.test.ts"
+  ],
   "modifiedFiles": [
-    "src/transcript/usage.ts",
-    "test/transcript/usage.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/file-size-budget.json"
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "parseContextOccupancy is now exported from src/transcript/usage.ts. It returns input_tokens + cache_read_input_tokens + cache_creation_input_tokens of the LAST usage-bearing request in the JSONL (not cumulative). The dedup logic mirrors parseTranscriptUsage (key by message.id|requestId, last-wins). Returns 0 for empty/no-usage transcripts. The next story (US-002 or higher priority) can import this function to build the orchestrator context backstop.",
+  "nextStoryContext": "US-002 added src/orchestrator/context-window.ts as a pure config/decision layer. Exports: OPUS_CONTEXT_WINDOW (1_000_000, matching Anthropic docs for claude-opus-4-6+), ORCH_CONTEXT_BACKSTOP_FRACTION (0.8), orchestratorContextWindow(configPath?) which reads readPhaseModel('orchestrator', configPath) and maps to the correct window size (1M for current generation, 200k for older variants), and isOverContextBackstop(occupancy, window, fraction) which returns true iff occupancy > window * fraction. IMPORTANT: OPUS_CONTEXT_WINDOW is 1_000_000 (not 200_000 as the PRD notes assumed; docs validation corrected this). US-003 (the watcher wiring story) should import these exports from src/orchestrator/context-window.ts to arm ORCH_RECYCLE_MARKER when the orchestrator's occupancy crosses the backstop ceiling.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "US-001 is a pure TypeScript primitive (JSONL line parsing using node:fs/node:path). No external library was introduced or touched."
+      "lib": "anthropic/models",
+      "version": "2026-07-03",
+      "url": "https://platform.claude.com/docs/en/docs/about-claude/models/overview",
+      "fetchedAt": "2026-07-03T01:00:00Z",
+      "status": "corrected",
+      "summary": "PRD notes assumed OPUS_CONTEXT_WINDOW = 200_000, but Anthropic docs confirm claude-opus-4-6, 4-7, and 4-8 all have a 1M token context window. Corrected implementation to OPUS_CONTEXT_WINDOW = 1_000_000. Also updated model->window mapping: 200k for claude-opus-4-1, claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5, claude-3-*; 1M for claude-opus-4-6+, claude-sonnet-4-6+, claude-sonnet-5, claude-fable-5, claude-mythos-5."
     }
   ]
 }
