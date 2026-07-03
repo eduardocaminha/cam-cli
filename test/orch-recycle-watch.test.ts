@@ -1,8 +1,15 @@
 // test/orch-recycle-watch.test.ts
 //
-// Unit tests for the context-backstop wiring in runOrchRecycleWatch.
+// Unit tests for runOrchRecycleWatch.
 //
-// US-003 acceptance criteria:
+// US-002 acceptance criteria (AC1-AC3 unit tests):
+//   AC1: resolvePidFn is now () => number | null (no sessionId arg).
+//        Injected fakes cover resolve-ok, file-absent, and no-child paths.
+//   AC2: The tick path no longer uses readSessionIdFn for pid resolution.
+//   AC3: emitEventFn fires exactly on the unresolved-pid-with-consumed-marker
+//        path and NOT on the resolve-ok path.
+//
+// US-003 acceptance criteria (context-backstop):
 //   AC1: parseContextOccupancy is called (via readOccupancyFn seam).
 //   AC2: High-occupancy tick -> armMarkerFn called -> handleOneTick fires SIGTERM.
 //   AC2: Low-occupancy tick -> armMarkerFn NOT called -> killFn NOT called.
@@ -50,6 +57,131 @@ const CONTEXT_WINDOW = 1_000_000;
 // Tests
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// US-002 AC1: resolvePidFn is now () => number | null (no sessionId arg)
+// ---------------------------------------------------------------------------
+
+test('AC1 resolve-ok: marker present + resolvePidFn returns pid -> SIGTERM sent, marker consumed', async () => {
+	const killedPids: Array<[number, NodeJS.Signals]> = [];
+	let removed = false;
+
+	await runOneTick({
+		readMarkerFn: () => true,
+		resolvePidFn: () => 12_345,
+		killFn: (pid, signal) => { killedPids.push([pid, signal]); },
+		removeMarkerFn: () => { removed = true; },
+		readOccupancyFn: () => null,
+		armMarkerFn: () => {},
+		contextWindow: CONTEXT_WINDOW,
+		backstopFraction: ORCH_CONTEXT_BACKSTOP_FRACTION,
+	});
+
+	expect(killedPids).toHaveLength(1);
+	expect(killedPids[0]).toEqual([12_345, 'SIGTERM']);
+	expect(removed).toBe(true);
+});
+
+test('AC1 file-absent: marker present + resolvePidFn returns null -> no SIGTERM, marker consumed', async () => {
+	const killedPids: Array<[number, NodeJS.Signals]> = [];
+	let removed = false;
+
+	await runOneTick({
+		readMarkerFn: () => true,
+		resolvePidFn: () => null, // simulates absent pid file or no child
+		killFn: (pid, signal) => { killedPids.push([pid, signal]); },
+		removeMarkerFn: () => { removed = true; },
+		readOccupancyFn: () => null,
+		armMarkerFn: () => {},
+		contextWindow: CONTEXT_WINDOW,
+		backstopFraction: ORCH_CONTEXT_BACKSTOP_FRACTION,
+	});
+
+	expect(killedPids).toHaveLength(0);
+	expect(removed).toBe(true); // consume-once even when pid not found
+});
+
+test('AC1 no-child: marker present + resolvePidFn returns null (pgrep -P found nothing) -> no SIGTERM', async () => {
+	let killCalled = false;
+
+	await runOneTick({
+		readMarkerFn: () => true,
+		resolvePidFn: () => null,
+		killFn: () => { killCalled = true; },
+		removeMarkerFn: () => {},
+		readOccupancyFn: () => null,
+		armMarkerFn: () => {},
+		contextWindow: CONTEXT_WINDOW,
+		backstopFraction: ORCH_CONTEXT_BACKSTOP_FRACTION,
+	});
+
+	expect(killCalled).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
+// US-002 AC3: emitEventFn fires exactly on unresolved-pid path
+// ---------------------------------------------------------------------------
+
+test('AC3 unresolved-pid: emitEventFn fires once when marker consumed but pid not found', async () => {
+	const emitted: string[] = [];
+
+	await runOneTick({
+		readMarkerFn: () => true,
+		resolvePidFn: () => null,
+		killFn: () => {},
+		removeMarkerFn: () => {},
+		emitEventFn: (line) => { emitted.push(line); },
+		readOccupancyFn: () => null,
+		armMarkerFn: () => {},
+		contextWindow: CONTEXT_WINDOW,
+		backstopFraction: ORCH_CONTEXT_BACKSTOP_FRACTION,
+	});
+
+	expect(emitted).toHaveLength(1);
+	const parsed = JSON.parse(emitted[0] ?? '{}') as Record<string, unknown>;
+	expect(parsed['event']).toBe('unresolved-pid');
+	expect(typeof parsed['ts']).toBe('string');
+});
+
+test('AC3 resolve-ok: emitEventFn NOT called when pid successfully resolved', async () => {
+	const emitted: string[] = [];
+
+	await runOneTick({
+		readMarkerFn: () => true,
+		resolvePidFn: () => 99_999,
+		killFn: () => {},
+		removeMarkerFn: () => {},
+		emitEventFn: (line) => { emitted.push(line); },
+		readOccupancyFn: () => null,
+		armMarkerFn: () => {},
+		contextWindow: CONTEXT_WINDOW,
+		backstopFraction: ORCH_CONTEXT_BACKSTOP_FRACTION,
+	});
+
+	expect(emitted).toHaveLength(0);
+});
+
+test('AC3 no-marker: emitEventFn NOT called when marker is absent (no tick action)', async () => {
+	const emitted: string[] = [];
+
+	await runOneTick({
+		readMarkerFn: () => false,
+		resolvePidFn: () => null,
+		killFn: () => {},
+		removeMarkerFn: () => {},
+		emitEventFn: (line) => { emitted.push(line); },
+		readOccupancyFn: () => null,
+		armMarkerFn: () => {},
+		contextWindow: CONTEXT_WINDOW,
+		backstopFraction: ORCH_CONTEXT_BACKSTOP_FRACTION,
+	});
+
+	expect(emitted).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------------
+// US-003 backstop tests (existing)
+// ---------------------------------------------------------------------------
+
 test('high-occupancy reader: backstop arms marker and handleOneTick fires SIGTERM on resolved PID', async () => {
 	// Shared state: armMarkerFn writes to this; readMarkerFn reads from it.
 	let markerArmed = false;
@@ -70,8 +202,8 @@ test('high-occupancy reader: backstop arms marker and handleOneTick fires SIGTER
 	// Provide a session ID so handleOneTick can resolve a PID.
 	const readSessionIdFn = (): string => 'test-session-uuid';
 
-	// Fake PID resolver: always returns a constant PID.
-	const resolvePidFn = (_uuid: string): number => 42_000;
+	// Fake PID resolver (no-arg): always returns a constant PID.
+	const resolvePidFn = (): number => 42_000;
 
 	// Capture kill calls.
 	const killFn = (pid: number, signal: NodeJS.Signals): void => {

@@ -48,7 +48,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/commands/orch-recycle-watch.ts. Rework makeResolvePidFn (~lines 141-158) to take no sessionId: read ORCH_PID_MARKER via readFileSync+trim -> parseInt(wrapperPid) -> spawnSync('pgrep', ['-P', String(wrapperPid)], {encoding:'utf8'}); return null on absent file, non-finite pid, or empty pgrep output. handleOneTick (~lines 250-265) drops the readSessionIdFn->resolvePidFn(sessionId) chain and instead resolves from the pid marker; keep the consume-once removeMarkerFn call (do NOT spin). Add an injectable emit seam (e.g. emitEventFn?: (line: string) => void) on OrchRecycleWatchOptions defaulting to a process.stderr.write of a structured one-line record (captured by .claude/cam-recycle-watcher.log); call it when readMarkerFn() was true but pid resolved null. Leave makeReadOccupancyFn / orchestratorTranscriptPath (which read .cam-orch-session) and the whole checkBackstop path unchanged. GOTCHAS: pgrep -P is kernel-ppid match (confirmed macOS man, officialDocsConsulted), categorically different from the broken pgrep -f argv string-match; during the claude phase the ONLY child of the wrapper is claude (jq/uuidgen/cat/mv/printf run between invocations, never concurrent). noUncheckedIndexedAccess: guard lines[...] access with ?? ''. Burrow/CAM-55 lesson: a unit fake that returns the output the code expects cannot catch tool-real behavior - the AC3 integration test with a REAL giant-argv process is mandatory. Import ORCH_PID_MARKER from src/tmux/session.ts (introduced in US-001).",
       "repo": "main-repo"
