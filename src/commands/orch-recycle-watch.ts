@@ -416,7 +416,6 @@ export async function runOrchRecycleWatch(options: OrchRecycleWatchOptions = {})
 	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
 	const pollIntervalMs = options.pollIntervalMs ?? 2000;
 
-	// eslint-disable-next-line no-constant-condition
 	while (true) {
 		// Check the context backstop first: if over the ceiling, arm the marker.
 		// handleOneTick then sees the marker and fires SIGTERM via the existing
