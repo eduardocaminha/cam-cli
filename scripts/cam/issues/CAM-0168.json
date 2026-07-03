@@ -1,12 +1,48 @@
 {
   "id": "CAM-168",
   "title": "Auto-close self-trigger não armado: recycle marker nunca escrito (CAM-162)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T04:01:31.434Z",
   "description": "O CAM-162 (autonomous cycle self-exit/recycle) entregou toda a canalizacao do recycle mas NAO o self-trigger que arma o marker, entao o loop nunca se auto-recicla no cycle-close (exige /exit manual).\n\nCanalizacao que existe e funciona: wrapper bash respawn com export CAM_ORCH_REHYDRATE, rehydrate no boot prompt, watcher `cam orch-recycle-watch` que da SIGTERM no claude quando ve o marker, prosa no subagent-orchestrator.md. O reason=cycle-close reseta o respawn counter (n=0).\n\nO que falta: nada escreve o marker .claude/.cam-orch-recycle.\n\nEvidencia (3 confirmacoes independentes):\n1. grep de todo o src por ORCH_RECYCLE_MARKER acha apenas: src/tmux/session.ts (definicao da const), src/commands/orch-recycle-watch.ts (le + remove), src/commands/stop.ts (cleanup), src/commands/run.ts (comentario). Nenhum writer.\n2. O agent file subagent-orchestrator.md (linhas ~277-278) manda o orquestrador rodar `cam journal append --cycle-close` pra disparar o recycle, mas --cycle-close nao e flag real: em runtime e ignorada e o comando erra no parse de stdin vazio (\"invalid JSON from stdin: Unexpected EOF\"). Nao escreve marker nenhum.\n3. Nao existe subcomando `cam orch-recycle --arm`.\n\nResultado: o watcher fica pollando pra sempre um marker que nunca e escrito. A cerimonia autonoma (handoff -> self-exit -> respawn) fica inerte. Bate exato com o desejo do operador registrado na memoria feedback-autonomous-cycle-self-exit.\n\nEscopo do fix:\n1. Implementar a armacao do marker. Opcao A: fazer `cam journal append --cycle-close` de fato escrever .claude/.cam-orch-recycle apos anexar a entrada cycle-close no journal. Opcao B: subcomando dedicado `cam orch-recycle --arm` que escreve o marker. Preferir a opcao mais coesa com o comando que o agent file ja invoca.\n2. Corrigir as DUAS copias do agent file (.claude/agents/subagent-orchestrator.md e templates/agents/subagent-orchestrator.md) pra chamar o comando real (dual-copy, ver memoria cam-dual-copy-is-per-file).\n3. Garantir watcher vivo no momento do arm (cam run ja spawna; se morto, precisa do backstop de occupancy, relaciona CAM-163).\n\nAcceptance criteria: de uma sessao de orquestrador interativa, escrever o handoff (reason:cycle-close) + disparar o sinal de cycle-close resulta em: watcher da SIGTERM no processo claude, wrapper respawna com reason=cycle-close (n resetado pra 0) e o novo orquestrador rehydrata a partir do .cam-orch-handoff.consumed.json, tudo SEM /exit manual.\n\nRelaciona: CAM-162 (parent, shipou incompleto), CAM-163 (occupancy backstop pro watcher), CAM-164 (validar SIGTERM gracioso com claude interativo). Tipo: idea, defeito de completude do CAM-162.\n",
   "derivedFrom": [
     "CAM-162"
-  ]
+  ],
+  "spec": {
+    "scope": "Make the autonomous cycle-close self-trigger (CAM-162) actually fire reliably end-to-end. The recycle-marker WRITER already exists (index.ts armRecycleMarkerFn on the --cycle-close path, shipped in CAM-162 PR #120); this issue does NOT re-implement it. In scope: (G2) gate the --cycle-close marker arming on a LIVE recycle watcher, refusing to arm (distinct exit code, no marker written) when no watcher is running; (G3) clean any stale recycle marker on cam run boot BEFORE spawning the watcher; (G1) fix both agent-file copies so the cam journal append --cycle-close invocation is unambiguous (JSON narrative entry piped on stdin AND marker-arm in one call) and document the refuse-to-arm fallback. Out of scope: re-implementing the marker writer, the watcher SIGTERM/respawn/rehydrate plumbing (all shipped CAM-162), and the occupancy backstop (shipped CAM-163). End-to-end validation on a fresh cam run is an operator ceremony tracked separately as a hand-filed requires:operator story.",
+    "acceptanceCriteria": [
+      "cam journal append --cycle-close with a valid handoff present AND a live recycle watcher arms .claude/.cam-orch-recycle and exits 0 (existing happy path, unchanged).",
+      "cam journal append --cycle-close with a valid handoff present but NO live recycle watcher (pid file absent OR the pid's process is dead) does NOT create the marker, prints an error naming the missing watcher and the manual-/exit fallback, and returns exit code 4 (distinct from 1=invalid-stdin/append-fail and 3=handoff-absent).",
+      "Watcher liveness is detected by reading .claude/.cam-watcher.pid and confirming the process is alive (process.kill(pid, 0) semantics); the detection is injectable so unit tests never scan real processes.",
+      "cam run boot removes any pre-existing .claude/.cam-orch-recycle marker BEFORE spawning the recycle watcher, so a stale marker cannot cause a first-tick spurious SIGTERM of the freshly-booted orchestrator.",
+      "Both agent-file copies (.claude/agents/subagent-orchestrator.md and templates/agents/subagent-orchestrator.md) update the self-handoff section to (a) make explicit that `cam journal append --cycle-close` is the SAME call that appends the narrative journal entry (JSON piped on stdin) AND arms the recycle marker, and (b) document the refuse-to-arm fallback (exit 4 => no watcher => /exit manually or restart cam run). `bun run embed-vendor:check` passes.",
+      "Unit tests cover: arm-with-live-watcher (exit 0, marker written), arm-without-watcher (exit 4, marker NOT written, error emitted), and stale-marker cleanup on cam run boot.",
+      "Full quality spine green: bun run check:all, bun test, and bun run typecheck all pass."
+    ],
+    "gotchas": [
+      "DO NOT re-implement the marker arming. The writer exists at index.ts (armRecycleMarkerFn on the parsed.cycleClose branch), shipped CAM-162 PR #120, and is unit-tested in test/commands/journal-append.test.ts. The original CAM-168 premise ('no writer') was a false diagnosis: the grep was scoped to src/ but the writer lives in index.ts at the REPO ROOT, and running `cam journal append` bare hits the stdin-EOF guard before the arm path.",
+      "cam journal append --cycle-close REQUIRES a JSON journal entry on stdin: it appends the narrative entry AND arms the marker in a single call. Running it with empty stdin yields 'invalid JSON from stdin: Unexpected EOF' (exit 1) and never reaches the arm path.",
+      "Watcher-liveness signal: .claude/.cam-watcher.pid is written by run.ts writeWatcherPid (line ~689) when the watcher is spawned and removed on cam run cleanup (removeWatcherPidIfExists). Reuse this pid file; do not invent a new mechanism.",
+      "The watcher's handleOneTick (orch-recycle-watch.ts:250) consumes the marker EVERY tick and SIGTERMs the PID matching the CURRENT session UUID (pgrep -f <uuid> from ORCH_SESSION_MARKER). A stale marker left on disk will therefore SIGTERM the NEXT fresh orchestrator on tick 1 (self-limiting to one spurious recycle, but real). This is exactly why G3 (boot cleanup) exists; run.ts boot today does NOT clean it (run.ts:684-686).",
+      "Dual-copy: the agent file lives in BOTH .claude/agents/subagent-orchestrator.md AND templates/agents/subagent-orchestrator.md; edit both and re-embed vendor (bun run embed-vendor). The embed-vendor:check gate catches drift. See memory cam-dual-copy-is-per-file: they are NOT always byte-identical, diff before assuming.",
+      "Agent-file .md is LLM-consumed, so em-dash and emoji are ALLOWED there (documented exception to the project no-em-dash rule).",
+      "refuse-to-arm exit code: 4 is free (dispatchJournal already uses 0=success, 1=invalid-stdin/append-fail, 3=handoff-absent).",
+      "The end-to-end ceremony (watcher SIGTERM -> wrapper respawn reason=cycle-close n=0 -> fresh orchestrator rehydrates from .cam-orch-handoff.consumed.json) has NEVER been exercised in production: it needs a fresh cam run with the CAM-162 wrapper, which has not happened (the currently-running wrapper predates CAM-162 and spawns no watcher). Track validation as a hand-filed requires:operator story; the planner does not emit operator stories."
+    ],
+    "domainTerms": [
+      "recycle marker (.claude/.cam-orch-recycle)",
+      "orch-recycle-watch (background watcher spawned by cam run)",
+      "cycle-close self-trigger",
+      "watcher pid file (.claude/.cam-watcher.pid)",
+      "refuse-to-arm (exit 4 when no live watcher)",
+      "CAM_ORCH_REHYDRATE (explicit rehydrate delivery on respawn)"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 2
+  }
 }
