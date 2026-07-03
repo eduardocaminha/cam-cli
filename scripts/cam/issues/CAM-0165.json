@@ -1,0 +1,9 @@
+{
+  "id": "CAM-165",
+  "title": "orch-recycle-watch hardening: PID match via --session-id/pgrep -n + drop stale --help claim e eslint-disable cruft",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-03T02:03:52.367Z",
+  "description": "3 review-suggestions do CAM-162 (round 1-3, nao-bloqueantes, nao viraram fix-story). (1) makeResolvePidFn (src/commands/orch-recycle-watch.ts:~115) seleciona o claude pelo MAIOR PID de pgrep -f <uuid> (assume wrapper-antes-claude, ordem de PID ascendente, sem wraparound). Validado pelo e2e real-tmux, mas fragil. Fix determinístico: casar a forma `--session-id <uuid>` (unica no argv do claude; o wrapper tem sid='<uuid>') ou usar `pgrep -n` (mais novo=filho). (2) Comentario do header (:18) afirma 'Responds to --help when invoked directly' mas nao ha guard -> `cam orch-recycle-watch --help` inicia o poll loop; dropar a claim ou adicionar guard (comment-vs-runtime, licao 2026-06-05). (3) `// eslint-disable-next-line no-constant-condition` (:200) stale -- o projeto usa biome, diretiva inerte; remover. P3."
+}
