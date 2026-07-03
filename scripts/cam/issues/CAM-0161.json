@@ -1,9 +1,41 @@
 {
   "id": "CAM-161",
   "title": "cam ship --finalize: issueId some vezes nao entra no merge-watch (race com sidecar idle)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T19:26:51.154Z",
-  "description": "cam ship --finalize chama stashFn(issueId) pra escrever .claude/.cam-merge-watch.json com {issueId}. Mas o sidecar idle (poll 2s) pode deletar o arquivo logo apos a escrita (consume-on-read, sidecar.ts), antes que o passo pos-PR leia-e-enriqueca com prNumber+mergedBranch. Resultado: WATCH vira {} via fallback e o jq grava {prNumber, mergedBranch} sem issueId. Post-merge: closeIssueOnMain nao e acionado. Vivido no ship do CAM-158: corrigi manualmente. Fix: finalize grava issueId num arquivo separado nao-consumido pelo sidecar (ex: .cam-issue-stash.json), e o step pos-PR le dali pra montar o merge-watch completo. P2 -- falha silenciosa, nao trava o ship mas mata o post-merge automatico."
+  "description": "cam ship --finalize chama stashFn(issueId) pra escrever .claude/.cam-merge-watch.json com {issueId}. Mas o sidecar idle (poll 2s) pode deletar o arquivo logo apos a escrita (consume-on-read, sidecar.ts), antes que o passo pos-PR leia-e-enriqueca com prNumber+mergedBranch. Resultado: WATCH vira {} via fallback e o jq grava {prNumber, mergedBranch} sem issueId. Post-merge: closeIssueOnMain nao e acionado. Vivido no ship do CAM-158: corrigi manualmente. Fix: finalize grava issueId num arquivo separado nao-consumido pelo sidecar (ex: .cam-issue-stash.json), e o step pos-PR le dali pra montar o merge-watch completo. P2 -- falha silenciosa, nao trava o ship mas mata o post-merge automatico.",
+  "spec": {
+    "scope": "Corrigir a causa-raiz da race do merge-watch (CAM-161) que faz o post-merge nao fechar o issue no backend none em modo ci-gated. A origem e o branch de garbage-collection em src/commands/sidecar.ts (makeProductionMergeWatchFn): quando readMergeWatchState retorna null para um seed issueId-only (que ela rejeita por exigir prNumber, merge-watch.ts), o sidecar deleta o arquivo a cada tick de 2s, tratando um seed pre-PR legitimo como lixo. Entre cam ship --finalize (que grava apenas issueId) e o passo enrich do cam-ship.md (que adiciona prNumber e mergedBranch), o sidecar apaga o seed; o enrich cai no fallback de objeto vazio e grava sem issueId; o post-merge nao recebe closeIssueId. Fix (Opcao B, escolhida no grill): ensinar o GC a distinguir um seed issueId-only valido (preservar) de lixo real (deletar). Single-file, sem arquivo separado, sem TTL. Dentro do escopo: o discriminador no GC do sidecar, os comentarios corrigidos e a regressao real-fs. Fora do escopo: mudar readMergeWatchState ou stashIssueIdInMergeWatch, o caminho immediate, e qualquer arquivo de stash separado.",
+    "acceptanceCriteria": [
+      "AC1: Em makeProductionMergeWatchFn (src/commands/sidecar.ts, branch state===null com arquivo existente), o GC preserva um seed issueId-only valido (objeto JSON com issueId string e sem prNumber numerico) em vez de deletar; deleta apenas lixo real (JSON malformado, valor nao-objeto ou array, ou objeto sem issueId e sem prNumber).",
+      "AC2: Apos um tick do merge-watch do sidecar sobre um arquivo contendo apenas issueId (sem prNumber), o arquivo continua existindo e o issueId permanece intacto.",
+      "AC3: No fluxo ci-gated, com o seed preservado, o passo enrich do cam-ship.md le o issueId e produz o merge-watch completo (issueId, prNumber, mergedBranch), e runPostMerge recebe closeIssueId nao-nulo, fechando o issue apos o merge.",
+      "AC4: Existe uma regressao real-fs (nao-mock) que grava um seed issueId-only, roda o tick real do merge-watch do sidecar e assere arquivo-presente e issueId-intacto; o teste reprova contra o codigo atual (que deleta o seed) e aprova com o fix.",
+      "AC5: Os comentarios enganosos sao corrigidos: merge-watch.ts (a afirmacao de que stashing mantem o sidecar inert) e sidecar.ts (a linha de garbage collection) passam a documentar que um seed issueId-only e preservado, nao coletado.",
+      "AC6: O caminho de modo immediate fica intocado (a merge-watch fn do sidecar so roda em ci-gated); nenhum comportamento do immediate muda.",
+      "AC7: check:all verde (typecheck, test, embed-vendor se templates forem tocados, ratchets de file-size e coverage)."
+    ],
+    "gotchas": [
+      "A causa-raiz e o GC do branch state===null (sidecar.ts, cerca de :373-378 no HEAD atual), NAO consumo de um watch valido. readMergeWatchState retorna null para issueId-only porque exige prNumber numerico (merge-watch.ts, cerca de :76). Ancore pela funcao e comportamento, nao pelo numero de linha (pode driftar).",
+      "NAO adicionar arquivo separado (.cam-issue-stash.json). Foi a proposta original do issue mas e workaround: deixaria o unlink incorreto de pe para qualquer outro seed e adicionaria um segundo lifecycle. Rejeitado no grill em favor do fix de raiz single-file.",
+      "NAO mexer na semantica de readMergeWatchState (prNumber ausente igual a watch nao-pending continua correto) nem em stashIssueIdInMergeWatch (ja correto: read-modify-write preserva e atualiza issueId).",
+      "Seed orfao (ship aborta antes do gh pr create) e ACEITO por decisao do operador: inocuo, o proximo cam ship --finalize sobrescreve o issueId. NAO adicionar TTL nem staleness.",
+      "Anti-shadow-mock: os testes do CAM-121 mascararam esse bug usando stashFn no-op e nunca exercitaram o tick real do sidecar contra um seed issueId-only. O oracle DEVE rodar o tick real (real-fs), nao um mock que re-implementa o GC.",
+      "Colocacao robusta a CAM-149 (ship-runner deterministico): o fix vive no lado sidecar (leitor e GC), entao sobrevive a reescrita da fase de ship, que troca quem ESCREVE o seed, nao quem faz o GC.",
+      "writeMergeWatchState preserva issueId (merge-watch.ts, cerca de :116-118); apos o enrich escrever o estado completo, os ticks subsequentes de pollCount nao perdem o issueId."
+    ],
+    "domainTerms": [
+      "merge-watch seed: arquivo .claude/.cam-merge-watch.json contendo apenas issueId, escrito por cam ship --finalize antes do gh pr create; nao e um watch pending (sem prNumber).",
+      "consume-on-read terminal (by-design): removeMergeWatchState deleta o merge-watch quando um watch valido atinge outcome terminal. Distinto do GC-de-null, que e o defeito do CAM-161.",
+      "ci-gated post-merge: modo em que o sidecar detecta o PR mergeado lendo o merge-watch em idle ticks e roda runPostMerge (pull main, push tag, prune branch e, no backend none, closeIssueOnMain com o issueId stashado)."
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 4,
+    "riskReduction": 4,
+    "jobSize": 2
+  }
 }
