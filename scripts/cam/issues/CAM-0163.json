@@ -1,7 +1,7 @@
 {
   "id": "CAM-163",
   "title": "orchestrator recycle backstop: token de OCUPACAO (parseContextOccupancy) no watcher (split de CAM-162)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-162"
