@@ -35,7 +35,8 @@ import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWork
 import { runPlanPhase, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult } from '../supervisor/plan-runner.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
-import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig } from '../config/models.ts';
+import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation } from '../config/models.ts';
+import { makeProductionEnsureContainerFn } from '../supervisor/ensure-container.ts';
 import { sendEscalation, type ResendSendFn } from '../notify/resend.ts';
 import { buildWorkerReportSendKeysArgv } from '../supervisor/worker-report.ts';
 import {
@@ -172,6 +173,15 @@ export interface SidecarOptions {
 	 * Tests: inject a spy to assert call count without spawning real tmux panes.
 	 */
 	runPlanPhaseFn?: RunSidecarLoopOptions['runPlanPhaseFn'];
+	/**
+	 * Override the ensure-container function (US-003, CAM-150).
+	 *
+	 * Production (container mode): built via makeProductionEnsureContainerFn,
+	 * calls ensureWorkerContainer with spawnSync-backed deps at sidecar boot.
+	 * Production (host mode): not called (zero docker invocations).
+	 * Tests: inject a spy to assert the call happened without real docker.
+	 */
+	ensureContainerFn?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -1061,6 +1071,13 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	const sessionName = projectSessionName(cwd);
 	const logEvent =
 		options.logEventFn ?? makeFileEventLogger(join(claudeDir, 'cam-worker-events.jsonl'));
+
+	// US-003: ensure the worker container is running before dispatching (container
+	// mode only).  In host mode this block is a complete no-op (zero docker calls).
+	const isolation = readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'));
+	if (isolation === 'container') {
+		(options.ensureContainerFn ?? makeProductionEnsureContainerFn(cwd))();
+	}
 
 	const deps = buildSidecarLoopDeps(
 		{ cwd, claudeDir, prdPath, sessionName, logEvent, realSpawnFn },
