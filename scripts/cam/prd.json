@@ -26,7 +26,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/commands/orch-recycle-watch.ts:11]: Stale file-header comment: lines 11-12 still describe the pre-fix mechanism ('The PID is resolved via `pgrep -f <uuid>` scoped to the session UUID read fresh from ORCH_SESSION_MARKER on every poll'). The shipped code resolves via `pgrep -P <wrapper_pid>` read from ORCH_PID_MARKER (.cam-orch-pid). The function-level JSDoc (307-316) was updated but the header block was not. Doc-sync deviation (CLAUDE.md section 7; 2026-06-05 stale-comment lesson). Fix: update the header to describe pgrep -P + ORCH_PID_MARKER."
     },
     {

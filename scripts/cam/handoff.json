@@ -1,25 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
-  "createdFiles": [
-    "test/commands/orch-recycle-pid-fns.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
     "src/commands/orch-recycle-watch.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 exported readWrapperPid and resolveChildViaPgrep (with PgrepSpawnFn injectable seam) from src/commands/orch-recycle-watch.ts, and added test/commands/orch-recycle-pid-fns.test.ts with 17 direct unit tests covering every parsing guard branch (RW-1..8 for readWrapperPid, RC-1..8+extra for resolveChildViaPgrep). The next story is US-R1-002: update the stale file-header comment in src/commands/orch-recycle-watch.ts (lines 11-12 still describe pgrep -f <uuid> but the shipped code uses pgrep -P + ORCH_PID_MARKER).",
+  "nextStoryContext": "US-R1-002 updated the stale file-header comment in src/commands/orch-recycle-watch.ts lines 11-12 to describe pgrep -P + ORCH_PID_MARKER, replacing the pre-fix pgrep -f <uuid> / ORCH_SESSION_MARKER description. Both US-R1-001 and US-R1-002 are now passes:true. If no further stories remain with passes:false, the PRD is complete and the next step is /cam-review.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "version": "n/a",
       "url": "n/a",
-      "fetchedAt": "2026-07-03T16:20:00Z",
+      "fetchedAt": "2026-07-03T00:00:00Z",
       "status": "no_external_lib_touched",
-      "summary": "US-R1-001 adds injectable seam (PgrepSpawnFn) and exports inner helpers; no external library API was exercised."
+      "summary": "US-R1-002 is a pure doc fix (2-line comment update in file header); no external library API was exercised."
     }
   ]
 }
