@@ -82,7 +82,7 @@
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "New file: src/commands/orch-recycle-watch.ts. Register in index.ts near the 'sidecar' case (~line 1554), mirror its INTERNAL-command comment. Make all I/O injectable (readMarkerFn, readSessionIdFn, resolvePidFn, killFn, sleepFn) so unit tests never touch real fs/processes -- follow the sidecar.ts dep-injection pattern. Read ORCH_SESSION_MARKER + ORCH_RECYCLE_MARKER from src/tmux/session.ts. PID resolution hint: the claude argv carries `--session-id <uuid>` (run.ts buildOrchestratorPaneCommand), so `pgrep -f <uuid>` scopes to this project's orchestrator with no tmux call; read the uuid fresh each poll (it is rewritten on every respawn, and is already lowercased in run.ts per the macOS uuidgen lesson). GOTCHA F-05: directory-grep oracles use grep -rq. Do NOT add token/occupancy logic here -- the occupancy backstop is CAM-163 (blocked by this issue); do NOT reuse parseTranscriptUsage/computeOrchBudget."
     },

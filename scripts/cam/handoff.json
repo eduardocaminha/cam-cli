@@ -1,17 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Arm the recycle marker via cam journal append --cycle-close"
+    "id": "US-003",
+    "title": "Recycle watcher module and cam orch-recycle-watch command"
   },
   "branchName": "cam/pr-162-orch-recycle-core",
-  "timestamp": "2026-07-02T13:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-02T14:00:00Z",
+  "createdFiles": [
+    "src/commands/orch-recycle-watch.ts",
+    "test/commands/orch-recycle-watch.test.ts"
+  ],
   "modifiedFiles": [
     "index.ts",
-    "test/commands/journal-append.test.ts"
+    "knip.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "ParsedJournalArgs now has `cycleClose: boolean` on the append member. dispatchJournal checks parsed.cycleClose after the durable writes (CAM_JOURNAL_APPENDED + recordFn); if handoff absent: printError + return 3; if handoff present: calls armRecycleMarkerFn (default: writeFileSync .claude/ORCH_RECYCLE_MARKER). Injectable deps `handoffExistsFn` and `armRecycleMarkerFn` added to JournalDispatchDeps. CAM_ORCH_HANDOFF_DUE=true is emitted on the success path (both cycle-close and non-cycle-close). Production import: ORCH_RECYCLE_MARKER from src/tmux/session.ts; existsSync, mkdirSync from node:fs. The two toEqual assertions at test lines 315/319 were updated to include cycleClose: false; the pinned tests at :357/:448 are unchanged. US-003 should implement the orch-recycle-watch module that detects the marker, resolves the orchestrator PID, and sends SIGTERM.",
+  "nextStoryContext": "runOrchRecycleWatch (src/commands/orch-recycle-watch.ts) polls ORCH_RECYCLE_MARKER via readMarkerFn, reads ORCH_SESSION_MARKER fresh each poll via readSessionIdFn, resolves the orchestrator claude PID via resolvePidFn (pgrep -f <uuid>), sends SIGTERM via killFn, and removes the marker via removeMarkerFn (consume-once). All deps are injectable; handleOneTick is the extracted inner helper. Registered as case 'orch-recycle-watch' in index.ts (INTERNAL, near sidecar case ~line 1604). knip.json now includes 'pgrep' in ignoreBinaries. US-004 should wire cam run to spawn cam orch-recycle-watch as a detached background process alongside cam sidecar, and cam stop should SIGTERM and clean up the watcher process and its associated marker.",
   "officialDocsValidated": [
     {
       "lib": "none",
