@@ -47,6 +47,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .claude/.cam-setup-prompt.txt
 .claude/.cam-orch-ready
 .claude/.cam-sidecar.pid
+.claude/.cam-watcher.pid
 .claude/.cam-orch-handoff.json
 .claude/.cam-orch-handoff.consumed.json
 .claude/.cam-orch-recycle
@@ -67,6 +68,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Sidecar supervisor log + cam next run log (runtime artifacts written by `cam run` / `cam next`, CAM-55)
 .claude/cam-supervisor.log
 .claude/cam-next-run.log
+# Recycle watcher log written by spawnWatcherDefault in run.ts (US-004, CAM-162)
+.claude/cam-recycle-watcher.log
 # Ephemeral per-invocation worker exit report (US-003/US-FIX-006; read by supervisor, never committed)
 scripts/cam/worker-report.json
 # Ephemeral per-review structured findings report (US-001, CAM-75; read by supervisor, never committed)
