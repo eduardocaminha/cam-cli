@@ -1,27 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Resolve the orchestrator pid via pgrep -P with a non-silent unresolved-pid event"
+    "id": "US-003",
+    "title": "Gitignore the orchestrator-pid marker in both copies and re-embed"
   },
-  "createdFiles": [
-    "test/integration/orch-recycle-pid-resolve.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/orch-recycle-watch.ts",
-    "test/commands/orch-recycle-watch.test.ts",
-    "test/orch-recycle-watch.test.ts",
+    ".gitignore",
+    "templates/.gitignore",
+    "src/vendor/_generated.ts",
+    "test/embedded.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 reworked makeResolvePidFn to use ORCH_PID_MARKER (from src/tmux/session.ts, introduced US-001) + pgrep -P instead of pgrep -f <sessionId>. Two new helpers were extracted: readWrapperPid(pidFilePath) and resolveChildViaPgrep(wrapperPid). The tick path (handleOneTick) no longer uses readSessionIdFn; it now calls resolvePidFn() directly (no args). OrchRecycleWatchOptions.resolvePidFn is now () => number | null. readSessionIdFn in the options is deprecated (silently ignored) but kept for backward compat. An injectable emitEventFn seam was added: fires a structured JSON line when the marker is consumed but pid does not resolve. The integration test (test/integration/orch-recycle-pid-resolve.test.ts) spawns a real bash wrapper with pgrep -P and SIGTERMs the child.",
+  "nextStoryContext": "US-003 added .claude/.cam-orch-pid to the CAM-68 runtime-marker block in both .gitignore and templates/.gitignore, regenerated src/vendor/_generated.ts via bun run embed-vendor, and extended the MARKER_RULES array in test/embedded.test.ts with '.cam-orch-pid' so the embedded byte-parity suite pins the rule. All 3 PRD stories now have passes:true. The PRD is complete.",
   "officialDocsValidated": [
     {
-      "lib": "pgrep (macOS man page)",
-      "version": "macOS 14.x (FreeBSD-derived)",
-      "url": "https://man.freebsd.org/cgi/man.cgi?query=pgrep&sektion=1&manpath=macOS+14.0",
-      "fetchedAt": "2026-07-03T15:55:00Z",
-      "status": "ok",
-      "summary": "pgrep -P restricts matches to children of the given ppid. Exit 0 = match found, exit 1 = no match. Implementation guards (result.status ?? 1) !== 0 correctly handle both cases."
+      "lib": "none",
+      "version": "n/a",
+      "url": "n/a",
+      "fetchedAt": "2026-07-03T00:00:00Z",
+      "status": "no_external_lib_touched",
+      "summary": "US-003 is a gitignore + embed-vendor hygiene story; no external library API was exercised."
     }
   ]
 }
