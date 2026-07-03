@@ -4,6 +4,14 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.49.0] - 2026-07-03
+
+### Added
+
+- US-003 - Wire occupancy backstop into the recycle watcher tick (arm marker when over ceiling)
+- US-002 - Add model->context-window mapping, backstop fraction, and over-backstop decision
+- US-001 - Add parseContextOccupancy primitive (last-request occupancy, not cumulative)
+
 ## [0.48.0] - 2026-07-03
 
 ### Added
