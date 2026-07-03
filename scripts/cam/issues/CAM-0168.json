@@ -1,7 +1,7 @@
 {
   "id": "CAM-168",
   "title": "Auto-close self-trigger não armado: recycle marker nunca escrito (CAM-162)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T04:01:31.434Z",
