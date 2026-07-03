@@ -517,9 +517,9 @@ export function computeBackoffMs(
  * the cause is persistent (a dead tmux server, a worker dying pre-session), the
  * loop would otherwise storm: re-dispatch every poll interval, burning
  * MAX_ITERATIONS in minutes with each spawn dying the same way. Mirroring the
- * CAM-36/38 no-progress guard, dead-pane outcomes get the same escalating
- * NO_PROGRESS_BACKOFF_MS * streak backoff and block after this many consecutive
- * failures instead of spinning to the iteration cap.
+ * CAM-36/38 no-progress guard, dead-pane outcomes get the same exponential-with-jitter
+ * backoff via computeBackoffMs (base NO_PROGRESS_BACKOFF_MS, cap MAX_BACKOFF_MS) and
+ * block after this many consecutive failures instead of spinning to the iteration cap.
  */
 export const MAX_DEAD_WORKER_RETRIES = 3;
 
