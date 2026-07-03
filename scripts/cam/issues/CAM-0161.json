@@ -1,7 +1,7 @@
 {
   "id": "CAM-161",
   "title": "cam ship --finalize: issueId some vezes nao entra no merge-watch (race com sidecar idle)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T19:26:51.154Z",
