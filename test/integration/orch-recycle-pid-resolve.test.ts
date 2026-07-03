@@ -1,36 +1,35 @@
 // test/integration/orch-recycle-pid-resolve.test.ts
 //
-// Integration test (REAL processes) for US-002/CAM-173.
+// Integration test (REAL processes) for CAM-165 / US-001.
 //
-// Reproduces the CAM-173 failure mode: in the pre-fix code, `pgrep -f <uuid>`
-// was used to find the orchestrator claude child. On macOS, when the bash
-// wrapper's argv is large (containing the session uuid baked in), the kernel
-// truncates the KERN_PROCARGS2 output, making pgrep -f return empty. The new
-// approach uses `pgrep -P <wrapper_pid>` (parent-pid match), which is immune
-// to argv truncation because it matches by OS ppid, not cmdline content.
+// Reproduces the CAM-173 / CAM-165 failure mode chain:
+//   - In CAM-173, `pgrep -f <uuid>` was replaced with `pgrep -P <wrapper_pid>`.
+//   - In production, claude 2.1.200 rewrites its own process.title at runtime,
+//     leaving KERN_PROCARGS2 in a state that makes pgrep SKIP the process in
+//     ALL modes (-P, -f, -x, name). Verified empirically ~10x (cam-171-ship
+//     journal). `ps` still reports the process normally.
+//   - CAM-165 fixes this by switching to `ps -ax -o pid=,ppid=` ppid-walk
+//     (kernel proc table, immune to process-title rewriting).
+//
+// Stand-in design: a bun script that calls `process.title = 'cam-orch-stand-in'`
+// simulates the claude 2.1.200 behavior. A plain `sleep` stand-in gives FALSE
+// confidence because it does not rewrite its title (CAM-173 lesson).
 //
 // What this test proves:
-//   1. `pgrep -f <uuid>` returns EMPTY even when uuid is in the wrapper argv
-//      (giant argv simulation: we spawn a bash wrapper without the uuid visible
-//       in any process cmdline, since reliable kernel truncation would require
-//       argv > kern.argmax which triggers execve E2BIG. The practical
-//       reproduction: uuid is associated with the session but NOT present in
-//       any process's visible argv, matching the real CAM-173 scenario.)
-//   2. The new path (read .cam-orch-pid + pgrep -P) resolves the child.
-//   3. A real SIGTERM terminates the child.
+//   (a) SOFT: pgrep -P <wrapperPid> may be blind to the title-rewritten child.
+//       Environment-dependent (macOS behavior); never gate CI on this.
+//   (b) HARD: `ps -ax -o pid=,ppid=` ppid-walk resolves the child by ppid
+//       despite the process-title rewrite.
+//   (c) HARD: a real SIGTERM terminates the child.
 //
-// Pattern: real Bun.spawn/spawnSync, test.skipIf when pgrep is absent,
-// mkdtemp cwd, cleanup in afterEach. Mirrors test/integration/tmux-introspect.test.ts.
-//
-// Fakes do NOT count (Burrow lesson / CAM-55): unit fakes return what the code
-// expects; only a real process can catch kernel-level behavior gaps.
+// Pattern: real Bun.spawn / spawnSync, skipIf when pgrep or bun is absent,
+// mkdtemp cwd, cleanup in afterEach.
 
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { randomUUID } from 'node:crypto';
 
 import { ORCH_PID_MARKER } from '../../src/tmux/session.ts';
 
@@ -38,8 +37,12 @@ import { ORCH_PID_MARKER } from '../../src/tmux/session.ts';
 // Prerequisites
 // ---------------------------------------------------------------------------
 
-const pgrepCheck = spawnSync('pgrep', ['-P', '1'], { stdio: 'pipe' });
-const pgrepAvailable = pgrepCheck.status !== null; // null means spawn failed (not found)
+const pgrepCheck = spawnSync('pgrep', ['--version'], { stdio: 'pipe' });
+// pgrep exits non-zero or fails to spawn when absent.
+const pgrepAvailable = pgrepCheck.status !== null;
+
+const bunCheck = spawnSync('bun', ['--version'], { stdio: 'pipe' });
+const bunAvailable = bunCheck.status === 0;
 
 // ---------------------------------------------------------------------------
 // Cleanup registry
@@ -54,7 +57,7 @@ afterEach(() => {
 		try {
 			process.kill(pid, 'SIGKILL');
 		} catch {
-			// Already dead — fine.
+			// Already dead -- fine.
 		}
 	}
 	// Then remove temp dirs.
@@ -72,21 +75,36 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 /**
- * Poll until pgrep -P <ppid> finds at least one child, up to timeoutMs.
- * Returns the child pid string or null on timeout.
+ * Parse `ps -ax -o pid=,ppid=` output and return the pids of processes whose
+ * ppid equals the given wrapperPid. Mirrors resolveChildViaPs in source.
  */
-function waitForChild(ppid: number, timeoutMs = 3000): string | null {
+function findChildrenViaPs(wrapperPid: number): number[] {
+	const r = spawnSync('ps', ['-ax', '-o', 'pid=,ppid='], { encoding: 'utf8' });
+	if ((r.status ?? 1) !== 0) return [];
+	const matched: number[] = [];
+	for (const line of (typeof r.stdout === 'string' ? r.stdout : '').split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		const parts = trimmed.split(/\s+/);
+		const ppid = parseInt(parts[1] ?? '', 10);
+		if (!Number.isFinite(ppid) || ppid !== wrapperPid) continue;
+		const pid = parseInt(parts[0] ?? '', 10);
+		if (Number.isFinite(pid) && pid > 0) matched.push(pid);
+	}
+	return matched;
+}
+
+/**
+ * Poll via ps ppid-walk until the wrapper has at least one child, up to
+ * timeoutMs. Returns the first child pid found or null on timeout.
+ * Uses ps (not pgrep) because the child may rewrite its title.
+ */
+function waitForChildViaPs(wrapperPid: number, timeoutMs = 5000): number | null {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
-		const r = spawnSync('pgrep', ['-P', String(ppid)], { encoding: 'utf8' });
-		if ((r.status ?? 1) === 0) {
-			const lines = (typeof r.stdout === 'string' ? r.stdout : '')
-				.trim()
-				.split('\n')
-				.filter((l) => l.trim().length > 0);
-			const first = lines[0] ?? '';
-				if (first.length > 0) return first;
-		}
+		const children = findChildrenViaPs(wrapperPid);
+		const first = children[0];
+		if (first !== undefined) return first;
 		Bun.sleepSync(50);
 	}
 	return null;
@@ -96,8 +114,8 @@ function waitForChild(ppid: number, timeoutMs = 3000): string | null {
 // Integration test
 // ---------------------------------------------------------------------------
 
-test.skipIf(!pgrepAvailable)(
-	'CAM-173: pgrep -f <uuid> returns empty; pgrep -P resolves child; SIGTERM terminates it',
+test.skipIf(!pgrepAvailable || !bunAvailable)(
+	'CAM-165: ps ppid-walk resolves title-rewritten child; pgrep-P blindness documented; SIGTERM terminates',
 	async () => {
 		// Setup: mkdtemp for .claude dir.
 		const cwd = mkdtempSync(join(tmpdir(), 'cam-it-pid-resolve-'));
@@ -105,67 +123,67 @@ test.skipIf(!pgrepAvailable)(
 		cleanupDirs.push(cwd);
 		mkdirSync(claudeDir, { recursive: true });
 
-		// Generate a session UUID (represents the session identifier used in
-		// the pre-fix `pgrep -f <uuid>` call). The uuid is NOT part of any
-		// spawned process's cmdline — simulating the CAM-173 scenario where
-		// the kernel-truncated KERN_PROCARGS2 (or non-inclusion in claude argv)
-		// made pgrep -f return empty.
-		const sessionUuid = randomUUID();
+		// Write the title-rewriting stand-in script.
+		// It sets process.title (simulating claude 2.1.200's behavior) then sleeps.
+		// A plain `sleep` stand-in is NOT used: it does not rewrite its title and
+		// thus does not reproduce the production failure mode (CAM-165 lesson).
+		const standInScript = `// cam-orch-stand-in: simulates claude 2.1.200 process-title rewrite
+process.title = 'cam-orch-stand-in';
+await Bun.sleep(60000);
+`;
+		const standInPath = join(cwd, 'stand-in.ts');
+		writeFileSync(standInPath, standInScript, 'utf8');
 
-		// Spawn the "wrapper" bash process (analogous to the orchestrator bash
-		// respawn-wrapper). Use `sleep 60 & wait $!` so bash forks sleep as a
-		// genuine child and stays alive as the parent. A plain `bash -c 'sleep 60'`
-		// triggers bash's exec-optimization (bash replaces itself with sleep),
-		// leaving no separate parent/child relationship for pgrep -P to observe.
-		const wrapperProc = Bun.spawn(['bash', '-c', 'sleep 60 & wait $!'], {
-			stdin: 'ignore',
-			stdout: 'ignore',
-			stderr: 'ignore',
-		});
+		// Spawn a bash wrapper that forks the bun stand-in as a genuine child.
+		// `cmd & wait $!` prevents bash's exec-optimization (bash -c 'cmd'
+		// replaces itself with cmd, leaving no separate parent/child for ppid-walk).
+		const wrapperProc = Bun.spawn(
+			['bash', '-c', `bun '${standInPath}' & wait $!`],
+			{ stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' },
+		);
 		const wrapperPid = wrapperProc.pid;
 		cleanupPids.push(wrapperPid);
 
-		// Wait for bash to fork and start the `sleep 60` child.
-		const childPidStr = waitForChild(wrapperPid);
-		expect(childPidStr).not.toBeNull();
-		const childPid = parseInt(childPidStr ?? '', 10);
-		expect(Number.isFinite(childPid) && childPid > 0).toBe(true);
-		cleanupPids.push(childPid);
-
-		// --- ASSERT: pgrep -f <uuid> returns EMPTY ---
-		// The uuid is not in any running process's cmdline (it only lives in
-		// the test's local variable). This reproduces the CAM-173 failure mode:
-		// the caller cannot find the target process via cmdline string-matching.
-		const pgrepF = spawnSync('pgrep', ['-f', sessionUuid], { encoding: 'utf8' });
-		// pgrep -f returns exit 1 (no match) or 0 (match found).
-		// We assert no match: either status 1 OR empty stdout.
-		const pgrepFOutput = typeof pgrepF.stdout === 'string' ? pgrepF.stdout.trim() : '';
-		expect(pgrepFOutput).toBe('');
-
-		// --- ASSERT: new path (read .cam-orch-pid + pgrep -P) resolves child ---
-		// Write wrapper pid to .cam-orch-pid (as US-001 does at wrapper boot).
+		// Write wrapper pid to .cam-orch-pid (mirrors the production path in run.ts).
 		const pidFilePath = join(claudeDir, ORCH_PID_MARKER);
 		writeFileSync(pidFilePath, String(wrapperPid), 'utf8');
 
-		const pgrepP = spawnSync('pgrep', ['-P', String(wrapperPid)], { encoding: 'utf8' });
-		expect((pgrepP.status ?? 1)).toBe(0);
-		const pgrepPOutput = typeof pgrepP.stdout === 'string' ? pgrepP.stdout.trim() : '';
-		expect(pgrepPOutput.length).toBeGreaterThan(0);
+		// Wait for the bun stand-in to appear as a child of the wrapper (via ps).
+		const childPid = waitForChildViaPs(wrapperPid);
+		expect(childPid).not.toBeNull();
+		const resolvedChild = childPid as number;
+		cleanupPids.push(resolvedChild);
 
-		// The resolved PID must match the sleep child we observed.
-		const resolvedPidStr = pgrepPOutput.split('\n')[0] ?? '';
-		const resolvedPid = parseInt(resolvedPidStr, 10);
-		expect(resolvedPid).toBe(childPid);
+		// --- (a) SOFT assertion: pgrep -P blindness (environment-dependent) ---
+		// On macOS, claude 2.1.200's process.title rewrite makes pgrep SKIP the
+		// process in all modes (verified ~10x empirically, cam-171-ship journal).
+		// A title-rewriting bun stand-in MAY or MAY NOT reproduce this depending
+		// on the runtime environment (EMPIRICAL CAVEAT in CAM-165 notes).
+		// We document the result without gating CI on it.
+		const pgrepP = spawnSync('pgrep', ['-P', String(wrapperPid)], {
+			encoding: 'utf8',
+		});
+		const pgrepPOutput = (typeof pgrepP.stdout === 'string' ? pgrepP.stdout : '').trim();
+		// Not a hard assertion. If blind (empty): CAM-173 failure mode reproduced.
+		// If not blind: pgrep still works in this environment (ps dominates either way).
+		void pgrepPOutput; // suppresses unused-var lint; value is intentionally not asserted
 
-		// --- ASSERT: real SIGTERM terminates the child ---
-		process.kill(childPid, 'SIGTERM');
+		// --- (b) HARD assertion: ps ppid-walk resolves child by ppid ---
+		// This is the load-bearing proof: regardless of pgrep behavior, the
+		// ps-based ppid-walk must always find the child.
+		const psChildren = findChildrenViaPs(wrapperPid);
+		expect(psChildren.length).toBeGreaterThan(0);
+		expect(psChildren).toContain(resolvedChild);
+
+		// --- (c) HARD assertion: real SIGTERM terminates the child ---
+		process.kill(resolvedChild, 'SIGTERM');
 
 		// Wait for the child to exit (up to 2s).
 		const deadline = Date.now() + 2000;
 		let childExited = false;
 		while (Date.now() < deadline) {
 			try {
-				process.kill(childPid, 0); // signal-0: alive check
+				process.kill(resolvedChild, 0); // signal-0: alive check
 				Bun.sleepSync(50);
 			} catch {
 				childExited = true; // ESRCH: process is gone
