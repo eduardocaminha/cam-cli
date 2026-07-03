@@ -68,7 +68,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: .gitignore (add `.claude/.cam-orch-pid` in the CAM-68 block right after the `.cam-orch-recycle` line); templates/.gitignore (add the same line in its CAM-68 block); then run `bun run embed-vendor` to refresh src/vendor/_generated.ts templatesContents['.gitignore'] (~line 25) and verify with `bun run embed-vendor:check`. Assert in test/embedded.test.ts (byte-parity of templatesContents). Do NOT hand-edit _generated.ts - it is regenerated. Pattern: CAM-68 escaped harness runtime markers; cam dual-copy is per-file (diff both .gitignore copies before assuming they are byte-identical).",
       "repo": "main-repo"
