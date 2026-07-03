@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.53.0] - 2026-07-03
+
+### Added
+
+- [US-001] - Bump retry cap 3->4 to realize the 240s backoff window
+
 ## [0.52.0] - 2026-07-03
 
 ### Added
