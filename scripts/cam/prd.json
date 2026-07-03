@@ -154,7 +154,7 @@
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": "US-006",
       "notes": "Files: FLOW.md (sections around lines 67-68, 77, 166, 178-180 -- the '## 1' summary, the create-session pane narrative, and the pane-0.0 exit paragraph) and README.md (status blurb ~line 11 and the 'orchestrator persists between sessions' paragraph ~line 118). Per CAM-162 AC12 (DOC MAINTENANCE, F-03 r2) FLOW.md + README.md are already listed in this PRD's relatedDocs. Follow global CLAUDE.md section 7 (Doc Maintenance). Project rule: no em-dash and no decorative emoji in persisted human-readable .md (use colon/comma/parens). Keep prose factual and scannable; do not re-litigate the design, just describe the shipped flow."
     }

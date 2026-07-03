@@ -1,19 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Update orchestrator agent policy to the deterministic recycle flow"
+    "id": "US-007",
+    "title": "Update FLOW.md and README.md to the marker-driven recycle flow"
   },
   "branchName": "cam/pr-162-orch-recycle-core",
-  "timestamp": "2026-07-02T17:00:00Z",
+  "timestamp": "2026-07-02T18:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-orchestrator.md",
-    "templates/agents/subagent-orchestrator.md",
-    "src/vendor/_generated.ts",
+    "FLOW.md",
+    "README.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 replaced the stale Self-handoff section in subagent-orchestrator.md (both .claude/ and templates/ copies, vendor re-synced). The new section: (1) step 2 is now 'Fire the cycle-close signal: run cam journal append --cycle-close; do NOT run /exit'; (2) the wrapper owns SIGTERM via recycle watcher + respawn + rehydrate via CAM_ORCH_REHYDRATE; (3) adds the One-PR-per-session invariant (tokens/session as effort proxy). The 'Exit cleanly ... then exit' prose is fully removed. US-007 (if it exists) is the next story.",
+  "nextStoryContext": "US-007 updated FLOW.md (mermaid node labels, summary prose, pane-0.0 descriptor, cam-run section text) and README.md (status blurb line 11, orchestrator-persists paragraph ~line 118, session-layout paragraph ~line 166, Recent-changes entry ~line 293) to describe the marker-driven recycle flow: cycle-close arms cam-orch-recycle, watcher SIGTERMs the claude process, wrapper respawns delivering handoff via CAM_ORCH_REHYDRATE. All oracle greps pass. No more operator-/exit narrative in either doc. Check prd.json for the next story after US-007.",
   "officialDocsValidated": [
     {
       "lib": "none",
