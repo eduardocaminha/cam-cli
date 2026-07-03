@@ -48,7 +48,7 @@
         "bun run check:all passes. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "New file src/supervisor/docker-exec.ts: pure function, no I/O (same discipline as worker-argv.ts / plan-argv.ts). env -u must run INSIDE the container, which it does because the wrap prepends 'docker exec -it cam-worker ' to the existing 'env -u ... claude ...' string. Per the fetched Docker exec reference: docker exec execs argv directly (no shell), and the host pane shell tokenizes the wrapped string, so NO inner sh -c is needed. Reuse DEFAULT_CONTAINER_NAME from src/supervisor/worker-container.ts. Test under test/supervisor/. patterns.md: 'tmux mangles TAB' and single-hub dispatch are unaffected (send-keys targets the host pane, unchanged)."
     },
