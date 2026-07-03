@@ -64,8 +64,8 @@ flowchart TD
     SHIP --> PRUNE["/cam-prune<br/>volta pra main"]
     PRUNE -. "proximo issue" .-> PLAN
 
-    RUN -. "orq. sai com handoff" .-> RESPAWN["respawn orquestrador<br/>(rehidrata, ate o cap)"]
-    RUN -. "orq. sai sem handoff" .-> TEARDOWN["sessao destruida<br/>tmux kill-session"]
+    RUN -. "cycle-close arma cam-orch-recycle" .-> RESPAWN["watcher SIGTERM + respawn<br/>(rehydrata via CAM_ORCH_REHYDRATE)"]
+    RUN -. "sem marcador de reciclo pendente" .-> TEARDOWN["sessao destruida<br/>tmux kill-session"]
 ```
 
 Resumo da espinha dorsal: `init` (uma vez) prepara a máquina e instala templates.
@@ -74,8 +74,10 @@ Resumo da espinha dorsal: `init` (uma vez) prepara a máquina e instala template
 e `issue` são lançadores de pane: abrem um pane novo na sessão e retornam 0
 imediatamente; `next` também é thin-proxy (não abre pane), só liga `active:true` e
 dispara o sidecar (o `runSupervisor` background spawnado pelo `cam run`), que corre o loop.
-Quando o orquestrador (pane 0.0) sai, o wrapper respawna se houver um handoff de
-cycle-close (por-ciclo) pendente, senão destrói a sessão. Quando o PRD fecha com review limpo, o
+Quando o orquestrador (pane 0.0) fecha um ciclo, chama `cam journal append --cycle-close`,
+que arma o marcador `cam-orch-recycle`. O watcher do wrapper detecta o marcador, envia SIGTERM
+ao processo claude, e o wrapper o respawna entregando o handoff via `CAM_ORCH_REHYDRATE`. Sem
+marcador pendente dentro do cap de respawns, o wrapper destrói a sessão. Quando o PRD fecha com review limpo, o
 sidecar chega ao terminal, o PR vai via `/cam-ship` e `/cam-prune`
 limpa a branch.
 
@@ -163,7 +165,7 @@ flowchart TD
     ATTACH --> EXIT0a(["exit 0"])
 
     EXISTS -->|nao| CREATE["new-session -d (3 panes):"]
-    CREATE --> P0["pane 0.0: orchestrator<br/>(claude + subagent-orchestrator prompt;<br/>ao sair: respawn no handoff, senao kill-session)"]
+    CREATE --> P0["pane 0.0: orchestrator<br/>(claude + subagent-orchestrator prompt;<br/>cycle-close arma cam-orch-recycle; watcher SIGTERM + respawn via CAM_ORCH_REHYDRATE)"]
     CREATE --> P1["pane 0.1: cam dashboard<br/>(permanente, read-only)"]
     CREATE --> P2["pane 0.2: menu interativo<br/>(n, p, i, s, r, d, q)"]
 
@@ -175,10 +177,12 @@ flowchart TD
     ATTACH2 --> EXIT0c(["exit 0"])
 ```
 
-Quando o `claude` do pane 0.0 sai, o wrapper do `cam run` respawna o orquestrador
-(rehidratando de um handoff de cycle-close) se houver um pendente e dentro do cap
-de respawns; senao encadeia `; tmux kill-session -t <sessao>` e os 3 panes somem. O
-dashboard (pane 0.1) é sempre visivel enquanto a sessao existe.
+Quando o orquestrador fecha um ciclo, chama `cam journal append --cycle-close`, que
+arma o marcador `cam-orch-recycle`. O watcher detecta o marcador, envia SIGTERM ao
+processo claude, e o wrapper o respawna entregando o handoff via `CAM_ORCH_REHYDRATE`.
+Se nao ha marcador pendente ou o cap de respawns foi atingido, o wrapper encadeia
+`; tmux kill-session -t <sessao>` e os 3 panes somem. O dashboard (pane 0.1) e
+sempre visivel enquanto a sessao existe.
 
 ---
 
