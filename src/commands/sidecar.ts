@@ -352,6 +352,49 @@ export function makeHasPendingStories(prdPath: string): () => boolean {
 // ---------------------------------------------------------------------------
 
 /**
+ * Null-state GC for the merge-watch file.
+ *
+ * Called by makeProductionMergeWatchFn when readMergeWatchState returns null
+ * (file present but no valid watch state). Discriminates between a valid
+ * issueId-only seed (pre-PR stash written by stashIssueIdInMergeWatch) and
+ * real garbage.
+ *
+ * Preserves: a JSON object whose `issueId` is a string and whose `prNumber`
+ * is NOT a number. This is the seed cam-ship --finalize writes before
+ * gh pr create; the cam-ship enrich step later adds prNumber + mergedBranch.
+ *
+ * Deletes: malformed JSON, a non-object or array value, or an object with
+ * neither an `issueId` string nor a numeric `prNumber`.
+ *
+ * Exported so tests can drive the real GC code path against a temp file
+ * (AC4 anti-shadow-mock regression).
+ *
+ * Never throws.
+ */
+export function gcMergeWatchIfGarbage(filePath: string): void {
+	if (!existsSync(filePath)) return;
+	try {
+		const raw = readFileSync(filePath, 'utf8');
+		const parsed: unknown = JSON.parse(raw);
+		if (
+			parsed !== null &&
+			typeof parsed === 'object' &&
+			!Array.isArray(parsed)
+		) {
+			const obj = parsed as Record<string, unknown>;
+			if (typeof obj['issueId'] === 'string' && typeof obj['prNumber'] !== 'number') {
+				// Valid issueId-only seed: preserve it.
+				return;
+			}
+		}
+	} catch {
+		// Malformed JSON: fall through to delete.
+	}
+	// Real garbage: delete.
+	try { unlinkSync(filePath); } catch { /* best-effort */ }
+}
+
+/**
  * Build the production runMergeWatchFn closure for ci-gated ship mode.
  *
  * This factory is called by runSidecar when merge_mode == "ci-gated".
@@ -371,10 +414,11 @@ function makeProductionMergeWatchFn(
 		// absent or contains malformed JSON (never throws).
 		const state = readMergeWatchState(watchFilePath);
 		if (state === null) {
-			// Absent: no watch pending. Malformed: best-effort garbage collection.
-			if (existsSync(watchFilePath)) {
-				try { unlinkSync(watchFilePath); } catch { /* best-effort */ }
-			}
+			// Absent: no watch pending.
+			// File present but readMergeWatchState returned null: discriminate a
+			// valid issueId-only seed (pre-PR stash) from real garbage.
+			// gcMergeWatchIfGarbage preserves the seed and deletes only real garbage.
+			gcMergeWatchIfGarbage(watchFilePath);
 			return;
 		}
 

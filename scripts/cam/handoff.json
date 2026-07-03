@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Preserve valid issueId-only merge-watch seed in the sidecar null-state GC"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/sidecar.ts",
+    "src/release/merge-watch.ts",
+    "test/release/merge-watch.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 is now complete. The GC fix is in gcMergeWatchIfGarbage (exported from sidecar.ts): it preserves issueId-only seeds and deletes real garbage. The stale 'keeps the sidecar inert' comment in merge-watch.ts is removed. AC4 anti-shadow-mock regression tests and AC3 integration tests (with real-jq skipIf) are in test/release/merge-watch.test.ts. The file-size budget for src/commands/sidecar.ts was raised from 1045 to 1090.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Story touched only Node.js builtins (node:fs, JSON.parse) and internal project code. No third-party npm/bun library was exercised."
+    }
+  ]
+}
