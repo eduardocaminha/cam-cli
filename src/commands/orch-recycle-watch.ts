@@ -8,8 +8,8 @@
 //
 // Key invariants:
 //   - Fires SIGTERM on the recycle marker only; never on the handoff file.
-//   - The PID is resolved via `pgrep -f <uuid>` scoped to the session UUID
-//     read fresh from ORCH_SESSION_MARKER on every poll — no tmux call made.
+//   - The PID is resolved via `pgrep -P <wrapper_pid>`, reading the wrapper
+//     pid from ORCH_PID_MARKER (.cam-orch-pid) on every poll — no tmux call made.
 //   - After sending SIGTERM the marker is removed so a single arm triggers
 //     at most one SIGTERM (the respawned session sees no marker).
 //   - All I/O is injectable so unit tests never touch real fs/processes.
