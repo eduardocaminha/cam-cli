@@ -592,7 +592,7 @@ describe('dispatchJournal', () => {
 	// US-002 (CAM-162) AC: --cycle-close arms the recycle marker
 	// ---------------------------------------------------------------------------
 
-	test('--cycle-close with handoff present: arms marker, emits both sentinels, returns 0', async () => {
+	test('--cycle-close with handoff present AND live watcher: arms marker, emits both sentinels, returns 0', async () => {
 		const stdoutLines: string[] = [];
 		let markerArmed = false;
 		const parsed = parseJournalArgs(['append', '--cycle-close']);
@@ -605,6 +605,7 @@ describe('dispatchJournal', () => {
 			writeStdout: (line) => stdoutLines.push(line),
 			recordCycleTokensFn: () => {},
 			handoffExistsFn: () => true,
+			watcherAliveFn: () => true,
 			armRecycleMarkerFn: () => { markerArmed = true; },
 		});
 
@@ -614,6 +615,44 @@ describe('dispatchJournal', () => {
 		expect(stdoutLines).toHaveLength(2);
 		expect(stdoutLines[0]).toMatch(/^CAM_JOURNAL_APPENDED=/);
 		expect(stdoutLines[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
+	});
+
+	test('--cycle-close: no live watcher -- armRecycleMarkerFn never called, exits 4, error names pid file and /exit fallback', async () => {
+		const stdoutLines: string[] = [];
+		let markerArmed = false;
+		const stderrLines: string[] = [];
+		const originalWrite = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string') stderrLines.push(chunk);
+			return true;
+		};
+
+		try {
+			const parsed = parseJournalArgs(['append', '--cycle-close']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+				appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+				writeStdout: (line) => stdoutLines.push(line),
+				recordCycleTokensFn: () => {},
+				handoffExistsFn: () => true,
+				watcherAliveFn: () => false,
+				armRecycleMarkerFn: () => { markerArmed = true; },
+			});
+
+			expect(code).toBe(4);
+			expect(markerArmed).toBe(false);
+			// CAM_ORCH_HANDOFF_DUE must NOT be emitted on exit 4
+			expect(stdoutLines.join('')).not.toContain('CAM_ORCH_HANDOFF_DUE');
+			// Error printed to stderr; must name the pid file and the manual fallback
+			const errorOutput = stderrLines.join('');
+			expect(errorOutput).toMatch(/\.cam-watcher\.pid/);
+			expect(errorOutput).toMatch(/\/exit/);
+		} finally {
+			process.stderr.write = originalWrite;
+		}
 	});
 
 	test('--cycle-close with handoff ABSENT: no marker, exit 3, no CAM_ORCH_HANDOFF_DUE', async () => {
@@ -637,6 +676,8 @@ describe('dispatchJournal', () => {
 				writeStdout: (line) => stdoutLines.push(line),
 				recordCycleTokensFn: () => {},
 				handoffExistsFn: () => false,
+				// watcher alive is irrelevant here: handoff check fires FIRST (exit 3)
+				watcherAliveFn: () => true,
 				armRecycleMarkerFn: () => { markerArmed = true; },
 			});
 
@@ -667,6 +708,7 @@ describe('dispatchJournal', () => {
 			writeStdout: () => {},
 			recordCycleTokensFn: () => {},
 			handoffExistsFn: () => true,
+			watcherAliveFn: () => true,
 			armRecycleMarkerFn: () => { markerArmed = true; },
 		});
 

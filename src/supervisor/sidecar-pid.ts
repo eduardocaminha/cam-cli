@@ -141,3 +141,17 @@ export function removeWatcherPidIfExists(claudeDir: string): void {
 		removeWatcherPid(claudeDir);
 	}
 }
+
+/**
+ * Composite liveness check for the recycle watcher.
+ *
+ * Returns `true` when `.claude/.cam-watcher.pid` exists, contains a valid
+ * positive-integer pid, and signal-0 confirms the process is alive.
+ * Returns `false` when the pid file is absent, unparseable, or the process
+ * is dead. Never throws.
+ */
+export function watcherAlive(claudeDir: string): boolean {
+	const pid = readWatcherPid(claudeDir);
+	if (pid === null) return false;
+	return sidecarPidAlive(pid);
+}
