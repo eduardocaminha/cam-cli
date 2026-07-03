@@ -1,26 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Gitignore the orchestrator-pid marker in both copies and re-embed"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
-  "createdFiles": [],
+  "createdFiles": [
+    "test/commands/orch-recycle-pid-fns.test.ts"
+  ],
   "modifiedFiles": [
-    ".gitignore",
-    "templates/.gitignore",
-    "src/vendor/_generated.ts",
-    "test/embedded.test.ts",
+    "src/commands/orch-recycle-watch.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added .claude/.cam-orch-pid to the CAM-68 runtime-marker block in both .gitignore and templates/.gitignore, regenerated src/vendor/_generated.ts via bun run embed-vendor, and extended the MARKER_RULES array in test/embedded.test.ts with '.cam-orch-pid' so the embedded byte-parity suite pins the rule. All 3 PRD stories now have passes:true. The PRD is complete.",
+  "nextStoryContext": "US-R1-001 exported readWrapperPid and resolveChildViaPgrep (with PgrepSpawnFn injectable seam) from src/commands/orch-recycle-watch.ts, and added test/commands/orch-recycle-pid-fns.test.ts with 17 direct unit tests covering every parsing guard branch (RW-1..8 for readWrapperPid, RC-1..8+extra for resolveChildViaPgrep). The next story is US-R1-002: update the stale file-header comment in src/commands/orch-recycle-watch.ts (lines 11-12 still describe pgrep -f <uuid> but the shipped code uses pgrep -P + ORCH_PID_MARKER).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "version": "n/a",
       "url": "n/a",
-      "fetchedAt": "2026-07-03T00:00:00Z",
+      "fetchedAt": "2026-07-03T16:20:00Z",
       "status": "no_external_lib_touched",
-      "summary": "US-003 is a gitignore + embed-vendor hygiene story; no external library API was exercised."
+      "summary": "US-R1-001 adds injectable seam (PgrepSpawnFn) and exports inner helpers; no external library API was exercised."
     }
   ]
 }
