@@ -1,7 +1,7 @@
 {
   "id": "CAM-162",
   "title": "orchestrator recycle CORE: marker + wrapper SIGTERM + explicit rehydrate (CAM-141) + cycle-close arming",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T20:00:04.178Z",
