@@ -1,7 +1,7 @@
 {
   "id": "CAM-85",
   "title": "Supervisor: substituir backoff linear por exponencial com jitter nos retries de no-progress/dead-pane",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-25T15:00:00Z",
