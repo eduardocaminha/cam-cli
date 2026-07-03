@@ -39,7 +39,7 @@
         "Full quality spine green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit the result.created boot path in src/commands/run.ts, right before the spawnWatcherFn call (~lines 684-686). run.ts already imports from '../tmux/session.ts' (line 52), so add ORCH_RECYCLE_MARKER to that import. Remove the marker with existsSync + unlinkSync in try/catch (mirror the style of removeWatcherPidIfExists in sidecar-pid.ts), or reuse a helper. Gotcha (from spec): the watcher handleOneTick consumes the marker EVERY tick and SIGTERMs the PID matching the CURRENT session UUID (pgrep -f <uuid> from ORCH_SESSION_MARKER); a stale marker therefore SIGTERMs the NEXT fresh orchestrator on tick 1 (self-limiting to one spurious recycle, but real). run.ts boot today does NOT clean it. Tests: use the noopWatcher / makeFakeSpawn helpers already in test/run.test.ts; write a stale marker, run runRun with spawnWatcherFn injected, assert the marker is gone. This gate is independent of US-001."
     },
