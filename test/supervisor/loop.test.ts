@@ -341,8 +341,8 @@ describe('runSupervisor', () => {
 
 		expect(result.status).toBe('blocked');
 		expect(result.iterations).toBe(MAX_DEAD_WORKER_RETRIES);
-		// Two escalating backoffs before the 3rd timeout blocks.
-		expect(sleeps).toEqual([NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2]);
+		// Three escalating backoffs before the 4th timeout blocks.
+		expect(sleeps).toEqual([NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2, NO_PROGRESS_BACKOFF_MS * 4]);
 		const retryEvents = events.filter((e) => e.kind === 'pane-died-retry');
 		expect(retryEvents).toHaveLength(MAX_DEAD_WORKER_RETRIES - 1);
 		expect(retryEvents[0]?.detail).toMatchObject({
@@ -378,7 +378,7 @@ describe('runSupervisor', () => {
 
 		expect(result.status).toBe('blocked');
 		expect(result.iterations).toBe(MAX_DEAD_WORKER_RETRIES);
-		expect(sleeps).toEqual([NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2]);
+		expect(sleeps).toEqual([NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2, NO_PROGRESS_BACKOFF_MS * 4]);
 		const retryEvents = events.filter((e) => e.kind === 'pane-died-retry');
 		expect(retryEvents).toHaveLength(MAX_DEAD_WORKER_RETRIES - 1);
 		expect(retryEvents[0]?.detail).toMatchObject({ pollOutcome: 'pane-died' });
@@ -585,8 +585,8 @@ describe('runSupervisor', () => {
 
 		expect(result.status).toBe('blocked');
 		expect(result.iterations).toBe(MAX_NO_PROGRESS_RETRIES);
-		// Two paused retries before the 3rd no-op blocks: escalating backoff.
-		expect(sleeps).toEqual([NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2]);
+		// Three paused retries before the 4th no-op blocks: escalating backoff.
+		expect(sleeps).toEqual([NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2, NO_PROGRESS_BACKOFF_MS * 4]);
 		const retryEvents = events.filter((e) => e.kind === 'no-progress-retry');
 		expect(retryEvents).toHaveLength(MAX_NO_PROGRESS_RETRIES - 1);
 		expect(retryEvents[0]?.detail).toMatchObject({
@@ -2770,7 +2770,7 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 		//   prd shows US-001 passes:true -> outcome = pass / US-001.
 		//
 		// completedAlreadyPassing = true (US-001 was passes:true at top of iter).
-		// noProgressStreak becomes 1, which is < MAX_NO_PROGRESS_RETRIES (3).
+		// noProgressStreak becomes 1, which is < MAX_NO_PROGRESS_RETRIES (4).
 		// -> no-progress retry branch: sleep + continue (no notifyOrchestrator call).
 		//
 		// This test FAILS against a defective implementation that calls

@@ -444,30 +444,29 @@ export const DEFAULT_POLL_INTERVAL_MS = 5_000;
  * kind:'pass' for the LAST completed story. Without this cap the loop
  * re-dispatches the same still-pending advisory story every iteration until
  * MAX_ITERATIONS, burning one claude invocation per turn. CAM-38 added a backoff
- * between retries (NO_PROGRESS_BACKOFF_MS), which makes a couple more attempts
- * worthwhile, so the cap is 3 (block on the 3rd consecutive no-op after two
- * paused retries).
+ * between retries (NO_PROGRESS_BACKOFF_MS), which makes more attempts
+ * worthwhile. Cap is 4: streaks 1-3 sleep {60s,120s,240s} before streak 4
+ * blocks, realizing the full three-step backoff window (CAM-171).
  */
-export const MAX_NO_PROGRESS_RETRIES = 3;
+export const MAX_NO_PROGRESS_RETRIES = 4;
 
 /**
  * Base backoff (ms) before re-dispatching a story whose worker no-op'd (CAM-38,
  * CAM-85). Used as `base` in computeBackoffMs. Exponential formula:
  * min(MAX_BACKOFF_MS, NO_PROGRESS_BACKOFF_MS * 2^(streak-1)) before jitter.
- * With streak=1 this is 60s; streak=2 is 120s; streak=3 would be 240s but is
- * capped by MAX_BACKOFF_MS (300s). In production next.ts injects Bun.sleepSync;
- * tests inject a no-op sleepFn so they never actually wait.
+ * With streak=1 this is 60s; streak=2 is 120s; streak=3 is 240s (all three
+ * fire at cap=4 before streak 4 blocks). In production next.ts injects
+ * Bun.sleepSync; tests inject a no-op sleepFn so they never actually wait.
  */
 export const NO_PROGRESS_BACKOFF_MS = 60_000;
 
 /**
  * Maximum backoff cap (ms) applied by computeBackoffMs (CAM-85). Prevents the
  * exponential from growing unboundedly on a long dead-worker or no-progress
- * streak. With NO_PROGRESS_BACKOFF_MS=60s the cap only binds at streak >= 3
- * (240s would exceed 300s), which is beyond the current MAX_*_RETRIES=3 limit
- * (streak 3 triggers the block path, so the cap never actually fires today).
- * The constant is exported so future stories can raise the retry cap without
- * modifying the max bound separately.
+ * streak. With NO_PROGRESS_BACKOFF_MS=60s and MAX_*_RETRIES=4, streaks 1-3
+ * sleep {60s,120s,240s} and streak 4 blocks without sleeping (240s < 300s, so
+ * the cap never actually binds at cap=4). The constant is exported so future
+ * stories can raise the retry cap without modifying the max bound separately.
  */
 export const MAX_BACKOFF_MS = 300_000;
 
@@ -521,7 +520,7 @@ export function computeBackoffMs(
  * backoff via computeBackoffMs (base NO_PROGRESS_BACKOFF_MS, cap MAX_BACKOFF_MS) and
  * block after this many consecutive failures instead of spinning to the iteration cap.
  */
-export const MAX_DEAD_WORKER_RETRIES = 3;
+export const MAX_DEAD_WORKER_RETRIES = 4;
 
 /**
  * Max review-dispatch attempts before the loop blocks (CAM-37). A reviewer
