@@ -61,7 +61,7 @@
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: index.ts (parseJournalArgs ~line 1049-1062: extend ParsedJournalArgs union with `cycleClose: boolean`; dispatchJournal ~1090-1145: after recordFn(), on cycleClose check handoff exists then write ORCH_RECYCLE_MARKER, else printError + return 3). Import ORCH_RECYCLE_MARKER from src/tmux/session.ts and the handoff path .claude/.cam-orch-handoff.json (matches run.ts handoffMarker). Add injectable deps to JournalDispatchDeps (e.g. handoffExistsFn, armRecycleMarkerFn) for hermetic tests -- no real fs. GOTCHA: adding `cycleClose` to the union breaks the two toEqual shape assertions at journal-append.test.ts:315 and :319 (patterns.md CAM-89 US-003: expect().toEqual requires exact shape) -- update those two, they are NOT the pinned 357/448. Keep CAM_ORCH_HANDOFF_DUE=true emission on both paths unchanged. Preserve recovery-runbook (w) (CAM-122) usage: --force without handoff on the NON-cycle-close path still behaves as today (exit 0)."
     },
