@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add parseContextOccupancy primitive (last-request occupancy, not cumulative)"
+  },
+  "branchName": "cam/CAM-163-orch-context-backstop",
+  "timestamp": "2026-07-03T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/transcript/usage.ts",
+    "test/transcript/usage.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "parseContextOccupancy is now exported from src/transcript/usage.ts. It returns input_tokens + cache_read_input_tokens + cache_creation_input_tokens of the LAST usage-bearing request in the JSONL (not cumulative). The dedup logic mirrors parseTranscriptUsage (key by message.id|requestId, last-wins). Returns 0 for empty/no-usage transcripts. The next story (US-002 or higher priority) can import this function to build the orchestrator context backstop.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-001 is a pure TypeScript primitive (JSONL line parsing using node:fs/node:path). No external library was introduced or touched."
+    }
+  ]
+}

@@ -153,6 +153,69 @@ export function renderTokensLine(t: TranscriptUsage): string {
 }
 
 /**
+ * Returns the input-window occupancy of the LAST usage-bearing request in the JSONL.
+ *
+ * Occupancy = input_tokens + cache_read_input_tokens + cache_creation_input_tokens
+ * of the final request only (output_tokens excluded; they do not fill the input window).
+ *
+ * Unlike parseTranscriptUsage, this is NOT cumulative. It answers: "how full is the
+ * context window right now?" rather than "how many tokens did this session spend total?"
+ *
+ * Real transcripts write multiple JSONL lines per assistant turn (one per content block),
+ * each carrying an identical usage payload. The same dedup logic as parseTranscriptUsage
+ * is applied: key each line by (message.id, requestId), keep only the last payload per
+ * key. The "last request" is whichever distinct key appeared last in the JSONL.
+ *
+ * Returns 0 for empty transcripts or transcripts with no usage-bearing lines.
+ */
+export function parseContextOccupancy(jsonl: string): number {
+	const seen = new Map<string, MessageUsage>();
+	let fallbackCounter = 0;
+	let lastKey: string | null = null;
+
+	const lines = jsonl.split("\n");
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (trimmed === "") continue;
+
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(trimmed);
+		} catch {
+			continue;
+		}
+
+		if (!isTranscriptLine(parsed)) continue;
+
+		const usage = parsed.message?.usage;
+		if (usage === undefined || usage === null) continue;
+
+		const msgId = parsed.message?.id ?? null;
+		const reqId = parsed.requestId ?? null;
+
+		let key: string;
+		if (msgId !== null || reqId !== null) {
+			key = `${msgId ?? ""}|${reqId ?? ""}`;
+		} else {
+			key = `__fallback_${fallbackCounter++}`;
+		}
+
+		seen.set(key, usage);
+		lastKey = key;
+	}
+
+	if (lastKey === null) return 0;
+	const lastUsage = seen.get(lastKey);
+	if (lastUsage === undefined) return 0;
+
+	return (
+		toNumber(lastUsage.input_tokens) +
+		toNumber(lastUsage.cache_read_input_tokens) +
+		toNumber(lastUsage.cache_creation_input_tokens)
+	);
+}
+
+/**
  * Resolves the JSONL transcript path for a given session uuid.
  *
  * Returns:

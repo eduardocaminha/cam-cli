@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
 	formatTokens,
 	orchestratorTranscriptPath,
+	parseContextOccupancy,
 	parseTranscriptUsage,
 	readWorkerSessionMarker,
 	renderTokensLine,
@@ -171,6 +172,134 @@ describe("parseTranscriptUsage", () => {
 		// Both lines should be counted (no false collision).
 		expect(result.input).toBe(300);
 		expect(result.output).toBe(30);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseContextOccupancy
+// ---------------------------------------------------------------------------
+
+describe("parseContextOccupancy", () => {
+	function makeRequest(
+		reqId: string,
+		msgId: string,
+		input: number,
+		cacheRead = 0,
+		cacheCreation = 0,
+		output = 0,
+	): string {
+		return JSON.stringify({
+			type: "assistant",
+			requestId: reqId,
+			message: {
+				id: msgId,
+				usage: {
+					input_tokens: input,
+					output_tokens: output,
+					cache_read_input_tokens: cacheRead,
+					cache_creation_input_tokens: cacheCreation,
+				},
+			},
+		});
+	}
+
+	test("returns 0 for empty input", () => {
+		expect(parseContextOccupancy("")).toBe(0);
+	});
+
+	test("returns 0 for transcript with no usage-bearing lines", () => {
+		const jsonl = [
+			JSON.stringify({ type: "human", message: { content: "hello" } }),
+			"not valid json { oops",
+		].join("\n");
+		expect(parseContextOccupancy(jsonl)).toBe(0);
+	});
+
+	test("returns last request occupancy for a single request", () => {
+		const line = makeRequest("req_1", "msg_1", 500, 200, 100, 80);
+		// occupancy = input + cacheRead + cacheCreation = 500 + 200 + 100 = 800
+		expect(parseContextOccupancy(line)).toBe(800);
+	});
+
+	test("output_tokens are excluded from occupancy", () => {
+		const line = makeRequest("req_1", "msg_1", 300, 0, 0, 9999);
+		// output_tokens (9999) must not appear in occupancy
+		expect(parseContextOccupancy(line)).toBe(300);
+	});
+
+	test("occupancy is NOT cumulative: multi-request transcript returns only last request (AC-2)", () => {
+		// 3 requests with growing input: 100, 200, 400
+		const req1 = makeRequest("req_1", "msg_1", 100, 50, 20, 30);
+		const req2 = makeRequest("req_2", "msg_2", 200, 80, 40, 60);
+		const req3 = makeRequest("req_3", "msg_3", 400, 150, 60, 90);
+		const jsonl = [req1, req2, req3].join("\n");
+
+		const occupancy = parseContextOccupancy(jsonl);
+		// Last request occupancy = 400 + 150 + 60 = 610
+		expect(occupancy).toBe(610);
+
+		// Must be strictly less than cumulative input+cacheCreation+cacheRead
+		const cumulative = parseTranscriptUsage(jsonl);
+		const cumulativeInput =
+			cumulative.input + cumulative.cacheCreation + cumulative.cacheRead;
+		expect(occupancy).toBeLessThan(cumulativeInput);
+	});
+
+	test("duplicate content-block lines for the last request are counted once (AC-3)", () => {
+		// Req1 appears once, req2 appears 3 times (content blocks: thinking, text, tool_use)
+		const req1 = makeRequest("req_1", "msg_1", 200, 50, 10, 40);
+		const req2Line = makeRequest("req_2", "msg_2", 500, 300, 100, 80);
+		const jsonl = [req1, req2Line, req2Line, req2Line].join("\n");
+
+		const occupancy = parseContextOccupancy(jsonl);
+		// Last request (req2) occupancy = 500 + 300 + 100 = 900 (counted once, not 3x)
+		expect(occupancy).toBe(900);
+	});
+
+	test("last request wins even when interspersed with earlier request lines", () => {
+		// req1 line, req2 line, req1 line again — last line is req1, so req1 is last
+		const req1 = makeRequest("req_1", "msg_1", 100, 10, 5, 20);
+		const req2 = makeRequest("req_2", "msg_2", 400, 80, 30, 60);
+		const jsonl = [req1, req2, req1].join("\n");
+
+		// The LAST usage-bearing line has key of req1, so req1 is the "last request"
+		expect(parseContextOccupancy(jsonl)).toBe(115); // 100 + 10 + 5
+	});
+
+	test("handles lines without message.id and requestId (fallback key)", () => {
+		// Two lines without dedup fields - each is a distinct fallback key
+		const line1 = JSON.stringify({
+			type: "assistant",
+			message: { usage: { input_tokens: 100, output_tokens: 10 } },
+		});
+		const line2 = JSON.stringify({
+			type: "assistant",
+			message: { usage: { input_tokens: 250, output_tokens: 20, cache_read_input_tokens: 50 } },
+		});
+		const jsonl = [line1, line2].join("\n");
+
+		// Last line occupancy = 250 + 50 + 0 = 300
+		expect(parseContextOccupancy(jsonl)).toBe(300);
+	});
+
+	test("parseContextOccupancy does NOT equal cumulative for a real multi-request session (AC-2 invariant)", () => {
+		// Simulate a session with 5 growing requests
+		const requests = [1, 2, 3, 4, 5].map((i) =>
+			makeRequest(`req_${i}`, `msg_${i}`, i * 1000, i * 500, i * 200, i * 100),
+		);
+		const jsonl = requests.join("\n");
+
+		const occupancy = parseContextOccupancy(jsonl);
+		// Last (i=5): 5000 + 2500 + 1000 = 8500
+		expect(occupancy).toBe(8500);
+
+		const cumulative = parseTranscriptUsage(jsonl);
+		const cumulativeInputVolume =
+			cumulative.input + cumulative.cacheCreation + cumulative.cacheRead;
+		// Cumulative is sum of all 5: (1+2+3+4+5)*1000 + (1+2+3+4+5)*500 + (1+2+3+4+5)*200 = 15000+7500+3000 = 25500
+		expect(cumulativeInputVolume).toBe(25500);
+		expect(occupancy).toBeLessThan(cumulativeInputVolume);
+		expect(occupancy).not.toBe(cumulativeInputVolume);
 	});
 });
 

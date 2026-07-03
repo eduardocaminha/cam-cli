@@ -3,7 +3,9 @@
   "branchName": "cam/CAM-163-orch-context-backstop",
   "description": "Occupancy-token backstop in the orchestrator recycle watcher: force a recycle when the current context occupancy of the last request exceeds a fraction of the model window, avoiding silent auto-compaction on a pathologically long cycle.",
   "issueNumber": 163,
-  "relatedDocs": ["scripts/cam/journal.md"],
+  "relatedDocs": [
+    "scripts/cam/journal.md"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -20,7 +22,7 @@
         "Full quality spine passes (bun run check:all), no --no-verify. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/transcript/usage.ts (add export next to parseTranscriptUsage); test: test/transcript/usage.test.ts. CRITICAL (journal.md:468-469, CAM-23 misfire): parseTranscriptUsage sums cumulative traffic (~5.58M/session real) by deduping (message.id, requestId) across ALL requests; occupancy must instead take the LAST usage-bearing line's payload only. TranscriptUsage/MessageUsage interfaces already exist in this file; reuse the JSONL split + JSON.parse + isTranscriptLine guards. noUncheckedIndexedAccess: getting lines[lines.length-1] is T|undefined, guard it. Return 0 for empty/no-usage transcripts. Do NOT include output_tokens (occupancy = input-window fill only)."
     },
