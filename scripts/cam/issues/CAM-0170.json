@@ -1,0 +1,9 @@
+{
+  "id": "CAM-170",
+  "title": "merge-watch: surface poll failures (emit event after N consecutive null polls)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-03T05:59:21.528Z",
+  "description": "GhPollFn returns null on ANY gh error and stepMergeWatch silently retries forever: a sidecar with a stale/revoked GITHUB_TOKEN (401) spins mute (pollCount 40+) and never detects MERGED. Bit the CAM-163 ship twice: 2 manual sidecar respawns because the inherited env token was revoked (env var wins over .env; token rotation never propagates to a live sidecar). Fix: count consecutive null polls in merge-watch state; after threshold N emit a merge-watch-poll-error event and notifyOrchestrator once (not per-poll). Consider also logging gh stderr in the event detail for diagnosis."
+}
