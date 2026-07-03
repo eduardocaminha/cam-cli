@@ -4,6 +4,14 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.50.0] - 2026-07-03
+
+### Added
+
+- [US-003] - Disambiguate the cycle-close self-handoff instruction in both agent-file copies
+- [US-002] - Clean any stale recycle marker on cam run boot before spawning the watcher
+- [US-001] - Refuse to arm the recycle marker when no live watcher is running
+
 ## [0.49.0] - 2026-07-03
 
 ### Added

@@ -58,6 +58,7 @@ import { runSidecar } from './src/commands/sidecar.ts';
 import { runOrchRecycleWatch } from './src/commands/orch-recycle-watch.ts';
 import { runTag } from './src/commands/tag.ts';
 import { ORCH_RECYCLE_MARKER } from './src/tmux/session.ts';
+import { watcherAlive } from './src/supervisor/sidecar-pid.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
 import {
 	stashIssueIdInMergeWatch,
@@ -1095,10 +1096,21 @@ export interface JournalDispatchDeps {
 	handoffExistsFn?: () => boolean;
 	/**
 	 * Injectable: write the recycle marker file `.claude/.cam-orch-recycle`.
-	 * Called on the --cycle-close success path (handoff confirmed present).
+	 * Called on the --cycle-close success path (handoff confirmed present AND
+	 * watcher confirmed alive).
 	 * Default: writes an empty file at `<cwd>/.claude/<ORCH_RECYCLE_MARKER>`.
 	 */
 	armRecycleMarkerFn?: () => void;
+	/**
+	 * Injectable: check whether the recycle watcher process is alive.
+	 * On the --cycle-close path this guard sits between the handoff-exists check
+	 * (exit 3) and the armMarker call: if no live watcher is found, the command
+	 * prints an actionable error (naming the missing pid file and the manual
+	 * /exit fallback) and returns exit code 4.
+	 * Default: `watcherAlive(join(process.cwd(), '.claude'))` (reads
+	 * `.claude/.cam-watcher.pid` + signal-0 probe).
+	 */
+	watcherAliveFn?: () => boolean;
 }
 
 /**
@@ -1172,6 +1184,18 @@ export async function dispatchJournal(
 					'write the cycle-close handoff before arming the recycle marker.',
 			);
 			return 3;
+		}
+		const isWatcherAlive =
+			deps?.watcherAliveFn !== undefined
+				? deps.watcherAliveFn()
+				: watcherAlive(join(process.cwd(), '.claude'));
+		if (!isWatcherAlive) {
+			printError(
+				'cam journal append --cycle-close: no live recycle watcher ' +
+					'(.claude/.cam-watcher.pid absent or process dead); ' +
+					'use /exit manually or start cam run to restart the watcher.',
+			);
+			return 4;
 		}
 		const armMarker =
 			deps?.armRecycleMarkerFn ??

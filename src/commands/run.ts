@@ -47,6 +47,7 @@ import {
 	isSessionStale,
 	tmuxArgs,
 	ORCH_SESSION_MARKER,
+	ORCH_RECYCLE_MARKER,
 	type SpawnFn,
 	type CreatedPaneIds,
 } from '../tmux/session.ts';
@@ -677,6 +678,18 @@ export function runRun(options: RunOptions = {}): number {
 		// sidecar even when it holds no supervisor lock (idle branch).
 		writeSidecarPid(join(cwd, '.claude'), sidecarProc.pid);
 		emitMutedHint(`Sidecar supervisor started (log: .claude/cam-supervisor.log)`);
+
+		// US-002: Clean any stale recycle marker BEFORE spawning the watcher.
+		// A leftover .cam-orch-recycle from a prior session would cause the
+		// watcher to SIGTERM the newly booted orchestrator on its first tick.
+		const recycleMarkerPath = join(cwd, '.claude', ORCH_RECYCLE_MARKER);
+		if (existsSync(recycleMarkerPath)) {
+			try {
+				unlinkSync(recycleMarkerPath);
+			} catch {
+				// Idempotent: if the file was already removed, ignore the error.
+			}
+		}
 
 		// Spawn the recycle watcher alongside the sidecar (US-004). It polls for
 		// ORCH_RECYCLE_MARKER, SIGTERMs the orchestrator claude process when found,

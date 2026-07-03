@@ -25,7 +25,7 @@ import {
 	type SpawnSidecarFn,
 	type SpawnWatcherFn,
 } from '../src/commands/run.ts';
-import type { SpawnFn } from '../src/tmux/session.ts';
+import { ORCH_RECYCLE_MARKER, type SpawnFn } from '../src/tmux/session.ts';
 
 /**
  * No-op sidecar handle. runRun spawns the sidecar via spawnSidecarFn, whose
@@ -865,5 +865,52 @@ describe('runRun recycle watcher spawn (US-004)', () => {
 		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar, spawnWatcherFn });
 
 		expect(watcherSpawnCalled).toBe(false);
+	});
+
+	// US-002 tests -----------------------------------------------------------
+
+	it('clears a stale .cam-orch-recycle marker on a newly created session (US-002)', () => {
+		const cwd = makeTmpProject();
+		const dotClaude = join(cwd, '.claude');
+		mkdirSync(dotClaude, { recursive: true });
+		const recycleMarker = join(dotClaude, ORCH_RECYCLE_MARKER);
+		writeFileSync(recycleMarker, '', 'utf8');
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar, spawnWatcherFn: noopWatcher });
+
+		// The stale marker must be removed before the watcher starts.
+		expect(existsSync(recycleMarker)).toBe(false);
+	});
+
+	it('stale marker is absent when spawnWatcherFn is invoked (ordering, US-002)', () => {
+		const cwd = makeTmpProject();
+		const dotClaude = join(cwd, '.claude');
+		mkdirSync(dotClaude, { recursive: true });
+		const recycleMarker = join(dotClaude, ORCH_RECYCLE_MARKER);
+		writeFileSync(recycleMarker, '', 'utf8');
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		let markerExistsAtWatcherSpawn: boolean | undefined;
+		const spawnWatcherFn: SpawnWatcherFn = (_c: string, _l: string) => {
+			// The cleanup must have run before this is called.
+			markerExistsAtWatcherSpawn = existsSync(recycleMarker);
+			return { pid: 0, kill: () => {} };
+		};
+
+		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar, spawnWatcherFn });
+
+		expect(markerExistsAtWatcherSpawn).toBe(false);
+	});
+
+	it('no-marker boot is a silent no-op (idempotent, US-002)', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		// No marker written - should not throw and should succeed.
+		const code = runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn: noopSidecar, spawnWatcherFn: noopWatcher });
+
+		expect(code).toBe(0);
+		expect(existsSync(join(cwd, '.claude', ORCH_RECYCLE_MARKER))).toBe(false);
 	});
 });
