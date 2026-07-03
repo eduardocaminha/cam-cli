@@ -630,6 +630,21 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		expect(cmd.indexOf('[ "$n" -lt "$max" ]')).toBeLessThan(cmd.indexOf('n=$((n + 1))'));
 	});
 
+	it('exports CAM_ORCH_REHYDRATE to the consumed path after mv, before re-exec (US-005)', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		const consumed = base.handoffMarker.replace(/\.json$/, '.consumed.json');
+		// The export must use the consumed path so the freshly spawned claude reads
+		// exactly the renamed file (consume-once invariant preserved).
+		expect(cmd).toContain(`export CAM_ORCH_REHYDRATE='${consumed}'`);
+		// Export must come AFTER the mv (file must exist before we point at it)
+		// and BEFORE the uuid generation (so the env is set before re-exec).
+		const mvIdx = cmd.indexOf(`mv '${base.handoffMarker}'`);
+		const exportIdx = cmd.indexOf(`export CAM_ORCH_REHYDRATE=`);
+		const uuidgenIdx = cmd.indexOf(`uuidgen`);
+		expect(mvIdx).toBeLessThan(exportIdx);
+		expect(exportIdx).toBeLessThan(uuidgenIdx);
+	});
+
 	it('reads reason with jq before mv, resets n=0 on cycle-close, increments otherwise (US-003)', () => {
 		const cmd = buildOrchestratorPaneCommand(base);
 		// jq reads the reason field from the handoff BEFORE the mv rename.
@@ -647,12 +662,25 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 });
 
 describe('buildOrchestratorBootPrompt (CAM-23 rehydration directive)', () => {
-	it('directs the orchestrator to rehydrate from the handoff file when present', () => {
+	it('directs the orchestrator to rehydrate via CAM_ORCH_REHYDRATE when present (US-005)', () => {
 		const prompt = buildOrchestratorBootPrompt();
-		expect(prompt).toContain('.claude/.cam-orch-handoff.json');
+		// Must reference the env var, not an unconditional path check (US-005, CAM-141).
+		expect(prompt).toContain('CAM_ORCH_REHYDRATE');
 		expect(prompt.toLowerCase()).toContain('rehydrate');
 		// Still tells it to read its agent system prompt.
 		expect(prompt).toContain('subagent-orchestrator.md');
+	});
+
+	it('cold-start safe: does NOT unconditionally instruct reading a stale handoff file (US-005)', () => {
+		const prompt = buildOrchestratorBootPrompt();
+		// The old "if .cam-orch-handoff.json exists, read it" instruction is gone;
+		// rehydration is now gated on CAM_ORCH_REHYDRATE being non-empty.
+		// NOTE: the path MAY appear in the cold-boot prohibition clause (do NOT read
+		// any stale .cam-orch-handoff.json) - that is the ONLY acceptable reference.
+		// The boot prompt must NOT instruct an unconditional read of the file.
+		const instructionToReadHandoff =
+			/read.*\.cam-orch-handoff\.json.*first|if.*\.cam-orch-handoff\.json.*exists.*read/i;
+		expect(instructionToReadHandoff.test(prompt)).toBe(false);
 	});
 
 	it('US-FIX-005: instructs the orchestrator to write .cam-orch-ready as FIRST action', () => {

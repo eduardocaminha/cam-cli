@@ -161,10 +161,11 @@ export function buildOrchestratorBootPrompt(): string {
 		'system prompt — every instruction in it applies to you for the entire',
 		'duration of this session.',
 		'',
-		'If .claude/.cam-orch-handoff.json exists, read it FIRST and rehydrate from',
-		"it: it is your previous self's serialized context (a token-budget",
-		'self-handoff, CAM-23). Otherwise perform the cold-boot context sequence the',
-		'agent file documents.',
+		'Run Bash: `echo $CAM_ORCH_REHYDRATE`',
+		'If the output is non-empty, read exactly that path and rehydrate from it',
+		'(it is your previous context from the token-budget self-handoff, CAM-23).',
+		'If CAM_ORCH_REHYDRATE is empty or absent, perform a clean cold-boot:',
+		'do NOT read any stale .cam-orch-handoff.json or .cam-orch-handoff.consumed.json.',
 		'',
 		'After reading it, perform the boot context steps it documents (read',
 		'CLAUDE.md, project.toml, journal.md, prd.json, current git state),',
@@ -237,6 +238,12 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		// missing field.
 		`reason=$(jq -r '.reason // empty' ${q(opts.handoffMarker)}); ` +
 		`mv ${q(opts.handoffMarker)} ${q(consumed)}; ` +
+		// Export the consumed handoff path so the freshly respawned claude can
+		// rehydrate deterministically from exactly that file (US-005, CAM-141).
+		// The export persists in the bash shell process; every respawn overwrites
+		// it with the latest consumed path, and the teardown branch never re-execs
+		// claude, so stale values never reach a new session.
+		`export CAM_ORCH_REHYDRATE=${q(consumed)}; ` +
 		// Lowercase the uuid: macOS `uuidgen` emits UPPERCASE, but claude writes
 		// transcripts with lowercase-uuid filenames (node randomUUID is lowercase),
 		// so an uppercase --session-id would make orchestratorTranscriptPath miss
