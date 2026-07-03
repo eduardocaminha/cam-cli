@@ -140,8 +140,11 @@ function makeReadMarkerFn(claudeDir: string): () => boolean {
 /**
  * Read the wrapper bash pid from the pid marker file.
  * Returns null when the file is absent, empty, or contains a non-finite value.
+ *
+ * Exported for direct unit testing of each guard branch (reviewer finding
+ * US-R1-001: zero coverage on the parsing guards).
  */
-function readWrapperPid(pidFilePath: string): number | null {
+export function readWrapperPid(pidFilePath: string): number | null {
 	let raw: string;
 	try {
 		raw = readFileSync(pidFilePath, 'utf8').trim();
@@ -154,13 +157,29 @@ function readWrapperPid(pidFilePath: string): number | null {
 }
 
 /**
+ * Minimal injectable seam for resolveChildViaPgrep.
+ * Receives the wrapper pid; returns raw pgrep output.
+ * Tests inject a fake to exercise guard branches without spawning a real process.
+ */
+export type PgrepSpawnFn = (pid: number) => { status: number | null; stdout: string };
+
+/**
  * Resolve the child pid of a given wrapper process via pgrep -P.
  * pgrep -P is a kernel ppid match: deterministic and immune to argv
  * truncation (the CAM-173 failure mode with pgrep -f <uuid>).
  * Returns null when pgrep finds no child or exits non-zero.
+ *
+ * Exported for direct unit testing of each guard branch.
+ * The optional spawnFn seam lets tests exercise all parsing guards
+ * without real process spawning (reviewer finding US-R1-001).
  */
-function resolveChildViaPgrep(wrapperPid: number): number | null {
-	const result = spawnSync('pgrep', ['-P', String(wrapperPid)], { encoding: 'utf8' });
+export function resolveChildViaPgrep(
+	wrapperPid: number,
+	spawnFn?: PgrepSpawnFn,
+): number | null {
+	const result = spawnFn
+		? spawnFn(wrapperPid)
+		: spawnSync('pgrep', ['-P', String(wrapperPid)], { encoding: 'utf8' }) as { status: number | null; stdout: string };
 	if ((result.status ?? 1) !== 0) return null;
 	const raw = typeof result.stdout === 'string' ? result.stdout.trim() : '';
 	if (raw.length === 0) return null;

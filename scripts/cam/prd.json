@@ -16,6 +16,20 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/commands/orch-recycle-watch.ts:144]: The core fix functions readWrapperPid (144-152), resolveChildViaPgrep (162-171), and makeResolvePidFn (175-179) have zero direct unit coverage (confirmed uncovered by the coverage report). US-002 AC1 required 'a unit test with injected read/spawn fakes covers resolve-ok, file-absent, and no-child', but the delivered unit tests inject resolvePidFn at the OrchRecycleWatchOptions level, bypassing makeResolvePidFn entirely, and the real-process integration test re-implements the pgrep -P logic inline instead of importing the production function. The parsing guards (empty file -> null, non-finite pid -> null, pid<=0 -> null, non-zero pgrep status -> null, empty/multi-line stdout) can regress silently. Fix: export readWrapperPid/resolveChildViaPgrep (or add a read/spawn seam to makeResolvePidFn) and add unit tests exercising each guard branch."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [src/commands/orch-recycle-watch.ts:11]: Stale file-header comment: lines 11-12 still describe the pre-fix mechanism ('The PID is resolved via `pgrep -f <uuid>` scoped to the session UUID read fresh from ORCH_SESSION_MARKER on every poll'). The shipped code resolves via `pgrep -P <wrapper_pid>` read from ORCH_PID_MARKER (.cam-orch-pid). The function-level JSDoc (307-316) was updated but the header block was not. Doc-sync deviation (CLAUDE.md section 7; 2026-06-05 stale-comment lesson). Fix: update the header to describe pgrep -P + ORCH_PID_MARKER."
+    },
+    {
       "id": "US-001",
       "title": "Persist the orchestrator wrapper pid to a lifecycle marker",
       "description": "As the recycle watcher, I need the orchestrator wrapper to persist its own stable bash pid to .claude/.cam-orch-pid so a downstream reader can resolve the live claude child deterministically instead of string-matching the giant inlined argv.",
@@ -28,7 +42,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (add ORCH_PID_MARKER='.cam-orch-pid' export near ORCH_SESSION_MARKER ~line 508 and ORCH_RECYCLE_MARKER ~line 517); src/commands/run.ts buildOrchestratorPaneCommand (~lines 229-277: emit `printf '%s' \"$$\" > <q(pidMarker)>;` immediately after `sid=...; n=0; max=...;` and BEFORE `while true; do` at line 237; add `rm -f <q(pidMarker)>;` in the teardown branch next to the stateFile/readyMarker rm at ~lines 267-270; add a pidMarker field to OrchestratorPaneCommandOptions and pass join(dotClaude, ORCH_PID_MARKER) from setupPanes ~lines 395-404); src/commands/stop.ts marker-removal loop (~lines 473-476, import ORCH_PID_MARKER and add [claudeDir, ORCH_PID_MARKER]). GOTCHAS: macOS /bin/bash is 3.2.57 - use `$$` (the wrapper shell pid, stable across respawns because the same `while` shell persists); do NOT use `$BASHPID` (empty in bash 3.2). Do NOT background claude (Ink TUI in a tmux pane; async list in non-job-control bash sends stdin to /dev/null and/or the reader takes SIGTTIN); approach A keeps claude foreground on purpose. Single-quote-escape the path with the existing `q()` helper. buildOrchestratorPaneCommand is pure string assembly (no I/O), so the argv-shape asserts are plain unit tests. Pattern: CAM-67 US-002 marker invariant (named const + performStop removal loop).",
@@ -47,7 +61,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": "US-001",
       "notes": "Files: src/commands/orch-recycle-watch.ts. Rework makeResolvePidFn (~lines 141-158) to take no sessionId: read ORCH_PID_MARKER via readFileSync+trim -> parseInt(wrapperPid) -> spawnSync('pgrep', ['-P', String(wrapperPid)], {encoding:'utf8'}); return null on absent file, non-finite pid, or empty pgrep output. handleOneTick (~lines 250-265) drops the readSessionIdFn->resolvePidFn(sessionId) chain and instead resolves from the pid marker; keep the consume-once removeMarkerFn call (do NOT spin). Add an injectable emit seam (e.g. emitEventFn?: (line: string) => void) on OrchRecycleWatchOptions defaulting to a process.stderr.write of a structured one-line record (captured by .claude/cam-recycle-watcher.log); call it when readMarkerFn() was true but pid resolved null. Leave makeReadOccupancyFn / orchestratorTranscriptPath (which read .cam-orch-session) and the whole checkBackstop path unchanged. GOTCHAS: pgrep -P is kernel-ppid match (confirmed macOS man, officialDocsConsulted), categorically different from the broken pgrep -f argv string-match; during the claude phase the ONLY child of the wrapper is claude (jq/uuidgen/cat/mv/printf run between invocations, never concurrent). noUncheckedIndexedAccess: guard lines[...] access with ?? ''. Burrow/CAM-55 lesson: a unit fake that returns the output the code expects cannot catch tool-real behavior - the AC3 integration test with a REAL giant-argv process is mandatory. Import ORCH_PID_MARKER from src/tmux/session.ts (introduced in US-001).",
@@ -67,11 +81,36 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": "US-001",
       "notes": "Files: .gitignore (add `.claude/.cam-orch-pid` in the CAM-68 block right after the `.cam-orch-recycle` line); templates/.gitignore (add the same line in its CAM-68 block); then run `bun run embed-vendor` to refresh src/vendor/_generated.ts templatesContents['.gitignore'] (~line 25) and verify with `bun run embed-vendor:check`. Assert in test/embedded.test.ts (byte-parity of templatesContents). Do NOT hand-edit _generated.ts - it is regenerated. Pattern: CAM-68 escaped harness runtime markers; cam dual-copy is per-file (diff both .gitignore copies before assuming they are byte-identical).",
       "repo": "main-repo"
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:2",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/commands/orch-recycle-watch.ts",
+        "line": 144,
+        "text": "The core fix functions readWrapperPid (144-152), resolveChildViaPgrep (162-171), and makeResolvePidFn (175-179) have zero direct unit coverage (confirmed uncovered by the coverage report). US-002 AC1 required 'a unit test with injected read/spawn fakes covers resolve-ok, file-absent, and no-child', but the delivered unit tests inject resolvePidFn at the OrchRecycleWatchOptions level, bypassing makeResolvePidFn entirely, and the real-process integration test re-implements the pgrep -P logic inline instead of importing the production function. The parsing guards (empty file -> null, non-finite pid -> null, pid<=0 -> null, non-zero pgrep status -> null, empty/multi-line stdout) can regress silently. Fix: export readWrapperPid/resolveChildViaPgrep (or add a read/spawn seam to makeResolvePidFn) and add unit tests exercising each guard branch."
+      },
+      {
+        "severity": "WARNING",
+        "file": "src/commands/orch-recycle-watch.ts",
+        "line": 11,
+        "text": "Stale file-header comment: lines 11-12 still describe the pre-fix mechanism ('The PID is resolved via `pgrep -f <uuid>` scoped to the session UUID read fresh from ORCH_SESSION_MARKER on every poll'). The shipped code resolves via `pgrep -P <wrapper_pid>` read from ORCH_PID_MARKER (.cam-orch-pid). The function-level JSDoc (307-316) was updated but the header block was not. Doc-sync deviation (CLAUDE.md section 7; 2026-06-05 stale-comment lesson). Fix: update the header to describe pgrep -P + ORCH_PID_MARKER."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/integration/orch-recycle-pid-resolve.test.ts",
+        "line": 757,
+        "text": "The mandatory real-process oracle proves the OS mechanism (pgrep -P resolves the child, pgrep -f misses, SIGTERM kills) but calls spawnSync('pgrep', ['-P', ...]) inline rather than the shipped makeResolvePidFn. Having it drive the production resolve function would make the Burrow-lesson real-process test cover the actual code path shipped, closing the gap noted in the WARNING above."
+      }
+    ]
+  }
 }
