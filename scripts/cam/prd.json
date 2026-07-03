@@ -1,0 +1,65 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-168-recycle-self-trigger-arm",
+  "description": "Make the CAM-162 autonomous cycle-close self-trigger fire reliably: refuse to arm the recycle marker without a live watcher, clean stale markers on boot, and disambiguate the agent-file instruction.",
+  "issueNumber": 168,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Refuse to arm the recycle marker when no live watcher is running",
+      "description": "As the cam recycle machinery, I need `cam journal append --cycle-close` to refuse to arm `.claude/.cam-orch-recycle` when no live recycle watcher is running, so that a marker is never left orphaned (armed with nobody to consume it) and the operator gets an actionable exit code plus a manual /exit fallback.",
+      "acceptanceCriteria": [
+        "cam journal append --cycle-close with a valid handoff present AND a live recycle watcher (injected watcher-alive = true) arms the recycle marker and exits 0 (existing happy path, unchanged). [oracle: bun test test/commands/journal-append.test.ts]",
+        "cam journal append --cycle-close with a valid handoff present but NO live recycle watcher (injected watcher-alive = false) does NOT arm the marker (armRecycleMarkerFn is never called), prints an error naming the missing watcher pid file (.claude/.cam-watcher.pid) and the manual-/exit fallback, and returns exit code 4. [oracle: bun test test/commands/journal-append.test.ts]",
+        "Exit code 4 is a distinct return path in dispatchJournal, not reused for 1 (invalid-stdin/append-fail) or 3 (handoff-absent). [oracle: file-assert grep -q 'return 4' index.ts]",
+        "The handoff-absent path still returns exit 3 unchanged (regression guard). [oracle: bun test test/commands/journal-append.test.ts]",
+        "Watcher liveness is detected by reading .claude/.cam-watcher.pid and confirming the process is alive via signal-0 semantics (process.kill(pid, 0)); the detection is injectable (a watcherAliveFn dep on JournalDispatchDeps) so unit tests never scan real processes. [oracle: file-assert grep -q 'watcherAliveFn' index.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit the parsed.cycleClose branch of dispatchJournal in index.ts (~lines 1164-1184). Ordering in that branch is load-bearing: handoff-exists check (exit 3) stays FIRST, then the new watcher-alive check (exit 4), then armMarker. DO NOT re-implement the marker writer: armRecycleMarkerFn already exists on this branch (shipped CAM-162 PR #120); the false 'no writer' premise in the original issue body was scoped to src/ but the writer lives in index.ts at repo root. Reuse the existing liveness primitives in src/supervisor/sidecar-pid.ts: readWatcherPid(claudeDir) (WATCHER_PID_FILE = '.cam-watcher.pid') + sidecarPidAlive(pid) (signal-0 probe, treats EPERM as alive). Prefer adding a small watcherAlive(claudeDir): boolean helper in sidecar-pid.ts composing those two, then default watcherAliveFn to () => watcherAlive(join(process.cwd(), '.claude')). Add the watcherAliveFn injectable to JournalDispatchDeps. Tests live in test/commands/journal-append.test.ts; inject watcherAliveFn (true/false) and armRecycleMarkerFn (spy) plus handoffExistsFn to cover arm-with-watcher, refuse-without-watcher, and handoff-absent. Skills/patterns: patterns.md 'spawnSync exit-status guard' not relevant here (no git); 'JSON reader shape guards' relevant for any parsed input. This story defines the exit-4 contract that US-003 documents."
+    },
+    {
+      "id": "US-002",
+      "title": "Clean any stale recycle marker on cam run boot before spawning the watcher",
+      "description": "As a freshly booted orchestrator, I need `cam run` to delete any pre-existing `.claude/.cam-orch-recycle` marker BEFORE it spawns the recycle watcher, so a stale marker left from a previous session cannot cause a first-tick spurious SIGTERM of the newly booted orchestrator.",
+      "acceptanceCriteria": [
+        "On a newly created session (result.created), a pre-existing .claude/.cam-orch-recycle file is removed during boot. Model the test on the existing 'clears a stale .cam-orch-handoff.json on a newly created session' test in test/run.test.ts. [oracle: bun test test/run.test.ts]",
+        "The stale-marker removal happens BEFORE spawnWatcherFn is invoked (an injected fake spawnWatcherFn observes the marker absent at call time, or the ordering is asserted directly). [oracle: bun test test/run.test.ts]",
+        "The cleanup references the ORCH_RECYCLE_MARKER constant from src/tmux/session.ts (no bare string literal for the marker filename). [oracle: file-assert grep -q 'ORCH_RECYCLE_MARKER' src/commands/run.ts]",
+        "The cleanup is idempotent: when no marker exists it is a silent no-op and never throws (existsSync-guarded, mirroring removeWatcherPidIfExists). [oracle: bun test test/run.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit the result.created boot path in src/commands/run.ts, right before the spawnWatcherFn call (~lines 684-686). run.ts already imports from '../tmux/session.ts' (line 52), so add ORCH_RECYCLE_MARKER to that import. Remove the marker with existsSync + unlinkSync in try/catch (mirror the style of removeWatcherPidIfExists in sidecar-pid.ts), or reuse a helper. Gotcha (from spec): the watcher handleOneTick consumes the marker EVERY tick and SIGTERMs the PID matching the CURRENT session UUID (pgrep -f <uuid> from ORCH_SESSION_MARKER); a stale marker therefore SIGTERMs the NEXT fresh orchestrator on tick 1 (self-limiting to one spurious recycle, but real). run.ts boot today does NOT clean it. Tests: use the noopWatcher / makeFakeSpawn helpers already in test/run.test.ts; write a stale marker, run runRun with spawnWatcherFn injected, assert the marker is gone. This gate is independent of US-001."
+    },
+    {
+      "id": "US-003",
+      "title": "Disambiguate the cycle-close self-handoff instruction in both agent-file copies",
+      "description": "As the orchestrator agent, I need the self-handoff section to state plainly that `cam journal append --cycle-close` is the single call that both appends the narrative journal entry (JSON piped on stdin) AND arms the recycle marker, and to document the refuse-to-arm fallback (exit 4 means no live watcher: /exit manually or restart cam run), so the autonomous recycle is unambiguous and there is a documented manual path when the watcher is absent.",
+      "acceptanceCriteria": [
+        "Both agent-file copies (.claude/agents/subagent-orchestrator.md and templates/agents/subagent-orchestrator.md) make explicit in the Recycle flow / self-handoff section that `cam journal append --cycle-close` is the SAME call that appends the narrative journal entry (JSON piped on stdin) AND arms the recycle marker. [oracle: file-assert grep -q 'stdin' .claude/agents/subagent-orchestrator.md && grep -q 'stdin' templates/agents/subagent-orchestrator.md]",
+        "Both copies document the refuse-to-arm fallback: exit code 4 means no live watcher, in which case the operator must /exit manually or restart cam run. [oracle: file-assert grep -q 'exit 4' .claude/agents/subagent-orchestrator.md && grep -q 'exit 4' templates/agents/subagent-orchestrator.md]",
+        "The embedded vendor copy (src/vendor/_generated.ts) is regenerated so it stays byte-consistent with both agent-file copies. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Full quality spine green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Dual-copy edit (memory cam-dual-copy-is-per-file, patterns.md agent-prompt self-hosting): edit BOTH .claude/agents/subagent-orchestrator.md AND templates/agents/subagent-orchestrator.md, then run `bun run embed-vendor` to sync src/vendor/_generated.ts, then verify with `bun run embed-vendor:check`. The two copies are currently byte-identical at the Recycle flow section (### Recycle flow (cycle-close), lines ~271-284); keep them identical. Step 2 ('Fire the cycle-close signal') is the anchor: clarify that `cam journal append --cycle-close` REQUIRES the JSON journal entry piped on stdin (it appends the narrative entry AND arms the marker in one call; running it with empty stdin yields the invalid-JSON exit-1 guard and never arms), and add the exit-4 refuse-to-arm fallback wording that references the contract from US-001. Agent .md is LLM-consumed, so em-dash and emoji are ALLOWED here (documented exception to the project no-em-dash rule). This is docs-only surface work: no runtime code changes."
+    }
+  ]
+}
