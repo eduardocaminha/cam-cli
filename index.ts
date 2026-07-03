@@ -55,6 +55,7 @@ import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.t
 import { runConfig } from './src/commands/config.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { runSidecar } from './src/commands/sidecar.ts';
+import { runOrchRecycleWatch } from './src/commands/orch-recycle-watch.ts';
 import { runTag } from './src/commands/tag.ts';
 import { ORCH_RECYCLE_MARKER } from './src/tmux/session.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
@@ -1596,6 +1597,14 @@ async function main(argv: string[]): Promise<number> {
 		// runSupervisor when active:true with non-operator stories pending.
 		case 'sidecar': {
 			await runSidecar();
+			return 0;
+		}
+		// Internal subcommand — not listed in top-level HELP.
+		// Polls for the ORCH_RECYCLE_MARKER, resolves the orchestrator claude PID
+		// via pgrep -f <session-uuid>, sends SIGTERM, and consumes the marker once.
+		// Spawned as a detached background process by cam run alongside cam sidecar.
+		case 'orch-recycle-watch': {
+			await runOrchRecycleWatch();
 			return 0;
 		}
 		// Internal subcommand — not listed in top-level HELP.
