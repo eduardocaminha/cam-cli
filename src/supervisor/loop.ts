@@ -239,6 +239,12 @@ export interface RunSupervisorOptions {
 	 */
 	sleepFn?: (ms: number) => void;
 	/**
+	 * Random source for backoff jitter (CAM-85). Injected so tests can pin a
+	 * deterministic value (e.g. () => 0.5 for zero jitter offset). Defaults to
+	 * Math.random in production. Used only by computeBackoffMs at each retry site.
+	 */
+	randomFn?: () => number;
+	/**
 	 * Return current time in milliseconds. Injected for deterministic tests.
 	 * Defaults to Date.now. Used for elapsed-time tracking in sentinel polling.
 	 */
@@ -445,19 +451,64 @@ export const DEFAULT_POLL_INTERVAL_MS = 5_000;
 export const MAX_NO_PROGRESS_RETRIES = 3;
 
 /**
- * Base backoff (ms) before re-dispatching a story whose worker no-op'd (CAM-38).
- * The most likely cause of a pre-session instant-exit is a startup rate-limit,
- * whose message is never printed, so US-016 rate-limit detection cannot fire and
- * the durable out-log captures nothing. A blind escalating backoff
- * (NO_PROGRESS_BACKOFF_MS * streak) is the only defense: it gives the rate-limit
- * window a few minutes to clear across the bounded retries before blocking. With
- * the current values the worst-case total wait before blocking is
- * NO_PROGRESS_BACKOFF_MS * (1 + 2 + ... + (MAX_NO_PROGRESS_RETRIES - 1)) = 180s.
- * This is best-effort: a longer (usage-tier) rate-limit still blocks, and the
- * operator re-runs once it clears. In production next.ts injects Bun.sleepSync;
+ * Base backoff (ms) before re-dispatching a story whose worker no-op'd (CAM-38,
+ * CAM-85). Used as `base` in computeBackoffMs. Exponential formula:
+ * min(MAX_BACKOFF_MS, NO_PROGRESS_BACKOFF_MS * 2^(streak-1)) before jitter.
+ * With streak=1 this is 60s; streak=2 is 120s; streak=3 would be 240s but is
+ * capped by MAX_BACKOFF_MS (300s). In production next.ts injects Bun.sleepSync;
  * tests inject a no-op sleepFn so they never actually wait.
  */
 export const NO_PROGRESS_BACKOFF_MS = 60_000;
+
+/**
+ * Maximum backoff cap (ms) applied by computeBackoffMs (CAM-85). Prevents the
+ * exponential from growing unboundedly on a long dead-worker or no-progress
+ * streak. With NO_PROGRESS_BACKOFF_MS=60s the cap only binds at streak >= 3
+ * (240s would exceed 300s), which is beyond the current MAX_*_RETRIES=3 limit
+ * (streak 3 triggers the block path, so the cap never actually fires today).
+ * The constant is exported so future stories can raise the retry cap without
+ * modifying the max bound separately.
+ */
+export const MAX_BACKOFF_MS = 300_000;
+
+/**
+ * Jitter fraction applied symmetrically around the computed backoff (CAM-85).
+ * A value of 0.2 means +/-20%: the actual sleep is in
+ * [base*0.8, base*1.2] depending on the injected randomFn.
+ * With randomFn() === 0.5 (the midpoint), jitter is exactly zero — useful for
+ * deterministic tests.
+ */
+export const JITTER_FRACTION = 0.2;
+
+/**
+ * Pure helper: compute the exponential-with-jitter backoff for a given streak.
+ *
+ * Formula: min(max, base * 2^(streak-1)) * (1 + jitterFraction * (2*r - 1))
+ *
+ *   - streak=1 -> base * 1 (no doubling yet).
+ *   - streak=2 -> base * 2, then jittered.
+ *   - cap (max) prevents unbounded growth.
+ *   - r=0.5 -> multiplier is exactly 1.0 (zero offset): use in deterministic tests.
+ *   - r=0   -> multiplier is (1 - jitterFraction)  (-20% at the default fraction).
+ *   - r=1   -> multiplier is (1 + jitterFraction)  (+20% at the default fraction).
+ *
+ * @param streak   Number of consecutive backoff retries so far (1-based).
+ * @param opts     Base interval (ms), max cap (ms), jitter fraction, random source.
+ * @returns        Milliseconds to sleep; always a non-negative integer.
+ */
+export function computeBackoffMs(
+	streak: number,
+	opts: {
+		base: number;
+		max: number;
+		jitterFraction: number;
+		random: () => number;
+	},
+): number {
+	const exponential = Math.min(opts.max, opts.base * Math.pow(2, streak - 1));
+	const jitter = 1 + opts.jitterFraction * (2 * opts.random() - 1);
+	return Math.round(exponential * jitter);
+}
 
 /**
  * Max consecutive dead-pane / timeout outcomes before the loop blocks (CAM-44).
@@ -466,9 +517,9 @@ export const NO_PROGRESS_BACKOFF_MS = 60_000;
  * the cause is persistent (a dead tmux server, a worker dying pre-session), the
  * loop would otherwise storm: re-dispatch every poll interval, burning
  * MAX_ITERATIONS in minutes with each spawn dying the same way. Mirroring the
- * CAM-36/38 no-progress guard, dead-pane outcomes get the same escalating
- * NO_PROGRESS_BACKOFF_MS * streak backoff and block after this many consecutive
- * failures instead of spinning to the iteration cap.
+ * CAM-36/38 no-progress guard, dead-pane outcomes get the same exponential-with-jitter
+ * backoff via computeBackoffMs (base NO_PROGRESS_BACKOFF_MS, cap MAX_BACKOFF_MS) and
+ * block after this many consecutive failures instead of spinning to the iteration cap.
  */
 export const MAX_DEAD_WORKER_RETRIES = 3;
 
@@ -543,6 +594,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// Real sleep: use a no-op by default so tests never block; callers that want
 	// actual sleeping must inject Bun.sleepSync (or similar).
 	const sleepFn = opts.sleepFn ?? ((_ms: number) => {});
+	// Random source for jitter in computeBackoffMs. Defaulted here so every
+	// downstream call shares the same resolved fn without re-deriving.
+	const randomFn = opts.randomFn ?? Math.random;
 	const now = opts.nowMs ?? (() => Date.now());
 	const logEvent = opts.logEvent;
 	const readWorkerTokens = opts.readWorkerTokens;
@@ -898,12 +952,18 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					storyId: undefined,
 					detail: pollOutcome === 'pane-died' ? 'pane-died-pre-result' : 'timeout',
 				};
+				const deadBackoffMs = computeBackoffMs(deadWorkerStreak, {
+					base: NO_PROGRESS_BACKOFF_MS,
+					max: MAX_BACKOFF_MS,
+					jitterFraction: JITTER_FRACTION,
+					random: randomFn,
+				});
 				emit('pane-died-retry', advisoryStoryId, uuid, {
 					attempt: deadWorkerStreak,
-					backoffMs: NO_PROGRESS_BACKOFF_MS * deadWorkerStreak,
+					backoffMs: deadBackoffMs,
 					pollOutcome,
 				});
-				sleepFn(NO_PROGRESS_BACKOFF_MS * deadWorkerStreak);
+				sleepFn(deadBackoffMs);
 				continue;
 			}
 
@@ -1101,12 +1161,18 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					// so a transient startup rate-limit whose message is never printed
 					// can clear. A blind backoff is the only defense when the worker
 					// produced no output.
+					const noProgressBackoffMs = computeBackoffMs(noProgressStreak, {
+						base: NO_PROGRESS_BACKOFF_MS,
+						max: MAX_BACKOFF_MS,
+						jitterFraction: JITTER_FRACTION,
+						random: randomFn,
+					});
 					emit('no-progress-retry', advisoryStoryId, uuid, {
 						attempt: noProgressStreak,
-						backoffMs: NO_PROGRESS_BACKOFF_MS * noProgressStreak,
+						backoffMs: noProgressBackoffMs,
 						completedStory: outcome.storyId,
 					});
-					sleepFn(NO_PROGRESS_BACKOFF_MS * noProgressStreak);
+					sleepFn(noProgressBackoffMs);
 				} else {
 					noProgressStreak = 0;
 					// Genuine advance: story was NOT already passing. Notify the

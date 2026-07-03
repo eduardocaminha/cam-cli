@@ -4,6 +4,16 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.51.0] - 2026-07-03
+
+### Added
+
+- [US-001] - Exponential-with-jitter retry backoff in the supervisor loop
+
+### Fixed
+
+- [US-R1-001] - update MAX_DEAD_WORKER_RETRIES docstring to reference computeBackoffMs
+
 ## [0.50.0] - 2026-07-03
 
 ### Added
