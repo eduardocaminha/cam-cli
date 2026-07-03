@@ -1,9 +1,40 @@
 {
   "id": "CAM-171",
   "title": "Supervisor: subir retry cap (3->4) para realizar a janela de backoff de 240s prometida pelo CAM-85",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T11:52:26.581Z",
-  "description": "Follow-up do CAM-85 (PR #124, v0.51.0), que trocou o backoff linear por exponencial-com-jitter via computeBackoffMs.\n\nPROBLEMA: com o cap atual (MAX_NO_PROGRESS_RETRIES = MAX_DEAD_WORKER_RETRIES = 3), o loop bloqueia NO streak 3 antes de dormir (loop.ts:952/1081), entao so os streaks 1 e 2 chegam ao sleep. Para esses, 2^(streak-1) = {1,2} da a MESMA sequencia {60s,120s} do linear antigo. Ou seja, a unica mudanca observavel que o CAM-85 entregou foi o jitter +/-20%. O terceiro backoff de 240s e a janela de ~7min do proprio exemplo do CAM-85 (60/120/240) sao inalcancaveis, e MAX_BACKOFF_MS (300s) nunca vincula. Achado pelo auditor no plan do CAM-85, verificado no codigo.\n\nFIX proposto: subir MAX_NO_PROGRESS_RETRIES e MAX_DEAD_WORKER_RETRIES de 3 para 4, para que o streak 3 durma (240s) antes de bloquear no streak 4. MAX_BACKOFF_MS ja esta exportado exatamente para isso, entao o delta e pequeno: os dois constantes + a sequencia esperada no teste (test/supervisor/loop.test.ts) + as docstrings que hoje dizem cap=3 (loop.ts:465-472 e o bloco do MAX_DEAD_WORKER_RETRIES).\n\nTRADE-OFF (decisao de politica, por isso ficou fora do PR de forma): subir o cap faz o loop tolerar 1 streak a mais antes de escalar pro humano. Em rate-limit longo isso e o desejado (mais janela de clearance). Em falha genuina (servidor tmux morto, crash real) isso atrasa a escalacao pro humano em ~4min. O ganho e uma faixa estreita (rate-limits de 3-7min); o custo aplica a toda falha persistente. Avaliar se vale, ou se o cap=3 ja e suficiente e o CAM-85 (jitter anti-thundering-herd) fecha a necessidade real.\n\nPrioridade: P3 (mesma faixa do CAM-85, melhoria incremental). Pode ser fechado como wont-fix se a conclusao for que jitter-only ja basta."
+  "description": "Follow-up do CAM-85 (PR #124, v0.51.0), que trocou o backoff linear por exponencial-com-jitter via computeBackoffMs.\n\nPROBLEMA: com o cap atual (MAX_NO_PROGRESS_RETRIES = MAX_DEAD_WORKER_RETRIES = 3), o loop bloqueia NO streak 3 antes de dormir (loop.ts:952/1081), entao so os streaks 1 e 2 chegam ao sleep. Para esses, 2^(streak-1) = {1,2} da a MESMA sequencia {60s,120s} do linear antigo. Ou seja, a unica mudanca observavel que o CAM-85 entregou foi o jitter +/-20%. O terceiro backoff de 240s e a janela de ~7min do proprio exemplo do CAM-85 (60/120/240) sao inalcancaveis, e MAX_BACKOFF_MS (300s) nunca vincula. Achado pelo auditor no plan do CAM-85, verificado no codigo.\n\nFIX proposto: subir MAX_NO_PROGRESS_RETRIES e MAX_DEAD_WORKER_RETRIES de 3 para 4, para que o streak 3 durma (240s) antes de bloquear no streak 4. MAX_BACKOFF_MS ja esta exportado exatamente para isso, entao o delta e pequeno: os dois constantes + a sequencia esperada no teste (test/supervisor/loop.test.ts) + as docstrings que hoje dizem cap=3 (loop.ts:465-472 e o bloco do MAX_DEAD_WORKER_RETRIES).\n\nTRADE-OFF (decisao de politica, por isso ficou fora do PR de forma): subir o cap faz o loop tolerar 1 streak a mais antes de escalar pro humano. Em rate-limit longo isso e o desejado (mais janela de clearance). Em falha genuina (servidor tmux morto, crash real) isso atrasa a escalacao pro humano em ~4min. O ganho e uma faixa estreita (rate-limits de 3-7min); o custo aplica a toda falha persistente. Avaliar se vale, ou se o cap=3 ja e suficiente e o CAM-85 (jitter anti-thundering-herd) fecha a necessidade real.\n\nPrioridade: P3 (mesma faixa do CAM-85, melhoria incremental). Pode ser fechado como wont-fix se a conclusao for que jitter-only ja basta.",
+  "spec": {
+    "scope": "Raise the supervisor retry cap from 3 to 4 for both the no-progress and dead-worker streaks so the third backoff (240s) is actually exercised before the loop blocks and escalates to the operator. CAM-85 (PR #124) shipped computeBackoffMs (exponential-with-jitter) but at cap=3 the loop blocks at streak 3 before sleeping, so only streaks 1 and 2 reach sleep and produce {60s,120s}, behaviorally identical to the old linear path except for jitter. In scope: bump MAX_NO_PROGRESS_RETRIES and MAX_DEAD_WORKER_RETRIES from 3 to 4 in src/supervisor/loop.ts; update the expected-sequence assertion in test/supervisor/loop.test.ts; refresh the two docstrings that still say cap=3. Out of scope: computeBackoffMs, MAX_BACKOFF_MS (already 300s), the jitter fraction, and the escalation mechanism itself.",
+    "acceptanceCriteria": [
+      "MAX_NO_PROGRESS_RETRIES and MAX_DEAD_WORKER_RETRIES both equal 4 in src/supervisor/loop.ts.",
+      "With cap=4 the loop blocks/escalates at streak 4, so streaks 1, 2, and 3 reach the sleep path and produce the {60s, 120s, 240s} sequence (with jitter). The 240s third backoff that CAM-85 documented but never exercised at cap=3 now fires.",
+      "test/supervisor/loop.test.ts asserts the {60s, 120s, 240s} expected sequence with randomFn=()=>0.5 (zero jitter, exact ms) for both the no-progress and dead-worker retry paths, and asserts that streak 4 escalates without sleeping.",
+      "The two docstrings that currently state cap=3 (loop.ts around 465-472 and the MAX_DEAD_WORKER_RETRIES block) are updated to describe cap=4 and the realized 240s window; no stale cap=3 or only-60s/120s text remains.",
+      "MAX_BACKOFF_MS (300s) still never binds because 240s < 300s; it is left unchanged.",
+      "Full quality spine green: bun run check:all, bun test, and bun run typecheck all pass."
+    ],
+    "gotchas": [
+      "Do NOT re-implement or touch computeBackoffMs (exponential-with-jitter), shipped CAM-85 PR #124. This issue only moves the two retry-cap constants.",
+      "The loop blocks/escalates AT the cap streak BEFORE sleeping (block sites the CAM-85 auditor located near loop.ts:952/1081), so cap=N means only streaks 1..N-1 reach sleep. cap=4 -> streaks 1,2,3 sleep {60,120,240}. Confirm the exact block sites at implement time; do not trust these line numbers blindly (comments-do-not-prove-behaviour).",
+      "Tests inject randomFn=()=>0.5 to zero out the +/-20% jitter and assert exact ms; follow the existing CAM-85 test pattern in test/supervisor/loop.test.ts.",
+      "The policy trade-off is already decided (operator, this session): the bump tolerates one extra streak (~4min) before escalating a genuine persistent failure to the human, in exchange for a wider clearance window on 3-7min rate-limits. Do NOT re-litigate; implement the bump.",
+      "Two separate docstring sites carry the cap=3 claim; a stale docstring was a review finding in CAM-85, so update both."
+    ],
+    "domainTerms": [
+      "retry cap (MAX_NO_PROGRESS_RETRIES / MAX_DEAD_WORKER_RETRIES)",
+      "backoff streak",
+      "computeBackoffMs (exponential-with-jitter, CAM-85)",
+      "MAX_BACKOFF_MS (300s ceiling)",
+      "escalation to operator (block at cap streak)"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 1
+  }
 }
