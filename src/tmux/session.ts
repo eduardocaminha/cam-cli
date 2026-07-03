@@ -508,6 +508,15 @@ export const WORKER_PANE_MARKER = '.cam-worker-pane';
 export const ORCH_SESSION_MARKER = '.cam-orch-session';
 
 /**
+ * Filename within `.claude/` where the orchestrator recycle signal is written.
+ *
+ * Written by the orchestrator at end-of-cycle to signal that the sidecar
+ * should recycle its CORE loop (close the session and boot a fresh one).
+ * Removed by `cam stop` as part of the full per-session marker cleanup.
+ */
+export const ORCH_RECYCLE_MARKER = '.cam-orch-recycle';
+
+/**
  * Persist the worker pane id to `<claudeDir>/.cam-worker-pane`.
  *
  * `claudeDir` is typically `<cwd>/.claude`. Creates the directory if absent.

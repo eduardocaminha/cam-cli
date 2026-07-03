@@ -84,3 +84,60 @@ export function removeSidecarPidIfExists(claudeDir: string): void {
 		removeSidecarPid(claudeDir);
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Recycle watcher PID (mirrors the sidecar PID pattern above)
+// ---------------------------------------------------------------------------
+
+/** Filename within `.claude/` where the recycle watcher spawn-time PID is persisted. */
+export const WATCHER_PID_FILE = '.cam-watcher.pid';
+
+/**
+ * Persist the recycle watcher pid to `<claudeDir>/.cam-watcher.pid`.
+ *
+ * Called immediately after `spawnWatcherFn` returns so `cam stop` can SIGTERM
+ * the watcher even when it is idle (no supervisor lock held by the watcher).
+ */
+export function writeWatcherPid(claudeDir: string, pid: number): void {
+	mkdirSync(claudeDir, { recursive: true });
+	writeFileSync(join(claudeDir, WATCHER_PID_FILE), String(pid), 'utf8');
+}
+
+/**
+ * Read the recycle watcher pid from `<claudeDir>/.cam-watcher.pid`.
+ *
+ * Returns the pid as a number, or `null` when the file is absent, empty, or
+ * does not contain a valid positive integer. Never throws.
+ */
+export function readWatcherPid(claudeDir: string): number | null {
+	try {
+		const content = readFileSync(join(claudeDir, WATCHER_PID_FILE), 'utf8').trim();
+		const pid = parseInt(content, 10);
+		return Number.isFinite(pid) && pid > 0 ? pid : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Remove the watcher pid file. Idempotent: silently ignores "already gone".
+ * Never throws.
+ */
+export function removeWatcherPid(claudeDir: string): void {
+	try {
+		unlinkSync(join(claudeDir, WATCHER_PID_FILE));
+	} catch {
+		// already gone or never written
+	}
+}
+
+/**
+ * Remove the watcher pid file only when it exists (existsSync-guarded). Used
+ * by the cleanup path in run.ts to avoid ENOENT noise if the file was never
+ * written.
+ */
+export function removeWatcherPidIfExists(claudeDir: string): void {
+	if (existsSync(join(claudeDir, WATCHER_PID_FILE))) {
+		removeWatcherPid(claudeDir);
+	}
+}

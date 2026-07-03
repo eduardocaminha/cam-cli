@@ -9,6 +9,7 @@
 //   - .claude/.cam-orch-session     (ORCH_SESSION_MARKER)
 //   - .claude/.cam-worker-pane      (WORKER_PANE_MARKER)
 //   - .claude/.cam-orch-ready       (ORCH_READY_MARKER)
+//   - .claude/.cam-orch-recycle     (ORCH_RECYCLE_MARKER)
 //   - scripts/cam/worker-report.json (WORKER_REPORT_FILENAME)
 //
 // Oracle: bun test test/stop-markers.test.ts
@@ -20,7 +21,7 @@ import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 import { performStop, type SpawnSyncFn } from '../src/commands/stop.ts';
-import { WORKER_PANE_MARKER, ORCH_SESSION_MARKER } from '../src/tmux/session.ts';
+import { WORKER_PANE_MARKER, ORCH_SESSION_MARKER, ORCH_RECYCLE_MARKER } from '../src/tmux/session.ts';
 import { ORCH_READY_MARKER } from '../src/tmux/bootstrap-wait.ts';
 import { SUPERVISOR_LOCK_FILE } from '../src/supervisor/lock.ts';
 import { WORKER_REPORT_FILENAME } from '../src/supervisor/worker-report.ts';
@@ -107,14 +108,15 @@ describe('performStop — per-session marker cleanup (US-002)', () => {
 				},
 			});
 
-			// Expect exactly 6 unlink calls — one per marker.
+			// Expect exactly 7 unlink calls — one per marker.
 			expect(unlinked).toContain(join(dir, '.claude', 'cam-loop.local.md'));
 			expect(unlinked).toContain(join(claudeDir, SUPERVISOR_LOCK_FILE));
 			expect(unlinked).toContain(join(claudeDir, ORCH_SESSION_MARKER));
 			expect(unlinked).toContain(join(claudeDir, WORKER_PANE_MARKER));
 			expect(unlinked).toContain(join(claudeDir, ORCH_READY_MARKER));
+			expect(unlinked).toContain(join(claudeDir, ORCH_RECYCLE_MARKER));
 			expect(unlinked).toContain(join(dir, WORKER_REPORT_FILENAME));
-			expect(unlinked).toHaveLength(6);
+			expect(unlinked).toHaveLength(7);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -127,12 +129,13 @@ describe('performStop — per-session marker cleanup (US-002)', () => {
 			mkdirSync(claudeDir, { recursive: true });
 			mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
 
-			// Write all six markers, then call performStop twice.
+			// Write all seven markers, then call performStop twice.
 			writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'active: true\n');
 			writeFileSync(join(claudeDir, SUPERVISOR_LOCK_FILE), '{"pid":1}');
 			writeFileSync(join(claudeDir, ORCH_SESSION_MARKER), 'uuid-abc');
 			writeFileSync(join(claudeDir, WORKER_PANE_MARKER), '%5');
 			writeFileSync(join(claudeDir, ORCH_READY_MARKER), '');
+			writeFileSync(join(claudeDir, ORCH_RECYCLE_MARKER), '');
 			writeFileSync(join(dir, WORKER_REPORT_FILENAME), '{"outcome":"DONE"}');
 
 			performStop({ cwd: dir, spawnSyncFn: fakeSpawn });

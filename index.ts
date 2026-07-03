@@ -18,7 +18,7 @@
 
 import process from 'node:process';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -55,7 +55,9 @@ import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.t
 import { runConfig } from './src/commands/config.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { runSidecar } from './src/commands/sidecar.ts';
+import { runOrchRecycleWatch } from './src/commands/orch-recycle-watch.ts';
 import { runTag } from './src/commands/tag.ts';
+import { ORCH_RECYCLE_MARKER } from './src/tmux/session.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
 import {
 	stashIssueIdInMergeWatch,
@@ -1046,7 +1048,9 @@ function _buildBumpOpts(cwd: string) {
  * - mode === 'append': dispatch the journal append subcommand.
  * - help === true: caller should print JOURNAL_HELP and exit 0.
  */
-export type ParsedJournalArgs = { mode: 'append'; force: boolean; help: false } | { mode?: never; help: true };
+export type ParsedJournalArgs =
+	| { mode: 'append'; force: boolean; cycleClose: boolean; help: false }
+	| { mode?: never; help: true };
 
 export function parseJournalArgs(args: string[]): ParsedJournalArgs | null {
 	if (args.includes('--help') || args.includes('-h')) {
@@ -1057,8 +1061,10 @@ export function parseJournalArgs(args: string[]): ParsedJournalArgs | null {
 		printFatalHint('Usage: cam journal append [--force]  (reads JSON from stdin)');
 		return null;
 	}
-	const force = args.slice(1).includes('--force');
-	return { mode: 'append', force, help: false };
+	const rest = args.slice(1);
+	const force = rest.includes('--force');
+	const cycleClose = rest.includes('--cycle-close');
+	return { mode: 'append', force, cycleClose, help: false };
 }
 
 /** Injectable deps for dispatchJournal -- all optional; production uses real impls. */
@@ -1080,6 +1086,19 @@ export interface JournalDispatchDeps {
 	 * production cwd/claudeDir.
 	 */
 	recordCycleTokensFn?: () => void;
+	/**
+	 * Injectable: check whether the orchestrator handoff file
+	 * `.claude/.cam-orch-handoff.json` exists.  Used on the --cycle-close path to
+	 * enforce handoff-before-marker ordering.
+	 * Default: `existsSync(join(process.cwd(), '.claude', '.cam-orch-handoff.json'))`.
+	 */
+	handoffExistsFn?: () => boolean;
+	/**
+	 * Injectable: write the recycle marker file `.claude/.cam-orch-recycle`.
+	 * Called on the --cycle-close success path (handoff confirmed present).
+	 * Default: writes an empty file at `<cwd>/.claude/<ORCH_RECYCLE_MARKER>`.
+	 */
+	armRecycleMarkerFn?: () => void;
 }
 
 /**
@@ -1138,6 +1157,31 @@ export async function dispatchJournal(
 			});
 		});
 	recordFn();
+
+	// --cycle-close: arm the recycle marker only when the handoff is already present.
+	// Ordering is load-bearing: marker must not be written before the handoff exists,
+	// so the sidecar recycle is only triggered on genuine end-of-cycle transitions.
+	if (parsed.cycleClose) {
+		const handoffExists =
+			deps?.handoffExistsFn !== undefined
+				? deps.handoffExistsFn()
+				: existsSync(join(process.cwd(), '.claude', '.cam-orch-handoff.json'));
+		if (!handoffExists) {
+			printError(
+				'cam journal append --cycle-close: handoff file absent (.claude/.cam-orch-handoff.json); ' +
+					'write the cycle-close handoff before arming the recycle marker.',
+			);
+			return 3;
+		}
+		const armMarker =
+			deps?.armRecycleMarkerFn ??
+			(() => {
+				const claudeDir = join(process.cwd(), '.claude');
+				mkdirSync(claudeDir, { recursive: true });
+				writeFileSync(join(claudeDir, ORCH_RECYCLE_MARKER), '', 'utf8');
+			});
+		armMarker();
+	}
 
 	// Unconditional handoff signal: no token threshold, fired strictly after durable writes.
 	writeStdout('CAM_ORCH_HANDOFF_DUE=true\n');
@@ -1553,6 +1597,14 @@ async function main(argv: string[]): Promise<number> {
 		// runSupervisor when active:true with non-operator stories pending.
 		case 'sidecar': {
 			await runSidecar();
+			return 0;
+		}
+		// Internal subcommand — not listed in top-level HELP.
+		// Polls for the ORCH_RECYCLE_MARKER, resolves the orchestrator claude PID
+		// via pgrep -f <session-uuid>, sends SIGTERM, and consumes the marker once.
+		// Spawned as a detached background process by cam run alongside cam sidecar.
+		case 'orch-recycle-watch': {
+			await runOrchRecycleWatch();
 			return 0;
 		}
 		// Internal subcommand — not listed in top-level HELP.

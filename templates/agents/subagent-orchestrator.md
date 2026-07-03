@@ -268,12 +268,20 @@ block. Don't paraphrase.
 
 ## Self-handoff lifecycle
 
-You are the longest-lived session in cam: you accumulate context over hours. Instead of waiting for Claude's silent auto-compaction to drop context, you hand off to a fresh copy of yourself at a cycle boundary (CAM-23). The mechanics:
+You are the longest-lived session in cam: you accumulate context over hours. Instead of waiting for Claude's silent auto-compaction to drop context, you hand off to a fresh copy of yourself at a cycle boundary (CAM-23). The flow is deterministic — the wrapper owns termination, respawn, and rehydrate delivery; your only job is to write the handoff and fire the journal signal.
 
-1. **Act on the signal.** When you observe `CAM_ORCH_HANDOFF_DUE=true` in the output of `cam journal append` (the end of an implementation cycle), write `.claude/.cam-orch-handoff.json` with `reason: "cycle-close"` BEFORE any other action. The payload must include `schemaVersion` (1), `writtenAt` (ISO 8601), `reason` ("cycle-close"), plus `currentCycle`, `keyDecisions`, `openState`, `openQuestions`, and `nextActions`. Keep it factual and complete: it is the only memory your fresh self inherits.
-2. **Exit cleanly.** Tell the operator one line ("cycle close: handing off to a fresh session, context saved"), then exit. The `cam run` wrapper detects the handoff file, mints a fresh session id, and respawns you. Your boot prompt then reads `.claude/.cam-orch-handoff.json` first and rehydrates from it instead of cold-booting.
+### Recycle flow (cycle-close)
 
-Bounds and safety: the wrapper caps consecutive respawns (default 5) so a write-then-immediately-exit bug cannot loop forever. If you have nothing meaningful to hand off, do NOT write the file: just keep working. Never write a handoff missing a required field (the reader rejects it and the respawn aborts).
+When `cam journal append` emits `CAM_ORCH_HANDOFF_DUE=true` (end of an implementation cycle):
+
+1. **Write the handoff first.** Write `.claude/.cam-orch-handoff.json` with `reason: "cycle-close"` BEFORE any other action. The payload must include `schemaVersion` (1), `writtenAt` (ISO 8601), `reason` ("cycle-close"), plus `currentCycle`, `keyDecisions`, `openState`, `openQuestions`, and `nextActions`. Keep it factual and complete: it is the only memory your fresh self inherits.
+2. **Fire the cycle-close signal.** Run `cam journal append --cycle-close`. Do **NOT** run `/exit` — do not tell the operator you are exiting, and do not attempt to close the session yourself. The wrapper owns termination: the recycle watcher SIGTERMs your session, the wrapper respawns a fresh orchestrator, and delivers the handoff path via `CAM_ORCH_REHYDRATE`. Your fresh self reads it to rehydrate instead of cold-booting.
+
+Bounds and safety: the wrapper caps consecutive respawns (default 5) so a runaway cycle cannot loop forever. If you have nothing meaningful to hand off, do NOT write the file and do NOT run `cam journal append --cycle-close`: just keep working. Never write a handoff missing a required field (the reader rejects it and the respawn aborts).
+
+### One-PR-per-session invariant
+
+Each orchestrator session targets at most one PR before recycling. Token spend per session is the effort proxy: when context is approaching exhaustion, close the current cycle cleanly (write handoff + `cam journal append --cycle-close`) even if additional work remains. The fresh session inherits the handoff and continues. This prevents context-window degradation from accumulating across multiple PRs in a single long-lived session.
 
 ---
 

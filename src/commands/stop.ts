@@ -29,7 +29,13 @@ import { join, relative } from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
 
-import { readSidecarPid, removeSidecarPid, sidecarPidAlive } from '../supervisor/sidecar-pid.ts';
+import {
+	readSidecarPid,
+	removeSidecarPid,
+	sidecarPidAlive,
+	readWatcherPid,
+	removeWatcherPid,
+} from '../supervisor/sidecar-pid.ts';
 import { SUPERVISOR_LOCK_FILE } from '../supervisor/lock.ts';
 import { WORKER_REPORT_FILENAME } from '../supervisor/worker-report.ts';
 import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
@@ -48,6 +54,7 @@ import {
 	tmuxArgs,
 	WORKER_PANE_MARKER,
 	ORCH_SESSION_MARKER,
+	ORCH_RECYCLE_MARKER,
 } from '../tmux/session.ts';
 
 // --- Constants -------------------------------------------------------------
@@ -127,6 +134,21 @@ export interface StopOptions {
 	 * path did NOT find a live sidecar (absent file or dead pid).
 	 */
 	listProcessesFn?: ListProcessesFn;
+	/**
+	 * Override the recycle watcher pid reader for tests.
+	 * When undefined, defaults to `readWatcherPid` from sidecar-pid.ts.
+	 */
+	watcherPidReader?: (claudeDir: string) => number | null;
+	/**
+	 * Override the signal-0 liveness probe for the watcher pid.
+	 * When undefined, defaults to `sidecarPidAlive` (same probe, generic).
+	 */
+	watcherPidAliveFn?: (pid: number) => boolean;
+	/**
+	 * Override the watcher pid-file remover for tests.
+	 * When undefined, defaults to `removeWatcherPid` from sidecar-pid.ts.
+	 */
+	watcherPidRemover?: (claudeDir: string) => void;
 }
 
 export interface StopReport {
@@ -171,6 +193,13 @@ export interface StopReport {
 	 * equals this project's cwd.
 	 */
 	fallbackSidecarKilled: boolean;
+	/**
+	 * Was the recycle watcher process (from .claude/.cam-watcher.pid) sent SIGTERM?
+	 * False when the pid file is absent, the pid is dead (signal-0 fails),
+	 * or the kill call threw. The pid file is always removed when present,
+	 * regardless of liveness.
+	 */
+	watcherKilled: boolean;
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -331,6 +360,9 @@ export function performStop(options: StopOptions = {}): StopReport {
 	const sidecarPidAliveImpl = options.sidecarPidAliveFn ?? sidecarPidAlive;
 	const sidecarPidRemoverImpl = options.sidecarPidRemover ?? removeSidecarPid;
 	const listProcessesImpl = options.listProcessesFn ?? defaultListProcesses;
+	const watcherPidReaderImpl = options.watcherPidReader ?? readWatcherPid;
+	const watcherPidAliveImpl = options.watcherPidAliveFn ?? sidecarPidAlive;
+	const watcherPidRemoverImpl = options.watcherPidRemover ?? removeWatcherPid;
 
 	const session = projectSessionName(cwd);
 	const claudeDir = join(cwd, '.claude');
@@ -345,6 +377,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 		sidecarKilled: false,
 		markersRemoved: [],
 		fallbackSidecarKilled: false,
+		watcherKilled: false,
 	};
 
 	// 1. Kill the supervisor PID from the state file (before we remove it).
@@ -390,6 +423,24 @@ export function performStop(options: StopOptions = {}): StopReport {
 		}
 	}
 
+	// 1d. Kill the recycle watcher from .claude/.cam-watcher.pid.
+	//     Mirrors step 1b: probe liveness (signal-0), SIGTERM only when alive,
+	//     always remove the pid file (idempotent).
+	const watcherPid = watcherPidReaderImpl(claudeDir);
+	if (watcherPid !== null) {
+		const watcherAlive = watcherPidAliveImpl(watcherPid);
+		if (watcherAlive) {
+			try {
+				killFn(watcherPid, 'SIGTERM');
+				report.watcherKilled = true;
+			} catch {
+				// kill threw — pid may have died in the instant between probe and kill
+			}
+		}
+		// Always remove the pid file (idempotent whether alive or dead).
+		watcherPidRemoverImpl(claudeDir);
+	}
+
 	// 2. Remove the loop state file.
 	const statePath = join(cwd, STATE_FILE_PATH);
 	if (existsSyncImpl(statePath)) {
@@ -411,6 +462,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 	//   - .cam-orch-session     (ORCH_SESSION_MARKER)     in .claude/
 	//   - .cam-worker-pane      (WORKER_PANE_MARKER)      in .claude/
 	//   - .cam-orch-ready       (ORCH_READY_MARKER)       in .claude/
+	//   - .cam-orch-recycle     (ORCH_RECYCLE_MARKER)     in .claude/
 	//   - scripts/cam/worker-report.json (WORKER_REPORT_FILENAME) in cwd
 	//
 	// Absent markers are a no-op (existsSyncImpl returns false -> skip).
@@ -421,6 +473,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 		[claudeDir, ORCH_SESSION_MARKER],
 		[claudeDir, WORKER_PANE_MARKER],
 		[claudeDir, ORCH_READY_MARKER],
+		[claudeDir, ORCH_RECYCLE_MARKER],
 		[cwd, WORKER_REPORT_FILENAME],
 	] as [string, string][]) {
 		const p = join(dir, name);
@@ -484,6 +537,10 @@ export function runStop(options: StopOptions = {}): number {
 		emitOk('Sent SIGTERM to orphaned sidecar process (fallback scoped scan)');
 	}
 
+	if (report.watcherKilled) {
+		emitOk('Sent SIGTERM to recycle watcher process');
+	}
+
 	if (report.markersRemoved.length > 0) {
 		emitOk(`Removed ${report.markersRemoved.length} marker file(s): ${report.markersRemoved.join(', ')}`);
 	}
@@ -510,7 +567,7 @@ export function runStop(options: StopOptions = {}): number {
 	// success is signaled by the accent ✓ glyph on the content line (`emitOk`),
 	// matching how the Ink screens do it.
 	emitSectionHeading('Done');
-	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled || report.fallbackSidecarKilled || report.markersRemoved.length > 0) {
+	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled || report.fallbackSidecarKilled || report.watcherKilled || report.markersRemoved.length > 0) {
 		emitOk('Loop stopped');
 	} else {
 		emitMutedHint('Nothing to clean — no active loop or stale state');

@@ -51,7 +51,12 @@ import {
 	type CreatedPaneIds,
 } from '../tmux/session.ts';
 import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
-import { writeSidecarPid, removeSidecarPidIfExists } from '../supervisor/sidecar-pid.ts';
+import {
+	writeSidecarPid,
+	removeSidecarPidIfExists,
+	writeWatcherPid,
+	removeWatcherPidIfExists,
+} from '../supervisor/sidecar-pid.ts';
 import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
@@ -89,6 +94,14 @@ export interface SidecarProcess {
  */
 export type SpawnSidecarFn = (cwd: string, logPath: string) => SidecarProcess;
 
+/**
+ * Factory that spawns the recycle watcher as a background child process.
+ * Same interface and lifecycle contract as SpawnSidecarFn.
+ * The real default redirects stdout+stderr to .claude/cam-recycle-watcher.log.
+ * Tests inject a fake that records the invocation and returns a no-op handle.
+ */
+export type SpawnWatcherFn = (cwd: string, logPath: string) => SidecarProcess;
+
 export interface RunOptions {
 	noAttach?: boolean;
 	cwd?: string;
@@ -103,6 +116,14 @@ export interface RunOptions {
 	 * stdout+stderr redirected to .claude/cam-supervisor.log.
 	 */
 	spawnSidecarFn?: SpawnSidecarFn;
+	/**
+	 * Injectable recycle watcher spawn function for unit tests.
+	 * Default: spawn `cam orch-recycle-watch` as a background Bun child process
+	 * alongside the sidecar, with stdout+stderr redirected to
+	 * .claude/cam-recycle-watcher.log. Killed in the same cleanup handler as
+	 * the sidecar on SIGINT/SIGTERM.
+	 */
+	spawnWatcherFn?: SpawnWatcherFn;
 }
 
 export interface ParsedRunArgs {
@@ -145,10 +166,11 @@ export function buildOrchestratorBootPrompt(): string {
 		'system prompt — every instruction in it applies to you for the entire',
 		'duration of this session.',
 		'',
-		'If .claude/.cam-orch-handoff.json exists, read it FIRST and rehydrate from',
-		"it: it is your previous self's serialized context (a token-budget",
-		'self-handoff, CAM-23). Otherwise perform the cold-boot context sequence the',
-		'agent file documents.',
+		'Run Bash: `echo $CAM_ORCH_REHYDRATE`',
+		'If the output is non-empty, read exactly that path and rehydrate from it',
+		'(it is your previous context from the token-budget self-handoff, CAM-23).',
+		'If CAM_ORCH_REHYDRATE is empty or absent, perform a clean cold-boot:',
+		'do NOT read any stale .cam-orch-handoff.json or .cam-orch-handoff.consumed.json.',
 		'',
 		'After reading it, perform the boot context steps it documents (read',
 		'CLAUDE.md, project.toml, journal.md, prd.json, current git state),',
@@ -221,6 +243,12 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		// missing field.
 		`reason=$(jq -r '.reason // empty' ${q(opts.handoffMarker)}); ` +
 		`mv ${q(opts.handoffMarker)} ${q(consumed)}; ` +
+		// Export the consumed handoff path so the freshly respawned claude can
+		// rehydrate deterministically from exactly that file (US-005, CAM-141).
+		// The export persists in the bash shell process; every respawn overwrites
+		// it with the latest consumed path, and the teardown branch never re-execs
+		// claude, so stale values never reach a new session.
+		`export CAM_ORCH_REHYDRATE=${q(consumed)}; ` +
 		// Lowercase the uuid: macOS `uuidgen` emits UPPERCASE, but claude writes
 		// transcripts with lowercase-uuid filenames (node randomUUID is lowercase),
 		// so an uppercase --session-id would make orchestratorTranscriptPath miss
@@ -504,6 +532,37 @@ function spawnSidecarDefault(cwd: string, logPath: string): SidecarProcess {
 }
 
 // ---------------------------------------------------------------------------
+// Recycle watcher spawn (real production implementation)
+// ---------------------------------------------------------------------------
+
+/**
+ * Real production implementation of SpawnWatcherFn.
+ *
+ * Spawns `cam orch-recycle-watch` as a background Bun child process alongside
+ * the sidecar, with stdout+stderr redirected to `logPath`
+ * (.claude/cam-recycle-watcher.log). Same lifecycle contract as
+ * spawnSidecarDefault: NOT detached, shares cam run's process group, killed
+ * in the SIGINT/SIGTERM cleanup handler.
+ */
+function spawnWatcherDefault(cwd: string, logPath: string): SidecarProcess {
+	const logFd = openSync(logPath, 'a');
+	const proc = Bun.spawn(['cam', 'orch-recycle-watch'], {
+		cwd,
+		stdio: ['ignore', logFd, logFd],
+	});
+	return {
+		pid: proc.pid,
+		kill: () => {
+			try {
+				proc.kill();
+			} catch {
+				// best-effort
+			}
+		},
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Claude auth preflight (re-export from sibling module)
 // ---------------------------------------------------------------------------
 
@@ -619,6 +678,17 @@ export function runRun(options: RunOptions = {}): number {
 		writeSidecarPid(join(cwd, '.claude'), sidecarProc.pid);
 		emitMutedHint(`Sidecar supervisor started (log: .claude/cam-supervisor.log)`);
 
+		// Spawn the recycle watcher alongside the sidecar (US-004). It polls for
+		// ORCH_RECYCLE_MARKER, SIGTERMs the orchestrator claude process when found,
+		// and removes the marker (consume-once). Killed in the same cleanup handler.
+		const watcherLogPath = join(cwd, '.claude', 'cam-recycle-watcher.log');
+		const spawnWatcherFn = options.spawnWatcherFn ?? spawnWatcherDefault;
+		const watcherProc = spawnWatcherFn(cwd, watcherLogPath);
+		// Persist pid immediately after spawn so `cam stop` can SIGTERM the
+		// watcher even when it is idle (mirrors the sidecar pid pattern).
+		writeWatcherPid(join(cwd, '.claude'), watcherProc.pid);
+		emitMutedHint(`Recycle watcher started (log: .claude/cam-recycle-watcher.log)`);
+
 		let cleaned = false;
 		const cleanup = () => {
 			if (cleaned) return;
@@ -629,7 +699,9 @@ export function runRun(options: RunOptions = {}): number {
 				// already gone or never written
 			}
 			removeSidecarPidIfExists(join(cwd, '.claude'));
+			removeWatcherPidIfExists(join(cwd, '.claude'));
 			sidecarProc.kill();
+			watcherProc.kill();
 		};
 		process.once('SIGINT', () => {
 			cleanup();
