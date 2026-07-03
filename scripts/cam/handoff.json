@@ -1,17 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-R2-001",
-    "title": "Review round 2 fix 001: address reviewer finding"
+    "id": "US-R2-002",
+    "title": "Review round 2 fix 002: address reviewer finding"
   },
   "branchName": "cam/pr-162-orch-recycle-core",
-  "timestamp": "2026-07-02T20:00:00Z",
+  "timestamp": "2026-07-02T21:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/file-size-budget.json",
+    ".gitignore",
+    "templates/.gitignore",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R2-001 raised three file-size budget ceilings that US-R1-001 exceeded without updating: src/commands/run.ts 749->758, src/commands/stop.ts 525->579, src/supervisor/sidecar-pid.ts 87->144. Also added test/stop-watcher-kill.test.ts 121 to the budget (the new test file from US-R1-001 was not tracked). All check:all gates now pass. US-R2-002 is still passes:false; check prd.json for its notes.",
+  "nextStoryContext": "US-R2-002 added .claude/.cam-watcher.pid and .claude/cam-recycle-watcher.log to both .gitignore and templates/.gitignore, then re-ran embed-vendor to sync _generated.ts. All stories now pass=true. PRD is complete; supervisor should run /cam-review to determine if a new review round is needed or the PR can be shipped.",
   "officialDocsValidated": [
     {
       "lib": "none",

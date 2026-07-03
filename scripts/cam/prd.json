@@ -38,7 +38,7 @@
       "id": "US-R2-002",
       "title": "Review round 2 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [.gitignore]: Two new runtime files written under .claude/ are not gitignored in either tree, unlike their sidecar analogues (.cam-sidecar.pid and cam-supervisor.log both ARE gitignored): (1) .claude/.cam-watcher.pid (WATCHER_PID_FILE, written by writeWatcherPid in run.ts, US-R1-001) and (2) .claude/cam-recycle-watcher.log (opened by spawnWatcherDefault in run.ts, US-004). The pid file lingers after a normal detach until cam stop removes it, and the log is never removed, so both appear as untracked runtime state in the dogfood repo and in every downstream project (templates/.gitignore is what cam init installs). Fix: add .claude/.cam-watcher.pid and .claude/cam-recycle-watcher.log to both .gitignore and templates/.gitignore, then re-run bun run embed-vendor (templates/.gitignore is embedded in src/vendor/_generated.ts) and verify embed-vendor:check is clean."
     },
     {
