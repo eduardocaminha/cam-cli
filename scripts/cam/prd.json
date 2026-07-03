@@ -137,7 +137,7 @@
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": "US-005",
       "notes": "Files: .claude/agents/subagent-orchestrator.md AND templates/agents/subagent-orchestrator.md (Self-handoff lifecycle section ~line 269-277), then `bun run embed-vendor` to sync src/vendor/_generated.ts. Read patterns.md: 'Agent-prompt self-hosting pattern (US-001, CAM-70)' -- templates/ is source of truth, .claude/ is the runtime mirror, both edited then re-embed; the templatesContents byte-parity test in test/embedded.test.ts catches drift. Agent-instruction .md files are LLM-consumed (may use em-dash). Content: model writes handoff FIRST, then runs `cam journal append --cycle-close`; NO /exit; the wrapper watcher SIGTERMs, wrapper respawns and hands back the handoff path via CAM_ORCH_REHYDRATE."
     },

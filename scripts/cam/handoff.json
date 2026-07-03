@@ -1,19 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Explicit rehydrate delivery on respawn (CAM-141 fix) with cold-start safety"
+    "id": "US-006",
+    "title": "Update orchestrator agent policy to the deterministic recycle flow"
   },
   "branchName": "cam/pr-162-orch-recycle-core",
-  "timestamp": "2026-07-02T16:00:00Z",
+  "timestamp": "2026-07-02T17:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/run.ts",
-    "test/run.test.ts",
-    "scripts/file-size-budget.json",
+    ".claude/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 added explicit CAM_ORCH_REHYDRATE env-var delivery in buildOrchestratorPaneCommand (after mv handoff->consumed, before uuidgen) and replaced the unconditional .cam-orch-handoff.json boot prompt paragraph with an env-gated one. The boot prompt now says: run `echo $CAM_ORCH_REHYDRATE`; if non-empty read that path; else cold-boot (do NOT read stale handoff). The consume-once + cap invariants are preserved. US-006 is the next story: update subagent-orchestrator.md (and its templates mirror + embedded vendor) to describe the deterministic recycle flow (write handoff+cycle-close, wrapper owns SIGTERM+respawn+rehydrate) and remove the stale 'exit cleanly' self-exit prose.",
+  "nextStoryContext": "US-006 replaced the stale Self-handoff section in subagent-orchestrator.md (both .claude/ and templates/ copies, vendor re-synced). The new section: (1) step 2 is now 'Fire the cycle-close signal: run cam journal append --cycle-close; do NOT run /exit'; (2) the wrapper owns SIGTERM via recycle watcher + respawn + rehydrate via CAM_ORCH_REHYDRATE; (3) adds the One-PR-per-session invariant (tokens/session as effort proxy). The 'Exit cleanly ... then exit' prose is fully removed. US-007 (if it exists) is the next story.",
   "officialDocsValidated": [
     {
       "lib": "none",
