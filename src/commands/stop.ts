@@ -29,7 +29,13 @@ import { join, relative } from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
 
-import { readSidecarPid, removeSidecarPid, sidecarPidAlive } from '../supervisor/sidecar-pid.ts';
+import {
+	readSidecarPid,
+	removeSidecarPid,
+	sidecarPidAlive,
+	readWatcherPid,
+	removeWatcherPid,
+} from '../supervisor/sidecar-pid.ts';
 import { SUPERVISOR_LOCK_FILE } from '../supervisor/lock.ts';
 import { WORKER_REPORT_FILENAME } from '../supervisor/worker-report.ts';
 import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
@@ -128,6 +134,21 @@ export interface StopOptions {
 	 * path did NOT find a live sidecar (absent file or dead pid).
 	 */
 	listProcessesFn?: ListProcessesFn;
+	/**
+	 * Override the recycle watcher pid reader for tests.
+	 * When undefined, defaults to `readWatcherPid` from sidecar-pid.ts.
+	 */
+	watcherPidReader?: (claudeDir: string) => number | null;
+	/**
+	 * Override the signal-0 liveness probe for the watcher pid.
+	 * When undefined, defaults to `sidecarPidAlive` (same probe, generic).
+	 */
+	watcherPidAliveFn?: (pid: number) => boolean;
+	/**
+	 * Override the watcher pid-file remover for tests.
+	 * When undefined, defaults to `removeWatcherPid` from sidecar-pid.ts.
+	 */
+	watcherPidRemover?: (claudeDir: string) => void;
 }
 
 export interface StopReport {
@@ -172,6 +193,13 @@ export interface StopReport {
 	 * equals this project's cwd.
 	 */
 	fallbackSidecarKilled: boolean;
+	/**
+	 * Was the recycle watcher process (from .claude/.cam-watcher.pid) sent SIGTERM?
+	 * False when the pid file is absent, the pid is dead (signal-0 fails),
+	 * or the kill call threw. The pid file is always removed when present,
+	 * regardless of liveness.
+	 */
+	watcherKilled: boolean;
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -332,6 +360,9 @@ export function performStop(options: StopOptions = {}): StopReport {
 	const sidecarPidAliveImpl = options.sidecarPidAliveFn ?? sidecarPidAlive;
 	const sidecarPidRemoverImpl = options.sidecarPidRemover ?? removeSidecarPid;
 	const listProcessesImpl = options.listProcessesFn ?? defaultListProcesses;
+	const watcherPidReaderImpl = options.watcherPidReader ?? readWatcherPid;
+	const watcherPidAliveImpl = options.watcherPidAliveFn ?? sidecarPidAlive;
+	const watcherPidRemoverImpl = options.watcherPidRemover ?? removeWatcherPid;
 
 	const session = projectSessionName(cwd);
 	const claudeDir = join(cwd, '.claude');
@@ -346,6 +377,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 		sidecarKilled: false,
 		markersRemoved: [],
 		fallbackSidecarKilled: false,
+		watcherKilled: false,
 	};
 
 	// 1. Kill the supervisor PID from the state file (before we remove it).
@@ -389,6 +421,24 @@ export function performStop(options: StopOptions = {}): StopReport {
 				}
 			}
 		}
+	}
+
+	// 1d. Kill the recycle watcher from .claude/.cam-watcher.pid.
+	//     Mirrors step 1b: probe liveness (signal-0), SIGTERM only when alive,
+	//     always remove the pid file (idempotent).
+	const watcherPid = watcherPidReaderImpl(claudeDir);
+	if (watcherPid !== null) {
+		const watcherAlive = watcherPidAliveImpl(watcherPid);
+		if (watcherAlive) {
+			try {
+				killFn(watcherPid, 'SIGTERM');
+				report.watcherKilled = true;
+			} catch {
+				// kill threw — pid may have died in the instant between probe and kill
+			}
+		}
+		// Always remove the pid file (idempotent whether alive or dead).
+		watcherPidRemoverImpl(claudeDir);
 	}
 
 	// 2. Remove the loop state file.
@@ -487,6 +537,10 @@ export function runStop(options: StopOptions = {}): number {
 		emitOk('Sent SIGTERM to orphaned sidecar process (fallback scoped scan)');
 	}
 
+	if (report.watcherKilled) {
+		emitOk('Sent SIGTERM to recycle watcher process');
+	}
+
 	if (report.markersRemoved.length > 0) {
 		emitOk(`Removed ${report.markersRemoved.length} marker file(s): ${report.markersRemoved.join(', ')}`);
 	}
@@ -513,7 +567,7 @@ export function runStop(options: StopOptions = {}): number {
 	// success is signaled by the accent ✓ glyph on the content line (`emitOk`),
 	// matching how the Ink screens do it.
 	emitSectionHeading('Done');
-	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled || report.fallbackSidecarKilled || report.markersRemoved.length > 0) {
+	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled || report.fallbackSidecarKilled || report.watcherKilled || report.markersRemoved.length > 0) {
 		emitOk('Loop stopped');
 	} else {
 		emitMutedHint('Nothing to clean — no active loop or stale state');

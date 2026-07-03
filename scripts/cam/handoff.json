@@ -1,18 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-007",
-    "title": "Update FLOW.md and README.md to the marker-driven recycle flow"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/pr-162-orch-recycle-core",
-  "timestamp": "2026-07-02T18:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-02T18:30:00Z",
+  "createdFiles": [
+    "test/stop-watcher-kill.test.ts"
+  ],
   "modifiedFiles": [
-    "FLOW.md",
-    "README.md",
-    "scripts/cam/prd.json"
+    "src/supervisor/sidecar-pid.ts",
+    "src/commands/run.ts",
+    "src/commands/stop.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 updated FLOW.md (mermaid node labels, summary prose, pane-0.0 descriptor, cam-run section text) and README.md (status blurb line 11, orchestrator-persists paragraph ~line 118, session-layout paragraph ~line 166, Recent-changes entry ~line 293) to describe the marker-driven recycle flow: cycle-close arms cam-orch-recycle, watcher SIGTERMs the claude process, wrapper respawns delivering handoff via CAM_ORCH_REHYDRATE. All oracle greps pass. No more operator-/exit narrative in either doc. Check prd.json for the next story after US-007.",
+  "nextStoryContext": "US-R1-001 fixed the orphaned recycle watcher by persisting its PID to .claude/.cam-watcher.pid (WATCHER_PID_FILE in sidecar-pid.ts), writing it immediately after spawn in run.ts, and adding a watcher kill step to performStop in stop.ts (mirrors the sidecar kill step: read pid, probe liveness, SIGTERM if alive, always remove file). New test: test/stop-watcher-kill.test.ts (3 cases: absent, dead, alive). Also added removeWatcherPidIfExists call to the SIGINT/SIGTERM cleanup handler in run.ts. All 2782 tests pass. Check prd.json for the next story after US-R1-001 (all other stories are passes:true, review verdict is FIXES_PENDING:1 -- now addressed; next step is re-review).",
   "officialDocsValidated": [
     {
       "lib": "none",

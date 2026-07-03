@@ -51,7 +51,12 @@ import {
 	type CreatedPaneIds,
 } from '../tmux/session.ts';
 import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
-import { writeSidecarPid, removeSidecarPidIfExists } from '../supervisor/sidecar-pid.ts';
+import {
+	writeSidecarPid,
+	removeSidecarPidIfExists,
+	writeWatcherPid,
+	removeWatcherPidIfExists,
+} from '../supervisor/sidecar-pid.ts';
 import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
@@ -679,6 +684,9 @@ export function runRun(options: RunOptions = {}): number {
 		const watcherLogPath = join(cwd, '.claude', 'cam-recycle-watcher.log');
 		const spawnWatcherFn = options.spawnWatcherFn ?? spawnWatcherDefault;
 		const watcherProc = spawnWatcherFn(cwd, watcherLogPath);
+		// Persist pid immediately after spawn so `cam stop` can SIGTERM the
+		// watcher even when it is idle (mirrors the sidecar pid pattern).
+		writeWatcherPid(join(cwd, '.claude'), watcherProc.pid);
 		emitMutedHint(`Recycle watcher started (log: .claude/cam-recycle-watcher.log)`);
 
 		let cleaned = false;
@@ -691,6 +699,7 @@ export function runRun(options: RunOptions = {}): number {
 				// already gone or never written
 			}
 			removeSidecarPidIfExists(join(cwd, '.claude'));
+			removeWatcherPidIfExists(join(cwd, '.claude'));
 			sidecarProc.kill();
 			watcherProc.kill();
 		};
