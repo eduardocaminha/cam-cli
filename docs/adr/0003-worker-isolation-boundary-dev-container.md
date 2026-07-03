@@ -40,11 +40,17 @@ Dois tokens sao obrigatorios no ambiente do sidecar (`.env` na raiz, injetados v
 
 O modelo HTTPS-token (sem SSH) e a escolha deliberada: SSH dentro do container exigiria montar chaves do host (ampliando blast radius) ou gerar chaves efemeras (complexidade de rotacao). HTTPS com PAT de escopo restrito minimiza o acesso e e auditavel.
 
-## Substrato inerte ate CAM-152 (B-2)
+## Flip fail-closed: B-2 (CAM-152, US-004) -- implementado
 
-O substrato containerizado descrito neste ADR esta inerte na B-1 (CAM-150): o preflight deterministico (`src/supervisor/preflight-container.ts`) roda e loga o resultado antes de cada dispatch, mas o spawn do worker ainda ocorre no host via `respawn-pane -k` tmux convencional. Nenhum worker e executado dentro do container enquanto CAM-152 nao mergear.
+O flip fail-closed foi implementado em CAM-152 US-004. Os tres mecanismos principais:
 
-A logica de spawn fail-closed sera implementada na B-2 (CAM-152). O seam de injecao (`preflightContainerFn` em `RunSupervisorOptions`) ja existe; a B-2 completa a ligacao entre o preflight e o dispatch.
+1. **dockerExecWrap no dispatch**: quando `worker_isolation = container` em `scripts/cam/project.toml`, `loop.ts` envolve o `shellCmd` com `dockerExecWrap()` antes do `respawn-pane -k`. O comando enviado ao pane tmux fica na forma `docker exec -it cam-worker env -u CLAUDECODE ... claude ...`. Em modo `host` (padrao), o shellCmd e passado sem alteracao.
+
+2. **Preflight fail-closed**: quando o preflight retorna `ready: false` em modo container, o loop chama `escalateFn` (best-effort) e retorna `{ status: 'blocked' }` com reason `container-not-ready: <reason>`. Nunca faz fallback para o host. Em modo host, o preflight continua sendo observe-only.
+
+3. **Runtime failure sem fallback de host**: se o pane morre apos o dispatch containerizado (container parou entre o preflight e a execucao), `pollOutcome === 'pane-died'` em modo container e rotado para reason `container-exec-failure` em vez do generico `pane-died-pre-result`. O CAM-44 backoff/retry ainda se aplica, mas sempre pelo caminho container -- nunca ha fallback para o host.
+
+**Invariante de seguranca**: opt-in (default `host`), fail-closed (sem fallback de host quando `container`), um container de longa vida e reutilizavel (`cam-worker`).
 
 ## Consequencias
 
