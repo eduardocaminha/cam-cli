@@ -1,25 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Add dockerExecWrap() shared chokepoint helper"
+    "id": "US-003",
+    "title": "Ensure-up idempotent container lifecycle at supervisor boot"
   },
   "branchName": "cam/pr-152-flip-worker-spawn-container",
-  "timestamp": "2026-07-03T23:30:00Z",
+  "timestamp": "2026-07-03T23:50:00Z",
   "createdFiles": [
-    "src/supervisor/docker-exec.ts",
-    "test/supervisor/docker-exec.test.ts"
+    "src/supervisor/ensure-container.ts",
+    "test/supervisor/ensure-container.test.ts"
   ],
-  "modifiedFiles": [],
+  "modifiedFiles": [
+    "src/commands/sidecar.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "dockerExecWrap(shellString, containerName?) is now exported from src/supervisor/docker-exec.ts. It is a pure function that prepends 'docker exec -it <containerName> ' to the inner shell string byte-for-byte. Default containerName is DEFAULT_CONTAINER_NAME ('cam-worker') imported from worker-container.ts. 9 tests pass. Next story (US-003) likely wires dockerExecWrap into the dispatch sites (loop.ts, review.ts, plan-runner.ts) gated on the WorkerIsolation flag from US-001.",
+  "nextStoryContext": "ensureWorkerContainer() is now in src/supervisor/ensure-container.ts. It reconciles container state across 4 branches (running/stopped/absent/image-stale) using DI spawnFn+probe seams. makeProductionEnsureContainerFn(cwd) builds the production closure. Wired in runSidecar() via options.ensureContainerFn with gate readWorkerIsolation()==='container'. cam stop still has 0 docker references. Next story (US-004 or later) may wire dockerExecWrap() into dispatch sites (loop.ts) gated on WorkerIsolation=container.",
   "officialDocsValidated": [
     {
-      "lib": "docker exec",
-      "version": "current",
-      "url": "https://docs.docker.com/reference/cli/docker/container/exec/",
-      "fetchedAt": "2026-07-03T23:30:00Z",
+      "lib": "docker inspect",
+      "version": "current (2024+)",
+      "url": "https://docs.docker.com/reference/cli/docker/inspect/",
+      "fetchedAt": "2026-07-03T23:50:00Z",
       "status": "ok",
-      "summary": "docker exec passes argv directly (no shell interpolation by Docker); host pane shell tokenizes the wrapped string. No inner sh -c needed. Confirmed 'docker exec -it cam-worker env -u CLAUDECODE ...' works correctly."
+      "summary": "docker inspect -f {{.State.Running}} returns 'true' for running containers, 'false' for stopped containers, and exits non-zero for absent containers. Confirmed by official docs and Docker CLI discussions. Implementation matches expected behavior."
     }
   ]
 }

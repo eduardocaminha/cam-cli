@@ -66,7 +66,7 @@
         "bun run check:all passes. [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "New file src/supervisor/ensure-container.ts; wire it at sidecar boot in src/commands/sidecar.ts near buildSupervisorOptions. Gate on readWorkerIsolation()==='container' (US-001). Reuse ContainerSpawnFn/DockerProbe seams already exported by worker-container.ts and preflight-container.ts; probe container state via `docker inspect -f {{.State.Running}} cam-worker` (missing container => absent, exit non-zero). Spec gotcha: cam stop must NOT drop the container (only SIGTERMs the tmux session); a dedicated reset command is out of scope. File-size: sidecar.ts is at 1090 ceiling; if the boot wiring exceeds it, raise scripts/file-size-budget.json with a CAM-152 _ref and stage it before check:all (patterns.md 'Ratchet gate')."
     },
