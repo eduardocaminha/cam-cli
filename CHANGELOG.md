@@ -4,6 +4,15 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.52.0] - 2026-07-03
+
+### Added
+
+- [US-R1-001] - Export readWrapperPid and resolveChildViaPgrep with injectable seam; add direct unit tests for all parsing guards
+- [US-003] - Gitignore the orchestrator-pid marker in both copies and re-embed
+- [US-002] - Resolve the orchestrator pid via pgrep -P with a non-silent unresolved-pid event
+- [US-001] - Persist the orchestrator wrapper pid to a lifecycle marker
+
 ## [0.51.0] - 2026-07-03
 
 ### Added
