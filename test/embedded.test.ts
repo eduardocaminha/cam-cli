@@ -330,6 +330,7 @@ describe('CAM-68: harness runtime marker ignore rules', () => {
 		'.cam-sidecar.pid',
 		'.cam-orch-handoff.json',
 		'.cam-orch-handoff.consumed.json',
+		'.cam-orch-pid',
 	] as const;
 
 	for (const rule of MARKER_RULES) {

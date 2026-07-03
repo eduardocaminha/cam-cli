@@ -55,6 +55,7 @@ import {
 	WORKER_PANE_MARKER,
 	ORCH_SESSION_MARKER,
 	ORCH_RECYCLE_MARKER,
+	ORCH_PID_MARKER,
 } from '../tmux/session.ts';
 
 // --- Constants -------------------------------------------------------------
@@ -463,6 +464,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 	//   - .cam-worker-pane      (WORKER_PANE_MARKER)      in .claude/
 	//   - .cam-orch-ready       (ORCH_READY_MARKER)       in .claude/
 	//   - .cam-orch-recycle     (ORCH_RECYCLE_MARKER)     in .claude/
+	//   - .cam-orch-pid         (ORCH_PID_MARKER)         in .claude/
 	//   - scripts/cam/worker-report.json (WORKER_REPORT_FILENAME) in cwd
 	//
 	// Absent markers are a no-op (existsSyncImpl returns false -> skip).
@@ -474,6 +476,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 		[claudeDir, WORKER_PANE_MARKER],
 		[claudeDir, ORCH_READY_MARKER],
 		[claudeDir, ORCH_RECYCLE_MARKER],
+		[claudeDir, ORCH_PID_MARKER],
 		[cwd, WORKER_REPORT_FILENAME],
 	] as [string, string][]) {
 		const p = join(dir, name);

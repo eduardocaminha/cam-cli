@@ -155,6 +155,7 @@ test.skipIf(!shouldRun)(
 		//    PATH manipulation prepended to the wrapper string.
 		const stateFile = join(claudeDir, 'cam-loop.local.md');
 		const readyMarker = join(claudeDir, '.cam-orch-ready');
+		const pidMarker = join(claudeDir, '.cam-orch-pid');
 		const agentCmd = buildOrchestratorPaneCommand({
 			sessionName: SESSION,
 			sessionId: initialUUID,
@@ -163,6 +164,7 @@ test.skipIf(!shouldRun)(
 			handoffMarker: handoffPath,
 			stateFile,
 			readyMarker,
+			pidMarker,
 			maxRespawns: 3,
 		});
 

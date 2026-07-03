@@ -64,7 +64,7 @@ function makeHarnessWithCounter(opts: {
 	const watcherOpts: OrchRecycleWatchOptions = {
 		readMarkerFn,
 		readSessionIdFn: () => opts.sessionId !== undefined ? opts.sessionId : 'test-session-uuid-1234',
-		resolvePidFn: (_sessionId: string) => resolvedPid,
+		resolvePidFn: () => resolvedPid,
 		killFn: (pid, signal) => { killCalls.push({ pid, signal }); },
 		removeMarkerFn: () => { removeCalls++; },
 		sleepFn: (_ms: number) => {
@@ -157,15 +157,18 @@ describe('orch-recycle-watch', () => {
 		expect(getRemoveCalls()).toBe(1);
 	});
 
-	test('no kill when session UUID cannot be read', async () => {
+	test('readSessionIdFn is deprecated/ignored: resolvePidFn drives the kill, not the session UUID', async () => {
+		// US-002/AC2: the tick path no longer gates on readSessionIdFn.
+		// Even if readSessionIdFn returns null (the old no-kill gate), the kill
+		// now fires whenever resolvePidFn returns a non-null PID.
 		const killCalls: Array<{ pid: number; signal: NodeJS.Signals }> = [];
 		let removeCalls = 0;
 		let cycles = 0;
 
 		const watcherOpts: OrchRecycleWatchOptions = {
 			readMarkerFn: () => true,
-			readSessionIdFn: () => null,
-			resolvePidFn: () => 9999,
+			readSessionIdFn: () => null, // deprecated, silently ignored
+			resolvePidFn: () => 9999,    // non-null -> kill happens
 			killFn: (pid, signal) => { killCalls.push({ pid, signal }); },
 			removeMarkerFn: () => { removeCalls++; },
 			sleepFn: () => {
@@ -177,8 +180,10 @@ describe('orch-recycle-watch', () => {
 
 		await runWatcher(watcherOpts);
 
-		expect(killCalls.length).toBe(0);
-		// Marker is still consumed even when UUID is unavailable.
+		// With the new code: resolvePidFn returning 9999 causes a kill.
+		expect(killCalls.length).toBe(1);
+		expect(killCalls[0]).toEqual({ pid: 9999, signal: 'SIGTERM' });
+		// Marker is consumed after the kill.
 		expect(removeCalls).toBe(1);
 	});
 });

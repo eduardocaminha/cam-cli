@@ -8,8 +8,8 @@
 //
 // Key invariants:
 //   - Fires SIGTERM on the recycle marker only; never on the handoff file.
-//   - The PID is resolved via `pgrep -f <uuid>` scoped to the session UUID
-//     read fresh from ORCH_SESSION_MARKER on every poll — no tmux call made.
+//   - The PID is resolved via `pgrep -P <wrapper_pid>`, reading the wrapper
+//     pid from ORCH_PID_MARKER (.cam-orch-pid) on every poll — no tmux call made.
 //   - After sending SIGTERM the marker is removed so a single arm triggers
 //     at most one SIGTERM (the respawned session sees no marker).
 //   - All I/O is injectable so unit tests never touch real fs/processes.
@@ -28,7 +28,7 @@ import { homedir } from 'node:os';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
-import { ORCH_RECYCLE_MARKER, ORCH_SESSION_MARKER } from '../tmux/session.ts';
+import { ORCH_PID_MARKER, ORCH_RECYCLE_MARKER } from '../tmux/session.ts';
 import {
 	parseContextOccupancy,
 	orchestratorTranscriptPath,
@@ -53,19 +53,29 @@ export interface OrchRecycleWatchOptions {
 	 */
 	readMarkerFn?: () => boolean;
 	/**
-	 * Returns the orchestrator session UUID (contents of ORCH_SESSION_MARKER),
-	 * or null when the file is absent or empty.
-	 * Production: readFileSync('<claudeDir>/ORCH_SESSION_MARKER').trim() | null.
-	 * Tests inject a constant or sequence.
+	 * @deprecated No longer used for pid resolution (US-002/CAM-173). The tick
+	 * path now reads ORCH_PID_MARKER directly via resolvePidFn. The occupancy
+	 * backstop path reads .cam-orch-session internally via orchestratorTranscriptPath.
+	 * This field is accepted for backward compat but silently ignored.
 	 */
 	readSessionIdFn?: () => string | null;
 	/**
-	 * Resolves the orchestrator claude PID from the session UUID via pgrep.
-	 * Returns null when no matching process is found.
-	 * Production: spawnSync('pgrep', ['-f', sessionId]).
-	 * Tests inject a fake to avoid real process scanning.
+	 * Resolves the orchestrator claude PID via pgrep -P <wrapper_pid>.
+	 * Reads .cam-orch-pid to obtain the wrapper pid, then calls pgrep -P.
+	 * Returns null when the pid file is absent/empty, the wrapper pid is
+	 * non-finite, or pgrep -P finds no child process.
+	 * Production: reads ORCH_PID_MARKER then spawnSync('pgrep', ['-P', ...]).
+	 * Tests inject a fake (no-arg) to avoid real fs/process calls.
 	 */
-	resolvePidFn?: (sessionId: string) => number | null;
+	resolvePidFn?: () => number | null;
+	/**
+	 * Called when the recycle marker is consumed but the pid does not resolve
+	 * (pid file absent or child already dead). Receives a one-line structured
+	 * JSON record. Default: process.stderr.write of the record.
+	 * Tests inject a capture fn to assert the event fires exactly on the
+	 * unresolved-pid-with-consumed-marker path and NOT on the resolve-ok path.
+	 */
+	emitEventFn?: (line: string) => void;
 	/**
 	 * Sends a signal to the given PID.
 	 * Production: process.kill(pid, 'SIGTERM').
@@ -126,35 +136,67 @@ function makeReadMarkerFn(claudeDir: string): () => boolean {
 	return () => existsSync(markerPath);
 }
 
-function makeReadSessionIdFn(claudeDir: string): () => string | null {
-	const sessionPath = join(claudeDir, ORCH_SESSION_MARKER);
-	return () => {
-		try {
-			const content = readFileSync(sessionPath, 'utf8').trim();
-			return content.length > 0 ? content : null;
-		} catch {
-			return null;
-		}
-	};
+
+/**
+ * Read the wrapper bash pid from the pid marker file.
+ * Returns null when the file is absent, empty, or contains a non-finite value.
+ *
+ * Exported for direct unit testing of each guard branch (reviewer finding
+ * US-R1-001: zero coverage on the parsing guards).
+ */
+export function readWrapperPid(pidFilePath: string): number | null {
+	let raw: string;
+	try {
+		raw = readFileSync(pidFilePath, 'utf8').trim();
+	} catch {
+		return null; // file absent — no wrapper running
+	}
+	if (raw.length === 0) return null;
+	const pid = parseInt(raw, 10);
+	return Number.isFinite(pid) && pid > 0 ? pid : null;
 }
 
-function makeResolvePidFn(): (sessionId: string) => number | null {
-	return (sessionId: string) => {
-		const result = spawnSync('pgrep', ['-f', sessionId], { encoding: 'utf8' });
-		if ((result.status ?? 1) !== 0) return null;
-		const raw = typeof result.stdout === 'string' ? result.stdout.trim() : '';
-		if (raw.length === 0) return null;
-		// pgrep may return multiple PIDs (one per line). The bash respawn-wrapper has
-		// the session UUID baked into its -c argument (sid='<uuid>'), so pgrep matches
-		// both the wrapper shell AND the child claude process. The bash wrapper has the
-		// lower PID (started first); the child claude has the higher PID (started after).
-		// We MUST SIGTERM the child claude, not the wrapper: SIGTERMing the wrapper
-		// would kill bash immediately with no chance for the respawn loop to fire.
-		// Taking the LAST line (highest PID) selects the child claude process.
-		const lines = raw.split('\n').filter((l) => l.trim().length > 0);
-		const lastLine = lines[lines.length - 1] ?? '';
-		const pid = parseInt(lastLine, 10);
-		return Number.isFinite(pid) && pid > 0 ? pid : null;
+/**
+ * Minimal injectable seam for resolveChildViaPgrep.
+ * Receives the wrapper pid; returns raw pgrep output.
+ * Tests inject a fake to exercise guard branches without spawning a real process.
+ */
+export type PgrepSpawnFn = (pid: number) => { status: number | null; stdout: string };
+
+/**
+ * Resolve the child pid of a given wrapper process via pgrep -P.
+ * pgrep -P is a kernel ppid match: deterministic and immune to argv
+ * truncation (the CAM-173 failure mode with pgrep -f <uuid>).
+ * Returns null when pgrep finds no child or exits non-zero.
+ *
+ * Exported for direct unit testing of each guard branch.
+ * The optional spawnFn seam lets tests exercise all parsing guards
+ * without real process spawning (reviewer finding US-R1-001).
+ */
+export function resolveChildViaPgrep(
+	wrapperPid: number,
+	spawnFn?: PgrepSpawnFn,
+): number | null {
+	const result = spawnFn
+		? spawnFn(wrapperPid)
+		: spawnSync('pgrep', ['-P', String(wrapperPid)], { encoding: 'utf8' }) as { status: number | null; stdout: string };
+	if ((result.status ?? 1) !== 0) return null;
+	const raw = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+	if (raw.length === 0) return null;
+	// During the active claude phase, the wrapper has exactly one child
+	// (claude). Take the first pid returned.
+	const lines = raw.split('\n').filter((l) => l.trim().length > 0);
+	const firstLine = lines[0] ?? '';
+	const pid = parseInt(firstLine, 10);
+	return Number.isFinite(pid) && pid > 0 ? pid : null;
+}
+
+function makeResolvePidFn(claudeDir: string): () => number | null {
+	const pidFilePath = join(claudeDir, ORCH_PID_MARKER);
+	return () => {
+		const wrapperPid = readWrapperPid(pidFilePath);
+		if (wrapperPid === null) return null;
+		return resolveChildViaPgrep(wrapperPid);
 	};
 }
 
@@ -234,10 +276,10 @@ function checkBackstop(deps: BackstopDeps): void {
 
 interface TickDeps {
 	readMarkerFn: () => boolean;
-	readSessionIdFn: () => string | null;
-	resolvePidFn: (sessionId: string) => number | null;
+	resolvePidFn: () => number | null;
 	killFn: (pid: number, signal: NodeJS.Signals) => void;
 	removeMarkerFn: () => void;
+	emitEventFn?: (line: string) => void;
 }
 
 /**
@@ -246,16 +288,29 @@ interface TickDeps {
  * Consume-once: removes the marker regardless of whether a PID was resolved.
  * This ensures a single arm produces at most one SIGTERM and the respawned
  * session sees no stale marker.
+ *
+ * When the marker is consumed but the pid does not resolve (file absent or
+ * child already dead), a structured event is emitted via emitEventFn so the
+ * failure is never a silent no-op (AC3: non-silent unresolved-pid event).
  */
 function handleOneTick(deps: TickDeps): void {
 	if (!deps.readMarkerFn()) return;
 
-	// Read session UUID fresh (rewritten on every respawn).
-	const sessionId = deps.readSessionIdFn();
-	if (sessionId !== null) {
-		const pid = deps.resolvePidFn(sessionId);
-		if (pid !== null) {
-			deps.killFn(pid, 'SIGTERM');
+	// Resolve the claude child pid from the wrapper pid in .cam-orch-pid.
+	const pid = deps.resolvePidFn();
+	if (pid !== null) {
+		deps.killFn(pid, 'SIGTERM');
+	} else {
+		// Marker consumed but no pid resolved: emit a structured event so the
+		// failure is observable (never a silent no-op).
+		const event = JSON.stringify({
+			event: 'unresolved-pid',
+			ts: new Date().toISOString(),
+		});
+		if (deps.emitEventFn) {
+			deps.emitEventFn(event);
+		} else {
+			process.stderr.write(`[cam] orch-recycle-watch: ${event}\n`);
 		}
 	}
 
@@ -272,10 +327,12 @@ function handleOneTick(deps: TickDeps): void {
  * Run the orchestrator recycle watcher.
  *
  * Polls for the ORCH_RECYCLE_MARKER file. When present:
- *   1. Reads the ORCH_SESSION_MARKER file to get the session UUID (fresh each poll).
- *   2. Resolves the orchestrator claude PID via `pgrep -f <uuid>`.
+ *   1. Reads ORCH_PID_MARKER (.cam-orch-pid) to get the wrapper bash pid.
+ *   2. Resolves the orchestrator claude PID via `pgrep -P <wrapper_pid>`.
  *   3. Sends SIGTERM to that PID (graceful exit, not SIGKILL).
  *   4. Removes the marker (consume-once: the respawned session sees no marker).
+ *   5. Emits a structured unresolved-pid event when the marker was consumed
+ *      but no pid could be resolved (never a silent no-op).
  *
  * Returns a Promise<void> that never resolves; the process is killed by the
  * caller's cleanup handler (same contract as `cam sidecar`).
@@ -286,10 +343,10 @@ export async function runOrchRecycleWatch(options: OrchRecycleWatchOptions = {})
 
 	const deps: TickDeps = {
 		readMarkerFn: options.readMarkerFn ?? makeReadMarkerFn(claudeDir),
-		readSessionIdFn: options.readSessionIdFn ?? makeReadSessionIdFn(claudeDir),
-		resolvePidFn: options.resolvePidFn ?? makeResolvePidFn(),
+		resolvePidFn: options.resolvePidFn ?? makeResolvePidFn(claudeDir),
 		killFn: options.killFn ?? ((pid: number, signal: NodeJS.Signals) => { process.kill(pid, signal); }),
 		removeMarkerFn: options.removeMarkerFn ?? makeRemoveMarkerFn(claudeDir),
+		emitEventFn: options.emitEventFn,
 	};
 	const backstopDeps: BackstopDeps = {
 		readOccupancyFn: options.readOccupancyFn ?? makeReadOccupancyFn(cwd),

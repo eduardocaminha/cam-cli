@@ -579,6 +579,7 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		handoffMarker: '/project/.claude/.cam-orch-handoff.json',
 		stateFile: '/project/.claude/cam-loop.local.md',
 		readyMarker: '/project/.claude/.cam-orch-ready',
+		pidMarker: '/project/.claude/.cam-orch-pid',
 	};
 
 	it('preserves --permission-mode bypassPermissions and the initial session-id', () => {
@@ -658,6 +659,38 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		expect(cmd).toContain('then n=0');
 		// Non-cycle-close (no-progress or unknown) still increments the counter.
 		expect(cmd).toContain('n=$((n + 1))');
+	});
+
+	it('writes wrapper pid ($$) to pidMarker exactly once, before the while loop (CAM-173 US-001)', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		// The pid write must be present and use $$, not $BASHPID (empty in bash 3.2).
+		expect(cmd).toContain(`printf '%s' "$$" > '${base.pidMarker}'`);
+		// The pid write must appear BEFORE "while true; do" so the marker is
+		// populated before any claude invocation runs.
+		expect(cmd.indexOf(`printf '%s' "$$"`)).toBeLessThan(cmd.indexOf('while true; do'));
+	});
+
+	it('claude invocation line has no background operator & (Ink TUI must stay foreground)', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		// Extract the claude invocation line. It should not be backgrounded.
+		// A backgrounded claude (&) would send stdin to /dev/null in a non-job-control
+		// bash and break the Ink TUI.
+		const claudeIdx = cmd.indexOf('claude --permission-mode');
+		const semicolonAfterClaude = cmd.indexOf(';', claudeIdx);
+		const claudeLine = cmd.slice(claudeIdx, semicolonAfterClaude);
+		expect(claudeLine).not.toContain('&');
+	});
+
+	it('removes pidMarker in teardown branch, before kill-session (CAM-173 US-001)', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain(`rm -f '${base.pidMarker}'`);
+		// Must be in the teardown branch: after the stateFile rm and before kill-session.
+		expect(cmd.indexOf(`rm -f '${base.pidMarker}'`)).toBeGreaterThan(
+			cmd.indexOf(`rm -f '${base.stateFile}'`),
+		);
+		expect(cmd.indexOf(`rm -f '${base.pidMarker}'`)).toBeLessThan(
+			cmd.indexOf(`kill-session -t ${base.sessionName}`),
+		);
 	});
 });
 

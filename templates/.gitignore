@@ -21,5 +21,6 @@ scripts/cam/plan-verdict-report.json
 .claude/.cam-orch-handoff.json
 .claude/.cam-orch-handoff.consumed.json
 .claude/.cam-orch-recycle
+.claude/.cam-orch-pid
 # Recycle watcher log written by spawnWatcherDefault in run.ts (US-004)
 .claude/cam-recycle-watcher.log
