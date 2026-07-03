@@ -1,0 +1,30 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-171-retry-cap-240s-window",
+  "description": "Raise the supervisor retry cap (no-progress + dead-worker) from 3 to 4 so the third backoff (240s) promised by CAM-85 is actually exercised before escalating to the operator.",
+  "issueNumber": 171,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Bump retry cap 3->4 to realize the 240s backoff window",
+      "description": "As a cam operator relying on the CAM-85 exponential-with-jitter backoff, I need the supervisor to sleep the third 240s backoff before escalating a persistent no-progress/dead-worker streak, so the {60s,120s,240s} clearance window CAM-85 documented is actually reachable (at cap=3 the loop blocks at streak 3 before sleeping, so only {60s,120s} ever fire and the only observable CAM-85 delta was jitter).",
+      "acceptanceCriteria": [
+        "MAX_NO_PROGRESS_RETRIES and MAX_DEAD_WORKER_RETRIES both equal 4 in src/supervisor/loop.ts. [oracle: grep -q 'MAX_NO_PROGRESS_RETRIES = 4' src/supervisor/loop.ts && grep -q 'MAX_DEAD_WORKER_RETRIES = 4' src/supervisor/loop.ts]",
+        "MAX_BACKOFF_MS is left unchanged at 300_000, and computeBackoffMs is NOT touched (out of scope: this issue only moves the two retry-cap constants). [oracle: grep -q 'MAX_BACKOFF_MS = 300_000' src/supervisor/loop.ts]",
+        "The three hardcoded backoff-sleep assertions in the retry-path tests (currently [NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2] at test/supervisor/loop.test.ts:345, 381, 589 for the dead-worker timeout, pane-death, and no-progress paths) assert the full three-step sequence [NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2, NO_PROGRESS_BACKOFF_MS * 4] = [60000, 120000, 240000] with randomFn=()=>0.5 (zero jitter). The exponent is 2^(streak-1), so streak 3 is factor 4 (240000), NOT factor 3. [oracle: bun test test/supervisor/loop.test.ts]",
+        "With cap=4 the loop blocks/escalates at streak 4 WITHOUT sleeping: streaks 1, 2, 3 reach the sleep path (three sleeps, three retry events, the 240s third backoff now fires), streak 4 returns status 'blocked'. The retry tests assert result.iterations === MAX_*_RETRIES (4) and retryEvents length === MAX_*_RETRIES - 1 (3) for both the no-progress and dead-worker paths. [oracle: bun test test/supervisor/loop.test.ts]",
+        "No stale cap=3 or only-60s/120s docstring text remains in src/supervisor/loop.ts: the MAX_NO_PROGRESS_RETRIES docstring (~line 442-451), the NO_PROGRESS_BACKOFF_MS docstring (~line 453-461), and the MAX_BACKOFF_MS docstring (~line 463-472) are rewritten to describe cap=4 and the realized 240s window; the factually-wrong '240s would exceed 300s' claim (240s < 300s) is corrected so MAX_BACKOFF_MS is described as still never binding at cap=4. [oracle: bash -c '! grep -nE \"cap is 3|RETRIES=3|240s would exceed|never actually fires today\" src/supervisor/loop.ts']",
+        "The stale inline comment '< MAX_NO_PROGRESS_RETRIES (3)' in test/supervisor/loop.test.ts (~line 2773) is updated to (4); unrelated iterations===3 assertions that are NOT retry-cap tests (happy-path '2 implement + 1 review' and explicit-maxIterations tests near lines 292, 421, 521, 670) are left unchanged. [oracle: bash -c '! grep -q \"MAX_NO_PROGRESS_RETRIES (3)\" test/supervisor/loop.test.ts']",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single-file-pair change: src/supervisor/loop.ts (constants MAX_NO_PROGRESS_RETRIES ~line 451, MAX_DEAD_WORKER_RETRIES ~line 524; docstrings ~442-451, ~453-461, ~463-472) and test/supervisor/loop.test.ts (sleep-sequence assertions at lines 345/381/589; stale comment ~2773). GOTCHAS: (1) Do NOT re-implement or touch computeBackoffMs (exponential-with-jitter shipped CAM-85 PR #124) or MAX_BACKOFF_MS's value. (2) The loop blocks/escalates AT the cap streak BEFORE sleeping (block sites near loop.ts:941 for dead-worker and loop.ts:1141 for no-progress), so cap=N means only streaks 1..N-1 reach sleep; cap=4 -> streaks 1,2,3 sleep {60,120,240}. comments-do-not-prove-behaviour: confirm the exact block sites at implement time, do not trust these line numbers blindly. (3) computeBackoffMs = base * 2^(streak-1): streak 3 -> 60000*4 = 240000, so the third sleep literal is NO_PROGRESS_BACKOFF_MS * 4 (factor 4, an off-by-one trap: do not write * 3). (4) Tests inject randomFn=()=>0.5 to zero the +/-20% jitter and assert exact ms; follow the existing CAM-85 pattern already in test/supervisor/loop.test.ts. (5) iterations===MAX_*_RETRIES and retryEvents length===MAX_*_RETRIES-1 assertions already reference the constants and auto-adjust to 4/3; only the hardcoded sleeps arrays are literal and must gain the third element. (6) Do NOT bump the unrelated iterations===3 assertions at lines 292/421/521/670 (they are happy-path or explicit-maxIterations tests, not retry-cap tests). (7) docs/recovery-runbook.md:78-85 references MAX_DEAD_WORKER_RETRIES generically (no hardcoded number/window) and stays valid at cap=4: no doc edit needed. POLICY (already decided by operator, do NOT re-litigate): the bump tolerates one extra streak (~4min) before escalating a genuine persistent failure to the human, in exchange for a wider clearance window on 3-7min rate-limits. Read scripts/cam/patterns.md at story start. This story touches no external library, no Ink screen, and no vendor/ or templates/ files, so no extra mandatory gates beyond typecheck/test/check:all apply."
+    }
+  ]
+}
