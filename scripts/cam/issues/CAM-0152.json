@@ -1,9 +1,44 @@
 {
   "id": "CAM-152",
   "title": "CAM-150 B-2: flip the worker spawn through the container (fail-closed) + live validation",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-01T15:04:55.555Z",
-  "description": "Part 2 (flip-spawn) of CAM-150 worker-isolation Half B. B-1 (substrate) delivers the correct, authenticated, firewalled container + preflight wiring but leaves workers spawning on the host. B-2 is the behavior change that ROUTES the workers into the container. Grilled scope (settled with CAM-150): (1) wrap all four worker dispatch sites (loop.ts:733 implementer/reviewer, plan-runner.ts:268/294 planner/auditor) as `docker exec -it <container> env -u CLAUDECODE ... claude ...` so the worker runs inside the long-lived container attached to the host tmux pane PTY; the worker-argv.ts/plan-argv.ts builders are reused unchanged (wrap the shell string at the respawn-pane call site). (2) Preserve spawn invariants through the wrap: env -u CLAUDECODE (CAM-43) runs INSIDE the container, lowercase --session-id (CAM-23), atomic send-keys to the host pane (CAM-55), mutex 1 worker-pane. (3) FAIL-CLOSED: preflightWorkerContainer() before every dispatch + a runtime docker-exec-failure catch; on failure the worker NEVER falls back to the host, the loop escalates via the existing escalateFn + returns blocked with a clear reason (no CAM-151 dependency; the retry/abandon gate upgrade is a separate follow-up once CAM-151 lands). (4) Live validation (requires:operator, hand-filed): a representative story completes GREEN inside the container (bun test + tsc + git push pass under the firewall) and claude auth works, captured as evidence (ties into CAM-116). REBUILD-GATE: this is the behavior change, so after B-2 ships, rebuild+reinstall+restart the sidecar before relying on containerized workers. Credentials are already provisioned in .env (GITHUB_TOKEN fine-grained + CLAUDE_CODE_OAUTH_TOKEN); Bun auto-loads them into the sidecar process.env and B-2 passes them via docker run -e. Depends on CAM-150 B-1 (substrate). Split done on engineering merit per the CAM-150 spec plan-time-split gotcha."
+  "description": "Part 2 (flip-spawn) of CAM-150 worker-isolation Half B. B-1 (substrate) delivers the correct, authenticated, firewalled container + preflight wiring but leaves workers spawning on the host. B-2 is the behavior change that ROUTES the workers into the container. Grilled scope (settled with CAM-150): (1) wrap all four worker dispatch sites (loop.ts:733 implementer/reviewer, plan-runner.ts:268/294 planner/auditor) as `docker exec -it <container> env -u CLAUDECODE ... claude ...` so the worker runs inside the long-lived container attached to the host tmux pane PTY; the worker-argv.ts/plan-argv.ts builders are reused unchanged (wrap the shell string at the respawn-pane call site). (2) Preserve spawn invariants through the wrap: env -u CLAUDECODE (CAM-43) runs INSIDE the container, lowercase --session-id (CAM-23), atomic send-keys to the host pane (CAM-55), mutex 1 worker-pane. (3) FAIL-CLOSED: preflightWorkerContainer() before every dispatch + a runtime docker-exec-failure catch; on failure the worker NEVER falls back to the host, the loop escalates via the existing escalateFn + returns blocked with a clear reason (no CAM-151 dependency; the retry/abandon gate upgrade is a separate follow-up once CAM-151 lands). (4) Live validation (requires:operator, hand-filed): a representative story completes GREEN inside the container (bun test + tsc + git push pass under the firewall) and claude auth works, captured as evidence (ties into CAM-116). REBUILD-GATE: this is the behavior change, so after B-2 ships, rebuild+reinstall+restart the sidecar before relying on containerized workers. Credentials are already provisioned in .env (GITHUB_TOKEN fine-grained + CLAUDE_CODE_OAUTH_TOKEN); Bun auto-loads them into the sidecar process.env and B-2 passes them via docker run -e. Depends on CAM-150 B-1 (substrate). Split done on engineering merit per the CAM-150 spec plan-time-split gotcha.",
+  "spec": {
+    "scope": "Rotear os 4 workers (implementer, reviewer, planner, auditor) para dentro do container long-lived cam-worker via docker exec -it cam-worker <shell-string>, atras de um flag de config [loop] worker_isolation (enum host|container, default host, opt-in container). Lifecycle ensure-up idempotente no boot do supervisor (up->reuse, down->start, absent->build+run, image-stale->rebuild+recreate); sem teardown no cam stop. Fail-closed: preflight antes de cada dispatch (incluindo novo seam no plan-runner) + runtime docker-exec-failure catch; NUNCA fallback pro host, escala via escalateFn + retorna blocked. Preserva invariantes de spawn (env -u CLAUDECODE dentro do container, session-id lowercase, send-keys atomico ao host pane, mutex 1 worker-pane). Wrap via helper compartilhado dockerExecWrap() nos 3 builders (worker-argv.ts, review.ts, plan-argv.ts). Live-validation e story requires:operator hand-filed.",
+    "acceptanceCriteria": [
+      "Flag [loop] worker_isolation adicionado (enum host|container, default host); reader DI-testado; valor invalido ou ausente fail-closes para host.",
+      "Com worker_isolation=container, os 4 dispatch sites (loop.ts:825 implementer, review.ts:364 reviewer, plan-runner.ts:328 planner, plan-runner.ts:361 auditor) envolvem o shell-string em docker exec -it cam-worker <string> via helper compartilhado dockerExecWrap(); com host, a string fica inalterada.",
+      "Ensure-up idempotente no boot do supervisor: reconcilia estado do container (up->reuse, down->start, absent->build+run, image-stale->rebuild+recreate) via runWorkerContainer + preflightWorkerContainer; DI (spawnFn/probe) testado nos 4 ramos.",
+      "Preflight seam adicionado ao plan-runner (planner+auditor): preflightWorkerContainer antes de cada spawn, espelhando a loop phase.",
+      "Fail-closed: com worker_isolation=container, preflight not-ready OU docker-exec runtime failure faz o worker nunca cair pro host; escala via escalateFn e retorna blocked com razao clara. Testado com preflight-fail e exec-fail injetados.",
+      "Invariantes preservados atraves do wrap: env -u CLAUDECODE roda DENTRO do container, --session-id lowercase, send-keys atomico ao host pane, mutex 1 worker-pane. Teste de argv-shape assere a ordem docker exec -it cam-worker env -u CLAUDECODE ... claude ... --session-id <lower>.",
+      "bun run check:all passa (typecheck + biome + test).",
+      "ADR registra: worker isolation flip, flag opt-in default-host, fail-closed sem fallback, container long-lived reusavel.",
+      "requires:operator (hand-filed) Live-validation: com worker_isolation=container e sidecar rebuildado, uma story representativa completa GREEN dentro do container (bun test + tsc + git push sob firewall) e claude auth funciona; evidencia capturada, liga no CAM-116."
+    ],
+    "gotchas": [
+      "REBUILD-GATE: B-2 e mudanca de comportamento; apos ship, rebuild+reinstall+restart o sidecar antes de confiar em workers containerizados. O flag default-host protege, mas a ceremony exige o rebuild.",
+      "Fail-closed e literal: NUNCA fallback pro host quando worker_isolation=container. Fallback silencioso derrotaria o proposito do sandbox (a rede de seguranca do CAM-139). Preflight-fail e exec-fail viram blocked+escalate, nao degrade.",
+      "plan-runner NAO tem preflight seam hoje (so a loop phase tem); construi-lo e escopo, senao planner+auditor rodariam sem fail-closed.",
+      "O wrap esta espalhado em 3 builders (worker-argv.ts, review.ts, plan-argv.ts) + 4 call-sites (loop.ts:825, review.ts:364, plan-runner.ts:328, plan-runner.ts:361); usar helper compartilhado dockerExecWrap() como single chokepoint em vez de duplicar.",
+      "Credenciais ja em .env (GITHUB_TOKEN fine-grained + CLAUDE_CODE_OAUTH_TOKEN); Bun auto-carrega no process.env do sidecar; passar pro container via o mecanismo do B-1. Nao re-provisionar.",
+      "cam stop NAO derruba o container (so SIGTERMa a sessao tmux); o container e reusavel entre sessoes via ensure-up. Reset explicito fica pra comando dedicado (fora de escopo; filar se necessario).",
+      "O flag worker_isolation=container e EXATAMENTE o que a hard-precondition do CAM-139 checa (container ativo = flag on + preflight ready). Manter a semantica alinhada."
+    ],
+    "domainTerms": [
+      "worker isolation",
+      "ensure-up",
+      "fail-closed",
+      "dockerExecWrap"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 3
+  }
 }
