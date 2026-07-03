@@ -31,7 +31,7 @@
         "bun run check:all passes. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mirror readMetaLoop (src/config/models.ts:227) and readPlanApproval (:258) exactly: same try/catch, same [loop] section lookup, same fail-closed default. The [loop] section already exists (meta_loop lives there). Default 'host' is the fail-closed default per the CAM-139 hard-precondition alignment (container active == flag on + preflight ready). Test file mirrors src under test/. patterns.md: fail-closed default enum reader idiom."
     },

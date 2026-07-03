@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add fail-closed [loop] worker_isolation config reader"
+  },
+  "branchName": "cam/pr-152-flip-worker-spawn-container",
+  "timestamp": "2026-07-03T23:00:00Z",
+  "createdFiles": [
+    "test/config/worker-isolation.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/config/models.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "WorkerIsolation type and readWorkerIsolation function are now exported from src/config/models.ts. The reader lives under the [loop] TOML section (same section as meta_loop), returns 'container' only on exact match, 'host' on all error paths. Test file: test/config/worker-isolation.test.ts (17 tests, all pass). Next story (US-002) likely wires readWorkerIsolation into the sidecar spawn path.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-001 only adds a TOML config reader mirroring existing readMetaLoop/readPlanApproval patterns. Bun.TOML.parse is a Bun built-in already validated by existing reader tests; no new external library dependency introduced."
+    }
+  ]
+}
