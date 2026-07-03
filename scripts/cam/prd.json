@@ -1,0 +1,131 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-152-flip-worker-spawn-container",
+  "description": "Route the four cam worker spawns (implementer, reviewer, planner, auditor) into the long-lived cam-worker Docker container via a shared dockerExecWrap chokepoint, gated on a fail-closed [loop] worker_isolation flag (default host), with no host fallback.",
+  "issueNumber": 152,
+  "relatedDocs": [
+    "docs/adr/0003-worker-isolation-boundary-dev-container.md",
+    "docs/recovery-runbook.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Docker CLI (docker exec / docker run)",
+      "url": "https://docs.docker.com/reference/cli/docker/container/exec/",
+      "version": "current",
+      "fetchedAt": "2026-07-03T12:00:00Z",
+      "summary": "docker exec runs the trailing command exec'd directly as argv, NOT through a shell (a chained/quoted command needs an explicit `sh -c`). Since the host tmux pane shell tokenizes the wrapped string, `docker exec -it cam-worker env -u CLAUDECODE ... claude ... '<prompt>'` passes env/claude/prompt as argv with no inner sh -c needed. `-it` (interactive + pseudo-TTY) works and is the standard pattern; the pane is the controlling PTY. No breaking changes or deprecations in current versions.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add fail-closed [loop] worker_isolation config reader",
+      "description": "As the sidecar, I need a config flag that says whether workers spawn on the host or inside the container so that container routing is opt-in and a typo can never silently disable the sandbox.",
+      "acceptanceCriteria": [
+        "readWorkerIsolation reads [loop] worker_isolation from project.toml and returns 'container' only when the value is exactly \"container\"; every other case (missing file, missing [loop] section, missing key, malformed TOML, non-string, or any other value) fail-closes to 'host'. [oracle: bun test]",
+        "The reader accepts a configPath override (DI) so tests target a tmp fixture without mutating scripts/cam/project.toml; a fixture with worker_isolation=\"container\" returns 'container', a fixture with worker_isolation=\"bogus\" returns 'host'. [oracle: bun test]",
+        "A WorkerIsolation type ('host' | 'container') is exported from src/config/models.ts alongside MetaLoop/PlanApproval. [oracle: grep -q 'WorkerIsolation' src/config/models.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "bun run check:all passes. [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Mirror readMetaLoop (src/config/models.ts:227) and readPlanApproval (:258) exactly: same try/catch, same [loop] section lookup, same fail-closed default. The [loop] section already exists (meta_loop lives there). Default 'host' is the fail-closed default per the CAM-139 hard-precondition alignment (container active == flag on + preflight ready). Test file mirrors src under test/. patterns.md: fail-closed default enum reader idiom."
+    },
+    {
+      "id": "US-002",
+      "title": "Add dockerExecWrap() shared chokepoint helper",
+      "description": "As the four dispatch sites, I need one shared helper that wraps an existing worker shell string in `docker exec -it cam-worker ...` so that the container routing lives in a single tested place instead of being duplicated across loop.ts, review.ts and plan-runner.ts.",
+      "acceptanceCriteria": [
+        "dockerExecWrap(shellString, containerName?) returns 'docker exec -it <containerName> ' + shellString with the inner string unchanged; the default containerName is DEFAULT_CONTAINER_NAME ('cam-worker') imported from worker-container.ts (no duplicate literal). [oracle: bun test]",
+        "The inner shell string is preserved byte-for-byte, so the CAM-43 env -u prefix, CAM-23 lowercase --session-id, --model quoting and the single-quoted prompt run INSIDE the container. [oracle: bun test]",
+        "An argv-shape test asserts the wrapped output begins with 'docker exec -it cam-worker env -u CLAUDECODE ' and still contains ' claude ' after the env prefix. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "bun run check:all passes. [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "New file src/supervisor/docker-exec.ts: pure function, no I/O (same discipline as worker-argv.ts / plan-argv.ts). env -u must run INSIDE the container, which it does because the wrap prepends 'docker exec -it cam-worker ' to the existing 'env -u ... claude ...' string. Per the fetched Docker exec reference: docker exec execs argv directly (no shell), and the host pane shell tokenizes the wrapped string, so NO inner sh -c is needed. Reuse DEFAULT_CONTAINER_NAME from src/supervisor/worker-container.ts. Test under test/supervisor/. patterns.md: 'tmux mangles TAB' and single-hub dispatch are unaffected (send-keys targets the host pane, unchanged)."
+    },
+    {
+      "id": "US-003",
+      "title": "Ensure-up idempotent container lifecycle at supervisor boot",
+      "description": "As the sidecar boot path, I need to reconcile the cam-worker container to a ready state before dispatching so that container mode has a live long-lived container to exec into, reused across dispatches and sessions.",
+      "acceptanceCriteria": [
+        "ensureWorkerContainer reconciles container state idempotently across four branches: running->reuse (no-op), stopped->docker start, absent->build+run (runWorkerContainer), image-stale->rebuild+recreate (docker rm -f + runWorkerContainer); each branch is DI-tested with an injected spawnFn/probe and never touches a real daemon. [oracle: bun test]",
+        "Reconciliation reuses runWorkerContainer (build+run) and preflightWorkerContainer (image-stale detection) instead of duplicating docker argv. [oracle: grep -q 'runWorkerContainer' src/supervisor/ensure-container.ts]",
+        "Ensure-up runs only when worker_isolation=container; in host mode it is a no-op with zero docker calls. [oracle: bun test]",
+        "cam stop does NOT tear down the container: stop.ts contains no docker stop/rm call, so the container is reusable across sessions. [oracle: grep -c docker src/commands/stop.ts prints 0]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "bun run check:all passes. [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "New file src/supervisor/ensure-container.ts; wire it at sidecar boot in src/commands/sidecar.ts near buildSupervisorOptions. Gate on readWorkerIsolation()==='container' (US-001). Reuse ContainerSpawnFn/DockerProbe seams already exported by worker-container.ts and preflight-container.ts; probe container state via `docker inspect -f {{.State.Running}} cam-worker` (missing container => absent, exit non-zero). Spec gotcha: cam stop must NOT drop the container (only SIGTERMs the tmux session); a dedicated reset command is out of scope. File-size: sidecar.ts is at 1090 ceiling; if the boot wiring exceeds it, raise scripts/file-size-budget.json with a CAM-152 _ref and stage it before check:all (patterns.md 'Ratchet gate')."
+    },
+    {
+      "id": "US-004",
+      "title": "Flip the implementer spawn through the container (fail-closed) + ADR",
+      "description": "As the sidecar implement loop, I need the implementer worker to spawn inside the container in container mode and to fail closed when the container is not ready so that autonomous code-writing runs are sandboxed with no silent host fallback.",
+      "acceptanceCriteria": [
+        "With worker_isolation=container the loop.ts implementer dispatch wraps shellCmd via dockerExecWrap before the respawn-pane -k (loop.ts ~825); with worker_isolation=host the shellCmd is passed unchanged. [oracle: bun test]",
+        "preflightContainerFn is flipped from observe-only to fail-closed in container mode: when preflight returns ready:false the loop escalates via escalateFn and returns { status: 'blocked' } with a reason naming the container failure; it NEVER respawns an un-wrapped host worker. [oracle: bun test]",
+        "A runtime docker-exec failure (container gone mid-dispatch) routes to a blocked terminal with a container-named reason and no host fallback path. [oracle: bun test]",
+        "Invariants preserved through the wrap: an argv-shape test asserts the dispatched string is 'docker exec -it cam-worker env -u CLAUDECODE ... claude ... --session-id <lowercase-uuid> ...' and that host-pane send-keys and the mutex-1-worker-pane are unchanged. [oracle: bun test]",
+        "In host mode (default) every existing loop test passes byte-for-byte (zero behavior change). [oracle: bun test]",
+        "An ADR records the worker-isolation flip: opt-in flag default-host, fail-closed with no host fallback, one long-lived reusable container (extend docs/adr/0003 or add docs/adr/0007). [oracle: grep -rq 'fail-closed' docs/adr/]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "bun run check:all passes. [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": "US-003",
+      "notes": "loop.ts implement branch ~755-825 builds shellCmd from buildImplementerWorkerArgv then respawn-pane -k. The preflightContainerFn seam at ~796-810 is currently observe-only (its comment already says 'B-2 (CAM-152) will flip this fail-closed using escalateFn'). host.ts buildSupervisorOptions (~561/649) wires preflightContainerFn + escalateFn today and must now read readWorkerIsolation() and thread the mode into opts. Reuse the existing escalateFn (loop.ts ~1266) and blocked-return idiom (loop.ts ~925/947). Fail-closed is LITERAL: do not add any host fallback path (spec + CAM-139 safety-net rationale). ADR 0003 already forward-references CAM-152; extend it rather than restate. File-size: loop.ts (1669) and host.ts (696) are at ceiling; raise scripts/file-size-budget.json with a CAM-152 _ref if exceeded (ratchet gate)."
+    },
+    {
+      "id": "US-005",
+      "title": "Flip the reviewer spawn through the container (fail-closed)",
+      "description": "As the sidecar review dispatch, I need the reviewer worker to spawn inside the container in container mode and to fail closed when the container is not ready so that the review phase is sandboxed on the same terms as the implementer.",
+      "acceptanceCriteria": [
+        "With worker_isolation=container the reviewer dispatch wraps shellCmd via dockerExecWrap before respawn-pane -k (review.ts ~364); with host, unchanged. [oracle: bun test]",
+        "A container preflight seam is added to makeReviewDispatch: in container mode a ready:false preflight escalates and returns a blocked/terminal verdict with no un-wrapped host respawn. [oracle: bun test]",
+        "Invariants preserved: an argv-shape test asserts 'docker exec -it cam-worker env -u CLAUDECODE ... claude ... --session-id <lower>'; the review poll loop, titled worker-pane reuse, and ensureWorkerPane self-heal are unchanged. [oracle: bun test]",
+        "In host mode existing review tests pass byte-for-byte. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "bun run check:all passes. [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": "US-004",
+      "notes": "review.ts: buildReviewerWorkerArgv (line 112) produces the shell, dispatch is respawn-pane -k at line 364. Extend MakeReviewDispatchOptions (line 197) with the worker_isolation mode + a container preflight seam mirroring the loop dep (preflightContainerFn / PreflightResult from preflight-container.ts). host.ts builds reviewDispatch via makeReviewDispatch and must thread the flag + preflight + escalateFn. Reuse dockerExecWrap (US-002). File-size: review.ts is at 585 ceiling; raise scripts/file-size-budget.json with a CAM-152 _ref if exceeded."
+    },
+    {
+      "id": "US-006",
+      "title": "Flip the planner + auditor spawns through the container + add plan-runner preflight seam (fail-closed)",
+      "description": "As the deterministic plan-runner, I need the planner and auditor workers to spawn inside the container with a fail-closed preflight so that plan-time workers are sandboxed too and no worker type is left un-contained.",
+      "acceptanceCriteria": [
+        "A container preflight seam is ADDED to plan-runner (none exists today): preflightWorkerContainer runs before each planner and auditor spawn, mirroring the loop phase. [oracle: bun test]",
+        "With worker_isolation=container both plan-runner dispatch sites (planner ~328, auditor ~361) wrap the shell via dockerExecWrap; with host, unchanged. [oracle: bun test]",
+        "Fail-closed: in container mode a not-ready preflight (or docker-exec failure) escalates via escalateFn and halts the plan phase with a blocked/escalated result; the planner/auditor NEVER spawn on the host. [oracle: bun test]",
+        "Invariants preserved for both spawns: an argv-shape test asserts 'docker exec -it cam-worker env -u CLAUDECODE ... claude ... --session-id <lower>'; mutex-1-worker-pane and atomic host-pane send-keys are unchanged. [oracle: bun test]",
+        "In host mode existing plan-runner tests pass byte-for-byte. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "bun run check:all passes. [oracle: bun run check:all]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": "US-005",
+      "notes": "plan-runner.ts: spawnPlanner builds shell + respawn-pane -k at ~326-328, spawnAuditor at ~359-361. Extend RunPlanPhaseOptions (~124) with the worker_isolation mode + a CONTAINER preflight fn (distinct from the existing plan-preflight preflightFn at ~180, which checks issue/PRD state, not Docker). Add the container preflight immediately BEFORE each respawn-pane, gated on container mode; on not-ready escalate (RunPostAuditOptions.escalateFn ~631) and return a preflight-failed/escalated PlanPhaseResult. Wire at makeProductionPlanPhaseFn in src/commands/sidecar.ts. Spec gotcha: leaving planner/auditor un-contained is a hole in the gate. Reuse dockerExecWrap (US-002). File-size: plan-runner.ts and sidecar.ts (1090 ceiling) may need a budget raise with a CAM-152 _ref."
+    }
+  ]
+}
