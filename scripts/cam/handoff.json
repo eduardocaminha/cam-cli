@@ -1,16 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Clean any stale recycle marker on cam run boot before spawning the watcher"
+    "id": "US-003",
+    "title": "Disambiguate the cycle-close self-handoff instruction in both agent-file copies"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/run.ts",
-    "test/run.test.ts",
-    "scripts/file-size-budget.json"
+    ".claude/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 adds ORCH_RECYCLE_MARKER to the run.ts import from session.ts and inserts an existsSync/unlinkSync cleanup in the result.created boot path, immediately before spawnWatcherFn is called. The cleanup is guarded by existsSync (silent no-op if absent). File-size ceilings raised: src/commands/run.ts 758->771, test/run.test.ts 870->917 (with CAM-168 tracker ref in _ref). US-003 (if it exists) can rely on the stale-marker cleanup invariant: any fresh cam run session starts with no recycle marker on disk.",
+  "nextStoryContext": "US-003 is a docs-only change: step 2 of the Recycle flow section in both agent copies now makes explicit that `cam journal append --cycle-close` requires a JSON journal entry piped on stdin (the single call that BOTH appends the narrative entry AND arms the recycle marker), and documents the exit-4 refuse-to-arm fallback (no live watcher: /exit manually or restart cam run). src/vendor/_generated.ts was regenerated to match. No runtime code was changed.",
   "officialDocsValidated": [
     {
       "lib": "none",

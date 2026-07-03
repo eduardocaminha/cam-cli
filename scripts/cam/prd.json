@@ -57,7 +57,7 @@
         "Full quality spine green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Dual-copy edit (memory cam-dual-copy-is-per-file, patterns.md agent-prompt self-hosting): edit BOTH .claude/agents/subagent-orchestrator.md AND templates/agents/subagent-orchestrator.md, then run `bun run embed-vendor` to sync src/vendor/_generated.ts, then verify with `bun run embed-vendor:check`. The two copies are currently byte-identical at the Recycle flow section (### Recycle flow (cycle-close), lines ~271-284); keep them identical. Step 2 ('Fire the cycle-close signal') is the anchor: clarify that `cam journal append --cycle-close` REQUIRES the JSON journal entry piped on stdin (it appends the narrative entry AND arms the marker in one call; running it with empty stdin yields the invalid-JSON exit-1 guard and never arms), and add the exit-4 refuse-to-arm fallback wording that references the contract from US-001. Agent .md is LLM-consumed, so em-dash and emoji are ALLOWED here (documented exception to the project no-em-dash rule). This is docs-only surface work: no runtime code changes."
     }
