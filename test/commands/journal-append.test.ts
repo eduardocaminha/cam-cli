@@ -311,12 +311,30 @@ describe('parseJournalArgs', () => {
 		expect(parseJournalArgs(['-h'])).toEqual({ help: true });
 	});
 
-	test('append with no flags returns { mode: "append", force: false, help: false }', () => {
-		expect(parseJournalArgs(['append'])).toEqual({ mode: 'append', force: false, help: false });
+	test('append with no flags returns { mode: "append", force: false, cycleClose: false, help: false }', () => {
+		expect(parseJournalArgs(['append'])).toEqual({ mode: 'append', force: false, cycleClose: false, help: false });
 	});
 
-	test('append --force returns { mode: "append", force: true, help: false }', () => {
-		expect(parseJournalArgs(['append', '--force'])).toEqual({ mode: 'append', force: true, help: false });
+	test('append --force returns { mode: "append", force: true, cycleClose: false, help: false }', () => {
+		expect(parseJournalArgs(['append', '--force'])).toEqual({ mode: 'append', force: true, cycleClose: false, help: false });
+	});
+
+	test('append --cycle-close returns { mode: "append", force: false, cycleClose: true, help: false }', () => {
+		expect(parseJournalArgs(['append', '--cycle-close'])).toEqual({
+			mode: 'append',
+			force: false,
+			cycleClose: true,
+			help: false,
+		});
+	});
+
+	test('append --cycle-close --force returns { mode: "append", force: true, cycleClose: true, help: false }', () => {
+		expect(parseJournalArgs(['append', '--cycle-close', '--force'])).toEqual({
+			mode: 'append',
+			force: true,
+			cycleClose: true,
+			help: false,
+		});
 	});
 
 	test('unknown subcommand returns null (triggers printFatalHint)', () => {
@@ -568,6 +586,110 @@ describe('dispatchJournal', () => {
 		});
 
 		expect(callCount).toBe(0);
+	});
+
+	// ---------------------------------------------------------------------------
+	// US-002 (CAM-162) AC: --cycle-close arms the recycle marker
+	// ---------------------------------------------------------------------------
+
+	test('--cycle-close with handoff present: arms marker, emits both sentinels, returns 0', async () => {
+		const stdoutLines: string[] = [];
+		let markerArmed = false;
+		const parsed = parseJournalArgs(['append', '--cycle-close']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+			writeStdout: (line) => stdoutLines.push(line),
+			recordCycleTokensFn: () => {},
+			handoffExistsFn: () => true,
+			armRecycleMarkerFn: () => { markerArmed = true; },
+		});
+
+		expect(code).toBe(0);
+		expect(markerArmed).toBe(true);
+		// Both sentinels still emitted
+		expect(stdoutLines).toHaveLength(2);
+		expect(stdoutLines[0]).toMatch(/^CAM_JOURNAL_APPENDED=/);
+		expect(stdoutLines[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
+	});
+
+	test('--cycle-close with handoff ABSENT: no marker, exit 3, no CAM_ORCH_HANDOFF_DUE', async () => {
+		const stdoutLines: string[] = [];
+		let markerArmed = false;
+		const stderrLines: string[] = [];
+		const originalWrite = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string') stderrLines.push(chunk);
+			return true;
+		};
+
+		try {
+			const parsed = parseJournalArgs(['append', '--cycle-close']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+				appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+				writeStdout: (line) => stdoutLines.push(line),
+				recordCycleTokensFn: () => {},
+				handoffExistsFn: () => false,
+				armRecycleMarkerFn: () => { markerArmed = true; },
+			});
+
+			expect(code).toBe(3);
+			expect(markerArmed).toBe(false);
+			// CAM_ORCH_HANDOFF_DUE must NOT be emitted on exit 3
+			expect(stdoutLines.join('')).not.toContain('CAM_ORCH_HANDOFF_DUE');
+			// Error printed to stderr
+			expect(stderrLines.join('')).toMatch(/handoff file absent|cycle-close/i);
+		} finally {
+			process.stderr.write = originalWrite;
+		}
+	});
+
+	test('--cycle-close --force with handoff present: still arms the marker (force does not block)', async () => {
+		let markerArmed = false;
+		const parsed = parseJournalArgs(['append', '--cycle-close', '--force']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: (_entry, force) => {
+				// force is true on this path
+				expect(force).toBe(true);
+				return { ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'abc' };
+			},
+			writeStdout: () => {},
+			recordCycleTokensFn: () => {},
+			handoffExistsFn: () => true,
+			armRecycleMarkerFn: () => { markerArmed = true; },
+		});
+
+		expect(code).toBe(0);
+		expect(markerArmed).toBe(true);
+	});
+
+	test('plain append (no --cycle-close): never calls armRecycleMarkerFn', async () => {
+		let markerArmed = false;
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'abc' }),
+			writeStdout: () => {},
+			recordCycleTokensFn: () => {},
+			armRecycleMarkerFn: () => { markerArmed = true; },
+		});
+
+		expect(code).toBe(0);
+		expect(markerArmed).toBe(false);
 	});
 });
 
