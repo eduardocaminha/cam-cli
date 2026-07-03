@@ -1,7 +1,7 @@
 {
   "id": "CAM-164",
   "title": "operator ceremony: validar empirico que claude interativo REAL sai limpo no SIGTERM mid-session (gate do recycle CAM-162)",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T01:54:31.930Z",
