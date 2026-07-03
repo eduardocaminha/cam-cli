@@ -1,0 +1,77 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-173-orch-pid-resolve",
+  "description": "Make the auto-recycle watcher actually deliver SIGTERM on macOS by resolving the orchestrator claude via a persisted wrapper pid + pgrep -P, replacing the pgrep -f <uuid> match that fails against the giant inlined argv.",
+  "issueNumber": 173,
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "pgrep (macOS/BSD)",
+      "url": "https://man.freebsd.org/cgi/man.cgi?query=pgrep&sektion=1&manpath=macOS",
+      "version": "current",
+      "fetchedAt": "2026-07-03T00:00:00Z",
+      "summary": "Confirmed the fix linchpin: `pgrep -P ppid` restricts matches to processes whose PARENT process id is in the comma-separated ppid list. This is a deterministic kernel-ppid match, categorically different from the broken `pgrep -f <uuid>` argv string-match that misses the ~1384-byte inlined orchestrator argv.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Persist the orchestrator wrapper pid to a lifecycle marker",
+      "description": "As the recycle watcher, I need the orchestrator wrapper to persist its own stable bash pid to .claude/.cam-orch-pid so a downstream reader can resolve the live claude child deterministically instead of string-matching the giant inlined argv.",
+      "acceptanceCriteria": [
+        "The `.cam-orch-pid` filename is a named export constant (e.g. ORCH_PID_MARKER) in src/tmux/session.ts, alongside ORCH_SESSION_MARKER / ORCH_RECYCLE_MARKER (CAM-67 invariant: every lifecycle marker is a named constant, never a bare string literal). [oracle: grep -q 'ORCH_PID_MARKER' src/tmux/session.ts]",
+        "buildOrchestratorPaneCommand writes the wrapper's stable pid ($$) to the pid-marker path exactly ONCE, before the `while` loop, via printf/echo redirection; the claude invocation line stays foreground and unchanged (no `&`, no `wait` appended to the claude line). A unit test over the returned command string asserts the pid write appears before `while true` and that the claude line carries no background operator. [oracle: bun test test/run.test.ts]",
+        "The wrapper teardown branch removes the pid marker with `rm -f`, alongside the existing stateFile and readyMarker removals; the returned command string contains that rm. [oracle: bun test test/run.test.ts]",
+        "performStop removes the pid marker in its per-session marker-removal loop (stop.ts), symmetric to stateFile/readyMarker which are cleaned in BOTH the wrapper teardown and cam stop. [oracle: grep -q 'ORCH_PID_MARKER' src/commands/stop.ts]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/tmux/session.ts (add ORCH_PID_MARKER='.cam-orch-pid' export near ORCH_SESSION_MARKER ~line 508 and ORCH_RECYCLE_MARKER ~line 517); src/commands/run.ts buildOrchestratorPaneCommand (~lines 229-277: emit `printf '%s' \"$$\" > <q(pidMarker)>;` immediately after `sid=...; n=0; max=...;` and BEFORE `while true; do` at line 237; add `rm -f <q(pidMarker)>;` in the teardown branch next to the stateFile/readyMarker rm at ~lines 267-270; add a pidMarker field to OrchestratorPaneCommandOptions and pass join(dotClaude, ORCH_PID_MARKER) from setupPanes ~lines 395-404); src/commands/stop.ts marker-removal loop (~lines 473-476, import ORCH_PID_MARKER and add [claudeDir, ORCH_PID_MARKER]). GOTCHAS: macOS /bin/bash is 3.2.57 - use `$$` (the wrapper shell pid, stable across respawns because the same `while` shell persists); do NOT use `$BASHPID` (empty in bash 3.2). Do NOT background claude (Ink TUI in a tmux pane; async list in non-job-control bash sends stdin to /dev/null and/or the reader takes SIGTTIN); approach A keeps claude foreground on purpose. Single-quote-escape the path with the existing `q()` helper. buildOrchestratorPaneCommand is pure string assembly (no I/O), so the argv-shape asserts are plain unit tests. Pattern: CAM-67 US-002 marker invariant (named const + performStop removal loop).",
+      "repo": "main-repo"
+    },
+    {
+      "id": "US-002",
+      "title": "Resolve the orchestrator pid via pgrep -P with a non-silent unresolved-pid event",
+      "description": "As the recycle watcher, I need to resolve the live claude child from the persisted wrapper pid using pgrep -P (deterministic parent-pid match) instead of pgrep -f <uuid>, so the recycle SIGTERM actually reaches the orchestrator on macOS, and I need a structured event when resolution fails so the CAM-173 failure mode is never masked again.",
+      "acceptanceCriteria": [
+        "makeResolvePidFn reads .claude/.cam-orch-pid (the wrapper pid) and resolves the child claude via `pgrep -P <wrapper_pid>`; the pid-resolution path no longer calls `pgrep -f <sessionId>`. It returns null (safe no-op) when the pid file is absent/empty or pgrep -P finds no child. A unit test with injected read/spawn fakes covers resolve-ok, file-absent, and no-child. [oracle: bun test test/orch-recycle-watch.test.ts]",
+        "The tick path (handleOneTick) no longer consumes readSessionIdFn for pid resolution; .cam-orch-session and orchestratorTranscriptPath (the occupancy/backstop path) are left untouched and continue to work. [oracle: bun test test/orch-recycle-watch.test.ts]",
+        "When the recycle marker is consumed but the pid does not resolve (pid file absent or child already dead), the watcher emits a structured event through an injectable seam (never a silent no-op); a unit test injects a capture fn and asserts the event fires exactly on the unresolved-pid-with-consumed-marker path and NOT on the resolve-ok path. [oracle: bun test test/orch-recycle-watch.test.ts]",
+        "A real-process integration test (Bun.spawn/spawnSync, pattern of test/integration/tmux-introspect.test.ts, test.skipIf when pgrep/tmux is absent, mkdtemp cwd, cleanup in afterEach) reproduces the CAM-173 failure mode: spawn a wrapper whose argv is giant and inlines a uuid, assert `pgrep -f <uuid>` returns EMPTY, then assert the new path (read .cam-orch-pid + pgrep -P) resolves the child and a real SIGTERM terminates it. Fakes do not count (Burrow lesson). [oracle: bun test test/integration/orch-recycle-pid-resolve.test.ts]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/commands/orch-recycle-watch.ts. Rework makeResolvePidFn (~lines 141-158) to take no sessionId: read ORCH_PID_MARKER via readFileSync+trim -> parseInt(wrapperPid) -> spawnSync('pgrep', ['-P', String(wrapperPid)], {encoding:'utf8'}); return null on absent file, non-finite pid, or empty pgrep output. handleOneTick (~lines 250-265) drops the readSessionIdFn->resolvePidFn(sessionId) chain and instead resolves from the pid marker; keep the consume-once removeMarkerFn call (do NOT spin). Add an injectable emit seam (e.g. emitEventFn?: (line: string) => void) on OrchRecycleWatchOptions defaulting to a process.stderr.write of a structured one-line record (captured by .claude/cam-recycle-watcher.log); call it when readMarkerFn() was true but pid resolved null. Leave makeReadOccupancyFn / orchestratorTranscriptPath (which read .cam-orch-session) and the whole checkBackstop path unchanged. GOTCHAS: pgrep -P is kernel-ppid match (confirmed macOS man, officialDocsConsulted), categorically different from the broken pgrep -f argv string-match; during the claude phase the ONLY child of the wrapper is claude (jq/uuidgen/cat/mv/printf run between invocations, never concurrent). noUncheckedIndexedAccess: guard lines[...] access with ?? ''. Burrow/CAM-55 lesson: a unit fake that returns the output the code expects cannot catch tool-real behavior - the AC3 integration test with a REAL giant-argv process is mandatory. Import ORCH_PID_MARKER from src/tmux/session.ts (introduced in US-001).",
+      "repo": "main-repo"
+    },
+    {
+      "id": "US-003",
+      "title": "Gitignore the orchestrator-pid marker in both copies and re-embed",
+      "description": "As the repo, I need .claude/.cam-orch-pid ignored in the repo .gitignore and templates/.gitignore and pinned in the embedded templatesContents map so the new runtime marker never shows as a dirty file, ships to downstream cam projects, or drifts (CAM-68 class).",
+      "acceptanceCriteria": [
+        ".claude/.cam-orch-pid is added to the repo .gitignore in the CAM-68 escaped-harness-runtime-markers block (near .cam-orch-recycle). [oracle: grep -q '.cam-orch-pid' .gitignore]",
+        ".claude/.cam-orch-pid is added to templates/.gitignore in the CAM-68 runtime-markers block. [oracle: grep -q '.cam-orch-pid' templates/.gitignore]",
+        "src/vendor/_generated.ts is regenerated via `bun run embed-vendor` so the templatesContents ['.gitignore'] entry now contains .cam-orch-pid (regenerate, never hand-edit). [oracle: grep -q '.cam-orch-pid' src/vendor/_generated.ts]",
+        "A test asserts the pid-marker rule is present in the embedded template copy. [oracle: bun test test/embedded.test.ts]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: .gitignore (add `.claude/.cam-orch-pid` in the CAM-68 block right after the `.cam-orch-recycle` line); templates/.gitignore (add the same line in its CAM-68 block); then run `bun run embed-vendor` to refresh src/vendor/_generated.ts templatesContents['.gitignore'] (~line 25) and verify with `bun run embed-vendor:check`. Assert in test/embedded.test.ts (byte-parity of templatesContents). Do NOT hand-edit _generated.ts - it is regenerated. Pattern: CAM-68 escaped harness runtime markers; cam dual-copy is per-file (diff both .gitignore copies before assuming they are byte-identical).",
+      "repo": "main-repo"
+    }
+  ]
+}
