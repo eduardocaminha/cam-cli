@@ -4,6 +4,20 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.47.0] - 2026-07-03
+
+### Added
+
+- [US-R2-002] - Review round 2 fix 002: address reviewer finding
+- [US-R2-001] - Review round 2 fix 001: address reviewer finding
+- [US-R1-001] - Review round 1 fix 001: address reviewer finding
+- [US-006] - Update orchestrator agent policy to the deterministic recycle flow
+- [US-005] - Explicit rehydrate delivery on respawn (CAM-141 fix) with cold-start safety
+- [US-004] - Wire the recycle watcher into cam run and prove SIGTERM+respawn end-to-end
+- [US-003] - Recycle watcher module and cam orch-recycle-watch command
+- [US-002] - Arm the recycle marker via cam journal append --cycle-close
+- [US-001] - Add recycle-marker constant, symmetric gitignore, and stop cleanup
+
 ## [0.46.0] - 2026-07-02
 
 ### Added
