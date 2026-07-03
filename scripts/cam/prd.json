@@ -86,7 +86,7 @@
         "bun run check:all passes. [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "loop.ts implement branch ~755-825 builds shellCmd from buildImplementerWorkerArgv then respawn-pane -k. The preflightContainerFn seam at ~796-810 is currently observe-only (its comment already says 'B-2 (CAM-152) will flip this fail-closed using escalateFn'). host.ts buildSupervisorOptions (~561/649) wires preflightContainerFn + escalateFn today and must now read readWorkerIsolation() and thread the mode into opts. Reuse the existing escalateFn (loop.ts ~1266) and blocked-return idiom (loop.ts ~925/947). Fail-closed is LITERAL: do not add any host fallback path (spec + CAM-139 safety-net rationale). ADR 0003 already forward-references CAM-152; extend it rather than restate. File-size: loop.ts (1669) and host.ts (696) are at ceiling; raise scripts/file-size-budget.json with a CAM-152 _ref if exceeded (ratchet gate)."
     },

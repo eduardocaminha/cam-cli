@@ -1,29 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Ensure-up idempotent container lifecycle at supervisor boot"
+    "id": "US-004",
+    "title": "Flip the implementer spawn through the container (fail-closed) + ADR"
   },
   "branchName": "cam/pr-152-flip-worker-spawn-container",
-  "timestamp": "2026-07-03T23:50:00Z",
-  "createdFiles": [
-    "src/supervisor/ensure-container.ts",
-    "test/supervisor/ensure-container.test.ts"
-  ],
+  "timestamp": "2026-07-03T23:55:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/sidecar.ts",
+    "src/supervisor/loop.ts",
+    "src/supervisor/host.ts",
+    "test/supervisor/loop.test.ts",
+    "docs/adr/0003-worker-isolation-boundary-dev-container.md",
     "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "ensureWorkerContainer() is now in src/supervisor/ensure-container.ts. It reconciles container state across 4 branches (running/stopped/absent/image-stale) using DI spawnFn+probe seams. makeProductionEnsureContainerFn(cwd) builds the production closure. Wired in runSidecar() via options.ensureContainerFn with gate readWorkerIsolation()==='container'. cam stop still has 0 docker references. Next story (US-004 or later) may wire dockerExecWrap() into dispatch sites (loop.ts) gated on WorkerIsolation=container.",
+  "nextStoryContext": "US-004 (B-2 CAM-152) is complete. loop.ts now: (1) reads opts.workerIsolation ('host'|'container'); (2) wraps shellCmd via dockerExecWrap() before respawn-pane when container mode; (3) is fail-closed: if preflightContainerFn returns ready:false in container mode, calls escalateFn and returns { status: 'blocked', detail: 'container-not-ready: ...' } without ever dispatching a worker; (4) routes pane-died in container mode to 'container-exec-failure' reason. host.ts wires workerIsolation via readWorkerIsolation(). ADR 0003 updated to document the flip. Tests added: 7 new tests in 'US-004 / B-2: container mode dispatch' describe block. The docker exec string format is 'docker exec -it cam-worker env -u CLAUDECODE ... claude ... --session-id <lowercase-uuid> ...'. All quality gates pass. Next story may be the final US-005 or operator-required stories.",
   "officialDocsValidated": [
     {
-      "lib": "docker inspect",
-      "version": "current (2024+)",
-      "url": "https://docs.docker.com/reference/cli/docker/inspect/",
-      "fetchedAt": "2026-07-03T23:50:00Z",
+      "lib": "docker exec",
+      "version": "current (Docker CLI 24+)",
+      "url": "https://docs.docker.com/reference/cli/docker/container/exec/",
+      "fetchedAt": "2026-07-03T23:55:00Z",
       "status": "ok",
-      "summary": "docker inspect -f {{.State.Running}} returns 'true' for running containers, 'false' for stopped containers, and exits non-zero for absent containers. Confirmed by official docs and Docker CLI discussions. Implementation matches expected behavior."
+      "summary": "docker exec -it passes the command via shell tokenization when invoked through a tmux pane shell. The -i flag keeps STDIN open, -t allocates a pseudo-TTY. The dockerExecWrap implementation (prefix + inner shellCmd string) is correct for the tmux respawn-pane invocation path where the pane shell tokenizes the combined string."
     }
   ]
 }
