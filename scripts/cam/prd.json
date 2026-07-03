@@ -40,7 +40,7 @@
         "Full quality spine passes (bun run check:all), no --no-verify. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file: src/orchestrator/context-window.ts; test: test/orchestrator/context-window.test.ts. Reads model via readPhaseModel('orchestrator', configPath) from src/config/models.ts (default 'claude-opus-4-8'). No model->window mapping exists in the codebase today (src/orchestrator/budget.ts has none; grep contextWindow/200000 in src/ returns nothing) -- introduce it here as a NAMED constant, never a bare literal at the call site. Opus context window = 200_000 (established Claude Opus 4.x fact). Sonnet is also 200k today, so a small keyed mapping with a 200k default is sufficient; keep it defensive (unknown model -> default window). ORCH_CONTEXT_BACKSTOP_FRACTION default ~0.8 (no operator override in scope). Keep this module a pure config/decision layer so US-003 only wires it."
     },
