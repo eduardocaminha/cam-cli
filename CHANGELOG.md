@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.48.0] - 2026-07-03
+
+### Added
+
+- US-001 - Preserve valid issueId-only merge-watch seed in the sidecar null-state GC
+
 ## [0.47.0] - 2026-07-03
 
 ### Added
