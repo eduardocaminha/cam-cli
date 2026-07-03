@@ -29,7 +29,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (add ORCH_PID_MARKER='.cam-orch-pid' export near ORCH_SESSION_MARKER ~line 508 and ORCH_RECYCLE_MARKER ~line 517); src/commands/run.ts buildOrchestratorPaneCommand (~lines 229-277: emit `printf '%s' \"$$\" > <q(pidMarker)>;` immediately after `sid=...; n=0; max=...;` and BEFORE `while true; do` at line 237; add `rm -f <q(pidMarker)>;` in the teardown branch next to the stateFile/readyMarker rm at ~lines 267-270; add a pidMarker field to OrchestratorPaneCommandOptions and pass join(dotClaude, ORCH_PID_MARKER) from setupPanes ~lines 395-404); src/commands/stop.ts marker-removal loop (~lines 473-476, import ORCH_PID_MARKER and add [claudeDir, ORCH_PID_MARKER]). GOTCHAS: macOS /bin/bash is 3.2.57 - use `$$` (the wrapper shell pid, stable across respawns because the same `while` shell persists); do NOT use `$BASHPID` (empty in bash 3.2). Do NOT background claude (Ink TUI in a tmux pane; async list in non-job-control bash sends stdin to /dev/null and/or the reader takes SIGTTIN); approach A keeps claude foreground on purpose. Single-quote-escape the path with the existing `q()` helper. buildOrchestratorPaneCommand is pure string assembly (no I/O), so the argv-shape asserts are plain unit tests. Pattern: CAM-67 US-002 marker invariant (named const + performStop removal loop).",
       "repo": "main-repo"

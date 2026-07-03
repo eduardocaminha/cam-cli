@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Persist the orchestrator wrapper pid to a lifecycle marker"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/tmux/session.ts",
+    "src/commands/run.ts",
+    "src/commands/stop.ts",
+    "test/run.test.ts",
+    "test/stop-markers.test.ts",
+    "test/commands/run-model-argv.test.ts",
+    "test/integration/orch-recycle-watch.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 introduced ORCH_PID_MARKER ('.cam-orch-pid') exported from src/tmux/session.ts. The wrapper bash pid ($$) is written once before the while loop and removed on teardown and cam stop. All existing test fixtures that call buildOrchestratorPaneCommand now include pidMarker. Subsequent stories that need to READ the pid marker should import ORCH_PID_MARKER from src/tmux/session.ts and look for it at join(dotClaude, ORCH_PID_MARKER).",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-001 is pure bash string assembly + TypeScript constants. No external library API was exercised."
+    }
+  ]
+}
