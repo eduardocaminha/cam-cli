@@ -15,6 +15,7 @@ const BASE_OPTS = {
 	handoffMarker: '/project/.claude/.cam-orch-handoff.json',
 	stateFile: '/project/.claude/cam-loop.local.md',
 	readyMarker: '/project/.claude/.cam-orch-ready',
+	pidMarker: '/project/.claude/.cam-orch-pid',
 };
 
 describe('buildOrchestratorPaneCommand --model wiring (US-002)', () => {

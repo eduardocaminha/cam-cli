@@ -517,6 +517,16 @@ export const ORCH_SESSION_MARKER = '.cam-orch-session';
 export const ORCH_RECYCLE_MARKER = '.cam-orch-recycle';
 
 /**
+ * Filename within `.claude/` where the orchestrator wrapper bash pid is persisted.
+ *
+ * Written by the wrapper shell (via `printf '%s' "$$"`) once before the `while`
+ * loop begins, so a downstream reader (recycle watcher) can resolve the live
+ * claude child deterministically without string-matching the inlined argv.
+ * Removed by the wrapper teardown branch and by `cam stop` (CAM-173 / US-001).
+ */
+export const ORCH_PID_MARKER = '.cam-orch-pid';
+
+/**
  * Persist the worker pane id to `<claudeDir>/.cam-worker-pane`.
  *
  * `claudeDir` is typically `<cwd>/.claude`. Creates the directory if absent.

@@ -48,6 +48,7 @@ import {
 	tmuxArgs,
 	ORCH_SESSION_MARKER,
 	ORCH_RECYCLE_MARKER,
+	ORCH_PID_MARKER,
 	type SpawnFn,
 	type CreatedPaneIds,
 } from '../tmux/session.ts';
@@ -203,6 +204,9 @@ export interface OrchestratorPaneCommandOptions {
 	stateFile: string;
 	/** Path to .claude/.cam-orch-ready; removed when the orchestrator tears down (US-006). */
 	readyMarker: string;
+	/** Path to .claude/.cam-orch-pid; receives the wrapper bash pid ($$) before the loop starts
+	 *  and is removed on teardown so a downstream reader always sees a live value. */
+	pidMarker: string;
 	/** Max consecutive respawns (default DEFAULT_MAX_ORCH_RESPAWNS). */
 	maxRespawns?: number;
 	/**
@@ -235,6 +239,11 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 	const q = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 	return (
 		`sid=${q(opts.sessionId)}; n=0; max=${max}; ` +
+		// Write the wrapper's stable bash pid once, before the loop. $$ is the pid
+		// of this bash process (the while-loop shell); it is stable across respawns
+		// because the same shell persists the entire session. Do NOT use $BASHPID
+		// (empty in macOS bash 3.2.57). Single-quote-escape the path via q().
+		`printf '%s' "$$" > ${q(opts.pidMarker)}; ` +
 		`while true; do ` +
 		`claude --permission-mode bypassPermissions --session-id "$sid" --model ${q(model)} "$(cat ${q(opts.promptFile)})"; ` +
 		`if [ -f ${q(opts.handoffMarker)} ] && [ "$n" -lt "$max" ]; then ` +
@@ -268,6 +277,8 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		// Clear the ready marker so stale markers don't deceive thin-proxy commands
 		// after the orchestrator has exited (US-006).
 		`rm -f ${q(opts.readyMarker)}; ` +
+		// Clear the pid marker so a stale pid is never visible after teardown.
+		`rm -f ${q(opts.pidMarker)}; ` +
 		// sessionName is a sanitized identifier (projectSessionName); unquoted to
 		// match the pre-CAM-23 command + the kill-session assertion in run.test.ts.
 		`tmux -L cam kill-session -t ${opts.sessionName}; break; ` +
@@ -400,6 +411,7 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 		handoffMarker: join(dotClaude, '.cam-orch-handoff.json'),
 		stateFile: join(dotClaude, 'cam-loop.local.md'),
 		readyMarker: readyMarkerPath,
+		pidMarker: join(dotClaude, ORCH_PID_MARKER),
 		model: orchModel,
 	});
 	// US-007: emit structured {phase, model, backend} spawn-resolution event.
