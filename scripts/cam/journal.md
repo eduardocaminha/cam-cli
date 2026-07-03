@@ -888,3 +888,15 @@ Each entry follows this template:
 - **Outcome**: validated (operator ceremony)
 - **Summary**: Fired the real cycle-close recycle trigger on binary 0.52.0 to validate macOS auto-recycle end to end (CAM-173 pid-resolve fix + CAM-168 G4). Preconditions verified live: watcher 24203 alive, .cam-orch-pid=24177 (wrapper), pgrep -P resolves the claude child, marker absent pre-fire. Wrote the cycle-close handoff, then armed .cam-orch-recycle via cam journal append --cycle-close. Expected chain: watcher resolves the orchestrator pid via pgrep -P (immune to macOS argv truncation) and SIGTERMs it, wrapper 24177 respawns a fresh orchestrator and delivers CAM_ORCH_REHYDRATE. The respawned session boot-with-rehydrate is the PASS proof; it confirms the empirical signals before declaring PASS.
 - **Follow-ups**: Respawned session to confirm PASS and ask operator whether to close CAM-173 operator-story + G4 (CAM-168) as validated-live. Backlog: CAM-171 (retry cap 3->4), CAM-65 (reviewer pane lingering post-CLEAN), F-01 residual (orphan readSessionIdFn option in orch-recycle-watch.ts).
+
+## operator-ceremony-cam-173-recycle-pass — operator ceremony PASS: macOS auto-recycle validated live (0.52.0)
+
+- **Started**: 2026-07-03T17:32:37Z
+- **Closed**: 2026-07-03T17:32:37Z
+- **Branch**: main
+- **Issue**: CAM-173 / G4 (CAM-168)
+- **Outcome**: validated-live (PASS)
+- **Summary**: Respawned orchestrator confirmed the macOS auto-recycle chain end to end on binary 0.52.0. Empirical signals: handoff consumed (.cam-orch-handoff.json renamed to .consumed.json); .cam-orch-recycle marker absent (the watcher removes it only after killFn SIGTERM on the pgrep -P-resolved pid, orch-recycle-watch.ts:302); prior session 6e539da2 frozen at 14:26 while this session a7c9ae0a booted with a non-empty CAM_ORCH_REHYDRATE; wrapper 24177 / sidecar 24202 / watcher 24203 all alive. The CAM-173 pgrep -P fix resolved the child pid despite the wrapper running under zsh -c (cmd != claude), which was exactly the pgrep -f <uuid> failure mode.
+- **Decisions**: None; ceremony only, no code change. CAM-173 + CAM-168 were already stage:shipped; this closes the G4 live-validation follow-up.
+- **Blockers encountered**: None functional. Honest caveat: .claude/cam-recycle-watcher.log is 0 bytes. That is NOT a failure signal: the watcher tick path emits nothing to stdout/stderr on a successful tick, so the redirect log is empty by design. The prior ceremony entry's expectation that the log would show the pgrep -P + SIGTERM lines was wrong (comments-do-not-prove-behaviour). PASS rests on the observable state transitions (marker consumed + respawn + rehydrate), not on log output.
+- **Follow-ups**: CAM-173 + CAM-168 already stage:shipped (terminal). Next: CAM-171 (retry cap 3 -> 4). Still open: CAM-65 (reviewer pane lingering post-CLEAN), F-01 residual (orphan readSessionIdFn option in orch-recycle-watch.ts).
