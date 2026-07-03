@@ -1,22 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "branchName": "cam/pr-162-orch-recycle-core",
-  "timestamp": "2026-07-02T18:30:00Z",
-  "createdFiles": [
-    "test/stop-watcher-kill.test.ts"
-  ],
+  "timestamp": "2026-07-02T20:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/sidecar-pid.ts",
-    "src/commands/run.ts",
-    "src/commands/stop.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 fixed the orphaned recycle watcher by persisting its PID to .claude/.cam-watcher.pid (WATCHER_PID_FILE in sidecar-pid.ts), writing it immediately after spawn in run.ts, and adding a watcher kill step to performStop in stop.ts (mirrors the sidecar kill step: read pid, probe liveness, SIGTERM if alive, always remove file). New test: test/stop-watcher-kill.test.ts (3 cases: absent, dead, alive). Also added removeWatcherPidIfExists call to the SIGINT/SIGTERM cleanup handler in run.ts. All 2782 tests pass. Check prd.json for the next story after US-R1-001 (all other stories are passes:true, review verdict is FIXES_PENDING:1 -- now addressed; next step is re-review).",
+  "nextStoryContext": "US-R2-001 raised three file-size budget ceilings that US-R1-001 exceeded without updating: src/commands/run.ts 749->758, src/commands/stop.ts 525->579, src/supervisor/sidecar-pid.ts 87->144. Also added test/stop-watcher-kill.test.ts 121 to the budget (the new test file from US-R1-001 was not tracked). All check:all gates now pass. US-R2-002 is still passes:false; check prd.json for its notes.",
   "officialDocsValidated": [
     {
       "lib": "none",
