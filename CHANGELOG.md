@@ -4,6 +4,13 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.54.0] - 2026-07-03
+
+### Added
+
+- [US-002] - Remove inert eslint-disable no-constant-condition directives
+- [US-001] - Resolve orchestrator pid via ps ppid-walk (drop pgrep)
+
 ## [0.53.0] - 2026-07-03
 
 ### Added
