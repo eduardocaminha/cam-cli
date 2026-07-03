@@ -118,7 +118,7 @@
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "US-004",
       "notes": "Files: src/commands/run.ts only -- buildOrchestratorPaneCommand (~line 206-248: inside the handoff-present respawn branch, after `mv handoffMarker consumed`, add `export CAM_ORCH_REHYDRATE=<consumed>` before the loop re-execs claude; keep the single-quote escaping helper q()) and buildOrchestratorBootPrompt (~line 132-157: replace the unconditional handoff-read paragraph with an env-gated one -- 'run Bash `echo \\$CAM_ORCH_REHYDRATE`; if non-empty, read that file and rehydrate; else cold-boot and do NOT read any stale handoff'). GOTCHA (F-05): name run.ts as the file that exports CAM_ORCH_REHYDRATE. GOTCHA: with immediate recycle the CAM-141 gap fires EVERY cycle (not rare), so explicit delivery is a hard pre-requisite, not a follow-up. Relates to memory note boot-read-consumed-handoff. Keep --permission-mode bypassPermissions and the uuidgen lowercase step intact. Update test/run.test.ts assertions on the wrapper string / boot prompt accordingly."
     },
