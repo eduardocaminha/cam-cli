@@ -1,24 +1,31 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Recycle watcher module and cam orch-recycle-watch command"
+    "id": "US-004",
+    "title": "Wire the recycle watcher into cam run and prove SIGTERM+respawn end-to-end"
   },
   "branchName": "cam/pr-162-orch-recycle-core",
-  "timestamp": "2026-07-02T14:00:00Z",
+  "timestamp": "2026-07-02T15:00:00Z",
   "createdFiles": [
-    "src/commands/orch-recycle-watch.ts",
-    "test/commands/orch-recycle-watch.test.ts"
+    "test/integration/orch-recycle-watch.test.ts",
+    "scripts/cam/issues/CAM-0164.json"
   ],
   "modifiedFiles": [
-    "index.ts",
-    "knip.json"
+    "src/commands/orch-recycle-watch.ts",
+    "src/commands/run.ts",
+    "test/run.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "runOrchRecycleWatch (src/commands/orch-recycle-watch.ts) polls ORCH_RECYCLE_MARKER via readMarkerFn, reads ORCH_SESSION_MARKER fresh each poll via readSessionIdFn, resolves the orchestrator claude PID via resolvePidFn (pgrep -f <uuid>), sends SIGTERM via killFn, and removes the marker via removeMarkerFn (consume-once). All deps are injectable; handleOneTick is the extracted inner helper. Registered as case 'orch-recycle-watch' in index.ts (INTERNAL, near sidecar case ~line 1604). knip.json now includes 'pgrep' in ignoreBinaries. US-004 should wire cam run to spawn cam orch-recycle-watch as a detached background process alongside cam sidecar, and cam stop should SIGTERM and clean up the watcher process and its associated marker.",
+  "nextStoryContext": "cam run now spawns cam orch-recycle-watch (via spawnWatcherFn / spawnWatcherDefault) alongside the sidecar in the if (result.created) block. The watcher is killed in the SIGINT/SIGTERM cleanup handler alongside the sidecar. makeResolvePidFn in orch-recycle-watch.ts was fixed to take the LAST pgrep line (highest PID = child claude, not the bash wrapper parent which starts first and has a lower PID). SpawnWatcherFn type is exported from run.ts; tests inject noopWatcher to prevent real watcher spawn. The integration test (test/integration/orch-recycle-watch.test.ts) uses a bash fake-claude that writes a handoff file on SIGTERM; it proves end-to-end: arming ORCH_RECYCLE_MARKER -> watcher fires SIGTERM -> bash wrapper respawns (ORCH_SESSION_MARKER changes to new UUID). Follow-up CAM-164 tracks the real-claude SIGTERM ceremony (operator-validated). US-005 is the next story: explicit rehydrate delivery on respawn via CAM_ORCH_REHYDRATE env var in buildOrchestratorPaneCommand.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "Bun.spawn",
+      "version": "1.3.x",
+      "url": "https://bun.sh/docs/api/spawn",
+      "fetchedAt": "2026-07-02T15:00:00Z",
+      "status": "ok",
+      "summary": "Confirmed: proc.pid is readonly number, proc.kill() exists, cwd and stdio (file descriptor number) options are valid. spawnWatcherDefault implementation matches documented API."
     }
   ]
 }

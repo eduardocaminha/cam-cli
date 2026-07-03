@@ -100,7 +100,7 @@
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Files: src/commands/run.ts (in the `if (result.created)` block ~line 609-642, spawn the watcher next to spawnSidecarFn; add its kill to the `cleanup` closure). Mirror spawnSidecarDefault (Bun.spawn(['cam','orch-recycle-watch'], {cwd, stdio:['ignore', logFd, logFd]})) and consider persisting its pid the same way as the sidecar so it is killable; add an injectable spawn fn for unit tests like spawnSidecarFn. Integration test: reuse test/fixtures/interactivity/mock-claude.ts as the fake-claude under buildOrchestratorPaneCommand; skip when tmux/pgrep absent (Bun.which). The test may arm the marker by writing the file directly (or by running US-002's command) and assert the fake-claude PID gets SIGTERM'd then a fresh one respawns. GOTCHA: TUI needs foreground -- do not break the tty; the watcher resolves the PID itself (US-003), the wrapper only spawns/kills the watcher. macOS binary signing: integration tests run bun index.ts, not the compiled binary."
     },
