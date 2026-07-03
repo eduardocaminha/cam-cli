@@ -1,0 +1,9 @@
+{
+  "id": "CAM-169",
+  "title": "consolidate orch-recycle-watch tests into test/commands/ (mirror convention)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-03T05:59:05.290Z",
+  "description": "CAM-163 US-003 landed its backstop tests in a NEW test/orch-recycle-watch.test.ts instead of extending the canonical test/commands/orch-recycle-watch.test.ts (CAM-162). Auditor F-01 predicted exactly this; review round 1 missed it. Both files test src/commands/orch-recycle-watch.ts. Fix: merge the backstop tests into the canonical file (adjust ../ imports to ../../), delete the off-convention file, keep all assertions green."
+}
