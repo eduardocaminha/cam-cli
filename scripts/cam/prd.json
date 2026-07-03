@@ -21,7 +21,7 @@
         "Full quality spine green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit the parsed.cycleClose branch of dispatchJournal in index.ts (~lines 1164-1184). Ordering in that branch is load-bearing: handoff-exists check (exit 3) stays FIRST, then the new watcher-alive check (exit 4), then armMarker. DO NOT re-implement the marker writer: armRecycleMarkerFn already exists on this branch (shipped CAM-162 PR #120); the false 'no writer' premise in the original issue body was scoped to src/ but the writer lives in index.ts at repo root. Reuse the existing liveness primitives in src/supervisor/sidecar-pid.ts: readWatcherPid(claudeDir) (WATCHER_PID_FILE = '.cam-watcher.pid') + sidecarPidAlive(pid) (signal-0 probe, treats EPERM as alive). Prefer adding a small watcherAlive(claudeDir): boolean helper in sidecar-pid.ts composing those two, then default watcherAliveFn to () => watcherAlive(join(process.cwd(), '.claude')). Add the watcherAliveFn injectable to JournalDispatchDeps. Tests live in test/commands/journal-append.test.ts; inject watcherAliveFn (true/false) and armRecycleMarkerFn (spy) plus handoffExistsFn to cover arm-with-watcher, refuse-without-watcher, and handoff-absent. Skills/patterns: patterns.md 'spawnSync exit-status guard' not relevant here (no git); 'JSON reader shape guards' relevant for any parsed input. This story defines the exit-4 contract that US-003 documents."
     },

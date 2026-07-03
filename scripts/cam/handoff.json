@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Refuse to arm the recycle marker when no live watcher is running"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/sidecar-pid.ts",
+    "index.ts",
+    "test/commands/journal-append.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 adds exit code 4 to dispatchJournal (watcher-absent path). US-002 or later stories in this PRD that reference the exit-4 contract can rely on it being distinct from exit-1 (invalid-stdin/append-fail) and exit-3 (handoff-absent). The watcherAlive() composite helper now lives in src/supervisor/sidecar-pid.ts and is tested via injection (watcherAliveFn dep on JournalDispatchDeps). File-size ceiling for sidecar-pid.ts raised to 158 (was 144) with CAM-168 ref in _ref field.",
+  "officialDocsValidated": [
+    {
+      "lib": "node:process (process.kill signal-0)",
+      "version": "Node.js v22 / Bun 1.3.x",
+      "url": "https://nodejs.org/api/process.html#processkillpid-signal",
+      "fetchedAt": "2026-07-03T00:00:00Z",
+      "status": "ok",
+      "summary": "Signal 0 confirms process existence without sending a real signal; throws on dead pid (ESRCH); EPERM means alive-but-unpermissioned. Existing sidecarPidAlive() implementation is correct; watcherAlive() correctly delegates to it."
+    }
+  ]
+}
