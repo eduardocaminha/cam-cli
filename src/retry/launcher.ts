@@ -129,7 +129,6 @@ export async function launchClaude(opts: LaunchOptions): Promise<number> {
   const config = await loadConfig();
   let retries = 0;
 
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const result = await spawn(argv, env, cwd);
     const combined = result.stdout + result.stderr;

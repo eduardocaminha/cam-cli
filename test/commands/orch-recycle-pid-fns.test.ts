@@ -1,16 +1,9 @@
 // test/commands/orch-recycle-pid-fns.test.ts
 //
-// Direct unit tests for readWrapperPid and resolveChildViaPgrep.
+// Direct unit tests for readWrapperPid and resolveChildViaPs.
 //
-// These functions were previously bypassed entirely by the OrchRecycleWatchOptions
-// injection layer (reviewer finding US-R1-001): every test injected resolvePidFn
-// at the options level, so readWrapperPid / resolveChildViaPgrep / makeResolvePidFn
-// had zero direct coverage, and their parsing guards (empty file, non-finite pid,
-// non-zero pgrep exit, empty/multi-line stdout, pid<=0) could regress silently.
-//
-// Fix: export readWrapperPid and resolveChildViaPgrep (the latter with an
-// injectable PgrepSpawnFn seam) so this file can exercise each guard branch
-// with real temp files (readWrapperPid) or fake spawn output (resolveChildViaPgrep).
+// These functions are exported with injectable seams so every parsing guard
+// branch can be exercised without touching real fs/processes.
 //
 // Test matrix:
 //   readWrapperPid:
@@ -23,15 +16,16 @@
 //     RW-7  valid pid (no whitespace) -> number
 //     RW-8  valid pid with surrounding whitespace -> number (trimmed)
 //
-//   resolveChildViaPgrep:
-//     RC-1  non-zero exit status -> null
-//     RC-2  null status (signal-killed pgrep) -> null
-//     RC-3  zero exit, empty stdout -> null
-//     RC-4  zero exit, whitespace-only stdout -> null
-//     RC-5  zero exit, single valid pid -> number
-//     RC-6  zero exit, multi-line stdout -> first pid returned
-//     RC-7  zero exit, non-numeric first line -> null
-//     RC-8  zero exit, pid = 0 in stdout -> null
+//   resolveChildViaPs (injected PsSpawnFn -- no real process spawn):
+//     PS-1  non-zero exit status -> null
+//     PS-2  null status (signal-killed ps) -> null
+//     PS-3  zero exit, empty stdout -> null
+//     PS-4  zero exit, no line with matching ppid -> null
+//     PS-5  zero exit, one match, space-padded columns -> returns pid
+//     PS-6  zero exit, multiple matching lines -> highest pid selected + ambiguity event
+//     PS-7  zero exit, non-numeric ppid column -> line skipped (no match -> null)
+//     PS-8  zero exit, matching ppid but non-numeric pid column -> null
+//     PS-extra  spawnFn is invoked when injected
 
 import { describe, test, expect, afterEach } from 'bun:test';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -40,8 +34,8 @@ import { tmpdir } from 'node:os';
 
 import {
 	readWrapperPid,
-	resolveChildViaPgrep,
-	type PgrepSpawnFn,
+	resolveChildViaPs,
+	type PsSpawnFn,
 } from '../../src/commands/orch-recycle-watch.ts';
 
 // ---------------------------------------------------------------------------
@@ -127,57 +121,83 @@ describe('readWrapperPid', () => {
 });
 
 // ---------------------------------------------------------------------------
-// resolveChildViaPgrep (injected PgrepSpawnFn — no real process spawn)
+// resolveChildViaPs (injected PsSpawnFn -- no real process spawn)
+//
+// The ps output format is `ps -ax -o pid=,ppid=`: space-padded two-column
+// lines "  PID  PPID" with no header row (the `=` suppresses the header).
 // ---------------------------------------------------------------------------
 
-describe('resolveChildViaPgrep', () => {
-	test('RC-1: non-zero exit status -> null', () => {
-		const fake: PgrepSpawnFn = () => ({ status: 1, stdout: '5678\n' });
-		expect(resolveChildViaPgrep(1234, fake)).toBeNull();
+describe('resolveChildViaPs', () => {
+	test('PS-1: non-zero exit status -> null', () => {
+		const fake: PsSpawnFn = () => ({ status: 1, stdout: '   5678   1234\n' });
+		expect(resolveChildViaPs(1234, fake)).toBeNull();
 	});
 
-	test('RC-2: null status (signal-killed pgrep) -> null', () => {
-		const fake: PgrepSpawnFn = () => ({ status: null, stdout: '5678\n' });
-		expect(resolveChildViaPgrep(1234, fake)).toBeNull();
+	test('PS-2: null status (signal-killed ps) -> null', () => {
+		const fake: PsSpawnFn = () => ({ status: null, stdout: '   5678   1234\n' });
+		expect(resolveChildViaPs(1234, fake)).toBeNull();
 	});
 
-	test('RC-3: zero exit, empty stdout -> null', () => {
-		const fake: PgrepSpawnFn = () => ({ status: 0, stdout: '' });
-		expect(resolveChildViaPgrep(1234, fake)).toBeNull();
+	test('PS-3: zero exit, empty stdout -> null', () => {
+		const fake: PsSpawnFn = () => ({ status: 0, stdout: '' });
+		expect(resolveChildViaPs(1234, fake)).toBeNull();
 	});
 
-	test('RC-4: zero exit, whitespace-only stdout -> null', () => {
-		const fake: PgrepSpawnFn = () => ({ status: 0, stdout: '   \n' });
-		expect(resolveChildViaPgrep(1234, fake)).toBeNull();
+	test('PS-4: zero exit, no line with matching ppid -> null', () => {
+		// Line has ppid=9999, not 1234.
+		const fake: PsSpawnFn = () => ({ status: 0, stdout: '   5678   9999\n' });
+		expect(resolveChildViaPs(1234, fake)).toBeNull();
 	});
 
-	test('RC-5: zero exit, single valid pid -> returns number', () => {
-		const fake: PgrepSpawnFn = () => ({ status: 0, stdout: '5678\n' });
-		expect(resolveChildViaPgrep(1234, fake)).toBe(5678);
+	test('PS-5: zero exit, one match, space-padded columns -> returns pid', () => {
+		// Two lines; only the second matches ppid==1234.
+		const fake: PsSpawnFn = () => ({
+			status: 0,
+			stdout: '   9999   9000\n   5678   1234\n',
+		});
+		expect(resolveChildViaPs(1234, fake)).toBe(5678);
 	});
 
-	test('RC-6: zero exit, multi-line stdout -> first pid returned', () => {
-		const fake: PgrepSpawnFn = () => ({ status: 0, stdout: '5678\n9012\n' });
-		expect(resolveChildViaPgrep(1234, fake)).toBe(5678);
-	});
-
-	test('RC-7: zero exit, non-numeric first line -> null', () => {
-		const fake: PgrepSpawnFn = () => ({ status: 0, stdout: 'not-a-number\n' });
-		expect(resolveChildViaPgrep(1234, fake)).toBeNull();
-	});
-
-	test('RC-8: zero exit, pid = 0 in stdout -> null', () => {
-		const fake: PgrepSpawnFn = () => ({ status: 0, stdout: '0\n' });
-		expect(resolveChildViaPgrep(1234, fake)).toBeNull();
-	});
-
-	test('RC-extra: wrapperPid is passed through to spawnFn', () => {
-		let receivedPid: number | undefined;
-		const fake: PgrepSpawnFn = (pid) => {
-			receivedPid = pid;
-			return { status: 0, stdout: '9999\n' };
+	test('PS-6: zero exit, multiple matching lines -> highest pid selected + ambiguity event emitted', () => {
+		// Both lines match ppid==1234; highest pid is 9012.
+		const fake: PsSpawnFn = () => ({
+			status: 0,
+			stdout: '   5678   1234\n   9012   1234\n',
+		});
+		const events: string[] = [];
+		const result = resolveChildViaPs(1234, fake, (e) => events.push(e));
+		expect(result).toBe(9012);
+		expect(events.length).toBe(1);
+		const parsed = JSON.parse(events[0] ?? '{}') as {
+			event: string;
+			selectedPid: number;
+			childPids: number[];
 		};
-		resolveChildViaPgrep(42, fake);
-		expect(receivedPid).toBe(42);
+		expect(parsed.event).toBe('ambiguous-children');
+		expect(parsed.selectedPid).toBe(9012);
+		expect(parsed.childPids).toContain(5678);
+		expect(parsed.childPids).toContain(9012);
+	});
+
+	test('PS-7: zero exit, non-numeric ppid column -> line skipped (no match -> null)', () => {
+		// ppid column is "abc" -- parseInt returns NaN, line is skipped.
+		const fake: PsSpawnFn = () => ({ status: 0, stdout: '   5678   abc\n' });
+		expect(resolveChildViaPs(1234, fake)).toBeNull();
+	});
+
+	test('PS-8: zero exit, matching ppid but non-numeric pid column -> null', () => {
+		// pid column is "abc" -- parseInt returns NaN, line produces no match.
+		const fake: PsSpawnFn = () => ({ status: 0, stdout: '   abc   1234\n' });
+		expect(resolveChildViaPs(1234, fake)).toBeNull();
+	});
+
+	test('PS-extra: spawnFn is invoked when injected', () => {
+		let called = false;
+		const fake: PsSpawnFn = () => {
+			called = true;
+			return { status: 0, stdout: '' };
+		};
+		resolveChildViaPs(1234, fake);
+		expect(called).toBe(true);
 	});
 });

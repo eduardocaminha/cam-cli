@@ -8,15 +8,15 @@
 //
 // Key invariants:
 //   - Fires SIGTERM on the recycle marker only; never on the handoff file.
-//   - The PID is resolved via `pgrep -P <wrapper_pid>`, reading the wrapper
-//     pid from ORCH_PID_MARKER (.cam-orch-pid) on every poll — no tmux call made.
+//   - The PID is resolved via `ps -ax -o pid=,ppid=` filtered by ppid==wrapper_pid
+//     (kernel proc table, immune to process-title rewriting; CAM-165 fix).
+//     The wrapper pid is read from ORCH_PID_MARKER (.cam-orch-pid) on every poll.
 //   - After sending SIGTERM the marker is removed so a single arm triggers
 //     at most one SIGTERM (the respawned session sees no marker).
 //   - All I/O is injectable so unit tests never touch real fs/processes.
 //
 // NOT listed in top-level HELP. Spawned as a detached background process by
-// `cam run` (mirroring the `cam sidecar` pattern). Responds to `--help` when
-// invoked directly.
+// `cam run` (mirroring the `cam sidecar` pattern).
 //
 // IMPORTANT INVARIANT: this file does NOT register a `--permission-mode` flag
 // of its own. `test/no-permission-mode-flag.test.ts` enforces this by scanning
@@ -60,11 +60,13 @@ export interface OrchRecycleWatchOptions {
 	 */
 	readSessionIdFn?: () => string | null;
 	/**
-	 * Resolves the orchestrator claude PID via pgrep -P <wrapper_pid>.
-	 * Reads .cam-orch-pid to obtain the wrapper pid, then calls pgrep -P.
+	 * Resolves the orchestrator claude PID via ps ppid-walk.
+	 * Reads .cam-orch-pid to obtain the wrapper pid, then runs
+	 * `ps -ax -o pid=,ppid=` filtered by ppid==wrapperPid (kernel proc table,
+	 * immune to process-title rewriting; CAM-165 fix).
 	 * Returns null when the pid file is absent/empty, the wrapper pid is
-	 * non-finite, or pgrep -P finds no child process.
-	 * Production: reads ORCH_PID_MARKER then spawnSync('pgrep', ['-P', ...]).
+	 * non-finite, or ps finds no child with the expected ppid.
+	 * Production: reads ORCH_PID_MARKER then spawnSync('ps', ['-ax', '-o', 'pid=,ppid=']).
 	 * Tests inject a fake (no-arg) to avoid real fs/process calls.
 	 */
 	resolvePidFn?: () => number | null;
@@ -157,38 +159,94 @@ export function readWrapperPid(pidFilePath: string): number | null {
 }
 
 /**
- * Minimal injectable seam for resolveChildViaPgrep.
- * Receives the wrapper pid; returns raw pgrep output.
- * Tests inject a fake to exercise guard branches without spawning a real process.
+ * Minimal injectable seam for resolveChildViaPs.
+ * Returns raw `ps -ax -o pid=,ppid=` output (all processes; filtering by ppid
+ * happens in TS). Tests inject a fake to exercise guard branches without
+ * spawning a real process.
  */
-export type PgrepSpawnFn = (pid: number) => { status: number | null; stdout: string };
+export type PsSpawnFn = () => { status: number | null; stdout: string };
 
 /**
- * Resolve the child pid of a given wrapper process via pgrep -P.
- * pgrep -P is a kernel ppid match: deterministic and immune to argv
- * truncation (the CAM-173 failure mode with pgrep -f <uuid>).
- * Returns null when pgrep finds no child or exits non-zero.
+ * Parse `ps -ax -o pid=,ppid=` stdout and return pids of processes whose
+ * ppid column equals wrapperPid. Columns are space-padded ("  PID  PPID").
+ * Lines with non-numeric pid/ppid are skipped. Extracted to keep
+ * resolveChildViaPs under biome's noExcessiveCognitiveComplexity limit.
+ */
+function parsePsChildPids(raw: string, wrapperPid: number): number[] {
+	const matched: number[] = [];
+	for (const line of raw.split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		const parts = trimmed.split(/\s+/);
+		const ppid = parseInt(parts[1] ?? '', 10);
+		if (!Number.isFinite(ppid) || ppid !== wrapperPid) continue;
+		const pid = parseInt(parts[0] ?? '', 10);
+		if (!Number.isFinite(pid) || pid <= 0) continue;
+		matched.push(pid);
+	}
+	return matched;
+}
+
+/**
+ * Emit an ambiguous-children structured event (>1 ps results for the same
+ * wrapperPid). Extracted to keep resolveChildViaPs under the complexity limit.
+ */
+function emitAmbiguityEvent(
+	wrapperPid: number,
+	childPids: number[],
+	selectedPid: number,
+	emitEventFn?: (line: string) => void,
+): void {
+	const event = JSON.stringify({
+		event: 'ambiguous-children',
+		wrapperPid,
+		childPids,
+		selectedPid,
+		ts: new Date().toISOString(),
+	});
+	if (emitEventFn) {
+		emitEventFn(event);
+	} else {
+		process.stderr.write(`[cam] orch-recycle-watch: ${event}\n`);
+	}
+}
+
+/**
+ * Resolve the child pid of a given wrapper process via ps ppid-walk.
+ * Runs `ps -ax -o pid=,ppid=` and filters lines where the ppid column equals
+ * wrapperPid. The kernel proc table (ppid field) is immune to process-title
+ * rewriting (the CAM-165 fix: the previous approach was blind to title-rewritten processes).
+ *
+ * - 0 matches: returns null (caller emits unresolved-pid event).
+ * - 1 match: returns that pid.
+ * - >1 matches: selects the highest pid (newest child) and records the
+ *   ambiguity via emitEventFn (defaults to stderr).
  *
  * Exported for direct unit testing of each guard branch.
  * The optional spawnFn seam lets tests exercise all parsing guards
- * without real process spawning (reviewer finding US-R1-001).
+ * without real process spawning.
  */
-export function resolveChildViaPgrep(
+export function resolveChildViaPs(
 	wrapperPid: number,
-	spawnFn?: PgrepSpawnFn,
+	spawnFn?: PsSpawnFn,
+	emitEventFn?: (line: string) => void,
 ): number | null {
 	const result = spawnFn
-		? spawnFn(wrapperPid)
-		: spawnSync('pgrep', ['-P', String(wrapperPid)], { encoding: 'utf8' }) as { status: number | null; stdout: string };
+		? spawnFn()
+		: (spawnSync('ps', ['-ax', '-o', 'pid=,ppid='], { encoding: 'utf8' }) as {
+				status: number | null;
+				stdout: string;
+			});
 	if ((result.status ?? 1) !== 0) return null;
-	const raw = typeof result.stdout === 'string' ? result.stdout.trim() : '';
-	if (raw.length === 0) return null;
-	// During the active claude phase, the wrapper has exactly one child
-	// (claude). Take the first pid returned.
-	const lines = raw.split('\n').filter((l) => l.trim().length > 0);
-	const firstLine = lines[0] ?? '';
-	const pid = parseInt(firstLine, 10);
-	return Number.isFinite(pid) && pid > 0 ? pid : null;
+	const raw = typeof result.stdout === 'string' ? result.stdout : '';
+	const matched = parsePsChildPids(raw, wrapperPid);
+	if (matched.length === 0) return null;
+	if (matched.length > 1) {
+		const selectedPid = Math.max(...matched);
+		emitAmbiguityEvent(wrapperPid, matched, selectedPid, emitEventFn);
+		return selectedPid;
+	}
+	return matched[0] ?? null;
 }
 
 function makeResolvePidFn(claudeDir: string): () => number | null {
@@ -196,7 +254,7 @@ function makeResolvePidFn(claudeDir: string): () => number | null {
 	return () => {
 		const wrapperPid = readWrapperPid(pidFilePath);
 		if (wrapperPid === null) return null;
-		return resolveChildViaPgrep(wrapperPid);
+		return resolveChildViaPs(wrapperPid);
 	};
 }
 
@@ -328,7 +386,8 @@ function handleOneTick(deps: TickDeps): void {
  *
  * Polls for the ORCH_RECYCLE_MARKER file. When present:
  *   1. Reads ORCH_PID_MARKER (.cam-orch-pid) to get the wrapper bash pid.
- *   2. Resolves the orchestrator claude PID via `pgrep -P <wrapper_pid>`.
+ *   2. Resolves the orchestrator claude PID via ps ppid-walk (`ps -ax -o pid=,ppid=`
+ *      filtered by ppid==wrapperPid). Immune to process-title rewriting (CAM-165).
  *   3. Sends SIGTERM to that PID (graceful exit, not SIGKILL).
  *   4. Removes the marker (consume-once: the respawned session sees no marker).
  *   5. Emits a structured unresolved-pid event when the marker was consumed
@@ -357,7 +416,6 @@ export async function runOrchRecycleWatch(options: OrchRecycleWatchOptions = {})
 	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
 	const pollIntervalMs = options.pollIntervalMs ?? 2000;
 
-	// eslint-disable-next-line no-constant-condition
 	while (true) {
 		// Check the context backstop first: if over the ceiling, arm the marker.
 		// handleOneTick then sees the marker and fires SIGTERM via the existing

@@ -1625,7 +1625,9 @@ async function main(argv: string[]): Promise<number> {
 		}
 		// Internal subcommand — not listed in top-level HELP.
 		// Polls for the ORCH_RECYCLE_MARKER, resolves the orchestrator claude PID
-		// via pgrep -f <session-uuid>, sends SIGTERM, and consumes the marker once.
+		// via ps ppid-walk (ps -ax -o pid=,ppid= filtered by ppid==wrapperPid,
+		// immune to process-title rewriting; CAM-165 fix), sends SIGTERM, and
+		// consumes the marker once.
 		// Spawned as a detached background process by cam run alongside cam sidecar.
 		case 'orch-recycle-watch': {
 			await runOrchRecycleWatch();
