@@ -40,7 +40,7 @@
         "Lint/static gate passes (bun run check:all); removing the directives keeps the gate green. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/commands/orch-recycle-watch.ts:360, src/retry/launcher.ts:132. These are ESLint directives (`// eslint-disable-next-line`), NOT Biome `// biome-ignore` suppressions, so Biome neither honors nor tracks them: removal produces no suppressions/unused warning (unlike the stale biome-ignore case in patterns.md / CAM-60). Biome's noConstantCondition does not flag the `while (true)` infinite-loop idiom, so deleting the comment keeps `bun run check:all` green; if Biome unexpectedly flags it, surface the finding (do NOT re-add ESLint syntax, and do NOT refactor the loop shape without cause). Do not touch the MIT header block (lines 1-6) in launcher.ts. Requires US-001 because both stories edit src/commands/orch-recycle-watch.ts; run this hygiene pass after the substantive fix lands. NOTE: the live end-to-end auto-recycle validation over the rebuilt binary (cycle-close -> watcher resolves pid via ps -> SIGTERM VIA watcher -> wrapper respawn -> rehydrate) is an operator ceremony filed separately via /cam-issue per the issue spec; it is NOT a story in this PRD, and the US-001 title-rewriting integration test is its automated proxy."
     }

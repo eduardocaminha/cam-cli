@@ -1,27 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Resolve orchestrator pid via ps ppid-walk (drop pgrep)"
+    "id": "US-002",
+    "title": "Remove inert eslint-disable no-constant-condition directives"
   },
   "branchName": "cam/pr-165-orch-recycle-ps-pid-resolve",
-  "timestamp": "2026-07-03T21:15:00Z",
+  "timestamp": "2026-07-03T21:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "src/commands/orch-recycle-watch.ts",
-    "test/commands/orch-recycle-pid-fns.test.ts",
-    "test/integration/orch-recycle-pid-resolve.test.ts",
-    "index.ts",
-    "scripts/cam/patterns.md"
+    "src/retry/launcher.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 is the only story in this PRD. prd.json is now complete (all stories pass:true). The reviewer should run /cam-review. Key decisions: (1) PsSpawnFn takes no args (ps lists ALL processes; ppid filtering is in TS). (2) resolveChildViaPs is exported for direct unit testing, with helpers parsePsChildPids and emitAmbiguityEvent extracted for biome complexity. (3) >1 children returns highest pid (newest) and emits ambiguous-children event. (4) Integration test uses title-rewriting bun stand-in; pgrep-P blindness assertion is soft per EMPIRICAL CAVEAT.",
+  "nextStoryContext": "US-002 is the final story in this PRD. All non-operator stories now pass:true. The reviewer should run /cam-review. Change was a 2-line deletion: removed the inert ESLint directive above each while(true) loop; Biome does not flag while(true) infinite-loop idiom so no biome-ignore is needed as replacement.",
   "officialDocsValidated": [
     {
-      "lib": "ps (BSD/macOS system command)",
-      "url": "https://man.freebsd.org/cgi/man.cgi?query=ps&sektion=1&manpath=Darwin+24.0",
-      "fetchedAt": "2026-07-03T21:14:00Z",
-      "status": "aligned",
-      "summary": "Confirmed: -o pid=,ppid= format with empty = suppresses headers; -a lists all users processes; -x includes processes without controlling terminal. Output is space-padded two columns. Verified locally: ps -ax -o pid=,ppid= produces correct output. Implementation matches documented behavior."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
