@@ -22,12 +22,22 @@
 // of its own. `test/no-permission-mode-flag.test.ts` enforces this by scanning
 // every file in `src/commands/`.
 
-import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
 import { ORCH_RECYCLE_MARKER, ORCH_SESSION_MARKER } from '../tmux/session.ts';
+import {
+	parseContextOccupancy,
+	orchestratorTranscriptPath,
+} from '../transcript/usage.ts';
+import {
+	orchestratorContextWindow,
+	ORCH_CONTEXT_BACKSTOP_FRACTION,
+	isOverContextBackstop,
+} from '../orchestrator/context-window.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -76,6 +86,35 @@ export interface OrchRecycleWatchOptions {
 	sleepFn?: (ms: number) => void;
 	/** Poll interval in milliseconds. Default: 2000ms. */
 	pollIntervalMs?: number;
+
+	// --- Backstop seams (US-003 / CAM-163) ---
+
+	/**
+	 * Returns the orchestrator's current context occupancy in tokens,
+	 * or null when the transcript is absent or unreadable.
+	 * Production: reads orchestratorTranscriptPath(cwd, claudeConfigDir) then
+	 * applies parseContextOccupancy. A null return is always a no-op.
+	 */
+	readOccupancyFn?: () => number | null;
+	/**
+	 * Arms the ORCH_RECYCLE_MARKER by writing an empty file.
+	 * Production: writeFileSync(join(claudeDir, ORCH_RECYCLE_MARKER), '', 'utf8').
+	 * Must write to the same path that readMarkerFn reads, so handleOneTick
+	 * picks up the marker and fires SIGTERM via the existing consume-once path.
+	 */
+	armMarkerFn?: () => void;
+	/**
+	 * Context window size in tokens for the configured orchestrator model.
+	 * Production: orchestratorContextWindow() from src/orchestrator/context-window.ts.
+	 * Resolved once at startup, not per-tick.
+	 */
+	contextWindow?: number;
+	/**
+	 * Backstop fraction (0-1). The watcher fires when occupancy exceeds
+	 * contextWindow * backstopFraction.
+	 * Production: ORCH_CONTEXT_BACKSTOP_FRACTION (0.8).
+	 */
+	backstopFraction?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,10 +169,68 @@ function makeRemoveMarkerFn(claudeDir: string): () => void {
 	};
 }
 
+/**
+ * Reads the orchestrator's current context occupancy from its transcript.
+ * Returns null when the transcript path cannot be resolved or the file is
+ * absent / unreadable (caller treats null as a no-op).
+ */
+function makeReadOccupancyFn(cwd: string): () => number | null {
+	const claudeConfigDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude');
+	return (): number | null => {
+		const transcriptPath = orchestratorTranscriptPath(cwd, claudeConfigDir);
+		if (transcriptPath === null) return null;
+		let jsonl: string;
+		try {
+			jsonl = readFileSync(transcriptPath, 'utf8');
+		} catch {
+			return null;
+		}
+		return parseContextOccupancy(jsonl);
+	};
+}
+
+/**
+ * Arms the recycle marker by writing an empty file.
+ * Mirrors the arming pattern in index.ts:~1181 so the existing
+ * handleOneTick consume-once path fires SIGTERM automatically.
+ */
+function makeArmMarkerFn(claudeDir: string): () => void {
+	const markerPath = join(claudeDir, ORCH_RECYCLE_MARKER);
+	return () => {
+		writeFileSync(markerPath, '', 'utf8');
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Poll tick helper (extracted to keep runOrchRecycleWatch under biome's
 // noExcessiveCognitiveComplexity limit of 15; CAM-60 factory/helper pattern)
 // ---------------------------------------------------------------------------
+
+interface BackstopDeps {
+	readOccupancyFn: () => number | null;
+	armMarkerFn: () => void;
+	contextWindow: number;
+	backstopFraction: number;
+}
+
+/**
+ * Check the context backstop once per poll tick.
+ *
+ * If the orchestrator transcript reports an occupancy strictly above
+ * `contextWindow * backstopFraction`, the recycle marker is armed via
+ * `armMarkerFn`. The immediately following `handleOneTick` call then
+ * sees the marker and fires SIGTERM via the existing consume-once path.
+ *
+ * A null occupancy (absent/unreadable transcript) is always a no-op:
+ * it never produces a false-positive recycle.
+ */
+function checkBackstop(deps: BackstopDeps): void {
+	const occupancy = deps.readOccupancyFn();
+	if (occupancy === null) return;
+	if (isOverContextBackstop(occupancy, deps.contextWindow, deps.backstopFraction)) {
+		deps.armMarkerFn();
+	}
+}
 
 interface TickDeps {
 	readMarkerFn: () => boolean;
@@ -194,11 +291,21 @@ export async function runOrchRecycleWatch(options: OrchRecycleWatchOptions = {})
 		killFn: options.killFn ?? ((pid: number, signal: NodeJS.Signals) => { process.kill(pid, signal); }),
 		removeMarkerFn: options.removeMarkerFn ?? makeRemoveMarkerFn(claudeDir),
 	};
+	const backstopDeps: BackstopDeps = {
+		readOccupancyFn: options.readOccupancyFn ?? makeReadOccupancyFn(cwd),
+		armMarkerFn: options.armMarkerFn ?? makeArmMarkerFn(claudeDir),
+		contextWindow: options.contextWindow ?? orchestratorContextWindow(),
+		backstopFraction: options.backstopFraction ?? ORCH_CONTEXT_BACKSTOP_FRACTION,
+	};
 	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
 	const pollIntervalMs = options.pollIntervalMs ?? 2000;
 
 	// eslint-disable-next-line no-constant-condition
 	while (true) {
+		// Check the context backstop first: if over the ceiling, arm the marker.
+		// handleOneTick then sees the marker and fires SIGTERM via the existing
+		// consume-once path (one unified signal route regardless of who armed it).
+		checkBackstop(backstopDeps);
 		handleOneTick(deps);
 		sleepFn(pollIntervalMs);
 	}
