@@ -900,3 +900,15 @@ Each entry follows this template:
 - **Decisions**: None; ceremony only, no code change. CAM-173 + CAM-168 were already stage:shipped; this closes the G4 live-validation follow-up.
 - **Blockers encountered**: None functional. Honest caveat: .claude/cam-recycle-watcher.log is 0 bytes. That is NOT a failure signal: the watcher tick path emits nothing to stdout/stderr on a successful tick, so the redirect log is empty by design. The prior ceremony entry's expectation that the log would show the pgrep -P + SIGTERM lines was wrong (comments-do-not-prove-behaviour). PASS rests on the observable state transitions (marker consumed + respawn + rehydrate), not on log output.
 - **Follow-ups**: CAM-173 + CAM-168 already stage:shipped (terminal). Next: CAM-171 (retry cap 3 -> 4). Still open: CAM-65 (reviewer pane lingering post-CLEAN), F-01 residual (orphan readSessionIdFn option in orch-recycle-watch.ts).
+
+## cam-171-ship-plus-recycle-pgrep-defect — CAM-171 shipped (retry cap 3 to 4, v0.53.0); found CAM-173 recycle pgrep-blind defect on macOS
+
+- **Started**: 2026-07-03T17:30:00Z
+- **Closed**: 2026-07-03T19:14:48Z
+- **Branch**: main
+- **Issue**: CAM-171
+- **Outcome**: PASS
+- **Summary**: Shipped CAM-171 end to end fully autonomously: spec (inline, description was spec-complete) to /cam-plan to auditor APPROVE to implement US-001 (2864 tests pass) to review CLEAN round 1 to ci-gated ship to CI-merge to sidecar post-merge (tag v0.53.0, branch pruned, issue closed). The retry cap 3 to 4 finally realizes the 240s backoff window CAM-85 promised but shipped inert. Caps are still behaviorally inert until the sidecar (running 0.52.0 in-memory) is rebuilt to 0.53.0.
+- **Decisions**: Bump (not wont-fix): an autonomous loop should ride out 3-7min transient rate-limits without a human, at the cost of tolerating ~1 extra streak (~4min) before escalating a real failure. All gh ops via env -u GITHUB_TOKEN (keyring gho_) because the .env PAT lost Pull-requests:write.
+- **Blockers encountered**: DEFEITO no auto-recycle CAM-173, descoberto ao tentar o cycle-close handoff: claude 2.1.200 reescreve o proprio process-title em runtime, deixando o KERN_PROCARGS2 num estado que o `pgrep` PULA. O processo do orquestrador fica INVISIVEL ao `pgrep` em todo modo (-P, -f, -x, nome), enquanto `ps` o enxerga normal. Logo `pgrep -P <wrapper>` (o fix do CAM-173) volta vazio e o watcher nao SIGTERMa o orquestrador: recycle falha em silencio. Verificado empirico ~10x. Este cycle-close foi completado por `kill -TERM` direto no pid (o watcher/pgrep esta cego), nao pelo marker/watcher.
+- **Follow-ups**: CAM-165: trocar a resolucao de pid do watcher pra ps-based (walk de ppid) ou pra um arquivo .cam-orch-child-pid gravado pelo wrapper no spawn; o spec atual do CAM-165 propoe pgrep -n que tambem falharia. Rebuild+reinstall 0.53.0 e restart do sidecar pra os caps 3 to 4 ficarem vivos. CAM-139 (drainer inter-ciclo) segue nao construido = nao existe autonomia inter-ciclos hoje.
