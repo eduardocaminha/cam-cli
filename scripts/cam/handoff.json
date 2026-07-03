@@ -1,23 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Exponential-with-jitter retry backoff in the supervisor loop"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "test/supervisor/loop.test.ts",
-    "scripts/file-size-budget.json"
+    "src/supervisor/loop.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 (exponential backoff + jitter) is complete. The helper computeBackoffMs is exported and tested. MAX_BACKOFF_MS=300_000 and JITTER_FRACTION=0.2 constants are in loop.ts. Both retry sites (dead-worker and no-progress) use the helper; the randomFn seam is injectable. No follow-up work is blocked. The PRD has only one story (US-001) so review should be the next sidecar action.",
+  "nextStoryContext": "US-R1-001 is complete. All PRD stories now pass (US-001 and US-R1-001 both passes:true). The only change was updating the MAX_DEAD_WORKER_RETRIES docstring in src/supervisor/loop.ts to reference computeBackoffMs instead of the old linear NO_PROGRESS_BACKOFF_MS * streak formula. No follow-up work is blocked. The PRD should now go to review.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
       "url": "",
       "fetchedAt": "2026-07-03T00:00:00Z",
-      "summary": "Pure refactor of src/supervisor/loop.ts using only TypeScript builtins (Math.pow, Math.min, Math.round). No external library exercised."
+      "summary": "Pure comment-only fix in src/supervisor/loop.ts. No external library exercised."
     }
   ]
 }

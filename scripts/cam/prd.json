@@ -7,6 +7,13 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/supervisor/loop.ts:521]: The MAX_DEAD_WORKER_RETRIES docstring still describes the removed linear backoff: 'dead-pane outcomes get the same escalating NO_PROGRESS_BACKOFF_MS * streak backoff'. This PR replaced that formula with exponential-with-jitter via computeBackoffMs, so the comment now states a formula the code no longer uses. The NO_PROGRESS_BACKOFF_MS and MAX_BACKOFF_MS docstrings were updated in this change; this sibling comment (outside lines 447-471) was missed. Update it to reference the exponential computeBackoffMs formula."
+    },
+    {
       "id": "US-001",
       "title": "Exponential-with-jitter retry backoff in the supervisor loop",
       "description": "As a cam operator, I need the no-progress and dead-pane retry backoff to grow exponentially with +/-20% jitter (BASE 60s, MAX 300s) instead of linearly, so that longer rate-limit windows and transient crash bursts get a wider clearance window and multiple concurrent instances do not re-dispatch in lockstep (thundering herd).",
@@ -21,10 +28,23 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Single-concern mechanical change, all in src/supervisor/loop.ts + its test. CALL SITES: dead-worker backoff at ~line 903 (emit 'pane-died-retry' backoffMs) and ~line 906 (sleepFn); no-progress backoff at ~line 1106 (emit 'no-progress-retry' backoffMs) and ~line 1109 (sleepFn). Constants block: ~lines 445-473 (MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS=60_000, MAX_DEAD_WORKER_RETRIES). RunSupervisorOptions type: ~lines 200-260 (add randomFn next to sleepFn/nowMs; default Math.random). Prefer a pure helper e.g. computeBackoffMs(streak, { base, max, jitterFraction, random }) and unit-test it directly. GOTCHA 1 (issue is WRONG): the issue says 'a mudanca e segura sem tocar nos testes existentes' but test/supervisor/loop.test.ts DOES assert exact sleep values (expect(sleeps).toEqual([NO_PROGRESS_BACKOFF_MS*1, NO_PROGRESS_BACKOFF_MS*2]) at lines 341/375/581) and exact backoffMs (lines 346/586). You MUST update these; inject randomFn to make jitter deterministic (e.g. () => 0.5 -> zero jitter offset if jitter is centered, or a fixed fraction) and recompute expected values. GOTCHA 2 (surgical scope): keep MAX_NO_PROGRESS_RETRIES and MAX_DEAD_WORKER_RETRIES at 3 (NOT in the acceptanceCriteria; the '~6 min / 3 retries' line in the issue body is a loose suggestion, not settled scope). Consequence: only streaks 1 and 2 ever reach the sleep before the cap blocks at streak 3, and 2^(streak-1) = 1,2 equals the old linear multiplier for those two streaks; MAX_BACKOFF_MS (300s) never binds at 60s/120s. So the observable change at the current cap is the jitter; the exponential base only matters if a future story raises the retry cap. Keep the docstrings at lines 447-471 accurate (they currently describe the linear 180s-total math). GOTCHA 3 (file-size ratchet): src/supervisor/loop.ts is 1602/1603 and test/supervisor/loop.test.ts is 3094/3094 in scripts/file-size-budget.json (both at ceiling). Adding the helper/constants/seam and the test updates will exceed both; raise the ceilings with a CAM-85 _ref entry (ratchet raise-and-retry pattern in scripts/cam/patterns.md 'Ratchet gate pattern' and 'cam-ship Step 3 ratchet raise-and-retry'). PATTERN: keep the test's 'if (ms > 0) sleeps.push(ms)' shape and pair the no-op sleepFn with a tiny pollIntervalMs (see patterns.md 'Test timeout with no-op sleepFn'). noUncheckedIndexedAccess is on; guard any array/regex access. No external library, no vendor/, no templates/, no Ink screen touched."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/supervisor/loop.ts",
+        "line": 521,
+        "text": "The MAX_DEAD_WORKER_RETRIES docstring still describes the removed linear backoff: 'dead-pane outcomes get the same escalating NO_PROGRESS_BACKOFF_MS * streak backoff'. This PR replaced that formula with exponential-with-jitter via computeBackoffMs, so the comment now states a formula the code no longer uses. The NO_PROGRESS_BACKOFF_MS and MAX_BACKOFF_MS docstrings were updated in this change; this sibling comment (outside lines 447-471) was missed. Update it to reference the exponential computeBackoffMs formula."
+      }
+    ]
+  }
 }
