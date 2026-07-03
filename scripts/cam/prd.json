@@ -28,9 +28,23 @@
   ],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "CRITICAL [scripts/file-size-budget.json]: bun run check:all (the CI lint/static gate; oracle in every story's acceptanceCriteria) FAILS at exit 1. The HEAD commit f960429 (US-R1-001) grew three files past their budget ceilings without raising them: src/commands/run.ts is 757 lines (budget 749), src/commands/stop.ts is 578 (budget 525), src/supervisor/sidecar-pid.ts is 143 (budget 87). The budget was last updated by US-005, before the R1 fix added the watcher pid persistence (+11 run.ts, +58 stop.ts, +57 sidecar-pid.ts). Layer B behavioral-gate hard-constraint fail. Fix: raise the three ceilings in scripts/file-size-budget.json (with the _ref annotation) or refactor to fit. typecheck, bun test (2782 pass), embed-vendor:check and biome lint all pass; only check:file-size fails."
+    },
+    {
+      "id": "US-R2-002",
+      "title": "Review round 2 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [.gitignore]: Two new runtime files written under .claude/ are not gitignored in either tree, unlike their sidecar analogues (.cam-sidecar.pid and cam-supervisor.log both ARE gitignored): (1) .claude/.cam-watcher.pid (WATCHER_PID_FILE, written by writeWatcherPid in run.ts, US-R1-001) and (2) .claude/cam-recycle-watcher.log (opened by spawnWatcherDefault in run.ts, US-004). The pid file lingers after a normal detach until cam stop removes it, and the log is never removed, so both appear as untracked runtime state in the dogfood repo and in every downstream project (templates/.gitignore is what cam init installs). Fix: add .claude/.cam-watcher.pid and .claude/cam-recycle-watcher.log to both .gitignore and templates/.gitignore, then re-run bun run embed-vendor (templates/.gitignore is embedded in src/vendor/_generated.ts) and verify embed-vendor:check is clean."
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "notes": "WARNING [src/commands/run.ts:679]: The recycle watcher is orphaned by `cam stop`. The watcher is spawned identically to the sidecar (Bun.spawn, not detached, no proc.unref()) and survives `cam run`'s normal exit because main() ends in process.exit() after the blocking tmux attach returns on detach. But unlike the sidecar, its pid is never persisted (no writeSidecarPid equivalent) and performStop's fallback scoped scan only matches argv[1]==='sidecar' (stop.ts:214, matchesSidecarForProject). So after the normal detach -> `cam stop` teardown, the watcher keeps polling .claude/.cam-orch-recycle every 2s forever, and one leaks per run/stop cycle. US-004 AC1 (kill in the SIGINT/SIGTERM cleanup handler) is met, but the PRD note's recommendation to persist the pid \"so it is killable\" was not followed, so the documented kill-switch does not reach it. Fix: persist the watcher pid and kill it in performStop (mirror writeSidecarPid + the sidecar kill path), or extend the fallback scan to match `cam orch-recycle-watch`."
     },
@@ -48,7 +62,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/session.ts (add the constant beside ORCH_SESSION_MARKER, ~line 508), .gitignore (root, near the .cam-orch-handoff entries lines 50-51), templates/.gitignore (near lines 20-21), src/commands/stop.ts (add [claudeDir, ORCH_RECYCLE_MARKER] to the marker-removal loop ~line 419-425 and to the comment block ~411-414). templates/.gitignore IS embedded in src/vendor/_generated.ts (the '.gitignore' key), so run `bun run embed-vendor` then `bun run embed-vendor:check`. Read patterns.md: 'Per-session marker set + cam stop cleanup (US-002, CAM-67)' -- every new lifecycle marker MUST be a named export constant AND added to performStop's loop."
@@ -67,7 +81,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": "US-001",
       "notes": "Files: index.ts (parseJournalArgs ~line 1049-1062: extend ParsedJournalArgs union with `cycleClose: boolean`; dispatchJournal ~1090-1145: after recordFn(), on cycleClose check handoff exists then write ORCH_RECYCLE_MARKER, else printError + return 3). Import ORCH_RECYCLE_MARKER from src/tmux/session.ts and the handoff path .claude/.cam-orch-handoff.json (matches run.ts handoffMarker). Add injectable deps to JournalDispatchDeps (e.g. handoffExistsFn, armRecycleMarkerFn) for hermetic tests -- no real fs. GOTCHA: adding `cycleClose` to the union breaks the two toEqual shape assertions at journal-append.test.ts:315 and :319 (patterns.md CAM-89 US-003: expect().toEqual requires exact shape) -- update those two, they are NOT the pinned 357/448. Keep CAM_ORCH_HANDOFF_DUE=true emission on both paths unchanged. Preserve recovery-runbook (w) (CAM-122) usage: --force without handoff on the NON-cycle-close path still behaves as today (exit 0)."
@@ -88,7 +102,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 6,
       "passes": true,
       "requires": "US-001",
       "notes": "New file: src/commands/orch-recycle-watch.ts. Register in index.ts near the 'sidecar' case (~line 1554), mirror its INTERNAL-command comment. Make all I/O injectable (readMarkerFn, readSessionIdFn, resolvePidFn, killFn, sleepFn) so unit tests never touch real fs/processes -- follow the sidecar.ts dep-injection pattern. Read ORCH_SESSION_MARKER + ORCH_RECYCLE_MARKER from src/tmux/session.ts. PID resolution hint: the claude argv carries `--session-id <uuid>` (run.ts buildOrchestratorPaneCommand), so `pgrep -f <uuid>` scopes to this project's orchestrator with no tmux call; read the uuid fresh each poll (it is rewritten on every respawn, and is already lowercased in run.ts per the macOS uuidgen lesson). GOTCHA F-05: directory-grep oracles use grep -rq. Do NOT add token/occupancy logic here -- the occupancy backstop is CAM-163 (blocked by this issue); do NOT reuse parseTranscriptUsage/computeOrchBudget."
@@ -106,7 +120,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 7,
       "passes": true,
       "requires": "US-003",
       "notes": "Files: src/commands/run.ts (in the `if (result.created)` block ~line 609-642, spawn the watcher next to spawnSidecarFn; add its kill to the `cleanup` closure). Mirror spawnSidecarDefault (Bun.spawn(['cam','orch-recycle-watch'], {cwd, stdio:['ignore', logFd, logFd]})) and consider persisting its pid the same way as the sidecar so it is killable; add an injectable spawn fn for unit tests like spawnSidecarFn. Integration test: reuse test/fixtures/interactivity/mock-claude.ts as the fake-claude under buildOrchestratorPaneCommand; skip when tmux/pgrep absent (Bun.which). The test may arm the marker by writing the file directly (or by running US-002's command) and assert the fake-claude PID gets SIGTERM'd then a fresh one respawns. GOTCHA: TUI needs foreground -- do not break the tty; the watcher resolves the PID itself (US-003), the wrapper only spawns/kills the watcher. macOS binary signing: integration tests run bun index.ts, not the compiled binary."
@@ -124,7 +138,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 6,
+      "priority": 8,
       "passes": true,
       "requires": "US-004",
       "notes": "Files: src/commands/run.ts only -- buildOrchestratorPaneCommand (~line 206-248: inside the handoff-present respawn branch, after `mv handoffMarker consumed`, add `export CAM_ORCH_REHYDRATE=<consumed>` before the loop re-execs claude; keep the single-quote escaping helper q()) and buildOrchestratorBootPrompt (~line 132-157: replace the unconditional handoff-read paragraph with an env-gated one -- 'run Bash `echo \\$CAM_ORCH_REHYDRATE`; if non-empty, read that file and rehydrate; else cold-boot and do NOT read any stale handoff'). GOTCHA (F-05): name run.ts as the file that exports CAM_ORCH_REHYDRATE. GOTCHA: with immediate recycle the CAM-141 gap fires EVERY cycle (not rare), so explicit delivery is a hard pre-requisite, not a follow-up. Relates to memory note boot-read-consumed-handoff. Keep --permission-mode bypassPermissions and the uuidgen lowercase step intact. Update test/run.test.ts assertions on the wrapper string / boot prompt accordingly."
@@ -143,7 +157,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 7,
+      "priority": 9,
       "passes": true,
       "requires": "US-005",
       "notes": "Files: .claude/agents/subagent-orchestrator.md AND templates/agents/subagent-orchestrator.md (Self-handoff lifecycle section ~line 269-277), then `bun run embed-vendor` to sync src/vendor/_generated.ts. Read patterns.md: 'Agent-prompt self-hosting pattern (US-001, CAM-70)' -- templates/ is source of truth, .claude/ is the runtime mirror, both edited then re-embed; the templatesContents byte-parity test in test/embedded.test.ts catches drift. Agent-instruction .md files are LLM-consumed (may use em-dash). Content: model writes handoff FIRST, then runs `cam journal append --cycle-close`; NO /exit; the wrapper watcher SIGTERMs, wrapper respawns and hands back the handoff path via CAM_ORCH_REHYDRATE."
@@ -160,40 +174,44 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes with no --no-verify (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 8,
+      "priority": 10,
       "passes": true,
       "requires": "US-006",
       "notes": "Files: FLOW.md (sections around lines 67-68, 77, 166, 178-180 -- the '## 1' summary, the create-session pane narrative, and the pane-0.0 exit paragraph) and README.md (status blurb ~line 11 and the 'orchestrator persists between sessions' paragraph ~line 118). Per CAM-162 AC12 (DOC MAINTENANCE, F-03 r2) FLOW.md + README.md are already listed in this PRD's relatedDocs. Follow global CLAUDE.md section 7 (Doc Maintenance). Project rule: no em-dash and no decorative emoji in persisted human-readable .md (use colon/comma/parens). Keep prose factual and scannable; do not re-litigate the design, just describe the shipped flow."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:1",
+    "lastVerdict": "FIXES_PENDING:2",
     "findings": [
       {
+        "severity": "CRITICAL",
+        "file": "scripts/file-size-budget.json",
+        "text": "bun run check:all (the CI lint/static gate; oracle in every story's acceptanceCriteria) FAILS at exit 1. The HEAD commit f960429 (US-R1-001) grew three files past their budget ceilings without raising them: src/commands/run.ts is 757 lines (budget 749), src/commands/stop.ts is 578 (budget 525), src/supervisor/sidecar-pid.ts is 143 (budget 87). The budget was last updated by US-005, before the R1 fix added the watcher pid persistence (+11 run.ts, +58 stop.ts, +57 sidecar-pid.ts). Layer B behavioral-gate hard-constraint fail. Fix: raise the three ceilings in scripts/file-size-budget.json (with the _ref annotation) or refactor to fit. typecheck, bun test (2782 pass), embed-vendor:check and biome lint all pass; only check:file-size fails."
+      },
+      {
         "severity": "WARNING",
-        "file": "src/commands/run.ts",
-        "line": 679,
-        "text": "The recycle watcher is orphaned by `cam stop`. The watcher is spawned identically to the sidecar (Bun.spawn, not detached, no proc.unref()) and survives `cam run`'s normal exit because main() ends in process.exit() after the blocking tmux attach returns on detach. But unlike the sidecar, its pid is never persisted (no writeSidecarPid equivalent) and performStop's fallback scoped scan only matches argv[1]==='sidecar' (stop.ts:214, matchesSidecarForProject). So after the normal detach -> `cam stop` teardown, the watcher keeps polling .claude/.cam-orch-recycle every 2s forever, and one leaks per run/stop cycle. US-004 AC1 (kill in the SIGINT/SIGTERM cleanup handler) is met, but the PRD note's recommendation to persist the pid \"so it is killable\" was not followed, so the documented kill-switch does not reach it. Fix: persist the watcher pid and kill it in performStop (mirror writeSidecarPid + the sidecar kill path), or extend the fallback scan to match `cam orch-recycle-watch`."
+        "file": ".gitignore",
+        "text": "Two new runtime files written under .claude/ are not gitignored in either tree, unlike their sidecar analogues (.cam-sidecar.pid and cam-supervisor.log both ARE gitignored): (1) .claude/.cam-watcher.pid (WATCHER_PID_FILE, written by writeWatcherPid in run.ts, US-R1-001) and (2) .claude/cam-recycle-watcher.log (opened by spawnWatcherDefault in run.ts, US-004). The pid file lingers after a normal detach until cam stop removes it, and the log is never removed, so both appear as untracked runtime state in the dogfood repo and in every downstream project (templates/.gitignore is what cam init installs). Fix: add .claude/.cam-watcher.pid and .claude/cam-recycle-watcher.log to both .gitignore and templates/.gitignore, then re-run bun run embed-vendor (templates/.gitignore is embedded in src/vendor/_generated.ts) and verify embed-vendor:check is clean."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/commands/orch-recycle-watch.ts",
-        "line": 19,
-        "text": "Header comment claims \"Responds to `--help` when invoked directly\", but neither the index.ts case ('orch-recycle-watch' just calls runOrchRecycleWatch() and returns) nor runOrchRecycleWatch parses args, so `cam orch-recycle-watch --help` starts the poll loop instead of printing help. Comment-vs-runtime mismatch (see lessons.archive.md 2026-06-05); either drop the claim or add a --help guard."
+        "line": 18,
+        "text": "Header comment claims 'Responds to --help when invoked directly', but the index.ts case only calls runOrchRecycleWatch() and returns, and runOrchRecycleWatch parses no args, so `cam orch-recycle-watch --help` starts the poll loop instead of printing help. Comment-vs-runtime mismatch (open from review round 1). Drop the claim or add a --help guard."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/commands/orch-recycle-watch.ts",
         "line": 200,
-        "text": "Stale `// eslint-disable-next-line no-constant-condition` on the `while (true)` loop. The project lints with biome (biome.json), not eslint, so this directive is inert cruft."
+        "text": "Stale `// eslint-disable-next-line no-constant-condition` on the `while (true)` loop. The project lints with biome, not eslint, so the directive is inert cruft (open from review round 1)."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/commands/orch-recycle-watch.ts",
         "line": 115,
-        "text": "makeResolvePidFn selects the child claude PID by taking the LAST pgrep line (assumed highest PID = process started after the bash wrapper). This relies on pgrep emitting ascending-PID order and no PID wraparound; documented and proven by the e2e integration test, but fragile. Consider matching argv more precisely (e.g. the claude `--session-id <uuid>` form vs the wrapper `sid='<uuid>'`) or `pgrep -n`."
+        "text": "makeResolvePidFn selects the child claude PID by taking the LAST pgrep line (assumed highest PID). Relies on pgrep ascending-PID order and no PID wraparound; documented and proven by the e2e test, but fragile. Consider `pgrep -n` or matching argv more precisely (open from review round 1)."
       }
     ]
   }
