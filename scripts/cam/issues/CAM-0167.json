@@ -1,0 +1,9 @@
+{
+  "id": "CAM-167",
+  "title": "worker pane nunca fechado no fim do ciclo: reviewer/planner/auditor TUI fica vivo-idle, trava o mutex, forca kill manual",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-03T02:13:13.216Z",
+  "description": "DEFEITO recorrente (toil a sessao inteira: matei ~6 panes na mao, %28-%33). Worker claude sessions sao TUI interativos (CAM-42) que NAO saem sozinhos quando a tarefa termina. Confirmado: NAO existe teardown de worker pane em lugar nenhum do supervisor/plan-runner (grep kill-pane em src/ so acha setup.ts pro config pane). O worker pane so e 'reusado' via respawn-pane no PROXIMO dispatch; quando o ciclo/loop termina sem proximo dispatch, o pane fica com um claude vivo-idle indefinidamente. EFEITO: (1) paneCountMutex (src/tmux/session.ts:273) conta 3 panes = busy -> proximo cam plan/next/ship e RECUSADO ate matar o pane na mao; (2) processos claude orfaos vivos consumindo recurso. Pior no plan-runner: cada tentativa de cam plan spawna pane NOVO (nao reusa) -> %29/%30/%31/%32 acumularam nos 4 plan attempts do CAM-162. MESMA CLASSE do CAM-162 (TUI interativo nao auto-sai -> mecanismo deterministico tem que terminar; hooks/in-session nao encerram). FIX: (a) o supervisor/sidecar mata o worker pane (tmux kill-pane) quando o loop atinge estado terminal (complete/awaiting-operator/blocked) ou volta a idle; (b) o plan-runner (runPlanPhase) mata os panes planner+auditor quando a plan phase termina, nos DOIS caminhos (APPROVE->branch E BLOCK->idle). Determinístico no TS, nao manual. Verificar interacao com o design de reuse (worker-pane unico reusado entre stories) -- reuse DENTRO do ciclo fica, fecha no fim. Relaciona CAM-57 (self-heal stale worker pane) e CAM-58 (false-terminal). P2."
+}
