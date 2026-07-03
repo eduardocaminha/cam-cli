@@ -150,7 +150,9 @@ export function removeMergeWatchState(filePath: string): void {
  *   return null from readMergeWatchState until prNumber is written).
  *
  * readMergeWatchState still returns null for issueId-only files (prNumber
- * absent), so stashing before the PR is created keeps the sidecar inert.
+ * absent), so stashing before the PR is created writes a preserved seed: the
+ * sidecar GC (gcMergeWatchIfGarbage in sidecar.ts) keeps it intact until the
+ * cam-ship enrich step adds prNumber + mergedBranch to produce the full state.
  *
  * Single-writer assumption holds (same as the rest of this module).
  * Never throws.
@@ -189,8 +191,9 @@ export function stashIssueIdInMergeWatch(filePath: string, issueId: string): voi
  * field needed).
  *
  * issueId is optional and may be stashed before the PR is created (US-002).
- * readMergeWatchState still returns null when prNumber is absent, so an
- * issueId-only file keeps the sidecar inert until the PR number is written.
+ * readMergeWatchState still returns null when prNumber is absent; the sidecar
+ * GC (gcMergeWatchIfGarbage) preserves the issueId-only seed until the
+ * cam-ship enrich step adds prNumber + mergedBranch.
  */
 export interface MergeWatchState {
 	prNumber: number;

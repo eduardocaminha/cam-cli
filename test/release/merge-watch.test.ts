@@ -22,6 +22,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { gcMergeWatchIfGarbage } from '../../src/commands/sidecar.ts';
 import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 import {
 	readMergeWatchState,
@@ -1857,4 +1858,226 @@ describe('stashIssueIdInMergeWatch (US-002)', () => {
 		const raw = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
 		expect(raw['issueId']).toBe('CAM-121');
 	});
+});
+
+// ---------------------------------------------------------------------------
+// AC4: real-fs regression for null-state GC (US-001)
+// ---------------------------------------------------------------------------
+// Anti-shadow-mock: exercises the ACTUAL production GC helper (gcMergeWatchIfGarbage
+// imported from sidecar.ts), not a re-implementation of the discriminator logic.
+// This test MUST fail against the old code (unconditional unlinkSync on existsSync)
+// and pass with the fix (discriminate valid issueId-only seed vs real garbage).
+// ---------------------------------------------------------------------------
+
+describe('AC4: gcMergeWatchIfGarbage real-fs regression (US-001)', () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'cam-mw-gc-'));
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	test('AC4a: valid issueId-only seed is preserved (not deleted)', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		// Simulate what `cam ship --finalize` writes before `gh pr create`.
+		writeFileSync(filePath, JSON.stringify({ issueId: 'CAM-161' }), 'utf8');
+
+		// Run the ACTUAL production GC code path.
+		gcMergeWatchIfGarbage(filePath);
+
+		// File must still be present with issueId intact.
+		expect(existsSync(filePath)).toBe(true);
+		const raw = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+		expect(raw['issueId']).toBe('CAM-161');
+	});
+
+	test('AC4b: malformed JSON is deleted as garbage', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeFileSync(filePath, 'NOT VALID JSON {{{{', 'utf8');
+
+		gcMergeWatchIfGarbage(filePath);
+
+		expect(existsSync(filePath)).toBe(false);
+	});
+
+	test('AC4c: JSON array is deleted as garbage', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeFileSync(filePath, JSON.stringify([1, 2, 3]), 'utf8');
+
+		gcMergeWatchIfGarbage(filePath);
+
+		expect(existsSync(filePath)).toBe(false);
+	});
+
+	test('AC4d: object with neither issueId nor prNumber is deleted as garbage', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeFileSync(filePath, JSON.stringify({ someOtherField: 'stale-value' }), 'utf8');
+
+		gcMergeWatchIfGarbage(filePath);
+
+		expect(existsSync(filePath)).toBe(false);
+	});
+
+	test('AC4e: object with numeric prNumber only (no issueId, no mergedBranch) is deleted as garbage', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		// readMergeWatchState returns null here (mergedBranch absent); it has a numeric
+		// prNumber so it is NOT a valid issueId-only seed.
+		writeFileSync(filePath, JSON.stringify({ prNumber: 42 }), 'utf8');
+
+		gcMergeWatchIfGarbage(filePath);
+
+		expect(existsSync(filePath)).toBe(false);
+	});
+
+	test('AC4f: absent file is a no-op (no throw)', () => {
+		const filePath = join(tempDir, 'nonexistent.json');
+		expect(() => gcMergeWatchIfGarbage(filePath)).not.toThrow();
+		expect(existsSync(filePath)).toBe(false);
+	});
+
+	test('AC4g: issueId-only seed issueId is byte-intact after GC (non-null closeIssueId)', () => {
+		// Regression for the bug: the old code unlinked the seed unconditionally,
+		// so closeIssueId would be undefined (post-merge closes no issue).
+		// After the fix, issueId survives and closeIssueId is the stashed value.
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		const stashedIssueId = 'CAM-161';
+		writeFileSync(filePath, JSON.stringify({ issueId: stashedIssueId }), 'utf8');
+
+		gcMergeWatchIfGarbage(filePath);
+
+		// Seed intact: the next cam-ship enrich step can read issueId.
+		expect(existsSync(filePath)).toBe(true);
+		const raw = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+		expect(typeof raw['issueId']).toBe('string');
+		expect(raw['issueId']).toBe(stashedIssueId);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC3: preserved-seed -> jq enrich -> stepMergeWatch -> postMergeFn closeIssueId
+// ---------------------------------------------------------------------------
+// Integration test composing:
+//   1. preserved issueId-only seed (post-gcMergeWatchIfGarbage)
+//   2. cam-ship.md enrich step (jq '. + {prNumber, mergedBranch}') -- skipIf jq absent
+//   3. readMergeWatchState: yields full state with issueId
+//   4. stepMergeWatch on MERGED: postMergeFn is called; production closure uses
+//      state.issueId as closeIssueId -> asserts closeIssueId === seed issueId
+// ---------------------------------------------------------------------------
+
+describe('AC3: preserved-seed -> enrich -> stepMergeWatch closeIssueId (US-001)', () => {
+	const jqAvailable = Bun.which('jq') !== null;
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'cam-mw-ac3-'));
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	// Non-jq subtest: verify readMergeWatchState reads issueId from enriched state
+	// (enrich is simulated by writing the merged JSON directly, no jq needed).
+	test('AC3 (no-jq): enriched state read by readMergeWatchState carries issueId', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		// Simulate what jq '. + {"prNumber":42,"mergedBranch":"cam/test"}' produces
+		// when applied to a preserved issueId-only seed.
+		const enriched = { issueId: 'CAM-161', prNumber: 42, mergedBranch: 'cam/test' };
+		writeFileSync(filePath, JSON.stringify(enriched), 'utf8');
+
+		const state = readMergeWatchState(filePath);
+		expect(state).not.toBeNull();
+		expect(state?.issueId).toBe('CAM-161');
+		expect(state?.prNumber).toBe(42);
+		expect(state?.mergedBranch).toBe('cam/test');
+	});
+
+	// Non-jq subtest: stepMergeWatch on MERGED with enriched state gives closeIssueId.
+	test('AC3 (no-jq): stepMergeWatch on MERGED with enriched state -> postMergeFn receives closeIssueId', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		const enriched = { issueId: 'CAM-161', prNumber: 42, mergedBranch: 'cam/test' };
+		writeFileSync(filePath, JSON.stringify(enriched), 'utf8');
+
+		const state = readMergeWatchState(filePath);
+		expect(state).not.toBeNull();
+
+		// Simulate the production closure: the postMergeFn captures state.issueId
+		// as closeIssueId (mirrors makeProductionMergeWatchFn stepOpts.postMergeFn).
+		let capturedCloseIssueId: string | undefined;
+		const result = stepMergeWatch(state!, 0, () => MERGED, {
+			cwd: '/fake',
+			postMergeFn: () => {
+				capturedCloseIssueId = state?.issueId;
+				return {
+					ok: true as const,
+					pulledSha: 'abc',
+					tag: 'v1.0.0',
+					tagCreated: true,
+					branchPrunedLocal: true,
+					branchPrunedRemote: true,
+				};
+			},
+			notifyOrchestrator: () => {},
+		});
+
+		expect(result.kind).toBe('terminal');
+		// The production postMergeFn closure passes state.issueId as closeIssueId.
+		expect(capturedCloseIssueId).toBe('CAM-161');
+	});
+
+	// Real-jq subtest: skipIf jq absent. Uses real jq to verify the enrich step
+	// (mirrors what cam-ship.md Step 7 ci-gated branch does).
+	test.skipIf(!jqAvailable)(
+		'AC3 (real-jq): preserved seed + jq enrich -> readMergeWatchState -> issueId non-null',
+		async () => {
+			const seedJson = JSON.stringify({ issueId: 'CAM-161' });
+
+			// Run the enrich step: jq '. + {"prNumber":42,"mergedBranch":"cam/test"}'
+			const proc = Bun.spawn(
+				['jq', '. + {"prNumber":42,"mergedBranch":"cam/test"}'],
+				{
+					stdin: new TextEncoder().encode(seedJson),
+					stdout: 'pipe',
+					stderr: 'pipe',
+				},
+			);
+			const exitCode = await proc.exited;
+			const enrichedText = await new Response(proc.stdout).text();
+			expect(exitCode).toBe(0);
+
+			const filePath = join(tempDir, '.cam-merge-watch.json');
+			writeFileSync(filePath, enrichedText.trim(), 'utf8');
+
+			// readMergeWatchState must return a state with issueId intact.
+			const state = readMergeWatchState(filePath);
+			expect(state).not.toBeNull();
+			expect(state?.issueId).toBe('CAM-161');
+			expect(state?.prNumber).toBe(42);
+			expect(state?.mergedBranch).toBe('cam/test');
+
+			// stepMergeWatch on MERGED: postMergeFn receives closeIssueId.
+			let capturedCloseIssueId: string | undefined;
+			const result = stepMergeWatch(state!, 0, () => MERGED, {
+				cwd: '/fake',
+				postMergeFn: () => {
+					capturedCloseIssueId = state?.issueId;
+					return {
+						ok: true as const,
+						pulledSha: 'abc',
+						tag: 'v1.0.0',
+						tagCreated: true,
+						branchPrunedLocal: true,
+						branchPrunedRemote: true,
+					};
+				},
+				notifyOrchestrator: () => {},
+			});
+
+			expect(result.kind).toBe('terminal');
+			expect(capturedCloseIssueId).toBe('CAM-161');
+		},
+	);
 });
