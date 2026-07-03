@@ -1,7 +1,7 @@
 {
   "id": "CAM-173",
   "title": "Watcher nao resolve pid do orquestrador no macOS: pgrep -f <uuid> falha em argv gigante, auto-recycle SIGTERM nunca chega",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T14:31:53.877Z",
