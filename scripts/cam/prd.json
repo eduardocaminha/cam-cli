@@ -59,7 +59,7 @@
         "Full quality spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Files: src/supervisor/ensure-container.ts (wire alongside the firewall block at ~200-215, add a configSpawnFn-style seam to EnsureWorkerContainerOptions and thread resolveHostIds uid/gid + the seam through makeProductionEnsureContainerFn ~234-277), src/commands/sidecar.ts (add the new instanceof arm next to the FirewallError catch at ~1156-1169; a bare `throw e` at ~1167 must NOT swallow it), test/supervisor/ensure-container.test.ts (extend the firewall-suite pattern: all four reconcile branches + absent-seam no-op + typed-error-thrown), test/commands/sidecar-firewall.test.ts or a new test/commands/sidecar-config.test.ts (fail-closed: loop NOT called, resolves, non-matching rethrow, plus file-assert that sidecar imports + instanceof-checks ContainerConfigError). GOTCHA: the config re-assert must run on EVERY ensure-up, not just at build - the 'running reuse' reconcile branch means a reused container persists a corrupted .claude.json across ticks until re-asserted; idempotency is required. Live real-docker convergence (fresh volume AND pre-existing root-owned volume, zero EACCES, modal-lines 0) is DEFERRED to the operator CAM-175 re-ceremony exactly as CAM-176 deferred real-daemon firewall convergence; it is NOT an autonomous story. Read scripts/cam/patterns.md at story start."
     }
