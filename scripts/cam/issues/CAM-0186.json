@@ -1,9 +1,49 @@
 {
   "id": "CAM-186",
   "title": "Investigate in-container test failures: 2957 pass / 10 fail vs 3012 green on host",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T19:26:19.974Z",
-  "description": "During the CAM-175 container ceremony (2026-07-04), running bun test INSIDE the cam-worker container reported 2957 pass / 10 fail, whereas the host runs 3012 green. Note the counts also differ in total (2957+10=2967 vs 3012), suggesting some tests do not run or are counted differently in-container. Investigate which specific tests fail in-container and why (likely env-specific: missing tmux/git config, network/daemon assumptions, filesystem/uid differences, or jq absence). Determine whether they are genuinely env-specific (guard/skip appropriately) or real gaps in the container toolchain. Split out of CAM-185 (the container-mode ownership fix) so it does not block that fix. Precondition: CAM-185 landed (a worker can run bash in-container at all)."
+  "description": "During the CAM-175 container ceremony (2026-07-04), running bun test INSIDE the cam-worker container reported 2957 pass / 10 fail, whereas the host runs 3012 green. Note the counts also differ in total (2957+10=2967 vs 3012), suggesting some tests do not run or are counted differently in-container. Investigate which specific tests fail in-container and why (likely env-specific: missing tmux/git config, network/daemon assumptions, filesystem/uid differences, or jq absence). Determine whether they are genuinely env-specific (guard/skip appropriately) or real gaps in the container toolchain. Split out of CAM-185 (the container-mode ownership fix) so it does not block that fix. Precondition: CAM-185 landed (a worker can run bash in-container at all).",
+  "spec": {
+    "scope": "Investigate and resolve in-container test failures so `bun test` inside the cam-worker container is green (0 failures plus documented skips), giving container mode a trustworthy suite ahead of CAM-139. The reported baseline is STALE: '2957 pass / 10 fail vs 3012 green on host' came from the CAM-175 ceremony on a pre-jq, pre-CAM-185-ownership-fix image; the host baseline is now 3070 (post CAM-185), and the exact 10 failing test names are not recorded anywhere on disk, so they must be reproduced on v0.60.0. US-001 builds a repeatable ON-DEMAND harness (e.g. scripts/test-in-container.ts) that ensure-ups the cam-worker container and runs `bun test` in-container via docker exec against /workspace, capturing pass/fail/skip counts and the names of any failing tests; its output is the authoritative baseline. Subsequent stories classify each in-container FAILURE as env-specific (guard via the existing per-file `test.skipIf(!probe)` convention with a documented reason) vs real toolchain gap (fix the cheap ones in this PR, e.g. add a missing binary to .devcontainer/Dockerfile or fix an unguarded shell-out or uid assumption; defer any gap whose fix exceeds one story as a new referenced CAM issue). Reconcile the host-total vs in-container (run plus skip) discrepancy by mapping every non-run test to a documented intended skip (tmux absent maps to 30 skipIf(!tmuxAvailable), etc.). Green definition (operator decision i): documented skips count as green; do NOT add tmux to the worker image solely to run tmux integration tests, since the worker never uses tmux at runtime. Regression protection is on-demand only: macos CI has no Docker daemon (the CAM-178 trap), so the harness cannot be a CI gate; instead add a pointer in the container ADR (docs/adr/0003) instructing to run the harness before shipping container-mode changes. Do NOT commit a worker_isolation flip: the committed default stays host and the harness brings the container up itself. Contingency: if the US-001 re-baseline shows 0 in-container failures on v0.60.0, the classify/guard/fix stories collapse to no-ops and the deliverable reduces to shipping the harness plus documenting the intended skips.",
+    "acceptanceCriteria": [
+      "HARNESS: a new on-demand script (e.g. scripts/test-in-container.ts) ensure-ups the cam-worker container and runs `bun test` inside it against /workspace via docker exec, printing pass/fail/skip counts and the names of any failing tests; its exit code is non-zero if and only if there are in-container test FAILURES (skips never fail it).",
+      "BASELINE (US-001): the harness output on the v0.60.0 image is recorded as the authoritative failure list (replacing the stale 2957/10), with each in-container FAILURE enumerated as file plus test name.",
+      "CLASSIFICATION: every captured in-container failure is labelled env-specific vs real-toolchain-gap, each with a one-line evidence-based reason.",
+      "ENV-SPECIFIC GUARDED: each env-specific failure is converted to a documented skip using the existing per-file `test.skipIf(!probe)` convention (module-level availability probe), never a blanket disable; the skip reason is auditable in the test file.",
+      "REAL GAPS: each real gap whose fix is one story or less is fixed in this PR (e.g. add the missing binary to .devcontainer/Dockerfile, or fix the unguarded shell-out or uid assumption); any gap whose fix exceeds one story is filed as a new referenced CAM issue, never left silently failing.",
+      "COUNT RECONCILED: the difference between the host total and the in-container (run plus skip) total is fully accounted for, every non-run test mapping to a documented intended skip (e.g. tmux absent), with no silent disappearance.",
+      "GREEN IN-CONTAINER: after the fixes, the harness run on v0.60.0 reports 0 failures; remaining non-run tests are documented skips. tmux is NOT added to the worker image solely to satisfy tmux integration tests (green counts documented skips, decision i).",
+      "NO FLIP COMMITTED: the committed worker_isolation default remains host; the harness brings the container up itself. The container ADR (docs/adr/0003) gains a pointer instructing to run the harness before shipping container-mode changes (regression protection is on-demand, not a CI gate).",
+      "GATES: bun run typecheck, bun test, and bun run check:all are all green on the host.",
+      "CONTINGENCY: if the US-001 baseline shows 0 in-container failures on v0.60.0, criteria 3 to 5 are satisfied vacuously and the PR still delivers criteria 1, 2, 6, 7, 8, 9 (harness plus documented skips plus ADR pointer)."
+    ],
+    "gotchas": [
+      "STALE NUMBERS: '2957 pass / 10 fail vs 3012 green' is from the CAM-175 ceremony on a pre-jq, pre-CAM-185 image; host is now 3070. Re-baseline on v0.60.0 first, the real failure list is unknown and likely smaller.",
+      "The 10 failing test names are NOT captured anywhere on disk (journal, issues, worker-report.json all lack the per-test list). US-001 must reproduce them.",
+      "Skip convention is per-file `test.skipIf(!flag)` with a module-level probe (spawnSync tool --version status 0, or Bun.which(tool) not null); there is no shared helper. Follow it; do not invent a new mechanism.",
+      "The ~45 uncounted tests are mostly tmux-absent skips (30 skipIf(!tmuxAvailable)) plus possibly jq skips if the ceremony predated jq; those are SKIPS not failures. The genuine failures are what the skip/fake convention failed to catch: an unguarded shell-out or fs or uid, a probe testing the wrong thing, or a real uid/ownership/path difference under the re-homed bun user in /workspace.",
+      "Docker-driving tests inject a fake probe/spawn (no real daemon touched), so they pass in-container; do NOT assume they are among the failures.",
+      "macos CI has NO Docker daemon (the CAM-178 trap): the harness cannot be a CI gate, on-demand only.",
+      "The cam-worker container must be built from the v0.60.0 binary for the baseline to be valid (ensure-up on 0.60.0 carries the CAM-185 chown/config-reassert). Rebuild plus reinstall to 0.60.0 was done this session.",
+      "worker_isolation stays host (committed default); the harness ensure-ups the container itself. Do NOT commit a flip."
+    ],
+    "domainTerms": [
+      "cam-worker",
+      "worker_isolation",
+      "test.skipIf",
+      "ensure-up",
+      "in-container-test-harness",
+      "tmuxAvailable",
+      "jqAvailable"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 4,
+    "riskReduction": 6,
+    "jobSize": 3
+  }
 }
