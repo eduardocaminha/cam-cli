@@ -4,6 +4,13 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.56.0] - 2026-07-04
+
+### Added
+
+- US-002 - Resolve host uid/gid and thread build-args through the production ensure-up path
+- US-001 - Re-home the bun user to HOST_UID/HOST_GID build-args in the worker image
+
 ## [0.55.0] - 2026-07-04
 
 ### Added
