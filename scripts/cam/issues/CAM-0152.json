@@ -1,7 +1,7 @@
 {
   "id": "CAM-152",
   "title": "CAM-150 B-2: flip the worker spawn through the container (fail-closed) + live validation",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-01T15:04:55.555Z",
