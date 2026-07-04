@@ -35,12 +35,14 @@ import type { PlanPreflightResult } from './plan-preflight.ts';
 import type { PlanVerdictReport } from './plan-verdict-report.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
-import type { PlanApproval } from '../config/models.ts';
+import type { PlanApproval, WorkerIsolation } from '../config/models.ts';
 import type { LoopPhase } from '../commands/status.ts';
+import type { PreflightResult } from './preflight-container.ts';
 import { buildPlannerWorkerArgv, buildAuditorWorkerArgv } from './plan-argv.ts';
 import { readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { decidePostAuditAction } from '../plan/plan-approval-decision.ts';
+import { dockerExecWrap } from './docker-exec.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -105,6 +107,12 @@ export type PlanPhaseResult =
 	| { kind: 'planner-timeout' }
 	| { kind: 'auditor-timeout' }
 	| { kind: 'planner-failed' }
+	/**
+	 * Container preflight blocked the spawn (US-006, CAM-152).
+	 * `phase` indicates which spawn was blocked ('planner' or 'auditor').
+	 * The corresponding worker was NEVER spawned on the host.
+	 */
+	| { kind: 'container-preflight-failed'; phase: 'planner' | 'auditor'; reason: string }
 	| { kind: 'audit-approved'; issue: IssueEntry; report: PlanVerdictReport }
 	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport };
 
@@ -276,6 +284,38 @@ export interface RunPlanPhaseOptions {
 	 * a claudeDir). Scoped to plan-runner spawns only; loop.ts is NOT modified.
 	 */
 	claudeDir?: string;
+
+	// -------------------------------------------------------------------------
+	// Container isolation (US-006, CAM-152)
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Worker isolation mode. 'container' wraps both planner and auditor shell
+	 * strings via dockerExecWrap before respawn-pane and enables fail-closed
+	 * preflight (preflightContainerFn not-ready -> container-preflight-failed).
+	 * 'host' (default) leaves every existing plan-phase behavior unchanged.
+	 */
+	workerIsolation?: WorkerIsolation;
+
+	/**
+	 * Container preflight seam. Called immediately before the planner spawn and
+	 * again before the auditor spawn. In container mode a not-ready result halts
+	 * the plan phase immediately (fail-closed: the worker is NEVER dispatched on
+	 * the host). In host mode the result is ignored. Optional for backward compat
+	 * with tests that do not inject it.
+	 *
+	 * Mirrors preflightContainerFn in RunSupervisorOptions and
+	 * MakeReviewDispatchOptions (patterns.md 'B-1/B-2 staged dispatch gating').
+	 */
+	preflightContainerFn?: () => PreflightResult;
+
+	/**
+	 * Best-effort escalation on container-preflight failure. Called fire-and-forget
+	 * (never awaited; never throws by contract) when the container is not ready in
+	 * container mode. Mirrors escalateFn in RunPostAuditOptions.
+	 * Optional: absent means silent no-op on preflight failure.
+	 */
+	escalateFn?: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +348,7 @@ function makeEventWriter(
  *
  * @cam_label is set BEFORE respawn-pane (AC5, patterns.md '@cam_label pane-labeling').
  * genUuid() output is lowercased (CAM-23: macOS uuidgen is uppercase).
+ * US-006 / CAM-152: shell is wrapped via dockerExecWrap when workerIsolation === 'container'.
  * Returns the lowercased uuid (for the event log if needed).
  */
 function resolveAndSpawnPlanner(
@@ -317,6 +358,7 @@ function resolveAndSpawnPlanner(
 	taskPrompt: string,
 	permissionMode: string,
 	logEvent: WorkerEventLogger | undefined,
+	workerIsolation: WorkerIsolation,
 	claudeDir?: string,
 ): string {
 	const uuid = genUuid().toLowerCase();
@@ -324,8 +366,10 @@ function resolveAndSpawnPlanner(
 	const backend = readBackend();
 	emitSpawnResolution({ phase: 'planner', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
 	const shell = buildPlannerWorkerArgv({ uuid, taskPrompt, permissionMode, model });
+	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
+	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'planner']);
-	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, shell]);
+	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, dispatchCmd]);
 	// AC4: pipe pane output to a per-worker out-log so silent no-ops are diagnosable.
 	if (claudeDir !== undefined) {
 		const outLog = join(claudeDir, `cam-plan-out-planner-${uuid}.log`);
@@ -341,6 +385,7 @@ function resolveAndSpawnPlanner(
  *
  * @cam_label is set BEFORE respawn-pane (AC5, patterns.md '@cam_label pane-labeling').
  * genUuid() output is lowercased (CAM-23: macOS uuidgen is uppercase).
+ * US-006 / CAM-152: shell is wrapped via dockerExecWrap when workerIsolation === 'container'.
  * Returns the lowercased uuid.
  */
 function resolveAndSpawnAuditor(
@@ -350,6 +395,7 @@ function resolveAndSpawnAuditor(
 	taskPrompt: string,
 	permissionMode: string,
 	logEvent: WorkerEventLogger | undefined,
+	workerIsolation: WorkerIsolation,
 	claudeDir?: string,
 ): string {
 	const uuid = genUuid().toLowerCase();
@@ -357,14 +403,44 @@ function resolveAndSpawnAuditor(
 	const backend = readBackend();
 	emitSpawnResolution({ phase: 'auditor', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
 	const shell = buildAuditorWorkerArgv({ uuid, taskPrompt, permissionMode, model });
+	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
+	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'auditor']);
-	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, shell]);
+	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, dispatchCmd]);
 	// AC4: pipe pane output to a per-worker out-log so silent no-ops are diagnosable.
 	if (claudeDir !== undefined) {
 		const outLog = join(claudeDir, `cam-plan-out-auditor-${uuid}.log`);
 		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', plannerPaneId, `cat >> ${outLog}`]);
 	}
 	return uuid;
+}
+
+/**
+ * Run the container preflight check before a plan spawn (US-006, CAM-152).
+ *
+ * Returns a container-preflight-failed PlanPhaseResult when container mode is
+ * active and preflightContainerFn reports not-ready; null otherwise (no block).
+ * escalateFn is called fire-and-forget when a block occurs.
+ *
+ * Mirrors the container preflight logic in loop.ts (B-2, US-004) and review.ts
+ * (US-005). The 'phase' discriminator ('planner' | 'auditor') identifies which
+ * spawn was blocked so the caller can log/notify accurately.
+ */
+function runContainerPlanPreflight(
+	phase: 'planner' | 'auditor',
+	workerIsolation: WorkerIsolation,
+	preflightContainerFn: (() => PreflightResult) | undefined,
+	escalateFn: (() => Promise<void>) | undefined,
+): Extract<PlanPhaseResult, { kind: 'container-preflight-failed' }> | null {
+	if (preflightContainerFn === undefined) return null;
+	const result = preflightContainerFn();
+	if (workerIsolation === 'container' && !result.ready) {
+		if (escalateFn !== undefined) {
+			void escalateFn(); // fire-and-forget: best-effort, never throws by contract
+		}
+		return { kind: 'container-preflight-failed', phase, reason: result.reason };
+	}
+	return null;
 }
 
 /**
@@ -492,22 +568,77 @@ function pollAuditorReport(
  * options object so the test suite can assert exact spawn sequences,
  * session-id case, label ordering, and timeout behavior.
  */
-export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
+/**
+ * Execute plan phase steps 4-7: container preflight (US-006) + planner spawn +
+ * planner poll + container preflight + auditor spawn + auditor poll.
+ *
+ * Extracted from runPlanPhase to keep that function under biome's
+ * noExcessiveLinesPerFunction(max=80) and noExcessiveCognitiveComplexity(max=15)
+ * limits (patterns.md 'Biome cognitive complexity: use factory/helper extraction').
+ *
+ * The caller (runPlanPhase) resolves plannerTaskPrompt and issue before calling;
+ * both are unavailable until steps 1-3 complete.
+ */
+function runPlanWorkerSequence(
+	opts: RunPlanPhaseOptions,
+	plannerTaskPrompt: string,
+	issue: IssueEntry,
+): PlanPhaseResult {
 	const {
-		spawnFn, isPaneAlive, sleepFn, genUuid,
-		selectIssueFn, readPlanVerdictFn, preflightFn, clock,
-		plannerPaneId, paneCountMutexFn, readPlannerReportFn,
-		ensureWorkerPane, claudeDir, clearStalePlanArtifactsFn,
+		spawnFn, isPaneAlive, sleepFn, genUuid, clock, plannerPaneId,
+		ensureWorkerPane, claudeDir, logEvent, readPlannerReportFn, readPlanVerdictFn,
 	} = opts;
-
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
-	// NOTE: plannerTaskPrompt is resolved AFTER issue selection (below) so it can
-	// be built from the selected issue.id (CAM-157 root-cause fix).
 	const auditorTaskPrompt = opts.auditorTaskPrompt ?? DEFAULT_AUDITOR_TASK_PROMPT;
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_PLAN_POLL_INTERVAL_MS;
 	const plannerTimeoutMs = opts.plannerTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
 	const auditorTimeoutMs = opts.auditorTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
-	const logEvent = opts.logEvent;
+	// US-006 / CAM-152: container isolation mode + preflight seam.
+	const workerIsolation: WorkerIsolation = opts.workerIsolation ?? 'host';
+	const { preflightContainerFn, escalateFn } = opts;
+
+	// Step 4: Container preflight (US-006) + planner spawn.
+	const planBlock = runContainerPlanPreflight('planner', workerIsolation, preflightContainerFn, escalateFn);
+	if (planBlock !== null) return planBlock;
+	const plannerLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
+	resolveAndSpawnPlanner(spawnFn, plannerLivePaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent, workerIsolation, claudeDir);
+
+	// Step 5: Poll planner — primary signal: prd.json written; fallback: pane dies.
+	const plannerDied = pollPlannerDeath(isPaneAlive, sleepFn, clock, spawnFn, plannerLivePaneId, pollIntervalMs, plannerTimeoutMs, readPlannerReportFn);
+	if (!plannerDied) return { kind: 'planner-timeout' };
+
+	// US-003: Guard — re-check if prd.json was actually written (Bug 4-adjacent).
+	if (isPlannerNoPrd(readPlannerReportFn)) return { kind: 'planner-failed' };
+
+	// Step 6: Container preflight (US-006) + auditor spawn.
+	const auditorBlock = runContainerPlanPreflight('auditor', workerIsolation, preflightContainerFn, escalateFn);
+	if (auditorBlock !== null) return auditorBlock;
+	const auditorLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
+	resolveAndSpawnAuditor(spawnFn, auditorLivePaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent, workerIsolation, claudeDir);
+
+	// Step 7: Poll auditor — verdict from FILE ONLY, never from capture-pane.
+	const auditorResult = pollAuditorReport(isPaneAlive, sleepFn, clock, spawnFn, readPlanVerdictFn, auditorLivePaneId, pollIntervalMs, auditorTimeoutMs);
+	if (!auditorResult.ok) return { kind: 'auditor-timeout' };
+	const { report } = auditorResult;
+	return report.verdict === 'APPROVE' ? { kind: 'audit-approved', issue, report } : { kind: 'audit-blocked', issue, report };
+}
+
+/**
+ * Execute the full plan phase deterministically.
+ *
+ * Returns a PlanPhaseResult discriminated union. The caller (US-006) is
+ * responsible for acting on the result (commit, branch, flip prd.json on
+ * audit-approved; re-plan loop on audit-blocked via CAM-151 Half B).
+ *
+ * Pure over its injected deps: all side effects are routed through the
+ * options object so the test suite can assert exact spawn sequences,
+ * session-id case, label ordering, and timeout behavior.
+ *
+ * Steps 4-7 (worker dispatch) are delegated to runPlanWorkerSequence to keep
+ * this function under biome's line/complexity limits (US-006, CAM-152).
+ */
+export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
+	const { preflightFn, selectIssueFn, paneCountMutexFn, clearStalePlanArtifactsFn, logEvent } = opts;
 
 	// Clear stale artifacts from any previous plan run (AC1, US-002).
 	// Runs BEFORE preflight so a stale APPROVE verdict cannot contaminate the
@@ -529,54 +660,19 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 
 	// Step 2: Pick plannable issue (AC3)
 	const issue = selectIssueFn();
-	if (issue === null) {
-		return { kind: 'no-plannable-issue' };
-	}
+	if (issue === null) return { kind: 'no-plannable-issue' };
 
-	// Build the target-aware planner task prompt AFTER the null-check, from
-	// the selected issue.id. The opts.plannerTaskPrompt override is honored for
-	// backward compat with tests that inject a fixed prompt (AC3, CAM-157).
+	// NOTE: plannerTaskPrompt is resolved AFTER issue selection so it can be
+	// built from the selected issue.id (CAM-157 root-cause fix).
+	// The opts.plannerTaskPrompt override is honored for backward compat.
 	const plannerTaskPrompt = opts.plannerTaskPrompt ?? buildPlannerTaskPrompt(issue.id);
 
 	// Step 3: Assert pane-count mutex (AC5)
-	// Production wiring: () => paneCountMutex(sessionName, tmuxSpawnFn)
-	if (paneCountMutexFn() === 'busy') {
-		return { kind: 'mutex-busy' };
-	}
+	if (paneCountMutexFn() === 'busy') return { kind: 'mutex-busy' };
 
-	// Step 4: Spawn planner pane — label 'planner' then respawn-pane -k (AC4, AC5).
-	const plannerLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
-	resolveAndSpawnPlanner(spawnFn, plannerLivePaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent, claudeDir);
-
-	// Step 5: Poll planner — primary signal: prd.json written; fallback: pane dies.
-	const plannerDied = pollPlannerDeath(
-		isPaneAlive, sleepFn, clock, spawnFn,
-		plannerLivePaneId, pollIntervalMs, plannerTimeoutMs, readPlannerReportFn,
-	);
-	if (!plannerDied) return { kind: 'planner-timeout' };
-
-	// US-003: Guard — re-check if prd.json was actually written (Bug 4-adjacent).
-	if (isPlannerNoPrd(readPlannerReportFn)) return { kind: 'planner-failed' };
-
-	// Step 6: Spawn auditor pane — label 'auditor' then respawn-pane -k (AC4, AC5).
-	const auditorLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
-	resolveAndSpawnAuditor(spawnFn, auditorLivePaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent, claudeDir);
-
-	// Step 7: Poll auditor — verdict from FILE ONLY, never from capture-pane.
-	const auditorResult = pollAuditorReport(
-		isPaneAlive, sleepFn, clock, spawnFn,
-		readPlanVerdictFn, auditorLivePaneId, pollIntervalMs, auditorTimeoutMs,
-	);
-
-	if (!auditorResult.ok) {
-		return { kind: 'auditor-timeout' };
-	}
-
-	const report = auditorResult.report;
-	if (report.verdict === 'APPROVE') {
-		return { kind: 'audit-approved', issue, report };
-	}
-	return { kind: 'audit-blocked', issue, report };
+	// Steps 4-7: Worker dispatch (container preflight + spawn + poll for both
+	// planner and auditor). Extracted to runPlanWorkerSequence (biome limits).
+	return runPlanWorkerSequence(opts, plannerTaskPrompt, issue);
 }
 
 // ---------------------------------------------------------------------------

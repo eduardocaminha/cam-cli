@@ -43,6 +43,7 @@ import { WORKER_REPORT_FILENAME, buildWorkerReportSendKeysArgv } from './worker-
 import type { ReviewReport } from './review-report.ts';
 import { REVIEW_REPORT_FILENAME } from './review-report.ts';
 import { preflightWorkerContainer } from './preflight-container.ts';
+import { readWorkerIsolation } from '../config/models.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -401,6 +402,42 @@ export function buildSupervisorOptions(
 	// US-R1-001: clear stale review-report.json before each reviewer respawn.
 	const clearReviewReport = makeClearReviewReport(cwd);
 
+	// US-005 / B-1 + B-2: production container preflight seam.
+	// Declared here (before makeReviewDispatch) so it can be threaded into both
+	// the review dispatch and the RunSupervisorOptions opts bag below.
+	// Uses real Docker probe (spawnSync) and real filesystem stat. CI has no Docker
+	// installed, so the probe will return daemon-unreachable -- in host mode that is
+	// fine (observe-only). In container mode (B-2 / CAM-152) a not-ready result is
+	// fail-closed: the loop blocks and never dispatches a host worker.
+	const preflightContainerFn: RunSupervisorOptions['preflightContainerFn'] = () =>
+		preflightWorkerContainer({
+			probe: (args) => {
+				const result = spawnSync('docker', args, {
+					stdio: 'pipe',
+					encoding: 'utf8',
+				} as Parameters<typeof spawnSync>[2]);
+				return {
+					stdout: typeof result.stdout === 'string' ? result.stdout : '',
+					exitCode: result.status ?? 1,
+				};
+			},
+			statFn: (path) => {
+				try {
+					const s = statSync(path);
+					return { mtimeMs: s.mtimeMs };
+				} catch {
+					return null;
+				}
+			},
+		});
+
+	// US-004 / B-2 (CAM-152): read worker isolation mode from project.toml.
+	// Declared here (before makeReviewDispatch) so it can be threaded into both
+	// the review dispatch and the RunSupervisorOptions opts bag below.
+	// 'container' enables dockerExecWrap + fail-closed preflight in the loop.
+	// 'host' (default) leaves every existing loop behavior unchanged.
+	const workerIsolation = readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'));
+
 	// Review dispatch.
 	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
 		spawn: (cmd, args) => {
@@ -445,6 +482,9 @@ export function buildSupervisorOptions(
 		readReviewReport,
 		// US-R1-001: clear stale report before each reviewer respawn.
 		clearReviewReport,
+		// US-005 / CAM-152: reviewer container isolation (mirrors implementer wiring).
+		workerIsolation,
+		preflightContainerFn,
 	});
 
 	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {
@@ -554,32 +594,6 @@ export function buildSupervisorOptions(
 	const readWorkerReport = makeReadWorkerReport(cwd);
 	const clearWorkerReport = makeClearWorkerReport(cwd);
 
-	// US-005 / B-1: production container preflight seam.
-	// Uses real Docker probe (spawnSync) and real filesystem stat. CI has no Docker
-	// installed, so the probe will return daemon-unreachable -- that is fine because
-	// in B-1 the result is observed only and never gates the host spawn.
-	const preflightContainerFn: RunSupervisorOptions['preflightContainerFn'] = () =>
-		preflightWorkerContainer({
-			probe: (args) => {
-				const result = spawnSync('docker', args, {
-					stdio: 'pipe',
-					encoding: 'utf8',
-				} as Parameters<typeof spawnSync>[2]);
-				return {
-					stdout: typeof result.stdout === 'string' ? result.stdout : '',
-					exitCode: result.status ?? 1,
-				};
-			},
-			statFn: (path) => {
-				try {
-					const s = statSync(path);
-					return { mtimeMs: s.mtimeMs };
-				} catch {
-					return null;
-				}
-			},
-		});
-
 	// US-002: build the notifyOrchestrator closure that resolves the orch pane
 	// and sends the verdict line via send-keys. Uses a spawnSync adapter that
 	// matches the TmuxSpawnFn signature (returns SpawnSyncReturns, not the
@@ -680,8 +694,11 @@ export function buildSupervisorOptions(
 		sleepFn: (ms) => {
 			Bun.sleepSync(ms);
 		},
-		// US-005 / B-1: container preflight seam (observe-only; does not gate spawn).
+		// US-005 / B-1 + B-2: container preflight seam.
+		// Fail-closed in container mode (workerIsolation === 'container').
 		preflightContainerFn,
+		// US-004 / B-2 (CAM-152): isolation mode drives dockerExecWrap + fail-closed.
+		workerIsolation,
 	};
 
 	return {

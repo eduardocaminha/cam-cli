@@ -34,9 +34,12 @@ import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPr
 import type { WorkerEventLogger } from './events.ts';
 import type { PrdSnapshot } from './decide.ts';
 import type { ReviewReport, ReviewFinding } from './review-report.ts';
+import type { PreflightResult } from './preflight-container.ts';
 import { workerEnvPrefix } from './worker-argv.ts';
 import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
+import type { WorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
+import { dockerExecWrap } from './docker-exec.ts';
 
 // ---------------------------------------------------------------------------
 // buildReviewerWorkerArgv
@@ -265,6 +268,28 @@ export interface MakeReviewDispatchOptions {
 	 * compat with callers that do not yet inject this dep.
 	 */
 	clearReviewReport?: () => void;
+	/**
+	 * Worker isolation mode (US-005 / CAM-152).
+	 * 'container': wraps shellCmd through dockerExecWrap before respawn-pane and
+	 *   enables fail-closed preflight (preflightContainerFn not-ready -> error).
+	 * 'host' (default): no wrapping, no preflight gating. All existing behavior
+	 *   unchanged (backward compat).
+	 */
+	workerIsolation?: WorkerIsolation;
+	/**
+	 * Container preflight seam (US-005 / CAM-152).
+	 * When provided, called before each reviewer respawn-pane. In container mode
+	 * a not-ready result is fail-closed: returns status='error' with a
+	 * 'container-not-ready' detail, never dispatches an un-wrapped host reviewer.
+	 * When absent (or in host mode), dispatch is unchanged (backward compat).
+	 */
+	preflightContainerFn?: () => PreflightResult;
+	/**
+	 * Optional escalation hook called fire-and-forget when container preflight
+	 * fails in container mode. Mirrors escalateFn in RunSupervisorOptions.
+	 * When absent, the blocked return is silent (no escalation attempt).
+	 */
+	escalateFn?: () => Promise<void>;
 }
 
 /** Default max review rounds (mirrors decide.ts and cam-review.md). */
@@ -318,6 +343,9 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	const readReviewReport = opts.readReviewReport;
 	const clearReviewReport = opts.clearReviewReport;
 	const warnFn = opts.warnFn ?? ((msg: string) => console.warn(`[cam/review] ${msg}`));
+	// US-005 / CAM-152: reviewer container isolation.
+	const workerIsolation = opts.workerIsolation ?? 'host';
+	const preflightContainerFn = opts.preflightContainerFn;
 
 	return function reviewDispatch(uuid: string): ReviewDispatchResult {
 		// CAM-57: ensure a live worker pane exists before the respawn. When
@@ -350,6 +378,33 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		// Best-effort: clearReviewReport handles the no-file case gracefully.
 		clearReviewReport?.();
 
+		// US-005 / CAM-152: container preflight. In container mode a not-ready result
+		// is fail-closed: return status='error' without dispatching an un-wrapped host
+		// reviewer. Mirrors the B-2 logic in loop.ts (~lines 811-848).
+		if (preflightContainerFn !== undefined) {
+			const preflightResult = preflightContainerFn();
+			if (workerIsolation === 'container' && !preflightResult.ready) {
+				const containerReason = `container-not-ready: ${preflightResult.reason}`;
+				if (opts.escalateFn !== undefined) {
+					const ef = opts.escalateFn;
+					void (async () => {
+						try {
+							await ef();
+						} catch (e) {
+							process.stderr.write(
+								`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+							);
+						}
+					})();
+				}
+				return { status: 'error', detail: containerReason };
+			}
+		}
+
+		// US-005 / CAM-152: wrap through docker exec in container mode.
+		// In host mode (default), dispatchCmd === shellCmd (zero behavior change).
+		const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shellCmd) : shellCmd;
+
 		// US-007: emit structured {phase, model, backend} spawn-resolution event.
 		// writeEvent bridges into the structured worker event log (logEvent sink).
 		emitSpawnResolution({
@@ -361,7 +416,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 				: undefined,
 		});
 
-		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, shellCmd]);
+		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, dispatchCmd]);
 
 		// Poll until one of three sources signals completion:
 		//   1. review-report.json present and well-formed (primary, structured).

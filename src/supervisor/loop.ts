@@ -34,6 +34,8 @@ import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
 import { readPhaseModel, readBackend } from '../config/models.ts';
+import type { WorkerIsolation } from '../config/models.ts';
+import { dockerExecWrap } from './docker-exec.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { formatReviewVerdictLine, formatWorkerReportSummary, type WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
@@ -357,20 +359,33 @@ export interface RunSupervisorOptions {
 	 */
 	escalateFn?: () => Promise<void>;
 	/**
-	 * Container preflight seam (US-005 / B-1 observe-only).
+	 * Container preflight seam (US-005 / B-1 observe-only; B-2 fail-closed).
 	 *
 	 * When injected, called once per implement dispatch immediately before the
 	 * respawn-pane call. The PreflightResult is emitted to the logEvent sink as a
-	 * 'container-preflight' event for observability. In B-1 the result does NOT
-	 * gate, block, or alter the live host spawn: the worker always dispatches on
-	 * the host regardless of ready/reason. B-2 (CAM-152) will flip this
-	 * fail-closed using escalateFn.
+	 * 'container-preflight' event for observability. In B-1 the result was
+	 * observe-only. In B-2 (CAM-152, US-004), when workerIsolation === 'container'
+	 * a not-ready result is fail-closed: the loop escalates via escalateFn and
+	 * returns { status: 'blocked' } with a container-named reason without ever
+	 * dispatching a host worker. In host mode (default) the result is still
+	 * observe-only (zero behavior change).
 	 *
 	 * Optional: when absent (existing callers / tests that do not inject this dep)
 	 * the loop behavior is byte-for-byte unchanged. The seam is the testable
 	 * injection point; production wiring lives in host.ts.
 	 */
 	preflightContainerFn?: () => PreflightResult;
+	/**
+	 * Worker isolation mode (US-004 / B-2 CAM-152).
+	 *
+	 * 'container': wraps shellCmd through dockerExecWrap before respawn-pane and
+	 *   enables fail-closed preflight (preflightContainerFn not-ready -> blocked).
+	 * 'host' (default): shellCmd passed unchanged, preflight is observe-only.
+	 *
+	 * Optional: when absent defaults to 'host', preserving all existing behavior
+	 * byte-for-byte. Production wiring: host.ts reads readWorkerIsolation().
+	 */
+	workerIsolation?: WorkerIsolation;
 }
 
 // ---------------------------------------------------------------------------
@@ -607,8 +622,12 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const clearWorkerReport = opts.clearWorkerReport;
 	// Passed to readWorkerOutcome for the worker-report-fallback branch.
 	const workerReportPath = opts.workerReportPath;
-	// US-005 / B-1: container preflight seam. Observed-only in B-1; does not gate.
+	// US-005 / B-1 + B-2: container preflight seam. Observe-only in B-1; fail-closed in
+	// container mode (B-2 / CAM-152). See workerIsolation below.
 	const preflightContainerFn = opts.preflightContainerFn;
+	// US-004 / B-2 (CAM-152): worker isolation mode. 'container' enables dockerExecWrap
+	// and fail-closed preflight. Default 'host' preserves all existing behavior byte-for-byte.
+	const workerIsolation = opts.workerIsolation ?? 'host';
 
 	// --- US-001 progress tracking helpers ---
 	// Compute done/total counts from a PRD snapshot (non-operator stories only).
@@ -789,10 +808,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// Best-effort: clearWorkerReport handles the no-file case gracefully.
 			clearWorkerReport?.();
 
-			// US-005 / B-1: container preflight (observe-only, never gates in B-1).
-			// Call the injectable seam so the PreflightResult is available before dispatch.
-			// The result is threaded into the logEvent sink for observability; the host
-			// spawn is UNCHANGED regardless of ready/reason (fail-closed is CAM-152 / B-2).
+			// US-005 / B-1 + B-2: container preflight. In B-1 this was observe-only.
+			// In B-2 (CAM-152, US-004), container mode is fail-closed: a not-ready result
+			// blocks dispatch immediately without ever spawning a host worker.
 			if (preflightContainerFn !== undefined) {
 				const preflightResult = preflightContainerFn();
 				if (logEvent !== undefined) {
@@ -807,7 +825,32 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						detail: preflightDetail,
 					});
 				}
+				// B-2 (CAM-152): fail-closed in container mode.
+				// When the container is not ready, block immediately. Never fall back to host.
+				if (workerIsolation === 'container' && !preflightResult.ready) {
+					const containerReason = `container-not-ready: ${preflightResult.reason} (advisory ${advisoryStoryId ?? 'unknown'})`;
+					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
+					iterations++;
+					if (opts.escalateFn !== undefined) {
+						const escalateFn = opts.escalateFn;
+						void (async () => {
+							try {
+								await escalateFn();
+							} catch (e) {
+								process.stderr.write(
+									`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+								);
+							}
+						})();
+					}
+					notifyTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
 			}
+
+			// US-004 / B-2 (CAM-152): wrap through docker exec in container mode.
+			// In host mode (default), dispatchCmd === shellCmd (zero behavior change).
+			const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shellCmd) : shellCmd;
 
 			// US-007: emit structured {phase, model, backend} spawn-resolution event.
 			// writeEvent bridges into the structured worker event log (logEvent sink).
@@ -822,7 +865,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 			// Respawn the worker pane with the implementer command.
 			// respawn-pane -k reuses the existing pane (no new split-window spawned).
-			spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, shellCmd]);
+			spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, dispatchCmd]);
 
 			// US-013: worker-start. storyId is advisory here (the worker
 			// self-selects); later events carry the actual completed story.
@@ -931,25 +974,30 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// storms to MAX_ITERATIONS. Apply the same escalating backoff + cap as
 			// the no-progress guard: block cleanly after MAX_DEAD_WORKER_RETRIES
 			// consecutive failures instead of spinning.
+			// US-004 / B-2 (CAM-152): in container mode, pane-died means docker exec
+			// exited (container gone mid-dispatch). Route to a container-named reason.
+			// There is NO host fallback path in container mode.
 			if (pollOutcome === 'pane-died' || pollOutcome === 'timeout') {
 				if (pollOutcome === 'timeout') {
 					// Kill the stuck worker so the next dispatch starts from a clean pane.
 					spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
 				}
 				deadWorkerStreak += 1;
+				const isContainerExecFailure = workerIsolation === 'container' && pollOutcome === 'pane-died';
 				if (deadWorkerStreak >= MAX_DEAD_WORKER_RETRIES) {
-					lastOutcome = {
-						kind: 'blocked',
-						storyId: undefined,
-						detail: `dead-worker: ${deadWorkerStreak} consecutive ${pollOutcome} outcomes (advisory ${advisoryStoryId ?? 'unknown'})`,
-					};
+					const terminalDetail = isContainerExecFailure
+						? `container-exec-failure: ${deadWorkerStreak} consecutive docker-exec exits (advisory ${advisoryStoryId ?? 'unknown'})`
+						: `dead-worker: ${deadWorkerStreak} consecutive ${pollOutcome} outcomes (advisory ${advisoryStoryId ?? 'unknown'})`;
+					lastOutcome = { kind: 'blocked', storyId: undefined, detail: terminalDetail };
 					notifyTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
 				lastOutcome = {
 					kind: 'blocked',
 					storyId: undefined,
-					detail: pollOutcome === 'pane-died' ? 'pane-died-pre-result' : 'timeout',
+					detail: isContainerExecFailure
+						? 'container-exec-failure'
+						: pollOutcome === 'pane-died' ? 'pane-died-pre-result' : 'timeout',
 				};
 				const deadBackoffMs = computeBackoffMs(deadWorkerStreak, {
 					base: NO_PROGRESS_BACKOFF_MS,

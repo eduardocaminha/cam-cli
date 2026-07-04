@@ -4,6 +4,17 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.55.0] - 2026-07-04
+
+### Added
+
+- [US-006] - Flip the planner + auditor spawns through the container + add plan-runner preflight seam (fail-closed)
+- [US-005] - Flip the reviewer spawn through the container (fail-closed)
+- [US-004] - Flip the implementer spawn through the container (fail-closed) + ADR
+- [US-003] - Ensure-up idempotent container lifecycle at supervisor boot
+- [US-002] - Add dockerExecWrap() shared chokepoint helper
+- [US-001] - Add fail-closed [loop] worker_isolation config reader
+
 ## [0.54.0] - 2026-07-03
 
 ### Added

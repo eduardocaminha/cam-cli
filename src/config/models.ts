@@ -205,6 +205,12 @@ export function readResendConfig(configPath?: string): ResendConfig {
 }
 
 /**
+ * Worker isolation mode. `"container"` spawns workers inside the container;
+ * `"host"` spawns on the host (the default, fail-closed).
+ */
+export type WorkerIsolation = 'host' | 'container';
+
+/**
  * The meta-loop mode. `"observe"` enables the inter-cycle drainer;
  * `"off"` disables it (the default, fail-closed).
  */
@@ -270,4 +276,35 @@ export function readPlanApproval(configPath?: string): PlanApproval {
 		// Malformed TOML or fs read error: fall back to default.
 	}
 	return 'auto';
+}
+
+/**
+ * Read the worker isolation mode from the project config. Returns `"container"`
+ * only when `[loop] worker_isolation = "container"` is set exactly; returns
+ * `"host"` in every other case (missing file, missing [loop] section, missing
+ * key, malformed TOML, non-string, or any value other than `"container"`).
+ *
+ * The default `"host"` is fail-closed: a typo or missing config never silently
+ * enables container routing.
+ *
+ * @param configPath  Override the config file path (default:
+ *                    `scripts/cam/project.toml` resolved from `process.cwd()`).
+ *                    Used by tests to target a tmp fixture without modifying
+ *                    the real project config.
+ */
+export function readWorkerIsolation(configPath?: string): WorkerIsolation {
+	const path = configPath ?? defaultProjectConfigPath();
+	try {
+		const config = loadConfig(path);
+		const loopSection = config['loop'];
+		if (loopSection !== undefined && loopSection !== null && typeof loopSection === 'object') {
+			const value = (loopSection as Record<string, unknown>)['worker_isolation'];
+			if (value === 'container') {
+				return 'container';
+			}
+		}
+	} catch {
+		// Malformed TOML or fs read error: fall back to default.
+	}
+	return 'host';
 }

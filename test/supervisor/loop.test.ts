@@ -3098,6 +3098,188 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 			expect(detail?.reason).toBeUndefined();
 		});
 	});
+
+	// US-004 / B-2 (CAM-152): container dispatch tests
+	describe('US-004 / B-2: container mode dispatch (workerIsolation=container)', () => {
+		/**
+		 * Shared base: one-story PRD that completes in one iteration via report file.
+		 */
+		function oneStoryBase(): Partial<RunSupervisorOptions> {
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+			const fakeReport: WorkerReport = {
+				outcome: 'DONE',
+				story: 'US-001',
+				gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+				notes: 'none',
+			};
+			let prdCall = 0;
+			return {
+				readPrd: () => {
+					prdCall++;
+					return prdCall <= 1 ? prd_impl : prd_done;
+				},
+				readHandoff: () => makeHandoff('US-001'),
+				capturePane: (_paneId) => donePane('US-001'),
+				readWorkerReport: () => fakeReport,
+			};
+		}
+
+		test('AC1/AC4: container mode wraps shellCmd with docker exec prefix before respawn-pane', async () => {
+			const dispatchedCmds: string[] = [];
+
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: true }),
+				spawn: (_cmd, args) => {
+					if (args.includes('respawn-pane')) {
+						// The last element of the args array is the shell command passed to respawn-pane -k.
+						const lastArg = args[args.length - 1];
+						if (typeof lastArg === 'string') dispatchedCmds.push(lastArg);
+					}
+					return { stdout: '', exitCode: 0 };
+				},
+			});
+
+			await runSupervisor(opts);
+
+			expect(dispatchedCmds.length).toBeGreaterThanOrEqual(1);
+			const dispatchedCmd = dispatchedCmds[0] ?? '';
+			// AC4: dispatched string starts with 'docker exec -it cam-worker'
+			expect(dispatchedCmd).toMatch(/^docker exec -it cam-worker /);
+			// AC4: contains 'env -u CLAUDECODE'
+			expect(dispatchedCmd).toContain('env -u CLAUDECODE');
+			// AC4: contains 'claude'
+			expect(dispatchedCmd).toContain('claude');
+			// AC4: contains '--session-id' with a lowercase uuid
+			expect(dispatchedCmd).toMatch(/--session-id [0-9a-f-]+/);
+		});
+
+		test('AC5: host mode (default, no workerIsolation) passes shellCmd unchanged', async () => {
+			const dispatchedCmds: string[] = [];
+
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				// workerIsolation intentionally absent -> defaults to 'host'
+				preflightContainerFn: () => ({ ready: false, reason: 'daemon-unreachable' }),
+				spawn: (_cmd, args) => {
+					if (args.includes('respawn-pane')) {
+						const lastArg = args[args.length - 1];
+						if (typeof lastArg === 'string') dispatchedCmds.push(lastArg);
+					}
+					return { stdout: '', exitCode: 0 };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			// Host mode completes normally (preflight not-ready is observe-only)
+			expect(result.status).toBe('complete');
+			const dispatchedCmd = dispatchedCmds[0] ?? '';
+			// No docker prefix in host mode
+			expect(dispatchedCmd).not.toMatch(/^docker exec/);
+			// Contains 'claude' (the raw shellCmd)
+			expect(dispatchedCmd).toContain('claude');
+		});
+
+		test('AC2: container mode + preflight not-ready -> blocked, respawn-pane never called', async () => {
+			let respawnCalled = false;
+
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: false, reason: 'daemon-unreachable' }),
+				spawn: (_cmd, args) => {
+					if (args.includes('respawn-pane')) respawnCalled = true;
+					return { stdout: '', exitCode: 0 };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			expect(respawnCalled).toBe(false);
+			expect(result.lastOutcome?.detail).toMatch(/container-not-ready/);
+			expect(result.lastOutcome?.detail).toContain('daemon-unreachable');
+		});
+
+		test('AC2: container mode + preflight not-ready -> blocked reason is container-named', async () => {
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: false, reason: 'image-missing' }),
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			expect(result.lastOutcome?.detail).toContain('container-not-ready');
+			expect(result.lastOutcome?.detail).toContain('image-missing');
+		});
+
+		test('AC3: pane-died in container mode routes to container-named blocked reason', async () => {
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			let paneAliveCallCount = 0;
+			// isPaneAlive returns false on first call (pane immediately dies)
+			const isPaneAlive: IsPaneAlive = (_paneId) => {
+				paneAliveCallCount++;
+				return false;
+			};
+
+			const opts = makeBaseOpts({
+				readPrd: () => prd_impl,
+				readHandoff: () => null,
+				capturePane: () => '',
+				isPaneAlive,
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: true }),
+				// No readWorkerReport injected -> falls through to pane-alive poll
+			});
+
+			const result = await runSupervisor(opts);
+
+			// After MAX_DEAD_WORKER_RETRIES the loop blocks.
+			expect(result.status).toBe('blocked');
+			// The terminal reason must be container-named.
+			expect(result.lastOutcome?.detail).toContain('container-exec-failure');
+		});
+
+		test('AC3: container mode pane-died reason does not contain generic pane-died-pre-result', async () => {
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const isPaneAlive: IsPaneAlive = (_paneId) => false;
+
+			const opts = makeBaseOpts({
+				readPrd: () => prd_impl,
+				readHandoff: () => null,
+				capturePane: () => '',
+				isPaneAlive,
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: true }),
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			// Generic host detail must NOT appear in container mode pane-died.
+			expect(result.lastOutcome?.detail).not.toContain('pane-died-pre-result');
+		});
+
+		test('AC2: container preflight ready:true -> dispatch proceeds (no false block)', async () => {
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: true }),
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+		});
+	});
 });
 
 // ---------------------------------------------------------------------------
