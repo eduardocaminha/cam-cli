@@ -1,0 +1,9 @@
+{
+  "id": "CAM-176",
+  "title": "Wire init-firewall.sh into cam ensure-up container path (no firewall applied today)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-04T01:28:11.655Z",
+  "description": "The cam worker-container path (ensureWorkerContainer -> runWorkerContainer -> docker run ... sleep infinity) never invokes .devcontainer/init-firewall.sh, so the cam-worker container runs with NET_ADMIN/NET_RAW caps but NO iptables/ipset egress rules. The firewall is only a devcontainer postStartCommand, not part of cam's dispatch. Result: CAM-152 container mode is NOT sandboxed egress-wise. Wire the firewall init to run after docker run (sudo bash /workspace/.devcontainer/init-firewall.sh) in the ensure-up path, and add a readiness check. Ties CAM-116 (firewall) and CAM-175 (validation was run without firewall)."
+}
