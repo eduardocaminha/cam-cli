@@ -948,3 +948,15 @@ Each entry follows this template:
 - **Decisions**: Grill settled: (1) container persistent + ensure-up idempotent at boot (up/down/absent/stale), no teardown on cam stop; (2) all four workers wrapped incl planner+auditor, which required building a new plan-runner container preflight seam; (3) opt-in flag default host, so zero behavior change until operator flips + rebuilds; (4) fail-closed literal, no host fallback. plan_approval kept auto: operator participates only at spec.
 - **Blockers encountered**: Post-merge pull-failed: an unpushed local-main commit (img cleanup, acde9da) diverged local main from the PR squash (e52d553), so the sidecar git pull refused. Recovered by hand: reset --hard origin/main (lossless, content subsumed by squash) then closeIssueOnMain, cam tag v0.55.0, prune branch.
 - **Follow-ups**: 1. Post-merge resilience to a diverged local main (unpushed pre-branch commit subsumed by squash). 2. Live-validation ceremony (requires:operator): rebuild+reinstall 0.55.0, set worker_isolation=container, run a representative story GREEN inside the container under the firewall + confirm claude auth. 3. CAM-139 now unblocked but gated on container active (needs the ceremony first).
+
+## cam-178-container-worker-uid-align — container worker uid alignment (fix /workspace EACCES)
+
+- **Started**: 2026-07-04
+- **Closed**: 2026-07-04
+- **Branch**: cam/pr-178-container-worker-uid-align
+- **Issue**: CAM-178
+- **Outcome**: shipped
+- **Summary**: Aligned the cam-worker container user uid/gid to the host at build time (Dockerfile HOST_UID/HOST_GID build-args + usermod/chown; worker-container.ts threads --build-arg through ensure-up), fixing the /workspace EACCES (bun uid vs host uid) that blocked all container workers. Shipped v0.56.0 (PR #129), review CLEAN round 1, CI green, auto-merged, post-merge clean.
+- **Decisions**: Fix = build-time uid alignment (operator-chosen over run-as-host-uid-runtime or chown-workspace). First of 3 container-mode blockers found in the CAM-175 live-validation ceremony.
+- **Blockers encountered**: None within CAM-178. Context: the CAM-175 ceremony this session proved CAM-152 container mode is non-functional for real workers; the -p auth smoke passed but hid two integration bugs (onboarding block + EACCES) surfaced only by the real worker dispatch.
+- **Follow-ups**: CAM-179 (onboarding/trust seed) + CAM-176 (firewall wiring) still block container mode. After both ship + rebuild to 0.56.0, re-run CAM-175, then CAM-139. Also filed CAM-174 (post-merge resilience), CAM-177 (.dockerignore). CAM-160 specified but unshipped (ceremony planner could not write its PRD due to CAM-178, now fixed).
