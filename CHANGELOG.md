@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.59.0] - 2026-07-04
+
+### Added
+
+- [US-001] - Apply init-firewall.sh in ensure-up container path, fail-closed
+
 ## [0.58.0] - 2026-07-04
 
 ### Added
