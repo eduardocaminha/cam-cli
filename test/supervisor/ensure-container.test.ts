@@ -26,6 +26,10 @@ import {
 	FirewallError,
 	type FirewallSpawnFn,
 } from '../../src/supervisor/container-firewall.ts';
+import {
+	ContainerConfigError,
+	type ConfigSpawnFn,
+} from '../../src/supervisor/container-config.ts';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -666,5 +670,247 @@ describe('ensureWorkerContainer: FirewallError thrown on non-zero firewall exit 
 		expect(() => {
 			ensureWorkerContainer(makeOptsWithFirewall(probe.fn, spawn.fn, fw.fn));
 		}).not.toThrow();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Config seam helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a ConfigSpawnFn that records calls and returns the given exit code.
+ */
+function makeConfigSpawnFn(exitCode = 0): {
+	fn: ConfigSpawnFn;
+	calls: { cmd: string; args: string[] }[];
+} {
+	const calls: { cmd: string; args: string[] }[] = [];
+	const fn: ConfigSpawnFn = (cmd, args) => {
+		calls.push({ cmd, args });
+		return { stdout: '', stderr: '', exitCode };
+	};
+	return { fn, calls };
+}
+
+/** Build opts that include a configSpawnFn for testing the unconditional exec. */
+function makeOptsWithConfig(
+	probe: DockerProbe,
+	spawnFn: ContainerSpawnFn,
+	configSpawnFn: ConfigSpawnFn,
+	extra: Partial<EnsureWorkerContainerOptions> = {},
+): EnsureWorkerContainerOptions {
+	return { probe, spawnFn, configSpawnFn, workspaceFolder: WORKSPACE, ...extra };
+}
+
+// ---------------------------------------------------------------------------
+// AC1: config exec is invoked UNCONDITIONALLY on all four reconcile branches
+// ---------------------------------------------------------------------------
+
+describe('ensureWorkerContainer: config exec invoked unconditionally on all branches (AC1)', () => {
+	test('config exec is invoked when action=reused (running branch)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true\n', exitCode: 0 }, // running
+		});
+		const spawn = makeRecordingSpawnFn();
+		const cfg = makeConfigSpawnFn(0);
+		ensureWorkerContainer(makeOptsWithConfig(probe.fn, spawn.fn, cfg.fn));
+
+		// Two docker exec calls: chown + node config-assert
+		expect(cfg.calls.length).toBeGreaterThanOrEqual(2);
+		expect(cfg.calls[0]?.cmd).toBe('docker');
+		expect(cfg.calls[0]?.args[0]).toBe('exec');
+	});
+
+	test('config exec is invoked when action=started (stopped branch)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'false\n', exitCode: 0 }, // stopped
+		});
+		const spawn = makeRecordingSpawnFn();
+		const cfg = makeConfigSpawnFn(0);
+		ensureWorkerContainer(makeOptsWithConfig(probe.fn, spawn.fn, cfg.fn));
+
+		expect(cfg.calls.length).toBeGreaterThanOrEqual(2);
+		expect(cfg.calls[0]?.cmd).toBe('docker');
+	});
+
+	test('config exec is invoked when action=created (absent branch)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: '', exitCode: 1 }, // absent
+		});
+		const spawn = makeRecordingSpawnFn();
+		const cfg = makeConfigSpawnFn(0);
+		ensureWorkerContainer(makeOptsWithConfig(probe.fn, spawn.fn, cfg.fn));
+
+		expect(cfg.calls.length).toBeGreaterThanOrEqual(2);
+		expect(cfg.calls[0]?.cmd).toBe('docker');
+	});
+
+	test('config exec is invoked when action=rebuilt (image-stale branch)', () => {
+		const OLD_DATE = new Date(0).toISOString();
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: OLD_DATE, exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const cfg = makeConfigSpawnFn(0);
+		ensureWorkerContainer(
+			makeOptsWithConfig(probe.fn, spawn.fn, cfg.fn, {
+				statFn: (_path) => ({ mtimeMs: Date.now() }), // stale trigger
+			}),
+		);
+
+		expect(cfg.calls.length).toBeGreaterThanOrEqual(2);
+		expect(cfg.calls[0]?.cmd).toBe('docker');
+	});
+
+	test('config exec argv includes the correct container name', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const cfg = makeConfigSpawnFn(0);
+		ensureWorkerContainer(
+			makeOptsWithConfig(probe.fn, spawn.fn, cfg.fn, { containerName: 'cam-worker' }),
+		);
+
+		const chownCall = cfg.calls[0];
+		expect(chownCall?.args).toContain('cam-worker');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC2: absent configSpawnFn = no config exec calls (host mode / legacy)
+// ---------------------------------------------------------------------------
+
+describe('ensureWorkerContainer: no config exec when configSpawnFn is absent (AC2)', () => {
+	test('no config exec call when configSpawnFn is absent (running branch)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		// No configSpawnFn injected
+		ensureWorkerContainer(makeOpts(probe.fn, spawn.fn));
+
+		// spawnFn calls = none (reused branch + no firewall + no config)
+		const execCalls = spawn.calls.filter((c) => c.args[0] === 'exec');
+		expect(execCalls).toHaveLength(0);
+	});
+
+	test('no config exec call when configSpawnFn is absent (stopped branch)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'false', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		ensureWorkerContainer(makeOpts(probe.fn, spawn.fn));
+
+		const execCalls = spawn.calls.filter((c) => c.args[0] === 'exec');
+		expect(execCalls).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC1 (error path): ContainerConfigError thrown on non-zero config exit
+// ---------------------------------------------------------------------------
+
+describe('ensureWorkerContainer: ContainerConfigError thrown on non-zero config exit', () => {
+	test('throws ContainerConfigError when configSpawnFn exits non-zero', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 }, // running
+		});
+		const spawn = makeRecordingSpawnFn();
+		const cfg = makeConfigSpawnFn(1); // non-zero exit
+
+		expect(() => {
+			ensureWorkerContainer(makeOptsWithConfig(probe.fn, spawn.fn, cfg.fn));
+		}).toThrow(ContainerConfigError);
+	});
+
+	test('ContainerConfigError is instanceof ContainerConfigError (typed check works)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'false', exitCode: 0 }, // stopped
+		});
+		const spawn = makeRecordingSpawnFn();
+		const cfg = makeConfigSpawnFn(1);
+
+		try {
+			ensureWorkerContainer(makeOptsWithConfig(probe.fn, spawn.fn, cfg.fn));
+			throw new Error('Expected ContainerConfigError to be thrown');
+		} catch (e) {
+			expect(e).toBeInstanceOf(ContainerConfigError);
+		}
+	});
+
+	test('ContainerConfigError carries stderrTail from the config spawn', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const stderrText = 'chown: changing ownership: Operation not permitted';
+		const failCfg: ConfigSpawnFn = () => ({
+			stdout: '',
+			stderr: stderrText,
+			exitCode: 1,
+		});
+
+		try {
+			ensureWorkerContainer(makeOptsWithConfig(probe.fn, spawn.fn, failCfg));
+			throw new Error('Expected ContainerConfigError to be thrown');
+		} catch (e) {
+			expect(e).toBeInstanceOf(ContainerConfigError);
+			if (e instanceof ContainerConfigError) {
+				expect(e.stderrTail).toContain('chown');
+			}
+		}
+	});
+
+	test('no ContainerConfigError thrown when configSpawnFn exits 0', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const cfg = makeConfigSpawnFn(0); // success
+		expect(() => {
+			ensureWorkerContainer(makeOptsWithConfig(probe.fn, spawn.fn, cfg.fn));
+		}).not.toThrow();
+	});
+
+	test('reconcile action proceeds before config check (reused branch + throw)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const cfg = makeConfigSpawnFn(1);
+		let caughtError: unknown;
+		try {
+			ensureWorkerContainer(makeOptsWithConfig(probe.fn, spawn.fn, cfg.fn));
+		} catch (e) {
+			caughtError = e;
+		}
+		expect(caughtError).toBeInstanceOf(ContainerConfigError);
+		// Still no mutation calls (reused branch)
+		expect(spawn.calls).toHaveLength(0);
 	});
 });

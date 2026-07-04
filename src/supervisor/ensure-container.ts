@@ -37,6 +37,11 @@ import {
 	FirewallError,
 	type FirewallSpawnFn,
 } from './container-firewall.ts';
+import {
+	applyContainerConfig,
+	ContainerConfigError,
+	type ConfigSpawnFn,
+} from './container-config.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -117,6 +122,71 @@ export interface EnsureWorkerContainerOptions {
 	 * When absent, no firewall call is made (host-mode / legacy tests).
 	 */
 	firewallSpawnFn?: FirewallSpawnFn;
+
+	/**
+	 * Injectable spawn function for the config repair exec calls.
+	 *
+	 * When provided, `ensureWorkerContainer` calls `applyContainerConfig`
+	 * UNCONDITIONALLY after the 4-branch reconcile (and after the firewall
+	 * apply), regardless of which action was taken.  This ensures that a
+	 * reused container (which persists a corrupted .claude.json across sidecar
+	 * ticks) has its config repaired on every boot.
+	 *
+	 * The HOST_UID/HOST_GID resolved by `resolveHostIds` (already present in
+	 * `opts.build`) are threaded into the chown step so the chown target is
+	 * the numeric `uid:gid` form rather than a hardcoded named user.
+	 *
+	 * If either exec step exits non-zero, a `ContainerConfigError` is thrown
+	 * so the caller (sidecar boot) can abort fail-closed.
+	 *
+	 * When absent, no config call is made (host-mode / legacy callers).
+	 */
+	configSpawnFn?: ConfigSpawnFn;
+}
+
+// ---------------------------------------------------------------------------
+// Step helpers (extracted to keep ensureWorkerContainer under biome complexity 15)
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply the container egress firewall unconditionally.
+ * No-op when `firewallSpawnFn` is absent (host mode / legacy callers).
+ * Throws `FirewallError` when the firewall script exits non-zero.
+ */
+function applyFirewallIfPresent(
+	containerName: string,
+	firewallSpawnFn: FirewallSpawnFn | undefined,
+): void {
+	if (firewallSpawnFn === undefined) return;
+	const fwResult = applyContainerFirewall(containerName, firewallSpawnFn);
+	if (!fwResult.ok) {
+		throw new FirewallError(fwResult.stderrTail);
+	}
+}
+
+/**
+ * Apply both config-repair steps (chown + node merge) unconditionally.
+ * No-op when `configSpawnFn` is absent (host mode / legacy callers).
+ * Throws `ContainerConfigError` when either exec step exits non-zero.
+ *
+ * `hostUid`/`hostGid` come from `resolveHostIds` (via `opts.build`) in the
+ * production factory and are threaded into `buildChownExecArgv` so the chown
+ * target is the numeric uid:gid form, not a hardcoded named user.
+ */
+function applyConfigIfPresent(
+	containerName: string,
+	configSpawnFn: ConfigSpawnFn | undefined,
+	hostUid: number | undefined,
+	hostGid: number | undefined,
+): void {
+	if (configSpawnFn === undefined) return;
+	const cfgResult = applyContainerConfig(containerName, configSpawnFn, {
+		uid: hostUid,
+		gid: hostGid,
+	});
+	if (!cfgResult.ok) {
+		throw new ContainerConfigError(cfgResult.stderrTail);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -204,12 +274,22 @@ export function ensureWorkerContainer(
 	// idempotent (flushes first), so running it every sidecar boot is safe.
 	// When firewallSpawnFn is absent (host mode / legacy callers), this is a
 	// complete no-op.
-	if (opts.firewallSpawnFn !== undefined) {
-		const fwResult = applyContainerFirewall(containerName, opts.firewallSpawnFn);
-		if (!fwResult.ok) {
-			throw new FirewallError(fwResult.stderrTail);
-		}
-	}
+	applyFirewallIfPresent(containerName, opts.firewallSpawnFn);
+
+	// --- Unconditional config apply ---
+	// Runs both config-repair steps (chown + node merge) inside the container
+	// after EVERY reconcile action (reused|started|created|rebuilt).  A reused
+	// container persists a root-owned .claude dir or corrupted .claude.json
+	// across sidecar ticks; running the repair on every boot is idempotent and
+	// ensures zero EACCES and zero modal prompts.
+	//
+	// HOST_UID/HOST_GID come from opts.build (set by resolveHostIds in the
+	// production factory), so the chown target is the correct numeric uid:gid
+	// instead of a hardcoded named user.
+	//
+	// When configSpawnFn is absent (host mode / legacy callers), this is a
+	// complete no-op.
+	applyConfigIfPresent(containerName, opts.configSpawnFn, opts.build?.hostUid, opts.build?.hostGid);
 
 	return { action };
 }
@@ -263,13 +343,26 @@ export function makeProductionEnsureContainerFn(cwd: string): () => void {
 				exitCode: r.status ?? 1,
 			};
 		};
+		// configSpawnFn wraps spawnSync with stderr capture for stderrTail.
+		// Same shape as firewallSpawnFn; kept as a separate closure so the
+		// two seams remain independently injectable in tests.
+		const configSpawnFn: ConfigSpawnFn = (cmd, args) => {
+			const r = spawnSync(cmd, args, { encoding: 'utf8' });
+			return {
+				stdout: typeof r.stdout === 'string' ? r.stdout : '',
+				stderr: typeof r.stderr === 'string' ? r.stderr : '',
+				exitCode: r.status ?? 1,
+			};
+		};
 		const { uid: hostUid, gid: hostGid } = resolveHostIds(spawnFn);
 		// Throws FirewallError on firewall non-convergence; caught by runSidecar.
+		// Throws ContainerConfigError on config repair failure; caught by runSidecar.
 		ensureWorkerContainer({
 			spawnFn,
 			probe,
 			statFn,
 			firewallSpawnFn,
+			configSpawnFn,
 			workspaceFolder: cwd,
 			build: { hostUid, hostGid },
 		});

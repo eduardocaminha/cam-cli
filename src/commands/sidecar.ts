@@ -27,6 +27,7 @@ import { randomUUID } from 'node:crypto';
 
 import { runSidecarLoop, type RunSidecarLoopOptions, type SpawnFn as LoopSpawnFn, type IsPaneAlive } from '../supervisor/loop.ts';
 import { FirewallError } from '../supervisor/container-firewall.ts';
+import { ContainerConfigError } from '../supervisor/container-config.ts';
 import { buildSupervisorOptions, makeNotifyOrchestrator } from '../supervisor/host.ts';
 import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/events.ts';
 import { parseStateFile, type LoopPhase } from './status.ts';
@@ -1161,6 +1162,12 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 			if (e instanceof FirewallError) {
 				process.stderr.write(
 					`[cam] container firewall init failed — no worker will be dispatched.\n${e.stderrTail}\n`,
+				);
+				return;
+			}
+			if (e instanceof ContainerConfigError) {
+				process.stderr.write(
+					`[cam] container config repair failed — no worker will be dispatched.\n${e.stderrTail}\n`,
 				);
 				return;
 			}

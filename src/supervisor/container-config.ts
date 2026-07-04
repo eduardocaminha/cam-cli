@@ -66,10 +66,16 @@ export type ApplyConfigResult = ApplyConfigOk | ApplyConfigFail;
  * Return the `docker exec` argument vector to chown /home/bun/.claude inside
  * the named container (runs as root to repair stale root-owned volumes).
  *
- * Shape: `['exec', '-u', 'root', containerName, 'chown', '-R', 'bun:bun', '/home/bun/.claude']`
+ * When `uid` and `gid` are both provided (from `resolveHostIds`), the chown
+ * target is the numeric `uid:gid` form so it is correct even if the bun
+ * username is not yet in the container's /etc/passwd.  Falls back to the
+ * named `bun:bun` form when either value is absent.
+ *
+ * Shape: `['exec', '-u', 'root', containerName, 'chown', '-R', '<owner>', '/home/bun/.claude']`
  */
-export function buildChownExecArgv(containerName: string): string[] {
-	return ['exec', '-u', 'root', containerName, 'chown', '-R', 'bun:bun', '/home/bun/.claude'];
+export function buildChownExecArgv(containerName: string, uid?: number, gid?: number): string[] {
+	const owner = uid !== undefined && gid !== undefined ? `${uid}:${gid}` : 'bun:bun';
+	return ['exec', '-u', 'root', containerName, 'chown', '-R', owner, '/home/bun/.claude'];
 }
 
 // ---------------------------------------------------------------------------
@@ -127,8 +133,12 @@ function stderrTailOf(stderr: string): string {
 /**
  * Run both config-repair steps inside `containerName` via `docker exec`,
  * driven through the injectable `spawnFn`:
- *   1. chown -R bun:bun /home/bun/.claude  (directory ownership)
- *   2. node -e <merge-script>               (file content merge)
+ *   1. chown -R <uid>:<gid> /home/bun/.claude  (directory ownership)
+ *   2. node -e <merge-script>                   (file content merge)
+ *
+ * The optional `ids` bag carries the HOST_UID/HOST_GID resolved by
+ * `resolveHostIds` in the caller.  When provided, `buildChownExecArgv` uses
+ * the numeric `uid:gid` form; otherwise it falls back to `bun:bun`.
  *
  * Returns `{ok:true}` when both steps exit 0, or
  * `{ok:false, exitCode, stderrTail}` on the first non-zero exit.
@@ -138,9 +148,10 @@ function stderrTailOf(stderr: string): string {
 export function applyContainerConfig(
 	containerName: string,
 	spawnFn: ConfigSpawnFn,
+	ids?: { uid?: number; gid?: number },
 ): ApplyConfigResult {
 	// Step 1: chown (repair directory ownership)
-	const chownArgv = buildChownExecArgv(containerName);
+	const chownArgv = buildChownExecArgv(containerName, ids?.uid, ids?.gid);
 	const chownResult = spawnFn('docker', chownArgv);
 	if (chownResult.exitCode !== 0) {
 		return {
