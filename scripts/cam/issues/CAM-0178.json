@@ -1,9 +1,42 @@
 {
   "id": "CAM-178",
   "title": "Container mode: worker (bun uid) cannot write bind-mounted /workspace (host uid mismatch) -> EACCES",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T08:45:31.369Z",
-  "description": "In worker_isolation=container the cam-worker container runs as user bun (uid 1000) but /workspace is a bind mount of the host repo owned by the host user (uid 501 on macOS). bun has no write permission, so workers can READ but not WRITE: the planner composed a valid PRD but `cat > /workspace/scripts/cam/prd.json` failed with EACCES. This blocks ALL workers (prd.json, code edits, git commits) -> CAM-152 container mode is non-functional for real workers as shipped. Fix options: run the container as the host uid/gid (--user $(id -u):$(id -g)) instead of --user bun (must keep claude home/config working for that uid), or make /workspace writable by bun, or another uid-alignment approach. Hard blocker for CAM-139 (autonomous meta-loop needs container). Surfaced in CAM-175 live-validation. Ties CAM-152, CAM-116."
+  "description": "In worker_isolation=container the cam-worker container runs as user bun (uid 1000) but /workspace is a bind mount of the host repo owned by the host user (uid 501 on macOS). bun has no write permission, so workers can READ but not WRITE: the planner composed a valid PRD but `cat > /workspace/scripts/cam/prd.json` failed with EACCES. This blocks ALL workers (prd.json, code edits, git commits) -> CAM-152 container mode is non-functional for real workers as shipped. Fix options: run the container as the host uid/gid (--user $(id -u):$(id -g)) instead of --user bun (must keep claude home/config working for that uid), or make /workspace writable by bun, or another uid-alignment approach. Hard blocker for CAM-139 (autonomous meta-loop needs container). Surfaced in CAM-175 live-validation. Ties CAM-152, CAM-116.",
+  "spec": {
+    "acceptanceCriteria": [
+      ".devcontainer/Dockerfile declares `ARG HOST_UID` and `ARG HOST_GID` (default 1000) and re-homes the `bun` user to them: usermod -u $HOST_UID bun + groupmod -g $HOST_GID bun (handling gid collisions), followed by `chown -R $HOST_UID:$HOST_GID /home/bun`.",
+      "buildDockerBuildArgv (src/supervisor/worker-container.ts) emits `--build-arg HOST_UID=<uid>` and `--build-arg HOST_GID=<gid>`, resolved from the host via id -u / id -g and threaded through the production ensure-up path (makeProductionEnsureContainerFn).",
+      "After worker_isolation=container + rebuild, a container worker can WRITE the bind mount: `docker exec cam-worker sh -c \"touch /workspace/.cam-write-test && rm /workspace/.cam-write-test\"` exits 0 (no EACCES).",
+      "The claude config stays writable by the re-homed user: /home/bun/.claude.json and the claude-code-config volume at /home/bun/.claude are owned by the host uid and writable.",
+      "Host mode is byte-identical: no --build-arg is emitted when worker_isolation is absent/host; every existing host-mode dispatch path is unchanged.",
+      "Quality spine green: bun run typecheck, bun test, bun run check:all (worker-container + ensure-container tests updated for the new build-arg argv, asserted via the pure argv builder + injected fakes, since CI has no Docker)."
+    ],
+    "scope": "Align the cam-worker container user uid/gid to the host user at build time so container workers can WRITE the bind-mounted /workspace (fixes the EACCES that blocks all workers, CAM-175 finding). Two edits: (1) .devcontainer/Dockerfile ARG HOST_UID/HOST_GID + usermod/groupmod bun + chown /home/bun; (2) worker-container.ts buildDockerBuildArgv passes --build-arg from id -u/id -g via the ensure-up production path. OUT OF SCOPE: the onboarding/trust seed (CAM-179), the firewall wiring (CAM-176), and any dispatch change beyond the container build/run args.",
+    "gotchas": [
+      "CI runs on macos-latest with NO Docker; ensure-container/worker-container tests inject fake spawnFn/probe and never touch a real daemon. Assert the build-arg wiring through the pure buildDockerBuildArgv argv + injected fakes, NOT a live build.",
+      "oven/bun:1.2-slim ships bun at uid 1000; usermod -u does NOT re-own existing files, so it MUST be followed by chown -R $HOST_UID:$HOST_GID /home/bun.",
+      "Host gid 20 (macOS staff) may collide with an existing container group; groupmod/assign carefully and verify no conflict (a group with the target gid may already exist).",
+      "The claude-code-config named volume initializes with the mount-point ownership at FIRST run. A STALE volume from a prior uid-1000 build keeps old ownership; ensure-up rebuild (docker rm -f container) does NOT recreate the named volume. A one-time `docker volume rm claude-code-config` may be needed on upgrade: handle or document it.",
+      "ensure-up triggers a rebuild on Dockerfile mtime change (preflightWorkerContainer image-stale check). A build-arg change with the SAME Dockerfile mtime may not trigger a rebuild: verify the stale/rebuild trigger covers build-arg changes (the Dockerfile edit itself bumps mtime, so the first landing is fine).",
+      "Root cause of the EACCES is the uid mismatch, NOT a missing Write tool: subagent-planner writes prd.json via Bash `cat >` and works on host because eduardo owns the files. Once the container user == host uid, all workers (Bash/Edit/git) can write. Do not add a Write tool as a workaround.",
+      "Hard precondition for re-running CAM-175 and for CAM-139: validate by re-running the container ceremony after this fix (and CAM-179)."
+    ],
+    "domainTerms": [
+      "worker-container",
+      "bind-mount uid mismatch",
+      "HOST_UID/HOST_GID build-arg",
+      "ensure-up (ensureWorkerContainer)",
+      "claude-code-config volume"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 6,
+    "riskReduction": 7,
+    "jobSize": 3
+  }
 }
