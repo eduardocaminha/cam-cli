@@ -32,6 +32,11 @@ import {
 	type DockerProbe,
 	type StatFn,
 } from './preflight-container.ts';
+import {
+	applyContainerFirewall,
+	FirewallError,
+	type FirewallSpawnFn,
+} from './container-firewall.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -97,6 +102,21 @@ export interface EnsureWorkerContainerOptions {
 	 * Allows overriding the Dockerfile path and build context for tests.
 	 */
 	build?: DockerBuildArgvOptions;
+
+	/**
+	 * Injectable spawn function for the firewall exec call.
+	 *
+	 * When provided, `ensureWorkerContainer` calls `applyContainerFirewall`
+	 * UNCONDITIONALLY after the 4-branch reconcile returns, regardless of which
+	 * action was taken.  If the firewall exits non-zero, a `FirewallError` is
+	 * thrown so the caller (sidecar boot) can abort fail-closed.
+	 *
+	 * Unlike `ContainerSpawnFn`, this type also captures stderr so the
+	 * `stderrTail` is available for operator diagnosis.
+	 *
+	 * When absent, no firewall call is made (host-mode / legacy tests).
+	 */
+	firewallSpawnFn?: FirewallSpawnFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +158,9 @@ export function ensureWorkerContainer(
 		imageTag,
 		dockerfilePath,
 	});
+
+	let action: EnsureContainerAction;
+
 	if (preflight.ready === false && preflight.reason === 'image-stale') {
 		// Remove the stale container (best-effort; ignore exit code in case it
 		// is already absent).
@@ -147,34 +170,48 @@ export function ensureWorkerContainer(
 			build: opts.build,
 			run: { containerName, workspaceFolder: opts.workspaceFolder, imageTag },
 		});
-		return { action: 'rebuilt' };
+		action = 'rebuilt';
+	} else {
+		// --- Branches 1-3: probe container running state ---
+		// `docker inspect -f {{.State.Running}} <name>` returns:
+		//   stdout "true"  + exit 0 → container is running
+		//   stdout "false" + exit 0 → container exists but is stopped
+		//   exit non-zero           → container is absent (no such object)
+		const inspect = probe(['inspect', '-f', '{{.State.Running}}', containerName]);
+
+		if (inspect.exitCode !== 0) {
+			// Branch 3: absent → build + run
+			runWorkerContainer({
+				spawnFn,
+				build: opts.build,
+				run: { containerName, workspaceFolder: opts.workspaceFolder, imageTag },
+			});
+			action = 'created';
+		} else if (inspect.stdout.trim() === 'true') {
+			// Branch 1: running → reuse (no-op)
+			action = 'reused';
+		} else {
+			// Branch 2: stopped → docker start
+			spawnFn('docker', ['start', containerName]);
+			action = 'started';
+		}
 	}
 
-	// --- Branches 1-3: probe container running state ---
-	// `docker inspect -f {{.State.Running}} <name>` returns:
-	//   stdout "true"  + exit 0 → container is running
-	//   stdout "false" + exit 0 → container exists but is stopped
-	//   exit non-zero           → container is absent (no such object)
-	const inspect = probe(['inspect', '-f', '{{.State.Running}}', containerName]);
-
-	if (inspect.exitCode !== 0) {
-		// Branch 3: absent → build + run
-		runWorkerContainer({
-			spawnFn,
-			build: opts.build,
-			run: { containerName, workspaceFolder: opts.workspaceFolder, imageTag },
-		});
-		return { action: 'created' };
+	// --- Unconditional firewall apply ---
+	// Applies init-firewall.sh inside the container after EVERY reconcile
+	// action (reused|started|created|rebuilt).  docker start/run recreates the
+	// container netns and drops iptables/ipset rules; init-firewall.sh is
+	// idempotent (flushes first), so running it every sidecar boot is safe.
+	// When firewallSpawnFn is absent (host mode / legacy callers), this is a
+	// complete no-op.
+	if (opts.firewallSpawnFn !== undefined) {
+		const fwResult = applyContainerFirewall(containerName, opts.firewallSpawnFn);
+		if (!fwResult.ok) {
+			throw new FirewallError(fwResult.stderrTail);
+		}
 	}
 
-	if (inspect.stdout.trim() === 'true') {
-		// Branch 1: running → reuse (no-op)
-		return { action: 'reused' };
-	}
-
-	// Branch 2: stopped → docker start
-	spawnFn('docker', ['start', containerName]);
-	return { action: 'started' };
+	return { action };
 }
 
 // ---------------------------------------------------------------------------
@@ -217,11 +254,22 @@ export function makeProductionEnsureContainerFn(cwd: string): () => void {
 				return null;
 			}
 		};
+		// firewallSpawnFn wraps spawnSync with stderr capture for stderrTail.
+		const firewallSpawnFn: FirewallSpawnFn = (cmd, args) => {
+			const r = spawnSync(cmd, args, { encoding: 'utf8' });
+			return {
+				stdout: typeof r.stdout === 'string' ? r.stdout : '',
+				stderr: typeof r.stderr === 'string' ? r.stderr : '',
+				exitCode: r.status ?? 1,
+			};
+		};
 		const { uid: hostUid, gid: hostGid } = resolveHostIds(spawnFn);
+		// Throws FirewallError on firewall non-convergence; caught by runSidecar.
 		ensureWorkerContainer({
 			spawnFn,
 			probe,
 			statFn,
+			firewallSpawnFn,
 			workspaceFolder: cwd,
 			build: { hostUid, hostGid },
 		});

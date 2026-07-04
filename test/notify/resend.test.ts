@@ -287,9 +287,10 @@ describe('sidecar.ts production wiring oracle - escalateFn (AC3)', () => {
 		expect(source).toContain('sendEscalation');
 	});
 
-	test('sidecar.ts passes escalateFn to runSidecarLoop', () => {
-		// Isolate the runSidecarLoop call block.
-		const callMatch = source.match(/await runSidecarLoop\(\{[\s\S]*?\}\)/);
+	test('sidecar.ts passes escalateFn to the sidecar loop call', () => {
+		// The loop is now called via loopFn (injectable for tests); match the
+		// call block which must include escalateFn regardless of the fn name.
+		const callMatch = source.match(/await loopFn\(\{[\s\S]*?\}\)/);
 		expect(callMatch).not.toBeNull();
 		expect(callMatch?.[0]).toContain('escalateFn');
 	});
