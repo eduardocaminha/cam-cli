@@ -1,0 +1,9 @@
+{
+  "id": "CAM-183",
+  "title": "Container build broken on macOS: CAM-178 uid re-home fails (groupmod -n renames name but never frees the colliding GID)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-04T11:09:14.529Z",
+  "description": "The CAM-178 re-home block in .devcontainer/Dockerfile fails at build time whenever the host GID collides with an existing group in the oven/bun:1.2-slim base. On macOS host gid=20 (staff) collides with dialout:x:20 in the base. The collision guard runs `groupmod -n dialout dialout_rehomed` (renames the NAME) then `groupmod -g 20 bun`, which FAILS with `groupmod: GID 20 already exists` because renaming a group does NOT free its gid — dialout_rehomed still owns gid 20. Reproduced empirically: docker build --build-arg HOST_UID=501 --build-arg HOST_GID=20 fails at step 7/8 (exit 4). The cached cam-worker:latest still has bun uid=1000 gid=1000 (re-home never succeeded here), so the EACCES on /workspace that CAM-178 was meant to fix is STILL present on this host. Production hits the same path: resolveHostIds returns id -u=501/id -g=20 and threads the identical build-args. Never caught because CI (macos-latest) has no Docker daemon and the tests are argv-builders; CAM-178 shipped host-mode autonomous with no real docker build ever run. FIX (recommended): stop trying to renumber the colliding group. Branch on whether HOST_GID already exists: if it exists, set bun’s primary group to it by gid (usermod -u HOST_UID -g HOST_GID bun) — group NAME is irrelevant since chown -R uses numeric HOST_UID:HOST_GID; if it does NOT exist, groupmod -g HOST_GID bun then usermod -u HOST_UID bun. Blocks CAM-180 (cannot build image to verify CAM-179 onboarding) and all downstream container-mode work (CAM-176, CAM-175 re-run, CAM-139). VERIFICATION MUST include a real docker build on a macOS host (gid=20), not just argv unit tests — asserting bun ends at uid=501 gid=20 and /workspace is writable."
+}
