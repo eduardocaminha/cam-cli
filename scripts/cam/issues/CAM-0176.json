@@ -1,7 +1,7 @@
 {
   "id": "CAM-176",
   "title": "Wire init-firewall.sh into cam ensure-up container path (no firewall applied today)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T01:28:11.655Z",
