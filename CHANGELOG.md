@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.57.0] - 2026-07-04
+
+### Added
+
+- [US-001] - Bake claude onboarding + /workspace trust config into the cam-worker image
+
 ## [0.56.0] - 2026-07-04
 
 ### Added
