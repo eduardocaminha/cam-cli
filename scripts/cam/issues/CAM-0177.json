@@ -1,0 +1,9 @@
+{
+  "id": "CAM-177",
+  "title": "Add .dockerignore for cam-worker image build context",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-04T01:30:07.521Z",
+  "description": "docker build for the cam-worker image uses build context '.' (repo root) with no .dockerignore, so node_modules, dist, .git, .claude logs, claude-code-harness, and *.bun-build temps are all tarred and sent to the daemon each build. The Dockerfile never COPYs the context (installs via apt/npm; workspace is bind-mounted at run), so this is pure wasted transfer. Add a .dockerignore excluding node_modules, dist, .git, .claude, *.bun-build, coverage, and other non-build artifacts. Surfaced during CAM-175 (found a 4.9G context from ~84 orphan .bun-build files)."
+}
