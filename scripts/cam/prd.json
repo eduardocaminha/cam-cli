@@ -1,0 +1,39 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-132-wire-firewall-ensure-up",
+  "description": "Wire .devcontainer/init-firewall.sh into cam's ensure-up container path with a fail-closed readiness gate so the cam-worker container gets its default-deny egress firewall.",
+  "issueNumber": 176,
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "docker CLI (docker exec)",
+      "url": "https://docs.docker.com/reference/cli/docker/container/exec/",
+      "version": "current",
+      "fetchedAt": "2026-07-04T00:00:00Z",
+      "summary": "Confirmed `docker exec [OPTIONS] CONTAINER COMMAND [ARG...]`: CONTAINER first, then COMMAND, then positional ARGs. A chained/quoted command does not work, so the firewall command must be passed as separate argv tokens (sudo, bash, /workspace/.devcontainer/init-firewall.sh), which matches the pinned AC argv. No breaking change.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Apply init-firewall.sh in ensure-up container path, fail-closed",
+      "description": "As the cam operator running container mode, I need the ensure-up path to apply the .devcontainer/init-firewall.sh egress firewall inside the cam-worker container (and refuse to dispatch any worker if it does not converge) so that CAM-152 container mode is actually egress-sandboxed instead of running with NET_ADMIN/NET_RAW caps and zero iptables/ipset rules.",
+      "acceptanceCriteria": [
+        "buildFirewallExecArgv('cam-worker') returns exactly ['exec','cam-worker','sudo','bash','/workspace/.devcontainer/init-firewall.sh'] (absolute script path, bash not sh, to match the Dockerfile NOPASSWD sudoers grant). [oracle: bun test]",
+        "applyContainerFirewall returns {ok:true} (carrying exitCode 0) when the injected spawnFn exits 0, and {ok:false} carrying exitCode + stderrTail when the injected spawnFn exits non-zero. [oracle: bun test]",
+        "The firewall apply (docker exec of init-firewall.sh) is dispatched UNCONDITIONALLY after ensureWorkerContainer returns, regardless of its action, proven by a test asserting the exec fake is invoked for every branch (reused|started|created|rebuilt). [oracle: bun test]",
+        "FirewallError is a typed Error subclass thrown by the production ensureContainerFn closure on firewall non-convergence and caught by an instanceof-style typed check in runSidecar (not a bare catch), carrying the stderrTail for operator diagnosis. [oracle: grep -q 'FirewallError' src/commands/sidecar.ts]",
+        "When the production ensureContainerFn throws FirewallError, runSidecar catches it, logs an operator-facing message containing the stderrTail, and returns WITHOUT invoking runSidecarLoop, proven by injecting a throwing ensureContainerFn plus a runSidecarLoop spy and asserting the spy is never called (fail-closed, no worker ever dispatches). [oracle: bun test]",
+        "In host mode (worker_isolation absent/host), the container block remains a complete no-op: zero docker calls and zero firewall calls, proven by a test with an injected recording spawn asserting no invocations (non-regression). [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine is green: tsc --noEmit, biome lint --error-on-warnings, and the full bun test suite (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: NEW src/supervisor/container-firewall.ts (buildFirewallExecArgv + applyContainerFirewall + FirewallError); modify src/supervisor/ensure-container.ts (makeProductionEnsureContainerFn: call applyContainerFirewall unconditionally after ensureWorkerContainer returns, throw FirewallError on non-zero); modify src/commands/sidecar.ts (runSidecar ~lines 1142-1145: try/catch the ensureContainerFn call, catch FirewallError specifically, log stderrTail, return before runSidecarLoop). Tests: mirror the recording-fake pattern in test/supervisor/ensure-container.test.ts (makeRecordingSpawnFn / makeRoutedProbe); add test/supervisor/container-firewall.test.ts and extend the ensure-container / sidecar coverage. GOTCHAS: (1) The Dockerfile sudoers grant is EXACTLY `bun ALL=(root) NOPASSWD: /bin/bash /workspace/.devcontainer/init-firewall.sh` (.devcontainer/Dockerfile lines 20-22); the exec argv must be `sudo bash /workspace/.devcontainer/init-firewall.sh` (bash resolves to /bin/bash via PATH, absolute path required) or sudo denies it; AC#1 pins the argv. (2) applyContainerFirewall needs stderr for stderrTail, but the existing ContainerSpawnFn returns only {stdout, exitCode}: define a firewall-specific spawn seam that also returns stderr; the production wrapper in makeProductionEnsureContainerFn wraps spawnSync('docker', argv, {encoding:'utf8'}) and reads r.stderr. (3) applyContainerFirewall RETURNS {ok, exitCode, stderrTail} (never throws); the THROW of FirewallError lives in the production closure so unit tests of ensure-container can assert the throw, and non-production callers/tests stay throw-free. (4) FirewallError must be caught SPECIFICALLY (instanceof), not a bare catch: a bare uncaught crash would let the cam-run wrapper interpret exit!=0 as transient and enter a respawn crash-loop (see issue gotcha). (5) To assert runSidecarLoop is never invoked, make it an injectable seam: add `runSidecarLoopFn?` to SidecarOptions defaulting to the real runSidecarLoop import, and inject a spy in the fail-closed test. (6) Apply UNCONDITIONALLY on every action including 'started' and 'reused': docker start recreates the container netns and drops iptables/ipset rules; init-firewall.sh is idempotent (flushes first), runs once per sidecar boot (not per-story), ~2 self-verify curls, negligible. (7) init-firewall.sh self-verifies with real curls to api.anthropic.com (must reach) and example.com (must be blocked) and exits 1 if either fails: a boot with no network makes the firewall correctly fail-closed, which is why FirewallError MUST carry stderrTail. OUT OF SCOPE (do NOT do here): editing init-firewall.sh / the allowlist (CAM-116); any real-docker-daemon smoke test (CI is macos-latest, no daemon); end-to-end validation with a real story running in the container (deferred to CAM-175 re-run). No vendor/ or templates/ files are touched, so no embed-vendor:check is needed. Read scripts/cam/patterns.md bullets on ContainerSpawnFn injectable seams and the CAM-150 worker-container substrate before coding."
+    }
+  ]
+}
