@@ -1,7 +1,7 @@
 {
   "id": "CAM-183",
   "title": "Container build broken on macOS: CAM-178 uid re-home fails (groupmod -n renames name but never frees the colliding GID)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T11:09:14.529Z",
