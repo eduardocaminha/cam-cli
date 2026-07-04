@@ -1,9 +1,42 @@
 {
   "id": "CAM-176",
   "title": "Wire init-firewall.sh into cam ensure-up container path (no firewall applied today)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T01:28:11.655Z",
-  "description": "The cam worker-container path (ensureWorkerContainer -> runWorkerContainer -> docker run ... sleep infinity) never invokes .devcontainer/init-firewall.sh, so the cam-worker container runs with NET_ADMIN/NET_RAW caps but NO iptables/ipset egress rules. The firewall is only a devcontainer postStartCommand, not part of cam's dispatch. Result: CAM-152 container mode is NOT sandboxed egress-wise. Wire the firewall init to run after docker run (sudo bash /workspace/.devcontainer/init-firewall.sh) in the ensure-up path, and add a readiness check. Ties CAM-116 (firewall) and CAM-175 (validation was run without firewall)."
+  "description": "The cam worker-container path (ensureWorkerContainer -> runWorkerContainer -> docker run ... sleep infinity) never invokes .devcontainer/init-firewall.sh, so the cam-worker container runs with NET_ADMIN/NET_RAW caps but NO iptables/ipset egress rules. The firewall is only a devcontainer postStartCommand, not part of cam's dispatch. Result: CAM-152 container mode is NOT sandboxed egress-wise. Wire the firewall init to run after docker run (sudo bash /workspace/.devcontainer/init-firewall.sh) in the ensure-up path, and add a readiness check. Ties CAM-116 (firewall) and CAM-175 (validation was run without firewall).",
+  "spec": {
+    "scope": "Wire the existing .devcontainer/init-firewall.sh into cam's ensure-up container path so the cam-worker container gets its default-deny egress firewall applied. Today the firewall only runs via the devcontainer postStartCommand, which cam's `docker run` (ensureWorkerContainer -> runWorkerContainer -> `docker run ... sleep infinity`) path never triggers, so the container runs with NET_ADMIN/NET_RAW caps but zero iptables/ipset rules. Add: (1) a pure builder buildFirewallExecArgv(containerName) -> `docker exec <name> sudo bash /workspace/.devcontainer/init-firewall.sh` (mirrors the devcontainer form and the restricted NOPASSWD sudoers grant); (2) an applyContainerFirewall(spawnFn, containerName) orchestration fn that runs the exec via the injectable spawnFn, treats the script's exit code as the readiness gate, and returns {ok, exitCode, stderrTail}. Wire it into makeProductionEnsureContainerFn to run UNCONDITIONALLY after ensureWorkerContainer returns (regardless of action reused|started|created|rebuilt). Fail-closed: on non-zero exit the production closure throws a typed FirewallError; runSidecar (sidecar.ts:1142-1145) catches specifically that, logs an operator-facing message with stderrTail, and returns WITHOUT entering runSidecarLoop (no worker ever dispatches). OUT OF SCOPE: the allowlist / init-firewall.sh content (owned by CAM-116); end-to-end validation with a real story running in the container (CAM-175); any real-daemon smoke inside this issue; and any sidecar-stays-up-refusing-dispatch behavior (rejected in grill, future follow-up if container mode becomes continuous production). Test strategy mirrors the existing container substrate: pure argv builder + injectable spawnFn recording fakes; real-daemon verification deferred to CAM-175.",
+    "acceptanceCriteria": [
+      "buildFirewallExecArgv('cam-worker') returns exactly ['exec','cam-worker','sudo','bash','/workspace/.devcontainer/init-firewall.sh'].",
+      "applyContainerFirewall returns {ok:true} when the injected spawnFn exits 0, and {ok:false} carrying exitCode + stderrTail when the injected spawnFn exits non-zero.",
+      "The firewall apply is dispatched unconditionally after ensureWorkerContainer returns, regardless of its action (reused|started|created|rebuilt) -- proven by a test asserting the exec fake is invoked for every branch.",
+      "When the production ensureContainerFn throws FirewallError (firewall did not converge), runSidecar catches it, logs an operator-facing message, and returns WITHOUT calling runSidecarLoop -- proven by an injected fake that throws, asserting runSidecarLoop is never invoked (fail-closed).",
+      "In host mode (worker_isolation absent/host), the container block remains a complete no-op: zero docker and zero firewall calls (non-regression).",
+      "bun run check:all is green (tsc --noEmit, biome lint --error-on-warnings, and the full bun test suite)."
+    ],
+    "gotchas": [
+      "The Dockerfile NOPASSWD sudoers grant matches the EXACT command `/bin/bash /workspace/.devcontainer/init-firewall.sh`; the exec argv must be `sudo bash /workspace/.devcontainer/init-firewall.sh` (absolute script path, bash not sh) or sudo denies it. Acceptance criterion #1 pins the argv.",
+      "init-firewall.sh self-verifies with real curls to api.anthropic.com (must reach) and example.com (must be blocked) and exits 1 if either fails; a boot with no network or Anthropic down makes the firewall 'fail' and fail-closed bars the container. Correct by design (cannot prove egress control without the network), so FirewallError MUST carry stderrTail for the operator to diagnose.",
+      "iptables/ipset rules live in the container network namespace: docker stop/start recreates the netns and drops the rules, so the firewall MUST re-run on the 'started' action; the script is idempotent (flushes first), so applying unconditionally on every ensure-up (including 'reused') is safe and cheap. ensure-up runs once per sidecar boot (sidecar.ts:1144), not per-story, so the ~2 self-verify curls are negligible overhead.",
+      "init-firewall.sh overwrites /etc/resolv.conf to `nameserver 127.0.0.1` so DNS flows through the local dnsmasq that populates the allowed-domains ipset on each answer (CDN-rotation-safe). Expected runtime state for the container lifetime.",
+      "CAM-175 was previously 'validated' WITHOUT the firewall applied; after CAM-176 ships, that result must be treated as non-final until CAM-175 is re-run with the firewall active.",
+      "runSidecar currently invokes ensureContainerFn as `() => void` and discards the return; fail-closed requires the production closure to throw a typed FirewallError and runSidecar to catch specifically that (not a bare uncaught crash) to avoid the wrapper interpreting exit!=0 as transient and entering a respawn crash-loop."
+    ],
+    "domainTerms": [
+      "applyContainerFirewall: orchestration fn that execs init-firewall.sh in the running cam-worker container via the injectable spawnFn; returns {ok, exitCode, stderrTail}.",
+      "buildFirewallExecArgv: pure builder for the `docker exec <container> sudo bash /workspace/.devcontainer/init-firewall.sh` argv.",
+      "FirewallError: typed error thrown by the production ensureContainerFn closure when the firewall does not converge (non-zero exit); caught by runSidecar to fail closed.",
+      "fail-closed (firewall): on firewall non-convergence the sidecar refuses to dispatch any worker -- the loop never goes active and container mode aborts loudly.",
+      "ensure-up path: ensureWorkerContainer -> runWorkerContainer -> `docker run ... sleep infinity`; the cam-managed container lifecycle that, until CAM-176, never invoked the firewall.",
+      "allowed-domains ipset / dnsmasq --ipset: the CDN-rotation-safe egress allowlist mechanism inside init-firewall.sh (7 domains); owned by CAM-116, out of scope here."
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 8,
+    "riskReduction": 9,
+    "jobSize": 3
+  }
 }
