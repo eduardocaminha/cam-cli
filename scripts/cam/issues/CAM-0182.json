@@ -1,0 +1,9 @@
+{
+  "id": "CAM-182",
+  "title": "Sidecar merge-watch: auto-recover a stuck auto-merge (OPEN+BEHIND -> gh pr update-branch) instead of polling silently to 4h timeout",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-04T11:01:47.039Z",
+  "description": "In ci-gated mode with strict branch protection, a PR whose branch is BEHIND main never auto-merges (strict requires up-to-date). merge-watch stepPoll (src/release/merge-watch.ts:452) returns null for OPEN + non-BLOCKED (CLEAN/BEHIND/DIRTY), so on BEHIND the sidecar just keeps polling for up to 4h (240x60s) then times out, never merging. This is recurring: every ci-gated ship where main advanced during the cycle (specify + issue-file commits land on main) produces a BEHIND branch. Lived in CAM-179 ship (PR #130 sat OPEN+BEHIND; operator had to hand-run gh pr update-branch). Fix: when OPEN+BEHIND and auto-merge is armed, the sidecar should run gh pr update-branch (bounded retries, e.g. max 2-3) to catch the branch up, then keep watching; the re-run CI + armed auto-merge then closes it. Handle DIRTY (real merge conflict) by narrating + stopping the watch (needs a worker/human, not auto-recoverable). ci-red already narrates+stops. Complements CAM-170 (surface poll failures): CAM-170 signals the stall, this auto-recovers it. Guard: do not update-branch on ci-red or DIRTY; only on BEHIND with no failed check."
+}
