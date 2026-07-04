@@ -972,3 +972,15 @@ Each entry follows this template:
 - **Decisions**: Bake into the image (not runtime seed) via a versioned config file COPYd before the re-home block so the existing chown re-owns it. Verify prompt-suppression live in an operator ceremony, not via -p smoke (print mode hid this class of bug in CAM-175).
 - **Blockers encountered**: The CAM-180 ceremony rebuild FAILED and exposed a P1 bug (CAM-183): the CAM-178 uid re-home block never builds on macOS. The collision guard renames the group NAME (groupmod -n) but never frees gid 20 (base dialout:20 vs host staff:20), so groupmod -g 20 bun fails. The cached image still has bun uid=1000, meaning the /workspace EACCES that CAM-178 supposedly fixed was never actually resolved on this host. CI has no Docker daemon so the real build was never run. Also lived: PR #130 sat OPEN+BEHIND under strict branch protection and needed a manual gh pr update-branch to merge (filed CAM-182).
 - **Follow-ups**: CAM-183 (P1, fix the re-home groupmod gid collision; verify with a real macOS docker build) blocks all container-mode work and must go first. CAM-180 (verify CAM-179 onboarding) folds into a combined ceremony after CAM-183 lands and the image rebuilds. CAM-181 (auto-ship fires on review CLEAN without checking pending operator stories). CAM-182 (sidecar auto-recover OPEN+BEHIND). Then CAM-176 (firewall), CAM-175 re-run, CAM-139.
+
+## cam-183-rehome-gid-collision — CAM-183 shipped: getent gid-collision branch fixes the container build on macOS; ceremony verified 178/183 + 179 config
+
+- **Started**: 2026-07-04
+- **Closed**: 2026-07-04
+- **Branch**: cam/pr-183-rehome-gid-collision
+- **Issue**: CAM-183
+- **Outcome**: shipped
+- **Summary**: Fixed the CAM-178 uid re-home block in .devcontainer/Dockerfile that never built on macOS (host gid=20 collides with the base gid-20 group; the old groupmod -n rename freed the NAME but not the gid, so groupmod -g 20 bun failed). Replaced with a getent branch: usermod -u -g by numeric gid when the group exists, else groupmod -g then usermod -u. 1 vertical-slice story (Dockerfile rewrite + deterministic Dockerfile-text test), auditor APPROVE, review CLEAN round 1, 2971 tests, shipped v0.58.0 (PR #131).
+- **Decisions**: Combined operator ceremony PASSED empirically (first real docker build on this macOS host, gid=20): build exit 0, bun uid=501 gid=20, /workspace writable, file round-trips to host as 501:20; cam-worker:latest rebuilt+working. CAM-179 config verified bun-readable + 5 keys; live interactive zero-prompt deferred to CAM-175 as the definitive gate. No per-183 operator story filed (avoids the CAM-181 bug).
+- **Blockers encountered**: Stale reviewer panes (CAM-167) wedged paneCountMutex at busy and blocked cam plan; killed after confirming stale via capture-pane. Ship: env -u GITHUB_TOKEN needed on all gh (PAT lacks PR:write); PR sat BLOCKED until CI green then auto-merged (ci-gated, branch not behind).
+- **Follow-ups**: CAM-176 (firewall wiring) NEXT -> re-run CAM-175 (definitive 179 zero-prompt gate + real-story GREEN) -> CAM-139. Also open: CAM-180 (partially done), CAM-181, CAM-182, CAM-177.
