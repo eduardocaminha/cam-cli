@@ -1,9 +1,38 @@
 {
   "id": "CAM-160",
   "title": "templates/.gitignore: ignorar cam-worker-out e cam-plan-out logs (downstream)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T19:00:00.468Z",
-  "description": "Projetos criados por cam init copiam templates/.gitignore como seed. Downstream roda cam next (escreve .claude/.cam-worker-out-*.log) e cam plan (runPlanPhase escreve .claude/cam-plan-out-{planner,auditor}-<uuid>.log). templates/.gitignore NAO ignora nenhum dos dois padroes, entao projetos downstream sofrem o mesmo clean-tree false-halt que CAM-158 corrige apenas no .gitignore do repo-root do cam-cli. CAM-158 US-001 foi deliberadamente escopado so pro repo-root (auditor F-02). FIX: adicionar .claude/.cam-worker-out-*.log E .claude/cam-plan-out-*.log ao templates/.gitignore; rodar embed-vendor:check pois templates/ e embedado no binario. P3. Achado pelo auditor no plan-audit do CAM-158."
+  "description": "Projetos criados por cam init copiam templates/.gitignore como seed. Downstream roda cam next (escreve .claude/.cam-worker-out-*.log) e cam plan (runPlanPhase escreve .claude/cam-plan-out-{planner,auditor}-<uuid>.log). templates/.gitignore NAO ignora nenhum dos dois padroes, entao projetos downstream sofrem o mesmo clean-tree false-halt que CAM-158 corrige apenas no .gitignore do repo-root do cam-cli. CAM-158 US-001 foi deliberadamente escopado so pro repo-root (auditor F-02). FIX: adicionar .claude/.cam-worker-out-*.log E .claude/cam-plan-out-*.log ao templates/.gitignore; rodar embed-vendor:check pois templates/ e embedado no binario. P3. Achado pelo auditor no plan-audit do CAM-158.",
+  "spec": {
+    "acceptanceCriteria": [
+      "templates/.gitignore contains the exact glob line `.claude/.cam-worker-out-*.log`.",
+      "templates/.gitignore contains the exact glob line `.claude/cam-plan-out-*.log`.",
+      "Only those two lines are added to templates/.gitignore (surgical): no other pattern in templates/.gitignore is added, removed, or reordered.",
+      "The embedded copy is regenerated: `bun run embed-vendor` is run and the updated src/templates/embedded.ts is committed so `bun run embed-vendor:check` exits 0.",
+      "Full quality spine is green on the branch: `bun run typecheck`, `bun test`, `bun run check:all`, and `bun run embed-vendor:check` all pass."
+    ],
+    "scope": "Add exactly two ignore patterns (`.claude/.cam-worker-out-*.log` and `.claude/cam-plan-out-*.log`) to templates/.gitignore so that cam-init-seeded downstream projects ignore the per-invocation worker-out and plan-out logs and no longer hit the clean-tree false-halt that CAM-158 fixed only in the cam-cli repo-root .gitignore. Regenerate the embedded templates copy via embed-vendor. OUT OF SCOPE: reconciling any other drift between templates/.gitignore and the repo-root .gitignore; touching the repo-root .gitignore (already fixed in CAM-158); changing the log filename patterns themselves.",
+    "gotchas": [
+      "templates/ is embedded into the binary by scripts/generate-embedded-vendor.ts -> src/templates/embedded.ts. Any edit to templates/.gitignore MUST be followed by `bun run embed-vendor` and the regenerated src/templates/embedded.ts committed, or the `embed-vendor:check` quality gate fails.",
+      "Mirror the exact glob patterns from the repo-root .gitignore lines 57/59 (`.claude/.cam-worker-out-*.log`, `.claude/cam-plan-out-*.log`) — globs, not literal per-invocation filenames.",
+      "CAM-158 US-001 was deliberately scoped to the repo-root .gitignore only (auditor finding F-02); CAM-160 is the templates/ mirror. Do NOT re-touch the repo-root .gitignore.",
+      "Place the two lines coherently next to the existing CAM-68 `.claude/.cam-*` marker block already present in templates/.gitignore."
+    ],
+    "domainTerms": [
+      "cam-worker-out log",
+      "cam-plan-out log",
+      "embed-vendor",
+      "clean-tree false-halt",
+      "templates seed (cam init)"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 1
+  }
 }
