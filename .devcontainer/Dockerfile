@@ -51,16 +51,18 @@ COPY .devcontainer/claude-config.json /home/bun/.claude.json
 
 # Re-home the bun user to match HOST_UID/HOST_GID (bind-mount write access).
 # ARG HOST_UID/HOST_GID default to 1000 (oven/bun base image default).
-# groupmod guard: if another group already owns HOST_GID (e.g. macOS staff=20),
-# rename it first so groupmod -g has a free gid slot.
+# GID-collision guard: if HOST_GID already exists (e.g. macOS staff=20), use
+# usermod -g to switch bun's primary group to that existing gid directly;
+# otherwise claim the gid via groupmod first, then adjust the uid only.
+# usermod -g requires the group to already exist (usermod(8) invariant),
+# which is exactly why the getent branch is mandatory.
 ARG HOST_UID=1000
 ARG HOST_GID=1000
-RUN COLLIDING=$(getent group "$HOST_GID" 2>/dev/null | cut -d: -f1); \
-    if [ -n "$COLLIDING" ] && [ "$COLLIDING" != "bun" ]; then \
-        groupmod -n "${COLLIDING}_rehomed" "$COLLIDING"; \
+RUN if getent group "$HOST_GID" >/dev/null 2>&1; then \
+        usermod -u "$HOST_UID" -g "$HOST_GID" bun; \
+    else \
+        groupmod -g "$HOST_GID" bun && usermod -u "$HOST_UID" bun; \
     fi \
-    && groupmod -g "$HOST_GID" bun \
-    && usermod -u "$HOST_UID" bun \
     && chown -R "$HOST_UID:$HOST_GID" /home/bun
 
 # Switch to non-root user (the oven/bun image ships with a pre-created bun user)
