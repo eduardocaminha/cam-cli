@@ -32,7 +32,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .devcontainer/Dockerfile, src/supervisor/worker-container.ts (DockerBuildArgvOptions + buildDockerBuildArgv), test/supervisor/worker-container.test.ts. Read scripts/cam/patterns.md first. Place the ARG/usermod/groupmod/chown block BEFORE the existing `USER bun` directive (currently line ~46); ARG must be declared before the RUN that references it (Docker: an ARG comes into effect from its declaration line, confirmed in officialDocsConsulted). gid-collision gotcha: `groupmod -g` fails if another group already owns that gid (macOS staff gid 20 is the common collision); guard with `getent group $HOST_GID` and only groupmod when the gid is free (or rename the colliding group). Keep `--user bun` in buildDockerRunArgv unchanged: the re-homed bun user now carries the host uid. Do NOT add a Write tool as a workaround (gotcha: the root cause is the uid mismatch, not a missing tool). CI has NO Docker: assert the argv wiring via the pure buildDockerBuildArgv builder, never a live build. worker-container-parity.test.ts reads devcontainer.json for run-arg parity; the build-arg is a build-time concern and is not declared in devcontainer.json, so parity is unaffected."
     },

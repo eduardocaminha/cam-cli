@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Re-home the bun user to HOST_UID/HOST_GID build-args in the worker image"
+  },
+  "branchName": "cam/pr-178-container-worker-uid-align",
+  "timestamp": "2026-07-04T12:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".devcontainer/Dockerfile",
+    "src/supervisor/worker-container.ts",
+    "test/supervisor/worker-container.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 is done. The Dockerfile now re-homes bun user to HOST_UID/HOST_GID via ARG + RUN (getent group guard for gid collision, usermod, groupmod, chown -R). buildDockerBuildArgv emits --build-arg HOST_UID/HOST_GID when both are provided; absent -> no token (host mode unaffected). File-size budget raised for test/supervisor/worker-container.test.ts (326->363) and src/supervisor/worker-container.ts (220->238). Check what remaining stories exist in prd.json.",
+  "officialDocsValidated": [
+    {
+      "lib": "docker/dockerfile#arg",
+      "url": "https://docs.docker.com/reference/dockerfile/#arg",
+      "fetchedAt": "2026-07-04T12:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed ARG must precede the RUN that uses it; default value applies when --build-arg omitted; implementation matches spec."
+    }
+  ]
+}
