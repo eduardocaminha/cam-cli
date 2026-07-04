@@ -291,6 +291,10 @@ function makeDispatchOpts(
 		readReviewReport: overrides.readReviewReport,
 		warnFn: overrides.warnFn,
 		clearReviewReport: overrides.clearReviewReport,
+		// US-005 / CAM-152: container isolation passthrough.
+		workerIsolation: overrides.workerIsolation,
+		preflightContainerFn: overrides.preflightContainerFn,
+		escalateFn: overrides.escalateFn,
 		capturedWrittenPrd,
 		capturedSpawnArgs,
 	};
@@ -1417,5 +1421,181 @@ describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)',
 		expect(persistedFindings?.[0]?.text).toBe(
 			'Layer B behavioral gate FAIL: oracle [bun run check:all] exited non-zero',
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-005: reviewer container mode dispatch (CAM-152)
+//
+// AC1: container mode wraps shellCmd via dockerExecWrap before respawn-pane.
+//      argv-shape: 'docker exec -it cam-worker env -u CLAUDECODE ... claude ...
+//                   --session-id <lower-uuid>'.
+// AC2: container preflight not-ready -> status='error', detail contains
+//      'container-not-ready', no un-wrapped host respawn-pane is issued.
+// AC3: container mode + preflight ready -> shellCmd IS wrapped and
+//      respawn-pane IS called with the wrapped cmd.
+// AC4: host mode (default) -> shellCmd unchanged, existing tests pass.
+// AC5: escalateFn called fire-and-forget when preflight fails in container mode.
+// AC6: absent preflightContainerFn -> no behavior change (backward compat).
+// ---------------------------------------------------------------------------
+
+describe('makeReviewDispatch: US-005 container mode dispatch', () => {
+	const SAMPLE_UUID = 'cafebabe-dead-beef-0000-111122223333';
+
+	test('AC1: container mode wraps shellCmd with docker exec argv-shape', () => {
+		const capturedSpawnArgs: string[][] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+			spawn: (_cmd, args) => {
+				capturedSpawnArgs.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			workerIsolation: 'container',
+			preflightContainerFn: () => ({ ready: true }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		// First spawn call is the respawn-pane dispatch.
+		const firstCall = capturedSpawnArgs[0] ?? [];
+		expect(firstCall).toContain('respawn-pane');
+		const shellCmd = firstCall[firstCall.length - 1] ?? '';
+
+		// Must start with 'docker exec -it cam-worker' (dockerExecWrap prefix).
+		expect(shellCmd).toMatch(/^docker exec -it cam-worker /);
+		// Inner command must still contain the claude argv.
+		expect(shellCmd).toContain('env -u CLAUDECODE');
+		expect(shellCmd).toContain('claude');
+		expect(shellCmd).toContain(`--session-id ${SAMPLE_UUID}`);
+	});
+
+	test('AC2: container mode + preflight not-ready -> status=error, container-not-ready detail, no wrapped respawn', () => {
+		const capturedSpawnArgs: string[][] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+			spawn: (_cmd, args) => {
+				capturedSpawnArgs.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			workerIsolation: 'container',
+			preflightContainerFn: () => ({ ready: false, reason: 'daemon-unreachable' }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		// Must return error with container-not-ready detail.
+		expect(result.status).toBe('error');
+		expect(result.detail).toContain('container-not-ready');
+		expect(result.detail).toContain('daemon-unreachable');
+
+		// No respawn-pane with the reviewer shellCmd must have been dispatched.
+		// The only spawn that may occur is a potential no-op; but critically, no
+		// respawn-pane call with a 'claude' command should appear.
+		const anyReviewerRespawn = capturedSpawnArgs.some(
+			(args) => args.includes('respawn-pane') && (args[args.length - 1] ?? '').includes('claude'),
+		);
+		expect(anyReviewerRespawn).toBe(false);
+	});
+
+	test('AC3: container mode + preflight ready -> respawn-pane called with dockerExecWrap-wrapped cmd', () => {
+		const capturedSpawnArgs: string[][] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+			spawn: (_cmd, args) => {
+				capturedSpawnArgs.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			workerIsolation: 'container',
+			preflightContainerFn: () => ({ ready: true }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+
+		// A respawn-pane call with a docker exec prefix must have been issued.
+		const reviewerRespawn = capturedSpawnArgs.find(
+			(args) => args.includes('respawn-pane') && (args[args.length - 1] ?? '').startsWith('docker exec -it'),
+		);
+		expect(reviewerRespawn).toBeDefined();
+	});
+
+	test('AC4: host mode (default/no workerIsolation) -> shellCmd unchanged, behavior identical to existing tests', () => {
+		const capturedSpawnArgs: string[][] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+			spawn: (_cmd, args) => {
+				capturedSpawnArgs.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			// workerIsolation intentionally absent -> defaults to 'host'.
+			preflightContainerFn: () => ({ ready: false, reason: 'daemon-unreachable' }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		// In host mode, preflight result is ignored (observe-only) and dispatch proceeds.
+		expect(result.status).toBe('ok');
+
+		// The respawn-pane shellCmd must NOT be wrapped with docker exec.
+		const firstCall = capturedSpawnArgs[0] ?? [];
+		const shellCmd = firstCall[firstCall.length - 1] ?? '';
+		expect(shellCmd).not.toMatch(/^docker exec/);
+		expect(shellCmd).toContain('claude');
+	});
+
+	test('AC5: escalateFn called fire-and-forget when preflight fails in container mode', async () => {
+		let escalateCalled = false;
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+			workerIsolation: 'container',
+			preflightContainerFn: () => ({ ready: false, reason: 'image-missing' }),
+			escalateFn: async () => {
+				escalateCalled = true;
+			},
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('error');
+		expect(result.detail).toContain('container-not-ready');
+
+		// escalateFn is fire-and-forget; allow the microtask to flush.
+		await new Promise((r) => setTimeout(r, 10));
+		expect(escalateCalled).toBe(true);
+	});
+
+	test('AC6: absent preflightContainerFn -> no behavior change (backward compat)', () => {
+		const capturedSpawnArgs: string[][] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+			spawn: (_cmd, args) => {
+				capturedSpawnArgs.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			workerIsolation: 'container',
+			// preflightContainerFn intentionally absent.
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		// Without preflight, dispatch succeeds even in container mode.
+		// (No wrapping either: if preflight is absent the feature is not enabled.)
+		// Actually with absent preflight but container mode, the dispatchCmd IS
+		// wrapped via dockerExecWrap since workerIsolation === 'container'.
+		// The key is: no error is returned even though no preflight ran.
+		expect(result.status).toBe('ok');
 	});
 });
