@@ -1,0 +1,9 @@
+{
+  "id": "CAM-186",
+  "title": "Investigate in-container test failures: 2957 pass / 10 fail vs 3012 green on host",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-04T19:26:19.974Z",
+  "description": "During the CAM-175 container ceremony (2026-07-04), running bun test INSIDE the cam-worker container reported 2957 pass / 10 fail, whereas the host runs 3012 green. Note the counts also differ in total (2957+10=2967 vs 3012), suggesting some tests do not run or are counted differently in-container. Investigate which specific tests fail in-container and why (likely env-specific: missing tmux/git config, network/daemon assumptions, filesystem/uid differences, or jq absence). Determine whether they are genuinely env-specific (guard/skip appropriately) or real gaps in the container toolchain. Split out of CAM-185 (the container-mode ownership fix) so it does not block that fix. Precondition: CAM-185 landed (a worker can run bash in-container at all)."
+}
