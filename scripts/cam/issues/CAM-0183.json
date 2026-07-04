@@ -1,9 +1,43 @@
 {
   "id": "CAM-183",
   "title": "Container build broken on macOS: CAM-178 uid re-home fails (groupmod -n renames name but never frees the colliding GID)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T11:09:14.529Z",
-  "description": "The CAM-178 re-home block in .devcontainer/Dockerfile fails at build time whenever the host GID collides with an existing group in the oven/bun:1.2-slim base. On macOS host gid=20 (staff) collides with dialout:x:20 in the base. The collision guard runs `groupmod -n dialout dialout_rehomed` (renames the NAME) then `groupmod -g 20 bun`, which FAILS with `groupmod: GID 20 already exists` because renaming a group does NOT free its gid — dialout_rehomed still owns gid 20. Reproduced empirically: docker build --build-arg HOST_UID=501 --build-arg HOST_GID=20 fails at step 7/8 (exit 4). The cached cam-worker:latest still has bun uid=1000 gid=1000 (re-home never succeeded here), so the EACCES on /workspace that CAM-178 was meant to fix is STILL present on this host. Production hits the same path: resolveHostIds returns id -u=501/id -g=20 and threads the identical build-args. Never caught because CI (macos-latest) has no Docker daemon and the tests are argv-builders; CAM-178 shipped host-mode autonomous with no real docker build ever run. FIX (recommended): stop trying to renumber the colliding group. Branch on whether HOST_GID already exists: if it exists, set bun’s primary group to it by gid (usermod -u HOST_UID -g HOST_GID bun) — group NAME is irrelevant since chown -R uses numeric HOST_UID:HOST_GID; if it does NOT exist, groupmod -g HOST_GID bun then usermod -u HOST_UID bun. Blocks CAM-180 (cannot build image to verify CAM-179 onboarding) and all downstream container-mode work (CAM-176, CAM-175 re-run, CAM-139). VERIFICATION MUST include a real docker build on a macOS host (gid=20), not just argv unit tests — asserting bun ends at uid=501 gid=20 and /workspace is writable."
+  "description": "The CAM-178 re-home block in .devcontainer/Dockerfile fails at build time whenever the host GID collides with an existing group in the oven/bun:1.2-slim base. On macOS host gid=20 (staff) collides with dialout:x:20 in the base. The collision guard runs `groupmod -n dialout dialout_rehomed` (renames the NAME) then `groupmod -g 20 bun`, which FAILS with `groupmod: GID 20 already exists` because renaming a group does NOT free its gid — dialout_rehomed still owns gid 20. Reproduced empirically: docker build --build-arg HOST_UID=501 --build-arg HOST_GID=20 fails at step 7/8 (exit 4). The cached cam-worker:latest still has bun uid=1000 gid=1000 (re-home never succeeded here), so the EACCES on /workspace that CAM-178 was meant to fix is STILL present on this host. Production hits the same path: resolveHostIds returns id -u=501/id -g=20 and threads the identical build-args. Never caught because CI (macos-latest) has no Docker daemon and the tests are argv-builders; CAM-178 shipped host-mode autonomous with no real docker build ever run. FIX (recommended): stop trying to renumber the colliding group. Branch on whether HOST_GID already exists: if it exists, set bun’s primary group to it by gid (usermod -u HOST_UID -g HOST_GID bun) — group NAME is irrelevant since chown -R uses numeric HOST_UID:HOST_GID; if it does NOT exist, groupmod -g HOST_GID bun then usermod -u HOST_UID bun. Blocks CAM-180 (cannot build image to verify CAM-179 onboarding) and all downstream container-mode work (CAM-176, CAM-175 re-run, CAM-139). VERIFICATION MUST include a real docker build on a macOS host (gid=20), not just argv unit tests — asserting bun ends at uid=501 gid=20 and /workspace is writable.",
+  "spec": {
+    "scope": "Rewrite the CAM-178 uid/gid re-home RUN block in .devcontainer/Dockerfile so the cam-worker image builds on a macOS host where HOST_GID=20 collides with the base image's existing gid-20 group. Replace the group-rename approach (renames the colliding group's NAME via `groupmod -n ${COLLIDING}_rehomed`, which never frees its GID, so `groupmod -g 20 bun` fails with 'GID 20 already exists') with a getent branch: if a group already owns HOST_GID, run `usermod -u HOST_UID -g HOST_GID bun` (set bun's primary group by numeric gid; group NAME is irrelevant because chown uses numeric HOST_UID:HOST_GID); otherwise run `groupmod -g HOST_GID bun` then `usermod -u HOST_UID bun`; keep the trailing `chown -R HOST_UID:HOST_GID /home/bun`. Add a deterministic Dockerfile-text regression test (bun test, no Docker daemon) asserting the new block shape and the removal of the group-rename. OUT OF SCOPE (autonomous): HOST_UID collision handling (neither 501 nor 1000 collides with a pre-existing user on oven/bun:1.2-slim) is a documented risk, not a fix; the real docker-build verification is an operator ceremony (requires:operator), hand-filed after the PRD and folded into the combined CAM-178/183 + CAM-179 + CAM-180 rebuild ceremony; CAM-176 firewall wiring and CAM-179 onboarding (already shipped) are separate issues.",
+    "acceptanceCriteria": [
+      "The .devcontainer/Dockerfile re-home RUN block contains no `groupmod -n` and no `_rehomed` group-name rename; the collision-guard-by-rename is removed.",
+      "The re-home block branches on `getent group \"$HOST_GID\"`: when the group exists it runs `usermod -u \"$HOST_UID\" -g \"$HOST_GID\" bun`; when it does not it runs `groupmod -g \"$HOST_GID\" bun` then `usermod -u \"$HOST_UID\" bun`.",
+      "The block still ends with `chown -R \"$HOST_UID:$HOST_GID\" /home/bun`; the `ARG HOST_UID=1000` / `ARG HOST_GID=1000` defaults and the `COPY .devcontainer/claude-config.json /home/bun/.claude.json` positioned BEFORE `ARG HOST_UID` (CAM-179) are preserved.",
+      "A deterministic test reads the Dockerfile text and asserts AC1+AC2+AC3 (new branch present, group-rename absent, chown + COPY-before-ARG preserved); the existing claude-config-bake.test.ts positional assertions still pass.",
+      "`bun run check:all` (typecheck + biome + tests + ratchets) is green.",
+      "OPERATOR CEREMONY (requires:operator, hand-filed): a real `docker build --build-arg HOST_UID=501 --build-arg HOST_GID=20 -f .devcontainer/Dockerfile -t cam-worker:latest .` on this macOS host succeeds, and `docker run` shows bun at uid=501 gid=20 with /workspace writable by bun. Folds into the combined CAM-178/183 + CAM-179 + CAM-180 rebuild+verify ceremony."
+    ],
+    "gotchas": [
+      "`usermod -g <gid>` requires the group to already exist -- that is why the getent branch is mandatory (you cannot `usermod -g HOST_GID` unconditionally when no group owns that gid).",
+      "Renaming a group's NAME with `groupmod -n` does NOT free its GID; the renamed group still owns the number. This is the exact CAM-178 build failure (`groupmod -g 20 bun` -> 'GID 20 already exists').",
+      "macOS host gid=20 (staff) collides with the oven/bun:1.2-slim base gid-20 group (conventionally `dialout`, not documented in-repo). This is the real production input: resolveHostIds (src/supervisor/worker-container.ts:144) returns id -g=20, threaded as --build-arg HOST_GID=20.",
+      "CI (macos-latest) has NO Docker daemon; all container tests (test/supervisor/*) are argv-builders / Dockerfile-text file-asserts. The real build is UNEXERCISED by the suite -- the deterministic test can only assert Dockerfile TEXT; only the operator ceremony proves the build succeeds and /workspace is writable.",
+      "The CAM-179 `COPY ... /home/bun/.claude.json` must remain BEFORE `ARG HOST_UID` so the trailing `chown -R /home/bun` re-owns it to HOST_UID:HOST_GID (guarded by claude-config-bake.test.ts AC3). Do not move the COPY.",
+      "The cached cam-worker:latest is the BROKEN 1.16GB image (bun uid=1000, re-home never ran on this host). Do NOT rebuild until this fix lands -- the build WILL fail at the re-home step until then.",
+      "Combined operator ceremony: 178/183 (uid=501 gid=20 + /workspace writable) and 179 (zero onboarding/trust prompt) are COUPLED and must be verified together -- the baked .claude.json is only bun-readable after the chown works. CAM-180 folds in."
+    ],
+    "domainTerms": [
+      "re-home block",
+      "HOST_UID/HOST_GID build-args",
+      "collision guard",
+      "operator ceremony",
+      "resolveHostIds",
+      "cam-worker image"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 5,
+    "riskReduction": 8,
+    "jobSize": 2
+  }
 }
