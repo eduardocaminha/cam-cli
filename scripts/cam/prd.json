@@ -123,7 +123,7 @@
         "bun run check:all passes. [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": "US-005",
       "notes": "plan-runner.ts: spawnPlanner builds shell + respawn-pane -k at ~326-328, spawnAuditor at ~359-361. Extend RunPlanPhaseOptions (~124) with the worker_isolation mode + a CONTAINER preflight fn (distinct from the existing plan-preflight preflightFn at ~180, which checks issue/PRD state, not Docker). Add the container preflight immediately BEFORE each respawn-pane, gated on container mode; on not-ready escalate (RunPostAuditOptions.escalateFn ~631) and return a preflight-failed/escalated PlanPhaseResult. Wire at makeProductionPlanPhaseFn in src/commands/sidecar.ts. Spec gotcha: leaving planner/auditor un-contained is a hole in the gate. Reuse dockerExecWrap (US-002). File-size: plan-runner.ts and sidecar.ts (1090 ceiling) may need a budget raise with a CAM-152 _ref."
     }

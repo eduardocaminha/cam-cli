@@ -35,8 +35,9 @@ import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWork
 import { runPlanPhase, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult } from '../supervisor/plan-runner.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
-import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation } from '../config/models.ts';
+import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
 import { makeProductionEnsureContainerFn } from '../supervisor/ensure-container.ts';
+import { preflightWorkerContainer, type PreflightResult } from '../supervisor/preflight-container.ts';
 import { sendEscalation, type ResendSendFn } from '../notify/resend.ts';
 import { buildWorkerReportSendKeysArgv } from '../supervisor/worker-report.ts';
 import {
@@ -847,6 +848,57 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 	exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(o.claudeDir, o.cwd)); // US-R1-002
 }
 
+/** Grouped container-isolation deps for the plan phase (US-006, CAM-152). */
+interface PlanContainerOpts {
+	workerIsolation: WorkerIsolation;
+	preflightContainerFn: (() => PreflightResult) | undefined;
+	escalateFn: (() => Promise<void>) | undefined;
+}
+
+/**
+ * Build the container isolation deps for the plan phase (US-006, CAM-152).
+ *
+ * Reads worker_isolation from project.toml; builds a preflightWorkerContainer
+ * closure (real spawnSync probe, no stat check) when isolation === 'container';
+ * builds an escalateFn from Resend config when both apiKey and recipient are set.
+ * In host mode all three fields are no-ops (undefined / 'host').
+ *
+ * Extracted from makeProductionPlanPhaseFn to keep the closure under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper pattern).
+ * Not exported: tests inject options.runPlanPhaseFn directly.
+ */
+function buildPlanContainerOpts(cwd: string): PlanContainerOpts {
+	const workerIsolation = readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'));
+	const preflightContainerFn: (() => PreflightResult) | undefined =
+		workerIsolation === 'container'
+			? (): PreflightResult => preflightWorkerContainer({
+				probe: (args) => {
+					const r = spawnSync('docker', args, {
+						stdio: 'pipe',
+						encoding: 'utf8',
+					} as Parameters<typeof spawnSync>[2]);
+					return {
+						stdout: typeof r.stdout === 'string' ? r.stdout : '',
+						exitCode: r.status ?? 1,
+					};
+				},
+			})
+			: undefined;
+	const resendCfg = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
+	const escalateFn: (() => Promise<void>) | undefined =
+		(resendCfg.apiKey !== '' && resendCfg.recipient !== '')
+			? async (): Promise<void> => {
+				await sendEscalation({
+					apiKey: resendCfg.apiKey,
+					recipient: resendCfg.recipient,
+					subject: '[cam] Plan container not ready: preflight failed before worker spawn',
+					html: '<p><strong>[cam]</strong> The plan phase container preflight failed. The cam-worker container is not ready. Manual intervention required.</p>',
+				});
+			}
+			: undefined;
+	return { workerIsolation, preflightContainerFn, escalateFn };
+}
+
 /**
  * Build the production runPlanPhaseFn closure (US-002/US-R1-001, CAM-151).
  *
@@ -861,6 +913,10 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
  * (ADR 0006 section Decisao point 3): on APPROVE+auto this creates the feature
  * branch, commits prd.json, and flips phase:implementing so the sidecar loop
  * dispatches the first implementer worker.
+ *
+ * US-006 / CAM-152: container isolation + plan-phase preflight are wired via
+ * buildPlanContainerOpts (extracted to keep this closure under biome's 80-line
+ * limit). In host mode, zero docker calls are made.
  *
  * Extracted from buildSidecarLoopDeps to keep that function under the biome
  * cognitive-complexity (<=15) and function-length (<=80 lines) limits.
@@ -918,6 +974,12 @@ function makeProductionPlanPhaseFn(
 		// makePlanPaneHelpers to keep this closure under biome's 80-line limit.
 		const { isPaneAlive, ensureWorkerPane } = makePlanPaneHelpers(claudeDir, sessionName);
 
+		// US-006 / CAM-152: container isolation deps for the plan phase.
+		// In host mode all three fields are undefined/'host' (zero docker calls).
+		// Extracted to buildPlanContainerOpts to keep this closure under biome's
+		// noExcessiveLinesPerFunction(maxLines=80) limit.
+		const containerOpts = buildPlanContainerOpts(cwd);
+
 		const planResult = runPlanPhase({
 			spawnFn: loopSpawnFn,
 			isPaneAlive,
@@ -941,6 +1003,9 @@ function makeProductionPlanPhaseFn(
 			ensureWorkerPane,
 			claudeDir,
 			clearStalePlanArtifactsFn: makeClearStalePlanArtifacts(cwd),
+			workerIsolation: containerOpts.workerIsolation,
+			preflightContainerFn: containerOpts.preflightContainerFn,
+			escalateFn: containerOpts.escalateFn,
 		});
 
 		// Post-audit phase: read branchName, build escalateFn, run post-audit

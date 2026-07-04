@@ -1,28 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Flip the reviewer spawn through the container (fail-closed)"
+    "id": "US-006",
+    "title": "Flip the planner + auditor spawns through the container + add plan-runner preflight seam (fail-closed)"
   },
   "branchName": "cam/pr-152-flip-worker-spawn-container",
-  "timestamp": "2026-07-03T00:20:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-04T00:35:00Z",
+  "createdFiles": [
+    "test/supervisor/plan/plan-runner-container.test.ts"
+  ],
   "modifiedFiles": [
-    "src/supervisor/review.ts",
-    "src/supervisor/host.ts",
-    "test/supervisor/review.test.ts",
+    "src/supervisor/plan-runner.ts",
+    "src/commands/sidecar.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 (B-2 CAM-152) is complete. review.ts now: (1) accepts workerIsolation ('host'|'container'), preflightContainerFn, and escalateFn in MakeReviewDispatchOptions; (2) runs preflight before each reviewer respawn-pane when preflightContainerFn is provided; (3) is fail-closed in container mode: if preflightContainerFn returns ready:false, calls escalateFn (fire-and-forget) and returns { status: 'error', detail: 'container-not-ready: ...' } without dispatching an un-wrapped host reviewer; (4) wraps shellCmd via dockerExecWrap when workerIsolation==='container'. host.ts: hoisted preflightContainerFn and workerIsolation declarations before makeReviewDispatch to avoid TS2448 block-scoped-before-assignment error; wired both into the review dispatch options. Tests added: 6 new tests in 'makeReviewDispatch: US-005 container mode dispatch' describe block. All quality gates pass. All 5 user stories on this PRD now have passes:true; the PRD is ready for review.",
+  "nextStoryContext": "US-006 (B-2 CAM-152) is complete. plan-runner.ts now: (1) accepts workerIsolation ('host'|'container'), preflightContainerFn, and escalateFn in RunPlanPhaseOptions; (2) runs runContainerPlanPreflight before each planner and auditor spawn; (3) is fail-closed in container mode: if preflightContainerFn returns ready:false, calls escalateFn (fire-and-forget) and returns { kind: 'container-preflight-failed', phase: 'planner'|'auditor', reason } without dispatching un-wrapped workers; (4) wraps shellCmd via dockerExecWrap when workerIsolation==='container' for both planner and auditor. Steps 4-7 extracted to runPlanWorkerSequence helper to satisfy biome noExcessiveLinesPerFunction(max=80) and noExcessiveCognitiveComplexity(max=15). sidecar.ts: added PlanContainerOpts interface + buildPlanContainerOpts helper, wired into makeProductionPlanPhaseFn. New test file: 19 tests across 7 describe blocks (AC1-AC7). All quality gates pass. All 6 user stories on this PRD now have passes:true; the PRD is ready for review.",
   "officialDocsValidated": [
     {
-      "lib": "docker exec",
+      "lib": "docker exec (planner + auditor paths)",
       "version": "current (Docker CLI 24+)",
       "url": "https://docs.docker.com/reference/cli/docker/container/exec/",
-      "fetchedAt": "2026-07-03T00:20:00Z",
+      "fetchedAt": "2026-07-04T00:35:00Z",
       "status": "ok",
-      "summary": "docker exec -it confirmed: -i keeps STDIN open, -t allocates a pseudo-TTY. The 'docker exec -it cam-worker <shellCmd>' form used by dockerExecWrap is correct for the interactive reviewer dispatch pattern."
+      "summary": "Same docker exec -it cam-worker pattern validated in US-005 applies to planner and auditor dispatch in plan-runner.ts. dockerExecWrap prefixes the shell command identically. No API changes detected since US-005 validation."
     }
   ]
 }
