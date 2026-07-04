@@ -17,6 +17,7 @@ import {
 	buildDockerBuildArgv,
 	buildDockerRunArgv,
 	runWorkerContainer,
+	resolveHostIds,
 	DEFAULT_IMAGE_TAG,
 	DEFAULT_CONTAINER_NAME,
 	type ContainerSpawnFn,
@@ -358,5 +359,99 @@ describe('runWorkerContainer', () => {
 		// reaching this point.
 		expect(DEFAULT_IMAGE_TAG).toBe('cam-worker:latest');
 		expect(DEFAULT_CONTAINER_NAME).toBe('cam-worker');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// resolveHostIds
+// ---------------------------------------------------------------------------
+
+describe('resolveHostIds', () => {
+	// AC1: happy path - returns parsed uid/gid from id -u / id -g
+	test('returns parsed uid and gid when both id commands succeed', () => {
+		const spawnFn: ContainerSpawnFn = (_cmd, args) => {
+			if (args[0] === '-u') return { stdout: '501\n', exitCode: 0 };
+			if (args[0] === '-g') return { stdout: '20\n', exitCode: 0 };
+			return { stdout: '', exitCode: 1 };
+		};
+		const result = resolveHostIds(spawnFn);
+		expect(result.uid).toBe(501);
+		expect(result.gid).toBe(20);
+	});
+
+	test('calls id -u and id -g (the correct args)', () => {
+		const calls: Array<{ cmd: string; args: string[] }> = [];
+		const spawnFn: ContainerSpawnFn = (cmd, args) => {
+			calls.push({ cmd, args });
+			return { stdout: '1000\n', exitCode: 0 };
+		};
+		resolveHostIds(spawnFn);
+		const cmds = calls.map((c) => c.cmd);
+		expect(cmds).toContain('id');
+		const argSets = calls.map((c) => c.args[0]);
+		expect(argSets).toContain('-u');
+		expect(argSets).toContain('-g');
+	});
+
+	// AC1: fallback when command fails (non-zero exit)
+	test('falls back to uid=1000 when id -u exits non-zero', () => {
+		const spawnFn: ContainerSpawnFn = (_cmd, args) => {
+			if (args[0] === '-u') return { stdout: '', exitCode: 1 };
+			return { stdout: '20\n', exitCode: 0 };
+		};
+		const result = resolveHostIds(spawnFn);
+		expect(result.uid).toBe(1000);
+		expect(result.gid).toBe(20);
+	});
+
+	test('falls back to gid=1000 when id -g exits non-zero', () => {
+		const spawnFn: ContainerSpawnFn = (_cmd, args) => {
+			if (args[0] === '-g') return { stdout: '', exitCode: 1 };
+			return { stdout: '501\n', exitCode: 0 };
+		};
+		const result = resolveHostIds(spawnFn);
+		expect(result.uid).toBe(501);
+		expect(result.gid).toBe(1000);
+	});
+
+	test('falls back to { uid: 1000, gid: 1000 } when both commands fail', () => {
+		const spawnFn: ContainerSpawnFn = () => ({ stdout: '', exitCode: 127 });
+		const result = resolveHostIds(spawnFn);
+		expect(result).toEqual({ uid: 1000, gid: 1000 });
+	});
+
+	// AC1: fallback when stdout is non-numeric
+	test('falls back to 1000 when id -u returns non-numeric output', () => {
+		const spawnFn: ContainerSpawnFn = (_cmd, args) => {
+			if (args[0] === '-u') return { stdout: 'root\n', exitCode: 0 };
+			return { stdout: '20\n', exitCode: 0 };
+		};
+		const result = resolveHostIds(spawnFn);
+		expect(result.uid).toBe(1000);
+		expect(result.gid).toBe(20);
+	});
+
+	// AC1: fallback when stdout is empty (noUncheckedIndexedAccess guard)
+	test('falls back to 1000 when stdout is empty string', () => {
+		const spawnFn: ContainerSpawnFn = (_cmd, args) => {
+			if (args[0] === '-u') return { stdout: '', exitCode: 0 };
+			return { stdout: '1001\n', exitCode: 0 };
+		};
+		const result = resolveHostIds(spawnFn);
+		expect(result.uid).toBe(1000);
+		expect(result.gid).toBe(1001);
+	});
+
+	test('falls back to 1000 when stdout is whitespace only', () => {
+		const spawnFn: ContainerSpawnFn = () => ({ stdout: '   \n', exitCode: 0 });
+		const result = resolveHostIds(spawnFn);
+		expect(result).toEqual({ uid: 1000, gid: 1000 });
+	});
+
+	// Standard host uid/gid (1000/1000) passes through without modification
+	test('returns uid=1000 gid=1000 when id reports uid=1000 gid=1000', () => {
+		const spawnFn: ContainerSpawnFn = () => ({ stdout: '1000\n', exitCode: 0 });
+		const result = resolveHostIds(spawnFn);
+		expect(result).toEqual({ uid: 1000, gid: 1000 });
 	});
 });

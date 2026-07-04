@@ -118,6 +118,46 @@ export interface RunWorkerContainerOptions {
 }
 
 // ---------------------------------------------------------------------------
+// resolveHostIds
+// ---------------------------------------------------------------------------
+
+/** The resolved host uid/gid used to re-home the bun user in the worker image. */
+export interface HostIds {
+	uid: number;
+	gid: number;
+}
+
+const FALLBACK_ID = 1000;
+
+/**
+ * Resolve the host user's uid and gid by calling `id -u` / `id -g` through the
+ * injectable `spawnFn`.
+ *
+ * Falls back to `{ uid: 1000, gid: 1000 }` (or per-component) when:
+ *   - the command exits with a non-zero code
+ *   - stdout is empty or undefined
+ *   - the parsed value is NaN (non-numeric output)
+ *
+ * noUncheckedIndexedAccess: stdout is guarded with a trim + empty-check before
+ * parseInt so the undefined/empty case is handled explicitly.
+ */
+export function resolveHostIds(spawnFn: ContainerSpawnFn): HostIds {
+	const parseId = (result: { stdout: string; exitCode: number }): number => {
+		if (result.exitCode !== 0) return FALLBACK_ID;
+		const trimmed = result.stdout.trim();
+		if (!trimmed) return FALLBACK_ID;
+		const parsed = Number.parseInt(trimmed, 10);
+		return Number.isNaN(parsed) ? FALLBACK_ID : parsed;
+	};
+	const uidResult = spawnFn('id', ['-u']);
+	const gidResult = spawnFn('id', ['-g']);
+	return {
+		uid: parseId(uidResult),
+		gid: parseId(gidResult),
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Pure argv builders
 // ---------------------------------------------------------------------------
 

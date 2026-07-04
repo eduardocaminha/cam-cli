@@ -51,7 +51,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/supervisor/worker-container.ts (add exported resolveHostIds with a ContainerSpawnFn-style injectable seam), src/supervisor/ensure-container.ts (makeProductionEnsureContainerFn sets build: { hostUid, hostGid }), test/supervisor/worker-container.test.ts, test/supervisor/ensure-container.test.ts, docs/recovery-runbook.md. Depends on US-001 (the hostUid/hostGid fields on DockerBuildArgvOptions). ensureWorkerContainer ALREADY forwards `build: opts.build` to runWorkerContainer on both the created and rebuilt branches (ensure-container.ts:146,163), so the factory only needs to populate build. resolveHostIds: wrap spawnSync('id',['-u']) / ('id',['-g']) with encoding utf8; Number.parseInt(trimmed, 10); guard Number.isNaN -> 1000 (noUncheckedIndexedAccess: handle undefined/empty stdout). Image-stale rebuild trigger fires on Dockerfile mtime bump; the US-001 Dockerfile edit bumps mtime so the first landing rebuilds correctly (the build-arg-only-change case is out of scope here). Live behavioral confirmation (docker exec cam-worker touch /workspace) is the downstream CAM-175 re-run ceremony run by the operator OUTSIDE the autonomous loop (CI has no Docker; also gated on CAM-179 onboarding/trust seed); it is intentionally not an in-loop story. OUT OF SCOPE: the onboarding/trust seed (CAM-179), firewall wiring (CAM-176), and any dispatch change beyond the container build/run args."
     }
