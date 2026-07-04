@@ -960,3 +960,15 @@ Each entry follows this template:
 - **Decisions**: Fix = build-time uid alignment (operator-chosen over run-as-host-uid-runtime or chown-workspace). First of 3 container-mode blockers found in the CAM-175 live-validation ceremony.
 - **Blockers encountered**: None within CAM-178. Context: the CAM-175 ceremony this session proved CAM-152 container mode is non-functional for real workers; the -p auth smoke passed but hid two integration bugs (onboarding block + EACCES) surfaced only by the real worker dispatch.
 - **Follow-ups**: CAM-179 (onboarding/trust seed) + CAM-176 (firewall wiring) still block container mode. After both ship + rebuild to 0.56.0, re-run CAM-175, then CAM-139. Also filed CAM-174 (post-merge resilience), CAM-177 (.dockerignore). CAM-160 specified but unshipped (ceremony planner could not write its PRD due to CAM-178, now fixed).
+
+## cam-179-container-onboarding-trust-seed — CAM-179 shipped: bake claude onboarding + /workspace trust into worker image; live ceremony exposed CAM-178 build bug
+
+- **Started**: 2026-07-04T10:33:00Z
+- **Closed**: 2026-07-04T11:12:48.425Z
+- **Branch**: cam/pr-179-container-onboarding-trust-seed
+- **Issue**: CAM-179
+- **Outcome**: shipped
+- **Summary**: Baked a claude onboarding + /workspace folder-trust config into the cam-worker image (new .devcontainer/claude-config.json with 5 keys; Dockerfile COPY to /home/bun/.claude.json before the CAM-178 re-home block). One story US-001, review CLEAN round 1, shipped as PR #130, v0.57.0. The key insight from CAM-175 held: seeding top-level hasCompletedOnboarding alone does not suppress the per-project /workspace trust prompt; projects[/workspace].hasTrustDialogAccepted was the missing key.
+- **Decisions**: Bake into the image (not runtime seed) via a versioned config file COPYd before the re-home block so the existing chown re-owns it. Verify prompt-suppression live in an operator ceremony, not via -p smoke (print mode hid this class of bug in CAM-175).
+- **Blockers encountered**: The CAM-180 ceremony rebuild FAILED and exposed a P1 bug (CAM-183): the CAM-178 uid re-home block never builds on macOS. The collision guard renames the group NAME (groupmod -n) but never frees gid 20 (base dialout:20 vs host staff:20), so groupmod -g 20 bun fails. The cached image still has bun uid=1000, meaning the /workspace EACCES that CAM-178 supposedly fixed was never actually resolved on this host. CI has no Docker daemon so the real build was never run. Also lived: PR #130 sat OPEN+BEHIND under strict branch protection and needed a manual gh pr update-branch to merge (filed CAM-182).
+- **Follow-ups**: CAM-183 (P1, fix the re-home groupmod gid collision; verify with a real macOS docker build) blocks all container-mode work and must go first. CAM-180 (verify CAM-179 onboarding) folds into a combined ceremony after CAM-183 lands and the image rebuilds. CAM-181 (auto-ship fires on review CLEAN without checking pending operator stories). CAM-182 (sidecar auto-recover OPEN+BEHIND). Then CAM-176 (firewall), CAM-175 re-run, CAM-139.
