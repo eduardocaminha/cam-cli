@@ -1,7 +1,7 @@
 {
   "id": "CAM-185",
   "title": "Container mode: chown the claude-code-config volume to HOST_UID + re-assert bypass flag in ensure-up (CAM-175 blocker)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T19:14:06.154Z",
