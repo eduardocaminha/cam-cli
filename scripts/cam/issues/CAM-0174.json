@@ -1,0 +1,9 @@
+{
+  "id": "CAM-174",
+  "title": "Post-merge resilience: diverged local main from unpushed pre-branch commit leaves cycle half-done",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-04T01:03:49.777Z",
+  "description": "When an unpushed commit sits on local main before a feature branch squash-merges, the squash recreates that content at a new SHA and local main diverges from origin/main; the sidecar post-merge git pull then refuses (pull-failed), leaving the cycle half-done (consumes merge-watch, needs manual reset+close+tag+prune). Seen in CAM-152 post-merge. Harden the merge-watch/ship path to detect a diverged local main and either auto-recover (reset --hard origin/main when content is subsumed) or fail loudly with the runbook step, instead of silently wedging the cycle."
+}
