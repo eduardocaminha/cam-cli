@@ -3,7 +3,9 @@
   "branchName": "cam/pr-185-container-config-chown-bypass",
   "description": "Container mode: chown the claude-code-config volume to HOST_UID and re-assert the bypass-permissions keys on every ensure-up so real workers run without EACCES or the interactive Bypass Permissions modal (last CAM-175 blocker).",
   "issueNumber": 185,
-  "relatedDocs": ["scripts/cam/patterns.md"],
+  "relatedDocs": [
+    "scripts/cam/patterns.md"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -18,7 +20,7 @@
         "Full quality spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: .devcontainer/Dockerfile. Insert the mkdir into or before the ARG HOST_UID / RUN ... chown -R /home/bun block (currently line ~59-66) and add jq to the apt-get install -y list (line ~14-15). GOTCHA: Docker copies image-dir ownership into a named volume ONLY on the first (empty) mount, so the mkdir+chown fixes FRESH volumes; existing dev machines keep a stale root-owned volume that US-003's runtime chown self-heals. GOTCHA: /home/bun/.claude.json is a SIBLING file (COPY at line ~50), not under the volume dir; this story only fixes the dir + jq, not the file content. .devcontainer/ is NOT under vendor/ or templates/, so no embed-vendor:check gate applies. Verify build-time behavior via file-assert only; real docker build is deferred to the operator CAM-175 re-ceremony."
     },

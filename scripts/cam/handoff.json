@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Build-time Dockerfile: pre-create bun-owned /home/bun/.claude and install jq"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [".devcontainer/Dockerfile"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added jq to apt-get install and mkdir -p /home/bun/.claude before chown -R in the re-home block. FRESH named volumes will inherit bun ownership from the image dir on first mount. EXISTING volumes (stale root-owned) still need the runtime chown self-heal from US-003. No TS source was touched; no embed-vendor step needed.",
+  "officialDocsValidated": [
+    {
+      "lib": "Docker named volumes",
+      "version": "current",
+      "url": "https://docs.docker.com/engine/storage/volumes/#populate-a-volume-using-a-container",
+      "fetchedAt": "2026-07-04T00:00:00Z",
+      "status": "ok",
+      "summary": "Confirmed: empty named volume inherits image directory contents and ownership on first mount. Non-empty volumes are NOT overwritten (pre-existing content takes precedence). mkdir before chown is the correct pattern for fresh-volume bun-ownership inheritance."
+    }
+  ]
+}
