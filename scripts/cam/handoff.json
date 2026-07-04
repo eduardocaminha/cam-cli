@@ -1,29 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Flip the implementer spawn through the container (fail-closed) + ADR"
+    "id": "US-005",
+    "title": "Flip the reviewer spawn through the container (fail-closed)"
   },
   "branchName": "cam/pr-152-flip-worker-spawn-container",
-  "timestamp": "2026-07-03T23:55:00Z",
+  "timestamp": "2026-07-03T00:20:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
+    "src/supervisor/review.ts",
     "src/supervisor/host.ts",
-    "test/supervisor/loop.test.ts",
-    "docs/adr/0003-worker-isolation-boundary-dev-container.md",
+    "test/supervisor/review.test.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 (B-2 CAM-152) is complete. loop.ts now: (1) reads opts.workerIsolation ('host'|'container'); (2) wraps shellCmd via dockerExecWrap() before respawn-pane when container mode; (3) is fail-closed: if preflightContainerFn returns ready:false in container mode, calls escalateFn and returns { status: 'blocked', detail: 'container-not-ready: ...' } without ever dispatching a worker; (4) routes pane-died in container mode to 'container-exec-failure' reason. host.ts wires workerIsolation via readWorkerIsolation(). ADR 0003 updated to document the flip. Tests added: 7 new tests in 'US-004 / B-2: container mode dispatch' describe block. The docker exec string format is 'docker exec -it cam-worker env -u CLAUDECODE ... claude ... --session-id <lowercase-uuid> ...'. All quality gates pass. Next story may be the final US-005 or operator-required stories.",
+  "nextStoryContext": "US-005 (B-2 CAM-152) is complete. review.ts now: (1) accepts workerIsolation ('host'|'container'), preflightContainerFn, and escalateFn in MakeReviewDispatchOptions; (2) runs preflight before each reviewer respawn-pane when preflightContainerFn is provided; (3) is fail-closed in container mode: if preflightContainerFn returns ready:false, calls escalateFn (fire-and-forget) and returns { status: 'error', detail: 'container-not-ready: ...' } without dispatching an un-wrapped host reviewer; (4) wraps shellCmd via dockerExecWrap when workerIsolation==='container'. host.ts: hoisted preflightContainerFn and workerIsolation declarations before makeReviewDispatch to avoid TS2448 block-scoped-before-assignment error; wired both into the review dispatch options. Tests added: 6 new tests in 'makeReviewDispatch: US-005 container mode dispatch' describe block. All quality gates pass. All 5 user stories on this PRD now have passes:true; the PRD is ready for review.",
   "officialDocsValidated": [
     {
       "lib": "docker exec",
       "version": "current (Docker CLI 24+)",
       "url": "https://docs.docker.com/reference/cli/docker/container/exec/",
-      "fetchedAt": "2026-07-03T23:55:00Z",
+      "fetchedAt": "2026-07-03T00:20:00Z",
       "status": "ok",
-      "summary": "docker exec -it passes the command via shell tokenization when invoked through a tmux pane shell. The -i flag keeps STDIN open, -t allocates a pseudo-TTY. The dockerExecWrap implementation (prefix + inner shellCmd string) is correct for the tmux respawn-pane invocation path where the pane shell tokenizes the combined string."
+      "summary": "docker exec -it confirmed: -i keeps STDIN open, -t allocates a pseudo-TTY. The 'docker exec -it cam-worker <shellCmd>' form used by dockerExecWrap is correct for the interactive reviewer dispatch pattern."
     }
   ]
 }

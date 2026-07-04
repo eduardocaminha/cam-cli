@@ -104,7 +104,7 @@
         "bun run check:all passes. [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "US-004",
       "notes": "review.ts: buildReviewerWorkerArgv (line 112) produces the shell, dispatch is respawn-pane -k at line 364. Extend MakeReviewDispatchOptions (line 197) with the worker_isolation mode + a container preflight seam mirroring the loop dep (preflightContainerFn / PreflightResult from preflight-container.ts). host.ts builds reviewDispatch via makeReviewDispatch and must thread the flag + preflight + escalateFn. Reuse dockerExecWrap (US-002). File-size: review.ts is at 585 ceiling; raise scripts/file-size-budget.json with a CAM-152 _ref if exceeded."
     },
