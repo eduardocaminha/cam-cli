@@ -42,6 +42,13 @@ RUN echo '#!/bin/sh' > /usr/local/bin/git-credential-github-token \
           /usr/local/bin/git-credential-github-token \
     && chown bun:bun /home/bun/.gitconfig
 
+# Bake claude onboarding + /workspace trust config into the image (US-001, CAM-179).
+# COPY defaults to root:root ownership; the chown -R below re-owns it to HOST_UID:HOST_GID.
+# No --chown flag here: a --chown=bun:bun would bind to the pre-usermod uid 1000,
+# which is wrong after the re-home. Positioning BEFORE ARG HOST_UID ensures the
+# subsequent chown -R /home/bun covers this file.
+COPY .devcontainer/claude-config.json /home/bun/.claude.json
+
 # Re-home the bun user to match HOST_UID/HOST_GID (bind-mount write access).
 # ARG HOST_UID/HOST_GID default to 1000 (oven/bun base image default).
 # groupmod guard: if another group already owns HOST_GID (e.g. macOS staff=20),

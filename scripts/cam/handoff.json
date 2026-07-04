@@ -1,0 +1,31 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Bake claude onboarding + /workspace trust config into the cam-worker image"
+  },
+  "branchName": "cam/pr-179-container-onboarding-trust-seed",
+  "timestamp": "2026-07-04T10:45:00Z",
+  "createdFiles": [
+    ".devcontainer/claude-config.json",
+    "test/supervisor/claude-config-bake.test.ts"
+  ],
+  "modifiedFiles": [
+    ".devcontainer/Dockerfile",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [
+    "Operator ceremony (live prompt-suppression check via interactive docker exec -it ... claude --agent) is not part of this PRD; hand-file via /cam-issue when a real image rebuild + Docker is available.",
+    "CAM-176 (firewall wiring) and the full CAM-175 end-to-end re-run are separate follow-ups.",
+    "If a future CAM-177 lands a .dockerignore, it MUST NOT exclude .devcontainer/claude-config.json."
+  ],
+  "nextStoryContext": "US-001 baked claude-config.json (5 keys: hasCompletedOnboarding, theme, bypassPermissionsModeAccepted, projects[/workspace].hasTrustDialogAccepted, hasCompletedProjectOnboarding) into the Dockerfile via a COPY before ARG HOST_UID so the existing chown -R re-owns it. No run-argv changes to worker-container.ts or ensure-container.ts. The claude-code-config volume mount at /home/bun/.claude (directory) is untouched; .claude.json (file at /home/bun/.claude.json) is separate. The test uses \\nARG HOST_UID as the search pattern to avoid matching occurrences of the string inside Dockerfile comments.",
+  "officialDocsValidated": [
+    {
+      "lib": "claude-code-cli config schema",
+      "url": "https://code.claude.com/docs/en/settings",
+      "fetchedAt": "2026-07-04T10:45:00Z",
+      "status": "aligned",
+      "summary": "Docs confirm ~/.claude.json stores per-project trust state and per-project settings; the five baked keys are internal state fields consistent with this documented purpose. Specific key names are not in public docs (empirically validated via CAM-175 against host ~/.claude.json)."
+    }
+  ]
+}
