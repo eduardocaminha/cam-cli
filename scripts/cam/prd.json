@@ -3,7 +3,9 @@
   "branchName": "cam/pr-183-rehome-gid-collision",
   "description": "Fix the CAM-178 uid/gid re-home block in .devcontainer/Dockerfile so the cam-worker image builds on a macOS host where HOST_GID=20 collides with the base image group.",
   "issueNumber": 183,
-  "relatedDocs": ["docs/recovery-runbook.md"],
+  "relatedDocs": [
+    "docs/recovery-runbook.md"
+  ],
   "officialDocsConsulted": [
     {
       "lib": "shadow-utils (usermod/groupmod)",
@@ -30,7 +32,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "SINGLE-FILE FIX + regression test. Edit only the re-home RUN block in `.devcontainer/Dockerfile` (currently lines ~52-64) and add a new deterministic test under `test/supervisor/` (e.g. rehome-gid-collision.test.ts) mirroring the file-assert conventions in `test/supervisor/claude-config-bake.test.ts` (readFileSync the Dockerfile, string-contains / regex asserts). Target block shape: `RUN if getent group \"$HOST_GID\" >/dev/null 2>&1; then usermod -u \"$HOST_UID\" -g \"$HOST_GID\" bun; else groupmod -g \"$HOST_GID\" bun && usermod -u \"$HOST_UID\" bun; fi && chown -R \"$HOST_UID:$HOST_GID\" /home/bun`. WHY: `groupmod -n` renames a group's NAME but never frees its GID, so the old `groupmod -g $HOST_GID bun` failed with 'GID 20 already exists'; group NAME is irrelevant because chown uses the numeric HOST_UID:HOST_GID. GOTCHAS: (1) `usermod -g <gid>` requires the group to already exist (confirmed against usermod(8): 'The group must exist.'), which is exactly why the getent branch is mandatory, do NOT call `usermod -g $HOST_GID` unconditionally. (2) Do NOT move the CAM-179 `COPY ... /home/bun/.claude.json` line, it must stay BEFORE `ARG HOST_UID` so the trailing `chown -R /home/bun` re-owns it; claude-config-bake.test.ts AC3 guards this. (3) `.devcontainer/` is NOT embedded/vendored, so NO embed-vendor step is needed. (4) CI (macos-latest) has no Docker daemon, so the test can only assert Dockerfile TEXT; a real `docker build --build-arg HOST_UID=501 --build-arg HOST_GID=20` on this macOS host is a SEPARATE operator ceremony hand-filed after the PRD (folds into the combined CAM-178/183 + CAM-179 + CAM-180 rebuild+verify), it is NOT part of this autonomous story. OUT OF SCOPE: HOST_UID user collision handling (documented risk, not a fix); no change to `src/supervisor/worker-container.ts` (resolveHostIds already threads id -u/id -g correctly). Read scripts/cam/patterns.md before coding (Bun runtime, noUncheckedIndexedAccess, test conventions)."
     }
