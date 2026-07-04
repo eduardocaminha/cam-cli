@@ -26,6 +26,7 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 import { runSidecarLoop, type RunSidecarLoopOptions, type SpawnFn as LoopSpawnFn, type IsPaneAlive } from '../supervisor/loop.ts';
+import { FirewallError } from '../supervisor/container-firewall.ts';
 import { buildSupervisorOptions, makeNotifyOrchestrator } from '../supervisor/host.ts';
 import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/events.ts';
 import { parseStateFile, type LoopPhase } from './status.ts';
@@ -183,6 +184,14 @@ export interface SidecarOptions {
 	 * Tests: inject a spy to assert the call happened without real docker.
 	 */
 	ensureContainerFn?: () => void;
+	/**
+	 * Override the runSidecarLoop call (US-001, CAM-176).
+	 *
+	 * Production: calls the real runSidecarLoop from supervisor/loop.ts.
+	 * Tests: inject a spy to assert fail-closed behaviour: when ensureContainerFn
+	 * throws FirewallError, this spy must never be called.
+	 */
+	runSidecarLoopFn?: (opts: RunSidecarLoopOptions) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1137,11 +1146,26 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	const logEvent =
 		options.logEventFn ?? makeFileEventLogger(join(claudeDir, 'cam-worker-events.jsonl'));
 
-	// US-003: ensure the worker container is running before dispatching (container
-	// mode only).  In host mode this block is a complete no-op (zero docker calls).
+	// US-001 / CAM-176: ensure the worker container is running AND apply the
+	// egress firewall before dispatching (container mode only).
+	// In host mode this block is a complete no-op (zero docker calls, zero
+	// firewall calls).
+	// FirewallError is thrown by ensureWorkerContainer when init-firewall.sh
+	// exits non-zero; we catch it specifically (instanceof) so that a bare
+	// catch cannot accidentally swallow an unexpected runtime error.
 	const isolation = readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'));
 	if (isolation === 'container') {
-		(options.ensureContainerFn ?? makeProductionEnsureContainerFn(cwd))();
+		try {
+			(options.ensureContainerFn ?? makeProductionEnsureContainerFn(cwd))();
+		} catch (e) {
+			if (e instanceof FirewallError) {
+				process.stderr.write(
+					`[cam] container firewall init failed — no worker will be dispatched.\n${e.stderrTail}\n`,
+				);
+				return;
+			}
+			throw e;
+		}
 	}
 
 	const deps = buildSidecarLoopDeps(
@@ -1149,7 +1173,8 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		options,
 	);
 
-	await runSidecarLoop({
+	const loopFn = options.runSidecarLoopFn ?? runSidecarLoop;
+	await loopFn({
 		buildOpts: deps.buildOptsFn,
 		readActive: deps.readActiveFn,
 		clearActive: deps.clearActiveFn,

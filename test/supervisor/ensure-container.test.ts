@@ -22,6 +22,10 @@ import {
 } from '../../src/supervisor/ensure-container.ts';
 import type { ContainerSpawnFn } from '../../src/supervisor/worker-container.ts';
 import type { DockerProbe, StatFn } from '../../src/supervisor/preflight-container.ts';
+import {
+	FirewallError,
+	type FirewallSpawnFn,
+} from '../../src/supervisor/container-firewall.ts';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -422,5 +426,245 @@ describe('ensureWorkerContainer: hostUid/hostGid forwarded to docker build argv'
 		const buildCall = spawn.calls.find((c) => c.cmd === 'docker' && c.args[0] === 'build');
 		expect(buildCall).toBeDefined();
 		expect(buildCall?.args).not.toContain('--build-arg');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC3: firewall apply is UNCONDITIONAL on every action branch
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a FirewallSpawnFn that records calls and returns the given exit code.
+ */
+function makeFirewallSpawnFn(exitCode = 0): {
+	fn: FirewallSpawnFn;
+	calls: { cmd: string; args: string[] }[];
+} {
+	const calls: { cmd: string; args: string[] }[] = [];
+	const fn: FirewallSpawnFn = (cmd, args) => {
+		calls.push({ cmd, args });
+		return { stdout: '', stderr: '', exitCode };
+	};
+	return { fn, calls };
+}
+
+/** Build opts that include a firewallSpawnFn for testing the unconditional exec. */
+function makeOptsWithFirewall(
+	probe: DockerProbe,
+	spawnFn: ContainerSpawnFn,
+	firewallSpawnFn: FirewallSpawnFn,
+	extra: Partial<EnsureWorkerContainerOptions> = {},
+): EnsureWorkerContainerOptions {
+	return { probe, spawnFn, firewallSpawnFn, workspaceFolder: WORKSPACE, ...extra };
+}
+
+describe('ensureWorkerContainer: firewall is invoked unconditionally on all branches (AC3)', () => {
+	test('firewall exec is invoked when action=reused (running branch)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true\n', exitCode: 0 }, // running
+		});
+		const spawn = makeRecordingSpawnFn();
+		const fw = makeFirewallSpawnFn(0);
+		ensureWorkerContainer(makeOptsWithFirewall(probe.fn, spawn.fn, fw.fn));
+
+		// Firewall exec must have been called exactly once
+		expect(fw.calls).toHaveLength(1);
+		expect(fw.calls[0]?.cmd).toBe('docker');
+		expect(fw.calls[0]?.args[0]).toBe('exec');
+	});
+
+	test('firewall exec is invoked when action=started (stopped branch)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'false\n', exitCode: 0 }, // stopped
+		});
+		const spawn = makeRecordingSpawnFn();
+		const fw = makeFirewallSpawnFn(0);
+		ensureWorkerContainer(makeOptsWithFirewall(probe.fn, spawn.fn, fw.fn));
+
+		expect(fw.calls).toHaveLength(1);
+		expect(fw.calls[0]?.cmd).toBe('docker');
+		expect(fw.calls[0]?.args[0]).toBe('exec');
+	});
+
+	test('firewall exec is invoked when action=created (absent branch)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: '', exitCode: 1 }, // absent
+		});
+		const spawn = makeRecordingSpawnFn();
+		const fw = makeFirewallSpawnFn(0);
+		ensureWorkerContainer(makeOptsWithFirewall(probe.fn, spawn.fn, fw.fn));
+
+		expect(fw.calls).toHaveLength(1);
+		expect(fw.calls[0]?.cmd).toBe('docker');
+		expect(fw.calls[0]?.args[0]).toBe('exec');
+	});
+
+	test('firewall exec is invoked when action=rebuilt (image-stale branch)', () => {
+		const OLD_DATE = new Date(0).toISOString();
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: OLD_DATE, exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const fw = makeFirewallSpawnFn(0);
+		ensureWorkerContainer(
+			makeOptsWithFirewall(probe.fn, spawn.fn, fw.fn, {
+				statFn: (_path) => ({ mtimeMs: Date.now() }), // stale trigger
+			}),
+		);
+
+		expect(fw.calls).toHaveLength(1);
+		expect(fw.calls[0]?.cmd).toBe('docker');
+		expect(fw.calls[0]?.args[0]).toBe('exec');
+	});
+
+	test('firewall exec argv includes the correct container name', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const fw = makeFirewallSpawnFn(0);
+		ensureWorkerContainer(
+			makeOptsWithFirewall(probe.fn, spawn.fn, fw.fn, { containerName: 'cam-worker' }),
+		);
+
+		const call = fw.calls[0];
+		expect(call?.args).toContain('cam-worker');
+	});
+
+	test('firewall exec argv ends with the absolute script path', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const fw = makeFirewallSpawnFn(0);
+		ensureWorkerContainer(makeOptsWithFirewall(probe.fn, spawn.fn, fw.fn));
+
+		const call = fw.calls[0];
+		const lastArg = call?.args[call.args.length - 1];
+		expect(lastArg).toBe('/workspace/.devcontainer/init-firewall.sh');
+	});
+
+	test('no firewall call when firewallSpawnFn is absent (host mode / legacy)', () => {
+		// Without firewallSpawnFn, no exec call occurs (AC6 non-regression)
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		// Deliberately no firewallSpawnFn
+		ensureWorkerContainer(makeOpts(probe.fn, spawn.fn));
+
+		// Only the probe's inspect call; no docker exec via spawn
+		const execCalls = spawn.calls.filter((c) => c.args[0] === 'exec');
+		expect(execCalls).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC4: FirewallError thrown on non-zero firewall exit
+// ---------------------------------------------------------------------------
+
+describe('ensureWorkerContainer: FirewallError thrown on non-zero firewall exit (AC4)', () => {
+	test('throws FirewallError when firewallSpawnFn exits non-zero', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 }, // running
+		});
+		const spawn = makeRecordingSpawnFn();
+		const fw = makeFirewallSpawnFn(1); // non-zero exit
+
+		expect(() => {
+			ensureWorkerContainer(makeOptsWithFirewall(probe.fn, spawn.fn, fw.fn));
+		}).toThrow(FirewallError);
+	});
+
+	test('FirewallError is an instanceof FirewallError (typed check works)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'false', exitCode: 0 }, // stopped
+		});
+		const spawn = makeRecordingSpawnFn();
+		const fw = makeFirewallSpawnFn(1);
+
+		try {
+			ensureWorkerContainer(makeOptsWithFirewall(probe.fn, spawn.fn, fw.fn));
+			throw new Error('Expected FirewallError to be thrown');
+		} catch (e) {
+			expect(e).toBeInstanceOf(FirewallError);
+		}
+	});
+
+	test('FirewallError carries stderrTail from the firewall spawn', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const stderrText = 'iptables: Permission denied\nipset: Cannot create set';
+		const failFw: FirewallSpawnFn = () => ({
+			stdout: '',
+			stderr: stderrText,
+			exitCode: 1,
+		});
+
+		try {
+			ensureWorkerContainer(makeOptsWithFirewall(probe.fn, spawn.fn, failFw));
+			throw new Error('Expected FirewallError to be thrown');
+		} catch (e) {
+			expect(e).toBeInstanceOf(FirewallError);
+			if (e instanceof FirewallError) {
+				expect(e.stderrTail).toContain('iptables');
+			}
+		}
+	});
+
+	test('reconcile action proceeds before firewall check (reused branch + throw)', () => {
+		// Verify the reconcile (reused) succeeds and then the firewall throws
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const fw = makeFirewallSpawnFn(1);
+		// No docker start/build/run call happens (running = reused), but firewall fails
+		let caughtError: unknown;
+		try {
+			ensureWorkerContainer(makeOptsWithFirewall(probe.fn, spawn.fn, fw.fn));
+		} catch (e) {
+			caughtError = e;
+		}
+		expect(caughtError).toBeInstanceOf(FirewallError);
+		// Still no mutation calls (reused branch)
+		expect(spawn.calls).toHaveLength(0);
+	});
+
+	test('no FirewallError thrown when firewallSpawnFn exits 0', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const fw = makeFirewallSpawnFn(0); // success
+		expect(() => {
+			ensureWorkerContainer(makeOptsWithFirewall(probe.fn, spawn.fn, fw.fn));
+		}).not.toThrow();
 	});
 });
