@@ -1,9 +1,34 @@
 {
   "id": "CAM-184",
   "title": "container-smoke: validate container-mode dispatch (CAM-175, throwaway)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T14:50:09.323Z",
-  "description": "Append one dated marker line to a new scratch file scripts/cam/container-smoke.txt to exercise the container-mode dispatch path end-to-end: sidecar ensure-up firewall convergence, egress allow/block, interactive claude zero-prompt (CAM-179), and /workspace read-write round-trip. Disposable validation harness: prune the branch, never PR, and close this issue after the 4 container gates are verified. Only code change is the marker .txt; full quality gates run inside the container as the real toolchain test."
+  "description": "Append one dated marker line to a new scratch file scripts/cam/container-smoke.txt to exercise the container-mode dispatch path end-to-end: sidecar ensure-up firewall convergence, egress allow/block, interactive claude zero-prompt (CAM-179), and /workspace read-write round-trip. Disposable validation harness: prune the branch, never PR, and close this issue after the 4 container gates are verified. Only code change is the marker .txt; full quality gates run inside the container as the real toolchain test.",
+  "spec": {
+    "acceptanceCriteria": [
+      "A new file scripts/cam/container-smoke.txt exists containing one dated marker line (2026-07-04) confirming the container-mode dispatch path was exercised end-to-end.",
+      "The change was implemented by an implementer worker running INSIDE the cam-worker container (worker_isolation=container), not on the host.",
+      "The full quality gates (bun run typecheck, bun test, bun run check:all) pass when run inside the container.",
+      "During the run, the sidecar ensure-up applied the egress firewall (init-firewall.sh) and the firewall self-verify converged (exit 0)."
+    ],
+    "scope": "Add a single marker .txt file under scripts/cam/ to exercise the container-mode implementer dispatch end-to-end. No production code changes. Disposable validation harness for the CAM-175 container ceremony: the branch is pruned and never PR-d, and this issue is closed after the container gates are verified.",
+    "gotchas": [
+      "Throwaway: do NOT ship or open a PR; prune the branch after validation.",
+      "worker_isolation=container must be set locally in project.toml before dispatch, then reverted to host afterward."
+    ],
+    "domainTerms": [
+      "cam-worker",
+      "worker_isolation",
+      "ensure-up",
+      "init-firewall.sh"
+    ]
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  }
 }
