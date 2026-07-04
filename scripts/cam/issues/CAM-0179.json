@@ -1,9 +1,39 @@
 {
   "id": "CAM-179",
   "title": "Container mode: pre-seed claude onboarding + /workspace folder-trust so interactive workers don't block",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T08:45:33.801Z",
-  "description": "In worker_isolation=container, interactive workers (docker exec -it ... claude --agent ...) block on claude's first-run onboarding (theme picker) AND the trust-this-folder prompt for /workspace, causing planner/worker timeouts. The claude-code-config volume mounts /home/bun/.claude (dir) but the onboarding state lives in the EPHEMERAL /home/bun/.claude.json (home file, outside the volume), so it is fresh on every container recreate. Fix: bake an onboarding-complete config into the image (ephemeral home path) or seed via ensure-up: hasCompletedOnboarding, theme, bypassPermissionsModeAccepted, hasTrustDialogAccepted, AND folder-trust acceptance for /workspace. Note: seeding hasCompletedOnboarding/theme alone did NOT suppress the trust-folder prompt in CAM-175 (operator saw it in the pane). The -p auth smoke missed this entirely (print mode skips onboarding). Ties CAM-152, CAM-175."
+  "description": "In worker_isolation=container, interactive workers (docker exec -it ... claude --agent ...) block on claude's first-run onboarding (theme picker) AND the trust-this-folder prompt for /workspace, causing planner/worker timeouts. The claude-code-config volume mounts /home/bun/.claude (dir) but the onboarding state lives in the EPHEMERAL /home/bun/.claude.json (home file, outside the volume), so it is fresh on every container recreate. Fix: bake an onboarding-complete config into the image (ephemeral home path) or seed via ensure-up: hasCompletedOnboarding, theme, bypassPermissionsModeAccepted, hasTrustDialogAccepted, AND folder-trust acceptance for /workspace. Note: seeding hasCompletedOnboarding/theme alone did NOT suppress the trust-folder prompt in CAM-175 (operator saw it in the pane). The -p auth smoke missed this entirely (print mode skips onboarding). Ties CAM-152, CAM-175.",
+  "spec": {
+    "acceptanceCriteria": [
+      "New file .devcontainer/claude-config.json exists and is valid JSON containing: top-level hasCompletedOnboarding=true, theme=\"dark\", bypassPermissionsModeAccepted=true; and projects[\"/workspace\"] with hasTrustDialogAccepted=true and hasCompletedProjectOnboarding=true.",
+      ".devcontainer/Dockerfile copies claude-config.json to /home/bun/.claude.json, and the COPY instruction is placed BEFORE the 'ARG HOST_UID' re-home block so the existing 'chown -R $HOST_UID:$HOST_GID /home/bun' sets ownership to the host uid (no --chown flag, no extra chown line).",
+      "src/supervisor/worker-container.ts and src/supervisor/ensure-container.ts are unchanged, and the claude-code-config volume mount at /home/bun/.claude is untouched (image-bake changes no run-argv).",
+      "Unit tests assert: (a) claude-config.json parses to the exact five-key shape above; (b) the Dockerfile contains the COPY of claude-config.json to /home/bun/.claude.json positioned before the 'ARG HOST_UID' line.",
+      "Quality gates pass: bun run typecheck, bun test, bun run check:all.",
+      "OPERATOR CEREMONY (requires:operator, hand-filed after plan): with the image rebuilt to include the config, an interactive 'docker exec -it cam-worker ... claude --permission-mode bypassPermissions --agent <agent> ...' with cwd /workspace reaches the agent with ZERO blocking prompts (no first-run onboarding/theme picker and no /workspace trust-this-folder dialog)."
+    ],
+    "scope": "Bake a claude onboarding + folder-trust config into the cam-worker image so interactive container workers do not block on first-run onboarding or the /workspace trust prompt. In scope: a versioned .devcontainer/claude-config.json (five keys), a Dockerfile COPY to /home/bun/.claude.json before the CAM-178 uid re-home block, and unit tests for the config content and COPY placement; plus one hand-filed operator-ceremony story that verifies prompt-suppression live via an interactive docker exec. Out of scope: CAM-176 (init-firewall wiring, orthogonal to local prompts), CAM-139, and the full CAM-175 end-to-end story-GREEN re-run (sequenced after 179+176 ship + rebuild). worker-container.ts / ensure-container.ts stay untouched (bake changes no run-argv).",
+    "gotchas": [
+      "Onboarding/trust state lives in the EPHEMERAL /home/bun/.claude.json (a file at the container home), NOT in the claude-code-config volume (which mounts the /home/bun/.claude DIRECTORY). It resets on every container recreate, so it must be baked into the image, not persisted via the volume.",
+      "Seeding top-level hasCompletedOnboarding ALONE does NOT suppress the /workspace trust prompt (CAM-175 empirical). Folder-trust is per-project: the fix REQUIRES projects[\"/workspace\"].hasTrustDialogAccepted=true (verified against the host ~/.claude.json schema).",
+      "COPY defaults to root:root ownership. Place it BEFORE the CAM-178 re-home block so the existing 'chown -R $HOST_UID:$HOST_GID /home/bun' fixes ownership. A COPY --chown=bun:bun would bind to bun's pre-usermod uid (1000), wrong after the re-home changes bun's uid to the host uid.",
+      "The -p / print-mode auth smoke skips onboarding and writes nothing, so it HID both prompts in CAM-175. Verification MUST be an interactive docker exec, never -p.",
+      "Possible version-gated re-onboarding (lastOnboardingVersion vs pinned CLI @2.1.197) is unverified; not seeded speculatively. Add lastOnboardingVersion only if the ceremony surfaces re-onboarding.",
+      "CAM-177 (.dockerignore for the 4.9G build context) must NOT exclude .devcontainer/claude-config.json when it lands."
+    ],
+    "domainTerms": [
+      "folder-trust: claude's per-project 'trust this folder' acceptance, stored as projects[\"<abs cwd>\"].hasTrustDialogAccepted in ~/.claude.json.",
+      "onboarding gate: claude's first-run wizard (theme picker, etc.), gated by the top-level hasCompletedOnboarding flag in ~/.claude.json.",
+      "ephemeral home config: /home/bun/.claude.json, a file at the container home path outside the claude-code-config volume, reset on every container recreate."
+    ]
+  },
+  "wsjf": {
+    "value": 7,
+    "timeCriticality": 7,
+    "riskReduction": 7,
+    "jobSize": 2
+  }
 }
