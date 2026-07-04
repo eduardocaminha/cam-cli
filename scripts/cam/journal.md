@@ -936,3 +936,15 @@ Each entry follows this template:
 - **Decisions**: None; ceremony only, no code change. CAM-165 (PR #127, v0.54.0) and CAM-168 G4 already stage:shipped; this closes the live-validation follow-up.
 - **Blockers encountered**: None expected. Honest caveat carried from the prior ceremony: a 0-byte .claude/cam-recycle-watcher.log is NOT a failure signal (the watcher tick path emits nothing on a successful tick). PASS rests on observable state transitions (handoff consumed + marker removed + respawn + rehydrate), never on log output.
 - **Follow-ups**: Respawned session confirms PASS empirically and asks the operator whether to close the CAM-165 operator ceremony + CAM-168 G4 as validated-live. Backlog: CAM-139 (inter-cycle drainer, not built = no inter-cycle autonomy today), CAM-65 (reviewer pane lingering post-CLEAN), F-01 residual (orphan readSessionIdFn option in orch-recycle-watch.ts).
+
+## cam-152-flip-worker-spawn-container — CAM-152 shipped: flip worker spawn through container (fail-closed worker_isolation, v0.55.0)
+
+- **Started**: 2026-07-03
+- **Closed**: 2026-07-04T00:56:33Z
+- **Branch**: cam/pr-152-flip-worker-spawn-container
+- **Issue**: CAM-152
+- **Outcome**: shipped
+- **Summary**: Routed all four worker spawns (implementer, reviewer, planner, auditor) into the long-lived cam-worker container via a shared dockerExecWrap chokepoint, gated on a fail-closed [loop] worker_isolation flag (default host). 6 stories, review CLEAN round 1, PR #128 squash-merged, v0.55.0. Makes the CAM-150 isolation substrate live and provides the container-active gate that CAM-139 needs.
+- **Decisions**: Grill settled: (1) container persistent + ensure-up idempotent at boot (up/down/absent/stale), no teardown on cam stop; (2) all four workers wrapped incl planner+auditor, which required building a new plan-runner container preflight seam; (3) opt-in flag default host, so zero behavior change until operator flips + rebuilds; (4) fail-closed literal, no host fallback. plan_approval kept auto: operator participates only at spec.
+- **Blockers encountered**: Post-merge pull-failed: an unpushed local-main commit (img cleanup, acde9da) diverged local main from the PR squash (e52d553), so the sidecar git pull refused. Recovered by hand: reset --hard origin/main (lossless, content subsumed by squash) then closeIssueOnMain, cam tag v0.55.0, prune branch.
+- **Follow-ups**: 1. Post-merge resilience to a diverged local main (unpushed pre-branch commit subsumed by squash). 2. Live-validation ceremony (requires:operator): rebuild+reinstall 0.55.0, set worker_isolation=container, run a representative story GREEN inside the container under the firewall + confirm claude auth. 3. CAM-139 now unblocked but gated on container active (needs the ceremony first).
