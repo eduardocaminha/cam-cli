@@ -70,6 +70,43 @@ describe('buildDockerBuildArgv', () => {
 		// tag comes before dockerfile flag in practice; at minimum both present
 		expect(argv.length).toBeGreaterThan(4);
 	});
+
+	// AC4: hostUid + hostGid -> --build-arg HOST_UID=<uid> --build-arg HOST_GID=<gid>
+	test('emits --build-arg HOST_UID and HOST_GID when both hostUid and hostGid are provided', () => {
+		const argv = buildDockerBuildArgv({ hostUid: 501, hostGid: 20 });
+		const uidIdx = argv.indexOf('HOST_UID=501');
+		const gidIdx = argv.indexOf('HOST_GID=20');
+		expect(uidIdx).toBeGreaterThan(-1);
+		expect(argv[uidIdx - 1]).toBe('--build-arg');
+		expect(gidIdx).toBeGreaterThan(-1);
+		expect(argv[gidIdx - 1]).toBe('--build-arg');
+	});
+
+	test('build context is still the last arg when hostUid and hostGid are provided', () => {
+		const argv = buildDockerBuildArgv({ hostUid: 1000, hostGid: 1000, buildContext: './ctx' });
+		expect(argv[argv.length - 1]).toBe('./ctx');
+	});
+
+	// AC5: absent hostUid/hostGid -> NO --build-arg token, argv byte-identical to today
+	test('emits NO --build-arg when neither hostUid nor hostGid is provided', () => {
+		const argv = buildDockerBuildArgv();
+		expect(argv).not.toContain('--build-arg');
+	});
+
+	test('emits NO --build-arg when only hostUid is provided (hostGid absent)', () => {
+		const argv = buildDockerBuildArgv({ hostUid: 501 });
+		expect(argv).not.toContain('--build-arg');
+	});
+
+	test('emits NO --build-arg when only hostGid is provided (hostUid absent)', () => {
+		const argv = buildDockerBuildArgv({ hostGid: 20 });
+		expect(argv).not.toContain('--build-arg');
+	});
+
+	test('default argv without hostUid/hostGid is byte-identical to baseline', () => {
+		const argv = buildDockerBuildArgv();
+		expect(argv).toEqual(['build', '-t', DEFAULT_IMAGE_TAG, '-f', '.devcontainer/Dockerfile', '.']);
+	});
 });
 
 // ---------------------------------------------------------------------------
