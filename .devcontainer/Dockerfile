@@ -42,6 +42,20 @@ RUN echo '#!/bin/sh' > /usr/local/bin/git-credential-github-token \
           /usr/local/bin/git-credential-github-token \
     && chown bun:bun /home/bun/.gitconfig
 
+# Re-home the bun user to match HOST_UID/HOST_GID (bind-mount write access).
+# ARG HOST_UID/HOST_GID default to 1000 (oven/bun base image default).
+# groupmod guard: if another group already owns HOST_GID (e.g. macOS staff=20),
+# rename it first so groupmod -g has a free gid slot.
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+RUN COLLIDING=$(getent group "$HOST_GID" 2>/dev/null | cut -d: -f1); \
+    if [ -n "$COLLIDING" ] && [ "$COLLIDING" != "bun" ]; then \
+        groupmod -n "${COLLIDING}_rehomed" "$COLLIDING"; \
+    fi \
+    && groupmod -g "$HOST_GID" bun \
+    && usermod -u "$HOST_UID" bun \
+    && chown -R "$HOST_UID:$HOST_GID" /home/bun
+
 # Switch to non-root user (the oven/bun image ships with a pre-created bun user)
 USER bun
 

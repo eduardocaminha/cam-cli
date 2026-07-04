@@ -21,6 +21,7 @@ import { spawnSync } from 'node:child_process';
 
 import {
 	runWorkerContainer,
+	resolveHostIds,
 	DEFAULT_CONTAINER_NAME,
 	DEFAULT_IMAGE_TAG,
 	type ContainerSpawnFn,
@@ -216,6 +217,13 @@ export function makeProductionEnsureContainerFn(cwd: string): () => void {
 				return null;
 			}
 		};
-		ensureWorkerContainer({ spawnFn, probe, statFn, workspaceFolder: cwd });
+		const { uid: hostUid, gid: hostGid } = resolveHostIds(spawnFn);
+		ensureWorkerContainer({
+			spawnFn,
+			probe,
+			statFn,
+			workspaceFolder: cwd,
+			build: { hostUid, hostGid },
+		});
 	};
 }

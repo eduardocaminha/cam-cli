@@ -357,3 +357,70 @@ describe('ensureWorkerContainer: type sanity', () => {
 		expect(['reused', 'started', 'created', 'rebuilt']).toContain(result.action);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// AC3: build.hostUid/hostGid reach docker build argv on both created + rebuilt
+// ---------------------------------------------------------------------------
+
+describe('ensureWorkerContainer: hostUid/hostGid forwarded to docker build argv', () => {
+	test('created branch: --build-arg HOST_UID and HOST_GID appear in docker build argv', () => {
+		// inspect exits non-zero -> absent -> created branch
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: '', exitCode: 1 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		ensureWorkerContainer(
+			makeOpts(probe.fn, spawn.fn, { build: { hostUid: 1001, hostGid: 1002 } }),
+		);
+
+		const buildCall = spawn.calls.find((c) => c.cmd === 'docker' && c.args[0] === 'build');
+		expect(buildCall).toBeDefined();
+		expect(buildCall?.args).toContain('HOST_UID=1001');
+		expect(buildCall?.args).toContain('HOST_GID=1002');
+		// Both preceded by --build-arg
+		const args = buildCall?.args ?? [];
+		const uidIdx = args.indexOf('HOST_UID=1001');
+		const gidIdx = args.indexOf('HOST_GID=1002');
+		expect(args[uidIdx - 1]).toBe('--build-arg');
+		expect(args[gidIdx - 1]).toBe('--build-arg');
+	});
+
+	test('rebuilt branch: --build-arg HOST_UID and HOST_GID appear in docker build argv', () => {
+		const OLD_DATE = new Date(0).toISOString();
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: OLD_DATE, exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		ensureWorkerContainer(
+			makeOpts(probe.fn, spawn.fn, {
+				statFn: (_path) => ({ mtimeMs: Date.now() }),
+				build: { hostUid: 502, hostGid: 20 },
+			}),
+		);
+
+		const buildCall = spawn.calls.find((c) => c.cmd === 'docker' && c.args[0] === 'build');
+		expect(buildCall).toBeDefined();
+		expect(buildCall?.args).toContain('HOST_UID=502');
+		expect(buildCall?.args).toContain('HOST_GID=20');
+	});
+
+	// AC4: host mode / no build opts -> no --build-arg emitted
+	test('no --build-arg when build opts are absent (host mode behavior unchanged)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: '', exitCode: 1 }, // absent -> created
+		});
+		const spawn = makeRecordingSpawnFn();
+		// No build option passed = same as host mode (no build-args expected)
+		ensureWorkerContainer(makeOpts(probe.fn, spawn.fn));
+
+		const buildCall = spawn.calls.find((c) => c.cmd === 'docker' && c.args[0] === 'build');
+		expect(buildCall).toBeDefined();
+		expect(buildCall?.args).not.toContain('--build-arg');
+	});
+});

@@ -2245,6 +2245,27 @@ was modified after the last build. Rebuild:
 docker build .devcontainer -t cam-worker:latest
 ```
 
+**Upgrade caveat: claude-code-config volume ownership after HOST_UID/HOST_GID re-home**
+
+The `claude-code-config` named Docker volume at `/home/bun/.claude` retains the
+uid/gid ownership from when it was first created. If the volume was created with
+uid 1000 (the old hard-coded bun uid) and the cam-worker image is then rebuilt
+with `HOST_UID`/`HOST_GID` build-args that re-home the bun user to the host uid,
+the volume will still be owned by uid 1000, causing EACCES errors inside the
+container.
+
+Fix: remove the volume once so Docker recreates it with the correct ownership on
+the next `cam run`:
+
+```bash
+docker volume rm claude-code-config
+```
+
+This is a one-time operation per host. The volume contains only Claude Code
+authentication state and cached config. After removal, re-authenticate with
+`claude login` inside a fresh container, or ensure `CLAUDE_CODE_OAUTH_TOKEN` is
+set in `.env` (preferred for unattended automation).
+
 **Symptom: firewall self-verify fails (allowed domain unreachable)**
 
 `init-firewall.sh` performs a self-verify step after applying rules. If

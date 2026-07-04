@@ -65,6 +65,19 @@ export interface DockerBuildArgvOptions {
 	 * Defaults to `'.'` (repo root).
 	 */
 	buildContext?: string;
+
+	/**
+	 * Host UID to pass as the HOST_UID build-arg, re-homing the bun user so the
+	 * container process uid matches the bind-mounted /workspace owner.
+	 * Must be paired with `hostGid`; if either is absent no --build-arg is emitted.
+	 */
+	hostUid?: number;
+
+	/**
+	 * Host GID to pass as the HOST_GID build-arg.
+	 * Must be paired with `hostUid`; if either is absent no --build-arg is emitted.
+	 */
+	hostGid?: number;
 }
 
 /** Options for `buildDockerRunArgv`. */
@@ -105,6 +118,46 @@ export interface RunWorkerContainerOptions {
 }
 
 // ---------------------------------------------------------------------------
+// resolveHostIds
+// ---------------------------------------------------------------------------
+
+/** The resolved host uid/gid used to re-home the bun user in the worker image. */
+export interface HostIds {
+	uid: number;
+	gid: number;
+}
+
+const FALLBACK_ID = 1000;
+
+/**
+ * Resolve the host user's uid and gid by calling `id -u` / `id -g` through the
+ * injectable `spawnFn`.
+ *
+ * Falls back to `{ uid: 1000, gid: 1000 }` (or per-component) when:
+ *   - the command exits with a non-zero code
+ *   - stdout is empty or undefined
+ *   - the parsed value is NaN (non-numeric output)
+ *
+ * noUncheckedIndexedAccess: stdout is guarded with a trim + empty-check before
+ * parseInt so the undefined/empty case is handled explicitly.
+ */
+export function resolveHostIds(spawnFn: ContainerSpawnFn): HostIds {
+	const parseId = (result: { stdout: string; exitCode: number }): number => {
+		if (result.exitCode !== 0) return FALLBACK_ID;
+		const trimmed = result.stdout.trim();
+		if (!trimmed) return FALLBACK_ID;
+		const parsed = Number.parseInt(trimmed, 10);
+		return Number.isNaN(parsed) ? FALLBACK_ID : parsed;
+	};
+	const uidResult = spawnFn('id', ['-u']);
+	const gidResult = spawnFn('id', ['-g']);
+	return {
+		uid: parseId(uidResult),
+		gid: parseId(gidResult),
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Pure argv builders
 // ---------------------------------------------------------------------------
 
@@ -119,7 +172,12 @@ export function buildDockerBuildArgv(opts?: DockerBuildArgvOptions): string[] {
 	const dockerfilePath = opts?.dockerfilePath ?? '.devcontainer/Dockerfile';
 	const imageTag = opts?.imageTag ?? DEFAULT_IMAGE_TAG;
 	const buildContext = opts?.buildContext ?? '.';
-	return ['build', '-t', imageTag, '-f', dockerfilePath, buildContext];
+	const argv = ['build', '-t', imageTag, '-f', dockerfilePath];
+	if (opts?.hostUid !== undefined && opts?.hostGid !== undefined) {
+		argv.push('--build-arg', `HOST_UID=${opts.hostUid}`, '--build-arg', `HOST_GID=${opts.hostGid}`);
+	}
+	argv.push(buildContext);
+	return argv;
 }
 
 /**
