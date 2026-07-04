@@ -1,7 +1,7 @@
 {
   "id": "CAM-179",
   "title": "Container mode: pre-seed claude onboarding + /workspace folder-trust so interactive workers don't block",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T08:45:33.801Z",
