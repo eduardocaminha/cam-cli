@@ -1,0 +1,9 @@
+{
+  "id": "CAM-181",
+  "title": "auto-ship fires on review CLEAN without checking pending operator stories — awaiting-operator gate is bypassed",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-04T10:54:57.477Z",
+  "description": "In auto mode (plan_approval=auto), autoShipFn is called immediately when review.lastVerdict==CLEAN (loop.ts:1354), before the next decideNextAction iteration that would detect pending operator stories and return await-operator. A hand-filed operator-ceremony story with requires:operator does NOT gate the ship as documented. The await-operator terminal state is correct per the stop-condition spec but the auto-ship callsite runs one iteration earlier, in the review branch, before the loop re-evaluates story completeness."
+}
