@@ -1,26 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Re-home the bun user to HOST_UID/HOST_GID build-args in the worker image"
+    "id": "US-002",
+    "title": "Resolve host uid/gid and thread build-args through the production ensure-up path"
   },
   "branchName": "cam/pr-178-container-worker-uid-align",
-  "timestamp": "2026-07-04T12:00:00Z",
+  "timestamp": "2026-07-04T13:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".devcontainer/Dockerfile",
     "src/supervisor/worker-container.ts",
+    "src/supervisor/ensure-container.ts",
     "test/supervisor/worker-container.test.ts",
+    "test/supervisor/ensure-container.test.ts",
+    "docs/recovery-runbook.md",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 is done. The Dockerfile now re-homes bun user to HOST_UID/HOST_GID via ARG + RUN (getent group guard for gid collision, usermod, groupmod, chown -R). buildDockerBuildArgv emits --build-arg HOST_UID/HOST_GID when both are provided; absent -> no token (host mode unaffected). File-size budget raised for test/supervisor/worker-container.test.ts (326->363) and src/supervisor/worker-container.ts (220->238). Check what remaining stories exist in prd.json.",
+  "nextStoryContext": "US-002 is done. resolveHostIds (ContainerSpawnFn injectable seam) is exported from worker-container.ts: calls id -u / id -g, parseInt with NaN fallback to 1000, empty stdout guard for noUncheckedIndexedAccess. makeProductionEnsureContainerFn now calls resolveHostIds(spawnFn) and passes build: { hostUid, hostGid } into ensureWorkerContainer. Both absent (created) and image-stale (rebuilt) branches in ensureWorkerContainer already forward opts.build to runWorkerContainer, so the --build-arg HOST_UID/HOST_GID reach docker build argv on both branches. docs/recovery-runbook.md now documents the claude-code-config volume upgrade caveat. Budget raised for 4 files (split-'\n'.length = wc -l + 1 for trailing-newline files). Check what remaining stories exist in prd.json.",
   "officialDocsValidated": [
     {
-      "lib": "docker/dockerfile#arg",
-      "url": "https://docs.docker.com/reference/dockerfile/#arg",
-      "fetchedAt": "2026-07-04T12:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed ARG must precede the RUN that uses it; default value applies when --build-arg omitted; implementation matches spec."
+      "lib": "POSIX id utility",
+      "url": "https://pubs.opengroup.org/onlinepubs/9699919799/utilities/id.html",
+      "fetchedAt": "2026-07-04T13:30:00Z",
+      "status": "ok",
+      "summary": "Confirmed: id -u and id -g always output numeric uid/gid followed by \\n. No -n flag used so no name substitution. Implementation (trim + parseInt + NaN guard) matches POSIX spec exactly."
     }
   ]
 }
