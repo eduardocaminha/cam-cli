@@ -4,6 +4,14 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.60.0] - 2026-07-04
+
+### Added
+
+- US-003 - Wire container-config into ensure-up + fail-closed in runSidecar
+- US-002 - New src/supervisor/container-config.ts mirroring container-firewall.ts
+- US-001 - Build-time Dockerfile: pre-create bun-owned /home/bun/.claude and install jq
+
 ## [0.59.0] - 2026-07-04
 
 ### Added

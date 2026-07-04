@@ -12,7 +12,7 @@ FROM oven/bun:1.2-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git nodejs npm \
-        sudo iptables ipset dnsmasq dnsutils curl \
+        sudo iptables ipset dnsmasq dnsutils curl jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Grant the bun user passwordless sudo for the firewall init script only.
@@ -63,6 +63,7 @@ RUN if getent group "$HOST_GID" >/dev/null 2>&1; then \
     else \
         groupmod -g "$HOST_GID" bun && usermod -u "$HOST_UID" bun; \
     fi \
+    && mkdir -p /home/bun/.claude \
     && chown -R "$HOST_UID:$HOST_GID" /home/bun
 
 # Switch to non-root user (the oven/bun image ships with a pre-created bun user)
