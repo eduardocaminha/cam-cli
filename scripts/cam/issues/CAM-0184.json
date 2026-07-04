@@ -2,7 +2,7 @@
   "id": "CAM-184",
   "title": "container-smoke: validate container-mode dispatch (CAM-175, throwaway)",
   "stage": "specified",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-07-04T14:50:09.323Z",
   "description": "Append one dated marker line to a new scratch file scripts/cam/container-smoke.txt to exercise the container-mode dispatch path end-to-end: sidecar ensure-up firewall convergence, egress allow/block, interactive claude zero-prompt (CAM-179), and /workspace read-write round-trip. Disposable validation harness: prune the branch, never PR, and close this issue after the 4 container gates are verified. Only code change is the marker .txt; full quality gates run inside the container as the real toolchain test.",
