@@ -39,7 +39,7 @@
         "Full quality spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files: src/supervisor/container-config.ts, test/supervisor/container-config.test.ts. Mirror src/supervisor/container-firewall.ts EXACTLY (FirewallSpawnFn captures stderr; buildFirewallExecArgv pure; applyContainerFirewall never throws; FirewallError caller-thrown). GOTCHA: the config re-assert is a DISTINCT step from the chown - chowning the .claude DIR does not repair the sibling FILE /home/bun/.claude.json content. GOTCHA: claude STRIPS the baked bypassPermissionsModeAccepted:true on its first config rewrite, so this must be a merge that re-asserts the 5 keys, preserving claude-owned fields like machineID/userID. GOTCHA: reused containers built before this fix have NO jq, so the re-assert must go through in-container node (the image has always shipped nodejs), not jq. The 5 keys and their nesting come from .devcontainer/claude-config.json. Bun/TS: noUncheckedIndexedAccess - guard all argv/regex indexing. Read scripts/cam/patterns.md at story start."
     },

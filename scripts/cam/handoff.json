@@ -1,20 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Build-time Dockerfile: pre-create bun-owned /home/bun/.claude and install jq"
+    "id": "US-002",
+    "title": "New src/supervisor/container-config.ts mirroring container-firewall.ts"
   },
-  "createdFiles": [],
-  "modifiedFiles": [".devcontainer/Dockerfile"],
+  "createdFiles": [
+    "src/supervisor/container-config.ts",
+    "test/supervisor/container-config.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/patterns.md"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added jq to apt-get install and mkdir -p /home/bun/.claude before chown -R in the re-home block. FRESH named volumes will inherit bun ownership from the image dir on first mount. EXISTING volumes (stale root-owned) still need the runtime chown self-heal from US-003. No TS source was touched; no embed-vendor step needed.",
+  "nextStoryContext": "US-002 created container-config.ts (ConfigSpawnFn, buildChownExecArgv, buildConfigAssertArgv, applyContainerConfig, ContainerConfigError) mirroring container-firewall.ts exactly. The chown step runs as root via docker exec -u root; the config-assert step runs jq-free via in-container node -e. Both steps are distinct (chown repairs the dir, node merge repairs /home/bun/.claude.json). No vendor/ or templates/ were touched; no embed-vendor step needed. US-003 (ensureWorkerContainer caller) will import ContainerConfigError and throw it when applyContainerConfig returns {ok:false}.",
   "officialDocsValidated": [
     {
-      "lib": "Docker named volumes",
+      "lib": "Docker CLI (docker exec -u flag)",
       "version": "current",
-      "url": "https://docs.docker.com/engine/storage/volumes/#populate-a-volume-using-a-container",
+      "url": "https://docs.docker.com/reference/cli/docker/container/exec/",
       "fetchedAt": "2026-07-04T00:00:00Z",
       "status": "ok",
-      "summary": "Confirmed: empty named volume inherits image directory contents and ownership on first mount. Non-empty volumes are NOT overwritten (pre-existing content takes precedence). mkdir before chown is the correct pattern for fresh-volume bun-ownership inheritance."
+      "summary": "Confirmed: docker exec -u root <container> <cmd> is correct syntax. The -u flag accepts <name|uid>[:<group|gid>] and the command runs as that user inside the container."
     }
   ]
 }
