@@ -1,0 +1,9 @@
+{
+  "id": "CAM-178",
+  "title": "Container mode: worker (bun uid) cannot write bind-mounted /workspace (host uid mismatch) -> EACCES",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-04T08:45:31.369Z",
+  "description": "In worker_isolation=container the cam-worker container runs as user bun (uid 1000) but /workspace is a bind mount of the host repo owned by the host user (uid 501 on macOS). bun has no write permission, so workers can READ but not WRITE: the planner composed a valid PRD but `cat > /workspace/scripts/cam/prd.json` failed with EACCES. This blocks ALL workers (prd.json, code edits, git commits) -> CAM-152 container mode is non-functional for real workers as shipped. Fix options: run the container as the host uid/gid (--user $(id -u):$(id -g)) instead of --user bun (must keep claude home/config working for that uid), or make /workspace writable by bun, or another uid-alignment approach. Hard blocker for CAM-139 (autonomous meta-loop needs container). Surfaced in CAM-175 live-validation. Ties CAM-152, CAM-116."
+}
