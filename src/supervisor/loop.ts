@@ -482,6 +482,18 @@ export const MAX_ITERATIONS = 50;
 /** Default per-worker timeout in milliseconds (30 minutes). */
 export const DEFAULT_PER_WORKER_TIMEOUT_MS = 30 * 60 * 1000;
 
+/**
+ * Default per-worker timeout in milliseconds for container-isolated workers
+ * (60 minutes, US-003 / CAM-187). Container stories often include an image
+ * rebuild plus in-container test suites, which routinely run long enough to
+ * hit the host ceiling and trigger a premature timeout/re-dispatch even
+ * though the worker is still making progress. Host workers keep the
+ * DEFAULT_PER_WORKER_TIMEOUT_MS (30 min) ceiling; only workerIsolation ===
+ * 'container' gets the extended ceiling, and only when perWorkerTimeoutMs
+ * is not explicitly set by the caller.
+ */
+export const DEFAULT_CONTAINER_WORKER_TIMEOUT_MS = 60 * 60 * 1000;
+
 /** Default sentinel polling interval in milliseconds (5 seconds). */
 export const DEFAULT_POLL_INTERVAL_MS = 5_000;
 
@@ -633,7 +645,15 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 	const genUuid = opts.genUuid ?? defaultGenUuid;
 	const maxIter = opts.maxIterations ?? MAX_ITERATIONS;
-	const perWorkerTimeoutMs = opts.perWorkerTimeoutMs ?? DEFAULT_PER_WORKER_TIMEOUT_MS;
+	// US-003 (CAM-187): the fallback ceiling is isolation-aware. Container workers
+	// (image rebuild + in-container test suites) get the 60-min ceiling; host
+	// workers keep the 30-min ceiling. An explicit opts.perWorkerTimeoutMs always
+	// wins over either default.
+	const perWorkerTimeoutMs =
+		opts.perWorkerTimeoutMs ??
+		(opts.workerIsolation === 'container'
+			? DEFAULT_CONTAINER_WORKER_TIMEOUT_MS
+			: DEFAULT_PER_WORKER_TIMEOUT_MS);
 	const maxWorkerTokens = opts.maxWorkerTokens ?? 0;
 	const runGates = opts.runGates;
 	const finalizeStory = opts.finalizeStory;

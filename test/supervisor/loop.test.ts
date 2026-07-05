@@ -24,7 +24,7 @@
 //  18. US-003: does NOT notify on a no-progress re-confirmation retry.
 
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_BACKOFF_MS, JITTER_FRACTION, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, computeBackoffMs } from '../../src/supervisor/loop.ts';
+import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_BACKOFF_MS, JITTER_FRACTION, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_CONTAINER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, computeBackoffMs } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
 	SpawnFn,
@@ -3278,6 +3278,111 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 			const result = await runSupervisor(opts);
 
 			expect(result.status).toBe('complete');
+		});
+	});
+
+	// US-003 (CAM-187): worker-isolation-aware per-worker sentinel timeout ceiling
+	describe('US-003 (CAM-187): worker-isolation-aware per-worker sentinel timeout ceiling', () => {
+		test('DEFAULT_CONTAINER_WORKER_TIMEOUT_MS is 60 minutes', () => {
+			expect(DEFAULT_CONTAINER_WORKER_TIMEOUT_MS).toBe(60 * 60 * 1000);
+		});
+
+		test('AC4: host worker (default isolation) times out at the 31-min mark (30-min ceiling)', async () => {
+			// perWorkerTimeoutMs left unset -> falls back to the isolation-aware
+			// default. workerIsolation also left unset -> defaults to 'host', so the
+			// ceiling must be DEFAULT_PER_WORKER_TIMEOUT_MS (30 min).
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+
+			let prdCallCount = 0;
+			let nowCallCount = 0;
+			const spawnCalls: string[][] = [];
+
+			const opts = makeBaseOpts({
+				pollIntervalMs: 0,
+				// call 1 = startMs (0); every subsequent call simulates 31 minutes elapsed.
+				nowMs: () => {
+					nowCallCount++;
+					return nowCallCount === 1 ? 0 : 31 * 60 * 1000;
+				},
+				readPrd: () => {
+					prdCallCount++;
+					if (prdCallCount <= 1) return prd_impl;
+					return prd_done;
+				},
+				capturePane: (_paneId) => '', // never returns sentinel
+				spawn: (_cmd, args) => {
+					spawnCalls.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			// The timeout path fired (kill sent) on the very first poll tick, at the
+			// 31-minute mark, confirming the 30-min host ceiling was used.
+			const timeoutKill = spawnCalls.find((a) => a.includes('echo timeout'));
+			expect(timeoutKill).toBeDefined();
+		});
+
+		test('AC2/AC4: container worker (workerIsolation=container) is NOT timed out at the 31-min mark (60-min ceiling)', async () => {
+			// Same 31-minute elapsed simulation as the host test above, but with
+			// workerIsolation: 'container'. Since 31 min < the 60-min container
+			// ceiling, the timeout must NOT fire; the poll must keep going until the
+			// sentinel appears on the next tick.
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+
+			let prdCallCount = 0;
+			let nowCallCount = 0;
+			let captureCount = 0;
+			const spawnCalls: string[][] = [];
+
+			const opts = makeBaseOpts({
+				pollIntervalMs: 0,
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: true }),
+				// call 1 = startMs (0); every subsequent call simulates 31 minutes elapsed
+				// (well past the 30-min host ceiling, still under the 60-min container one).
+				nowMs: () => {
+					nowCallCount++;
+					return nowCallCount === 1 ? 0 : 31 * 60 * 1000;
+				},
+				readPrd: () => {
+					prdCallCount++;
+					if (prdCallCount <= 1) return prd_impl;
+					return prd_done;
+				},
+				readHandoff: () => makeHandoff('US-001'),
+				capturePane: (_paneId) => {
+					captureCount++;
+					// First tick: no sentinel (would have timed out on a host ceiling).
+					// Second tick: sentinel appears -> outcome pass.
+					if (captureCount <= 1) return '';
+					return donePane('US-001');
+				},
+				spawn: (_cmd, args) => {
+					spawnCalls.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			expect(result.lastOutcome?.kind).toBe('pass');
+			expect(result.lastOutcome?.storyId).toBe('US-001');
+			// No timeout-kill was ever sent: the 60-min container ceiling absorbed
+			// the 31-minute elapsed time that would have killed a host worker.
+			const timeoutKill = spawnCalls.find((a) => a.includes('echo timeout'));
+			expect(timeoutKill).toBeUndefined();
 		});
 	});
 });

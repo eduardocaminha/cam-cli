@@ -22,6 +22,7 @@ import { spawnSync } from 'node:child_process';
 
 import {
 	DEFAULT_PER_WORKER_TIMEOUT_MS,
+	DEFAULT_CONTAINER_WORKER_TIMEOUT_MS,
 	type RunSupervisorOptions,
 	type OnProgress,
 } from './loop.ts';
@@ -240,16 +241,6 @@ export function buildSupervisorOptions(
 	const sessionName = projectSessionName(cwd);
 	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
 
-	// Per-worker timeout: configurable via CAM_WORKER_TIMEOUT_MS env var.
-	const perWorkerTimeoutMs = (() => {
-		const envVal = process.env['CAM_WORKER_TIMEOUT_MS'];
-		if (envVal !== undefined) {
-			const parsed = parseInt(envVal, 10);
-			if (!isNaN(parsed) && parsed > 0) return parsed;
-		}
-		return DEFAULT_PER_WORKER_TIMEOUT_MS;
-	})();
-
 	// Per-worker token ceiling (CAM-5).
 	const maxWorkerTokens = (() => {
 		const envVal = process.env['CAM_WORKER_MAX_TOKENS'];
@@ -454,6 +445,23 @@ export function buildSupervisorOptions(
 	// 'container' enables dockerExecWrap + fail-closed preflight in the loop.
 	// 'host' (default) leaves every existing loop behavior unchanged.
 	const workerIsolation = readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'));
+
+	// Per-worker timeout: configurable via CAM_WORKER_TIMEOUT_MS env var. When
+	// unset, the fallback is isolation-aware (US-003 / CAM-187): container
+	// workers get DEFAULT_CONTAINER_WORKER_TIMEOUT_MS (60 min) so long container
+	// stories (image rebuild + in-container test suites) do not hit the host
+	// ceiling and trigger a premature timeout/re-dispatch; host workers keep
+	// DEFAULT_PER_WORKER_TIMEOUT_MS (30 min). An explicit env value always wins.
+	const perWorkerTimeoutMs = (() => {
+		const envVal = process.env['CAM_WORKER_TIMEOUT_MS'];
+		if (envVal !== undefined) {
+			const parsed = parseInt(envVal, 10);
+			if (!isNaN(parsed) && parsed > 0) return parsed;
+		}
+		return workerIsolation === 'container'
+			? DEFAULT_CONTAINER_WORKER_TIMEOUT_MS
+			: DEFAULT_PER_WORKER_TIMEOUT_MS;
+	})();
 
 	// Review dispatch.
 	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
