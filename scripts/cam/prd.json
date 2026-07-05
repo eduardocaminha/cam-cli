@@ -3,7 +3,9 @@
   "branchName": "cam/pr-181-auto-ship-terminal-anchor",
   "description": "Re-anchor supervisor auto-ship on the terminal complete+CLEAN state (not the transient review->CLEAN edge) with a persisted fire-once marker, fixing the bypassed await-operator gate and the re-entry reachability miss.",
   "issueNumber": 181,
-  "relatedDocs": ["docs/adr/0007-inter-cycle-unattended-drain.md"],
+  "relatedDocs": [
+    "docs/adr/0007-inter-cycle-unattended-drain.md"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -24,7 +26,7 @@
         "Full quality spine passes: bun run check:all exits 0 (typecheck + biome + tests). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Core change in src/supervisor/loop.ts. (1) In the terminal 'complete' branch (loop.ts:718-738), after the existing promoteVerdictTo handling, add: if opts.autoShipFn !== undefined && prd.review?.lastVerdict === 'CLEAN' && prd.review?.autoShipDispatchedAt === undefined, then writePrd({ ...prd, review: { ...prd.review, autoShipDispatchedAt: clock() } }) and call opts.autoShipFn(). Write the marker BEFORE the dispatch. (2) Delete the old callsite in the review branch (loop.ts:1350-1356). (3) Add autoShipDispatchedAt?: string to the review shape of PrdSnapshot in src/supervisor/decide.ts (lines 30-35). GOTCHA (from issue): 'complete' is ALSO reached with lastVerdict==='MAX_ROUNDS_DEBT' (debt terminal + promoteVerdictTo) -- gate strictly on ==='CLEAN' so debt escalates rather than ships. GOTCHA: the intra-invocation dedup is moot (complete returns immediately); the real risk is cross-invocation / sidecar restart (in-place binary swap), hence the PERSISTED marker, NOT the in-memory blockedCycleEmitted flag (CAM-139 US-005 pattern in sidecar.ts). GOTCHA: the supervisor already owns prd.review writes (verdicts), so adding autoShipDispatchedAt there is consistent; the 'orchestrator does not modify prd.json' rule does not apply to the supervisor. Tests: extend test/supervisor/auto-chain.test.ts -- the existing makePrd helper hardcodes requires:null; add a variant with a requires:'operator' pending story (path A), a re-entry prd pre-seeded with lastVerdict CLEAN + no marker (path B), a shared-mutable-prd cross-invocation case for dedup, and a MAX_ROUNDS_DEBT complete case. Read scripts/cam/patterns.md at story start. noUncheckedIndexedAccess is on: guard array/optional access."
     },

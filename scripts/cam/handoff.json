@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Re-anchor auto-ship to terminal complete+CLEAN with a persisted fire-once marker"
+  },
+  "branchName": "cam/pr-181-auto-ship-terminal-anchor",
+  "timestamp": "2026-07-05T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/decide.ts",
+    "src/supervisor/loop.ts",
+    "test/supervisor/auto-chain.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 moved autoShipFn from the review branch to the terminal 'complete' branch in loop.ts, gated on lastVerdict==='CLEAN' and a persisted fire-once marker (prd.review.autoShipDispatchedAt). The marker is written to prd.json via writePrd BEFORE dispatch. The old callsite (~line 1354 in the pre-US-001 loop.ts) is deleted. PrdSnapshot.review in decide.ts now carries autoShipDispatchedAt?: string. BUG A (operator story gates await-operator not complete) and BUG B (re-entry dedup) are covered by new tests in test/supervisor/auto-chain.test.ts. File-size budgets raised: decide.ts 155->159, loop.ts 1716->1731.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure internal TypeScript refactoring of loop.ts and decide.ts; no external library API exercised."
+    }
+  ]
+}
