@@ -1,7 +1,7 @@
 {
   "id": "CAM-139",
   "title": "auto-dispatch inter-ciclo: o drainer dispara o plan da proxima issue e drena a fila ate secar (mode=auto + kill-switch runtime + notify-on-stop)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-29T17:21:26.138Z",
