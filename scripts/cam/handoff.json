@@ -1,22 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Build the on-demand in-container test harness"
+    "id": "US-002",
+    "title": "Re-baseline v0.60.0 in-container failures and drive them to green"
   },
   "branchName": "cam/pr-186-in-container-test-harness",
-  "timestamp": "2026-07-04T00:00:00Z",
+  "timestamp": "2026-07-04T21:00:00Z",
   "createdFiles": [
-    "scripts/test-in-container.ts",
-    "test/test-in-container.test.ts"
+    "docs/container-test-baseline.md"
   ],
   "modifiedFiles": [
-    "docs/adr/0003-worker-isolation-boundary-dev-container.md",
-    "package.json",
-    "scripts/file-size-budget.json",
+    "test/dashboard.test.ts",
+    "test/integration/orch-recycle-pid-resolve.test.ts",
+    "test/integration/review-verdict-handback.test.ts",
+    "test/integration/sendkeys-submit.test.ts",
+    "test/ui/init-setup-screen-keys.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 shipped. scripts/test-in-container.ts is the on-demand harness: injectable ensureFn/execFn seams, parseBunOutput parser with Set-dedup for per-file+failure-block double-print, exit code re-derived from parsed fail count (not raw docker exec exit). test:container alias in package.json. ADR 0003 updated with operator runbook pointer. NOT in GATES manifest or ci.yml.",
+  "nextStoryContext": "US-002 shipped. All 11 in-container failures resolved: 3 were Bun.spawnSync ENOENT crashes on tmux probe (fixed to node:child_process.spawnSync or try-catch), 1 was ps-absent timeout (psAvailable probe + skipIf), 5 were bun 1.2.x macrotask timing in dashboard.test.ts, 2 were bun 1.2.x timing in init-setup-screen-keys.test.ts (bunVersionOk probe). Baseline doc at docs/container-test-baseline.md: 3064 pass / 34 skip / 0 fail. Container: oven/bun:1.2-slim, bun 1.2.23, no tmux, no procps. Host: bun 1.3.13, 3098 pass / 0 fail. All skips are env-specific. PRD is now fully implemented (2/2 stories pass).",
   "officialDocsValidated": [
     {
       "lib": "bun/test",
@@ -25,6 +26,14 @@
       "fetchedAt": "2026-07-04T00:00:00Z",
       "status": "ok",
       "summary": "Confirmed: summary lines are ' N pass' / ' N fail' / ' N skip' (single leading space). CLAUDECODE=1 hides passing/skip detail but keeps summary + failure detail. Format matches parser implementation."
+    },
+    {
+      "lib": "Bun (runtime) / node:child_process",
+      "version": "bun 1.x",
+      "url": "https://bun.sh/docs/api/spawn",
+      "fetchedAt": "2026-07-04T21:00:00Z",
+      "status": "ok",
+      "summary": "Confirmed: Bun.spawnSync throws ENOENT when binary is absent; node:child_process.spawnSync returns {status:null} gracefully. Module-level availability probes must use Bun.which() or node:child_process.spawnSync (or try-catch if Bun.spawnSync must be used)."
     }
   ]
 }

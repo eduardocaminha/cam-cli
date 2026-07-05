@@ -25,7 +25,9 @@ const TEST_SOCK = "cam-it-verdict";
 const SESSION = "cam-it-verdict";
 
 // AC3 oracle: exact literals required.
-const tmuxAvailable = Bun.spawnSync(["tmux", "-V"]).exitCode === 0;
+// Use node:child_process.spawnSync (not Bun.spawnSync) so the probe returns
+// status:null gracefully when tmux is absent instead of throwing ENOENT.
+const tmuxAvailable = spawnSync("tmux", ["-V"], { stdio: "pipe" }).status === 0;
 
 /** Run tmux on the private test socket (setup/teardown helper). */
 function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {

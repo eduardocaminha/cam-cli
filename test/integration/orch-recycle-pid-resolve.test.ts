@@ -44,6 +44,12 @@ const pgrepAvailable = pgrepCheck.status !== null;
 const bunCheck = spawnSync('bun', ['--version'], { stdio: 'pipe' });
 const bunAvailable = bunCheck.status === 0;
 
+// `ps` (from procps) is required to reproduce ppid-walk behavior.
+// It is absent in oven/bun:1.2-slim (no procps package installed); skip there.
+// The production recycle-watcher runs on the host (not inside the container),
+// so this is env-specific: the test does not reflect a container toolchain gap.
+const psAvailable = Bun.which('ps') !== null;
+
 // ---------------------------------------------------------------------------
 // Cleanup registry
 // ---------------------------------------------------------------------------
@@ -114,7 +120,7 @@ function waitForChildViaPs(wrapperPid: number, timeoutMs = 5000): number | null 
 // Integration test
 // ---------------------------------------------------------------------------
 
-test.skipIf(!pgrepAvailable || !bunAvailable)(
+test.skipIf(!pgrepAvailable || !bunAvailable || !psAvailable)(
 	'CAM-165: ps ppid-walk resolves title-rewritten child; pgrep-P blindness documented; SIGTERM terminates',
 	async () => {
 		// Setup: mkdtemp for .claude dir.
