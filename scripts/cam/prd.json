@@ -42,7 +42,7 @@
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/release/pr-body.ts (new), test/release/pr-body.test.ts (new). Precedent: generateReleaseBody in src/release/changelog.ts is the pure string-composer pattern to mirror. Define a minimal structural PrdSnapshot input type (project, description, issueNumber, userStories[{id,title,passes,requires}]) locally or in the ship-runner types; do NOT import command-layer types. noUncheckedIndexedAccess is on: guard array access. The composer receives the snapshot captured BEFORE finalize removes prd.json (see US-002)."
     },

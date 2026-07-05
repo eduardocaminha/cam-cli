@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add deterministic PR title/body composer from the PRD snapshot"
+  },
+  "branchName": "cam/pr-149-ship-runner-deterministic",
+  "timestamp": "2026-07-05T00:00:00Z",
+  "createdFiles": [
+    "src/release/pr-body.ts",
+    "test/release/pr-body.test.ts"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [
+    "prd.json currently has no top-level 'notes' field (PRD-level remarks). composePrBody accepts an optional PrdSnapshot.notes and falls back to 'None.' when absent; a future story may want a writer to populate it (e.g. from review findings or handoff.openQuestions) before ship time."
+  ],
+  "nextStoryContext": "US-002 (runShipPhase) is the deterministic pre-PR ship sequence (verify-PRD -> gates -> bump -> finalize -> push). It should capture the PrdSnapshot (project, description, issueNumber, userStories) from prd.json BEFORE calling the finalize step that removes prd.json, since composePrTitle/composePrBody (src/release/pr-body.ts, this story) need that snapshot at PR-create time (US-003) and prd.json will already be gone by then. Precedent for the pure-composer pattern: generateReleaseBody in src/release/changelog.ts.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure TypeScript string composer with no external library imports."
+    }
+  ]
+}
