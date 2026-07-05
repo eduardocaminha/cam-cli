@@ -1,9 +1,42 @@
 {
   "id": "CAM-181",
   "title": "auto-ship fires on review CLEAN without checking pending operator stories — awaiting-operator gate is bypassed",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T10:54:57.477Z",
-  "description": "In auto mode (plan_approval=auto), autoShipFn is called immediately when review.lastVerdict==CLEAN (loop.ts:1354), before the next decideNextAction iteration that would detect pending operator stories and return await-operator. A hand-filed operator-ceremony story with requires:operator does NOT gate the ship as documented. The await-operator terminal state is correct per the stop-condition spec but the auto-ship callsite runs one iteration earlier, in the review branch, before the loop re-evaluates story completeness."
+  "description": "In auto mode (plan_approval=auto), autoShipFn is called immediately when review.lastVerdict==CLEAN (loop.ts:1354), before the next decideNextAction iteration that would detect pending operator stories and return await-operator. A hand-filed operator-ceremony story with requires:operator does NOT gate the ship as documented. The await-operator terminal state is correct per the stop-condition spec but the auto-ship callsite runs one iteration earlier, in the review branch, before the loop re-evaluates story completeness.",
+  "spec": {
+    "scope": "Re-ancorar a decisao de auto-ship do supervisor loop no estado terminal complete && review.lastVerdict==='CLEAN' (nao na edge transiente review->CLEAN), com marcador persistido review.autoShipDispatchedAt no prd.json garantindo fire-once entre re-invocacoes e restart do sidecar. Conserta BUG B (reachability: o loop retorna complete no topo e nunca chega no callsite atual em loop.ts) e BUG A (over-fire: complete e inalcancavel com operator story pendente, que roteia para await-operator em decide.ts, entao o gate cai de graca). Fora de escopo: teardown do worker/reviewer pane pendurado (follow-up separado), o exercicio end-to-end do auto-drain do CAM-139 (rebuild+container+meta_loop=auto), merge-watch/post-merge, e CAM-187.",
+    "acceptanceCriteria": [
+      "opts.autoShipFn() nao vive mais no branch action.kind==='review'; vive no branch terminal 'complete', gated em review.lastVerdict==='CLEAN'.",
+      "PRD com story requires:'operator' pendente e review CLEAN roteia para await-operator e autoShipFn NAO e chamado (test novo).",
+      "Re-entrada com review.lastVerdict==='CLEAN' ja persistido e todas as stories passando dispara auto-ship exatamente uma vez (test do path BUG B).",
+      "Duas invocacoes de runSupervisor sobre o mesmo prd complete+CLEAN chamam autoShipFn 1x no total; o marcador review.autoShipDispatchedAt guarda o re-dispatch (test cross-invocacao).",
+      "Terminal 'complete' alcancado via MAX_ROUNDS_DEBT (nao CLEAN) NAO dispara auto-ship (test).",
+      "review.autoShipDispatchedAt e escrito no prd.json antes do dispatch e removido no finalize (git rm do prd), de modo que um ciclo novo re-arma.",
+      "docs/adr/0008-*.md documenta a ancoragem terminal, o dedup persistido e a divergencia principiada do CAM-68 (dedup in-memory).",
+      "bun run check:all EXIT 0 (typecheck + biome + tests)."
+    ],
+    "gotchas": [
+      "O branch terminal complete da return imediato, entao a dedup intra-invocacao e moot; o risco real e re-fire cross-invocacao / restart do sidecar (swap de binario in-place), por isso marcador PERSISTIDO e nao o flag in-memory blockedCycleEmitted do CAM-139 US-005.",
+      "complete tambem e alcancado com lastVerdict==='MAX_ROUNDS_DEBT' (debt terminal + promoteVerdictTo); o conjunto ==='CLEAN' e OBRIGATORIO para excluir (debt escala, nao shippa).",
+      "Nao adicionar check redundante de operator no callsite: complete e inalcancavel enquanto houver story requires:'operator' pendente (roteiam para await-operator em decide.ts:145-153).",
+      "O /cam-ship que o autoShipFn injeta no pane do orquestrador roda o markdown do slash-command e NAO consulta o paneCountMutex; so o thin-proxy externo cam ship recusa por 3-panes (ship.ts:161-166). Logo o pane pendurado nao bloqueia o auto-ship (teardown e higiene, follow-up separado).",
+      "O supervisor ja e dono das escritas em prd.review (verdicts); adicionar autoShipDispatchedAt ali e consistente. A regra 'orquestrador nao modifica prd.json' nao se aplica ao supervisor.",
+      "test/supervisor/auto-chain.test.ts cobre CLEAN->autoShipFn mas todo PRD usa uma unica story requires:null: os paths A (operator-gate) e B (re-entrada) estao SEM cobertura, adicionar."
+    ],
+    "domainTerms": [
+      "auto-ship",
+      "terminal-anchor",
+      "fire-once marker",
+      "await-operator gate"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 3,
+    "riskReduction": 3,
+    "jobSize": 2
+  }
 }
