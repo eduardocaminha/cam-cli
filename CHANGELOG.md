@@ -4,6 +4,17 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.65.0] - 2026-07-05
+
+### Added
+
+- [US-R1-003] - Add real-git integration test for commitExistsForStory
+- [US-R1-002] - Scope commitExistsForStory git log to this branch's own commits
+- [US-R1-001] - Support the bracketed feat commit convention in commitSubjectMatchesStory
+- [US-003] - Worker-isolation-aware per-worker sentinel timeout ceiling
+- [US-002] - Wire commitExistsForStory from host + loop with anchored git detection
+- [US-001] - Add commit-existence gate to readWorkerOutcome
+
 ## [0.64.0] - 2026-07-05
 
 ### Added
