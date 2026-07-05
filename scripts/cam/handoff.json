@@ -1,30 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Runtime drain kill-switch: marker primitive + cam drain command"
+    "id": "US-003",
+    "title": "Fail-closed hard-precondition gate for the drain"
   },
   "createdFiles": [
-    "src/supervisor/drain-kill-switch.ts",
-    "src/commands/drain.ts",
-    "test/commands/drain.test.ts"
+    "src/supervisor/drain-preconditions.ts",
+    "test/supervisor/drain-preconditions.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/stop.ts",
-    "index.ts",
-    ".gitignore",
-    "templates/.gitignore",
-    "test/stop-markers.test.ts",
-    "src/vendor/_generated.ts",
-    "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 is done. DRAIN_STOP_MARKER ('.cam-drain-stop') is exported from src/supervisor/drain-kill-switch.ts with set/clear/isDrainStopSet helpers (injectable fs seams). 'cam drain --stop' writes the marker; 'cam drain --clear' removes it; 'cam drain' prints status. 'cam stop' clears it as part of marker cleanup (stop.ts loop). The next story (US-003) adds a fail-closed hard-precondition gate: before the auto-drain loop starts a new cycle, it must check isDrainStopSet and refuse to proceed if set. The marker module and command are the building blocks already in place.",
+  "nextStoryContext": "US-003 is done. evaluateDrainPreconditions is exported from src/supervisor/drain-preconditions.ts. It is a pure function with no I/O: takes { workerIsolation: WorkerIsolation, containerPreflight: PreflightResult, planApproval: PlanApproval } and returns { ok: true } | { ok: false; reason: 'container-not-active' | 'plan-approval-not-auto' }. Check ordering: container-not-active is evaluated first, plan-approval-not-auto second. The next story (US-004) wires the auto-dispatcher into the sidecar idle-tick and should call evaluateDrainPreconditions as the fail-closed gate before dispatching.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-002 touches only project-internal modules (node:fs, path primitives). No external library API was exercised."
+      "summary": "US-003 touches only project-internal modules (drain-preconditions.ts imports from preflight-container.ts and models.ts). No external library API was exercised."
     }
   ]
 }

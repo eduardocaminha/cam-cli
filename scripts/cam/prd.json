@@ -57,7 +57,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New pure module e.g. src/supervisor/drain-preconditions.ts, structured like src/supervisor/observe.ts (no I/O, all inputs injected). Reuse the PreflightResult union from src/supervisor/preflight-container.ts for the container-ready input and WorkerIsolation/PlanApproval types from src/config/models.ts. 'Container active' (CAM-111) = worker_isolation === 'container' AND preflightWorkerContainer().ready === true. Fail-closed default (CAM-96): any doubt refuses. Resend is best-effort observability, decided NOT a precondition by the operator 2026-06-30 (see issue spec); do not gate on it here."
     },
