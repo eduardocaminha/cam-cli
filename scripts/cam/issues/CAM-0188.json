@@ -1,7 +1,7 @@
 {
   "id": "CAM-188",
   "title": "Teardown lingering worker/reviewer pane on terminal exit to restore the 2-pane invariant",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-05T15:00:44.657Z",
