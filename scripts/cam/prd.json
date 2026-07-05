@@ -1,0 +1,41 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-188-teardown-worker-pane-terminal-exit",
+  "description": "Kill the lingering reused worker/reviewer pane on every supervisor terminal exit so the tmux session returns to the 2-pane invariant and paneCountMutex stops spuriously refusing outside-terminal CLI fallbacks.",
+  "issueNumber": 188,
+  "relatedDocs": ["scripts/cam/patterns.md"],
+  "officialDocsConsulted": [
+    {
+      "lib": "tmux",
+      "url": "https://man.openbsd.org/tmux.1",
+      "version": "current",
+      "fetchedAt": "2026-07-05T00:00:00Z",
+      "summary": "Confirmed the fix's core distinction: `kill-pane` destroys the given pane and reduces the window's pane count, whereas `respawn-pane -k` only kills the running command and keeps the pane alive. Teardown must use kill-pane (not respawn-pane -k) to restore count==2; matches session.ts paneCountMutex and stop.ts:340 killWorkerPane semantics.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Tear down the lingering worker pane on every supervisor terminal exit",
+      "description": "As the operator running cam subcommands outside the supervisor terminal, I need the single reused worker/reviewer pane killed on every terminal exit of runSupervisorLoop so the tmux session returns to exactly 2 panes and paneCountMutex reports 'available', so that cam next/ship/review/issue/spec stop being spuriously refused and the CAM-139 auto-drain can chain to the next cycle's dispatch.",
+      "acceptanceCriteria": [
+        "On every terminal exit of runSupervisorLoop (complete, awaiting-operator, blocked, max-iterations) the lingering worker/reviewer pane is torn down so the tmux session returns to exactly 2 panes and paneCountMutex reports 'available'. [oracle: bun test test/integration/tmux-introspect.test.ts]",
+        "Teardown uses `tmux kill-pane -t <paneId>` (NOT respawn-pane -k, which keeps the pane alive and leaves the mutex busy), resolving the pane id from readWorkerPaneMarker(claudeDir) with the in-scope workerPaneId as fallback; the closure lives in src/supervisor/host.ts. [oracle: grep -q 'kill-pane' src/supervisor/host.ts]",
+        "A single finishTerminal(status) helper wraps notifyTerminal(status) + teardown and replaces every paired terminal-exit callsite in runSupervisorLoop (both 'complete' paths, all 'blocked' paths, 'awaiting-operator', 'max-iterations'), so no terminal return path can exit without teardown. [oracle: grep -q 'finishTerminal' src/supervisor/loop.ts]",
+        "Every terminal return in runSupervisorLoop is preceded by finishTerminal (no bare notifyTerminal call remains at a terminal-return site; notifyTerminal is invoked only from inside finishTerminal). [oracle: reviewer-judgment]",
+        "Teardown is injected as an optional teardownWorkerPaneFn (default no-op) on RunSupervisorOptions; the pure loop stays testable with a spy and existing loop tests that omit the dep pass unchanged. [oracle: grep -q 'teardownWorkerPaneFn' src/supervisor/loop.ts]",
+        "Teardown is best-effort and non-throwing: a null marker or an already-dead pane (CAM-57 self-heal case) is a silent no-op that never throws and never fails the terminal return. [oracle: bun test test/supervisor]",
+        "A unit test asserts teardownWorkerPaneFn is invoked exactly once for each of the 4 terminal statuses (complete, awaiting-operator, blocked, max-iterations), and on the 'complete' path it runs AFTER the CAM-181 auto-ship dispatch (opts.autoShipFn). [oracle: bun test test/supervisor]",
+        "A real-tmux integration test asserts pane count goes 3->2 after teardown and that the next ensureWorkerPane dispatch re-creates the 3rd pane via split-window (kill -> available -> recreate cycle, compatible with CAM-57). [oracle: bun test test/integration/tmux-introspect.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Quality spine green: bun run check:all exits 0 (typecheck + biome lint + full test suite). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single tracer-bullet cutting type -> loop logic -> host wiring -> unit spy -> real-tmux anchor. FILES: (1) src/supervisor/loop.ts -- add optional `teardownWorkerPaneFn?: () => void` to RunSupervisorOptions (doc it next to autoShipFn ~L349 / ensureWorkerPane ~L296; default no-op via `const teardownWorkerPaneFn = opts.teardownWorkerPaneFn ?? (() => {});` near the other opts destructuring ~L603-635); add `finishTerminal(status)` helper right after notifyTerminal (~L660) that calls notifyTerminal(status) then teardownWorkerPaneFn(); then sweep EVERY terminal-return callsite to call finishTerminal instead of bare notifyTerminal: L702/703 (prd unreadable blocked), L759/760 (complete direct/cap-reentry), L777/779 (awaiting-operator), L787/788 (blocked-no-implementable), and all implement/review blocked returns (L869, L990, L1006/1015, L1135, L1147, L1165, L1176, L1194, L1226, L1300), L1349/1350 (post-review complete with CAM-139 escalateFn), and L1387/1388 (max-iterations). (2) src/supervisor/host.ts -- wire the real closure: `const teardownWorkerPaneFn = () => { const id = readWorkerPaneMarker(claudeDir) ?? workerPaneId; try { spawnSync('tmux', tmuxArgs? / ['-L','cam','kill-pane','-t',id], {stdio:'pipe'}); } catch {} };` (readWorkerPaneMarker already imported at L33; workerPaneId at L265; mirror the spawnSync adapter shape used for isPaneAlive ~L280). Add `teardownWorkerPaneFn,` to the `opts` object (~L663-702). Do NOT add it to the reviewDispatch opts (teardown is a loop-terminal concern, not per-dispatch). (3) test/supervisor -- new unit test (or extend loop.test.ts): inject a spy teardownWorkerPaneFn, drive each of the 4 terminal statuses, assert exactly-once per status; for 'complete', inject autoShipFn + a shared call-order log and assert autoShipFn fires BEFORE teardown. (4) test/integration/tmux-introspect.test.ts -- extend with a real-tmux case (test.skipIf(!tmuxAvailable)): create session, split to 3 panes, run the host teardown closure, assert list-panes count 3->2 and paneCountMutex=='available', then call ensureWorkerPaneFn (or openPaneInSession) and assert count back to 3.\n\nGOTCHAS (from spec + patterns.md): (a) notifyTerminal has an `if (!onProgress) return` guard -- do NOT fold teardown inside notifyTerminal or it is skipped whenever onProgress is absent (many tests); the finishTerminal wrapper makes teardown unconditional. (b) kill-pane (removes pane, count->2) NOT respawn-pane -k (keeps pane, mutex stays busy) -- stop.ts:340 killWorkerPane intentionally uses respawn-pane -k for mid-cycle reuse; do NOT touch it (different lifecycle, out of scope). (c) Pane-id source of truth is readWorkerPaneMarker(claudeDir) re-read fresh; the in-scope workerPaneId is only the boot-time fallback. (d) Preserve ordering: CAM-181 auto-ship (opts.autoShipFn) fires in the 'complete' branch right before the old notifyTerminal('complete') (~L757-759); since finishTerminal replaces notifyTerminal, teardown naturally runs AFTER auto-ship -- keep that order. /cam-ship uses the orchestrator pane and bypasses the mutex, so teardown never races it. (e) TWO 'complete' terminal paths (~L759 direct/cap-reentry and ~L1349 post-review with escalateFn) must both route through finishTerminal. (f) Fakes lie for tmux (patterns.md CAM-55: 3 CLEAN rounds + 925 tests missed 2 criticals): the real-tmux integration test is the anchor, not the unit spy. (g) CAM-57 ensureWorkerPane re-creates the pane via split-window on the next dispatch, so killing at terminal is safe and is exactly what lets the auto-drain chain.\n\nSKILLS/PATTERNS to re-read at story start: scripts/cam/patterns.md bullets 'tmux mangles TAB in -F output; key panes on @cam_label' (real-tmux anchor discipline), 'ensureWorkerPane self-heal (CAM-57)', 'Single-pusher invariant / notifyOrchestrator', and 'Pane worker vs Task subagent'. OUT OF SCOPE: surfacing reviewer SUGGESTIONs as follow-up issues (separate concern, already in review-report.json); no change to the reviewer contract; no change to stop.ts killWorkerPane. No vendor/ or templates/ touched (no embed-vendor step). No Ink screen touched."
+    }
+  ]
+}
