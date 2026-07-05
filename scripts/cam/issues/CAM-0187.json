@@ -1,7 +1,7 @@
 {
   "id": "CAM-187",
   "title": "Loop advances to review on uncommitted passes=true after worker sentinel timeout",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-05T01:50:29.990Z",
