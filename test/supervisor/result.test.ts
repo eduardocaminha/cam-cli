@@ -9,7 +9,7 @@
 // function falls back to sentinel + handoff.json (state-primary).
 
 import { describe, expect, test } from 'bun:test';
-import { readWorkerOutcome } from '../../src/supervisor/result.ts';
+import { commitSubjectMatchesStory, readWorkerOutcome } from '../../src/supervisor/result.ts';
 import type { FileReader } from '../../src/supervisor/result.ts';
 
 // ---------------------------------------------------------------------------
@@ -25,6 +25,12 @@ function fakeHandoff(storyId: string): string {
 		lastCompletedStory: { id: storyId, title: `Story ${storyId}` },
 		branchName: 'cam/test-branch',
 		timestamp: '2026-06-08T00:00:00Z',
+	});
+}
+
+function fakePrdWithRequires(storyId: string, passes: boolean, requires: string | null): string {
+	return JSON.stringify({
+		userStories: [{ id: storyId, title: `Story ${storyId}`, passes, requires }],
 	});
 }
 
@@ -1085,5 +1091,193 @@ describe('parseAnySentinel prompt-echo regression (CAM-42 US-002)', () => {
 		const match = parseAnySentinel(pane);
 		expect(match).not.toBeNull();
 		expect(match?.source).toBe('implementer');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001 (CAM-187): commit-existence gate
+// ---------------------------------------------------------------------------
+//
+// readWorkerOutcome accepts an optional commitExistsForStory(storyId) callback
+// and consults it before confirming a passes:true story as kind:'pass'. This
+// covers both readWorkerOutcome resolution paths: the worker-report primary
+// path (workerReportPath provided, report.outcome === 'DONE') and the
+// handoff/sentinel fallback path (no workerReportPath, resolved via handoff).
+
+const CG_REPORT_PATH = '/cg/worker-report.json';
+
+describe('readWorkerOutcome: commit-existence gate (US-001, CAM-187)', () => {
+	test('AC2 (worker-report path): passes:true but commitExistsForStory=false, requires=null -> NOT pass', () => {
+		const storyId = 'US-020';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: CG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[CG_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+			commitExistsForStory: () => false,
+		});
+		expect(result.kind).not.toBe('pass');
+		expect(result.kind).toBe('no-commit');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('AC2 (fallback path): passes:true but commitExistsForStory=false, requires=null -> NOT pass', () => {
+		const storyId = 'US-021';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: donePane(storyId),
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[HANDOFF_PATH]: fakeHandoff(storyId),
+			}),
+			commitExistsForStory: () => false,
+		});
+		expect(result.kind).not.toBe('pass');
+		expect(result.kind).toBe('no-commit');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('AC3 (worker-report path): passes:true and commitExistsForStory=true -> pass', () => {
+		const storyId = 'US-022';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: CG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[CG_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+			commitExistsForStory: () => true,
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('AC3 (fallback path): passes:true and commitExistsForStory=true -> pass', () => {
+		const storyId = 'US-023';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: donePane(storyId),
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[HANDOFF_PATH]: fakeHandoff(storyId),
+			}),
+			commitExistsForStory: () => true,
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('AC4: requires:"operator" story resolves to pass even when commitExistsForStory=false', () => {
+		const storyId = 'US-024';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: donePane(storyId),
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, 'operator'),
+				[HANDOFF_PATH]: fakeHandoff(storyId),
+			}),
+			commitExistsForStory: () => false,
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('AC4 (worker-report path): requires:"operator" story resolves to pass even when commitExistsForStory=false', () => {
+		const storyId = 'US-025';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: CG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, 'operator'),
+				[CG_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+			commitExistsForStory: () => false,
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('AC5: commitExistsForStory undefined -> no gate applied, behaves as before (worker-report path)', () => {
+		const storyId = 'US-026';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: CG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[CG_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+			// commitExistsForStory intentionally omitted
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('AC5: commitExistsForStory undefined -> no gate applied, behaves as before (fallback path)', () => {
+		const storyId = 'US-027';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: donePane(storyId),
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[HANDOFF_PATH]: fakeHandoff(storyId),
+			}),
+			// commitExistsForStory intentionally omitted
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001 (CAM-187): commitSubjectMatchesStory pure matcher
+// ---------------------------------------------------------------------------
+
+describe('commitSubjectMatchesStory (US-001, CAM-187)', () => {
+	test('matches the standard feat convention', () => {
+		expect(commitSubjectMatchesStory('feat: US-001 - Add commit-existence gate', 'US-001')).toBe(true);
+	});
+
+	test('matches a review-fix id with internal hyphens (US-R1-003)', () => {
+		expect(commitSubjectMatchesStory('feat: US-R1-003 - Correct the offending edge case', 'US-R1-003')).toBe(
+			true,
+		);
+	});
+
+	test('tolerates extra whitespace around the separators', () => {
+		expect(commitSubjectMatchesStory('feat:   US-002   -   Title here', 'US-002')).toBe(true);
+	});
+
+	test('rejects a subject that only mentions the id incidentally (wrong prefix)', () => {
+		expect(commitSubjectMatchesStory('chore: mention US-001 in the README', 'US-001')).toBe(false);
+	});
+
+	test('rejects a subject that mentions the id after other words following feat:', () => {
+		expect(commitSubjectMatchesStory('feat: implement US-001 - Title', 'US-001')).toBe(false);
+	});
+
+	test('rejects a longer id that shares this id as a prefix (US-0010 vs US-001)', () => {
+		expect(commitSubjectMatchesStory('feat: US-0010 - Some other story', 'US-001')).toBe(false);
+	});
+
+	test('rejects a subject naming a different story, even if this story is mentioned in the title', () => {
+		expect(commitSubjectMatchesStory('feat: US-002 - Fix reference to US-001', 'US-001')).toBe(false);
+	});
+
+	test('rejects a bare fix: prefix (not the feat: completion convention)', () => {
+		expect(commitSubjectMatchesStory('fix: US-001 - correct an edge case', 'US-001')).toBe(false);
 	});
 });

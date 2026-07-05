@@ -1,0 +1,19 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add commit-existence gate to readWorkerOutcome"
+  },
+  "branchName": "cam/pr-187-commit-existence-gate",
+  "timestamp": "2026-07-05T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/result.ts",
+    "test/supervisor/result.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 wires commitExistsForStory from host.ts + loop.ts using anchored git detection (e.g. git log --grep on the story id, subject validated with commitSubjectMatchesStory exported from src/supervisor/result.ts). The new WorkerOutcomeKind 'no-commit' is returned by readWorkerOutcome when a passes:true story (not requires:'operator') fails the gate; loop.ts does NOT yet special-case 'no-commit' (it falls through the existing if-blocks with no notify and just `continue`s to the next iteration, since none of the current kind checks in loop.ts match it) -- US-002's own acceptance criteria define what the loop should actually do with it (the hint in this story said 're-dispatch/no-progress' treatment, similar to the CAM-36 no-progress guard). commitExistsForStory is optional so all pre-existing callers (host.ts, tests) are unaffected until US-002 wires it. Two gate sites in result.ts both call the shared confirmCommitGate/isOperatorStory helpers.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

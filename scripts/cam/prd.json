@@ -23,7 +23,7 @@
         "Full quality spine is green (bun run check:all: typecheck + biome lint + tests). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit src/supervisor/result.ts + test/supervisor/result.test.ts only. Gate BOTH storyPassesInPrd->pass sites: the worker-report primary path (~line 344) and the handoff/sentinel fallback path (~line 430). Extend the internal PrdJson story shape to also read `requires` (currently only {id, passes}) so the operator exemption can read it. Make commitExistsForStory OPTIONAL so existing callers (no callback yet) keep today's behavior verbatim (US-002 wires the real one). Keep the pure-function contract: no git spawn, all I/O via injected callbacks. The story-id token can contain internal hyphens (US-R1-003) per the sentinel regex US-[A-Za-z0-9-]+; the matcher must handle those. Commit convention is `feat: [Story ID] - [Story Title]` (scripts/cam/CLAUDE.md step 8). HINT on the not-DONE return kind: do NOT return a kind whose loop treatment routes to finalizeStory/auto-commit ('incomplete' triggers supervisor finalize, which is out-of-scope) - prefer a kind/detail that the loop treats as re-dispatch/no-progress (US-002 defines the loop behavior). Read scripts/cam/patterns.md at story start."
     },

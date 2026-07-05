@@ -32,8 +32,18 @@
 /** File-reading callback injected by the caller. Returns null on missing/error. */
 export type FileReader = (path: string) => string | null;
 
-/** Outcome kinds returned by readWorkerOutcome. */
-export type WorkerOutcomeKind = 'pass' | 'incomplete' | 'fail' | 'blocked' | 'unknown';
+/**
+ * Outcome kinds returned by readWorkerOutcome.
+ *
+ * 'no-commit' (US-001, CAM-187): a story is passes:true in prd.json but the
+ * injected commitExistsForStory callback could not confirm a matching commit
+ * (and the story is not requires:'operator', which is exempt). This is
+ * deliberately distinct from 'incomplete' (which routes the supervisor loop
+ * to finalizeStory/auto-commit) -- a passes:true-but-no-commit story is not a
+ * worker-truncated-protocol-tail case, it is a suspect DONE claim that should
+ * not advance to review without an actual commit landing.
+ */
+export type WorkerOutcomeKind = 'pass' | 'incomplete' | 'fail' | 'blocked' | 'unknown' | 'no-commit';
 
 /** Typed result from readWorkerOutcome. */
 export interface WorkerOutcome {
@@ -79,6 +89,22 @@ export interface ReadWorkerOutcomeOptions {
 	capturedPaneText: string;
 	/** Injected file reader; returns file contents as string, or null on error. */
 	readFile: FileReader;
+	/**
+	 * Optional commit-existence gate (US-001, CAM-187): called with a story id
+	 * that is passes:true in prd.json, right before confirming a DONE outcome.
+	 * Returning false means no commit was found for that story, so the outcome
+	 * does NOT resolve to kind:'pass' (kind:'no-commit' instead), UNLESS the
+	 * story's `requires` field is 'operator' (ceremony exemption -- operator
+	 * stories are flipped by hand, not by a worker commit).
+	 *
+	 * When absent (undefined), no gate is applied: readWorkerOutcome behaves
+	 * exactly as it did before this option existed (AC5). This callback is a
+	 * pure injection point: result.ts performs no git/child-process spawn of
+	 * its own; the caller (US-002) is responsible for the actual git lookup,
+	 * typically using commitSubjectMatchesStory to validate the found commit's
+	 * subject line.
+	 */
+	commitExistsForStory?: (storyId: string) => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,11 +158,16 @@ interface HandoffJson {
 /**
  * Minimal shape of prd.json we care about.
  * We do a runtime shape check before accessing fields.
+ *
+ * `requires` was added in US-001 (CAM-187) so the commit-existence gate can
+ * read the operator-ceremony exemption (requires: 'operator' stories are
+ * flipped by hand and have no worker commit to find).
  */
 interface PrdJson {
 	userStories?: Array<{
 		id?: string;
 		passes?: boolean;
+		requires?: string | null;
 	}>;
 }
 
@@ -216,6 +247,58 @@ function storyPassesInPrd(prd: PrdJson, storyId: string): boolean {
 	const story = prd.userStories.find((s) => s.id === storyId);
 	if (!story) return false;
 	return story.passes === true;
+}
+
+/** Is this story exempt from the commit-existence gate (an operator ceremony)? */
+function isOperatorStory(prd: PrdJson, storyId: string): boolean {
+	const story = prd.userStories?.find((s) => s.id === storyId);
+	return story?.requires === 'operator';
+}
+
+/**
+ * Commit-existence gate (US-001, CAM-187): decide whether a passes:true story
+ * is safe to confirm as kind:'pass', or must fall back to kind:'no-commit'.
+ *
+ * - No callback injected -> always ok (AC5: pre-existing behavior, no gate).
+ * - requires:'operator' story -> always ok (AC4: ceremony exemption).
+ * - Otherwise -> ok iff commitExistsForStory(storyId) returns true (AC2/AC3).
+ */
+function confirmCommitGate(
+	prd: PrdJson,
+	storyId: string,
+	commitExistsForStory: ((storyId: string) => boolean) | undefined,
+): { ok: true } | { ok: false; detail: string } {
+	if (commitExistsForStory === undefined) return { ok: true };
+	if (isOperatorStory(prd, storyId)) return { ok: true };
+	if (commitExistsForStory(storyId)) return { ok: true };
+	return {
+		ok: false,
+		detail: `story=${storyId} is passes:true in prd.json but no commit was found for it (commit-existence gate); not confirmed DONE.`,
+	};
+}
+
+/**
+ * Pure matcher (US-001, CAM-187): does a commit subject line confirm
+ * completion of the given story, per the commit convention
+ * `feat: <Story ID> - <Title>` (scripts/cam/CLAUDE.md step 8)?
+ *
+ * Review-fix story ids (e.g. US-R1-003) follow the same convention (they are
+ * ordinary stories from the implementer's point of view) and are matched by
+ * the same rule, since the id class US-[A-Za-z0-9-]+ already allows internal
+ * hyphens.
+ *
+ * Rejects a subject that only mentions the id incidentally: the id must
+ * appear immediately after `feat:` (optional whitespace) and immediately
+ * before the ` - ` title separator (optional whitespace around the hyphen).
+ * A subject naming a DIFFERENT story that happens to share this story's id as
+ * a prefix (e.g. "feat: US-0010 - Title" queried with storyId "US-001") does
+ * not match, because the character right after the id must be the separator
+ * hyphen, not another id character.
+ */
+export function commitSubjectMatchesStory(subject: string, storyId: string): boolean {
+	const escapedId = storyId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const re = new RegExp(`^feat:\\s*${escapedId}\\s*-\\s*\\S`);
+	return re.test(subject.trim());
 }
 
 // ---------------------------------------------------------------------------
@@ -342,10 +425,18 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 						};
 					}
 					if (storyPassesInPrd(prd, reportStory)) {
+						const gate = confirmCommitGate(prd, reportStory, opts.commitExistsForStory);
+						if (gate.ok) {
+							return {
+								kind: 'pass',
+								storyId: reportStory,
+								detail: `story=${reportStory} confirmed: prd.json passes:true (worker-report-fallback).`,
+							};
+						}
 						return {
-							kind: 'pass',
+							kind: 'no-commit',
 							storyId: reportStory,
-							detail: `story=${reportStory} confirmed: prd.json passes:true (worker-report-fallback).`,
+							detail: `${gate.detail} (worker-report-fallback)`,
 						};
 					}
 					return {
@@ -428,6 +519,14 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 	}
 
 	if (storyPassesInPrd(prd, completedStory)) {
+		const gate = confirmCommitGate(prd, completedStory, opts.commitExistsForStory);
+		if (!gate.ok) {
+			return {
+				kind: 'no-commit',
+				storyId: completedStory,
+				detail: gate.detail,
+			};
+		}
 		const corroboration = sentinelDone
 			? 'sentinel DONE corroborates'
 			: handoffWasStringCoerced
