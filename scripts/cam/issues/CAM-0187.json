@@ -1,0 +1,9 @@
+{
+  "id": "CAM-187",
+  "title": "Loop advances to review on uncommitted passes=true after worker sentinel timeout",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-05T01:50:29.990Z",
+  "description": "During CAM-186 US-002 (container story: image rebuild + 3098 in-container tests) the implementer did real work, wrote passes=true into prd.json and git-add-staged its changes, but hit the 30-min sentinel poll ceiling (worker-end pollOutcome:timeout, pane-died-retry) BEFORE committing. The loop read the UNCOMMITTED passes=true and advanced to review prematurely (HEAD had only US-001; US-002 work was staged-uncommitted). Self-healed only because the reviewer reviews the working-tree diff and caught check:all failing (file-size gate) -> FIXES_PENDING -> round-1 fixer committed everything via git add -A. Latent risk: a CLEAN working-tree review would advance a story whose commit never happened (mitigated by cam ship --finalize committing pending, but trusting a timed-out worker uncommitted self-report is the fragility). Contrast CAM-176: same timeout but committed before timing out = clean self-heal. Two sub-fixes: (1) 30-min sentinel ceiling too short for container stories; raise it for worker_isolation=container or make it story-kind-aware. (2) gate story-complete on the commit existing (HEAD advanced), not just prd.json passes in the working tree, especially after a worker timeout. Relevant to CAM-139 autonomous-loop reliability. Self-healed via the reviewer safety net. Found 2026-07-05 shipping CAM-186."
+}
