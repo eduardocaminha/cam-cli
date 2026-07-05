@@ -1251,6 +1251,18 @@ describe('commitSubjectMatchesStory (US-001, CAM-187)', () => {
 		expect(commitSubjectMatchesStory('feat: US-001 - Add commit-existence gate', 'US-001')).toBe(true);
 	});
 
+	test('matches the real bracketed convention (US-R1-001, CAM-187)', () => {
+		expect(commitSubjectMatchesStory('feat: [US-001] - Add commit-existence gate', 'US-001')).toBe(true);
+	});
+
+	test('rejects a mismatched single bracket (opening only)', () => {
+		expect(commitSubjectMatchesStory('feat: [US-001 - Add commit-existence gate', 'US-001')).toBe(false);
+	});
+
+	test('rejects a bracketed longer id that shares this id as a prefix (US-0010 vs US-001)', () => {
+		expect(commitSubjectMatchesStory('feat: [US-0010] - Some other story', 'US-001')).toBe(false);
+	});
+
 	test('matches a review-fix id with internal hyphens (US-R1-003)', () => {
 		expect(commitSubjectMatchesStory('feat: US-R1-003 - Correct the offending edge case', 'US-R1-003')).toBe(
 			true,

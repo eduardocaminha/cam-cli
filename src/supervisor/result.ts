@@ -278,9 +278,18 @@ function confirmCommitGate(
 }
 
 /**
- * Pure matcher (US-001, CAM-187): does a commit subject line confirm
- * completion of the given story, per the commit convention
- * `feat: <Story ID> - <Title>` (scripts/cam/CLAUDE.md step 8)?
+ * Pure matcher (US-001, CAM-187; bracketed convention fixed in US-R1-001):
+ * does a commit subject line confirm completion of the given story, per the
+ * commit convention `feat: [Story ID] - [Story Title]`
+ * (scripts/cam/CLAUDE.md step 8, templates/agents/subagent-implementer.md)?
+ *
+ * The real convention the worker emits brackets the id (e.g.
+ * `feat: [US-001] - Add commit-existence gate`); the bracketless form
+ * (`feat: US-001 - Title`) is also accepted for backward compatibility with
+ * older commits on the branch's history. The id must be either exactly
+ * `[<id>]` or exactly `<id>` (no mismatched single bracket), immediately
+ * after `feat:` (optional whitespace) and immediately before the ` - ` title
+ * separator (optional whitespace around the hyphen).
  *
  * Review-fix story ids (e.g. US-R1-003) follow the same convention (they are
  * ordinary stories from the implementer's point of view) and are matched by
@@ -293,11 +302,11 @@ function confirmCommitGate(
  * A subject naming a DIFFERENT story that happens to share this story's id as
  * a prefix (e.g. "feat: US-0010 - Title" queried with storyId "US-001") does
  * not match, because the character right after the id must be the separator
- * hyphen, not another id character.
+ * hyphen (or closing bracket), not another id character.
  */
 export function commitSubjectMatchesStory(subject: string, storyId: string): boolean {
 	const escapedId = storyId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-	const re = new RegExp(`^feat:\\s*${escapedId}\\s*-\\s*\\S`);
+	const re = new RegExp(`^feat:\\s*(?:\\[${escapedId}\\]|${escapedId})\\s*-\\s*\\S`);
 	return re.test(subject.trim());
 }
 
