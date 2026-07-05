@@ -396,6 +396,22 @@ export function buildSupervisorOptions(
 		return newId;
 	};
 
+	// CAM-188 / US-001: tear down the reused worker pane on every terminal exit.
+	// Uses `tmux kill-pane` (NOT respawn-pane -k which keeps the pane alive and
+	// leaves the mutex busy). Pane id resolved fresh from readWorkerPaneMarker so
+	// a mid-session pane re-allocation is picked up correctly; the boot-time
+	// workerPaneId is the fallback when no marker exists.
+	// Best-effort: a null marker, already-dead pane, or absent tmux is a silent
+	// no-op. Never throws so the terminal return always proceeds.
+	const teardownWorkerPaneFn: RunSupervisorOptions['teardownWorkerPaneFn'] = () => {
+		const id = readWorkerPaneMarker(claudeDir) ?? workerPaneId;
+		try {
+			spawnSync('tmux', ['-L', 'cam', 'kill-pane', '-t', id], { stdio: 'pipe' });
+		} catch {
+			// best-effort: silent no-op
+		}
+	};
+
 	// US-002 / CAM-75: reviewer structured exit report reader.
 	const readReviewReport = makeReadReviewReport(cwd);
 
@@ -699,6 +715,9 @@ export function buildSupervisorOptions(
 		preflightContainerFn,
 		// US-004 / B-2 (CAM-152): isolation mode drives dockerExecWrap + fail-closed.
 		workerIsolation,
+		// CAM-188 / US-001: kill-pane on every terminal exit so the session returns
+		// to exactly 2 panes and paneCountMutex reports 'available'.
+		teardownWorkerPaneFn,
 	};
 
 	return {

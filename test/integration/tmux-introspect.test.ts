@@ -25,6 +25,8 @@ import {
 	orchestratorAlive,
 	getOrchPaneId,
 	isSessionStale,
+	paneCountMutex,
+	openPaneInSession,
 	type SpawnFn,
 } from '../../src/tmux/session.ts';
 
@@ -133,5 +135,50 @@ test.skipIf(!tmuxAvailable)(
 		label(p2, 'implementer');
 		Bun.sleepSync(100);
 		expect(isSessionStale(SESSION, swapSocketSpawn)).toBe(false); // labeled worker: alive
+	},
+);
+
+test.skipIf(!tmuxAvailable)(
+	'teardownWorkerPaneFn kill-pane cycle: 3 panes -> 2 (available) -> 3 after recreate (CAM-188 anchor)',
+	() => {
+		// Reproduces the lifecycle that the production teardownWorkerPaneFn enables:
+		// kill-pane reduces count to 2 -> paneCountMutex reports 'available'
+		// -> ensureWorkerPane / openPaneInSession brings it back to 3.
+		// This is the real-tmux anchor that unit fakes cannot provide (they encode
+		// the idealized kill/mutex state, masking any wrong tmux argv).
+
+		// 1. Create a 3-pane session (orch + dashboard + worker).
+		const p0 = tmuxRaw(['list-panes', '-t', SESSION, '-F', '#{pane_id}'])
+			.stdout.toString().trim().split('\n')[0]!;
+		const p1 = tmuxRaw(['split-window', '-t', SESSION, '-v', '-d', '-P', '-F', '#{pane_id}'])
+			.stdout.toString().trim();
+		const p2 = tmuxRaw(['split-window', '-t', SESSION, '-v', '-d', '-P', '-F', '#{pane_id}'])
+			.stdout.toString().trim();
+		Bun.sleepSync(150);
+		label(p0, 'orchestrator');
+		label(p1, 'dashboard');
+		label(p2, 'implementer');
+		Bun.sleepSync(100);
+
+		// Verify we start with 3 panes -> mutex is 'busy'.
+		expect(paneCountMutex(SESSION, swapSocketSpawn)).toBe('busy');
+
+		// 2. Simulate teardownWorkerPaneFn: kill-pane on the worker pane.
+		// The production closure calls spawnSync('tmux', ['-L', 'cam', 'kill-pane', '-t', id]).
+		// Here we use the private test socket via swapSocketSpawn-style argv.
+		const killResult = spawnSync('tmux', ['-L', TEST_SOCK, 'kill-pane', '-t', p2], { stdio: 'pipe' });
+		expect(killResult.status).toBe(0); // kill-pane must succeed
+		Bun.sleepSync(150);
+
+		// 3. After teardown: count = 2, mutex = 'available'.
+		expect(paneCountMutex(SESSION, swapSocketSpawn)).toBe('available');
+
+		// 4. Recreate the worker pane via openPaneInSession (mirrors ensureWorkerPane).
+		const newWorkerId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, p0);
+		Bun.sleepSync(150);
+		expect(newWorkerId).toMatch(/^%\d+$/);
+
+		// 5. After recreation: count = 3 again, mutex = 'busy'.
+		expect(paneCountMutex(SESSION, swapSocketSpawn)).toBe('busy');
 	},
 );
