@@ -62,7 +62,7 @@
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/ship-runner.ts (new), test/ship-runner.test.ts (new). Mirror src/supervisor/plan-runner.ts conventions exactly: dep-injected options interface, discriminated result union, helpers extracted for biome cognitive-complexity limits (patterns.md 'factory/helper extraction'). Unlike the plan runner, NO worker pane is spawned (zero LLM in this phase), so no pane mutex, no uuid, no respawn-pane. Reuse SpawnFn from loop.ts. runShipBump (src/release/ship-bump.ts) and finalizeCycleClose (src/commands/ship-finalize.ts) already exist as injectable functions; wrap them behind bumpFn/finalizeFn seams so unit tests never touch real git. Gotcha: bump then finalize then push is the cam-ship.md order; bump is NOT idempotent (re-run would double-bump), so a mid-sequence failure escalates to the operator (recovery per docs/recovery-runbook.md), never auto-resumes. finalizeCycleClose is idempotent (noOp when prd.json absent). Do not add a config knob for the gates command in this story; injected default 'bun run check:all' with a cam-init adaptation note deferred."
     },
