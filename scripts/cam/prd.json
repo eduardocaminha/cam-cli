@@ -1,0 +1,105 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-139-inter-cycle-auto-drain",
+  "description": "Arm the unattended inter-cycle auto-drain (meta_loop=auto): the sidecar dispatches the next plannable issue's plan, chains plan->implement->review->ship->merge via existing primitives, and drains the backlog until empty, hard-gated on container isolation + plan_approval=auto with a dedicated runtime kill-switch.",
+  "issueNumber": 139,
+  "relatedDocs": [
+    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md",
+    "docs/adr/0006-phase-enum-loop-state-machine.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Extend meta_loop enum with 'auto'",
+      "description": "As a cam operator, I need `[loop] meta_loop = \"auto\"` to be a recognized config value so that the sidecar can arm the unattended inter-cycle drain, while every other value stays fail-closed to off.",
+      "acceptanceCriteria": [
+        "The MetaLoop type in src/config/models.ts is exactly 'off' | 'observe' | 'auto'. [oracle: grep -q \"'off' | 'observe' | 'auto'\" src/config/models.ts]",
+        "readMetaLoop returns 'auto' only when [loop] meta_loop = \"auto\" is set exactly, still returns 'observe' for observe, and returns 'off' for any unknown value, missing key/section/file, or malformed TOML (fail-closed posture, CAM-96). [oracle: bun test test/config/meta-loop.test.ts]",
+        "The readMetaLoop doc comment no longer cites \"auto\" as an example of a typo that maps to off (it is now a valid value). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit src/config/models.ts:217-248 (MetaLoop type + readMetaLoop). Extend test/config/meta-loop.test.ts to cover the new 'auto' case plus the existing off/observe/unknown/missing cases. This is the pure type/config foundation every later story reads. No template or vendor change (meta_loop is hand-set in project.toml, no wizard entry exists today)."
+    },
+    {
+      "id": "US-002",
+      "title": "Runtime drain kill-switch: marker primitive + cam drain command",
+      "description": "As a cam operator, I need a dedicated runtime kill-switch that stops an in-flight autonomous drain at the next safe cycle boundary WITHOUT killing the sidecar/session, so I can pause unattended draining and keep the live session for inspection, distinct from `cam stop` (which SIGTERMs the whole sidecar).",
+      "acceptanceCriteria": [
+        "A new marker module exports a named constant for the kill-switch file (e.g. DRAIN_STOP_MARKER = '.cam-drain-stop') plus set/clear/read helpers under .claude/; reading is a pure boolean check, never throws. [oracle: grep -rq \"DRAIN_STOP_MARKER\" src/supervisor/]",
+        "`cam drain --stop` writes the marker and `cam drain --clear` removes it (both idempotent); the fs seams are injectable so unit tests never touch the real filesystem. [oracle: bun test test/commands/drain.test.ts]",
+        "`cam stop` clears the kill-switch marker as part of its per-session marker-removal set, referenced by the named constant (not a bare string literal). [oracle: grep -q \"DRAIN_STOP_MARKER\" src/commands/stop.ts]",
+        "The kill-switch marker is DISTINCT from cam stop: `cam drain --stop` sends no SIGTERM to the sidecar and removes no other marker. [oracle: reviewer-judgment]",
+        "The marker file is gitignored in both .gitignore and templates/.gitignore. [oracle: grep -q \"cam-drain-stop\" .gitignore]",
+        "`cam drain` is registered as a dispatchable subcommand in index.ts. [oracle: grep -q \"case 'drain'\" index.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "New module e.g. src/supervisor/drain-kill-switch.ts mirroring the marker pattern in src/supervisor/sidecar-pid.ts (named constant + injectable reader/writer/remover, patterns.md 'Sidecar PID persistence' + 'Per-session marker set + cam stop cleanup'). New CLI in src/commands/drain.ts (flag-based like `cam issue --file-local` / `cam ship --finalize`; default no-flag prints status) + a `case 'drain'` in index.ts + help text. Register removal in src/commands/stop.ts performStop marker loop (import the constant). CAM-68 nuance: a .claude/ RUNTIME marker is the correct cross-process channel here (same class as .cam-merge-watch.json / .cam-sidecar.pid); only the observe/dispatch DEDUP state must stay in-memory. Add '.claude/.cam-drain-stop' to both .gitignore and templates/.gitignore."
+    },
+    {
+      "id": "US-003",
+      "title": "Fail-closed hard-precondition gate for the drain",
+      "description": "As the deterministic drain runner, I need a pure fail-closed precondition evaluator that refuses to drain unless the worker container is active (CAM-111) AND plan_approval is auto, so that unattended cycle-chaining never runs without its safety net.",
+      "acceptanceCriteria": [
+        "A pure function (e.g. evaluateDrainPreconditions) returns a discriminated result { ok: true } | { ok: false; reason: 'container-not-active' | 'plan-approval-not-auto' } from injected inputs (workerIsolation, container preflight result, planApproval); it performs no filesystem, docker, or network I/O. [oracle: bun test test/supervisor/drain-preconditions.test.ts]",
+        "Refuses (ok:false, reason 'container-not-active') when workerIsolation !== 'container' OR the injected container preflight is not ready: host mode never drains (fail-closed). [oracle: bun test test/supervisor/drain-preconditions.test.ts]",
+        "Refuses (ok:false, reason 'plan-approval-not-auto') when planApproval !== 'auto'. [oracle: bun test test/supervisor/drain-preconditions.test.ts]",
+        "Returns ok:true only when the container is active/ready AND planApproval === 'auto'; Resend config is NOT consulted (not a precondition). [oracle: bun test test/supervisor/drain-preconditions.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "New pure module e.g. src/supervisor/drain-preconditions.ts, structured like src/supervisor/observe.ts (no I/O, all inputs injected). Reuse the PreflightResult union from src/supervisor/preflight-container.ts for the container-ready input and WorkerIsolation/PlanApproval types from src/config/models.ts. 'Container active' (CAM-111) = worker_isolation === 'container' AND preflightWorkerContainer().ready === true. Fail-closed default (CAM-96): any doubt refuses. Resend is best-effort observability, decided NOT a precondition by the operator 2026-06-30 (see issue spec); do not gate on it here."
+    },
+    {
+      "id": "US-004",
+      "title": "Wire the auto-dispatcher into the sidecar idle-tick",
+      "description": "As the deterministic runner, in meta_loop=auto I need the sidecar idle-tick to dispatch the next plannable issue's plan at a safe cycle boundary (fail-closed on preconditions and kill-switch) and stop+notify when the backlog drains, so the queue chains plan->implement->review->ship->merge and drains until empty without a human gate.",
+      "acceptanceCriteria": [
+        "When meta_loop=auto, the production factory (e.g. makeProductionMetaLoopDispatchFn) is wired into the existing runMetaLoopObserveFn seam in buildSidecarLoopDeps; meta_loop=observe keeps the observe-only closure and meta_loop=off keeps the seam undefined (zero behavior change for off/observe and every existing test). loop.ts is unchanged. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "The dispatcher DISPATCHES (writes phase:planning to .claude/cam-loop.local.md via the setPhase writer, targeting the selected plannable issue) ONLY when ALL hold: kill-switch not engaged; preconditions ok (US-003); no PRD cycle in flight (scripts/cam/prd.json absent); no merge-watch file present; phase is idle or absent. Otherwise it dispatches nothing this tick. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "Selection is deterministic via selectPlannableFromFile / selectPlannableIssue (rank asc, numeric-id-suffix tiebreak) reading the MAIN backlog, never the working tree (CAM-86/CAM-133 on-main invariant); rank-tie is NOT a judgment point. [oracle: bun test test/issues/select.test.ts]",
+        "When preconditions are NOT met, the dispatcher REFUSES fail-closed: it dispatches nothing, emits a clear structured refusal event to the event log, and writes a clear stderr error; it never drains degraded. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "When the backlog is drained (selectPlannable returns null at a safe boundary), the dispatcher stops, emits the drained observability event (reusing meta-loop-observe {drained:true}), and fires the drain-notify best-effort: it sends via Resend when configured and emits a soft-warn (mirroring the cam init Resend warning) when it is not; Resend is never a precondition. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "When the kill-switch marker is engaged, the dispatcher dispatches nothing (parks at the boundary), the sidecar loop keeps running (session stays alive, no SIGTERM), and a structured 'stopped' event is recorded once. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "A new WorkerEventKind (e.g. 'meta-loop-dispatch') and its detail union are added in src/supervisor/events.ts and emitted for dispatched / refused / stopped so the flight recorder captures every auto-path decision. [oracle: grep -q \"meta-loop-dispatch\" src/supervisor/events.ts]",
+        "An ADR under docs/adr/ (next sequential number) records: 'inter-cycle unattended drain: a deterministic runner chains cycles; the LLM enters only at judgment points (empty queue, blocked cycle); hard-gated on the container + plan_approval=auto safety net'. [oracle: grep -rq \"judgment point\" docs/adr/]",
+        "bun run check:all passes (typecheck + test + embed-vendor + ratchets + biome + ci-parity). [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Primary file src/commands/sidecar.ts (add makeProductionMetaLoopDispatchFn next to makeProductionMetaLoopObserveFn; branch buildSidecarLoopDeps: metaLoop==='observe' -> observe fn, 'auto' -> dispatch fn, else undefined). Reuse observeDecide (src/supervisor/observe.ts) for wouldSelect/drained observability + dedup (in-memory closure state, CAM-68), makeSetPhaseFn (already in sidecar.ts) to write phase:planning + plan_issue, DRAIN_NOTIFY_SUBJECT/makeProductionDrainNotifyFn for drain-notify, evaluateDrainPreconditions (US-003) with buildPlanContainerOpts-style preflight, and the kill-switch reader (US-002). Safe-boundary reads: scripts/cam/prd.json presence, MERGE_WATCH_FILENAME presence (.claude/.cam-merge-watch.json), and phase via parseStateFile. Build the closure with INJECTABLE sub-deps (selectFn, readPhaseFn, mergeWatchPresentFn, preconditionFn, killSwitchFn, setPhaseFn, drainNotifyFn, warnFn, logEvent) mirroring runPlanPhase's dep-injection so unit tests drive dispatch/drained/refuse/kill branches without real fs/docker/tmux (anti-shadow-mock, CAM-55). loop.ts needs NO change: the extra gates live inside the closure (issue gotcha: 'auto' EXTENDS observe, does not replace). The plan-runner + flipActiveFn/autoShipFn/escalateFn/merge-watch already chain implement->review->ship->merge once phase:planning is set. GRAPH-REWIRE (issue AC7) is MOOT: CAM-110 is already stage:shipped, so swapping CAM-132->CAM-139 in its blockedBy has no premature-unblock effect and there is no edit-blockedBy primitive; record this in the ADR/journal instead of editing the backlog. Re-check docs/adr/0004 (plan-runner chaining) and docs/adr/0006 (phase enum) before coding."
+    },
+    {
+      "id": "US-005",
+      "title": "Judgment point: park the drain and escalate on a blocked cycle",
+      "description": "As the deterministic runner, when a cycle ends blocked (MAX_ROUNDS_DEBT or a hard block) I need the auto-drain to park (dispatch no further cycles) and escalate best-effort to the operator while keeping the session alive, so an unattended chain never silently loops past a stuck cycle.",
+      "acceptanceCriteria": [
+        "When the most recent cycle ended blocked (scripts/cam/prd.json present with review.lastVerdict === 'MAX_ROUNDS_DEBT'), the auto-dispatcher parks: it dispatches no next plannable and records a structured blocked-cycle event. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "On detecting a blocked cycle the dispatcher fires an escalation best-effort: it sends via Resend when configured (reusing sendEscalation/escalateFn) and emits a soft-warn (mirroring init) when it is not; escalation is never a precondition. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "Parking on a blocked cycle keeps the sidecar/session alive (the loop keeps polling, no SIGTERM, no clearActive-triggered exit) so the operator can intervene. [oracle: reviewer-judgment]",
+        "The drain resumes (dispatches the next plannable) only after the block is cleared (prd.json removed/finalized by an operator ship or abandon); a still-blocked prd.json keeps parking each tick without re-escalating in a loop. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "bun run check:all passes. [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Extends the US-004 closure in src/commands/sidecar.ts: when the safe-boundary check finds prd.json present with review.lastVerdict === 'MAX_ROUNDS_DEBT' (see makeHasPendingStories MAX_ROUNDS_DEBT guard for the read shape), treat it as the blocked judgment point rather than a plain in-flight cycle. Reuse the existing escalate closure (readResendConfig + sendEscalation, patterns.md 'makeProductionEscalateFn') for the best-effort notify and warnFn for the soft-warn. Dedup the escalation via the in-memory closure state so a persistently-blocked prd.json does not re-notify every 2s tick (mirror observeDecide dedup). This is the second judgment point in the issue's invariant (empty queue in US-004; blocked cycle here); rank-tie is deterministic, not a judgment point. Distinct from the loop's per-cycle escalateFn (review-round exhaustion): this is the DRAIN-level halt notification."
+    }
+  ]
+}
