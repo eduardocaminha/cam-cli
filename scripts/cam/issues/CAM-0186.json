@@ -1,7 +1,7 @@
 {
   "id": "CAM-186",
   "title": "Investigate in-container test failures: 2957 pass / 10 fail vs 3012 green on host",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T19:26:19.974Z",
