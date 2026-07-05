@@ -1,9 +1,43 @@
 {
   "id": "CAM-187",
   "title": "Loop advances to review on uncommitted passes=true after worker sentinel timeout",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-05T01:50:29.990Z",
-  "description": "During CAM-186 US-002 (container story: image rebuild + 3098 in-container tests) the implementer did real work, wrote passes=true into prd.json and git-add-staged its changes, but hit the 30-min sentinel poll ceiling (worker-end pollOutcome:timeout, pane-died-retry) BEFORE committing. The loop read the UNCOMMITTED passes=true and advanced to review prematurely (HEAD had only US-001; US-002 work was staged-uncommitted). Self-healed only because the reviewer reviews the working-tree diff and caught check:all failing (file-size gate) -> FIXES_PENDING -> round-1 fixer committed everything via git add -A. Latent risk: a CLEAN working-tree review would advance a story whose commit never happened (mitigated by cam ship --finalize committing pending, but trusting a timed-out worker uncommitted self-report is the fragility). Contrast CAM-176: same timeout but committed before timing out = clean self-heal. Two sub-fixes: (1) 30-min sentinel ceiling too short for container stories; raise it for worker_isolation=container or make it story-kind-aware. (2) gate story-complete on the commit existing (HEAD advanced), not just prd.json passes in the working tree, especially after a worker timeout. Relevant to CAM-139 autonomous-loop reliability. Self-healed via the reviewer safety net. Found 2026-07-05 shipping CAM-186."
+  "description": "During CAM-186 US-002 (container story: image rebuild + 3098 in-container tests) the implementer did real work, wrote passes=true into prd.json and git-add-staged its changes, but hit the 30-min sentinel poll ceiling (worker-end pollOutcome:timeout, pane-died-retry) BEFORE committing. The loop read the UNCOMMITTED passes=true and advanced to review prematurely (HEAD had only US-001; US-002 work was staged-uncommitted). Self-healed only because the reviewer reviews the working-tree diff and caught check:all failing (file-size gate) -> FIXES_PENDING -> round-1 fixer committed everything via git add -A. Latent risk: a CLEAN working-tree review would advance a story whose commit never happened (mitigated by cam ship --finalize committing pending, but trusting a timed-out worker uncommitted self-report is the fragility). Contrast CAM-176: same timeout but committed before timing out = clean self-heal. Two sub-fixes: (1) 30-min sentinel ceiling too short for container stories; raise it for worker_isolation=container or make it story-kind-aware. (2) gate story-complete on the commit existing (HEAD advanced), not just prd.json passes in the working tree, especially after a worker timeout. Relevant to CAM-139 autonomous-loop reliability. Self-healed via the reviewer safety net. Found 2026-07-05 shipping CAM-186.",
+  "spec": {
+    "scope": "One PR, two coupled sub-fixes to the autonomous loop story-complete path. (1) Commit-existence gate in readWorkerOutcome (src/supervisor/result.ts): confirm a story DONE only when prd.json passes:true AND a commit for that story exists on the branch (HEAD advanced), injected as a commitExistsForStory(storyId) callback (no direct git spawn inside the pure fn). Unconditional (not only post-timeout). Stories with requires:\"operator\" are EXEMPT (manual passes:true flip without a commit still confirms). (2) worker_isolation-aware per-worker sentinel timeout ceiling in src/supervisor/loop.ts: container workers get a longer ceiling (new DEFAULT_CONTAINER_WORKER_TIMEOUT_MS ~60min); host unchanged at 30min. Wire the commitExistsForStory callback from loop.ts. Tests under test/supervisor/. Out-of-scope: supervisor auto-committing worker output, a config knob for the ceiling, reworking the commit-message convention, CAM-182 (merge-watch auto-recover), CAM-170.",
+    "acceptanceCriteria": [
+      "readWorkerOutcome confirms a story DONE only when prd.json passes:true AND a commit for that story ID exists on the current branch; a story with passes:true but no matching commit is NOT confirmed DONE (does not advance to review).",
+      "Commit detection is anchored to the exact Story ID token in commit messages (convention feat: US-XXX - ...); a commit message not containing the exact token does not produce a false-positive DONE.",
+      "Stories with requires:\"operator\" are exempt from the commit-existence gate: a manual passes:true flip without a commit still confirms DONE (operator ceremony preserved).",
+      "Commit-existence is injected into readWorkerOutcome as a callback (commitExistsForStory(storyId)); readWorkerOutcome performs no direct git spawn and stays unit-testable.",
+      "On passes:true-without-commit the loop does not advance to review; the story re-dispatches and recurrence is bounded by the existing anti-storm guard (MAX_DEAD_WORKER_RETRIES) which blocks + escalates instead of spinning.",
+      "The per-worker sentinel timeout ceiling is worker_isolation-aware: container workers use a longer ceiling (new DEFAULT_CONTAINER_WORKER_TIMEOUT_MS, ~60min) while host workers remain at DEFAULT_PER_WORKER_TIMEOUT_MS (30min).",
+      "Unit tests cover: committed+passes -> done; passes+no-commit -> not-done; operator-story passes+no-commit -> done (exempt); anchored-token precision (divergent commit message does not false-positive).",
+      "bun run check:all is green (typecheck + biome lint + tests)."
+    ],
+    "gotchas": [
+      "On pollOutcome=timeout the loop (loop.ts:1033) does NOT read outcome directly: it kill-panes + backs off + re-dispatches. The false-advance surfaces on the RE-DISPATCH, where a fresh worker no-ops on the stale working-tree passes:true and readWorkerOutcome confirms DONE while HEAD lacks the commit. The gate in readWorkerOutcome is what catches it.",
+      "requires:\"operator\" stories flip passes:true in the working tree WITHOUT a commit (CLAUDE.md operator ceremony) — the gate MUST exempt them or the ceremony breaks (E1).",
+      "Fix stories (US-R1-*) commit messages must carry the story ID for the gate to confirm them; verify the fixer commit convention includes it.",
+      "readWorkerOutcome currently takes a readFile adapter and is pure-ish; keep git access as an injected callback to preserve testability (E2).",
+      "Commit convention is `feat: [Story ID] - [Story Title]` (CLAUDE.md); anchor the grep on the exact story-id token, not a loose substring, to avoid false-positive from an earlier story body mentioning the id.",
+      "Contrast CAM-176: same timeout but the worker committed before timing out = clean self-heal. The gate makes the timeout SAFE regardless; the isolation-aware ceiling only reduces how often it fires."
+    ],
+    "domainTerms": [
+      "commit-existence gate",
+      "story-complete invariant",
+      "per-worker sentinel timeout ceiling",
+      "worker isolation (host | container)",
+      "anti-storm guard (MAX_DEAD_WORKER_RETRIES)"
+    ]
+  },
+  "wsjf": {
+    "value": 7,
+    "timeCriticality": 6,
+    "riskReduction": 8,
+    "jobSize": 3
+  }
 }
