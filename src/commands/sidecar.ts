@@ -723,6 +723,13 @@ function makeProductionMetaLoopObserveFn(
 // ---------------------------------------------------------------------------
 
 /**
+ * Subject line for blocked-cycle Resend emails (US-005, CAM-139).
+ * Exported so tests can assert against the canonical string without
+ * hardcoding it, and so file-assert oracles can verify its presence.
+ */
+export const BLOCKED_CYCLE_ESCALATE_SUBJECT = '[cam] Blocked cycle: MAX_ROUNDS_DEBT reached, operator intervention required';
+
+/**
  * Injectable sub-deps for the inter-cycle auto-dispatcher.
  *
  * Every dep has a corresponding production default built by
@@ -754,6 +761,24 @@ export interface MetaLoopDispatchDeps {
 	warnFn?: (msg: string) => void;
 	/** Emit structured events to the flight recorder. */
 	logEvent: WorkerEventLogger;
+	/**
+	 * Read review.lastVerdict from scripts/cam/prd.json (US-005, CAM-139).
+	 * Returns null when absent, unparseable, or no verdict is set.
+	 * Used by handleBlockedCycleBoundary to distinguish MAX_ROUNDS_DEBT (blocked)
+	 * from a plain in-flight cycle. Absent in existing tests = backward compat
+	 * (falls back to plain in-flight silent skip).
+	 */
+	readPrdVerdictFn?: () => string | null;
+	/**
+	 * Send blocked-cycle escalation email (US-005, CAM-139).
+	 * Distinct from drainNotifyFn (empty backlog) and from loop's escalateFn
+	 * (MAX_ROUNDS_DEBT detected by the supervisor itself).
+	 * This is the DRAIN-level halt notification: the auto-dispatcher detected
+	 * a blocked cycle at the safe boundary and parked.
+	 * Absent when Resend is not configured (both apiKey and recipient must be set).
+	 * Escalation is best-effort: failure never prevents parking.
+	 */
+	blockedCycleEscalateFn?: () => Promise<void>;
 }
 
 /**
@@ -787,6 +812,12 @@ export interface MetaLoopDispatchDeps {
 interface DispatchClosureState {
 	stoppedEmitted: boolean;
 	observeState: ObserveState;
+	/**
+	 * Dedup flag for the blocked-cycle judgment point (US-005).
+	 * Set to true after the first blockedCycle event + escalation fires.
+	 * Reset to false when prd.json is absent (block cleared by operator ship/abandon).
+	 */
+	blockedCycleEmitted: boolean;
 }
 
 /**
@@ -832,6 +863,51 @@ function handlePreconditionRefuse(deps: MetaLoopDispatchDeps): boolean {
 }
 
 /**
+ * Handle the blocked-cycle judgment point for one dispatch tick (US-005, CAM-139).
+ *
+ * Returns false when prd.json is absent (block cleared by operator ship/abandon):
+ *   the caller resets ctx.blockedCycleEmitted and continues to normal dispatch.
+ * Returns true when prd.json is present (caller should return early):
+ *   - verdict === 'MAX_ROUNDS_DEBT': park, emit 'meta-loop-dispatch {blockedCycle:true}'
+ *     once (deduped via ctx.blockedCycleEmitted), fire blockedCycleEscalateFn or warnFn.
+ *   - any other verdict: plain in-flight cycle, silent skip.
+ *
+ * Escalation is best-effort: a thrown exception is swallowed so parking is never
+ * conditional on the network call succeeding (AC2: "escalation is never a precondition").
+ */
+async function handleBlockedCycleBoundary(
+	deps: MetaLoopDispatchDeps,
+	ctx: DispatchClosureState,
+): Promise<boolean> {
+	if (!deps.prdPresentFn()) {
+		ctx.blockedCycleEmitted = false; // block cleared: reset dedup for next cycle
+		return false;
+	}
+	const verdict = deps.readPrdVerdictFn?.() ?? null;
+	if (verdict !== 'MAX_ROUNDS_DEBT') {
+		return true; // plain in-flight cycle: silent skip
+	}
+	// Blocked cycle: park + escalate exactly once (dedup via ctx.blockedCycleEmitted).
+	if (!ctx.blockedCycleEmitted) {
+		ctx.blockedCycleEmitted = true;
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'meta-loop-dispatch',
+			detail: { blockedCycle: true },
+		});
+		if (deps.blockedCycleEscalateFn) {
+			try { await deps.blockedCycleEscalateFn(); } catch { /* best-effort */ }
+		} else {
+			const warn = deps.warnFn ?? ((m: string) => process.stderr.write(`[cam] ${m}\n`));
+			warn('blocked-cycle: MAX_ROUNDS_DEBT; operator intervention required');
+		}
+	}
+	return true;
+}
+
+/**
  * Select the next plannable issue and either dispatch it or emit a drain event.
  * Mutates ctx.observeState for cross-tick dedup (mirrors the observe path).
  */
@@ -869,12 +945,14 @@ async function dispatchOrDrain(
 }
 
 export function makeProductionMetaLoopDispatchFn(deps: MetaLoopDispatchDeps): () => Promise<void> {
-	const ctx: DispatchClosureState = { stoppedEmitted: false, observeState: { kind: 'none' } };
+	const ctx: DispatchClosureState = { stoppedEmitted: false, observeState: { kind: 'none' }, blockedCycleEmitted: false };
 
 	return async (): Promise<void> => {
 		if (handleKillSwitchBoundary(deps, ctx)) return;
 		if (handlePreconditionRefuse(deps)) return;
-		if (deps.prdPresentFn()) return;
+		// US-005: check for blocked cycle (MAX_ROUNDS_DEBT) before plain prd-present skip.
+		// Returns true (park) for both blocked and plain in-flight; false when prd absent.
+		if (await handleBlockedCycleBoundary(deps, ctx)) return;
 		if (deps.mergeWatchPresentFn()) return;
 		const phase = deps.readPhaseFn();
 		if (phase !== undefined && phase !== 'idle') return;
@@ -924,10 +1002,12 @@ function buildProductionDispatchFn(
 			: (): import('../supervisor/preflight-container.ts').PreflightResult =>
 				({ ready: false, reason: 'daemon-unreachable' as const });
 
+	const prdPath = join(cwd, 'scripts/cam/prd.json');
+
 	return makeProductionMetaLoopDispatchFn({
 		selectFn: () => selectPlannableFromFile(cwd),
 		readPhaseFn: makeReadLoopPhase(claudeDir),
-		prdPresentFn: () => existsSync(join(cwd, 'scripts/cam/prd.json')),
+		prdPresentFn: () => existsSync(prdPath),
 		mergeWatchPresentFn: () => existsSync(join(claudeDir, MERGE_WATCH_FILENAME)),
 		preconditionFn: () =>
 			evaluateDrainPreconditions({
@@ -939,6 +1019,26 @@ function buildProductionDispatchFn(
 		setPhaseFn: makeSetPhaseFn(claudeDir, cwd),
 		drainNotifyFn: makeProductionDrainNotifyFn(resendConfig.apiKey, resendConfig.recipient),
 		logEvent,
+		// US-005: blocked-cycle judgment point deps.
+		readPrdVerdictFn: () => {
+			try {
+				const raw = readFileSync(prdPath, 'utf8');
+				const parsed: unknown = JSON.parse(raw);
+				if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+				const prd = parsed as { review?: { lastVerdict?: string | null } };
+				return prd.review?.lastVerdict ?? null;
+			} catch { return null; }
+		},
+		blockedCycleEscalateFn: (resendConfig.apiKey !== '' && resendConfig.recipient !== '')
+			? async (): Promise<void> => {
+				await sendEscalation({
+					apiKey: resendConfig.apiKey,
+					recipient: resendConfig.recipient,
+					subject: BLOCKED_CYCLE_ESCALATE_SUBJECT,
+					html: '<p><strong>[cam]</strong> The drain detected a blocked cycle. The review reached MAX_ROUNDS_DEBT without converging. Operator intervention is required.</p>',
+				});
+			}
+			: undefined,
 	});
 }
 
