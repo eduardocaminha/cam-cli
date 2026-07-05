@@ -22,21 +22,28 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { gcMergeWatchIfGarbage } from '../../src/commands/sidecar.ts';
+import { gcMergeWatchIfGarbage, updateShipStalledMarker } from '../../src/commands/sidecar.ts';
 import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 import {
 	readMergeWatchState,
 	writeMergeWatchState,
 	removeMergeWatchState,
 	stashIssueIdInMergeWatch,
+	readShipStalledMarker,
+	writeShipStalledMarker,
+	removeShipStalledMarker,
+	SHIP_STALLED_FILENAME,
+	MERGE_WATCH_FILENAME,
 	runMergeWatch,
 	stepMergeWatch,
 	type MergeWatchOptions,
 	type MergeWatchState,
+	type MergeWatchOutcome,
 	type StepMergeWatchOptions,
 	type GhPollFn,
 	type PostMergeFn,
 	type PrStatus,
+	type ShipStalledMarker,
 } from '../../src/release/merge-watch.ts';
 import {
 	runSidecarLoop,
@@ -742,7 +749,7 @@ describe('runMergeWatch structured events (US-008)', () => {
 		expect(postMergeCalled).toBe(false);
 
 		const kinds = events.map((e) => e.kind);
-		expect(kinds).toEqual(['merge-watch-watching', 'merge-watch-ci-red']);
+		expect(kinds).toEqual(['merge-watch-watching', 'merge-watch-ci-red', 'merge-watch-stalled']);
 
 		// Check ci-red detail
 		const ciRedEvt = events[1];
@@ -751,6 +758,15 @@ describe('runMergeWatch structured events (US-008)', () => {
 			const d = ciRedEvt.detail as { prNumber: number; reason: string };
 			expect(d.prNumber).toBe(201);
 			expect(d.reason).toBe('blocked');
+		}
+
+		// Check merge-watch-stalled detail (US-002, CAM-182)
+		const stalledEvt = events[2];
+		expect(stalledEvt).toBeDefined();
+		if (stalledEvt) {
+			const d = stalledEvt.detail as { prNumber: number; reason: string };
+			expect(d.prNumber).toBe(201);
+			expect(d.reason).toBe('ci-red');
 		}
 	});
 
@@ -804,13 +820,22 @@ describe('runMergeWatch structured events (US-008)', () => {
 		});
 
 		const kinds = events.map((e) => e.kind);
-		expect(kinds).toEqual(['merge-watch-watching', 'merge-watch-ci-red']);
+		expect(kinds).toEqual(['merge-watch-watching', 'merge-watch-ci-red', 'merge-watch-stalled']);
 
 		const ciRedEvt = events[1];
 		if (ciRedEvt) {
 			const d = ciRedEvt.detail as { prNumber: number; reason: string };
 			expect(d.prNumber).toBe(203);
 			expect(d.reason).toBe('closed');
+		}
+
+		// Check merge-watch-stalled detail (US-002, CAM-182): reason mirrors the
+		// MergeWatchOutcome kind ('closed-not-merged'), NOT the ci-red sub-reason.
+		const stalledEvt = events[2];
+		if (stalledEvt) {
+			const d = stalledEvt.detail as { prNumber: number; reason: string };
+			expect(d.prNumber).toBe(203);
+			expect(d.reason).toBe('closed-not-merged');
 		}
 	});
 
@@ -2316,5 +2341,300 @@ describe('sidecar.ts production wiring oracle - BEHIND auto-recovery (US-001, CA
 	test('stepOpts wires updateBranchFn into the production StepMergeWatchOptions bag', () => {
 		expect(stepOptsMatch).not.toBeNull();
 		expect(stepOptsMatch?.[0]).toContain('updateBranchFn,');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-002 (CAM-182): durable stalled escalation
+// ---------------------------------------------------------------------------
+
+describe('merge-watch-stalled event emission on non-merged terminals (US-002, CAM-182)', () => {
+	function makeStalledStepOpts(overrides: Partial<StepMergeWatchOptions> = {}): {
+		opts: StepMergeWatchOptions;
+		events: ReturnType<typeof makeInMemoryEventLogger>['events'];
+		notifications: string[];
+	} {
+		const { logger, events } = makeInMemoryEventLogger();
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'test-uuid', kind, detail });
+		};
+		const notifications: string[] = [];
+		const opts: StepMergeWatchOptions = {
+			cwd: '/fake',
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: (line) => notifications.push(line),
+			logEvent,
+			pollIntervalMs: 1,
+			maxPolls: 240,
+			...overrides,
+		};
+		return { opts, events, notifications };
+	}
+
+	test('dirty terminal emits merge-watch-stalled with reason:dirty, prUrl and issueId', () => {
+		const { opts, events, notifications } = makeStalledStepOpts();
+		const state: MergeWatchState = { prNumber: 700, mergedBranch: 'cam/b', issueId: 'CAM-700' };
+		const dirtyWithUrl: PrStatus = {
+			state: 'OPEN',
+			mergeStateStatus: 'DIRTY',
+			url: 'https://github.com/x/y/pull/700',
+		};
+
+		const result = stepMergeWatch(state, 0, () => dirtyWithUrl, opts);
+
+		expect(result.kind).toBe('terminal');
+		if (result.kind === 'terminal') {
+			expect(result.outcome.kind).toBe('dirty');
+		}
+		// AC6: the existing live-orchestrator narration is preserved alongside the
+		// new durable event (both fire; neither replaces the other).
+		expect(notifications.some((n) => n.includes('DIRTY'))).toBe(true);
+
+		const stalled = events.find((e) => e.kind === 'merge-watch-stalled');
+		expect(stalled).toBeDefined();
+		if (stalled) {
+			const d = stalled.detail as { prNumber: number; reason: string; prUrl?: string; issueId?: string };
+			expect(d.prNumber).toBe(700);
+			expect(d.reason).toBe('dirty');
+			expect(d.prUrl).toBe('https://github.com/x/y/pull/700');
+			expect(d.issueId).toBe('CAM-700');
+		}
+	});
+
+	test('behind-unrecovered terminal (cap exhausted) emits merge-watch-stalled with reason:behind-unrecovered', () => {
+		const { opts, events } = makeStalledStepOpts();
+		const state: MergeWatchState = { prNumber: 701, mergedBranch: 'cam/b', updateBranchCount: 2 };
+		const behindArmed: PrStatus = {
+			state: 'OPEN',
+			mergeStateStatus: 'BEHIND',
+			autoMergeRequest: { enabledAt: '2026-07-05T00:00:00Z' },
+		};
+
+		const result = stepMergeWatch(state, 0, () => behindArmed, opts);
+
+		expect(result.kind).toBe('terminal');
+		if (result.kind === 'terminal') {
+			expect(result.outcome.kind).toBe('behind-unrecovered');
+		}
+		const stalled = events.find((e) => e.kind === 'merge-watch-stalled');
+		expect(stalled).toBeDefined();
+		if (stalled) {
+			const d = stalled.detail as { prNumber: number; reason: string };
+			expect(d.prNumber).toBe(701);
+			expect(d.reason).toBe('behind-unrecovered');
+		}
+	});
+
+	test('timeout terminal emits merge-watch-stalled with reason:timeout and no prUrl (never polled)', () => {
+		const { opts, events } = makeStalledStepOpts({ maxPolls: 1 });
+		const state: MergeWatchState = { prNumber: 702, mergedBranch: 'cam/b', pollCount: 1, lastPolledAt: 0 };
+
+		const result = stepMergeWatch(state, 60_000, () => OPEN_CLEAN, opts);
+
+		expect(result.kind).toBe('terminal');
+		if (result.kind === 'terminal') {
+			expect(result.outcome.kind).toBe('timeout');
+		}
+		const stalled = events.find((e) => e.kind === 'merge-watch-stalled');
+		expect(stalled).toBeDefined();
+		if (stalled) {
+			const d = stalled.detail as { prNumber: number; reason: string; prUrl?: string };
+			expect(d.prNumber).toBe(702);
+			expect(d.reason).toBe('timeout');
+			expect(d.prUrl).toBeUndefined();
+		}
+	});
+
+	test('MERGED terminal does NOT emit merge-watch-stalled', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'test-uuid', kind, detail });
+		};
+
+		await runMergeWatch({
+			prNumber: 703,
+			mergedBranch: 'cam/test-branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([MERGED]),
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: () => {},
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 5,
+			logEvent,
+		});
+
+		expect(events.some((e) => e.kind === 'merge-watch-stalled')).toBe(false);
+	});
+});
+
+describe('ship-stalled marker durable I/O helpers (US-002, CAM-182)', () => {
+	let tempDir: string;
+	let filePath: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'cam-ship-stalled-'));
+		filePath = join(tempDir, SHIP_STALLED_FILENAME);
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	test('round-trips a full marker (prUrl+issueId known)', () => {
+		const marker: ShipStalledMarker = {
+			prNumber: 800,
+			prUrl: 'https://github.com/x/y/pull/800',
+			issueId: 'CAM-800',
+			reason: 'ci-red',
+			ts: '2026-07-05T00:00:00Z',
+		};
+		writeShipStalledMarker(filePath, marker);
+
+		expect(readShipStalledMarker(filePath)).toEqual(marker);
+	});
+
+	test('tolerates null prUrl/issueId when unknown (e.g. timeout)', () => {
+		const marker: ShipStalledMarker = {
+			prNumber: 801,
+			prUrl: null,
+			issueId: null,
+			reason: 'timeout',
+			ts: '2026-07-05T00:00:00Z',
+		};
+		writeShipStalledMarker(filePath, marker);
+
+		expect(readShipStalledMarker(filePath)).toEqual(marker);
+	});
+
+	test('readShipStalledMarker returns null for an absent file', () => {
+		expect(readShipStalledMarker(filePath)).toBeNull();
+	});
+
+	test('readShipStalledMarker returns null for malformed JSON', () => {
+		writeFileSync(filePath, 'NOT VALID JSON {{{{', 'utf8');
+		expect(readShipStalledMarker(filePath)).toBeNull();
+	});
+
+	test('readShipStalledMarker returns null when required fields are missing', () => {
+		writeFileSync(filePath, JSON.stringify({ prNumber: 802 }), 'utf8');
+		expect(readShipStalledMarker(filePath)).toBeNull();
+	});
+
+	test('removeShipStalledMarker deletes the file', () => {
+		writeShipStalledMarker(filePath, {
+			prNumber: 803, prUrl: null, issueId: null, reason: 'dirty', ts: '2026-07-05T00:00:00Z',
+		});
+		expect(existsSync(filePath)).toBe(true);
+
+		removeShipStalledMarker(filePath);
+
+		expect(existsSync(filePath)).toBe(false);
+	});
+
+	test('removeShipStalledMarker on an absent file does not throw', () => {
+		expect(() => removeShipStalledMarker(filePath)).not.toThrow();
+	});
+});
+
+describe('updateShipStalledMarker: sidecar terminal-branch marker reconciliation (US-002, CAM-182)', () => {
+	let tempDir: string;
+	let markerPath: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'cam-ship-stalled-caller-'));
+		markerPath = join(tempDir, SHIP_STALLED_FILENAME);
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	test('AC3: non-merged terminal writes the marker with prNumber/prUrl/issueId/reason/ts', () => {
+		const state: MergeWatchState = { prNumber: 900, mergedBranch: 'cam/b', issueId: 'CAM-900' };
+		const outcome: MergeWatchOutcome = {
+			kind: 'ci-red', prNumber: 900, prUrl: 'https://github.com/x/y/pull/900',
+		};
+
+		updateShipStalledMarker(markerPath, outcome, state);
+
+		const marker = readShipStalledMarker(markerPath);
+		expect(marker).not.toBeNull();
+		if (marker) {
+			expect(marker.prNumber).toBe(900);
+			expect(marker.prUrl).toBe('https://github.com/x/y/pull/900');
+			expect(marker.issueId).toBe('CAM-900');
+			expect(marker.reason).toBe('ci-red');
+			expect(typeof marker.ts).toBe('string');
+		}
+	});
+
+	test('AC3: prUrl/issueId tolerate null when unknown (timeout terminal)', () => {
+		const state: MergeWatchState = { prNumber: 901, mergedBranch: 'cam/b' };
+		const outcome: MergeWatchOutcome = { kind: 'timeout', polls: 240 };
+
+		updateShipStalledMarker(markerPath, outcome, state);
+
+		const marker = readShipStalledMarker(markerPath);
+		expect(marker).not.toBeNull();
+		if (marker) {
+			expect(marker.prNumber).toBe(901);
+			expect(marker.prUrl).toBeNull();
+			expect(marker.issueId).toBeNull();
+			expect(marker.reason).toBe('timeout');
+		}
+	});
+
+	test('AC4: MERGED for the SAME prNumber removes the marker', () => {
+		writeShipStalledMarker(markerPath, {
+			prNumber: 902, prUrl: null, issueId: null, reason: 'dirty', ts: '2026-07-05T00:00:00Z',
+		});
+		const state: MergeWatchState = { prNumber: 902, mergedBranch: 'cam/b' };
+		const outcome: MergeWatchOutcome = {
+			kind: 'merged',
+			postMerge: {
+				ok: true, pulledSha: 'abc123', tag: 'v1.0.0', tagCreated: true,
+				branchPrunedLocal: true, branchPrunedRemote: true,
+			},
+		};
+
+		updateShipStalledMarker(markerPath, outcome, state);
+
+		expect(existsSync(markerPath)).toBe(false);
+	});
+
+	test('AC4: MERGED for a DIFFERENT prNumber leaves the marker intact', () => {
+		writeShipStalledMarker(markerPath, {
+			prNumber: 903, prUrl: null, issueId: null, reason: 'dirty', ts: '2026-07-05T00:00:00Z',
+		});
+		const state: MergeWatchState = { prNumber: 904, mergedBranch: 'cam/other-b' };
+		const outcome: MergeWatchOutcome = {
+			kind: 'merged',
+			postMerge: {
+				ok: true, pulledSha: 'def456', tag: 'v2.0.0', tagCreated: true,
+				branchPrunedLocal: true, branchPrunedRemote: true,
+			},
+		};
+
+		updateShipStalledMarker(markerPath, outcome, state);
+
+		const marker = readShipStalledMarker(markerPath);
+		expect(marker).not.toBeNull();
+		expect(marker?.prNumber).toBe(903);
+	});
+
+	test('AC5: the marker file is separate from the merge-watch state file', () => {
+		const watchStatePath = join(tempDir, MERGE_WATCH_FILENAME);
+		writeMergeWatchState(watchStatePath, { prNumber: 905, mergedBranch: 'cam/b' });
+		const state: MergeWatchState = { prNumber: 905, mergedBranch: 'cam/b' };
+		const outcome: MergeWatchOutcome = { kind: 'dirty', prNumber: 905 };
+
+		updateShipStalledMarker(markerPath, outcome, state);
+
+		// Both files exist independently: writing/removing the marker never
+		// touches the watch-state file's own consume-on-terminal lifecycle.
+		expect(markerPath).not.toBe(watchStatePath);
+		expect(existsSync(markerPath)).toBe(true);
+		expect(existsSync(watchStatePath)).toBe(true);
 	});
 });

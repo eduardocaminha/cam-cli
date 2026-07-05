@@ -55,6 +55,12 @@ import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
  *   - 'merge-watch-merged': emitted when GitHub reports state==MERGED.
  *   - 'merge-watch-ci-red': emitted on OPEN+BLOCKED (CI failing) or CLOSED.
  *   - 'merge-watch-post-merge-done': emitted after the post-merge step completes.
+ *   - 'merge-watch-stalled' (US-002, CAM-182): emitted on every non-merged
+ *     terminal (behind-unrecovered, dirty, ci-red, closed-not-merged, timeout)
+ *     so a recycled orchestrator can learn the ship stalled even when the live
+ *     send-keys narration is lost. Mirrored by a durable .cam-ship-stalled.json
+ *     marker (written by the sidecar caller, removed when the same PR later
+ *     merges).
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -77,6 +83,7 @@ export type WorkerEventKind =
 	| 'merge-watch-merged'
 	| 'merge-watch-ci-red'
 	| 'merge-watch-post-merge-done'
+	| 'merge-watch-stalled'
 	| 'stage-promoted'
 	| 'cycle-tokens'
 	| 'meta-loop-observe'
@@ -225,6 +232,19 @@ export interface MergeWatchPostMergeDoneEventDetail {
 }
 
 /**
+ * 'merge-watch-stalled' event detail (US-002, CAM-182): emitted on every
+ * non-merged merge-watch terminal (behind-unrecovered, dirty, ci-red,
+ * closed-not-merged, timeout). prUrl/issueId are omitted when unknown (e.g.
+ * timeout before any successful poll never learns the PR url).
+ */
+export interface MergeWatchStalledEventDetail {
+	prNumber: number;
+	reason: 'behind-unrecovered' | 'dirty' | 'ci-red' | 'closed-not-merged' | 'timeout';
+	prUrl?: string;
+	issueId?: string;
+}
+
+/**
  * 'stage-promoted' event detail: emitted by specifyIssueOnMain (the grill spec
  * writer) immediately after a successful commit. Carries the issue id and the
  * stage transition so a grill promotion is replayable from the event log.
@@ -315,6 +335,7 @@ export type WorkerEventDetail =
 	| MergeWatchMergedEventDetail
 	| MergeWatchCiRedEventDetail
 	| MergeWatchPostMergeDoneEventDetail
+	| MergeWatchStalledEventDetail
 	| StagePromotedEventDetail
 	| CycleTokensEventDetail
 	| MetaLoopObserveEventDetail

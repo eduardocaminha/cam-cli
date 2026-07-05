@@ -28,6 +28,7 @@ import type {
 	MergeWatchMergedEventDetail,
 	MergeWatchCiRedEventDetail,
 	MergeWatchPostMergeDoneEventDetail,
+	MergeWatchStalledEventDetail,
 } from '../supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,15 @@ import type {
 
 /** Filename of the merge-watch state file (relative to .claude/ dir). */
 export const MERGE_WATCH_FILENAME = '.cam-merge-watch.json';
+
+/**
+ * Filename of the durable ship-stalled marker (relative to .claude/ dir,
+ * US-002, CAM-182). Written by the sidecar caller on every non-merged
+ * merge-watch terminal; removed when a later watch reaches MERGED for the
+ * same prNumber. Deliberately a SEPARATE file from MERGE_WATCH_FILENAME,
+ * which keeps its consume-on-terminal lifecycle unchanged.
+ */
+export const SHIP_STALLED_FILENAME = '.cam-ship-stalled.json';
 
 /** Default poll interval between gh pr view calls (60 seconds). */
 export const DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS = 60_000;
@@ -176,6 +186,89 @@ export function stashIssueIdInMergeWatch(filePath: string, issueId: string): voi
 	}
 	existing['issueId'] = issueId;
 	writeFileSync(filePath, JSON.stringify(existing, null, 2), 'utf8');
+}
+
+/**
+ * Durable ship-stalled marker (US-002, CAM-182): written on every non-merged
+ * merge-watch terminal so a recycled orchestrator can learn the ship stalled
+ * even when the live send-keys narration is lost.
+ *
+ * prUrl/issueId are `string | null` (not optional) so the marker always
+ * round-trips the same three-state field: known, unknown (null), or absent
+ * key entirely on a legacy read. `null` covers the case where the terminal
+ * fired before the PR url or issueId was ever learned (e.g. timeout before
+ * any successful poll).
+ */
+export interface ShipStalledMarker {
+	prNumber: number;
+	prUrl: string | null;
+	issueId: string | null;
+	reason: string;
+	ts: string;
+}
+
+/**
+ * Read the ship-stalled marker from a persistent file.
+ *
+ * Returns null when the file is absent, contains malformed JSON, a non-object
+ * / array value, or is missing the required `prNumber: number` / `reason:
+ * string` / `ts: string` fields. Never throws (mirrors readMergeWatchState).
+ */
+export function readShipStalledMarker(filePath: string): ShipStalledMarker | null {
+	try {
+		if (!existsSync(filePath)) return null;
+		const raw = readFileSync(filePath, 'utf8');
+		const parsed: unknown = JSON.parse(raw);
+		if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+		const obj = parsed as Record<string, unknown>;
+		if (
+			typeof obj['prNumber'] !== 'number' ||
+			typeof obj['reason'] !== 'string' ||
+			typeof obj['ts'] !== 'string'
+		) {
+			return null;
+		}
+		const prUrl = obj['prUrl'];
+		const issueId = obj['issueId'];
+		return {
+			prNumber: obj['prNumber'] as number,
+			prUrl: typeof prUrl === 'string' ? prUrl : null,
+			issueId: typeof issueId === 'string' ? issueId : null,
+			reason: obj['reason'] as string,
+			ts: obj['ts'] as string,
+		};
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Write the ship-stalled marker to a persistent file (durable, not
+ * consume-on-read; mirrors writeMergeWatchState). Overwrites any previous
+ * marker (a fresh non-merged terminal always reflects the latest state).
+ * Never throws.
+ */
+export function writeShipStalledMarker(filePath: string, marker: ShipStalledMarker): void {
+	try {
+		writeFileSync(filePath, JSON.stringify(marker, null, 2), 'utf8');
+	} catch {
+		/* best-effort: a failed write just means the marker is not durable this tick */
+	}
+}
+
+/**
+ * Remove the ship-stalled marker file.
+ *
+ * Called when a later watch reaches MERGED for the SAME prNumber the marker
+ * references (caller's responsibility to check prNumber match first). Never
+ * throws when the file is already absent (mirrors removeMergeWatchState).
+ */
+export function removeShipStalledMarker(filePath: string): void {
+	try {
+		unlinkSync(filePath);
+	} catch {
+		/* best-effort: file may already be absent */
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -349,14 +442,21 @@ export interface MergeWatchOptions {
 	maxPolls?: number;
 }
 
-/** Terminal outcome of the merge-watch state machine. */
+/**
+ * Terminal outcome of the merge-watch state machine.
+ *
+ * The non-merged variants carry an optional `prUrl` (US-002, CAM-182) so the
+ * caller (sidecar.ts) can write the ship-stalled marker without a second gh
+ * poll. Absent when the terminal fired without ever learning the PR url
+ * (e.g. timeout).
+ */
 export type MergeWatchOutcome =
 	| { kind: 'merged'; postMerge: PostMergeOutcome }
-	| { kind: 'ci-red'; prNumber: number }
-	| { kind: 'closed-not-merged'; prNumber: number }
+	| { kind: 'ci-red'; prNumber: number; prUrl?: string }
+	| { kind: 'closed-not-merged'; prNumber: number; prUrl?: string }
 	| { kind: 'timeout'; polls: number }
-	| { kind: 'behind-unrecovered'; prNumber: number }
-	| { kind: 'dirty'; prNumber: number };
+	| { kind: 'behind-unrecovered'; prNumber: number; prUrl?: string }
+	| { kind: 'dirty'; prNumber: number; prUrl?: string };
 
 // ---------------------------------------------------------------------------
 // Check-failure detection helpers
@@ -438,6 +538,26 @@ function buildSuccessPostMergeDoneDetail(
 }
 
 /**
+ * Emit the 'merge-watch-stalled' event (US-002, CAM-182) via the injected
+ * logEvent seam. Called at every non-merged terminal (behind-unrecovered,
+ * dirty, ci-red, closed-not-merged, timeout). prUrl/issueId are included only
+ * when defined (mirrors the optional-field convention used elsewhere in this
+ * module, e.g. writeMergeWatchState's lastPolledAt).
+ */
+function emitStalledEvent(
+	logEvent: ((kind: WorkerEventKind, detail: WorkerEventDetail) => void) | undefined,
+	prNumber: number,
+	reason: MergeWatchStalledEventDetail['reason'],
+	prUrl: string | undefined,
+	issueId: string | undefined,
+): void {
+	const detail: MergeWatchStalledEventDetail = { prNumber, reason };
+	if (prUrl !== undefined) detail.prUrl = prUrl;
+	if (issueId !== undefined) detail.issueId = issueId;
+	logEvent?.('merge-watch-stalled', detail);
+}
+
+/**
  * Handle an OPEN+BEHIND poll result (US-001, CAM-182): decide whether to run
  * the bounded `gh pr update-branch` auto-recovery.
  *
@@ -459,8 +579,9 @@ function handleBehindStatus(
 	status: PrStatus,
 	updateBranchCount: number,
 	opts: MergeWatchOptions,
+	issueId: string | undefined,
 ): { outcome: MergeWatchOutcome } | { updateBranchCount: number } | null {
-	const { prNumber, notifyOrchestrator, updateBranchFn } = opts;
+	const { prNumber, notifyOrchestrator, updateBranchFn, logEvent } = opts;
 	const rollup = status.statusCheckRollup ?? [];
 	if (hasFailedCheck(rollup)) {
 		return null; // guard: never recover a BEHIND branch that is also failing CI
@@ -473,7 +594,8 @@ function handleBehindStatus(
 		notifyOrchestrator(
 			`[cam] merge-watch: PR #${prNumber} still BEHIND after ${updateBranchCount} auto-update-branch attempts, giving up${status.url ? ` - ${status.url}` : ''}`,
 		);
-		return { outcome: { kind: 'behind-unrecovered', prNumber } };
+		emitStalledEvent(logEvent, prNumber, 'behind-unrecovered', status.url, issueId);
+		return { outcome: { kind: 'behind-unrecovered', prNumber, ...(status.url !== undefined ? { prUrl: status.url } : {}) } };
 	}
 	updateBranchFn?.(prNumber);
 	const nextCount = updateBranchCount + 1;
@@ -522,6 +644,7 @@ function handleMergedStatus(opts: MergeWatchOptions): { outcome: MergeWatchOutco
 function handleBlockedStatus(
 	status: PrStatus,
 	opts: MergeWatchOptions,
+	issueId: string | undefined,
 ): { outcome: MergeWatchOutcome } | null {
 	const { prNumber, notifyOrchestrator, logEvent } = opts;
 	const rollup = status.statusCheckRollup ?? [];
@@ -531,7 +654,8 @@ function handleBlockedStatus(
 	notifyOrchestrator(`[cam] CI red, PR #${prNumber} open, not merged`);
 	const ciRedDetail: MergeWatchCiRedEventDetail = { prNumber, reason: 'blocked' };
 	logEvent?.('merge-watch-ci-red', ciRedDetail);
-	return { outcome: { kind: 'ci-red', prNumber } };
+	emitStalledEvent(logEvent, prNumber, 'ci-red', status.url, issueId);
+	return { outcome: { kind: 'ci-red', prNumber, ...(status.url !== undefined ? { prUrl: status.url } : {}) } };
 }
 
 /**
@@ -549,6 +673,7 @@ function processPollResult(
 	status: PrStatus,
 	opts: MergeWatchOptions,
 	updateBranchCount: number,
+	issueId: string | undefined,
 ): { outcome: MergeWatchOutcome } | { updateBranchCount: number } | null {
 	const { prNumber, notifyOrchestrator, logEvent } = opts;
 
@@ -560,22 +685,24 @@ function processPollResult(
 		notifyOrchestrator(`[cam] CI red, PR #${prNumber} closed-not-merged`);
 		const ciRedDetail: MergeWatchCiRedEventDetail = { prNumber, reason: 'closed' };
 		logEvent?.('merge-watch-ci-red', ciRedDetail);
-		return { outcome: { kind: 'closed-not-merged', prNumber } };
+		emitStalledEvent(logEvent, prNumber, 'closed-not-merged', status.url, issueId);
+		return { outcome: { kind: 'closed-not-merged', prNumber, ...(status.url !== undefined ? { prUrl: status.url } : {}) } };
 	}
 
 	if (status.state === 'OPEN' && status.mergeStateStatus === 'BLOCKED') {
-		return handleBlockedStatus(status, opts);
+		return handleBlockedStatus(status, opts, issueId);
 	}
 
 	if (status.state === 'OPEN' && status.mergeStateStatus === 'DIRTY') {
 		notifyOrchestrator(
 			`[cam] merge-watch: PR #${prNumber} is DIRTY (merge conflict), stopping${status.url ? ` - ${status.url}` : ''}`,
 		);
-		return { outcome: { kind: 'dirty', prNumber } };
+		emitStalledEvent(logEvent, prNumber, 'dirty', status.url, issueId);
+		return { outcome: { kind: 'dirty', prNumber, ...(status.url !== undefined ? { prUrl: status.url } : {}) } };
 	}
 
 	if (status.state === 'OPEN' && status.mergeStateStatus === 'BEHIND') {
-		return handleBehindStatus(status, updateBranchCount, opts);
+		return handleBehindStatus(status, updateBranchCount, opts, issueId);
 	}
 
 	return null; // OPEN + non-BLOCKED/DIRTY/BEHIND (CLEAN, UNSTABLE, etc.): keep polling
@@ -654,6 +781,8 @@ export function stepMergeWatch(
 		opts.notifyOrchestrator(
 			`[cam] merge-watch timeout: PR #${state.prNumber} not yet merged after ${maxPolls} polls`,
 		);
+		// No successful poll this tick: prUrl is never known at timeout.
+		emitStalledEvent(opts.logEvent, state.prNumber, 'timeout', undefined, state.issueId);
 		return { kind: 'terminal', outcome: { kind: 'timeout', polls: maxPolls } };
 	}
 
@@ -694,7 +823,7 @@ export function stepMergeWatch(
 		updateBranchFn: opts.updateBranchFn,
 	};
 	const updateBranchCount = state.updateBranchCount ?? 0;
-	const result = processPollResult(status, mergeWatchOpts, updateBranchCount);
+	const result = processPollResult(status, mergeWatchOpts, updateBranchCount, state.issueId);
 	if (result !== null && 'outcome' in result) {
 		return { kind: 'terminal', outcome: result.outcome };
 	}

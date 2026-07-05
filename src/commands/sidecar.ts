@@ -47,11 +47,17 @@ import {
 	readMergeWatchState,
 	writeMergeWatchState,
 	removeMergeWatchState,
+	readShipStalledMarker,
+	writeShipStalledMarker,
+	removeShipStalledMarker,
 	MERGE_WATCH_FILENAME,
+	SHIP_STALLED_FILENAME,
 	type GhPollFn,
 	type PrStatus,
 	type StepMergeWatchOptions,
 	type UpdateBranchFn,
+	type MergeWatchOutcome,
+	type MergeWatchState,
 } from '../release/merge-watch.ts';
 import { runPostMerge, type SpawnFn as PostMergeSpawnFn } from '../release/post-merge.ts';
 import { observeDecide, type ObserveState } from '../supervisor/observe.ts';
@@ -421,6 +427,38 @@ export function gcMergeWatchIfGarbage(filePath: string): void {
 }
 
 /**
+ * Reconcile the durable ship-stalled marker against a terminal merge-watch
+ * outcome (US-002, CAM-182).
+ *
+ * MERGED: removes the marker ONLY when it references the SAME prNumber (a
+ * marker for a different, still-stalled PR is left intact).
+ * Any non-merged terminal (behind-unrecovered, dirty, ci-red,
+ * closed-not-merged, timeout): writes/refreshes the marker with the outcome's
+ * reason, prUrl (when the outcome variant carries one), and the watch's
+ * issueId.
+ */
+export function updateShipStalledMarker(
+	markerPath: string,
+	outcome: MergeWatchOutcome,
+	state: MergeWatchState,
+): void {
+	if (outcome.kind === 'merged') {
+		const existing = readShipStalledMarker(markerPath);
+		if (existing !== null && existing.prNumber === state.prNumber) {
+			removeShipStalledMarker(markerPath);
+		}
+		return;
+	}
+	writeShipStalledMarker(markerPath, {
+		prNumber: state.prNumber,
+		prUrl: 'prUrl' in outcome ? (outcome.prUrl ?? null) : null,
+		issueId: state.issueId ?? null,
+		reason: outcome.kind,
+		ts: new Date().toISOString(),
+	});
+}
+
+/**
  * Build the production runMergeWatchFn closure for ci-gated ship mode.
  *
  * This factory is called by runSidecar when merge_mode == "ci-gated".
@@ -502,9 +540,12 @@ function makeProductionMergeWatchFn(
 			// watch survives a sidecar restart.
 			writeMergeWatchState(watchFilePath, result.state);
 		} else {
-			// Terminal outcome (merged | closed-not-merged | ci-red | timeout):
-			// remove the state file so idle ticks become no-ops.
+			// Terminal outcome (merged | closed-not-merged | ci-red | timeout |
+			// behind-unrecovered | dirty): remove the state file so idle ticks
+			// become no-ops, then reconcile the durable ship-stalled marker
+			// (US-002, CAM-182).
 			removeMergeWatchState(watchFilePath);
+			updateShipStalledMarker(join(claudeDir, SHIP_STALLED_FILENAME), result.outcome, state);
 		}
 	};
 }
