@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Extend meta_loop enum with 'auto'"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/config/models.ts",
+    "test/config/meta-loop.test.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 is done. MetaLoop type now includes 'auto'; readMetaLoop returns 'auto' only when [loop] meta_loop = \"auto\" is set exactly. All other values remain fail-closed to 'off'. The next story can read MetaLoop and branch on 'auto' to arm the unattended inter-cycle drain.",
+  "officialDocsValidated": [
+    {
+      "lib": "Bun.TOML.parse",
+      "version": "bun 1.3.x",
+      "url": "https://bun.com/reference/bun/TOML/parse",
+      "fetchedAt": "2026-07-05T00:00:00Z",
+      "status": "ok",
+      "summary": "API is parse(input: string): object; our try-catch wrapper around loadConfig correctly handles parse errors by falling back to 'off'."
+    }
+  ]
+}

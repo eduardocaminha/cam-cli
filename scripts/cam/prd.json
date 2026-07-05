@@ -21,7 +21,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit src/config/models.ts:217-248 (MetaLoop type + readMetaLoop). Extend test/config/meta-loop.test.ts to cover the new 'auto' case plus the existing off/observe/unknown/missing cases. This is the pure type/config foundation every later story reads. No template or vendor change (meta_loop is hand-set in project.toml, no wizard entry exists today)."
     },
