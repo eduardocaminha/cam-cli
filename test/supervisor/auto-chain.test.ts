@@ -383,3 +383,137 @@ describe('auto-chain: file-assert oracles (AC3)', () => {
 		expect(sidecarSrc).toContain('readPlanApproval');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// CAM-181 / US-001: Re-anchored auto-ship tests
+// ---------------------------------------------------------------------------
+
+describe('auto-chain: CAM-181 auto-ship re-anchored to complete+CLEAN', () => {
+	// BUG A: a pending requires:'operator' story with a CLEAN verdict must
+	// route to await-operator, NOT complete. autoShipFn must not fire.
+	test('BUG A: operator story pending + CLEAN verdict → await-operator, autoShipFn not called', async () => {
+		let autoShipCalls = 0;
+
+		// All non-operator stories pass, verdict CLEAN (terminal), operator story pending.
+		const prd: PrdSnapshot = {
+			userStories: [
+				{ id: 'US-001', priority: 1, passes: true, requires: null },
+				{ id: 'US-002', priority: 2, passes: false, requires: 'operator' },
+			],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		};
+
+		const opts = makeReviewBaseOpts({
+			readPrd: () => prd,
+			autoShipFn: () => { autoShipCalls++; },
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Must route to await-operator (not complete): 'complete' is unreachable
+		// while a requires:'operator' story is pending (decide.ts invariant).
+		expect(result.status).toBe('awaiting-operator');
+		// autoShipFn must NOT be called
+		expect(autoShipCalls).toBe(0);
+	});
+
+	// BUG B: re-entry with review.lastVerdict==='CLEAN' already persisted and
+	// all stories passing must dispatch auto-ship exactly once.
+	test('BUG B: re-entry with CLEAN already persisted dispatches auto-ship exactly once', async () => {
+		let autoShipCalls = 0;
+		let writePrdCalls = 0;
+
+		// PRD already in the terminal CLEAN state (simulating a re-entry after
+		// the review agent ran in a prior invocation).
+		const prd: PrdSnapshot = makePrd({ allPass: true, verdict: 'CLEAN' });
+
+		const opts = makeReviewBaseOpts({
+			readPrd: () => prd,
+			writePrd: () => { writePrdCalls++; },
+			autoShipFn: () => { autoShipCalls++; },
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		// autoShipFn dispatched exactly once on re-entry
+		expect(autoShipCalls).toBe(1);
+		// marker was written before dispatch
+		expect(writePrdCalls).toBe(1);
+	});
+
+	// Cross-invocation dedup: Two runSupervisor invocations over the same
+	// complete+CLEAN prd must call autoShipFn only once in total. The
+	// review.autoShipDispatchedAt marker guards the re-dispatch.
+	test('cross-invocation: autoShipFn called once in total across two runSupervisor calls (marker guards re-dispatch)', async () => {
+		let autoShipCalls = 0;
+
+		// Shared mutable PRD: writePrd updates it; readPrd reads it.
+		let sharedPrd: PrdSnapshot = makePrd({ allPass: true, verdict: 'CLEAN' });
+
+		const makeInvocationOpts = (): RunSupervisorOptions =>
+			makeReviewBaseOpts({
+				readPrd: () => sharedPrd,
+				writePrd: (p) => { sharedPrd = p; },
+				autoShipFn: () => { autoShipCalls++; },
+			});
+
+		// First invocation: marker absent → writes marker + calls autoShipFn
+		const r1 = await runSupervisor(makeInvocationOpts());
+		expect(r1.status).toBe('complete');
+		expect(autoShipCalls).toBe(1);
+
+		// The marker must now be persisted in the shared prd
+		expect(sharedPrd.review?.autoShipDispatchedAt).toBeDefined();
+
+		// Second invocation: marker present → autoShipFn NOT called again
+		const r2 = await runSupervisor(makeInvocationOpts());
+		expect(r2.status).toBe('complete');
+		expect(autoShipCalls).toBe(1); // still 1 — no second dispatch
+	});
+
+	// Terminal 'complete' reached via MAX_ROUNDS_DEBT must NOT dispatch auto-ship.
+	test('complete via MAX_ROUNDS_DEBT does NOT dispatch auto-ship', async () => {
+		let autoShipCalls = 0;
+
+		// All stories pass; verdict is the non-convergence terminal.
+		const prd: PrdSnapshot = {
+			userStories: [{ id: 'US-001', priority: 1, passes: true, requires: null }],
+			review: { roundsCompleted: 3, maxRounds: 3, lastVerdict: 'MAX_ROUNDS_DEBT' },
+		};
+
+		const opts = makeReviewBaseOpts({
+			readPrd: () => prd,
+			autoShipFn: () => { autoShipCalls++; },
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		// Debt terminal: auto-ship must NOT fire (only CLEAN triggers dispatch)
+		expect(autoShipCalls).toBe(0);
+	});
+
+	// File-assert oracles (AC6): autoShipDispatchedAt appears in both source files.
+	test('autoShipDispatchedAt marker exists in decide.ts and loop.ts', () => {
+		const decideSrc = readFileSync(
+			join(import.meta.dir, '../../src/supervisor/decide.ts'),
+			'utf8',
+		);
+		const loopSrc = readFileSync(
+			join(import.meta.dir, '../../src/supervisor/loop.ts'),
+			'utf8',
+		);
+		expect(decideSrc).toContain('autoShipDispatchedAt');
+		expect(loopSrc).toContain('autoShipDispatchedAt');
+	});
+
+	// File-assert oracle (AC7): prd.json is in ship-finalize harnessPaths.
+	test('prd.json is in ship-finalize harnessPaths', () => {
+		const src = readFileSync(
+			join(import.meta.dir, '../../src/commands/ship-finalize.ts'),
+			'utf8',
+		);
+		expect(src).toContain('scripts/cam/prd.json');
+	});
+});
