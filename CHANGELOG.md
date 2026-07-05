@@ -4,6 +4,17 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.61.0] - 2026-07-05
+
+### Added
+
+- [US-001] - Build the on-demand in-container test harness
+
+### Fixed
+
+- [US-R1-002] - parseBunOutput now matches real bun non-TTY (fail)/todo format
+- [US-R1-001] - address reviewer finding: bump three file-size budget ceilings
+
 ## [0.60.0] - 2026-07-04
 
 ### Added
