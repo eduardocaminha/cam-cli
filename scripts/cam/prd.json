@@ -60,7 +60,7 @@
         "Full quality spine is green (bun run check:all: typecheck + biome lint + tests). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "loop.ts: declare DEFAULT_CONTAINER_WORKER_TIMEOUT_MS next to DEFAULT_PER_WORKER_TIMEOUT_MS (~line 471); change the perWorkerTimeoutMs resolution (~line 624) so the fallback is isolation-aware using workerIsolation (resolved ~line 652) instead of a flat DEFAULT_PER_WORKER_TIMEOUT_MS. host.ts: the CAM_WORKER_TIMEOUT_MS resolver (~line 243) must fall back to the isolation-aware default (workerIsolation resolved at host.ts:455) when the env var is unset; the explicit env value must still win. This sub-fix is independent of US-001/US-002 (requires null) - it only reduces how often the timeout fires; the commit gate makes the timeout SAFE regardless. loop.test.ts already injects nowMs, perWorkerTimeoutMs and workerIsolation, so the ceiling-selection test is straightforward. Read scripts/cam/patterns.md at story start."
     }

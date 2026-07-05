@@ -1,7 +1,7 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Wire commitExistsForStory from host + loop with anchored git detection"
+    "id": "US-003",
+    "title": "Worker-isolation-aware per-worker sentinel timeout ceiling"
   },
   "branchName": "cam/pr-187-commit-existence-gate",
   "timestamp": "2026-07-05T00:00:00Z",
@@ -13,8 +13,8 @@
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 is done: loop.ts's RunSupervisorOptions gained an optional commitExistsForStory field (threaded straight into the readWorkerOutcome call); host.ts builds the real adapter (git branch --show-current + git log --format=%s <branch>, matched via commitSubjectMatchesStory from result.ts, US-001). Design decision worth knowing for US-003: decideNextAction (decide.ts) is purely a function of prd.json's passes booleans and has zero awareness of commit state, so a 'no-commit' outcome cannot be handled by merely `continue`-ing the outer loop (the next decideNextAction call would take prd.json's passes:true at face value and advance to review/next-story). The fix implemented: a NEW dedicated `if (outcome.kind === 'no-commit')` block in loop.ts, placed right after the existing blocked/fail/unknown immediate-block check, that notifies + finishTerminal('blocked') + returns blocked on the very FIRST occurrence (no streak/backoff/retry loop like CAM-36/CAM-44 -- retrying is pointless here since a fresh worker session would just see passes:true and move on to the next story, it would not create the missing commit). This trivially satisfies 'bounded, never spins to MAX_ITERATIONS': every subsequent supervisor run (via a new `cam next`) hits the same guard on iteration 1. finalizeStory is never invoked for this outcome (kept structurally separate from the 'incomplete' branch). requires:'operator' stories remain exempt via the existing confirmCommitGate/isOperatorStory helpers in result.ts (unchanged, verified with a discriminating loop-level test). Next story per prd.json priority order is US-003 (worker-isolation-aware per-worker sentinel timeout ceiling) -- unrelated surface (perWorkerTimeoutMs / workerIsolation in loop.ts), no dependency on this story's work.",
+  "nextStoryContext": "All 3 non-operator stories in this PRD now pass (US-001 commit-existence gate in result.ts, US-002 wiring it from host.ts + loop.ts with anchored git detection, US-003 this story). US-003 added DEFAULT_CONTAINER_WORKER_TIMEOUT_MS (60 min, loop.ts) and made the perWorkerTimeoutMs fallback isolation-aware: `opts.perWorkerTimeoutMs ?? (opts.workerIsolation === 'container' ? DEFAULT_CONTAINER_WORKER_TIMEOUT_MS : DEFAULT_PER_WORKER_TIMEOUT_MS)`. In host.ts, the CAM_WORKER_TIMEOUT_MS env resolver was RELOCATED (not just edited) from ~line 244 to right after `const workerIsolation = readWorkerIsolation(...)` (now ~line 447) so the fallback can read workerIsolation; this was safe because perWorkerTimeoutMs had zero usages between its old declaration site and its first real usage (`timeoutMs: perWorkerTimeoutMs` in the makeReviewDispatch call, which comes after workerIsolation is resolved). The next implementer picking up this branch should run `jq -r '.userStories[] | select(.passes==false)' scripts/cam/prd.json` first: if empty (as it is right now), the correct action is CAM_IMPLEMENTER_STATUS=PRD_COMPLETE, not another story pick. No known open gaps left by this story.",
   "officialDocsValidated": [
-    { "lib": "git", "status": "aligned", "summary": "Fetched git-log docs to confirm --format=%s prints one commit subject line per commit reachable from <branch>, most recent first; matches the new host.ts commitExistsForStory adapter and the pre-existing --pretty=%s usage in ship-bump.ts/status.ts/resume.ts.", "url": "https://git-scm.com/docs/git-log", "fetchedAt": "2026-07-05T00:00:00Z" }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal TS refactor (timeout-constant resolution order in loop.ts/host.ts); no external library API surface was exercised." }
   ]
 }
