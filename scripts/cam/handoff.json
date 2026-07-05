@@ -1,18 +1,16 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Durable stalled escalation: merge-watch-stalled event + marker, consumed on merge" },
+  "lastCompletedStory": { "id": "US-003", "title": "Orchestrator boot surfaces the ship-stalled marker" },
   "branchName": "cam/pr-182-merge-watch-behind-autorecover",
-  "timestamp": "2026-07-05T22:40:00Z",
+  "timestamp": "2026-07-05T23:10:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/events.ts",
-    "src/release/merge-watch.ts",
-    "src/commands/sidecar.ts",
-    "test/release/merge-watch.test.ts",
-    "scripts/file-size-budget.json"
+    "templates/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 (durable stalled escalation) is done: added 'merge-watch-stalled' to WorkerEventKind + a typed MergeWatchStalledEventDetail (prNumber, reason, optional prUrl/issueId) in src/supervisor/events.ts. src/release/merge-watch.ts gained SHIP_STALLED_FILENAME ('.cam-ship-stalled.json') + never-throw readShipStalledMarker/writeShipStalledMarker/removeShipStalledMarker helpers (mirroring the merge-watch state I/O helpers), a pure emitStalledEvent() helper called from every non-merged terminal site (handleBehindStatus's give-up branch -> 'behind-unrecovered', handleBlockedStatus's ci-red branch -> 'ci-red', processPollResult's closed/dirty branches -> 'closed-not-merged'/'dirty', and stepMergeWatch's timeout branch -> 'timeout'; MERGED never emits it), and MergeWatchOutcome's non-merged variants now carry an optional `prUrl` field (sourced from the same PrStatus.url already threaded in US-001) so the caller does not need a second gh poll. src/commands/sidecar.ts gained an exported updateShipStalledMarker(markerPath, outcome, state) helper wired into makeProductionMergeWatchFn's terminal else-branch (right after removeMergeWatchState): on 'merged' it removes the ship-stalled marker ONLY when the existing marker's prNumber matches state.prNumber (a marker for a different PR is left intact); on any non-merged terminal it writes/refreshes the marker with prUrl/issueId defaulting to null when unknown. US-003 (orchestrator boot surfaces the ship-stalled marker) is next -- it will likely read .claude/.cam-ship-stalled.json at orchestrator boot (mirroring the ORCH_READY_MARKER / .cam-orch-session boot-read pattern in run.ts) and narrate/print it so a recycled orchestrator learns about a stalled ship even when the pane scrollback with the live notifyOrchestrator narration is gone. The marker is NOT consumed by a boot-read (only consumed by a later MERGED terminal for the same prNumber, per US-002's design), so US-003's boot-read must be read-only (do not delete the marker just because the orchestrator restarted and saw it once).",
+  "nextStoryContext": "US-003 (last story in this PRD, CAM-182) is done: added boot step 6 to the 'Boot context' section of both subagent-orchestrator.md copies (templates/agents/ is source of truth, .claude/agents/ is the runtime mirror; both were byte-identical before and after this edit, confirmed via diff) instructing the orchestrator to read .claude/.cam-ship-stalled.json at boot and, when present, surface prNumber/reason/prUrl as an opening blocker line before the 'What would you like to do?' prompt (falls back to 'no PR url recorded' when prUrl is null). Explicitly documented that the orchestrator must NOT delete the marker at boot (read-only surface; removal is owned by the sidecar's MERGED-terminal consume path in updateShipStalledMarker, src/commands/sidecar.ts, from US-002). Regenerated src/vendor/_generated.ts via bun run embed-vendor (embed-vendor:check now clean). All 3 stories in this PRD (US-001 auto-recover BEHIND via gh pr update-branch, US-002 durable stalled-escalation event+marker, US-003 this orchestrator boot-surface step) now have passes:true -- the PRD is functionally complete pending review/ship. No open questions or deferred work.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal harness change (WorkerEventKind union, node:fs-backed marker I/O helpers mirroring existing durable-state patterns, sidecar terminal-branch wiring); no new external library surface introduced beyond gh CLI fields and node:fs APIs already validated in US-001/prior stories." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure markdown/prompt-doc change to the orchestrator agent instructions (Boot context section) plus a regenerated embedded-vendor TS artifact; no new external library surface introduced." }
   ]
 }

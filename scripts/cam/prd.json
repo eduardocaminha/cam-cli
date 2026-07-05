@@ -79,7 +79,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/agents/subagent-orchestrator.md and .claude/agents/subagent-orchestrator.md (Boot context section, currently steps 1-5 around lines 51-66: add the marker read as a numbered boot step and a blocker line in the greet block), plus regenerated src/vendor/_generated.ts via bun run embed-vendor. Gotchas: (1) cam dual-copy is per-file and NOT uniformly byte-identical; diff both copies of this file before editing and update both, then re-embed the vendor copy (memory: cam-dual-copy-is-per-file). (2) Keep the boot step small and scannable, matching the existing numbered-list style of the section. (3) The orchestrator only reads and surfaces; it must not delete the marker at boot (consume-on-resolve lives in the sidecar merged path). (4) Story touches templates/, so bun run embed-vendor:check is a mandatory gate; regenerate with bun run embed-vendor if stale."
     }
