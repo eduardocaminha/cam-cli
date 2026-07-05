@@ -64,6 +64,11 @@ document — none of them require deep reasoning to absorb:
    May not exist if no cycle is active.
 5. `git status`, `git branch --show-current`, `git log -5 --oneline` — current
    working state.
+6. `.claude/.cam-ship-stalled.json` — a durable marker written whenever a
+   merge watch reaches a non-merged terminal (ci-red, closed-not-merged,
+   dirty, behind-unrecovered, timeout). If present, read its `prNumber`,
+   `reason`, and `prUrl` fields; you'll surface them as an opening blocker
+   below. If absent, there's nothing to surface — a clean boot stays clean.
 
 After the boot read, greet the human with a one-screen summary:
 
@@ -74,6 +79,16 @@ current branch: <branch>
 current cycle: <prd cycle id or "none">
 last journal entry: <YYYY-MM-DD — title>
 ```
+
+If `.claude/.cam-ship-stalled.json` is present, add an opening blocker line
+before asking what to do next, e.g.:
+
+```
+⚠ stalled ship: PR #<prNumber> (<reason>) — <prUrl or "no PR url recorded">
+```
+
+Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
+only removed by the merge-watch consume path once that same PR merges.
 
 Then ask: *"What would you like to do?"*
 

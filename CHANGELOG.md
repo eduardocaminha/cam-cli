@@ -4,6 +4,14 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.66.0] - 2026-07-05
+
+### Added
+
+- US-003 - Orchestrator boot surfaces the ship-stalled marker
+- US-002 - Durable stalled escalation: merge-watch-stalled event + marker, consumed on merge
+- US-001 - Auto-recover OPEN+BEHIND merge-watch via bounded gh pr update-branch
+
 ## [0.65.0] - 2026-07-05
 
 ### Added
