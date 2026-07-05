@@ -51,6 +51,7 @@ import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runOrchBudget } from './src/commands/orch-budget.ts';
 import { runStop } from './src/commands/stop.ts';
+import { runDrain, parseDrainArgs } from './src/commands/drain.ts';
 import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
 import { runConfig } from './src/commands/config.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
@@ -93,6 +94,7 @@ const HELP = renderHelp({
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
 				{ name: 'stop', description: 'Cancel a running loop (clears state file + kills the per-project tmux session)' },
+				{ name: 'drain [--stop|--clear]', description: 'Set or clear the inter-cycle drain kill-switch without killing the sidecar' },
 				{ name: 'resume [options]', description: 'Reconcile loop state after interrupt; auto-detect or --mode <name>' },
 				{ name: 'version', description: 'Print the installed cam-cli version (also `--version` / `-v`)' },
 				{ name: 'help', description: 'Show this help' },
@@ -536,6 +538,30 @@ const STOP_HELP = renderHelp({
 		},
 	],
 	footer: 'After `cam stop`, the next `cam next` will not detect a stale loop.',
+});
+
+const DRAIN_HELP = renderHelp({
+	title: 'cam drain',
+	tagline: 'Set or clear the inter-cycle drain kill-switch',
+	usage: 'cam drain [--stop | --clear]',
+	sections: [
+		{
+			heading: 'Flags',
+			entries: [
+				{ name: '--stop', description: 'Write the kill-switch marker; the loop stops at the next safe cycle boundary' },
+				{ name: '--clear', description: 'Remove the kill-switch marker; unattended draining is re-enabled' },
+				{ name: '(none)', description: 'Print the current kill-switch status' },
+			],
+		},
+		{
+			heading: 'Notes',
+			body:
+				'`cam drain --stop` writes only the drain marker (.claude/.cam-drain-stop).\n' +
+				'It does NOT send SIGTERM to the sidecar or remove any other marker.\n' +
+				'Use `cam stop` to fully cancel the session.',
+		},
+	],
+	footer: '`cam stop` also clears the drain kill-switch as part of its full cleanup.',
 });
 
 const RESUME_HELP = renderHelp({
@@ -1590,6 +1616,19 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			return runStop();
+		}
+		case 'drain': {
+			const drainParsed = parseDrainArgs(argv.slice(3));
+			if (drainParsed === null) {
+				printError(`unknown drain option: ${argv[3] ?? ''}`);
+				printFatalHint('run `cam drain --help` for usage');
+				return 1;
+			}
+			if (drainParsed.help) {
+				process.stdout.write(DRAIN_HELP);
+				return 0;
+			}
+			return runDrain({ flag: drainParsed.flag });
 		}
 		case 'resume': {
 			const parsed = parseResumeArgs(argv.slice(3));

@@ -211,18 +211,20 @@ export function readResendConfig(configPath?: string): ResendConfig {
 export type WorkerIsolation = 'host' | 'container';
 
 /**
- * The meta-loop mode. `"observe"` enables the inter-cycle drainer;
+ * The meta-loop mode. `"observe"` enables the inter-cycle drainer in
+ * observe-only mode; `"auto"` arms the unattended inter-cycle drain;
  * `"off"` disables it (the default, fail-closed).
  */
-export type MetaLoop = 'off' | 'observe';
+export type MetaLoop = 'off' | 'observe' | 'auto';
 
 /**
  * Read the meta-loop mode from the project config. Returns `"observe"` only
- * when `[loop] meta_loop = "observe"` is set exactly; returns `"off"` in
- * every other case (missing file, missing section, missing key, malformed
- * TOML, non-string, or any value other than `"observe"`).
+ * when `[loop] meta_loop = "observe"` is set exactly; returns `"auto"` only
+ * when `[loop] meta_loop = "auto"` is set exactly; returns `"off"` in every
+ * other case (missing file, missing section, missing key, malformed TOML,
+ * non-string, or any value other than `"observe"` or `"auto"`).
  *
- * The default `"off"` is fail-closed: a typo (e.g. `"auto"`, `"OBSERVE"`)
+ * The default `"off"` is fail-closed: a typo (e.g. `"OBSERVE"`, `"AUTO"`)
  * never arms the inter-cycle drainer.
  *
  * @param configPath  Override the config file path (default:
@@ -239,6 +241,9 @@ export function readMetaLoop(configPath?: string): MetaLoop {
 			const value = (loopSection as Record<string, unknown>)['meta_loop'];
 			if (value === 'observe') {
 				return 'observe';
+			}
+			if (value === 'auto') {
+				return 'auto';
 			}
 		}
 	} catch {

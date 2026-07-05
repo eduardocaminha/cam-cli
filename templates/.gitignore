@@ -22,5 +22,7 @@ scripts/cam/plan-verdict-report.json
 .claude/.cam-orch-handoff.consumed.json
 .claude/.cam-orch-recycle
 .claude/.cam-orch-pid
+# Inter-cycle drain kill-switch marker written by `cam drain --stop` (US-002, CAM-139)
+.claude/.cam-drain-stop
 # Recycle watcher log written by spawnWatcherDefault in run.ts (US-004)
 .claude/cam-recycle-watcher.log

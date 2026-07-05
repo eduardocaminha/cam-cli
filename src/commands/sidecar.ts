@@ -55,6 +55,9 @@ import {
 import { runPostMerge, type SpawnFn as PostMergeSpawnFn } from '../release/post-merge.ts';
 import { observeDecide, type ObserveState } from '../supervisor/observe.ts';
 import { selectPlannableFromFile, selectPlanTargetFromFile } from '../issues/select.ts';
+import { isDrainStopSet } from '../supervisor/drain-kill-switch.ts';
+import { evaluateDrainPreconditions, type DrainPreconditionResult } from '../supervisor/drain-preconditions.ts';
+import type { IssueEntry } from '../issues/types.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -149,15 +152,16 @@ export interface SidecarOptions {
 	 */
 	escalateFn?: RunSidecarLoopOptions['escalateFn'];
 	/**
-	 * Override the meta-loop observe function (US-004/US-005, CAM-132).
+	 * Override the meta-loop observe/dispatch function (US-004/US-005, CAM-132/CAM-139).
 	 *
-	 * Production (meta_loop=observe): a closure that calls selectPlannableFromFile
-	 * on the MAIN backlog, runs observeDecide with in-memory dedup state, emits
-	 * a 'meta-loop-observe' event via logEvent, and sends a drain notification via
-	 * Resend when the backlog empties (US-005, if Resend is configured).
+	 * Production (meta_loop=observe): calls selectPlannableFromFile on the MAIN backlog,
+	 * runs observeDecide with in-memory dedup state, emits 'meta-loop-observe' events.
+	 * Production (meta_loop=auto): built by makeProductionMetaLoopDispatchFn; checks
+	 * the kill-switch (US-002), evaluates drain preconditions (US-003), confirms safe-boundary
+	 * guards, and dispatches phase:planning for the selected issue.
 	 * Production (meta_loop=off, default): undefined (inert, zero behavior change).
-	 * Tests: inject a spy (built via makeTestObserveFn in the test file) to assert
-	 * observe+drain notification behavior without real filesystem or network access.
+	 * Tests: inject a spy or call makeProductionMetaLoopDispatchFn with fake deps to
+	 * assert observe+dispatch+drain+refuse+kill branches without real fs/Docker/tmux.
 	 */
 	runMetaLoopObserveFn?: RunSidecarLoopOptions['runMetaLoopObserveFn'];
 	/**
@@ -504,9 +508,9 @@ function makeProductionMergeWatchFn(
  * Non-fatal on any error: the sidecar continues; the phase flip may simply
  * miss one cycle rather than aborting.
  */
-export function makeSetPhaseFn(claudeDir: string, cwd: string): (phase: LoopPhase) => void {
+export function makeSetPhaseFn(claudeDir: string, cwd: string): (phase: LoopPhase, planIssue?: string) => void {
 	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
-	return (phase: LoopPhase): void => {
+	return (phase: LoopPhase, planIssue?: string): void => {
 		try {
 			const now = new Date().toISOString();
 			let body: string;
@@ -519,6 +523,7 @@ export function makeSetPhaseFn(claudeDir: string, cwd: string): (phase: LoopPhas
 					startedAt: parsed?.started_at ?? now,
 					pid: parsed?.pid ?? process.pid,
 					phase,
+					plan_issue: planIssue,
 					iteration: parsed?.iteration,
 					currentStory: parsed?.current_story,
 					storiesDone: parsed?.stories_done,
@@ -532,6 +537,7 @@ export function makeSetPhaseFn(claudeDir: string, cwd: string): (phase: LoopPhas
 					startedAt: now,
 					pid: process.pid,
 					phase,
+					plan_issue: planIssue,
 					lastActivity: now,
 				});
 			}
@@ -710,6 +716,330 @@ function makeProductionMetaLoopObserveFn(
 			}
 		}
 	};
+}
+
+// ---------------------------------------------------------------------------
+// Auto-dispatcher (US-004, CAM-139): meta_loop=auto drain
+// ---------------------------------------------------------------------------
+
+/**
+ * Subject line for blocked-cycle Resend emails (US-005, CAM-139).
+ * Exported so tests can assert against the canonical string without
+ * hardcoding it, and so file-assert oracles can verify its presence.
+ */
+export const BLOCKED_CYCLE_ESCALATE_SUBJECT = '[cam] Blocked cycle: MAX_ROUNDS_DEBT reached, operator intervention required';
+
+/**
+ * Injectable sub-deps for the inter-cycle auto-dispatcher.
+ *
+ * Every dep has a corresponding production default built by
+ * buildProductionDispatchFn; tests inject fakes to drive dispatch/drained/
+ * refuse/kill branches without real filesystem, Docker, or tmux access
+ * (anti-shadow-mock, CAM-55).
+ */
+export interface MetaLoopDispatchDeps {
+	/** Read the next plannable issue from the MAIN backlog. Returns null when drained. */
+	selectFn: () => IssueEntry | null;
+	/** Read the current loop phase from cam-loop.local.md. Returns undefined when absent. */
+	readPhaseFn: () => LoopPhase | undefined;
+	/** Return true when scripts/cam/prd.json is present (a PRD cycle is in flight). */
+	prdPresentFn: () => boolean;
+	/** Return true when the merge-watch marker file is present. */
+	mergeWatchPresentFn: () => boolean;
+	/** Evaluate drain preconditions fail-closed (US-003). */
+	preconditionFn: () => DrainPreconditionResult;
+	/** Return true when the drain kill-switch marker is present (US-002). */
+	killSwitchFn: () => boolean;
+	/** Write phase (and optional plan_issue) to cam-loop.local.md (US-003 / ADR-0006). */
+	setPhaseFn: (phase: LoopPhase, planIssue?: string) => void;
+	/** Send drain notification email. Absent when Resend is not configured. */
+	drainNotifyFn?: () => Promise<void>;
+	/**
+	 * Emit a precondition refusal warning (default: process.stderr.write).
+	 * Tests inject a capture array to assert the warning fires without touching stderr.
+	 */
+	warnFn?: (msg: string) => void;
+	/** Emit structured events to the flight recorder. */
+	logEvent: WorkerEventLogger;
+	/**
+	 * Read review.lastVerdict from scripts/cam/prd.json (US-005, CAM-139).
+	 * Returns null when absent, unparseable, or no verdict is set.
+	 * Used by handleBlockedCycleBoundary to distinguish MAX_ROUNDS_DEBT (blocked)
+	 * from a plain in-flight cycle. Absent in existing tests = backward compat
+	 * (falls back to plain in-flight silent skip).
+	 */
+	readPrdVerdictFn?: () => string | null;
+	/**
+	 * Send blocked-cycle escalation email (US-005, CAM-139).
+	 * Distinct from drainNotifyFn (empty backlog) and from loop's escalateFn
+	 * (MAX_ROUNDS_DEBT detected by the supervisor itself).
+	 * This is the DRAIN-level halt notification: the auto-dispatcher detected
+	 * a blocked cycle at the safe boundary and parked.
+	 * Absent when Resend is not configured (both apiKey and recipient must be set).
+	 * Escalation is best-effort: failure never prevents parking.
+	 */
+	blockedCycleEscalateFn?: () => Promise<void>;
+}
+
+/**
+ * Build the auto-dispatcher closure for meta_loop=auto mode (US-004, CAM-139).
+ *
+ * On each idle tick (called via the runMetaLoopObserveFn seam in loop.ts) the
+ * closure checks the kill-switch, evaluates fail-closed preconditions, and
+ * verifies safe-boundary guards before dispatching:
+ *
+ *   1. Kill-switch engaged -> emit 'stopped' once (deduped), park.
+ *   2. Preconditions not met -> emit 'refused' + warn, park.
+ *   3. PRD cycle in flight (prd.json present) -> silent skip this tick.
+ *   4. Merge-watch file present -> silent skip this tick.
+ *   5. Phase not idle/absent -> silent skip this tick.
+ *   6. Backlog drained (selectFn returns null) -> emit 'meta-loop-observe {drained:true}'
+ *      + drain-notify (once, deduped by observeDecide state), park.
+ *   7. Issue found -> write phase:planning + plan_issue:<id> via setPhaseFn,
+ *      emit 'meta-loop-dispatch {dispatched:true}'.
+ *
+ * Dedup: same issue selected across ticks does NOT re-dispatch (the plan phase
+ * runner picks up the phase and transitions it; on return the phase will be idle
+ * again for the NEXT issue). Drain dedup mirrors the observe path (observeDecide
+ * state in closure). Kill-switch dedup: stopped event is emitted exactly once per
+ * engagement (boolean flag in closure).
+ *
+ * Exported for direct testability (anti-shadow-mock): tests call this factory
+ * with injected fakes and assert the returned closure's behavior without touching
+ * real filesystem, Docker, or tmux (AC#2-6, US-004).
+ */
+/** Mutable refs threaded through makeProductionMetaLoopDispatchFn helpers. */
+interface DispatchClosureState {
+	stoppedEmitted: boolean;
+	observeState: ObserveState;
+	/**
+	 * Dedup flag for the blocked-cycle judgment point (US-005).
+	 * Set to true after the first blockedCycle event + escalation fires.
+	 * Reset to false when prd.json is absent (block cleared by operator ship/abandon).
+	 */
+	blockedCycleEmitted: boolean;
+}
+
+/**
+ * Handle the kill-switch check for one dispatch tick.
+ * Returns true when the kill-switch is engaged (caller should return early).
+ * Emits the 'stopped' event exactly once per engagement (dedup via ctx.stoppedEmitted).
+ */
+function handleKillSwitchBoundary(deps: MetaLoopDispatchDeps, ctx: DispatchClosureState): boolean {
+	if (!deps.killSwitchFn()) {
+		ctx.stoppedEmitted = false; // reset when kill-switch clears
+		return false;
+	}
+	if (!ctx.stoppedEmitted) {
+		ctx.stoppedEmitted = true;
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'meta-loop-dispatch',
+			detail: { stopped: true },
+		});
+	}
+	return true;
+}
+
+/**
+ * Evaluate fail-closed preconditions (US-003) and emit 'refused' when not met.
+ * Returns true when the caller should return early (preconditions failed).
+ */
+function handlePreconditionRefuse(deps: MetaLoopDispatchDeps): boolean {
+	const result = deps.preconditionFn();
+	if (result.ok) return false;
+	const warn = deps.warnFn ?? ((m: string) => process.stderr.write(`[cam] ${m}\n`));
+	warn(`auto-drain refused: ${result.reason}`);
+	deps.logEvent({
+		ts: new Date().toISOString(),
+		storyId: undefined,
+		uuid: 'sidecar',
+		kind: 'meta-loop-dispatch',
+		detail: { refused: true, reason: result.reason },
+	});
+	return true;
+}
+
+/**
+ * Handle the blocked-cycle judgment point for one dispatch tick (US-005, CAM-139).
+ *
+ * Returns false when prd.json is absent (block cleared by operator ship/abandon):
+ *   the caller resets ctx.blockedCycleEmitted and continues to normal dispatch.
+ * Returns true when prd.json is present (caller should return early):
+ *   - verdict === 'MAX_ROUNDS_DEBT': park, emit 'meta-loop-dispatch {blockedCycle:true}'
+ *     once (deduped via ctx.blockedCycleEmitted), fire blockedCycleEscalateFn or warnFn.
+ *   - any other verdict: plain in-flight cycle, silent skip.
+ *
+ * Escalation is best-effort: a thrown exception is swallowed so parking is never
+ * conditional on the network call succeeding (AC2: "escalation is never a precondition").
+ */
+async function handleBlockedCycleBoundary(
+	deps: MetaLoopDispatchDeps,
+	ctx: DispatchClosureState,
+): Promise<boolean> {
+	if (!deps.prdPresentFn()) {
+		ctx.blockedCycleEmitted = false; // block cleared: reset dedup for next cycle
+		return false;
+	}
+	const verdict = deps.readPrdVerdictFn?.() ?? null;
+	if (verdict !== 'MAX_ROUNDS_DEBT') {
+		return true; // plain in-flight cycle: silent skip
+	}
+	// Blocked cycle: park + escalate exactly once (dedup via ctx.blockedCycleEmitted).
+	if (!ctx.blockedCycleEmitted) {
+		ctx.blockedCycleEmitted = true;
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'meta-loop-dispatch',
+			detail: { blockedCycle: true },
+		});
+		if (deps.blockedCycleEscalateFn) {
+			try { await deps.blockedCycleEscalateFn(); } catch { /* best-effort */ }
+		} else {
+			const warn = deps.warnFn ?? ((m: string) => process.stderr.write(`[cam] ${m}\n`));
+			warn('blocked-cycle: MAX_ROUNDS_DEBT; operator intervention required');
+		}
+	}
+	return true;
+}
+
+/**
+ * Select the next plannable issue and either dispatch it or emit a drain event.
+ * Mutates ctx.observeState for cross-tick dedup (mirrors the observe path).
+ */
+async function dispatchOrDrain(
+	deps: MetaLoopDispatchDeps,
+	ctx: DispatchClosureState,
+): Promise<void> {
+	const selected = deps.selectFn();
+	const observeResult = observeDecide(selected, ctx.observeState);
+	if (observeResult !== null) ctx.observeState = observeResult.newState;
+	if (selected === null) {
+		// Drained. Emit observe event + notify once (dedup: observeResult null when
+		// lastState was already 'drained').
+		if (observeResult !== null) {
+			deps.logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'meta-loop-observe',
+				detail: observeResult.detail,
+			});
+			if (deps.drainNotifyFn) await deps.drainNotifyFn();
+		}
+		return;
+	}
+	// Issue found: write phase:planning + plan_issue so the plan runner picks it up.
+	deps.setPhaseFn('planning', selected.id);
+	deps.logEvent({
+		ts: new Date().toISOString(),
+		storyId: undefined,
+		uuid: 'sidecar',
+		kind: 'meta-loop-dispatch',
+		detail: { dispatched: true, issueId: selected.id, rank: selected.rank ?? 0 },
+	});
+}
+
+export function makeProductionMetaLoopDispatchFn(deps: MetaLoopDispatchDeps): () => Promise<void> {
+	const ctx: DispatchClosureState = { stoppedEmitted: false, observeState: { kind: 'none' }, blockedCycleEmitted: false };
+
+	return async (): Promise<void> => {
+		if (handleKillSwitchBoundary(deps, ctx)) return;
+		if (handlePreconditionRefuse(deps)) return;
+		// US-005: check for blocked cycle (MAX_ROUNDS_DEBT) before plain prd-present skip.
+		// Returns true (park) for both blocked and plain in-flight; false when prd absent.
+		if (await handleBlockedCycleBoundary(deps, ctx)) return;
+		if (deps.mergeWatchPresentFn()) return;
+		const phase = deps.readPhaseFn();
+		if (phase !== undefined && phase !== 'idle') return;
+		await dispatchOrDrain(deps, ctx);
+	};
+}
+
+/**
+ * Build the production MetaLoopDispatchDeps for meta_loop=auto mode and return
+ * the dispatch closure (US-004, CAM-139).
+ *
+ * Extracted from buildSidecarLoopDeps to keep that function under biome's
+ * noExcessiveCognitiveComplexity(max=15) and noExcessiveLinesPerFunction(max=80)
+ * limits (CAM-60 factory/helper-extraction pattern).
+ * Not exported: tests inject options.runMetaLoopObserveFn or call
+ * makeProductionMetaLoopDispatchFn directly with fake deps.
+ */
+function buildProductionDispatchFn(
+	ctx: SidecarLoopDepsCtx,
+	logEvent: WorkerEventLogger,
+	resendConfig: { apiKey: string; recipient: string },
+): () => Promise<void> {
+	const { cwd, claudeDir } = ctx;
+	const configPath = join(cwd, 'scripts/cam/project.toml');
+
+	// Read isolation + approval once at build time (project config is stable per run).
+	const workerIsolation = readWorkerIsolation(configPath);
+	const planApproval = readPlanApproval(configPath);
+
+	// Container preflight probe: called fresh on each tick when isolation=container.
+	// In host mode, always returns { ready: false } (fail-closed; host mode never drains).
+	const preflightFn: () => import('../supervisor/preflight-container.ts').PreflightResult =
+		workerIsolation === 'container'
+			? (): import('../supervisor/preflight-container.ts').PreflightResult =>
+				preflightWorkerContainer({
+					probe: (args) => {
+						const r = spawnSync('docker', args, {
+							stdio: 'pipe',
+							encoding: 'utf8',
+						} as Parameters<typeof spawnSync>[2]);
+						return {
+							stdout: typeof r.stdout === 'string' ? r.stdout : '',
+							exitCode: r.status ?? 1,
+						};
+					},
+				})
+			: (): import('../supervisor/preflight-container.ts').PreflightResult =>
+				({ ready: false, reason: 'daemon-unreachable' as const });
+
+	const prdPath = join(cwd, 'scripts/cam/prd.json');
+
+	return makeProductionMetaLoopDispatchFn({
+		selectFn: () => selectPlannableFromFile(cwd),
+		readPhaseFn: makeReadLoopPhase(claudeDir),
+		prdPresentFn: () => existsSync(prdPath),
+		mergeWatchPresentFn: () => existsSync(join(claudeDir, MERGE_WATCH_FILENAME)),
+		preconditionFn: () =>
+			evaluateDrainPreconditions({
+				workerIsolation,
+				containerPreflight: preflightFn(),
+				planApproval,
+			}),
+		killSwitchFn: () => isDrainStopSet(claudeDir),
+		setPhaseFn: makeSetPhaseFn(claudeDir, cwd),
+		drainNotifyFn: makeProductionDrainNotifyFn(resendConfig.apiKey, resendConfig.recipient),
+		logEvent,
+		// US-005: blocked-cycle judgment point deps.
+		readPrdVerdictFn: () => {
+			try {
+				const raw = readFileSync(prdPath, 'utf8');
+				const parsed: unknown = JSON.parse(raw);
+				if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+				const prd = parsed as { review?: { lastVerdict?: string | null } };
+				return prd.review?.lastVerdict ?? null;
+			} catch { return null; }
+		},
+		blockedCycleEscalateFn: (resendConfig.apiKey !== '' && resendConfig.recipient !== '')
+			? async (): Promise<void> => {
+				await sendEscalation({
+					apiKey: resendConfig.apiKey,
+					recipient: resendConfig.recipient,
+					subject: BLOCKED_CYCLE_ESCALATE_SUBJECT,
+					html: '<p><strong>[cam]</strong> The drain detected a blocked cycle. The review reached MAX_ROUNDS_DEBT without converging. Operator intervention is required.</p>',
+				});
+			}
+			: undefined,
+	});
 }
 
 /**
@@ -1036,6 +1366,36 @@ function makeProductionPlanPhaseFn(
 }
 
 /**
+ * Resolve the runMetaLoopObserveFn dep from SidecarOptions + context (US-004, CAM-139).
+ *
+ * Extracted from buildSidecarLoopDeps to keep that function under biome's
+ * noExcessiveCognitiveComplexity(max=15) limit (each `??` and ternary adds +1).
+ * The meta-loop section contains two nested ternaries which would push the parent
+ * function over the limit. Extracted here, they live in a separate budget.
+ *
+ * Branching:
+ *   meta_loop=observe -> production observe fn (wouldSelect / drained observe events only)
+ *   meta_loop=auto    -> production dispatch fn (observe events + phase:planning writes)
+ *   meta_loop=off     -> undefined (zero behavior change for the default case)
+ */
+function buildMetaLoopFn(
+	ctx: SidecarLoopDepsCtx,
+	options: SidecarOptions,
+	logEvent: WorkerEventLogger,
+	resendConfig: { apiKey: string; recipient: string },
+): RunSidecarLoopOptions['runMetaLoopObserveFn'] {
+	const metaLoop = readMetaLoop(join(ctx.cwd, 'scripts/cam/project.toml'));
+	return (
+		options.runMetaLoopObserveFn ??
+		(metaLoop === 'observe'
+			? makeProductionMetaLoopObserveFn(ctx.cwd, logEvent, resendConfig.apiKey, resendConfig.recipient)
+			: metaLoop === 'auto'
+			? buildProductionDispatchFn(ctx, logEvent, resendConfig)
+			: undefined)
+	);
+}
+
+/**
  * Build the plan-phase injectable deps (US-002, CAM-151).
  *
  * Extracted from buildSidecarLoopDeps to keep it under the biome
@@ -1103,15 +1463,10 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	const escalateFn: RunSidecarLoopOptions['escalateFn'] =
 		options.escalateFn ?? makeProductionEscalateFn(resendConfig.apiKey, resendConfig.recipient);
 
-	// US-004/US-005 / CAM-132: meta-loop observe wiring. undefined when off (default).
-	// Drain notify (US-005) is built inside makeProductionMetaLoopObserveFn to keep
-	// buildSidecarLoopDeps under the biome complexity ceiling.
-	const metaLoop = readMetaLoop(join(cwd, 'scripts/cam/project.toml'));
-	const runMetaLoopObserveFn: RunSidecarLoopOptions['runMetaLoopObserveFn'] =
-		options.runMetaLoopObserveFn ??
-		(metaLoop === 'observe'
-			? makeProductionMetaLoopObserveFn(cwd, logEvent, resendConfig.apiKey, resendConfig.recipient)
-			: undefined);
+	// US-004 / CAM-139: meta-loop wiring (observe | auto | off).
+	// Extracted to buildMetaLoopFn to keep buildSidecarLoopDeps under the biome
+	// noExcessiveCognitiveComplexity(max=15) limit.
+	const runMetaLoopObserveFn = buildMetaLoopFn(ctx, options, logEvent, resendConfig);
 
 	// US-002 / CAM-151: plan-phase deps extracted to a helper (biome complexity budget).
 	const planPhaseDeps = buildPlanPhaseDeps(ctx, options);

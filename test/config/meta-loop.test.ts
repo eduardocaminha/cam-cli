@@ -1,10 +1,11 @@
 // test/config/meta-loop.test.ts
 //
 // Tests for readMetaLoop in src/config/models.ts.
-// Covers the resolution paths required by US-001 (CAM-132):
+// Covers the resolution paths required by US-001 (CAM-132, CAM-139):
 //   1. Explicit 'observe' -> returns 'observe'
+//   1b. Explicit 'auto' -> returns 'auto'
 //   2. Absent (no [loop] section, no key, absent file) -> default 'off'
-//   3. Any other string value (incl. 'auto', 'OBSERVE') -> falls back to 'off'
+//   3. Any other string value (incl. 'OBSERVE', 'AUTO') -> falls back to 'off'
 //   4. Non-string value -> falls back to 'off'
 //   5. Malformed TOML -> falls back to 'off'
 
@@ -61,6 +62,31 @@ meta_loop = "observe"
 });
 
 // ---------------------------------------------------------------------------
+// Resolution path 1b: explicit 'auto'
+// ---------------------------------------------------------------------------
+
+describe('readMetaLoop - explicit auto', () => {
+	test('returns "auto" when [loop] meta_loop = "auto"', () => {
+		const path = writeTmpToml(`
+[loop]
+meta_loop = "auto"
+`);
+		expect(readMetaLoop(path)).toBe('auto');
+	});
+
+	test('reads meta_loop = "auto" alongside other sections', () => {
+		const path = writeTmpToml(`
+[models]
+orchestrator = "claude-opus-4-8"
+
+[loop]
+meta_loop = "auto"
+`);
+		expect(readMetaLoop(path)).toBe('auto');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Resolution path 2: absent (default 'off')
 // ---------------------------------------------------------------------------
 
@@ -100,20 +126,18 @@ meta_loop = "off"
 // ---------------------------------------------------------------------------
 
 describe('readMetaLoop - unknown string value', () => {
-	test('returns "off" for value "auto" (AC#3 oracle case)', () => {
-		const path = writeTmpToml(`
-[loop]
-meta_loop = "auto"
-`);
-		// AC#3: this specific assertion ensures a future regression that returns
-		// the value verbatim ('auto') will fail this test.
-		expect(readMetaLoop(path)).toBe('off');
-	});
-
 	test('returns "off" for value "OBSERVE" (case-sensitive)', () => {
 		const path = writeTmpToml(`
 [loop]
 meta_loop = "OBSERVE"
+`);
+		expect(readMetaLoop(path)).toBe('off');
+	});
+
+	test('returns "off" for value "AUTO" (case-sensitive)', () => {
+		const path = writeTmpToml(`
+[loop]
+meta_loop = "AUTO"
 `);
 		expect(readMetaLoop(path)).toBe('off');
 	});

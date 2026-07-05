@@ -80,6 +80,7 @@ export type WorkerEventKind =
 	| 'stage-promoted'
 	| 'cycle-tokens'
 	| 'meta-loop-observe'
+	| 'meta-loop-dispatch'
 	| 'container-preflight'
 	| 'plan-preflight-failed';
 
@@ -270,6 +271,26 @@ export type MetaLoopObserveEventDetail =
 	| { drained: true };
 
 /**
+ * 'meta-loop-dispatch' event detail: emitted by the auto-dispatcher on each
+ * idle tick at a safe cycle boundary. Discriminated union of four shapes:
+ *   - { dispatched, issueId, rank }: phase:planning was written for the selected
+ *     issue; the plan runner will pick it up on the next sidecar tick.
+ *   - { refused, reason }: preconditions not met; dispatch refused fail-closed.
+ *     reason mirrors DrainPreconditionResult.reason ('container-not-active' |
+ *     'plan-approval-not-auto').
+ *   - { stopped }: kill-switch engaged; dispatcher parked at boundary.
+ *     Emitted once per kill-switch engagement (deduped in closure state).
+ *   - { blockedCycle }: prd.json present with review.lastVerdict === 'MAX_ROUNDS_DEBT';
+ *     drain parks until the operator clears the block (removes/finalizes prd.json).
+ *     Emitted once per engagement (deduped in closure state). (US-005, CAM-139)
+ */
+export type MetaLoopDispatchEventDetail =
+	| { dispatched: true; issueId: string; rank: number }
+	| { refused: true; reason: string }
+	| { stopped: true }
+	| { blockedCycle: true };
+
+/**
  * 'container-preflight' event detail: emitted once per implement dispatch
  * immediately before the respawn-pane call (B-1 observe-only; B-2 / CAM-152
  * will flip this fail-closed). The result is logged for observability without
@@ -297,6 +318,7 @@ export type WorkerEventDetail =
 	| StagePromotedEventDetail
 	| CycleTokensEventDetail
 	| MetaLoopObserveEventDetail
+	| MetaLoopDispatchEventDetail
 	| ContainerPreflightEventDetail
 	| Record<string, unknown>;
 
