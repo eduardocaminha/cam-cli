@@ -1,0 +1,9 @@
+{
+  "id": "CAM-188",
+  "title": "Teardown lingering worker/reviewer pane on terminal exit to restore the 2-pane invariant",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-05T15:00:44.657Z",
+  "description": "On any terminal exit (complete/await-operator/blocked) in runSupervisor, the single reused worker pane (relabeled implementer<->reviewer via @cam_label) lingers, leaving 3 panes. paneCountMutex returns 'busy' for count!=2 (src/tmux/session.ts:273), spuriously refusing the operator's outside-terminal CLI fallbacks: cam next (next.ts:279), cam ship (ship.ts:161), cam review (review.ts:161), cam issue (issue.ts:163), cam spec (spec.ts:163). It does NOT gate auto-ship: the /cam-ship slash command autoShipFn injects bypasses the mutex (CAM-181 investigation fact 1). Fix: add a teardown hook that kills the worker pane on terminal exit, mirroring killWorkerPane in src/commands/stop.ts:340 (respawn-pane -k <id> echo stopped, or kill-pane). Decisions: (1) which terminal states tear down (all vs complete-only); (2) scrollback trade-off, reviewer SUGGESTIONs should be captured in review-report.json not left in pane scrollback (CAM-186/139 lost 2 to scrollback). Compatible with CAM-57 self-heal and CAM-139 auto-drain re-arm. workerPaneId is in scope in runSupervisorLoop; the clearActive path (loop.ts:1699) would need readWorkerPaneMarker. Origin: CAM-181 grill Q3, deferred as a separate hygiene follow-up."
+}
