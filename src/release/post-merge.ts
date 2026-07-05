@@ -308,8 +308,12 @@ function performCloseStep(
  * Production default CloseIssueFn: wraps closeIssueOnMain with a real spawnSync.
  * Used when closeIssueFn is absent but closeIssueId is present.
  * Tests always inject a stub so this path is never exercised in unit tests.
+ *
+ * Exported so other production callers that need to close an issue on main
+ * (e.g. the sidecar's ship-phase PR-create step, US-004 CAM-149) reuse the
+ * exact same real-spawnSync wiring instead of duplicating it (jscpd gate).
  */
-function defaultCloseIssueFn(closeCwd: string, id: string): CloseIssueOnMainOutcome {
+export function defaultCloseIssueFn(closeCwd: string, id: string): CloseIssueOnMainOutcome {
 	const closeSpawnFn: CloseSpawnFn = (cmd, args, opts) =>
 		spawnSync(cmd, args, {
 			encoding: opts.encoding,

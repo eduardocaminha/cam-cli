@@ -61,6 +61,12 @@ import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
  *     send-keys narration is lost. Mirrored by a durable .cam-ship-stalled.json
  *     marker (written by the sidecar caller, removed when the same PR later
  *     merges).
+ *   - 'ship-phase-result' (US-004, CAM-149): emitted once per deterministic
+ *     shipping-phase run (makeProductionShipPhaseFn, sidecar.ts), recording
+ *     the full ShipPhaseResult (ship-runner.ts) -- kind plus its kind-specific
+ *     fields (e.g. blockingStoryIds, outputTail, detail, prNumber, mergeMode)
+ *     spread into detail -- so a failed ship is diagnosable from
+ *     .claude/cam-worker-events.jsonl without reading source.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -84,6 +90,7 @@ export type WorkerEventKind =
 	| 'merge-watch-ci-red'
 	| 'merge-watch-post-merge-done'
 	| 'merge-watch-stalled'
+	| 'ship-phase-result'
 	| 'stage-promoted'
 	| 'cycle-tokens'
 	| 'meta-loop-observe'

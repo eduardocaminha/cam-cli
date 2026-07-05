@@ -45,6 +45,7 @@ import {
 	finalizeCycleClose,
 	type FinalizeCycleCloseResult,
 } from './src/commands/ship-finalize.ts';
+import { buildShipFinalizeOpts, buildShipBumpOpts } from './src/commands/ship-deps.ts';
 import { runShipBump, type ShipBumpResult } from './src/release/ship-bump.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
@@ -61,12 +62,7 @@ import { runTag } from './src/commands/tag.ts';
 import { ORCH_RECYCLE_MARKER } from './src/tmux/session.ts';
 import { watcherAlive } from './src/supervisor/sidecar-pid.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
-import {
-	stashIssueIdInMergeWatch,
-	MERGE_WATCH_FILENAME,
-} from './src/release/merge-watch.ts';
 import type { WsjfScore } from './src/issues/types.ts';
-import { makeFileEventLogger } from './src/supervisor/events.ts';
 import { printError, printFatalHint, printHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { CAM_VERSION } from './src/version.ts';
@@ -1006,7 +1002,7 @@ export async function dispatchShip(
 	deps?: ShipDispatchDeps,
 ): Promise<number> {
 	if (parsed.finalize) {
-		const finalizeFn = deps?.finalizeFn ?? (() => finalizeCycleClose(_buildFinalizeOpts(process.cwd())));
+		const finalizeFn = deps?.finalizeFn ?? (() => finalizeCycleClose(buildShipFinalizeOpts(process.cwd())));
 		try {
 			finalizeFn();
 			return 0;
@@ -1016,7 +1012,7 @@ export async function dispatchShip(
 		}
 	}
 	if (parsed.bump) {
-		const bumpFn = deps?.bumpFn ?? (() => runShipBump(_buildBumpOpts(process.cwd())));
+		const bumpFn = deps?.bumpFn ?? (() => runShipBump(buildShipBumpOpts(process.cwd())));
 		try {
 			bumpFn();
 			return 0;
@@ -1027,43 +1023,6 @@ export async function dispatchShip(
 	}
 	const ship = deps?.runShipFn ?? (() => runShip({}));
 	return ship();
-}
-
-/** Build production deps for finalizeCycleClose from the given project root. */
-function _buildFinalizeOpts(cwd: string) {
-	return {
-		cwd,
-		spawnFn: spawnSync,
-		clock: () => new Date().toISOString(),
-		readProjectToml: () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8'),
-		readPrd: () => readFileSync(join(cwd, 'scripts/cam/prd.json'), 'utf8'),
-		stashFn: (issueId: string) =>
-			stashIssueIdInMergeWatch(join(cwd, '.claude', MERGE_WATCH_FILENAME), issueId),
-	};
-}
-
-/** Build production deps for runShipBump from the given project root. */
-function _buildBumpOpts(cwd: string) {
-	const eventLogger = makeFileEventLogger(join(cwd, '.claude/cam-worker-events.jsonl'));
-	return {
-		cwd,
-		spawnFn: spawnSync,
-		clock: () => new Date().toISOString(),
-		readVersionTs: () => readFileSync(join(cwd, 'src/version.ts'), 'utf8'),
-		readPackageJson: () => readFileSync(join(cwd, 'package.json'), 'utf8'),
-		writeVersionTs: (text: string) => writeFileSync(join(cwd, 'src/version.ts'), text, 'utf8'),
-		writePackageJson: (text: string) => writeFileSync(join(cwd, 'package.json'), text, 'utf8'),
-		readChangelog: () => readFileSync(join(cwd, 'CHANGELOG.md'), 'utf8'),
-		writeChangelog: (text: string) => writeFileSync(join(cwd, 'CHANGELOG.md'), text, 'utf8'),
-		writeEvent: (event: ShipBumpResult) =>
-			eventLogger({
-				ts: new Date().toISOString(),
-				storyId: undefined,
-				uuid: 'ship-bump',
-				kind: 'ship-bump',
-				detail: event as unknown as Record<string, unknown>,
-			}),
-	};
 }
 
 // ---------------------------------------------------------------------------

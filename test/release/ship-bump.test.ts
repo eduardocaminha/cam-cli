@@ -464,41 +464,43 @@ describe('runShipBump - CHANGELOG roll', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Oracle: production wiring in index.ts _buildBumpOpts (US-R1-002)
+// Oracle: production wiring in buildShipBumpOpts (US-R1-002; relocated to
+// src/commands/ship-deps.ts in US-004 CAM-149 so cam ship --bump and the
+// sidecar's deterministic ship-phase runner share one production wiring)
 // ---------------------------------------------------------------------------
 //
-// Verifies that _buildBumpOpts in index.ts wires `writeEvent` to the
+// Verifies that buildShipBumpOpts wires `writeEvent` to the
 // cam-worker-events.jsonl file logger. This is the gap identified in US-R1-002:
 // the unit tests above confirm writeEvent works when injected, but the
-// production caller (_buildBumpOpts) must actually pass it.
+// production caller (buildShipBumpOpts) must actually pass it.
 
-describe('_buildBumpOpts production wiring - writeEvent oracle (US-R1-002)', () => {
-	const indexPath = resolve(import.meta.dir, '..', '..', 'index.ts');
-	const source = readFileSync(indexPath, 'utf8');
+describe('buildShipBumpOpts production wiring - writeEvent oracle (US-R1-002)', () => {
+	const shipDepsPath = resolve(import.meta.dir, '..', '..', 'src', 'commands', 'ship-deps.ts');
+	const source = readFileSync(shipDepsPath, 'utf8');
 
-	// Isolate the _buildBumpOpts function body for precise assertions.
-	// The function spans from `function _buildBumpOpts` to the closing `}`.
+	// Isolate the buildShipBumpOpts function body for precise assertions.
+	// The function spans from `function buildShipBumpOpts` to the closing `}`.
 	const bumpOptsMatch = source.match(
-		/function _buildBumpOpts[\s\S]*?^}/m,
+		/function buildShipBumpOpts[\s\S]*?^}/m,
 	);
 
-	test('_buildBumpOpts function exists in index.ts', () => {
+	test('buildShipBumpOpts function exists in src/commands/ship-deps.ts', () => {
 		expect(bumpOptsMatch).not.toBeNull();
 	});
 
-	test('_buildBumpOpts wires writeEvent', () => {
+	test('buildShipBumpOpts wires writeEvent', () => {
 		expect(bumpOptsMatch?.[0]).toContain('writeEvent');
 	});
 
-	test('_buildBumpOpts uses makeFileEventLogger', () => {
+	test('buildShipBumpOpts uses makeFileEventLogger', () => {
 		expect(bumpOptsMatch?.[0]).toContain('makeFileEventLogger');
 	});
 
-	test('_buildBumpOpts targets cam-worker-events.jsonl', () => {
+	test('buildShipBumpOpts targets cam-worker-events.jsonl', () => {
 		expect(bumpOptsMatch?.[0]).toContain('cam-worker-events.jsonl');
 	});
 
-	test('_buildBumpOpts wraps event with kind ship-bump', () => {
+	test('buildShipBumpOpts wraps event with kind ship-bump', () => {
 		expect(bumpOptsMatch?.[0]).toContain("'ship-bump'");
 	});
 });

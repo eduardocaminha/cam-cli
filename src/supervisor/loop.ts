@@ -1642,6 +1642,25 @@ export interface RunSidecarLoopOptions {
 	 * change for all existing tests that do not inject readLoopPhaseFn).
 	 */
 	runPlanPhaseFn?: () => void | Promise<void>;
+	/**
+	 * Run the deterministic pre-PR ship sequence (US-004, CAM-149).
+	 *
+	 * When injected AND readLoopPhaseFn() returns 'shipping', called once per
+	 * tick. Wraps runShipPhase (ship-runner.ts) with all deps wired: a real
+	 * spawnFn, the bun run check:all gates adapter, the shared
+	 * buildShipBumpOpts/buildShipFinalizeOpts factories, and runShipPrStep
+	 * (ship-pr.ts) for the PR-create + merge-mode step. The closure is
+	 * responsible for its own phase->idle reset (in a finally block), success
+	 * or failure, so this option carries no separate "on done" callback.
+	 *
+	 * Production wiring (sidecar.ts): makeProductionShipPhaseFn(...).
+	 * Tests inject a spy to assert call count / crash-survival without
+	 * spawning real git/gh processes.
+	 *
+	 * Optional: when absent, phase:shipping is silently ignored (zero behavior
+	 * change for all existing tests that do not inject readLoopPhaseFn).
+	 */
+	runShipPhaseFn?: () => void | Promise<void>;
 }
 
 /** Idle polling interval for the sidecar outer loop (2 seconds). */
@@ -1695,6 +1714,29 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 					uuid: 'sidecar',
 					kind: 'sidecar-exit',
 					detail: { reason: 'plan-phase-crash-outer', error: err instanceof Error ? err.message : String(err) },
+				});
+			}
+			opts.sleep(idlePollMs);
+			continue;
+		}
+
+		// US-004 / CAM-149: shipping-phase branch (sibling of planning; phase:
+		// shipping derives active:false, so this guard MUST precede the
+		// active!==true idle check to avoid falling into the idle path on a
+		// shipping tick). Unlike the planning branch, the injected closure is
+		// responsible for its own phase->idle reset (in a finally block), so
+		// this outer guard only catches + logs a crash; it never writes phase
+		// itself.
+		if (loopPhase === 'shipping' && opts.runShipPhaseFn !== undefined) {
+			try {
+				await opts.runShipPhaseFn();
+			} catch (err: unknown) {
+				opts.logEvent?.({
+					ts: new Date().toISOString(),
+					storyId: undefined,
+					uuid: 'sidecar',
+					kind: 'sidecar-exit',
+					detail: { reason: 'ship-phase-crash-outer', error: err instanceof Error ? err.message : String(err) },
 				});
 			}
 			opts.sleep(idlePollMs);
