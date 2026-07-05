@@ -1,47 +1,34 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Implement the PR-create and merge-mode step (gh integration)"
+    "id": "US-004",
+    "title": "Wire the shipping phase into the sidecar loop and make the CLEAN trigger deterministic"
   },
   "branchName": "cam/pr-149-ship-runner-deterministic",
   "timestamp": "2026-07-05T00:00:00Z",
   "createdFiles": [
-    "src/release/ship-pr.ts",
-    "test/release/ship-pr.test.ts"
+    "src/commands/ship-deps.ts",
+    "test/sidecar-ship-phase.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/ship-runner.ts",
-    "test/ship-runner.test.ts"
+    "index.ts",
+    "src/commands/sidecar.ts",
+    "src/release/post-merge.ts",
+    "src/supervisor/events.ts",
+    "src/supervisor/loop.ts",
+    "test/release/ship-bump.test.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [
-    "runShipPhase's runGatesFn/bumpFn/finalizeFn/runShipPrStepFn are all required injected functions with no production factory wired yet (deliberately deferred to US-004): the shipping-phase wiring must build a makeProductionShipPhaseFn in sidecar.ts that composes runShipPhase with real spawnFn/gates/bump/finalize adapters AND a real runShipPrStepFn closure wrapping runShipPrStep (src/release/ship-pr.ts) with production spawnFn (spawnSync-backed, gh mutation calls stripping GITHUB_TOKEN per the pattern already inside ship-pr.ts's own stripGithubToken helper), a real temp-file writer (mkdtempSync+writeFileSync), a real review-artifact reader (existsSync+readFileSync against REVIEW_ARTIFACT_FILENAME from src/supervisor/review-report.ts), readMergeMode/readMergeWatchState/writeMergeWatchState/removeMergeWatchState (merge-watch.ts) resolved against join(cwd,'.claude',MERGE_WATCH_FILENAME), and closeIssueOnMain (issue-specify.ts).",
-    "The ShipPhaseResult union no longer has a 'ready-for-pr' kind (replaced by 'shipped' and 'pr-create-failed' in US-003); US-004's shipping branch in loop.ts must switch on all 9 kinds (on-main, prd-incomplete, no-commits-ahead, gates-failed, bump-failed, finalize-failed, push-failed, pr-create-failed, shipped) per its AC3."
+    "src/commands/ship.ts (runShip, the cam ship CLI thin-proxy) is UNCHANGED by this story: it still sends '/cam-ship' via tmux send-keys to the orchestrator pane (see ship.ts lines ~3-12, 110-186). US-005 must convert it to a phase-signal writer: write phase:shipping to .claude/cam-loop.local.md (mirroring runPlan's buildPlanningBody + writeStateFile pattern from plan.ts), preserving the liveness/bootstrap preamble and the paneCountMutex busy-refusal, and no longer send-keys '/cam-ship'. The --bump/--finalize in-process flags (parseShipArgs/dispatchShip in index.ts) are UNCHANGED in behavior and must stay that way per US-005 AC2 -- they already route through the new shared src/commands/ship-deps.ts factories (buildShipBumpOpts/buildShipFinalizeOpts) added in this story, but that is transparent to ship.ts/index.ts's argv parsing.",
+    "The deterministic ship runner (runShipPhase + runShipPrStep + the new sidecar shipping-phase wiring) is now fully live for BOTH triggers into phase:shipping: the auto-mode autoShipFn (this story) and, once US-005 lands, the manual `cam ship` CLI. Until US-005 ships, `cam ship` (no flags) still uses the OLD send-keys '/cam-ship' path (which dispatches the now-thinned cam-ship.md prompt, US-006's job) -- so the deterministic runner is reachable in auto mode only until US-005 completes.",
+    "makeProductionShipPhaseFn (sidecar.ts) reads scripts/cam/prd.json directly via JSON.parse(readFileSync(...)) with no try/catch of its own; a missing/malformed prd.json propagates up to the outer try/catch in the same closure, which logs a 'sidecar-exit' event (reason: 'ship-phase-crash') and resets phase to idle in the finally block. This is intentional (mirrors makeProductionPlanPhaseFn's outer safety net) but means a ship dispatched with no prd.json present produces a crash-shaped event rather than a clean ShipPhaseResult kind; worth a source-text oracle if a future story wants a dedicated 'prd-missing' result kind instead."
   ],
-  "nextStoryContext": "US-004 (wire the shipping phase into the sidecar loop) consumes runShipPhase (ship-runner.ts) as a black box: it needs a 'shipping' branch in runSidecarLoop (loop.ts) that invokes an injected runShipPhaseFn and reacts to the full ShipPhaseResult union (9 kinds after US-003, see openQuestions above), mirroring the existing planning-branch precedent (outer try/catch + sidecar-exit event + phase precedes the active check). It also needs to swap the auto-mode CLEAN trigger from tmux send-keys '/cam-ship' to setPhase('shipping'). The production wiring (makeProductionShipPhaseFn in sidecar.ts) must compose runShipPhase with real adapters for ALL FOUR required deps: runGatesFn (spawn 'bun run check:all', capture output tail on failure), bumpFn (wraps runShipBump), finalizeFn (wraps finalizeCycleClose), and — new in US-003 — runShipPrStepFn (wraps runShipPrStep from src/release/ship-pr.ts with real spawnFn/writeTempFile/readReviewArtifact/readMergeModeFn/readMergeWatchStateFn/writeMergeWatchStateFn/removeMergeWatchStateFn/closeIssueOnMainFn/emitHint/emitWarning). Reuse the index.ts _buildBumpOpts/_buildFinalizeOpts adapters rather than duplicating (jscpd gate).",
+  "nextStoryContext": "US-005 (convert the cam ship CLI to a phase-signal writer) consumes the now-complete deterministic ship pipeline (runShipPhase/runShipPrStep/sidecar shipping-phase wiring, all shipped in US-002/US-003/US-004) as a black box: it only needs to change HOW the shipping phase gets triggered from the CLI. Concretely: rewrite runShip (src/commands/ship.ts) to write phase:shipping to .claude/cam-loop.local.md instead of sending '/cam-ship' via send-keys, following plan.ts's runPlan precedent (liveness/bootstrap preamble -> mutex check -> writeStateFile with force:true, replacing only the final SEND step). Keep all existing injectable seams (tmuxSpawnFn, bootstrapFn, statFn, sleepFn, writeFn) and the mutex busy-refusal (shipping must not start while a worker/review pane is active). Update index.ts's cam-ship help text to mention 'writes phase:shipping; the sidecar runs the deterministic ship runner'. test/ship.test.ts needs a rewrite to assert the state-file write instead of send-keys (mirrors test/plan.test.ts's US-004/CAM-151 rewrite, per patterns.md). Never add a --permission-mode flag (test/no-permission-mode-flag.test.ts guards this globally). --bump/--finalize argv parsing and dispatch (parseShipArgs/dispatchShip) must NOT change in this story.",
   "officialDocsValidated": [
     {
-      "lib": "gh (GitHub CLI)",
-      "version": "current (cli.github.com/manual)",
-      "url": "https://cli.github.com/manual/gh_pr_create",
-      "fetchedAt": "2026-07-05T00:00:00Z",
-      "status": "ok",
-      "summary": "--title, --body-file, --base all confirmed current flags with the exact semantics used in ship-pr.ts (--base defaults to the repo default branch when omitted; we always pass --base main explicitly)."
-    },
-    {
-      "lib": "gh (GitHub CLI)",
-      "version": "current (cli.github.com/manual)",
-      "url": "https://cli.github.com/manual/gh_pr_merge",
-      "fetchedAt": "2026-07-05T00:00:00Z",
-      "status": "ok",
-      "summary": "--auto and --squash confirmed current; --auto with no positional arg targets the PR of the current branch, matching ship-pr.ts's argv (no PR number passed to gh pr merge)."
-    },
-    {
-      "lib": "gh (GitHub CLI)",
-      "version": "current (cli.github.com/manual)",
-      "url": "https://cli.github.com/manual/gh_pr_view",
-      "fetchedAt": "2026-07-05T00:00:00Z",
-      "status": "ok",
-      "summary": "--json number --jq '.number' confirmed as the documented example for extracting the PR number; matches ship-pr.ts's exact argv."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-004 is pure internal wiring: a new phase:'shipping' branch in the existing runSidecarLoop state machine (loop.ts) and a production dependency-injection factory (sidecar.ts) composing already-implemented, already-doc-validated internal modules (runShipPhase/US-002, runShipPrStep + gh CLI calls/US-003, runShipBump, finalizeCycleClose). No new external library surface was introduced or exercised; gh/git CLI usage is unchanged from the US-002/US-003 wiring (already validated against cli.github.com/manual in this PRD's officialDocsConsulted)."
     }
   ]
 }

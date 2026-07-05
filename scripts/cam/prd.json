@@ -100,7 +100,7 @@
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (shipping branch in runSidecarLoop + RunSidecarLoopOptions.runShipPhaseFn), src/commands/sidecar.ts (makeProductionShipPhaseFn, autoShipFn swap), test/sidecar-ship-phase.test.ts (new). Mirror the planning-branch precedent exactly (loop.ts lines around 1679-1702) including the outer try/catch and the sidecar-exit event. makeSetPhaseFn already exists in sidecar.ts; makeAutoShipFn becomes a setPhase('shipping') closure (keep the option seam name autoShipFn so RunSupervisorOptions and the fire-once marker logic stay untouched). Extract the index.ts _buildBumpOpts/_buildFinalizeOpts production adapters into a shared factory if needed rather than duplicating them (jscpd duplication gate). Gotcha: the shipping tick runs on the sidecar outer loop (no supervisor lock is held on phase ticks; same as planning). LoopPhase already includes 'shipping' and parseStateFile accepts it; no enum change needed."
     },
