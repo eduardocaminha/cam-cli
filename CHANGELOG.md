@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.63.0] - 2026-07-05
+
+### Added
+
+- [US-001] - Re-anchor auto-ship to terminal complete+CLEAN with a persisted fire-once marker
+
 ## [0.62.0] - 2026-07-05
 
 ### Added
