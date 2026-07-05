@@ -4,6 +4,16 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.62.0] - 2026-07-05
+
+### Added
+
+- [US-005] - Judgment point: park the drain and escalate on a blocked cycle
+- [US-004] - Wire the auto-dispatcher into the sidecar idle-tick
+- [US-003] - Fail-closed hard-precondition gate for the drain
+- [US-002] - Runtime drain kill-switch: marker primitive + cam drain command
+- [US-001] - Extend meta_loop enum with 'auto'
+
 ## [0.61.0] - 2026-07-05
 
 ### Added
