@@ -24,7 +24,7 @@
       "id": "US-R1-003",
       "title": "Review round 1 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [test/supervisor/result.test.ts:1283]: The commitSubjectMatchesStory tests only assert the bracketless 'feat: US-001 - ...' form (the wrong convention); no test asserts the real 'feat: [US-001] - ...' bracketed convention. The loop/host tests inject a fake commitExistsForStory, so no test exercises the real host.ts adapter against a real git log. Consequently the two CRITICAL defects pass CI green. Add a matcher test for 'feat: [US-001] - Title' and an integration test that runs the real adapter against a repo whose only matching commit is bracketed."
     },
     {
