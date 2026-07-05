@@ -97,7 +97,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Extends the US-004 closure in src/commands/sidecar.ts: when the safe-boundary check finds prd.json present with review.lastVerdict === 'MAX_ROUNDS_DEBT' (see makeHasPendingStories MAX_ROUNDS_DEBT guard for the read shape), treat it as the blocked judgment point rather than a plain in-flight cycle. Reuse the existing escalate closure (readResendConfig + sendEscalation, patterns.md 'makeProductionEscalateFn') for the best-effort notify and warnFn for the soft-warn. Dedup the escalation via the in-memory closure state so a persistently-blocked prd.json does not re-notify every 2s tick (mirror observeDecide dedup). This is the second judgment point in the issue's invariant (empty queue in US-004; blocked cycle here); rank-tie is deterministic, not a judgment point. Distinct from the loop's per-cycle escalateFn (review-round exhaustion): this is the DRAIN-level halt notification."
     }

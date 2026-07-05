@@ -1,11 +1,9 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Wire the auto-dispatcher into the sidecar idle-tick"
+    "id": "US-005",
+    "title": "Judgment point: park the drain and escalate on a blocked cycle"
   },
-  "createdFiles": [
-    "docs/adr/0007-inter-cycle-unattended-drain.md"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
     "scripts/cam/prd.json",
     "scripts/file-size-budget.json",
@@ -14,12 +12,12 @@
     "test/commands/sidecar-meta-loop.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 is done. makeProductionMetaLoopDispatchFn is exported from src/commands/sidecar.ts. It is a factory that builds a closure over injectable MetaLoopDispatchDeps (selectFn, readPhaseFn, prdPresentFn, mergeWatchPresentFn, preconditionFn, killSwitchFn, setPhaseFn, drainNotifyFn, warnFn, logEvent). The auto-dispatcher is wired into the runMetaLoopObserveFn seam in buildSidecarLoopDeps via buildMetaLoopFn which branches on meta_loop=auto. The 'meta-loop-dispatch' WorkerEventKind and MetaLoopDispatchEventDetail union are in src/supervisor/events.ts. ADR 0007 documents the decision. All 3155 tests pass. The sidecar idle-tick now dispatches phase:planning for the next plannable issue when all safe-boundary guards pass in meta_loop=auto mode.",
+  "nextStoryContext": "US-005 is done. The auto-dispatcher (makeProductionMetaLoopDispatchFn in src/commands/sidecar.ts) now has a blocked-cycle judgment point: when prd.json is present with review.lastVerdict === 'MAX_ROUNDS_DEBT', handleBlockedCycleBoundary emits a 'meta-loop-dispatch {blockedCycle:true}' event once (deduped via ctx.blockedCycleEmitted) and fires blockedCycleEscalateFn (Resend) or warnFn (soft-warn) best-effort. The sidecar loop keeps polling (no SIGTERM, no clearActive). The block resets when prd.json is absent (operator ship/abandon). BLOCKED_CYCLE_ESCALATE_SUBJECT is exported from sidecar.ts. The MetaLoopDispatchEventDetail in events.ts has a new '{ blockedCycle: true }' variant. All 3166 tests pass. The file-size ratchet was raised for sidecar.ts (1458->1558), events.ts (440->444), and the test file (984->1282).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 touches only project-internal modules (sidecar.ts helpers, events.ts types, observe.ts, drain-preconditions.ts, drain-kill-switch.ts, select.ts). No external library API was exercised."
+      "summary": "US-005 touches only project-internal modules (sidecar.ts dispatch logic, events.ts types, and test file). The sendEscalation reuse calls an existing project wrapper; no new external library API was exercised."
     }
   ]
 }
