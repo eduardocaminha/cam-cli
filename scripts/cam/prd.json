@@ -41,7 +41,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/release/merge-watch.ts (PrStatus, MergeWatchState.updateBranchCount, UpdateBranchFn injectable in StepMergeWatchOptions + MergeWatchOptions, processPollResult + stepMergeWatch branches, new MergeWatchOutcome kinds behind-unrecovered and dirty, read/write state helpers), src/commands/sidecar.ts (makeProductionMergeWatchFn: extend ghPollFn --json field list, production updateBranchFn), test/release/merge-watch.test.ts. Gotchas from spec: (1) right after update-branch the mergeStateStatus flips to BLOCKED/UNSTABLE while CI re-runs, NOT back to BEHIND, so the cap is only spent when main advances again; never gate the cap on pollCount. (2) The .env GITHUB_TOKEN fine-grained PAT lacks Pull requests: write; the mutation must fall back to the keyring OAuth token (same pattern as gh pr create/merge/comment); do NOT strip the token on the read-only poll. (3) stepMergeWatch is pure (no FS, no Date.now, no sleep); updateBranchFn is injected like pollFn so tests use fakes; the sidecar owns the real spawn. (4) Make updateBranchFn optional on the legacy runMergeWatch options bag (absent = never update) so existing callers/tests keep compiling. (5) noUncheckedIndexedAccess: guard rollup/array access. Narrate one notifyOrchestrator line per update attempt and on the new terminals (single-pusher invariant CAM-78, coalesce to one send-keys per event)."
     },

@@ -87,6 +87,9 @@ export function readMergeWatchState(filePath: string): MergeWatchState | null {
 		if (typeof obj['issueId'] === 'string') {
 			state.issueId = obj['issueId'] as string;
 		}
+		if (typeof obj['updateBranchCount'] === 'number') {
+			state.updateBranchCount = obj['updateBranchCount'] as number;
+		}
 		return state;
 	} catch {
 		return null;
@@ -109,6 +112,7 @@ export function writeMergeWatchState(filePath: string, state: MergeWatchState): 
 		prNumber: state.prNumber,
 		mergedBranch: state.mergedBranch,
 		pollCount: state.pollCount ?? 0,
+		updateBranchCount: state.updateBranchCount ?? 0,
 	};
 	if (state.lastPolledAt !== undefined) {
 		payload['lastPolledAt'] = state.lastPolledAt;
@@ -211,6 +215,13 @@ export interface MergeWatchState {
 	 * without re-reading prd.json.
 	 */
 	issueId?: string;
+	/**
+	 * Number of `gh pr update-branch` auto-recovery attempts performed so far
+	 * for the current BEHIND streak (US-001, CAM-182). Absent = 0 (fresh
+	 * state; a legacy state file predating this field reads back as fresh).
+	 * Capped at MAX_UPDATE_BRANCH_ATTEMPTS.
+	 */
+	updateBranchCount?: number;
 }
 
 /**
@@ -233,18 +244,28 @@ export interface PrCheckRollupEntry {
 }
 
 /**
- * Subset of the `gh pr view --json state,mergeStateStatus,statusCheckRollup` output we care about.
+ * Subset of the
+ * `gh pr view --json state,mergeStateStatus,statusCheckRollup,autoMergeRequest,url`
+ * output we care about.
  *
  * state: "OPEN" | "MERGED" | "CLOSED"
  * mergeStateStatus: "BLOCKED" | "CLEAN" | "BEHIND" | "DIRTY" | "HAS_HOOKS" |
  *                   "UNKNOWN" | "UNSTABLE"
  * statusCheckRollup: list of check-run / status-context entries (may be absent
  *   when the PR has no required checks configured).
+ * autoMergeRequest: non-null when GitHub auto-merge is armed (`gh pr merge
+ *   --auto`); null/absent when not armed. Gates the BEHIND auto-recovery: we
+ *   only run `gh pr update-branch` when the PR will merge itself once CI goes
+ *   green again, so we never leave an update-branch-fresh PR mid-flight
+ *   without a merge follow-up.
+ * url: PR URL, surfaced in terminal narration when auto-recovery gives up.
  */
 export interface PrStatus {
 	state: string;
 	mergeStateStatus: string;
 	statusCheckRollup?: PrCheckRollupEntry[];
+	autoMergeRequest?: Record<string, unknown> | null;
+	url?: string;
 }
 
 /**
@@ -255,6 +276,24 @@ export interface PrStatus {
  * Returns null on gh error (poll is silently retried).
  */
 export type GhPollFn = (prNumber: number) => PrStatus | null;
+
+/**
+ * Injectable gh pr update-branch invocable (US-001, CAM-182).
+ *
+ * Production: spawns `gh pr update-branch <prNumber>` with GITHUB_TOKEN
+ * stripped from the child environment (falls back to the gh keyring OAuth
+ * token, same pattern as `gh pr create`/`gh pr merge`/`gh pr comment` -- the
+ * .env GITHUB_TOKEN fine-grained PAT lacks "Pull requests: write").
+ * Tests: records the call.
+ */
+export type UpdateBranchFn = (prNumber: number) => void;
+
+/**
+ * Maximum number of `gh pr update-branch` auto-recovery attempts for a single
+ * BEHIND streak. After this many attempts a still-BEHIND poll terminates the
+ * watch with outcome kind 'behind-unrecovered' instead of retrying forever.
+ */
+export const MAX_UPDATE_BRANCH_ATTEMPTS = 2;
 
 /**
  * Injectable post-merge invocable.
@@ -287,6 +326,13 @@ export interface MergeWatchOptions {
 	 */
 	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
 	/**
+	 * Injectable `gh pr update-branch` invocable (US-001, CAM-182). Optional so
+	 * existing callers/tests keep compiling: absent means the BEHIND
+	 * auto-recovery never runs (the watch just keeps polling on BEHIND, the
+	 * pre-US-001 behavior).
+	 */
+	updateBranchFn?: UpdateBranchFn;
+	/**
 	 * Sleep between polls. Defaults to Bun.sleepSync.
 	 * Tests inject a no-op to avoid real delays (with tiny pollIntervalMs).
 	 */
@@ -308,7 +354,9 @@ export type MergeWatchOutcome =
 	| { kind: 'merged'; postMerge: PostMergeOutcome }
 	| { kind: 'ci-red'; prNumber: number }
 	| { kind: 'closed-not-merged'; prNumber: number }
-	| { kind: 'timeout'; polls: number };
+	| { kind: 'timeout'; polls: number }
+	| { kind: 'behind-unrecovered'; prNumber: number }
+	| { kind: 'dirty'; prNumber: number };
 
 // ---------------------------------------------------------------------------
 // Check-failure detection helpers
@@ -390,10 +438,109 @@ function buildSuccessPostMergeDoneDetail(
 }
 
 /**
+ * Handle an OPEN+BEHIND poll result (US-001, CAM-182): decide whether to run
+ * the bounded `gh pr update-branch` auto-recovery.
+ *
+ * Guards (all must hold before calling updateBranchFn):
+ *   - no failed check in statusCheckRollup (never recover a BEHIND branch
+ *     that is also failing CI -- update-branch would just re-run doomed checks).
+ *   - autoMergeRequest is armed (non-null): only recover when the PR will
+ *     merge itself once CI goes green again, so update-branch always has a
+ *     merge follow-up and never leaves the PR mid-flight.
+ *   - updateBranchCount < MAX_UPDATE_BRANCH_ATTEMPTS.
+ *
+ * Returns `{ outcome }` on the give-up terminal, `{ updateBranchCount }` when
+ * an attempt was made (caller merges this into the continuing state), or
+ * `null` to keep polling with the count unchanged.
+ *
+ * Extracted from processPollResult to keep it under the biome complexity limit.
+ */
+function handleBehindStatus(
+	status: PrStatus,
+	updateBranchCount: number,
+	opts: MergeWatchOptions,
+): { outcome: MergeWatchOutcome } | { updateBranchCount: number } | null {
+	const { prNumber, notifyOrchestrator, updateBranchFn } = opts;
+	const rollup = status.statusCheckRollup ?? [];
+	if (hasFailedCheck(rollup)) {
+		return null; // guard: never recover a BEHIND branch that is also failing CI
+	}
+	const autoMergeArmed = status.autoMergeRequest !== null && status.autoMergeRequest !== undefined;
+	if (!autoMergeArmed) {
+		return null; // auto-merge not armed: leave the branch alone
+	}
+	if (updateBranchCount >= MAX_UPDATE_BRANCH_ATTEMPTS) {
+		notifyOrchestrator(
+			`[cam] merge-watch: PR #${prNumber} still BEHIND after ${updateBranchCount} auto-update-branch attempts, giving up${status.url ? ` - ${status.url}` : ''}`,
+		);
+		return { outcome: { kind: 'behind-unrecovered', prNumber } };
+	}
+	updateBranchFn?.(prNumber);
+	const nextCount = updateBranchCount + 1;
+	notifyOrchestrator(
+		`[cam] merge-watch: PR #${prNumber} BEHIND, ran gh pr update-branch (attempt ${nextCount}/${MAX_UPDATE_BRANCH_ATTEMPTS})`,
+	);
+	return { updateBranchCount: nextCount };
+}
+
+/**
+ * Handle a MERGED poll result: run post-merge and narrate the outcome.
+ * Extracted from processPollResult to keep it under the biome complexity limit.
+ */
+function handleMergedStatus(opts: MergeWatchOptions): { outcome: MergeWatchOutcome } {
+	const { prNumber, mergedBranch, cwd, postMergeFn, notifyOrchestrator, logEvent } = opts;
+	notifyOrchestrator(`[cam] PR #${prNumber} merged - running post-merge`);
+	const mergedDetail: MergeWatchMergedEventDetail = { prNumber };
+	logEvent?.('merge-watch-merged', mergedDetail);
+	const result = postMergeFn({ cwd, mergedBranch });
+	if (result.ok) {
+		const tagNote = result.tagCreated ? '(tag created)' : '(tag existed)';
+		// Coalesce: fold prune sub-status into a single completion line.
+		// warnOnPruneFailure is a pure builder (returns string, no side-effects)
+		// so there is EXACTLY ONE notifyOrchestrator call on the success path
+		// (back-to-back send-keys would race in the orchestrator Ink prompt).
+		const pruneSuffix = warnOnPruneFailure(result.branchPrunedLocal, result.branchPrunedRemote);
+		notifyOrchestrator(`[cam] post-merge complete: ${result.tag} ${tagNote}${pruneSuffix}`);
+		const doneDetail = buildSuccessPostMergeDoneDetail(prNumber, result);
+		logEvent?.('merge-watch-post-merge-done', doneDetail);
+	} else {
+		notifyOrchestrator(`[cam] post-merge failed: ${result.reason}`);
+		const doneDetail: MergeWatchPostMergeDoneEventDetail = {
+			prNumber, ok: false, reason: result.reason,
+		};
+		logEvent?.('merge-watch-post-merge-done', doneDetail);
+	}
+	return { outcome: { kind: 'merged', postMerge: result } };
+}
+
+/**
+ * Handle an OPEN+BLOCKED poll result: GitHub returns BLOCKED while checks are
+ * pending, so inspect the rollup before treating it as ci-red (US-R1-003
+ * pattern). Extracted from processPollResult to keep it under the biome
+ * complexity limit.
+ */
+function handleBlockedStatus(
+	status: PrStatus,
+	opts: MergeWatchOptions,
+): { outcome: MergeWatchOutcome } | null {
+	const { prNumber, notifyOrchestrator, logEvent } = opts;
+	const rollup = status.statusCheckRollup ?? [];
+	if (rollup.length === 0 || !hasFailedCheck(rollup)) {
+		return null; // CI pending/in-progress: keep polling
+	}
+	notifyOrchestrator(`[cam] CI red, PR #${prNumber} open, not merged`);
+	const ciRedDetail: MergeWatchCiRedEventDetail = { prNumber, reason: 'blocked' };
+	logEvent?.('merge-watch-ci-red', ciRedDetail);
+	return { outcome: { kind: 'ci-red', prNumber } };
+}
+
+/**
  * Handle one non-null poll result.
  *
  * Returns `{ outcome }` when the state machine should stop (terminal outcome),
- * or `null` to continue polling.
+ * `{ updateBranchCount }` when a BEHIND auto-recovery attempt updated the
+ * counter (caller merges this into the continuing state), or `null` to
+ * continue polling with the count unchanged.
  *
  * Extracted from runMergeWatch to keep the main function under complexity/line
  * limits (CAM-60 factory/helper pattern).
@@ -401,32 +548,12 @@ function buildSuccessPostMergeDoneDetail(
 function processPollResult(
 	status: PrStatus,
 	opts: MergeWatchOptions,
-): { outcome: MergeWatchOutcome } | null {
-	const { prNumber, mergedBranch, cwd, postMergeFn, notifyOrchestrator, logEvent } = opts;
+	updateBranchCount: number,
+): { outcome: MergeWatchOutcome } | { updateBranchCount: number } | null {
+	const { prNumber, notifyOrchestrator, logEvent } = opts;
 
 	if (status.state === 'MERGED') {
-		notifyOrchestrator(`[cam] PR #${prNumber} merged - running post-merge`);
-		const mergedDetail: MergeWatchMergedEventDetail = { prNumber };
-		logEvent?.('merge-watch-merged', mergedDetail);
-		const result = postMergeFn({ cwd, mergedBranch });
-		if (result.ok) {
-			const tagNote = result.tagCreated ? '(tag created)' : '(tag existed)';
-			// Coalesce: fold prune sub-status into a single completion line.
-			// warnOnPruneFailure is a pure builder (returns string, no side-effects)
-			// so there is EXACTLY ONE notifyOrchestrator call on the success path
-			// (back-to-back send-keys would race in the orchestrator Ink prompt).
-			const pruneSuffix = warnOnPruneFailure(result.branchPrunedLocal, result.branchPrunedRemote);
-			notifyOrchestrator(`[cam] post-merge complete: ${result.tag} ${tagNote}${pruneSuffix}`);
-			const doneDetail = buildSuccessPostMergeDoneDetail(prNumber, result);
-			logEvent?.('merge-watch-post-merge-done', doneDetail);
-		} else {
-			notifyOrchestrator(`[cam] post-merge failed: ${result.reason}`);
-			const doneDetail: MergeWatchPostMergeDoneEventDetail = {
-				prNumber, ok: false, reason: result.reason,
-			};
-			logEvent?.('merge-watch-post-merge-done', doneDetail);
-		}
-		return { outcome: { kind: 'merged', postMerge: result } };
+		return handleMergedStatus(opts);
 	}
 
 	if (status.state === 'CLOSED') {
@@ -437,19 +564,21 @@ function processPollResult(
 	}
 
 	if (status.state === 'OPEN' && status.mergeStateStatus === 'BLOCKED') {
-		// GitHub returns BLOCKED while checks are pending: inspect rollup before
-		// treating as ci-red (US-R1-003 pattern).
-		const rollup = status.statusCheckRollup ?? [];
-		if (rollup.length === 0 || !hasFailedCheck(rollup)) {
-			return null; // CI pending/in-progress: keep polling
-		}
-		notifyOrchestrator(`[cam] CI red, PR #${prNumber} open, not merged`);
-		const ciRedDetail: MergeWatchCiRedEventDetail = { prNumber, reason: 'blocked' };
-		logEvent?.('merge-watch-ci-red', ciRedDetail);
-		return { outcome: { kind: 'ci-red', prNumber } };
+		return handleBlockedStatus(status, opts);
 	}
 
-	return null; // OPEN + non-BLOCKED (CLEAN, BEHIND, etc.): keep polling
+	if (status.state === 'OPEN' && status.mergeStateStatus === 'DIRTY') {
+		notifyOrchestrator(
+			`[cam] merge-watch: PR #${prNumber} is DIRTY (merge conflict), stopping${status.url ? ` - ${status.url}` : ''}`,
+		);
+		return { outcome: { kind: 'dirty', prNumber } };
+	}
+
+	if (status.state === 'OPEN' && status.mergeStateStatus === 'BEHIND') {
+		return handleBehindStatus(status, updateBranchCount, opts);
+	}
+
+	return null; // OPEN + non-BLOCKED/DIRTY/BEHIND (CLEAN, UNSTABLE, etc.): keep polling
 }
 
 // ---------------------------------------------------------------------------
@@ -479,6 +608,8 @@ export interface StepMergeWatchOptions {
 	postMergeFn: PostMergeFn;
 	notifyOrchestrator: (line: string) => void;
 	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
+	/** Injectable gh pr update-branch invocable (US-001, CAM-182). Absent = never update. */
+	updateBranchFn?: UpdateBranchFn;
 	/** Default: DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS */
 	pollIntervalMs?: number;
 	/** Default: DEFAULT_MERGE_WATCH_MAX_POLLS */
@@ -560,17 +691,22 @@ export function stepMergeWatch(
 		postMergeFn: opts.postMergeFn,
 		notifyOrchestrator: opts.notifyOrchestrator,
 		logEvent: opts.logEvent,
+		updateBranchFn: opts.updateBranchFn,
 	};
-	const result = processPollResult(status, mergeWatchOpts);
-	if (result !== null) {
+	const updateBranchCount = state.updateBranchCount ?? 0;
+	const result = processPollResult(status, mergeWatchOpts, updateBranchCount);
+	if (result !== null && 'outcome' in result) {
 		return { kind: 'terminal', outcome: result.outcome };
 	}
 
-	// Non-terminal: keep watching with updated counters.
-	return {
-		kind: 'continue',
-		state: { ...state, pollCount: newPollCount, lastPolledAt: newLastPolledAt },
-	};
+	// Non-terminal: keep watching with updated counters. Merge in the new
+	// updateBranchCount only when a BEHIND auto-recovery attempt ran; otherwise
+	// preserve whatever was already on state (undefined stays undefined).
+	const nextState: MergeWatchState = { ...state, pollCount: newPollCount, lastPolledAt: newLastPolledAt };
+	if (result !== null && 'updateBranchCount' in result) {
+		nextState.updateBranchCount = result.updateBranchCount;
+	}
+	return { kind: 'continue', state: nextState };
 }
 
 // ---------------------------------------------------------------------------
@@ -608,6 +744,7 @@ export async function runMergeWatch(opts: MergeWatchOptions): Promise<MergeWatch
 		postMergeFn: opts.postMergeFn,
 		notifyOrchestrator: opts.notifyOrchestrator,
 		logEvent: opts.logEvent,
+		updateBranchFn: opts.updateBranchFn,
 		pollIntervalMs,
 		maxPolls,
 	};

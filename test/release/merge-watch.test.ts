@@ -2081,3 +2081,240 @@ describe('AC3: preserved-seed -> enrich -> stepMergeWatch closeIssueId (US-001)'
 		},
 	);
 });
+
+// ---------------------------------------------------------------------------
+// US-001 (CAM-182): auto-recover OPEN+BEHIND via bounded gh pr update-branch
+// ---------------------------------------------------------------------------
+
+describe('processPollResult / stepMergeWatch: BEHIND auto-recovery (US-001, CAM-182)', () => {
+	const OPEN_BEHIND_ARMED: PrStatus = {
+		state: 'OPEN',
+		mergeStateStatus: 'BEHIND',
+		autoMergeRequest: { enabledAt: '2026-07-05T00:00:00Z' },
+	};
+	const OPEN_BEHIND_NOT_ARMED: PrStatus = {
+		state: 'OPEN',
+		mergeStateStatus: 'BEHIND',
+		autoMergeRequest: null,
+	};
+	const OPEN_BEHIND_ARMED_FAILED_CHECK: PrStatus = {
+		state: 'OPEN',
+		mergeStateStatus: 'BEHIND',
+		autoMergeRequest: { enabledAt: '2026-07-05T00:00:00Z' },
+		statusCheckRollup: [{ conclusion: 'FAILURE' }],
+	};
+	const OPEN_DIRTY: PrStatus = { state: 'OPEN', mergeStateStatus: 'DIRTY' };
+
+	function makeUpdateBranchStepOpts(
+		overrides: Partial<StepMergeWatchOptions> = {},
+	): { opts: StepMergeWatchOptions; notifications: string[]; updateBranchCalls: number[] } {
+		const notifications: string[] = [];
+		const updateBranchCalls: number[] = [];
+		const opts: StepMergeWatchOptions = {
+			cwd: '/fake',
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: (line) => notifications.push(line),
+			updateBranchFn: (prNumber) => updateBranchCalls.push(prNumber),
+			pollIntervalMs: 1,
+			maxPolls: 240,
+			...overrides,
+		};
+		return { opts, notifications, updateBranchCalls };
+	}
+
+	// AC (armed): BEHIND + auto-merge armed + no failed check + count < 2 ->
+	// updateBranchFn called exactly once, count incremented, watch continues.
+	test('OPEN+BEHIND with auto-merge armed calls updateBranchFn once and continues (count 0 -> 1)', () => {
+		const { opts, notifications, updateBranchCalls } = makeUpdateBranchStepOpts();
+		const state: MergeWatchState = { prNumber: 500, mergedBranch: 'cam/b' };
+
+		const result = stepMergeWatch(state, 0, () => OPEN_BEHIND_ARMED, opts);
+
+		expect(result.kind).toBe('continue');
+		if (result.kind === 'continue') {
+			expect(result.state.updateBranchCount).toBe(1);
+		}
+		expect(updateBranchCalls).toEqual([500]);
+		expect(notifications.some((n) => n.includes('BEHIND') && n.includes('update-branch'))).toBe(true);
+	});
+
+	// AC (cap): updateBranchCount===2 and still BEHIND -> terminal behind-unrecovered,
+	// updateBranchFn NOT called again.
+	test('OPEN+BEHIND with updateBranchCount already at cap (2) terminates behind-unrecovered', () => {
+		const { opts, notifications, updateBranchCalls } = makeUpdateBranchStepOpts();
+		const state: MergeWatchState = { prNumber: 501, mergedBranch: 'cam/b', updateBranchCount: 2 };
+
+		const result = stepMergeWatch(state, 0, () => OPEN_BEHIND_ARMED, opts);
+
+		expect(result.kind).toBe('terminal');
+		if (result.kind === 'terminal') {
+			expect(result.outcome.kind).toBe('behind-unrecovered');
+			if (result.outcome.kind === 'behind-unrecovered') {
+				expect(result.outcome.prNumber).toBe(501);
+			}
+		}
+		expect(updateBranchCalls).toEqual([]);
+		expect(notifications.some((n) => n.includes('giving up'))).toBe(true);
+	});
+
+	// AC (not armed): auto-merge NOT armed -> updateBranchFn not called, keep polling.
+	test('OPEN+BEHIND with auto-merge NOT armed does not call updateBranchFn, keeps polling', () => {
+		const { opts, updateBranchCalls } = makeUpdateBranchStepOpts();
+		const state: MergeWatchState = { prNumber: 502, mergedBranch: 'cam/b' };
+
+		const result = stepMergeWatch(state, 0, () => OPEN_BEHIND_NOT_ARMED, opts);
+
+		expect(result.kind).toBe('continue');
+		if (result.kind === 'continue') {
+			expect(result.state.updateBranchCount).toBeUndefined();
+		}
+		expect(updateBranchCalls).toEqual([]);
+	});
+
+	// AC (dirty): OPEN+DIRTY terminates non-merged (kind:dirty), updateBranchFn not called.
+	test('OPEN+DIRTY terminates with outcome kind dirty, updateBranchFn not called', () => {
+		const { opts, updateBranchCalls } = makeUpdateBranchStepOpts();
+		const state: MergeWatchState = { prNumber: 503, mergedBranch: 'cam/b' };
+
+		const result = stepMergeWatch(state, 0, () => OPEN_DIRTY, opts);
+
+		expect(result.kind).toBe('terminal');
+		if (result.kind === 'terminal') {
+			expect(result.outcome.kind).toBe('dirty');
+			if (result.outcome.kind === 'dirty') {
+				expect(result.outcome.prNumber).toBe(503);
+			}
+		}
+		expect(updateBranchCalls).toEqual([]);
+	});
+
+	// AC (guard): a failed check in the rollup blocks the update-branch recovery
+	// even when auto-merge is armed.
+	test('OPEN+BEHIND with a failed check in the rollup does not call updateBranchFn', () => {
+		const { opts, updateBranchCalls } = makeUpdateBranchStepOpts();
+		const state: MergeWatchState = { prNumber: 504, mergedBranch: 'cam/b' };
+
+		const result = stepMergeWatch(state, 0, () => OPEN_BEHIND_ARMED_FAILED_CHECK, opts);
+
+		expect(result.kind).toBe('continue');
+		expect(updateBranchCalls).toEqual([]);
+	});
+
+	// AC (round-trip): updateBranchCount survives a write/read cycle (sidecar restart).
+	test('updateBranchCount round-trips through writeMergeWatchState/readMergeWatchState', () => {
+		const filePath = join(mkdtempSync(join(tmpdir(), 'merge-watch-behind-test-')), '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, { prNumber: 42, mergedBranch: 'cam/b', updateBranchCount: 1 });
+
+		const read = readMergeWatchState(filePath);
+
+		expect(read?.updateBranchCount).toBe(1);
+	});
+
+	// AC (round-trip legacy): a legacy state file without updateBranchCount reads
+	// back as fresh (count 0 via the `?? 0` default at use-sites).
+	test('legacy state file without updateBranchCount reads back as fresh (undefined -> 0)', () => {
+		const filePath = join(mkdtempSync(join(tmpdir(), 'merge-watch-behind-legacy-')), '.cam-merge-watch.json');
+		writeFileSync(filePath, JSON.stringify({ prNumber: 7, mergedBranch: 'cam/legacy' }), 'utf8');
+
+		const state = readMergeWatchState(filePath);
+
+		expect(state).not.toBeNull();
+		expect(state?.updateBranchCount).toBeUndefined();
+	});
+
+	// AC (default write): writeMergeWatchState defaults updateBranchCount to 0 when absent.
+	test('writeMergeWatchState defaults updateBranchCount to 0 when absent in state', () => {
+		const filePath = join(mkdtempSync(join(tmpdir(), 'merge-watch-behind-default-')), '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, { prNumber: 1, mergedBranch: 'cam/b' });
+
+		const read = readMergeWatchState(filePath);
+
+		expect(read?.updateBranchCount).toBe(0);
+	});
+
+	// End-to-end via the legacy blocking runMergeWatch wrapper: two consecutive
+	// BEHIND polls exhaust the cap and the watch terminates behind-unrecovered
+	// without ever reaching a merge.
+	test('runMergeWatch: BEHIND streak exhausts the cap and terminates behind-unrecovered', async () => {
+		const updateBranchCalls: number[] = [];
+		const notifications: string[] = [];
+
+		const outcome = await runMergeWatch({
+			prNumber: 600,
+			mergedBranch: 'cam/branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([OPEN_BEHIND_ARMED, OPEN_BEHIND_ARMED, OPEN_BEHIND_ARMED]),
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: (line) => notifications.push(line),
+			updateBranchFn: (prNumber) => updateBranchCalls.push(prNumber),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 10,
+		});
+
+		expect(outcome.kind).toBe('behind-unrecovered');
+		// Exactly 2 update-branch attempts (cap), the 3rd poll gives up.
+		expect(updateBranchCalls).toEqual([600, 600]);
+		expect(notifications.some((n) => n.includes('giving up'))).toBe(true);
+	});
+
+	// End-to-end: BEHIND recovers after one update-branch attempt and eventually merges.
+	test('runMergeWatch: BEHIND recovers after one update-branch attempt, then merges', async () => {
+		const updateBranchCalls: number[] = [];
+
+		const outcome = await runMergeWatch({
+			prNumber: 601,
+			mergedBranch: 'cam/branch',
+			cwd: '/fake',
+			pollFn: makeSeqPollFn([OPEN_BEHIND_ARMED, OPEN_CLEAN, MERGED]),
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: () => {},
+			updateBranchFn: (prNumber) => updateBranchCalls.push(prNumber),
+			sleepFn: () => {},
+			pollIntervalMs: 1,
+			maxPolls: 10,
+		});
+
+		expect(outcome.kind).toBe('merged');
+		expect(updateBranchCalls).toEqual([601]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// sidecar.ts production wiring oracle - BEHIND auto-recovery (US-001, CAM-182)
+// ---------------------------------------------------------------------------
+
+describe('sidecar.ts production wiring oracle - BEHIND auto-recovery (US-001, CAM-182)', () => {
+	const sidecarPath = resolve(import.meta.dir, '..', '..', 'src', 'commands', 'sidecar.ts');
+	const source = readFileSync(sidecarPath, 'utf8');
+
+	const ghPollFnMatch = source.match(/const ghPollFn: GhPollFn = \(prNumber\): PrStatus \| null => \{[\s\S]*?\n\t\t\};/);
+	const updateBranchFnMatch = source.match(/const updateBranchFn: UpdateBranchFn = \(prNumber\): void => \{[\s\S]*?\n\t\t\};/);
+	const stepOptsMatch = source.match(/const stepOpts: StepMergeWatchOptions = \{[\s\S]*?\};/);
+
+	test('autoMergeRequest is present in sidecar.ts (AC1 grep oracle mirror)', () => {
+		expect(source).toContain('autoMergeRequest');
+	});
+
+	test('ghPollFn --json field list includes state,mergeStateStatus,statusCheckRollup,autoMergeRequest,url', () => {
+		expect(source).toContain(
+			"'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,statusCheckRollup,autoMergeRequest,url'",
+		);
+	});
+
+	test('the read-only ghPollFn spawnSync call carries no custom env (keeps ambient GITHUB_TOKEN)', () => {
+		expect(ghPollFnMatch).not.toBeNull();
+		expect(ghPollFnMatch?.[0]).not.toContain('env:');
+	});
+
+	test('updateBranchFn strips GITHUB_TOKEN from the child environment', () => {
+		expect(updateBranchFnMatch).not.toBeNull();
+		expect(updateBranchFnMatch?.[0]).toContain("k !== 'GITHUB_TOKEN'");
+		expect(updateBranchFnMatch?.[0]).toContain("'pr', 'update-branch'");
+	});
+
+	test('stepOpts wires updateBranchFn into the production StepMergeWatchOptions bag', () => {
+		expect(stepOptsMatch).not.toBeNull();
+		expect(stepOptsMatch?.[0]).toContain('updateBranchFn,');
+	});
+});

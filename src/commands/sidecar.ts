@@ -51,6 +51,7 @@ import {
 	type GhPollFn,
 	type PrStatus,
 	type StepMergeWatchOptions,
+	type UpdateBranchFn,
 } from '../release/merge-watch.ts';
 import { runPostMerge, type SpawnFn as PostMergeSpawnFn } from '../release/post-merge.ts';
 import { observeDecide, type ObserveState } from '../supervisor/observe.ts';
@@ -448,9 +449,10 @@ function makeProductionMergeWatchFn(
 		}
 
 		const ghPollFn: GhPollFn = (prNumber): PrStatus | null => {
+			// Read-only poll: keeps the ambient GITHUB_TOKEN (no env stripping).
 			const result = spawnSync(
 				'gh',
-				['pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,statusCheckRollup'],
+				['pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,statusCheckRollup,autoMergeRequest,url'],
 				{ encoding: 'utf8' },
 			);
 			if ((result.status ?? 1) !== 0) return null;
@@ -461,6 +463,18 @@ function makeProductionMergeWatchFn(
 				}
 				return null;
 			} catch { return null; }
+		};
+
+		// Mutation: `gh pr update-branch` runs with GITHUB_TOKEN stripped from the
+		// child environment so gh falls back to its keyring OAuth token (same
+		// pattern as gh pr create/merge/comment -- the .env GITHUB_TOKEN
+		// fine-grained PAT lacks "Pull requests: write").
+		const updateBranchFn: UpdateBranchFn = (prNumber): void => {
+			const env: Record<string, string> = {};
+			for (const [k, v] of Object.entries(process.env)) {
+				if (v !== undefined && k !== 'GITHUB_TOKEN') env[k] = v;
+			}
+			spawnSync('gh', ['pr', 'update-branch', String(prNumber)], { encoding: 'utf8', env });
 		};
 
 		const postMergeSpawnFn: PostMergeSpawnFn = (cmd, args, spawnOpts) =>
@@ -476,6 +490,7 @@ function makeProductionMergeWatchFn(
 			notifyOrchestrator: notify,
 			logEvent: (kind, detail) =>
 				logEvent({ ts: new Date().toISOString(), storyId: undefined, uuid: 'sidecar', kind, detail }),
+			updateBranchFn,
 		};
 
 		// One step per tick. The outer sidecar loop owns the 2s idle-poll cadence;
