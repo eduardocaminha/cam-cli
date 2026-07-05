@@ -32,7 +32,7 @@ import { runSidecarLoop, type RunSidecarLoopOptions } from '../../src/supervisor
 import { makeInMemoryEventLogger, type WorkerEventLogger } from '../../src/supervisor/events.ts';
 import { observeDecide, type ObserveState } from '../../src/supervisor/observe.ts';
 import { sendEscalation, type ResendSendFn } from '../../src/notify/resend.ts';
-import { DRAIN_NOTIFY_SUBJECT } from '../../src/commands/sidecar.ts';
+import { DRAIN_NOTIFY_SUBJECT, makeProductionMetaLoopDispatchFn } from '../../src/commands/sidecar.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 
 // ---------------------------------------------------------------------------
@@ -545,5 +545,439 @@ describe('sidecar-meta-loop: drain notify file-assert oracles (US-005)', () => {
 		expect(src).toContain('readResendConfig');
 		// No second Resend client: no 'new Resend(' in sidecar.ts
 		expect(src).not.toContain('new Resend(');
+	});
+});
+
+// ===========================================================================
+// US-004 (CAM-139): Wire the auto-dispatcher into the sidecar idle-tick
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// AC#7 oracle: events.ts contains 'meta-loop-dispatch'
+// ---------------------------------------------------------------------------
+
+describe('meta-loop-dispatch: events.ts contains meta-loop-dispatch kind (AC#7)', () => {
+	test("grep oracle: 'meta-loop-dispatch' present in src/supervisor/events.ts", () => {
+		const src = readFileSync(
+			join(import.meta.dir, '../../src/supervisor/events.ts'),
+			'utf8',
+		);
+		expect(src).toContain('meta-loop-dispatch');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC#1 oracle: sidecar.ts wires dispatch fn for auto and observe fn for observe
+// ---------------------------------------------------------------------------
+
+describe('meta-loop-dispatch: sidecar wiring oracle (AC#1)', () => {
+	test('sidecar.ts exports makeProductionMetaLoopDispatchFn and branches on auto', () => {
+		const src = readFileSync(
+			join(import.meta.dir, '../../src/commands/sidecar.ts'),
+			'utf8',
+		);
+		expect(src).toContain('makeProductionMetaLoopDispatchFn');
+		expect(src).toContain("metaLoop === 'auto'");
+		expect(src).toContain("metaLoop === 'observe'");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Helper: minimal drain-notify spy (scoped to dispatch tests)
+// ---------------------------------------------------------------------------
+
+function makeDispatchDrainSpy(): { callCount: number; drainNotifyFn: () => Promise<void> } {
+	let callCount = 0;
+	return { get callCount() { return callCount; }, drainNotifyFn: async () => { callCount++; } };
+}
+
+// ---------------------------------------------------------------------------
+// AC#2: Dispatcher dispatches ONLY when all gates pass
+// ---------------------------------------------------------------------------
+
+describe('meta-loop-dispatch: dispatches when all gates pass (AC#2)', () => {
+	test('setPhaseFn called with planning + issueId; dispatched event emitted', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const setPhaseCaptures: Array<{ phase: string; planIssue?: string }> = [];
+		const fixture = makePlannableIssue('CAM-42');
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => fixture,
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: (phase, planIssue) => { setPhaseCaptures.push({ phase, planIssue }); },
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+
+		expect(setPhaseCaptures.length).toBe(1);
+		expect(setPhaseCaptures[0]?.phase).toBe('planning');
+		expect(setPhaseCaptures[0]?.planIssue).toBe('CAM-42');
+
+		const dispatchEvents = events.filter((ev) => ev.kind === 'meta-loop-dispatch');
+		expect(dispatchEvents.length).toBe(1);
+		const detail = dispatchEvents[0]?.detail as { dispatched: boolean; issueId: string; rank: number };
+		expect(detail.dispatched).toBe(true);
+		expect(detail.issueId).toBe('CAM-42');
+		expect(typeof detail.rank).toBe('number');
+	});
+
+	test('dispatches when phase is undefined (absent)', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const setPhaseCaptures: Array<{ phase: string; planIssue?: string }> = [];
+		const fixture = makePlannableIssue('CAM-10');
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => fixture,
+			readPhaseFn: () => undefined, // absent
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: (phase, planIssue) => { setPhaseCaptures.push({ phase, planIssue }); },
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+		expect(setPhaseCaptures[0]?.phase).toBe('planning');
+		expect(setPhaseCaptures[0]?.planIssue).toBe('CAM-10');
+		expect(events.filter((ev) => ev.kind === 'meta-loop-dispatch').length).toBe(1);
+	});
+
+	test('does NOT dispatch when phase is planning (not idle)', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		let setPhaseCallCount = 0;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => makePlannableIssue(),
+			readPhaseFn: () => 'planning',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => { setPhaseCallCount++; },
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+		expect(setPhaseCallCount).toBe(0);
+		expect(events.filter((ev) => ev.kind === 'meta-loop-dispatch').length).toBe(0);
+	});
+
+	test('does NOT dispatch when phase is implementing', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		let setPhaseCallCount = 0;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => makePlannableIssue(),
+			readPhaseFn: () => 'implementing',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => { setPhaseCallCount++; },
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+		expect(setPhaseCallCount).toBe(0);
+		expect(events.filter((ev) => ev.kind === 'meta-loop-dispatch').length).toBe(0);
+	});
+
+	test('does NOT dispatch when prd.json in flight (prdPresentFn true)', async () => {
+		const { logger } = makeInMemoryEventLogger();
+		let setPhaseCallCount = 0;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => makePlannableIssue(),
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => true, // PRD cycle in flight
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => { setPhaseCallCount++; },
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+		expect(setPhaseCallCount).toBe(0);
+	});
+
+	test('does NOT dispatch when merge-watch present', async () => {
+		const { logger } = makeInMemoryEventLogger();
+		let setPhaseCallCount = 0;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => makePlannableIssue(),
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => true, // merge-watch present
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => { setPhaseCallCount++; },
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+		expect(setPhaseCallCount).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC#4: Refused fail-closed when preconditions not met
+// ---------------------------------------------------------------------------
+
+describe('meta-loop-dispatch: refused fail-closed (AC#4)', () => {
+	test('emits refused event + warnFn for container-not-active', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const warnMessages: string[] = [];
+		let setPhaseCallCount = 0;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => makePlannableIssue(),
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: false, reason: 'container-not-active' as const }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => { setPhaseCallCount++; },
+			warnFn: (msg) => { warnMessages.push(msg); },
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+
+		// Fail-closed: setPhaseFn never called
+		expect(setPhaseCallCount).toBe(0);
+
+		// Structured refusal event emitted
+		const refusalEvents = events.filter((ev) => ev.kind === 'meta-loop-dispatch');
+		expect(refusalEvents.length).toBe(1);
+		const detail = refusalEvents[0]?.detail as { refused: boolean; reason: string };
+		expect(detail.refused).toBe(true);
+		expect(detail.reason).toBe('container-not-active');
+
+		// stderr warning carries the reason
+		expect(warnMessages.length).toBeGreaterThan(0);
+		expect(warnMessages[0]).toContain('container-not-active');
+	});
+
+	test('emits refused event for plan-approval-not-auto', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const warnMessages: string[] = [];
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => makePlannableIssue(),
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: false, reason: 'plan-approval-not-auto' as const }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => {},
+			warnFn: (msg) => { warnMessages.push(msg); },
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+
+		const detail = events.filter((ev) => ev.kind === 'meta-loop-dispatch')[0]?.detail as { refused: boolean; reason: string };
+		expect(detail.refused).toBe(true);
+		expect(detail.reason).toBe('plan-approval-not-auto');
+		expect(warnMessages[0]).toContain('plan-approval-not-auto');
+	});
+
+	test('selectFn NOT called when preconditions fail (never drains degraded)', async () => {
+		const { logger } = makeInMemoryEventLogger();
+		let selectCallCount = 0;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => { selectCallCount++; return makePlannableIssue(); },
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: false, reason: 'container-not-active' as const }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => {},
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+
+		// Refused before reaching selectFn
+		expect(selectCallCount).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC#5: Drained path: observe event + drain-notify, no dispatch
+// ---------------------------------------------------------------------------
+
+describe('meta-loop-dispatch: drained path (AC#5)', () => {
+	test('emits meta-loop-observe drained event when backlog is empty', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => null,
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => {},
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+
+		const drainEvents = events.filter(
+			(ev) => ev.kind === 'meta-loop-observe' && (ev.detail as { drained?: boolean }).drained === true,
+		);
+		expect(drainEvents.length).toBe(1);
+		// No dispatch event
+		expect(events.filter((ev) => ev.kind === 'meta-loop-dispatch').length).toBe(0);
+	});
+
+	test('fires drain notify once on drained transition; deduped on subsequent calls', async () => {
+		const { logger } = makeInMemoryEventLogger();
+		const spy = makeDispatchDrainSpy();
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => null,
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => {},
+			drainNotifyFn: spy.drainNotifyFn,
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		// Call twice; second is deduped
+		await dispatchFn();
+		await dispatchFn();
+
+		expect(spy.callCount).toBe(1);
+	});
+
+	test('setPhaseFn NOT called when drained', async () => {
+		const { logger } = makeInMemoryEventLogger();
+		let setPhaseCallCount = 0;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => null,
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => { setPhaseCallCount++; },
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+		expect(setPhaseCallCount).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC#6: Kill-switch parks at boundary; sidecar loop keeps running
+// ---------------------------------------------------------------------------
+
+describe('meta-loop-dispatch: kill-switch parks at boundary (AC#6)', () => {
+	test('emits stopped event once when kill-switch engaged', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		let setPhaseCallCount = 0;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => makePlannableIssue(),
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => true,
+			setPhaseFn: () => { setPhaseCallCount++; },
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+
+		expect(setPhaseCallCount).toBe(0);
+		const stoppedEvents = events.filter(
+			(ev) => ev.kind === 'meta-loop-dispatch' && (ev.detail as { stopped?: boolean }).stopped === true,
+		);
+		expect(stoppedEvents.length).toBe(1);
+	});
+
+	test('stopped event emitted only once even across multiple calls (dedup)', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => makePlannableIssue(),
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => true,
+			setPhaseFn: () => {},
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		for (let i = 0; i < 5; i++) await dispatchFn();
+
+		const stoppedEvents = events.filter(
+			(ev) => ev.kind === 'meta-loop-dispatch' && (ev.detail as { stopped?: boolean }).stopped === true,
+		);
+		expect(stoppedEvents.length).toBe(1);
+	});
+
+	test('sidecar loop keeps running (no SIGTERM) when dispatch fn parks via kill-switch', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => makePlannableIssue(),
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => true,
+			setPhaseFn: () => {},
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		// Drive 3 idle ticks via runSidecarLoop to confirm the loop continues
+		const loopOpts = makeIdleLoopOpts(3, {
+			runMetaLoopObserveFn: dispatchFn,
+			hasPendingStories: () => false,
+		});
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		// Loop reached ESCAPE (completed 3 ticks without aborting), stopped event exactly once
+		const stoppedEvents = events.filter(
+			(ev) => ev.kind === 'meta-loop-dispatch' && (ev.detail as { stopped?: boolean }).stopped === true,
+		);
+		expect(stoppedEvents.length).toBe(1);
 	});
 });
