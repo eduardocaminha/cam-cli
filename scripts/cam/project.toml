@@ -8,7 +8,7 @@ name = "claude"
 auditor = "claude-opus-4-8"
 implementer = "claude-sonnet-5"
 orchestrator = "claude-opus-4-8"
-planner = "claude-opus-4-8"
+planner = "claude-fable-5"
 reviewer = "claude-opus-4-8"
 ship = "claude-sonnet-4-6"
 
