@@ -7,6 +7,27 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "CRITICAL [src/supervisor/result.ts:300]: commitSubjectMatchesStory anchors the id immediately after 'feat:' (regex ^feat:\\s*<id>\\s*-\\s*\\S), matching only the bracketless form 'feat: US-001 - Title'. The actual convention the worker emits is bracketed: 'feat: [Story ID] - [Story Title]' (templates/agents/subagent-implementer.md:100, templates/scripts/cam/CLAUDE.md:12) and every real per-story commit on this branch is 'feat: [US-001] - ...'. Verified: commitSubjectMatchesStory('feat: [US-001] - Add commit-existence gate','US-001') returns false against the branch's own commit. The matcher cannot confirm the real commit convention, so US-001 AC7 (confirm a commit that follows the convention) is not met."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "CRITICAL [src/supervisor/host.ts:626]: commitExistsForStory runs `git log --format=%s <branch>`, which walks the entire branch ancestry back to root (per git-scm.com/docs/git-log), not just commits unique to this PRD. Story ids (US-001..) are reused every PRD, so ancient bracketless commits collide: commitExistsForStory('US-001') returns true by matching 'feat: US-001 - tmux worker-slot primitives' (an unrelated months-old commit), NOT this branch's 'feat: [US-001] - ...'. The gate therefore returns true regardless of whether the current worker committed, silently defeating the exact 'passes:true but no commit' scenario the epic (CAM-187) exists to catch. Scope the lookup to commits unique to the branch (e.g. `git log --format=%s main..HEAD` or origin/main..HEAD)."
+    },
+    {
+      "id": "US-R1-003",
+      "title": "Review round 1 fix 003: address reviewer finding",
+      "priority": 3,
+      "passes": false,
+      "notes": "WARNING [test/supervisor/result.test.ts:1283]: The commitSubjectMatchesStory tests only assert the bracketless 'feat: US-001 - ...' form (the wrong convention); no test asserts the real 'feat: [US-001] - ...' bracketed convention. The loop/host tests inject a fake commitExistsForStory, so no test exercises the real host.ts adapter against a real git log. Consequently the two CRITICAL defects pass CI green. Add a matcher test for 'feat: [US-001] - Title' and an integration test that runs the real adapter against a repo whose only matching commit is bracketed."
+    },
+    {
       "id": "US-001",
       "title": "Add commit-existence gate to readWorkerOutcome",
       "description": "As the cam supervisor, I need readWorkerOutcome to confirm a story DONE only when prd.json passes:true AND a commit for that story exists, so a worker that flipped passes:true but never committed (e.g. staged-then-timed-out) does not get reported as a clean pass.",
@@ -22,7 +43,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine is green (bun run check:all: typecheck + biome lint + tests). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Edit src/supervisor/result.ts + test/supervisor/result.test.ts only. Gate BOTH storyPassesInPrd->pass sites: the worker-report primary path (~line 344) and the handoff/sentinel fallback path (~line 430). Extend the internal PrdJson story shape to also read `requires` (currently only {id, passes}) so the operator exemption can read it. Make commitExistsForStory OPTIONAL so existing callers (no callback yet) keep today's behavior verbatim (US-002 wires the real one). Keep the pure-function contract: no git spawn, all I/O via injected callbacks. The story-id token can contain internal hyphens (US-R1-003) per the sentinel regex US-[A-Za-z0-9-]+; the matcher must handle those. Commit convention is `feat: [Story ID] - [Story Title]` (scripts/cam/CLAUDE.md step 8). HINT on the not-DONE return kind: do NOT return a kind whose loop treatment routes to finalizeStory/auto-commit ('incomplete' triggers supervisor finalize, which is out-of-scope) - prefer a kind/detail that the loop treats as re-dispatch/no-progress (US-002 defines the loop behavior). Read scripts/cam/patterns.md at story start."
@@ -41,7 +62,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine is green (bun run check:all: typecheck + biome lint + tests). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 5,
       "passes": true,
       "requires": "US-001",
       "notes": "loop.ts: add commitExistsForStory to RunSupervisorOptions (near the prdPath/handoffPath fields ~line 205-215), resolve it in the opts destructure, and pass it into the readWorkerOutcome({...}) call (~line 1095). host.ts: build the real adapter in makeRunSupervisorHostOptions and add it to the returned opts object (~line 679-721); implement it with spawnSync git like the existing helpers (host.ts:531-589), e.g. `git log --format=%s <branch>` for the current branch subjects, then match each with the US-001 anchored matcher. Gotcha (issue spec E-list): fixer commits (US-R1-*) must carry the story id in their subject for the gate to confirm them - the anchored matcher must accept that convention. loop.test.ts already injects nowMs/perWorkerTimeoutMs/workerIsolation and fake finalizeStory, so the loop-behavior and no-auto-commit assertions are testable with fakes. Requires US-001 (callback + matcher). Read scripts/cam/patterns.md at story start."
@@ -59,10 +80,35 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine is green (bun run check:all: typecheck + biome lint + tests). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "loop.ts: declare DEFAULT_CONTAINER_WORKER_TIMEOUT_MS next to DEFAULT_PER_WORKER_TIMEOUT_MS (~line 471); change the perWorkerTimeoutMs resolution (~line 624) so the fallback is isolation-aware using workerIsolation (resolved ~line 652) instead of a flat DEFAULT_PER_WORKER_TIMEOUT_MS. host.ts: the CAM_WORKER_TIMEOUT_MS resolver (~line 243) must fall back to the isolation-aware default (workerIsolation resolved at host.ts:455) when the env var is unset; the explicit env value must still win. This sub-fix is independent of US-001/US-002 (requires null) - it only reduces how often the timeout fires; the commit gate makes the timeout SAFE regardless. loop.test.ts already injects nowMs, perWorkerTimeoutMs and workerIsolation, so the ceiling-selection test is straightforward. Read scripts/cam/patterns.md at story start."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:3",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "src/supervisor/result.ts",
+        "line": 300,
+        "text": "commitSubjectMatchesStory anchors the id immediately after 'feat:' (regex ^feat:\\s*<id>\\s*-\\s*\\S), matching only the bracketless form 'feat: US-001 - Title'. The actual convention the worker emits is bracketed: 'feat: [Story ID] - [Story Title]' (templates/agents/subagent-implementer.md:100, templates/scripts/cam/CLAUDE.md:12) and every real per-story commit on this branch is 'feat: [US-001] - ...'. Verified: commitSubjectMatchesStory('feat: [US-001] - Add commit-existence gate','US-001') returns false against the branch's own commit. The matcher cannot confirm the real commit convention, so US-001 AC7 (confirm a commit that follows the convention) is not met."
+      },
+      {
+        "severity": "CRITICAL",
+        "file": "src/supervisor/host.ts",
+        "line": 626,
+        "text": "commitExistsForStory runs `git log --format=%s <branch>`, which walks the entire branch ancestry back to root (per git-scm.com/docs/git-log), not just commits unique to this PRD. Story ids (US-001..) are reused every PRD, so ancient bracketless commits collide: commitExistsForStory('US-001') returns true by matching 'feat: US-001 - tmux worker-slot primitives' (an unrelated months-old commit), NOT this branch's 'feat: [US-001] - ...'. The gate therefore returns true regardless of whether the current worker committed, silently defeating the exact 'passes:true but no commit' scenario the epic (CAM-187) exists to catch. Scope the lookup to commits unique to the branch (e.g. `git log --format=%s main..HEAD` or origin/main..HEAD)."
+      },
+      {
+        "severity": "WARNING",
+        "file": "test/supervisor/result.test.ts",
+        "line": 1283,
+        "text": "The commitSubjectMatchesStory tests only assert the bracketless 'feat: US-001 - ...' form (the wrong convention); no test asserts the real 'feat: [US-001] - ...' bracketed convention. The loop/host tests inject a fake commitExistsForStory, so no test exercises the real host.ts adapter against a real git log. Consequently the two CRITICAL defects pass CI green. Add a matcher test for 'feat: [US-001] - Title' and an integration test that runs the real adapter against a repo whose only matching commit is bracketed."
+      }
+    ]
+  }
 }

@@ -1,20 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Worker-isolation-aware per-worker sentinel timeout ceiling"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/pr-187-commit-existence-gate",
   "timestamp": "2026-07-05T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/supervisor/host.ts",
-    "test/supervisor/loop.test.ts",
+    "src/supervisor/result.ts",
+    "test/supervisor/result.test.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "All 3 non-operator stories in this PRD now pass (US-001 commit-existence gate in result.ts, US-002 wiring it from host.ts + loop.ts with anchored git detection, US-003 this story). US-003 added DEFAULT_CONTAINER_WORKER_TIMEOUT_MS (60 min, loop.ts) and made the perWorkerTimeoutMs fallback isolation-aware: `opts.perWorkerTimeoutMs ?? (opts.workerIsolation === 'container' ? DEFAULT_CONTAINER_WORKER_TIMEOUT_MS : DEFAULT_PER_WORKER_TIMEOUT_MS)`. In host.ts, the CAM_WORKER_TIMEOUT_MS env resolver was RELOCATED (not just edited) from ~line 244 to right after `const workerIsolation = readWorkerIsolation(...)` (now ~line 447) so the fallback can read workerIsolation; this was safe because perWorkerTimeoutMs had zero usages between its old declaration site and its first real usage (`timeoutMs: perWorkerTimeoutMs` in the makeReviewDispatch call, which comes after workerIsolation is resolved). The next implementer picking up this branch should run `jq -r '.userStories[] | select(.passes==false)' scripts/cam/prd.json` first: if empty (as it is right now), the correct action is CAM_IMPLEMENTER_STATUS=PRD_COMPLETE, not another story pick. No known open gaps left by this story.",
+  "nextStoryContext": "Review round 1 filed 3 fix stories against the commit-existence gate epic (CAM-187) after US-001/002/003 were reviewed. This story (US-R1-001, priority 1) fixed the CRITICAL finding at src/supervisor/result.ts:300: commitSubjectMatchesStory only matched the bracketless form ('feat: US-001 - Title') but every real commit on this branch is bracketed ('feat: [US-001] - Title', scripts/cam/CLAUDE.md step 8). Fix: widened the anchored regex to `^feat:\\s*(?:\\[${id}\\]|${id})\\s*-\\s*\\S` (alternation, not `\\[?...\\]?`, to reject mismatched single brackets) so BOTH the bracketed convention and the older bracketless history match. Added 3 regression tests (bracketed match, mismatched-bracket rejection, bracketed-longer-id-prefix rejection) to test/supervisor/result.test.ts. Raised file-size ratchet ceilings for both files (result.ts 551->560, result.test.ts 1284->1296) with a tracker-ref in scripts/file-size-budget.json._ref. Two fix stories remain, both about the SAME epic and closely related: US-R1-002 (priority 2, CRITICAL, src/supervisor/host.ts:626) -- commitExistsForStory runs `git log --format=%s <branch>` which walks the FULL branch ancestry to root, so ancient bracketless commits from unrelated past PRDs (story ids are reused every PRD) collide and make the gate return true unconditionally, defeating the whole point of CAM-187. Fix should scope the git log to commits unique to THIS PRD/branch, e.g. `git log --format=%s main..HEAD` or `origin/main..HEAD` (the story's own notes field suggests this). US-R1-003 (priority 3, WARNING, test/supervisor/result.test.ts:1283 pre-fix line number) wants an integration test running the REAL host.ts adapter (not the injected fake used by loop.test.ts/host tests) against a repo whose only matching commit is bracketed -- this should exercise the fix from BOTH US-R1-001 (my fix, matcher) and US-R1-002 (the next story's fix, git log scoping) together, so it likely makes most sense to implement it after US-R1-002. Read the story's own `notes` field (there is no acceptanceCriteria array on these three fix stories, only notes -- judgment must be applied against the reviewer's literal finding text).",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal TS refactor (timeout-constant resolution order in loop.ts/host.ts); no external library API surface was exercised." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal TS regex-matcher fix in result.ts (no framework/library API surface exercised); JSDoc updated in place. Verified only against git-log conventions documented in this repo's own scripts/cam/CLAUDE.md and templates/agents/subagent-implementer.md, not an external library." }
   ]
 }
