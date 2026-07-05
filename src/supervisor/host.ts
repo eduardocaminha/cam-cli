@@ -610,10 +610,22 @@ export function buildSupervisorOptions(
 		}
 	};
 
-	// commitExistsForStory for US-002 (CAM-187): reads the current branch's
-	// commit subjects via git and matches them with the anchored matcher from
-	// US-001 (commitSubjectMatchesStory). Read-only (no mutation), same
+	// commitExistsForStory for US-002 (CAM-187): reads commits unique to this
+	// PRD/branch and matches them with the anchored matcher from US-001
+	// (commitSubjectMatchesStory). Read-only (no mutation), same
 	// spawnSync-git style as ensurePushed/finalizeStory above.
+	//
+	// US-R1-002 fix: `git log --format=%s <branch>` walks the branch's ENTIRE
+	// ancestry back to the root commit (git-scm.com/docs/git-log), not just
+	// commits unique to this branch. Story ids (US-001..) are reused every
+	// PRD, so an ancient bracketless commit from an unrelated past PRD
+	// collides and makes the gate return true unconditionally, silently
+	// defeating the exact "passes:true but no commit" scenario the epic
+	// exists to catch. Scope the range to `origin/main..HEAD` (a best-effort
+	// `git fetch origin main` keeps it fresh), falling back to local
+	// `main..HEAD` when origin/main cannot be resolved (e.g. no remote
+	// configured), so only commits made on this branch since it forked from
+	// main are considered.
 	const commitExistsForStory: RunSupervisorOptions['commitExistsForStory'] = (storyId) => {
 		try {
 			const branchProc = spawnSync('git', ['branch', '--show-current'], {
@@ -623,7 +635,23 @@ export function buildSupervisorOptions(
 			} as Parameters<typeof spawnSync>[2]);
 			const branchName = (typeof branchProc.stdout === 'string' ? branchProc.stdout : '').trim();
 			if (!branchName) return false;
-			const logProc = spawnSync('git', ['log', '--format=%s', branchName], {
+
+			// Best-effort: refresh origin/main so the range reflects the true
+			// upstream fork point. Ignore failures (offline, no remote, etc.).
+			spawnSync('git', ['fetch', 'origin', 'main'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+
+			const originMainProc = spawnSync('git', ['rev-parse', 'origin/main'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const range = originMainProc.status === 0 ? 'origin/main..HEAD' : 'main..HEAD';
+
+			const logProc = spawnSync('git', ['log', '--format=%s', range], {
 				cwd,
 				stdio: 'pipe',
 				encoding: 'utf8',
