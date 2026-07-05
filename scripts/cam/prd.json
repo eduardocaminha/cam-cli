@@ -17,7 +17,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [src/supervisor/host.ts:626]: commitExistsForStory runs `git log --format=%s <branch>`, which walks the entire branch ancestry back to root (per git-scm.com/docs/git-log), not just commits unique to this PRD. Story ids (US-001..) are reused every PRD, so ancient bracketless commits collide: commitExistsForStory('US-001') returns true by matching 'feat: US-001 - tmux worker-slot primitives' (an unrelated months-old commit), NOT this branch's 'feat: [US-001] - ...'. The gate therefore returns true regardless of whether the current worker committed, silently defeating the exact 'passes:true but no commit' scenario the epic (CAM-187) exists to catch. Scope the lookup to commits unique to the branch (e.g. `git log --format=%s main..HEAD` or origin/main..HEAD)."
     },
     {
