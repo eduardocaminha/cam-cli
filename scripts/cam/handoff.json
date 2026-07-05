@@ -1,0 +1,30 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Build the on-demand in-container test harness"
+  },
+  "branchName": "cam/pr-186-in-container-test-harness",
+  "timestamp": "2026-07-04T00:00:00Z",
+  "createdFiles": [
+    "scripts/test-in-container.ts",
+    "test/test-in-container.test.ts"
+  ],
+  "modifiedFiles": [
+    "docs/adr/0003-worker-isolation-boundary-dev-container.md",
+    "package.json",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 shipped. scripts/test-in-container.ts is the on-demand harness: injectable ensureFn/execFn seams, parseBunOutput parser with Set-dedup for per-file+failure-block double-print, exit code re-derived from parsed fail count (not raw docker exec exit). test:container alias in package.json. ADR 0003 updated with operator runbook pointer. NOT in GATES manifest or ci.yml.",
+  "officialDocsValidated": [
+    {
+      "lib": "bun/test",
+      "version": "1.x",
+      "url": "https://bun.sh/docs/cli/test",
+      "fetchedAt": "2026-07-04T00:00:00Z",
+      "status": "ok",
+      "summary": "Confirmed: summary lines are ' N pass' / ' N fail' / ' N skip' (single leading space). CLAUDECODE=1 hides passing/skip detail but keeps summary + failure detail. Format matches parser implementation."
+    }
+  ]
+}
