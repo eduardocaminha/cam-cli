@@ -332,14 +332,19 @@ export interface RunSupervisorOptions {
 	 */
 	notifyOrchestrator?: (line: string) => void;
 	/**
-	 * Auto-ship callback for auto mode (US-005).
+	 * Auto-ship callback for auto mode (US-005 / CAM-181).
 	 *
-	 * When injected (plan_approval === 'auto'), called immediately after a CLEAN
-	 * review verdict to dispatch /cam-ship without a human gate. In production
-	 * this sends '/cam-ship Enter' to the orchestrator pane via tmux send-keys.
+	 * When injected (plan_approval === 'auto'), called from the terminal
+	 * 'complete' branch, gated on prd.review.lastVerdict === 'CLEAN' and the
+	 * fire-once marker prd.review.autoShipDispatchedAt being absent. The marker
+	 * is written to prd.json via writePrd BEFORE the dispatch, so a sidecar
+	 * restart or in-place binary swap never re-dispatches.
+	 *
+	 * In production this sends '/cam-ship Enter' to the orchestrator pane via
+	 * tmux send-keys.
 	 *
 	 * Optional: when absent (operator mode or plan_approval != 'auto') the
-	 * review branch is unchanged (zero behavior change for all existing tests).
+	 * complete branch is unchanged (zero behavior change for all existing tests).
 	 */
 	autoShipFn?: () => void;
 	/**
@@ -732,6 +737,24 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				opts.notifyOrchestrator?.(
 					formatReviewVerdictLine(prd.review?.roundsCompleted ?? 0, 'MAX_ROUNDS_DEBT'),
 				);
+			}
+			// CAM-181 / US-001: auto-ship dispatch re-anchored to the terminal
+			// 'complete' branch. Gate: lastVerdict === 'CLEAN' AND the fire-once
+			// marker is absent. Write the marker BEFORE calling autoShipFn so that
+			// a sidecar restart or in-place binary swap never re-dispatches.
+			// Note: 'complete' is unreachable while any requires:'operator' story is
+			// pending (decide.ts routes those to 'await-operator'), so no redundant
+			// operator check is needed here.
+			if (
+				opts.autoShipFn !== undefined &&
+				prd.review?.lastVerdict === 'CLEAN' &&
+				prd.review?.autoShipDispatchedAt === undefined
+			) {
+				writePrd({
+					...prd,
+					review: { ...(prd.review ?? {}), autoShipDispatchedAt: clock() },
+				});
+				opts.autoShipFn();
 			}
 			notifyTerminal('complete');
 			return { status: 'complete', iterations, lastOutcome };
@@ -1345,14 +1368,6 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					round: updatedPrd.review.roundsCompleted ?? 0,
 				};
 				emit('review-verdict-handback', undefined, reviewUuid, handbackDetail);
-			}
-
-			// US-005: Auto-ship on CLEAN in auto mode.
-			// When autoShipFn is injected (plan_approval === 'auto'), call it
-			// immediately after a CLEAN verdict to dispatch /cam-ship without a
-			// human gate. Inert when absent (operator mode or plan_approval != 'auto').
-			if (opts.autoShipFn !== undefined && updatedPrd?.review?.lastVerdict === 'CLEAN') {
-				opts.autoShipFn();
 			}
 
 			// CAM-36: a review iteration is real state-machine progress, so it
