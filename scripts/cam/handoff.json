@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Auto-recover OPEN+BEHIND merge-watch via bounded gh pr update-branch" },
+  "branchName": "cam/pr-182-merge-watch-behind-autorecover",
+  "timestamp": "2026-07-05T21:57:26Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/release/merge-watch.ts",
+    "src/commands/sidecar.ts",
+    "test/release/merge-watch.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (autoMergeRequest-gated bounded gh pr update-branch auto-recovery) is done: PrStatus gained autoMergeRequest+url; MergeWatchState gained updateBranchCount (round-trips through read/write, legacy files read back as fresh/0); processPollResult gained handleBehindStatus (calls updateBranchFn up to MAX_UPDATE_BRANCH_ATTEMPTS=2, guarded by no-failed-check + auto-merge-armed) and a DIRTY branch (new outcome kind 'dirty'); new terminal outcome kind 'behind-unrecovered'. Production updateBranchFn in sidecar.ts strips GITHUB_TOKEN from the child env (keyring fallback); ghPollFn poll keeps the token and now requests --json state,mergeStateStatus,statusCheckRollup,autoMergeRequest,url. US-002 (durable stalled escalation: merge-watch-stalled event + marker, consumed on merge) is next -- it likely wants to react to the NEW 'behind-unrecovered' and 'dirty' MergeWatchOutcome kinds (and possibly the existing 'ci-red'/'timeout' kinds) by emitting a durable marker/event so the orchestrator boot (US-003) can surface it. No new WorkerEventKind was added in US-001 (kept scope to notifyOrchestrator per the story notes); US-002 may need to add one for merge-watch-stalled. sidecar.ts file-size ceiling was raised 1558->1580 with a tracker-ref entry in scripts/file-size-budget.json's _ref log -- when raising it further, edit the JSON with the Edit tool (2-space indent) rather than re-serializing the whole file, to keep the diff minimal for the tracker-ref oracle.",
+  "officialDocsValidated": [
+    {
+      "lib": "gh (GitHub CLI)",
+      "url": "https://cli.github.com/manual/gh_pr_update-branch",
+      "fetchedAt": "2026-07-05T21:50:00Z",
+      "status": "aligned",
+      "summary": "gh pr update-branch <number> defaults to merge (not rebase), matching the no-flags production call. gh pr view --json confirmed autoMergeRequest, mergeStateStatus, statusCheckRollup, state, url are all valid field names (cross-checked https://cli.github.com/manual/gh_pr_view). autoMergeRequest null-when-disarmed semantics are inferred from the GitHub GraphQL PullRequest.autoMergeRequest convention (nullable, docs did not explicitly state the null case) -- not corrected, treated as aligned since no contradiction was found."
+    }
+  ]
+}
