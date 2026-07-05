@@ -1,0 +1,87 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-182-merge-watch-behind-autorecover",
+  "description": "Sidecar merge-watch auto-recovers OPEN+BEHIND PRs via bounded gh pr update-branch and durably escalates non-merged terminals via a stalled marker consumed at orchestrator boot (CAM-182)",
+  "issueNumber": 182,
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "gh (GitHub CLI)",
+      "url": "https://cli.github.com/manual/gh_pr_update-branch",
+      "version": "current",
+      "fetchedAt": "2026-07-05T21:34:14Z",
+      "summary": "Confirms `gh pr update-branch <number>` syntax: default behavior merges the base branch into the PR branch (exactly what strict branch protection needs); --rebase is optional and not required here. No deprecations.",
+      "status": "ok"
+    },
+    {
+      "lib": "gh (GitHub CLI)",
+      "url": "https://cli.github.com/manual/gh_pr_view",
+      "version": "current",
+      "fetchedAt": "2026-07-05T21:34:14Z",
+      "summary": "Confirms `autoMergeRequest` is a supported --json field on gh pr view, alongside the already-used state, mergeStateStatus, statusCheckRollup, and url. autoMergeRequest is null when auto-merge is not armed.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Auto-recover OPEN+BEHIND merge-watch via bounded gh pr update-branch",
+      "description": "As a cam operator shipping in ci-gated mode, I need the sidecar merge-watch to catch a BEHIND branch up to main automatically (bounded gh pr update-branch) so that a PR stuck at OPEN+BEHIND under strict branch protection merges without a human hand-running the command.",
+      "acceptanceCriteria": [
+        "PrStatus gains an autoMergeRequest field and the production gh poll in sidecar.ts fetches it (--json state,mergeStateStatus,statusCheckRollup,autoMergeRequest,url). [oracle: grep -q 'autoMergeRequest' src/commands/sidecar.ts]",
+        "When a poll returns OPEN + mergeStateStatus BEHIND with auto-merge armed (autoMergeRequest non-null), no failed check in statusCheckRollup, and updateBranchCount < 2, stepMergeWatch calls updateBranchFn(prNumber) exactly once, increments updateBranchCount in MergeWatchState, and the watch continues with no terminal outcome. [oracle: bun test test/release/merge-watch.test.ts]",
+        "When updateBranchCount === 2 and a poll still returns OPEN + BEHIND, the watch terminates non-merged with outcome kind behind-unrecovered and updateBranchFn is not called again. [oracle: bun test test/release/merge-watch.test.ts]",
+        "When a poll returns OPEN + BEHIND but auto-merge is not armed (autoMergeRequest null or absent), updateBranchFn is not called and polling continues. [oracle: bun test test/release/merge-watch.test.ts]",
+        "When a poll returns OPEN + DIRTY, the watch terminates non-merged with outcome kind dirty and updateBranchFn is not called. [oracle: bun test test/release/merge-watch.test.ts]",
+        "When a BEHIND poll's statusCheckRollup contains a failed check, updateBranchFn is not called (guard: only recover BEHIND with no failed check). [oracle: bun test test/release/merge-watch.test.ts]",
+        "updateBranchCount round-trips through writeMergeWatchState/readMergeWatchState so the cap survives a sidecar restart; legacy state files without the field read back as fresh (count 0). [oracle: bun test test/release/merge-watch.test.ts]",
+        "The production updateBranchFn in sidecar.ts runs gh pr update-branch with GITHUB_TOKEN stripped from the child environment (env -u GITHUB_TOKEN keyring fallback); the read-only gh pr view poll keeps the token. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/release/merge-watch.ts (PrStatus, MergeWatchState.updateBranchCount, UpdateBranchFn injectable in StepMergeWatchOptions + MergeWatchOptions, processPollResult + stepMergeWatch branches, new MergeWatchOutcome kinds behind-unrecovered and dirty, read/write state helpers), src/commands/sidecar.ts (makeProductionMergeWatchFn: extend ghPollFn --json field list, production updateBranchFn), test/release/merge-watch.test.ts. Gotchas from spec: (1) right after update-branch the mergeStateStatus flips to BLOCKED/UNSTABLE while CI re-runs, NOT back to BEHIND, so the cap is only spent when main advances again; never gate the cap on pollCount. (2) The .env GITHUB_TOKEN fine-grained PAT lacks Pull requests: write; the mutation must fall back to the keyring OAuth token (same pattern as gh pr create/merge/comment); do NOT strip the token on the read-only poll. (3) stepMergeWatch is pure (no FS, no Date.now, no sleep); updateBranchFn is injected like pollFn so tests use fakes; the sidecar owns the real spawn. (4) Make updateBranchFn optional on the legacy runMergeWatch options bag (absent = never update) so existing callers/tests keep compiling. (5) noUncheckedIndexedAccess: guard rollup/array access. Narrate one notifyOrchestrator line per update attempt and on the new terminals (single-pusher invariant CAM-78, coalesce to one send-keys per event)."
+    },
+    {
+      "id": "US-002",
+      "title": "Durable stalled escalation: merge-watch-stalled event + marker, consumed on merge",
+      "description": "As a recycled orchestrator, I need every non-merged merge-watch terminal to emit a structured event and write a durable stalled marker (removed when the same PR later merges) so that I learn the ship stalled even when the live send-keys narration is lost.",
+      "acceptanceCriteria": [
+        "A merge-watch-stalled event kind with a typed detail (prNumber, reason, optional prUrl, optional issueId) is added to the WorkerEventKind and WorkerEventDetail unions in src/supervisor/events.ts. [oracle: grep -q 'merge-watch-stalled' src/supervisor/events.ts]",
+        "On every non-merged terminal (behind-unrecovered, dirty, ci-red, closed-not-merged, timeout), a merge-watch-stalled event is emitted via the existing logEvent seam. [oracle: bun test test/release/merge-watch.test.ts]",
+        "On every non-merged terminal, .claude/.cam-ship-stalled.json is written with prNumber, prUrl, issueId, reason, and ts (prUrl/issueId tolerate null when unknown, e.g. timeout before any successful poll). [oracle: bun test]",
+        "When a later watch reaches MERGED for the same prNumber, the .cam-ship-stalled.json marker is removed; a marker referencing a different prNumber is left intact. [oracle: bun test]",
+        "The stalled marker is a separate file from .cam-merge-watch.json; the watch-state file lifecycle (delete on any terminal) is unchanged. [oracle: bun test]",
+        "The existing notifyOrchestrator send-keys narration on terminals is preserved as the live-orchestrator fast path. [oracle: bun test test/release/merge-watch.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/events.ts (new kind + detail interface, add to unions around lines 52-80 and 314-317), src/release/merge-watch.ts (SHIP_STALLED_FILENAME constant '.cam-ship-stalled.json', never-throw write/read/remove marker helpers mirroring the merge-watch state helpers, stalled-event emission on terminals), src/commands/sidecar.ts (terminal branch of makeProductionMergeWatchFn around lines 483-494: write marker on non-merged terminal, remove marker on merged terminal for the same prNumber), test/release/merge-watch.test.ts. Gotchas from spec: (1) reuse the existing logEvent (cam-worker-events.jsonl) and notifyOrchestrator seams; do NOT invent a third narration channel (single-pusher invariant CAM-78). (2) The stalled marker is deliberately a SEPARATE durable file from .cam-merge-watch.json, which stays consume-on-read/deleted-on-terminal; do not overload the watch-state file. (3) stepMergeWatch stays pure: logEvent emission happens inside it via the injected seam, but the marker FS write/remove belongs to the caller (sidecar terminal branch), fed by the terminal outcome kind + state; a small injectable writer keeps it testable. (4) prUrl sourcing: add url to the gh poll --json list (done in US-001) and stash it into MergeWatchState on the first successful poll so terminal writes can include it; timeout with no successful poll writes prUrl null. (5) issueId already lives in MergeWatchState (stashIssueIdInMergeWatch). (6) General unification with CAM-170 poll-error surfacing is OUT of scope; CAM-170 consumes this event later."
+    },
+    {
+      "id": "US-003",
+      "title": "Orchestrator boot surfaces the ship-stalled marker",
+      "description": "As the cam orchestrator booting (fresh or recycled), I need a boot step that reads .claude/.cam-ship-stalled.json and surfaces it as an opening blocker so that a stalled ship is acted on instead of silently forgotten.",
+      "acceptanceCriteria": [
+        "The Boot context section of templates/agents/subagent-orchestrator.md documents reading .claude/.cam-ship-stalled.json and, when present, surfacing prNumber/reason/prUrl as an opening blocker in the greeting summary; a clean boot with no marker surfaces nothing. [oracle: grep -q 'cam-ship-stalled' templates/agents/subagent-orchestrator.md]",
+        "The .claude/agents/subagent-orchestrator.md copy carries the same boot step (dual-copy is per-file; both sources updated). [oracle: grep -q 'cam-ship-stalled' .claude/agents/subagent-orchestrator.md]",
+        "The boot step instructs the orchestrator to surface the marker without deleting it; removal is owned by the merged-watch consume path (US-002). [oracle: reviewer-judgment]",
+        "Vendor drift check passes after re-embedding the generated copy (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: templates/agents/subagent-orchestrator.md and .claude/agents/subagent-orchestrator.md (Boot context section, currently steps 1-5 around lines 51-66: add the marker read as a numbered boot step and a blocker line in the greet block), plus regenerated src/vendor/_generated.ts via bun run embed-vendor. Gotchas: (1) cam dual-copy is per-file and NOT uniformly byte-identical; diff both copies of this file before editing and update both, then re-embed the vendor copy (memory: cam-dual-copy-is-per-file). (2) Keep the boot step small and scannable, matching the existing numbered-list style of the section. (3) The orchestrator only reads and surfaces; it must not delete the marker at boot (consume-on-resolve lives in the sidecar merged path). (4) Story touches templates/, so bun run embed-vendor:check is a mandatory gate; regenerate with bun run embed-vendor if stale."
+    }
+  ]
+}
