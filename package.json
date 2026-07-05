@@ -13,7 +13,8 @@
     "check:all": "bun scripts/check-all.ts",
     "check:ci-parity": "bun scripts/check-ci-parity.ts",
     "lint": "bunx biome lint --error-on-warnings",
-    "verify": "bun scripts/check-all.ts"
+    "verify": "bun scripts/check-all.ts",
+    "test:container": "bun scripts/test-in-container.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",

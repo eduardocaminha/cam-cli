@@ -59,6 +59,25 @@ O flip fail-closed foi implementado em CAM-152 US-004. Os tres mecanismos princi
 - **Portabilidade**: a firewall default-deny requer Linux com iptables (ou Docker Desktop que usa VM interna no macOS/Windows). Ambientes sem suporte a iptables obtem apenas o isolamento de filesystem e usuario; sem default-deny de rede.
 - **Evolucao da allowlist**: qualquer story futura que precisar de acesso a um novo dominio externo deve atualizar `init-firewall.sh` e a secao (x) do `docs/recovery-runbook.md`. Adicionar um dominio e uma decisao consciente, nao uma conveniencia.
 
+## Regression check: in-container test harness
+
+To verify container-mode changes before shipping, run:
+
+```
+bun scripts/test-in-container.ts
+```
+
+This script ensures the cam-worker container is running (via the existing
+ensure-container path) and then executes `bun test` inside it via
+non-interactive `docker exec` against `/workspace`.  It parses the Bun
+summary lines and exits non-zero only on real test failures (fail count > 0);
+a run with only skips exits 0.
+
+This regression protection is on-demand: the script is NOT registered as a CI
+gate (absent from `scripts/check-all.ts` and `.github/workflows/ci.yml`).
+macOS CI (macos-latest) has no Docker daemon, so it cannot be a CI gate.
+Run it locally before shipping any container-mode change.
+
 ## Alternativas descartadas
 
 - **Native bash-sandbox** (barreira primaria via bash): implementar o gate de seguranca como wrapper bash em torno do worker. Rejeitada como barreira primaria: bash-sandbox e contornavel -- ferramentas como `Edit`, `Write`, e chamadas de rede escapam via Task subagent com permissoes distintas. Pode funcionar como camada adicional futura, nunca como gate principal.
