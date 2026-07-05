@@ -26,6 +26,7 @@ import {
 	type OnProgress,
 } from './loop.ts';
 import { makeReviewDispatch } from './review.ts';
+import { commitSubjectMatchesStory } from './result.ts';
 import { makeFileEventLogger, readWorkerTokens } from './events.ts';
 import { acquireSupervisorLock, SUPERVISOR_LOCK_FILE, type AcquireLockResult } from './lock.ts';
 import type { PrdSnapshot } from './decide.ts';
@@ -601,6 +602,32 @@ export function buildSupervisorOptions(
 		}
 	};
 
+	// commitExistsForStory for US-002 (CAM-187): reads the current branch's
+	// commit subjects via git and matches them with the anchored matcher from
+	// US-001 (commitSubjectMatchesStory). Read-only (no mutation), same
+	// spawnSync-git style as ensurePushed/finalizeStory above.
+	const commitExistsForStory: RunSupervisorOptions['commitExistsForStory'] = (storyId) => {
+		try {
+			const branchProc = spawnSync('git', ['branch', '--show-current'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const branchName = (typeof branchProc.stdout === 'string' ? branchProc.stdout : '').trim();
+			if (!branchName) return false;
+			const logProc = spawnSync('git', ['log', '--format=%s', branchName], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			if (logProc.status !== 0) return false;
+			const subjects = (typeof logProc.stdout === 'string' ? logProc.stdout : '').split('\n');
+			return subjects.some((subject) => commitSubjectMatchesStory(subject, storyId));
+		} catch {
+			return false;
+		}
+	};
+
 	// US-013 token reader.
 	const transcriptClaudeDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude');
 	const readWorkerTokensAdapter: RunSupervisorOptions['readWorkerTokens'] = (uuid) =>
@@ -691,6 +718,8 @@ export function buildSupervisorOptions(
 		workerPaneId,
 		prdPath,
 		handoffPath,
+		// US-002 (CAM-187): commit-existence gate, threaded into readWorkerOutcome.
+		commitExistsForStory,
 		workerReportPath: join(cwd, WORKER_REPORT_FILENAME),
 		permissionMode,
 		taskPrompt,

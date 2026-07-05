@@ -3404,6 +3404,87 @@ describe('runSupervisor US-001: teardownWorkerPaneFn called on every terminal ex
 });
 
 // ---------------------------------------------------------------------------
+// US-002 (CAM-187): commit-existence gate wiring (commitExistsForStory)
+// ---------------------------------------------------------------------------
+
+describe('runSupervisor US-002: commit-existence gate (CAM-187)', () => {
+	test('no-commit outcome blocks immediately: does not advance to review, does not finalize', async () => {
+		// Single non-operator story: passes:false at the top of the iteration (so
+		// decideNextAction dispatches 'implement'); by outcome-resolution time
+		// prd.json shows passes:true (simulating the worker's own edit) but the
+		// injected commitExistsForStory adapter finds no matching commit. Without
+		// this gate, the loop would `continue`, decideNextAction would see
+		// passes:true with review not yet terminal, and dispatch review over a
+		// story with no landed commit -- exactly what this gate must prevent.
+		const prd_incomplete = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_donePasses = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
+
+		const prds: PrdSnapshot[] = [prd_incomplete, prd_donePasses];
+		let prdCallCount = 0;
+
+		const reviewCalls: string[] = [];
+		const finalizeCalls: string[] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => prds[prdCallCount++] ?? prd_donePasses,
+			readHandoff: () => makeHandoff('US-001'),
+			capturePane: (_paneId) => donePane('US-001'),
+			maxIterations: 50, // would spin toward review/complete without the gate
+			commitExistsForStory: () => false,
+			reviewDispatch: (uuid) => {
+				reviewCalls.push(uuid);
+				return { status: 'ok', detail: 'review ok' };
+			},
+			finalizeStory: (storyId) => {
+				finalizeCalls.push(storyId);
+				return { ok: true, detail: 'finalized' };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(1); // blocks on first occurrence, never spins
+		expect(result.lastOutcome?.kind).toBe('no-commit');
+		expect(result.lastOutcome?.storyId).toBe('US-001');
+		expect(reviewCalls).toHaveLength(0); // AC1: never advances to review
+		expect(finalizeCalls).toHaveLength(0); // AC2: never auto-commits via finalizeStory
+	});
+
+	test('AC3: requires:"operator" story with passes:true is exempt from the commit gate at the loop level', async () => {
+		// Mirrors the CAM-36 "no-progress spin" regression (a stale fallback
+		// reports an already-passing story), but the reported story is
+		// requires:'operator' with commitExistsForStory returning false for
+		// EVERY story (hostile adapter: operator ceremonies are hand-completed,
+		// never git-committed by a worker). The operator exemption in
+		// confirmCommitGate (result.ts) must still resolve 'pass', so the loop
+		// falls into the pre-existing CAM-36 no-progress guard -- NOT the new
+		// no-commit immediate-block. If the exemption regressed, this would
+		// instead block on iteration 1 with a no-commit detail.
+		const prd = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true, requires: 'operator' },
+				{ id: 'US-002', priority: 2, passes: false },
+			],
+		});
+
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			readHandoff: () => makeHandoff('US-001'), // stale: reports the operator story
+			capturePane: (_paneId) => donePane('US-001'),
+			maxIterations: 50,
+			commitExistsForStory: () => false,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(MAX_NO_PROGRESS_RETRIES);
+		expect(result.lastOutcome?.detail).toContain('no-progress');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Unit tests for computeBackoffMs (CAM-85)
 // ---------------------------------------------------------------------------
 
