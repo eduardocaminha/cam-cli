@@ -1,7 +1,7 @@
 {
   "id": "CAM-182",
   "title": "Sidecar merge-watch: auto-recover a stuck auto-merge (OPEN+BEHIND -> gh pr update-branch) instead of polling silently to 4h timeout",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T11:01:47.039Z",
