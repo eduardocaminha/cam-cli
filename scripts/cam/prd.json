@@ -1,0 +1,144 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-149-ship-runner-deterministic",
+  "description": "Deterministic ship runner: the sidecar drives the ship phase as a TS state machine (verify-PRD -> gates -> bump -> finalize -> push -> PR-create -> merge-mode), with the PR body templated from the PRD (LLM removed from the ship path)",
+  "issueNumber": 149,
+  "relatedDocs": [
+    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md",
+    "docs/adr/0006-phase-enum-loop-state-machine.md",
+    "docs/adr/0008-auto-ship-terminal-anchor.md",
+    "docs/recovery-runbook.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "GitHub CLI (gh pr create)",
+      "url": "https://cli.github.com/manual/gh_pr_create",
+      "version": "current",
+      "fetchedAt": "2026-07-05T00:00:00Z",
+      "summary": "Confirmed --title, --body-file (-F) and --base (-B) are current flags with no deprecations; --body-file reads the PR body from a file, which the runner uses via a temp file.",
+      "status": "ok"
+    },
+    {
+      "lib": "GitHub CLI (gh pr merge)",
+      "url": "https://cli.github.com/manual/gh_pr_merge",
+      "version": "current",
+      "fetchedAt": "2026-07-05T00:00:00Z",
+      "summary": "Confirmed --auto (merge after requirements are met) and --squash are current flags with no deprecations. Behavior when the repo disallows auto-merge is not documented, so the runner treats gh pr merge failure as best-effort (hint + continue), matching the existing cam-ship.md contract.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add deterministic PR title/body composer from the PRD snapshot",
+      "description": "As the ship runner, I need a pure composer that renders the PR title and body from the in-memory PRD snapshot so that the ship phase needs no LLM to author the PR.",
+      "acceptanceCriteria": [
+        "src/release/pr-body.ts exports composePrTitle and composePrBody as pure functions with no filesystem, git, or network I/O (inputs in, strings out). [oracle: grep -q 'export function composePrBody' src/release/pr-body.ts]",
+        "composePrTitle returns the PRD description when present, falling back to the project name; never returns an empty string. [oracle: bun test test/release/pr-body.test.ts]",
+        "composePrBody renders the four sections of the existing cam-ship.md PR template (Summary, Stories completed, Testing, Notes): Summary from prd.description; a stories table listing every userStories entry with id, title, and a checked box when passes is true; Testing stating that the deterministic gate spine (bun run check:all) ran green at ship time; Notes carrying any PRD-level remarks. [oracle: bun test test/release/pr-body.test.ts]",
+        "Composer output contains no em-dash characters (persisted-artifact formatting rule). [oracle: bun test test/release/pr-body.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/release/pr-body.ts (new), test/release/pr-body.test.ts (new). Precedent: generateReleaseBody in src/release/changelog.ts is the pure string-composer pattern to mirror. Define a minimal structural PrdSnapshot input type (project, description, issueNumber, userStories[{id,title,passes,requires}]) locally or in the ship-runner types; do NOT import command-layer types. noUncheckedIndexedAccess is on: guard array access. The composer receives the snapshot captured BEFORE finalize removes prd.json (see US-002)."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement the deterministic pre-PR ship sequence (runShipPhase)",
+      "description": "As the sidecar, I need a dep-injected TS state machine that runs verify-PRD-complete, commits-ahead check, quality gates, version bump, cycle-close finalize, and branch push deterministically so that no LLM interprets cam-ship.md steps 1-6 (same logic-in-markdown scar as CAM-49/72/86/104).",
+      "acceptanceCriteria": [
+        "src/supervisor/ship-runner.ts exports runShipPhase(opts) returning a discriminated ShipPhaseResult with at least these kinds: on-main, prd-incomplete (carrying the blocking story ids), no-commits-ahead, gates-failed (carrying the failing output tail), bump-failed, finalize-failed, push-failed, ready-for-pr. [oracle: grep -q 'ready-for-pr' src/supervisor/ship-runner.ts]",
+        "Step order is enforced and fail-fast: branch guard (refuse when the current branch is main), PRD-complete check (every story with requires != 'operator' has passes true), commits-ahead-of-main check (git log main..HEAD non-empty), quality gates via injected runGatesFn (production default command: bun run check:all), bump via injected bumpFn (wrapping runShipBump), finalize via injected finalizeFn (wrapping finalizeCycleClose), then git push origin <branch>. A failed step returns its result kind without executing any later step. [oracle: bun test test/ship-runner.test.ts]",
+        "The PRD snapshot (project, description, issueNumber, stories) is captured in memory BEFORE finalizeFn runs and is carried inside the ready-for-pr result, because finalize git-rms prd.json. [oracle: bun test test/ship-runner.test.ts]",
+        "All side effects are injected (spawnFn, readPrd, runGatesFn, bumpFn, finalizeFn, clock, optional logEvent); every git spawn guards its exit status explicitly (spawnSync does not throw on non-zero exit). [oracle: bun test test/ship-runner.test.ts]",
+        "A gates-failed result never mutates ratchet budget files: the runner contains no writes to scripts/file-size-budget.json or scripts/coverage-budget.json (ratchet raises are escalation, never auto-fix). [oracle: file-assert ! grep -q 'file-size-budget' src/supervisor/ship-runner.ts]",
+        "The push step never force-pushes and never targets main: the git argv is exactly push origin <current-branch> with no --force variant anywhere in the module. [oracle: file-assert ! grep -q 'force' src/supervisor/ship-runner.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/ship-runner.ts (new), test/ship-runner.test.ts (new). Mirror src/supervisor/plan-runner.ts conventions exactly: dep-injected options interface, discriminated result union, helpers extracted for biome cognitive-complexity limits (patterns.md 'factory/helper extraction'). Unlike the plan runner, NO worker pane is spawned (zero LLM in this phase), so no pane mutex, no uuid, no respawn-pane. Reuse SpawnFn from loop.ts. runShipBump (src/release/ship-bump.ts) and finalizeCycleClose (src/commands/ship-finalize.ts) already exist as injectable functions; wrap them behind bumpFn/finalizeFn seams so unit tests never touch real git. Gotcha: bump then finalize then push is the cam-ship.md order; bump is NOT idempotent (re-run would double-bump), so a mid-sequence failure escalates to the operator (recovery per docs/recovery-runbook.md), never auto-resumes. finalizeCycleClose is idempotent (noOp when prd.json absent). Do not add a config knob for the gates command in this story; injected default 'bun run check:all' with a cam-init adaptation note deferred."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement the PR-create and merge-mode step (gh integration)",
+      "description": "As the ship runner, I need a deterministic PR-create step (gh pr create, auto-merge, artifact comment, merge-mode branching) so that the last LLM-orchestrated part of ship becomes TS code with the templated PR body from US-001.",
+      "acceptanceCriteria": [
+        "src/release/ship-pr.ts exports runShipPrStep(opts): writes the composePrBody output to a temp body file, creates the PR via gh pr create --title <composePrTitle output> --body-file <tmpfile> --base main, then enables auto-merge via gh pr merge --auto --squash as best-effort (a merge failure emits the settings hint and does not abort; the PR is already created). [oracle: bun test test/release/ship-pr.test.ts]",
+        "gh mutation calls (pr create, pr merge, pr comment, issue close) run with GITHUB_TOKEN stripped from the child env, mirroring the update-branch env-strip pattern in sidecar.ts (keyring OAuth fallback); read-only gh calls keep the ambient env. [oracle: grep -q 'GITHUB_TOKEN' src/release/ship-pr.ts]",
+        "When scripts/cam/review-artifact.txt exists, its content is posted as a PR comment prefixed with the artifact-of-record heading (best-effort: missing file or gh failure never aborts the ship). [oracle: bun test test/release/ship-pr.test.ts]",
+        "Merge-mode branching reads readMergeMode: ci-gated enriches .claude/.cam-merge-watch.json with prNumber and mergedBranch via readMergeWatchState/writeMergeWatchState (read-modify-write preserving the issueId stashed by finalize; never a blind overwrite; exactly one write, before the sidecar consumes the file); immediate closes the issue per backend (none: closeIssueOnMain with the stashed issueId then remove the watch file; github: gh issue close best-effort; linear: notify line telling the operator to close manually). [oracle: bun test test/release/ship-pr.test.ts]",
+        "runShipPhase (ship-runner.ts) invokes runShipPrStep after ready-for-pr and surfaces the outcome in the ShipPhaseResult union: a shipped kind carrying prNumber and mergeMode, and a pr-create-failed kind. [oracle: bun test test/ship-runner.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/release/ship-pr.ts (new), test/release/ship-pr.test.ts (new), src/supervisor/ship-runner.ts (edit: wire the step). Reuse existing helpers: readMergeMode (src/config/models.ts), readMergeWatchState/writeMergeWatchState/MERGE_WATCH_FILENAME (src/release/merge-watch.ts), closeIssueOnMain (src/commands/issue-specify.ts), REVIEW_ARTIFACT_FILENAME (src/supervisor/review-report.ts). Gotchas: (a) merge-watch consume-on-read is by-design; the sidecar deletes the file when it starts watching, so the runner must never re-write it after the enrichment write (double post-merge). (b) GITHUB_TOKEN strip: see sidecar.ts makeProductionUpdateBranchFn (env copy omitting GITHUB_TOKEN) and memory ship-pr-create-token-keyring-fallback. (c) The PR number comes from gh pr view --json number --jq .number or from the create output; parse deterministically, guard NaN. (d) All gh spawns via injected SpawnFn shape so tests assert exact argv without a real gh."
+    },
+    {
+      "id": "US-004",
+      "title": "Wire the shipping phase into the sidecar loop and make the CLEAN trigger deterministic",
+      "description": "As the sidecar, I need a phase:shipping branch in runSidecarLoop plus production wiring so that the CLEAN verdict flows into the deterministic ship runner instead of injecting /cam-ship into the orchestrator pane.",
+      "acceptanceCriteria": [
+        "runSidecarLoop (src/supervisor/loop.ts) handles phase 'shipping': an optional runShipPhaseFn dep is invoked on a shipping tick, guarded by an outer try/catch that logs a sidecar-exit event on crash; the branch precedes the active check because phase shipping derives active false (mirrors the planning branch). [oracle: grep -q \"loopPhase === 'shipping'\" src/supervisor/loop.ts]",
+        "sidecar.ts provides makeProductionShipPhaseFn wiring runShipPhase with production adapters (spawnSync-backed spawnFn, bun run check:all gates adapter, runShipBump/finalizeCycleClose adapters shared with the index.ts --bump/--finalize wiring, readMergeMode, merge-watch helpers, closeIssueOnMain) and ALWAYS resets phase to idle when the run ends (finally), success or failure. [oracle: bun test test/sidecar-ship-phase.test.ts]",
+        "Failure result kinds (on-main, prd-incomplete, no-commits-ahead, gates-failed, bump-failed, finalize-failed, push-failed, pr-create-failed) push a one-line summary to the orchestrator pane via the notifyOrchestrator seam and fire escalateFn best-effort (fire-and-forget); the shipped kind pushes a success line with PR number and merge mode. [oracle: bun test test/sidecar-ship-phase.test.ts]",
+        "The auto-mode CLEAN trigger is deterministic: the production autoShipFn calls setPhase('shipping') instead of tmux send-keys /cam-ship (no send-keys dispatch of /cam-ship remains in sidecar.ts); the fire-once autoShipDispatchedAt marker gate in loop.ts is unchanged. [oracle: file-assert ! grep -q \"'/cam-ship'\" src/commands/sidecar.ts]",
+        "Structured events are logged for the ship-phase outcome (kind and result detail) via the existing worker event log, so a failed ship is diagnosable from .claude/cam-worker-events.jsonl without reading source. [oracle: bun test test/sidecar-ship-phase.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/loop.ts (shipping branch in runSidecarLoop + RunSidecarLoopOptions.runShipPhaseFn), src/commands/sidecar.ts (makeProductionShipPhaseFn, autoShipFn swap), test/sidecar-ship-phase.test.ts (new). Mirror the planning-branch precedent exactly (loop.ts lines around 1679-1702) including the outer try/catch and the sidecar-exit event. makeSetPhaseFn already exists in sidecar.ts; makeAutoShipFn becomes a setPhase('shipping') closure (keep the option seam name autoShipFn so RunSupervisorOptions and the fire-once marker logic stay untouched). Extract the index.ts _buildBumpOpts/_buildFinalizeOpts production adapters into a shared factory if needed rather than duplicating them (jscpd duplication gate). Gotcha: the shipping tick runs on the sidecar outer loop (no supervisor lock is held on phase ticks; same as planning). LoopPhase already includes 'shipping' and parseStateFile accepts it; no enum change needed."
+    },
+    {
+      "id": "US-005",
+      "title": "Convert the cam ship CLI to a phase-signal writer",
+      "description": "As an operator, I need cam ship (no flags) to write phase:shipping to the loop state file so that the sidecar runs the deterministic ship runner, replacing the send-keys /cam-ship injection.",
+      "acceptanceCriteria": [
+        "runShip (src/commands/ship.ts) writes phase:shipping to .claude/cam-loop.local.md preserving all other state-file fields (mirrors runPlan's buildPlanningBody + writeStateFile pattern) and no longer injects /cam-ship via send-keys; the liveness/bootstrap preamble and the paneCountMutex busy-refusal are preserved. [oracle: file-assert ! grep -q \"'/cam-ship'\" src/commands/ship.ts]",
+        "The --bump and --finalize in-process flags are unchanged in behavior and argv parsing. [oracle: bun test test/ship-args.test.ts]",
+        "index.ts help text for cam ship describes the phase-signal behavior (writes phase:shipping; the sidecar runs the deterministic ship runner). [oracle: grep -q 'phase:shipping' index.ts]",
+        "test/ship.test.ts asserts the state-file write (phase shipping, fields preserved) instead of the send-keys dispatch, including the busy-mutex and bootstrap paths. [oracle: bun test test/ship.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/ship.ts, index.ts (help text), test/ship.test.ts, test/ship-args.test.ts. Precedent: src/commands/plan.ts runPlan (liveness/bootstrap preamble, mutex check, then writeStateFile with force:true; the SEND step was replaced by the state-file write in CAM-151 US-004). Keep the injectable seams (tmuxSpawnFn, bootstrapFn, statFn, sleepFn, writeFn) so tests never touch real tmux/fs. Never register a --permission-mode flag (test/no-permission-mode-flag.test.ts). Keep the mutex check: shipping must not start while a worker/review pane is active."
+    },
+    {
+      "id": "US-006",
+      "title": "Reduce cam-ship.md to a thin phase-signal and record the ADR",
+      "description": "As a maintainer, I need cam-ship.md reduced to a signal-writer doc and an ADR recording the decision so that no ship control-flow remains in markdown and the pipeline-determinism decision is durable.",
+      "acceptanceCriteria": [
+        "templates/commands/cam-ship.md and .claude/commands/cam-ship.md are reduced to a signal-writer doc mirroring cam-plan.md: describe the CLI path (cam ship writes phase:shipping), the slash-command path (write the same signal, then narrate), and the runner's step sequence as narration only; the step-by-step gh/jq/git instructions are removed (intentional self-hosting: edit BOTH copies). [oracle: file-assert ! grep -q 'gh pr create' templates/commands/cam-ship.md]",
+        "docs/adr/0009-ship-phase-deterministic-sidecar-runner.md records the decision: ship control-flow, gates, mutations and escalation are TS deterministic; the PR body is templated from the PRD snapshot (LLM removed from the ship path); the considered alternative (LLM-authored PR body via a worker pane) and the trade-off are stated; cross-references ADR 0004 and ADR 0006. [oracle: test -f docs/adr/0009-ship-phase-deterministic-sidecar-runner.md]",
+        "Vendor drift check passes after regenerating the embed (bun run embed-vendor then bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "New persisted markdown contains no em-dash characters (project formatting rule). [oracle: file-assert ! grep -q -- '—' docs/adr/0009-ship-phase-deterministic-sidecar-runner.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: templates/commands/cam-ship.md, .claude/commands/cam-ship.md, docs/adr/0009-ship-phase-deterministic-sidecar-runner.md (new), src/vendor/_generated.ts (regenerated). Precedent: templates/commands/cam-plan.md is the exact thin phase-signal shape to mirror. Agent-prompt self-hosting pattern (patterns.md): edit templates/ AND .claude/ copies, then bun run embed-vendor; call out 'intentional self-hosting' in the commit message. Keep the downstream cam-init adaptation note about the aggregate gate command in the reduced doc (the runner's default gates command is bun run check:all). ADR gates all pass: hard to reverse (pipeline architecture), surprising (ship runs with zero LLM), genuine trade-off (LLM-authored PR prose vs deterministic template)."
+    }
+  ]
+}
