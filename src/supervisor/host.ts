@@ -22,10 +22,12 @@ import { spawnSync } from 'node:child_process';
 
 import {
 	DEFAULT_PER_WORKER_TIMEOUT_MS,
+	DEFAULT_CONTAINER_WORKER_TIMEOUT_MS,
 	type RunSupervisorOptions,
 	type OnProgress,
 } from './loop.ts';
 import { makeReviewDispatch } from './review.ts';
+import { commitSubjectMatchesStory } from './result.ts';
 import { makeFileEventLogger, readWorkerTokens } from './events.ts';
 import { acquireSupervisorLock, SUPERVISOR_LOCK_FILE, type AcquireLockResult } from './lock.ts';
 import type { PrdSnapshot } from './decide.ts';
@@ -239,16 +241,6 @@ export function buildSupervisorOptions(
 	const sessionName = projectSessionName(cwd);
 	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
 
-	// Per-worker timeout: configurable via CAM_WORKER_TIMEOUT_MS env var.
-	const perWorkerTimeoutMs = (() => {
-		const envVal = process.env['CAM_WORKER_TIMEOUT_MS'];
-		if (envVal !== undefined) {
-			const parsed = parseInt(envVal, 10);
-			if (!isNaN(parsed) && parsed > 0) return parsed;
-		}
-		return DEFAULT_PER_WORKER_TIMEOUT_MS;
-	})();
-
 	// Per-worker token ceiling (CAM-5).
 	const maxWorkerTokens = (() => {
 		const envVal = process.env['CAM_WORKER_MAX_TOKENS'];
@@ -454,6 +446,23 @@ export function buildSupervisorOptions(
 	// 'host' (default) leaves every existing loop behavior unchanged.
 	const workerIsolation = readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'));
 
+	// Per-worker timeout: configurable via CAM_WORKER_TIMEOUT_MS env var. When
+	// unset, the fallback is isolation-aware (US-003 / CAM-187): container
+	// workers get DEFAULT_CONTAINER_WORKER_TIMEOUT_MS (60 min) so long container
+	// stories (image rebuild + in-container test suites) do not hit the host
+	// ceiling and trigger a premature timeout/re-dispatch; host workers keep
+	// DEFAULT_PER_WORKER_TIMEOUT_MS (30 min). An explicit env value always wins.
+	const perWorkerTimeoutMs = (() => {
+		const envVal = process.env['CAM_WORKER_TIMEOUT_MS'];
+		if (envVal !== undefined) {
+			const parsed = parseInt(envVal, 10);
+			if (!isNaN(parsed) && parsed > 0) return parsed;
+		}
+		return workerIsolation === 'container'
+			? DEFAULT_CONTAINER_WORKER_TIMEOUT_MS
+			: DEFAULT_PER_WORKER_TIMEOUT_MS;
+	})();
+
 	// Review dispatch.
 	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
 		spawn: (cmd, args) => {
@@ -601,6 +610,60 @@ export function buildSupervisorOptions(
 		}
 	};
 
+	// commitExistsForStory for US-002 (CAM-187): reads commits unique to this
+	// PRD/branch and matches them with the anchored matcher from US-001
+	// (commitSubjectMatchesStory). Read-only (no mutation), same
+	// spawnSync-git style as ensurePushed/finalizeStory above.
+	//
+	// US-R1-002 fix: `git log --format=%s <branch>` walks the branch's ENTIRE
+	// ancestry back to the root commit (git-scm.com/docs/git-log), not just
+	// commits unique to this branch. Story ids (US-001..) are reused every
+	// PRD, so an ancient bracketless commit from an unrelated past PRD
+	// collides and makes the gate return true unconditionally, silently
+	// defeating the exact "passes:true but no commit" scenario the epic
+	// exists to catch. Scope the range to `origin/main..HEAD` (a best-effort
+	// `git fetch origin main` keeps it fresh), falling back to local
+	// `main..HEAD` when origin/main cannot be resolved (e.g. no remote
+	// configured), so only commits made on this branch since it forked from
+	// main are considered.
+	const commitExistsForStory: RunSupervisorOptions['commitExistsForStory'] = (storyId) => {
+		try {
+			const branchProc = spawnSync('git', ['branch', '--show-current'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const branchName = (typeof branchProc.stdout === 'string' ? branchProc.stdout : '').trim();
+			if (!branchName) return false;
+
+			// Best-effort: refresh origin/main so the range reflects the true
+			// upstream fork point. Ignore failures (offline, no remote, etc.).
+			spawnSync('git', ['fetch', 'origin', 'main'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+
+			const originMainProc = spawnSync('git', ['rev-parse', 'origin/main'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const range = originMainProc.status === 0 ? 'origin/main..HEAD' : 'main..HEAD';
+
+			const logProc = spawnSync('git', ['log', '--format=%s', range], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			if (logProc.status !== 0) return false;
+			const subjects = (typeof logProc.stdout === 'string' ? logProc.stdout : '').split('\n');
+			return subjects.some((subject) => commitSubjectMatchesStory(subject, storyId));
+		} catch {
+			return false;
+		}
+	};
+
 	// US-013 token reader.
 	const transcriptClaudeDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude');
 	const readWorkerTokensAdapter: RunSupervisorOptions['readWorkerTokens'] = (uuid) =>
@@ -691,6 +754,8 @@ export function buildSupervisorOptions(
 		workerPaneId,
 		prdPath,
 		handoffPath,
+		// US-002 (CAM-187): commit-existence gate, threaded into readWorkerOutcome.
+		commitExistsForStory,
 		workerReportPath: join(cwd, WORKER_REPORT_FILENAME),
 		permissionMode,
 		taskPrompt,

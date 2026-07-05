@@ -24,7 +24,7 @@
 //  18. US-003: does NOT notify on a no-progress re-confirmation retry.
 
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_BACKOFF_MS, JITTER_FRACTION, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, computeBackoffMs } from '../../src/supervisor/loop.ts';
+import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_BACKOFF_MS, JITTER_FRACTION, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_CONTAINER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, computeBackoffMs } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
 	SpawnFn,
@@ -3280,6 +3280,111 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 			expect(result.status).toBe('complete');
 		});
 	});
+
+	// US-003 (CAM-187): worker-isolation-aware per-worker sentinel timeout ceiling
+	describe('US-003 (CAM-187): worker-isolation-aware per-worker sentinel timeout ceiling', () => {
+		test('DEFAULT_CONTAINER_WORKER_TIMEOUT_MS is 60 minutes', () => {
+			expect(DEFAULT_CONTAINER_WORKER_TIMEOUT_MS).toBe(60 * 60 * 1000);
+		});
+
+		test('AC4: host worker (default isolation) times out at the 31-min mark (30-min ceiling)', async () => {
+			// perWorkerTimeoutMs left unset -> falls back to the isolation-aware
+			// default. workerIsolation also left unset -> defaults to 'host', so the
+			// ceiling must be DEFAULT_PER_WORKER_TIMEOUT_MS (30 min).
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+
+			let prdCallCount = 0;
+			let nowCallCount = 0;
+			const spawnCalls: string[][] = [];
+
+			const opts = makeBaseOpts({
+				pollIntervalMs: 0,
+				// call 1 = startMs (0); every subsequent call simulates 31 minutes elapsed.
+				nowMs: () => {
+					nowCallCount++;
+					return nowCallCount === 1 ? 0 : 31 * 60 * 1000;
+				},
+				readPrd: () => {
+					prdCallCount++;
+					if (prdCallCount <= 1) return prd_impl;
+					return prd_done;
+				},
+				capturePane: (_paneId) => '', // never returns sentinel
+				spawn: (_cmd, args) => {
+					spawnCalls.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			// The timeout path fired (kill sent) on the very first poll tick, at the
+			// 31-minute mark, confirming the 30-min host ceiling was used.
+			const timeoutKill = spawnCalls.find((a) => a.includes('echo timeout'));
+			expect(timeoutKill).toBeDefined();
+		});
+
+		test('AC2/AC4: container worker (workerIsolation=container) is NOT timed out at the 31-min mark (60-min ceiling)', async () => {
+			// Same 31-minute elapsed simulation as the host test above, but with
+			// workerIsolation: 'container'. Since 31 min < the 60-min container
+			// ceiling, the timeout must NOT fire; the poll must keep going until the
+			// sentinel appears on the next tick.
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+
+			let prdCallCount = 0;
+			let nowCallCount = 0;
+			let captureCount = 0;
+			const spawnCalls: string[][] = [];
+
+			const opts = makeBaseOpts({
+				pollIntervalMs: 0,
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: true }),
+				// call 1 = startMs (0); every subsequent call simulates 31 minutes elapsed
+				// (well past the 30-min host ceiling, still under the 60-min container one).
+				nowMs: () => {
+					nowCallCount++;
+					return nowCallCount === 1 ? 0 : 31 * 60 * 1000;
+				},
+				readPrd: () => {
+					prdCallCount++;
+					if (prdCallCount <= 1) return prd_impl;
+					return prd_done;
+				},
+				readHandoff: () => makeHandoff('US-001'),
+				capturePane: (_paneId) => {
+					captureCount++;
+					// First tick: no sentinel (would have timed out on a host ceiling).
+					// Second tick: sentinel appears -> outcome pass.
+					if (captureCount <= 1) return '';
+					return donePane('US-001');
+				},
+				spawn: (_cmd, args) => {
+					spawnCalls.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			expect(result.lastOutcome?.kind).toBe('pass');
+			expect(result.lastOutcome?.storyId).toBe('US-001');
+			// No timeout-kill was ever sent: the 60-min container ceiling absorbed
+			// the 31-minute elapsed time that would have killed a host worker.
+			const timeoutKill = spawnCalls.find((a) => a.includes('echo timeout'));
+			expect(timeoutKill).toBeUndefined();
+		});
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -3400,6 +3505,87 @@ describe('runSupervisor US-001: teardownWorkerPaneFn called on every terminal ex
 		await runSupervisor(opts);
 
 		expect(teardownCount).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-002 (CAM-187): commit-existence gate wiring (commitExistsForStory)
+// ---------------------------------------------------------------------------
+
+describe('runSupervisor US-002: commit-existence gate (CAM-187)', () => {
+	test('no-commit outcome blocks immediately: does not advance to review, does not finalize', async () => {
+		// Single non-operator story: passes:false at the top of the iteration (so
+		// decideNextAction dispatches 'implement'); by outcome-resolution time
+		// prd.json shows passes:true (simulating the worker's own edit) but the
+		// injected commitExistsForStory adapter finds no matching commit. Without
+		// this gate, the loop would `continue`, decideNextAction would see
+		// passes:true with review not yet terminal, and dispatch review over a
+		// story with no landed commit -- exactly what this gate must prevent.
+		const prd_incomplete = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_donePasses = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
+
+		const prds: PrdSnapshot[] = [prd_incomplete, prd_donePasses];
+		let prdCallCount = 0;
+
+		const reviewCalls: string[] = [];
+		const finalizeCalls: string[] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => prds[prdCallCount++] ?? prd_donePasses,
+			readHandoff: () => makeHandoff('US-001'),
+			capturePane: (_paneId) => donePane('US-001'),
+			maxIterations: 50, // would spin toward review/complete without the gate
+			commitExistsForStory: () => false,
+			reviewDispatch: (uuid) => {
+				reviewCalls.push(uuid);
+				return { status: 'ok', detail: 'review ok' };
+			},
+			finalizeStory: (storyId) => {
+				finalizeCalls.push(storyId);
+				return { ok: true, detail: 'finalized' };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(1); // blocks on first occurrence, never spins
+		expect(result.lastOutcome?.kind).toBe('no-commit');
+		expect(result.lastOutcome?.storyId).toBe('US-001');
+		expect(reviewCalls).toHaveLength(0); // AC1: never advances to review
+		expect(finalizeCalls).toHaveLength(0); // AC2: never auto-commits via finalizeStory
+	});
+
+	test('AC3: requires:"operator" story with passes:true is exempt from the commit gate at the loop level', async () => {
+		// Mirrors the CAM-36 "no-progress spin" regression (a stale fallback
+		// reports an already-passing story), but the reported story is
+		// requires:'operator' with commitExistsForStory returning false for
+		// EVERY story (hostile adapter: operator ceremonies are hand-completed,
+		// never git-committed by a worker). The operator exemption in
+		// confirmCommitGate (result.ts) must still resolve 'pass', so the loop
+		// falls into the pre-existing CAM-36 no-progress guard -- NOT the new
+		// no-commit immediate-block. If the exemption regressed, this would
+		// instead block on iteration 1 with a no-commit detail.
+		const prd = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true, requires: 'operator' },
+				{ id: 'US-002', priority: 2, passes: false },
+			],
+		});
+
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			readHandoff: () => makeHandoff('US-001'), // stale: reports the operator story
+			capturePane: (_paneId) => donePane('US-001'),
+			maxIterations: 50,
+			commitExistsForStory: () => false,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(MAX_NO_PROGRESS_RETRIES);
+		expect(result.lastOutcome?.detail).toContain('no-progress');
 	});
 });
 

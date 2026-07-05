@@ -207,6 +207,18 @@ export interface RunSupervisorOptions {
 	/** Absolute path to handoff.json (for readWorkerOutcome). */
 	handoffPath: string;
 	/**
+	 * Optional commit-existence gate (US-002, CAM-187), threaded straight into
+	 * every readWorkerOutcome call. When injected, a passes:true-without-a-
+	 * landed-commit story resolves to kind:'no-commit' instead of 'pass' (see
+	 * result.ts confirmCommitGate), UNLESS the story is requires:'operator'
+	 * (ceremony exemption). Production wiring (host.ts) reads the current
+	 * branch's commit subjects via git and matches them with the anchored
+	 * commitSubjectMatchesStory matcher (US-001). Optional: when absent, no
+	 * gate is applied and readWorkerOutcome behaves exactly as it did before
+	 * this option existed (backward compat, zero behavior change).
+	 */
+	commitExistsForStory?: (storyId: string) => boolean;
+	/**
 	 * Absolute path to scripts/cam/worker-report.json (for readWorkerOutcome
 	 * fallback when neither handoff nor DONE sentinel yield a story id).
 	 * When provided, the fileReader adapter serves it via readWorkerReport.
@@ -470,6 +482,18 @@ export const MAX_ITERATIONS = 50;
 /** Default per-worker timeout in milliseconds (30 minutes). */
 export const DEFAULT_PER_WORKER_TIMEOUT_MS = 30 * 60 * 1000;
 
+/**
+ * Default per-worker timeout in milliseconds for container-isolated workers
+ * (60 minutes, US-003 / CAM-187). Container stories often include an image
+ * rebuild plus in-container test suites, which routinely run long enough to
+ * hit the host ceiling and trigger a premature timeout/re-dispatch even
+ * though the worker is still making progress. Host workers keep the
+ * DEFAULT_PER_WORKER_TIMEOUT_MS (30 min) ceiling; only workerIsolation ===
+ * 'container' gets the extended ceiling, and only when perWorkerTimeoutMs
+ * is not explicitly set by the caller.
+ */
+export const DEFAULT_CONTAINER_WORKER_TIMEOUT_MS = 60 * 60 * 1000;
+
 /** Default sentinel polling interval in milliseconds (5 seconds). */
 export const DEFAULT_POLL_INTERVAL_MS = 5_000;
 
@@ -621,7 +645,15 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 	const genUuid = opts.genUuid ?? defaultGenUuid;
 	const maxIter = opts.maxIterations ?? MAX_ITERATIONS;
-	const perWorkerTimeoutMs = opts.perWorkerTimeoutMs ?? DEFAULT_PER_WORKER_TIMEOUT_MS;
+	// US-003 (CAM-187): the fallback ceiling is isolation-aware. Container workers
+	// (image rebuild + in-container test suites) get the 60-min ceiling; host
+	// workers keep the 30-min ceiling. An explicit opts.perWorkerTimeoutMs always
+	// wins over either default.
+	const perWorkerTimeoutMs =
+		opts.perWorkerTimeoutMs ??
+		(opts.workerIsolation === 'container'
+			? DEFAULT_CONTAINER_WORKER_TIMEOUT_MS
+			: DEFAULT_PER_WORKER_TIMEOUT_MS);
 	const maxWorkerTokens = opts.maxWorkerTokens ?? 0;
 	const runGates = opts.runGates;
 	const finalizeStory = opts.finalizeStory;
@@ -644,6 +676,8 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const clearWorkerReport = opts.clearWorkerReport;
 	// Passed to readWorkerOutcome for the worker-report-fallback branch.
 	const workerReportPath = opts.workerReportPath;
+	// US-002 (CAM-187): commit-existence gate, threaded straight into readWorkerOutcome.
+	const commitExistsForStory = opts.commitExistsForStory;
 	// US-005 / B-1 + B-2: container preflight seam. Observe-only in B-1; fail-closed in
 	// container mode (B-2 / CAM-152). See workerIsolation below.
 	const preflightContainerFn = opts.preflightContainerFn;
@@ -1099,6 +1133,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				expectedStoryId: advisoryStoryId,
 				capturedPaneText: paneText,
 				readFile: fileReader,
+				commitExistsForStory,
 			});
 
 			lastOutcome = outcome;
@@ -1174,6 +1209,24 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				outcome.kind === 'fail' ||
 				outcome.kind === 'unknown'
 			) {
+				opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
+				finishTerminal('blocked');
+				return { status: 'blocked', iterations, lastOutcome };
+			}
+
+			// US-002 (CAM-187): a passes:true story with no matching commit is a
+			// suspect DONE claim (result.ts confirmCommitGate), not a worker-
+			// truncated-protocol-tail case. It must NOT fall through to the next
+			// decideNextAction call: decideNextAction is oblivious to commit state,
+			// so it would see prd.json's passes:true at face value and advance to
+			// review (or the next story) on the very next iteration -- exactly the
+			// "advance without a landed commit" outcome this gate exists to prevent.
+			// Block immediately (same immediate-terminal shape as the check above);
+			// finalizeStory is never invoked (supervisor auto-commit is out-of-scope).
+			// Recurrence is trivially bounded: every subsequent supervisor run hits
+			// this same guard on its very first iteration instead of storming
+			// review/implement dispatches up to MAX_ITERATIONS.
+			if (outcome.kind === 'no-commit') {
 				opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
 				finishTerminal('blocked');
 				return { status: 'blocked', iterations, lastOutcome };
