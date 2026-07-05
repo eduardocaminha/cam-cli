@@ -29,7 +29,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [scripts/test-in-container.ts:130]: parseBunOutput fails to extract failing test names from real `bun test` output. Real bun prints `(fail) <name>` (and `(fail) <name> [Nms]` under CLAUDECODE=1) in the non-TTY docker-exec capture path, but the regex matches `\\s+✗\\s+<name>(\\s+\\(Nms\\))?`, a marker bun never emits there. Verified: running the branch parser on real captured output returns failingTests:[]. The unit-test fixtures in test/test-in-container.test.ts use the fictional ✗ format, so the name-extraction tests (US-001 AC1/AC2) are false-greens and the feature is non-functional in production (operator sees fail count but not which tests failed). Fix: match `^\\((fail|todo)\\)\\s+(.+?)(?:\\s+\\[\\d+.*ms\\])?\\s*$` and record a real bun fixture."
     },
     {
