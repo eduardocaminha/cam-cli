@@ -1,23 +1,18 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Auto-recover OPEN+BEHIND merge-watch via bounded gh pr update-branch" },
+  "lastCompletedStory": { "id": "US-002", "title": "Durable stalled escalation: merge-watch-stalled event + marker, consumed on merge" },
   "branchName": "cam/pr-182-merge-watch-behind-autorecover",
-  "timestamp": "2026-07-05T21:57:26Z",
+  "timestamp": "2026-07-05T22:40:00Z",
   "createdFiles": [],
   "modifiedFiles": [
+    "src/supervisor/events.ts",
     "src/release/merge-watch.ts",
     "src/commands/sidecar.ts",
     "test/release/merge-watch.test.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 (autoMergeRequest-gated bounded gh pr update-branch auto-recovery) is done: PrStatus gained autoMergeRequest+url; MergeWatchState gained updateBranchCount (round-trips through read/write, legacy files read back as fresh/0); processPollResult gained handleBehindStatus (calls updateBranchFn up to MAX_UPDATE_BRANCH_ATTEMPTS=2, guarded by no-failed-check + auto-merge-armed) and a DIRTY branch (new outcome kind 'dirty'); new terminal outcome kind 'behind-unrecovered'. Production updateBranchFn in sidecar.ts strips GITHUB_TOKEN from the child env (keyring fallback); ghPollFn poll keeps the token and now requests --json state,mergeStateStatus,statusCheckRollup,autoMergeRequest,url. US-002 (durable stalled escalation: merge-watch-stalled event + marker, consumed on merge) is next -- it likely wants to react to the NEW 'behind-unrecovered' and 'dirty' MergeWatchOutcome kinds (and possibly the existing 'ci-red'/'timeout' kinds) by emitting a durable marker/event so the orchestrator boot (US-003) can surface it. No new WorkerEventKind was added in US-001 (kept scope to notifyOrchestrator per the story notes); US-002 may need to add one for merge-watch-stalled. sidecar.ts file-size ceiling was raised 1558->1580 with a tracker-ref entry in scripts/file-size-budget.json's _ref log -- when raising it further, edit the JSON with the Edit tool (2-space indent) rather than re-serializing the whole file, to keep the diff minimal for the tracker-ref oracle.",
+  "nextStoryContext": "US-002 (durable stalled escalation) is done: added 'merge-watch-stalled' to WorkerEventKind + a typed MergeWatchStalledEventDetail (prNumber, reason, optional prUrl/issueId) in src/supervisor/events.ts. src/release/merge-watch.ts gained SHIP_STALLED_FILENAME ('.cam-ship-stalled.json') + never-throw readShipStalledMarker/writeShipStalledMarker/removeShipStalledMarker helpers (mirroring the merge-watch state I/O helpers), a pure emitStalledEvent() helper called from every non-merged terminal site (handleBehindStatus's give-up branch -> 'behind-unrecovered', handleBlockedStatus's ci-red branch -> 'ci-red', processPollResult's closed/dirty branches -> 'closed-not-merged'/'dirty', and stepMergeWatch's timeout branch -> 'timeout'; MERGED never emits it), and MergeWatchOutcome's non-merged variants now carry an optional `prUrl` field (sourced from the same PrStatus.url already threaded in US-001) so the caller does not need a second gh poll. src/commands/sidecar.ts gained an exported updateShipStalledMarker(markerPath, outcome, state) helper wired into makeProductionMergeWatchFn's terminal else-branch (right after removeMergeWatchState): on 'merged' it removes the ship-stalled marker ONLY when the existing marker's prNumber matches state.prNumber (a marker for a different PR is left intact); on any non-merged terminal it writes/refreshes the marker with prUrl/issueId defaulting to null when unknown. US-003 (orchestrator boot surfaces the ship-stalled marker) is next -- it will likely read .claude/.cam-ship-stalled.json at orchestrator boot (mirroring the ORCH_READY_MARKER / .cam-orch-session boot-read pattern in run.ts) and narrate/print it so a recycled orchestrator learns about a stalled ship even when the pane scrollback with the live notifyOrchestrator narration is gone. The marker is NOT consumed by a boot-read (only consumed by a later MERGED terminal for the same prNumber, per US-002's design), so US-003's boot-read must be read-only (do not delete the marker just because the orchestrator restarted and saw it once).",
   "officialDocsValidated": [
-    {
-      "lib": "gh (GitHub CLI)",
-      "url": "https://cli.github.com/manual/gh_pr_update-branch",
-      "fetchedAt": "2026-07-05T21:50:00Z",
-      "status": "aligned",
-      "summary": "gh pr update-branch <number> defaults to merge (not rebase), matching the no-flags production call. gh pr view --json confirmed autoMergeRequest, mergeStateStatus, statusCheckRollup, state, url are all valid field names (cross-checked https://cli.github.com/manual/gh_pr_view). autoMergeRequest null-when-disarmed semantics are inferred from the GitHub GraphQL PullRequest.autoMergeRequest convention (nullable, docs did not explicitly state the null case) -- not corrected, treated as aligned since no contradiction was found."
-    }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal harness change (WorkerEventKind union, node:fs-backed marker I/O helpers mirroring existing durable-state patterns, sidecar terminal-branch wiring); no new external library surface introduced beyond gh CLI fields and node:fs APIs already validated in US-001/prior stories." }
   ]
 }

@@ -61,7 +61,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/events.ts (new kind + detail interface, add to unions around lines 52-80 and 314-317), src/release/merge-watch.ts (SHIP_STALLED_FILENAME constant '.cam-ship-stalled.json', never-throw write/read/remove marker helpers mirroring the merge-watch state helpers, stalled-event emission on terminals), src/commands/sidecar.ts (terminal branch of makeProductionMergeWatchFn around lines 483-494: write marker on non-merged terminal, remove marker on merged terminal for the same prNumber), test/release/merge-watch.test.ts. Gotchas from spec: (1) reuse the existing logEvent (cam-worker-events.jsonl) and notifyOrchestrator seams; do NOT invent a third narration channel (single-pusher invariant CAM-78). (2) The stalled marker is deliberately a SEPARATE durable file from .cam-merge-watch.json, which stays consume-on-read/deleted-on-terminal; do not overload the watch-state file. (3) stepMergeWatch stays pure: logEvent emission happens inside it via the injected seam, but the marker FS write/remove belongs to the caller (sidecar terminal branch), fed by the terminal outcome kind + state; a small injectable writer keeps it testable. (4) prUrl sourcing: add url to the gh poll --json list (done in US-001) and stash it into MergeWatchState on the first successful poll so terminal writes can include it; timeout with no successful poll writes prUrl null. (5) issueId already lives in MergeWatchState (stashIssueIdInMergeWatch). (6) General unification with CAM-170 poll-error surfacing is OUT of scope; CAM-170 consumes this event later."
     },
