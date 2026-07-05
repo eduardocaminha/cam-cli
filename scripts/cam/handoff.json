@@ -1,24 +1,47 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Implement the deterministic pre-PR ship sequence (runShipPhase)"
+    "id": "US-003",
+    "title": "Implement the PR-create and merge-mode step (gh integration)"
   },
   "branchName": "cam/pr-149-ship-runner-deterministic",
   "timestamp": "2026-07-05T00:00:00Z",
   "createdFiles": [
+    "src/release/ship-pr.ts",
+    "test/release/ship-pr.test.ts"
+  ],
+  "modifiedFiles": [
     "src/supervisor/ship-runner.ts",
     "test/ship-runner.test.ts"
   ],
-  "modifiedFiles": [],
   "openQuestions": [
-    "runShipPhase's runGatesFn/bumpFn/finalizeFn are required injected functions with no production factory wired yet (deliberately deferred): US-004 (wire the shipping phase into the sidecar loop) must build the host wiring, e.g. a runGatesFn that spawns DEFAULT_GATES_COMMAND ('bun run check:all') via spawnFn and captures the output tail on failure, plus bumpFn/finalizeFn closures wrapping runShipBump/finalizeCycleClose with their own real spawnFn/clock/read/write deps (see ship-bump.ts and ship-finalize.ts option shapes, which differ from ship-runner.ts's loop.ts-style SpawnFn)."
+    "runShipPhase's runGatesFn/bumpFn/finalizeFn/runShipPrStepFn are all required injected functions with no production factory wired yet (deliberately deferred to US-004): the shipping-phase wiring must build a makeProductionShipPhaseFn in sidecar.ts that composes runShipPhase with real spawnFn/gates/bump/finalize adapters AND a real runShipPrStepFn closure wrapping runShipPrStep (src/release/ship-pr.ts) with production spawnFn (spawnSync-backed, gh mutation calls stripping GITHUB_TOKEN per the pattern already inside ship-pr.ts's own stripGithubToken helper), a real temp-file writer (mkdtempSync+writeFileSync), a real review-artifact reader (existsSync+readFileSync against REVIEW_ARTIFACT_FILENAME from src/supervisor/review-report.ts), readMergeMode/readMergeWatchState/writeMergeWatchState/removeMergeWatchState (merge-watch.ts) resolved against join(cwd,'.claude',MERGE_WATCH_FILENAME), and closeIssueOnMain (issue-specify.ts).",
+    "The ShipPhaseResult union no longer has a 'ready-for-pr' kind (replaced by 'shipped' and 'pr-create-failed' in US-003); US-004's shipping branch in loop.ts must switch on all 9 kinds (on-main, prd-incomplete, no-commits-ahead, gates-failed, bump-failed, finalize-failed, push-failed, pr-create-failed, shipped) per its AC3."
   ],
-  "nextStoryContext": "US-003 (PR-create and merge-mode step) consumes runShipPhase's ready-for-pr result directly: result.prdSnapshot feeds composePrTitle/composePrBody (src/release/pr-body.ts, US-001) to build the gh pr create title/body without any LLM authoring step, and result.branchName is the already-pushed branch to open the PR from. ready-for-pr also carries bumpResult and finalizeResult (issueId, issueBackend) which US-003's merge-mode/issue-close logic will need (mirrors cam-ship.md Steps 7-9: gh pr create, auto-merge, reviewer-artifact PR comment, ci-gated merge-watch enrichment vs immediate-mode issue close). Note ship-runner.ts's gates-failed/bump-failed/finalize-failed/push-failed/on-main/prd-incomplete/no-commits-ahead results are NOT this story's concern (US-004 wires the caller that reacts to those); US-003 only needs the ready-for-pr success path plus whatever escalation hook the PRD specifies for a failed PR-create/merge call.",
+  "nextStoryContext": "US-004 (wire the shipping phase into the sidecar loop) consumes runShipPhase (ship-runner.ts) as a black box: it needs a 'shipping' branch in runSidecarLoop (loop.ts) that invokes an injected runShipPhaseFn and reacts to the full ShipPhaseResult union (9 kinds after US-003, see openQuestions above), mirroring the existing planning-branch precedent (outer try/catch + sidecar-exit event + phase precedes the active check). It also needs to swap the auto-mode CLEAN trigger from tmux send-keys '/cam-ship' to setPhase('shipping'). The production wiring (makeProductionShipPhaseFn in sidecar.ts) must compose runShipPhase with real adapters for ALL FOUR required deps: runGatesFn (spawn 'bun run check:all', capture output tail on failure), bumpFn (wraps runShipBump), finalizeFn (wraps finalizeCycleClose), and — new in US-003 — runShipPrStepFn (wraps runShipPrStep from src/release/ship-pr.ts with real spawnFn/writeTempFile/readReviewArtifact/readMergeModeFn/readMergeWatchStateFn/writeMergeWatchStateFn/removeMergeWatchStateFn/closeIssueOnMainFn/emitHint/emitWarning). Reuse the index.ts _buildBumpOpts/_buildFinalizeOpts adapters rather than duplicating (jscpd gate).",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Pure TypeScript state machine wrapping existing internal modules (loop.ts SpawnFn, ship-bump.ts, ship-finalize.ts, pr-body.ts); no new external library import."
+      "lib": "gh (GitHub CLI)",
+      "version": "current (cli.github.com/manual)",
+      "url": "https://cli.github.com/manual/gh_pr_create",
+      "fetchedAt": "2026-07-05T00:00:00Z",
+      "status": "ok",
+      "summary": "--title, --body-file, --base all confirmed current flags with the exact semantics used in ship-pr.ts (--base defaults to the repo default branch when omitted; we always pass --base main explicitly)."
+    },
+    {
+      "lib": "gh (GitHub CLI)",
+      "version": "current (cli.github.com/manual)",
+      "url": "https://cli.github.com/manual/gh_pr_merge",
+      "fetchedAt": "2026-07-05T00:00:00Z",
+      "status": "ok",
+      "summary": "--auto and --squash confirmed current; --auto with no positional arg targets the PR of the current branch, matching ship-pr.ts's argv (no PR number passed to gh pr merge)."
+    },
+    {
+      "lib": "gh (GitHub CLI)",
+      "version": "current (cli.github.com/manual)",
+      "url": "https://cli.github.com/manual/gh_pr_view",
+      "fetchedAt": "2026-07-05T00:00:00Z",
+      "status": "ok",
+      "summary": "--json number --jq '.number' confirmed as the documented example for extracting the PR number; matches ship-pr.ts's exact argv."
     }
   ]
 }

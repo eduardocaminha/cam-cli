@@ -81,7 +81,7 @@
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/release/ship-pr.ts (new), test/release/ship-pr.test.ts (new), src/supervisor/ship-runner.ts (edit: wire the step). Reuse existing helpers: readMergeMode (src/config/models.ts), readMergeWatchState/writeMergeWatchState/MERGE_WATCH_FILENAME (src/release/merge-watch.ts), closeIssueOnMain (src/commands/issue-specify.ts), REVIEW_ARTIFACT_FILENAME (src/supervisor/review-report.ts). Gotchas: (a) merge-watch consume-on-read is by-design; the sidecar deletes the file when it starts watching, so the runner must never re-write it after the enrichment write (double post-merge). (b) GITHUB_TOKEN strip: see sidecar.ts makeProductionUpdateBranchFn (env copy omitting GITHUB_TOKEN) and memory ship-pr-create-token-keyring-fallback. (c) The PR number comes from gh pr view --json number --jq .number or from the create output; parse deterministically, guard NaN. (d) All gh spawns via injected SpawnFn shape so tests assert exact argv without a real gh."
     },
