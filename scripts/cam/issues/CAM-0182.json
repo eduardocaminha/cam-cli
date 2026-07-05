@@ -1,9 +1,47 @@
 {
   "id": "CAM-182",
   "title": "Sidecar merge-watch: auto-recover a stuck auto-merge (OPEN+BEHIND -> gh pr update-branch) instead of polling silently to 4h timeout",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T11:01:47.039Z",
-  "description": "In ci-gated mode with strict branch protection, a PR whose branch is BEHIND main never auto-merges (strict requires up-to-date). merge-watch stepPoll (src/release/merge-watch.ts:452) returns null for OPEN + non-BLOCKED (CLEAN/BEHIND/DIRTY), so on BEHIND the sidecar just keeps polling for up to 4h (240x60s) then times out, never merging. This is recurring: every ci-gated ship where main advanced during the cycle (specify + issue-file commits land on main) produces a BEHIND branch. Lived in CAM-179 ship (PR #130 sat OPEN+BEHIND; operator had to hand-run gh pr update-branch). Fix: when OPEN+BEHIND and auto-merge is armed, the sidecar should run gh pr update-branch (bounded retries, e.g. max 2-3) to catch the branch up, then keep watching; the re-run CI + armed auto-merge then closes it. Handle DIRTY (real merge conflict) by narrating + stopping the watch (needs a worker/human, not auto-recoverable). ci-red already narrates+stops. Complements CAM-170 (surface poll failures): CAM-170 signals the stall, this auto-recovers it. Guard: do not update-branch on ci-red or DIRTY; only on BEHIND with no failed check."
+  "description": "In ci-gated mode with strict branch protection, a PR whose branch is BEHIND main never auto-merges (strict requires up-to-date). merge-watch stepPoll (src/release/merge-watch.ts:452) returns null for OPEN + non-BLOCKED (CLEAN/BEHIND/DIRTY), so on BEHIND the sidecar just keeps polling for up to 4h (240x60s) then times out, never merging. This is recurring: every ci-gated ship where main advanced during the cycle (specify + issue-file commits land on main) produces a BEHIND branch. Lived in CAM-179 ship (PR #130 sat OPEN+BEHIND; operator had to hand-run gh pr update-branch). Fix: when OPEN+BEHIND and auto-merge is armed, the sidecar should run gh pr update-branch (bounded retries, e.g. max 2-3) to catch the branch up, then keep watching; the re-run CI + armed auto-merge then closes it. Handle DIRTY (real merge conflict) by narrating + stopping the watch (needs a worker/human, not auto-recoverable). ci-red already narrates+stops. Complements CAM-170 (surface poll failures): CAM-170 signals the stall, this auto-recovers it. Guard: do not update-branch on ci-red or DIRTY; only on BEHIND with no failed check.",
+  "spec": {
+    "scope": "Make the sidecar merge-watch auto-recover a PR stuck at OPEN+BEHIND under strict branch protection, and durably surface non-recoverable merge-watch terminals so a recycled orchestrator learns the ship stalled. (1) Auto-recover: in processPollResult, when state OPEN and mergeStateStatus BEHIND and auto-merge is armed, run gh pr update-branch via a new injectable updateBranchFn (production wraps env -u GITHUB_TOKEN gh pr update-branch <N>), capped at 2 attempts tracked in MergeWatchState.updateBranchCount, then keep polling so the re-run CI plus armed auto-merge closes the PR. Extend the gh poll JSON with autoMergeRequest to gate on armed. DIRTY (real conflict) and cap-exhausted are non-recoverable: stop the watch. (2) Durable escalation: on any non-merged terminal (behind-unrecovered, dirty, ci-red, closed, timeout) emit logEvent merge-watch-stalled with reason/prNumber/issueId and write a durable marker .claude/.cam-ship-stalled.json; keep the existing notifyOrchestrator send-keys as a live-orchestrator fast path. (3) Consumption: add a boot step to subagent-orchestrator.md that reads the stalled marker and surfaces it as an opening blocker; consume the marker automatically when a subsequent watch merges the same PR. Out of scope: general unification with CAM-170, auto-resolving DIRTY conflicts, and changing the 4h poll timeout.",
+    "acceptanceCriteria": [
+      "When a poll returns OPEN + mergeStateStatus BEHIND with auto-merge armed (autoMergeRequest non-null) and updateBranchCount < 2, stepMergeWatch calls updateBranchFn(prNumber), increments updateBranchCount in MergeWatchState, and the watch continues with no terminal outcome.",
+      "When updateBranchCount === 2 and a poll still returns OPEN + BEHIND, the watch terminates non-merged with reason behind-unrecovered and updateBranchFn is not called again.",
+      "When a poll returns OPEN + BEHIND but auto-merge is not armed (autoMergeRequest null), updateBranchFn is not called.",
+      "When a poll returns OPEN + DIRTY, the watch terminates non-merged with reason dirty and updateBranchFn is not called.",
+      "On every non-merged terminal (behind-unrecovered, dirty, ci-red, closed, timeout), a merge-watch-stalled event is emitted via logEvent and .claude/.cam-ship-stalled.json is written with prNumber, prUrl, issueId, reason, and ts.",
+      "The production updateBranchFn runs gh pr update-branch with GITHUB_TOKEN stripped from the environment; the read-only gh pr view poll keeps the token.",
+      "When a later watch reaches MERGED for the same prNumber, the .claude/.cam-ship-stalled.json marker is removed.",
+      "subagent-orchestrator.md boot documents reading .claude/.cam-ship-stalled.json and surfacing it as an opening blocker; a clean boot with no marker surfaces nothing.",
+      "Unit tests cover BEHIND+armed to update+continue, BEHIND cap to terminate, BEHIND not-armed to no-update, DIRTY to terminate, and marker written on terminal plus removed on a later merge."
+    ],
+    "gotchas": [
+      "gh pr update-branch is a mutation: the .env GITHUB_TOKEN (fine-grained PAT) lacks Pull requests: write, so it must run under env -u GITHUB_TOKEN to fall back to the keyring OAuth token (same as gh pr create/merge/comment). Do NOT strip the token on the read-only gh pr view poll.",
+      "Right after update-branch the mergeStateStatus flips to BLOCKED/UNSTABLE (CI re-running), not back to BEHIND, so the cap is only spent when main advances AGAIN. Do not gate the cap on pollCount.",
+      "The durable channel already exists: reuse the logEvent (cam-worker-events.jsonl) and notifyOrchestrator seams; do not invent a third narration channel (single-pusher invariant CAM-78).",
+      "The stalled marker .claude/.cam-ship-stalled.json is a SEPARATE file from .cam-merge-watch.json, which is consume-on-read and deleted on any terminal. Do not overload the merge-watch state file.",
+      "The orchestrator boot template is cam dual-copy per-file: templates/agents/subagent-orchestrator.md, .claude/agents/subagent-orchestrator.md, and the generated vendor copy. Verify all copies and re-embed the vendor copy if the .claude source changed.",
+      "General unification of all merge-watch terminal outcomes and CAM-170 poll-errors onto one durable channel is out of scope: CAM-170 owns that as a consumer of the merge-watch-stalled event.",
+      "gh pr view must be extended to fetch autoMergeRequest so the armed-gate can be evaluated; PrStatus gains an auto-merge-armed signal."
+    ],
+    "domainTerms": [
+      "BEHIND",
+      "mergeStateStatus",
+      "auto-merge armed",
+      "update-branch",
+      "merge-watch",
+      "stalled-marker",
+      "consume-on-resolve"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 8,
+    "riskReduction": 8,
+    "jobSize": 5
+  }
 }
