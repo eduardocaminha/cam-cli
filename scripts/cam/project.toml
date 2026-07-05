@@ -6,7 +6,7 @@ name = "claude"
 
 [models]
 auditor = "claude-opus-4-8"
-implementer = "claude-sonnet-4-6"
+implementer = "claude-sonnet-5"
 orchestrator = "claude-opus-4-8"
 planner = "claude-opus-4-8"
 reviewer = "claude-opus-4-8"
