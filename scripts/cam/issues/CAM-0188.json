@@ -1,9 +1,44 @@
 {
   "id": "CAM-188",
   "title": "Teardown lingering worker/reviewer pane on terminal exit to restore the 2-pane invariant",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-05T15:00:44.657Z",
-  "description": "On any terminal exit (complete/await-operator/blocked) in runSupervisor, the single reused worker pane (relabeled implementer<->reviewer via @cam_label) lingers, leaving 3 panes. paneCountMutex returns 'busy' for count!=2 (src/tmux/session.ts:273), spuriously refusing the operator's outside-terminal CLI fallbacks: cam next (next.ts:279), cam ship (ship.ts:161), cam review (review.ts:161), cam issue (issue.ts:163), cam spec (spec.ts:163). It does NOT gate auto-ship: the /cam-ship slash command autoShipFn injects bypasses the mutex (CAM-181 investigation fact 1). Fix: add a teardown hook that kills the worker pane on terminal exit, mirroring killWorkerPane in src/commands/stop.ts:340 (respawn-pane -k <id> echo stopped, or kill-pane). Decisions: (1) which terminal states tear down (all vs complete-only); (2) scrollback trade-off, reviewer SUGGESTIONs should be captured in review-report.json not left in pane scrollback (CAM-186/139 lost 2 to scrollback). Compatible with CAM-57 self-heal and CAM-139 auto-drain re-arm. workerPaneId is in scope in runSupervisorLoop; the clearActive path (loop.ts:1699) would need readWorkerPaneMarker. Origin: CAM-181 grill Q3, deferred as a separate hygiene follow-up."
+  "description": "On any terminal exit (complete/await-operator/blocked) in runSupervisor, the single reused worker pane (relabeled implementer<->reviewer via @cam_label) lingers, leaving 3 panes. paneCountMutex returns 'busy' for count!=2 (src/tmux/session.ts:273), spuriously refusing the operator's outside-terminal CLI fallbacks: cam next (next.ts:279), cam ship (ship.ts:161), cam review (review.ts:161), cam issue (issue.ts:163), cam spec (spec.ts:163). It does NOT gate auto-ship: the /cam-ship slash command autoShipFn injects bypasses the mutex (CAM-181 investigation fact 1). Fix: add a teardown hook that kills the worker pane on terminal exit, mirroring killWorkerPane in src/commands/stop.ts:340 (respawn-pane -k <id> echo stopped, or kill-pane). Decisions: (1) which terminal states tear down (all vs complete-only); (2) scrollback trade-off, reviewer SUGGESTIONs should be captured in review-report.json not left in pane scrollback (CAM-186/139 lost 2 to scrollback). Compatible with CAM-57 self-heal and CAM-139 auto-drain re-arm. workerPaneId is in scope in runSupervisorLoop; the clearActive path (loop.ts:1699) would need readWorkerPaneMarker. Origin: CAM-181 grill Q3, deferred as a separate hygiene follow-up.",
+  "spec": {
+    "acceptanceCriteria": [
+      "On every terminal exit of runSupervisorLoop (complete, awaiting-operator, blocked, max-iterations) the lingering worker/reviewer pane is torn down so the tmux session returns to exactly 2 panes and paneCountMutex reports 'available'. [oracle: named-command bun test test/integration/tmux-introspect.test.ts]",
+      "Teardown uses `tmux kill-pane -t <paneId>` (NOT respawn-pane -k, which keeps the pane alive and leaves the mutex busy), resolving the pane id from readWorkerPaneMarker(claudeDir) with the in-scope workerPaneId as fallback.",
+      "A single finishTerminal(status) helper wraps notifyTerminal(status) + teardown and replaces every paired terminal-exit callsite in runSupervisorLoop (both 'complete' paths, all 'blocked' paths, 'awaiting-operator', 'max-iterations'), so no terminal return path can exit without teardown.",
+      "Teardown is injected as an optional teardownWorkerPaneFn (default no-op) on the supervisor options; src/supervisor/host.ts wires the real kill-pane closure. The pure loop stays testable with a spy.",
+      "Teardown is best-effort and non-throwing: a null marker or an already-dead pane (CAM-57 self-heal case) is a silent no-op that never throws and never fails the terminal return. [oracle: named-command bun test test/supervisor]",
+      "Unit test asserts teardownWorkerPaneFn is invoked exactly once for each of the 4 terminal statuses, and on the 'complete' path it runs AFTER the CAM-181 auto-ship dispatch (opts.autoShipFn).",
+      "Integration test against real tmux asserts pane count goes 3->2 after teardown and the next ensureWorkerPane dispatch re-creates the 3rd pane via split-window (kill -> available -> recreate cycle, compatible with CAM-57). [oracle: named-command bun test test/integration/tmux-introspect.test.ts]",
+      "Quality spine green: bun run check:all exits 0 (typecheck + biome lint + full test suite). [oracle: named-command bun run check:all]"
+    ],
+    "scope": "Teardown-only pane hygiene: kill-pane the single reused worker/reviewer pane on ALL terminal exits of runSupervisorLoop to restore the 2-pane invariant so the operator's outside-terminal CLI fallbacks (cam next/ship/review/issue/spec) stop being spuriously refused by paneCountMutex, and so the CAM-139 auto-drain can chain to the next cycle's dispatch. Mechanism: finishTerminal(status) wrapper + injected teardownWorkerPaneFn (default no-op) wired to a real kill-pane closure in host.ts. OUT OF SCOPE: surfacing reviewer SUGGESTIONs as follow-up issues (separate concern, already persisted in review-report.json; filed separately); no change to the reviewer contract; no change to stop.ts killWorkerPane (which intentionally uses respawn-pane -k for mid-cycle pane reuse, a different lifecycle).",
+    "gotchas": [
+      "notifyTerminal has an `if (!onProgress) return` guard: do NOT fold teardown inside it or teardown is skipped whenever onProgress is absent (many tests). Use the finishTerminal wrapper so teardown is unconditional.",
+      "respawn-pane -k (stop.ts:340 killWorkerPane) kills the process but KEEPS the pane => still 3 panes => mutex stays 'busy'. Only kill-pane removes the 3rd pane and restores count==2 (session.ts:285).",
+      "Pane id source of truth is readWorkerPaneMarker(claudeDir) (host.ts:265), re-read fresh; the in-scope workerPaneId is only the boot-time fallback.",
+      "CAM-181 auto-ship (opts.autoShipFn) fires in the 'complete' branch right before notifyTerminal('complete') (loop.ts ~757-759). finishTerminal replaces notifyTerminal, so teardown naturally runs AFTER auto-ship. Preserve that order; /cam-ship uses the orchestrator pane and bypasses the mutex, so teardown never races it.",
+      "There are two 'complete' terminal paths (loop.ts ~759 direct/cap-reentry and ~1349 post-review with CAM-139 escalateFn); both must route through finishTerminal.",
+      "Fakes lie for tmux (memory tmux-format-tab-mangle-validate-real: CAM-55 smoke found 2 criticals that 3 CLEAN rounds + 925 tests missed). The real-tmux integration test in test/integration/tmux-introspect.test.ts is the anchor, not the unit spy.",
+      "CAM-57 ensureWorkerPane (host.ts:362) re-creates the pane via split-window on the next dispatch, so killing at terminal is safe and is exactly what lets the auto-drain chain."
+    ],
+    "domainTerms": [
+      "pane-count mutex",
+      "2-pane invariant",
+      "worker pane teardown",
+      "finishTerminal",
+      "terminal exit (supervisor)"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 5,
+    "riskReduction": 8,
+    "jobSize": 3
+  }
 }
