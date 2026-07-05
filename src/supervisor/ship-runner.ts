@@ -16,14 +16,16 @@
 //   6. Cycle-close finalize via the injected finalizeFn (wraps finalizeCycleClose,
 //      src/commands/ship-finalize.ts).
 //   7. `git push origin <branch>`.
+//   8. PR-create + merge-mode step via the injected runShipPrStepFn (wraps
+//      runShipPrStep, src/release/ship-pr.ts, US-003) -- the last
+//      LLM-orchestrated part of cam-ship.md becomes deterministic here.
 //
 // A failed step returns its result kind immediately; no later step runs.
 //
 // The PRD snapshot (project, description, issueNumber, userStories) is read
-// once at step 2 and carried inside the ready-for-pr result, because
-// finalizeFn removes prd.json from disk -- callers building the PR title/body
-// (composePrTitle/composePrBody, src/release/pr-body.ts, US-001) need that
-// snapshot after prd.json is already gone.
+// once at step 2 and carried into the step-8 input, because finalizeFn
+// removes prd.json from disk -- composePrTitle/composePrBody (src/release/
+// pr-body.ts, US-001) need that snapshot after prd.json is already gone.
 //
 // bumpFn is NOT idempotent (a re-run would double-bump the version), so a
 // mid-sequence failure after the bump step is an operator escalation, never
@@ -37,6 +39,8 @@
 import type { SpawnFn } from './loop.ts';
 import type { WorkerEventLogger } from './events.ts';
 import type { PrdSnapshot, PrdSnapshotStory } from '../release/pr-body.ts';
+import type { ShipPrStepInput, ShipPrStepOutcome } from '../release/ship-pr.ts';
+import type { MergeMode } from '../config/models.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -103,8 +107,11 @@ export interface ShipPrdRecord {
  * bump-failed          - bumpFn threw.
  * finalize-failed      - finalizeFn threw.
  * push-failed          - `git push origin <branch>` exited non-zero.
- * ready-for-pr         - every step succeeded; the branch is pushed and ready
- *                        for the PR-create step (US-003) to consume.
+ * pr-create-failed     - runShipPrStepFn reported ok: false (e.g. gh pr create
+ *                        failed, or the created PR's number could not be resolved).
+ * shipped              - every step succeeded, including the PR-create + merge-mode
+ *                        step (US-003): the PR is open (and, in immediate mode,
+ *                        the issue is closed / the ci-gated watch is armed).
  */
 export type ShipPhaseResult =
 	| { kind: 'on-main' }
@@ -114,13 +121,8 @@ export type ShipPhaseResult =
 	| { kind: 'bump-failed'; detail: string }
 	| { kind: 'finalize-failed'; detail: string }
 	| { kind: 'push-failed'; detail: string }
-	| {
-			kind: 'ready-for-pr';
-			branchName: string;
-			prdSnapshot: PrdSnapshot;
-			bumpResult: ShipBumpResultLike;
-			finalizeResult: ShipFinalizeResultLike;
-	  };
+	| { kind: 'pr-create-failed'; detail: string }
+	| { kind: 'shipped'; prNumber: number; mergeMode: MergeMode };
 
 // ---------------------------------------------------------------------------
 // Options
@@ -145,6 +147,12 @@ export interface RunShipPhaseOptions {
 
 	/** Wraps finalizeCycleClose (src/commands/ship-finalize.ts). May throw on failure. */
 	finalizeFn: () => ShipFinalizeResultLike;
+
+	/**
+	 * Wraps runShipPrStep (src/release/ship-pr.ts, US-003). Runs after the
+	 * branch is pushed; never throws (returns { ok: false, detail } instead).
+	 */
+	runShipPrStepFn: (input: ShipPrStepInput) => ShipPrStepOutcome;
 
 	/** Returns the current ISO 8601 timestamp. Used to stamp logEvent calls. */
 	clock: () => string;
@@ -220,7 +228,7 @@ function blockingStoryIds(userStories: PrdSnapshotStory[]): string[] {
  * the exact sequence and fail-fast behavior without touching a real repo.
  */
 export function runShipPhase(opts: RunShipPhaseOptions): ShipPhaseResult {
-	const { spawnFn, readPrd, runGatesFn, bumpFn, finalizeFn, clock, logEvent } = opts;
+	const { spawnFn, readPrd, runGatesFn, bumpFn, finalizeFn, runShipPrStepFn, clock, logEvent } = opts;
 
 	// Step 1: branch guard.
 	const branchName = readCurrentBranch(spawnFn);
@@ -274,5 +282,15 @@ export function runShipPhase(opts: RunShipPhaseOptions): ShipPhaseResult {
 		return { kind: 'push-failed', detail };
 	}
 
-	return { kind: 'ready-for-pr', branchName, prdSnapshot, bumpResult, finalizeResult };
+	// Step 8: PR-create + merge-mode step (US-003). The last LLM-orchestrated
+	// part of cam-ship.md ends here.
+	const prStepResult = runShipPrStepFn({
+		branchName,
+		prdSnapshot,
+		issueId: finalizeResult.issueId,
+		issueBackend: finalizeResult.issueBackend,
+	});
+	if (!prStepResult.ok) return { kind: 'pr-create-failed', detail: prStepResult.detail };
+
+	return { kind: 'shipped', prNumber: prStepResult.prNumber, mergeMode: prStepResult.mergeMode };
 }

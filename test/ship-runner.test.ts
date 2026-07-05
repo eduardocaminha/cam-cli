@@ -4,10 +4,10 @@
 //
 // Coverage:
 //   1.  Happy path: on-main guard passes, PRD complete, commits ahead, gates
-//       pass, bump succeeds, finalize succeeds, push succeeds -> ready-for-pr
-//       carrying the PRD snapshot, bump result, and finalize result.
+//       pass, bump succeeds, finalize succeeds, push succeeds, PR-create step
+//       succeeds -> shipped carrying the prNumber and mergeMode.
 //   2.  on-main: refuses immediately; no PRD read, no gates, no bump, no
-//       finalize, no push.
+//       finalize, no push, no PR-create step.
 //   3.  prd-incomplete: non-operator incomplete story blocks; operator-required
 //       incomplete stories do NOT block; later steps never run.
 //   4.  no-commits-ahead: empty `git log main..HEAD`; later steps never run.
@@ -22,6 +22,9 @@
 //       finalizeFn runs.
 //   10. Push argv is exactly ['push', 'origin', branchName] -- no force variant.
 //   11. logEvent: called once, with the bump result, when provided.
+//   12. pr-create-failed: runShipPrStepFn returns ok:false; detail is surfaced.
+//   13. runShipPrStepFn receives branchName, prdSnapshot, issueId, issueBackend
+//       from the finalize result.
 
 import { describe, expect, test } from 'bun:test';
 import {
@@ -34,6 +37,7 @@ import {
 } from '../src/supervisor/ship-runner.ts';
 import type { SpawnFn } from '../src/supervisor/loop.ts';
 import type { WorkerEvent } from '../src/supervisor/events.ts';
+import type { ShipPrStepInput, ShipPrStepOutcome } from '../src/release/ship-pr.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -62,6 +66,7 @@ const INCOMPLETE_PRD: ShipPrdRecord = {
 
 const BUMP_RESULT: ShipBumpResultLike = { from: '0.61.0', to: '0.62.0', bumpType: 'minor' };
 const FINALIZE_RESULT: ShipFinalizeResultLike = { issueId: 'CAM-149', issueBackend: 'none' };
+const PR_STEP_RESULT: ShipPrStepOutcome = { ok: true, prNumber: 42, mergeMode: 'immediate' };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -82,6 +87,7 @@ interface MakeOptsConfig {
 	gatesOutputTail?: string;
 	bumpImpl?: () => ShipBumpResultLike;
 	finalizeImpl?: () => ShipFinalizeResultLike;
+	prStepImpl?: (input: ShipPrStepInput) => ShipPrStepOutcome;
 }
 
 interface MakeOptsResult {
@@ -93,6 +99,8 @@ interface MakeOptsResult {
 	gatesCount: () => number;
 	bumpCount: () => number;
 	finalizeCount: () => number;
+	prStepCount: () => number;
+	prStepInputs: () => ShipPrStepInput[];
 }
 
 function makeOpts(cfg: MakeOptsConfig = {}): MakeOptsResult {
@@ -111,6 +119,8 @@ function makeOpts(cfg: MakeOptsConfig = {}): MakeOptsResult {
 	let gatesCalls = 0;
 	let bumpCalls = 0;
 	let finalizeCalls = 0;
+	let prStepCalls = 0;
+	const prStepInputs: ShipPrStepInput[] = [];
 
 	const spawnFn: SpawnFn = (cmd, args) => {
 		calls.push({ cmd, args });
@@ -151,6 +161,12 @@ function makeOpts(cfg: MakeOptsConfig = {}): MakeOptsResult {
 			callOrder.push('finalize');
 			return cfg.finalizeImpl ? cfg.finalizeImpl() : FINALIZE_RESULT;
 		},
+		runShipPrStepFn: (input) => {
+			prStepCalls++;
+			prStepInputs.push(input);
+			callOrder.push('pr-step');
+			return cfg.prStepImpl ? cfg.prStepImpl(input) : PR_STEP_RESULT;
+		},
 		clock: () => '2026-07-05T00:00:00.000Z',
 		logEvent: (event) => {
 			events.push(event);
@@ -166,6 +182,8 @@ function makeOpts(cfg: MakeOptsConfig = {}): MakeOptsResult {
 		gatesCount: () => gatesCalls,
 		bumpCount: () => bumpCalls,
 		finalizeCount: () => finalizeCalls,
+		prStepCount: () => prStepCalls,
+		prStepInputs: () => prStepInputs,
 	};
 }
 
@@ -174,21 +192,28 @@ function makeOpts(cfg: MakeOptsConfig = {}): MakeOptsResult {
 // ---------------------------------------------------------------------------
 
 describe('runShipPhase', () => {
-	test('happy path returns ready-for-pr with PRD snapshot, bump result, finalize result', () => {
-		const { opts, callOrder } = makeOpts();
+	test('happy path returns shipped with prNumber and mergeMode from the PR-create step', () => {
+		const { opts, callOrder, prStepCount, prStepInputs } = makeOpts();
 		const result = runShipPhase(opts);
 
-		expect(result.kind).toBe('ready-for-pr');
-		if (result.kind !== 'ready-for-pr') return;
-		expect(result.branchName).toBe('cam/pr-149-ship-runner-deterministic');
-		expect(result.prdSnapshot.project).toBe('cam-cli');
-		expect(result.prdSnapshot.description).toBe('Deterministic ship runner');
-		expect(result.prdSnapshot.issueNumber).toBe(149);
-		expect(result.prdSnapshot.userStories).toEqual(COMPLETE_PRD.userStories);
-		expect(result.bumpResult).toEqual(BUMP_RESULT);
-		expect(result.finalizeResult).toEqual(FINALIZE_RESULT);
+		expect(result).toEqual({ kind: 'shipped', prNumber: 42, mergeMode: 'immediate' });
+		expect(prStepCount()).toBe(1);
+		expect(prStepInputs()).toEqual([
+			{
+				branchName: 'cam/pr-149-ship-runner-deterministic',
+				prdSnapshot: {
+					project: 'cam-cli',
+					description: 'Deterministic ship runner',
+					issueNumber: 149,
+					userStories: COMPLETE_PRD.userStories,
+					notes: undefined,
+				},
+				issueId: FINALIZE_RESULT.issueId,
+				issueBackend: FINALIZE_RESULT.issueBackend,
+			},
+		]);
 
-		// Full step order: branch -> read-prd -> commits-ahead -> gates -> bump -> finalize -> push.
+		// Full step order: branch -> read-prd -> commits-ahead -> gates -> bump -> finalize -> push -> pr-step.
 		expect(callOrder).toEqual([
 			'branch-check',
 			'read-prd',
@@ -197,11 +222,12 @@ describe('runShipPhase', () => {
 			'bump',
 			'finalize',
 			'push',
+			'pr-step',
 		]);
 	});
 
-	test('on-main refuses immediately; no PRD read, no gates, no bump, no finalize, no push', () => {
-		const { opts, calls, readPrdCount, gatesCount, bumpCount, finalizeCount } = makeOpts({
+	test('on-main refuses immediately; no PRD read, no gates, no bump, no finalize, no push, no pr-step', () => {
+		const { opts, calls, readPrdCount, gatesCount, bumpCount, finalizeCount, prStepCount } = makeOpts({
 			branch: MAIN_BRANCH,
 		});
 		const result = runShipPhase(opts);
@@ -211,32 +237,35 @@ describe('runShipPhase', () => {
 		expect(gatesCount()).toBe(0);
 		expect(bumpCount()).toBe(0);
 		expect(finalizeCount()).toBe(0);
+		expect(prStepCount()).toBe(0);
 		// Only the branch check spawned; no commits-ahead check, no push.
 		expect(calls).toEqual([{ cmd: 'git', args: ['branch', '--show-current'] }]);
 	});
 
 	test('prd-incomplete blocks on non-operator incomplete stories only; later steps never run', () => {
-		const { opts, gatesCount, bumpCount, finalizeCount } = makeOpts({ prd: INCOMPLETE_PRD });
+		const { opts, gatesCount, bumpCount, finalizeCount, prStepCount } = makeOpts({ prd: INCOMPLETE_PRD });
 		const result = runShipPhase(opts);
 
 		expect(result).toEqual({ kind: 'prd-incomplete', blockingStoryIds: ['US-002'] });
 		expect(gatesCount()).toBe(0);
 		expect(bumpCount()).toBe(0);
 		expect(finalizeCount()).toBe(0);
+		expect(prStepCount()).toBe(0);
 	});
 
 	test('no-commits-ahead when git log main..HEAD is empty; later steps never run', () => {
-		const { opts, gatesCount, bumpCount, finalizeCount } = makeOpts({ commitsAhead: false });
+		const { opts, gatesCount, bumpCount, finalizeCount, prStepCount } = makeOpts({ commitsAhead: false });
 		const result = runShipPhase(opts);
 
 		expect(result).toEqual({ kind: 'no-commits-ahead' });
 		expect(gatesCount()).toBe(0);
 		expect(bumpCount()).toBe(0);
 		expect(finalizeCount()).toBe(0);
+		expect(prStepCount()).toBe(0);
 	});
 
-	test('gates-failed carries the output tail; bump/finalize/push never run', () => {
-		const { opts, calls, bumpCount, finalizeCount } = makeOpts({
+	test('gates-failed carries the output tail; bump/finalize/push/pr-step never run', () => {
+		const { opts, calls, bumpCount, finalizeCount, prStepCount } = makeOpts({
 			gatesOk: false,
 			gatesOutputTail: 'FAIL: typecheck error TS2345',
 		});
@@ -245,11 +274,12 @@ describe('runShipPhase', () => {
 		expect(result).toEqual({ kind: 'gates-failed', outputTail: 'FAIL: typecheck error TS2345' });
 		expect(bumpCount()).toBe(0);
 		expect(finalizeCount()).toBe(0);
+		expect(prStepCount()).toBe(0);
 		expect(calls.some((c) => c.args[0] === 'push')).toBe(false);
 	});
 
-	test('bump-failed carries the thrown message; finalize/push never run', () => {
-		const { opts, calls, finalizeCount } = makeOpts({
+	test('bump-failed carries the thrown message; finalize/push/pr-step never run', () => {
+		const { opts, calls, finalizeCount, prStepCount } = makeOpts({
 			bumpImpl: () => {
 				throw new Error('git commit failed (exit 1)');
 			},
@@ -258,11 +288,12 @@ describe('runShipPhase', () => {
 
 		expect(result).toEqual({ kind: 'bump-failed', detail: 'git commit failed (exit 1)' });
 		expect(finalizeCount()).toBe(0);
+		expect(prStepCount()).toBe(0);
 		expect(calls.some((c) => c.args[0] === 'push')).toBe(false);
 	});
 
-	test('finalize-failed carries the thrown message; push never runs', () => {
-		const { opts, calls } = makeOpts({
+	test('finalize-failed carries the thrown message; push/pr-step never run', () => {
+		const { opts, calls, prStepCount } = makeOpts({
 			finalizeImpl: () => {
 				throw new Error('cannot resolve issueId for issueNumber=abc');
 			},
@@ -273,17 +304,31 @@ describe('runShipPhase', () => {
 			kind: 'finalize-failed',
 			detail: 'cannot resolve issueId for issueNumber=abc',
 		});
+		expect(prStepCount()).toBe(0);
 		expect(calls.some((c) => c.args[0] === 'push')).toBe(false);
 	});
 
-	test('push-failed carries the exit code and stdout', () => {
-		const { opts } = makeOpts({ pushExitCode: 1, pushStdout: 'remote: rejected\n' });
+	test('push-failed carries the exit code and stdout; pr-step never runs', () => {
+		const { opts, prStepCount } = makeOpts({ pushExitCode: 1, pushStdout: 'remote: rejected\n' });
 		const result = runShipPhase(opts);
 
 		expect(result.kind).toBe('push-failed');
 		if (result.kind !== 'push-failed') return;
 		expect(result.detail).toContain('exit 1');
 		expect(result.detail).toContain('remote: rejected');
+		expect(prStepCount()).toBe(0);
+	});
+
+	test('pr-create-failed carries the detail when runShipPrStepFn returns ok:false', () => {
+		const { opts } = makeOpts({
+			prStepImpl: () => ({ ok: false, detail: 'gh pr create failed (exit 1): permission denied' }),
+		});
+		const result = runShipPhase(opts);
+
+		expect(result).toEqual({
+			kind: 'pr-create-failed',
+			detail: 'gh pr create failed (exit 1): permission denied',
+		});
 	});
 
 	test('push argv is exactly push origin <branch>, never a force variant', () => {
