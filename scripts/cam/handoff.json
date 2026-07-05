@@ -1,19 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add commit-existence gate to readWorkerOutcome"
+    "id": "US-002",
+    "title": "Wire commitExistsForStory from host + loop with anchored git detection"
   },
   "branchName": "cam/pr-187-commit-existence-gate",
   "timestamp": "2026-07-05T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/result.ts",
-    "test/supervisor/result.test.ts",
+    "src/supervisor/loop.ts",
+    "src/supervisor/host.ts",
+    "test/supervisor/loop.test.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 wires commitExistsForStory from host.ts + loop.ts using anchored git detection (e.g. git log --grep on the story id, subject validated with commitSubjectMatchesStory exported from src/supervisor/result.ts). The new WorkerOutcomeKind 'no-commit' is returned by readWorkerOutcome when a passes:true story (not requires:'operator') fails the gate; loop.ts does NOT yet special-case 'no-commit' (it falls through the existing if-blocks with no notify and just `continue`s to the next iteration, since none of the current kind checks in loop.ts match it) -- US-002's own acceptance criteria define what the loop should actually do with it (the hint in this story said 're-dispatch/no-progress' treatment, similar to the CAM-36 no-progress guard). commitExistsForStory is optional so all pre-existing callers (host.ts, tests) are unaffected until US-002 wires it. Two gate sites in result.ts both call the shared confirmCommitGate/isOperatorStory helpers.",
+  "nextStoryContext": "US-002 is done: loop.ts's RunSupervisorOptions gained an optional commitExistsForStory field (threaded straight into the readWorkerOutcome call); host.ts builds the real adapter (git branch --show-current + git log --format=%s <branch>, matched via commitSubjectMatchesStory from result.ts, US-001). Design decision worth knowing for US-003: decideNextAction (decide.ts) is purely a function of prd.json's passes booleans and has zero awareness of commit state, so a 'no-commit' outcome cannot be handled by merely `continue`-ing the outer loop (the next decideNextAction call would take prd.json's passes:true at face value and advance to review/next-story). The fix implemented: a NEW dedicated `if (outcome.kind === 'no-commit')` block in loop.ts, placed right after the existing blocked/fail/unknown immediate-block check, that notifies + finishTerminal('blocked') + returns blocked on the very FIRST occurrence (no streak/backoff/retry loop like CAM-36/CAM-44 -- retrying is pointless here since a fresh worker session would just see passes:true and move on to the next story, it would not create the missing commit). This trivially satisfies 'bounded, never spins to MAX_ITERATIONS': every subsequent supervisor run (via a new `cam next`) hits the same guard on iteration 1. finalizeStory is never invoked for this outcome (kept structurally separate from the 'incomplete' branch). requires:'operator' stories remain exempt via the existing confirmCommitGate/isOperatorStory helpers in result.ts (unchanged, verified with a discriminating loop-level test). Next story per prd.json priority order is US-003 (worker-isolation-aware per-worker sentinel timeout ceiling) -- unrelated surface (perWorkerTimeoutMs / workerIsolation in loop.ts), no dependency on this story's work.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    { "lib": "git", "status": "aligned", "summary": "Fetched git-log docs to confirm --format=%s prints one commit subject line per commit reachable from <branch>, most recent first; matches the new host.ts commitExistsForStory adapter and the pre-existing --pretty=%s usage in ship-bump.ts/status.ts/resume.ts.", "url": "https://git-scm.com/docs/git-log", "fetchedAt": "2026-07-05T00:00:00Z" }
   ]
 }

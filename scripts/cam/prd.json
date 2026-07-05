@@ -42,7 +42,7 @@
         "Full quality spine is green (bun run check:all: typecheck + biome lint + tests). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "loop.ts: add commitExistsForStory to RunSupervisorOptions (near the prdPath/handoffPath fields ~line 205-215), resolve it in the opts destructure, and pass it into the readWorkerOutcome({...}) call (~line 1095). host.ts: build the real adapter in makeRunSupervisorHostOptions and add it to the returned opts object (~line 679-721); implement it with spawnSync git like the existing helpers (host.ts:531-589), e.g. `git log --format=%s <branch>` for the current branch subjects, then match each with the US-001 anchored matcher. Gotcha (issue spec E-list): fixer commits (US-R1-*) must carry the story id in their subject for the gate to confirm them - the anchored matcher must accept that convention. loop.test.ts already injects nowMs/perWorkerTimeoutMs/workerIsolation and fake finalizeStory, so the loop-behavior and no-auto-commit assertions are testable with fakes. Requires US-001 (callback + matcher). Read scripts/cam/patterns.md at story start."
     },
