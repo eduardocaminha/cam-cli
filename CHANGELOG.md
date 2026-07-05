@@ -4,6 +4,12 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.64.0] - 2026-07-05
+
+### Added
+
+- [US-001] - Tear down the lingering worker pane on every supervisor terminal exit
+
 ## [0.63.0] - 2026-07-05
 
 ### Added
