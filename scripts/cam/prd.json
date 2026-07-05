@@ -19,6 +19,20 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "CRITICAL [scripts/file-size-budget.json:96]: `bun run check:all` FAILS (exit 1) at the file-size gate: US-002's staged edits grew three test files past their budget ceilings without bumping the budget file. Actual (line-count + 1): test/dashboard.test.ts 1452 (budget 1440), test/integration/review-verdict-handback.test.ts 136 (budget 134), test/integration/sendkeys-submit.test.ts 69 (budget 61). This violates US-001 AC9 and US-002 AC10 ('Full quality spine green'), and the [oracle: bun run check:all] named-command oracle failed at Layer B. Fix: set the three ceilings to 1452 / 136 / 69."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "CRITICAL [scripts/test-in-container.ts:130]: parseBunOutput fails to extract failing test names from real `bun test` output. Real bun prints `(fail) <name>` (and `(fail) <name> [Nms]` under CLAUDECODE=1) in the non-TTY docker-exec capture path, but the regex matches `\\s+✗\\s+<name>(\\s+\\(Nms\\))?`, a marker bun never emits there. Verified: running the branch parser on real captured output returns failingTests:[]. The unit-test fixtures in test/test-in-container.test.ts use the fictional ✗ format, so the name-extraction tests (US-001 AC1/AC2) are false-greens and the feature is non-functional in production (operator sees fail count but not which tests failed). Fix: match `^\\((fail|todo)\\)\\s+(.+?)(?:\\s+\\[\\d+.*ms\\])?\\s*$` and record a real bun fixture."
+    },
+    {
       "id": "US-001",
       "title": "Build the on-demand in-container test harness",
       "description": "As a container-mode maintainer, I need a repeatable on-demand script that runs bun test inside the cam-worker container and fails only on real test failures, so container mode has a trustworthy regression check that never becomes a Docker-requiring CI gate.",
@@ -33,7 +47,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine green (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Core deliverable, fully deterministic (no live Docker needed to complete this story; the live run happens in US-002). Files: new `scripts/test-in-container.ts`, new `test/test-in-container.test.ts` (mirror test/check-all.test.ts at test/ root, NOT test/scripts/), edit `docs/adr/0003-worker-isolation-boundary-dev-container.md`. Reuse the existing container plumbing: `ensureWorkerContainer` / `makeProductionEnsureContainerFn` (src/supervisor/ensure-container.ts), `DEFAULT_CONTAINER_NAME='cam-worker'` and `DEFAULT_IMAGE_TAG='cam-worker:latest'` (src/supervisor/worker-container.ts). Build the docker-exec argv NON-interactively (plain `docker exec cam-worker bun test`, NO `-it`) so stdout is capturable; do NOT reuse dockerExecWrap (src/supervisor/docker-exec.ts), which is `-it` for the TUI worker. The container WORKDIR is already `/workspace` (Dockerfile line 72), so bun test runs against the bind-mounted repo by default. Follow the DI pattern of scripts/check-all.ts / ensure-container.ts: injectable spawnFn/ensureFn/exec seams so unit tests assert argv + parse + exit-code with fakes and never touch a real daemon (patterns.md: injectable onResults / SpawnFn conventions; scripts/**/*.ts are knip entry points). Parser gotcha (from the Bun docs consulted): parse the standalone summary lines and the failure blocks; when CLAUDECODE=1/AGENT=1 is set in the container env, bun test hides passing/skip detail but keeps summary + failure detail, so failing test names remain parseable. noUncheckedIndexedAccess: guard every regex capture group. Optional convenience: add a `test:container` script to package.json, but do NOT add it to the GATES manifest or ci.yml (CAM-178). Do not add em-dash to the ADR (project rule)."
@@ -54,10 +68,41 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine green (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "This is the single Docker-dependent story; it runs the US-001 harness against the live daemon on the operator's host (default host isolation means the worker runs on the operator's macOS where Docker Desktop is available; container mode was validated live this session per CAM-185/journal). Files: new `docs/container-test-baseline.md`, whatever `test/**` files need skipIf guards, and possibly `.devcontainer/Dockerfile` (a missing binary is the cheapest real-gap fix). GOTCHAS: (1) STALE NUMBERS: '2957/10 vs 3012' is from the CAM-175 pre-jq/pre-CAM-185 ceremony; host is now 3070 and the real in-container failure list is unknown and likely smaller, possibly 0 (contingency). (2) The ~45 uncounted tests are mostly tmux-absent skips (30 skipIf(!tmuxAvailable)) plus possible jq skips; those are SKIPS not failures. Do NOT add tmux to the worker image (the worker never uses tmux at runtime). (3) Docker-driving tests inject a fake probe/spawn (no real daemon), so they pass in-container: do NOT assume they are failures. (4) The genuine failures are what the skip/fake convention failed to catch: an unguarded shell-out or fs/uid assumption, a probe testing the wrong thing, or a real uid/ownership/path difference under the re-homed bun user in /workspace. (5) node_modules on the bind-mounted /workspace are the host's (macOS-arm64) but the container is linux: if bun test in-container fails on native/platform resolution, that is itself a real gap the harness surfaces; classify and fix or file it, do not pre-solve here. Skip convention is per-file `test.skipIf(!flag)` with a module-level probe (see test/orch-agent-allowlist.test.ts jqAvailable = Bun.which('jq') !== null; test/integration/tmux-introspect.test.ts tmuxAvailable = spawnSync('tmux',['-V']).status===0); there is no shared helper, follow it. Regression protection stays on-demand (macos CI has no Docker daemon, CAM-178). Do NOT commit a worker_isolation flip. No em-dash in the persisted baseline doc (project rule); route the cycle narrative to journal.md at cycle close, not into the baseline doc."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:2",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "scripts/file-size-budget.json",
+        "line": 96,
+        "text": "`bun run check:all` FAILS (exit 1) at the file-size gate: US-002's staged edits grew three test files past their budget ceilings without bumping the budget file. Actual (line-count + 1): test/dashboard.test.ts 1452 (budget 1440), test/integration/review-verdict-handback.test.ts 136 (budget 134), test/integration/sendkeys-submit.test.ts 69 (budget 61). This violates US-001 AC9 and US-002 AC10 ('Full quality spine green'), and the [oracle: bun run check:all] named-command oracle failed at Layer B. Fix: set the three ceilings to 1452 / 136 / 69."
+      },
+      {
+        "severity": "CRITICAL",
+        "file": "scripts/test-in-container.ts",
+        "line": 130,
+        "text": "parseBunOutput fails to extract failing test names from real `bun test` output. Real bun prints `(fail) <name>` (and `(fail) <name> [Nms]` under CLAUDECODE=1) in the non-TTY docker-exec capture path, but the regex matches `\\s+✗\\s+<name>(\\s+\\(Nms\\))?`, a marker bun never emits there. Verified: running the branch parser on real captured output returns failingTests:[]. The unit-test fixtures in test/test-in-container.test.ts use the fictional ✗ format, so the name-extraction tests (US-001 AC1/AC2) are false-greens and the feature is non-functional in production (operator sees fail count but not which tests failed). Fix: match `^\\((fail|todo)\\)\\s+(.+?)(?:\\s+\\[\\d+.*ms\\])?\\s*$` and record a real bun fixture."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/test-in-container.ts",
+        "line": 192,
+        "text": "makeDefaultExecFn calls spawnSync without an explicit maxBuffer; the Node default is 1MB. For a regression harness whose whole point is to detect failures, output truncation would fail-open (summary lines at the end get cut, parseBunOutput returns all zeros -> exit 0). Non-TTY output is compact today so this is unlikely, but set maxBuffer (e.g. 64MB) to harden against silent fail-open."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "docs/container-test-baseline.md",
+        "line": 25,
+        "text": "The heading 'US-001 skips: new tmux-absent guards (6)' is inaccurate: review-verdict-handback.test.ts and sendkeys-submit.test.ts already had test.skipIf(!tmuxAvailable) on main; US-002 only fixed the module-level probe robustness (Bun.spawnSync ENOENT throw). They are not newly-added guards."
+      }
+    ]
+  }
 }
