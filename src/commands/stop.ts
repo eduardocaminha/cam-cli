@@ -38,6 +38,7 @@ import {
 } from '../supervisor/sidecar-pid.ts';
 import { SUPERVISOR_LOCK_FILE } from '../supervisor/lock.ts';
 import { WORKER_REPORT_FILENAME } from '../supervisor/worker-report.ts';
+import { DRAIN_STOP_MARKER } from '../supervisor/drain-kill-switch.ts';
 import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
 
 import {
@@ -477,6 +478,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 		[claudeDir, ORCH_READY_MARKER],
 		[claudeDir, ORCH_RECYCLE_MARKER],
 		[claudeDir, ORCH_PID_MARKER],
+		[claudeDir, DRAIN_STOP_MARKER],
 		[cwd, WORKER_REPORT_FILENAME],
 	] as [string, string][]) {
 		const p = join(dir, name);

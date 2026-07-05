@@ -40,7 +40,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New module e.g. src/supervisor/drain-kill-switch.ts mirroring the marker pattern in src/supervisor/sidecar-pid.ts (named constant + injectable reader/writer/remover, patterns.md 'Sidecar PID persistence' + 'Per-session marker set + cam stop cleanup'). New CLI in src/commands/drain.ts (flag-based like `cam issue --file-local` / `cam ship --finalize`; default no-flag prints status) + a `case 'drain'` in index.ts + help text. Register removal in src/commands/stop.ts performStop marker loop (import the constant). CAM-68 nuance: a .claude/ RUNTIME marker is the correct cross-process channel here (same class as .cam-merge-watch.json / .cam-sidecar.pid); only the observe/dispatch DEDUP state must stay in-memory. Add '.claude/.cam-drain-stop' to both .gitignore and templates/.gitignore."
     },
