@@ -1,0 +1,9 @@
+{
+  "id": "CAM-189",
+  "title": "Surface reviewer SUGGESTIONs from the last review round as follow-ups before cycle close",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-05T15:40:09.932Z",
+  "description": "The reviewer already persists all findings (incl. SUGGESTION severity) to scripts/cam/review-report.json (ephemeral, overwritten each round), but the loop never reads the last rounds SUGGESTIONs out to surface them as follow-up issues before the cycle closes, so they are silently lost when the file is overwritten or the pane is torn down (CAM-188). CAM-186 and CAM-139 each lost 2 SUGGESTIONs this way. Scope: on terminal CLEAN, read review-report.json findings of severity SUGGESTION and surface them to the operator and/or auto-file as stage:idea follow-ups. Related to CAM-115/CAM-128 (follow-ups das SUGGESTIONs do review) and to teardown-only CAM-188 (which makes the loss permanent by killing the scrollback)."
+}
