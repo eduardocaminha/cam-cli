@@ -1,22 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Fail-closed hard-precondition gate for the drain"
+    "id": "US-004",
+    "title": "Wire the auto-dispatcher into the sidecar idle-tick"
   },
   "createdFiles": [
-    "src/supervisor/drain-preconditions.ts",
-    "test/supervisor/drain-preconditions.test.ts"
+    "docs/adr/0007-inter-cycle-unattended-drain.md"
   ],
   "modifiedFiles": [
-    "scripts/cam/prd.json"
+    "scripts/cam/prd.json",
+    "scripts/file-size-budget.json",
+    "src/commands/sidecar.ts",
+    "src/supervisor/events.ts",
+    "test/commands/sidecar-meta-loop.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 is done. evaluateDrainPreconditions is exported from src/supervisor/drain-preconditions.ts. It is a pure function with no I/O: takes { workerIsolation: WorkerIsolation, containerPreflight: PreflightResult, planApproval: PlanApproval } and returns { ok: true } | { ok: false; reason: 'container-not-active' | 'plan-approval-not-auto' }. Check ordering: container-not-active is evaluated first, plan-approval-not-auto second. The next story (US-004) wires the auto-dispatcher into the sidecar idle-tick and should call evaluateDrainPreconditions as the fail-closed gate before dispatching.",
+  "nextStoryContext": "US-004 is done. makeProductionMetaLoopDispatchFn is exported from src/commands/sidecar.ts. It is a factory that builds a closure over injectable MetaLoopDispatchDeps (selectFn, readPhaseFn, prdPresentFn, mergeWatchPresentFn, preconditionFn, killSwitchFn, setPhaseFn, drainNotifyFn, warnFn, logEvent). The auto-dispatcher is wired into the runMetaLoopObserveFn seam in buildSidecarLoopDeps via buildMetaLoopFn which branches on meta_loop=auto. The 'meta-loop-dispatch' WorkerEventKind and MetaLoopDispatchEventDetail union are in src/supervisor/events.ts. ADR 0007 documents the decision. All 3155 tests pass. The sidecar idle-tick now dispatches phase:planning for the next plannable issue when all safe-boundary guards pass in meta_loop=auto mode.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-003 touches only project-internal modules (drain-preconditions.ts imports from preflight-container.ts and models.ts). No external library API was exercised."
+      "summary": "US-004 touches only project-internal modules (sidecar.ts helpers, events.ts types, observe.ts, drain-preconditions.ts, drain-kill-switch.ts, select.ts). No external library API was exercised."
     }
   ]
 }
