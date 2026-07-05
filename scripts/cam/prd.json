@@ -44,7 +44,7 @@
         "Full quality spine passes: bun run check:all exits 0. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file docs/adr/0008-auto-ship-terminal-anchor.md. Mirror the format of docs/adr/0007-inter-cycle-unattended-drain.md (headers in Portuguese, no travessao/emoji per the repo doc convention). This decision passes all three ADR gates: hard to reverse (moving the dispatch anchor + adding a persisted prd field), surprising without context (why a persisted marker instead of the in-memory blockedCycleEmitted flag used in CAM-139 US-005), and a genuine trade-off (persisted marker survives restart but adds a prd.json field the supervisor must manage). DISCREPANCY to reconcile: the CAM-181 spec's ADR acceptance criterion cites 'CAM-68 (dedup in-memory)', but CAM-68 is about gitignoring runtime markers; the actual in-memory dedup precedent is CAM-139 US-005's blockedCycleEmitted (src/commands/sidecar.ts:820,891). Document the divergence against the real in-memory dedup site. Depends on US-001 (documents the behavior US-001 implements)."
     }

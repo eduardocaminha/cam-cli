@@ -1,25 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Re-anchor auto-ship to terminal complete+CLEAN with a persisted fire-once marker"
+    "id": "US-002",
+    "title": "Record ADR 0008 for the auto-ship terminal anchoring and persisted dedup"
   },
   "branchName": "cam/pr-181-auto-ship-terminal-anchor",
   "timestamp": "2026-07-05T00:00:00Z",
-  "createdFiles": [],
+  "createdFiles": [
+    "docs/adr/0008-auto-ship-terminal-anchor.md"
+  ],
   "modifiedFiles": [
-    "src/supervisor/decide.ts",
-    "src/supervisor/loop.ts",
-    "test/supervisor/auto-chain.test.ts",
-    "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 moved autoShipFn from the review branch to the terminal 'complete' branch in loop.ts, gated on lastVerdict==='CLEAN' and a persisted fire-once marker (prd.review.autoShipDispatchedAt). The marker is written to prd.json via writePrd BEFORE dispatch. The old callsite (~line 1354 in the pre-US-001 loop.ts) is deleted. PrdSnapshot.review in decide.ts now carries autoShipDispatchedAt?: string. BUG A (operator story gates await-operator not complete) and BUG B (re-entry dedup) are covered by new tests in test/supervisor/auto-chain.test.ts. File-size budgets raised: decide.ts 155->159, loop.ts 1716->1731.",
+  "nextStoryContext": "US-002 created docs/adr/0008-auto-ship-terminal-anchor.md documenting: (1) auto-ship anchored on terminal 'complete' branch gated on lastVerdict==='CLEAN' + absent autoShipDispatchedAt, (2) persisted marker in prd.review.autoShipDispatchedAt survives sidecar restart and in-place binary swap, (3) principled divergence from in-memory blockedCycleEmitted (CAM-139 US-005 in sidecar.ts:820-891) -- blockedCycleEmitted resets on restart by design, autoShipDispatchedAt must not. All stories in prd.json now have passes:true.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal TypeScript refactoring of loop.ts and decide.ts; no external library API exercised."
+      "summary": "Pure documentation story (ADR); no external library API exercised."
     }
   ]
 }
