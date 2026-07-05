@@ -15,7 +15,15 @@ import { test, expect } from "bun:test";
 const SOCK = "cam-it-sendkeys";
 const PAYLOAD = "[cam] US-001 DONE: typecheck ok, 5 pass / 0 fail";
 
-const tmuxAvailable = Bun.spawnSync(["tmux", "-V"]).exitCode === 0;
+// Use try-catch so the probe returns false gracefully when tmux is absent
+// instead of throwing ENOENT (Bun.spawnSync throws on missing binary).
+const tmuxAvailable = (() => {
+	try {
+		return Bun.spawnSync(["tmux", "-V"]).exitCode === 0;
+	} catch {
+		return false;
+	}
+})();
 
 function tmux(args: string[]): string {
 	return Bun.spawnSync(["tmux", "-L", SOCK, ...args]).stdout.toString();
