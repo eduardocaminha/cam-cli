@@ -18,7 +18,11 @@ import {
 } from '../scripts/test-in-container.ts';
 
 // ---------------------------------------------------------------------------
-// Fixtures: recorded Bun test output (format: bun test v1.x.x)
+// Fixtures: recorded Bun test output (format: bun test v1.x.x, non-TTY)
+//
+// Real bun emits '(fail) <name>' in non-TTY mode (docker-exec capture path).
+// With CLAUDECODE=1 it appends a bracketed duration: '(fail) <name> [Nms]'.
+// The ✗ glyph appears only in TTY (interactive terminal) mode.
 // ---------------------------------------------------------------------------
 
 /** All tests pass: 5 pass, 0 fail, 2 skip. */
@@ -40,23 +44,22 @@ const FIXTURE_ALL_PASS = `bun test v1.x.x (abc123)
  2 skip
 `;
 
-/** Some tests fail: 3 pass, 2 fail, 1 skip. */
+/**
+ * Some tests fail: 3 pass, 2 fail, 1 skip.
+ * Uses the real non-TTY '(fail) <name> [Nms]' format (CLAUDECODE=1 path).
+ */
 const FIXTURE_WITH_FAILURES = `bun test v1.x.x (abc123)
 
  test/foo.test.ts:
    ✓ should do thing (1ms)
-   ✗ should fail (2ms)
-
-   ✗ should fail
+(fail) should fail [2ms]
 
      Error: expected 1 but got 2
        at foo.test.ts:5:5
 
  test/bar.test.ts:
    ✓ bar test 1 (1ms)
-   ✗ another failing test (3ms)
-
-   ✗ another failing test
+(fail) another failing test [3ms]
 
      TypeError: Cannot read property 'x' of undefined
        at bar.test.ts:10:3
@@ -87,14 +90,30 @@ const FIXTURE_ONLY_SKIPS = `bun test v1.x.x (abc123)
 /** Empty output (no bun test ran). */
 const FIXTURE_EMPTY = '';
 
-/** Single failing test, no trailing duration on the fail line. */
+/** Single failing test, no duration suffix -- plain '(fail) <name>' format. */
 const FIXTURE_NO_DURATION = `bun test v1.x.x (abc123)
 
  test/x.test.ts:
-   ✗ bare failing test
+(fail) bare failing test
 
  0 pass
  1 fail
+ 0 skip
+`;
+
+/**
+ * Real bun non-TTY output with CLAUDECODE=1: three entries including a
+ * '(todo)' test.  Confirms that the '[Nms]' duration is stripped and that
+ * '(todo)' entries are captured alongside '(fail)' entries.
+ */
+const FIXTURE_REAL_BUN_CLAUDECODE = `bun test v1.x.x (abc123)
+
+(fail) first failing test [5ms]
+(fail) second failing test [12ms]
+(todo) a todo test [1ms]
+
+ 0 pass
+ 3 fail
  0 skip
 `;
 
@@ -178,10 +197,31 @@ describe('parseBunOutput', () => {
 	});
 
 	describe('no-duration fixture', () => {
-		test('extracts test name without trailing (Nms)', () => {
+		test('extracts test name from plain (fail) line without [Nms]', () => {
 			const r = parseBunOutput(FIXTURE_NO_DURATION);
 			expect(r.fail).toBe(1);
 			expect(r.failingTests[0]).toBe('bare failing test');
+		});
+	});
+
+	describe('real bun non-TTY (CLAUDECODE=1) fixture', () => {
+		test('fail count is 3', () => {
+			expect(parseBunOutput(FIXTURE_REAL_BUN_CLAUDECODE).fail).toBe(3);
+		});
+
+		test('failingTests has 3 entries', () => {
+			expect(parseBunOutput(FIXTURE_REAL_BUN_CLAUDECODE).failingTests).toHaveLength(3);
+		});
+
+		test('extracts (fail) test names stripping [Nms] suffix', () => {
+			const r = parseBunOutput(FIXTURE_REAL_BUN_CLAUDECODE);
+			expect(r.failingTests).toContain('first failing test');
+			expect(r.failingTests).toContain('second failing test');
+		});
+
+		test('extracts (todo) test name', () => {
+			const r = parseBunOutput(FIXTURE_REAL_BUN_CLAUDECODE);
+			expect(r.failingTests).toContain('a todo test');
 		});
 	});
 

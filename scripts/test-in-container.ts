@@ -87,8 +87,11 @@ export interface RunInContainerTestsOptions {
  * failing test names.
  *
  * Bun summary lines: ' N pass' / ' N fail' / ' N skip' (single leading space).
- * Failing test markers: lines containing the ballot-X glyph followed by the
- * test name (optionally trailed by a duration in parentheses).
+ * Failing test markers in non-TTY (docker-exec) capture path:
+ *   '(fail) test name'          -- without CLAUDECODE=1
+ *   '(fail) test name [Nms]'    -- with CLAUDECODE=1 (adds bracketed duration)
+ *   '(todo) test name [Nms]'    -- todo tests (same format)
+ * The ✗ glyph is a TTY-only marker; it is never emitted in non-interactive mode.
  *
  * noUncheckedIndexedAccess: all regex capture groups are guarded with ?? '0'.
  */
@@ -99,10 +102,9 @@ export function parseBunOutput(output: string): BunTestSummary {
 	let skip = 0;
 	const failingTests: string[] = [];
 
-	// Use a Set to deduplicate: bun prints each failing test name twice in
-	// verbose mode -- once in the per-file output (with duration suffix) and
-	// once in the failure-detail block (without duration).  Deduplicating via
-	// a Set collapses the two occurrences to one without losing any test name.
+	// Use a Set to deduplicate in case the same test name appears more than
+	// once across multiple output blocks (defensive; typically each name
+	// appears exactly once in the non-TTY capture path).
 	const failingTestsSet = new Set<string>();
 
 	for (const line of lines) {
@@ -123,13 +125,14 @@ export function parseBunOutput(output: string): BunTestSummary {
 			continue;
 		}
 
-		// Failing test lines: '   ✗ test name (2ms)' or '   ✗ test name'
-		// U+2717 BALLOT X is the glyph bun uses for per-file failure markers.
-		// The optional duration suffix is stripped; the Set deduplicates the two
-		// occurrences (per-file line and failure-detail header) to one.
-		const failLineM = /^\s+✗\s+(.+?)(?:\s+\(\d+ms\))?\s*$/.exec(line);
+		// Failing test lines in non-TTY mode:
+		//   '(fail) test name'         -- no duration
+		//   '(fail) test name [2ms]'   -- CLAUDECODE=1 adds bracketed duration
+		//   '(todo) test name [2ms]'   -- todo tests use the same pattern
+		// The optional '[Nms]' suffix is stripped; the rest is the test name.
+		const failLineM = /^\((fail|todo)\)\s+(.+?)(?:\s+\[\d+.*ms\])?\s*$/.exec(line);
 		if (failLineM) {
-			const name = failLineM[1]?.trim();
+			const name = failLineM[2]?.trim();
 			if (name) failingTestsSet.add(name);
 		}
 	}
