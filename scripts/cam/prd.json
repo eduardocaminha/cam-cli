@@ -76,7 +76,7 @@
         "Full quality spine is green. [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/sidecar.ts (makeProductionPlanPhaseFn ~line 1586, runPostPlanActions ~line 1476, exitPhaseAfterPlan ~line 1376), src/supervisor/plan-runner.ts (runPostAuditAction may need a case for the new terminal kind), tests under test/supervisor/ (sidecar-loop.test.ts and/or test/supervisor/plan/plan-runner-postaudit.test.ts). Teardown precedent: host.ts:398 teardownWorkerPaneFn (kill-pane, fresh marker read, silent no-op on dead pane). Escalation email precedent: the existing '[cam] Plan BLOCK' sendEscalation block in runPostPlanActions - reuse, but marker write must come first and be unconditional. Gotchas: exitPhaseAfterPlan maps the new terminal to 'idle' (same as escalated today); keep the outermost try/catch safety net in makeProductionPlanPhaseFn intact; branchName is read from prd.json AFTER the final round (round 2 may rewrite it); Biome 80-line limit - extract helpers rather than inflating existing closures."
     },
