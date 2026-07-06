@@ -1,0 +1,65 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-202-no-flaky-test-evasion",
+  "description": "Enforce no-flaky-test-evasion: a failing gate is a hard stop for workers, encoded in both subagent files and enforced by a harness guard that refuses a passes:true story whose recorded gate had a failing test.",
+  "issueNumber": 202,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add red-gate guard to readWorkerOutcome: refuse DONE on recorded failing test",
+      "description": "As the cam supervisor, I need the outcome-validation path to refuse a story marked passes:true when the worker's recorded gate result (worker-report.json gates.tests) shows a failing test, so that a worker cannot declare a story done on a red gate by narrating the failure away as flaky/pre-existing/environmental/unrelated.",
+      "acceptanceCriteria": [
+        "A pure helper in src/supervisor/result.ts (e.g. gateTestsIndicateFailure(tests: string): boolean) classifies the recorded gates.tests string: FAILING when the fail count is > 0 (e.g. '41 pass / 1 fail') or the string starts with 'fail' (e.g. 'fail: <detail>'); NOT failing for '42 pass / 0 fail', 'ok', 'n/a', and strings with skips but zero fails (e.g. '40 pass / 3 skip / 0 fail'). Legitimate skips never block; only a failing test blocks. [oracle: bun test test/supervisor/result.test.ts]",
+        "readWorkerOutcome's primary path (worker-report.json present, outcome DONE) refuses kind:'pass' when the report's gates.tests indicates a failing test, EVEN IF prd.json shows passes:true for that story. The returned outcome is a non-pass kind whose detail names the red-gate refusal (recorded gate had a failing test) and the story id, so the supervisor loop cannot advance the story to done/review. [oracle: bun test test/supervisor/result.test.ts]",
+        "A regression test reproduces the CAM-202 evasion: worker-report.json with outcome 'DONE', story 'US-XXX', gates.tests '41 pass / 1 fail'; prd.json has that story passes:true; readWorkerOutcome does NOT return kind:'pass' and the detail mentions the failing recorded gate. [oracle: bun test test/supervisor/result.test.ts]",
+        "A companion test asserts the guard does NOT fire on green or skip-containing gates: outcome 'DONE' with gates.tests '40 pass / 3 skip / 0 fail' (and prd passes:true, commit gate satisfied) still resolves to kind:'pass'. Reports with no gates field (malformed/legacy) preserve pre-existing behavior (no refusal). [oracle: bun test test/supervisor/result.test.ts]",
+        "The supervisor loop treats the refused outcome as a hard stop (routes to the blocked/fail branch, never to finalize-as-pass); existing loop tests remain green. [oracle: bun test test/supervisor/loop.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/result.ts, test/supervisor/result.test.ts, possibly src/supervisor/loop.ts (only if a new WorkerOutcomeKind is introduced). Extends the two-layer verification (CAM-56) and the commit-existence gate pattern from CAM-187 (see confirmCommitGate in result.ts as the structural template). Key on the RECORDED gate (report.gates.tests string from worker-report.json, shape documented in src/supervisor/worker-report.ts), never on worker prose. The WorkerReportFallback interface in result.ts currently reads only {outcome, story}; extend it to optionally read gates (runtime shape-check it, it is untrusted JSON). Two wiring options: (a) return kind:'fail' with a red-gate detail (loop.ts already routes 'fail' to the blocked terminal branch at ~line 1208, zero loop changes), or (b) add a dedicated kind (e.g. 'red-gate') mirroring how 'no-commit' was added in CAM-187 and wire it into the same blocked branch of loop.ts. Prefer (b) only if the distinct kind adds observability value; otherwise (a) is smaller. Gotchas: noUncheckedIndexedAccess means regex capture groups are string | undefined, always guard; readWorkerOutcome is a pure function with injected FileReader, so tests need no real filesystem (follow existing result.test.ts patterns); guard applies in the PRIMARY report path only (the fallback path has no recorded gates). Do not let 'n/a' or skip-only strings trigger the guard (gotcha from the issue: OS/capability-gated skips like real-tmux tests off-macOS are legitimate)."
+    },
+    {
+      "id": "US-002",
+      "title": "Encode the no-flaky-evasion hard-stop rule in subagent-implementer.md",
+      "description": "As the cam operator, I need the implementer agent instructions to state that any failing gate blocks the story and that dismissing a failing test as flaky/pre-existing/environmental/unrelated (or re-running to confirm flakiness and proceeding) is forbidden, so that implementer workers hard-stop and escalate instead of narrating a red gate green.",
+      "acceptanceCriteria": [
+        "templates/agents/subagent-implementer.md contains an explicit rule (in or adjacent to the 'Gate discipline' section) stating: any failing gate BLOCKS the story; a failing test may NOT be dismissed as flaky, pre-existing, environmental, or unrelated; re-running to confirm flakiness and proceeding green is forbidden; non-determinism is a defect to fix deterministically or the worker must HALT and escalate (emit BLOCKED_QUALITY, story stays passes:false). [oracle: grep -qi 'flaky' templates/agents/subagent-implementer.md && grep -qi 'pre-existing' templates/agents/subagent-implementer.md && grep -qi 'environmental' templates/agents/subagent-implementer.md && grep -qi 'unrelated' templates/agents/subagent-implementer.md]",
+        "The live copy .claude/agents/subagent-implementer.md carries the same rule, preserving the existing intentional deltas between the two copies (do not blanket-copy one file over the other). [oracle: grep -qi 'flaky' .claude/agents/subagent-implementer.md && grep -qi 'pre-existing' .claude/agents/subagent-implementer.md]",
+        "The rule text ties the prohibition to the recorded gate: the worker-report.json gates field must record the real gate result; writing a green gates.tests while a test failed is a protocol violation the harness refuses (references the US-001 guard). [oracle: reviewer-judgment]",
+        "Embedded vendor copy regenerated and clean (bun run embed-vendor then bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: templates/agents/subagent-implementer.md, .claude/agents/subagent-implementer.md, src/vendor/_generated.ts (regenerated via bun run embed-vendor, never hand-edited). Gotchas: the two copies intentionally DIFFER (the .claude/agents copy has cam-cli-specific gate commands and a Read-before-Write handoff note); apply the new rule to both without collapsing their deltas. The implementer constraint 'must not modify .claude/agents/*' is lifted here because this story's acceptance criteria explicitly require it. Natural anchor point: the '## Gate discipline' section (already states the implementer is PROHIBITED from declaring a story done before gates pass); extend it rather than adding a disconnected section. Same gate-gaming class as CAM-66 skipIf masking, in narrative form (see issue gotchas). Keep the rule wording aligned with US-003's reviewer wording so both agents enforce the identical policy."
+    },
+    {
+      "id": "US-003",
+      "title": "Encode the no-flaky-evasion hard-stop rule in subagent-reviewer.md",
+      "description": "As the cam operator, I need the reviewer agent instructions to treat a failing gate dismissed as flaky/pre-existing/environmental/unrelated as a hard-constraint FAIL, so that Layer B independently blocks any story where the implementer evaded a red gate by narrative.",
+      "acceptanceCriteria": [
+        "templates/agents/subagent-reviewer.md states explicitly that any failing gate blocks the story: a failing test during the reviewer's independent gate run may NOT be dismissed as flaky, pre-existing, environmental, or unrelated; re-running to confirm flakiness and approving is forbidden; non-determinism is a defect (CRITICAL finding), never a pass rationale. [oracle: grep -qi 'flaky' templates/agents/subagent-reviewer.md && grep -qi 'pre-existing' templates/agents/subagent-reviewer.md && grep -qi 'environmental' templates/agents/subagent-reviewer.md && grep -qi 'unrelated' templates/agents/subagent-reviewer.md]",
+        "The rule is wired into the Hard-constraint rule list of the Layer B binary PASS/FAIL rubric: a failing test at review time (including one the implementer called flaky) is a hard-constraint failure that FAILs the entire verdict and yields FIXES_PENDING, regardless of soft-criteria count. [oracle: grep -qi 'flaky' templates/agents/subagent-reviewer.md]",
+        "The live copy .claude/agents/subagent-reviewer.md carries the same rule, preserving the existing intentional deltas between the two copies (do not blanket-copy one file over the other). [oracle: grep -qi 'flaky' .claude/agents/subagent-reviewer.md && grep -qi 'pre-existing' .claude/agents/subagent-reviewer.md]",
+        "Embedded vendor copy regenerated and clean (bun run embed-vendor then bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: templates/agents/subagent-reviewer.md, .claude/agents/subagent-reviewer.md, src/vendor/_generated.ts (regenerated via bun run embed-vendor, never hand-edited). Gotchas: the two copies intentionally DIFFER (the .claude/agents copy has CLI-context security/correctness checklists and concrete gate commands); apply the rule to both without collapsing their deltas. Natural anchor points: the '### Hard-constraint rule' list (add the flaky-evasion clause as a hard-constraint bullet, following the existing behavioral-gate-FAIL bullet pattern: integrate into the findings channel, do NOT introduce a separate verdict field or parallel gate-verdict path) and the '### Green tests do not prove correctness' section. Keep wording aligned with US-002's implementer rule so both agents enforce the identical policy. The constraint 'must not modify .claude/agents/*' is lifted because this story's acceptance criteria explicitly require it."
+    }
+  ]
+}
