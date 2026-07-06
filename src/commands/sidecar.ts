@@ -19,8 +19,9 @@
 //
 // All I/O is injectable via SidecarOptions for unit tests.
 
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import process from 'node:process';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -41,7 +42,6 @@ import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWo
 import { makeProductionEnsureContainerFn } from '../supervisor/ensure-container.ts';
 import { preflightWorkerContainer, type PreflightResult } from '../supervisor/preflight-container.ts';
 import { sendEscalation, type ResendSendFn } from '../notify/resend.ts';
-import { buildWorkerReportSendKeysArgv } from '../supervisor/worker-report.ts';
 import {
 	stepMergeWatch,
 	readMergeWatchState,
@@ -59,12 +59,19 @@ import {
 	type MergeWatchOutcome,
 	type MergeWatchState,
 } from '../release/merge-watch.ts';
-import { runPostMerge, type SpawnFn as PostMergeSpawnFn } from '../release/post-merge.ts';
+import { runPostMerge, defaultCloseIssueFn, type SpawnFn as PostMergeSpawnFn } from '../release/post-merge.ts';
 import { observeDecide, type ObserveState } from '../supervisor/observe.ts';
 import { selectPlannableFromFile, selectPlanTargetFromFile } from '../issues/select.ts';
 import { isDrainStopSet } from '../supervisor/drain-kill-switch.ts';
 import { evaluateDrainPreconditions, type DrainPreconditionResult } from '../supervisor/drain-preconditions.ts';
 import type { IssueEntry } from '../issues/types.ts';
+import { runShipPhase, type ShipPhaseResult, type ShipPrdRecord, type ShipGatesResult, DEFAULT_GATES_COMMAND } from '../supervisor/ship-runner.ts';
+import { runShipPrStep, type ShipPrSpawnFn, type RunShipPrStepOptions, type ShipPrStepInput } from '../release/ship-pr.ts';
+import { finalizeCycleClose } from './ship-finalize.ts';
+import { runShipBump } from '../release/ship-bump.ts';
+import { buildShipFinalizeOpts, buildShipBumpOpts } from './ship-deps.ts';
+import { REVIEW_ARTIFACT_FILENAME } from '../supervisor/review-report.ts';
+import { printHint, printWarning } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -128,10 +135,12 @@ export interface SidecarOptions {
 	 */
 	flipActiveFn?: RunSidecarLoopOptions['flipActiveFn'];
 	/**
-	 * Override the autoShipFn (US-005).
+	 * Override the autoShipFn (US-005, deterministic since US-004 CAM-149).
 	 *
-	 * Production (auto mode): sends '/cam-ship Enter' to the orchestrator pane
-	 * via tmux send-keys so cam-ship runs without a human gate after CLEAN review.
+	 * Production (auto mode): writes phase:shipping to .claude/cam-loop.local.md
+	 * (setPhase('shipping')) so the sidecar's shipping branch runs the
+	 * deterministic ship runner without a human gate after a CLEAN review
+	 * verdict. No tmux send-keys dispatch of a slash command is involved.
 	 * Production (operator mode): undefined (inert, zero behavior change).
 	 * Tests inject a spy to assert the dispatch happened.
 	 */
@@ -187,6 +196,17 @@ export interface SidecarOptions {
 	 * Tests: inject a spy to assert call count without spawning real tmux panes.
 	 */
 	runPlanPhaseFn?: RunSidecarLoopOptions['runPlanPhaseFn'];
+	/**
+	 * Override the ship-phase runner (US-004, CAM-149).
+	 *
+	 * Production: makeProductionShipPhaseFn closure over runShipPhase with all
+	 * deps wired (spawnFn, the bun run check:all gates adapter, the shared
+	 * buildShipBumpOpts/buildShipFinalizeOpts factories, runShipPrStep). ALWAYS
+	 * resets phase to idle when the run ends, success or failure.
+	 * Tests: inject a spy to assert call count / crash-survival without
+	 * spawning real git/gh processes.
+	 */
+	runShipPhaseFn?: RunSidecarLoopOptions['runShipPhaseFn'];
 	/**
 	 * Override the ensure-container function (US-003, CAM-150).
 	 *
@@ -618,18 +638,259 @@ function makeFlipActiveFn(claudeDir: string, cwd: string): () => void {
 }
 
 /**
- * Build the production autoShipFn closure for auto mode.
+ * Build the production autoShipFn closure for auto mode (US-005, CAM-149:
+ * deterministic CLEAN trigger).
  *
- * Sends '/cam-ship Enter' to the orchestrator pane via tmux send-keys so
- * cam ship runs without a human gate after a CLEAN review verdict.
- * Best-effort: a missing orchestrator pane is a silent no-op.
+ * Delegates to makeSetPhaseFn with 'shipping', so the state file carries
+ * phase:shipping and the sidecar's shipping branch (loop.ts) runs the
+ * deterministic ship runner on its next tick. Replaces the former tmux
+ * send-keys dispatch of the cam-ship slash command (no LLM interprets the
+ * CLEAN trigger). Preserves all other fields from the existing state file.
+ * Non-fatal on any error (same contract as makeSetPhaseFn).
  */
-function makeAutoShipFn(sessionName: string, spawnFn: SpawnFn): () => void {
+function makeAutoShipFn(claudeDir: string, cwd: string): () => void {
+	const setPhase = makeSetPhaseFn(claudeDir, cwd);
+	return (): void => setPhase('shipping');
+}
+
+// ---------------------------------------------------------------------------
+// Ship-phase production factory (US-004, CAM-149)
+// ---------------------------------------------------------------------------
+
+/** Trailing lines of combined stdout+stderr captured on a gates-failed result. */
+const GATES_OUTPUT_TAIL_LINES = 60;
+
+/**
+ * Build the production runGatesFn adapter for runShipPhase.
+ *
+ * Spawns DEFAULT_GATES_COMMAND ('bun run check:all', ship-runner.ts) with a
+ * real spawnSync and captures the trailing GATES_OUTPUT_TAIL_LINES lines of
+ * combined stdout+stderr on failure, so a gates-failed result is diagnosable
+ * without re-running the gate manually.
+ */
+function makeProductionShipGatesFn(cwd: string): () => ShipGatesResult {
+	const [bin, ...rest] = DEFAULT_GATES_COMMAND.split(' ');
+	return (): ShipGatesResult => {
+		const result = spawnSync(bin ?? 'bun', rest, { cwd, encoding: 'utf8' });
+		if ((result.status ?? 1) === 0) return { ok: true, outputTail: '' };
+		const combined = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+		return { ok: false, outputTail: combined.split('\n').slice(-GATES_OUTPUT_TAIL_LINES).join('\n') };
+	};
+}
+
+/**
+ * Build the constant (non-input) deps runShipPrStep needs, everything except
+ * the per-call ShipPrStepInput (US-003, ship-pr.ts).
+ *
+ * Reuses defaultCloseIssueFn (post-merge.ts) for closeIssueOnMainFn so the
+ * "none" backend issue-close never drifts from the post-merge production
+ * wiring, and printHint/printWarning (logging/color.ts) for the operator-
+ * facing emit seams.
+ *
+ * Extracted from makeProductionShipPhaseFn to keep that closure under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
+ * pattern). Not exported: tests inject options.runShipPhaseFn directly.
+ */
+function buildProductionShipPrStepDeps(
+	cwd: string,
+	claudeDir: string,
+): Omit<RunShipPrStepOptions, keyof ShipPrStepInput> {
+	const watchFilePath = join(claudeDir, MERGE_WATCH_FILENAME);
+	const spawnFn: ShipPrSpawnFn = (cmd, args, options) =>
+		spawnSync(cmd, args, options as Parameters<typeof spawnSync>[2]) as SpawnSyncReturns<string>;
+	return {
+		spawnFn,
+		writeTempFile: (content: string): string => {
+			const dir = mkdtempSync(join(tmpdir(), 'cam-ship-pr-'));
+			const filePath = join(dir, 'body.md');
+			writeFileSync(filePath, content, 'utf8');
+			return filePath;
+		},
+		readReviewArtifact: (): string | null => {
+			const artifactPath = join(cwd, REVIEW_ARTIFACT_FILENAME);
+			try {
+				if (!existsSync(artifactPath)) return null;
+				return readFileSync(artifactPath, 'utf8');
+			} catch {
+				return null;
+			}
+		},
+		readMergeModeFn: () => readMergeMode(join(cwd, 'scripts/cam/project.toml')),
+		readMergeWatchStateFn: () => readMergeWatchState(watchFilePath),
+		writeMergeWatchStateFn: (state) => writeMergeWatchState(watchFilePath, state),
+		removeMergeWatchStateFn: () => removeMergeWatchState(watchFilePath),
+		closeIssueOnMainFn: (id: string) => defaultCloseIssueFn(cwd, id),
+		emitHint: printHint,
+		emitWarning: printWarning,
+	};
+}
+
+/**
+ * Build the production ship-phase escalateFn.
+ *
+ * Mirrors makeProductionEscalateFn's shape with a ship-specific subject.
+ * Returns undefined when Resend is unconfigured (inert, zero behavior change).
+ */
+function buildShipEscalateFn(cwd: string): (() => Promise<void>) | undefined {
+	const resendCfg = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
+	if (resendCfg.apiKey === '' || resendCfg.recipient === '') return undefined;
+	return async (): Promise<void> => {
+		await sendEscalation({
+			apiKey: resendCfg.apiKey,
+			recipient: resendCfg.recipient,
+			subject: '[cam] Ship failed: deterministic ship phase did not complete',
+			html: '<p><strong>[cam]</strong> The deterministic ship phase failed. Manual intervention required.</p>',
+		});
+	};
+}
+
+/**
+ * Build a short human-readable detail string for a ShipPhaseResult, used by
+ * narrateShipPhaseResult for the orchestrator-pane summary line.
+ */
+function shipFailureDetail(result: ShipPhaseResult): string {
+	switch (result.kind) {
+		case 'on-main':
+			return 'current branch is main';
+		case 'prd-incomplete':
+			return `blocking stories: ${result.blockingStoryIds.join(', ')}`;
+		case 'no-commits-ahead':
+			return 'no commits ahead of main';
+		case 'gates-failed':
+			return result.outputTail.split('\n').filter((l) => l.trim() !== '').slice(-3).join(' | ') || 'gates failed';
+		case 'bump-failed':
+			return result.detail;
+		case 'finalize-failed':
+			return result.detail;
+		case 'push-failed':
+			return result.detail;
+		case 'pr-create-failed':
+			return result.detail;
+		case 'shipped':
+			return `PR #${result.prNumber} (${result.mergeMode})`;
+	}
+}
+
+/**
+ * Push a one-line summary of the ship-phase outcome to the orchestrator pane.
+ * The shipped kind narrates success; every other kind narrates the failure
+ * kind plus a short detail.
+ */
+function narrateShipPhaseResult(result: ShipPhaseResult, notify: (line: string) => void): void {
+	if (result.kind === 'shipped') {
+		notify(`[cam] ship shipped: ${shipFailureDetail(result)}`);
+		return;
+	}
+	notify(`[cam] ship failed (${result.kind}): ${shipFailureDetail(result)}`);
+}
+
+/**
+ * Narrate + log the outcome of runShipPhase (US-004, CAM-149).
+ *
+ * Every outcome is logged via logEvent (kind 'ship-phase-result', detail is
+ * the full ShipPhaseResult) so a failed ship is diagnosable from
+ * .claude/cam-worker-events.jsonl without reading source. Failure kinds also
+ * push a one-line summary to the orchestrator pane and fire escalateFn
+ * best-effort (fire-and-forget); the shipped kind pushes a success line.
+ *
+ * Exported for direct unit testing (mirrors runPostAuditAction, CAM-155):
+ * makeProductionShipPhaseFn calls this after runShipPhase returns; tests
+ * exercise it with fake notify/escalateFn/logEvent, no real spawn needed.
+ */
+export function handleShipPhaseResult(
+	result: ShipPhaseResult,
+	deps: {
+		notify: (line: string) => void;
+		escalateFn: (() => Promise<void>) | undefined;
+		logEvent: WorkerEventLogger;
+	},
+): void {
+	deps.logEvent({
+		ts: new Date().toISOString(),
+		storyId: undefined,
+		uuid: 'ship',
+		kind: 'ship-phase-result',
+		detail: { ...result } as unknown as Record<string, unknown>,
+	});
+	narrateShipPhaseResult(result, deps.notify);
+	if (result.kind !== 'shipped' && deps.escalateFn !== undefined) {
+		void deps.escalateFn();
+	}
+}
+
+/**
+ * Build the production runShipPhaseFn closure (US-004, CAM-149).
+ *
+ * Wires runShipPhase (ship-runner.ts, US-002/US-003) with production adapters:
+ *   - spawnFn: spawnSync-backed loop.ts SpawnFn shape (git branch/log/push).
+ *   - runGatesFn: makeProductionShipGatesFn (spawns DEFAULT_GATES_COMMAND).
+ *   - bumpFn / finalizeFn: buildShipBumpOpts / buildShipFinalizeOpts
+ *     (src/commands/ship-deps.ts) -- the SAME shared factories `cam ship
+ *     --bump` / `--finalize` use (index.ts dispatchShip), so the two
+ *     production paths never drift.
+ *   - runShipPrStepFn: runShipPrStep (ship-pr.ts, US-003) wired via
+ *     buildProductionShipPrStepDeps (real gh spawn, temp-file writer,
+ *     review-artifact reader, merge-watch read/write/remove, closeIssueOnMain).
+ *
+ * The outcome is narrated + logged via handleShipPhaseResult. ALWAYS resets
+ * phase to idle when the run ends (finally), success or failure, so the
+ * sidecar never gets wedged in phase:shipping. Any thrown exception (e.g. an
+ * unreadable prd.json) is caught, logged as a 'sidecar-exit' event, and
+ * swallowed (mirrors makeProductionPlanPhaseFn's outer safety net).
+ *
+ * Not exported: tests inject options.runShipPhaseFn directly.
+ */
+function makeProductionShipPhaseFn(
+	cwd: string,
+	claudeDir: string,
+	sessionName: string,
+	logEvent: WorkerEventLogger,
+	realSpawnFn: SpawnFn,
+): () => void {
 	return (): void => {
-		const orchPane = getOrchPaneId(sessionName, spawnFn);
-		if (orchPane === null) return; // best-effort: silent no-op
-		const argv = buildWorkerReportSendKeysArgv(orchPane, '/cam-ship');
-		spawnFn('tmux', argv, { stdio: 'ignore' });
+		const setPhase = makeSetPhaseFn(claudeDir, cwd);
+		try {
+			const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
+				const result = spawnSync(cmd, args, {
+					cwd,
+					stdio: spawnOpts?.stdio ?? 'pipe',
+					encoding: 'utf8',
+				} as Parameters<typeof spawnSync>[2]);
+				return {
+					stdout: typeof result.stdout === 'string' ? result.stdout : '',
+					exitCode: result.status ?? null,
+				};
+			};
+
+			const prStepDeps = buildProductionShipPrStepDeps(cwd, claudeDir);
+
+			const result = runShipPhase({
+				spawnFn: loopSpawnFn,
+				readPrd: () => JSON.parse(readFileSync(join(cwd, 'scripts/cam/prd.json'), 'utf8')) as ShipPrdRecord,
+				runGatesFn: makeProductionShipGatesFn(cwd),
+				bumpFn: () => runShipBump(buildShipBumpOpts(cwd)),
+				finalizeFn: () => finalizeCycleClose(buildShipFinalizeOpts(cwd)),
+				runShipPrStepFn: (input: ShipPrStepInput) => runShipPrStep({ ...input, ...prStepDeps }),
+				clock: () => new Date().toISOString(),
+				logEvent,
+			});
+
+			handleShipPhaseResult(result, {
+				notify: makeNotifyOrchestrator(sessionName, realSpawnFn),
+				escalateFn: buildShipEscalateFn(cwd),
+				logEvent,
+			});
+		} catch (err: unknown) {
+			logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'sidecar-exit',
+				detail: { reason: 'ship-phase-crash', error: err instanceof Error ? err.message : String(err) },
+			});
+		} finally {
+			setPhase('idle');
+		}
 	};
 }
 
@@ -663,6 +924,7 @@ interface SidecarLoopDepsResult {
 	runMetaLoopObserveFn: RunSidecarLoopOptions['runMetaLoopObserveFn'];
 	readLoopPhaseFn: RunSidecarLoopOptions['readLoopPhaseFn'];
 	runPlanPhaseFn: RunSidecarLoopOptions['runPlanPhaseFn'];
+	runShipPhaseFn: RunSidecarLoopOptions['runShipPhaseFn'];
 }
 
 // ---------------------------------------------------------------------------
@@ -1473,6 +1735,25 @@ function buildPlanPhaseDeps(
 }
 
 /**
+ * Build the ship-phase injectable dep (US-004, CAM-149).
+ *
+ * Extracted from buildSidecarLoopDeps to keep it under the biome
+ * noExcessiveCognitiveComplexity(max=15) limit (CAM-60 factory/helper
+ * pattern), mirroring buildPlanPhaseDeps.
+ */
+function buildShipPhaseDeps(
+	ctx: SidecarLoopDepsCtx,
+	options: SidecarOptions,
+): Pick<SidecarLoopDepsResult, 'runShipPhaseFn'> {
+	const { cwd, claudeDir, sessionName, logEvent, realSpawnFn } = ctx;
+	return {
+		runShipPhaseFn: options.runShipPhaseFn ?? makeProductionShipPhaseFn(
+			cwd, claudeDir, sessionName, logEvent, realSpawnFn,
+		),
+	};
+}
+
+/**
  * Resolve all injectable sidecar loop deps from SidecarOptions + context.
  *
  * Each dep follows the options-injection-or-production-default pattern: when
@@ -1507,7 +1788,7 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	// mode; undefined in operator mode = zero behavior change).
 	const planApproval = readPlanApproval(join(cwd, 'scripts/cam/project.toml'));
 	const autoChainProduction = planApproval === 'auto'
-		? { flipActiveFn: makeFlipActiveFn(claudeDir, cwd), autoShipFn: makeAutoShipFn(sessionName, realSpawnFn) }
+		? { flipActiveFn: makeFlipActiveFn(claudeDir, cwd), autoShipFn: makeAutoShipFn(claudeDir, cwd) }
 		: { flipActiveFn: undefined as RunSidecarLoopOptions['flipActiveFn'], autoShipFn: undefined as RunSidecarLoopOptions['autoShipFn'] };
 	const flipActiveFn = options.flipActiveFn ?? autoChainProduction.flipActiveFn;
 	const autoShipFn = options.autoShipFn ?? autoChainProduction.autoShipFn;
@@ -1527,10 +1808,13 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	// US-002 / CAM-151: plan-phase deps extracted to a helper (biome complexity budget).
 	const planPhaseDeps = buildPlanPhaseDeps(ctx, options);
 
+	// US-004 / CAM-149: ship-phase dep extracted to a helper (biome complexity budget).
+	const shipPhaseDeps = buildShipPhaseDeps(ctx, options);
+
 	return {
 		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
 		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, autoShipFn, escalateFn,
-		runMetaLoopObserveFn, ...planPhaseDeps,
+		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps,
 	};
 }
 
@@ -1609,5 +1893,6 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		runMetaLoopObserveFn: deps.runMetaLoopObserveFn,
 		readLoopPhaseFn: deps.readLoopPhaseFn,
 		runPlanPhaseFn: deps.runPlanPhaseFn,
+		runShipPhaseFn: deps.runShipPhaseFn,
 	});
 }

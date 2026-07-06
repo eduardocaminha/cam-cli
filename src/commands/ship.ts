@@ -1,19 +1,23 @@
 // src/commands/ship.ts
 //
-// Implementation of `cam ship` -- thin-proxy that routes /cam-ship to the
-// live orchestrator pane via send-keys (US-007).
+// Implementation of `cam ship` (no flags) -- thin-proxy that writes
+// phase:shipping to the loop state file instead of injecting a slash
+// command via send-keys (US-005 of CAM-149).
 //
-// Acceptance criteria (US-007):
-//   1. Detect a live orchestrator via orchestratorAlive (US-005 predicate).
-//   2. On hit: atomic send-keys /cam-ship to the orchestrator pane and
-//      return 0 immediately (fire-and-forget).
-//   3. On miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
-//      (with orchestratorAlive re-check), then send-keys.
-//   4. send-keys is atomic (text + Enter in one call), NO -l (it would make "Enter" literal).
-//   5. No --permission-mode CLI flag (enforced by no-permission-mode-flag.test.ts).
-//   6. Typecheck passes (bun run typecheck).
-//   7. Tests pass (bun test).
+// Acceptance criteria (US-005):
+//   1. runShip writes phase:shipping to .claude/cam-loop.local.md (mirrors
+//      runPlan's buildPlanningBody + writeStateFile pattern), preserving all
+//      other state-file fields, and no longer sends a slash command via
+//      send-keys. The liveness/bootstrap preamble and the paneCountMutex
+//      busy-refusal are preserved.
+//   2. --bump / --finalize argv parsing and dispatch (index.ts's
+//      parseShipArgs/dispatchShip) are unchanged in behavior.
+//   3. index.ts help text describes the phase-signal behavior.
+//   4. No --permission-mode CLI flag (no-permission-mode-flag.test.ts).
+//   5. Typecheck passes (bun run typecheck).
+//   6. Tests pass (bun test).
 
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -29,14 +33,19 @@ import {
 import {
 	hasSession,
 	orchestratorAlive,
-	getOrchPaneId,
 	paneCountMutex,
 	projectSessionName,
 	type Env,
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
 import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
-import { sendKeysWhenIdle, type CapturePaneFn } from '../tmux/dispatch.ts';
+import { parseStateFile } from './status.ts';
+import {
+	renderStateFile,
+	writeStateFile,
+	DEFAULT_MAX_ITERATIONS,
+	DEFAULT_COMPLETION_PROMISE,
+} from './next.ts';
 
 // --- Types -----------------------------------------------------------------
 
@@ -65,22 +74,14 @@ export interface ShipOptions {
 	 */
 	statFn?: (path: string) => boolean;
 	/**
-	 * Sleep function for the ready-poll and idle-poll. Defaults to `Bun.sleepSync`.
+	 * Sleep function for the ready-poll. Defaults to `Bun.sleepSync`.
 	 * Tests inject a no-op to avoid real waits.
 	 */
 	sleepFn?: (ms: number) => void;
 	/** Total poll budget for waitForOrchestrator (ms). Default 60 000. */
 	waitTimeoutMs?: number;
-	/**
-	 * Override the capture-pane reader used by the idle-check before send-keys.
-	 * Tests inject a fake that returns controlled pane content strings.
-	 */
-	capturePaneFn?: CapturePaneFn;
-	/**
-	 * Maximum ms to wait for the orchestrator pane to go idle before sending
-	 * anyway (fallback: log + still send). Default: 5 000.
-	 */
-	idleTimeoutMs?: number;
+	/** Injectable state-file writer for tests. Defaults to writeStateFile. */
+	writeFn?: (cwd: string, body: string, opts: { force?: boolean }) => string;
 }
 
 // --- Internal helpers -------------------------------------------------------
@@ -92,25 +93,57 @@ async function doBootstrap(cwd: string, bootstrapFn?: () => Promise<boolean>): P
 	return (result.status ?? 1) === 0;
 }
 
+/**
+ * Build the state-file body for phase:shipping.
+ * Merges with existing state-file fields when the file is already present
+ * (mirrors plan.ts's buildPlanningBody).
+ */
+function buildShippingBody(claudeDir: string): string {
+	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
+	const now = new Date().toISOString();
+	if (!existsSync(stateFilePath)) {
+		return renderStateFile({
+			maxIterations: DEFAULT_MAX_ITERATIONS,
+			completionPromise: DEFAULT_COMPLETION_PROMISE,
+			startedAt: now,
+			pid: process.pid,
+			phase: 'shipping',
+			lastActivity: now,
+		});
+	}
+	const contents = readFileSync(stateFilePath, 'utf8');
+	const parsed = parseStateFile(contents);
+	return renderStateFile({
+		maxIterations: parsed?.max_iterations ?? DEFAULT_MAX_ITERATIONS,
+		completionPromise: parsed?.completion_promise ?? DEFAULT_COMPLETION_PROMISE,
+		startedAt: parsed?.started_at ?? now,
+		pid: parsed?.pid ?? process.pid,
+		phase: 'shipping',
+		iteration: parsed?.iteration,
+		currentStory: parsed?.current_story,
+		storiesDone: parsed?.stories_done,
+		storiesTotal: parsed?.stories_total,
+		lastActivity: now,
+		plan_issue: parsed?.plan_issue,
+	});
+}
+
 // --- Public entrypoint -----------------------------------------------------
 
 /**
- * Run the `cam ship` flow: thin-proxy to the live orchestrator (US-007).
+ * Run the `cam ship` flow: writes phase:shipping to the loop state file
+ * (US-005 of CAM-149).
  *
- * If the orchestrator is already running (hasSession + orchestratorAlive):
- *   - Sends `/cam-ship` to the orchestrator pane via send-keys.
+ * The liveness/bootstrap/mutex preamble is unchanged from the previous
+ * thin-proxy. The SEND step (send-keys to the orchestrator pane) is
+ * replaced by a state-file write that the sidecar's deterministic ship
+ * runner detects and acts on.
  *
- * If the orchestrator is not running:
- *   - Bootstraps it via `cam run --no-attach` (or injected bootstrapFn).
- *   - Polls `.claude/.cam-orch-ready` + orchestratorAlive until ready.
- *   - Then sends the request.
- *
- * Returns 0 on success, 1 on bootstrap/liveness failure.
+ * Returns 0 on success, 1 on any failure.
  */
 export async function runShip(options: ShipOptions = {}): Promise<number> {
 	const cwd = options.cwd ?? process.cwd();
 	const env = options.env ?? process.env;
-	const request = '/cam-ship';
 
 	const { spawnSync } = await import('node:child_process');
 	const tmuxSpawnFn: TmuxSpawnFn =
@@ -165,31 +198,24 @@ export async function runShip(options: ShipOptions = {}): Promise<number> {
 		return 1;
 	}
 
-	// --- Send request ---------------------------------------------------------
-	const orchPaneId = getOrchPaneId(sessionName, tmuxSpawnFn);
-	if (!orchPaneId) {
+	// --- Write phase:shipping to state file (US-005) ---------------------------
+	// The sidecar's poll loop reads this phase and runs the deterministic ship
+	// runner (runShipPhase / runShipPrStep, wired in loop.ts). No slash command
+	// is injected into the orchestrator pane anymore.
+	try {
+		const body = buildShippingBody(claudeDir);
+		(options.writeFn ?? writeStateFile)(cwd, body, { force: true });
+		emitMutedHint('phase:shipping written to .claude/cam-loop.local.md');
+	} catch (err) {
 		printError(
-			'Could not find orchestrator pane',
-			'The session exists but pane index 0 is missing.',
+			'Failed to write phase:shipping to .claude/cam-loop.local.md',
+			err instanceof Error ? err.message : String(err),
 		);
 		emitTrailingBlank();
 		return 1;
 	}
 
-	// Wait for the orchestrator pane to be idle, then issue atomic send-keys.
-	// sendKeysWhenIdle polls capture-pane until the prompt is stable (no
-	// spinner / tool-call glyph), then sends text + Enter in one call WITHOUT -l
-	// (sendkeys-literal-enter-gotcha: -l would make "Enter" literal and never submit; US-008).
-	sendKeysWhenIdle({
-		paneId: orchPaneId,
-		text: request,
-		tmuxSpawnFn,
-		capturePaneFn: options.capturePaneFn,
-		sleepFn: options.sleepFn,
-		idleTimeoutMs: options.idleTimeoutMs,
-	});
-
-	emitOk(`Sent "${request}" to orchestrator pane ${orchPaneId}`);
+	emitOk('Ship phase initiated (phase:shipping written; sidecar will run the ship pipeline)');
 	emitAttachHint(sessionName, env);
 	emitTrailingBlank();
 	return 0;

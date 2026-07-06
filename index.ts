@@ -45,6 +45,7 @@ import {
 	finalizeCycleClose,
 	type FinalizeCycleCloseResult,
 } from './src/commands/ship-finalize.ts';
+import { buildShipFinalizeOpts, buildShipBumpOpts } from './src/commands/ship-deps.ts';
 import { runShipBump, type ShipBumpResult } from './src/release/ship-bump.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
@@ -61,12 +62,7 @@ import { runTag } from './src/commands/tag.ts';
 import { ORCH_RECYCLE_MARKER } from './src/tmux/session.ts';
 import { watcherAlive } from './src/supervisor/sidecar-pid.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
-import {
-	stashIssueIdInMergeWatch,
-	MERGE_WATCH_FILENAME,
-} from './src/release/merge-watch.ts';
 import type { WsjfScore } from './src/issues/types.ts';
-import { makeFileEventLogger } from './src/supervisor/events.ts';
 import { printError, printFatalHint, printHint } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { CAM_VERSION } from './src/version.ts';
@@ -404,7 +400,7 @@ const REVIEW_HELP = renderHelp({
 
 const SHIP_HELP = renderHelp({
 	title: 'cam ship',
-	tagline: 'Dispatch /cam-ship to the live orchestrator, or finalize a cycle in-process',
+	tagline: 'Write phase:shipping to the loop state file, or finalize a cycle in-process',
 	usage: 'cam ship [--finalize] [--bump]',
 	sections: [
 		{
@@ -412,11 +408,12 @@ const SHIP_HELP = renderHelp({
 			body:
 				'1. Checks whether a live orchestrator session exists\n' +
 				'   (cam-orch-<basename>-<hash>).\n' +
-				'2. On hit: sends /cam-ship to the orchestrator pane via\n' +
-				'   atomic tmux send-keys and returns immediately.\n' +
+				'2. On hit: writes phase:shipping to .claude/cam-loop.local.md,\n' +
+				'   preserving all other state-file fields; the sidecar runs the\n' +
+				'   deterministic ship runner and returns immediately.\n' +
 				'3. On miss: bootstraps the orchestrator via `cam run --no-attach`,\n' +
 				'   waits for .claude/.cam-orch-ready + liveness re-check, then\n' +
-				'   sends /cam-ship.\n' +
+				'   writes phase:shipping.\n' +
 				'4. If not already inside the session, prints a hint:\n' +
 				'     Run `cam run` to open the project session.',
 		},
@@ -1006,7 +1003,7 @@ export async function dispatchShip(
 	deps?: ShipDispatchDeps,
 ): Promise<number> {
 	if (parsed.finalize) {
-		const finalizeFn = deps?.finalizeFn ?? (() => finalizeCycleClose(_buildFinalizeOpts(process.cwd())));
+		const finalizeFn = deps?.finalizeFn ?? (() => finalizeCycleClose(buildShipFinalizeOpts(process.cwd())));
 		try {
 			finalizeFn();
 			return 0;
@@ -1016,7 +1013,7 @@ export async function dispatchShip(
 		}
 	}
 	if (parsed.bump) {
-		const bumpFn = deps?.bumpFn ?? (() => runShipBump(_buildBumpOpts(process.cwd())));
+		const bumpFn = deps?.bumpFn ?? (() => runShipBump(buildShipBumpOpts(process.cwd())));
 		try {
 			bumpFn();
 			return 0;
@@ -1027,43 +1024,6 @@ export async function dispatchShip(
 	}
 	const ship = deps?.runShipFn ?? (() => runShip({}));
 	return ship();
-}
-
-/** Build production deps for finalizeCycleClose from the given project root. */
-function _buildFinalizeOpts(cwd: string) {
-	return {
-		cwd,
-		spawnFn: spawnSync,
-		clock: () => new Date().toISOString(),
-		readProjectToml: () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8'),
-		readPrd: () => readFileSync(join(cwd, 'scripts/cam/prd.json'), 'utf8'),
-		stashFn: (issueId: string) =>
-			stashIssueIdInMergeWatch(join(cwd, '.claude', MERGE_WATCH_FILENAME), issueId),
-	};
-}
-
-/** Build production deps for runShipBump from the given project root. */
-function _buildBumpOpts(cwd: string) {
-	const eventLogger = makeFileEventLogger(join(cwd, '.claude/cam-worker-events.jsonl'));
-	return {
-		cwd,
-		spawnFn: spawnSync,
-		clock: () => new Date().toISOString(),
-		readVersionTs: () => readFileSync(join(cwd, 'src/version.ts'), 'utf8'),
-		readPackageJson: () => readFileSync(join(cwd, 'package.json'), 'utf8'),
-		writeVersionTs: (text: string) => writeFileSync(join(cwd, 'src/version.ts'), text, 'utf8'),
-		writePackageJson: (text: string) => writeFileSync(join(cwd, 'package.json'), text, 'utf8'),
-		readChangelog: () => readFileSync(join(cwd, 'CHANGELOG.md'), 'utf8'),
-		writeChangelog: (text: string) => writeFileSync(join(cwd, 'CHANGELOG.md'), text, 'utf8'),
-		writeEvent: (event: ShipBumpResult) =>
-			eventLogger({
-				ts: new Date().toISOString(),
-				storyId: undefined,
-				uuid: 'ship-bump',
-				kind: 'ship-bump',
-				detail: event as unknown as Record<string, unknown>,
-			}),
-	};
 }
 
 // ---------------------------------------------------------------------------

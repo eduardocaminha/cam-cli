@@ -1,15 +1,19 @@
 // test/ship.test.ts
 //
-// Unit tests for `cam ship` (US-007: thin-proxy to orchestrator).
+// Unit tests for `cam ship` (US-005 of CAM-149: phase-signal writer).
 //
 // What we cover:
-//   - parseShipArgs: --help/-h, unknown flag rejection.
-//   - runShip (hit path): orchestrator alive -> send-keys /cam-ship and return 0.
-//   - runShip (miss path): bootstraps cam run, waits for marker, then send-keys.
+//   - parseShipArgs: --help/-h, unknown flag rejection (unchanged, still
+//     covered here for the default no-flags path).
+//   - runShip (hit path): orchestrator alive -> phase:shipping written to
+//     the state file and returns 0. NO send-keys dispatch.
+//   - runShip (miss path): bootstraps cam run, waits for marker, then
+//     writes the state file.
 //   - runShip: bootstrap failure returns 1.
 //   - runShip: marker timeout returns 1.
-//   - runShip: missing orch pane returns 1.
-//   - send-keys is atomic (NO -l; -l would make "Enter" literal; text + Enter same call).
+//   - runShip: pane mutex busy returns 1 and does NOT write the state file.
+//   - The liveness/bootstrap preamble and paneCountMutex busy-refusal are
+//     preserved from the previous send-keys-based thin-proxy.
 
 import { describe, expect, test } from 'bun:test';
 import { tmpdir } from 'node:os';
@@ -23,6 +27,7 @@ import {
 	projectSessionName,
 	type SpawnFn as TmuxSpawnFn,
 } from '../src/tmux/session.ts';
+import { parseStateFile } from '../src/commands/status.ts';
 
 // --- Fake tmux spawn --------------------------------------------------------
 
@@ -83,19 +88,23 @@ function makeFakeTmuxSpawn(opts: {
 			return { ...base, stdout: Buffer.from('') };
 		}
 
-		if (subcommand === 'capture-pane') {
-			// Return idle pane content so the idle-check (US-008) passes immediately.
-			return { ...base, stdout: Buffer.from('> ') };
-		}
-
-		if (subcommand === 'send-keys') {
-			return base;
-		}
-
 		return base;
 	}) as TmuxSpawnFn & { calls: TmuxCall[] };
 	fn.calls = calls;
 	return fn;
+}
+
+/** Capture state-file writes from runShip. Returns last captured body. */
+function makeWriteCapture(): {
+	calls: Array<{ body: string }>;
+	writeFn: (cwd: string, body: string, opts: { force?: boolean }) => string;
+} {
+	const calls: Array<{ body: string }> = [];
+	const writeFn = (_cwd: string, body: string, _opts: { force?: boolean }) => {
+		calls.push({ body });
+		return 'captured';
+	};
+	return { calls, writeFn };
 }
 
 // --- parseShipArgs ---------------------------------------------------------
@@ -137,76 +146,65 @@ describe('parseShipArgs', () => {
 // --- runShip (thin-proxy): hit path ------------------------------------------
 
 describe('runShip (thin-proxy, hit path)', () => {
-	test('sends /cam-ship to orchestrator pane and returns 0', async () => {
+	test('writes phase:shipping to the state file and returns 0', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-hit-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%3' });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
 		const code = await runShip({
 			cwd: tmpDir,
 			tmuxSpawnFn: spawnFn,
+			writeFn,
 		});
 
 		expect(code).toBe(0);
-
-		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-		expect(sendKeys).toBeDefined();
-		expect(sendKeys?.args).not.toContain('-l');
-		expect(sendKeys?.args).toContain('/cam-ship');
-		expect(sendKeys?.args).toContain('Enter');
-		expect(sendKeys?.args).toContain('%3');
+		expect(writeCalls).toHaveLength(1);
+		const parsed = parseStateFile(writeCalls[0]?.body ?? '');
+		expect(parsed?.phase).toBe('shipping');
 	});
 
-	test('send-keys is atomic: text and Enter are in the same send-keys call', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-atomic-'));
+	test('does NOT call send-keys (state-file write is the signal)', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-no-sendkeys-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+		const { writeFn } = makeWriteCapture();
 
-		await runShip({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		await runShip({ cwd: tmpDir, tmuxSpawnFn: spawnFn, writeFn });
 
-		const sendKeys = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeys).toHaveLength(1);
-		const call = sendKeys[0];
-		const enterIdx = call?.args.lastIndexOf('Enter') ?? -1;
-		const textIdx = call?.args.findIndex((a) => a === '/cam-ship') ?? -1;
-		expect(enterIdx).toBeGreaterThan(textIdx);
-	});
-
-	test('does NOT use -l (regression: -l makes "Enter" literal, never submits)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-literal-'));
-		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
-
-		await runShip({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
-
-		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-		expect(sendKeys?.args).not.toContain('-l');
+		const sendKeys = spawnFn.calls.find((c) => c.args.includes('send-keys'));
+		expect(sendKeys).toBeUndefined();
 	});
 
 	test('skips bootstrap when orchestrator is already alive', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-no-bootstrap-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { writeFn } = makeWriteCapture();
 		let bootstrapCalled = false;
 
 		await runShip({
 			cwd: tmpDir,
 			tmuxSpawnFn: spawnFn,
+			writeFn,
 			bootstrapFn: async () => { bootstrapCalled = true; return true; },
 		});
 
 		expect(bootstrapCalled).toBe(false);
 	});
 
-	test('returns 1 and does not send-keys when pane mutex is busy', async () => {
+	test('returns 1 and does not write the state file when pane mutex is busy', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-busy-'));
 		const spawnFn = makeFakeTmuxSpawn({
 			sessionExists: true,
 			orchAlive: true,
 			paneMutexBusy: true,
 		});
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
-		const code = await runShip({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		const code = await runShip({ cwd: tmpDir, tmuxSpawnFn: spawnFn, writeFn });
 
 		expect(code).toBe(1);
-		// send-keys must NOT have been called (worker is still running)
-		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+		expect(writeCalls).toHaveLength(0);
+		// send-keys must NOT have been called either (worker is still running)
+		const sendKeys = spawnFn.calls.find((c) => c.args.includes('send-keys'));
 		expect(sendKeys).toBeUndefined();
 	});
 });
@@ -214,7 +212,7 @@ describe('runShip (thin-proxy, hit path)', () => {
 // --- runShip (thin-proxy): miss path ------------------------------------------
 
 describe('runShip (thin-proxy, miss path)', () => {
-	test('bootstraps + waits for marker + sends keys when orch not alive', async () => {
+	test('bootstraps + waits for marker + writes state file when orch not alive', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-miss-'));
 
 		let bootstrapCalled = false;
@@ -253,10 +251,6 @@ describe('runShip (thin-proxy, miss path)', () => {
 					}
 					return { ...base, stdout: Buffer.from('') };
 				}
-				if (subcommand === 'capture-pane') {
-					// Return idle pane content so the idle-check (US-008) passes immediately.
-					return { ...base, stdout: Buffer.from('> ') };
-				}
 				return base;
 			},
 			{ calls },
@@ -269,6 +263,8 @@ describe('runShip (thin-proxy, miss path)', () => {
 			return true;
 		};
 
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+
 		const code = await runShip({
 			cwd: tmpDir,
 			tmuxSpawnFn: statefulSpawnFn,
@@ -276,14 +272,17 @@ describe('runShip (thin-proxy, miss path)', () => {
 			statFn: () => markerPresent,
 			sleepFn: () => {},
 			waitTimeoutMs: 5_000,
+			writeFn,
 		});
 
 		expect(code).toBe(0);
 		expect(bootstrapCalled).toBe(true);
+		expect(writeCalls).toHaveLength(1);
+		const parsed = parseStateFile(writeCalls[0]?.body ?? '');
+		expect(parsed?.phase).toBe('shipping');
 
-		const sendKeys = statefulSpawnFn.calls.find((c) => c.args[2] === 'send-keys');
-		expect(sendKeys).toBeDefined();
-		expect(sendKeys?.args).toContain('/cam-ship');
+		const sendKeys = statefulSpawnFn.calls.find((c) => c.args.includes('send-keys'));
+		expect(sendKeys).toBeUndefined();
 	});
 
 	test('returns 1 when bootstrap fails', async () => {
@@ -316,53 +315,16 @@ describe('runShip (thin-proxy, miss path)', () => {
 	});
 });
 
-// --- runShip (thin-proxy): pane-not-found path --------------------------------
-
-describe('runShip (thin-proxy, pane lookup)', () => {
-	test('returns 1 when getOrchPaneId returns null (list-panes fails)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-nopane-'));
-		const spawnFn: TmuxSpawnFn & { calls: TmuxCall[] } = (() => {
-			const calls: TmuxCall[] = [];
-			const fn = ((cmd: string, args: string[]) => {
-				calls.push({ cmd, args: [...args] });
-				const base: SpawnSyncReturns<Buffer> = {
-					pid: 1,
-					output: [null, Buffer.from(''), Buffer.from('')],
-					stdout: Buffer.from(''),
-					stderr: Buffer.from(''),
-					status: 0,
-					signal: null,
-				};
-				const subcommand = args[0] === '-L' ? args[2] : args[0];
-				if (subcommand === 'has-session') return base;
-				if (subcommand === 'list-panes') {
-					const fIdx = args.indexOf('-F');
-					const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
-					if (fmt === '#{@cam_label}') {
-						return { ...base, stdout: Buffer.from('orchestrator\ndashboard\n') };
-					}
-					return { ...base, stdout: Buffer.from('') };
-				}
-				return base;
-			}) as TmuxSpawnFn & { calls: TmuxCall[] };
-			fn.calls = calls;
-			return fn;
-		})();
-
-		const code = await runShip({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
-		expect(code).toBe(1);
-	});
-});
-
 // --- runShip: session name used in all tmux calls ----------------------------
 
 describe('runShip: session name', () => {
 	test('all tmux calls include the project session name', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-sessname-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+		const { writeFn } = makeWriteCapture();
 		const sessionName = projectSessionName(tmpDir);
 
-		await runShip({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		await runShip({ cwd: tmpDir, tmuxSpawnFn: spawnFn, writeFn });
 
 		const callsWithSession = spawnFn.calls.filter((c) => c.args.includes(sessionName));
 		expect(callsWithSession.length).toBeGreaterThan(0);
