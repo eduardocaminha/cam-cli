@@ -76,7 +76,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-spec.md, templates/commands/cam-spec.md, src/vendor/_generated.ts (regen only, via bun run embed-vendor). Agent-prompt self-hosting pattern (patterns.md, US-001/CAM-92 bullet): edit BOTH the templates/ source-of-truth and the .claude/ runtime mirror identically, then regen the embed; call out 'intentional self-hosting' in the commit message. The templatesContents byte-parity test in test/embedded.test.ts catches drift. Check for any test/vendor/*-hygiene.test.ts or test asserting cam-spec.md content and update it to the new invariants in the same story (CAM-149 US-006 lesson). Also update the stale inline TypeScript specifyIssueOnMain example in cam-spec.md ONLY if the new step touches those lines; do not expand scope. Keep the domain-docs step conditional: a grill that resolves no new terms and no ADR-worthy decisions pipes an empty payload (or skips), which is a sanctioned noOp. No em-dash in persisted .md."
     }
