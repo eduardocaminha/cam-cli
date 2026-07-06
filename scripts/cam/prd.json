@@ -41,7 +41,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files: src/commands/issue-list.ts, test/issue-list.test.ts (mirrors issue-file.ts / issue-specify.ts precedent for deterministic in-process issue commands). Imports: readBacklogFromMain + BacklogSpawnFn from src/issues/backlog.ts; the US-001 view builder from src/issues/list.ts; loadConfig from src/config/toml.ts (issue_system read pattern at src/commands/ship-finalize.ts:117-121); print helpers from src/logging/screen.ts (emitTitle, emitSectionHeading, emitContent, emitMutedHint) and src/logging/color.ts (printHint, visibleLength for truncation). Injectable writer seam pattern: printConfigShow in src/commands/config.ts. Do NOT touch src/commands/issue.ts (the thin-proxy) in this story. knip/file-size gates run under check:all; new files may need entry registration if flagged."
     },
