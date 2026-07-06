@@ -23,7 +23,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New pure module: src/domain-docs/render.ts (types DomainDocsPayload/TermEntry/AdrEntry + validateDomainDocsPayload + mergeContextMd + renderAdr + nextAdrNumber). Tests: test/domain-docs/render.test.ts (mirror test/ dir layout). No git, no fs, no I/O in this story: pure string-in/string-out so US-002 can inject them. Gotchas: noUncheckedIndexedAccess means regex capture groups and array indexing are T | undefined (guard with ?? or explicit checks when parsing existing CONTEXT.md sections and ADR filename prefixes). Re-read CONTEXT-FORMAT.md and ADR-FORMAT.md before coding: CONTEXT.md is GLOSSARY-ONLY (the US-005/CAM-107 convention, restated in scripts/cam/CLAUDE.md Domain Model Convention); docs/adr/ numbering is sequential scan-max+1. Repo already has docs/adr/0001..0009, so nextAdrNumber must handle a populated dir. Keep the ValidationResult {ok, errors} shape consistent with src/issues/spec.ts."
     },
