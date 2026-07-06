@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.69.0] - 2026-07-06
+
+### Added
+
+- [US-002] - Repair the corrupted live CHANGELOG.md and lock the single-[Unreleased] invariant
+
+### Fixed
+
+- [US-001] - Line-anchor the [Unreleased] heading match in rollChangelog
+
 ## [0.68.0] - 2026-07-06
 
 ### Added
