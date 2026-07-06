@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Stub runInit subprocess spawns via injectable spawnFn seam"
+  },
+  "branchName": "cam/pr-205-deterministic-init-tests",
+  "timestamp": "2026-07-06T23:08:15Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/init.ts",
+    "test/init.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-205) is the only story in this PRD's userStories array as of this handoff — check prd.json for any stories added since. The injectable spawn seam is `SpawnFn = (cmd: string, args: string[]) => { status: number | null; stdout: string; stderr: string }`, exported from src/commands/init.ts, with `defaultSpawnFn` wrapping real `spawnSync` as the default. It threads through lookupOnPath/validateClaude/runVendoredSmoke and is exposed as `InitOptions.spawnFn` -> `runInit` -> `runInitLinear`. The interactive path (buildInteractiveChecks/runInitInteractive) intentionally does NOT thread spawnFn — it always uses the real default, since bun test never reaches that path (isInitInteractiveGate routes to linear when stdin/stdout aren't TTYs). test/init.test.ts now injects a deterministic `stubSpawnFn` into all four runInit() calls, simulating 'claude not found' + a skipped vendored smoke; the suite runs in ~0.4s with zero real subprocess spawns. Also: bumped scripts/file-size-budget.json ceilings for src/commands/init.ts (404->427) and test/init.test.ts (77->97) with a CAM-205 tracker ref in _ref, required by the check:file-size ratchet gate.",
+  "officialDocsValidated": [
+    {
+      "lib": "node:child_process (spawnSync)",
+      "status": "fetch_failed",
+      "summary": "WebFetch to nodejs.org/api/child_process.html failed (no output/network error) after 3 attempts. Not a blocker: the seam only wraps the pre-existing spawnSync call sites verbatim (same args/options), it does not change how spawnSync is invoked or its return shape is interpreted. Reviewer should re-check at PR time if desired."
+    }
+  ]
+}
