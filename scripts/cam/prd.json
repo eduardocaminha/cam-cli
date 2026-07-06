@@ -98,7 +98,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/cam/orch-handoff.schema.json (nextActions at properties.nextActions, top-level description), .claude/agents/subagent-orchestrator.md + templates/agents/subagent-orchestrator.md (self-handoff lifecycle section), src/vendor/_generated.ts (regen), test/vendor/orchestrator-backlog-derivation.test.ts (extend, do not create a second file). orch-handoff.schema.json has NO templates/ counterpart (only the worker handoff.schema.json is templated); edit the single file. CAM-123 dual-copy gotcha applies to the persona files: diff both copies before editing, run bun run embed-vendor after. Sequencing: depends on US-004 having created the doc-gate test file and edited the same persona files. Out of scope reminders from the spec: no --json output, no --state filter, no stage-enum change, no 1.0.0 graduation."
     }
