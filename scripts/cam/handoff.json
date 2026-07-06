@@ -1,27 +1,30 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Convert the cam ship CLI to a phase-signal writer"
+    "id": "US-006",
+    "title": "Reduce cam-ship.md to a thin phase-signal and record the ADR"
   },
   "branchName": "cam/pr-149-ship-runner-deterministic",
   "timestamp": "2026-07-05T00:00:00Z",
-  "createdFiles": [],
+  "createdFiles": [
+    "docs/adr/0009-ship-phase-deterministic-sidecar-runner.md"
+  ],
   "modifiedFiles": [
-    "src/commands/ship.ts",
-    "index.ts",
-    "test/ship.test.ts",
-    "scripts/file-size-budget.json"
+    "templates/commands/cam-ship.md",
+    ".claude/commands/cam-ship.md",
+    "src/vendor/_generated.ts",
+    "test/vendor/cam-ship-hygiene.test.ts",
+    "docs/recovery-runbook.md"
   ],
   "openQuestions": [
-    "src/ui/Dashboard.tsx's keybar 's' key (buildDashboardKeybarActions or similar, ~line 106) still sends a literal '/cam-ship' via tmux send-keys directly (not through runShip). This is intentionally OUT OF SCOPE for US-005 (not in the story's notes: Files list), but it means the dashboard keybar and `cam ship` (CLI) now trigger the ship phase via two different mechanisms (raw send-keys of a slash command vs the phase:shipping state-file write). If a future story wants a single dispatch path, Dashboard.tsx's 's' key should be rewired to write phase:shipping too (or shell out to `cam ship`), consistent with how the other keybar keys route.",
-    "cam-ship.md (the slash-command prompt injected by the OLD send-keys path) is now dead for the CLI path (US-005 removed the '/cam-ship' send-keys call from ship.ts) but is still the literal text sent by Dashboard.tsx's keybar AND presumably still exists as a full agent prompt file. US-006 (next priority, 'Reduce cam-ship.md to a thin phase-signal and record the ADR') is exactly the follow-up that addresses this: thin the prompt and write the ADR recording the phase-signal architecture decision (CLEAN trigger determinism, CAM-149's overall shift from LLM-interpreted slash commands to sidecar-detected state-file phases for both plan and ship)."
+    "This was the last story (priority 6) in the CAM-149 PRD; all 6 stories now have passes:true. The PRD is complete and ready for the review cycle / ship phase (this project's own dogfooded runShipPhase/runShipPrStep pipeline this PRD just built will run the ship for CAM-149 itself).",
+    "src/ui/Dashboard.tsx's keybar 's' key still sends a literal '/cam-ship' via tmux send-keys directly (noted as an open question in the US-005 handoff too). Re-verified in US-006: this is NOT a bug needing a fix. Both dispatch mechanisms now converge correctly: the CLI path (cam ship) writes phase:shipping directly; the slash-command path (Dashboard.tsx's 's' key -> '/cam-ship' -> orchestrator reads the now-thinned cam-ship.md) also ends up writing phase:shipping, then narrates. The reduced cam-ship.md documents exactly this convergence. No follow-up needed unless a future story wants to collapse the two mechanisms into one code path for its own sake (not a correctness issue)."
   ],
-  "nextStoryContext": "US-006 (priority 6, the last story in this PRD) reduces .claude/commands/cam-ship.md + templates/commands/cam-ship.md to a thin phase-signal stub and records an ADR documenting the phase-signal architecture (CAM-149's shift: cam plan/cam ship no longer inject slash commands via send-keys; they write phase:planning/phase:shipping to .claude/cam-loop.local.md and the sidecar's deterministic loop -- runPlanPhaseFn/runShipPhaseFn in loop.ts -- picks up the phase and runs the pipeline without LLM interpretation). Precedent for the 'thin the prompt' half: check how cam-plan.md was (or wasn't) thinned in the CAM-151 PRD (search git log / templates/commands/cam-plan.md) for a prior-art shape. The ADR should live in docs/adr/ per the Domain Model Convention (only write one if it passes the three gates: hard to reverse, surprising without context, genuine trade-off -- this one plausibly qualifies since the send-keys->state-file shift is a real architectural pivot away from LLM-driven triggering). Remember docs/adr/ is created lazily (do not pre-create an empty directory if this is the first ADR in the repo -- check with `ls docs/adr/` first). Also worth grep'ing the codebase for any other remaining '/cam-ship' or '/cam-plan' string literals that might need cleanup or are intentionally out of scope (see openQuestions: Dashboard.tsx keybar still sends '/cam-ship' directly and was left untouched by both US-004 and US-005 since it is not in either story's Files: notes).",
+  "nextStoryContext": "No user stories remain in scripts/cam/prd.json for the CAM-149 PRD (all 6 have passes:true). The next agent invocation should find zero non-operator passes:false stories and should NOT implement anything: it should read prd.json, find nothing pending, and exit PRD_COMPLETE so the orchestrator/sidecar proceeds to /cam-review. If a new PRD has been planned by the time this handoff is read (e.g. via /cam-plan for a follow-up issue), ignore this file's CAM-149-specific context entirely and follow the new prd.json instead; this handoff carries no forward instructions for a different PRD.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-005 is a pure internal CLI refactor: ship.ts's imports are node:fs/node:path/node:process (Node built-ins, not a versioned external library surface) plus internal project modules (../tmux/session.ts, ../tmux/bootstrap-wait.ts, ./status.ts, ./next.ts). The behavioral change (replacing a tmux send-keys call with a state-file write) reuses the already-doc-validated renderStateFile/writeStateFile/parseStateFile utilities from next.ts/status.ts (validated in prior CAM-151 stories) and the already-shipped runShipPhase pipeline (US-002/US-003/US-004 of this PRD). No new external library was introduced or exercised."
+      "summary": "US-006 is a pure internal doc/refactor story: it thins two markdown command prompts (templates/commands/cam-ship.md, .claude/commands/cam-ship.md), writes a new architecture-decision-record markdown file (docs/adr/0009), regenerates the embedded vendor bundle (an internal build step, src/vendor/_generated.ts), rewrites a bun:test regression-guard test file, and fixes two stale cross-references in docs/recovery-runbook.md. No new external library API surface was introduced or exercised; the underlying gh/git behavior these docs describe was already implemented (and doc-validated) in US-001/002/003 of this same PRD."
     }
   ]
 }

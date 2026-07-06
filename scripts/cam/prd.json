@@ -136,7 +136,7 @@
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/commands/cam-ship.md, .claude/commands/cam-ship.md, docs/adr/0009-ship-phase-deterministic-sidecar-runner.md (new), src/vendor/_generated.ts (regenerated). Precedent: templates/commands/cam-plan.md is the exact thin phase-signal shape to mirror. Agent-prompt self-hosting pattern (patterns.md): edit templates/ AND .claude/ copies, then bun run embed-vendor; call out 'intentional self-hosting' in the commit message. Keep the downstream cam-init adaptation note about the aggregate gate command in the reduced doc (the runner's default gates command is bun run check:all). ADR gates all pass: hard to reverse (pipeline architecture), surprising (ship runs with zero LLM), genuine trade-off (LLM-authored PR prose vs deterministic template)."
     }
