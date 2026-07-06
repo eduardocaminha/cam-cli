@@ -1152,3 +1152,14 @@ Each entry follows this template:
 - **Decisions**: Plan non-convergence is a hard-stop (escalated), never proceed-with-debt, asymmetric with the review loop MAX_ROUNDS_DEBT: an unsound PRD poisons every downstream story it spawns. ADR + glossary written via cam spec --write-docs. Filed and specified without an interactive grill (fix was well-understood).
 - **Blockers encountered**: CAM-191 auto-ship wedge (review CLEAN + autoShipDispatchedAt set but phase went idle with no PR); re-armed via /cam-ship.
 - **Follow-ups**: Binary rebuild pending to activate in the running sidecar (installed cam was v0.71.0).
+
+## cam/pr-205-deterministic-init-tests — CAM-205 shipped: deterministic runInit tests (flaky-timeout root-cause fix)
+
+- **Started**: 2026-07-06T22:55:00Z
+- **Closed**: 2026-07-06T23:15:00Z
+- **Branch**: cam/pr-205-deterministic-init-tests
+- **Issue**: CAM-205
+- **Outcome**: shipped
+- **Summary**: Stubbed runInit's three real subprocess spawns (command -v claude, claude --version, bun smoke-script) via an injectable spawnFn seam, so test/init.test.ts is deterministic and no longer times out at 5000ms under check:all concurrent load. Root-cause fix for the flake that hard-stopped the CAM-203 ship gate. 1 story, review CLEAN. v0.74.0, PR #147.
+- **Decisions**: First real application of the CAM-202 no-flaky-evasion rule: the red gate was NOT re-run to force green; the root was fixed. Filed as a SEPARATE issue (not silently fixed on CAM-203's branch) per surgical-changes discipline.
+- **Blockers encountered**: CAM-191 auto-ship wedge again; re-armed via /cam-ship.
