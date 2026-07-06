@@ -1,0 +1,89 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-203-plan-target-and-wsjf-fallback",
+  "description": "Honor explicit /cam-plan <id> targets end-to-end and make freshly-specified rank:None issues plannable via a WSJF fallback in selection.",
+  "issueNumber": 203,
+  "relatedDocs": [
+    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md",
+    "docs/adr/0006-phase-enum-loop-state-machine.md",
+    "docs/adr/0007-inter-cycle-unattended-drain.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Unranked issues compete by WSJF in plannable selection",
+      "description": "As a cam operator, I need a freshly-specified issue with rank:None to compete for plan selection by its WSJF score so that a high-WSJF new issue is never silently unplannable behind lower-WSJF ranked entries.",
+      "acceptanceCriteria": [
+        "An unranked specified+open issue with WSJF 5.0 is selected by selectPlannableIssue over a ranked (rank: 13) issue with WSJF 2.0; the regression fixture mirrors CAM-201 vs CAM-66. [oracle: bun test test/issues/select.test.ts]",
+        "When both candidates are ranked, rank ascending stays authoritative regardless of WSJF (rank 1 with lower WSJF still beats rank 2 with higher WSJF; existing rank-order tests keep passing). [oracle: bun test test/issues/select.test.ts]",
+        "An unranked candidate whose wsjf field is absent or has jobSize <= 0 is treated as WSJF 0 (reuse computeWsjf from src/issues/rank.ts) and never beats any ranked candidate. [oracle: bun test test/issues/select.test.ts]",
+        "Ranked-vs-unranked comparison uses WSJF: the unranked candidate wins only when its WSJF is strictly higher; on a WSJF tie the ranked candidate wins; numeric id suffix remains the final deterministic tie-break. [oracle: bun test test/issues/select.test.ts]",
+        "The dir-backed seam selectPlannableFromFile returns the same winner as selectPlannableIssue for the unranked-high-WSJF fixture. [oracle: bun test test/issues/select.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/issues/select.ts, test/issues/select.test.ts. Reuse computeWsjf from src/issues/rank.ts (returns { wsjf, warning }; treats missing wsjf or jobSize <= 0 as score 0). Gotcha: a pairwise comparator that mixes both-ranked-by-rank with mixed-by-WSJF is NOT a total order (intransitive: rank1/wsjf1 < rank2/wsjf9, unranked/wsjf5 beats the first but loses to the second). selectPlannableIssue only needs the single winner, so the recommended design is champion-vs-champion: pick the best ranked candidate (min rank, numeric-id tie-break) and the best unranked candidate (max computeWsjf, numeric-id tie-break), then the unranked champion wins only on strictly higher WSJF than the ranked champion's WSJF. The existing test 'ranked entries sort before unranked ones' encodes the superseded invariant: update it deliberately (an unranked candidate WITHOUT wsjf must still lose to every ranked one). This selector feeds BOTH the bare plan path and the meta_loop=auto dispatcher (buildProductionDispatchFn in src/commands/sidecar.ts), so this story alone makes a CAM-201-class issue dispatchable. noUncheckedIndexedAccess: guard candidates[0]. Re-check docs/adr/0007 (drain selection semantics) before coding."
+    },
+    {
+      "id": "US-002",
+      "title": "Plan-runner terminal for invalid explicit target + explicit-target-wins regression test",
+      "description": "As a cam operator, I need runPlanPhase to fail with a distinct, target-naming terminal when plan_issue names a missing / not-open / not-plannable issue, and to provably plan the exact target when it is plannable, so that an explicit /cam-plan <id> is never a silent no-op that plans a different issue.",
+      "acceptanceCriteria": [
+        "RunPlanPhaseOptions accepts the explicit target id (planTargetId); when it is set and selectIssueFn() returns null, runPlanPhase returns a new terminal kind 'plan-target-invalid' carrying the target id, and the planner pane is NEVER spawned (no respawn-pane call recorded by the fake spawnFn). [oracle: bun test]",
+        "The literal result kind exists in the plan-runner result union. [oracle: grep -q 'plan-target-invalid' src/supervisor/plan-runner.ts]",
+        "Explicit target wins over a higher-ranked issue: a unit test composes selectIssueFn from selectPlanTargetFromFile over a fixture backlog where the target is unranked and a different issue holds rank 1, and asserts the planner respawn shell string contains 'Plan issue <target-id> specifically' (buildPlannerTaskPrompt names the target, not the top-ranked issue). This is the AC1 regression proof at the runPlanPhase level. [oracle: bun test]",
+        "Bare path unchanged: with no planTargetId, a null selection still returns 'no-plannable-issue' and all existing plan-runner tests pass unchanged. [oracle: bun test]",
+        "runPlanPhaseWithReplan passes 'plan-target-invalid' through as a non-audit kind: no re-plan round, no teardown call, no escalation-marker write. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/plan-runner.ts plus a new test (e.g. test/plan-runner-target-invalid.test.ts; mirror the injection fixtures in test/plan-runner-no-prd.test.ts and test/plan-runner-target-prompt.test.ts). Keep the module pure and dep-injected (no fs/clock/tmux imports; all side effects via opts). Add the new kind to the PlanPhaseResult doc comment AND to the trailing 'non-audit kinds' comment in runPlanPhaseWithReplan (its passthrough branch must list it). CAM-154 already ships selectPlannableById / selectPlanTargetFromFile with never-fall-back semantics; this story only makes the null case distinguishable and loud. Biome limits: extract a small guard helper instead of inflating runPlanPhase (patterns.md 'Biome cognitive complexity: factory/helper extraction'). Do not add any CLI flag; planTargetId arrives via the options bag only."
+    },
+    {
+      "id": "US-003",
+      "title": "Sidecar surfaces plan-target-invalid: notify, event, idle exit, stale plan_issue cleared",
+      "description": "As a cam operator, I need the sidecar to tell me clearly when my explicit plan target could not be planned and to reset the loop state, so the failure is visible in the orchestrator pane and the planning tick does not re-fire the same invalid target forever.",
+      "acceptanceCriteria": [
+        "makeProductionPlanPhaseFn threads the fresh-read plan_issue into runPlanPhaseWithReplan as planTargetId (alongside the existing selectPlanTargetFromFile selectIssueFn). [oracle: grep -q 'planTargetId' src/commands/sidecar.ts]",
+        "On a 'plan-target-invalid' result, the post-plan path pushes an orchestrator notification naming the target id (notifyFn) and emits a structured 'plan-target-invalid' event to the flight recorder. [oracle: bun test]",
+        "The phase exits to idle and the stale plan_issue is cleared from cam-loop.local.md (state file no longer carries the invalid target after the plan tick); a test proves both. [oracle: bun test]",
+        "No branch/commit/phase:implementing flip occurs for plan-target-invalid (runPostAuditAction yields no-action; no 'git checkout -b' recorded by the fake spawnFn). [oracle: bun test]",
+        "The new event kind is added to WorkerEventKind. [oracle: grep -q 'plan-target-invalid' src/supervisor/events.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/sidecar.ts (makeProductionPlanPhaseFn, PlanWorkerRunDeps, runProductionPlanPhaseWithReplan, runPostPlanActions, exitPhaseAfterPlan), src/supervisor/events.ts, tests (mirror the injection style of test/plan-phase-crash-safety.test.ts). makeReadPlanIssue(claudeDir) already exists (CAM-154): reuse it, never re-parse the state file ad hoc. makeSetPhaseFn drops plan_issue when called without the planIssue arg (renderStateFile renders plan_issue: null), so routing the new kind through exitPhaseAfterPlan's idle write clears the stale target for free; do NOT add a second state-file writer. Notification copy should name the id and the not-plannable reason class (missing / not-open / not-specified / blocked); the reason may be derived with a cheap readBacklogFromMain re-read or kept generic if the runner carries no reason detail. exitPhaseAfterPlan currently maps non-approved kinds to idle via runPostAuditAction's no-action; verify the new kind lands there rather than falling into the escalated branch. Test-fake gotcha: makeFakeTmuxSpawn-style fakes must answer ALL tmux -F format strings or paneCountMutex reads 'busy' (patterns.md 'Mutex busy check in dispatch sites')."
+    },
+    {
+      "id": "US-004",
+      "title": "Meta-loop auto-dispatcher honors a pending explicit plan_issue",
+      "description": "As a cam operator running meta_loop=auto, I need a pending explicit plan_issue in cam-loop.local.md to win over the drainer's top-of-queue pick, so /cam-plan <id> targeting is honored instead of being clobbered by rank-based auto-dispatch.",
+      "acceptanceCriteria": [
+        "MetaLoopDispatchDeps gains an optional pending-target reader (readPlanIssueFn); when it returns a non-empty id on an idle dispatch tick, dispatchOrDrain resolves THAT issue via target-aware selection and dispatches setPhaseFn('planning', <target-id>); a unit test proves the pending explicit target wins over a higher-ranked plannable issue. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "When the pending target is not plannable, the dispatcher never dispatches a different issue on that tick: it emits a 'meta-loop-dispatch' event whose detail names the refused target id, and clears the stale plan_issue so the NEXT tick resumes top-of-queue dispatch. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "With no pending plan_issue, dispatch behavior is unchanged (top-of-queue via the existing selectFn; the new dep is optional and all existing dispatcher tests pass unchanged). [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "Production wiring in buildProductionDispatchFn supplies the pending-target reader (makeReadPlanIssue(claudeDir)) and a target-aware selector (selectPlanTargetFromFile). [oracle: grep -q 'readPlanIssueFn' src/commands/sidecar.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/sidecar.ts (MetaLoopDispatchDeps, dispatchOrDrain, buildProductionDispatchFn), test/commands/sidecar-meta-loop.test.ts. Root-cause context (lived 2026-07-06): meta_loop=auto dispatched top-ranked CAM-66 (rank 13, WSJF 2.0) because freshly-specified CAM-201 (WSJF 5.0) was rank:None and the operator's explicit target was never consulted by the dispatcher; US-001's WSJF fallback fixes the default pick, this story makes an explicit pending target authoritative regardless of ranking. Preserve the drained-path dedup semantics (observeDecide state) untouched; the pending-target branch should bypass observeDecide only where necessary and keep the 'meta-loop-dispatch' event shape ({ dispatched: true, issueId, rank }) for the happy path. Clearing plan_issue on refusal must go through the makeSetPhaseFn-style render (preserves all other state-file fields; never hand-edit a single YAML line). Keep the new dep optional with a safe default so existing tests and the observe-mode path are byte-identical. Re-check docs/adr/0006 (phase enum writes) and docs/adr/0007 (safe-boundary guards, ordering of kill-switch/precondition/prd-present/phase checks) before coding: the pending-target read must happen AFTER the phase-idle guard so an in-flight plan is never disturbed."
+    }
+  ]
+}
