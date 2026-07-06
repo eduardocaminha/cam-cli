@@ -1,7 +1,7 @@
 {
   "id": "CAM-98",
   "title": "rollChangelog insere [X.Y.Z] acima do [Unreleased] antigo em vez de renomear inline",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-26T11:31:45.818Z",
