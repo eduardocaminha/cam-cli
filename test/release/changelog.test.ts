@@ -108,6 +108,54 @@ describe('rollChangelog - body preservation', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Tests: line-anchored heading match (US-001, CAM-98)
+// ---------------------------------------------------------------------------
+
+// Mirrors the shape of the live 0.2.0-era corruption: the intro prose
+// mentions the literal, backtick-quoted `## [Unreleased]` text (as part of a
+// format description) BEFORE the real full-line heading appears further down.
+const PROSE_MENTIONS_HEADING_CHANGELOG = `# Changelog
+
+All notable changes to cam-cli are documented here.
+
+Format: \`## [X.Y.Z] - YYYY-MM-DD\` for releases; \`## [Unreleased]\` for pending work.
+
+---
+
+## [Unreleased]
+
+### Added
+
+- Real pending change.
+`;
+
+describe('rollChangelog - line-anchored heading match (US-001)', () => {
+	test('prose mention of `## [Unreleased]` before the real heading is left byte-identical', () => {
+		const result = rollChangelog(PROSE_MENTIONS_HEADING_CHANGELOG, '0.2.0', '2026-06-26');
+		const proseLine = 'Format: `## [X.Y.Z] - YYYY-MM-DD` for releases; `## [Unreleased]` for pending work.';
+		expect(result).toContain(proseLine);
+	});
+
+	test('the real heading (further down) is the one that gets rolled', () => {
+		const result = rollChangelog(PROSE_MENTIONS_HEADING_CHANGELOG, '0.2.0', '2026-06-26');
+		expect(result).toContain('## [0.2.0] - 2026-06-26');
+		expect(result).toContain('- Real pending change.');
+	});
+
+	test('regression: reproduces the live 0.2.0-era corruption shape -- exactly one full-line ## [Unreleased] heading survives', () => {
+		const result = rollChangelog(PROSE_MENTIONS_HEADING_CHANGELOG, '0.2.0', '2026-06-26');
+		const fullLineMatches = [...result.matchAll(/^## \[Unreleased\][ \t]*$/gm)];
+		expect(fullLineMatches).toHaveLength(1);
+	});
+
+	test('a substring match inside prose with no real line-anchored heading is left unchanged', () => {
+		const noRealHeading = '# Changelog\n\nSee `## [Unreleased]` in the format docs.\n\n## [0.1.0] - 2026-01-01\n\n- item\n';
+		const result = rollChangelog(noRealHeading, '0.2.0', '2026-06-26');
+		expect(result).toBe(noRealHeading);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Tests: edge cases
 // ---------------------------------------------------------------------------
 
