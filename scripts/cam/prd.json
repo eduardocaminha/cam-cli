@@ -39,7 +39,7 @@
         "Full quality spine is green. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-escalation.ts (new), src/supervisor/events.ts, test/supervisor/plan/plan-escalation.test.ts (new). Mirror the durable ship-stalled marker precedent verbatim: src/release/merge-watch.ts lines ~42-60 (SHIP_STALLED_FILENAME) and ~192-260 (read/write/remove, shape guards). Follow patterns.md 'JSON reader shape guards' (see makeReadPlanVerdict in plan-verdict-report.ts for the guard style). The marker file is ephemeral state under .claude/ and must be gitignored (verify .claude/ marker files are already covered by .gitignore; add a pattern if not). Detail union: events.ts ~line 364 aggregates detail types; add the new one there."
     },

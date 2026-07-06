@@ -10,6 +10,8 @@ scripts/cam/review-artifact.txt
 # Ephemeral per-plan-audit verdict report written by the auditor agent (US-001, CAM-117).
 # Never commit this file: it is overwritten on each plan-audit invocation.
 scripts/cam/plan-verdict-report.json
+# Durable plan-escalation marker written on plan non-convergence (US-002, CAM-204)
+.claude/.cam-plan-escalated.json
 
 # CAM-68: escaped harness runtime markers (orchestrator + setup + handoff + sidecar)
 .claude/.cam-orchestrator-prompt.txt

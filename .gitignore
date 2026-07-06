@@ -81,6 +81,8 @@ scripts/cam/review-report.json
 scripts/cam/review-artifact.txt
 # Ephemeral per-plan-audit verdict report (US-001, CAM-117; read by plan-runner, never committed)
 scripts/cam/plan-verdict-report.json
+# Durable plan-escalation marker written on plan non-convergence (US-002, CAM-204)
+.claude/.cam-plan-escalated.json
 # Per-run gate timing output written by check-all.ts --json (US-004, CAM-59); read by CI step summary
 gate-results.json
 
