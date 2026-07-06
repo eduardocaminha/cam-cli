@@ -8,7 +8,14 @@
 // rollChangelog -- pure transform that rolls CHANGELOG.md from Keep-a-Changelog
 // format's [Unreleased] section into a versioned release section.
 //
-// The transform locates the literal `## [Unreleased]` heading and:
+// The transform locates the `## [Unreleased]` heading via a LINE-ANCHORED
+// regex match (start-of-line through end-of-line, trailing whitespace only),
+// never a plain substring search. This matters because CHANGELOG.md intro
+// prose may legitimately mention the literal text `## [Unreleased]` (e.g.
+// inside a backtick-quoted format description) before the real heading; a
+// substring search would splice the new version into that prose line instead
+// of the real bottom section, silently corrupting the file. Once the real
+// heading line is located, the transform:
 //   1. Inserts a fresh empty `## [Unreleased]` directly above it.
 //   2. Renames the old heading to `## [X.Y.Z] - YYYY-MM-DD`.
 //
@@ -20,9 +27,15 @@
 // Both functions are pure: they accept strings and return strings without
 // performing any filesystem reads or writes.
 //
-// US-004 (CAM-89), US-006 (CAM-89).
+// US-004 (CAM-89), US-006 (CAM-89), US-001 (line-anchored heading match).
 
 const UNRELEASED_HEADING = '## [Unreleased]';
+
+// Line-anchored: matches only a FULL LINE that is exactly `## [Unreleased]`
+// (optionally followed by trailing spaces/tabs), never a substring inside
+// prose. `m` flag makes `^`/`$` match at line boundaries instead of the
+// whole-string start/end.
+const UNRELEASED_HEADING_LINE_RE = /^## \[Unreleased\][ \t]*$/m;
 
 // ---------------------------------------------------------------------------
 // Regexes for conventional-commit prefix detection (consistent with bump.ts)
@@ -115,11 +128,13 @@ export function generateReleaseBody(subjects: string[]): string {
  * @returns Transformed text (original returned unchanged if no [Unreleased] heading exists).
  */
 export function rollChangelog(text: string, version: string, date: string, releaseBody?: string): string {
-	const idx = text.indexOf(UNRELEASED_HEADING);
-	if (idx === -1) return text;
+	const match = UNRELEASED_HEADING_LINE_RE.exec(text);
+	if (match === null) return text;
 
+	const idx = match.index;
+	const matchedHeading = match[0] ?? UNRELEASED_HEADING;
 	const before = text.slice(0, idx);
-	const after = text.slice(idx + UNRELEASED_HEADING.length);
+	const after = text.slice(idx + matchedHeading.length);
 
 	if (releaseBody !== undefined) {
 		// Locate the next `## ` heading in `after` so we can skip the old

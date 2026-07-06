@@ -10,9 +10,9 @@ tools:
   - Bash
   - WebFetch
   - SlashCommand
+  - Write
 disallowedTools:
   - Edit
-  - Write
   - NotebookEdit
   - AskUserQuestion
 color: blue
