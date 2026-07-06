@@ -1,0 +1,101 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-204-plan-block-replan-loop",
+  "description": "Deterministic BLOCK->re-plan loop in the plan-runner: feed auditor findings back into the planner prompt, cap N=2 rounds, durable escalation marker on non-convergence, and planner/auditor pane teardown on every plan terminal (CAM-204).",
+  "issueNumber": 204,
+  "relatedDocs": [
+    "docs/adr/0012-plan-non-convergence-is-a-hard-stop-not-proceed-with-debt-asymmetric-with-the-review-loop.md",
+    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add re-plan prompt builder and round-cap constant to the plan-runner",
+      "description": "As the plan-runner, I need a pure helper that injects the prior round's auditor findings into the planner spawn prompt (plus an exported round cap), so a round-2 planner corrects the flagged defects instead of regenerating the PRD blind.",
+      "acceptanceCriteria": [
+        "An exported pure function buildReplanPlannerTaskPrompt(issueId, findings) in src/supervisor/plan-runner.ts returns a prompt that (a) names the exact issue id and forbids backlog re-selection (mirroring buildPlannerTaskPrompt / CAM-157), (b) instructs writing the PRD to scripts/cam/prd.json, and (c) embeds each finding's description AND suggestion verbatim. [oracle: bun test test/supervisor/plan/]",
+        "Findings whose optional suggestion field is absent render description-only, with no 'undefined' text in the prompt. [oracle: bun test test/supervisor/plan/]",
+        "An exported constant MAX_REPLAN_ROUNDS = 2 exists in src/supervisor/plan-runner.ts. [oracle: grep -q 'MAX_REPLAN_ROUNDS' src/supervisor/plan-runner.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine is green. [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/plan-runner.ts, test/supervisor/plan/plan-runner.test.ts (or a new test/supervisor/plan/plan-replan.test.ts). PlanVerdictFinding type comes from src/supervisor/plan-verdict-report.ts (fields: id, category, severity, storyId?, description, suggestion?). Gotcha (issue spec): the planner does NOT read patterns.md or plan-verdict-report.json on its own; the ONLY channel to inform it is its spawn prompt string, so description + suggestion of each finding must be embedded there. Re-check ADR-0012 (relatedDocs) before coding: non-convergence is a hard stop, never proceed-with-debt. noUncheckedIndexedAccess: guard array access when iterating findings."
+    },
+    {
+      "id": "US-002",
+      "title": "Add durable plan-escalation marker module and event kind",
+      "description": "As the orchestrator, I need a durable plan-escalation marker file (plus a structured event kind) written on plan non-convergence, so I can derive a BLOCK terminal on wake even when the send-keys pane push is dropped (CAM-200-independent, CAM-195 style).",
+      "acceptanceCriteria": [
+        "A new module src/supervisor/plan-escalation.ts exports a PLAN_ESCALATED_FILENAME constant ('.cam-plan-escalated.json', living under the .claude/ dir like .cam-ship-stalled.json) plus write/read/remove functions for a marker payload carrying at least { issueId, summary, findings, roundsCompleted, writtenAt }. [oracle: bun test test/supervisor/plan/]",
+        "The writer/reader round-trip: written payload is read back intact; the reader returns null (never throws) on a missing file, corrupt JSON, or a shape-guard failure; the remover is a silent no-op when the file is absent. [oracle: bun test test/supervisor/plan/]",
+        "A 'plan-escalated' member is added to WorkerEventKind in src/supervisor/events.ts with a detail type carrying issueId and roundsCompleted, wired into the WorkerEventDetail union. [oracle: grep -q 'plan-escalated' src/supervisor/events.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine is green. [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/plan-escalation.ts (new), src/supervisor/events.ts, test/supervisor/plan/plan-escalation.test.ts (new). Mirror the durable ship-stalled marker precedent verbatim: src/release/merge-watch.ts lines ~42-60 (SHIP_STALLED_FILENAME) and ~192-260 (read/write/remove, shape guards). Follow patterns.md 'JSON reader shape guards' (see makeReadPlanVerdict in plan-verdict-report.ts for the guard style). The marker file is ephemeral state under .claude/ and must be gitignored (verify .claude/ marker files are already covered by .gitignore; add a pattern if not). Detail union: events.ts ~line 364 aggregates detail types; add the new one there."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement the BLOCK->re-plan loop with capped rounds and teardown seam",
+      "description": "As the meta-loop, I need runPlanPhase wrapped in a deterministic BLOCK->re-plan loop (capped at MAX_REPLAN_ROUNDS=2, mirroring the review loop's FIXES_PENDING->re-implement->MAX_ROUNDS control flow in loop.ts), so an audit-blocked PRD is re-planned with the auditor's findings instead of parking at idle every cycle.",
+      "acceptanceCriteria": [
+        "A new exported function in src/supervisor/plan-runner.ts (e.g. runPlanPhaseWithReplan) drives up to MAX_REPLAN_ROUNDS rounds: round 1 runs runPlanPhase unchanged; on an audit-blocked result with rounds remaining it re-runs with plannerTaskPrompt built via buildReplanPlannerTaskPrompt(issue.id, priorFindings), pinned to the SAME issue (no re-selection); a round that returns audit-approved is the terminal and proceeds to the caller's branch path. [oracle: bun test test/supervisor/plan/]",
+        "The prior round's findings are captured from the in-memory audit-blocked result BEFORE the next round's clearStalePlanArtifactsFn deletes plan-verdict-report.json (plan-runner.ts:254 clear-at-start), and a test asserts the round-2 planner spawn prompt contains the non-empty round-1 findings text. [oracle: bun test test/supervisor/plan/]",
+        "After MAX_REPLAN_ROUNDS consecutive audit-blocked rounds the function returns a terminal escalated-kind result (never audit-approved, never branch) and invokes an injected escalation-marker writer seam with the issue id and the LAST round's findings; a test asserts the writer is called with those fields and that no git/branch spawn occurs. [oracle: bun test test/supervisor/plan/]",
+        "An injected teardownPlanPanesFn seam is invoked on ALL terminal/boundary paths: after an audit-approved terminal, BEFORE each re-plan round's runPlanPhase call (so the pane-count mutex sees 'available'), and on the escalated terminal; a test asserts the seam fires on all three paths. [oracle: bun test test/supervisor/plan/]",
+        "Non-audit results (preflight-failed, no-plannable-issue, mutex-busy, planner-timeout, auditor-timeout, planner-failed, container-preflight-failed) are returned as-is and NEVER trigger a re-plan round. [oracle: bun test test/supervisor/plan/]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine is green. [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/plan-runner.ts, test/supervisor/plan/plan-runner.test.ts or new test/supervisor/plan/plan-replan.test.ts. Depends on US-001 (prompt builder + MAX_REPLAN_ROUNDS) and US-002 (marker writer signature). Insertion point: the audit-blocked return documented as absent at plan-runner.ts lines 27 and 789. Control-flow precedent: the review loop in src/supervisor/loop.ts (decideNextAction / MAX_ROUNDS terminal), but per ADR-0012 the plan terminal is escalated, NEVER a MAX_ROUNDS_DEBT analog. Key mechanics: (a) findings are already in-memory on the audit-blocked PlanPhaseResult ({ issue, report }) - thread report.findings forward, do NOT re-read the file; (b) round 2 must pass plannerTaskPrompt as the opts override so runPlanPhase's buildPlannerTaskPrompt default is bypassed, and must pin selectIssueFn to the round-1 issue; (c) teardown BEFORE round 2 is functionally required or paneCountMutexFn returns 'busy' (auditor TUI pane never self-exits); (d) all seams injected (teardownPlanPanesFn, marker writer) so tests assert exact call sequences - keep runPlanPhase itself byte-for-byte compatible for existing tests. Biome limits: use factory/helper extraction (patterns.md), max 80 lines/function, complexity <=15."
+    },
+    {
+      "id": "US-004",
+      "title": "Wire the re-plan loop, pane teardown, and durable escalation into the sidecar",
+      "description": "As the sidecar plan phase, I need makeProductionPlanPhaseFn to drive the re-plan loop with real kill-pane teardown and the durable escalation marker, so a BLOCK no longer parks the meta-loop silently and a converged plan restores the 2-pane mutex.",
+      "acceptanceCriteria": [
+        "makeProductionPlanPhaseFn (src/commands/sidecar.ts) invokes the US-003 loop function instead of bare runPlanPhase, wiring: a teardownPlanPanesFn that resolves the pane id fresh from readWorkerPaneMarker and runs tmux kill-pane (NOT respawn-pane -k), best-effort and never-throwing (mirrors host.ts teardownWorkerPaneFn, CAM-188); and the plan-escalation marker writer targeting the .claude/ dir. [oracle: bun test test/supervisor/]",
+        "On the non-convergence terminal, runPostPlanActions: writes the durable marker and emits the 'plan-escalated' event UNCONDITIONALLY (never gated on notifyFn or escalateFn presence/success - the pane push is a best-effort nudge only), fires notifyFn + escalateFn best-effort, and exits the phase to idle; a test asserts the marker exists even when notifyFn is absent. [oracle: bun test test/supervisor/]",
+        "The planner/auditor panes are killed on all three production paths - APPROVE->branch-created, each re-plan boundary, and escalate - so no worker pane lingers and the pane-count mutex returns 'available' afterward; tests assert the kill-pane spawn on all three paths. [oracle: bun test test/supervisor/]",
+        "A plan run that converges (audit-approved -> branch-created) removes any pre-existing plan-escalation marker, so a stale BLOCK escalation never outlives convergence. [oracle: bun test test/supervisor/]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine is green. [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/sidecar.ts (makeProductionPlanPhaseFn ~line 1586, runPostPlanActions ~line 1476, exitPhaseAfterPlan ~line 1376), src/supervisor/plan-runner.ts (runPostAuditAction may need a case for the new terminal kind), tests under test/supervisor/ (sidecar-loop.test.ts and/or test/supervisor/plan/plan-runner-postaudit.test.ts). Teardown precedent: host.ts:398 teardownWorkerPaneFn (kill-pane, fresh marker read, silent no-op on dead pane). Escalation email precedent: the existing '[cam] Plan BLOCK' sendEscalation block in runPostPlanActions - reuse, but marker write must come first and be unconditional. Gotchas: exitPhaseAfterPlan maps the new terminal to 'idle' (same as escalated today); keep the outermost try/catch safety net in makeProductionPlanPhaseFn intact; branchName is read from prd.json AFTER the final round (round 2 may rewrite it); Biome 80-line limit - extract helpers rather than inflating existing closures."
+    },
+    {
+      "id": "US-005",
+      "title": "Orchestrator derives the plan escalation on wake (boot doc + vendor regen)",
+      "description": "As the orchestrator, I need my boot context to read the durable plan-escalation marker and surface it as an opening blocker, so a dropped send-keys push (CAM-200) never loses a plan BLOCK terminal.",
+      "acceptanceCriteria": [
+        "The boot-context list in templates/agents/subagent-orchestrator.md gains a read of .claude/.cam-plan-escalated.json (modeled on the existing .cam-ship-stalled.json step): if present, surface an opening blocker line with the issue id, rounds completed, and summary; if absent, a clean boot stays clean; the orchestrator never deletes the marker itself (it is removed by the next converging plan run, US-004). [oracle: grep -q 'cam-plan-escalated' templates/agents/subagent-orchestrator.md]",
+        "The embedded vendor copy is regenerated (bun run embed-vendor) so src/vendor/_generated.ts carries the new boot step. [oracle: grep -q 'cam-plan-escalated' src/vendor/_generated.ts]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine is green. [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: templates/agents/subagent-orchestrator.md, src/vendor/_generated.ts (regenerated, never hand-edited). Precedent: the ship-stalled boot step (item 7 of the orchestrator 'Boot context' list) and its opening-blocker line format. Keep the doc wording symmetric with the ship-stalled step: read-only surfacing, explicit 'do NOT delete the marker yourself'. Depends on US-002 (filename constant) and US-004 (removal-on-convergence lifecycle)."
+    }
+  ]
+}
