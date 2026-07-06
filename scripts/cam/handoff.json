@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add red-gate guard to readWorkerOutcome: refuse DONE on recorded failing test"
+  },
+  "branchName": "cam/pr-202-no-flaky-test-evasion",
+  "timestamp": "2026-07-06T17:52:47Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/result.ts",
+    "test/supervisor/result.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 (encode the no-flaky-evasion hard-stop rule in templates/agents/subagent-implementer.md) and US-003 (same, subagent-reviewer.md) are prose/policy stories layered on top of this US-001 mechanical guard. The mechanical enforcement point is now readWorkerOutcome's primary (worker-report.json) path in src/supervisor/result.ts: a new pure helper gateTestsIndicateFailure(tests: string) classifies the recorded gates.tests string (FAILING when it starts with 'fail' or contains an '<N> fail' count with N>0; NOT failing for 'ok'/'n/a'/skip-only strings with 0 fails), and extractRecordedTestsGate(report) safely reads report.gates.tests (untrusted JSON, runtime-checked). The guard is wired into the DONE branch right before confirmCommitGate: if the recorded gates.tests fails, readWorkerOutcome returns kind:'fail' (reused existing kind, zero loop.ts changes needed -- loop.ts already routes kind:'fail' to the blocked terminal branch) with a detail naming 'recorded gate had a failing test' and the story id. This ONLY applies in the primary worker-report-present path; the fallback (no worker-report) path has no recorded gates and is unaffected by design. When writing the subagent prose in US-002/US-003, reference this mechanism by name (gateTestsIndicateFailure / the red-gate guard) so the prose and the code stay in sync, and make clear to the worker/reviewer that narrating a failing test away (as flaky/pre-existing/environmental/unrelated) does NOT get around this: the supervisor reads the RECORDED gates.tests string, not prose.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure TypeScript classification logic over JSON already parsed via the existing readFile/JSON.parse pattern in result.ts; no new external library or API surface was exercised."
+    }
+  ]
+}

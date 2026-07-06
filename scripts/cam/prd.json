@@ -21,7 +21,7 @@
         "Full quality spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/result.ts, test/supervisor/result.test.ts, possibly src/supervisor/loop.ts (only if a new WorkerOutcomeKind is introduced). Extends the two-layer verification (CAM-56) and the commit-existence gate pattern from CAM-187 (see confirmCommitGate in result.ts as the structural template). Key on the RECORDED gate (report.gates.tests string from worker-report.json, shape documented in src/supervisor/worker-report.ts), never on worker prose. The WorkerReportFallback interface in result.ts currently reads only {outcome, story}; extend it to optionally read gates (runtime shape-check it, it is untrusted JSON). Two wiring options: (a) return kind:'fail' with a red-gate detail (loop.ts already routes 'fail' to the blocked terminal branch at ~line 1208, zero loop changes), or (b) add a dedicated kind (e.g. 'red-gate') mirroring how 'no-commit' was added in CAM-187 and wire it into the same blocked branch of loop.ts. Prefer (b) only if the distinct kind adds observability value; otherwise (a) is smaller. Gotchas: noUncheckedIndexedAccess means regex capture groups are string | undefined, always guard; readWorkerOutcome is a pure function with injected FileReader, so tests need no real filesystem (follow existing result.test.ts patterns); guard applies in the PRIMARY report path only (the fallback path has no recorded gates). Do not let 'n/a' or skip-only strings trigger the guard (gotcha from the issue: OS/capability-gated skips like real-tmux tests off-macOS are legitimate)."
     },
