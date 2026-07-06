@@ -55,6 +55,71 @@ On success:
 On failure:
 - Print the error reason and stop. Do NOT retry silently.
 
+## Final step: persist the domain docs
+
+After `specifyIssueOnMain` succeeds, assemble a `DomainDocsPayload` from the
+interview and persist it too. This is the missing output from the CAM-109
+dogfood: two ADR-worthy decisions were resolved during that grill but nothing
+was written, because there was no step wiring the interview output into
+`CONTEXT.md` / `docs/adr/`. Every grill must produce the durable domain model,
+not just the issue spec.
+
+Assemble the payload:
+- `terms`: the glossary terms surfaced during the interview, including
+  (but not limited to) whatever went into `spec.domainTerms`. Each entry is
+  `{ term, definition }`.
+- `adrs`: only the decisions that pass **all three** ADR gates from the
+  domain-modeling skill: (1) hard to reverse, (2) surprising without context,
+  (3) the result of a real trade-off with genuine alternatives considered. If
+  any gate is missing for a decision, leave it out of `adrs`. Each included
+  entry is `{ title, context, decision, consequences }`.
+
+If the interview produced no new terms and no ADR-worthy decisions, the
+payload is `{ "terms": [], "adrs": [] }` (a sanctioned noOp: `cam spec
+--write-docs` recognizes this shape and exits 0 with no writes). Do not skip
+the step to "save time"; piping the empty payload is just as cheap and keeps
+the step uniform.
+
+Pipe the payload to `cam spec --write-docs <id>` via stdin, using a **safe
+quoting pattern** so shell interpolation cannot corrupt the JSON or execute
+arbitrary content (CAM-106 lesson):
+
+```bash
+cam spec --write-docs <id> <<'EOF'
+{
+  "terms": [
+    { "term": "...", "definition": "..." }
+  ],
+  "adrs": [
+    { "title": "...", "context": "...", "decision": "...", "consequences": "..." }
+  ]
+}
+EOF
+```
+
+A single-quoted heredoc (`<<'EOF'`, note the quotes around `EOF`) or a
+single-quoted `echo '<json>' | cam spec --write-docs <id>` are both safe: the
+shell does not expand `$`, backticks, or other special characters inside a
+single-quoted body. **Never use an unquoted heredoc** (`<<EOF` without
+quotes) or an unquoted `echo` to carry this payload: the shell would
+interpolate `$` and backtick sequences that may appear in the operator's
+interview answers, corrupting the JSON or, worse, executing arbitrary
+content.
+
+`cam spec --write-docs` writes `CONTEXT.md` and `docs/adr/` directly on
+`main` via commit-tree plumbing (mirrors `specifyIssueOnMain`); it does not
+touch the working branch. **Never hand-write `CONTEXT.md` or `docs/adr/`**
+via `Edit`, `Write`, `NotebookEdit`, or ad-hoc bash redirection (`>`, `>>`)
+instead of this command: those tools are disallowed for this reason, and a
+hand-written domain doc bypasses validation and the on-main commit
+guarantees.
+
+A non-zero exit from `cam spec --write-docs` is a real failure and **must be
+reported to the operator, never silently skipped**: print the error and stop.
+This is the exact CAM-109 failure mode this step exists to close: the spec
+was persisted but the domain docs were silently dropped, with nothing telling
+the operator that the second write never happened.
+
 ## Error handling
 
 | Reason | Action |
@@ -65,3 +130,6 @@ On failure:
 | Spec validation fails | Show the validation errors, ask the operator to correct the answers |
 | diverged / detached-head | Stop, print the guard error from `specifyIssueOnMain` |
 | Concurrent loop active | Stop, ask operator to pause the loop first |
+| `cam spec --write-docs` malformed/invalid payload | Stop, print the validation errors from the command's stderr; never silently skip |
+| `cam spec --write-docs` diverged / detached-head | Stop, print the guard error; report to the operator, never silently skip |
+| `cam spec --write-docs` noOp (empty payload, nothing to write) | Not a failure: print the muted hint and continue |
