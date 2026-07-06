@@ -1,0 +1,9 @@
+{
+  "id": "CAM-202",
+  "title": "Enforce no-flaky-test-evasion: gate vermelho e hard-stop pro worker",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-06T17:17:51.848Z",
+  "description": "Um worker (implementer/reviewer) NUNCA pode dispensar um teste que falha como flaky / pre-existing / environmental / unrelated, nem re-rodar pra confirmar flakiness e seguir verde. Gate vermelho e hard-stop. Mesma classe de gate-gaming do mascaramento skipIf do CAM-66, em forma de narrativa. Enforce: (1) encodar em subagent-implementer.md E subagent-reviewer.md que qualquer gate que falha BLOQUEIA a story; nao-determinismo e um defeito a consertar deterministicamente ou HALT+escala, nunca seguir. (2) Guard de harness: detectar story marcada passes:true enquanto o bun test / check:all teve teste falhando, e recusar o outcome (estende a two-layer verification CAM-56). Diretiva do operador 2026-07-06, ao ver um worker de CAM-66 evadindo a mesma falha que o skipIf mascarou."
+}
