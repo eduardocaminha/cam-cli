@@ -1,0 +1,9 @@
+{
+  "id": "CAM-203",
+  "title": "/cam-plan <id> targeting e no-op + issue specified fica rank:None (unplannable)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-06T17:17:54.209Z",
+  "description": "Dois defeitos acoplados que impediram planejar CAM-201 explicitamente. (1) /cam-plan <id> escreve plan_issue no cam-loop.local.md mas runPlanPhase.selectIssueFn (selectPlannableFromFile) IGNORA plan_issue e pega o top-RANKED plannable, entao targeting explicito e no-op (classe CAM-157: buildPlannerTaskPrompt nomeia o issue SELECIONADO, nao o pedido). (2) specifyIssueOnMain deixa rank:None; a selecao ordena por rank asc e um issue sem rank fica por ultimo / nao e selecionado, entao um issue recem-specificado (CAM-201, WSJF 5.0) nunca e planejado enquanto um ranked de WSJF menor (CAM-66 rank 13, WSJF 2.0) e escolhido. Fix: honrar plan_issue em selectIssueFn quando setado (target explicito ganha), e/ou atribuir rank provisorio no specify (ou cair no WSJF quando rank e null). Vivido 2026-07-06: /cam-plan CAM-201 planejou CAM-66."
+}
