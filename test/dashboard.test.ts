@@ -1149,6 +1149,22 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 	/** Wait one macrotask so React can flush state updates and re-render. */
 	const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
+	/** Poll for the accent-bg row (fixes a back-to-back-keypress flake, US-002/CAM-202). */
+	const waitForAccentLine = async (
+		lastFrame: () => string | undefined,
+		expectedId: string,
+		timeoutMs = 500,
+	): Promise<string | undefined> => {
+		const deadline = Date.now() + timeoutMs;
+		let accentLine: string | undefined;
+		do {
+			accentLine = (lastFrame() ?? '').split('\n').find((l) => l.includes(ACCENT_BG));
+			if (accentLine?.includes(expectedId)) return accentLine;
+			await new Promise((r) => setTimeout(r, 5));
+		} while (Date.now() < deadline);
+		return accentLine;
+	};
+
 	it('initial render: first row (index 0) is selected with accent background', () => {
 		const { lastFrame, unmount } = render(
 			React.createElement(DashboardApp, {
@@ -1213,9 +1229,8 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 		await tick();
 		stdin.write('k'); // back up to index 0
 		await tick();
-		const frame = lastFrame() ?? '';
 		// US-001 should now be highlighted (index 0).
-		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		const accentLine = await waitForAccentLine(lastFrame, 'US-001');
 		expect(accentLine).toBeDefined();
 		expect(accentLine).toContain('US-001');
 		unmount();
