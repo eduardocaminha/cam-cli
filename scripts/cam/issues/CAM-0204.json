@@ -1,7 +1,7 @@
 {
   "id": "CAM-204",
   "title": "plan-runner BLOCK to re-plan loop: feed auditor findings back, cap N=2, deterministic recovery (CAM-151 Half B never shipped)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T19:44:50.500Z",
