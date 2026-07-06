@@ -60,7 +60,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (parseIssueArgs ~line 642, ParsedIssueArgs union ~line 637, dispatchIssue ~line 1248, ISSUE_HELP ~line 256), test/issue-dispatch.test.ts. Follow the established discriminated-union parseXxxArgs pattern (patterns.md, US-003 CAM-86): existing tests accessing parsed.text may need a mode narrowing guard. Gotcha: the list branch must short-circuit before the positional free-text read, so a bare 'list' first positional becomes the subcommand (intended per spec, subsumes CAM-74). deps thunk shape: issueListFn?: () => Promise<number>, defaulting to runIssueList({ all: parsed.all }) from src/commands/issue-list.ts."
     },
