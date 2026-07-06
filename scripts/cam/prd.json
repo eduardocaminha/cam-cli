@@ -1,0 +1,39 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-205-deterministic-init-tests",
+  "description": "Make test/init.test.ts runInit tests deterministic under check:all concurrent load by stubbing runInit's three real subprocess spawns via an injectable spawnFn seam (CAM-205).",
+  "issueNumber": 205,
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "bun:test",
+      "url": "https://bun.com/docs/test/writing-tests",
+      "version": "bun-types 1.3.13 (bun 1.2.23)",
+      "fetchedAt": "2026-07-06T23:30:00Z",
+      "summary": "Confirmed via the vendored copy at node_modules/bun-types/docs/test/writing-tests.mdx (bun.com web fetch failed): the default per-test timeout is 5000ms; a per-test timeout can be passed as the third argument to test(); timeouts throw uncatchable exceptions and kill spawned child processes. This validates the flake mechanism and the fallback option; the chosen fix (stubbing spawns) removes the need for any timeout raise.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Stub runInit subprocess spawns via injectable spawnFn seam",
+      "description": "As a maintainer of the check:all quality spine, I need the runInit tests in test/init.test.ts to stop spawning three real subprocesses (command -v claude, claude --version, bun <smoke-script>) so that the tests are deterministic and never exceed the 5000ms bun test default timeout under the concurrent load of the full check:all gate, unblocking the CAM-203 re-ship.",
+      "acceptanceCriteria": [
+        "src/commands/init.ts gains an injectable spawn seam (an optional spawnFn on InitOptions and/or default parameters on validateClaude/runVendoredSmoke) whose default is node:child_process spawnSync, preserving current production behavior byte-for-byte on the default path. [oracle: grep -q 'spawnFn' src/commands/init.ts]",
+        "All four runInit tests in test/init.test.ts inject a stub spawnFn so that runInit spawns ZERO real subprocesses during bun test; the stubs return deterministic { status, stdout, stderr } shapes for the claude lookup, claude --version, and vendored-smoke calls. [oracle: grep -q 'spawnFn' test/init.test.ts]",
+        "bun test test/init.test.ts passes deterministically and completes well under the 5000ms default per-test timeout; no per-test timeout raise is needed once spawns are stubbed. [oracle: bun test test/init.test.ts]",
+        "The tests continue to NOT assert the runInit exit code (the PATH-coupling rationale in the test file header is preserved), and the config-write assertions (config.toml exists, permission_mode=bypassPermissions, trailing newline, CAM_CONFIG_PATH override) remain the oracle of the tests. [oracle: reviewer-judgment]",
+        "No CAM-202 evasion is introduced: no .skip / skipIf / retry / repeats / --no-verify appears in test/init.test.ts. [oracle: bash -c '! grep -E \"skipIf|\\.skip\\(|retry\" test/init.test.ts']",
+        "No production behavior change to runInit beyond the seam: the interactive Ink path (buildInteractiveChecks) and the linear path behave identically when no spawnFn is injected. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full quality spine is green, proving the fix is self-consistent (these tests run inside its own ship gate under concurrent load). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/init.ts (seam only), test/init.test.ts (stub injection). Do NOT touch anything else (spec scope). The three spawns to intercept: spawnSync('/bin/sh', ['-c', 'command -v claude']) in lookupOnPath (init.ts:77), spawnSync('claude', ['--version']) in validateClaude (:118), spawnSync('bun', [scriptPath]) in runVendoredSmoke (:187). Seam design hint: define a narrow local spawn-fn type (cmd: string, args: string[], opts?) => { status: number | null; stdout: string; stderr: string } rather than the overloaded typeof spawnSync; thread it as a default parameter through lookupOnPath/validateClaude/runVendoredSmoke and expose it as InitOptions.spawnFn threaded from runInit -> runInitLinear. Default parameters keep the interactive path (buildInteractiveChecks) untouched. Under bun test, runInit routes to runInitLinear (stdin/stdout are not TTYs via isInitInteractiveGate), so the seam only needs to reach the linear path; threading validateClaude/runVendoredSmoke via defaults covers the interactive path for free. Gotchas: (1) runVendoredSmoke calls existsSync(scriptPath) BEFORE spawning; in dev the vendor path exists, so the stub WILL be called for the smoke, return a deterministic shape (e.g. status 2 = skip, or status 0). (2) A stub returning status 1 everywhere is also fine, exit code is deliberately not asserted. (3) noUncheckedIndexedAccess: guard any array/regex-group access in stub helpers. (4) Bun-only project, but node:child_process spawnSync is the existing pattern in init.ts; the seam wraps it, do not rewrite to Bun.spawn (that would be production behavior change, out of scope). (5) CAM-202: a red gate is a hard-stop; do not add retry/skip. (6) patterns.md rule: inject fakes instead of touching real processes, this story brings init.test.ts in line with that convention. Docs: bun-types docs test/writing-tests.mdx confirms 5000ms default timeout and that the third-arg timeout exists (fallback explicitly NOT chosen; determinism preferred per spec). Skills: none beyond repo conventions; read scripts/cam/patterns.md bullets on spawnSync exit-status guard and test-timeout gotchas before coding."
+    }
+  ]
+}
