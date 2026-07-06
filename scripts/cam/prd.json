@@ -29,7 +29,7 @@
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/release/changelog.ts (rollChangelog only; generateReleaseBody unchanged), test/release/changelog.test.ts. Root cause: UNRELEASED_HEADING is matched via text.indexOf, and the live CHANGELOG.md intro line 5 contains the literal '## [Unreleased]' inside prose, so every roll since 0.2.0 spliced the new version into that prose line while the real bottom section was never renamed. Use a multiline regex anchored at line start AND end-of-line (allow trailing whitespace only) to find the heading; keep the function pure (string in, string out). Caller (src/release/ship-bump.ts:201-202) always passes releaseBody (possibly ''), so the releaseBody branch is the production path; do not change its signature. Gotchas: noUncheckedIndexedAccess makes regex .exec results and capture groups T | undefined, guard them; conventional commit message 'fix: [US-001] ...'. Update the file header comment (lines 8-23) to describe the line-anchored contract."
     },

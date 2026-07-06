@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Line-anchor the [Unreleased] heading match in rollChangelog"
+  },
+  "branchName": "cam/pr-98-rollchangelog-inline-rename",
+  "timestamp": "2026-07-06T04:36:46Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/release/changelog.ts",
+    "test/release/changelog.test.ts"
+  ],
+  "openQuestions": [
+    "test/dashboard.test.ts 'Stories navigation (US-005) > k after j returns to first row' fails in this container consistently (pre-existing, confirmed via git stash before this story's diff). Root cause is terminal-size's tput lookup in ink's getWindowSize, an environment/container issue unrelated to changelog.ts. Not fixed as part of US-001 (out of scope; do not attribute to this story).",
+    "bunx-invoked knip (dead-code gate) crashes under the sandboxed node v18.20.4 with 'node:util does not provide styleText' -- pre-existing environment issue (confirmed via git stash), unrelated to this story's diff.",
+    "Live CHANGELOG.md is still in the corrupted state described in the PRD (intro prose line 5 swallowed the real [Unreleased] heading); repairing it is explicitly scoped to US-002, not touched here."
+  ],
+  "nextStoryContext": "US-001 fixed rollChangelog's heading match to be line-anchored (/^## \\[Unreleased\\][ \\t]*$/m via .exec(), not text.indexOf). US-002 (repair the corrupted live CHANGELOG.md and lock the single-[Unreleased] invariant) is next: the live CHANGELOG.md intro (around line 5) currently reads 'Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]' with no real '## [Unreleased]' heading anywhere below it -- the heading was consumed into that prose line by the old indexOf bug on a prior roll. US-002 needs to both fix the prose text (remove/rephrase the truncated sentence so it no longer collides with the line-anchored regex) and insert/restore a real fresh '## [Unreleased]' heading section above the latest versioned release, then likely add a repo-level regression guard/test asserting exactly one line-anchored heading in the live file.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
