@@ -851,10 +851,15 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
  * branch-created         - proceed-branch path: branch created, prd.json
  *                          committed, active:true flipped.
  * awaiting-operator-approval - pause-operator path: no branch/commit/flip.
- * escalated              - audit-blocked path: escalateFn + notifyFn called,
- *                          no branch/commit/flip.
- * no-action              - planResult was neither audit-approved nor
- *                          audit-blocked (e.g. preflight-failed, timeout).
+ * escalated              - audit-blocked OR plan-escalated (US-004, CAM-204)
+ *                          path: escalateFn + notifyFn called, no
+ *                          branch/commit/flip. The durable marker for
+ *                          plan-escalated was already written unconditionally
+ *                          by runPlanPhaseWithReplan before this result is
+ *                          produced.
+ * no-action              - planResult was neither audit-approved,
+ *                          audit-blocked, nor plan-escalated (e.g.
+ *                          preflight-failed, timeout).
  */
 export type PostAuditActionResult =
 	| { kind: 'branch-created'; branchName: string }
@@ -897,6 +902,17 @@ export interface RunPostAuditOptions {
 	 * Absent when no orchestrator session is running.
 	 */
 	notifyFn?: (msg: string) => void;
+	/**
+	 * Remove the durable plan-escalation marker (US-004, CAM-204, AC4). Called
+	 * ONLY on the converging proceed-branch path (audit-approved ->
+	 * branch-created), so a stale BLOCK escalation from an earlier round or
+	 * issue never outlives a fresh convergence. Never called on
+	 * pause-operator, escalated (audit-blocked / plan-escalated), or no-action
+	 * outcomes. Optional: absent means no removal call (backward compat with
+	 * tests that do not inject it; production wiring in sidecar.ts always
+	 * supplies it via removePlanEscalatedMarker).
+	 */
+	removeEscalationMarkerFn?: () => void;
 }
 
 /**
@@ -941,6 +957,8 @@ function executeGitProceedBranch(
  * Execute the post-audit action after runPlanPhase returns.
  *
  * On audit-approved + proceed-branch (auto mode):
+ *   0. removeEscalationMarkerFn() (best-effort; US-004, CAM-204 AC4: a
+ *      converging run removes any stale BLOCK escalation marker)
  *   1. git checkout -b <branchName>  (branch BEFORE commit - cam-plan.md Step 9)
  *   2. git add scripts/cam/prd.json
  *   3. git commit -m "chore(cam): commit audited prd.json"
@@ -950,9 +968,11 @@ function executeGitProceedBranch(
  * On audit-approved + pause-operator (operator mode, Half A scope):
  *   Returns { kind: 'awaiting-operator-approval' }. No branch/commit/flip.
  *
- * On audit-blocked:
+ * On audit-blocked OR plan-escalated (US-004, CAM-204):
  *   Calls notifyFn (pane push) then fires escalateFn (best-effort, not awaited).
- *   Returns { kind: 'escalated' }. No branch/commit/flip. No re-plan (CAM-151).
+ *   Returns { kind: 'escalated' }. No branch/commit/flip. No re-plan here (the
+ *   re-plan decision, and the durable marker write for plan-escalated, already
+ *   happened inside runPlanPhaseWithReplan, CAM-151 / CAM-204).
  *
  * On any other planResult kind:
  *   Returns { kind: 'no-action' }.
@@ -970,6 +990,7 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		readPlanApprovalFn,
 		escalateFn,
 		notifyFn,
+		removeEscalationMarkerFn,
 	} = opts;
 
 	// planner-failed: planner produced no prd.json; notify best-effort, no escalate
@@ -983,6 +1004,23 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 	// audit-blocked: escalate and bail; no branch/commit/flip (AC3, AC4)
 	if (planResult.kind === 'audit-blocked') {
 		notifyFn?.(`[cam] plan BLOCK: ${planResult.report.summary}`);
+		if (escalateFn !== undefined) {
+			void escalateFn(); // best-effort: fire-and-forget, never throws by contract
+		}
+		return { kind: 'escalated' };
+	}
+
+	// plan-escalated (US-004, CAM-204): the BLOCK->re-plan loop (US-003)
+	// exhausted MAX_REPLAN_ROUNDS without converging. The durable marker was
+	// ALREADY written unconditionally by runPlanPhaseWithReplan's
+	// writeEscalationMarkerFn seam BEFORE this function is ever invoked, so
+	// its persistence never depends on notifyFn/escalateFn presence or
+	// success (AC2). Here we only fire the best-effort pane push + email
+	// escalation and exit to idle: same shape as the audit-blocked branch,
+	// no branch/commit/flip, no further re-plan (that decision was already
+	// made by the loop, ADR-0012 hard stop).
+	if (planResult.kind === 'plan-escalated') {
+		notifyFn?.(`[cam] plan escalated: ${planResult.report.summary}`);
 		if (escalateFn !== undefined) {
 			void escalateFn(); // best-effort: fire-and-forget, never throws by contract
 		}
@@ -1008,6 +1046,11 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		notifyFn?.('[cam] plan skipped: branchName is empty (prd.json absent or invalid)');
 		return { kind: 'no-action' };
 	}
+
+	// proceed-branch: convergence (US-004, CAM-204 AC4). Remove any stale
+	// plan-escalation marker BEFORE creating the branch, so a prior round's
+	// BLOCK escalation never outlives this fresh APPROVE.
+	removeEscalationMarkerFn?.();
 
 	// proceed-branch: create branch BEFORE committing prd.json (AC1, cam-plan.md Step 9)
 	return executeGitProceedBranch(spawnFn, branchName, setPhaseFn);

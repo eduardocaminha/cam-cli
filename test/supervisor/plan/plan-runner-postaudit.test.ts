@@ -85,6 +85,26 @@ const BLOCKED_RESULT: PlanPhaseResult = {
 	report: BLOCK_REPORT,
 };
 
+const ESCALATED_REPORT: PlanVerdictReport = {
+	verdict: 'BLOCK',
+	summary: 'Plan did not converge after all re-plan rounds',
+	findings: [
+		{
+			id: 'A.002',
+			category: 'A.completeness',
+			severity: 'critical',
+			description: 'Still missing acceptance criteria after re-plan',
+		},
+	],
+};
+
+const ESCALATED_RESULT: PlanPhaseResult = {
+	kind: 'plan-escalated',
+	issue: MOCK_ISSUE,
+	report: ESCALATED_REPORT,
+	roundsCompleted: 2,
+};
+
 const PREFLIGHT_FAILED_RESULT: PlanPhaseResult = {
 	kind: 'preflight-failed',
 	step: 'typecheck',
@@ -113,11 +133,13 @@ function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 	setPhaseCalls: LoopPhase[];
 	escalateCalled: { n: number };
 	notifyMessages: string[];
+	removeMarkerCalled: { n: number };
 } {
 	const gitCalls: GitCall[] = [];
 	const setPhaseCalls: LoopPhase[] = [];
 	const escalateCalled = { n: 0 };
 	const notifyMessages: string[] = [];
+	const removeMarkerCalled = { n: 0 };
 
 	const spawnFn: SpawnFn = (cmd, args) => {
 		gitCalls.push({ cmd, args });
@@ -132,10 +154,11 @@ function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 		readPlanApprovalFn: (): PlanApproval => 'auto',
 		escalateFn: async () => { escalateCalled.n++; },
 		notifyFn: (msg) => { notifyMessages.push(msg); },
+		removeEscalationMarkerFn: () => { removeMarkerCalled.n++; },
 		...overrides,
 	};
 
-	return { opts, gitCalls, setPhaseCalls, escalateCalled, notifyMessages };
+	return { opts, gitCalls, setPhaseCalls, escalateCalled, notifyMessages, removeMarkerCalled };
 }
 
 // ---------------------------------------------------------------------------
@@ -373,6 +396,97 @@ describe('runPostAuditAction', () => {
 		};
 		const { opts } = makeOpts({ spawnFn: failCommitSpawnFn });
 		expect(() => runPostAuditAction(opts)).toThrow(/git commit/);
+	});
+
+	// -------------------------------------------------------------------------
+	// plan-escalated path (US-004, CAM-204) - the durable marker was already
+	// written unconditionally by runPlanPhaseWithReplan BEFORE this function
+	// is ever called; here we only assert the best-effort notify/escalate
+	// fan-out and the idle-exit shape.
+	// -------------------------------------------------------------------------
+
+	test('plan-escalated: returns escalated kind (US-004)', () => {
+		const { opts } = makeOpts({ planResult: ESCALATED_RESULT });
+		const result = runPostAuditAction(opts);
+		expect(result.kind).toBe('escalated');
+	});
+
+	test('plan-escalated: escalateFn is called (US-004)', async () => {
+		const { opts, escalateCalled } = makeOpts({ planResult: ESCALATED_RESULT });
+		runPostAuditAction(opts);
+		await new Promise((r) => setTimeout(r, 5));
+		expect(escalateCalled.n).toBe(1);
+	});
+
+	test('plan-escalated: notifyFn is called with [cam] plan escalated prefix (US-004)', () => {
+		const { opts, notifyMessages } = makeOpts({ planResult: ESCALATED_RESULT });
+		runPostAuditAction(opts);
+		expect(notifyMessages.length).toBe(1);
+		expect(notifyMessages[0]).toMatch(/^\[cam\] plan escalated:/);
+	});
+
+	test('plan-escalated: notifyFn message includes the final report summary (US-004)', () => {
+		const { opts, notifyMessages } = makeOpts({ planResult: ESCALATED_RESULT });
+		runPostAuditAction(opts);
+		expect(notifyMessages[0]).toContain(ESCALATED_REPORT.summary);
+	});
+
+	test('plan-escalated: no branch/commit/setPhase calls (US-004)', () => {
+		const { opts, gitCalls, setPhaseCalls } = makeOpts({ planResult: ESCALATED_RESULT });
+		runPostAuditAction(opts);
+		expect(gitCalls.length).toBe(0);
+		expect(setPhaseCalls.length).toBe(0);
+	});
+
+	test('plan-escalated: absent escalateFn is safe (US-004 best-effort)', () => {
+		const { opts } = makeOpts({ planResult: ESCALATED_RESULT, escalateFn: undefined });
+		expect(() => runPostAuditAction(opts)).not.toThrow();
+	});
+
+	test('plan-escalated: removeEscalationMarkerFn is NOT called (only convergence removes the marker) (US-004)', () => {
+		const { opts, removeMarkerCalled } = makeOpts({ planResult: ESCALATED_RESULT });
+		runPostAuditAction(opts);
+		expect(removeMarkerCalled.n).toBe(0);
+	});
+
+	// -------------------------------------------------------------------------
+	// removeEscalationMarkerFn wiring (US-004, CAM-204, AC4)
+	// -------------------------------------------------------------------------
+
+	test('proceed-branch: removeEscalationMarkerFn is called exactly once on convergence (AC4)', () => {
+		const { opts, removeMarkerCalled } = makeOpts();
+		runPostAuditAction(opts);
+		expect(removeMarkerCalled.n).toBe(1);
+	});
+
+	test('proceed-branch: removeEscalationMarkerFn fires BEFORE the git checkout -b call (AC4)', () => {
+		const order: string[] = [];
+		const { opts } = makeOpts({
+			removeEscalationMarkerFn: () => { order.push('remove-marker'); },
+			spawnFn: (cmd, args) => {
+				if (args[0] === 'checkout') order.push('git-checkout');
+				return { stdout: '', exitCode: 0 };
+			},
+		});
+		runPostAuditAction(opts);
+		expect(order).toEqual(['remove-marker', 'git-checkout']);
+	});
+
+	test('proceed-branch: absent removeEscalationMarkerFn is safe (AC4 backward compat)', () => {
+		const { opts } = makeOpts({ removeEscalationMarkerFn: undefined });
+		expect(() => runPostAuditAction(opts)).not.toThrow();
+	});
+
+	test('pause-operator: removeEscalationMarkerFn NOT called (only proceed-branch convergence removes it) (AC4)', () => {
+		const { opts, removeMarkerCalled } = makeOpts({ readPlanApprovalFn: () => 'operator' });
+		runPostAuditAction(opts);
+		expect(removeMarkerCalled.n).toBe(0);
+	});
+
+	test('audit-blocked: removeEscalationMarkerFn NOT called (AC4)', () => {
+		const { opts, removeMarkerCalled } = makeOpts({ planResult: BLOCKED_RESULT });
+		runPostAuditAction(opts);
+		expect(removeMarkerCalled.n).toBe(0);
 	});
 
 	// -------------------------------------------------------------------------
