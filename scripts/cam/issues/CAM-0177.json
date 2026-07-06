@@ -1,9 +1,31 @@
 {
   "id": "CAM-177",
   "title": "Add .dockerignore for cam-worker image build context",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T01:30:07.521Z",
-  "description": "docker build for the cam-worker image uses build context '.' (repo root) with no .dockerignore, so node_modules, dist, .git, .claude logs, claude-code-harness, and *.bun-build temps are all tarred and sent to the daemon each build. The Dockerfile never COPYs the context (installs via apt/npm; workspace is bind-mounted at run), so this is pure wasted transfer. Add a .dockerignore excluding node_modules, dist, .git, .claude, *.bun-build, coverage, and other non-build artifacts. Surfaced during CAM-175 (found a 4.9G context from ~84 orphan .bun-build files)."
+  "description": "docker build for the cam-worker image uses build context '.' (repo root) with no .dockerignore, so node_modules, dist, .git, .claude logs, claude-code-harness, and *.bun-build temps are all tarred and sent to the daemon each build. The Dockerfile never COPYs the context (installs via apt/npm; workspace is bind-mounted at run), so this is pure wasted transfer. Add a .dockerignore excluding node_modules, dist, .git, .claude, *.bun-build, coverage, and other non-build artifacts. Surfaced during CAM-175 (found a 4.9G context from ~84 orphan .bun-build files).",
+  "spec": {
+    "scope": "CAM-177 adds a .dockerignore at the repo root so the cam-worker (.devcontainer) image build stops tarring the entire repo to the daemon. The .devcontainer/Dockerfile performs exactly one COPY (.devcontainer/claude-config.json to /home/bun/.claude.json) and bind-mounts the workspace at run time, so every other file in the build context is wasted transfer; CAM-175 saw a 4.9G context from orphan .bun-build files. IN SCOPE: a repo-root .dockerignore using the allowlist idiom that ignores everything and re-includes only the one COPYed file: a header comment explaining the rule and its maintenance, then the four ordered lines star, then bang-dot-devcontainer, then dot-devcontainer-slash-star, then bang-dot-devcontainer-slash-claude-config.json; a golden-fixture test asserting the file content; and a behavioral proof that docker build -f .devcontainer/Dockerfile dot still succeeds with a drastically smaller transferred context (run by the reviewer or operator where docker is available, since macOS CI may lack docker). OUT OF SCOPE: a denylist enumeration of individual artifacts, templating the .dockerignore into downstream cam projects (the cam-worker image is cam-cli internal), and any change to the Dockerfile or the build command.",
+    "acceptanceCriteria": [
+      "A .dockerignore exists at the repo root containing, in order, the four allowlist lines (star; then bang dot-devcontainer; then dot-devcontainer slash star; then bang dot-devcontainer slash claude-config.json), preceded by a header comment explaining the ignore-all-but-one rule and that a new Dockerfile COPY requires a matching allow line. A golden-fixture test asserts this content.",
+      "docker build -f .devcontainer/Dockerfile with the repo root as context still succeeds (the COPY of .devcontainer/claude-config.json resolves) and the transferred build context drops from gigabyte scale to kilobyte scale. This behavioral proof is run by the reviewer or operator where docker is available; macOS CI may lack docker."
+    ],
+    "gotchas": [
+      "The re-include-a-nested-file-under-an-excluded-parent idiom requires BuildKit (last-match-wins evaluation); the legacy builder cannot re-include a file whose parent directory was excluded. cam container-mode uses modern docker, so BuildKit is the default.",
+      "The .devcontainer directory must be un-ignored before re-including the nested file; a bare star plus a single re-include of the nested file can fail on some builders, hence the four-line form.",
+      "The .dockerignore is brittle to a future Dockerfile COPY: adding a COPY requires adding a matching re-include line or the build breaks confusingly; the header comment must document this.",
+      "With -f .devcontainer/Dockerfile the Dockerfile is read directly and not from the build context, so excluding it via star is fine and does not break the build."
+    ],
+    "domainTerms": [
+      "build context: the file tree sent to the docker daemon on build; the cam-worker image COPYs exactly one file, so the context should be reduced to that single file via an allowlist .dockerignore."
+    ]
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  }
 }
