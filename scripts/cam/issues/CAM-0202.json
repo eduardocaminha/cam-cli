@@ -1,7 +1,7 @@
 {
   "id": "CAM-202",
   "title": "Enforce no-flaky-test-evasion: gate vermelho e hard-stop pro worker",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T17:17:51.848Z",
