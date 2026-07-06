@@ -1,34 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Wire the shipping phase into the sidecar loop and make the CLEAN trigger deterministic"
+    "id": "US-005",
+    "title": "Convert the cam ship CLI to a phase-signal writer"
   },
   "branchName": "cam/pr-149-ship-runner-deterministic",
   "timestamp": "2026-07-05T00:00:00Z",
-  "createdFiles": [
-    "src/commands/ship-deps.ts",
-    "test/sidecar-ship-phase.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
+    "src/commands/ship.ts",
     "index.ts",
-    "src/commands/sidecar.ts",
-    "src/release/post-merge.ts",
-    "src/supervisor/events.ts",
-    "src/supervisor/loop.ts",
-    "test/release/ship-bump.test.ts",
+    "test/ship.test.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [
-    "src/commands/ship.ts (runShip, the cam ship CLI thin-proxy) is UNCHANGED by this story: it still sends '/cam-ship' via tmux send-keys to the orchestrator pane (see ship.ts lines ~3-12, 110-186). US-005 must convert it to a phase-signal writer: write phase:shipping to .claude/cam-loop.local.md (mirroring runPlan's buildPlanningBody + writeStateFile pattern from plan.ts), preserving the liveness/bootstrap preamble and the paneCountMutex busy-refusal, and no longer send-keys '/cam-ship'. The --bump/--finalize in-process flags (parseShipArgs/dispatchShip in index.ts) are UNCHANGED in behavior and must stay that way per US-005 AC2 -- they already route through the new shared src/commands/ship-deps.ts factories (buildShipBumpOpts/buildShipFinalizeOpts) added in this story, but that is transparent to ship.ts/index.ts's argv parsing.",
-    "The deterministic ship runner (runShipPhase + runShipPrStep + the new sidecar shipping-phase wiring) is now fully live for BOTH triggers into phase:shipping: the auto-mode autoShipFn (this story) and, once US-005 lands, the manual `cam ship` CLI. Until US-005 ships, `cam ship` (no flags) still uses the OLD send-keys '/cam-ship' path (which dispatches the now-thinned cam-ship.md prompt, US-006's job) -- so the deterministic runner is reachable in auto mode only until US-005 completes.",
-    "makeProductionShipPhaseFn (sidecar.ts) reads scripts/cam/prd.json directly via JSON.parse(readFileSync(...)) with no try/catch of its own; a missing/malformed prd.json propagates up to the outer try/catch in the same closure, which logs a 'sidecar-exit' event (reason: 'ship-phase-crash') and resets phase to idle in the finally block. This is intentional (mirrors makeProductionPlanPhaseFn's outer safety net) but means a ship dispatched with no prd.json present produces a crash-shaped event rather than a clean ShipPhaseResult kind; worth a source-text oracle if a future story wants a dedicated 'prd-missing' result kind instead."
+    "src/ui/Dashboard.tsx's keybar 's' key (buildDashboardKeybarActions or similar, ~line 106) still sends a literal '/cam-ship' via tmux send-keys directly (not through runShip). This is intentionally OUT OF SCOPE for US-005 (not in the story's notes: Files list), but it means the dashboard keybar and `cam ship` (CLI) now trigger the ship phase via two different mechanisms (raw send-keys of a slash command vs the phase:shipping state-file write). If a future story wants a single dispatch path, Dashboard.tsx's 's' key should be rewired to write phase:shipping too (or shell out to `cam ship`), consistent with how the other keybar keys route.",
+    "cam-ship.md (the slash-command prompt injected by the OLD send-keys path) is now dead for the CLI path (US-005 removed the '/cam-ship' send-keys call from ship.ts) but is still the literal text sent by Dashboard.tsx's keybar AND presumably still exists as a full agent prompt file. US-006 (next priority, 'Reduce cam-ship.md to a thin phase-signal and record the ADR') is exactly the follow-up that addresses this: thin the prompt and write the ADR recording the phase-signal architecture decision (CLEAN trigger determinism, CAM-149's overall shift from LLM-interpreted slash commands to sidecar-detected state-file phases for both plan and ship)."
   ],
-  "nextStoryContext": "US-005 (convert the cam ship CLI to a phase-signal writer) consumes the now-complete deterministic ship pipeline (runShipPhase/runShipPrStep/sidecar shipping-phase wiring, all shipped in US-002/US-003/US-004) as a black box: it only needs to change HOW the shipping phase gets triggered from the CLI. Concretely: rewrite runShip (src/commands/ship.ts) to write phase:shipping to .claude/cam-loop.local.md instead of sending '/cam-ship' via send-keys, following plan.ts's runPlan precedent (liveness/bootstrap preamble -> mutex check -> writeStateFile with force:true, replacing only the final SEND step). Keep all existing injectable seams (tmuxSpawnFn, bootstrapFn, statFn, sleepFn, writeFn) and the mutex busy-refusal (shipping must not start while a worker/review pane is active). Update index.ts's cam-ship help text to mention 'writes phase:shipping; the sidecar runs the deterministic ship runner'. test/ship.test.ts needs a rewrite to assert the state-file write instead of send-keys (mirrors test/plan.test.ts's US-004/CAM-151 rewrite, per patterns.md). Never add a --permission-mode flag (test/no-permission-mode-flag.test.ts guards this globally). --bump/--finalize argv parsing and dispatch (parseShipArgs/dispatchShip) must NOT change in this story.",
+  "nextStoryContext": "US-006 (priority 6, the last story in this PRD) reduces .claude/commands/cam-ship.md + templates/commands/cam-ship.md to a thin phase-signal stub and records an ADR documenting the phase-signal architecture (CAM-149's shift: cam plan/cam ship no longer inject slash commands via send-keys; they write phase:planning/phase:shipping to .claude/cam-loop.local.md and the sidecar's deterministic loop -- runPlanPhaseFn/runShipPhaseFn in loop.ts -- picks up the phase and runs the pipeline without LLM interpretation). Precedent for the 'thin the prompt' half: check how cam-plan.md was (or wasn't) thinned in the CAM-151 PRD (search git log / templates/commands/cam-plan.md) for a prior-art shape. The ADR should live in docs/adr/ per the Domain Model Convention (only write one if it passes the three gates: hard to reverse, surprising without context, genuine trade-off -- this one plausibly qualifies since the send-keys->state-file shift is a real architectural pivot away from LLM-driven triggering). Remember docs/adr/ is created lazily (do not pre-create an empty directory if this is the first ADR in the repo -- check with `ls docs/adr/` first). Also worth grep'ing the codebase for any other remaining '/cam-ship' or '/cam-plan' string literals that might need cleanup or are intentionally out of scope (see openQuestions: Dashboard.tsx keybar still sends '/cam-ship' directly and was left untouched by both US-004 and US-005 since it is not in either story's Files: notes).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "US-004 is pure internal wiring: a new phase:'shipping' branch in the existing runSidecarLoop state machine (loop.ts) and a production dependency-injection factory (sidecar.ts) composing already-implemented, already-doc-validated internal modules (runShipPhase/US-002, runShipPrStep + gh CLI calls/US-003, runShipBump, finalizeCycleClose). No new external library surface was introduced or exercised; gh/git CLI usage is unchanged from the US-002/US-003 wiring (already validated against cli.github.com/manual in this PRD's officialDocsConsulted)."
+      "summary": "US-005 is a pure internal CLI refactor: ship.ts's imports are node:fs/node:path/node:process (Node built-ins, not a versioned external library surface) plus internal project modules (../tmux/session.ts, ../tmux/bootstrap-wait.ts, ./status.ts, ./next.ts). The behavioral change (replacing a tmux send-keys call with a state-file write) reuses the already-doc-validated renderStateFile/writeStateFile/parseStateFile utilities from next.ts/status.ts (validated in prior CAM-151 stories) and the already-shipped runShipPhase pipeline (US-002/US-003/US-004 of this PRD). No new external library was introduced or exercised."
     }
   ]
 }
