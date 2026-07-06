@@ -9,7 +9,7 @@
 // function falls back to sentinel + handoff.json (state-primary).
 
 import { describe, expect, test } from 'bun:test';
-import { commitSubjectMatchesStory, readWorkerOutcome } from '../../src/supervisor/result.ts';
+import { commitSubjectMatchesStory, gateTestsIndicateFailure, readWorkerOutcome } from '../../src/supervisor/result.ts';
 import type { FileReader } from '../../src/supervisor/result.ts';
 
 // ---------------------------------------------------------------------------
@@ -1236,6 +1236,143 @@ describe('readWorkerOutcome: commit-existence gate (US-001, CAM-187)', () => {
 				[HANDOFF_PATH]: fakeHandoff(storyId),
 			}),
 			// commitExistsForStory intentionally omitted
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001 (CAM-202, no-flaky-evasion): gateTestsIndicateFailure classifier
+// ---------------------------------------------------------------------------
+
+describe('gateTestsIndicateFailure (US-001, CAM-202)', () => {
+	test('FAILING: fail count > 0', () => {
+		expect(gateTestsIndicateFailure('41 pass / 1 fail')).toBe(true);
+	});
+
+	test('FAILING: string starts with "fail"', () => {
+		expect(gateTestsIndicateFailure('fail: typecheck crashed mid-run')).toBe(true);
+	});
+
+	test('NOT failing: 0 fail count', () => {
+		expect(gateTestsIndicateFailure('42 pass / 0 fail')).toBe(false);
+	});
+
+	test('NOT failing: "ok"', () => {
+		expect(gateTestsIndicateFailure('ok')).toBe(false);
+	});
+
+	test('NOT failing: "n/a"', () => {
+		expect(gateTestsIndicateFailure('n/a')).toBe(false);
+	});
+
+	test('NOT failing: skips present but zero fails (legitimate OS/capability-gated skips)', () => {
+		expect(gateTestsIndicateFailure('40 pass / 3 skip / 0 fail')).toBe(false);
+	});
+
+	test('FAILING: skips present AND a nonzero fail count', () => {
+		expect(gateTestsIndicateFailure('38 pass / 3 skip / 2 fail')).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001 (CAM-202, no-flaky-evasion): red-gate guard in readWorkerOutcome
+//
+// A worker must not be able to declare a story DONE (and have the supervisor
+// confirm it as kind:'pass') when its OWN recorded gates.tests shows a
+// failing test, even when prd.json already shows passes:true for that story.
+// ---------------------------------------------------------------------------
+
+const RG_REPORT_PATH = '/rg/worker-report.json';
+
+function fakeWorkerReportWithGates(outcome: string, storyId: string, tests: string): string {
+	return JSON.stringify({
+		outcome,
+		story: storyId,
+		gates: { typecheck: 'ok', tests },
+		notes: 'none',
+	});
+}
+
+describe('readWorkerOutcome: red-gate guard (US-001, CAM-202)', () => {
+	test('CAM-202 regression: DONE + prd passes:true + gates.tests "41 pass / 1 fail" -> NOT pass, detail names the red-gate refusal and the story', () => {
+		const storyId = 'US-099';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: RG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, true),
+				[RG_REPORT_PATH]: fakeWorkerReportWithGates('DONE', storyId, '41 pass / 1 fail'),
+			}),
+		});
+		expect(result.kind).not.toBe('pass');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('failing test');
+		expect(result.detail).toContain(storyId);
+	});
+
+	test('DONE + prd passes:true + gates.tests "fail: <detail>" -> NOT pass (red-gate refusal)', () => {
+		const storyId = 'US-098';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: RG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, true),
+				[RG_REPORT_PATH]: fakeWorkerReportWithGates('DONE', storyId, 'fail: typecheck crashed'),
+			}),
+		});
+		expect(result.kind).not.toBe('pass');
+		expect(result.storyId).toBe(storyId);
+		expect(result.detail).toContain('failing test');
+	});
+
+	test('companion: DONE + prd passes:true + gates.tests "40 pass / 3 skip / 0 fail" -> still pass (skips never block)', () => {
+		const storyId = 'US-097';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: RG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, true),
+				[RG_REPORT_PATH]: fakeWorkerReportWithGates('DONE', storyId, '40 pass / 3 skip / 0 fail'),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('companion: report with no gates field preserves pre-existing behavior (no refusal)', () => {
+		const storyId = 'US-096';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: RG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, true),
+				[RG_REPORT_PATH]: JSON.stringify({ outcome: 'DONE', story: storyId }),
+			}),
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('the fallback path (no workerReportPath) is unaffected: no recorded gates to check', () => {
+		const storyId = 'US-095';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: donePane(storyId),
+			readFile: makeReader({
+				[PRD_PATH]: fakePrd(storyId, true),
+				[HANDOFF_PATH]: fakeHandoff(storyId),
+			}),
 		});
 		expect(result.kind).toBe('pass');
 		expect(result.storyId).toBe(storyId);

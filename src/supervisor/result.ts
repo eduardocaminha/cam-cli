@@ -42,6 +42,13 @@ export type FileReader = (path: string) => string | null;
  * to finalizeStory/auto-commit) -- a passes:true-but-no-commit story is not a
  * worker-truncated-protocol-tail case, it is a suspect DONE claim that should
  * not advance to review without an actual commit landing.
+ *
+ * 'fail' also covers the red-gate refusal (US-001, CAM-202: no-flaky-
+ * evasion): a story is passes:true in prd.json AND worker-report.json reports
+ * outcome DONE, but the report's own gates.tests string indicates a failing
+ * test (see gateTestsIndicateFailure). The supervisor loop already routes
+ * 'fail' to the blocked terminal branch, so this reuses the existing kind
+ * rather than introducing a new one.
  */
 export type WorkerOutcomeKind = 'pass' | 'incomplete' | 'fail' | 'blocked' | 'unknown' | 'no-commit';
 
@@ -214,11 +221,20 @@ function readHandoff(
 
 /**
  * Minimal shape of worker-report.json consumed for the fallback path.
- * Only outcome and story are needed; other fields are ignored.
+ * Only outcome, story, and gates.tests are needed; other fields are ignored.
+ *
+ * `gates` was added in US-001 (CAM-202, no-flaky-evasion) so the red-gate
+ * guard can read the worker's recorded test-gate result. It is untrusted JSON
+ * (worker-authored), so callers must runtime-check its shape before use; see
+ * extractRecordedTestsGate.
  */
 interface WorkerReportFallback {
 	outcome?: string;
 	story?: string;
+	gates?: {
+		tests?: string;
+		typecheck?: string;
+	};
 }
 
 /** Read and parse worker-report.json for the fallback branch. Returns null on any problem. */
@@ -228,6 +244,43 @@ function tryReadWorkerReport(reportPath: string, readFile: FileReader): WorkerRe
 	const parsed = tryParseJson(text);
 	if (!isObject(parsed)) return null;
 	return parsed as WorkerReportFallback;
+}
+
+/**
+ * Safely extract report.gates.tests as a string, or undefined if the field is
+ * absent or malformed (US-001, CAM-202). report.gates is untrusted worker-
+ * authored JSON: runtime-check its shape rather than trusting the TypeScript
+ * cast performed in tryReadWorkerReport.
+ */
+function extractRecordedTestsGate(report: WorkerReportFallback): string | undefined {
+	const gates = report.gates;
+	if (!isObject(gates)) return undefined;
+	const tests = (gates as Record<string, unknown>).tests;
+	return typeof tests === 'string' ? tests : undefined;
+}
+
+/**
+ * Red-gate guard (US-001, CAM-202: no-flaky-evasion): classify a recorded
+ * gates.tests string (worker-report.json) as indicating a failing test.
+ *
+ * FAILING when:
+ *   - the string starts with "fail" (e.g. "fail: <detail>"), OR
+ *   - it contains a "<N> fail" count where N > 0 (e.g. "41 pass / 1 fail").
+ *
+ * NOT failing for "42 pass / 0 fail", "ok", "n/a", and skip-containing
+ * strings with a zero fail count (e.g. "40 pass / 3 skip / 0 fail").
+ * Legitimate skips (e.g. OS/capability-gated real-tmux tests off-macOS) never
+ * block; only a failing test blocks. This prevents a worker from narrating a
+ * recorded test failure away as flaky/pre-existing/environmental/unrelated
+ * and declaring the story DONE anyway.
+ */
+export function gateTestsIndicateFailure(tests: string): boolean {
+	const trimmed = tests.trim();
+	if (/^fail/i.test(trimmed)) return true;
+	const match = trimmed.match(/(\d+)\s*fail\b/i);
+	if (!match) return false;
+	const count = Number(match[1] ?? '0');
+	return count > 0;
 }
 
 /** Read and validate prd.json. Returns null on any problem. */
@@ -434,6 +487,21 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 						};
 					}
 					if (storyPassesInPrd(prd, reportStory)) {
+						// Red-gate guard (US-001, CAM-202): refuse to confirm DONE when the
+						// worker's OWN recorded gates.tests shows a failing test, even
+						// though prd.json already shows passes:true for this story. This
+						// closes the no-flaky-evasion hole: a worker cannot narrate a red
+						// gate away as flaky/pre-existing/environmental/unrelated and have
+						// the supervisor advance the story anyway. Checked before the
+						// commit-existence gate so the red-gate detail is the one surfaced.
+						const recordedTests = extractRecordedTestsGate(report);
+						if (recordedTests !== undefined && gateTestsIndicateFailure(recordedTests)) {
+							return {
+								kind: 'fail',
+								storyId: reportStory,
+								detail: `story=${reportStory} refused: recorded gate had a failing test (gates.tests="${recordedTests}"); red-gate refusal, not confirmed DONE (worker-report-fallback).`,
+							};
+						}
 						const gate = confirmCommitGate(prd, reportStory, opts.commitExistsForStory);
 						if (gate.ok) {
 							return {
