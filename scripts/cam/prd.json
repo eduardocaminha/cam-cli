@@ -81,7 +81,7 @@
         "Full gate spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/sidecar.ts (MetaLoopDispatchDeps, dispatchOrDrain, buildProductionDispatchFn), test/commands/sidecar-meta-loop.test.ts. Root-cause context (lived 2026-07-06): meta_loop=auto dispatched top-ranked CAM-66 (rank 13, WSJF 2.0) because freshly-specified CAM-201 (WSJF 5.0) was rank:None and the operator's explicit target was never consulted by the dispatcher; US-001's WSJF fallback fixes the default pick, this story makes an explicit pending target authoritative regardless of ranking. Preserve the drained-path dedup semantics (observeDecide state) untouched; the pending-target branch should bypass observeDecide only where necessary and keep the 'meta-loop-dispatch' event shape ({ dispatched: true, issueId, rank }) for the happy path. Clearing plan_issue on refusal must go through the makeSetPhaseFn-style render (preserves all other state-file fields; never hand-edit a single YAML line). Keep the new dep optional with a safe default so existing tests and the observe-mode path are byte-identical. Re-check docs/adr/0006 (phase enum writes) and docs/adr/0007 (safe-boundary guards, ordering of kill-switch/precondition/prd-present/phase checks) before coding: the pending-target read must happen AFTER the phase-idle guard so an in-flight plan is never disturbed."
     }
