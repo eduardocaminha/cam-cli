@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.73.0] - 2026-07-06
+
+### Added
+
+- US-R1-001 - address reviewer finding (plan-escalated event emission)
+- US-005 - Orchestrator derives the plan escalation on wake (boot doc + vendor regen)
+- US-004 - Wire the re-plan loop, pane teardown, and durable escalation into the sidecar
+- US-003 - Implement the BLOCK->re-plan loop with capped rounds and teardown seam
+- US-002 - Add durable plan-escalation marker module and event kind
+- US-001 - Add re-plan prompt builder and round-cap constant to the plan-runner
+
 ## [0.72.0] - 2026-07-06
 
 ### Added

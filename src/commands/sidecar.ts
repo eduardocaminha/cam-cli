@@ -35,7 +35,8 @@ import { parseStateFile, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
-import { runPlanPhase, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult } from '../supervisor/plan-runner.ts';
+import { runPlanPhaseWithReplan, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult, type PlanEscalationWriterParams } from '../supervisor/plan-runner.ts';
+import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FILENAME, type PlanEscalatedMarker } from '../supervisor/plan-escalation.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
@@ -1434,6 +1435,50 @@ function makePlanPaneHelpers(
 }
 
 /**
+ * Build the real teardownPlanPanesFn for the plan phase (US-004, CAM-204).
+ *
+ * Mirrors host.ts:398 teardownWorkerPaneFn EXACTLY: `tmux kill-pane` (NOT
+ * respawn-pane -k, which keeps the pane alive and leaves the pane-count mutex
+ * busy). The pane id is resolved FRESH from readWorkerPaneMarker on every call
+ * (never cached), so a mid-run pane re-allocation (self-heal) is picked up
+ * correctly. Best-effort: a null marker, an already-dead pane, or absent tmux
+ * is a silent no-op; this function never throws.
+ *
+ * Wired into runPlanPhaseWithReplan so a kill-pane happens on all three
+ * production paths (AC3, US-004): audit-approved terminal, each re-plan round
+ * boundary, and the plan-escalated terminal -- runPlanPhaseWithReplan itself
+ * (US-003) already calls this seam at exactly those three points.
+ */
+function makeTeardownPlanPanesFn(claudeDir: string): () => void {
+	return () => {
+		const id = readWorkerPaneMarker(claudeDir) ?? '%2';
+		try {
+			spawnSync('tmux', ['-L', 'cam', 'kill-pane', '-t', id], { stdio: 'pipe' });
+		} catch {
+			// best-effort: silent no-op
+		}
+	};
+}
+
+/**
+ * Build the real writeEscalationMarkerFn for the plan phase (US-004, CAM-204).
+ *
+ * Stamps `writtenAt` (the one field runPlanPhaseWithReplan's pure seam does
+ * NOT add, keeping plan-runner.ts clock-free) and persists the durable
+ * .cam-plan-escalated.json marker via writePlanEscalatedMarker
+ * (src/supervisor/plan-escalation.ts, US-002). Called unconditionally by
+ * runPlanPhaseWithReplan on MAX_REPLAN_ROUNDS exhaustion, independent of
+ * notifyFn/escalateFn presence or success (AC2).
+ */
+function makeWriteEscalationMarkerFn(claudeDir: string): (params: PlanEscalationWriterParams) => void {
+	const filePath = join(claudeDir, PLAN_ESCALATED_FILENAME);
+	return (params: PlanEscalationWriterParams): void => {
+		const marker: PlanEscalatedMarker = { ...params, writtenAt: new Date().toISOString() };
+		writePlanEscalatedMarker(filePath, marker);
+	};
+}
+
+/**
  * Build a clearStalePlanArtifacts function for the given cwd (US-002, CAM-155).
  *
  * Removes both:
@@ -1502,6 +1547,10 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 		readPlanApprovalFn: () => readPlanApproval(join(o.cwd, 'scripts/cam/project.toml')),
 		escalateFn,
 		notifyFn: makeNotifyOrchestrator(o.sessionName, o.realSpawnFn),
+		// US-004 (CAM-204, AC4): a converging run (audit-approved -> branch-created)
+		// removes any pre-existing plan-escalation marker so a stale BLOCK
+		// escalation from an earlier round/issue never outlives convergence.
+		removeEscalationMarkerFn: () => removePlanEscalatedMarker(join(o.claudeDir, PLAN_ESCALATED_FILENAME)),
 	});
 	exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(o.claudeDir, o.cwd)); // US-R1-002
 }
@@ -1557,20 +1606,89 @@ function buildPlanContainerOpts(cwd: string): PlanContainerOpts {
 	return { workerIsolation, preflightContainerFn, escalateFn };
 }
 
+/** Grouped deps for runProductionPlanPhaseWithReplan (US-004, CAM-204). */
+interface PlanWorkerRunDeps {
+	cwd: string;
+	claudeDir: string;
+	sessionName: string;
+	realSpawnFn: SpawnFn;
+	logEvent: WorkerEventLogger;
+	loopSpawnFn: LoopSpawnFn;
+	preflightSpawnFn: PlanPreflightSpawnFn;
+	plannerPaneId: string;
+	planIssue: string | undefined;
+	isPaneAlive: IsPaneAlive;
+	ensureWorkerPane: () => string;
+	containerOpts: PlanContainerOpts;
+}
+
 /**
- * Build the production runPlanPhaseFn closure (US-002/US-R1-001, CAM-151).
+ * Assemble the runPlanPhaseWithReplan options bag and execute it (US-004, CAM-204).
  *
- * Wires runPlanPhase with all deps: plannerPaneId (read fresh from marker each
- * call), paneCountMutexFn (session.ts paneCountMutex), selectIssueFn
- * (selectPlannableFromFile), preflightFn (runPlanPreflight), readPlanVerdictFn
- * (makeReadPlanVerdict), spawnFn (loop.ts SpawnFn shape), isPaneAlive (and
- * ensureWorkerPane for self-heal, AC1/AC2 US-001), sleepFn, genUuid (randomUUID
- * lowercased per CAM-23), and clock.
+ * Extracted from makeProductionPlanPhaseFn to keep that closure under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit. Wires the real
+ * teardownPlanPanesFn (kill-pane, makeTeardownPlanPanesFn) and
+ * writeEscalationMarkerFn (durable marker, makeWriteEscalationMarkerFn) seams
+ * alongside every existing runPlanPhase dep.
+ */
+function runProductionPlanPhaseWithReplan(deps: PlanWorkerRunDeps): PlanPhaseResult {
+	const {
+		cwd, claudeDir, sessionName, realSpawnFn, logEvent, loopSpawnFn,
+		preflightSpawnFn, plannerPaneId, planIssue, isPaneAlive, ensureWorkerPane, containerOpts,
+	} = deps;
+	return runPlanPhaseWithReplan({
+		spawnFn: loopSpawnFn,
+		isPaneAlive,
+		sleepFn: (ms) => Bun.sleepSync(ms),
+		genUuid: () => randomUUID(),
+		selectIssueFn: () => selectPlanTargetFromFile(cwd, planIssue),
+		readPlanVerdictFn: makeReadPlanVerdict(cwd),
+		readPlannerReportFn: () => {
+			// Completion signal: prd.json written by the planner.
+			const prdPath = join(cwd, 'scripts/cam/prd.json');
+			try {
+				if (!existsSync(prdPath)) return null;
+				return readFileSync(prdPath, 'utf8');
+			} catch { return null; }
+		},
+		preflightFn: () => runPlanPreflight({ cwd, spawnFn: preflightSpawnFn }),
+		clock: Date.now,
+		plannerPaneId,
+		paneCountMutexFn: () => paneCountMutex(sessionName, realSpawnFn),
+		logEvent,
+		ensureWorkerPane,
+		claudeDir,
+		clearStalePlanArtifactsFn: makeClearStalePlanArtifacts(cwd),
+		workerIsolation: containerOpts.workerIsolation,
+		preflightContainerFn: containerOpts.preflightContainerFn,
+		escalateFn: containerOpts.escalateFn,
+		// US-004 (CAM-204): real kill-pane teardown + durable escalation marker.
+		teardownPlanPanesFn: makeTeardownPlanPanesFn(claudeDir),
+		writeEscalationMarkerFn: makeWriteEscalationMarkerFn(claudeDir),
+	});
+}
+
+/**
+ * Build the production runPlanPhaseFn closure (US-002/US-R1-001, CAM-151;
+ * re-plan loop wiring US-004, CAM-204).
  *
- * After runPlanPhase returns, calls runPostAuditAction with the PlanPhaseResult
- * (ADR 0006 section Decisao point 3): on APPROVE+auto this creates the feature
- * branch, commits prd.json, and flips phase:implementing so the sidecar loop
- * dispatches the first implementer worker.
+ * Wires runPlanPhaseWithReplan with all deps: plannerPaneId (read fresh from
+ * marker each call), paneCountMutexFn (session.ts paneCountMutex),
+ * selectIssueFn (selectPlannableFromFile), preflightFn (runPlanPreflight),
+ * readPlanVerdictFn (makeReadPlanVerdict), spawnFn (loop.ts SpawnFn shape),
+ * isPaneAlive (and ensureWorkerPane for self-heal, AC1/AC2 US-001), sleepFn,
+ * genUuid (randomUUID lowercased per CAM-23), clock, teardownPlanPanesFn
+ * (real kill-pane, US-004 AC1) and writeEscalationMarkerFn (real durable
+ * marker writer, US-004 AC1). runPlanPhaseWithReplan (US-003) drives the
+ * BLOCK->re-plan loop itself and calls both seams at the correct boundaries;
+ * this closure only wires them to real tmux/fs side effects.
+ *
+ * After runPlanPhaseWithReplan returns, calls runPostAuditAction with the
+ * PlanPhaseResult (ADR 0006 section Decisao point 3; ADR-0012 for the
+ * plan-escalated terminal): on APPROVE+auto this creates the feature branch,
+ * commits prd.json, removes any stale plan-escalation marker (US-004 AC4),
+ * and flips phase:implementing so the sidecar loop dispatches the first
+ * implementer worker.
  *
  * US-006 / CAM-152: container isolation + plan-phase preflight are wired via
  * buildPlanContainerOpts (extracted to keep this closure under biome's 80-line
@@ -1638,32 +1756,9 @@ function makeProductionPlanPhaseFn(
 		// noExcessiveLinesPerFunction(maxLines=80) limit.
 		const containerOpts = buildPlanContainerOpts(cwd);
 
-		const planResult = runPlanPhase({
-			spawnFn: loopSpawnFn,
-			isPaneAlive,
-			sleepFn: (ms) => Bun.sleepSync(ms),
-			genUuid: () => randomUUID(),
-			selectIssueFn: () => selectPlanTargetFromFile(cwd, planIssue),
-			readPlanVerdictFn: makeReadPlanVerdict(cwd),
-			readPlannerReportFn: () => {
-				// Completion signal: prd.json written by the planner.
-				const prdPath = join(cwd, 'scripts/cam/prd.json');
-				try {
-					if (!existsSync(prdPath)) return null;
-					return readFileSync(prdPath, 'utf8');
-				} catch { return null; }
-			},
-			preflightFn: () => runPlanPreflight({ cwd, spawnFn: preflightSpawnFn }),
-			clock: Date.now,
-			plannerPaneId,
-			paneCountMutexFn: () => paneCountMutex(sessionName, realSpawnFn),
-			logEvent,
-			ensureWorkerPane,
-			claudeDir,
-			clearStalePlanArtifactsFn: makeClearStalePlanArtifacts(cwd),
-			workerIsolation: containerOpts.workerIsolation,
-			preflightContainerFn: containerOpts.preflightContainerFn,
-			escalateFn: containerOpts.escalateFn,
+		const planResult = runProductionPlanPhaseWithReplan({
+			cwd, claudeDir, sessionName, realSpawnFn, logEvent, loopSpawnFn,
+			preflightSpawnFn, plannerPaneId, planIssue, isPaneAlive, ensureWorkerPane, containerOpts,
 		});
 
 		// Post-audit phase: read branchName, build escalateFn, run post-audit

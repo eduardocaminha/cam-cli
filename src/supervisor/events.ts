@@ -67,6 +67,12 @@ import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
  *     fields (e.g. blockingStoryIds, outputTail, detail, prNumber, mergeMode)
  *     spread into detail -- so a failed ship is diagnosable from
  *     .claude/cam-worker-events.jsonl without reading source.
+ *   - 'plan-escalated' (US-002, CAM-204): emitted when the BLOCK->re-plan
+ *     loop (US-003) exhausts MAX_REPLAN_ROUNDS without an APPROVE verdict.
+ *     Mirrored by a durable .cam-plan-escalated.json marker
+ *     (src/supervisor/plan-escalation.ts) so a recycled orchestrator can
+ *     derive the BLOCK terminal on wake even when the live send-keys
+ *     narration is dropped (CAM-200-independent, CAM-195 style).
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -97,7 +103,8 @@ export type WorkerEventKind =
 	| 'meta-loop-observe'
 	| 'meta-loop-dispatch'
 	| 'container-preflight'
-	| 'plan-preflight-failed';
+	| 'plan-preflight-failed'
+	| 'plan-escalated';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -345,6 +352,17 @@ export interface ContainerPreflightEventDetail {
 	reason?: string;
 }
 
+/**
+ * 'plan-escalated' event detail (US-002, CAM-204): emitted when the
+ * BLOCK->re-plan loop exhausts MAX_REPLAN_ROUNDS without an APPROVE verdict.
+ *   - issueId: the issue the re-plan loop was targeting.
+ *   - roundsCompleted: how many re-plan rounds actually ran before giving up.
+ */
+export interface PlanEscalatedEventDetail {
+	issueId: string;
+	roundsCompleted: number;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -364,6 +382,7 @@ export type WorkerEventDetail =
 	| MetaLoopObserveEventDetail
 	| MetaLoopDispatchEventDetail
 	| ContainerPreflightEventDetail
+	| PlanEscalatedEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

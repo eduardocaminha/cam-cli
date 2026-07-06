@@ -32,7 +32,7 @@ import { join } from 'node:path';
 import type { SpawnFn, IsPaneAlive } from './loop.ts';
 import type { WorkerEventLogger } from './events.ts';
 import type { PlanPreflightResult } from './plan-preflight.ts';
-import type { PlanVerdictReport } from './plan-verdict-report.ts';
+import type { PlanVerdictReport, PlanVerdictFinding } from './plan-verdict-report.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
 import type { PlanApproval, WorkerIsolation } from '../config/models.ts';
@@ -43,6 +43,7 @@ import { readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { decidePostAuditAction } from '../plan/plan-approval-decision.ts';
 import { dockerExecWrap } from './docker-exec.ts';
+import type { PlanEscalatedMarker } from './plan-escalation.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -66,6 +67,45 @@ export function buildPlannerTaskPrompt(issueId: string): string {
 	return (
 		`Plan issue ${issueId} specifically per your AGENT.md. ` +
 		`Do not re-select from the backlog; plan ONLY ${issueId}. ` +
+		`Write the resulting PRD to scripts/cam/prd.json.`
+	);
+}
+
+/**
+ * Round cap for the BLOCK->re-plan loop (CAM-204, ADR-0012). After
+ * MAX_REPLAN_ROUNDS re-plan attempts, a still-blocked plan terminates as
+ * escalated: there is no plan analog of the review loop's MAX_ROUNDS_DEBT
+ * (non-convergence is a hard stop, never proceed-with-debt).
+ */
+export const MAX_REPLAN_ROUNDS = 2;
+
+/**
+ * Build a re-plan planner task prompt that embeds the prior round's auditor
+ * findings verbatim, so a round-2 (or later) planner corrects the flagged
+ * defects instead of regenerating the PRD blind (US-001, CAM-204).
+ *
+ * Mirrors buildPlannerTaskPrompt (CAM-157): names the exact issue id and
+ * forbids backlog re-selection, and instructs writing the PRD to
+ * scripts/cam/prd.json. The planner does NOT read patterns.md or
+ * plan-verdict-report.json on its own (the spawn prompt string is the ONLY
+ * channel to inform it), so each finding's description AND suggestion (when
+ * present) must be embedded here verbatim. Findings with no suggestion
+ * render description-only (no literal 'undefined' text).
+ */
+export function buildReplanPlannerTaskPrompt(issueId: string, findings: PlanVerdictFinding[]): string {
+	const findingLines = findings
+		.map((finding, index) => {
+			const suggestionText =
+				finding.suggestion !== undefined ? ` Suggestion: ${finding.suggestion}` : '';
+			return `${index + 1}. ${finding.description}${suggestionText}`;
+		})
+		.join('\n');
+
+	return (
+		`Re-plan issue ${issueId} specifically per your AGENT.md. ` +
+		`Do not re-select from the backlog; plan ONLY ${issueId}. ` +
+		`The previous plan round was BLOCKED by the auditor with the following findings; ` +
+		`correct each one in the new PRD:\n${findingLines}\n` +
 		`Write the resulting PRD to scripts/cam/prd.json.`
 	);
 }
@@ -99,6 +139,11 @@ export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
  *   auditor-timeout      - plan-verdict-report.json absent when auditor died or timed out.
  *   planner-failed       - planner poll ended but readPlannerReportFn returned null (no
  *                          prd.json written); auditor is NEVER spawned (US-003, CAM-155).
+ *   plan-escalated       - ONLY produced by runPlanPhaseWithReplan (US-003, CAM-204):
+ *                          MAX_REPLAN_ROUNDS consecutive audit-blocked rounds without an
+ *                          APPROVE verdict. Terminal, never proceeds to branch (ADR-0012:
+ *                          non-convergence is a hard stop, never proceed-with-debt).
+ *                          runPlanPhase itself never returns this kind.
  */
 export type PlanPhaseResult =
 	| { kind: 'preflight-failed'; step: string; detail: string }
@@ -114,7 +159,8 @@ export type PlanPhaseResult =
 	 */
 	| { kind: 'container-preflight-failed'; phase: 'planner' | 'auditor'; reason: string }
 	| { kind: 'audit-approved'; issue: IssueEntry; report: PlanVerdictReport }
-	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport };
+	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport }
+	| { kind: 'plan-escalated'; issue: IssueEntry; report: PlanVerdictReport; roundsCompleted: number };
 
 // ---------------------------------------------------------------------------
 // Options
@@ -676,6 +722,140 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 }
 
 // ---------------------------------------------------------------------------
+// BLOCK -> re-plan loop (US-003, CAM-204)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fields the escalation-marker writer seam is invoked with on non-convergence
+ * (US-003, CAM-204). Mirrors PlanEscalatedMarker minus `writtenAt`: the
+ * production wiring (US-004) stamps the timestamp itself when persisting the
+ * durable marker file, keeping this pure module clock-free.
+ */
+export type PlanEscalationWriterParams = Omit<PlanEscalatedMarker, 'writtenAt'>;
+
+/** Options for runPlanPhaseWithReplan: RunPlanPhaseOptions plus the two loop seams. */
+export interface RunPlanPhaseWithReplanOptions extends RunPlanPhaseOptions {
+	/**
+	 * Teardown seam for the planner/auditor pane. Invoked on every
+	 * terminal/boundary path (AC4, US-003):
+	 *   - BEFORE each re-plan round's runPlanPhase call, so the pane-count
+	 *     mutex sees 'available' (the auditor TUI pane never self-exits).
+	 *   - After an audit-approved terminal.
+	 *   - On the plan-escalated terminal.
+	 * Optional: defaults to a no-op for backward compat. Production wiring
+	 * (US-004) mirrors host.ts teardownWorkerPaneFn (kill-pane, best-effort,
+	 * never-throwing).
+	 */
+	teardownPlanPanesFn?: () => void;
+
+	/**
+	 * Escalation-marker writer seam. Invoked exactly once, when
+	 * MAX_REPLAN_ROUNDS consecutive audit-blocked rounds are exhausted without
+	 * an APPROVE verdict (AC3, US-003, ADR-0012: non-convergence is a hard
+	 * stop, never proceed-with-debt). Called with the LAST round's issue id,
+	 * summary, findings, and the total rounds completed. Optional: defaults to
+	 * a no-op for backward compat. Production wiring (US-004) constructs the
+	 * full PlanEscalatedMarker (adding writtenAt) and calls
+	 * writePlanEscalatedMarker against the .claude/ dir.
+	 */
+	writeEscalationMarkerFn?: (params: PlanEscalationWriterParams) => void;
+}
+
+/**
+ * Drive runPlanPhase through up to MAX_REPLAN_ROUNDS rounds, mirroring the
+ * review loop's FIXES_PENDING -> re-implement -> MAX_ROUNDS control flow in
+ * loop.ts (US-003, CAM-204).
+ *
+ * Round 1 runs runPlanPhase unchanged (opts as given). Each subsequent round
+ * (while the previous round was audit-blocked and rounds remain) re-runs
+ * runPlanPhase pinned to the SAME issue (selectIssueFn overridden to return
+ * the blocked round's issue, never re-selecting from the backlog) with
+ * plannerTaskPrompt built via buildReplanPlannerTaskPrompt(issue.id,
+ * priorFindings) so the planner corrects the flagged defects instead of
+ * regenerating blind.
+ *
+ * The prior round's findings/summary are captured from the in-memory
+ * audit-blocked result BEFORE the next round's clearStalePlanArtifactsFn
+ * (invoked at the top of the next runPlanPhase call) deletes
+ * plan-verdict-report.json (AC2).
+ *
+ * Terminal outcomes:
+ *   - audit-approved: teardownPlanPanesFn() then returned as-is (proceeds to
+ *     the caller's branch path).
+ *   - MAX_REPLAN_ROUNDS exhausted still audit-blocked: writeEscalationMarkerFn
+ *     is invoked with the last round's findings, teardownPlanPanesFn() runs,
+ *     and a terminal `plan-escalated` result is returned (never
+ *     `audit-blocked`, never branch, AC3).
+ *   - Any other (non-audit) kind from round 1: returned as-is, no re-plan
+ *     round is ever triggered, no teardown call (AC5).
+ */
+export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): PlanPhaseResult {
+	const { teardownPlanPanesFn, writeEscalationMarkerFn, ...planOpts } = opts;
+	const teardown = teardownPlanPanesFn ?? ((): void => {});
+	const writeMarker = writeEscalationMarkerFn ?? ((): void => {});
+
+	let result = runPlanPhase(planOpts);
+	let roundsCompleted = 1;
+
+	while (result.kind === 'audit-blocked' && roundsCompleted < MAX_REPLAN_ROUNDS) {
+		const blockedIssue = result.issue;
+		const blockedFindings = result.report.findings;
+
+		// Teardown BEFORE the next round's spawn: functionally required, or
+		// paneCountMutexFn returns 'busy' (the auditor TUI pane never self-exits).
+		teardown();
+		roundsCompleted += 1;
+		result = runPlanPhase({
+			...planOpts,
+			selectIssueFn: () => blockedIssue,
+			plannerTaskPrompt: buildReplanPlannerTaskPrompt(blockedIssue.id, blockedFindings),
+		});
+	}
+
+	if (result.kind === 'audit-approved') {
+		teardown();
+		return result;
+	}
+
+	if (result.kind === 'audit-blocked') {
+		// MAX_REPLAN_ROUNDS exhausted without convergence (ADR-0012 hard stop).
+		writeMarker({
+			issueId: result.issue.id,
+			summary: result.report.summary,
+			findings: result.report.findings,
+			roundsCompleted,
+		});
+		// US-R1-001 (CAM-204 review fix): emit the structured 'plan-escalated'
+		// event UNCONDITIONALLY on this terminal (AC2). The durable marker above
+		// covers the US-005 boot-doc read path; this event is the flight-recorder
+		// counterpart (mirrors every other terminal that pairs a marker/state
+		// write with a logEvent call, e.g. 'plan-preflight-failed' in
+		// runPlanPhase). logEvent is optional (test callers omit it), so this is
+		// a no-op when absent.
+		planOpts.logEvent?.({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'plan-escalation',
+			kind: 'plan-escalated',
+			detail: { issueId: result.issue.id, roundsCompleted },
+		});
+		teardown();
+		return {
+			kind: 'plan-escalated',
+			issue: result.issue,
+			report: result.report,
+			roundsCompleted,
+		};
+	}
+
+	// Non-audit kinds (preflight-failed, no-plannable-issue, mutex-busy,
+	// planner-timeout, auditor-timeout, planner-failed,
+	// container-preflight-failed): returned as-is, no re-plan round, no
+	// teardown call (AC5).
+	return result;
+}
+
+// ---------------------------------------------------------------------------
 // Post-audit action (US-006)
 // ---------------------------------------------------------------------------
 
@@ -685,10 +865,15 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
  * branch-created         - proceed-branch path: branch created, prd.json
  *                          committed, active:true flipped.
  * awaiting-operator-approval - pause-operator path: no branch/commit/flip.
- * escalated              - audit-blocked path: escalateFn + notifyFn called,
- *                          no branch/commit/flip.
- * no-action              - planResult was neither audit-approved nor
- *                          audit-blocked (e.g. preflight-failed, timeout).
+ * escalated              - audit-blocked OR plan-escalated (US-004, CAM-204)
+ *                          path: escalateFn + notifyFn called, no
+ *                          branch/commit/flip. The durable marker for
+ *                          plan-escalated was already written unconditionally
+ *                          by runPlanPhaseWithReplan before this result is
+ *                          produced.
+ * no-action              - planResult was neither audit-approved,
+ *                          audit-blocked, nor plan-escalated (e.g.
+ *                          preflight-failed, timeout).
  */
 export type PostAuditActionResult =
 	| { kind: 'branch-created'; branchName: string }
@@ -731,6 +916,17 @@ export interface RunPostAuditOptions {
 	 * Absent when no orchestrator session is running.
 	 */
 	notifyFn?: (msg: string) => void;
+	/**
+	 * Remove the durable plan-escalation marker (US-004, CAM-204, AC4). Called
+	 * ONLY on the converging proceed-branch path (audit-approved ->
+	 * branch-created), so a stale BLOCK escalation from an earlier round or
+	 * issue never outlives a fresh convergence. Never called on
+	 * pause-operator, escalated (audit-blocked / plan-escalated), or no-action
+	 * outcomes. Optional: absent means no removal call (backward compat with
+	 * tests that do not inject it; production wiring in sidecar.ts always
+	 * supplies it via removePlanEscalatedMarker).
+	 */
+	removeEscalationMarkerFn?: () => void;
 }
 
 /**
@@ -775,6 +971,8 @@ function executeGitProceedBranch(
  * Execute the post-audit action after runPlanPhase returns.
  *
  * On audit-approved + proceed-branch (auto mode):
+ *   0. removeEscalationMarkerFn() (best-effort; US-004, CAM-204 AC4: a
+ *      converging run removes any stale BLOCK escalation marker)
  *   1. git checkout -b <branchName>  (branch BEFORE commit - cam-plan.md Step 9)
  *   2. git add scripts/cam/prd.json
  *   3. git commit -m "chore(cam): commit audited prd.json"
@@ -784,9 +982,11 @@ function executeGitProceedBranch(
  * On audit-approved + pause-operator (operator mode, Half A scope):
  *   Returns { kind: 'awaiting-operator-approval' }. No branch/commit/flip.
  *
- * On audit-blocked:
+ * On audit-blocked OR plan-escalated (US-004, CAM-204):
  *   Calls notifyFn (pane push) then fires escalateFn (best-effort, not awaited).
- *   Returns { kind: 'escalated' }. No branch/commit/flip. No re-plan (CAM-151).
+ *   Returns { kind: 'escalated' }. No branch/commit/flip. No re-plan here (the
+ *   re-plan decision, and the durable marker write for plan-escalated, already
+ *   happened inside runPlanPhaseWithReplan, CAM-151 / CAM-204).
  *
  * On any other planResult kind:
  *   Returns { kind: 'no-action' }.
@@ -804,6 +1004,7 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		readPlanApprovalFn,
 		escalateFn,
 		notifyFn,
+		removeEscalationMarkerFn,
 	} = opts;
 
 	// planner-failed: planner produced no prd.json; notify best-effort, no escalate
@@ -817,6 +1018,23 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 	// audit-blocked: escalate and bail; no branch/commit/flip (AC3, AC4)
 	if (planResult.kind === 'audit-blocked') {
 		notifyFn?.(`[cam] plan BLOCK: ${planResult.report.summary}`);
+		if (escalateFn !== undefined) {
+			void escalateFn(); // best-effort: fire-and-forget, never throws by contract
+		}
+		return { kind: 'escalated' };
+	}
+
+	// plan-escalated (US-004, CAM-204): the BLOCK->re-plan loop (US-003)
+	// exhausted MAX_REPLAN_ROUNDS without converging. The durable marker was
+	// ALREADY written unconditionally by runPlanPhaseWithReplan's
+	// writeEscalationMarkerFn seam BEFORE this function is ever invoked, so
+	// its persistence never depends on notifyFn/escalateFn presence or
+	// success (AC2). Here we only fire the best-effort pane push + email
+	// escalation and exit to idle: same shape as the audit-blocked branch,
+	// no branch/commit/flip, no further re-plan (that decision was already
+	// made by the loop, ADR-0012 hard stop).
+	if (planResult.kind === 'plan-escalated') {
+		notifyFn?.(`[cam] plan escalated: ${planResult.report.summary}`);
 		if (escalateFn !== undefined) {
 			void escalateFn(); // best-effort: fire-and-forget, never throws by contract
 		}
@@ -842,6 +1060,11 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		notifyFn?.('[cam] plan skipped: branchName is empty (prd.json absent or invalid)');
 		return { kind: 'no-action' };
 	}
+
+	// proceed-branch: convergence (US-004, CAM-204 AC4). Remove any stale
+	// plan-escalation marker BEFORE creating the branch, so a prior round's
+	// BLOCK escalation never outlives this fresh APPROVE.
+	removeEscalationMarkerFn?.();
 
 	// proceed-branch: create branch BEFORE committing prd.json (AC1, cam-plan.md Step 9)
 	return executeGitProceedBranch(spawnFn, branchName, setPhaseFn);
