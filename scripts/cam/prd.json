@@ -10,6 +10,13 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/commands/sidecar.ts:1759]: US-004 AC2 requires the plan phase to 'emit the plan-escalated event UNCONDITIONALLY' on the non-convergence terminal, but no production code path ever emits it. The 'plan-escalated' WorkerEventKind and the PlanEscalatedEventDetail interface were added in US-002 (src/supervisor/events.ts:361, wired into the union at :385) specifically for this, yet PlanEscalatedEventDetail is constructed nowhere and no logEvent({ kind: 'plan-escalated', ... }) call exists in runProductionPlanPhaseWithReplan / runPostPlanActions / runPostAuditAction. The durable marker (the mechanism US-005 reads on wake) IS written unconditionally, so the marker-focused tests pass and the gap is invisible to the suite \u2014 but the structured-event clause of AC2 is unimplemented. Mechanical fix: emit the event on the plan-escalated terminal (e.g. in runProductionPlanPhaseWithReplan when result.kind === 'plan-escalated', carrying issueId + roundsCompleted)."
+    },
+    {
       "id": "US-001",
       "title": "Add re-plan prompt builder and round-cap constant to the plan-runner",
       "description": "As the plan-runner, I need a pure helper that injects the prior round's auditor findings into the planner spawn prompt (plus an exported round cap), so a round-2 planner corrects the flagged defects instead of regenerating the PRD blind.",
@@ -21,7 +28,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine is green. [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts, test/supervisor/plan/plan-runner.test.ts (or a new test/supervisor/plan/plan-replan.test.ts). PlanVerdictFinding type comes from src/supervisor/plan-verdict-report.ts (fields: id, category, severity, storyId?, description, suggestion?). Gotcha (issue spec): the planner does NOT read patterns.md or plan-verdict-report.json on its own; the ONLY channel to inform it is its spawn prompt string, so description + suggestion of each finding must be embedded there. Re-check ADR-0012 (relatedDocs) before coding: non-convergence is a hard stop, never proceed-with-debt. noUncheckedIndexedAccess: guard array access when iterating findings."
@@ -38,7 +45,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine is green. [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-escalation.ts (new), src/supervisor/events.ts, test/supervisor/plan/plan-escalation.test.ts (new). Mirror the durable ship-stalled marker precedent verbatim: src/release/merge-watch.ts lines ~42-60 (SHIP_STALLED_FILENAME) and ~192-260 (read/write/remove, shape guards). Follow patterns.md 'JSON reader shape guards' (see makeReadPlanVerdict in plan-verdict-report.ts for the guard style). The marker file is ephemeral state under .claude/ and must be gitignored (verify .claude/ marker files are already covered by .gitignore; add a pattern if not). Detail union: events.ts ~line 364 aggregates detail types; add the new one there."
@@ -57,7 +64,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine is green. [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts, test/supervisor/plan/plan-runner.test.ts or new test/supervisor/plan/plan-replan.test.ts. Depends on US-001 (prompt builder + MAX_REPLAN_ROUNDS) and US-002 (marker writer signature). Insertion point: the audit-blocked return documented as absent at plan-runner.ts lines 27 and 789. Control-flow precedent: the review loop in src/supervisor/loop.ts (decideNextAction / MAX_ROUNDS terminal), but per ADR-0012 the plan terminal is escalated, NEVER a MAX_ROUNDS_DEBT analog. Key mechanics: (a) findings are already in-memory on the audit-blocked PlanPhaseResult ({ issue, report }) - thread report.findings forward, do NOT re-read the file; (b) round 2 must pass plannerTaskPrompt as the opts override so runPlanPhase's buildPlannerTaskPrompt default is bypassed, and must pin selectIssueFn to the round-1 issue; (c) teardown BEFORE round 2 is functionally required or paneCountMutexFn returns 'busy' (auditor TUI pane never self-exits); (d) all seams injected (teardownPlanPanesFn, marker writer) so tests assert exact call sequences - keep runPlanPhase itself byte-for-byte compatible for existing tests. Biome limits: use factory/helper extraction (patterns.md), max 80 lines/function, complexity <=15."
@@ -75,7 +82,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine is green. [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/sidecar.ts (makeProductionPlanPhaseFn ~line 1586, runPostPlanActions ~line 1476, exitPhaseAfterPlan ~line 1376), src/supervisor/plan-runner.ts (runPostAuditAction may need a case for the new terminal kind), tests under test/supervisor/ (sidecar-loop.test.ts and/or test/supervisor/plan/plan-runner-postaudit.test.ts). Teardown precedent: host.ts:398 teardownWorkerPaneFn (kill-pane, fresh marker read, silent no-op on dead pane). Escalation email precedent: the existing '[cam] Plan BLOCK' sendEscalation block in runPostPlanActions - reuse, but marker write must come first and be unconditional. Gotchas: exitPhaseAfterPlan maps the new terminal to 'idle' (same as escalated today); keep the outermost try/catch safety net in makeProductionPlanPhaseFn intact; branchName is read from prd.json AFTER the final round (round 2 may rewrite it); Biome 80-line limit - extract helpers rather than inflating existing closures."
@@ -92,10 +99,23 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine is green. [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: templates/agents/subagent-orchestrator.md, src/vendor/_generated.ts (regenerated, never hand-edited). Precedent: the ship-stalled boot step (item 7 of the orchestrator 'Boot context' list) and its opening-blocker line format. Keep the doc wording symmetric with the ship-stalled step: read-only surfacing, explicit 'do NOT delete the marker yourself'. Depends on US-002 (filename constant) and US-004 (removal-on-convergence lifecycle)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/commands/sidecar.ts",
+        "line": 1759,
+        "text": "US-004 AC2 requires the plan phase to 'emit the plan-escalated event UNCONDITIONALLY' on the non-convergence terminal, but no production code path ever emits it. The 'plan-escalated' WorkerEventKind and the PlanEscalatedEventDetail interface were added in US-002 (src/supervisor/events.ts:361, wired into the union at :385) specifically for this, yet PlanEscalatedEventDetail is constructed nowhere and no logEvent({ kind: 'plan-escalated', ... }) call exists in runProductionPlanPhaseWithReplan / runPostPlanActions / runPostAuditAction. The durable marker (the mechanism US-005 reads on wake) IS written unconditionally, so the marker-focused tests pass and the gap is invisible to the suite \u2014 but the structured-event clause of AC2 is unimplemented. Mechanical fix: emit the event on the plan-escalated terminal (e.g. in runProductionPlanPhaseWithReplan when result.kind === 'plan-escalated', carrying issueId + roundsCompleted)."
+      }
+    ]
+  }
 }

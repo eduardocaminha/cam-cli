@@ -825,6 +825,20 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
 			findings: result.report.findings,
 			roundsCompleted,
 		});
+		// US-R1-001 (CAM-204 review fix): emit the structured 'plan-escalated'
+		// event UNCONDITIONALLY on this terminal (AC2). The durable marker above
+		// covers the US-005 boot-doc read path; this event is the flight-recorder
+		// counterpart (mirrors every other terminal that pairs a marker/state
+		// write with a logEvent call, e.g. 'plan-preflight-failed' in
+		// runPlanPhase). logEvent is optional (test callers omit it), so this is
+		// a no-op when absent.
+		planOpts.logEvent?.({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'plan-escalation',
+			kind: 'plan-escalated',
+			detail: { issueId: result.issue.id, roundsCompleted },
+		});
 		teardown();
 		return {
 			kind: 'plan-escalated',

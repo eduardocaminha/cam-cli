@@ -39,6 +39,7 @@ import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-report.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanPreflightResult } from '../../../src/supervisor/plan-preflight.ts';
+import type { WorkerEvent } from '../../../src/supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -119,12 +120,14 @@ function makeReplanOpts(
 	teardownCallCount: () => number;
 	markerCalls: PlanEscalationWriterParams[];
 	selectIssueCallCount: () => number;
+	loggedEvents: WorkerEvent[];
 } {
 	const calls: TmuxCall[] = [];
 	let teardownCount = 0;
 	const markerCalls: PlanEscalationWriterParams[] = [];
 	let selectIssueCalls = 0;
 	let roundIndex = 0;
+	const loggedEvents: WorkerEvent[] = [];
 
 	const spawnFn: SpawnFn = (cmd, args) => {
 		calls.push({ cmd, args });
@@ -176,6 +179,9 @@ function makeReplanOpts(
 		writeEscalationMarkerFn: (params) => {
 			markerCalls.push(params);
 		},
+		logEvent: (event) => {
+			loggedEvents.push(event);
+		},
 		...overrides,
 	};
 
@@ -185,6 +191,7 @@ function makeReplanOpts(
 		teardownCallCount: () => teardownCount,
 		markerCalls,
 		selectIssueCallCount: () => selectIssueCalls,
+		loggedEvents,
 	};
 }
 
@@ -299,6 +306,37 @@ describe('runPlanPhaseWithReplan', () => {
 			findings: BLOCK_REPORT_ROUND2.findings,
 			roundsCompleted: MAX_REPLAN_ROUNDS,
 		});
+	});
+
+	// -------------------------------------------------------------------------
+	// US-R1-001 (CAM-204 review fix): 'plan-escalated' event emitted
+	// unconditionally on the non-convergence terminal (AC2).
+	// -------------------------------------------------------------------------
+	test('escalation: logEvent is called exactly once with kind plan-escalated (US-R1-001 AC2)', () => {
+		const { opts, loggedEvents } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
+		runPlanPhaseWithReplan(opts);
+		const planEscalatedEvents = loggedEvents.filter((e) => e.kind === 'plan-escalated');
+		expect(planEscalatedEvents.length).toBe(1);
+	});
+
+	test('escalation: plan-escalated event detail carries issueId + roundsCompleted (US-R1-001 AC2)', () => {
+		const { opts, loggedEvents } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
+		runPlanPhaseWithReplan(opts);
+		const event = loggedEvents.find((e) => e.kind === 'plan-escalated');
+		expect(event?.detail).toEqual({ issueId: 'CAM-204', roundsCompleted: MAX_REPLAN_ROUNDS });
+	});
+
+	test('non-escalation terminal (audit-approved): no plan-escalated event logged', () => {
+		const { opts, loggedEvents } = makeReplanOpts([APPROVE_REPORT]);
+		runPlanPhaseWithReplan(opts);
+		expect(loggedEvents.some((e) => e.kind === 'plan-escalated')).toBe(false);
+	});
+
+	test('backward compat: escalation works when logEvent is absent (no throw)', () => {
+		const { opts } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
+		const { logEvent: _l, ...rest } = opts;
+		const result = runPlanPhaseWithReplan(rest);
+		expect(result.kind).toBe('plan-escalated');
 	});
 
 	test('escalation: no git/branch spawn occurs (AC3)', () => {
