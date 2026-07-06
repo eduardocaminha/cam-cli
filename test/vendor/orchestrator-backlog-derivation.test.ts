@@ -50,3 +50,15 @@ describe('embedded orchestrator persona: cam issue list backlog derivation (US-0
 		expect(content).toContain('never answer from memory or from the handoff');
 	});
 });
+
+describe('embedded orchestrator persona: nextActions ephemeral-only + no-backlog-in-handoff hard rule (US-005)', () => {
+	test('self-handoff section states nextActions is ephemeral, cycle-specific-only, never a backlog snapshot', () => {
+		const content = templatesContents[PERSONA_KEY] ?? '';
+		expect(content.toLowerCase()).toContain('never a backlog snapshot');
+	});
+
+	test('self-handoff section states the hard rule that no handoff field enumerates the backlog', () => {
+		const content = templatesContents[PERSONA_KEY] ?? '';
+		expect(content.toLowerCase()).toContain('no handoff field enumerates the backlog');
+	});
+});
