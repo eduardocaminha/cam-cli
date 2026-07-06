@@ -92,6 +92,7 @@ export type WorkerEventKind =
 	| 'merge-watch-stalled'
 	| 'ship-phase-result'
 	| 'stage-promoted'
+	| 'domain-docs-written'
 	| 'cycle-tokens'
 	| 'meta-loop-observe'
 	| 'meta-loop-dispatch'
@@ -266,6 +267,20 @@ export interface StagePromotedEventDetail {
 }
 
 /**
+ * 'domain-docs-written' event detail: emitted by writeDomainDocsOnMain (the
+ * /cam-spec domain-docs writer, CAM-118) immediately after a successful
+ * (non-noOp) commit. Carries the id the domain docs were written for and the
+ * list of newly-created ADR filenames (empty when the payload had no new,
+ * non-duplicate ADR entries).
+ *   - id: the id the domain docs were written for (e.g. an issue id).
+ *   - adrFiles: filenames (not full paths) of newly-created docs/adr/ files.
+ */
+export interface DomainDocsWrittenEventDetail {
+	id: string;
+	adrFiles: string[];
+}
+
+/**
  * 'cycle-tokens' event detail: emitted at cycle-close time, recording the
  * per-cycle token spend for both the orchestrator session and all worker sessions
  * in that cycle. Used by CAM-136 for per-issue token analysis.
@@ -344,6 +359,7 @@ export type WorkerEventDetail =
 	| MergeWatchPostMergeDoneEventDetail
 	| MergeWatchStalledEventDetail
 	| StagePromotedEventDetail
+	| DomainDocsWrittenEventDetail
 	| CycleTokensEventDetail
 	| MetaLoopObserveEventDetail
 	| MetaLoopDispatchEventDetail
