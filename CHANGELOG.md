@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.72.0] - 2026-07-06
+
+### Added
+
+- US-001 - Ignore worker-out and plan-out logs in templates/.gitignore and regenerate embed
+
 ## [0.71.0] - 2026-07-06
 
 ### Added
