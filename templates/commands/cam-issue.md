@@ -138,14 +138,14 @@ Print the issue as JSON.
 
 #### `list`
 
-List all issue files in the directory, read each, and render open issues as a
-markdown table:
+Run the deterministic CLI command and render its output verbatim:
 ```bash
-git ls-tree -r --name-only main scripts/cam/issues/ 2>/dev/null | sort
+cam issue list
 ```
-Fallback: `ls scripts/cam/issues/` when git read fails.
-
-Note: a deterministic `cam issue list` CLI command is tracked separately (CAM-74).
+Pass `--all` to also include the `shipped` group. This command is
+in-process (no tmux, no claude spawn) and reads the backlog straight from
+`main` via git plumbing, so it is always up to date and safe to run fresh
+before answering any backlog question.
 
 ---
 

@@ -62,9 +62,17 @@ document — none of them require deep reasoning to absorb:
    where past blockers, decisions, and ship outcomes live.
 4. `scripts/cam/prd.json` — the current PRD if a cycle is in progress.
    May not exist if no cycle is active.
-5. `git status`, `git branch --show-current`, `git log -5 --oneline` — current
+5. The backlog — run `cam issue list` (a real shell command, not an
+   in-process call) to derive the current backlog with live per-stage
+   counts. If the command is unavailable or exits non-zero (e.g. a
+   pre-rebuild binary that predates this feature), fall back to reading
+   `scripts/cam/issues/*.json` directly, filtered by stage (exclude
+   `shipped` and `abandoned` entries). Never answer a backlog question
+   from memory or from a stale handoff — always re-run `cam issue list`
+   fresh.
+6. `git status`, `git branch --show-current`, `git log -5 --oneline` — current
    working state.
-6. `.claude/.cam-ship-stalled.json` — a durable marker written whenever a
+7. `.claude/.cam-ship-stalled.json` — a durable marker written whenever a
    merge watch reaches a non-merged terminal (ci-red, closed-not-merged,
    dirty, behind-unrecovered, timeout). If present, read its `prNumber`,
    `reason`, and `prUrl` fields; you'll surface them as an opening blocker
@@ -77,8 +85,13 @@ cam orchestrator — <project name>
 issue system: <linear|github|none>
 current branch: <branch>
 current cycle: <prd cycle id or "none">
+backlog: <N idea | N specified | N planned>
 last journal entry: <YYYY-MM-DD — title>
 ```
+
+The backlog line is a single line of live per-stage counts, derived from the
+`cam issue list` output you just ran. Do NOT enumerate individual issues in
+the greeting — no per-issue list, ever.
 
 If `.claude/.cam-ship-stalled.json` is present, add an opening blocker line
 before asking what to do next, e.g.:
@@ -101,7 +114,7 @@ translate intent into the appropriate dispatch. Examples:
 
 | Human says | You do |
 |---|---|
-| "o que temos pra fazer esse ciclo?" | If linear → query active cycle issues; if github → `gh issue list`; if none → list files in `scripts/cam/issues/` and read each. Render a short table. |
+| "o que temos pra fazer esse ciclo?" / any backlog question | Run `cam issue list` fresh — never answer from memory or from the handoff. Render its output verbatim (or a short table if the human wants more structure). |
 | "cria um issue para refatorar o auth" | Spawn `/cam-issue create` with the title. Capture `CAM_ISSUE_RESULT=...` and confirm to the human. |
 | "planejar LIN-42" / "plano para #17" | Spawn `/cam-plan <identifier>`. Wait for completion. Read `scripts/cam/prd.json` and summarize the proposed scope to the human for approval. |
 | "implementa" / "go" / "manda bala" | Spawn `/cam-next` in a loop until the worker emits `CAM_LOOP_STATUS=COMPLETE` or you hit an explicit blocker. |

@@ -79,7 +79,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (buildOrchestratorBootPrompt ~line 155), .claude/agents/subagent-orchestrator.md (boot context ~lines 51-93, conversation contract ~line 104), templates/agents/subagent-orchestrator.md, .claude/commands/cam-issue.md + templates/commands/cam-issue.md, src/vendor/_generated.ts (regen via bun run embed-vendor), new test/vendor/orchestrator-backlog-derivation.test.ts. CAM-123 gotcha: .claude vs templates copies are NOT uniformly byte-identical across the repo; diff each file before editing (orchestrator persona and cam-issue.md verified identical today, re-verify at implement time). Agent-prompt self-hosting pattern (patterns.md US-001 CAM-69): edit BOTH copies, then embed-vendor, and note 'intentional self-hosting' in the commit. Binary/branch coherence: the installed binary lacks cam issue list until this ships and the operator rebuilds; the fallback instruction is what keeps the orchestrator correct across that boundary, so it must be explicit, not implied. The greeting stays the persona's existing template with ONE added line (e.g. backlog: N idea / N specified / N planned). Do not add per-issue lists anywhere in the greeting."
     },
