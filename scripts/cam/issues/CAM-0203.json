@@ -1,7 +1,7 @@
 {
   "id": "CAM-203",
   "title": "/cam-plan <id> targeting e no-op + issue specified fica rank:None (unplannable)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T17:17:54.209Z",
