@@ -1,0 +1,12 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Pure backlog list-view derivation in src/issues/list.ts" },
+  "branchName": "cam/pr-190-issue-list-derived-backlog",
+  "timestamp": "2026-07-05T00:00:00Z",
+  "createdFiles": ["src/issues/list.ts", "test/issues/list.test.ts"],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "deriveBacklogView(backlog, options?) is exported from src/issues/list.ts. Shape for US-002 (runIssueList) to consume: returns BacklogViewGroup[] = { stage: IssueStage; entries: BacklogViewEntry[] }[], where BacklogViewEntry = { issue: IssueEntry; unmetBlockers: string[] }. Groups are ALWAYS present for the 3 default lifecycle stages (idea, specified, planned) in that order, even when a group has zero entries -- the renderer decides whether to skip empty stage headings, deriveBacklogView does not. BacklogViewOptions = { includeShipped?: boolean }; when true a 4th group with stage:'shipped' is appended (abandoned issues are still excluded from it). unmetBlockers is the ready-to-render list of blocker ids for the '[blocked: X]' marker (already filtered to isBlocked-semantics: present in backlog AND stage !== 'shipped'; a missing/unknown blockedBy id is silently omitted, mirroring isBlocked). Sort within each group mirrors selectPlannableIssue: ranked-before-unranked, ascending rank, numeric-id-suffix tie-break -- reimplemented locally in list.ts (not imported from select.ts) per the story's isolation note. Rank field doubles as 'priority' for the rendered priority column per US-002 AC2.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

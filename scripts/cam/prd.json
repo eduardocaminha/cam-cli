@@ -3,7 +3,9 @@
   "branchName": "cam/pr-190-issue-list-derived-backlog",
   "description": "Deterministic cam issue list as the single source of the actionable backlog; orchestrator derives backlog live (boot + on-demand) and nextActions becomes ephemeral-only, killing stale-backlog propagation across respawns.",
   "issueNumber": 190,
-  "relatedDocs": ["scripts/cam/patterns.md"],
+  "relatedDocs": [
+    "scripts/cam/patterns.md"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -20,7 +22,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files: src/issues/list.ts, test/issues/list.test.ts. Reuse IssueEntry/IssueStage from src/issues/types.ts and isBlocked from src/issues/graph.ts; mirror the numericIdSuffix + ranked-before-unranked sort already proven in src/issues/select.ts (do not import select.ts internals, replicate the ordering contract). Stage enum is idea, specified, planned, shipped (planned, not planning). Keep the function pure (backlog array in, view struct out): the I/O seam stays in US-002. Gotcha: noUncheckedIndexedAccess means array indexing is T | undefined, guard accordingly."
     },
