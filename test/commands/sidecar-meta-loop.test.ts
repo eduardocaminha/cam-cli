@@ -1279,3 +1279,155 @@ describe('meta-loop-dispatch: blocked-cycle judgment point (US-005)', () => {
 		expect(src).toContain('blockedCycle');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// US-004 (CAM-203): pending explicit plan_issue wins over top-of-queue pick
+// ---------------------------------------------------------------------------
+
+describe('meta-loop-dispatch: pending explicit plan_issue wins (US-004, CAM-203)', () => {
+	test('AC1: pending target wins over a higher-ranked plannable issue', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const setPhaseCaptures: Array<{ phase: string; planIssue?: string }> = [];
+		// Higher-ranked top-of-queue candidate (would win if selectFn were consulted).
+		const topOfQueue = makePlannableIssue('CAM-66');
+		// Explicit pending target: lower-ranked / unranked, but must win regardless.
+		const explicitTarget: IssueEntry = {
+			id: 'CAM-201',
+			title: 'Explicit target',
+			stage: 'specified',
+			status: 'open',
+			wsjf: { value: 5.0, timeCriticality: 5, riskReduction: 3, jobSize: 2 },
+		} as IssueEntry;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => topOfQueue,
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: (phase, planIssue) => { setPhaseCaptures.push({ phase, planIssue }); },
+			warnFn: () => {},
+			logEvent: logger,
+			readPlanIssueFn: () => 'CAM-201',
+			selectTargetFn: (targetId) => (targetId === 'CAM-201' ? explicitTarget : null),
+		});
+
+		await dispatchFn();
+
+		expect(setPhaseCaptures.length).toBe(1);
+		expect(setPhaseCaptures[0]?.phase).toBe('planning');
+		expect(setPhaseCaptures[0]?.planIssue).toBe('CAM-201');
+
+		const dispatchEvents = events.filter((ev) => ev.kind === 'meta-loop-dispatch');
+		expect(dispatchEvents.length).toBe(1);
+		const detail = dispatchEvents[0]?.detail as { dispatched: boolean; issueId: string };
+		expect(detail.dispatched).toBe(true);
+		expect(detail.issueId).toBe('CAM-201');
+	});
+
+	test('AC2: non-plannable pending target is refused, no substitute dispatch, plan_issue cleared', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const setPhaseCaptures: Array<{ phase: string; planIssue?: string }> = [];
+		const topOfQueue = makePlannableIssue('CAM-66');
+		let selectTargetCalls = 0;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => topOfQueue,
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: (phase, planIssue) => { setPhaseCaptures.push({ phase, planIssue }); },
+			warnFn: () => {},
+			logEvent: logger,
+			readPlanIssueFn: () => 'CAM-999',
+			selectTargetFn: (targetId) => { selectTargetCalls++; expect(targetId).toBe('CAM-999'); return null; },
+		});
+
+		await dispatchFn();
+
+		// Never dispatches a different (top-of-queue) issue on this tick.
+		expect(setPhaseCaptures.length).toBe(1);
+		expect(setPhaseCaptures[0]?.phase).toBe('idle');
+		expect(setPhaseCaptures[0]?.planIssue).toBeUndefined();
+		expect(selectTargetCalls).toBe(1);
+
+		const dispatchEvents = events.filter((ev) => ev.kind === 'meta-loop-dispatch');
+		expect(dispatchEvents.length).toBe(1);
+		const detail = dispatchEvents[0]?.detail as { refusedTarget: boolean; targetId: string };
+		expect(detail.refusedTarget).toBe(true);
+		expect(detail.targetId).toBe('CAM-999');
+	});
+
+	test('AC3: no pending plan_issue leaves top-of-queue dispatch unchanged', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const setPhaseCaptures: Array<{ phase: string; planIssue?: string }> = [];
+		const topOfQueue = makePlannableIssue('CAM-42');
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => topOfQueue,
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: (phase, planIssue) => { setPhaseCaptures.push({ phase, planIssue }); },
+			warnFn: () => {},
+			logEvent: logger,
+			readPlanIssueFn: () => undefined,
+			selectTargetFn: () => { throw new Error('selectTargetFn must not be called when no pending target'); },
+		});
+
+		await dispatchFn();
+
+		expect(setPhaseCaptures.length).toBe(1);
+		expect(setPhaseCaptures[0]?.phase).toBe('planning');
+		expect(setPhaseCaptures[0]?.planIssue).toBe('CAM-42');
+
+		const dispatchEvents = events.filter((ev) => ev.kind === 'meta-loop-dispatch');
+		expect(dispatchEvents.length).toBe(1);
+		const detail = dispatchEvents[0]?.detail as { dispatched: boolean; issueId: string };
+		expect(detail.dispatched).toBe(true);
+		expect(detail.issueId).toBe('CAM-42');
+	});
+
+	test('AC3: existing dispatcher tests pass unchanged when readPlanIssueFn/selectTargetFn are absent', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const setPhaseCaptures: Array<{ phase: string; planIssue?: string }> = [];
+		const topOfQueue = makePlannableIssue('CAM-77');
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => topOfQueue,
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: (phase, planIssue) => { setPhaseCaptures.push({ phase, planIssue }); },
+			warnFn: () => {},
+			logEvent: logger,
+			// readPlanIssueFn and selectTargetFn deliberately absent.
+		});
+
+		await dispatchFn();
+
+		expect(setPhaseCaptures.length).toBe(1);
+		expect(setPhaseCaptures[0]?.phase).toBe('planning');
+		expect(setPhaseCaptures[0]?.planIssue).toBe('CAM-77');
+		expect(events.filter((ev) => ev.kind === 'meta-loop-dispatch').length).toBe(1);
+	});
+
+	// File-assert oracle (AC4): buildProductionDispatchFn wires readPlanIssueFn.
+	test('sidecar.ts wires readPlanIssueFn in production dispatch build (AC4 oracle)', () => {
+		const src = readFileSync(
+			join(import.meta.dir, '../../src/commands/sidecar.ts'),
+			'utf8',
+		);
+		expect(src).toContain('readPlanIssueFn');
+		expect(src).toContain('selectTargetFn');
+		expect(src).toContain('makeReadPlanIssue(claudeDir)');
+		expect(src).toContain('selectPlanTargetFromFile(cwd, targetId)');
+	});
+});

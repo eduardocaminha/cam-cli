@@ -338,12 +338,18 @@ export type MetaLoopObserveEventDetail =
  *   - { blockedCycle }: prd.json present with review.lastVerdict === 'MAX_ROUNDS_DEBT';
  *     drain parks until the operator clears the block (removes/finalizes prd.json).
  *     Emitted once per engagement (deduped in closure state). (US-005, CAM-139)
+ *   - { refusedTarget, targetId }: a pending explicit plan_issue (operator
+ *     /cam-plan <id> target) was not plannable (missing, not open, or blocked);
+ *     the dispatcher never substitutes a different issue on this tick and
+ *     clears the stale plan_issue so the next tick resumes top-of-queue
+ *     dispatch. (US-004, CAM-203)
  */
 export type MetaLoopDispatchEventDetail =
 	| { dispatched: true; issueId: string; rank: number }
 	| { refused: true; reason: string }
 	| { stopped: true }
-	| { blockedCycle: true };
+	| { blockedCycle: true }
+	| { refusedTarget: true; targetId: string };
 
 /**
  * 'container-preflight' event detail: emitted once per implement dispatch
