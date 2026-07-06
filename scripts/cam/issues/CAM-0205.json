@@ -1,7 +1,7 @@
 {
   "id": "CAM-205",
   "title": "Flaky init tests: runInit spawns 3 real subprocesses, times out at 5000ms under check:all concurrent load",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T22:51:59.924Z",
