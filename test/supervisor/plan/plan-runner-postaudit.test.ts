@@ -40,6 +40,7 @@ import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-rep
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanApproval } from '../../../src/config/models.ts';
 import type { LoopPhase } from '../../../src/commands/status.ts';
+import { makeInMemoryEventLogger } from '../../../src/supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -109,6 +110,11 @@ const PREFLIGHT_FAILED_RESULT: PlanPhaseResult = {
 	kind: 'preflight-failed',
 	step: 'typecheck',
 	detail: 'error TS2345',
+};
+
+const TARGET_INVALID_RESULT: PlanPhaseResult = {
+	kind: 'plan-target-invalid',
+	targetId: 'CAM-777',
 };
 
 const BRANCH_NAME = 'cam/CAM-117-plan-runner';
@@ -365,6 +371,70 @@ describe('runPostAuditAction', () => {
 		expect(gitCalls.length).toBe(0);
 		expect(setPhaseCalls.length).toBe(0);
 		expect(escalateCalled.n).toBe(0);
+	});
+
+	// -------------------------------------------------------------------------
+	// plan-target-invalid path (US-003, CAM-203)
+	// -------------------------------------------------------------------------
+
+	test('plan-target-invalid: returns no-action kind (AC4: no branch/commit/implementing flip)', () => {
+		const { opts } = makeOpts({ planResult: TARGET_INVALID_RESULT });
+		const result = runPostAuditAction(opts);
+		expect(result.kind).toBe('no-action');
+	});
+
+	test('plan-target-invalid: notifyFn is called naming the target id (AC2)', () => {
+		const { opts, notifyMessages } = makeOpts({ planResult: TARGET_INVALID_RESULT });
+		runPostAuditAction(opts);
+		expect(notifyMessages.length).toBe(1);
+		expect(notifyMessages[0]).toContain('CAM-777');
+	});
+
+	test('plan-target-invalid: notifyFn message names the plan-target-invalid failure (AC2)', () => {
+		const { opts, notifyMessages } = makeOpts({ planResult: TARGET_INVALID_RESULT });
+		runPostAuditAction(opts);
+		expect(notifyMessages[0]).toMatch(/plan target invalid/i);
+	});
+
+	test('plan-target-invalid: escalateFn is NEVER called (operator-input error, not an infra alert) (AC2)', async () => {
+		const { opts, escalateCalled } = makeOpts({ planResult: TARGET_INVALID_RESULT });
+		runPostAuditAction(opts);
+		await new Promise((r) => setTimeout(r, 5));
+		expect(escalateCalled.n).toBe(0);
+	});
+
+	test('plan-target-invalid: emits a structured plan-target-invalid event carrying the targetId (AC2)', () => {
+		const { logger: logEvent, events } = makeInMemoryEventLogger();
+		const { opts } = makeOpts({ planResult: TARGET_INVALID_RESULT, logEvent });
+		runPostAuditAction(opts);
+		const targetEvents = events.filter((e) => e.kind === 'plan-target-invalid');
+		expect(targetEvents.length).toBe(1);
+		expect((targetEvents[0]?.detail as { targetId?: string }).targetId).toBe('CAM-777');
+	});
+
+	test('plan-target-invalid: absent logEvent is safe (backward compat)', () => {
+		const { opts } = makeOpts({ planResult: TARGET_INVALID_RESULT, logEvent: undefined });
+		expect(() => runPostAuditAction(opts)).not.toThrow();
+	});
+
+	test('plan-target-invalid: no git calls made (AC4: no branch/commit)', () => {
+		const { opts, gitCalls } = makeOpts({ planResult: TARGET_INVALID_RESULT });
+		runPostAuditAction(opts);
+		expect(gitCalls.length).toBe(0);
+		const branchCalls = gitCalls.filter((c) => c.args[0] === 'checkout' && c.args[1] === '-b');
+		expect(branchCalls.length).toBe(0);
+	});
+
+	test('plan-target-invalid: setPhaseFn NOT called by runPostAuditAction itself (AC3: idle exit happens via the caller exitPhaseAfterPlan)', () => {
+		const { opts, setPhaseCalls } = makeOpts({ planResult: TARGET_INVALID_RESULT });
+		runPostAuditAction(opts);
+		expect(setPhaseCalls.length).toBe(0);
+	});
+
+	test('plan-target-invalid: removeEscalationMarkerFn NOT called', () => {
+		const { opts, removeMarkerCalled } = makeOpts({ planResult: TARGET_INVALID_RESULT });
+		runPostAuditAction(opts);
+		expect(removeMarkerCalled.n).toBe(0);
 	});
 
 	// -------------------------------------------------------------------------

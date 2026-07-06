@@ -73,6 +73,11 @@ import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
  *     (src/supervisor/plan-escalation.ts) so a recycled orchestrator can
  *     derive the BLOCK terminal on wake even when the live send-keys
  *     narration is dropped (CAM-200-independent, CAM-195 style).
+ *   - 'plan-target-invalid' (US-003, CAM-203): emitted when an explicit
+ *     `/cam-plan <id>` target (planTargetId) named a missing/not-open/
+ *     not-plannable issue and runPlanPhase returned the 'plan-target-invalid'
+ *     terminal. Recorded alongside the orchestrator-pane notification so the
+ *     failure is diagnosable from .claude/cam-worker-events.jsonl.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -104,7 +109,8 @@ export type WorkerEventKind =
 	| 'meta-loop-dispatch'
 	| 'container-preflight'
 	| 'plan-preflight-failed'
-	| 'plan-escalated';
+	| 'plan-escalated'
+	| 'plan-target-invalid';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -332,12 +338,18 @@ export type MetaLoopObserveEventDetail =
  *   - { blockedCycle }: prd.json present with review.lastVerdict === 'MAX_ROUNDS_DEBT';
  *     drain parks until the operator clears the block (removes/finalizes prd.json).
  *     Emitted once per engagement (deduped in closure state). (US-005, CAM-139)
+ *   - { refusedTarget, targetId }: a pending explicit plan_issue (operator
+ *     /cam-plan <id> target) was not plannable (missing, not open, or blocked);
+ *     the dispatcher never substitutes a different issue on this tick and
+ *     clears the stale plan_issue so the next tick resumes top-of-queue
+ *     dispatch. (US-004, CAM-203)
  */
 export type MetaLoopDispatchEventDetail =
 	| { dispatched: true; issueId: string; rank: number }
 	| { refused: true; reason: string }
 	| { stopped: true }
-	| { blockedCycle: true };
+	| { blockedCycle: true }
+	| { refusedTarget: true; targetId: string };
 
 /**
  * 'container-preflight' event detail: emitted once per implement dispatch
@@ -363,6 +375,16 @@ export interface PlanEscalatedEventDetail {
 	roundsCompleted: number;
 }
 
+/**
+ * 'plan-target-invalid' event detail (US-003, CAM-203): emitted when an
+ * explicit /cam-plan <id> target could not be planned (missing, not-open, or
+ * not-plannable) and runPlanPhase returned { kind: 'plan-target-invalid' }.
+ *   - targetId: the explicit target id that failed to resolve.
+ */
+export interface PlanTargetInvalidEventDetail {
+	targetId: string;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -383,6 +405,7 @@ export type WorkerEventDetail =
 	| MetaLoopDispatchEventDetail
 	| ContainerPreflightEventDetail
 	| PlanEscalatedEventDetail
+	| PlanTargetInvalidEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

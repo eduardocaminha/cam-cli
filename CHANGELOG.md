@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.75.0] - 2026-07-06
+
+### Added
+
+- US-004 - Meta-loop auto-dispatcher honors a pending explicit plan_issue
+- US-003 - Sidecar surfaces plan-target-invalid: notify, event, idle exit, stale plan_issue cleared
+- US-002 - Plan-runner terminal for invalid explicit target + explicit-target-wins regression test
+- US-001 - Unranked issues compete by WSJF in plannable selection
+
 ## [0.74.0] - 2026-07-06
 
 ### Added

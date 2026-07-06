@@ -1089,6 +1089,23 @@ export interface MetaLoopDispatchDeps {
 	 */
 	readPrdVerdictFn?: () => string | null;
 	/**
+	 * Read a pending explicit plan_issue from cam-loop.local.md (US-004, CAM-203).
+	 * Returns undefined (or empty string) when no operator target is pending, in
+	 * which case dispatch behavior is unchanged (top-of-queue via selectFn).
+	 * When it returns a non-empty id, the pending explicit target takes priority
+	 * over selectFn's top-of-queue pick for that tick (see dispatchOrDrain /
+	 * handlePendingTarget). Optional for backward compat with existing tests.
+	 */
+	readPlanIssueFn?: () => string | undefined;
+	/**
+	 * Target-aware plannable selector (US-004, CAM-203): resolves a specific
+	 * pending plan_issue id to an IssueEntry, or null when the id is absent from
+	 * the backlog or not plannable (never falls back to top-of-queue). Only
+	 * consulted when readPlanIssueFn returns a non-empty id. Optional for
+	 * backward compat with existing tests.
+	 */
+	selectTargetFn?: (targetId: string) => IssueEntry | null;
+	/**
 	 * Send blocked-cycle escalation email (US-005, CAM-139).
 	 * Distinct from drainNotifyFn (empty backlog) and from loop's escalateFn
 	 * (MAX_ROUNDS_DEBT detected by the supervisor itself).
@@ -1227,13 +1244,67 @@ async function handleBlockedCycleBoundary(
 }
 
 /**
+ * Resolve a pending explicit plan_issue target (US-004, CAM-203): an
+ * operator-set plan_issue (e.g. via /cam-plan <id>) that is still pending when
+ * an idle auto-dispatch tick fires. This wins over selectFn's top-of-queue
+ * pick for the tick, regardless of rank/WSJF (CAM-201-class bug: an explicit
+ * target must never be silently clobbered by rank-based auto-dispatch).
+ *
+ * Plannable -> dispatch it via setPhaseFn('planning', target-id), emitting the
+ * same 'meta-loop-dispatch' {dispatched} event shape as top-of-queue dispatch.
+ *
+ * Not plannable (missing / not open / blocked) -> the dispatcher never
+ * substitutes a different issue on this tick. It emits a 'meta-loop-dispatch'
+ * {refusedTarget, targetId} event and clears the stale plan_issue via
+ * setPhaseFn('idle') (no 2nd arg; makeSetPhaseFn writes plan_issue as the raw
+ * 2nd argument with no fallback, so omitting it clears the field) so the NEXT
+ * tick resumes top-of-queue dispatch instead of retrying the same dead target
+ * forever.
+ *
+ * Deliberately bypasses observeDecide/ctx.observeState: the pending-target
+ * branch is a distinct decision point from the drain-dedup path and must not
+ * perturb that state.
+ */
+function handlePendingTarget(deps: MetaLoopDispatchDeps, targetId: string): void {
+	const resolved = deps.selectTargetFn?.(targetId) ?? null;
+	if (resolved !== null) {
+		deps.setPhaseFn('planning', resolved.id);
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'meta-loop-dispatch',
+			detail: { dispatched: true, issueId: resolved.id, rank: resolved.rank ?? 0 },
+		});
+		return;
+	}
+	deps.logEvent({
+		ts: new Date().toISOString(),
+		storyId: undefined,
+		uuid: 'sidecar',
+		kind: 'meta-loop-dispatch',
+		detail: { refusedTarget: true, targetId },
+	});
+	deps.setPhaseFn('idle');
+}
+
+/**
  * Select the next plannable issue and either dispatch it or emit a drain event.
  * Mutates ctx.observeState for cross-tick dedup (mirrors the observe path).
+ *
+ * A pending explicit plan_issue (US-004, CAM-203) is checked first and, when
+ * present, takes over the tick entirely via handlePendingTarget: top-of-queue
+ * selection is not consulted at all for that tick.
  */
 async function dispatchOrDrain(
 	deps: MetaLoopDispatchDeps,
 	ctx: DispatchClosureState,
 ): Promise<void> {
+	const pendingTarget = deps.readPlanIssueFn?.();
+	if (pendingTarget !== undefined && pendingTarget.length > 0) {
+		handlePendingTarget(deps, pendingTarget);
+		return;
+	}
 	const selected = deps.selectFn();
 	const observeResult = observeDecide(selected, ctx.observeState);
 	if (observeResult !== null) ctx.observeState = observeResult.newState;
@@ -1326,6 +1397,10 @@ function buildProductionDispatchFn(
 	return makeProductionMetaLoopDispatchFn({
 		selectFn: () => selectPlannableFromFile(cwd),
 		readPhaseFn: makeReadLoopPhase(claudeDir),
+		// US-004, CAM-203: a pending explicit /cam-plan <id> target wins over
+		// top-of-queue auto-dispatch for this tick (see handlePendingTarget).
+		readPlanIssueFn: makeReadPlanIssue(claudeDir),
+		selectTargetFn: (targetId) => selectPlanTargetFromFile(cwd, targetId),
 		prdPresentFn: () => existsSync(prdPath),
 		mergeWatchPresentFn: () => existsSync(join(claudeDir, MERGE_WATCH_FILENAME)),
 		preconditionFn: () =>
@@ -1517,6 +1592,7 @@ interface PostPlanActionsOpts {
 	sessionName: string;
 	loopSpawnFn: LoopSpawnFn;
 	realSpawnFn: SpawnFn;
+	logEvent: WorkerEventLogger;
 }
 function runPostPlanActions(o: PostPlanActionsOpts): void {
 	let branchName = '';
@@ -1551,6 +1627,8 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 		// removes any pre-existing plan-escalation marker so a stale BLOCK
 		// escalation from an earlier round/issue never outlives convergence.
 		removeEscalationMarkerFn: () => removePlanEscalatedMarker(join(o.claudeDir, PLAN_ESCALATED_FILENAME)),
+		// US-003 (CAM-203): structured event for the plan-target-invalid terminal.
+		logEvent: o.logEvent,
 	});
 	exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(o.claudeDir, o.cwd)); // US-R1-002
 }
@@ -1642,6 +1720,11 @@ function runProductionPlanPhaseWithReplan(deps: PlanWorkerRunDeps): PlanPhaseRes
 		sleepFn: (ms) => Bun.sleepSync(ms),
 		genUuid: () => randomUUID(),
 		selectIssueFn: () => selectPlanTargetFromFile(cwd, planIssue),
+		// US-003 (CAM-203): thread the fresh-read plan_issue into runPlanPhaseWithReplan
+		// as planTargetId. This is a pure LABEL: it keeps the plan-target-invalid
+		// terminal's targetId in sync with what selectIssueFn actually resolved
+		// against, without changing selectIssueFn's own wiring.
+		planTargetId: planIssue,
 		readPlanVerdictFn: makeReadPlanVerdict(cwd),
 		readPlannerReportFn: () => {
 			// Completion signal: prd.json written by the planner.
@@ -1764,7 +1847,7 @@ function makeProductionPlanPhaseFn(
 		// Post-audit phase: read branchName, build escalateFn, run post-audit
 		// action. Extracted to runPostPlanActions to keep this closure under
 		// biome's noExcessiveLinesPerFunction(maxLines=80) limit.
-		runPostPlanActions({ planResult, cwd, claudeDir, sessionName, loopSpawnFn, realSpawnFn });
+		runPostPlanActions({ planResult, cwd, claudeDir, sessionName, loopSpawnFn, realSpawnFn, logEvent });
 		} catch (err: unknown) {
 			logEvent({
 				ts: new Date().toISOString(),

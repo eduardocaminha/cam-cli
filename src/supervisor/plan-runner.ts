@@ -139,6 +139,11 @@ export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
  *   auditor-timeout      - plan-verdict-report.json absent when auditor died or timed out.
  *   planner-failed       - planner poll ended but readPlannerReportFn returned null (no
  *                          prd.json written); auditor is NEVER spawned (US-003, CAM-155).
+ *   plan-target-invalid  - opts.planTargetId was set (an explicit /cam-plan <id> target) AND
+ *                          selectIssueFn() returned null (the target is missing / not-open /
+ *                          not-plannable); carries the target id. The planner pane is NEVER
+ *                          spawned (US-002, CAM-203): an explicit target is never a silent
+ *                          no-op that plans a different issue.
  *   plan-escalated       - ONLY produced by runPlanPhaseWithReplan (US-003, CAM-204):
  *                          MAX_REPLAN_ROUNDS consecutive audit-blocked rounds without an
  *                          APPROVE verdict. Terminal, never proceeds to branch (ADR-0012:
@@ -148,6 +153,14 @@ export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
 export type PlanPhaseResult =
 	| { kind: 'preflight-failed'; step: string; detail: string }
 	| { kind: 'no-plannable-issue' }
+	/**
+	 * An explicit /cam-plan <id> target (opts.planTargetId) named a missing,
+	 * not-open, or not-plannable issue (US-002, CAM-203). Distinct from
+	 * 'no-plannable-issue' so the caller can surface a target-naming error
+	 * instead of a silent generic "nothing to plan" result. The planner pane
+	 * is NEVER spawned.
+	 */
+	| { kind: 'plan-target-invalid'; targetId: string }
 	| { kind: 'mutex-busy' }
 	| { kind: 'planner-timeout' }
 	| { kind: 'auditor-timeout' }
@@ -232,6 +245,20 @@ export interface RunPlanPhaseOptions {
 	 * (same discriminated union as runPlanPreflight in plan-preflight.ts).
 	 */
 	preflightFn: () => PlanPreflightResult;
+
+	/**
+	 * The explicit target issue id for an operator-invoked `/cam-plan <id>`
+	 * (US-002, CAM-203). Purely a labeling input: it does NOT change how
+	 * selectIssueFn is called (the caller is responsible for wiring
+	 * selectIssueFn to resolve the target, e.g. via
+	 * `() => selectPlanTargetFromFile(cwd, planTargetId, spawn)`). When set
+	 * AND selectIssueFn() returns null, runPlanPhase returns
+	 * `{ kind: 'plan-target-invalid', targetId: planTargetId }` instead of the
+	 * generic `{ kind: 'no-plannable-issue' }`, and the planner pane is NEVER
+	 * spawned. Absent (undefined) preserves the bare `cam plan` behavior
+	 * unchanged (AC4: null selection -> 'no-plannable-issue').
+	 */
+	planTargetId?: string;
 
 	/**
 	 * Monotonic-ish clock in ms (Date.now equivalent). Injectable for tests so
@@ -511,6 +538,23 @@ function resolveLivePaneId(ensureWorkerPane: (() => string) | undefined, staticI
 }
 
 /**
+ * Resolve the result kind for a null selectIssueFn() outcome (US-002, CAM-203).
+ *
+ * When planTargetId is set (an explicit /cam-plan <id> invocation), the null
+ * selection is loud and target-naming ('plan-target-invalid') rather than the
+ * generic 'no-plannable-issue', so an explicit target is never a silent no-op.
+ * Extracted to keep runPlanPhase's Step 2 a one-liner (patterns.md 'Biome
+ * cognitive complexity: use factory/helper extraction').
+ */
+function resolveNoIssueResult(
+	planTargetId: string | undefined,
+): Extract<PlanPhaseResult, { kind: 'no-plannable-issue' } | { kind: 'plan-target-invalid' }> {
+	return planTargetId !== undefined
+		? { kind: 'plan-target-invalid', targetId: planTargetId }
+		: { kind: 'no-plannable-issue' };
+}
+
+/**
  * Poll until the planner completes (prd.json written OR pane dies) or the
  * deadline fires. Returns true on completion; false on timeout (after killing
  * the pane).
@@ -706,7 +750,7 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 
 	// Step 2: Pick plannable issue (AC3)
 	const issue = selectIssueFn();
-	if (issue === null) return { kind: 'no-plannable-issue' };
+	if (issue === null) return resolveNoIssueResult(opts.planTargetId);
 
 	// NOTE: plannerTaskPrompt is resolved AFTER issue selection so it can be
 	// built from the selected issue.id (CAM-157 root-cause fix).
@@ -848,8 +892,8 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
 		};
 	}
 
-	// Non-audit kinds (preflight-failed, no-plannable-issue, mutex-busy,
-	// planner-timeout, auditor-timeout, planner-failed,
+	// Non-audit kinds (preflight-failed, no-plannable-issue, plan-target-invalid,
+	// mutex-busy, planner-timeout, auditor-timeout, planner-failed,
 	// container-preflight-failed): returned as-is, no re-plan round, no
 	// teardown call (AC5).
 	return result;
@@ -927,6 +971,14 @@ export interface RunPostAuditOptions {
 	 * supplies it via removePlanEscalatedMarker).
 	 */
 	removeEscalationMarkerFn?: () => void;
+	/**
+	 * Structured worker event logger (US-003, CAM-203). When provided, a
+	 * 'plan-target-invalid' event is emitted on that terminal, carrying the
+	 * target id, so the failure is diagnosable from
+	 * .claude/cam-worker-events.jsonl. Optional for backward compat with tests
+	 * that do not inject it.
+	 */
+	logEvent?: WorkerEventLogger;
 }
 
 /**
@@ -968,6 +1020,40 @@ function executeGitProceedBranch(
 }
 
 /**
+ * Handle the plan-target-invalid terminal (US-003, CAM-203): an explicit
+ * /cam-plan <id> target could not be planned (missing / not-open /
+ * not-specified / blocked). This is an operator-input error, not an infra
+ * alert: notify the orchestrator pane naming the target, log a structured
+ * event for the flight recorder, and do NOT fire escalateFn (mirrors the
+ * planner-failed precedent's reasoning). Phase exits to idle via the
+ * no-action return (the caller's exitPhaseAfterPlan maps no-action to idle,
+ * which also clears the stale plan_issue: makeSetPhaseFn omits planIssue when
+ * called without it, and renderStateFile renders plan_issue: null).
+ *
+ * Extracted from runPostAuditAction to keep that function under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
+ * extraction pattern).
+ */
+function handlePlanTargetInvalid(
+	targetId: string,
+	notifyFn: ((msg: string) => void) | undefined,
+	logEvent: WorkerEventLogger | undefined,
+): PostAuditActionResult {
+	notifyFn?.(
+		`[cam] plan target invalid: ${targetId} could not be planned ` +
+		'(missing, not open, not specified, or blocked)',
+	);
+	logEvent?.({
+		ts: new Date().toISOString(),
+		storyId: undefined,
+		uuid: 'plan-target-invalid',
+		kind: 'plan-target-invalid',
+		detail: { targetId },
+	});
+	return { kind: 'no-action' };
+}
+
+/**
  * Execute the post-audit action after runPlanPhase returns.
  *
  * On audit-approved + proceed-branch (auto mode):
@@ -1005,6 +1091,7 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		escalateFn,
 		notifyFn,
 		removeEscalationMarkerFn,
+		logEvent,
 	} = opts;
 
 	// planner-failed: planner produced no prd.json; notify best-effort, no escalate
@@ -1013,6 +1100,11 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 	if (planResult.kind === 'planner-failed') {
 		notifyFn?.('[cam] plan failed: planner exited without writing prd.json');
 		return { kind: 'no-action' };
+	}
+
+	// plan-target-invalid (US-003, CAM-203): see handlePlanTargetInvalid.
+	if (planResult.kind === 'plan-target-invalid') {
+		return handlePlanTargetInvalid(planResult.targetId, notifyFn, logEvent);
 	}
 
 	// audit-blocked: escalate and bail; no branch/commit/flip (AC3, AC4)

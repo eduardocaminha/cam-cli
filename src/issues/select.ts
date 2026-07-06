@@ -1,5 +1,6 @@
 import type { IssueEntry } from "./types.ts";
 import { isBlocked } from "./graph.ts";
+import { computeWsjf } from "./rank.ts";
 import { readBacklogFromMain, type BacklogSpawnFn } from "./backlog.ts";
 
 /**
@@ -15,16 +16,50 @@ function numericIdSuffix(id: string): number {
 }
 
 /**
+ * Picks the best ranked candidate: min rank value, numeric-id ascending
+ * tie-break. Returns undefined when the group is empty.
+ */
+function pickRankedChampion(ranked: IssueEntry[]): IssueEntry | undefined {
+	if (ranked.length === 0) return undefined;
+	const sorted = [...ranked].sort((a, b) => {
+		// Both entries in this group have rank !== undefined by construction.
+		const rankDiff = (a.rank as number) - (b.rank as number);
+		if (rankDiff !== 0) return rankDiff;
+		return numericIdSuffix(a.id) - numericIdSuffix(b.id);
+	});
+	return sorted[0];
+}
+
+/**
+ * Picks the best unranked candidate: max computeWsjf score, numeric-id
+ * ascending tie-break. Returns undefined when the group is empty.
+ */
+function pickUnrankedChampion(unranked: IssueEntry[]): IssueEntry | undefined {
+	if (unranked.length === 0) return undefined;
+	const sorted = [...unranked].sort((a, b) => {
+		const wsjfDiff = computeWsjf(b).wsjf - computeWsjf(a).wsjf;
+		if (wsjfDiff !== 0) return wsjfDiff;
+		return numericIdSuffix(a.id) - numericIdSuffix(b.id);
+	});
+	return sorted[0];
+}
+
+/**
  * Returns the single highest-priority plannable issue from a backlog,
  * or null when no issue qualifies.
  *
  * Qualification filter:
  *   stage === 'specified' AND status === 'open' AND not blocked
  *
- * Sort order (ascending):
- *   1. rank present < rank absent (unranked entries sort after all ranked ones)
- *   2. rank value ascending (lower rank = higher priority)
- *   3. numeric id suffix ascending (CAM-9 before CAM-12) as tie-breaker
+ * Selection is champion-vs-champion (US-001, CAM-203): a pairwise comparator
+ * mixing both-ranked-by-rank with mixed-by-WSJF is NOT a total order, so we
+ * pick the best ranked candidate (min rank, numeric-id tie-break) and the
+ * best unranked candidate (max WSJF via computeWsjf, numeric-id tie-break)
+ * separately, then let the unranked champion win only when its WSJF is
+ * STRICTLY higher than the ranked champion's WSJF (a tie goes to the ranked
+ * champion). This lets a freshly-specified high-WSJF unranked issue compete
+ * for selection instead of being silently unplannable behind every ranked
+ * entry (CAM-201-class bug).
  */
 export function selectPlannableIssue(
 	backlog: IssueEntry[],
@@ -38,27 +73,19 @@ export function selectPlannableIssue(
 
 	if (candidates.length === 0) return null;
 
-	candidates.sort((a, b) => {
-		const aHasRank = a.rank !== undefined;
-		const bHasRank = b.rank !== undefined;
+	const ranked = candidates.filter((c) => c.rank !== undefined);
+	const unranked = candidates.filter((c) => c.rank === undefined);
 
-		// Ranked entries always sort before unranked ones.
-		if (aHasRank && !bHasRank) return -1;
-		if (!aHasRank && bHasRank) return 1;
+	const rankedChampion = pickRankedChampion(ranked);
+	const unrankedChampion = pickUnrankedChampion(unranked);
 
-		// Both ranked: compare rank values.
-		if (aHasRank && bHasRank) {
-			// rank is defined here; non-null assertion is safe after the guards above.
-			const rankDiff = (a.rank as number) - (b.rank as number);
-			if (rankDiff !== 0) return rankDiff;
-		}
+	if (rankedChampion === undefined) return unrankedChampion ?? null;
+	if (unrankedChampion === undefined) return rankedChampion;
 
-		// Same rank (or both unranked): break ties by numeric id suffix.
-		return numericIdSuffix(a.id) - numericIdSuffix(b.id);
-	});
+	const rankedWsjf = computeWsjf(rankedChampion).wsjf;
+	const unrankedWsjf = computeWsjf(unrankedChampion).wsjf;
 
-	const top = candidates[0];
-	return top !== undefined ? top : null;
+	return unrankedWsjf > rankedWsjf ? unrankedChampion : rankedChampion;
 }
 
 /**

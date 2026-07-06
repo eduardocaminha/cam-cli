@@ -117,9 +117,9 @@ describe("selectPlannableIssue — filter gate", () => {
 // ---------------------------------------------------------------------------
 
 describe("selectPlannableIssue — sort order", () => {
-	test("ranked entries sort before unranked ones", () => {
+	test("an unranked candidate WITHOUT wsjf still loses to every ranked one (WSJF 0 never beats a ranked candidate)", () => {
 		const backlog: IssueEntry[] = [
-			makeIssue({ id: "CAM-5" }), // no rank
+			makeIssue({ id: "CAM-5" }), // no rank, no wsjf -> WSJF 0
 			makeIssue({ id: "CAM-3", rank: 2 }),
 		];
 		const result = selectPlannableIssue(backlog);
@@ -182,6 +182,121 @@ describe("selectPlannableIssue — sort order", () => {
 		];
 		const result = selectPlannableIssue(backlog);
 		expect(result?.id).toBe("CAM-5");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// WSJF competition: unranked issues compete by WSJF (US-001, CAM-203)
+// ---------------------------------------------------------------------------
+
+describe("selectPlannableIssue — unranked-vs-ranked WSJF competition", () => {
+	test("an unranked issue with WSJF 5.0 beats a ranked (rank:13) issue with WSJF 2.0 (CAM-201 vs CAM-66 regression)", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({
+				id: "CAM-66",
+				rank: 13,
+				wsjf: { value: 2, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+			makeIssue({
+				id: "CAM-201",
+				wsjf: { value: 5, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+		];
+		const result = selectPlannableIssue(backlog);
+		expect(result?.id).toBe("CAM-201");
+	});
+
+	test("when both candidates are ranked, rank ascending stays authoritative regardless of WSJF", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({
+				id: "CAM-1",
+				rank: 1,
+				wsjf: { value: 1, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+			makeIssue({
+				id: "CAM-2",
+				rank: 2,
+				wsjf: { value: 9, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+		];
+		const result = selectPlannableIssue(backlog);
+		expect(result?.id).toBe("CAM-1");
+	});
+
+	test("an unranked candidate with wsjf absent is treated as WSJF 0 and never beats a ranked candidate", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({
+				id: "CAM-1",
+				rank: 1,
+				wsjf: { value: 0.5, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+			makeIssue({ id: "CAM-2" }), // no wsjf field -> WSJF 0
+		];
+		const result = selectPlannableIssue(backlog);
+		expect(result?.id).toBe("CAM-1");
+	});
+
+	test("an unranked candidate with jobSize <= 0 is treated as WSJF 0 and never beats a ranked candidate", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({
+				id: "CAM-1",
+				rank: 1,
+				wsjf: { value: 0.5, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+			makeIssue({
+				id: "CAM-2",
+				wsjf: { value: 99, timeCriticality: 0, riskReduction: 0, jobSize: 0 },
+			}),
+		];
+		const result = selectPlannableIssue(backlog);
+		expect(result?.id).toBe("CAM-1");
+	});
+
+	test("on a WSJF tie between the ranked champion and the unranked champion, the ranked candidate wins", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({
+				id: "CAM-1",
+				rank: 1,
+				wsjf: { value: 3, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+			makeIssue({
+				id: "CAM-2",
+				wsjf: { value: 3, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+		];
+		const result = selectPlannableIssue(backlog);
+		expect(result?.id).toBe("CAM-1");
+	});
+
+	test("an unranked candidate beats a ranked candidate only when strictly higher WSJF", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({
+				id: "CAM-1",
+				rank: 1,
+				wsjf: { value: 3, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+			makeIssue({
+				id: "CAM-2",
+				wsjf: { value: 3.01, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+		];
+		const result = selectPlannableIssue(backlog);
+		expect(result?.id).toBe("CAM-2");
+	});
+
+	test("numeric id suffix remains the final deterministic tie-break among unranked champions", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({
+				id: "CAM-12",
+				wsjf: { value: 5, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+			makeIssue({
+				id: "CAM-9",
+				wsjf: { value: 5, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+		];
+		const result = selectPlannableIssue(backlog);
+		expect(result?.id).toBe("CAM-9");
 	});
 });
 
@@ -320,6 +435,27 @@ describe("selectPlannableFromFile -- dir-backed fixture", () => {
 			throw new Error("git not found");
 		};
 		expect(selectPlannableFromFile("/repo", throwingSpawn)).toBeNull();
+	});
+
+	test("matches selectPlannableIssue for the unranked-high-WSJF fixture (CAM-201 vs CAM-66)", () => {
+		const entries: IssueEntry[] = [
+			makeIssue({
+				id: "CAM-66",
+				rank: 13,
+				wsjf: { value: 2, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+			makeIssue({
+				id: "CAM-201",
+				wsjf: { value: 5, timeCriticality: 0, riskReduction: 0, jobSize: 1 },
+			}),
+		];
+
+		const arrayResult = selectPlannableIssue(entries);
+		const spawn = makeSpawnFn(entries);
+		const dirResult = selectPlannableFromFile("/repo", spawn);
+
+		expect(dirResult?.id).toBe(arrayResult?.id);
+		expect(dirResult?.id).toBe("CAM-201");
 	});
 });
 
