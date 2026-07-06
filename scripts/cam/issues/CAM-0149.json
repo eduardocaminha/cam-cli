@@ -1,7 +1,7 @@
 {
   "id": "CAM-149",
   "title": "Epico: ship runner deterministico (fase de ship dirigida pelo sidecar; LLM so no corpo do PR)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-30T20:41:02.729Z",
