@@ -83,6 +83,12 @@ A gate is a **named-command + exitCode 0**: the gate is the command itself, not 
 
 The two universal mandatory gates are `bun run typecheck` and `bun test`. Their documented shape lives in `src/supervisor/worker-report.ts` (the `gates: { typecheck, tests }` fields). The shape is intentionally kept as simple string fields: the named-command + exitCode concept is defined here as a policy, and the string values (`"ok"`, `"fail: <detail>"`, `"<N> pass / <M> fail"`) already express pass/fail without adding a structured record per gate.
 
+### No-flaky-evasion hard stop
+
+Any failing gate BLOCKS the story. A failing test may **NOT** be dismissed as flaky, pre-existing, environmental, or unrelated. Re-running the suite to "confirm flakiness" and then proceeding as if it were green is **forbidden**: non-determinism in a test is itself a defect. You must either fix it so the test is deterministically green, or HALT and escalate — emit `BLOCKED_QUALITY`, leave the story `passes: false`, and document the flaky/failing test in `handoff.openQuestions`. There is no narrated path from red to green: you cannot talk your way past a failing gate.
+
+This is not merely a self-discipline rule; it is mechanically enforced downstream. `worker-report.json`'s `gates.tests` field must record the real, actually-observed gate result. The supervisor's `readWorkerOutcome` (`src/supervisor/result.ts`) runs a red-gate guard — `gateTestsIndicateFailure` — over the recorded `gates.tests` string before honoring a `DONE` outcome: if the recorded string starts with `"fail"` or reports an `<N> fail` count with `N > 0`, the supervisor refuses `DONE` regardless of what the sentinel or your prose claims. Writing a green `gates.tests` string while a test actually failed is a protocol violation the harness refuses, not a shortcut that works.
+
 ## Behavioral gate (Layer A) — self-correction
 
 When a story's `acceptanceCriteria` include a tmux-drivable oracle directive (`[oracle: named-command ...]` or `[oracle: file-assert ...]`), you MUST run the shared behavioral gate at **Layer A** before declaring the story done:

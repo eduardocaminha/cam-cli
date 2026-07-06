@@ -39,7 +39,7 @@
         "Full quality spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/agents/subagent-implementer.md, .claude/agents/subagent-implementer.md, src/vendor/_generated.ts (regenerated via bun run embed-vendor, never hand-edited). Gotchas: the two copies intentionally DIFFER (the .claude/agents copy has cam-cli-specific gate commands and a Read-before-Write handoff note); apply the new rule to both without collapsing their deltas. The implementer constraint 'must not modify .claude/agents/*' is lifted here because this story's acceptance criteria explicitly require it. Natural anchor point: the '## Gate discipline' section (already states the implementer is PROHIBITED from declaring a story done before gates pass); extend it rather than adding a disconnected section. Same gate-gaming class as CAM-66 skipIf masking, in narrative form (see issue gotchas). Keep the rule wording aligned with US-003's reviewer wording so both agents enforce the identical policy."
     },
