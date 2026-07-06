@@ -1,0 +1,56 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-98-rollchangelog-inline-rename",
+  "description": "Fix rollChangelog to line-anchor the [Unreleased] heading (substring indexOf matches the intro prose line, corrupting every roll since 0.2.0) and repair the corrupted live CHANGELOG.md, locking the single-[Unreleased] invariant with a hygiene test.",
+  "issueNumber": 98,
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Keep a Changelog (format spec)",
+      "url": "https://keepachangelog.com/en/1.1.0/",
+      "version": "1.1.0",
+      "fetchedAt": "2026-07-06T00:00:00Z",
+      "summary": "Confirmed convention: exactly one line-anchored '## [Unreleased]' heading kept at the top of the file above the newest release; at release time it is renamed inline to '## [X.Y.Z] - YYYY-MM-DD' and a fresh empty Unreleased heading is re-created above. No format breaking changes in the 2.0.0 revision.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Line-anchor the [Unreleased] heading match in rollChangelog",
+      "description": "As a maintainer running cam ship --bump, I need rollChangelog to locate the [Unreleased] section by a line-anchored heading match (never a substring hit inside prose) so that the rename-inline roll targets the real section and the CHANGELOG is never corrupted by a prose mention of '## [Unreleased]'.",
+      "acceptanceCriteria": [
+        "rollChangelog locates the section via a line-anchored heading match (e.g. /^## \\[Unreleased\\][ \\t]*$/m over full lines), not text.indexOf substring search; a fixture whose intro prose contains the literal backtick-quoted '## [Unreleased]' BEFORE the real heading rolls the real heading and leaves the prose line byte-identical. [oracle: bun test test/release/changelog.test.ts]",
+        "Rename-inline semantics preserved: with releaseBody provided, output contains exactly one line-anchored '## [Unreleased]' heading (fresh, empty) directly above '## [X.Y.Z] - YYYY-MM-DD' carrying the generated body, and the old [Unreleased] body is consumed (not preserved); prior release sections after the next '## ' heading remain intact. [oracle: bun test test/release/changelog.test.ts]",
+        "Backward-compat paths preserved: input with no line-anchored [Unreleased] heading is returned unchanged, and the legacy no-releaseBody path still preserves the old body verbatim under the new version heading; all pre-existing US-004/US-006 tests still pass. [oracle: bun test test/release/changelog.test.ts]",
+        "A regression test reproduces the live 0.2.0-era corruption shape (prose mention first, real heading later in the file) and asserts the transformed output has exactly one '## [Unreleased]' full-line heading. [oracle: bun test test/release/changelog.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/release/changelog.ts (rollChangelog only; generateReleaseBody unchanged), test/release/changelog.test.ts. Root cause: UNRELEASED_HEADING is matched via text.indexOf, and the live CHANGELOG.md intro line 5 contains the literal '## [Unreleased]' inside prose, so every roll since 0.2.0 spliced the new version into that prose line while the real bottom section was never renamed. Use a multiline regex anchored at line start AND end-of-line (allow trailing whitespace only) to find the heading; keep the function pure (string in, string out). Caller (src/release/ship-bump.ts:201-202) always passes releaseBody (possibly ''), so the releaseBody branch is the production path; do not change its signature. Gotchas: noUncheckedIndexedAccess makes regex .exec results and capture groups T | undefined, guard them; conventional commit message 'fix: [US-001] ...'. Update the file header comment (lines 8-23) to describe the line-anchored contract."
+    },
+    {
+      "id": "US-002",
+      "title": "Repair the corrupted live CHANGELOG.md and lock the single-[Unreleased] invariant",
+      "description": "As a cam-cli release reader, I need the live CHANGELOG.md repaired (intact intro prose, exactly one empty [Unreleased] heading at the top, stale bottom [Unreleased] section removed) and a hygiene test locking that shape, so that the next cam ship --bump rolls the correct section and no duplicate/stale [Unreleased] survives a bump.",
+      "acceptanceCriteria": [
+        "CHANGELOG.md contains exactly one line-anchored '## [Unreleased]' heading. [oracle: test \"$(grep -c '^## \\[Unreleased\\]' CHANGELOG.md)\" = \"1\"]",
+        "The single '## [Unreleased]' heading sits above the newest versioned section ('## [0.68.0]' at repair time), and the broken intro line is restored to complete prose (the format-description line no longer ends with a dangling '## [Unreleased]' fragment). [oracle: awk '/^## \\[/{print; exit}' CHANGELOG.md | grep -q 'Unreleased']",
+        "The stale bottom [Unreleased] section (CAM-33 push-verification and CAM-22 stop-hook-retirement bullets, long since shipped) is removed, not preserved: no '## [Unreleased]' heading appears after any versioned '## [X.Y.Z]' heading. [oracle: ! grep -q 'Retired the stop-hook loop driver' CHANGELOG.md]",
+        "A hygiene test (e.g. test/release/changelog-hygiene.test.ts) reads the repo CHANGELOG.md and asserts: exactly one line-anchored '## [Unreleased]' heading, and it precedes the first '## [X.Y.Z] - ' versioned heading. [oracle: bun test test/release/changelog-hygiene.test.ts]",
+        "All existing versioned release sections (0.2.0 through 0.68.0) remain present and unmodified in content. [oracle: grep -q '## \\[0.2.0\\] - 2026-06-26' CHANGELOG.md && grep -q '## \\[0.68.0\\] - 2026-07-06' CHANGELOG.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: CHANGELOG.md, test/release/changelog-hygiene.test.ts (new). Depends on US-001 (the anchored transform) so future rolls cannot re-corrupt the repaired file. Repair shape: '# Changelog' title, intro prose (restore a complete sentence, e.g. 'Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` heading at the top collects pending work.' -- reword freely but the line must not START with '## '), blank line, '## [Unreleased]' (empty body), then '## [0.68.0] - 2026-07-06' and all existing sections in current order, with the stale bottom [Unreleased] section (lines ~654-663: CAM-33 pushed-verification bullets + CAM-22/CAM-29 Changed bullet) deleted per the issue decision (consumido/descartado, conteudo stale). Gotchas: project rule forbids em-dash in persisted .md (use colon/comma/parens); hygiene test reads the file via Bun.file or node path relative to import.meta.dir, keep it dependency-free; do NOT put a bare full-line '## [Unreleased]' example inside any test-fixture markdown that the hygiene test scans from the repo root (it only scans CHANGELOG.md, so fixtures in test files are fine). No vendor/ or templates/ files are touched, so no embed-vendor step."
+    }
+  ]
+}
