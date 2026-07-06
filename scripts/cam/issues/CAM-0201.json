@@ -1,9 +1,45 @@
 {
   "id": "CAM-201",
   "title": "cam-worker/CI bun parity + guard contra skip de teste por versao",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T15:42:15.157Z",
-  "description": "Container roda oven/bun:1.2-slim (bun 1.2.23); CI (setup-bun@v2 sem bun-version) flutua pra latest (1.3.x); host 1.3.13. Os gates in-container (implementer e reviewer, ambos via dockerExecWrap) rodam 1.2.23, entao teste condicionado a versao (it.skipIf(bun>=1.3)) e pulado no loop mas roda no host/CI: um worker mascarou assim um teste fragil no cam/pr-66 (test/dashboard-ink.test.ts, asercao toContain do titulo de ~200 chars que o Ink quebra em 3 linhas) e o loop deu verde/CLEAN enquanto o check:all do ship (host) e o CI ficam vermelhos. Fix duravel: (1) pinar container FROM oven/bun:1.3-slim pra bater com o CI; (2) pinar CI bun-version fixo (parar de flutuar pra latest); (3) gate no check:all que barra skip por Bun.version/process.version. Raiz da classe verde-no-container/vermelho-no-CI. Amarra CAM-198 (container Node 18), CAM-192 (image staleness)."
+  "description": "Container roda oven/bun:1.2-slim (bun 1.2.23); CI (setup-bun@v2 sem bun-version) flutua pra latest (1.3.x); host 1.3.13. Os gates in-container (implementer e reviewer, ambos via dockerExecWrap) rodam 1.2.23, entao teste condicionado a versao (it.skipIf(bun>=1.3)) e pulado no loop mas roda no host/CI: um worker mascarou assim um teste fragil no cam/pr-66 (test/dashboard-ink.test.ts, asercao toContain do titulo de ~200 chars que o Ink quebra em 3 linhas) e o loop deu verde/CLEAN enquanto o check:all do ship (host) e o CI ficam vermelhos. Fix duravel: (1) pinar container FROM oven/bun:1.3-slim pra bater com o CI; (2) pinar CI bun-version fixo (parar de flutuar pra latest); (3) gate no check:all que barra skip por Bun.version/process.version. Raiz da classe verde-no-container/vermelho-no-CI. Amarra CAM-198 (container Node 18), CAM-192 (image staleness).",
+  "spec": {
+    "scope": "Eliminate the container-vs-CI toolchain divergence that lets the in-loop gates (implementer AND reviewer, both containerized via dockerExecWrap) skip tests that the host and CI run, by pinning bun and Node to a single source of truth read by both CI and the Dockerfile, keeping them auto-updated with zero hand-editing via Renovate (automerge patch/minor/major gated on green check:all CI), a check:all guard forbidding toolchain-version-conditioned test skips, a fail-closed container preflight asserting the running image toolchain equals the pinned versions, and a sidecar auto-rebuild of the worker image on mismatch. Closes CAM-198 (container Node 18), CAM-192 (image staleness), CAM-180 (manual rebuild ceremony). OUT OF SCOPE: fixing the poisoned test on branch cam/pr-66 (handled separately by abandoning cam/pr-66 and replanning CAM-66 fresh after this ships).",
+    "acceptanceCriteria": [
+      "A .bun-version file at repo root pins an exact bun version (1.3.13), and a .tool-versions (or equivalent) pins an exact Node version (>= 22). [oracle: file-assert .bun-version exists and matches /^[0-9]+\\.[0-9]+\\.[0-9]+$/]",
+      "CI (.github/workflows/ci.yml) uses oven-sh/setup-bun@v2 with bun-version-file: .bun-version and no floating latest; a check:all ci-parity assertion confirms the CI-resolved bun equals .bun-version. [oracle: named-command bun run check:all]",
+      ".devcontainer/Dockerfile reads bun via ARG BUN_VERSION fed from .bun-version at build time (FROM oven/bun:${BUN_VERSION}-slim) and installs Node pinned to the .tool-versions target (>= 22), not Debian apt Node 18.",
+      "A renovate.json enables updates for the bun/Node version files, the Docker base image, and GitHub Actions, with automerge enabled for patch+minor+major gated on the required ci status check.",
+      "A new check:all guard gate FAILS when any test file conditions a skip (skipIf / .skip / skipUnless) on Bun.version / process.version / process.versions, and does NOT flag skips conditioned on process.platform / process.env / capability probes; a fixture proves both the positive (version-skip fails) and negative (platform-skip passes) cases. [oracle: named-command bun run check:all]",
+      "The container preflight (container-config.ts) asserts the running image bun == .bun-version and Node == target, fail-closed: refuses dispatch and escalates on mismatch.",
+      "On preflight mismatch the sidecar auto-rebuilds the worker image (docker build with --build-arg BUN_VERSION=$(cat .bun-version) and HOST_UID/HOST_GID), re-asserts, and only then dispatches; a rebuild failure fails closed and escalates, never dispatching on a stale or broken image.",
+      "After CAM-201 merges, the running loop auto-rebuilds to the new toolchain with zero operator action (preflight detects bun 1.2.23 != .bun-version, auto-rebuilds, container bun == .bun-version afterward).",
+      "CAM-198, CAM-192, and CAM-180 are referenced as subsumed/closed in the PR body."
+    ],
+    "gotchas": [
+      "Reviewer AND implementer are both containerized (dockerExecWrap), so BOTH in-loop gates were blind to skipIf(bun<1.3); the only honest gate was the ship host check:all. This is why review returned CLEAN while the ship gate went red.",
+      "Docker ARG before FROM is only usable in the FROM line; the build-arg must be passed at build time from .bun-version by BOTH the release build script AND the sidecar auto-rebuild path.",
+      "setup-bun@v2 already reads package.json packageManager/engines.bun by default; bun-version-file: .bun-version is the explicit, Renovate-manageable single source.",
+      "Renovate needs its GitHub App installed on the repo once (one-time). Repo is public so it is free.",
+      "The guard MUST allow legitimate OS/capability gating: the CAM-59 real-tmux tests skip off-macOS / when tmux is absent. Only toolchain-version skips are forbidden.",
+      "Auto-rebuild is slow (docker build, minutes). Rebuild only on preflight mismatch, never per-dispatch; Docker layer cache reduces cost (bump invalidates from FROM/ARG down).",
+      "Motivating incident: a worker masked a brittle Ink detail-subview assertion (test/dashboard-ink.test.ts on cam/pr-66) via it.skipIf(!bunVersionOk) with bunVersionOk = bun>=1.3; the container (1.2.23) skipped it, the ship host check:all and CI go red."
+    ],
+    "domainTerms": [
+      "toolchain parity",
+      "version-skip masking",
+      "bun-version single source of truth",
+      "container preflight fail-closed assert",
+      "sidecar auto-rebuild"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 8,
+    "riskReduction": 9,
+    "jobSize": 5
+  }
 }
