@@ -1,0 +1,9 @@
+{
+  "id": "CAM-194",
+  "title": "commit-existence gate anchors on feat: prefix, false-BLOCKs stories committed with fix or other conventional types",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-06T05:09:45.404Z",
+  "description": "commitSubjectMatchesStory (src/supervisor/result.ts:309) builds a regex requiring the feat: prefix before the bracketed or bare story id. A story committed as fix: [US-XXX] - ... (or refactor:/perf:/chore:/docs:/test:, all valid conventional-commit types) fails the match, so the commit-existence gate reports no-commit and emits a false BLOCKED even though a bracketed [US-XXX] commit exists. Observed on CAM-98 US-001 (a bugfix correctly committed as fix: [US-001] - ...): false BLOCKED, though it did not wedge the cycle since passes:true stayed. Fix: accept any conventional-commit type prefix (feat|fix|refactor|perf|chore|docs|test|build|ci|style) before the id, not only feat:."
+}
