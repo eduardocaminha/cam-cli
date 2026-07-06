@@ -1517,6 +1517,7 @@ interface PostPlanActionsOpts {
 	sessionName: string;
 	loopSpawnFn: LoopSpawnFn;
 	realSpawnFn: SpawnFn;
+	logEvent: WorkerEventLogger;
 }
 function runPostPlanActions(o: PostPlanActionsOpts): void {
 	let branchName = '';
@@ -1551,6 +1552,8 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 		// removes any pre-existing plan-escalation marker so a stale BLOCK
 		// escalation from an earlier round/issue never outlives convergence.
 		removeEscalationMarkerFn: () => removePlanEscalatedMarker(join(o.claudeDir, PLAN_ESCALATED_FILENAME)),
+		// US-003 (CAM-203): structured event for the plan-target-invalid terminal.
+		logEvent: o.logEvent,
 	});
 	exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(o.claudeDir, o.cwd)); // US-R1-002
 }
@@ -1642,6 +1645,11 @@ function runProductionPlanPhaseWithReplan(deps: PlanWorkerRunDeps): PlanPhaseRes
 		sleepFn: (ms) => Bun.sleepSync(ms),
 		genUuid: () => randomUUID(),
 		selectIssueFn: () => selectPlanTargetFromFile(cwd, planIssue),
+		// US-003 (CAM-203): thread the fresh-read plan_issue into runPlanPhaseWithReplan
+		// as planTargetId. This is a pure LABEL: it keeps the plan-target-invalid
+		// terminal's targetId in sync with what selectIssueFn actually resolved
+		// against, without changing selectIssueFn's own wiring.
+		planTargetId: planIssue,
 		readPlanVerdictFn: makeReadPlanVerdict(cwd),
 		readPlannerReportFn: () => {
 			// Completion signal: prd.json written by the planner.
@@ -1764,7 +1772,7 @@ function makeProductionPlanPhaseFn(
 		// Post-audit phase: read branchName, build escalateFn, run post-audit
 		// action. Extracted to runPostPlanActions to keep this closure under
 		// biome's noExcessiveLinesPerFunction(maxLines=80) limit.
-		runPostPlanActions({ planResult, cwd, claudeDir, sessionName, loopSpawnFn, realSpawnFn });
+		runPostPlanActions({ planResult, cwd, claudeDir, sessionName, loopSpawnFn, realSpawnFn, logEvent });
 		} catch (err: unknown) {
 			logEvent({
 				ts: new Date().toISOString(),

@@ -73,6 +73,11 @@ import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
  *     (src/supervisor/plan-escalation.ts) so a recycled orchestrator can
  *     derive the BLOCK terminal on wake even when the live send-keys
  *     narration is dropped (CAM-200-independent, CAM-195 style).
+ *   - 'plan-target-invalid' (US-003, CAM-203): emitted when an explicit
+ *     `/cam-plan <id>` target (planTargetId) named a missing/not-open/
+ *     not-plannable issue and runPlanPhase returned the 'plan-target-invalid'
+ *     terminal. Recorded alongside the orchestrator-pane notification so the
+ *     failure is diagnosable from .claude/cam-worker-events.jsonl.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -104,7 +109,8 @@ export type WorkerEventKind =
 	| 'meta-loop-dispatch'
 	| 'container-preflight'
 	| 'plan-preflight-failed'
-	| 'plan-escalated';
+	| 'plan-escalated'
+	| 'plan-target-invalid';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -363,6 +369,16 @@ export interface PlanEscalatedEventDetail {
 	roundsCompleted: number;
 }
 
+/**
+ * 'plan-target-invalid' event detail (US-003, CAM-203): emitted when an
+ * explicit /cam-plan <id> target could not be planned (missing, not-open, or
+ * not-plannable) and runPlanPhase returned { kind: 'plan-target-invalid' }.
+ *   - targetId: the explicit target id that failed to resolve.
+ */
+export interface PlanTargetInvalidEventDetail {
+	targetId: string;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -383,6 +399,7 @@ export type WorkerEventDetail =
 	| MetaLoopDispatchEventDetail
 	| ContainerPreflightEventDetail
 	| PlanEscalatedEventDetail
+	| PlanTargetInvalidEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

@@ -63,7 +63,7 @@
         "Full gate spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/sidecar.ts (makeProductionPlanPhaseFn, PlanWorkerRunDeps, runProductionPlanPhaseWithReplan, runPostPlanActions, exitPhaseAfterPlan), src/supervisor/events.ts, tests (mirror the injection style of test/plan-phase-crash-safety.test.ts). makeReadPlanIssue(claudeDir) already exists (CAM-154): reuse it, never re-parse the state file ad hoc. makeSetPhaseFn drops plan_issue when called without the planIssue arg (renderStateFile renders plan_issue: null), so routing the new kind through exitPhaseAfterPlan's idle write clears the stale target for free; do NOT add a second state-file writer. Notification copy should name the id and the not-plannable reason class (missing / not-open / not-specified / blocked); the reason may be derived with a cheap readBacklogFromMain re-read or kept generic if the runner carries no reason detail. exitPhaseAfterPlan currently maps non-approved kinds to idle via runPostAuditAction's no-action; verify the new kind lands there rather than falling into the escalated branch. Test-fake gotcha: makeFakeTmuxSpawn-style fakes must answer ALL tmux -F format strings or paneCountMutex reads 'busy' (patterns.md 'Mutex busy check in dispatch sites')."
     },

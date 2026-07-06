@@ -971,6 +971,14 @@ export interface RunPostAuditOptions {
 	 * supplies it via removePlanEscalatedMarker).
 	 */
 	removeEscalationMarkerFn?: () => void;
+	/**
+	 * Structured worker event logger (US-003, CAM-203). When provided, a
+	 * 'plan-target-invalid' event is emitted on that terminal, carrying the
+	 * target id, so the failure is diagnosable from
+	 * .claude/cam-worker-events.jsonl. Optional for backward compat with tests
+	 * that do not inject it.
+	 */
+	logEvent?: WorkerEventLogger;
 }
 
 /**
@@ -1012,6 +1020,40 @@ function executeGitProceedBranch(
 }
 
 /**
+ * Handle the plan-target-invalid terminal (US-003, CAM-203): an explicit
+ * /cam-plan <id> target could not be planned (missing / not-open /
+ * not-specified / blocked). This is an operator-input error, not an infra
+ * alert: notify the orchestrator pane naming the target, log a structured
+ * event for the flight recorder, and do NOT fire escalateFn (mirrors the
+ * planner-failed precedent's reasoning). Phase exits to idle via the
+ * no-action return (the caller's exitPhaseAfterPlan maps no-action to idle,
+ * which also clears the stale plan_issue: makeSetPhaseFn omits planIssue when
+ * called without it, and renderStateFile renders plan_issue: null).
+ *
+ * Extracted from runPostAuditAction to keep that function under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
+ * extraction pattern).
+ */
+function handlePlanTargetInvalid(
+	targetId: string,
+	notifyFn: ((msg: string) => void) | undefined,
+	logEvent: WorkerEventLogger | undefined,
+): PostAuditActionResult {
+	notifyFn?.(
+		`[cam] plan target invalid: ${targetId} could not be planned ` +
+		'(missing, not open, not specified, or blocked)',
+	);
+	logEvent?.({
+		ts: new Date().toISOString(),
+		storyId: undefined,
+		uuid: 'plan-target-invalid',
+		kind: 'plan-target-invalid',
+		detail: { targetId },
+	});
+	return { kind: 'no-action' };
+}
+
+/**
  * Execute the post-audit action after runPlanPhase returns.
  *
  * On audit-approved + proceed-branch (auto mode):
@@ -1049,6 +1091,7 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		escalateFn,
 		notifyFn,
 		removeEscalationMarkerFn,
+		logEvent,
 	} = opts;
 
 	// planner-failed: planner produced no prd.json; notify best-effort, no escalate
@@ -1057,6 +1100,11 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 	if (planResult.kind === 'planner-failed') {
 		notifyFn?.('[cam] plan failed: planner exited without writing prd.json');
 		return { kind: 'no-action' };
+	}
+
+	// plan-target-invalid (US-003, CAM-203): see handlePlanTargetInvalid.
+	if (planResult.kind === 'plan-target-invalid') {
+		return handlePlanTargetInvalid(planResult.targetId, notifyFn, logEvent);
 	}
 
 	// audit-blocked: escalate and bail; no branch/commit/flip (AC3, AC4)
