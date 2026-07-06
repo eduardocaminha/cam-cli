@@ -24,5 +24,9 @@ scripts/cam/plan-verdict-report.json
 .claude/.cam-orch-pid
 # Inter-cycle drain kill-switch marker written by `cam drain --stop` (US-002, CAM-139)
 .claude/.cam-drain-stop
+# Runtime per-story worker out-log (CAM-22/CAM-32, mirrored into templates/ by CAM-160)
+.claude/.cam-worker-out-*.log
+# CAM-158: pipe-pane logs written by runPlanPhase (planner/auditor sessions), mirrored into templates/ by CAM-160
+.claude/cam-plan-out-*.log
 # Recycle watcher log written by spawnWatcherDefault in run.ts (US-004)
 .claude/cam-recycle-watcher.log
