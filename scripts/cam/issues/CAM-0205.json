@@ -1,0 +1,9 @@
+{
+  "id": "CAM-205",
+  "title": "Flaky init tests: runInit spawns 3 real subprocesses, times out at 5000ms under check:all concurrent load",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-06T22:51:59.924Z",
+  "description": "test/init.test.ts runInit tests call runInit() directly, which spawns THREE real subprocesses: spawnSync(/bin/sh -c command -v claude) at src/commands/init.ts:77, spawnSync(claude --version) at :118, and spawnSync(bun <smoke-script>) at :187. Under the concurrent load of the full check:all spine (typecheck + biome + jscpd + knip + bun test running together), these serialized spawns exceed bun test default 5000ms timeout. The test writes config.toml with permission_mode=bypassPermissions on a fresh path TIMED OUT at 5004ms during the CAM-203 ship gate (2026-07-06), hard-stopping an otherwise all-green, review-CLEAN branch on an unrelated flake. This is the first real application of the CAM-202 no-flaky-evasion rule: the red gate was NOT re-run to force green; the root is fixed instead. Root-cause fix (prefer determinism): make the runInit tests deterministic by injecting/stubbing the subprocess spawns (fast + deterministic, add an injectable spawnFn seam in runInit if needed), or at minimum give the runInit tests a timeout appropriate to three real subprocess spawns under load. The fix MUST make check:all reliably green under concurrent load, including on its own ship (self-consistent: the fix branch fixes its own flake). Scope: test/init.test.ts primarily; src/commands/init.ts only if an injection seam is required. Do NOT touch unrelated code. Blocks the CAM-203 re-ship until merged."
+}
