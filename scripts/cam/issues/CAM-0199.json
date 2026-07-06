@@ -1,0 +1,9 @@
+{
+  "id": "CAM-199",
+  "title": "quality-gate tools unpinned: bunx knip floats to latest, spine is nondeterministic",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-06T14:34:09.559Z",
+  "description": "The dead-code gate runs plain bunx knip (scripts/check-all.ts:87) with knip absent from package.json devDependencies, so every run downloads the latest knip release. On 2026-07-06 this broke the CAM-118 ship deterministically-unrelated to the diff: a fresh knip release started flagging Unlisted binaries (cam) for the pre-existing spawnSync('cam', ['run','--no-attach']) self-spawn in src/commands/spec.ts (present on main, which shipped green two days earlier with the same code), and the ship runner failed at gates (ship-phase-result kind gates-failed, 14:26 UTC) after review round 1 CLEAN. Same-day unblock commit on the CAM-118 branch pins knip in check-all.ts and adds ignoreBinaries [cam] to knip.json; this issue is the durable follow-through. Fix direction: every bunx-invoked gate tool pinned to an exact version: knip at an exact version (the unblock pin), jscpd is pinned only to major @5 (minor/patch still float, tighten to exact), biome rides devDependencies ^2.5.1 (caret range, consider exact pin since lint runs with --error-on-warnings and a new biome warning class can fail the spine, e.g. the DEPRECATED recommended-field diagnostic that appeared today without failing, this time). Acceptance shape: check:all behavior is reproducible across days with no code change; a version bump of any gate tool is an explicit reviewed diff, never ambient. Cross-refs: CAM-198 (the in-container Node 18 blind spot that let this violation reach ship instead of failing cheap intra-story), CAM-59 (green-local equals green-CI contract)."
+}
