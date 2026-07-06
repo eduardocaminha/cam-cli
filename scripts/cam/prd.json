@@ -41,7 +41,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file: src/commands/domain-docs.ts (writeDomainDocsOnMain), consuming the pure helpers from US-001 (src/domain-docs/render.ts). Also touches src/supervisor/events.ts to add the 'domain-docs-written' event kind. Mirror src/commands/issue-specify.ts closely: SpawnFn re-export from src/git/on-main.ts, checkMainUpToDate + pushMainBestEffort guard/push helpers, commitTreeToMain(cwd, files, msg, localMainSha, spawnFn, 'cam-domain-docs-'). GOTCHA (jscpd): checkMainUpToDate/pushMainBestEffort exist as private verbatim copies in issue-specify.ts, issue-file.ts, journal.ts, triage.ts; a 5th copy risks tripping the jscpd gate in bun run check:all (threshold already raised twice, dedup tracked as CAM-124). Prefer extracting the guard+push into src/git/on-main.ts exports and importing here (do NOT refactor the other 4 call sites; that is CAM-124's scope). spawnSync never throws on non-zero exit: always guard (result.status ?? 1) !== 0. commitTreeToMain already handles on-main worktree sync via syncWorktreeIfOnMain; do not add manual restore calls. Real-git test pattern: patterns.md 'Real-git integration test pattern' bullet (mkdtempSync repo, git config user, skipIf git absent, cleanup in afterEach)."
     },
