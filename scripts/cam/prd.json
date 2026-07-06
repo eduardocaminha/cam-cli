@@ -58,7 +58,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/spec.ts (arg parse + dispatch; keep runSpec proxy path intact), index.ts (SPEC_HELP + argv routing), tests (extend test/ spec coverage; see test/issue-dispatch.test.ts and journal tests for the stdin + discriminated-union precedent). Follow the 'Discriminated-union parseXxxArgs pattern' bullet in scripts/cam/patterns.md (CAM-86 US-003): injectable deps as () => Promise<number> thunks. Read stdin via Bun (e.g. await new Response(Bun.stdin.stream()).text() or the same mechanism cam journal append uses in index.ts; match the existing journal wiring exactly for consistency). NEVER add --permission-mode (test/no-permission-mode-flag.test.ts enforces). The proxy path keeps sendKeysWhenIdle/paneCountMutex untouched; the new mode must return before any tmux import side effects matter."
     },

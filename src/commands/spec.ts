@@ -1,9 +1,12 @@
 // src/commands/spec.ts
 //
 // Implementation of `cam spec` -- thin-proxy that routes /cam-spec <id> to the
-// live orchestrator pane via send-keys (US-004, CAM-107).
+// live orchestrator pane via send-keys (US-004, CAM-107), PLUS the in-process
+// `--write-docs` write channel (US-003, CAM-118) that lets the read-only
+// orchestrator persist domain docs via a single Bash pipe, exactly like
+// `cam journal append` / `cam issue --file-local`.
 //
-// Acceptance criteria (US-004):
+// Acceptance criteria (US-004, thin-proxy path):
 //   1. Detect a live orchestrator via orchestratorAlive.
 //   2. On hit: atomic send-keys /cam-spec <id> to the orchestrator pane and
 //      return 0 immediately (fire-and-forget).
@@ -13,7 +16,16 @@
 //   5. No --permission-mode CLI flag (enforced by no-permission-mode-flag.test.ts).
 //   6. Typecheck passes (bun run typecheck).
 //   7. Tests pass (bun test).
+//
+// Acceptance criteria (US-003, --write-docs path):
+//   1. `echo '<json>' | cam spec --write-docs <id>` reads the DomainDocsPayload
+//      from stdin and calls writeDomainDocsOnMain in-process: NO tmux calls,
+//      no send-keys, no pane bootstrap, no orchestrator liveness check.
+//   2. Exit 0 on { ok: true } including noOp (prints a muted hint); exit 1 on
+//      malformed stdin JSON, invalid payload (errors printed), or a guard
+//      failure (diverged / detached-head / missing-main).
 
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -37,6 +49,13 @@ import {
 } from '../tmux/session.ts';
 import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
 import { sendKeysWhenIdle, type CapturePaneFn } from '../tmux/dispatch.ts';
+import {
+	writeDomainDocsOnMain,
+	type ClockFn,
+	type SpawnFn as OnMainSpawnFn,
+	type WriteDomainDocsOnMainOutcome,
+} from './domain-docs.ts';
+import type { DomainDocsPayload } from '../domain-docs/render.ts';
 
 // --- Types -----------------------------------------------------------------
 
@@ -194,5 +213,96 @@ export async function runSpec(options: SpecOptions): Promise<number> {
 	emitOk(`Sent "${request}" to orchestrator pane ${orchPaneId}`);
 	emitAttachHint(sessionName, env);
 	emitTrailingBlank();
+	return 0;
+}
+
+// --- --write-docs entrypoint (US-003, CAM-118) ------------------------------
+
+export interface SpecWriteDocsOptions {
+	/** Id the domain docs are being written for (drives the commit message). */
+	id: string;
+	/** Override the working directory; default `process.cwd()`. */
+	cwd?: string;
+	/**
+	 * Injectable stdin reader. Default: `Bun.stdin.text()` (matches the
+	 * `cam journal append` / `cam issue --file-local` stdin-JSON convention).
+	 */
+	readStdin?: () => Promise<string>;
+	/**
+	 * Injectable spawnSync-based git plumbing fn, passed through to
+	 * writeDomainDocsOnMain. Default: a `spawnSync` wrapper over `git`.
+	 */
+	spawnFn?: OnMainSpawnFn;
+	/** Injectable clock -- returns ISO 8601 timestamp. Default: `new Date().toISOString()`. */
+	clock?: ClockFn;
+	/** Injectable stdout writer. Default: `process.stdout.write`. */
+	writeStdout?: (line: string) => void;
+	/**
+	 * Injectable full bypass of stdin-read + writeDomainDocsOnMain, for
+	 * branch-isolation unit tests. When present, `readStdin`/`spawnFn`/`clock`
+	 * are never consulted.
+	 */
+	writeFn?: (payload: unknown) => WriteDomainDocsOnMainOutcome;
+}
+
+/**
+ * `cam spec --write-docs <id>`: read a DomainDocsPayload as JSON from stdin
+ * and call writeDomainDocsOnMain in-process. NO tmux calls, no send-keys, no
+ * pane bootstrap, no orchestrator liveness check -- this is the write channel
+ * FOR the orchestrator (the orchestrator's own tools disallow Edit/Write/
+ * NotebookEdit), mirroring `cam journal append` / `cam issue --file-local`.
+ *
+ * Returns 0 on `{ ok: true }` (including the noOp outcome, which prints a
+ * muted "nothing to write" hint); returns 1 on malformed stdin JSON, an
+ * invalid payload (validation errors printed), or a guard failure (diverged /
+ * detached-head / missing-main).
+ */
+export async function runSpecWriteDocs(options: SpecWriteDocsOptions): Promise<number> {
+	const cwd = options.cwd ?? process.cwd();
+	const readStdin = options.readStdin ?? (() => Bun.stdin.text());
+	const writeStdout =
+		options.writeStdout ?? ((line: string) => { process.stdout.write(line); });
+	const clock = options.clock ?? (() => new Date().toISOString());
+	const spawnFn: OnMainSpawnFn =
+		options.spawnFn ??
+		((cmd, args, opts) => spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>);
+
+	const stdinText = await readStdin();
+	let payload: unknown;
+	try {
+		payload = JSON.parse(stdinText);
+	} catch (err) {
+		printError(`cam spec --write-docs: invalid JSON from stdin: ${String(err)}`);
+		return 1;
+	}
+
+	const outcome: WriteDomainDocsOnMainOutcome = options.writeFn
+		? options.writeFn(payload)
+		: writeDomainDocsOnMain({
+				cwd,
+				id: options.id,
+				payload: payload as DomainDocsPayload,
+				spawnFn,
+				clock,
+			});
+
+	if (!outcome.ok) {
+		if (outcome.reason === 'invalid-payload') {
+			printError('cam spec --write-docs: invalid payload', outcome.errors.join('; '));
+		} else {
+			printError(
+				`cam spec --write-docs: ${outcome.reason}`,
+				'ensure main is up to date and you are not on a detached HEAD, then retry.',
+			);
+		}
+		return 1;
+	}
+
+	if (outcome.noOp) {
+		emitMutedHint('nothing to write (empty payload: no terms, no adrs)');
+		return 0;
+	}
+
+	writeStdout(`CAM_DOMAIN_DOCS_WRITTEN=${options.id} sha=${outcome.sha}\n`);
 	return 0;
 }

@@ -1,9 +1,16 @@
 // test/commands/spec.test.ts
 //
-// Unit tests for `cam spec` (US-004, CAM-107: thin-proxy to orchestrator).
+// Unit tests for `cam spec` (US-004, CAM-107: thin-proxy to orchestrator;
+// US-003, CAM-118: --write-docs in-process write channel).
 //
 // What we cover:
-//   - parseSpecArgs: positional id, bare (no arg), unknown flags rejected.
+//   - parseSpecArgs: positional id, bare (no arg), unknown flags rejected,
+//     --write-docs discriminated-union recognition (US-003).
+//   - dispatchSpec: routes mode 'write-docs' to writeDocsFn and mode 'proxy'
+//     to runSpecFn, proving branch isolation (US-003).
+//   - runSpecWriteDocs: reads stdin JSON, calls writeDomainDocsOnMain,
+//     zero tmux spawn calls, exit codes for ok/noOp/invalid-payload/guard
+//     failure/malformed-JSON (US-003).
 //   - runSpec (hit path): orchestrator alive -> send-keys /cam-spec <id> and return 0.
 //   - runSpec: dispatch shape asserts issue id parsed, /cam-spec slash injected.
 //   - runSpec: send-keys is atomic (NO -l; -l would make "Enter" literal).
@@ -19,8 +26,9 @@ import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import { runSpec } from '../../src/commands/spec.ts';
-import { parseSpecArgs } from '../../index.ts';
+import { runSpec, runSpecWriteDocs } from '../../src/commands/spec.ts';
+import { parseSpecArgs, dispatchSpec } from '../../index.ts';
+import type { WriteDomainDocsOnMainOutcome } from '../../src/commands/domain-docs.ts';
 import {
 	projectSessionName,
 	type SpawnFn as TmuxSpawnFn,
@@ -99,12 +107,12 @@ function makeFakeTmuxSpawn(opts: {
 // --- parseSpecArgs ----------------------------------------------------------
 
 describe('parseSpecArgs', () => {
-	test('parses a positional issue id (prefix-number format)', () => {
-		expect(parseSpecArgs(['CAM-42'])).toEqual({ id: 'CAM-42', help: false });
+	test('parses a positional issue id (prefix-number format) as mode:proxy', () => {
+		expect(parseSpecArgs(['CAM-42'])).toEqual({ mode: 'proxy', id: 'CAM-42', help: false });
 	});
 
 	test('parses a bare integer as an id string', () => {
-		expect(parseSpecArgs(['42'])).toEqual({ id: '42', help: false });
+		expect(parseSpecArgs(['42'])).toEqual({ mode: 'proxy', id: '42', help: false });
 	});
 
 	test('--help / -h set the help flag', () => {
@@ -112,8 +120,8 @@ describe('parseSpecArgs', () => {
 		expect(parseSpecArgs(['-h'])).toEqual({ help: true });
 	});
 
-	test('bare (no argument) returns { help: false } with no id', () => {
-		expect(parseSpecArgs([])).toEqual({ help: false });
+	test('bare (no argument) returns { mode: proxy, help: false } with no id', () => {
+		expect(parseSpecArgs([])).toEqual({ mode: 'proxy', help: false });
 	});
 
 	test('rejects empty string argument (returns null)', () => {
@@ -145,6 +153,229 @@ describe('parseSpecArgs', () => {
 		} finally {
 			process.stderr.write = original;
 		}
+	});
+});
+
+// --- parseSpecArgs: --write-docs discriminated-union recognition (US-003) --
+
+describe('parseSpecArgs: --write-docs', () => {
+	test('--write-docs <id> returns { mode: write-docs, id, help: false }', () => {
+		expect(parseSpecArgs(['--write-docs', 'CAM-118'])).toEqual({
+			mode: 'write-docs',
+			id: 'CAM-118',
+			help: false,
+		});
+	});
+
+	test('id may precede the --write-docs flag', () => {
+		expect(parseSpecArgs(['CAM-118', '--write-docs'])).toEqual({
+			mode: 'write-docs',
+			id: 'CAM-118',
+			help: false,
+		});
+	});
+
+	test('--write-docs without an id returns null', () => {
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		try {
+			expect(parseSpecArgs(['--write-docs'])).toBeNull();
+		} finally {
+			process.stderr.write = original;
+		}
+	});
+
+	test('mode discriminates write-docs from proxy', () => {
+		const writeDocs = parseSpecArgs(['--write-docs', 'CAM-1']);
+		const proxy = parseSpecArgs(['CAM-1']);
+		expect(writeDocs?.mode).toBe('write-docs');
+		expect(proxy?.mode).toBe('proxy');
+	});
+
+	test('--help still wins over --write-docs', () => {
+		expect(parseSpecArgs(['--write-docs', '--help'])).toEqual({ help: true });
+	});
+});
+
+// --- dispatchSpec: branch isolation (US-003) --------------------------------
+
+describe('dispatchSpec: routing isolation', () => {
+	test('mode:write-docs calls writeDocsFn and NOT runSpecFn', async () => {
+		let writeDocsCalled = false;
+		let runSpecCalled = false;
+
+		const code = await dispatchSpec(
+			{ mode: 'write-docs', id: 'CAM-118', help: false },
+			{
+				writeDocsFn: async (id) => {
+					writeDocsCalled = true;
+					expect(id).toBe('CAM-118');
+					return 0;
+				},
+				runSpecFn: async () => {
+					runSpecCalled = true;
+					return 0;
+				},
+			},
+		);
+
+		expect(code).toBe(0);
+		expect(writeDocsCalled).toBe(true);
+		expect(runSpecCalled).toBe(false);
+	});
+
+	test('mode:proxy calls runSpecFn and NOT writeDocsFn', async () => {
+		let writeDocsCalled = false;
+		let runSpecCalled = false;
+
+		const code = await dispatchSpec(
+			{ mode: 'proxy', id: 'CAM-42', help: false },
+			{
+				writeDocsFn: async () => {
+					writeDocsCalled = true;
+					return 0;
+				},
+				runSpecFn: async (id) => {
+					runSpecCalled = true;
+					expect(id).toBe('CAM-42');
+					return 0;
+				},
+			},
+		);
+
+		expect(code).toBe(0);
+		expect(runSpecCalled).toBe(true);
+		expect(writeDocsCalled).toBe(false);
+	});
+
+	test('mode:proxy with no id prints error and returns 1 without calling runSpecFn', async () => {
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		let runSpecCalled = false;
+		try {
+			const code = await dispatchSpec(
+				{ mode: 'proxy', help: false },
+				{ runSpecFn: async () => { runSpecCalled = true; return 0; } },
+			);
+			expect(code).toBe(1);
+			expect(runSpecCalled).toBe(false);
+		} finally {
+			process.stderr.write = original;
+		}
+	});
+
+	test('forwards exit codes from both branches', async () => {
+		const writeDocsCode = await dispatchSpec(
+			{ mode: 'write-docs', id: 'CAM-1', help: false },
+			{ writeDocsFn: async () => 1, runSpecFn: async () => 0 },
+		);
+		expect(writeDocsCode).toBe(1);
+
+		const proxyCode = await dispatchSpec(
+			{ mode: 'proxy', id: 'CAM-1', help: false },
+			{ writeDocsFn: async () => 0, runSpecFn: async () => 1 },
+		);
+		expect(proxyCode).toBe(1);
+	});
+});
+
+// --- runSpecWriteDocs: zero tmux spawn calls + exit codes (US-003) ----------
+
+describe('runSpecWriteDocs', () => {
+	test('real writeDomainDocsOnMain path: injected spawnFn is only ever called with cmd=git, never tmux', async () => {
+		const calls: { cmd: string; args: string[] }[] = [];
+		const fakeSpawnFn = (cmd: string, args: string[]) => {
+			calls.push({ cmd, args: [...args] });
+			const subcommand = args[2];
+			if (subcommand === 'rev-parse' && args.includes('--abbrev-ref')) {
+				return { pid: 1, output: [null, 'main\n', ''], stdout: 'main\n', stderr: '', status: 0, signal: null } as SpawnSyncReturns<string>;
+			}
+			if (subcommand === 'rev-parse') {
+				return { pid: 1, output: [null, 'deadbeef\n', ''], stdout: 'deadbeef\n', stderr: '', status: 0, signal: null } as SpawnSyncReturns<string>;
+			}
+			return { pid: 1, output: [null, '', ''], stdout: '', stderr: '', status: 1, signal: null } as SpawnSyncReturns<string>;
+		};
+
+		const code = await runSpecWriteDocs({
+			id: 'CAM-118',
+			readStdin: async () => JSON.stringify({ terms: [], adrs: [] }),
+			spawnFn: fakeSpawnFn,
+		});
+
+		// Empty payload short-circuits as noOp BEFORE any read/commit, but the
+		// up-to-date guard still runs two spawnFn calls (branch + main rev-parse).
+		expect(code).toBe(0);
+		expect(calls.length).toBeGreaterThan(0);
+		expect(calls.every((c) => c.cmd === 'git')).toBe(true);
+		expect(calls.some((c) => c.cmd === 'tmux')).toBe(false);
+	});
+
+	test('malformed stdin JSON returns 1', async () => {
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		try {
+			const code = await runSpecWriteDocs({
+				id: 'CAM-118',
+				readStdin: async () => 'not json{{{',
+			});
+			expect(code).toBe(1);
+		} finally {
+			process.stderr.write = original;
+		}
+	});
+
+	test('invalid payload (validation errors) returns 1', async () => {
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		try {
+			const code = await runSpecWriteDocs({
+				id: 'CAM-118',
+				readStdin: async () => JSON.stringify({ terms: [], adrs: [] }),
+				writeFn: () => ({ ok: false, reason: 'invalid-payload', errors: ['terms must be an array'] }),
+			});
+			expect(code).toBe(1);
+		} finally {
+			process.stderr.write = original;
+		}
+	});
+
+	test('guard failure (diverged / detached-head / missing-main) returns 1', async () => {
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		try {
+			const code = await runSpecWriteDocs({
+				id: 'CAM-118',
+				readStdin: async () => JSON.stringify({ terms: [], adrs: [] }),
+				writeFn: () => ({ ok: false, reason: 'diverged' }),
+			});
+			expect(code).toBe(1);
+		} finally {
+			process.stderr.write = original;
+		}
+	});
+
+	test('ok:true (non-noOp) returns 0 and writes the CAM_DOMAIN_DOCS_WRITTEN sentinel', async () => {
+		const written: string[] = [];
+		const code = await runSpecWriteDocs({
+			id: 'CAM-118',
+			readStdin: async () => JSON.stringify({ terms: [{ term: 'Order', definition: 'x' }], adrs: [] }),
+			writeFn: () => ({ ok: true, sha: 'abc1234', adrFiles: [] }),
+			writeStdout: (line) => written.push(line),
+		});
+		expect(code).toBe(0);
+		expect(written.join('')).toContain('CAM_DOMAIN_DOCS_WRITTEN=CAM-118 sha=abc1234');
+	});
+
+	test('ok:true noOp returns 0 without writing the sentinel', async () => {
+		const written: string[] = [];
+		const code = await runSpecWriteDocs({
+			id: 'CAM-118',
+			readStdin: async () => JSON.stringify({ terms: [], adrs: [] }),
+			writeFn: () => ({ ok: true, sha: '', noOp: true, adrFiles: [] }),
+			writeStdout: (line) => written.push(line),
+		});
+		expect(code).toBe(0);
+		expect(written.join('')).not.toContain('CAM_DOMAIN_DOCS_WRITTEN');
 	});
 });
 
