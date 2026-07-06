@@ -25,7 +25,7 @@
         "Full gate spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/issues/select.ts, test/issues/select.test.ts. Reuse computeWsjf from src/issues/rank.ts (returns { wsjf, warning }; treats missing wsjf or jobSize <= 0 as score 0). Gotcha: a pairwise comparator that mixes both-ranked-by-rank with mixed-by-WSJF is NOT a total order (intransitive: rank1/wsjf1 < rank2/wsjf9, unranked/wsjf5 beats the first but loses to the second). selectPlannableIssue only needs the single winner, so the recommended design is champion-vs-champion: pick the best ranked candidate (min rank, numeric-id tie-break) and the best unranked candidate (max computeWsjf, numeric-id tie-break), then the unranked champion wins only on strictly higher WSJF than the ranked champion's WSJF. The existing test 'ranked entries sort before unranked ones' encodes the superseded invariant: update it deliberately (an unranked candidate WITHOUT wsjf must still lose to every ranked one). This selector feeds BOTH the bare plan path and the meta_loop=auto dispatcher (buildProductionDispatchFn in src/commands/sidecar.ts), so this story alone makes a CAM-201-class issue dispatchable. noUncheckedIndexedAccess: guard candidates[0]. Re-check docs/adr/0007 (drain selection semantics) before coding."
     },

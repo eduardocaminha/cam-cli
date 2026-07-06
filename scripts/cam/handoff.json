@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Unranked issues compete by WSJF in plannable selection" },
+  "branchName": "cam/pr-203-plan-target-and-wsjf-fallback",
+  "timestamp": "2026-07-06T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/issues/select.ts",
+    "test/issues/select.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "selectPlannableIssue (src/issues/select.ts) now does champion-vs-champion selection: pickRankedChampion (min rank, numeric-id tiebreak) vs pickUnrankedChampion (max computeWsjf, numeric-id tiebreak); the unranked champion only wins on strictly-higher WSJF than the ranked champion's WSJF (ties go to ranked). This also changes selectPlannableFromFile and feeds selectPlanTargetFromFile's no-target path (both call selectPlannableIssue internally) and the meta-loop auto-dispatcher (buildProductionDispatchFn in src/commands/sidecar.ts) transparently -- no call-site changes were needed for US-001. selectPlannableById / selectPlanTargetFromFile (the CAM-154 explicit-target path) are untouched: they still do exact-id lookup with never-fall-back semantics and do not need WSJF competition logic. US-002 (plan-runner terminal for invalid explicit target) builds directly on selectPlanTargetFromFile returning null for a non-plannable/absent explicit target -- that null-on-invalid-target behavior was already correct pre-US-001 and is unaffected by this story's changes.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
