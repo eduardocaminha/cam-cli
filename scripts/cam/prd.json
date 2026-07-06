@@ -58,7 +58,7 @@
         "Full quality spine is green. [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts, test/supervisor/plan/plan-runner.test.ts or new test/supervisor/plan/plan-replan.test.ts. Depends on US-001 (prompt builder + MAX_REPLAN_ROUNDS) and US-002 (marker writer signature). Insertion point: the audit-blocked return documented as absent at plan-runner.ts lines 27 and 789. Control-flow precedent: the review loop in src/supervisor/loop.ts (decideNextAction / MAX_ROUNDS terminal), but per ADR-0012 the plan terminal is escalated, NEVER a MAX_ROUNDS_DEBT analog. Key mechanics: (a) findings are already in-memory on the audit-blocked PlanPhaseResult ({ issue, report }) - thread report.findings forward, do NOT re-read the file; (b) round 2 must pass plannerTaskPrompt as the opts override so runPlanPhase's buildPlannerTaskPrompt default is bypassed, and must pin selectIssueFn to the round-1 issue; (c) teardown BEFORE round 2 is functionally required or paneCountMutexFn returns 'busy' (auditor TUI pane never self-exits); (d) all seams injected (teardownPlanPanesFn, marker writer) so tests assert exact call sequences - keep runPlanPhase itself byte-for-byte compatible for existing tests. Biome limits: use factory/helper extraction (patterns.md), max 80 lines/function, complexity <=15."
     },
