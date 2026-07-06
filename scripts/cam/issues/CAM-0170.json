@@ -1,9 +1,38 @@
 {
   "id": "CAM-170",
   "title": "merge-watch: surface poll failures (emit event after N consecutive null polls)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T05:59:21.528Z",
-  "description": "GhPollFn returns null on ANY gh error and stepMergeWatch silently retries forever: a sidecar with a stale/revoked GITHUB_TOKEN (401) spins mute (pollCount 40+) and never detects MERGED. Bit the CAM-163 ship twice: 2 manual sidecar respawns because the inherited env token was revoked (env var wins over .env; token rotation never propagates to a live sidecar). Fix: count consecutive null polls in merge-watch state; after threshold N emit a merge-watch-poll-error event and notifyOrchestrator once (not per-poll). Consider also logging gh stderr in the event detail for diagnosis."
+  "description": "GhPollFn returns null on ANY gh error and stepMergeWatch silently retries forever: a sidecar with a stale/revoked GITHUB_TOKEN (401) spins mute (pollCount 40+) and never detects MERGED. Bit the CAM-163 ship twice: 2 manual sidecar respawns because the inherited env token was revoked (env var wins over .env; token rotation never propagates to a live sidecar). Fix: count consecutive null polls in merge-watch state; after threshold N emit a merge-watch-poll-error event and notifyOrchestrator once (not per-poll). Consider also logging gh stderr in the event detail for diagnosis.",
+  "spec": {
+    "scope": "CAM-170 makes a muted merge-watch poll failure loud and diagnosable instead of spinning silently to the 4h timeout. Today GhPollFn (src/release/merge-watch.ts) returns null on any gh error and stepMergeWatch retries forever, so a sidecar with a stale or revoked GITHUB_TOKEN (401) polls mute (pollCount 40 plus) and never surfaces the problem; it bit the CAM-163 ship twice with manual sidecar respawns. IN SCOPE: (1) Discriminated poll result: change GhPollFn from PrStatus or null to return PrStatus on success or an error result carrying the gh stderr; the production poll wrapper (gh pr view via spawnSync, in the sidecar) surfaces stderr into the error result; a normal poll of a still-open PR returns a PrStatus (state OPEN) and is NOT an error. (2) Consecutive-error counter: MergeWatchState gains a consecutiveNullPolls field, persisted by writeMergeWatchState mirroring pollCount; it increments on each poll error and resets to 0 on any successful poll. (3) Edge-triggered threshold: a named constant N (default 3, three minutes at the 60s interval); when the counter transitions to exactly N, stepMergeWatch emits one merge-watch-poll-error event via the logEvent seam and notifyOrchestrator narrates once; further consecutive errors at N+1 or N+2 do NOT re-emit until a successful poll resets the counter, after which a later re-crossing emits again. (4) Event: a new merge-watch-poll-error event kind and detail type carrying prNumber, the consecutive count, and the last gh stderr. OUT OF SCOPE: any new early-terminal outcome (the existing 240-poll or 4h cap remains the terminal; poll-error is advisory mid-watch and a token rotation lets the watch recover to MERGED), any change to merge-watch-stalled (CAM-182, which fires only on a non-merged terminal and is complementary), and auto-rotating or re-reading the token.",
+    "acceptanceCriteria": [
+      "GhPollFn returns a discriminated result: a PrStatus on success or an error result carrying the gh stderr string; the production poll wrapper surfaces gh stderr into the error result. A normal poll of a still-open PR returns a PrStatus (state OPEN) and does not count as an error.",
+      "MergeWatchState gains a consecutiveNullPolls field that is persisted; it increments on each poll error and resets to 0 on any successful poll. A pure stepMergeWatch tick test proves the increment and the reset.",
+      "When the consecutive-error counter transitions to exactly N (default 3), stepMergeWatch emits exactly one merge-watch-poll-error event and notifyOrchestrator narrates exactly once; ticks at N+1 and N+2 emit nothing; a successful poll resets the counter and a later re-crossing to N emits again.",
+      "The merge-watch-poll-error event detail carries prNumber, the consecutive count, and the last gh stderr.",
+      "Reaching or exceeding the threshold does not change the watch outcome: polling continues to the existing 240-poll or 4h cap, and a poll that succeeds (for example after a token rotation) resets the counter and the watch proceeds to MERGED normally.",
+      "merge-watch-poll-error (mid-watch) is distinct from merge-watch-stalled (terminal): a run that fails consecutively and then recovers emits merge-watch-poll-error but not merge-watch-stalled.",
+      "The GhPollFn signature change is propagated to the production wrapper and every test fake; the suite is green."
+    ],
+    "gotchas": [
+      "GhPollFn null today means a gh error only; a still-open PR returns a PrStatus, so the counter must increment on the error result, never on a successful not-merged poll (the discriminated result makes this explicit).",
+      "stepMergeWatch is a pure function (no FS, no Date.now); the consecutiveNullPolls counter must be threaded through MergeWatchState and persisted by the caller via writeMergeWatchState, mirroring how pollCount is handled.",
+      "Emit-once is implemented as a transition to exactly N (=== N), not a >= N test, so ticks past the threshold do not re-emit; a reset to 0 on a successful poll re-arms the single emit.",
+      "The GhPollFn type change ripples to the production gh pr view wrapper in the sidecar and to every test fake that currently returns PrStatus or null; update all of them.",
+      "notifyOrchestrator narration must be gated to once per threshold crossing, not per tick, matching the single event emission."
+    ],
+    "domainTerms": [
+      "poll error (merge-watch): a gh poll that fails (the GhPollFn error result), as opposed to a successful poll of a still-open PR; only poll errors increment the consecutive-error counter.",
+      "merge-watch-poll-error event: emitted once when consecutive poll errors cross the threshold N mid-watch, carrying the last gh stderr; advisory and distinct from the terminal merge-watch-stalled event."
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 2
+  }
 }
