@@ -22,7 +22,7 @@
         "Full quality spine is green. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts, test/supervisor/plan/plan-runner.test.ts (or a new test/supervisor/plan/plan-replan.test.ts). PlanVerdictFinding type comes from src/supervisor/plan-verdict-report.ts (fields: id, category, severity, storyId?, description, suggestion?). Gotcha (issue spec): the planner does NOT read patterns.md or plan-verdict-report.json on its own; the ONLY channel to inform it is its spawn prompt string, so description + suggestion of each finding must be embedded there. Re-check ADR-0012 (relatedDocs) before coding: non-convergence is a hard stop, never proceed-with-debt. noUncheckedIndexedAccess: guard array access when iterating findings."
     },

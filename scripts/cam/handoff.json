@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add re-plan prompt builder and round-cap constant to the plan-runner"
+  },
+  "branchName": "cam/pr-204-plan-block-replan-loop",
+  "timestamp": "2026-07-06T21:00:00Z",
+  "createdFiles": [
+    "test/supervisor/plan/plan-replan.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/plan-runner.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [
+    "A single `bun test` run showed a transient '1 fail' (unidentified test name) before the pre-story typecheck/gate sequence stabilized; 15 subsequent consecutive `bun test` runs (including the final gate run) all showed 0 fail. Could not reproduce or identify the specific test that flaked despite repeated attempts. Not traceable to this story's diff (plan-runner.ts + a new isolated test file). Flagging for visibility per the no-flaky-evasion policy; a future story touching timing-sensitive suites (tmux/orchestrator readiness polling) should watch for recurrence."
+  ],
+  "nextStoryContext": "US-001 added two exports to src/supervisor/plan-runner.ts: MAX_REPLAN_ROUNDS = 2 (round cap constant, ADR-0012: non-convergence after N rounds is a hard stop, never proceed-with-debt) and buildReplanPlannerTaskPrompt(issueId, findings: PlanVerdictFinding[]) — a pure prompt builder that embeds each finding's description + optional suggestion verbatim (numbered list), names the exact issue id, forbids backlog re-selection, and instructs writing the PRD to scripts/cam/prd.json. Neither export is wired into runPlanPhase / runPostAuditAction yet: US-002 (durable plan-escalation marker module + event kind) and US-003 (the actual BLOCK->re-plan loop with capped rounds + teardown seam) still need to consume these. The re-plan loop must track round count and stop at MAX_REPLAN_ROUNDS, escalating (not proceeding) on non-convergence per ADR-0012. The file-size-budget.json ceiling for src/supervisor/plan-runner.ts was raised 849->888 with a CAM-204 tracker ref; expect this file to keep growing across US-002/US-003/US-004 (the loop wiring stories) and raise the ceiling again with a fresh CAM-204 ref each time.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "US-001 is a pure internal helper (prompt-string builder + constant) with no external library surface touched; only intra-repo imports (node:path, sibling supervisor modules)." }
+  ]
+}
