@@ -400,7 +400,7 @@ const REVIEW_HELP = renderHelp({
 
 const SHIP_HELP = renderHelp({
 	title: 'cam ship',
-	tagline: 'Dispatch /cam-ship to the live orchestrator, or finalize a cycle in-process',
+	tagline: 'Write phase:shipping to the loop state file, or finalize a cycle in-process',
 	usage: 'cam ship [--finalize] [--bump]',
 	sections: [
 		{
@@ -408,11 +408,12 @@ const SHIP_HELP = renderHelp({
 			body:
 				'1. Checks whether a live orchestrator session exists\n' +
 				'   (cam-orch-<basename>-<hash>).\n' +
-				'2. On hit: sends /cam-ship to the orchestrator pane via\n' +
-				'   atomic tmux send-keys and returns immediately.\n' +
+				'2. On hit: writes phase:shipping to .claude/cam-loop.local.md,\n' +
+				'   preserving all other state-file fields; the sidecar runs the\n' +
+				'   deterministic ship runner and returns immediately.\n' +
 				'3. On miss: bootstraps the orchestrator via `cam run --no-attach`,\n' +
 				'   waits for .claude/.cam-orch-ready + liveness re-check, then\n' +
-				'   sends /cam-ship.\n' +
+				'   writes phase:shipping.\n' +
 				'4. If not already inside the session, prints a hint:\n' +
 				'     Run `cam run` to open the project session.',
 		},
