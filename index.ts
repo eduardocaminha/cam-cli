@@ -35,6 +35,7 @@ import {
 	type AppendJournalEntryOnMainResult,
 } from './src/commands/journal.ts';
 import { runIssue } from './src/commands/issue.ts';
+import { runIssueList } from './src/commands/issue-list.ts';
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
@@ -255,8 +256,8 @@ const SPEC_HELP = renderHelp({
 
 const ISSUE_HELP = renderHelp({
 	title: 'cam issue',
-	tagline: 'File an issue from free text without entering a session manually',
-	usage: 'cam issue "<free text>"',
+	tagline: 'File an issue from free text, or list the actionable backlog',
+	usage: 'cam issue "<free text>" | cam issue list [--all]',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -264,6 +265,11 @@ const ISSUE_HELP = renderHelp({
 				{
 					name: '"<free text>"',
 					description: 'Free-text description; expanded to title + description by /cam-issue create',
+				},
+				{
+					name: 'list [--all]',
+					description:
+						'Print the actionable backlog (deterministic, in-process, no tmux). --all also includes shipped issues.',
 				},
 			],
 		},
@@ -278,7 +284,9 @@ const ISSUE_HELP = renderHelp({
 				'     claude --permission-mode <mode> "/cam-issue create <text>"\n' +
 				'4. Returns 0 immediately. The issue-creation flow runs inside the pane.\n' +
 				'5. If not already inside the session, prints a hint:\n' +
-				'     Run `cam run` to open the project session.',
+				'     Run `cam run` to open the project session.\n' +
+				'6. `cam issue list` never opens a pane or spawns tmux/claude: it reads\n' +
+				'   the backlog in-process and prints it directly.',
 		},
 	],
 	footer:
@@ -632,16 +640,33 @@ const RESUME_HELP = renderHelp({
  * - mode === 'file-local': deterministic in-process path (US-003).
  *     fastTrack: true when --fast-track was passed (specSource: operator).
  *     derivedFrom: non-empty when --derived-from was passed (specSource: derived).
+ * - mode === 'list': deterministic in-process backlog print (US-003, CAM-190).
+ *     all: true when --all was passed (include the shipped group).
  * - help === true: caller should print ISSUE_HELP and exit 0.
  */
 export type ParsedIssueArgs =
 	| { mode: 'text'; text: string; help: false }
 	| { mode: 'file-local'; fastTrack: boolean; derivedFrom: string[]; help: false }
+	| { mode: 'list'; all: boolean; help: false }
 	| { mode?: never; help: true };
 
 export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 	if (args.includes('--help') || args.includes('-h')) {
 		return { help: true };
+	}
+	// The `list` subcommand is evaluated BEFORE the free-text fallthrough so a
+	// bare `list` positional is never misread as free-text issue creation.
+	if (args[0] === 'list') {
+		let all = false;
+		for (const arg of args.slice(1)) {
+			if (arg === '--all') {
+				all = true;
+			} else {
+				printError(`unexpected argument: ${arg}`);
+				return null;
+			}
+		}
+		return { mode: 'list', all, help: false };
 	}
 	if (args.includes('--file-local')) {
 		let fastTrack = false;
@@ -1202,7 +1227,7 @@ export async function dispatchJournal(
 // cam issue dispatch (exported for unit testing with injectable deps)
 // ---------------------------------------------------------------------------
 
-/** Injectable deps for dispatchIssue — both optional; production uses real impls. */
+/** Injectable deps for dispatchIssue — all optional; production uses real impls. */
 export interface IssueDispatchDeps {
 	/**
 	 * Inject a fake for the --file-local branch.
@@ -1211,6 +1236,11 @@ export interface IssueDispatchDeps {
 	fileLocalFn?: () => Promise<number>;
 	/** Inject a fake runIssue thin-proxy. Default: calls the real runIssue with the parsed text. */
 	runIssueFn?: () => Promise<number>;
+	/**
+	 * Inject a fake for the `list` branch. Default: calls the real runIssueList
+	 * in-process (no tmux, no thin-proxy, no claude spawn).
+	 */
+	issueListFn?: () => Promise<number>;
 }
 
 /** Build production CreateLocalIssueOnMainOptions from project root + parsed stdin JSON + CLI flags. */
@@ -1249,6 +1279,11 @@ export async function dispatchIssue(
 	parsed: ParsedIssueArgs,
 	deps?: IssueDispatchDeps,
 ): Promise<number> {
+	if (parsed.mode === 'list') {
+		const issueListFn =
+			deps?.issueListFn ?? (async () => runIssueList({ cwd: process.cwd(), all: parsed.all }));
+		return issueListFn();
+	}
 	if (parsed.mode === 'file-local') {
 		const fileLocalFn =
 			deps?.fileLocalFn ??
