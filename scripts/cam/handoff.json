@@ -1,24 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add red-gate guard to readWorkerOutcome: refuse DONE on recorded failing test"
+    "id": "US-002",
+    "title": "Encode the no-flaky-evasion hard-stop rule in subagent-implementer.md"
   },
   "branchName": "cam/pr-202-no-flaky-test-evasion",
-  "timestamp": "2026-07-06T17:52:47Z",
+  "timestamp": "2026-07-06T18:10:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/result.ts",
-    "test/supervisor/result.test.ts",
+    "templates/agents/subagent-implementer.md",
+    ".claude/agents/subagent-implementer.md",
+    "src/vendor/_generated.ts",
+    "test/dashboard.test.ts",
+    "scripts/check-all.ts",
+    "test/check-all.test.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 (encode the no-flaky-evasion hard-stop rule in templates/agents/subagent-implementer.md) and US-003 (same, subagent-reviewer.md) are prose/policy stories layered on top of this US-001 mechanical guard. The mechanical enforcement point is now readWorkerOutcome's primary (worker-report.json) path in src/supervisor/result.ts: a new pure helper gateTestsIndicateFailure(tests: string) classifies the recorded gates.tests string (FAILING when it starts with 'fail' or contains an '<N> fail' count with N>0; NOT failing for 'ok'/'n/a'/skip-only strings with 0 fails), and extractRecordedTestsGate(report) safely reads report.gates.tests (untrusted JSON, runtime-checked). The guard is wired into the DONE branch right before confirmCommitGate: if the recorded gates.tests fails, readWorkerOutcome returns kind:'fail' (reused existing kind, zero loop.ts changes needed -- loop.ts already routes kind:'fail' to the blocked terminal branch) with a detail naming 'recorded gate had a failing test' and the story id. This ONLY applies in the primary worker-report-present path; the fallback (no worker-report) path has no recorded gates and is unaffected by design. When writing the subagent prose in US-002/US-003, reference this mechanism by name (gateTestsIndicateFailure / the red-gate guard) so the prose and the code stay in sync, and make clear to the worker/reviewer that narrating a failing test away (as flaky/pre-existing/environmental/unrelated) does NOT get around this: the supervisor reads the RECORDED gates.tests string, not prose.",
+  "nextStoryContext": "US-003 (encode the SAME no-flaky-evasion hard-stop rule in templates/agents/subagent-reviewer.md AND .claude/agents/subagent-reviewer.md) is the direct sibling of this story. Copy the '### No-flaky-evasion hard stop' subsection verbatim in spirit (adapt wording for the reviewer's read-only, judgment role rather than the implementer's 'fix or HALT' role) into the reviewer's own Gate discipline / verification section, keeping the same four required substrings for the oracle: 'flaky', 'pre-existing', 'environmental', 'unrelated'. Anchor point in subagent-implementer.md (already done, for reference): a new '### No-flaky-evasion hard stop' subsection placed immediately after the 'Roll-up convention' paragraph and before '## Behavioral gate (Layer A)', inside '## Gate discipline'. Tie the reviewer's version to the same mechanism by name: readWorkerOutcome's gateTestsIndicateFailure red-gate guard (src/supervisor/result.ts, from US-001) -- the reviewer, like the implementer, cannot narrate a red gate green because the supervisor reads the recorded gates.tests string, not prose. Run bun run embed-vendor after editing both reviewer copies, then bun run embed-vendor:check. Gotcha encountered on THIS story that will likely recur: bun run check:all in this sandbox has two additional failure modes unrelated to any story content: (1) a genuinely flaky test/dashboard.test.ts keypress test ('k after j returns to first row') that intermittently failed under full-suite CPU load because a single 0ms setTimeout tick was not always enough for React to flush two back-to-back useInput-triggered re-renders; fixed here with a poll-based waitForAccentLine helper (bounded 500ms timeout, 5ms poll interval) -- reuse this same poll pattern if another keypress-sequence test flakes. (2) knip (the dead-code gate) crashes under this sandbox's system Node 18 (missing node:util's styleText, needed by knip 6.24.0, added in Node 20) because bunx delegates to the shebang-declared `node` interpreter by default; fixed by adding --bun to the gate command in scripts/check-all.ts (bunx --bun knip@6.24.0), which forces bunx to use Bun's own JS runtime instead (confirmed against Bun's official bunx docs). Both fixes required touching test/check-all.test.ts (gate-args assertion) and scripts/file-size-budget.json (ratchet: budget values are content.split('\\n').length, i.e. wc -l + 1 for a trailing-newline file, NOT bare wc -l -- verify with `bun -e \"console.log(require('fs').readFileSync(path,'utf8').split('\\n').length)\"` before setting a ceiling, do not just copy wc -l output). If check:all is red again for either of these two reasons on a fresh run, it is very likely the same underlying flake/environment gap recurring, not a regression introduced by the current story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure TypeScript classification logic over JSON already parsed via the existing readFile/JSON.parse pattern in result.ts; no new external library or API surface was exercised."
+      "summary": "Pure prose edits to two agent instruction files (subagent-implementer.md templates + runtime mirror) plus a test-timing fix and a bunx flag fix. The bunx --bun behavior was verified via web search against Bun's official bunx docs (bun.com/docs/pm/bunx and the v0.7.0 release notes): --bun forces bunx to execute a package's bin script under Bun's own JS runtime instead of respecting a #!/usr/bin/env node shebang, confirming the fix for the knip/Node-18 crash is correct and matches documented behavior."
     }
   ]
 }
