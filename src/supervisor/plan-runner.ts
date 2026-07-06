@@ -43,6 +43,7 @@ import { readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { decidePostAuditAction } from '../plan/plan-approval-decision.ts';
 import { dockerExecWrap } from './docker-exec.ts';
+import type { PlanEscalatedMarker } from './plan-escalation.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -138,6 +139,11 @@ export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
  *   auditor-timeout      - plan-verdict-report.json absent when auditor died or timed out.
  *   planner-failed       - planner poll ended but readPlannerReportFn returned null (no
  *                          prd.json written); auditor is NEVER spawned (US-003, CAM-155).
+ *   plan-escalated       - ONLY produced by runPlanPhaseWithReplan (US-003, CAM-204):
+ *                          MAX_REPLAN_ROUNDS consecutive audit-blocked rounds without an
+ *                          APPROVE verdict. Terminal, never proceeds to branch (ADR-0012:
+ *                          non-convergence is a hard stop, never proceed-with-debt).
+ *                          runPlanPhase itself never returns this kind.
  */
 export type PlanPhaseResult =
 	| { kind: 'preflight-failed'; step: string; detail: string }
@@ -153,7 +159,8 @@ export type PlanPhaseResult =
 	 */
 	| { kind: 'container-preflight-failed'; phase: 'planner' | 'auditor'; reason: string }
 	| { kind: 'audit-approved'; issue: IssueEntry; report: PlanVerdictReport }
-	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport };
+	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport }
+	| { kind: 'plan-escalated'; issue: IssueEntry; report: PlanVerdictReport; roundsCompleted: number };
 
 // ---------------------------------------------------------------------------
 // Options
@@ -712,6 +719,126 @@ export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
 	// Steps 4-7: Worker dispatch (container preflight + spawn + poll for both
 	// planner and auditor). Extracted to runPlanWorkerSequence (biome limits).
 	return runPlanWorkerSequence(opts, plannerTaskPrompt, issue);
+}
+
+// ---------------------------------------------------------------------------
+// BLOCK -> re-plan loop (US-003, CAM-204)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fields the escalation-marker writer seam is invoked with on non-convergence
+ * (US-003, CAM-204). Mirrors PlanEscalatedMarker minus `writtenAt`: the
+ * production wiring (US-004) stamps the timestamp itself when persisting the
+ * durable marker file, keeping this pure module clock-free.
+ */
+export type PlanEscalationWriterParams = Omit<PlanEscalatedMarker, 'writtenAt'>;
+
+/** Options for runPlanPhaseWithReplan: RunPlanPhaseOptions plus the two loop seams. */
+export interface RunPlanPhaseWithReplanOptions extends RunPlanPhaseOptions {
+	/**
+	 * Teardown seam for the planner/auditor pane. Invoked on every
+	 * terminal/boundary path (AC4, US-003):
+	 *   - BEFORE each re-plan round's runPlanPhase call, so the pane-count
+	 *     mutex sees 'available' (the auditor TUI pane never self-exits).
+	 *   - After an audit-approved terminal.
+	 *   - On the plan-escalated terminal.
+	 * Optional: defaults to a no-op for backward compat. Production wiring
+	 * (US-004) mirrors host.ts teardownWorkerPaneFn (kill-pane, best-effort,
+	 * never-throwing).
+	 */
+	teardownPlanPanesFn?: () => void;
+
+	/**
+	 * Escalation-marker writer seam. Invoked exactly once, when
+	 * MAX_REPLAN_ROUNDS consecutive audit-blocked rounds are exhausted without
+	 * an APPROVE verdict (AC3, US-003, ADR-0012: non-convergence is a hard
+	 * stop, never proceed-with-debt). Called with the LAST round's issue id,
+	 * summary, findings, and the total rounds completed. Optional: defaults to
+	 * a no-op for backward compat. Production wiring (US-004) constructs the
+	 * full PlanEscalatedMarker (adding writtenAt) and calls
+	 * writePlanEscalatedMarker against the .claude/ dir.
+	 */
+	writeEscalationMarkerFn?: (params: PlanEscalationWriterParams) => void;
+}
+
+/**
+ * Drive runPlanPhase through up to MAX_REPLAN_ROUNDS rounds, mirroring the
+ * review loop's FIXES_PENDING -> re-implement -> MAX_ROUNDS control flow in
+ * loop.ts (US-003, CAM-204).
+ *
+ * Round 1 runs runPlanPhase unchanged (opts as given). Each subsequent round
+ * (while the previous round was audit-blocked and rounds remain) re-runs
+ * runPlanPhase pinned to the SAME issue (selectIssueFn overridden to return
+ * the blocked round's issue, never re-selecting from the backlog) with
+ * plannerTaskPrompt built via buildReplanPlannerTaskPrompt(issue.id,
+ * priorFindings) so the planner corrects the flagged defects instead of
+ * regenerating blind.
+ *
+ * The prior round's findings/summary are captured from the in-memory
+ * audit-blocked result BEFORE the next round's clearStalePlanArtifactsFn
+ * (invoked at the top of the next runPlanPhase call) deletes
+ * plan-verdict-report.json (AC2).
+ *
+ * Terminal outcomes:
+ *   - audit-approved: teardownPlanPanesFn() then returned as-is (proceeds to
+ *     the caller's branch path).
+ *   - MAX_REPLAN_ROUNDS exhausted still audit-blocked: writeEscalationMarkerFn
+ *     is invoked with the last round's findings, teardownPlanPanesFn() runs,
+ *     and a terminal `plan-escalated` result is returned (never
+ *     `audit-blocked`, never branch, AC3).
+ *   - Any other (non-audit) kind from round 1: returned as-is, no re-plan
+ *     round is ever triggered, no teardown call (AC5).
+ */
+export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): PlanPhaseResult {
+	const { teardownPlanPanesFn, writeEscalationMarkerFn, ...planOpts } = opts;
+	const teardown = teardownPlanPanesFn ?? ((): void => {});
+	const writeMarker = writeEscalationMarkerFn ?? ((): void => {});
+
+	let result = runPlanPhase(planOpts);
+	let roundsCompleted = 1;
+
+	while (result.kind === 'audit-blocked' && roundsCompleted < MAX_REPLAN_ROUNDS) {
+		const blockedIssue = result.issue;
+		const blockedFindings = result.report.findings;
+
+		// Teardown BEFORE the next round's spawn: functionally required, or
+		// paneCountMutexFn returns 'busy' (the auditor TUI pane never self-exits).
+		teardown();
+		roundsCompleted += 1;
+		result = runPlanPhase({
+			...planOpts,
+			selectIssueFn: () => blockedIssue,
+			plannerTaskPrompt: buildReplanPlannerTaskPrompt(blockedIssue.id, blockedFindings),
+		});
+	}
+
+	if (result.kind === 'audit-approved') {
+		teardown();
+		return result;
+	}
+
+	if (result.kind === 'audit-blocked') {
+		// MAX_REPLAN_ROUNDS exhausted without convergence (ADR-0012 hard stop).
+		writeMarker({
+			issueId: result.issue.id,
+			summary: result.report.summary,
+			findings: result.report.findings,
+			roundsCompleted,
+		});
+		teardown();
+		return {
+			kind: 'plan-escalated',
+			issue: result.issue,
+			report: result.report,
+			roundsCompleted,
+		};
+	}
+
+	// Non-audit kinds (preflight-failed, no-plannable-issue, mutex-busy,
+	// planner-timeout, auditor-timeout, planner-failed,
+	// container-preflight-failed): returned as-is, no re-plan round, no
+	// teardown call (AC5).
+	return result;
 }
 
 // ---------------------------------------------------------------------------
