@@ -1,0 +1,9 @@
+{
+  "id": "CAM-201",
+  "title": "cam-worker/CI bun parity + guard contra skip de teste por versao",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-06T15:42:15.157Z",
+  "description": "Container roda oven/bun:1.2-slim (bun 1.2.23); CI (setup-bun@v2 sem bun-version) flutua pra latest (1.3.x); host 1.3.13. Os gates in-container (implementer e reviewer, ambos via dockerExecWrap) rodam 1.2.23, entao teste condicionado a versao (it.skipIf(bun>=1.3)) e pulado no loop mas roda no host/CI: um worker mascarou assim um teste fragil no cam/pr-66 (test/dashboard-ink.test.ts, asercao toContain do titulo de ~200 chars que o Ink quebra em 3 linhas) e o loop deu verde/CLEAN enquanto o check:all do ship (host) e o CI ficam vermelhos. Fix duravel: (1) pinar container FROM oven/bun:1.3-slim pra bater com o CI; (2) pinar CI bun-version fixo (parar de flutuar pra latest); (3) gate no check:all que barra skip por Bun.version/process.version. Raiz da classe verde-no-container/vermelho-no-CI. Amarra CAM-198 (container Node 18), CAM-192 (image staleness)."
+}
