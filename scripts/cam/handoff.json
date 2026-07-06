@@ -1,22 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add re-plan prompt builder and round-cap constant to the plan-runner"
+    "id": "US-002",
+    "title": "Add durable plan-escalation marker module and event kind"
   },
   "branchName": "cam/pr-204-plan-block-replan-loop",
-  "timestamp": "2026-07-06T21:00:00Z",
+  "timestamp": "2026-07-06T21:30:00Z",
   "createdFiles": [
-    "test/supervisor/plan/plan-replan.test.ts"
+    "src/supervisor/plan-escalation.ts",
+    "test/supervisor/plan/plan-escalation.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/plan-runner.ts",
-    "scripts/file-size-budget.json"
+    "src/supervisor/events.ts",
+    ".gitignore",
+    "templates/.gitignore",
+    "src/vendor/_generated.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "A single `bun test` run showed a transient '1 fail' (unidentified test name) before the pre-story typecheck/gate sequence stabilized; 15 subsequent consecutive `bun test` runs (including the final gate run) all showed 0 fail. Could not reproduce or identify the specific test that flaked despite repeated attempts. Not traceable to this story's diff (plan-runner.ts + a new isolated test file). Flagging for visibility per the no-flaky-evasion policy; a future story touching timing-sensitive suites (tmux/orchestrator readiness polling) should watch for recurrence."
+    "The ship-stalled marker precedent (.cam-ship-stalled.json, src/release/merge-watch.ts) has NO .gitignore entry in either .gitignore or templates/.gitignore despite being durable runtime state written directly by the sidecar. This story added its own marker's entry in both files but did NOT retroactively fix the pre-existing gap for .cam-ship-stalled.json (out of scope: not touched by this story's diff). A future story should add `.claude/.cam-ship-stalled.json` to both gitignore files."
   ],
-  "nextStoryContext": "US-001 added two exports to src/supervisor/plan-runner.ts: MAX_REPLAN_ROUNDS = 2 (round cap constant, ADR-0012: non-convergence after N rounds is a hard stop, never proceed-with-debt) and buildReplanPlannerTaskPrompt(issueId, findings: PlanVerdictFinding[]) — a pure prompt builder that embeds each finding's description + optional suggestion verbatim (numbered list), names the exact issue id, forbids backlog re-selection, and instructs writing the PRD to scripts/cam/prd.json. Neither export is wired into runPlanPhase / runPostAuditAction yet: US-002 (durable plan-escalation marker module + event kind) and US-003 (the actual BLOCK->re-plan loop with capped rounds + teardown seam) still need to consume these. The re-plan loop must track round count and stop at MAX_REPLAN_ROUNDS, escalating (not proceeding) on non-convergence per ADR-0012. The file-size-budget.json ceiling for src/supervisor/plan-runner.ts was raised 849->888 with a CAM-204 tracker ref; expect this file to keep growing across US-002/US-003/US-004 (the loop wiring stories) and raise the ceiling again with a fresh CAM-204 ref each time.",
+  "nextStoryContext": "US-002 added src/supervisor/plan-escalation.ts: PLAN_ESCALATED_FILENAME = '.cam-plan-escalated.json' (relative to .claude/ dir) plus readPlanEscalatedMarker/writePlanEscalatedMarker/removePlanEscalatedMarker, structurally cloned from the ShipStalledMarker precedent in src/release/merge-watch.ts (JSON reader shape guard on every required field: issueId:string, summary:string, findings:array, roundsCompleted:number, writtenAt:string; never throws; write/remove are best-effort). Also added 'plan-escalated' to WorkerEventKind and PlanEscalatedEventDetail ({ issueId, roundsCompleted }) to the WorkerEventDetail union in src/supervisor/events.ts. Neither the marker module nor the event kind is wired into plan-runner.ts yet -- US-003 (BLOCK->re-plan loop with capped rounds + teardown seam) must: (a) consume MAX_REPLAN_ROUNDS and buildReplanPlannerTaskPrompt from US-001 to drive the actual re-plan spawn loop, (b) call writePlanEscalatedMarker + emit the 'plan-escalated' event when the loop exhausts MAX_REPLAN_ROUNDS without an APPROVE verdict (ADR-0012: non-convergence is a hard stop, never proceed-with-debt), and (c) implement the teardown seam so the worker pane is properly torn down on escalation. US-004 (wire the loop into the sidecar) and US-005 (orchestrator derives escalation on wake) will consume readPlanEscalatedMarker + removePlanEscalatedMarker respectively -- mirror the .cam-ship-stalled.json boot-surface pattern in subagent-orchestrator.md (read the marker at boot, surface as an opening blocker, never delete it yourself; only the loop removes it on a later clean plan for the same issueId). file-size-budget.json ceiling for src/supervisor/events.ts was raised 488->507 with a CAM-204 tracker ref; expect further raises across US-003/US-004/US-005 as the loop wiring lands.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "US-001 is a pure internal helper (prompt-string builder + constant) with no external library surface touched; only intra-repo imports (node:path, sibling supervisor modules)." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "US-002 only touches node:fs (existsSync/readFileSync/writeFileSync/unlinkSync, Bun's Node-compat built-in) and intra-repo type imports; no external npm library surface was exercised." }
   ]
 }
