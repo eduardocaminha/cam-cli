@@ -32,7 +32,7 @@ import { join } from 'node:path';
 import type { SpawnFn, IsPaneAlive } from './loop.ts';
 import type { WorkerEventLogger } from './events.ts';
 import type { PlanPreflightResult } from './plan-preflight.ts';
-import type { PlanVerdictReport } from './plan-verdict-report.ts';
+import type { PlanVerdictReport, PlanVerdictFinding } from './plan-verdict-report.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
 import type { PlanApproval, WorkerIsolation } from '../config/models.ts';
@@ -66,6 +66,45 @@ export function buildPlannerTaskPrompt(issueId: string): string {
 	return (
 		`Plan issue ${issueId} specifically per your AGENT.md. ` +
 		`Do not re-select from the backlog; plan ONLY ${issueId}. ` +
+		`Write the resulting PRD to scripts/cam/prd.json.`
+	);
+}
+
+/**
+ * Round cap for the BLOCK->re-plan loop (CAM-204, ADR-0012). After
+ * MAX_REPLAN_ROUNDS re-plan attempts, a still-blocked plan terminates as
+ * escalated: there is no plan analog of the review loop's MAX_ROUNDS_DEBT
+ * (non-convergence is a hard stop, never proceed-with-debt).
+ */
+export const MAX_REPLAN_ROUNDS = 2;
+
+/**
+ * Build a re-plan planner task prompt that embeds the prior round's auditor
+ * findings verbatim, so a round-2 (or later) planner corrects the flagged
+ * defects instead of regenerating the PRD blind (US-001, CAM-204).
+ *
+ * Mirrors buildPlannerTaskPrompt (CAM-157): names the exact issue id and
+ * forbids backlog re-selection, and instructs writing the PRD to
+ * scripts/cam/prd.json. The planner does NOT read patterns.md or
+ * plan-verdict-report.json on its own (the spawn prompt string is the ONLY
+ * channel to inform it), so each finding's description AND suggestion (when
+ * present) must be embedded here verbatim. Findings with no suggestion
+ * render description-only (no literal 'undefined' text).
+ */
+export function buildReplanPlannerTaskPrompt(issueId: string, findings: PlanVerdictFinding[]): string {
+	const findingLines = findings
+		.map((finding, index) => {
+			const suggestionText =
+				finding.suggestion !== undefined ? ` Suggestion: ${finding.suggestion}` : '';
+			return `${index + 1}. ${finding.description}${suggestionText}`;
+		})
+		.join('\n');
+
+	return (
+		`Re-plan issue ${issueId} specifically per your AGENT.md. ` +
+		`Do not re-select from the backlog; plan ONLY ${issueId}. ` +
+		`The previous plan round was BLOCKED by the auditor with the following findings; ` +
+		`correct each one in the new PRD:\n${findingLines}\n` +
 		`Write the resulting PRD to scripts/cam/prd.json.`
 	);
 }
