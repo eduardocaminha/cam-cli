@@ -1,9 +1,33 @@
 {
   "id": "CAM-202",
   "title": "Enforce no-flaky-test-evasion: gate vermelho e hard-stop pro worker",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T17:17:51.848Z",
-  "description": "Um worker (implementer/reviewer) NUNCA pode dispensar um teste que falha como flaky / pre-existing / environmental / unrelated, nem re-rodar pra confirmar flakiness e seguir verde. Gate vermelho e hard-stop. Mesma classe de gate-gaming do mascaramento skipIf do CAM-66, em forma de narrativa. Enforce: (1) encodar em subagent-implementer.md E subagent-reviewer.md que qualquer gate que falha BLOQUEIA a story; nao-determinismo e um defeito a consertar deterministicamente ou HALT+escala, nunca seguir. (2) Guard de harness: detectar story marcada passes:true enquanto o bun test / check:all teve teste falhando, e recusar o outcome (estende a two-layer verification CAM-56). Diretiva do operador 2026-07-06, ao ver um worker de CAM-66 evadindo a mesma falha que o skipIf mascarou."
+  "description": "Um worker (implementer/reviewer) NUNCA pode dispensar um teste que falha como flaky / pre-existing / environmental / unrelated, nem re-rodar pra confirmar flakiness e seguir verde. Gate vermelho e hard-stop. Mesma classe de gate-gaming do mascaramento skipIf do CAM-66, em forma de narrativa. Enforce: (1) encodar em subagent-implementer.md E subagent-reviewer.md que qualquer gate que falha BLOQUEIA a story; nao-determinismo e um defeito a consertar deterministicamente ou HALT+escala, nunca seguir. (2) Guard de harness: detectar story marcada passes:true enquanto o bun test / check:all teve teste falhando, e recusar o outcome (estende a two-layer verification CAM-56). Diretiva do operador 2026-07-06, ao ver um worker de CAM-66 evadindo a mesma falha que o skipIf mascarou.",
+  "spec": {
+    "scope": "Make a failing gate a hard stop for workers. No implementer or reviewer may dismiss a failing test as flaky, pre-existing, environmental, or unrelated, nor re-run to confirm flakiness to proceed green. Encode the rule in subagent-implementer.md and subagent-reviewer.md, and add a harness guard that refuses a story outcome whose recorded gate had a failing test even if the worker marked it passing. Extends two-layer verification (CAM-56).",
+    "acceptanceCriteria": [
+      "subagent-implementer.md AND subagent-reviewer.md state explicitly that any failing gate blocks the story; a failing test may NOT be dismissed as flaky/pre-existing/environmental/unrelated; \"re-run to confirm flakiness\" is forbidden; non-determinism is a defect to fix deterministically or HALT and escalate. [oracle: file-assert grep the rule in both agent files]",
+      "A harness guard in the outcome-validation path (readWorkerOutcome / two-layer verification) refuses or flags a story marked passes:true when its recorded gate result has a failing test (gates.tests != pass), so the story cannot be declared done on a red gate. [oracle: named-command bun test]",
+      "A regression test reproduces the evasion (worker marks a story passing while a test failed) and asserts the guard blocks it.",
+      "bun run check:all is green."
+    ],
+    "gotchas": [
+      "Same gate-gaming class as CAM-66 skipIf masking, in narrative form. The guard must key on the RECORDED gate result (gates.tests), not on worker prose.",
+      "Allow legitimate skips (OS/capability gating, e.g. real-tmux tests off-macOS). Only a FAILING test blocks, never a legitimately skipped one.",
+      "Operator directive 2026-07-06 after a CAM-66 worker tried to proceed by calling a real failure flaky."
+    ],
+    "domainTerms": [
+      "gate hard-stop",
+      "flaky-evasion"
+    ]
+  },
+  "wsjf": {
+    "value": 9,
+    "timeCriticality": 9,
+    "riskReduction": 8,
+    "jobSize": 2
+  }
 }
