@@ -1163,3 +1163,15 @@ Each entry follows this template:
 - **Summary**: Stubbed runInit's three real subprocess spawns (command -v claude, claude --version, bun smoke-script) via an injectable spawnFn seam, so test/init.test.ts is deterministic and no longer times out at 5000ms under check:all concurrent load. Root-cause fix for the flake that hard-stopped the CAM-203 ship gate. 1 story, review CLEAN. v0.74.0, PR #147.
 - **Decisions**: First real application of the CAM-202 no-flaky-evasion rule: the red gate was NOT re-run to force green; the root was fixed. Filed as a SEPARATE issue (not silently fixed on CAM-203's branch) per surgical-changes discipline.
 - **Blockers encountered**: CAM-191 auto-ship wedge again; re-armed via /cam-ship.
+
+## cam/pr-203-plan-target-and-wsjf-fallback — CAM-203 shipped: honor explicit plan targets + WSJF fallback for rank:None
+
+- **Started**: 2026-07-06T21:48:00Z
+- **Closed**: 2026-07-06T23:35:00Z
+- **Branch**: cam/pr-203-plan-target-and-wsjf-fallback
+- **Issue**: CAM-203
+- **Outcome**: shipped
+- **Summary**: Honor explicit /cam-plan <id> targets end-to-end (invalid target fails loud, never a silent no-op) and make freshly-specified rank:None issues plannable via a single-sort-key WSJF fallback in selection. 4 stories, review CLEAN. v0.75.0, PR #148.
+- **Decisions**: The auditor correctly BLOCKed the planner twice on an intransitive two-tier comparator (a genuine Array.sort total-order violation); resolved as a single comparable-scalar key. The issue SPEC was clean: the contradiction was planner-introduced in the PRD, not the spec, so /cam-spec was neither needed nor possible (specified issues cannot be re-spec'd). Blind re-plan converged on the 3rd attempt.
+- **Blockers encountered**: Ship gate first hard-stopped on the unrelated CAM-205 flaky init timeout (halted per CAM-202, not evaded). Re-shipped after merging main (CAM-205 fix) into the branch, resolving a file-size-budget.json _ref conflict (numeric budgets auto-unioned), re-review CLEAN, and re-arming the ship past the CAM-191 wedge.
+- **Follow-ups**: Binary rebuild to activate the selection change in the running sidecar. File the re-spec-gap follow-up (no supported path to re-spec a stage:specified issue).
