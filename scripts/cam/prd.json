@@ -44,7 +44,7 @@
         "Full gate spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts plus a new test (e.g. test/plan-runner-target-invalid.test.ts; mirror the injection fixtures in test/plan-runner-no-prd.test.ts and test/plan-runner-target-prompt.test.ts). Keep the module pure and dep-injected (no fs/clock/tmux imports; all side effects via opts). Add the new kind to the PlanPhaseResult doc comment AND to the trailing 'non-audit kinds' comment in runPlanPhaseWithReplan (its passthrough branch must list it). CAM-154 already ships selectPlannableById / selectPlanTargetFromFile with never-fall-back semantics; this story only makes the null case distinguishable and loud. Biome limits: extract a small guard helper instead of inflating runPlanPhase (patterns.md 'Biome cognitive complexity: factory/helper extraction'). Do not add any CLI flag; planTargetId arrives via the options bag only."
     },
