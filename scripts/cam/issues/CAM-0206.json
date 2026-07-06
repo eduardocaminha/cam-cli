@@ -1,0 +1,9 @@
+{
+  "id": "CAM-206",
+  "title": "No re-spec path for a stage:specified issue with a defective spec (specifyIssueOnMain + /cam-spec guard idea-only)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-06T23:32:58.249Z",
+  "description": "When a stage:specified issue has a defective spec (internally contradictory ACs, or ACs a planner keeps mis-implementing), there is NO supported way to fix the spec. Both /cam-spec pre-flight and specifyIssueOnMain (src/commands/issue-specify.ts Guard 4: Target issue must be stage:idea) hard-refuse a non-idea issue with reason wrong-stage. The only workarounds are hand-editing the issue JSON to revert stage, or abandon+refile: both fragile and outside the sanctioned CLI. Discovered 2026-07-06 during CAM-203: a 2nd blind re-plan BLOCKed and re-spec was recommended, but /cam-spec refused (already specified). On inspection the CAM-203 issue spec was actually clean (the intransitive-comparator contradiction was planner-introduced in the PRD, not the spec), so re-spec was not needed there and CAM-203 shipped after a 3rd blind re-plan converged. But the GAP is real for the genuine case: a specified issue whose spec IS wrong has no fix path. Fix direction: add a supported re-spec path, e.g. cam spec --respec <id> or a stage-aware specifyIssueOnMain that allows overwriting a specified issue spec (idempotent, on-main via commit-tree, mirroring the existing writers), OR a cam issue --demote <id> moving specified->idea. Cross-ref: CAM-204 (plan BLOCK->re-plan loop) is the PRD-level analog; this is the SPEC-level analog for defective specs the auditor/planner cannot converge on."
+}
