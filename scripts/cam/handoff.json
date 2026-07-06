@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add DomainDocsPayload types, validation, and deterministic renderers" },
+  "branchName": "cam/pr-118-domain-docs-writer",
+  "timestamp": "2026-07-06T13:54:37Z",
+  "createdFiles": [
+    "src/domain-docs/render.ts",
+    "test/domain-docs/render.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [
+    "US-002 needs the ref-only writer wired around these pure helpers (git-tree writes, no working-tree mutation) -- reuse the render.ts exports as-is, do not duplicate parsing/rendering logic in the writer.",
+    "CONTEXT.md payload has no context-name/description field, so mergeContextMd(null, ...) always seeds a bare '# Context' title with no description sentence; if a future story wants a richer title/description on first-create, that requires a payload shape change (out of scope for US-001).",
+    "Environment note (not a code defect): `bunx knip` (the check:all dead-code gate) crashes in this sandbox because system Node is v18.20.4 and knip's bundled colors.js imports node:util's styleText (Node 22+ only). typecheck and bun test are green; this is a pre-existing environment/infra gap unrelated to this story's diff (confirmed: knip fails at import time before reading any source files)."
+  ],
+  "nextStoryContext": "US-001 delivered a pure, dependency-free module at src/domain-docs/render.ts: types (DomainDocsPayload/TermEntry/AdrEntry), validateDomainDocsPayload (mirrors the {ok, errors} ValidationResult shape from src/issues/spec.ts), mergeContextMd (idempotent glossary merge, creates '# Context\\n\\n## Language' skeleton when existing is null, updates definitions in place, appends new terms), renderAdr (title + Context/Decision/Consequences section skeleton), nextAdrNumber (scans NNNN- prefixes, empty list -> '0001'), slugifyAdrTitle + adrFilename (NNNN-<slug>.md). No git/fs/network I/O anywhere in this file by design, so US-002 (writeDomainDocsOnMain) can inject a real filesystem/git-tree layer around these pure functions without needing to touch or re-test the rendering logic. docs/adr/ already has 0001..0009 on disk, so nextAdrNumber must be exercised against a populated list (covered in tests) as well as an empty one.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
