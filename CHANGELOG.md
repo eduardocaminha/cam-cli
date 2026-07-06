@@ -4,6 +4,17 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.67.0] - 2026-07-06
+
+### Added
+
+- US-006 - Reduce cam-ship.md to a thin phase-signal and record the ADR
+- US-005 - Convert the cam ship CLI to a phase-signal writer
+- US-004 - Wire the shipping phase into the sidecar loop and make the CLEAN trigger deterministic
+- US-003 - Implement the PR-create and merge-mode step (gh integration)
+- US-002 - Implement the deterministic pre-PR ship sequence (runShipPhase)
+- US-001 - Add deterministic PR title/body composer from the PRD snapshot
+
 ## [0.66.0] - 2026-07-05
 
 ### Added
