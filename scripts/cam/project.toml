@@ -14,3 +14,7 @@ ship = "claude-sonnet-4-6"
 
 [ship]
 merge_mode = "ci-gated"
+
+[loop]
+meta_loop = "auto"
+worker_isolation = "container"
