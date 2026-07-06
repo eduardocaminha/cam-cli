@@ -1,0 +1,33 @@
+{
+  "id": "CAM-205",
+  "title": "Flaky init tests: runInit spawns 3 real subprocesses, times out at 5000ms under check:all concurrent load",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-06T22:51:59.924Z",
+  "description": "test/init.test.ts runInit tests call runInit() directly, which spawns THREE real subprocesses: spawnSync(/bin/sh -c command -v claude) at src/commands/init.ts:77, spawnSync(claude --version) at :118, and spawnSync(bun <smoke-script>) at :187. Under the concurrent load of the full check:all spine (typecheck + biome + jscpd + knip + bun test running together), these serialized spawns exceed bun test default 5000ms timeout. The test writes config.toml with permission_mode=bypassPermissions on a fresh path TIMED OUT at 5004ms during the CAM-203 ship gate (2026-07-06), hard-stopping an otherwise all-green, review-CLEAN branch on an unrelated flake. This is the first real application of the CAM-202 no-flaky-evasion rule: the red gate was NOT re-run to force green; the root is fixed instead. Root-cause fix (prefer determinism): make the runInit tests deterministic by injecting/stubbing the subprocess spawns (fast + deterministic, add an injectable spawnFn seam in runInit if needed), or at minimum give the runInit tests a timeout appropriate to three real subprocess spawns under load. The fix MUST make check:all reliably green under concurrent load, including on its own ship (self-consistent: the fix branch fixes its own flake). Scope: test/init.test.ts primarily; src/commands/init.ts only if an injection seam is required. Do NOT touch unrelated code. Blocks the CAM-203 re-ship until merged.",
+  "spec": {
+    "scope": "IN: make test/init.test.ts runInit tests reliably green under the concurrent load of the full check:all spine. runInit() (src/commands/init.ts) spawns three real subprocesses (command -v claude at :77, claude --version at :118, bun smoke-script at :187) that serialize and exceed bun test default 5000ms timeout under load. Fix at the root: prefer making the tests deterministic by injecting/stubbing the spawns (add an injectable spawnFn seam in runInit if that is the cleanest path); at minimum, set an appropriate per-test timeout. The fix must be self-consistent (its own ship check:all passes). OUT: touching unrelated code; changing runInit production behavior beyond an optional test seam; any --no-verify / skip / retry-until-green evasion (CAM-202).",
+    "acceptanceCriteria": [
+      "test/init.test.ts runInit tests no longer time out at the default 5000ms under check:all concurrent load; the fix either injects/stubs the three subprocess spawns for determinism or sets an appropriate per-test timeout. [oracle: named-command bun run check:all]",
+      "bun test test/init.test.ts passes deterministically. [oracle: named-command bun test test/init.test.ts]",
+      "No production behavior change to runInit beyond an optional injectable test seam; if src/commands/init.ts is touched, only a spawn-injection seam is added whose default preserves current behavior. [oracle: reviewer-judgment]",
+      "bun run check:all is green (typecheck + biome + tests). [oracle: named-command bun run check:all]"
+    ],
+    "gotchas": [
+      "The flake is a TIMEOUT (5004ms > 5000ms), not an assertion failure; the three spawns are command -v claude (init.ts:77), claude --version (:118), bun smoke-script (:187).",
+      "The fix must fix its OWN ship: the flaky test runs in the fix branch check:all too, so a too-tight timeout or a still-non-deterministic spawn would re-flake and block the fix own ship.",
+      "Do NOT evade (CAM-202): no --no-verify, no skip/skipIf, no retry-until-green. A red gate is a hard-stop; this issue fixes the root.",
+      "The init tests deliberately do NOT assert runInit exit code (it couples to claude-on-PATH); preserve that."
+    ],
+    "domainTerms": [
+      "flaky test: a test whose pass/fail depends on timing or environment rather than the code under test; here a 5000ms-timeout test that spawns real subprocesses and tips over under concurrent gate load."
+    ]
+  },
+  "wsjf": {
+    "value": 7,
+    "timeCriticality": 9,
+    "riskReduction": 7,
+    "jobSize": 2
+  }
+}
