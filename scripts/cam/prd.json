@@ -48,7 +48,7 @@
         "Full gate spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: CHANGELOG.md, test/release/changelog-hygiene.test.ts (new). Depends on US-001 (the anchored transform) so future rolls cannot re-corrupt the repaired file. Repair shape: '# Changelog' title, intro prose (restore a complete sentence, e.g. 'Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` heading at the top collects pending work.' -- reword freely but the line must not START with '## '), blank line, '## [Unreleased]' (empty body), then '## [0.68.0] - 2026-07-06' and all existing sections in current order, with the stale bottom [Unreleased] section (lines ~654-663: CAM-33 pushed-verification bullets + CAM-22/CAM-29 Changed bullet) deleted per the issue decision (consumido/descartado, conteudo stale). Gotchas: project rule forbids em-dash in persisted .md (use colon/comma/parens); hygiene test reads the file via Bun.file or node path relative to import.meta.dir, keep it dependency-free; do NOT put a bare full-line '## [Unreleased]' example inside any test-fixture markdown that the hygiene test scans from the repo root (it only scans CHANGELOG.md, so fixtures in test files are fine). No vendor/ or templates/ files are touched, so no embed-vendor step."
     }
