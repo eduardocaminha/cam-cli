@@ -77,6 +77,11 @@ document — none of them require deep reasoning to absorb:
    dirty, behind-unrecovered, timeout). If present, read its `prNumber`,
    `reason`, and `prUrl` fields; you'll surface them as an opening blocker
    below. If absent, there's nothing to surface — a clean boot stays clean.
+8. `.claude/.cam-plan-escalated.json` — a durable marker written whenever the
+   plan BLOCK->re-plan loop exhausts its rounds without reaching an
+   `audit-approved` verdict. If present, read its `issueId`, `roundsCompleted`,
+   and `summary` fields; you'll surface them as an opening blocker below. If
+   absent, there's nothing to surface — a clean boot stays clean.
 
 After the boot read, greet the human with a one-screen summary:
 
@@ -102,6 +107,16 @@ before asking what to do next, e.g.:
 
 Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
 only removed by the merge-watch consume path once that same PR merges.
+
+If `.claude/.cam-plan-escalated.json` is present, add an opening blocker line
+before asking what to do next, e.g.:
+
+```
+⚠ plan escalated: <issueId> (<roundsCompleted> rounds) — <summary>
+```
+
+Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
+only removed by the next converging plan run for that issue.
 
 Then ask: *"What would you like to do?"*
 
