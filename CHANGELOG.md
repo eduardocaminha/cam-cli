@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.74.0] - 2026-07-06
+
+### Added
+
+- US-001 - Stub runInit subprocess spawns via injectable spawnFn seam
+
 ## [0.73.0] - 2026-07-06
 
 ### Added
