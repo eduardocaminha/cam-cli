@@ -93,7 +93,7 @@
         "Full quality spine is green. [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/agents/subagent-orchestrator.md, src/vendor/_generated.ts (regenerated, never hand-edited). Precedent: the ship-stalled boot step (item 7 of the orchestrator 'Boot context' list) and its opening-blocker line format. Keep the doc wording symmetric with the ship-stalled step: read-only surfacing, explicit 'do NOT delete the marker yourself'. Depends on US-002 (filename constant) and US-004 (removal-on-convergence lifecycle)."
     }
