@@ -20,7 +20,7 @@
     "dist/**",
     "claude-code-harness/**"
   ],
-  "ignoreBinaries": ["claude", "tmux", "ps", "lsof", "gh", "pgrep"],
+  "ignoreBinaries": ["cam", "claude", "tmux", "ps", "lsof", "gh", "pgrep"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "duplicates"]
 }

@@ -84,7 +84,7 @@ export const GATES: Gate[] = [
 	g('file-size', 'bun scripts/check-file-sizes.ts'),
 	g('debt-markers', 'bun scripts/check-debt-markers.ts'),
 	g('coverage', 'bun scripts/check-coverage.ts'),
-	g('dead-code', 'bunx knip'),
+	g('dead-code', 'bunx knip@6.24.0'),
 	g('dup', 'bunx jscpd@5 --config .jscpd.json src scripts'),
 	g('ci-parity', 'bun run check:ci-parity'),
 ];

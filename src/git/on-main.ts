@@ -30,7 +30,7 @@ import type { SpawnSyncReturns } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { printWarning } from '../logging/color.ts';
+import { printError, printWarning } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
 // Shared SpawnFn type
@@ -264,6 +264,92 @@ export function syncWorktreeIfOnMain(
 		printWarning(
 			'syncWorktreeIfOnMain: git restore failed',
 			(restoreResult.stderr ?? '').trim(),
+		);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// checkMainUpToDate / pushMainBestEffort (shared guard + push helpers)
+// ---------------------------------------------------------------------------
+//
+// GOTCHA (jscpd, CAM-118 US-002): four existing on-main callers
+// (issue-specify.ts, issue-file.ts, journal.ts, triage.ts) each carry a
+// byte-identical private copy of this guard+push pair. A 5th verbatim copy
+// risks tripping the jscpd duplication gate (bun run check:all). NEW callers
+// (starting with src/commands/domain-docs.ts) should import these shared
+// exports instead of adding another private copy. The four existing copies
+// are intentionally left untouched here (that dedup is CAM-124's scope, not
+// this story's).
+
+/** Guard outcome shared by all on-main writers. */
+export type MainGuardResult =
+	| { ok: false; reason: 'diverged' | 'detached-head' | 'missing-main' }
+	| { ok: true; branchWasMain: boolean; localMainSha: string };
+
+/**
+ * Up-to-date guard. Runs before any mutation.
+ *   0a. Detached HEAD -> { ok: false, reason: 'detached-head' }.
+ *   0b. Missing local main branch -> { ok: false, reason: 'missing-main' }.
+ *   0c. Best-effort fetch + divergence check against origin/main ->
+ *       { ok: false, reason: 'diverged' } on mismatch.
+ *
+ * @param actionLabel human-readable verb phrase for the detached-head error
+ *   message (e.g. 'write domain docs'), mirroring the per-caller wording used
+ *   by the four existing private copies.
+ */
+export function checkMainUpToDate(
+	cwd: string,
+	spawnFn: SpawnFn,
+	actionLabel: string,
+): MainGuardResult {
+	const branchResult = spawnFn('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], {
+		encoding: 'utf8',
+	});
+	const currentBranch = (branchResult.stdout ?? '').trim();
+	const branchWasMain = currentBranch === 'main';
+
+	if (currentBranch === 'HEAD') {
+		printError('detached HEAD', `cannot ${actionLabel} from a detached HEAD state`);
+		return { ok: false, reason: 'detached-head' };
+	}
+
+	const localMainResult = spawnFn('git', ['-C', cwd, 'rev-parse', 'main'], {
+		encoding: 'utf8',
+	});
+	if ((localMainResult.status ?? 1) !== 0) {
+		printError('missing local main branch', 'run: git fetch origin main:main');
+		return { ok: false, reason: 'missing-main' };
+	}
+	const localMainSha = (localMainResult.stdout ?? '').trim();
+
+	spawnFn('git', ['-C', cwd, 'fetch', 'origin', 'main'], { encoding: 'utf8' });
+
+	const originMainResult = spawnFn('git', ['-C', cwd, 'rev-parse', 'origin/main'], {
+		encoding: 'utf8',
+	});
+	if ((originMainResult.status ?? 1) === 0) {
+		const originSha = (originMainResult.stdout ?? '').trim();
+		if (localMainSha !== originSha) {
+			printError('local main is diverged from origin/main', 'run: git pull origin main');
+			return { ok: false, reason: 'diverged' };
+		}
+	}
+
+	return { ok: true, branchWasMain, localMainSha };
+}
+
+/**
+ * Best-effort push of main to origin. A non-zero exit is logged via
+ * printError; the caller does not abort (the local commit already landed).
+ */
+export function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
+	const pushResult = spawnFn('git', ['-C', cwd, 'push', 'origin', 'main'], {
+		encoding: 'utf8',
+	});
+	if ((pushResult.status ?? 1) !== 0) {
+		printError(
+			'push rejected',
+			`git push origin main: ${(pushResult.stderr ?? '').trim() || 'unknown error'}`,
 		);
 	}
 }

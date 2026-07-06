@@ -6,6 +6,20 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-07-06
+
+### Added
+
+- US-004 - Wire the domain-docs write into the /cam-spec final step
+- US-003 - Expose cam spec --write-docs stdin-JSON entrypoint
+- US-002 - Add writeDomainDocsOnMain ref-only deterministic writer
+- US-001 - Add DomainDocsPayload types, validation, and deterministic renderers
+
+### Fixed
+
+- update GATES manifest test for pinned knip@6.24.0
+- pin knip@6.24.0 and ignore cam self-spawn binary
+
 ## [0.69.0] - 2026-07-06
 
 ### Added

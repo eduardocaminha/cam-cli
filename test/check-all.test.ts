@@ -112,11 +112,11 @@ describe('GATES manifest', () => {
 		expect(gate?.args).toEqual(['scripts/check-coverage.ts']);
 	});
 
-	test('dead-code gate: bunx knip', () => {
+	test('dead-code gate: bunx knip@6.24.0', () => {
 		const gate = GATES[7];
 		expect(gate?.name).toBe('dead-code');
 		expect(gate?.cmd).toBe('bunx');
-		expect(gate?.args).toEqual(['knip']);
+		expect(gate?.args).toEqual(['knip@6.24.0']);
 	});
 
 	test('dup gate: bunx jscpd@5 --config .jscpd.json src scripts', () => {

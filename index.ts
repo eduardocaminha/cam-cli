@@ -39,7 +39,7 @@ import { runIssueList } from './src/commands/issue-list.ts';
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
-import { runSpec } from './src/commands/spec.ts';
+import { runSpec, runSpecWriteDocs } from './src/commands/spec.ts';
 import { runReview } from './src/commands/review.ts';
 import { runShip } from './src/commands/ship.ts';
 import {
@@ -224,7 +224,7 @@ const PLAN_HELP = renderHelp({
 const SPEC_HELP = renderHelp({
 	title: 'cam spec',
 	tagline: 'Deep-spec an idea issue into stage:specified via grill-with-docs',
-	usage: 'cam spec <id>',
+	usage: 'cam spec <id> | cam spec --write-docs <id>  (reads JSON from stdin)',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -237,6 +237,18 @@ const SPEC_HELP = renderHelp({
 			],
 		},
 		{
+			heading: 'Options',
+			entries: [
+				{
+					name: '--write-docs <id>',
+					description:
+						'In-process write channel (no tmux): reads a DomainDocsPayload JSON\n' +
+						'blob from stdin and calls writeDomainDocsOnMain directly, mirroring\n' +
+						'`cam journal append` / `cam issue --file-local`.',
+				},
+			],
+		},
+		{
 			heading: 'Behaviour',
 			body:
 				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
@@ -245,13 +257,19 @@ const SPEC_HELP = renderHelp({
 				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Sends `/cam-spec <id>` to the orchestrator pane via atomic send-keys.\n' +
 				'4. Returns 0 immediately. The grill-with-docs interview runs inside the pane.\n' +
-				'5. At interview end the orchestrator calls specifyIssueOnMain to promote\n' +
-				'   the issue from stage:idea to stage:specified on main.',
+				'5. At interview end the orchestrator (a read-only session: Edit/Write/\n' +
+				'   NotebookEdit are disallowed) pipes the assembled DomainDocsPayload JSON\n' +
+				'   into `cam spec --write-docs <id>`, which commits CONTEXT.md + any new\n' +
+				'   ADR files to main in one atomic commit via writeDomainDocsOnMain, with\n' +
+				'   NO tmux calls, no send-keys, no pane bootstrap, no liveness check.',
 		},
 	],
 	footer:
 		'cam spec requires exactly one issue id argument (e.g. CAM-42).\n' +
-		'After the interview the issue is stage:specified and plannable via `cam plan`.',
+		'After the interview the issue is stage:specified and plannable via `cam plan`.\n' +
+		'`echo \'<json>\' | cam spec --write-docs CAM-42` exits 0 on { ok: true }\n' +
+		'(including the noOp empty-payload outcome) and 1 on malformed JSON, an\n' +
+		'invalid payload, or a guard failure (diverged / detached-head / missing-main).',
 });
 
 const ISSUE_HELP = renderHelp({
@@ -762,23 +780,41 @@ export function parsePlanArgs(args: string[]): { issue?: number; help: boolean }
 }
 
 /**
- * Parse `cam spec` args. The command takes exactly one positional argument:
- * an issue id string (e.g. 'CAM-42' or '42'). A leading prefix is preserved
- * as-is; a bare integer is accepted and prefixed by the caller.
- *
- * Returns `{ id, help: false }` on success, `{ help: true }` on --help/-h,
- * or `null` on a parse error (the caller prints the usage hint).
+ * Discriminated union returned by parseSpecArgs.
+ * - mode === 'write-docs': in-process `--write-docs <id>` write channel
+ *     (US-003, CAM-118): reads a DomainDocsPayload JSON blob from stdin and
+ *     calls writeDomainDocsOnMain directly. NO tmux calls.
+ * - mode === 'proxy': the existing thin-proxy path (US-004, CAM-107),
+ *     byte-behaviorally unchanged. `id` is optional here: a bare `cam spec`
+ *     with no positional is a parse success (dispatch reports the missing-id
+ *     error), matching the pre-US-003 behaviour.
+ * - help === true: caller should print SPEC_HELP and exit 0.
  *
  * NOTE: This parser does NOT accept `--permission-mode` (US-007 invariant).
  */
-export function parseSpecArgs(args: string[]): { id?: string; help: boolean } | null {
-	const result: { id?: string; help: boolean } = { help: false };
-	for (let i = 0; i < args.length; i += 1) {
-		const arg = args[i]!;
-		if (arg === '--help' || arg === '-h') {
-			result.help = true;
-			continue;
-		}
+export type ParsedSpecArgs =
+	| { mode: 'write-docs'; id: string; help: false }
+	| { mode: 'proxy'; id?: string; help: false }
+	| { mode?: never; help: true };
+
+/**
+ * Parse `cam spec` args. The command takes exactly one positional argument:
+ * an issue id string (e.g. 'CAM-42' or '42'). A leading prefix is preserved
+ * as-is; a bare integer is accepted and prefixed by the caller. `--write-docs`
+ * selects the in-process write channel (US-003); its absence keeps the
+ * existing thin-proxy path (US-004) unchanged.
+ *
+ * Returns `null` on a parse error (the caller prints the usage hint).
+ */
+export function parseSpecArgs(args: string[]): ParsedSpecArgs | null {
+	if (args.includes('--help') || args.includes('-h')) {
+		return { help: true };
+	}
+	const writeDocs = args.includes('--write-docs');
+	const rest = args.filter((a) => a !== '--write-docs');
+
+	let id: string | undefined;
+	for (const arg of rest) {
 		if (arg.startsWith('-')) {
 			printError(
 				`unknown spec option: ${arg}`,
@@ -786,7 +822,7 @@ export function parseSpecArgs(args: string[]): { id?: string; help: boolean } | 
 			);
 			return null;
 		}
-		if (result.id !== undefined) {
+		if (id !== undefined) {
 			printError(
 				'cam spec: too many arguments',
 				'expected a single issue id, e.g. `cam spec CAM-42`',
@@ -800,9 +836,58 @@ export function parseSpecArgs(args: string[]): { id?: string; help: boolean } | 
 			);
 			return null;
 		}
-		result.id = arg;
+		id = arg;
 	}
-	return result;
+
+	if (writeDocs) {
+		if (id === undefined) {
+			printError(
+				'cam spec --write-docs: missing issue id',
+				'usage: echo \'<json>\' | cam spec --write-docs <id>',
+			);
+			return null;
+		}
+		return { mode: 'write-docs', id, help: false };
+	}
+
+	return id !== undefined ? { mode: 'proxy', id, help: false } : { mode: 'proxy', help: false };
+}
+
+/** Injectable deps for dispatchSpec -- all optional; production uses real impls. */
+export interface SpecDispatchDeps {
+	/**
+	 * Inject a fake for the --write-docs branch.
+	 * Default: calls runSpecWriteDocs({ id }) (reads stdin JSON, in-process,
+	 * no tmux).
+	 */
+	writeDocsFn?: (id: string) => Promise<number>;
+	/** Inject a fake for the thin-proxy branch. Default: calls runSpec({ id }). */
+	runSpecFn?: (id: string) => Promise<number>;
+}
+
+/**
+ * Route a parsed `cam spec` call: mode 'write-docs' => runSpecWriteDocs
+ * in-process (NO tmux calls, no send-keys, no pane bootstrap, no liveness
+ * check); mode 'proxy' => the existing runSpec thin-proxy. Exported so unit
+ * tests can inject fakes for both branches and prove the --write-docs path
+ * never touches the thin-proxy (and vice versa).
+ */
+export async function dispatchSpec(
+	parsed: ParsedSpecArgs,
+	deps?: SpecDispatchDeps,
+): Promise<number> {
+	if (parsed.mode === 'write-docs') {
+		const writeDocsFn = deps?.writeDocsFn ?? ((id: string) => runSpecWriteDocs({ id }));
+		return writeDocsFn(parsed.id);
+	}
+	const id = parsed.mode === 'proxy' ? parsed.id : undefined;
+	if (!id) {
+		printError('cam spec: missing issue id', 'usage: cam spec <id>  e.g. cam spec CAM-42');
+		printFatalHint('run `cam spec --help` for usage');
+		return 1;
+	}
+	const runSpecFn = deps?.runSpecFn ?? ((idArg: string) => runSpec({ id: idArg }));
+	return runSpecFn(id);
 }
 
 /**
@@ -1485,12 +1570,7 @@ async function main(argv: string[]): Promise<number> {
 				process.stdout.write(SPEC_HELP);
 				return 0;
 			}
-			if (!parsed.id) {
-				printError('cam spec: missing issue id', 'usage: cam spec <id>  e.g. cam spec CAM-42');
-				printFatalHint('run `cam spec --help` for usage');
-				return 1;
-			}
-			return runSpec({ id: parsed.id });
+			return dispatchSpec(parsed);
 		}
 		case 'issue': {
 			const parsed = parseIssueArgs(argv.slice(3));
