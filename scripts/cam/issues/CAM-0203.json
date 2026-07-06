@@ -1,9 +1,31 @@
 {
   "id": "CAM-203",
   "title": "/cam-plan <id> targeting e no-op + issue specified fica rank:None (unplannable)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T17:17:54.209Z",
-  "description": "Dois defeitos acoplados que impediram planejar CAM-201 explicitamente. (1) /cam-plan <id> escreve plan_issue no cam-loop.local.md mas runPlanPhase.selectIssueFn (selectPlannableFromFile) IGNORA plan_issue e pega o top-RANKED plannable, entao targeting explicito e no-op (classe CAM-157: buildPlannerTaskPrompt nomeia o issue SELECIONADO, nao o pedido). (2) specifyIssueOnMain deixa rank:None; a selecao ordena por rank asc e um issue sem rank fica por ultimo / nao e selecionado, entao um issue recem-specificado (CAM-201, WSJF 5.0) nunca e planejado enquanto um ranked de WSJF menor (CAM-66 rank 13, WSJF 2.0) e escolhido. Fix: honrar plan_issue em selectIssueFn quando setado (target explicito ganha), e/ou atribuir rank provisorio no specify (ou cair no WSJF quando rank e null). Vivido 2026-07-06: /cam-plan CAM-201 planejou CAM-66."
+  "description": "Dois defeitos acoplados que impediram planejar CAM-201 explicitamente. (1) /cam-plan <id> escreve plan_issue no cam-loop.local.md mas runPlanPhase.selectIssueFn (selectPlannableFromFile) IGNORA plan_issue e pega o top-RANKED plannable, entao targeting explicito e no-op (classe CAM-157: buildPlannerTaskPrompt nomeia o issue SELECIONADO, nao o pedido). (2) specifyIssueOnMain deixa rank:None; a selecao ordena por rank asc e um issue sem rank fica por ultimo / nao e selecionado, entao um issue recem-specificado (CAM-201, WSJF 5.0) nunca e planejado enquanto um ranked de WSJF menor (CAM-66 rank 13, WSJF 2.0) e escolhido. Fix: honrar plan_issue em selectIssueFn quando setado (target explicito ganha), e/ou atribuir rank provisorio no specify (ou cair no WSJF quando rank e null). Vivido 2026-07-06: /cam-plan CAM-201 planejou CAM-66.",
+  "spec": {
+    "scope": "Make explicit plan targeting honor the requested issue and make freshly-specified issues plannable. (1) runPlanPhase.selectIssueFn honors plan_issue from cam-loop.local.md when set, so an explicit /cam-plan <id> target wins over top-ranked selection. (2) A freshly-specified issue with rank:None is not silently unplannable: assign a provisional rank at specify time or fall back to WSJF in the selection sort when rank is null.",
+    "acceptanceCriteria": [
+      "When cam-loop.local.md has a non-empty plan_issue, runPlanPhase selects that exact issue (when plannable) rather than the top-ranked one; a unit test proves the explicit target wins over a higher-ranked other issue. [oracle: named-command bun test]",
+      "A specified+open issue with rank:None is selectable by the plan-runner (provisional rank at specify time, or a WSJF fallback in the selection sort); a test proves an unranked high-WSJF issue is not skipped in favor of a lower-WSJF ranked one.",
+      "If plan_issue names an issue that is missing / not-open / not-plannable, the plan-runner fails with a clear error rather than silently planning a different issue.",
+      "bun run check:all is green."
+    ],
+    "gotchas": [
+      "Lived 2026-07-06: /cam-plan CAM-201 planned CAM-66 because CAM-201 was rank:None and plan_issue was ignored.",
+      "CAM-157 fixed buildPlannerTaskPrompt to NAME the selected issue but did not fix the SELECTION to honor plan_issue."
+    ],
+    "domainTerms": [
+      "plan_issue explicit target"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 9,
+    "riskReduction": 7,
+    "jobSize": 3
+  }
 }
