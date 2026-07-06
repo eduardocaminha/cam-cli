@@ -1,28 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Encode the no-flaky-evasion hard-stop rule in subagent-implementer.md"
+    "id": "US-003",
+    "title": "Encode the no-flaky-evasion hard-stop rule in subagent-reviewer.md"
   },
   "branchName": "cam/pr-202-no-flaky-test-evasion",
-  "timestamp": "2026-07-06T18:10:00Z",
+  "timestamp": "2026-07-06T18:20:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "templates/agents/subagent-implementer.md",
-    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-reviewer.md",
+    ".claude/agents/subagent-reviewer.md",
     "src/vendor/_generated.ts",
-    "test/dashboard.test.ts",
-    "scripts/check-all.ts",
-    "test/check-all.test.ts",
-    "scripts/file-size-budget.json",
     "scripts/cam/prd.json"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "US-003 (encode the SAME no-flaky-evasion hard-stop rule in templates/agents/subagent-reviewer.md AND .claude/agents/subagent-reviewer.md) is the direct sibling of this story. Copy the '### No-flaky-evasion hard stop' subsection verbatim in spirit (adapt wording for the reviewer's read-only, judgment role rather than the implementer's 'fix or HALT' role) into the reviewer's own Gate discipline / verification section, keeping the same four required substrings for the oracle: 'flaky', 'pre-existing', 'environmental', 'unrelated'. Anchor point in subagent-implementer.md (already done, for reference): a new '### No-flaky-evasion hard stop' subsection placed immediately after the 'Roll-up convention' paragraph and before '## Behavioral gate (Layer A)', inside '## Gate discipline'. Tie the reviewer's version to the same mechanism by name: readWorkerOutcome's gateTestsIndicateFailure red-gate guard (src/supervisor/result.ts, from US-001) -- the reviewer, like the implementer, cannot narrate a red gate green because the supervisor reads the recorded gates.tests string, not prose. Run bun run embed-vendor after editing both reviewer copies, then bun run embed-vendor:check. Gotcha encountered on THIS story that will likely recur: bun run check:all in this sandbox has two additional failure modes unrelated to any story content: (1) a genuinely flaky test/dashboard.test.ts keypress test ('k after j returns to first row') that intermittently failed under full-suite CPU load because a single 0ms setTimeout tick was not always enough for React to flush two back-to-back useInput-triggered re-renders; fixed here with a poll-based waitForAccentLine helper (bounded 500ms timeout, 5ms poll interval) -- reuse this same poll pattern if another keypress-sequence test flakes. (2) knip (the dead-code gate) crashes under this sandbox's system Node 18 (missing node:util's styleText, needed by knip 6.24.0, added in Node 20) because bunx delegates to the shebang-declared `node` interpreter by default; fixed by adding --bun to the gate command in scripts/check-all.ts (bunx --bun knip@6.24.0), which forces bunx to use Bun's own JS runtime instead (confirmed against Bun's official bunx docs). Both fixes required touching test/check-all.test.ts (gate-args assertion) and scripts/file-size-budget.json (ratchet: budget values are content.split('\\n').length, i.e. wc -l + 1 for a trailing-newline file, NOT bare wc -l -- verify with `bun -e \"console.log(require('fs').readFileSync(path,'utf8').split('\\n').length)\"` before setting a ceiling, do not just copy wc -l output). If check:all is red again for either of these two reasons on a fresh run, it is very likely the same underlying flake/environment gap recurring, not a regression introduced by the current story.",
+  "openQuestions": [
+    "Non-blocking observability note: one full 'bun test' run out of ~20 consecutive runs (spread across plain 'bun test' and full 'bun run check:all' invocations, including 4 runs under deliberate artificial CPU-stress via background 'yes' processes) reported '3403 pass / 1 fail' instead of the steady-state '3404 pass / 0 fail'. The failing test name could not be captured (the anomalous run's full log was not retained before rediscovery) and it did not reproduce again despite repeated attempts including under stress. This is consistent with the already-documented dashboard.test.ts keypress-timing flake class (see patterns.md 'Dogfooding the no-flaky-evasion rule...' and 'Gotcha encountered on THIS story...' entries from US-002/CAM-202), which was already given a poll-based fix (waitForAccentLine) in the prior story. Every gate run used for THIS story's own DONE decision (the one recorded in worker-report.json) was independently verified green (0 fail) per the no-flaky-evasion rule this very story encodes; no red gate was narrated green. Flagging here per the rule's own instruction to document any flaky/failing test observed, even when not reproducible or attributable to this story's diff (pure prose edits to two agent markdown files, zero test/source changes)."
+  ],
+  "nextStoryContext": "US-003 is done: both templates/agents/subagent-reviewer.md and .claude/agents/subagent-reviewer.md now carry a '### No-flaky-evasion hard stop' subsection (placed between '### Green tests do not prove correctness' and '### Hard-constraint rule', inside the 'Layer B Verdict: Binary PASS/FAIL Rubric' section) plus a new bullet appended to the existing '### Hard-constraint rule' list, mirroring the wording/mechanism-naming style of US-002's implementer-side rule (same four required substrings: flaky, pre-existing, environmental, unrelated; same named-mechanism tie-in to gateTestsIndicateFailure in src/supervisor/result.ts). The two copies' PRE-EXISTING intentional deltas (the .claude/agents copy's CLI-context security checklist, concrete gate commands, and the runBehavioralGate invocation detail in its Layer B Behavioral Gate section) were left untouched; only the shared/common sections were edited identically in both files, per the story's own gotcha note. Ran embed-vendor + embed-vendor:check (clean), typecheck (clean), bun test (clean on the recorded run), and full bun run check:all (clean, exit 0) before commit. If a future story needs to touch the implementer/reviewer no-flaky-evasion wording again (e.g. a hypothetical US-004 tightening enforcement further), the two anchor subsections to edit are now: subagent-implementer.md's '### No-flaky-evasion hard stop' (under '## Gate discipline') and subagent-reviewer.md's new '### No-flaky-evasion hard stop' (under 'Layer B Verdict') in BOTH template and runtime copies, then embed-vendor + embed-vendor:check. No other non-operator stories were inspected during this story; check prd.json fresh for the next highest-priority passes:false story.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure prose edits to two agent instruction files (subagent-implementer.md templates + runtime mirror) plus a test-timing fix and a bunx flag fix. The bunx --bun behavior was verified via web search against Bun's official bunx docs (bun.com/docs/pm/bunx and the v0.7.0 release notes): --bun forces bunx to execute a package's bin script under Bun's own JS runtime instead of respecting a #!/usr/bin/env node shebang, confirming the fix for the knip/Node-18 crash is correct and matches documented behavior."
+      "summary": "Pure prose edits to two agent instruction files (subagent-reviewer.md templates + runtime mirror) mirroring US-002's implementer-side rule. No external library touched; no code changed."
     }
   ]
 }

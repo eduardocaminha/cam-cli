@@ -57,7 +57,7 @@
         "Full quality spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/agents/subagent-reviewer.md, .claude/agents/subagent-reviewer.md, src/vendor/_generated.ts (regenerated via bun run embed-vendor, never hand-edited). Gotchas: the two copies intentionally DIFFER (the .claude/agents copy has CLI-context security/correctness checklists and concrete gate commands); apply the rule to both without collapsing their deltas. Natural anchor points: the '### Hard-constraint rule' list (add the flaky-evasion clause as a hard-constraint bullet, following the existing behavioral-gate-FAIL bullet pattern: integrate into the findings channel, do NOT introduce a separate verdict field or parallel gate-verdict path) and the '### Green tests do not prove correctness' section. Keep wording aligned with US-002's implementer rule so both agents enforce the identical policy. The constraint 'must not modify .claude/agents/*' is lifted because this story's acceptance criteria explicitly require it."
     }
