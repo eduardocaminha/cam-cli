@@ -4,6 +4,16 @@ All notable changes to cam-cli are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; `## [Unreleased]
 
+## [0.68.0] - 2026-07-06
+
+### Added
+
+- US-005 - nextActions ephemeral-only: schema + persona hard rule + doc-gate
+- US-004 - Boot prompt + persona derive backlog via cam issue list; greeting counts line
+- US-003 - CLI surface: parse cam issue list, route in dispatchIssue, help text
+- US-002 - runIssueList command core: deterministic read + render + backend branch
+- US-001 - Pure backlog list-view derivation in src/issues/list.ts
+
 ## [0.67.0] - 2026-07-06
 
 ### Added
