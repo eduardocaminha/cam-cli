@@ -1,0 +1,9 @@
+{
+  "id": "CAM-193",
+  "title": "container image-staleness: preflight hot-loops with no backoff, false-stale on Dockerfile touch, ensure-up does not auto-rebuild",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-06T04:57:25.487Z",
+  "description": "Three related defects in container worker-isolation staleness, all hit on CAM-98 (2026-07-06) when cam-worker:latest was older than the Dockerfile. (1) per-dispatch container-preflight image-stale retries about 9 per second with no backoff, hot-looping until the image is fresh (contrast the implement and review backoff). (2) false-stale: the check compares Dockerfile mtime vs image Created; a Dockerfile touched without content change stays permanently stale, and a normal rebuild is a full cache hit that never updates Created, so only a no-cache rebuild clears it. Consider hashing Dockerfile content instead of mtime. (3) ensure-up did not auto-rebuild the stale image at supervisor boot despite CAM-152 specifying image-stale to rebuild and recreate; the dispatch path fail-closed instead of triggering the rebuild. Recovery this session was a manual no-cache docker build."
+}
