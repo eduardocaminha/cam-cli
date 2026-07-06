@@ -1,9 +1,41 @@
 {
   "id": "CAM-189",
   "title": "Surface reviewer SUGGESTIONs from the last review round as follow-ups before cycle close",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-05T15:40:09.932Z",
-  "description": "The reviewer already persists all findings (incl. SUGGESTION severity) to scripts/cam/review-report.json (ephemeral, overwritten each round), but the loop never reads the last rounds SUGGESTIONs out to surface them as follow-up issues before the cycle closes, so they are silently lost when the file is overwritten or the pane is torn down (CAM-188). CAM-186 and CAM-139 each lost 2 SUGGESTIONs this way. Scope: on terminal CLEAN, read review-report.json findings of severity SUGGESTION and surface them to the operator and/or auto-file as stage:idea follow-ups. Related to CAM-115/CAM-128 (follow-ups das SUGGESTIONs do review) and to teardown-only CAM-188 (which makes the loss permanent by killing the scrollback)."
+  "description": "The reviewer already persists all findings (incl. SUGGESTION severity) to scripts/cam/review-report.json (ephemeral, overwritten each round), but the loop never reads the last rounds SUGGESTIONs out to surface them as follow-up issues before the cycle closes, so they are silently lost when the file is overwritten or the pane is torn down (CAM-188). CAM-186 and CAM-139 each lost 2 SUGGESTIONs this way. Scope: on terminal CLEAN, read review-report.json findings of severity SUGGESTION and surface them to the operator and/or auto-file as stage:idea follow-ups. Related to CAM-115/CAM-128 (follow-ups das SUGGESTIONs do review) and to teardown-only CAM-188 (which makes the loss permanent by killing the scrollback).",
+  "spec": {
+    "scope": "CAM-189 makes review SUGGESTIONs durable instead of losing them when review-report.json is overwritten or the pane is torn down (CAM-188). Two coordinated changes. REVIEWER CHANGE: the subagent-reviewer exit protocol writes SUGGESTION (and other non-blocking) findings into scripts/cam/review-report.json even when the verdict is CLEAN; the CLEAN templates (both the no-oracle and the with-oracle CLEAN shapes in .claude/agents/subagent-reviewer.md plus templates) stop forcing findings empty and carry the SUGGESTION findings. Verdict CLEAN means no blocking findings, not no findings. SIDECAR CHANGE: at a terminal review verdict (CLEAN or MAX_ROUNDS_DEBT, per TERMINAL_VERDICTS in src/supervisor/decide.ts), the sidecar reads the terminal review-report.json, filters findings with severity SUGGESTION, and auto-files each as a stage:idea issue via createLocalIssueOnMain (the on-main commit-tree path, not the working branch), then pushes a one-line summary to the orchestrator pane. Dedup: each SUGGESTION gets a stable short fingerprint hash of its normalized file, line, and text; the filed issue description embeds a suggestion-fingerprint line; before filing, the sidecar reads open issues via readBacklogFromMain and skips any fingerprint already present in an open issue description (also dedups within the same batch). IN SCOPE: the reviewer CLEAN-template change plus re-embed; the sidecar terminal-hook read-filter-file-summary; the fingerprint and dedup helpers; a decide.ts regression test proving terminal detection keys off the verdict string not findings length; tests for the auto-file and dedup paths. OUT OF SCOPE: capturing non-blocking WARNING findings that survive a CLEAN (separate follow-up), any change to how blocking CRITICAL or WARNING debt is handled, and surfacing SUGGESTIONs to the operator by any channel other than the one-line pane summary plus the filed idea issues.",
+    "acceptanceCriteria": [
+      "The subagent-reviewer exit protocol writes SUGGESTION findings into review-report.json on a CLEAN verdict: both CLEAN templates (no-oracle and with-oracle) carry the SUGGESTION findings instead of an empty array. A doc-gate or fixture test asserts this, and the embedded copy is regenerated (embed-vendor check clean).",
+      "decide() with lastVerdict CLEAN and a non-empty findings array still returns a terminal decision (complete or await-operator); a regression test locks terminal detection to the verdict string (TERMINAL_VERDICTS), not findings length.",
+      "At a terminal review verdict (CLEAN or MAX_ROUNDS_DEBT), the sidecar reads the terminal review-report.json, filters severity SUGGESTION, and files each as a stage:idea issue via createLocalIssueOnMain. A fixture report with 2 SUGGESTIONs files 2 idea issues on main.",
+      "A SUGGESTION whose fingerprint already appears in an open issue description is NOT re-filed. Fixture: one open idea issue carrying fingerprint F, a report SUGGESTION hashing to F, result 0 filed. Duplicates within the same report batch are also deduped.",
+      "A filed issue has title equal to the truncated finding text and description equal to the full finding text plus provenance (source branch or cycle id, round, and file:line when present) plus a suggestion-fingerprint line.",
+      "After filing, the sidecar pushes exactly one summary line to the orchestrator pane listing the filed issue ids and the dup-skipped count.",
+      "A terminal verdict with zero SUGGESTION findings files nothing and pushes no summary line (silent no-op).",
+      "The auto-file path runs in the sidecar deterministically with no claude spawn, uses the on-main commit-tree path, and does not touch the working branch; if createLocalIssueOnMain reports a diverged main it skips filing and warns rather than crashing the loop."
+    ],
+    "gotchas": [
+      "The reviewer currently forces an empty findings array on CLEAN (subagent-reviewer.md exit protocol, both the no-oracle and with-oracle CLEAN shapes); the fix must edit BOTH shapes and re-embed into src/vendor/_generated.ts (embed-vendor) or the vendor-drift check fails.",
+      "decide.ts keys terminal detection off TERMINAL_VERDICTS over the verdict string, not findings length, so carrying SUGGESTIONs on a CLEAN report is safe; add a regression test so a future refactor does not start gating on findings emptiness.",
+      "review-report.json is ephemeral and gitignored and is overwritten on every review round; the sidecar must read it at the instant decide() returns terminal, before the next dispatch overwrites it and before the CAM-188 teardown kills the pane.",
+      "ReviewFinding has no stable id and its file and line are optional; the fingerprint must normalize and handle missing file or line without collisions across distinct texts.",
+      "createLocalIssueOnMain fetches and compares origin/main and pushes; the sidecar auto-file must treat a diverged main or push failure as skip-and-warn, never a loop crash.",
+      "The dedup scan reuses readBacklogFromMain (reads open issues from main), the same primitive CAM-190 builds on; it is available today and needs no dependency on CAM-190."
+    ],
+    "domainTerms": [
+      "SUGGESTION follow-up: a stage:idea issue auto-filed from a non-blocking SUGGESTION finding at terminal review, so the finding is not lost when review-report.json is overwritten or the pane is torn down.",
+      "suggestion fingerprint: a stable short hash of a review findings normalized file, line, and text, embedded in the filed issue description as a suggestion-fingerprint line, used to dedup re-filing across rounds and cycles.",
+      "terminal review verdict: CLEAN or MAX_ROUNDS_DEBT (the TERMINAL_VERDICTS set), the point at which the review cycle stops and SUGGESTIONs would otherwise be lost."
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 3
+  }
 }
