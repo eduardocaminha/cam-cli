@@ -1,7 +1,7 @@
 {
   "id": "CAM-118",
   "title": "Follow-up CAM-107: writer deterministico de CONTEXT.md/ADR para o /cam-spec (orquestrador e read-only)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-27T13:48:53.367Z",
