@@ -68,16 +68,31 @@ interface ValidationResult {
 }
 
 /**
+ * Injectable subprocess-spawn seam (CAM-205). Narrower than `typeof spawnSync`
+ * on purpose: `lookupOnPath`/`validateClaude`/`runVendoredSmoke` only ever
+ * need `{ status, stdout, stderr }` back, so tests can stub deterministic
+ * shapes without real subprocesses. Defaults to `defaultSpawnFn` (a thin
+ * wrapper over `node:child_process` `spawnSync`), preserving production
+ * behavior byte-for-byte when no `spawnFn` is injected.
+ */
+export type SpawnFn = (
+	cmd: string,
+	args: string[],
+) => { status: number | null; stdout: string; stderr: string };
+
+function defaultSpawnFn(cmd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+	const result = spawnSync(cmd, args, { encoding: 'utf8' });
+	return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+/**
  * Look up an executable on PATH. We use `command -v` via `/bin/sh` rather than
  * `which` because `command -v` is POSIX-mandated and respects shell builtins,
  * while `which` behavior varies across distros. Returns the resolved path or
  * `null` when the binary is not found.
  */
-function lookupOnPath(name: string): string | null {
-	const result = spawnSync('/bin/sh', ['-c', `command -v ${name}`], {
-		encoding: 'utf8',
-		shell: false,
-	});
+function lookupOnPath(name: string, spawnFn: SpawnFn = defaultSpawnFn): string | null {
+	const result = spawnFn('/bin/sh', ['-c', `command -v ${name}`]);
 	if (result.status !== 0) return null;
 	const trimmed = result.stdout.trim();
 	return trimmed === '' ? null : trimmed;
@@ -106,8 +121,8 @@ function compareVersions(a: string, b: string): number {
 	return 0;
 }
 
-function validateClaude(): ValidationResult {
-	const path = lookupOnPath('claude');
+function validateClaude(spawnFn: SpawnFn = defaultSpawnFn): ValidationResult {
+	const path = lookupOnPath('claude', spawnFn);
 	if (!path) {
 		return {
 			ok: false,
@@ -115,7 +130,7 @@ function validateClaude(): ValidationResult {
 			hint: 'Install Claude Code from https://claude.com/claude-code and ensure the install puts the binary on PATH',
 		};
 	}
-	const version = spawnSync('claude', ['--version'], { encoding: 'utf8' });
+	const version = spawnFn('claude', ['--version']);
 	if (version.status !== 0) {
 		// Found on PATH but `--version` errored. Warn but don't fail — Claude Code
 		// occasionally ships a transient `--version` regression and we don't want
@@ -175,7 +190,7 @@ interface SmokeResult {
  *   2   → ok=true, skipped=true (environmental — not a clean-machine concern)
  *   any → ok=false (treat unknown exits as failures with raw stderr surfaced)
  */
-function runVendoredSmoke(scriptPath: string): SmokeResult {
+function runVendoredSmoke(scriptPath: string, spawnFn: SpawnFn = defaultSpawnFn): SmokeResult {
 	if (!existsSync(scriptPath)) {
 		return {
 			ok: false,
@@ -184,7 +199,7 @@ function runVendoredSmoke(scriptPath: string): SmokeResult {
 			stderr: `vendored smoke missing: ${scriptPath}`,
 		};
 	}
-	const result = spawnSync('bun', [scriptPath], { encoding: 'utf8' });
+	const result = spawnFn('bun', [scriptPath]);
 	const stdout = result.stdout ?? '';
 	const stderr = result.stderr ?? '';
 	const status = result.status ?? -1;
@@ -225,6 +240,14 @@ function reportSmoke(label: string, result: SmokeResult): void {
 
 export interface InitOptions {
 	configPath?: string;
+	/**
+	 * Injectable subprocess-spawn seam (CAM-205). Only reaches the non-interactive
+	 * (`runInitLinear`) path — tests run under `bun test` where stdin/stdout are
+	 * not TTYs, so `isInitInteractiveGate` always routes here. Defaults to real
+	 * `spawnSync` via `defaultSpawnFn` when omitted, preserving production
+	 * behavior byte-for-byte.
+	 */
+	spawnFn?: SpawnFn;
 }
 
 /**
@@ -262,16 +285,16 @@ export async function runInit(options: InitOptions = {}): Promise<number> {
 		process.env.CI,
 	);
 	if (!isInteractive) {
-		return runInitLinear(configPath);
+		return runInitLinear(configPath, options.spawnFn);
 	}
 	return runInitInteractive(configPath);
 }
 
-function runInitLinear(configPath: string): number {
+function runInitLinear(configPath: string, spawnFn: SpawnFn = defaultSpawnFn): number {
 	const failures: string[] = [];
 
 	// 1. claude
-	const claude = validateClaude();
+	const claude = validateClaude(spawnFn);
 	if (claude.ok) {
 		printSuccess(claude.message);
 		if (claude.hint) printHint(claude.hint);
@@ -281,7 +304,7 @@ function runInitLinear(configPath: string): number {
 	}
 
 	// 2. vendored smokes
-	const frontmatter = runVendoredSmoke(vendorScriptPath('check-agent-frontmatter.ts'));
+	const frontmatter = runVendoredSmoke(vendorScriptPath('check-agent-frontmatter.ts'), spawnFn);
 	reportSmoke('check-agent-frontmatter', frontmatter);
 	if (!frontmatter.ok) failures.push('check-agent-frontmatter');
 
