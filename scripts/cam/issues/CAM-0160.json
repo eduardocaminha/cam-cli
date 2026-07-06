@@ -1,7 +1,7 @@
 {
   "id": "CAM-160",
   "title": "templates/.gitignore: ignorar cam-worker-out e cam-plan-out logs (downstream)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T19:00:00.468Z",
