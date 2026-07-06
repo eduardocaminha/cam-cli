@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.71.0] - 2026-07-06
+
+### Added
+
+- [US-003] - Encode the no-flaky-evasion hard-stop rule in subagent-reviewer.md
+- [US-002] - Encode the no-flaky-evasion hard-stop rule in subagent-implementer.md
+- [US-001] - Add red-gate guard to readWorkerOutcome: refuse DONE on recorded failing test
+
 ## [0.70.0] - 2026-07-06
 
 ### Added
