@@ -738,6 +738,16 @@ describe('buildOrchestratorBootPrompt (CAM-23 rehydration directive)', () => {
 		expect(prompt).not.toContain('use the Write tool');
 		expect(prompt).toContain('Bash');
 	});
+
+	it('US-004: instructs deriving the backlog via cam issue list, with a stage-filtered fallback', () => {
+		const prompt = buildOrchestratorBootPrompt();
+		// Primary instruction: derive the backlog via the real `cam issue list` shell command.
+		expect(prompt).toContain('cam issue list');
+		// Explicit fallback for when the command is unavailable or exits non-zero
+		// (e.g. a pre-rebuild binary), reading the per-issue files directly, filtered by stage.
+		expect(prompt).toContain('scripts/cam/issues/*.json');
+		expect(prompt.toLowerCase()).toContain('filtered by stage');
+	});
 });
 
 // ---------------------------------------------------------------------------

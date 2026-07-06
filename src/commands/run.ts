@@ -175,8 +175,15 @@ export function buildOrchestratorBootPrompt(): string {
 		'do NOT read any stale .cam-orch-handoff.json or .cam-orch-handoff.consumed.json.',
 		'',
 		'After reading it, perform the boot context steps it documents (read',
-		'CLAUDE.md, project.toml, journal.md, prd.json, current git state),',
-		'then greet the operator with the one-screen summary it specifies.',
+		'CLAUDE.md, project.toml, journal.md, prd.json, current git state).',
+		'',
+		'Derive the backlog by running `cam issue list` (a real shell command,',
+		'not an in-process call). If the command is unavailable or exits',
+		'non-zero (e.g. a pre-rebuild binary that predates this feature), fall',
+		'back to reading scripts/cam/issues/*.json directly, filtered by stage',
+		'(exclude shipped and abandoned entries).',
+		'',
+		'Then greet the operator with the one-screen summary it specifies.',
 	].join('\n');
 }
 

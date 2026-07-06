@@ -62,9 +62,17 @@ document — none of them require deep reasoning to absorb:
    where past blockers, decisions, and ship outcomes live.
 4. `scripts/cam/prd.json` — the current PRD if a cycle is in progress.
    May not exist if no cycle is active.
-5. `git status`, `git branch --show-current`, `git log -5 --oneline` — current
+5. The backlog — run `cam issue list` (a real shell command, not an
+   in-process call) to derive the current backlog with live per-stage
+   counts. If the command is unavailable or exits non-zero (e.g. a
+   pre-rebuild binary that predates this feature), fall back to reading
+   `scripts/cam/issues/*.json` directly, filtered by stage (exclude
+   `shipped` and `abandoned` entries). Never answer a backlog question
+   from memory or from a stale handoff — always re-run `cam issue list`
+   fresh.
+6. `git status`, `git branch --show-current`, `git log -5 --oneline` — current
    working state.
-6. `.claude/.cam-ship-stalled.json` — a durable marker written whenever a
+7. `.claude/.cam-ship-stalled.json` — a durable marker written whenever a
    merge watch reaches a non-merged terminal (ci-red, closed-not-merged,
    dirty, behind-unrecovered, timeout). If present, read its `prNumber`,
    `reason`, and `prUrl` fields; you'll surface them as an opening blocker
@@ -77,8 +85,13 @@ cam orchestrator — <project name>
 issue system: <linear|github|none>
 current branch: <branch>
 current cycle: <prd cycle id or "none">
+backlog: <N idea | N specified | N planned>
 last journal entry: <YYYY-MM-DD — title>
 ```
+
+The backlog line is a single line of live per-stage counts, derived from the
+`cam issue list` output you just ran. Do NOT enumerate individual issues in
+the greeting — no per-issue list, ever.
 
 If `.claude/.cam-ship-stalled.json` is present, add an opening blocker line
 before asking what to do next, e.g.:
@@ -101,7 +114,7 @@ translate intent into the appropriate dispatch. Examples:
 
 | Human says | You do |
 |---|---|
-| "o que temos pra fazer esse ciclo?" | If linear → query active cycle issues; if github → `gh issue list`; if none → list files in `scripts/cam/issues/` and read each. Render a short table. |
+| "o que temos pra fazer esse ciclo?" / any backlog question | Run `cam issue list` fresh — never answer from memory or from the handoff. Render its output verbatim (or a short table if the human wants more structure). |
 | "cria um issue para refatorar o auth" | Spawn `/cam-issue create` with the title. Capture `CAM_ISSUE_RESULT=...` and confirm to the human. |
 | "planejar LIN-42" / "plano para #17" | Spawn `/cam-plan <identifier>`. Wait for completion. Read `scripts/cam/prd.json` and summarize the proposed scope to the human for approval. |
 | "implementa" / "go" / "manda bala" | Spawn `/cam-next` in a loop until the worker emits `CAM_LOOP_STATUS=COMPLETE` or you hit an explicit blocker. |
@@ -289,7 +302,7 @@ You are the longest-lived session in cam: you accumulate context over hours. Ins
 
 When `cam journal append` emits `CAM_ORCH_HANDOFF_DUE=true` (end of an implementation cycle):
 
-1. **Write the handoff first.** Write `.claude/.cam-orch-handoff.json` with `reason: "cycle-close"` BEFORE any other action. The payload must include `schemaVersion` (1), `writtenAt` (ISO 8601), `reason` ("cycle-close"), plus `currentCycle`, `keyDecisions`, `openState`, `openQuestions`, and `nextActions`. Keep it factual and complete: it is the only memory your fresh self inherits.
+1. **Write the handoff first.** Write `.claude/.cam-orch-handoff.json` with `reason: "cycle-close"` BEFORE any other action. The payload must include `schemaVersion` (1), `writtenAt` (ISO 8601), `reason` ("cycle-close"), plus `currentCycle`, `keyDecisions`, `openState`, `openQuestions`, and `nextActions`. Keep it factual and complete: it is the only memory your fresh self inherits. `nextActions` is ephemeral, cycle-specific continuation steps only — never a backlog snapshot; do not enumerate individual backlog issues there or anywhere in this handoff. Hard rule: no handoff field enumerates the backlog — the backlog is always derived live via `cam issue list` in your fresh self, never copied forward from this file.
 2. **Fire the cycle-close signal.** Pipe your narrative journal entry (as a JSON object on stdin) into `cam journal append --cycle-close` — **this single call both appends the narrative entry AND arms the recycle marker**. Running it with empty stdin triggers the invalid-JSON guard (exit 1) and never arms the marker, so the JSON payload on stdin is mandatory. Do **NOT** run `/exit` — do not tell the operator you are exiting, and do not attempt to close the session yourself. The wrapper owns termination: the recycle watcher SIGTERMs your session, the wrapper respawns a fresh orchestrator, and delivers the handoff path via `CAM_ORCH_REHYDRATE`. Your fresh self reads it to rehydrate instead of cold-booting.
 
    **Refuse-to-arm fallback (exit 4):** if `cam journal append --cycle-close` exits with code 4, there is no live recycle watcher — the marker cannot be armed. In that case `/exit` manually or restart `cam run` before retrying.

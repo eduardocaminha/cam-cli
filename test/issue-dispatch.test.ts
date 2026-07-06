@@ -11,9 +11,13 @@
 //   (d) The --file-local path NEVER calls the runIssue thin-proxy.
 //   (e) The text path calls runIssueFn and NOT fileLocalFn.
 //   (f) Exit codes are forwarded from the injected fakes.
+//   (g) parseIssueArgs recognizes `list` / `list --all` as { mode: 'list' },
+//       evaluated BEFORE the free-text fallthrough (CAM-190 US-003).
+//   (h) dispatchIssue routes mode 'list' to issueListFn and NEVER touches
+//       runIssueFn or fileLocalFn (no thin-proxy, no send-keys, no claude spawn).
 //
-// All external I/O is faked via injectable deps (fileLocalFn, runIssueFn).
-// No real stdin, git, or tmux is exercised.
+// All external I/O is faked via injectable deps (fileLocalFn, runIssueFn,
+// issueListFn). No real stdin, git, or tmux is exercised.
 
 import { describe, expect, test } from 'bun:test';
 import { parseIssueArgs, dispatchIssue } from '../index.ts';
@@ -81,6 +85,48 @@ describe('parseIssueArgs: --file-local recognition', () => {
 	test('empty args still returns null', () => {
 		const result = withSilentStderr(() => parseIssueArgs([]));
 		expect(result).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseIssueArgs: `list` subcommand (US-003, CAM-190)
+// ---------------------------------------------------------------------------
+
+describe('parseIssueArgs: list subcommand', () => {
+	test('cam issue list returns { mode: list, all: false, help: false }', () => {
+		const result = parseIssueArgs(['list']);
+		expect(result?.mode).toBe('list');
+		expect(result?.help).toBe(false);
+		if (result?.mode === 'list') {
+			expect(result.all).toBe(false);
+		}
+	});
+
+	test('cam issue list --all returns { mode: list, all: true, help: false }', () => {
+		const result = parseIssueArgs(['list', '--all']);
+		expect(result?.mode).toBe('list');
+		if (result?.mode === 'list') {
+			expect(result.all).toBe(true);
+		}
+		expect(result?.help).toBe(false);
+	});
+
+	test('a bare "list" positional is never misread as free-text issue creation', () => {
+		const result = parseIssueArgs(['list']);
+		expect(result?.mode).not.toBe('text');
+	});
+
+	test('cam issue list <unexpected> returns null', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['list', 'bogus']));
+		expect(result).toBeNull();
+	});
+
+	test('free text starting with a different word is still mode:text (no regression)', () => {
+		const result = parseIssueArgs(['fix the flaky retry test']);
+		expect(result?.mode).toBe('text');
+		if (result?.mode === 'text') {
+			expect(result.text).toBe('fix the flaky retry test');
+		}
 	});
 });
 
@@ -255,5 +301,58 @@ describe('dispatchIssue: routing isolation', () => {
 			},
 		);
 		expect(fileLocalCalled).toBe(true);
+	});
+
+	test('mode:list calls issueListFn and NEVER runIssueFn or fileLocalFn (no thin-proxy)', async () => {
+		let issueListCalled = false;
+		let runIssueCalled = false;
+		let fileLocalCalled = false;
+
+		const code = await dispatchIssue(
+			{ mode: 'list', all: false, help: false },
+			{
+				issueListFn: async () => {
+					issueListCalled = true;
+					return 0;
+				},
+				runIssueFn: async () => {
+					runIssueCalled = true;
+					return 0;
+				},
+				fileLocalFn: async () => {
+					fileLocalCalled = true;
+					return 0;
+				},
+			},
+		);
+
+		expect(issueListCalled).toBe(true);
+		expect(runIssueCalled).toBe(false);
+		expect(fileLocalCalled).toBe(false);
+		expect(code).toBe(0);
+	});
+
+	test('mode:list --all still routes to issueListFn only', async () => {
+		let issueListCalled = false;
+		await dispatchIssue(
+			{ mode: 'list', all: true, help: false },
+			{
+				issueListFn: async () => {
+					issueListCalled = true;
+					return 0;
+				},
+				runIssueFn: async () => 99,
+				fileLocalFn: async () => 99,
+			},
+		);
+		expect(issueListCalled).toBe(true);
+	});
+
+	test('mode:list forwards issueListFn exit code', async () => {
+		const code = await dispatchIssue(
+			{ mode: 'list', all: false, help: false },
+			{ issueListFn: async () => 1 },
+		);
+		expect(code).toBe(1);
 	});
 });
