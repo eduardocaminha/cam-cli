@@ -543,14 +543,17 @@ Cross-reference: `scripts/check-file-sizes.ts`, `scripts/check-coverage.ts`,
 
 ### (j.4) Ratchet failure during /cam-ship (the ship gate)
 
-`/cam-ship` Step 3 runs `bun run check:all` as the ship gate -- the same spine
-CI runs. If this ship gate fails on a ratchet (file-size ceiling or coverage
+The ship phase's quality-gate step (`runShipPhase`, `src/supervisor/ship-runner.ts`,
+`runGatesFn`) runs `bun run check:all` as the ship gate -- the same spine CI
+runs. If this ship gate fails on a ratchet (file-size ceiling or coverage
 floor) because the story represents legitimate growth, use the raise-and-retry
 procedure from (j.1) or (j.3): edit the budget file, add the tracker ref in the
-`"_ref"` field, stage the file, and re-run `bun run check:all` before opening
-the PR. Do not skip to the PR step.
+`"_ref"` field, stage the file, and re-run `bun run check:all`, then re-invoke
+`cam ship` (the pipeline restarts from the branch guard; there is no mid-run
+resume).
 
-Cross-reference: `.claude/commands/cam-ship.md` Step 3 (raise-and-retry block).
+Cross-reference: `src/supervisor/ship-runner.ts` (`DEFAULT_GATES_COMMAND`),
+`docs/adr/0009-ship-phase-deterministic-sidecar-runner.md`.
 
 ## (k) CAM-70: reviewer verdict not appearing in the orchestrator pane
 
@@ -1489,9 +1492,9 @@ The two required settings are:
    gh pr merge --squash <PR#>
    ```
 
-Cross-reference: `.claude/commands/cam-ship.md` Step 7 (the best-effort
-auto-merge call and hint), `scripts/cam/patterns.md` (gh pr merge --auto
-best-effort pattern bullet).
+Cross-reference: `src/release/ship-pr.ts` (the best-effort auto-merge call and
+hint), `scripts/cam/patterns.md` (gh pr merge --auto best-effort pattern
+bullet).
 
 ## (t) CAM-101: ci-gated merge mode -- stuck CI or sidecar merge-watch stall
 

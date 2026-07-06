@@ -1,90 +1,65 @@
 import { test, expect } from "bun:test";
 import { templatesContents } from "../../src/vendor/_generated";
 
-// Regression guard: the actually-shipped cam-ship.md text (written into user
-// projects by `cam init`) must delegate cycle-close to `cam ship --finalize`,
-// never expose raw git rm commands or the masked-atomic `2>/dev/null || true`
-// pattern that silently swallowed real errors.
+// Regression guard: the embedded cam-ship.md text (written into user
+// projects by `cam init`) stays a thin phase-signal stub (CAM-149 US-006).
+// The ship control-flow (PRD gate, quality gates, bump, finalize, push,
+// PR-create, merge-mode branching) lives in runShipPhase/runShipPrStep
+// (src/supervisor/ship-runner.ts, src/release/ship-pr.ts), never as
+// step-by-step gh/jq/git prose here. See docs/adr/0009.
 
 const SHIP_KEY = "commands/cam-ship.md";
 
-test("embedded cam-ship.md delegates cycle-close to cam ship --finalize", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  expect(content).toContain("cam ship --finalize");
+test("embedded cam-ship.md does not contain gh pr create instructions", () => {
+	const content = templatesContents[SHIP_KEY];
+	expect(content).toBeDefined();
+	expect(content).not.toContain("gh pr create");
 });
 
-test("embedded cam-ship.md does NOT contain masked-atomic git rm pattern", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  expect(content).not.toContain(
-    "git rm -q scripts/cam/prd.json scripts/cam/handoff.json scripts/cam/progress.txt 2>/dev/null || true"
-  );
+test("embedded cam-ship.md does not contain the masked-atomic git rm pattern", () => {
+	const content = templatesContents[SHIP_KEY];
+	expect(content).toBeDefined();
+	expect(content).not.toContain(
+		"git rm -q scripts/cam/prd.json scripts/cam/handoff.json scripts/cam/progress.txt 2>/dev/null || true",
+	);
 });
 
-test("embedded cam-ship.md Step 3 pins bun run check:all (full gate spine)", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  expect(content).toContain("bun run check:all");
+test("embedded cam-ship.md does not contain raw gh merge/close instructions", () => {
+	const content = templatesContents[SHIP_KEY];
+	expect(content).toBeDefined();
+	expect(content).not.toContain("gh pr merge --auto --squash");
+	expect(content).not.toContain("gh issue close");
+	expect(content).not.toContain("gh pr view --json number");
 });
 
-test("embedded cam-ship.md Step 3 does NOT pin the partial-gate-only placeholder", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  expect(content).not.toContain("<project typecheck command>");
+test("embedded cam-ship.md writes phase: shipping as the signal", () => {
+	const content = templatesContents[SHIP_KEY];
+	expect(content).toBeDefined();
+	expect(content).toContain("phase: shipping");
 });
 
-test("embedded cam-ship.md contains gh pr merge --auto --squash", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  expect(content).toContain("gh pr merge --auto --squash");
+test("embedded cam-ship.md references the deterministic runShipPhase runner", () => {
+	const content = templatesContents[SHIP_KEY];
+	expect(content).toBeDefined();
+	expect(content).toContain("runShipPhase");
 });
 
-test("embedded cam-ship.md gh pr merge --auto --squash is positioned after gh pr create", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  const mergeIdx = content!.indexOf("gh pr merge --auto --squash");
-  const createIdx = content!.indexOf("gh pr create");
-  expect(mergeIdx).toBeGreaterThan(createIdx);
+test("embedded cam-ship.md describes both the CLI path and the slash-command path", () => {
+	const content = templatesContents[SHIP_KEY];
+	expect(content).toBeDefined();
+	expect(content).toContain("CLI path");
+	expect(content).toContain("Slash-command path");
 });
 
-test("embedded cam-ship.md documents ci-gated merge mode branching after gh pr merge", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  expect(content).toContain("ci-gated");
+test("embedded cam-ship.md cross-references ADR 0009", () => {
+	const content = templatesContents[SHIP_KEY];
+	expect(content).toBeDefined();
+	expect(content).toContain("0009-ship-phase-deterministic-sidecar-runner.md");
 });
 
-test("embedded cam-ship.md ci-gated path instructs skipping inline pull/tag/prune", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  expect(content).toContain("Do NOT run pull/tag/prune inline");
-});
-
-test("embedded cam-ship.md ci-gated path states sidecar completes post-merge autonomously", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  expect(content).toContain("sidecar detects the CI-merged event");
-});
-
-test("embedded cam-ship.md immediate mode is documented as the unchanged path", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  expect(content).toContain("immediate");
-  expect(content).toContain("post-merge by hand as today");
-});
-
-test("embedded cam-ship.md ci-gated path writes .cam-merge-watch.json with prNumber and mergedBranch", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  // The orchestrator must write the watch file after gh pr create so the sidecar
-  // can engage (sidecar early-returns when the file is absent).
-  expect(content).toContain(".cam-merge-watch.json");
-  expect(content).toContain("prNumber");
-  expect(content).toContain("mergedBranch");
-});
-
-test("embedded cam-ship.md ci-gated path captures PR number via gh pr view", () => {
-  const content = templatesContents[SHIP_KEY];
-  expect(content).toBeDefined();
-  expect(content).toContain("gh pr view --json number");
+test("embedded cam-ship.md keeps the cam-init aggregate-gate adaptation note", () => {
+	const content = templatesContents[SHIP_KEY];
+	expect(content).toBeDefined();
+	expect(content).toContain("cam-init: adaptation point");
+	expect(content).toContain("bun run check:all");
 });
