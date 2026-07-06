@@ -1,0 +1,9 @@
+{
+  "id": "CAM-191",
+  "title": "auto-ship on CLEAN loses the phase:shipping signal; cycle wedges without shipping",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-06T04:56:29.629Z",
+  "description": "On a CLEAN review verdict the supervisor writes the fire-once marker prd.review.autoShipDispatchedAt and calls autoShipFn (makeAutoShipFn = setPhase(shipping)) inside runSupervisor, but the phase:shipping write is lost (likely clobbered by clearActive resetting phase to idle when runSupervisor returns complete). Result: cycle sits CLEAN-without-ship, no ship-phase events, no PR; the fire-once marker prevents retry. Observed on CAM-98 (2026-07-06): 3.7min idle after CLEAN, ship ran only after a manual phase:shipping nudge. Prior cycles (PR 139/140/141) auto-shipped fine, so may be a timing/ordering race. Fix: ensure autoShipFn phase:shipping survives the runSupervisor return path (order clearActive vs phase write, or write phase:shipping from the outer loop after terminal complete)."
+}
