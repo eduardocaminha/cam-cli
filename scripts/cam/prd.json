@@ -1,0 +1,84 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-118-domain-docs-writer",
+  "description": "Deterministic CONTEXT.md/ADR writer (ref-only commit-tree to main) plus a stdin-JSON CLI channel so the read-only /cam-spec orchestrator persists the grill's domain-model output without Edit/Write.",
+  "issueNumber": 118,
+  "relatedDocs": [
+    ".claude/skills/domain-modeling/CONTEXT-FORMAT.md",
+    ".claude/skills/domain-modeling/ADR-FORMAT.md",
+    "docs/recovery-runbook.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add DomainDocsPayload types, validation, and deterministic renderers",
+      "description": "As the /cam-spec flow, I need a validated payload schema (glossary terms + optional ADRs) and pure deterministic render/merge helpers so that CONTEXT.md and docs/adr/ files are produced byte-deterministically from structured input, never from LLM formatting judgment or hand-written heredocs (CAM-106 hazard).",
+      "acceptanceCriteria": [
+        "validateDomainDocsPayload accepts { terms: [], adrs: [] } (empty = valid no-op payload) and rejects: non-object/null/array input, a term entry missing a non-empty `term` or `definition` string, and an ADR entry missing a non-empty `title`, `context`, `decision`, or `consequences` string. Mirrors the validateSpec {ok, errors} ValidationResult shape from src/issues/spec.ts. [oracle: bun test test/domain-docs/render.test.ts]",
+        "mergeContextMd(existing: string | null, terms) creates a fresh glossary-only CONTEXT.md (format per .claude/skills/domain-modeling/CONTEXT-FORMAT.md: term + definition entries, zero implementation details/specs/decisions) when existing is null, appends new terms, updates the definition in place when the term already exists, and is idempotent: merging the same payload twice yields byte-identical output. [oracle: bun test]",
+        "renderAdr(number, adr) produces the section skeleton from .claude/skills/domain-modeling/ADR-FORMAT.md, and nextAdrNumber(existingFilenames) returns max(existing 4-digit prefixes) + 1 zero-padded to 4 digits (returns 1 -> '0001' for an empty list); the target filename is NNNN-<slug-from-title>.md. [oracle: bun test]",
+        "Rendered/merged markdown contains no em-dash character (project rule: use colon, comma, parens, or period). [oracle: bun test asserting the rendered output has no em-dash]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New pure module: src/domain-docs/render.ts (types DomainDocsPayload/TermEntry/AdrEntry + validateDomainDocsPayload + mergeContextMd + renderAdr + nextAdrNumber). Tests: test/domain-docs/render.test.ts (mirror test/ dir layout). No git, no fs, no I/O in this story: pure string-in/string-out so US-002 can inject them. Gotchas: noUncheckedIndexedAccess means regex capture groups and array indexing are T | undefined (guard with ?? or explicit checks when parsing existing CONTEXT.md sections and ADR filename prefixes). Re-read CONTEXT-FORMAT.md and ADR-FORMAT.md before coding: CONTEXT.md is GLOSSARY-ONLY (the US-005/CAM-107 convention, restated in scripts/cam/CLAUDE.md Domain Model Convention); docs/adr/ numbering is sequential scan-max+1. Repo already has docs/adr/0001..0009, so nextAdrNumber must handle a populated dir. Keep the ValidationResult {ok, errors} shape consistent with src/issues/spec.ts."
+    },
+    {
+      "id": "US-002",
+      "title": "Add writeDomainDocsOnMain ref-only deterministic writer",
+      "description": "As the grill flow, I need a deterministic writer that commits the merged CONTEXT.md and any new ADR files directly to main in one atomic ref-only commit (style specifyIssueOnMain) so the domain-model output of /cam-spec is persisted without touching the working branch or the working tree.",
+      "acceptanceCriteria": [
+        "Guards run in order before any mutation: up-to-date guard (detached-head / missing-main / diverged, same reasons as specifyIssueOnMain) then payload validation; the outcome is a discriminated union { ok: true; sha: string; noOp?: true; adrFiles: string[] } | { ok: false; reason: string; errors?: string[] }, and callers must narrow with if (!result.ok). An empty payload (no terms, no adrs) returns { ok: true, noOp: true } with NO commit and NO push. [oracle: bun test test/domain-docs/write-on-main.test.ts]",
+        "Existing CONTEXT.md content is read via `git show main:CONTEXT.md` (null when absent -> lazy creation) and the docs/adr/ listing via `git ls-tree` against main; the working tree is never read. ADR numbers are allocated against main's listing (existing 0001..0009 yields 0010). [oracle: bun test asserting the recorded spawnFn argv contains 'show' with 'main:CONTEXT.md' and ls-tree against main]",
+        "All written files (CONTEXT.md + zero or more docs/adr/NNNN-*.md) land in ONE atomic commit via unconditional commitTreeToMain from src/git/on-main.ts (never a working-tree commit path, CAM-133 rule), commit message `docs(cam): domain docs for <id>`, followed by best-effort push to origin main (non-zero push exit logs printError and still returns ok). [oracle: grep -q 'commitTreeToMain' src/commands/domain-docs.ts && bun test]",
+        "Real-git integration test (CAM-133 regression shape): in a tmpdir repo, a prior ref-only issue write leaves the working tree stale; writeDomainDocsOnMain on main then preserves the prior file in main's tree AND the new CONTEXT.md/ADR content is visible via `git show main:CONTEXT.md` / `git show main:docs/adr/...`; a second run with the same payload is idempotent (no duplicate glossary entries, no second ADR file for the same decision title). [oracle: bun test test/integration/domain-docs-on-main.test.ts]",
+        "On a successful non-noOp commit the writer emits a 'domain-docs-written' observability event through the writer-owned default file sink pattern (eventSink?: WorkerEventLogger defaulting to makeFileEventLogger(<cwd>/.claude/cam-worker-events.jsonl) inside the function); unit tests with fake cwd inject a no-op sink; one production-wiring test omits eventSink and asserts the file is written. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "New file: src/commands/domain-docs.ts (writeDomainDocsOnMain), consuming the pure helpers from US-001 (src/domain-docs/render.ts). Also touches src/supervisor/events.ts to add the 'domain-docs-written' event kind. Mirror src/commands/issue-specify.ts closely: SpawnFn re-export from src/git/on-main.ts, checkMainUpToDate + pushMainBestEffort guard/push helpers, commitTreeToMain(cwd, files, msg, localMainSha, spawnFn, 'cam-domain-docs-'). GOTCHA (jscpd): checkMainUpToDate/pushMainBestEffort exist as private verbatim copies in issue-specify.ts, issue-file.ts, journal.ts, triage.ts; a 5th copy risks tripping the jscpd gate in bun run check:all (threshold already raised twice, dedup tracked as CAM-124). Prefer extracting the guard+push into src/git/on-main.ts exports and importing here (do NOT refactor the other 4 call sites; that is CAM-124's scope). spawnSync never throws on non-zero exit: always guard (result.status ?? 1) !== 0. commitTreeToMain already handles on-main worktree sync via syncWorktreeIfOnMain; do not add manual restore calls. Real-git test pattern: patterns.md 'Real-git integration test pattern' bullet (mkdtempSync repo, git config user, skipIf git absent, cleanup in afterEach)."
+    },
+    {
+      "id": "US-003",
+      "title": "Expose cam spec --write-docs stdin-JSON entrypoint",
+      "description": "As the read-only orchestrator (disallowedTools Edit/Write/NotebookEdit, with the CAM-102 hook denying writer subagents), I need a CLI mode that reads the DomainDocsPayload as JSON from stdin and calls writeDomainDocsOnMain in-process so I can persist the domain docs with a single Bash pipe, exactly like the sanctioned `cam journal append` channel.",
+      "acceptanceCriteria": [
+        "`echo '<json>' | cam spec --write-docs <id>` reads the payload from stdin and calls writeDomainDocsOnMain in-process: NO tmux calls, no send-keys, no pane bootstrap, no orchestrator liveness check (this mode is the write channel FOR the orchestrator, mirroring cam journal append / cam issue --file-local). [oracle: bun test asserting zero tmux spawn calls on the --write-docs path]",
+        "Exit code 0 on { ok: true } including the noOp outcome (noOp prints a muted 'nothing to write' hint); exit code 1 with printError on malformed stdin JSON, invalid payload (validation errors are printed), or a guard failure (diverged / detached-head / missing-main). [oracle: bun test]",
+        "The spec argv parser becomes a discriminated union ({ mode: 'write-docs'; id } | { mode: 'proxy'; id } | help) with an injectable writeDocsFn dep for branch-isolation tests; the existing `cam spec <id>` thin-proxy path is byte-behaviorally unchanged and all existing spec tests stay green. [oracle: bun test]",
+        "SPEC_HELP in index.ts documents the new mode and the stdin JSON contract; no --permission-mode flag is registered. [oracle: grep -q 'write-docs' index.ts && bun test test/no-permission-mode-flag.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/spec.ts (arg parse + dispatch; keep runSpec proxy path intact), index.ts (SPEC_HELP + argv routing), tests (extend test/ spec coverage; see test/issue-dispatch.test.ts and journal tests for the stdin + discriminated-union precedent). Follow the 'Discriminated-union parseXxxArgs pattern' bullet in scripts/cam/patterns.md (CAM-86 US-003): injectable deps as () => Promise<number> thunks. Read stdin via Bun (e.g. await new Response(Bun.stdin.stream()).text() or the same mechanism cam journal append uses in index.ts; match the existing journal wiring exactly for consistency). NEVER add --permission-mode (test/no-permission-mode-flag.test.ts enforces). The proxy path keeps sendKeysWhenIdle/paneCountMutex untouched; the new mode must return before any tmux import side effects matter."
+    },
+    {
+      "id": "US-004",
+      "title": "Wire the domain-docs write into the /cam-spec final step",
+      "description": "As a grill operator, I need /cam-spec to persist the interview's glossary terms and ADR-worthy decisions at interview end (the missing output (2) from the CAM-109 dogfood, where 2 ADR-worthy decisions were resolved but nothing was written) so every grill produces the durable domain model, not just the issue spec.",
+      "acceptanceCriteria": [
+        "Both .claude/commands/cam-spec.md and templates/commands/cam-spec.md gain an identical 'Persist the domain docs' step that runs AFTER the specifyIssueOnMain success path: assemble the DomainDocsPayload from the interview (glossary terms, including what went into spec.domainTerms, plus only the decisions passing all three ADR gates: hard-to-reverse, surprising without context, real trade-off) and pipe it to `cam spec --write-docs <id>` via stdin using a SAFE quoting pattern (single-quoted heredoc `<<'EOF'` or single-quoted echo; the doc must explicitly forbid unquoted heredocs, CAM-106 lesson). [oracle: grep -q 'cam spec --write-docs' .claude/commands/cam-spec.md && grep -q 'cam spec --write-docs' templates/commands/cam-spec.md && grep -q \"<<'EOF'\" .claude/commands/cam-spec.md]",
+        "The doc explicitly forbids hand-writing CONTEXT.md or docs/adr/ via Edit/Write/NotebookEdit or ad-hoc bash redirection, and states that a writer failure (non-zero exit) must be reported to the operator and never silently skipped (the exact CAM-109 failure mode: spec persisted, domain docs silently dropped). [oracle: grep -qi 'never silently' .claude/commands/cam-spec.md; prose quality: reviewer-judgment]",
+        "The Error handling table gains rows for the new writer outcomes (malformed/invalid payload, diverged/detached-head, noOp nothing-to-write). [oracle: file-assert grep -q 'write-docs' on the error-handling section of .claude/commands/cam-spec.md]",
+        "Vendor drift check passes (bun run embed-vendor:check) after regenerating with bun run embed-vendor. [oracle: bun run embed-vendor:check]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/commands/cam-spec.md, templates/commands/cam-spec.md, src/vendor/_generated.ts (regen only, via bun run embed-vendor). Agent-prompt self-hosting pattern (patterns.md, US-001/CAM-92 bullet): edit BOTH the templates/ source-of-truth and the .claude/ runtime mirror identically, then regen the embed; call out 'intentional self-hosting' in the commit message. The templatesContents byte-parity test in test/embedded.test.ts catches drift. Check for any test/vendor/*-hygiene.test.ts or test asserting cam-spec.md content and update it to the new invariants in the same story (CAM-149 US-006 lesson). Also update the stale inline TypeScript specifyIssueOnMain example in cam-spec.md ONLY if the new step touches those lines; do not expand scope. Keep the domain-docs step conditional: a grill that resolves no new terms and no ADR-worthy decisions pipes an empty payload (or skips), which is a sanctioned noOp. No em-dash in persisted .md."
+    }
+  ]
+}
