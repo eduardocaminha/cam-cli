@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.82.0] - 2026-07-07
+
+### Added
+
+- US-002 - Discriminated GhPollFn result and edge-triggered poll-error emit in stepMergeWatch
+- US-001 - Add merge-watch-poll-error event vocabulary and consecutiveNullPolls state persistence
+
 ## [0.81.0] - 2026-07-07
 
 ### Added
