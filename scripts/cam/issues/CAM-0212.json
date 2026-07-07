@@ -1,0 +1,9 @@
+{
+  "id": "CAM-212",
+  "title": "Retrofit CAM_ISSUE_RESULT machine line onto cam issue --file-local and list (deterministic-CLI handback consistency)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-07T15:11:50.934Z",
+  "description": "Follow-up surfaced during the CAM-210 grill (2026-07-07). CAM-210 adds a machine-parseable CAM_ISSUE_RESULT=<id>/=ERROR line to the new `cam issue close`/`abandon` subcommands (the CAM-197 structured-handback thesis). The sibling deterministic paths `cam issue --file-local` (index.ts:1372-1414) and `cam issue list` predate that thesis and emit only a human printHint + exit code, no CAM_ISSUE_* line. This leaves the deterministic `cam issue` surface inconsistent: some subcommands hand back a parseable line, some don't. Retrofit the machine line onto --file-local (CAM_ISSUE_RESULT=<id> on result.ok, CAM_ISSUE_RESULT=ERROR on failure, alongside the existing `filed <id> on main (<sha>)` hint) and decide/apply the appropriate handback for `list`. Keep printHint for humans. Origin: operator-approved during CAM-210 spec; concrete Layer-1 instance of the CAM-197 epic."
+}
