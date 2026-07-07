@@ -209,6 +209,72 @@ export function makeNotifyOrchestrator(
 }
 
 // ---------------------------------------------------------------------------
+// onProgress factory (US-002, CAM-191: extracted so real-writer regression
+// tests can exercise the production unlink-on-complete behavior directly,
+// without constructing the entire tmux-dependent buildSupervisorOptions bag)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the production onProgress closure that rewrites the loop state file
+ * on every iteration and unlinks it on the terminal 'complete' status.
+ *
+ * Extracted verbatim from buildSupervisorOptions (zero behavior change): the
+ * only difference is that `stateFilePath` and `stateFileBase` are now
+ * parameters instead of closed-over locals, so a caller (or a test) can build
+ * the SAME real writer against an arbitrary state-file path without pulling
+ * in the rest of buildSupervisorOptions' tmux-dependent wiring.
+ *
+ * @param stateFilePath Absolute path to the state file (cam-loop.local.md).
+ * @param stateFileBase Static fields carried into every renderStateFile call.
+ */
+export function makeOnProgress(
+	stateFilePath: string,
+	stateFileBase: { maxIterations: number; completionPromise: string; startedAt: string; pid: number },
+): OnProgress {
+	return (payload) => {
+		if (payload.terminalStatus !== undefined) {
+			if (payload.terminalStatus === 'complete') {
+				try {
+					unlinkSync(stateFilePath);
+				} catch {
+					/* already gone */
+				}
+				return;
+			}
+			const pausedBody = renderStateFile({
+				...stateFileBase,
+				active: false,
+				iteration: payload.iteration,
+				currentStory: payload.currentStoryId ?? null,
+				storiesDone: payload.storiesDone,
+				storiesTotal: payload.storiesTotal,
+				lastActivity: payload.lastActivity,
+			});
+			try {
+				writeFileSync(stateFilePath, pausedBody, 'utf8');
+			} catch {
+				// non-fatal
+			}
+			return;
+		}
+		const body = renderStateFile({
+			...stateFileBase,
+			active: true,
+			iteration: payload.iteration,
+			currentStory: payload.currentStoryId ?? null,
+			storiesDone: payload.storiesDone,
+			storiesTotal: payload.storiesTotal,
+			lastActivity: payload.lastActivity,
+		});
+		try {
+			writeFileSync(stateFilePath, body, 'utf8');
+		} catch {
+			// non-fatal
+		}
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Main factory
 // ---------------------------------------------------------------------------
 
@@ -708,47 +774,7 @@ export function buildSupervisorOptions(
 		pid,
 	};
 
-	const onProgress: OnProgress = (payload) => {
-		if (payload.terminalStatus !== undefined) {
-			if (payload.terminalStatus === 'complete') {
-				try {
-					unlinkSync(stateFilePath);
-				} catch {
-					/* already gone */
-				}
-				return;
-			}
-			const pausedBody = renderStateFile({
-				...stateFileBase,
-				active: false,
-				iteration: payload.iteration,
-				currentStory: payload.currentStoryId ?? null,
-				storiesDone: payload.storiesDone,
-				storiesTotal: payload.storiesTotal,
-				lastActivity: payload.lastActivity,
-			});
-			try {
-				writeFileSync(stateFilePath, pausedBody, 'utf8');
-			} catch {
-				// non-fatal
-			}
-			return;
-		}
-		const body = renderStateFile({
-			...stateFileBase,
-			active: true,
-			iteration: payload.iteration,
-			currentStory: payload.currentStoryId ?? null,
-			storiesDone: payload.storiesDone,
-			storiesTotal: payload.storiesTotal,
-			lastActivity: payload.lastActivity,
-		});
-		try {
-			writeFileSync(stateFilePath, body, 'utf8');
-		} catch {
-			// non-fatal
-		}
-	};
+	const onProgress: OnProgress = makeOnProgress(stateFilePath, stateFileBase);
 
 	const opts: RunSupervisorOptions = {
 		spawn: supervisorSpawn,
