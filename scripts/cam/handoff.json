@@ -1,7 +1,7 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Pin CI bun via bun-version-file and enforce it in ci-parity" },
+  "lastCompletedStory": { "id": "US-001", "title": "Pin bun and Node versions with a shared toolchain reader" },
   "branchName": "cam/pr-201-toolchain-parity",
-  "timestamp": "2026-07-07T01:20:00Z",
+  "timestamp": "2026-07-07T01:25:00Z",
   "createdFiles": [
     "test/fixtures/bun-pin-aligned.yml",
     "test/fixtures/bun-pin-missing.yml",
@@ -14,8 +14,11 @@
     "test/check-ci-parity.test.ts",
     "scripts/file-size-budget.json"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "US-002 added `with: bun-version-file: .bun-version` to the oven-sh/setup-bun@v2 step in .github/workflows/ci.yml (no floating bun-version: latest anywhere). scripts/check-ci-parity.ts gained a new exported function checkBunVersionPin(workflowYaml, pinnedBunVersion) that: (1) fails if pinnedBunVersion is null (i.e. .bun-version is absent/malformed per readPinnedBunVersion from src/config/toolchain.ts, US-001), (2) fails if no oven-sh/setup-bun step exists in any job, (3) fails if the step's with.bun-version-file !== '.bun-version', (4) fails if the step also sets a floating with.bun-version (e.g. 'latest'). checkParityFromFile now merges checkParity's errors with checkBunVersionPin's errors (reading the real .bun-version via readPinnedBunVersion()); checkParity itself is UNCHANGED (still takes only workflowYaml+gates, so the pre-existing aligned/unknown-script/missing-gate fixtures -- which have no setup-bun step -- still pass through checkParity alone). New fixtures added under test/fixtures/: bun-pin-aligned.yml (passing shape), bun-pin-missing.yml (setup-bun step present, no bun-version-file), bun-pin-floating.yml (bun-version: latest set), bun-pin-no-step.yml (no setup-bun step at all). Also raised scripts/file-size-budget.json ceilings for scripts/check-ci-parity.ts (176->290) and test/check-ci-parity.test.ts (172->250) with a CAM-201 tracker ref staged in the same commit (ratchet gate convention, patterns.md). US-003 (worker Dockerfile toolchain) should read readPinnedBunVersion/readPinnedNodeVersion from src/config/toolchain.ts directly to build the Docker build-arg, mirroring how checkBunVersionPin consumes the same reader here, rather than re-parsing .bun-version/.tool-versions or grepping ci.yml.",
+  "openQuestions": [
+    "US-002's implementation is FULLY DONE and GREEN locally (commit 5c888ca on cam/pr-201-toolchain-parity: adds `bun-version-file: .bun-version` to the oven-sh/setup-bun@v2 step in .github/workflows/ci.yml, adds checkBunVersionPin() + wiring in scripts/check-ci-parity.ts, new test fixtures, raised file-size-budget.json ceilings with a CAM-201 tracker ref). `bun run check:all` passes clean including the new ci-parity assertion. HOWEVER `git push origin cam/pr-201-toolchain-parity` is REJECTED by GitHub: 'refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflow` scope'. This is confirmed with two independent push attempts (default remote credential and an explicit x-access-token URL using $GITHUB_TOKEN), both rejected identically. This is a hard GitHub-side restriction on any push whose diff touches .github/workflows/**, not a transient/flaky failure, and it cannot be worked around from inside the implementer session (no --no-verify equivalent exists for this; it is enforced server-side by GitHub, not by a local hook). FIX REQUIRED (operator action): grant the configured PAT (`$GITHUB_TOKEN`) the `workflow` OAuth scope (or swap to a GitHub App installation token / fine-grained PAT with 'Workflows: write' permission), then re-run `git push origin cam/pr-201-toolchain-parity` from this same working tree (commit 5c888ca is already sitting on the branch, ready to push; no re-implementation needed). Once pushed, flip US-002's `passes` back to `true` in prd.json (it was flipped true then reverted to false by this session specifically because the push failed, per the BLOCKED_QUALITY contract that passes must reflect 'not shippable yet'). Until the token scope is fixed, DO NOT re-implement US-002 from scratch: read commit 5c888ca first, it is already correct.",
+    "Root cause verified: PAT scope, not a code defect. No test/gate change is needed once the operator grants the `workflow` scope."
+  ],
+  "nextStoryContext": "US-001 (bun/node version pins + toolchain reader) is the true last-pushed-and-complete story. A follow-on session attempting US-002 should FIRST check `git log --oneline` on cam/pr-201-toolchain-parity for commit 5c888ca ('feat: US-002 - Pin CI bun via bun-version-file and enforce it in ci-parity'): if present, the implementation is already done (see openQuestions for exact contents) and the ONLY remaining action is `git push origin cam/pr-201-toolchain-parity` after the operator fixes the PAT's `workflow` scope, followed by flipping US-002.passes to true and re-writing this handoff. If push succeeds, US-003 (worker Dockerfile toolchain) should read readPinnedBunVersion/readPinnedNodeVersion from src/config/toolchain.ts directly to build the Docker build-arg, mirroring how checkBunVersionPin (added in the pending US-002 commit) consumes the same reader, rather than re-parsing .bun-version/.tool-versions or grepping ci.yml.",
   "officialDocsValidated": [
     {
       "lib": "oven-sh/setup-bun",
@@ -23,7 +26,7 @@
       "url": "https://github.com/oven-sh/setup-bun",
       "fetchedAt": "2026-07-07T01:19:00Z",
       "status": "ok",
-      "summary": "Confirmed bun-version-file is a supported input on setup-bun@v2 that reads the pinned version from a file (e.g. .bun-version); without an explicit bun-version or bun-version-file input the action falls back through package.json packageManager/engines.bun and finally to 'latest'. Our ci.yml change (adding bun-version-file: .bun-version) matches the documented API and eliminates the prior implicit 'latest' float."
+      "summary": "Confirmed bun-version-file is a supported input on setup-bun@v2 that reads the pinned version from a file (e.g. .bun-version); without an explicit bun-version or bun-version-file input the action falls back through package.json packageManager/engines.bun and finally to 'latest'. The ci.yml change (adding bun-version-file: .bun-version) matches the documented API and eliminates the prior implicit 'latest' float. This validation stands even though the commit is not yet pushed."
     }
   ]
 }
