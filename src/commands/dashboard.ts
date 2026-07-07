@@ -811,6 +811,92 @@ export interface RunDashboardInkOptions {
 	orchPane?: string;
 }
 
+/** How long to wait after the last resize event before re-asserting a trailing clear. */
+export const RESIZE_TRAILING_CLEAR_MS = 100;
+
+export interface ResizeClearerOptions {
+	/** Write sink for the clear escape sequence. Defaults to `process.stdout.write`. */
+	writeFn?: (data: string) => void;
+	/**
+	 * Injectable `setTimeout`, so tests never touch the real event loop timers.
+	 * The handle type is intentionally opaque (`unknown`): Bun's global `Timer`
+	 * and `@types/node`'s ambient `NodeJS.Timeout` are structurally distinct,
+	 * and this factory never inspects the handle, only round-trips it to
+	 * `clearTimeoutFn`.
+	 */
+	setTimeoutFn?: (cb: () => void, ms: number) => unknown;
+	/** Injectable `clearTimeout`, paired with `setTimeoutFn`. */
+	clearTimeoutFn?: (id: unknown) => void;
+	/** Delay after the last resize event before the trailing re-clear fires. */
+	debounceMs?: number;
+}
+
+export interface ResizeClearer {
+	/** Register as the `resize` listener. Writes an immediate clear, then (re)arms a trailing clear. */
+	onResize: () => void;
+	/** Cancels any pending trailing timer. Call from the outer cleanup before removing the listener. */
+	cleanup: () => void;
+}
+
+/**
+ * Hardens the on-resize alt-screen clear against reflow storms (CAM-66
+ * US-002). A single resize event still writes an immediate `CURSOR.clear`
+ * ahead of Ink's repaint, matching the pre-hardening behavior. A rapid burst
+ * of resize events (the cam-run window-resized hook can fire several in a
+ * row while a pane settles) additionally (re)arms a trailing debounced clear
+ * a tick after the last event in the burst: this re-asserts the clear once
+ * the burst has settled, so Ink's stale previous-frame line count (tracked
+ * at a mid-burst width) cannot leave the "Loop" header ghosted on the final
+ * repaint.
+ */
+// Bun's global `Timer` and `@types/node`'s ambient `NodeJS.Timeout` are
+// structurally distinct, so the default setTimeout/clearTimeout wiring is
+// funnelled through these narrow, single-signature wrappers instead of
+// exposing the ambient overloaded types on `ResizeClearerOptions`.
+function defaultSetTimeoutFn(cb: () => void, ms: number): unknown {
+	return setTimeout(cb, ms);
+}
+function defaultClearTimeoutFn(id: unknown): void {
+	clearTimeout(id as Parameters<typeof clearTimeout>[0]);
+}
+
+export function makeResizeClearer(options: ResizeClearerOptions = {}): ResizeClearer {
+	const writeFn = options.writeFn ?? ((data: string) => process.stdout.write(data));
+	const setTimeoutFn = options.setTimeoutFn ?? defaultSetTimeoutFn;
+	const clearTimeoutFn = options.clearTimeoutFn ?? defaultClearTimeoutFn;
+	const debounceMs = options.debounceMs ?? RESIZE_TRAILING_CLEAR_MS;
+
+	let trailingTimer: unknown;
+
+	const writeClear = (): void => {
+		try {
+			writeFn(CURSOR.clear);
+		} catch {
+			// A failed clear only risks a transient ghost, never a crash.
+		}
+	};
+
+	const onResize = (): void => {
+		writeClear();
+		if (trailingTimer !== undefined) {
+			clearTimeoutFn(trailingTimer);
+		}
+		trailingTimer = setTimeoutFn(() => {
+			trailingTimer = undefined;
+			writeClear();
+		}, debounceMs);
+	};
+
+	const cleanup = (): void => {
+		if (trailingTimer !== undefined) {
+			clearTimeoutFn(trailingTimer);
+			trailingTimer = undefined;
+		}
+	};
+
+	return { onResize, cleanup };
+}
+
 /**
  * Production dashboard entrypoint. Enters the alt-screen + hides the cursor,
  * mounts the Ink `DashboardApp`, and on user exit (`q` or Ctrl+C) tears the
@@ -839,21 +925,19 @@ export async function runDashboardInk(options: RunDashboardInkOptions = {}): Pro
 	// when the cam-run window-resized hook reflows the column, that count is wrong
 	// and the old top (e.g. the "Loop" header) ghosts. Registering BEFORE render()
 	// so this runs ahead of Ink's own resize rerender gives it a blank canvas.
-	const onResize = (): void => {
-		try {
-			process.stdout.write(CURSOR.clear);
-		} catch {
-			// A failed clear only risks a transient ghost, never a crash.
-		}
-	};
-	process.stdout.on('resize', onResize);
+	// `makeResizeClearer` additionally hardens against reflow storms (a rapid
+	// burst of resize events): see its doc comment for the trailing-clear
+	// rationale.
+	const resizeClearer = makeResizeClearer();
+	process.stdout.on('resize', resizeClearer.onResize);
 
 	let cleaned = false;
 	const cleanup = () => {
 		if (cleaned) return;
 		cleaned = true;
+		resizeClearer.cleanup();
 		try {
-			process.stdout.removeListener('resize', onResize);
+			process.stdout.removeListener('resize', resizeClearer.onResize);
 		} catch {
 			// listener may already be gone; nothing to do.
 		}

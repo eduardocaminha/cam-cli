@@ -27,6 +27,7 @@ import {
 	DEFAULT_POLL_INTERVAL_MS,
 	RECENT_ENTRIES_COUNT,
 	composeDashboard,
+	makeResizeClearer,
 	parseRecentProgress,
 	readRecentProgress,
 	readSnapshot,
@@ -696,6 +697,126 @@ describe('runDashboard', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+// --- makeResizeClearer (US-002, resize/reflow-storm hardening) -------------
+//
+// `makeResizeClearer` is the extracted, injectable factory backing
+// `runDashboardInk`'s resize handler. A fake clock (recording setTimeout /
+// clearTimeout calls without touching the real event loop) lets us simulate
+// a burst of resize events and assert the trailing debounced re-clear lands
+// after the burst settles, without ever touching real process.stdout.
+
+function makeFakeClock() {
+	let nextId = 1;
+	const timers = new Map<number, () => void>();
+	const setTimeoutFn = (cb: () => void, _ms: number): unknown => {
+		const id = nextId++;
+		timers.set(id, cb);
+		return id;
+	};
+	const clearTimeoutFn = (id: unknown): void => {
+		timers.delete(id as number);
+	};
+	const runAll = (): void => {
+		const pending = [...timers.values()];
+		timers.clear();
+		for (const cb of pending) cb();
+	};
+	const pendingCount = (): number => timers.size;
+	return { setTimeoutFn, clearTimeoutFn, runAll, pendingCount };
+}
+
+describe('makeResizeClearer (US-002)', () => {
+	test('single resize event writes an immediate clear (pre-hardening behavior preserved)', () => {
+		const writes: string[] = [];
+		const clock = makeFakeClock();
+		const clearer = makeResizeClearer({
+			writeFn: (data) => writes.push(data),
+			setTimeoutFn: clock.setTimeoutFn,
+			clearTimeoutFn: clock.clearTimeoutFn,
+		});
+
+		clearer.onResize();
+
+		expect(writes).toEqual([CURSOR.clear]);
+		// A trailing timer is armed even for a single event; it simply re-asserts
+		// the same clear once settled (harmless — a second no-op clear).
+		expect(clock.pendingCount()).toBe(1);
+	});
+
+	test('a burst of resize events writes one trailing clear after the final event settles', () => {
+		const writes: string[] = [];
+		const clock = makeFakeClock();
+		const clearer = makeResizeClearer({
+			writeFn: (data) => writes.push(data),
+			setTimeoutFn: clock.setTimeoutFn,
+			clearTimeoutFn: clock.clearTimeoutFn,
+		});
+
+		// Simulate a reflow storm: 5 resize events fire in rapid succession.
+		for (let i = 0; i < 5; i++) {
+			clearer.onResize();
+		}
+
+		// Each event wrote its own immediate clear; only the LAST event's
+		// trailing timer should still be pending (earlier ones were cancelled).
+		expect(writes.length).toBe(5);
+		expect(clock.pendingCount()).toBe(1);
+
+		const writesBeforeSettle = writes.length;
+		clock.runAll(); // simulate the burst settling (debounce fires)
+
+		expect(writes.length).toBe(writesBeforeSettle + 1);
+		expect(writes.at(-1)).toBe(CURSOR.clear);
+		expect(clock.pendingCount()).toBe(0);
+	});
+
+	test('cleanup cancels a pending trailing timer (no leaked timer after exit)', () => {
+		const writes: string[] = [];
+		const clock = makeFakeClock();
+		const clearer = makeResizeClearer({
+			writeFn: (data) => writes.push(data),
+			setTimeoutFn: clock.setTimeoutFn,
+			clearTimeoutFn: clock.clearTimeoutFn,
+		});
+
+		clearer.onResize();
+		expect(clock.pendingCount()).toBe(1);
+
+		clearer.cleanup();
+		expect(clock.pendingCount()).toBe(0);
+
+		// If the timer had leaked, this would produce a second write.
+		clock.runAll();
+		expect(writes.length).toBe(1);
+	});
+
+	test('cleanup is a safe no-op when no resize has fired yet', () => {
+		const clock = makeFakeClock();
+		const clearer = makeResizeClearer({
+			writeFn: () => {},
+			setTimeoutFn: clock.setTimeoutFn,
+			clearTimeoutFn: clock.clearTimeoutFn,
+		});
+
+		expect(() => clearer.cleanup()).not.toThrow();
+		expect(clock.pendingCount()).toBe(0);
+	});
+
+	test('a failed write is swallowed, never thrown (transient ghost over a crash)', () => {
+		const clock = makeFakeClock();
+		const clearer = makeResizeClearer({
+			writeFn: () => {
+				throw new Error('synthetic write failure');
+			},
+			setTimeoutFn: clock.setTimeoutFn,
+			clearTimeoutFn: clock.clearTimeoutFn,
+		});
+
+		expect(() => clearer.onResize()).not.toThrow();
+		expect(() => clock.runAll()).not.toThrow();
 	});
 });
 
