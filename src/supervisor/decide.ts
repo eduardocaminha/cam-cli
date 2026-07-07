@@ -32,9 +32,10 @@ export interface PrdSnapshot {
 		maxRounds?: number;
 		lastVerdict?: string | null;
 		findings?: Array<{ severity: string; file?: string; line?: number; text: string }>;
-		/** Fire-once marker written by the supervisor before dispatching auto-ship.
-		 *  When present, the auto-ship dispatch in the 'complete' branch is skipped,
-		 *  preventing re-dispatch across sidecar restarts / in-place binary swaps. */
+		/** Fire-once marker written by the sidecar (runSidecarLoop, post-clearActive;
+		 *  see ADR 0013) before dispatching auto-ship on a 'complete' + CLEAN result.
+		 *  When present, the auto-ship dispatch is skipped, preventing re-dispatch
+		 *  across sidecar restarts / in-place binary swaps. */
 		autoShipDispatchedAt?: string;
 	};
 }

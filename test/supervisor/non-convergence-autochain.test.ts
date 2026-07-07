@@ -356,7 +356,13 @@ describe('AC4: auto-chain does not fire at MAX_ROUNDS_DEBT terminal', () => {
 			buildOpts: () => ({
 				spawn: () => ({ stdout: '', exitCode: 0 }),
 				capturePane: () => '',
-				readPrd: () => prds[prdIdx++] ?? null,
+				// CAM-191: the outer loop's post-clearActive auto-ship gate calls
+				// readPrd() one extra time (after runSupervisorFn returns) to check
+				// prd.review.lastVerdict. Clamp at the last entry so that extra read
+				// deterministically observes the MAX_ROUNDS_DEBT state (not an
+				// out-of-bounds null) — the gate must reject on lastVerdict, not on
+				// a stale/absent read.
+				readPrd: () => prds[Math.min(prdIdx++, prds.length - 1)] ?? null,
 				writePrd: () => {},
 				readHandoff: () => null,
 				clock: () => '2026-06-27T00:00:00Z',

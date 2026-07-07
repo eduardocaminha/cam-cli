@@ -304,7 +304,7 @@ export function makeReadPlanIssue(claudeDir: string): () => string | undefined {
  * write if the file is absent or unparseable. Best-effort: a failure here is
  * non-fatal (the loop will just re-check on the next poll).
  */
-function makeClearActive(claudeDir: string, cwd: string): () => void {
+export function makeClearActive(claudeDir: string, cwd: string): () => void {
 	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
 	return () => {
 		try {

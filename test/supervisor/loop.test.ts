@@ -24,9 +24,10 @@
 //  18. US-003: does NOT notify on a no-progress re-confirmation retry.
 
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { runSupervisor, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_BACKOFF_MS, JITTER_FRACTION, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_CONTAINER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, computeBackoffMs } from '../../src/supervisor/loop.ts';
+import { runSupervisor, runSidecarLoop, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_BACKOFF_MS, JITTER_FRACTION, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_CONTAINER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, computeBackoffMs } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
+	RunSidecarLoopOptions,
 	SpawnFn,
 	CapturePane,
 	ReadPrd,
@@ -3644,19 +3645,40 @@ describe('runSupervisor US-001: teardownWorkerPaneFn called on every terminal ex
 		expect(teardownCount).toBe(1);
 	});
 
-	test('complete path: teardownWorkerPaneFn runs AFTER autoShipFn (ordering invariant)', async () => {
+	test('complete path: teardownWorkerPaneFn (inner) runs BEFORE autoShipFn (outer) — ordering invariant post CAM-191', async () => {
+		// CAM-191 / ADR 0013 moved autoShipFn out of runSupervisor entirely: it is
+		// now dispatched by runSidecarLoop, AFTER runSupervisorFn returns AND after
+		// clearActive() runs. teardownWorkerPaneFn (CAM-188) still fires INSIDE
+		// runSupervisor's finishTerminal, before runSupervisor returns to the outer
+		// loop. So the invariant flips from CAM-181 (autoShip, then teardown) to:
+		// teardown (inner), then autoShip (outer).
 		const callOrder: string[] = [];
-		const opts = makeBaseOpts({
+		const supervisorOpts = makeBaseOpts({
 			readPrd: () => cleanPrd(),
-			autoShipFn: () => { callOrder.push('autoShipFn'); },
 			teardownWorkerPaneFn: () => { callOrder.push('teardownWorkerPaneFn'); },
 		});
 
-		const result = await runSupervisor(opts);
+		const ESCAPE = Symbol('escape');
+		const readActiveSeq: Array<boolean> = [true, false];
+		let readIdx = 0;
 
-		expect(result.status).toBe('complete');
-		// autoShipFn fires first (CAM-181), teardown follows (CAM-188).
-		expect(callOrder).toEqual(['autoShipFn', 'teardownWorkerPaneFn']);
+		const loopOpts: RunSidecarLoopOptions = {
+			buildOpts: () => supervisorOpts,
+			readActive: () => readActiveSeq[readIdx++] ?? false,
+			clearActive: () => {},
+			sleep: () => { throw ESCAPE; },
+			hasPendingStories: () => true,
+			acquireLock: () => ({ acquired: true, release: () => {} }),
+			autoShipFn: () => { callOrder.push('autoShipFn'); },
+		};
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		expect(callOrder).toEqual(['teardownWorkerPaneFn', 'autoShipFn']);
 	});
 
 	test('absent teardownWorkerPaneFn (omitted): loop behavior unchanged, no error', async () => {
