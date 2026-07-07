@@ -44,10 +44,20 @@ export type StatFn = (path: string) => { mtimeMs: number } | null;
  *     but the worker image does not exist locally.
  *   - `{ ready: false; reason: 'image-stale' }` — the image exists but was
  *     built before the Dockerfile was last modified (stale image).
+ *   - `{ ready: false; reason: 'toolchain-mismatch' }` — the running
+ *     container's bun/node version has drifted from the repo pins (see
+ *     `assertContainerToolchain` in `toolchain-assert.ts`, US-006/CAM-201).
+ *     Reserved here so callers can branch on a distinct reason; the actual
+ *     computation of this branch inside `preflightWorkerContainer` is wired
+ *     by US-007 (this story lands the assert helper tested-but-inert, same
+ *     as this file did before its own CAM-150 wiring).
  */
 export type PreflightResult =
 	| { ready: true }
-	| { ready: false; reason: 'daemon-unreachable' | 'image-missing' | 'image-stale' };
+	| {
+			ready: false;
+			reason: 'daemon-unreachable' | 'image-missing' | 'image-stale' | 'toolchain-mismatch';
+	  };
 
 /** Options for `preflightWorkerContainer`. */
 export interface PreflightWorkerContainerOptions {

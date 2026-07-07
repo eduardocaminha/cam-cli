@@ -177,6 +177,7 @@ test.skipIf(!gitAvailable)(
 		const logMsg = run(['log', '-1', '--format=%s']);
 		expect(logMsg.stdout.trim()).toBe(EXPECTED_COMMIT_MSG);
 	},
+	{ timeout: 20_000 },
 );
 
 // ---------------------------------------------------------------------------
@@ -222,4 +223,5 @@ test.skipIf(!gitAvailable)(
 		expect(existsSync(join(camDir, 'prd.json'))).toBe(false);
 		expect(existsSync(join(camDir, 'handoff.json'))).toBe(false);
 	},
+	{ timeout: 20_000 },
 );

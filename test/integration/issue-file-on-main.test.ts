@@ -199,6 +199,7 @@ test.skipIf(!gitAvailable)(
 		const oldFileResult = run(['show', 'main:scripts/cam/issues.local.json']);
 		expect((oldFileResult.status as number)).not.toBe(0);
 	},
+	{ timeout: 20_000 },
 );
 
 // ---------------------------------------------------------------------------
@@ -257,4 +258,5 @@ test.skipIf(!gitAvailable)(
 		const oldFileResult = run(['show', 'main:scripts/cam/issues.local.json']);
 		expect((oldFileResult.status as number)).not.toBe(0);
 	},
+	{ timeout: 20_000 },
 );

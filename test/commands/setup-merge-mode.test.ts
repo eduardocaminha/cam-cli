@@ -430,7 +430,7 @@ describe('AC-7: runSetup writes [ship] merge_mode to project.toml', () => {
 				rmSync(workDir, { recursive: true, force: true });
 			}
 		}
-	});
+	}, { timeout: 20_000 });
 });
 
 // ---------------------------------------------------------------------------

@@ -120,7 +120,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/preflight-container.ts (or new src/supervisor/toolchain-assert.ts), test mirror. Reuse the DockerProbe/ConfigSpawnFn seam shapes (no real docker in CI, macos-latest has no daemon). Probe argv shape: docker exec <containerName> bun --version and docker exec <containerName> node --version. Apply the JSON-reader shape-guard discipline from patterns.md (validate discriminator fields). Keep the helper pure/injectable; the wiring into ensure/dispatch is US-007, mirroring how preflight-container.ts landed tested-but-inert before CAM-150 wiring."
     },

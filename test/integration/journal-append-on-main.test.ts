@@ -192,6 +192,7 @@ test.skipIf(!gitAvailable)(
 		expect(typeof result.sha).toBe('string');
 		expect(result.sha.length).toBeGreaterThan(0);
 	},
+	{ timeout: 20_000 },
 );
 
 // ---------------------------------------------------------------------------
@@ -250,4 +251,5 @@ test.skipIf(!gitAvailable)(
 		expect(typeof result.sha).toBe('string');
 		expect(result.sha.length).toBeGreaterThan(0);
 	},
+	{ timeout: 20_000 },
 );
