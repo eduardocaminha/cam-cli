@@ -1,18 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Wire cam issue close <id> positional subcommand"
+    "id": "US-003",
+    "title": "Wire cam issue abandon <id> positional subcommand"
   },
   "branchName": "cam/pr-210-issue-close-abandon-cli",
-  "timestamp": "2026-07-07T00:00:00.000Z",
+  "timestamp": "2026-07-07T15:30:00.000Z",
   "createdFiles": [],
   "modifiedFiles": [
     "index.ts",
+    "src/release/post-merge.ts",
     "test/issue-dispatch.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added `close <id>` to parseIssueArgs (ParsedIssueArgs gained { mode: 'close'; id: string; help: false }, checked at the top of the function alongside `list`, before the --file-local/free-text branches) and a matching dispatchIssue branch. The branch injects at the PRIMITIVE level: IssueDispatchDeps.closeIssueOnMainFn?: (id: string) => CloseIssueOnMainOutcome (same name/shape already used by ship-pr.ts's ShipPrOptions), defaulting to defaultCloseIssueFn(process.cwd(), id) imported from src/release/post-merge.ts (reuses the existing real-spawnSync+clock wiring; do NOT duplicate a spawnFn closure inline in index.ts). dispatchIssue's close branch owns ALL printing: printHint(`closed ${result.id} on main (${result.sha})`) on ok:true plus process.stdout.write(`CAM_ISSUE_RESULT=${result.id}\\n`) and return 0; on !ok, printError(...) plus process.stdout.write(`CAM_ISSUE_RESULT=ERROR reason=${result.reason}\\n`) and return 1. ISSUE_HELP now documents 'close <id>' and the usage line. US-003 (wire `cam issue abandon <id>`) should mirror this exact shape 1:1 against abandonIssueOnMain (src/commands/issue-specify.ts, already implemented and tested in test/commands/issue-specify.test.ts): add { mode: 'abandon'; id } to ParsedIssueArgs, a parse branch alongside close/list, and an IssueDispatchDeps.abandonIssueOnMainFn?: (id: string) => AbandonIssueOnMainOutcome seam with a production default (check whether post-merge.ts/ship-pr.ts already has a defaultAbandonIssueFn-equivalent before writing a new spawnFn+clock closure inline; if not, consider adding one next to defaultCloseIssueFn in post-merge.ts to keep the jscpd-avoidance convention). AbandonIssueOnMainError reasons are diverged/detached-head/missing-main | not-found | already-abandoned (mirrors CloseIssueOnMainError's shape exactly, per issue-specify.ts). Two test files share a naming collision to watch for: test/issue-dispatch.test.ts (this story's parseIssueArgs/dispatchIssue tests, top-level test/) vs test/commands/issue-specify.test.ts (abandonIssueOnMain/closeIssueOnMain primitive coverage, nested test/commands/) -- do not confuse the two when adding US-003 tests.",
+  "nextStoryContext": "All 3 stories in this PRD (US-001/US-002/US-003) now pass:true; this was the last story (CAM-210). US-003 mirrored US-002's close branch 1:1 against abandonIssueOnMain: added { mode: 'abandon'; id: string; help: false } to ParsedIssueArgs, a parse branch in parseIssueArgs (evaluated alongside list/close, before the free-text fallthrough), an IssueDispatchDeps.abandonIssueOnMainFn?: (id: string) => AbandonIssueOnMainOutcome seam defaulting to defaultAbandonIssueFn(process.cwd(), id), and a dispatchIssue branch with the same printHint/CAM_ISSUE_RESULT/exit-code shape as close. defaultAbandonIssueFn was added to src/release/post-merge.ts immediately after defaultCloseIssueFn (same real-spawnSync+clock closure convention, reusing the CloseSpawnFn type import from issue-specify.ts renamed for both close and abandon) even though runPostMerge itself never calls it -- the file is just the shared home for production default wiring around issue-specify.ts primitives. ISSUE_HELP documents 'abandon <id>' and the usage line now lists close and abandon. abandonIssueOnMain (src/commands/issue-specify.ts:409, pre-existing, untouched) already had the already-abandoned guard and full unit coverage in test/commands/issue-specify.test.ts; this story only added parse+dispatch tests in test/issue-dispatch.test.ts. Full bun run check:all is green (3653 tests, typecheck/lint/embed-vendor/coverage/dead-code/dup/ci-parity all ok). Since the PRD is now complete, the next agent invocation should find no passes:false non-operator stories and exit PRD_COMPLETE; the orchestrator should run /cam-review next.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal TS CLI-dispatch wiring reusing existing internal primitives (closeIssueOnMain, defaultCloseIssueFn); no external library API surface touched." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal TS CLI-dispatch wiring mirroring US-002's close branch and reusing existing internal primitives (abandonIssueOnMain, defaultCloseIssueFn convention); no external library API surface touched." }
   ]
 }
