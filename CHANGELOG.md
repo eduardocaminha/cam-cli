@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.79.0] - 2026-07-07
+
+### Added
+
+- US-002 - Regression-lock cam issue list as CAM_ISSUE_RESULT-free by design
+- US-001 - Emit CAM_ISSUE_RESULT machine line on cam issue --file-local (all outcomes)
+
 ## [0.78.0] - 2026-07-07
 
 ### Added
