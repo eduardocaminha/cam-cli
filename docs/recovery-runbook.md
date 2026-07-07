@@ -1524,6 +1524,7 @@ outcomes:
 | OPEN | BLOCKED | all pending / no failed check | keep polling (CI still in progress) |
 | CLOSED | (any) | (any) | narrate `merge-watch-ci-red` (reason: closed), stop |
 | (any) | (timeout) | (any) | narrate timeout, stop |
+| (gh poll failed: non-zero exit or malformed JSON) | -- | -- | silent retry; never stops the watch |
 
 Non-terminal states (OPEN + CLEAN / BEHIND / CONFLICTING / DRAFT / UNKNOWN)
 keep polling silently.
@@ -1536,10 +1537,25 @@ conclusion (`FAILURE`, `CANCELLED`, `TIMED_OUT`, `ACTION_REQUIRED`,
 `STARTUP_FAILURE`) or a failed status-context state (`FAILURE`, `ERROR`). An
 absent or all-pending rollup means CI is still running: the loop keeps polling.
 
+**gh poll errors (CAM-170):** every gh poll now returns a
+discriminated result (a `PrStatus` on success, or an error carrying the gh
+stderr on failure), so a revoked or stale `GITHUB_TOKEN` mid-watch is
+diagnosable instead of failing silently to the 4h timeout. A poll error is
+still a silent retry: it never stops the watch or changes the terminal
+outcome. `MergeWatchState.consecutiveNullPolls` counts consecutive failures
+and resets to 0 on the next successful poll. When the counter crosses
+`POLL_ERROR_THRESHOLD` (3, i.e. three minutes at the default 60s poll
+interval), the sidecar emits one `merge-watch-poll-error` event (carrying
+`prNumber`, `consecutiveNullPolls`, and `lastStderr`) and one orchestrator
+narration line, edge-triggered so it fires once per crossing rather than on
+every subsequent tick.
+
 The structured events emitted to `.claude/cam-worker-events.jsonl` during a
 merge-watch run are: `merge-watch-watching` (first gh poll, emitted inside stepMergeWatch on pollCount===0),
 `merge-watch-merged` (on MERGED), `merge-watch-ci-red` (on BLOCKED or CLOSED
-PR), and `merge-watch-post-merge-done` (after post-merge completes).
+PR), `merge-watch-poll-error` (edge-triggered advisory on repeated gh poll
+failure, see above), and `merge-watch-post-merge-done` (after post-merge
+completes).
 
 ### Diagnosing a stuck merge-watch
 

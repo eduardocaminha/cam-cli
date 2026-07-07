@@ -36,11 +36,14 @@ import {
 	MERGE_WATCH_FILENAME,
 	runMergeWatch,
 	stepMergeWatch,
+	POLL_ERROR_THRESHOLD,
 	type MergeWatchOptions,
 	type MergeWatchState,
 	type MergeWatchOutcome,
 	type StepMergeWatchOptions,
+	type StepMergeWatchResult,
 	type GhPollFn,
+	type GhPollResult,
 	type PostMergeFn,
 	type PrStatus,
 	type ShipStalledMarker,
@@ -79,13 +82,23 @@ const OPEN_BLOCKED_NO_ROLLUP: PrStatus = { state: 'OPEN', mergeStateStatus: 'BLO
 const MERGED: PrStatus = { state: 'MERGED', mergeStateStatus: 'MERGED' };
 const CLOSED: PrStatus = { state: 'CLOSED', mergeStateStatus: 'UNKNOWN' };
 
+/** Wrap a PrStatus into a successful GhPollResult (test convenience). */
+function ok(status: PrStatus): GhPollResult {
+	return { ok: true, status };
+}
+
+/** Wrap a stderr string into a failed GhPollResult (test convenience). */
+function err(stderr: string): GhPollResult {
+	return { ok: false, stderr };
+}
+
 /** Build a sequence-based pollFn that returns statuses in order. */
-function makeSeqPollFn(statuses: Array<PrStatus | null>): GhPollFn {
+function makeSeqPollFn(statuses: PrStatus[]): GhPollFn {
 	let idx = 0;
-	return (_prNumber: number): PrStatus | null => {
-		const s = statuses[idx] ?? statuses[statuses.length - 1] ?? null;
+	return (_prNumber: number): GhPollResult => {
+		const s = statuses[idx] ?? statuses[statuses.length - 1] ?? OPEN_CLEAN;
 		idx++;
-		return s;
+		return ok(s);
 	};
 }
 
@@ -104,7 +117,7 @@ const failPostMerge: PostMergeFn = () => ({ ok: false, reason: 'pull-failed' });
 
 /** Build minimal MergeWatchOptions with overrides. */
 function makeOpts(
-	overrides: Partial<MergeWatchOptions> & { pollStatuses?: Array<PrStatus | null> },
+	overrides: Partial<MergeWatchOptions> & { pollStatuses?: PrStatus[] },
 ): MergeWatchOptions & { notifications: string[]; sleepCalls: number } {
 	const notifications: string[] = [];
 	let sleepCalls = 0;
@@ -368,7 +381,7 @@ describe('runMergeWatch', () => {
 			mergedBranch: 'cam/branch',
 			cwd: '/fake',
 			// Always return OPEN+CLEAN (never terminal)
-			pollFn: () => OPEN_CLEAN,
+			pollFn: () => ok(OPEN_CLEAN),
 			postMergeFn: () => {
 				postMergeCalled = true;
 				return { ok: false, reason: 'pull-failed' };
@@ -387,7 +400,7 @@ describe('runMergeWatch', () => {
 		expect(notifications.some((n) => n.includes('timeout'))).toBe(true);
 	});
 
-	test('(e) gh error (null) -> silent retry until terminal', async () => {
+	test('(e) gh error -> silent retry until terminal', async () => {
 		const notifications: string[] = [];
 		let pollCalls = 0;
 
@@ -398,7 +411,7 @@ describe('runMergeWatch', () => {
 			// First 3 polls fail, then MERGED
 			pollFn: () => {
 				pollCalls++;
-				return pollCalls <= 3 ? null : MERGED;
+				return pollCalls <= 3 ? err('gh: authentication failed') : ok(MERGED);
 			},
 			postMergeFn: successPostMerge,
 			notifyOrchestrator: (line) => notifications.push(line),
@@ -1030,7 +1043,7 @@ describe('stepMergeWatch', () => {
 		let pollCalls = 0;
 		const pollFn: GhPollFn = () => {
 			pollCalls++;
-			return MERGED;
+			return ok(MERGED);
 		};
 		const state: MergeWatchState = {
 			prNumber: 1,
@@ -1056,7 +1069,7 @@ describe('stepMergeWatch', () => {
 		let pollCalls = 0;
 		const pollFn: GhPollFn = () => {
 			pollCalls++;
-			return OPEN_CLEAN; // non-terminal
+			return ok(OPEN_CLEAN); // non-terminal
 		};
 		const state: MergeWatchState = {
 			prNumber: 2,
@@ -1082,7 +1095,7 @@ describe('stepMergeWatch', () => {
 		let pollCalls = 0;
 		const pollFn: GhPollFn = () => {
 			pollCalls++;
-			return OPEN_CLEAN;
+			return ok(OPEN_CLEAN);
 		};
 		const state = legacySeed(10);
 		// lastPolledAt is absent -> throttle bypassed regardless of now
@@ -1101,7 +1114,7 @@ describe('stepMergeWatch', () => {
 		let pollCalls = 0;
 		const pollFn: GhPollFn = () => {
 			pollCalls++;
-			return OPEN_BLOCKED_PENDING;
+			return ok(OPEN_BLOCKED_PENDING);
 		};
 		const state = legacySeed(20);
 		const result = stepMergeWatch(state, 0, pollFn, makeStepOpts());
@@ -1115,7 +1128,7 @@ describe('stepMergeWatch', () => {
 		let pollCalls = 0;
 		const pollFn: GhPollFn = () => {
 			pollCalls++;
-			return OPEN_CLEAN;
+			return ok(OPEN_CLEAN);
 		};
 		const opts = makeStepOpts({ maxPolls: 3, pollIntervalMs: 1 });
 
@@ -1155,9 +1168,10 @@ describe('stepMergeWatch', () => {
 		expect(pollCalls).toBe(pollCallsBefore);
 	});
 
-	// Extra: gh error (null) on first tick returns continue with updated counters
-	test('gh error (null) on first tick returns continue with pollCount incremented', () => {
-		const pollFn: GhPollFn = () => null;
+	// Extra: gh poll error on first tick returns continue with updated counters
+	// and increments consecutiveNullPolls (US-001, CAM-170).
+	test('gh poll error on first tick returns continue with pollCount and consecutiveNullPolls incremented', () => {
+		const pollFn: GhPollFn = () => err('gh: authentication failed');
 		const state = legacySeed(50);
 		const result = stepMergeWatch(state, 0, pollFn, makeStepOpts());
 
@@ -1165,12 +1179,26 @@ describe('stepMergeWatch', () => {
 		if (result.kind === 'continue') {
 			expect(result.state.pollCount).toBe(1);
 			expect(result.state.lastPolledAt).toBe(0);
+			expect(result.state.consecutiveNullPolls).toBe(1);
+		}
+	});
+
+	// AC1: a normal poll of a still-open PR does not count as an error: the
+	// counter never increments on a successful (ok:true) poll.
+	test('(US-001) successful not-merged poll never increments consecutiveNullPolls', () => {
+		const pollFn: GhPollFn = () => ok(OPEN_CLEAN);
+		const state = legacySeed(51);
+		const result = stepMergeWatch(state, 0, pollFn, makeStepOpts());
+
+		expect(result.kind).toBe('continue');
+		if (result.kind === 'continue') {
+			expect(result.state.consecutiveNullPolls).toBe(0);
 		}
 	});
 
 	// Extra: MERGED on first tick returns terminal immediately
 	test('MERGED on first tick returns terminal merged outcome', () => {
-		const pollFn: GhPollFn = () => MERGED;
+		const pollFn: GhPollFn = () => ok(MERGED);
 		const state = legacySeed(60);
 		const notifications: string[] = [];
 		const result = stepMergeWatch(state, 0, pollFn, makeStepOpts({
@@ -1189,7 +1217,7 @@ describe('stepMergeWatch', () => {
 		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
 			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'sidecar', kind, detail });
 		};
-		const pollFn: GhPollFn = () => OPEN_CLEAN;
+		const pollFn: GhPollFn = () => ok(OPEN_CLEAN);
 		const state = legacySeed(99);
 
 		stepMergeWatch(state, 0, pollFn, makeStepOpts({ logEvent }));
@@ -1211,7 +1239,7 @@ describe('stepMergeWatch', () => {
 		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
 			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'sidecar', kind, detail });
 		};
-		const pollFn: GhPollFn = () => OPEN_CLEAN;
+		const pollFn: GhPollFn = () => ok(OPEN_CLEAN);
 		const state: MergeWatchState = {
 			prNumber: 88,
 			mergedBranch: 'cam/test-branch',
@@ -1404,6 +1432,41 @@ describe('merge-watch durable state I/O (US-002)', () => {
 		const read = readMergeWatchState(filePath);
 		expect(read?.pollCount).toBe(1);
 		expect(read?.lastPolledAt).toBeUndefined();
+	});
+
+	// US-001 (CAM-170): consecutiveNullPolls round-trips through write+read
+	test('US-001: write then read round-trips consecutiveNullPolls', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, {
+			prNumber: 55,
+			mergedBranch: 'cam/poll-error-test',
+			pollCount: 4,
+			consecutiveNullPolls: 3,
+		});
+
+		const read = readMergeWatchState(filePath);
+
+		expect(read?.consecutiveNullPolls).toBe(3);
+	});
+
+	// US-001 (CAM-170): legacy state file without the field reads back absent (fresh)
+	test('US-001: legacy state file without consecutiveNullPolls reads back absent (fresh)', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeFileSync(filePath, JSON.stringify({ prNumber: 8, mergedBranch: 'cam/legacy-poll' }), 'utf8');
+
+		const state = readMergeWatchState(filePath);
+
+		expect(state).not.toBeNull();
+		expect(state?.consecutiveNullPolls).toBeUndefined();
+	});
+
+	// US-001 (CAM-170): writeMergeWatchState defaults consecutiveNullPolls to 0 when absent
+	test('US-001: writeMergeWatchState defaults consecutiveNullPolls to 0 when absent in state', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, { prNumber: 1, mergedBranch: 'cam/b' });
+
+		const read = readMergeWatchState(filePath);
+		expect(read?.consecutiveNullPolls).toBe(0);
 	});
 });
 
@@ -1632,7 +1695,7 @@ describe('file persistence: non-terminal tick leaves file present', () => {
 		writeMergeWatchState(filePath, { prNumber: 42, mergedBranch: 'cam/feature' });
 
 		// Non-terminal pollFn: returns OPEN+CLEAN
-		const pollFn: GhPollFn = () => OPEN_CLEAN;
+		const pollFn: GhPollFn = () => ok(OPEN_CLEAN);
 		const state = readMergeWatchState(filePath);
 		expect(state).not.toBeNull();
 
@@ -1661,7 +1724,7 @@ describe('file persistence: non-terminal tick leaves file present', () => {
 		writeMergeWatchState(filePath, { prNumber: 7, mergedBranch: 'cam/ship' });
 
 		let postMergeCalls = 0;
-		const pollFn: GhPollFn = () => ({ state: 'MERGED', mergeStateStatus: 'MERGED' });
+		const pollFn: GhPollFn = () => ok({ state: 'MERGED', mergeStateStatus: 'MERGED' });
 		const state = readMergeWatchState(filePath);
 		expect(state).not.toBeNull();
 
@@ -1758,7 +1821,7 @@ describe('MergeWatchState issueId round-trip (US-002)', () => {
 		};
 		writeMergeWatchState(filePath, initial);
 
-		const pollFn: GhPollFn = () => OPEN_CLEAN;
+		const pollFn: GhPollFn = () => ok(OPEN_CLEAN);
 		const state = readMergeWatchState(filePath);
 		expect(state?.issueId).toBe('CAM-121');
 
@@ -2032,7 +2095,7 @@ describe('AC3: preserved-seed -> enrich -> stepMergeWatch closeIssueId (US-001)'
 		// Simulate the production closure: the postMergeFn captures state.issueId
 		// as closeIssueId (mirrors makeProductionMergeWatchFn stepOpts.postMergeFn).
 		let capturedCloseIssueId: string | undefined;
-		const result = stepMergeWatch(state!, 0, () => MERGED, {
+		const result = stepMergeWatch(state!, 0, () => ok(MERGED), {
 			cwd: '/fake',
 			postMergeFn: () => {
 				capturedCloseIssueId = state?.issueId;
@@ -2085,7 +2148,7 @@ describe('AC3: preserved-seed -> enrich -> stepMergeWatch closeIssueId (US-001)'
 
 			// stepMergeWatch on MERGED: postMergeFn receives closeIssueId.
 			let capturedCloseIssueId: string | undefined;
-			const result = stepMergeWatch(state!, 0, () => MERGED, {
+			const result = stepMergeWatch(state!, 0, () => ok(MERGED), {
 				cwd: '/fake',
 				postMergeFn: () => {
 					capturedCloseIssueId = state?.issueId;
@@ -2153,7 +2216,7 @@ describe('processPollResult / stepMergeWatch: BEHIND auto-recovery (US-001, CAM-
 		const { opts, notifications, updateBranchCalls } = makeUpdateBranchStepOpts();
 		const state: MergeWatchState = { prNumber: 500, mergedBranch: 'cam/b' };
 
-		const result = stepMergeWatch(state, 0, () => OPEN_BEHIND_ARMED, opts);
+		const result = stepMergeWatch(state, 0, () => ok(OPEN_BEHIND_ARMED), opts);
 
 		expect(result.kind).toBe('continue');
 		if (result.kind === 'continue') {
@@ -2169,7 +2232,7 @@ describe('processPollResult / stepMergeWatch: BEHIND auto-recovery (US-001, CAM-
 		const { opts, notifications, updateBranchCalls } = makeUpdateBranchStepOpts();
 		const state: MergeWatchState = { prNumber: 501, mergedBranch: 'cam/b', updateBranchCount: 2 };
 
-		const result = stepMergeWatch(state, 0, () => OPEN_BEHIND_ARMED, opts);
+		const result = stepMergeWatch(state, 0, () => ok(OPEN_BEHIND_ARMED), opts);
 
 		expect(result.kind).toBe('terminal');
 		if (result.kind === 'terminal') {
@@ -2187,7 +2250,7 @@ describe('processPollResult / stepMergeWatch: BEHIND auto-recovery (US-001, CAM-
 		const { opts, updateBranchCalls } = makeUpdateBranchStepOpts();
 		const state: MergeWatchState = { prNumber: 502, mergedBranch: 'cam/b' };
 
-		const result = stepMergeWatch(state, 0, () => OPEN_BEHIND_NOT_ARMED, opts);
+		const result = stepMergeWatch(state, 0, () => ok(OPEN_BEHIND_NOT_ARMED), opts);
 
 		expect(result.kind).toBe('continue');
 		if (result.kind === 'continue') {
@@ -2201,7 +2264,7 @@ describe('processPollResult / stepMergeWatch: BEHIND auto-recovery (US-001, CAM-
 		const { opts, updateBranchCalls } = makeUpdateBranchStepOpts();
 		const state: MergeWatchState = { prNumber: 503, mergedBranch: 'cam/b' };
 
-		const result = stepMergeWatch(state, 0, () => OPEN_DIRTY, opts);
+		const result = stepMergeWatch(state, 0, () => ok(OPEN_DIRTY), opts);
 
 		expect(result.kind).toBe('terminal');
 		if (result.kind === 'terminal') {
@@ -2219,7 +2282,7 @@ describe('processPollResult / stepMergeWatch: BEHIND auto-recovery (US-001, CAM-
 		const { opts, updateBranchCalls } = makeUpdateBranchStepOpts();
 		const state: MergeWatchState = { prNumber: 504, mergedBranch: 'cam/b' };
 
-		const result = stepMergeWatch(state, 0, () => OPEN_BEHIND_ARMED_FAILED_CHECK, opts);
+		const result = stepMergeWatch(state, 0, () => ok(OPEN_BEHIND_ARMED_FAILED_CHECK), opts);
 
 		expect(result.kind).toBe('continue');
 		expect(updateBranchCalls).toEqual([]);
@@ -2313,7 +2376,7 @@ describe('sidecar.ts production wiring oracle - BEHIND auto-recovery (US-001, CA
 	const sidecarPath = resolve(import.meta.dir, '..', '..', 'src', 'commands', 'sidecar.ts');
 	const source = readFileSync(sidecarPath, 'utf8');
 
-	const ghPollFnMatch = source.match(/const ghPollFn: GhPollFn = \(prNumber\): PrStatus \| null => \{[\s\S]*?\n\t\t\};/);
+	const ghPollFnMatch = source.match(/const ghPollFn: GhPollFn = \(prNumber\): GhPollResult => \{[\s\S]*?\n\t\t\};/);
 	const updateBranchFnMatch = source.match(/const updateBranchFn: UpdateBranchFn = \(prNumber\): void => \{[\s\S]*?\n\t\t\};/);
 	const stepOptsMatch = source.match(/const stepOpts: StepMergeWatchOptions = \{[\s\S]*?\};/);
 
@@ -2341,6 +2404,192 @@ describe('sidecar.ts production wiring oracle - BEHIND auto-recovery (US-001, CA
 	test('stepOpts wires updateBranchFn into the production StepMergeWatchOptions bag', () => {
 		expect(stepOptsMatch).not.toBeNull();
 		expect(stepOptsMatch?.[0]).toContain('updateBranchFn,');
+	});
+
+	// US-001 (CAM-170): production ghPollFn surfaces gh stderr into the
+	// discriminated error result on non-zero exit and on JSON-parse failure.
+	// Parsing is delegated to the named parseGhPollResult helper (extracted to
+	// keep ghPollFn under the biome complexity limit).
+	test('ghPollFn delegates to parseGhPollResult', () => {
+		expect(ghPollFnMatch).not.toBeNull();
+		expect(ghPollFnMatch?.[0]).toContain('parseGhPollResult(result)');
+	});
+
+	test('parseGhPollResult surfaces gh stderr into the error result on non-zero exit', () => {
+		expect(source).toContain('function parseGhPollResult');
+		expect(source).toContain('result.stderr');
+		expect(source).toContain('ok: false, stderr');
+	});
+
+	test('parseGhPollResult returns ok:false with a message on JSON-parse failure (catch block)', () => {
+		expect(source).toContain("'gh pr view returned malformed JSON'");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001 (CAM-170): merge-watch-poll-error edge-triggered advisory event
+// ---------------------------------------------------------------------------
+
+describe('merge-watch-poll-error edge-triggered emission (US-001, CAM-170)', () => {
+	function makePollErrorStepOpts(overrides: Partial<StepMergeWatchOptions> = {}): {
+		opts: StepMergeWatchOptions;
+		events: ReturnType<typeof makeInMemoryEventLogger>['events'];
+		notifications: string[];
+	} {
+		const { logger, events } = makeInMemoryEventLogger();
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail) => {
+			logger({ ts: '2026-01-01T00:00:00Z', storyId: undefined, uuid: 'test-uuid', kind, detail });
+		};
+		const notifications: string[] = [];
+		const opts: StepMergeWatchOptions = {
+			cwd: '/fake',
+			postMergeFn: successPostMerge,
+			notifyOrchestrator: (line) => notifications.push(line),
+			logEvent,
+			pollIntervalMs: 1,
+			maxPolls: 240,
+			...overrides,
+		};
+		return { opts, events, notifications };
+	}
+
+	/** Drive N consecutive failing ticks starting from a legacy seed state. */
+	function driveFailingTicks(
+		prNumber: number,
+		n: number,
+		opts: StepMergeWatchOptions,
+		stderr = 'gh: authentication failed',
+	): { state: MergeWatchState; result: StepMergeWatchResult } {
+		let state: MergeWatchState = { prNumber, mergedBranch: 'cam/b' };
+		let now = 0;
+		let result: StepMergeWatchResult = { kind: 'continue', state };
+		for (let i = 0; i < n; i++) {
+			result = stepMergeWatch(state, now, () => err(stderr), opts);
+			if (result.kind !== 'continue') return { state, result };
+			state = result.state;
+			now += 1;
+		}
+		return { state, result };
+	}
+
+	test('POLL_ERROR_THRESHOLD constant is 3 (three minutes at the 60s poll interval)', () => {
+		expect(POLL_ERROR_THRESHOLD).toBe(3);
+	});
+
+	test('AC: consecutiveNullPolls increments by 1 on each poll error', () => {
+		const { opts } = makePollErrorStepOpts();
+		const { state } = driveFailingTicks(100, 2, opts);
+		expect(state.consecutiveNullPolls).toBe(2);
+	});
+
+	test('AC: a successful poll resets consecutiveNullPolls to 0', () => {
+		const { opts } = makePollErrorStepOpts();
+		const { state: afterFailures } = driveFailingTicks(101, 2, opts);
+		expect(afterFailures.consecutiveNullPolls).toBe(2);
+
+		const result = stepMergeWatch(afterFailures, 10, () => ok(OPEN_CLEAN), opts);
+		expect(result.kind).toBe('continue');
+		if (result.kind === 'continue') {
+			expect(result.state.consecutiveNullPolls).toBe(0);
+		}
+	});
+
+	test('AC: emits exactly one merge-watch-poll-error event + one notifyOrchestrator narration at the Nth consecutive failure', () => {
+		const { opts, events, notifications } = makePollErrorStepOpts();
+		driveFailingTicks(102, POLL_ERROR_THRESHOLD, opts);
+
+		const pollErrorEvents = events.filter((e) => e.kind === 'merge-watch-poll-error');
+		expect(pollErrorEvents.length).toBe(1);
+		const pollErrorNarrations = notifications.filter((n) => n.includes('gh poll failed'));
+		expect(pollErrorNarrations.length).toBe(1);
+	});
+
+	test('AC: ticks N+1 and N+2 emit nothing further (edge-triggered, not level-triggered)', () => {
+		const { opts, events, notifications } = makePollErrorStepOpts();
+		driveFailingTicks(103, POLL_ERROR_THRESHOLD + 2, opts);
+
+		const pollErrorEvents = events.filter((e) => e.kind === 'merge-watch-poll-error');
+		expect(pollErrorEvents.length).toBe(1);
+		const pollErrorNarrations = notifications.filter((n) => n.includes('gh poll failed'));
+		expect(pollErrorNarrations.length).toBe(1);
+	});
+
+	test('AC: a reset followed by a later re-crossing to N emits again', () => {
+		const { opts, events } = makePollErrorStepOpts();
+		const { state: afterFirstCrossing } = driveFailingTicks(104, POLL_ERROR_THRESHOLD, opts);
+		expect(afterFirstCrossing.consecutiveNullPolls).toBe(POLL_ERROR_THRESHOLD);
+
+		// Recover (resets the counter), then fail N more times to re-cross.
+		const recovered = stepMergeWatch(afterFirstCrossing, 10, () => ok(OPEN_CLEAN), opts);
+		expect(recovered.kind).toBe('continue');
+		if (recovered.kind !== 'continue') return;
+		expect(recovered.state.consecutiveNullPolls).toBe(0);
+
+		let state = recovered.state;
+		let now = 11;
+		for (let i = 0; i < POLL_ERROR_THRESHOLD; i++) {
+			const r = stepMergeWatch(state, now, () => err('gh: still failing'), opts);
+			expect(r.kind).toBe('continue');
+			if (r.kind === 'continue') state = r.state;
+			now += 1;
+		}
+
+		const pollErrorEvents = events.filter((e) => e.kind === 'merge-watch-poll-error');
+		expect(pollErrorEvents.length).toBe(2);
+	});
+
+	test('AC: the event detail carries prNumber, consecutiveNullPolls, and the last gh stderr', () => {
+		const { opts, events } = makePollErrorStepOpts();
+		driveFailingTicks(105, POLL_ERROR_THRESHOLD, opts, 'gh: bad credentials (HTTP 401)');
+
+		const pollErrorEvt = events.find((e) => e.kind === 'merge-watch-poll-error');
+		expect(pollErrorEvt).toBeDefined();
+		if (pollErrorEvt) {
+			const d = pollErrorEvt.detail as { prNumber: number; consecutiveNullPolls: number; lastStderr: string };
+			expect(d.prNumber).toBe(105);
+			expect(d.consecutiveNullPolls).toBe(POLL_ERROR_THRESHOLD);
+			expect(d.lastStderr).toBe('gh: bad credentials (HTTP 401)');
+		}
+	});
+
+	test('AC: reaching the threshold does not change the watch outcome -- polling continues past N to the maxPolls timeout terminal', () => {
+		const { opts } = makePollErrorStepOpts({ maxPolls: POLL_ERROR_THRESHOLD + 2 });
+		let state: MergeWatchState = { prNumber: 106, mergedBranch: 'cam/b' };
+		let now = 0;
+		let result: StepMergeWatchResult = { kind: 'continue', state };
+		for (let i = 0; i < POLL_ERROR_THRESHOLD + 2; i++) {
+			result = stepMergeWatch(state, now, () => err('gh: rate limited'), opts);
+			expect(result.kind).toBe('continue');
+			if (result.kind === 'continue') state = result.state;
+			now += 1;
+		}
+		// One more tick: pollCount has reached maxPolls -> timeout terminal.
+		result = stepMergeWatch(state, now, () => err('gh: rate limited'), opts);
+		expect(result.kind).toBe('terminal');
+		if (result.kind === 'terminal') {
+			expect(result.outcome.kind).toBe('timeout');
+		}
+	});
+
+	test('AC: a fail-then-recover sequence past N proceeds to MERGED normally', () => {
+		const { opts } = makePollErrorStepOpts();
+		const { state: afterFailures } = driveFailingTicks(107, POLL_ERROR_THRESHOLD, opts);
+
+		const result = stepMergeWatch(afterFailures, 10, () => ok(MERGED), opts);
+		expect(result.kind).toBe('terminal');
+		if (result.kind === 'terminal') {
+			expect(result.outcome.kind).toBe('merged');
+		}
+	});
+
+	test('AC: a fail-then-recover sequence past N emits merge-watch-poll-error but never merge-watch-stalled', () => {
+		const { opts, events } = makePollErrorStepOpts();
+		const { state: afterFailures } = driveFailingTicks(108, POLL_ERROR_THRESHOLD, opts);
+
+		stepMergeWatch(afterFailures, 10, () => ok(MERGED), opts);
+
+		expect(events.some((e) => e.kind === 'merge-watch-poll-error')).toBe(true);
+		expect(events.some((e) => e.kind === 'merge-watch-stalled')).toBe(false);
 	});
 });
 
@@ -2380,7 +2629,7 @@ describe('merge-watch-stalled event emission on non-merged terminals (US-002, CA
 			url: 'https://github.com/x/y/pull/700',
 		};
 
-		const result = stepMergeWatch(state, 0, () => dirtyWithUrl, opts);
+		const result = stepMergeWatch(state, 0, () => ok(dirtyWithUrl), opts);
 
 		expect(result.kind).toBe('terminal');
 		if (result.kind === 'terminal') {
@@ -2410,7 +2659,7 @@ describe('merge-watch-stalled event emission on non-merged terminals (US-002, CA
 			autoMergeRequest: { enabledAt: '2026-07-05T00:00:00Z' },
 		};
 
-		const result = stepMergeWatch(state, 0, () => behindArmed, opts);
+		const result = stepMergeWatch(state, 0, () => ok(behindArmed), opts);
 
 		expect(result.kind).toBe('terminal');
 		if (result.kind === 'terminal') {
@@ -2429,7 +2678,7 @@ describe('merge-watch-stalled event emission on non-merged terminals (US-002, CA
 		const { opts, events } = makeStalledStepOpts({ maxPolls: 1 });
 		const state: MergeWatchState = { prNumber: 702, mergedBranch: 'cam/b', pollCount: 1, lastPolledAt: 0 };
 
-		const result = stepMergeWatch(state, 60_000, () => OPEN_CLEAN, opts);
+		const result = stepMergeWatch(state, 60_000, () => ok(OPEN_CLEAN), opts);
 
 		expect(result.kind).toBe('terminal');
 		if (result.kind === 'terminal') {

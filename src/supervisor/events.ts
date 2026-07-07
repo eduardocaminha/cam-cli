@@ -78,6 +78,10 @@ import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
  *     not-plannable issue and runPlanPhase returned the 'plan-target-invalid'
  *     terminal. Recorded alongside the orchestrator-pane notification so the
  *     failure is diagnosable from .claude/cam-worker-events.jsonl.
+ *   - 'merge-watch-poll-error' (US-001, CAM-170): emitted when a gh poll
+ *     inside stepMergeWatch fails (non-null stderr) on an edge-triggered
+ *     basis, carrying the consecutive-failure count and the last stderr. See
+ *     MergeWatchPollErrorEventDetail.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -110,7 +114,8 @@ export type WorkerEventKind =
 	| 'container-preflight'
 	| 'plan-preflight-failed'
 	| 'plan-escalated'
-	| 'plan-target-invalid';
+	| 'plan-target-invalid'
+	| 'merge-watch-poll-error';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -266,6 +271,20 @@ export interface MergeWatchStalledEventDetail {
 }
 
 /**
+ * 'merge-watch-poll-error' event detail (US-001, CAM-170): emitted, on an
+ * edge-triggered basis, when a gh poll inside stepMergeWatch fails.
+ *   - prNumber: the PR being watched.
+ *   - consecutiveNullPolls: how many consecutive gh polls have failed so far
+ *     (mirrors MergeWatchState.consecutiveNullPolls).
+ *   - lastStderr: the stderr text from the most recent failed gh call.
+ */
+export interface MergeWatchPollErrorEventDetail {
+	prNumber: number;
+	consecutiveNullPolls: number;
+	lastStderr: string;
+}
+
+/**
  * 'stage-promoted' event detail: emitted by specifyIssueOnMain (the grill spec
  * writer) immediately after a successful commit. Carries the issue id and the
  * stage transition so a grill promotion is replayable from the event log.
@@ -398,6 +417,7 @@ export type WorkerEventDetail =
 	| MergeWatchCiRedEventDetail
 	| MergeWatchPostMergeDoneEventDetail
 	| MergeWatchStalledEventDetail
+	| MergeWatchPollErrorEventDetail
 	| StagePromotedEventDetail
 	| DomainDocsWrittenEventDetail
 	| CycleTokensEventDetail
