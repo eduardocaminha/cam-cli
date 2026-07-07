@@ -24,12 +24,21 @@
 //   2. Exit 0 on { ok: true } including noOp (prints a muted hint); exit 1 on
 //      malformed stdin JSON, invalid payload (errors printed), or a guard
 //      failure (diverged / detached-head / missing-main).
+//
+// Acceptance criteria (US-001, CAM-213, --persist path):
+//   1. `echo '<json>' | cam spec --persist <id>` reads { spec, wsjf, blockedBy? }
+//      from stdin and calls specifyIssueOnMain in-process: NO tmux calls, no
+//      send-keys, no pane bootstrap, no orchestrator liveness check.
+//   2. Exit 0 on { ok: true }, printing CAM_SPEC_RESULT=<id> sha=<sha> plus a
+//      human hint; exit 1 on malformed stdin JSON (reason=invalid-json) or any
+//      specifyIssueOnMain guard/validation failure, printing
+//      CAM_SPEC_RESULT=ERROR reason=<reason>.
 
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { join } from 'node:path';
 import process from 'node:process';
 
-import { printError } from '../logging/color.ts';
+import { printError, printHint } from '../logging/color.ts';
 import {
 	emitAttachHint,
 	emitMutedHint,
@@ -55,6 +64,9 @@ import {
 	type SpawnFn as OnMainSpawnFn,
 	type WriteDomainDocsOnMainOutcome,
 } from './domain-docs.ts';
+import { specifyIssueOnMain, type SpecifyIssueOnMainOutcome } from './issue-specify.ts';
+import type { Spec } from '../issues/spec.ts';
+import type { WsjfScore } from '../issues/types.ts';
 import type { DomainDocsPayload } from '../domain-docs/render.ts';
 
 // --- Types -----------------------------------------------------------------
@@ -304,5 +316,112 @@ export async function runSpecWriteDocs(options: SpecWriteDocsOptions): Promise<n
 	}
 
 	writeStdout(`CAM_DOMAIN_DOCS_WRITTEN=${options.id} sha=${outcome.sha}\n`);
+	return 0;
+}
+
+// --- --persist entrypoint (US-001, CAM-213) ---------------------------------
+
+/** Stdin payload shape for `cam spec --persist <id>`. */
+interface SpecPersistPayload {
+	spec: Spec;
+	wsjf: WsjfScore;
+	blockedBy?: string[];
+}
+
+export interface SpecPersistOptions {
+	/** Id of the issue to persist the spec for (e.g. 'CAM-42'). */
+	id: string;
+	/** Override the working directory; default `process.cwd()`. */
+	cwd?: string;
+	/**
+	 * Injectable stdin reader. Default: `Bun.stdin.text()` (matches the
+	 * `cam journal append` / `cam issue --file-local` / `cam spec --write-docs`
+	 * stdin-JSON convention).
+	 */
+	readStdin?: () => Promise<string>;
+	/**
+	 * Injectable spawnSync-based git plumbing fn, passed through to
+	 * specifyIssueOnMain. Default: a `spawnSync` wrapper over `git`.
+	 */
+	spawnFn?: OnMainSpawnFn;
+	/** Injectable clock -- returns ISO 8601 timestamp. Default: `new Date().toISOString()`. */
+	clock?: ClockFn;
+	/** Injectable stdout writer. Default: `process.stdout.write`. */
+	writeStdout?: (line: string) => void;
+	/**
+	 * Injectable full bypass of stdin-read + specifyIssueOnMain, for
+	 * branch-isolation unit tests. When present, `readStdin`/`spawnFn`/`clock`
+	 * are never consulted.
+	 */
+	persistFn?: (payload: unknown) => SpecifyIssueOnMainOutcome;
+}
+
+/**
+ * `cam spec --persist <id>`: read { spec, wsjf, blockedBy? } as JSON from
+ * stdin and call specifyIssueOnMain directly. NO tmux calls, no send-keys, no
+ * pane bootstrap, no orchestrator liveness check -- this is the deterministic
+ * persist channel FOR the orchestrator (a read-only agent with no Task/inline-TS
+ * path), mirroring `cam spec --write-docs` / `cam journal append` /
+ * `cam issue --file-local`.
+ *
+ * specifyIssueOnMain already validates spec + wsjf and enforces all guards;
+ * this function only marshals stdin and maps the resulting discriminated
+ * union to exit code + machine-readable CAM_SPEC_RESULT line.
+ *
+ * Returns 0 on `{ ok: true }`; returns 1 on malformed stdin JSON
+ * (reason=invalid-json, specifyIssueOnMain is never called) or any
+ * specifyIssueOnMain guard/validation failure.
+ */
+export async function runSpecPersist(options: SpecPersistOptions): Promise<number> {
+	const cwd = options.cwd ?? process.cwd();
+	const readStdin = options.readStdin ?? (() => Bun.stdin.text());
+	const writeStdout =
+		options.writeStdout ?? ((line: string) => { process.stdout.write(line); });
+	const clock = options.clock ?? (() => new Date().toISOString());
+	const spawnFn: OnMainSpawnFn =
+		options.spawnFn ??
+		((cmd, args, opts) => spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>);
+
+	const stdinText = await readStdin();
+	let payload: unknown;
+	try {
+		payload = JSON.parse(stdinText);
+	} catch (err) {
+		printError(`cam spec --persist: invalid JSON from stdin: ${String(err)}`);
+		writeStdout('CAM_SPEC_RESULT=ERROR reason=invalid-json\n');
+		return 1;
+	}
+
+	const outcome: SpecifyIssueOnMainOutcome = options.persistFn
+		? options.persistFn(payload)
+		: specifyIssueOnMain({
+				cwd,
+				id: options.id,
+				spec: (payload as SpecPersistPayload).spec,
+				wsjf: (payload as SpecPersistPayload).wsjf,
+				blockedBy: (payload as SpecPersistPayload).blockedBy,
+				spawnFn,
+				clock,
+			});
+
+	if (!outcome.ok) {
+		if (
+			outcome.reason === 'invalid-spec' ||
+			outcome.reason === 'invalid-wsjf' ||
+			outcome.reason === 'integrity-error'
+		) {
+			printError(`cam spec --persist: ${outcome.reason}`, outcome.errors.join('; '));
+		} else {
+			printError(
+				`cam spec --persist: ${outcome.reason}`,
+				'ensure the issue is stage:idea/status:open and main is up to date, then retry.',
+			);
+		}
+		writeStdout(`CAM_SPEC_RESULT=ERROR reason=${outcome.reason}\n`);
+		return 1;
+	}
+
+	printHint(`specified ${outcome.id} on main (${outcome.sha})`);
+	writeStdout(`CAM_SPEC_RESULT=${outcome.id} sha=${outcome.sha}\n`);
 	return 0;
 }

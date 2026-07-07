@@ -1,16 +1,22 @@
 // test/commands/spec.test.ts
 //
 // Unit tests for `cam spec` (US-004, CAM-107: thin-proxy to orchestrator;
-// US-003, CAM-118: --write-docs in-process write channel).
+// US-003, CAM-118: --write-docs in-process write channel; US-001, CAM-213:
+// --persist in-process write channel).
 //
 // What we cover:
 //   - parseSpecArgs: positional id, bare (no arg), unknown flags rejected,
-//     --write-docs discriminated-union recognition (US-003).
-//   - dispatchSpec: routes mode 'write-docs' to writeDocsFn and mode 'proxy'
-//     to runSpecFn, proving branch isolation (US-003).
+//     --write-docs discriminated-union recognition (US-003), --persist
+//     discriminated-union recognition (US-001, CAM-213).
+//   - dispatchSpec: routes mode 'write-docs' to writeDocsFn, mode 'persist'
+//     to persistFn, and mode 'proxy' to runSpecFn, proving branch isolation
+//     (US-003, US-001).
 //   - runSpecWriteDocs: reads stdin JSON, calls writeDomainDocsOnMain,
 //     zero tmux spawn calls, exit codes for ok/noOp/invalid-payload/guard
 //     failure/malformed-JSON (US-003).
+//   - runSpecPersist: reads stdin JSON, calls specifyIssueOnMain, zero tmux
+//     spawn calls, exit codes for ok / each reason / malformed-JSON (US-001,
+//     CAM-213).
 //   - runSpec (hit path): orchestrator alive -> send-keys /cam-spec <id> and return 0.
 //   - runSpec: dispatch shape asserts issue id parsed, /cam-spec slash injected.
 //   - runSpec: send-keys is atomic (NO -l; -l would make "Enter" literal).
@@ -26,9 +32,10 @@ import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import { runSpec, runSpecWriteDocs } from '../../src/commands/spec.ts';
+import { runSpec, runSpecWriteDocs, runSpecPersist } from '../../src/commands/spec.ts';
 import { parseSpecArgs, dispatchSpec } from '../../index.ts';
 import type { WriteDomainDocsOnMainOutcome } from '../../src/commands/domain-docs.ts';
+import type { SpecifyIssueOnMainOutcome } from '../../src/commands/issue-specify.ts';
 import {
 	projectSessionName,
 	type SpawnFn as TmuxSpawnFn,
@@ -197,6 +204,49 @@ describe('parseSpecArgs: --write-docs', () => {
 	});
 });
 
+// --- parseSpecArgs: --persist discriminated-union recognition (US-001, CAM-213) --
+
+describe('parseSpecArgs: --persist', () => {
+	test('--persist <id> returns { mode: persist, id, help: false }', () => {
+		expect(parseSpecArgs(['--persist', 'CAM-213'])).toEqual({
+			mode: 'persist',
+			id: 'CAM-213',
+			help: false,
+		});
+	});
+
+	test('id may precede the --persist flag', () => {
+		expect(parseSpecArgs(['CAM-213', '--persist'])).toEqual({
+			mode: 'persist',
+			id: 'CAM-213',
+			help: false,
+		});
+	});
+
+	test('--persist without an id returns null', () => {
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		try {
+			expect(parseSpecArgs(['--persist'])).toBeNull();
+		} finally {
+			process.stderr.write = original;
+		}
+	});
+
+	test('mode discriminates persist from write-docs and proxy', () => {
+		const persist = parseSpecArgs(['--persist', 'CAM-1']);
+		const writeDocs = parseSpecArgs(['--write-docs', 'CAM-1']);
+		const proxy = parseSpecArgs(['CAM-1']);
+		expect(persist?.mode).toBe('persist');
+		expect(writeDocs?.mode).toBe('write-docs');
+		expect(proxy?.mode).toBe('proxy');
+	});
+
+	test('--help still wins over --persist', () => {
+		expect(parseSpecArgs(['--persist', '--help'])).toEqual({ help: true });
+	});
+});
+
 // --- dispatchSpec: branch isolation (US-003) --------------------------------
 
 describe('dispatchSpec: routing isolation', () => {
@@ -276,6 +326,64 @@ describe('dispatchSpec: routing isolation', () => {
 			{ writeDocsFn: async () => 0, runSpecFn: async () => 1 },
 		);
 		expect(proxyCode).toBe(1);
+	});
+});
+
+// --- dispatchSpec: --persist branch isolation (US-001, CAM-213) -------------
+
+describe('dispatchSpec: --persist routing isolation', () => {
+	test('mode:persist calls persistFn and NOT writeDocsFn/runSpecFn', async () => {
+		let persistCalled = false;
+		let writeDocsCalled = false;
+		let runSpecCalled = false;
+
+		const code = await dispatchSpec(
+			{ mode: 'persist', id: 'CAM-213', help: false },
+			{
+				persistFn: async (id) => {
+					persistCalled = true;
+					expect(id).toBe('CAM-213');
+					return 0;
+				},
+				writeDocsFn: async () => {
+					writeDocsCalled = true;
+					return 0;
+				},
+				runSpecFn: async () => {
+					runSpecCalled = true;
+					return 0;
+				},
+			},
+		);
+
+		expect(code).toBe(0);
+		expect(persistCalled).toBe(true);
+		expect(writeDocsCalled).toBe(false);
+		expect(runSpecCalled).toBe(false);
+	});
+
+	test('mode:write-docs and mode:proxy never call persistFn', async () => {
+		let persistCalled = false;
+
+		await dispatchSpec(
+			{ mode: 'write-docs', id: 'CAM-1', help: false },
+			{ persistFn: async () => { persistCalled = true; return 0; }, writeDocsFn: async () => 0 },
+		);
+		expect(persistCalled).toBe(false);
+
+		await dispatchSpec(
+			{ mode: 'proxy', id: 'CAM-1', help: false },
+			{ persistFn: async () => { persistCalled = true; return 0; }, runSpecFn: async () => 0 },
+		);
+		expect(persistCalled).toBe(false);
+	});
+
+	test('forwards exit code from persistFn', async () => {
+		const code = await dispatchSpec(
+			{ mode: 'persist', id: 'CAM-1', help: false },
+			{ persistFn: async () => 1 },
+		);
+		expect(code).toBe(1);
 	});
 });
 
@@ -377,6 +485,112 @@ describe('runSpecWriteDocs', () => {
 		expect(code).toBe(0);
 		expect(written.join('')).not.toContain('CAM_DOMAIN_DOCS_WRITTEN');
 	});
+});
+
+// --- runSpecPersist: zero tmux spawn calls + exit codes (US-001, CAM-213) ---
+
+const VALID_PERSIST_STDIN = JSON.stringify({
+	spec: {
+		acceptanceCriteria: ['a'],
+		scope: 'in-scope description',
+		gotchas: [],
+		domainTerms: [],
+	},
+	wsjf: { value: 5, timeCriticality: 5, riskReduction: 5, jobSize: 5 },
+});
+
+describe('runSpecPersist', () => {
+	test('real specifyIssueOnMain path: injected spawnFn is only ever called with cmd=git, never tmux', async () => {
+		const calls: { cmd: string; args: string[] }[] = [];
+		const fakeSpawnFn = (cmd: string, args: string[]) => {
+			calls.push({ cmd, args: [...args] });
+			const subcommand = args[2];
+			if (subcommand === 'rev-parse' && args.includes('--abbrev-ref')) {
+				return { pid: 1, output: [null, 'main\n', ''], stdout: 'main\n', stderr: '', status: 0, signal: null } as SpawnSyncReturns<string>;
+			}
+			if (subcommand === 'rev-parse') {
+				return { pid: 1, output: [null, 'deadbeef\n', ''], stdout: 'deadbeef\n', stderr: '', status: 0, signal: null } as SpawnSyncReturns<string>;
+			}
+			return { pid: 1, output: [null, '', ''], stdout: '', stderr: '', status: 1, signal: null } as SpawnSyncReturns<string>;
+		};
+
+		const code = await runSpecPersist({
+			id: 'CAM-213',
+			readStdin: async () => VALID_PERSIST_STDIN,
+			spawnFn: fakeSpawnFn,
+		});
+
+		// A non-existent backlog entry short-circuits as not-found, but the
+		// up-to-date guard + backlog read still exercise real git spawnFn calls.
+		expect(code).toBe(1);
+		expect(calls.length).toBeGreaterThan(0);
+		expect(calls.every((c) => c.cmd === 'git')).toBe(true);
+		expect(calls.some((c) => c.cmd === 'tmux')).toBe(false);
+	});
+
+	test('malformed stdin JSON returns 1 with reason=invalid-json; specifyIssueOnMain never called', async () => {
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		let persistCalled = false;
+		const written: string[] = [];
+		try {
+			const code = await runSpecPersist({
+				id: 'CAM-213',
+				readStdin: async () => 'not json{{{',
+				persistFn: () => { persistCalled = true; return { ok: false, reason: 'not-found' }; },
+				writeStdout: (line) => written.push(line),
+			});
+			expect(code).toBe(1);
+			expect(persistCalled).toBe(false);
+			expect(written.join('')).toContain('CAM_SPEC_RESULT=ERROR reason=invalid-json');
+		} finally {
+			process.stderr.write = original;
+		}
+	});
+
+	test('ok:true returns 0 and writes CAM_SPEC_RESULT=<id> sha=<sha>', async () => {
+		const written: string[] = [];
+		const code = await runSpecPersist({
+			id: 'CAM-213',
+			readStdin: async () => VALID_PERSIST_STDIN,
+			persistFn: () => ({ ok: true, id: 'CAM-213', committedTo: 'main', sha: 'abc1234', branchWasMain: false }),
+			writeStdout: (line) => written.push(line),
+		});
+		expect(code).toBe(0);
+		expect(written.join('')).toContain('CAM_SPEC_RESULT=CAM-213 sha=abc1234');
+	});
+
+	const reasonCases: { name: string; outcome: SpecifyIssueOnMainOutcome }[] = [
+		{ name: 'invalid-spec', outcome: { ok: false, reason: 'invalid-spec', errors: ['spec.problem required'] } },
+		{ name: 'invalid-wsjf', outcome: { ok: false, reason: 'invalid-wsjf', errors: ['wsjf.value required'] } },
+		{ name: 'not-found', outcome: { ok: false, reason: 'not-found' } },
+		{ name: 'wrong-stage', outcome: { ok: false, reason: 'wrong-stage' } },
+		{ name: 'not-open', outcome: { ok: false, reason: 'not-open' } },
+		{ name: 'integrity-error', outcome: { ok: false, reason: 'integrity-error', errors: ['dangling blockedBy ref'] } },
+		{ name: 'diverged', outcome: { ok: false, reason: 'diverged' } },
+		{ name: 'detached-head', outcome: { ok: false, reason: 'detached-head' } },
+		{ name: 'missing-main', outcome: { ok: false, reason: 'missing-main' } },
+	];
+
+	for (const { name, outcome } of reasonCases) {
+		test(`reason=${name} returns 1 and writes CAM_SPEC_RESULT=ERROR reason=${name}`, async () => {
+			const original = process.stderr.write.bind(process.stderr);
+			process.stderr.write = (() => true) as typeof process.stderr.write;
+			const written: string[] = [];
+			try {
+				const code = await runSpecPersist({
+					id: 'CAM-213',
+					readStdin: async () => VALID_PERSIST_STDIN,
+					persistFn: () => outcome,
+					writeStdout: (line) => written.push(line),
+				});
+				expect(code).toBe(1);
+				expect(written.join('')).toContain(`CAM_SPEC_RESULT=ERROR reason=${name}`);
+			} finally {
+				process.stderr.write = original;
+			}
+		});
+	}
 });
 
 // --- runSpec (thin-proxy): hit path ----------------------------------------
