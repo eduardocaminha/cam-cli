@@ -172,12 +172,27 @@
       "passes": true,
       "requires": null,
       "notes": "Files: .devcontainer/Dockerfile ONLY (two-token change: append =1.3.13 to the pre-FROM `ARG BUN_VERSION` and =22.23.1 to the post-FROM re-declared `ARG NODE_VERSION`). Do NOT touch worker-container.ts (the --build-arg path already overrides the default at cam-driven build time). Do NOT add a drift test or Renovate customManagers (consciously retired, see description). The `docker build --call check` no-warning outcome is host-verified by the orchestrator post-implement; the grep oracles above are the machine gate the worker runs."
+    },
+    {
+      "id": "US-R3-002",
+      "title": "Fix claude-off-PATH regression in worker Dockerfile (US-003)",
+      "description": "US-003 replaced apt-installed Node (Debian npm global prefix /usr/local, so claude landed on PATH at /usr/local/bin/claude) with a nodejs.org tarball extracted to /usr/local/lib/nodejs. npm's global-bin dir is now /usr/local/lib/nodejs/bin, and only node/npm/npx were symlinked into /usr/local/bin, so the later 'npm install -g @anthropic-ai/claude-code' installs claude off PATH. The container worker dispatches bare 'claude' via docker exec, so a fresh worker image fails 'claude: command not found', wedging the reviewer. Restore claude reachability so container-mode workers run. Not catchable by the Docker-less CI suite; verified by the orchestrator against a real container build.",
+      "acceptanceCriteria": [
+        ".devcontainer/Dockerfile exposes the Node global-bin dir on PATH (ENV PATH=/usr/local/lib/nodejs/bin:$PATH) or symlinks claude into /usr/local/bin, placed after the claude-code npm install, so bare 'claude' resolves in-container. [oracle: file-assert grep -qE 'ENV PATH=/usr/local/lib/nodejs/bin|ln -s /usr/local/lib/nodejs/bin/claude /usr/local/bin/claude' .devcontainer/Dockerfile]",
+        "Typecheck passes. [oracle: bun run typecheck]",
+        "Tests pass. [oracle: bun test]",
+        "Full gate spine passes. [oracle: bun run check:all]"
+      ],
+      "priority": 10,
+      "passes": true,
+      "requires": null,
+      "notes": "One-line Dockerfile change ONLY. Reviewer finding (round 3, review-report.json): .devcontainer/Dockerfile:58 WARNING claude-off-PATH regression. Prefer 'ENV PATH=/usr/local/lib/nodejs/bin:$PATH' (robust: any future npm global bin resolves), placed right after the 'RUN npm install -g @anthropic-ai/claude-code@2.1.197' line; the surgical alternative is an 'ln -s /usr/local/lib/nodejs/bin/claude /usr/local/bin/claude' mirroring the existing node/npm/npx symlinks. The orchestrator verifies empirically post-implement (docker build + docker exec cam-worker command -v claude). Do NOT touch any other file. Do NOT add drift tests or Renovate managers."
     }
   ],
   "review": {
-    "roundsCompleted": 2,
-    "maxRounds": 3,
+    "roundsCompleted": 3,
+    "maxRounds": 5,
     "lastVerdict": null,
-    "autoShipDispatchedAt": "2026-07-07T06:24:49.432Z"
+    "autoShipDispatchedAt": null
   }
 }

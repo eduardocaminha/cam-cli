@@ -17,4 +17,4 @@ merge_mode = "ci-gated"
 
 [loop]
 meta_loop = "auto"
-worker_isolation = "container"
+worker_isolation = "host"

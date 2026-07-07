@@ -57,6 +57,12 @@ RUN echo "bun ALL=(root) NOPASSWD: /bin/bash /workspace/.devcontainer/init-firew
 # Install pinned Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code@2.1.197
 
+# npm's global-bin dir for this tarball install is /usr/local/lib/nodejs/bin
+# (not /usr/local/bin, which only has the node/npm/npx symlinks added above),
+# so `claude` lands off PATH after the install above. Expose the npm
+# global-bin dir on PATH so bare `claude` resolves for docker exec callers.
+ENV PATH=/usr/local/lib/nodejs/bin:$PATH
+
 # Disable the auto-updater so the pinned CLI version is never replaced at runtime
 ENV DISABLE_AUTOUPDATER=1
 

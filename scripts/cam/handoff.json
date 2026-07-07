@@ -1,26 +1,27 @@
 {
-  "lastCompletedStory": { "id": "US-R3-001", "title": "Add ARG BUN_VERSION/NODE_VERSION literal defaults to the worker Dockerfile" },
+  "lastCompletedStory": { "id": "US-R3-002", "title": "Fix claude-off-PATH regression in worker Dockerfile (US-003)" },
   "branchName": "cam/pr-201-toolchain-parity",
-  "timestamp": "2026-07-07T12:30:00Z",
+  "timestamp": "2026-07-07T13:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     ".devcontainer/Dockerfile",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [
-    "All PRD user stories (US-001..US-008, US-R3-001) now have passes:true; no non-operator stories remain. The review cycle (prd.review, currently roundsCompleted:2/maxRounds:3, lastVerdict:null) should now run to a terminal verdict via the sidecar for this round; nothing further to implement unless review produces additional FIXES_PENDING follow-up stories.",
-    "The `docker build --call check` no-warning outcome for InvalidDefaultArgInFrom is meant to be host-verified by the orchestrator post-implement per the story notes (no docker daemon available in this worker sandbox to run it directly); the machine gate (the two grep oracles on the literal ARG default lines) passed cleanly and was step-5.5-validated against Docker's own build-checks docs (see officialDocsValidated below).",
-    "Per the story's own DESIGN DECISION text, US-003 AC#3 (a drift test) and US-008 AC#2/#4 (Renovate customManagers keeping the Dockerfile ARG default in lockstep with the pin files) are intentionally NOT implemented (retired as redundant given the reader-only toolchain feed via buildDockerBuildArgv). Confirmed renovate.json customManagers stays empty and test/toolchain-parity.test.ts was not created, matching AC#3's file-assert oracle.",
-    "Observed one non-reproducible `bun test` failure (1 fail / 3603 pass) on the very first post-edit run, then 0 fail across 35+ subsequent repeat runs (including the final bun run check:all gate run). This story only touched .devcontainer/Dockerfile (no test in the repo references the ARG lines, confirmed via grep), so the change surface cannot explain a test regression. This matches the ALREADY-DOCUMENTED flake class in patterns.md (CAM-201, 'bunfig.toml [test].timeout is silently ignored on bun 1.2.23' bullet and the terminal-size/tput subprocess-stall bullet above it): real-subprocess/tput-shellout stalls under full-suite CPU contention. Not a new pattern, not blocking; recorded here per the no-flaky-evasion documentation requirement, not as an open defect."
+    "This was a reviewer-filed regression fix (round 3 finding): US-003's switch from apt-installed Node to a nodejs.org tarball moved npm's global-bin dir to /usr/local/lib/nodejs/bin, so the later 'npm install -g @anthropic-ai/claude-code' line landed claude off PATH. Fix applied exactly as the story's notes prescribed: an 'ENV PATH=/usr/local/lib/nodejs/bin:$PATH' line placed immediately after the claude-code npm install RUN step (not the symlink alternative), so any future npm global-bin package also resolves.",
+    "Per the story description, this fix is 'not catchable by the Docker-less CI suite; verified by the orchestrator against a real container build'. The machine gate (file-assert grep oracle, typecheck, bun test, bun run check:all) all passed cleanly in this sandbox (no docker daemon available here), but the empirical confirmation ('docker build + docker exec cam-worker command -v claude' resolving to /usr/local/lib/nodejs/bin/claude) is host-verification left to the orchestrator per the story's own text, same pattern as US-R3-001's build-checks verification.",
+    "scripts/cam/project.toml's [loop].worker_isolation was already changed from 'container' to 'host' in the working tree before this story started (pre-existing dirty state at session start, not authored by this story). Left untouched and committed as-is since AGENT.md step 3/8 says commit ALL changes; not a regression I introduced or reverted. If this was an interim workaround for the exact claude-off-PATH bug just fixed here, the orchestrator may want to flip worker_isolation back to 'container' now that the regression is fixed, but that decision is out of scope for this story (notes say 'Do NOT touch any other file').",
+    "scripts/cam/prd.json's review block (roundsCompleted 2->3, maxRounds 3->5, autoShipDispatchedAt reset to null) was also already modified in the working tree before this story started (the review round that filed US-R3-002). Not touched further by this story beyond flipping US-R3-002.passes to true.",
+    "No non-operator stories with passes:false remain in prd.json after this story (verified via jq select query). The review cycle should now run to a terminal verdict via the sidecar."
   ],
-  "nextStoryContext": "This was the final non-operator story in the current review round (US-001 through US-008 plus the review-filed follow-up US-R3-001 all pass now). If prd.review produces further FIXES_PENDING stories, implement those next. If nothing further is filed, no additional implementation work is expected from this PRD.",
+  "nextStoryContext": "All non-operator stories in the current PRD (US-001..US-008, US-R3-001, US-R3-002) now have passes:true. If prd.review produces further FIXES_PENDING follow-up stories (e.g. a round-4 finding), implement those next. Otherwise no further implementation work is expected from this PRD; the orchestrator should host-verify the container build/exec claude resolution and let review reach a terminal verdict.",
   "officialDocsValidated": [
     {
-      "lib": "docker (BuildKit build-checks: InvalidDefaultArgInFrom)",
-      "url": "https://docs.docker.com/reference/build-checks/invalid-default-arg-in-from/",
-      "fetchedAt": "2026-07-07T12:20:00Z",
+      "lib": "npm (global bin resolution under a custom prefix)",
+      "url": "https://docs.npmjs.com/cli/v10/using-npm/config#prefix",
+      "fetchedAt": "2026-07-07T12:55:00Z",
       "status": "ok",
-      "summary": "Confirmed via WebSearch against docs.docker.com that InvalidDefaultArgInFrom fires when an ARG referenced in a FROM instruction lacks a default that resolves to a valid image reference without --build-arg, and that the documented fix is to declare the ARG with a literal default BEFORE the first FROM (exactly the pre-FROM `ARG BUN_VERSION=1.3.13` shape this story implements). No code change needed as a result of this check; the implementation already matched the documented fix pattern."
+      "summary": "Confirmed via WebFetch against docs.npmjs.com that npm's documented behavior is 'bin files are linked to {prefix}/bin': with the tarball-installed Node.js prefix set to /usr/local/lib/nodejs (this Dockerfile's layout), globally-installed CLI binaries (including claude-code's bin script) land at /usr/local/lib/nodejs/bin, not /usr/local/bin. This confirms the root cause named in the story and validates that prepending /usr/local/lib/nodejs/bin to PATH (the fix applied) is the correct, documented resolution."
     }
   ]
 }
