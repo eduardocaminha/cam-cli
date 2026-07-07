@@ -41,6 +41,9 @@
 //       reason=invalid-json (emitted before createLocalIssueOnMainFn runs)
 //       and exits 1; a thrown exception prints CAM_ISSUE_RESULT=ERROR
 //       reason=exception and exits 1.
+//   (n) dispatchIssue's list branch is CAM_ISSUE_RESULT-free by design
+//       (US-002, CAM-212, regression lock): unlike close/abandon/file-local,
+//       list never writes a CAM_ISSUE_RESULT line on any code path.
 //
 // All external I/O is faked via injectable deps (fileLocalFn, runIssueFn,
 // issueListFn, closeIssueOnMainFn, abandonIssueOnMainFn,
@@ -854,5 +857,32 @@ describe('dispatchIssue: default file-local CAM_ISSUE_RESULT retrofit', () => {
 		// the human printHint text ('filed ...').
 		const machineLines = lines.filter((l) => l.trim() === 'CAM_ISSUE_RESULT=CAM-7');
 		expect(machineLines.length).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// dispatchIssue: list is CAM_ISSUE_RESULT-free by design (US-002, CAM-212)
+//
+// Unlike close/abandon/file-local (each acts on exactly one issue and reports
+// its id), list is a read over many issues with no single id to report. This
+// is a deliberate design decision, not a forgotten path: the regression test
+// below locks the list branch's stdout contract so a future "fix" does not
+// retrofit a speculative machine line onto it.
+// ---------------------------------------------------------------------------
+
+describe('dispatchIssue: list mode is CAM_ISSUE_RESULT-free by design', () => {
+	test('mode:list dispatch never writes a CAM_ISSUE_RESULT line to stdout', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			await dispatchIssue(
+				{ mode: 'list', all: false, help: false },
+				{
+					issueListFn: async () => {
+						process.stdout.write('CAM-42  Some issue title\n');
+						return 0;
+					},
+				},
+			);
+		});
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT'))).toBe(false);
 	});
 });

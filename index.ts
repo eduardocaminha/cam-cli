@@ -1562,6 +1562,13 @@ export async function dispatchIssue(
 	deps?: IssueDispatchDeps,
 ): Promise<number> {
 	if (parsed.mode === 'list') {
+		// Deliberate design decision (US-002, CAM-212), not a forgotten path:
+		// CAM_ISSUE_RESULT is a mutation-outcome contract (it carries the id of
+		// the single acted-on issue, or ERROR, for a command that creates,
+		// closes, or abandons ONE issue). `list` is a read over MANY issues with
+		// no single id to report, so it emits NO CAM_ISSUE_RESULT line on any
+		// code path; its handback is the rendered table plus the process exit
+		// code alone. Do not retrofit a machine line here.
 		const issueListFn =
 			deps?.issueListFn ?? (async () => runIssueList({ cwd: process.cwd(), all: parsed.all }));
 		return issueListFn();
