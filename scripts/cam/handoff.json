@@ -1,0 +1,11 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Emit CAM_ISSUE_RESULT machine line on cam issue --file-local (all outcomes)" },
+  "branchName": "cam/pr-212-issue-result-retrofit",
+  "timestamp": "2026-07-07T18:30:00Z",
+  "modifiedFiles": ["index.ts", "test/issue-dispatch.test.ts"],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 (regression-lock cam issue list as CAM_ISSUE_RESULT-free by design) is next. The --file-local retrofit is done: dispatchIssue's file-local branch now owns the CAM_ISSUE_RESULT machine-line convention itself, mirroring close/abandon (index.ts ~1496-1552). Two new injectable seams were added to IssueDispatchDeps: createLocalIssueOnMainFn (fine-grained fake for the createLocalIssueOnMain call) and readStdinFn (fine-grained stdin fake); the pre-existing whole-branch fileLocalFn override still takes priority when present so the old US-003 branch-isolation tests stay green unchanged. New tests live in the 'dispatchIssue: default file-local CAM_ISSUE_RESULT retrofit' describe block at the end of test/issue-dispatch.test.ts. `cam issue list` (mode:'list') already routes to issueListFn and was NOT touched by this story; US-002 should confirm/regression-lock that runIssueList never emits a CAM_ISSUE_RESULT line (list is a read-only backlog print, not a mutation outcome).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure CLI-dispatch retrofit (stdout convention + injectable seams); no external library API surface touched (Bun.stdin.text and JSON.parse are runtime builtins already validated in prior stories)." }
+  ]
+}
