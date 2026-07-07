@@ -23,9 +23,18 @@
 //       ok:true to exit 0 and any !ok reason (already-closed / not-found) to
 //       exit 1 with CAM_ISSUE_RESULT=ERROR, and NEVER touches runIssueFn or
 //       fileLocalFn (no thin-proxy).
+//   (k) parseIssueArgs recognizes `abandon <id>` as { mode: 'abandon', id },
+//       evaluated BEFORE the free-text fallthrough (US-003, CAM-210). A
+//       missing id is a parse error, never a silent text-mode fallthrough.
+//   (l) dispatchIssue routes mode 'abandon' to abandonIssueOnMainFn, prints
+//       the human printHint line plus the machine CAM_ISSUE_RESULT line,
+//       maps ok:true to exit 0 and any !ok reason (already-abandoned /
+//       not-found) to exit 1 with CAM_ISSUE_RESULT=ERROR, and NEVER touches
+//       runIssueFn or fileLocalFn (no thin-proxy).
 //
 // All external I/O is faked via injectable deps (fileLocalFn, runIssueFn,
-// issueListFn, closeIssueOnMainFn). No real stdin, git, or tmux is exercised.
+// issueListFn, closeIssueOnMainFn, abandonIssueOnMainFn). No real stdin,
+// git, or tmux is exercised.
 
 import { describe, expect, test } from 'bun:test';
 import { parseIssueArgs, dispatchIssue } from '../index.ts';
@@ -525,6 +534,146 @@ describe('dispatchIssue: close routing isolation', () => {
 					{ mode: 'close', id: 'CAM-999', help: false },
 					{
 						closeIssueOnMainFn: () => ({ ok: false, reason: 'not-found' }),
+					},
+				),
+			);
+			expect(code).toBe(1);
+		});
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('not-found'))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseIssueArgs: `abandon <id>` subcommand (US-003, CAM-210)
+// ---------------------------------------------------------------------------
+
+describe('parseIssueArgs: abandon subcommand', () => {
+	test('cam issue abandon CAM-42 returns { mode: abandon, id: CAM-42, help: false }', () => {
+		const result = parseIssueArgs(['abandon', 'CAM-42']);
+		expect(result?.mode).toBe('abandon');
+		expect(result?.help).toBe(false);
+		if (result?.mode === 'abandon') {
+			expect(result.id).toBe('CAM-42');
+		}
+	});
+
+	test('a bare "abandon" positional is never misread as free-text issue creation', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['abandon']));
+		expect(result?.mode).not.toBe('text');
+	});
+
+	test('cam issue abandon with no id returns null (parse error, never text-mode fallthrough)', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['abandon']));
+		expect(result).toBeNull();
+	});
+
+	test('cam issue abandon CAM-42 extra returns null (unexpected argument)', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['abandon', 'CAM-42', 'extra']));
+		expect(result).toBeNull();
+	});
+
+	test('free text starting with "abandon" as a full sentence is still mode:text (no regression)', () => {
+		// A single-token `args[0] === 'abandon'` check only fires on the exact
+		// positional keyword; a free-text arg that merely CONTAINS "abandon" is
+		// unaffected because it is still args[0] verbatim vs the literal 'abandon'.
+		const result = parseIssueArgs(['abandon the retry loop rewrite']);
+		// args[0] here is the whole string 'abandon the retry loop rewrite',
+		// not the bare keyword 'abandon', so this still falls through to text mode.
+		expect(result?.mode).toBe('text');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// dispatchIssue: `abandon <id>` branch (US-003, CAM-210)
+// ---------------------------------------------------------------------------
+
+describe('dispatchIssue: abandon routing isolation', () => {
+	test('abandon calls abandonIssueOnMainFn and NOT runIssueFn/fileLocalFn', async () => {
+		let abandonCalled = false;
+		let runIssueCalled = false;
+		let fileLocalCalled = false;
+
+		const code = await dispatchIssue(
+			{ mode: 'abandon', id: 'CAM-42', help: false },
+			{
+				abandonIssueOnMainFn: (id) => {
+					abandonCalled = true;
+					return { ok: true, id, committedTo: 'main', sha: 'deadbeef', branchWasMain: true };
+				},
+				runIssueFn: async () => {
+					runIssueCalled = true;
+					return 99;
+				},
+				fileLocalFn: async () => {
+					fileLocalCalled = true;
+					return 99;
+				},
+			},
+		);
+
+		expect(abandonCalled).toBe(true);
+		expect(runIssueCalled).toBe(false);
+		expect(fileLocalCalled).toBe(false);
+		expect(code).toBe(0);
+	});
+
+	test('abandon passes the parsed id through to abandonIssueOnMainFn', async () => {
+		let receivedId: string | undefined;
+		await dispatchIssue(
+			{ mode: 'abandon', id: 'CAM-99', help: false },
+			{
+				abandonIssueOnMainFn: (id) => {
+					receivedId = id;
+					return { ok: true, id, committedTo: 'main', sha: 'sha1', branchWasMain: true };
+				},
+			},
+		);
+		expect(receivedId).toBe('CAM-99');
+	});
+
+	test('abandon on success prints CAM_ISSUE_RESULT=<id> and exits 0', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await dispatchIssue(
+				{ mode: 'abandon', id: 'CAM-42', help: false },
+				{
+					abandonIssueOnMainFn: (id) => ({
+						ok: true,
+						id,
+						committedTo: 'main',
+						sha: 'deadbeef',
+						branchWasMain: true,
+					}),
+				},
+			);
+			expect(code).toBe(0);
+		});
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT=CAM-42'))).toBe(true);
+	});
+
+	test('abandon on an already-abandoned issue prints CAM_ISSUE_RESULT=ERROR with reason and exits non-zero', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await withSilentStderrAsync(() =>
+				dispatchIssue(
+					{ mode: 'abandon', id: 'CAM-42', help: false },
+					{
+						abandonIssueOnMainFn: () => ({ ok: false, reason: 'already-abandoned' }),
+					},
+				),
+			);
+			expect(code).toBe(1);
+		});
+		expect(
+			lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('already-abandoned')),
+		).toBe(true);
+	});
+
+	test('abandon on a not-found id prints CAM_ISSUE_RESULT=ERROR and exits non-zero', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await withSilentStderrAsync(() =>
+				dispatchIssue(
+					{ mode: 'abandon', id: 'CAM-999', help: false },
+					{
+						abandonIssueOnMainFn: () => ({ ok: false, reason: 'not-found' }),
 					},
 				),
 			);

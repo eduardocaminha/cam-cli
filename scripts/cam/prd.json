@@ -60,7 +60,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (same regions as US-002: ParsedIssueArgs, parseIssueArgs, dispatchIssue, ISSUE_HELP), test/issue-dispatch.test.ts. Mirror the US-002 close branch exactly; abandonIssueOnMain (src/commands/issue-specify.ts:409) already has the 'already-abandoned' guard (entry.status !== 'open' at :424), so NO change to issue-specify.ts in this story. Gotchas: (a) abandon sets status:'abandoned' and LEAVES stage; do not conflate the axes; assert stage is untouched in the success test. (b) AbandonIssueOnMainError reasons: diverged | detached-head | missing-main | not-found | already-abandoned; map all failures to CAM_ISSUE_RESULT=ERROR + exit 1. (c) abandonIssueOnMain is pure return-only; the CLI branch owns printing and exit codes. (d) abandonIssueOnMain unit coverage lives in test/commands/issue-specify.test.ts; new parse+dispatch tests belong in test/issue-dispatch.test.ts. (e) This is the last story: run `bun run check:all` (AC10) and fix anything red before committing. Re-check CONTEXT.md 'abandon (issue)' before coding."
     }

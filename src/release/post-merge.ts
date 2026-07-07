@@ -24,7 +24,9 @@ import type { SpawnSyncReturns } from 'node:child_process';
 import { printError, printSuccess } from '../logging/color.ts';
 import {
 	closeIssueOnMain,
+	abandonIssueOnMain,
 	type CloseIssueOnMainOutcome,
+	type AbandonIssueOnMainOutcome,
 	type SpawnFn as CloseSpawnFn,
 } from '../commands/issue-specify.ts';
 
@@ -324,6 +326,30 @@ export function defaultCloseIssueFn(closeCwd: string, id: string): CloseIssueOnM
 		cwd: closeCwd,
 		id,
 		spawnFn: closeSpawnFn,
+		clock: () => new Date().toISOString(),
+	});
+}
+
+/**
+ * Production default AbandonIssueFn: wraps abandonIssueOnMain with a real spawnSync.
+ * Mirrors defaultCloseIssueFn's wiring exactly (same real-spawnSync closure shape).
+ *
+ * Exported so other production callers that need to abandon an issue on main
+ * (e.g. the `cam issue abandon <id>` positional subcommand, US-003 CAM-210)
+ * reuse this exact wiring instead of duplicating a spawnFn closure inline
+ * (jscpd gate).
+ */
+export function defaultAbandonIssueFn(abandonCwd: string, id: string): AbandonIssueOnMainOutcome {
+	const abandonSpawnFn: CloseSpawnFn = (cmd, args, opts) =>
+		spawnSync(cmd, args, {
+			encoding: opts.encoding,
+			...(opts.env !== undefined ? { env: opts.env } : {}),
+			...(opts.input !== undefined ? { input: opts.input } : {}),
+		}) as SpawnSyncReturns<string>;
+	return abandonIssueOnMain({
+		cwd: abandonCwd,
+		id,
+		spawnFn: abandonSpawnFn,
 		clock: () => new Date().toISOString(),
 	});
 }
