@@ -1,0 +1,157 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-201-toolchain-parity",
+  "description": "Pin bun+Node to a single source of truth consumed by CI, the Dockerfile, and a fail-closed container preflight with sidecar auto-rebuild; add a check:all guard forbidding toolchain-version-conditioned test skips; keep pins fresh via Renovate automerge. Closes CAM-198 (container Node 18), CAM-192 (image staleness), CAM-180 (manual rebuild ceremony) as subsumed.",
+  "issueNumber": 201,
+  "relatedDocs": ["docs/container-test-baseline.md", "docs/recovery-runbook.md"],
+  "officialDocsConsulted": [
+    {
+      "lib": "oven-sh/setup-bun",
+      "url": "https://github.com/oven-sh/setup-bun",
+      "version": "v2",
+      "fetchedAt": "2026-07-07T12:00:00Z",
+      "summary": "setup-bun@v2 supports the bun-version-file input (reads .bun-version, .tool-versions, or package.json). Default cascade when unpinned is packageManager -> engines.bun -> latest, which is exactly why the current unpinned CI floats to 1.3.x.",
+      "status": "ok"
+    },
+    {
+      "lib": "Renovate (bun-version manager)",
+      "url": "https://docs.renovatebot.com/modules/manager/bun-version/",
+      "version": "current",
+      "fetchedAt": "2026-07-07T12:00:00Z",
+      "summary": "Renovate ships a dedicated bun-version manager matching /(^|/)\\.bun-version$/ by default with npm versioning (npm datasource); it is separate from the bun manager (bun.lock/package.json). .tool-versions is handled by the asdf manager; Docker FROM tags by the dockerfile manager; workflow actions by the github-actions manager. Direct page fetch failed once; content confirmed via search snapshot of the same URL.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Pin bun and Node versions with a shared toolchain reader",
+      "description": "As a cam operator, I need one repo-root source of truth for the bun and Node versions so that CI, the worker image, and the container preflight all read the same pins and can never silently diverge.",
+      "acceptanceCriteria": [
+        "A .bun-version file at repo root contains exactly 1.3.13 (single line, exact semver, no prefix). [oracle: file-assert grep -Eq '^1\\.3\\.13$' .bun-version]",
+        "A .tool-versions file at repo root pins an exact Node 22.x version in asdf format. [oracle: file-assert grep -Eq '^nodejs 22\\.[0-9]+\\.[0-9]+$' .tool-versions]",
+        "A new pure module src/config/toolchain.ts exports readPinnedBunVersion and readPinnedNodeVersion that read those files (injectable read seam, trims whitespace, returns null on missing/malformed content, never throws). [oracle: bun test test/config/toolchain.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .bun-version, .tool-versions, src/config/toolchain.ts, test/config/toolchain.test.ts. Pick the current Node 22 LTS patch release for .tool-versions (issue requires >= 22 for knip's node:util styleText, see CAM-198). Gotcha (spec): setup-bun@v2 already reads package.json packageManager/engines.bun by default; .bun-version is the explicit, Renovate-manageable single source, so do NOT add engines.bun/packageManager to package.json. Follow patterns.md: injectable reader seam, null-on-error, no fs at import time. Downstream consumers: check-ci-parity (US-002), buildDockerBuildArgv (US-003), toolchain assert (US-006/007)."
+    },
+    {
+      "id": "US-002",
+      "title": "Pin CI bun via bun-version-file and enforce it in ci-parity",
+      "description": "As a cam operator, I need CI to resolve bun from .bun-version instead of floating to latest, with the ci-parity gate enforcing the pin, so that the CI toolchain is locked to the same version the container and host use.",
+      "acceptanceCriteria": [
+        ".github/workflows/ci.yml passes bun-version-file: .bun-version to oven-sh/setup-bun@v2 and contains no floating bun-version: latest. [oracle: file-assert grep -q 'bun-version-file: .bun-version' .github/workflows/ci.yml]",
+        "scripts/check-ci-parity.ts gains a ci-parity assertion that FAILS when the setup-bun step lacks bun-version-file: .bun-version or when .bun-version is absent/malformed, proven by unit tests for both the passing and failing workflow YAML shapes. [oracle: bun test test/check-ci-parity.test.ts]",
+        "The full spine passes with the new assertion active. [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .github/workflows/ci.yml, scripts/check-ci-parity.ts, test/check-ci-parity.test.ts, test/ci-workflow.test.ts (may assert workflow shape; update if stale). Gate-spine convention (patterns.md, CAM-59): CI calls only bun run check:all; ci-parity is the sync-enforcer, so extend checkParity/checkParityFromFile rather than adding a new ci.yml step. Reuse readPinnedBunVersion from US-001 (or the injectable-read pattern) so the assertion compares against the actual pin file, satisfying the spec AC that the CI-resolved bun equals .bun-version."
+    },
+    {
+      "id": "US-003",
+      "title": "Feed the worker Dockerfile toolchain from the pins",
+      "description": "As a loop operator, I need the worker image's bun and Node versions to be derived from .bun-version and .tool-versions at build time so that the container gates run the exact same toolchain as the host and CI (closing the bun 1.2.23 and Debian Node 18 gaps).",
+      "acceptanceCriteria": [
+        ".devcontainer/Dockerfile declares ARG BUN_VERSION before FROM and uses FROM oven/bun:${BUN_VERSION}-slim (no hardcoded 1.2 tag remains). [oracle: file-assert grep -q 'FROM oven/bun:${BUN_VERSION}-slim' .devcontainer/Dockerfile]",
+        "The Dockerfile installs Node pinned to the .tool-versions target (>= 22, via ARG NODE_VERSION fed NodeSource setup or a pinned upstream binary), and the Debian apt 'nodejs npm' install form is gone. [oracle: file-assert ! grep -Eq 'apt-get install.*nodejs npm|nodejs npm \\\\' .devcontainer/Dockerfile]",
+        "buildDockerBuildArgv (src/supervisor/worker-container.ts) emits --build-arg BUN_VERSION=<pinned> (and the Node pin arg) sourced from the US-001 toolchain reader by default, with explicit overrides still injectable for tests. [oracle: bun test test/worker-container.test.ts]",
+        "The pinned Claude Code CLI install and DISABLE_AUTOUPDATER=1 are preserved unchanged. [oracle: file-assert grep -q 'DISABLE_AUTOUPDATER=1' .devcontainer/Dockerfile]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .devcontainer/Dockerfile, src/supervisor/worker-container.ts, test for worker-container argv. Gotcha (spec): an ARG declared before FROM is only usable in the FROM line; re-declare any ARG needed after FROM. The ONLY docker build call site is runWorkerContainer via buildDockerBuildArgv (ensure-container.ts reuses it), so wiring the default there covers both the sidecar auto-rebuild path and initial creation; there is no separate release-build docker path (build-release.sh does not docker build). Keep the HOST_UID/HOST_GID build-arg pairing logic intact. Preserve the git-credential helper, firewall sudoers, and claude-config COPY blocks (CAM-150/179 history in Dockerfile comments)."
+    },
+    {
+      "id": "US-004",
+      "title": "Drop bun-version-conditioned skips; make Ink stdin tests version-agnostic",
+      "description": "As a loop operator, I need the previously version-skipped Ink keypress tests to run unconditionally on every toolchain so that no in-container gate can be blind to a test that the host and CI execute.",
+      "acceptanceCriteria": [
+        "No test file conditions a skip on Bun.version/process.version: the bunVersionOk probes and their skipIf usages in test/dashboard.test.ts and test/ui/init-setup-screen-keys.test.ts are removed and those tests run unconditionally. [oracle: file-assert ! grep -rq 'bunVersionOk' test/]",
+        "The un-skipped tests pass on both bun 1.2.x and 1.3.x by flushing enough macrotask ticks (two) after stdin-driven state updates, via a shared flush helper. [oracle: bun test test/dashboard.test.ts test/ui/init-setup-screen-keys.test.ts]",
+        "scripts/cam/patterns.md gains an appended bullet marking the CAM-186 version-skip pattern as retired by CAM-201 (old bullet preserved, file never truncated). [oracle: file-assert grep -q 'CAM-201' scripts/cam/patterns.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: test/dashboard.test.ts, test/ui/init-setup-screen-keys.test.ts, scripts/cam/patterns.md. Root cause (patterns.md CAM-186 bullet, line ~308): bun 1.2.x needs TWO macrotask ticks to flush ink-testing-library stdin-driven state into lastFrame(); bun >= 1.3 needs one. An extra tick is harmless on 1.3, so awaiting two ticks unconditionally is version-agnostic. IMPORTANT ordering: this story MUST land before the guard gate (US-005) or check:all goes red at the story boundary. The container running this cycle may still be bun 1.2.23 (rebuild lands in US-007), which is exactly why the double-tick fix, not a bare skip-removal, is required for in-container bun test to stay green. Do not change divider-color/glyph conventions; only timing."
+    },
+    {
+      "id": "US-005",
+      "title": "Add check:all guard gate forbidding toolchain-version-conditioned skips",
+      "description": "As a cam operator, I need a quality gate that fails when any test skip is conditioned on the runtime toolchain version so that a worker can never again mask a failing test from the in-container gates while the host and CI run it (the cam/pr-66 green-in-container/red-in-CI class).",
+      "acceptanceCriteria": [
+        "A new gate script (scripts/check-version-skips.ts) scans test files and FAILS when a skip form (skipIf / .skip / skipUnless / todoIf) is conditioned, directly or via a same-file variable derived from them, on Bun.version, process.version, or process.versions. [oracle: bun test test/check-version-skips.test.ts]",
+        "The gate does NOT flag skips conditioned on process.platform, process.env, or capability probes (e.g. the CAM-59 real-tmux/git availability skips in test/integration/ stay legal); fixtures under test/fixtures/ prove both the positive (version-skip fails) and negative (platform/capability-skip passes) cases. [oracle: bun test test/check-version-skips.test.ts]",
+        "The gate is registered in the GATES manifest in scripts/check-all.ts (spine coverage only; no new ci.yml step) and ci-parity stays green. [oracle: file-assert grep -q 'check-version-skips' scripts/check-all.ts]",
+        "The full spine passes with the guard active. [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/check-version-skips.ts, scripts/check-all.ts (GATES entry), test/check-version-skips.test.ts, test/fixtures/version-skip-guard/*. Follow the gate-spine convention (patterns.md CAM-59): add to GATES only, verify with bun run check:ci-parity. Two-pass detection handles the real incident shape: a module-level const derived from Bun.version (bunVersionOk) later used in skipIf. Exclude test/fixtures/ from the real scan so the guard's own fixtures do not trip it; scan only test/ (not scripts/) to avoid the debt-marker self-reference gotcha (patterns.md CAM-60). Mirror check-debt-markers.ts structure (exported pure checker + CLI entrypoint + injectable file-list seam). Follow the oracle-friendly manifest design bullet when adding the GATES entry."
+    },
+    {
+      "id": "US-006",
+      "title": "Add fail-closed container toolchain assert to the preflight layer",
+      "description": "As a loop operator, I need the preflight to assert that the running cam-worker image's bun and Node equal the repo pins so that a stale-toolchain container is detected as a first-class, machine-readable condition instead of silently running divergent gates.",
+      "acceptanceCriteria": [
+        "A toolchain assert helper (in src/supervisor/preflight-container.ts or a sibling module) probes bun --version and node --version inside the container via an injectable exec seam and compares them to readPinnedBunVersion/readPinnedNodeVersion (bun exact match; node compared with the leading 'v' stripped), returning a discriminated result { ok: true } | { ok: false; mismatches: [...] } and never throwing. [oracle: bun test test/toolchain-assert.test.ts]",
+        "The preflight surface exposes a distinct 'toolchain-mismatch' reason (alongside daemon-unreachable/image-missing/image-stale) so callers can branch on it. [oracle: file-assert grep -rq 'toolchain-mismatch' src/supervisor/]",
+        "A missing or malformed pin file fails closed (mismatch, not silent pass), proven by a unit test. [oracle: bun test test/toolchain-assert.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/preflight-container.ts (or new src/supervisor/toolchain-assert.ts), test mirror. Reuse the DockerProbe/ConfigSpawnFn seam shapes (no real docker in CI, macos-latest has no daemon). Probe argv shape: docker exec <containerName> bun --version and docker exec <containerName> node --version. Apply the JSON-reader shape-guard discipline from patterns.md (validate discriminator fields). Keep the helper pure/injectable; the wiring into ensure/dispatch is US-007, mirroring how preflight-container.ts landed tested-but-inert before CAM-150 wiring."
+    },
+    {
+      "id": "US-007",
+      "title": "Auto-rebuild worker image on toolchain mismatch; escalate on rebuild failure",
+      "description": "As a loop operator, I need the sidecar to auto-rebuild the worker image when the running container's toolchain diverges from the pins, re-assert, and only then dispatch, failing closed with an escalation when the rebuild cannot converge, so that a pin bump merged to main propagates to the running loop with zero operator action.",
+      "acceptanceCriteria": [
+        "ensureWorkerContainer runs the US-006 toolchain assert after its reconcile branches; on mismatch it tears down (docker rm -f), rebuilds via runWorkerContainer with --build-arg BUN_VERSION from .bun-version plus HOST_UID/HOST_GID, restarts the container, and re-asserts; dispatch is allowed only after a passing re-assert. [oracle: bun test test/ensure-container.test.ts]",
+        "A rebuild failure or a still-mismatching re-assert throws a typed ToolchainMismatchError; runSidecar catches it (instanceof, mirroring FirewallError/ContainerConfigError), refuses dispatch, and escalates (stderr line + the sidecar escalation channel). [oracle: file-assert grep -q 'ToolchainMismatchError' src/commands/sidecar.ts]",
+        "The toolchain assert (two cheap docker execs) runs on every container ensure invocation and the ensure path is exercised before dispatch cycles, so a running loop picks up a merged pin change (e.g. container bun 1.2.23 != .bun-version 1.3.13) and auto-rebuilds on the next cycle with zero operator action; the docker build is triggered ONLY on mismatch (or the existing stale/absent branches), never unconditionally per dispatch, proven by a test asserting reused+matching produces zero build calls. [oracle: bun test test/ensure-container.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/ensure-container.ts, src/commands/sidecar.ts, tests (ensure-container + sidecar fail-closed spy test: when ensureContainerFn throws ToolchainMismatchError the loop deps are never built). Follow the applyFirewallIfPresent/applyConfigIfPresent extraction style to stay under biome complexity 15. After a rebuild the firewall + config repair must still run (they are unconditional post-reconcile steps). Gotchas (spec): docker build takes minutes but Docker layer cache reduces cost; rebuild only on mismatch. If ensureContainerFn is currently invoked once per sidecar boot, move/also invoke the ensure (or at minimum the assert-and-rebuild path) into the per-cycle path the sidecar loop runs before dispatch, so a merge picked up by the running loop triggers the rebuild without a sidecar restart; keep host-mode (isolation != container) a complete no-op. This story delivers the CAM-192 (image staleness) and CAM-180 (manual rebuild ceremony) closures; US-003 delivers CAM-198 (Node 18). Reference all three as subsumed/closed in the PR body at ship time."
+    },
+    {
+      "id": "US-008",
+      "title": "Add Renovate config auto-updating the toolchain pins",
+      "description": "As a cam operator, I need Renovate to keep .bun-version, .tool-versions, the Docker base image, and GitHub Actions current with automerge gated on green CI so that the pins stay fresh with zero hand-editing and every bump is validated by the full check:all spine before landing.",
+      "acceptanceCriteria": [
+        "A renovate.json at repo root enables coverage for the bun-version manager (.bun-version), the asdf manager (.tool-versions), the dockerfile manager (Docker base image), and the github-actions manager (none of them disabled). [oracle: file-assert grep -q 'bun-version' renovate.json]",
+        "Automerge is enabled for patch, minor, AND major updates on those managers, and the config does not set ignoreTests, so automerge remains gated on the required CI status check. [oracle: file-assert grep -q '\"automerge\": true' renovate.json && ! grep -q 'ignoreTests' renovate.json]",
+        "A test validates that renovate.json parses as JSON and asserts the manager/automerge shape (schema field present, no floating-disable of the four managers). [oracle: bun test test/renovate-config.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 8,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: renovate.json, test/renovate-config.test.ts. Official docs consulted: the bun-version manager matches /(^|/)\\.bun-version$/ by default with npm versioning (https://docs.renovatebot.com/modules/manager/bun-version/); .tool-versions is the asdf manager; both are enabled by default under config:recommended, so the config mainly adds packageRules with automerge + matchUpdateTypes [patch, minor, major]. Renovate automerge waits for required branch status checks by default; the CI workflow must be a required check on main (repo-settings side, verify at ship). One-time out-of-band operator action (spec gotcha, NOT a story): install the Renovate GitHub App on the repo (public repo, free). Keep the config lint-clean JSON (biome does not lint .json by default, but keep 2-space style consistent)."
+    }
+  ]
+}
