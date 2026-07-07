@@ -1,9 +1,42 @@
 {
   "id": "CAM-213",
   "title": "Expose spec persist via deterministic CLI (cam spec --persist <id>, stdin JSON) instead of inline specifyIssueOnMain",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-07T15:12:46.924Z",
-  "description": "Surfaced live during the CAM-210 spec (2026-07-07). The /cam-spec skill's 'Final step: persist the spec' instructs the orchestrator to call specifyIssueOnMain (src/commands/issue-specify.ts:313) 'in-process (Task subagent or inline)'. Since the orchestrator has no Task/inline-TS path, this forces a throwaway bun script that imports specifyIssueOnMain and runs it by hand -- the exact anti-pattern CAM-197/CAM-210 exist to kill: an existing on-main deterministic mutation with NO CLI wrapper. Its sibling cam spec --write-docs <id> (domain docs) IS already a deterministic CLI (index.ts parseSpecArgs/dispatchSpec, src/commands/spec.ts), so only the spec-persist half is missing. Add cam spec --persist <id> that reads the assembled {spec, wsjf, blockedBy?} as JSON from stdin and calls specifyIssueOnMain with a production spawnFn+clock, mirroring cam spec --write-docs and cam issue --file-local: extend parseSpecArgs with a persist mode, add the dispatchSpec branch, print a CAM_SPEC_RESULT=<id>/=ERROR handback line + human hint, exit 0/1, guards surfaced (invalid-spec/invalid-wsjf/not-found/wrong-stage/not-open/diverged). Then rewrite the /cam-spec final step to pipe JSON into cam spec --persist <id> instead of an inline snippet. Concrete Layer-1 instance of the CAM-197 epic. Origin: operator caught it during CAM-210 (inclusive o spec nao deveria ser cli?)."
+  "description": "Surfaced live during the CAM-210 spec (2026-07-07). The /cam-spec skill's 'Final step: persist the spec' instructs the orchestrator to call specifyIssueOnMain (src/commands/issue-specify.ts:313) 'in-process (Task subagent or inline)'. Since the orchestrator has no Task/inline-TS path, this forces a throwaway bun script that imports specifyIssueOnMain and runs it by hand -- the exact anti-pattern CAM-197/CAM-210 exist to kill: an existing on-main deterministic mutation with NO CLI wrapper. Its sibling cam spec --write-docs <id> (domain docs) IS already a deterministic CLI (index.ts parseSpecArgs/dispatchSpec, src/commands/spec.ts), so only the spec-persist half is missing. Add cam spec --persist <id> that reads the assembled {spec, wsjf, blockedBy?} as JSON from stdin and calls specifyIssueOnMain with a production spawnFn+clock, mirroring cam spec --write-docs and cam issue --file-local: extend parseSpecArgs with a persist mode, add the dispatchSpec branch, print a CAM_SPEC_RESULT=<id>/=ERROR handback line + human hint, exit 0/1, guards surfaced (invalid-spec/invalid-wsjf/not-found/wrong-stage/not-open/diverged). Then rewrite the /cam-spec final step to pipe JSON into cam spec --persist <id> instead of an inline snippet. Concrete Layer-1 instance of the CAM-197 epic. Origin: operator caught it during CAM-210 (inclusive o spec nao deveria ser cli?).",
+  "spec": {
+    "acceptanceCriteria": [
+      "`echo '<json>' | cam spec --persist <id>` reads {spec, wsjf, blockedBy?} from stdin and calls specifyIssueOnMain in-process (spawnFn+clock); no tmux/send-keys/pane-bootstrap/liveness, mirroring cam spec --write-docs.",
+      "On {ok:true}: prints CAM_SPEC_RESULT=<id> sha=<sha> to stdout and exits 0.",
+      "On any {ok:false} (invalid-spec, invalid-wsjf, not-found, wrong-stage, not-open, integrity-error, diverged, detached-head, missing-main): prints a human printError with the reason plus the machine line CAM_SPEC_RESULT=ERROR reason=<reason>, exits 1.",
+      "Malformed stdin JSON: printError plus CAM_SPEC_RESULT=ERROR reason=invalid-json, exits 1.",
+      "parseSpecArgs becomes a union with mode:'persist'; dispatchSpec gets the persist branch; the bare <id> thin-proxy and --write-docs paths stay unchanged (existing tests green).",
+      "cam spec usage/help string lists --persist <id> alongside --write-docs <id>.",
+      "Both /cam-spec copies (.claude/commands/cam-spec.md and templates/commands/cam-spec.md) have the persist final-step rewritten to a single-quoted heredoc (safe-quoting, CAM-106) piping {spec,wsjf,blockedBy?} into cam spec --persist <id>, replacing the inline specifyIssueOnMain snippet; the --write-docs step stays a separate command.",
+      "bun run typecheck, bun run check:all, and bun test are green; new tests cover success-handback, each guard->ERROR reason mapping, malformed JSON, and branch-isolation (persist does not touch tmux), following the runSpecWriteDocs test pattern (inject readStdin/persistFn/writeStdout).",
+      "If a story touches templates/, bun run embed-vendor:check is green."
+    ],
+    "scope": "Add an in-process `cam spec --persist <id>` mode that reads {spec, wsjf, blockedBy?} as JSON from stdin and calls specifyIssueOnMain with production spawnFn+clock, mirroring cam spec --write-docs. No tmux/send-keys/bootstrap/liveness. Extend parseSpecArgs (persist mode) plus a dispatchSpec branch. Rewrite the /cam-spec final persist step (both copies) to pipe JSON into the command instead of the inline specifyIssueOnMain snippet. Scope is the spec-persist half only; --write-docs stays a separate command (decision A). Concrete Layer-1 instance of the CAM-197 deterministic-CLI-exposure epic.",
+    "gotchas": [
+      "/cam-spec is per-file dual-copy (.claude/commands/cam-spec.md and templates/commands/cam-spec.md): edit both; diff before assuming a templates edit forces embed-vendor re-embed.",
+      "specifyIssueOnMain already validates spec+wsjf+integrity and enforces all guards (main-up-to-date, exists, stage=idea, status=open); --persist must NOT re-validate, only marshal stdin and map the discriminated outcome.",
+      "Use a single-quoted heredoc (<<'EOF') for the piped payload so operator answer content cannot be shell-interpolated (CAM-106).",
+      "sha is present only on the {ok:true} outcome; guard the union.",
+      "invalid-json is a persist-specific reason token (JSON.parse fails before specifyIssueOnMain runs).",
+      "noUncheckedIndexedAccess: guard array/regex-group access.",
+      "The bare `cam spec <id>` thin-proxy (orchestrator send-keys injection) stays untouched; persist is a NEW in-process branch like --write-docs."
+    ],
+    "domainTerms": [
+      "spec-persist channel",
+      "Layer-1 CLI-exposure"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 5,
+    "riskReduction": 5,
+    "jobSize": 3
+  }
 }
