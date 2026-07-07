@@ -1,7 +1,7 @@
 {
   "id": "CAM-212",
   "title": "Retrofit CAM_ISSUE_RESULT machine line onto cam issue --file-local and list (deterministic-CLI handback consistency)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-07T15:11:50.934Z",
