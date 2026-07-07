@@ -1,7 +1,7 @@
 {
   "id": "CAM-177",
   "title": "Add .dockerignore for cam-worker image build context",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T01:30:07.521Z",
