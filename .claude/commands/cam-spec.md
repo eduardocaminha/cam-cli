@@ -4,7 +4,7 @@ Deep-spec an idea issue into `stage:specified` by running the grill-with-docs in
 
 ## Overview
 
-`/cam-spec <id>` takes a `stage:idea` issue (e.g. `CAM-42`) and transforms it into a `stage:specified` issue by running a structured operator interview (the **grill-with-docs** skill chain). At the end of the interview the orchestrator calls the deterministic spec writer (`specifyIssueOnMain`) to persist the result — the issue transitions from `idea` to `specified` on `main` without touching the working branch.
+`/cam-spec <id>` takes a `stage:idea` issue (e.g. `CAM-42`) and transforms it into a `stage:specified` issue by running a structured operator interview (the **grill-with-docs** skill chain). At the end of the interview the orchestrator pipes the assembled spec into `cam spec --persist <id>` (the in-process CLI channel over the deterministic spec writer, `specifyIssueOnMain`): the issue transitions from `idea` to `specified` on `main` without touching the working branch.
 
 This command is an **interactive operator interview** (human-in-the-loop), not an autonomous worker. It requires the operator's participation at each grill stage.
 
@@ -31,29 +31,58 @@ Key points:
 
 ## Final step: persist the spec
 
-After the grill-with-docs interview concludes and you have assembled the full `spec` object, call `specifyIssueOnMain` (from `src/commands/issue-specify.ts`) to persist the result:
+After the grill-with-docs interview concludes and you have assembled the full
+`spec` object and `wsjf` scores (and, if applicable, a `blockedBy` list of
+issue ids), pipe the payload to `cam spec --persist <id>` via stdin, using a
+**safe quoting pattern** so shell interpolation cannot corrupt the JSON or
+execute arbitrary content (CAM-106 lesson):
 
-```typescript
-// Orchestrator executes this in-process (Task subagent or inline):
-import { specifyIssueOnMain } from './src/commands/issue-specify.ts';
-import { spawnSync } from 'node:child_process';
+```bash
+cam spec --persist <id> <<'EOF'
+{
+  "spec": {
+    "acceptanceCriteria": ["..."],
+    "scope": "...",
+    "gotchas": ["..."],
+    "domainTerms": ["..."]
+  },
+  "wsjf": { "value": 0, "timeCriticality": 0, "riskReduction": 0, "jobSize": 0 },
+  "blockedBy": ["..."]
+}
+EOF
+```
 
-const result = specifyIssueOnMain({
-  cwd: process.cwd(),          // absolute path to the project root
-  id: '<id>',                  // e.g. 'CAM-42'
-  spec: { ... },               // assembled spec from the grill interview
-  wsjf: { ... },               // wsjf scores (value, timeCriticality, riskReduction, jobSize)
-  spawnFn: (cmd, args, opts) => spawnSync(cmd, args, { ...opts, stdio: 'pipe' }),
-  clock: () => new Date().toISOString(),
-});
+Omit `blockedBy` entirely when the interview surfaced no blocking issues. A
+single-quoted heredoc (`<<'EOF'`, note the quotes around `EOF`) or a
+single-quoted `echo '<json>' | cam spec --persist <id>` are both safe: the
+shell does not expand `$`, backticks, or other special characters inside a
+single-quoted body. **Never use an unquoted heredoc** (`<<EOF` without
+quotes) or an unquoted `echo` to carry this payload: the shell would
+interpolate `$` and backtick sequences that may appear in the operator's
+interview answers, corrupting the JSON or, worse, executing arbitrary
+content.
+
+`cam spec --persist <id>` calls the deterministic spec writer
+(`specifyIssueOnMain`) in-process: no tmux, no send-keys, no orchestrator
+liveness check. It already validates `spec` and `wsjf` and enforces every
+guard (stage, status, integrity, up-to-date-with-main), so this step never
+re-validates the payload: the command's exit code and stdout are the sole
+source of truth for the outcome.
+
+The command's own stdout is the handback contract:
+
+```
+CAM_SPEC_RESULT=<id> sha=<sha>          # success, exit 0
+CAM_SPEC_RESULT=ERROR reason=<reason>   # any failure, exit 1
 ```
 
 On success:
-- Print: `✓ <id> is now stage:specified — run /cam-plan <N> to generate a PRD.`
+- Print: `✓ <id> is now stage:specified. Run /cam-plan <N> to generate a PRD.`
 - The issue is now visible to `selectPlannableIssue` (used by `/cam-plan` with no argument).
 
 On failure:
-- Print the error reason and stop. Do NOT retry silently.
+- Stop and report the `reason` to the operator. Do NOT retry silently: a
+  non-zero exit means the spec was never persisted.
 
 ## Final step: persist the domain docs
 
@@ -128,7 +157,7 @@ the operator that the second write never happened.
 | Issue not `stage:idea` | Stop, print: `<id> is already stage:<stage> — nothing to do` |
 | Issue not `status:open` | Stop, print: `<id> is not open (status:<status>)` |
 | Spec validation fails | Show the validation errors, ask the operator to correct the answers |
-| diverged / detached-head | Stop, print the guard error from `specifyIssueOnMain` |
+| diverged / detached-head | Stop, print the `CAM_SPEC_RESULT=ERROR reason=<reason>` line from `cam spec --persist`; report to the operator, never retry silently |
 | Concurrent loop active | Stop, ask operator to pause the loop first |
 | `cam spec --write-docs` malformed/invalid payload | Stop, print the validation errors from the command's stderr; never silently skip |
 | `cam spec --write-docs` diverged / detached-head | Stop, print the guard error; report to the operator, never silently skip |

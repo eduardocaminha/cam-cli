@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.78.0] - 2026-07-07
+
+### Added
+
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-002 - Rewrite /cam-spec persist final step to pipe JSON into cam spec --persist (both copies)
+- US-001 - Add cam spec --persist <id> in-process CLI mode with CAM_SPEC_RESULT handback
+
 ## [0.77.0] - 2026-07-07
 
 ### Added

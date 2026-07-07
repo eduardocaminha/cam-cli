@@ -44,7 +44,7 @@ import { defaultCloseIssueFn, defaultAbandonIssueFn } from './src/release/post-m
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
-import { runSpec, runSpecWriteDocs } from './src/commands/spec.ts';
+import { runSpec, runSpecWriteDocs, runSpecPersist } from './src/commands/spec.ts';
 import { runReview } from './src/commands/review.ts';
 import { runShip } from './src/commands/ship.ts';
 import {
@@ -229,7 +229,8 @@ const PLAN_HELP = renderHelp({
 const SPEC_HELP = renderHelp({
 	title: 'cam spec',
 	tagline: 'Deep-spec an idea issue into stage:specified via grill-with-docs',
-	usage: 'cam spec <id> | cam spec --write-docs <id>  (reads JSON from stdin)',
+	usage:
+		'cam spec <id> | cam spec --write-docs <id> | cam spec --persist <id>  (reads JSON from stdin)',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -251,6 +252,13 @@ const SPEC_HELP = renderHelp({
 						'blob from stdin and calls writeDomainDocsOnMain directly, mirroring\n' +
 						'`cam journal append` / `cam issue --file-local`.',
 				},
+				{
+					name: '--persist <id>',
+					description:
+						'In-process write channel (no tmux): reads { spec, wsjf, blockedBy? }\n' +
+						'JSON from stdin and calls specifyIssueOnMain directly, promoting the\n' +
+						'issue to stage:specified.',
+				},
 			],
 		},
 		{
@@ -266,7 +274,10 @@ const SPEC_HELP = renderHelp({
 				'   NotebookEdit are disallowed) pipes the assembled DomainDocsPayload JSON\n' +
 				'   into `cam spec --write-docs <id>`, which commits CONTEXT.md + any new\n' +
 				'   ADR files to main in one atomic commit via writeDomainDocsOnMain, with\n' +
-				'   NO tmux calls, no send-keys, no pane bootstrap, no liveness check.',
+				'   NO tmux calls, no send-keys, no pane bootstrap, no liveness check.\n' +
+				'6. The orchestrator then pipes the assembled { spec, wsjf, blockedBy? }\n' +
+				'   JSON into `cam spec --persist <id>`, which promotes the issue to\n' +
+				'   stage:specified via specifyIssueOnMain, with the same no-tmux guarantee.',
 		},
 	],
 	footer:
@@ -274,7 +285,10 @@ const SPEC_HELP = renderHelp({
 		'After the interview the issue is stage:specified and plannable via `cam plan`.\n' +
 		'`echo \'<json>\' | cam spec --write-docs CAM-42` exits 0 on { ok: true }\n' +
 		'(including the noOp empty-payload outcome) and 1 on malformed JSON, an\n' +
-		'invalid payload, or a guard failure (diverged / detached-head / missing-main).',
+		'invalid payload, or a guard failure (diverged / detached-head / missing-main).\n' +
+		'`echo \'<json>\' | cam spec --persist CAM-42` exits 0 on { ok: true }, printing\n' +
+		'CAM_SPEC_RESULT=CAM-42 sha=<sha>, and 1 on malformed JSON (reason=invalid-json)\n' +
+		'or any specifyIssueOnMain guard/validation failure (reason=<reason>).',
 });
 
 const ISSUE_HELP = renderHelp({
@@ -836,6 +850,9 @@ export function parsePlanArgs(args: string[]): { issue?: number; help: boolean }
  * - mode === 'write-docs': in-process `--write-docs <id>` write channel
  *     (US-003, CAM-118): reads a DomainDocsPayload JSON blob from stdin and
  *     calls writeDomainDocsOnMain directly. NO tmux calls.
+ * - mode === 'persist': in-process `--persist <id>` write channel
+ *     (US-001, CAM-213): reads a { spec, wsjf, blockedBy? } JSON blob from
+ *     stdin and calls specifyIssueOnMain directly. NO tmux calls.
  * - mode === 'proxy': the existing thin-proxy path (US-004, CAM-107),
  *     byte-behaviorally unchanged. `id` is optional here: a bare `cam spec`
  *     with no positional is a parse success (dispatch reports the missing-id
@@ -846,6 +863,7 @@ export function parsePlanArgs(args: string[]): { issue?: number; help: boolean }
  */
 export type ParsedSpecArgs =
 	| { mode: 'write-docs'; id: string; help: false }
+	| { mode: 'persist'; id: string; help: false }
 	| { mode: 'proxy'; id?: string; help: false }
 	| { mode?: never; help: true };
 
@@ -853,7 +871,8 @@ export type ParsedSpecArgs =
  * Parse `cam spec` args. The command takes exactly one positional argument:
  * an issue id string (e.g. 'CAM-42' or '42'). A leading prefix is preserved
  * as-is; a bare integer is accepted and prefixed by the caller. `--write-docs`
- * selects the in-process write channel (US-003); its absence keeps the
+ * selects the in-process write-docs channel (US-003); `--persist` selects the
+ * in-process persist channel (US-001, CAM-213); their absence keeps the
  * existing thin-proxy path (US-004) unchanged.
  *
  * Returns `null` on a parse error (the caller prints the usage hint).
@@ -863,7 +882,8 @@ export function parseSpecArgs(args: string[]): ParsedSpecArgs | null {
 		return { help: true };
 	}
 	const writeDocs = args.includes('--write-docs');
-	const rest = args.filter((a) => a !== '--write-docs');
+	const persist = args.includes('--persist');
+	const rest = args.filter((a) => a !== '--write-docs' && a !== '--persist');
 
 	let id: string | undefined;
 	for (const arg of rest) {
@@ -902,6 +922,17 @@ export function parseSpecArgs(args: string[]): ParsedSpecArgs | null {
 		return { mode: 'write-docs', id, help: false };
 	}
 
+	if (persist) {
+		if (id === undefined) {
+			printError(
+				'cam spec --persist: missing issue id',
+				'usage: echo \'<json>\' | cam spec --persist <id>',
+			);
+			return null;
+		}
+		return { mode: 'persist', id, help: false };
+	}
+
 	return id !== undefined ? { mode: 'proxy', id, help: false } : { mode: 'proxy', help: false };
 }
 
@@ -913,6 +944,12 @@ export interface SpecDispatchDeps {
 	 * no tmux).
 	 */
 	writeDocsFn?: (id: string) => Promise<number>;
+	/**
+	 * Inject a fake for the --persist branch.
+	 * Default: calls runSpecPersist({ id }) (reads stdin JSON, in-process,
+	 * no tmux).
+	 */
+	persistFn?: (id: string) => Promise<number>;
 	/** Inject a fake for the thin-proxy branch. Default: calls runSpec({ id }). */
 	runSpecFn?: (id: string) => Promise<number>;
 }
@@ -920,8 +957,9 @@ export interface SpecDispatchDeps {
 /**
  * Route a parsed `cam spec` call: mode 'write-docs' => runSpecWriteDocs
  * in-process (NO tmux calls, no send-keys, no pane bootstrap, no liveness
- * check); mode 'proxy' => the existing runSpec thin-proxy. Exported so unit
- * tests can inject fakes for both branches and prove the --write-docs path
+ * check); mode 'persist' => runSpecPersist in-process (same no-tmux
+ * guarantee); mode 'proxy' => the existing runSpec thin-proxy. Exported so
+ * unit tests can inject fakes for all branches and prove each in-process path
  * never touches the thin-proxy (and vice versa).
  */
 export async function dispatchSpec(
@@ -931,6 +969,10 @@ export async function dispatchSpec(
 	if (parsed.mode === 'write-docs') {
 		const writeDocsFn = deps?.writeDocsFn ?? ((id: string) => runSpecWriteDocs({ id }));
 		return writeDocsFn(parsed.id);
+	}
+	if (parsed.mode === 'persist') {
+		const persistFn = deps?.persistFn ?? ((id: string) => runSpecPersist({ id }));
+		return persistFn(parsed.id);
 	}
 	const id = parsed.mode === 'proxy' ? parsed.id : undefined;
 	if (!id) {
