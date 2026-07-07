@@ -1,0 +1,9 @@
+{
+  "id": "CAM-213",
+  "title": "Expose spec persist via deterministic CLI (cam spec --persist <id>, stdin JSON) instead of inline specifyIssueOnMain",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-07T15:12:46.924Z",
+  "description": "Surfaced live during the CAM-210 spec (2026-07-07). The /cam-spec skill's 'Final step: persist the spec' instructs the orchestrator to call specifyIssueOnMain (src/commands/issue-specify.ts:313) 'in-process (Task subagent or inline)'. Since the orchestrator has no Task/inline-TS path, this forces a throwaway bun script that imports specifyIssueOnMain and runs it by hand -- the exact anti-pattern CAM-197/CAM-210 exist to kill: an existing on-main deterministic mutation with NO CLI wrapper. Its sibling cam spec --write-docs <id> (domain docs) IS already a deterministic CLI (index.ts parseSpecArgs/dispatchSpec, src/commands/spec.ts), so only the spec-persist half is missing. Add cam spec --persist <id> that reads the assembled {spec, wsjf, blockedBy?} as JSON from stdin and calls specifyIssueOnMain with a production spawnFn+clock, mirroring cam spec --write-docs and cam issue --file-local: extend parseSpecArgs with a persist mode, add the dispatchSpec branch, print a CAM_SPEC_RESULT=<id>/=ERROR handback line + human hint, exit 0/1, guards surfaced (invalid-spec/invalid-wsjf/not-found/wrong-stage/not-open/diverged). Then rewrite the /cam-spec final step to pipe JSON into cam spec --persist <id> instead of an inline snippet. Concrete Layer-1 instance of the CAM-197 epic. Origin: operator caught it during CAM-210 (inclusive o spec nao deveria ser cli?)."
+}
