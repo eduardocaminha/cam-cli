@@ -392,6 +392,15 @@ export async function runSpecPersist(options: SpecPersistOptions): Promise<numbe
 		return 1;
 	}
 
+	if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+		printError(
+			'cam spec --persist: invalid payload',
+			'top-level JSON must be a non-null object with spec/wsjf fields',
+		);
+		writeStdout('CAM_SPEC_RESULT=ERROR reason=invalid-spec\n');
+		return 1;
+	}
+
 	const outcome: SpecifyIssueOnMainOutcome = options.persistFn
 		? options.persistFn(payload)
 		: specifyIssueOnMain({

@@ -16,6 +16,13 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/commands/spec.ts:400]: runSpecPersist dereferences (payload as SpecPersistPayload).spec/.wsjf/.blockedBy at the specifyIssueOnMain call site BEFORE any validation. Verified: `echo 'null' | cam spec --persist CAM-999` (valid JSON, parses to null) throws an uncaught `TypeError: null is not an object (evaluating 'payload.spec')` with a raw stack trace and emits NO `CAM_SPEC_RESULT=` handback line. This breaks the handback contract the US-002 skill rewrite promises ('the command's exit code and stdout are the sole source of truth for the outcome'). Every other JSON shape (5, \"hi\", [], {}) maps cleanly to CAM_SPEC_RESULT=ERROR reason=invalid-spec. The sibling runSpecWriteDocs avoids this by passing `payload` into writeDomainDocsOnMain (which validates internally) rather than dereferencing .spec first. Fix: after JSON.parse, guard that payload is a non-null object (else emit CAM_SPEC_RESULT=ERROR reason=invalid-json / invalid-spec and exit 1) before constructing the specifyIssueOnMain options; add a test for top-level JSON null."
+    },
+    {
       "id": "US-001",
       "title": "Add cam spec --persist <id> in-process CLI mode with CAM_SPEC_RESULT handback",
       "description": "As the orchestrator (a read-only agent with no Task/inline-TS path), I need `echo '<json>' | cam spec --persist <id>` to call specifyIssueOnMain in-process so that persisting a grill spec is a single deterministic Bash pipe instead of a throwaway bun script importing internal code.",
@@ -31,7 +38,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/spec.ts (add runSpecPersist + SpecPersistOptions next to runSpecWriteDocs, same injection shape: readStdin/spawnFn/clock/writeStdout plus a persistFn full-bypass for branch-isolation tests); index.ts (ParsedSpecArgs union ~line 847, parseSpecArgs ~line 861, SpecDispatchDeps ~line 908, dispatchSpec ~line 927, SPEC_HELP ~line 229); test/commands/spec.test.ts (mirror the existing describe blocks: parseSpecArgs --write-docs, dispatchSpec routing isolation, runSpecWriteDocs). Gotchas: (1) specifyIssueOnMain (src/commands/issue-specify.ts:313) already validates spec+wsjf+integrity and enforces all guards; --persist must NOT re-validate, only marshal stdin and map the SpecifyIssueOnMainOutcome discriminated union. (2) sha exists only on the ok:true arm; guard the union before interpolating. (3) invalid-json is a persist-specific reason token, not a specifyIssueOnMain reason. (4) blockedBy is optional: spread it into the options only when present (exactOptionalPropertyTypes-style spreads as in _buildCreateIssueOpts, index.ts:1406). (5) Print the machine line + human hint inside runSpecPersist mirroring runSpecWriteDocs (spec.ts:260-308), not in dispatchSpec; CAM-210's dispatchIssue close/abandon (index.ts:1441-1466) is the sibling precedent for the RESULT-line wording. (6) noUncheckedIndexedAccess: guard array/regex-group access. (7) Never register --permission-mode. (8) Production spawnFn wrapper: spawnSync(cmd, args, {...opts, stdio: 'pipe'}) as SpawnSyncReturns<string>, same as spec.ts:266-268."
@@ -50,10 +57,23 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-spec.md (persist step at lines 32-56; overview line 7 mentions 'calls the deterministic spec writer (specifyIssueOnMain)' and should reference the CLI; error-handling table line ~131), templates/commands/cam-spec.md (byte-identical twin), src/vendor/_generated.ts (regenerated, never hand-edited). Gotchas: (1) /cam-spec is per-file dual-copy; edit BOTH and keep them identical; templates/commands/cam-spec.md is embedded at build time, so run `bun run embed-vendor` to regenerate src/vendor/_generated.ts and let embed-vendor:check prove no drift. (2) Use <<'EOF' (quoted delimiter) in every example so operator answer content cannot be shell-interpolated (CAM-106). (3) Persisted .md follows the no-em-dash project rule; do not introduce em-dashes in the rewritten prose. (4) The bare `cam spec <id>` thin-proxy description (line 3) stays untouched; only the persist final-step and its cross-references change. (5) Model the handback-parsing prose on the /cam-issue Step 3 output contract (CAM_ISSUE_RESULT grep line)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/commands/spec.ts",
+        "line": 400,
+        "text": "runSpecPersist dereferences (payload as SpecPersistPayload).spec/.wsjf/.blockedBy at the specifyIssueOnMain call site BEFORE any validation. Verified: `echo 'null' | cam spec --persist CAM-999` (valid JSON, parses to null) throws an uncaught `TypeError: null is not an object (evaluating 'payload.spec')` with a raw stack trace and emits NO `CAM_SPEC_RESULT=` handback line. This breaks the handback contract the US-002 skill rewrite promises ('the command's exit code and stdout are the sole source of truth for the outcome'). Every other JSON shape (5, \"hi\", [], {}) maps cleanly to CAM_SPEC_RESULT=ERROR reason=invalid-spec. The sibling runSpecWriteDocs avoids this by passing `payload` into writeDomainDocsOnMain (which validates internally) rather than dereferencing .spec first. Fix: after JSON.parse, guard that payload is a non-null object (else emit CAM_SPEC_RESULT=ERROR reason=invalid-json / invalid-spec and exit 1) before constructing the specifyIssueOnMain options; add a test for top-level JSON null."
+      }
+    ]
+  }
 }

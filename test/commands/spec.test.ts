@@ -528,6 +528,30 @@ describe('runSpecPersist', () => {
 		expect(calls.some((c) => c.cmd === 'tmux')).toBe(false);
 	});
 
+	test('top-level JSON null on the real specifyIssueOnMain path returns 1 with reason=invalid-spec and never spawns git', async () => {
+		const calls: { cmd: string; args: string[] }[] = [];
+		const fakeSpawnFn = (cmd: string, args: string[]) => {
+			calls.push({ cmd, args: [...args] });
+			return { pid: 1, output: [null, '', ''], stdout: '', stderr: '', status: 0, signal: null } as SpawnSyncReturns<string>;
+		};
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		const written: string[] = [];
+		try {
+			const code = await runSpecPersist({
+				id: 'CAM-999',
+				readStdin: async () => 'null',
+				spawnFn: fakeSpawnFn,
+				writeStdout: (line) => written.push(line),
+			});
+			expect(code).toBe(1);
+			expect(calls.length).toBe(0);
+			expect(written.join('')).toContain('CAM_SPEC_RESULT=ERROR reason=invalid-spec');
+		} finally {
+			process.stderr.write = original;
+		}
+	});
+
 	test('malformed stdin JSON returns 1 with reason=invalid-json; specifyIssueOnMain never called', async () => {
 		const original = process.stderr.write.bind(process.stderr);
 		process.stderr.write = (() => true) as typeof process.stderr.write;
@@ -543,6 +567,26 @@ describe('runSpecPersist', () => {
 			expect(code).toBe(1);
 			expect(persistCalled).toBe(false);
 			expect(written.join('')).toContain('CAM_SPEC_RESULT=ERROR reason=invalid-json');
+		} finally {
+			process.stderr.write = original;
+		}
+	});
+
+	test('top-level JSON null returns 1 with reason=invalid-spec; specifyIssueOnMain never called', async () => {
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		let persistCalled = false;
+		const written: string[] = [];
+		try {
+			const code = await runSpecPersist({
+				id: 'CAM-213',
+				readStdin: async () => 'null',
+				persistFn: () => { persistCalled = true; return { ok: false, reason: 'not-found' }; },
+				writeStdout: (line) => written.push(line),
+			});
+			expect(code).toBe(1);
+			expect(persistCalled).toBe(false);
+			expect(written.join('')).toContain('CAM_SPEC_RESULT=ERROR reason=invalid-spec');
 		} finally {
 			process.stderr.write = original;
 		}
