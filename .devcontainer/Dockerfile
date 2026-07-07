@@ -11,7 +11,7 @@
 # ARG declared before FROM is only in scope for the FROM line itself; it must
 # be re-declared after FROM to be usable in a later RUN step (see NODE_VERSION
 # below).
-ARG BUN_VERSION
+ARG BUN_VERSION=1.3.13
 
 FROM oven/bun:${BUN_VERSION}-slim
 
@@ -33,7 +33,7 @@ RUN apt-get update \
 # Install Node.js pinned to the exact .tool-versions target (>= 22) from the
 # official upstream binary tarball at nodejs.org/dist. ARG must be re-declared
 # here (after FROM) to be usable in this RUN step.
-ARG NODE_VERSION
+ARG NODE_VERSION=22.23.1
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64) NODE_ARCH="x64" ;; \
