@@ -87,7 +87,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/dashboard.test.ts, test/ui/init-setup-screen-keys.test.ts, scripts/cam/patterns.md. Root cause (patterns.md CAM-186 bullet, line ~308): bun 1.2.x needs TWO macrotask ticks to flush ink-testing-library stdin-driven state into lastFrame(); bun >= 1.3 needs one. An extra tick is harmless on 1.3, so awaiting two ticks unconditionally is version-agnostic. IMPORTANT ordering: this story MUST land before the guard gate (US-005) or check:all goes red at the story boundary. The container running this cycle may still be bun 1.2.23 (rebuild lands in US-007), which is exactly why the double-tick fix, not a bare skip-removal, is required for in-container bun test to stay green. Do not change divider-color/glyph conventions; only timing."
     },

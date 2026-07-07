@@ -1,30 +1,30 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Feed the worker Dockerfile toolchain from the pins" },
+  "lastCompletedStory": { "id": "US-004", "title": "Drop bun-version-conditioned skips; make Ink stdin tests version-agnostic" },
   "branchName": "cam/pr-201-toolchain-parity",
-  "timestamp": "2026-07-07T04:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-07T04:30:00Z",
+  "createdFiles": [
+    "test/helpers/flush-ink.ts",
+    "test/helpers/mock-terminal-size.ts"
+  ],
   "modifiedFiles": [
-    ".devcontainer/Dockerfile",
-    "src/supervisor/worker-container.ts",
-    "test/supervisor/worker-container.test.ts",
-    "test/supervisor/ensure-container.test.ts",
-    "scripts/file-size-budget.json"
+    "test/dashboard.test.ts",
+    "test/ui/init-setup-screen-keys.test.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "Note (informational, not blocking): US-002's PAT `workflow`-scope push blocker documented in the prior handoff is RESOLVED as of commit 2dd3a9c (US-002.passes flipped to true, and `git rev-parse HEAD` == `git rev-parse origin/cam/pr-201-toolchain-parity` confirmed at the start of this session -- the branch was fully pushed and in sync before this story began). No further action needed on that front.",
-    "This session found US-003's Dockerfile/worker-container.ts/worker-container.test.ts changes already fully written but UNCOMMITTED in the working tree at session start (a prior session's work-in-progress that never reached a commit). All 4 US-003 acceptance-criteria oracles were re-verified independently in this session (file-asserts + bun test test/supervisor/worker-container.test.ts) before committing, plus the full `bun run check:all` spine, so the pre-existing diff is now verified-and-committed, not blindly trusted.",
-    "One pre-existing test (test/supervisor/ensure-container.test.ts, AC4 host-mode test) asserted the OLD invariant 'no --build-arg at all when build opts are absent'. Since US-003 makes BUN_VERSION/NODE_VERSION build-args unconditional (always emitted, not gated on hostUid/hostGid), this test was updated in this session to assert the narrower invariant: no HOST_UID/HOST_GID build-arg (still correct), while asserting BUN_VERSION/NODE_VERSION build-args ARE present. This is the correct AC4 reading for US-003 (US-003 AC3 explicitly requires the toolchain args to be sourced from the US-001 reader 'by default').",
-    "scripts/file-size-budget.json ceilings were raised for the 3 touched files (worker-container.ts 278->350, worker-container.test.ts 458->507, ensure-container.test.ts 917->924->925) with a CAM-150 tracker reference prepended to the _ref field, satisfying check:file-size's staged-diff tracker-reference requirement. Gotcha for future stories: the budget line-count uses `content.split('\\n').length` (scripts/check-file-sizes.ts), which is ONE MORE than `wc -l` for any file ending in a trailing newline (wc -l counts newline characters, split('\\n') produces a trailing empty string). Always cross-check the ceiling against the actual `check:file-size` failure output (which reports the split-based count), not `wc -l`, to avoid an off-by-one retry loop."
+    "The story's notes assumed the root cause was purely bun-version macrotask scheduling (patterns.md CAM-186 bullet: '2 ticks on 1.2.x, 1 tick on >=1.3') and prescribed 'flushing enough macrotask ticks (two)'. Empirically that prescription was insufficient and flaky: repeated full-`bun test`-suite runs (30+ trials) showed a fixed 2-tick wait failing roughly 1 run in 4-8 under full-suite CPU contention, and even a fixed larger count (4 ticks, or a 3000ms bounded poll) still occasionally missed. Root-caused it instead to `ink-testing-library`'s fake Stdout having no `rows` getter, which makes Ink's `getWindowSize` shell out to `tput` synchronously via the `terminal-size` package on EVERY render; under concurrent-suite load that spawn can take up to several seconds. Fix implemented in `test/helpers/mock-terminal-size.ts` (installTerminalSizeMock, uses `mock.module('terminal-size', ...)` to stub it out entirely) rather than the tick-count approach the story notes suggested. `test/helpers/flush-ink.ts`'s `flushInk` (two ticks) and `waitForFrame` (content-based bounded poll, default 3000ms) are kept as defense-in-depth on top of the mock, not as the primary fix.",
+    "Verified via WebSearch (Step 5.5) that `mock.module()` is documented to override already-imported modules via live bindings (bun.sh/docs/test/mocks), and that `mock.restore()` has a known upstream issue (oven-sh/bun#7823) of NOT reverting a `mock.module()` call -- this matches what empirical testing in this session found (mock.restore() did not undo a terminal-size module mock). Because of this, `installTerminalSizeMock()` is intentionally process-global and idempotent (a guard flag, not a restore/undo path); it will silently also speed up/stabilize ANY other ink-testing-library-based test file that runs in the same `bun test` process after ours, which is a strict improvement (removes a synchronous subprocess spawn) but is worth knowing about if a future story ever needs to assert something about REAL terminal dimensions in an ink-testing-library render (none currently do).",
+    "US-005 (guard gate forbidding toolchain-version-conditioned skips) and US-006/US-007 remain queued next, continuing the toolchain-parity thread from US-001..US-003 (see prior handoff `nextStoryContext` for the established seams: `src/config/toolchain.ts`'s readPinnedBunVersion/readPinnedNodeVersion, `buildDockerBuildArgv`'s resolveBunVersion/resolveNodeVersion). US-005's guard should probably grep for the SAME anti-pattern this story just removed (`Bun.version` / `process.version` conditioned `skipIf`/`test.skip`), not just the literal `bunVersionOk` identifier name, since a differently-named future probe would otherwise slip through a name-only grep."
   ],
-  "nextStoryContext": "US-004 (Drop bun-version-conditioned skips; make Ink stdin tests version-agnostic) is next by priority. It touches Ink stdin test infrastructure, not the Docker/toolchain surface US-001..US-003 touched -- read its `notes` field fresh rather than assuming continuity with worker-container.ts. US-005/US-006/US-007 remain queued after it and DO continue the toolchain-parity thread (check:all guard gate, preflight fail-closed assert, auto-rebuild-on-mismatch): those three should read src/config/toolchain.ts's readPinnedBunVersion/readPinnedNodeVersion (added in US-001) and buildDockerBuildArgv's resolveBunVersion/resolveNodeVersion (added in this US-003 commit, bbe5602) as the established seams, rather than re-parsing pin files or re-implementing resolution logic.",
+  "nextStoryContext": "US-005 (Add check:all guard gate forbidding toolchain-version-conditioned skips) is next by priority. It should add a new gate function to scripts/check-all.ts's GATES manifest (see patterns.md 'Gate-spine convention' bullet) that greps test/ for Bun.version/process.version-conditioned skip patterns and fails if any are found, now that US-004 has cleared the only two pre-existing instances. Read patterns.md's new CAM-201 bullet (this story) for why the fix approach shifted from tick-counting to mocking terminal-size; that context is unrelated to US-005's own scope but explains why test/dashboard.test.ts and test/ui/init-setup-screen-keys.test.ts look different from what the original story notes described.",
   "officialDocsValidated": [
     {
-      "lib": "docker (Dockerfile ARG/FROM interaction)",
-      "version": "n/a (Dockerfile reference is versionless/rolling)",
-      "url": "https://docs.docker.com/reference/dockerfile/",
-      "fetchedAt": "2026-07-07T03:55:00Z",
+      "lib": "bun:test (mock.module)",
+      "version": "bun 1.2.23",
+      "url": "https://bun.com/docs/test/mocks",
+      "fetchedAt": "2026-07-07T04:28:00Z",
       "status": "ok",
-      "summary": "Web search corroborated (direct WebFetch to docs.docker.com failed with no output in this sandbox, so WebSearch was used as the fallback path -- recorded per Step 5.5's fetch_failed contingency, but a substitute successful validation was obtained): an ARG declared before the first FROM is scoped only to that FROM line and is NOT visible to any instruction after FROM; it must be re-declared (bare ARG, no value) after FROM to be usable in subsequent RUN steps. This exactly matches the implementation's structure (ARG BUN_VERSION before FROM, consumed only by `FROM oven/bun:${BUN_VERSION}-slim`; ARG NODE_VERSION re-declared immediately after FROM before the Node-install RUN step uses it) and the Dockerfile's own inline comment documenting this gotcha."
+      "summary": "Confirmed via WebSearch (direct WebFetch to bun.sh failed with no output in this sandbox, so WebSearch was used as the fallback path): mock.module() overrides a module even if already imported (live ESM bindings), and mock.restore() has a known upstream issue (oven-sh/bun#7823) of not reverting a mock.module() call. Both match this session's empirical findings exactly (installTerminalSizeMock() installed after ink-testing-library/ink already imported terminal-size still took effect; a manual mock.restore() probe did not undo the mock), so the implementation's process-global idempotent-installer design (no restore/undo path attempted) is the correct approach given the documented and known-buggy restore behavior, not a workaround for a misunderstood API."
     }
   ]
 }
