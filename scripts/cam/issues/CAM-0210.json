@@ -1,0 +1,9 @@
+{
+  "id": "CAM-210",
+  "title": "Expose issue close + abandon via deterministic CLI (cam issue close/abandon <id>)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-07T14:24:19.004Z",
+  "description": "closeIssueOnMain and abandonIssueOnMain (src/commands/issue-specify.ts) already implement the deterministic commit-to-main mutation (stage:shipped / status:abandoned, guards + commit-tree on main) but are NOT wired to any CLI subcommand: cam issue only exposes create + list. So closing a subsumed/duplicate issue (hit live: CAM-192/198/180 subsumed by CAM-201) forces hand-editing the CAM-NNNN.json + a manual git commit, which the orchestrator should never do. Add thin dispatch wrappers cam issue close <id> and cam issue abandon <id> (mirroring cam issue --file-local): call the existing functions with a real spawnFn/clock, print a CAM_ISSUE_* result line, commit to main, exit non-zero on not-found/diverged. Concrete Layer-1 instance of the CAM-197 epic (deterministic CLI, zero LLM, function already exists). Origin: operator direction + hit live during CAM-201 post-merge housekeeping 2026-07-07."
+}
