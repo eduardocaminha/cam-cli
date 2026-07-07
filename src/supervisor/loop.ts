@@ -347,22 +347,6 @@ export interface RunSupervisorOptions {
 	 */
 	notifyOrchestrator?: (line: string) => void;
 	/**
-	 * Auto-ship callback for auto mode (US-005 / CAM-181).
-	 *
-	 * When injected (plan_approval === 'auto'), called from the terminal
-	 * 'complete' branch, gated on prd.review.lastVerdict === 'CLEAN' and the
-	 * fire-once marker prd.review.autoShipDispatchedAt being absent. The marker
-	 * is written to prd.json via writePrd BEFORE the dispatch, so a sidecar
-	 * restart or in-place binary swap never re-dispatches.
-	 *
-	 * In production this sends '/cam-ship Enter' to the orchestrator pane via
-	 * tmux send-keys.
-	 *
-	 * Optional: when absent (operator mode or plan_approval != 'auto') the
-	 * complete branch is unchanged (zero behavior change for all existing tests).
-	 */
-	autoShipFn?: () => void;
-	/**
 	 * Best-effort escalation callback (US-007).
 	 *
 	 * When injected, called immediately after the MAX_ROUNDS_DEBT terminal is
@@ -831,24 +815,12 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					formatReviewVerdictLine(prd.review?.roundsCompleted ?? 0, 'MAX_ROUNDS_DEBT'),
 				);
 			}
-			// CAM-181 / US-001: auto-ship dispatch re-anchored to the terminal
-			// 'complete' branch. Gate: lastVerdict === 'CLEAN' AND the fire-once
-			// marker is absent. Write the marker BEFORE calling autoShipFn so that
-			// a sidecar restart or in-place binary swap never re-dispatches.
-			// Note: 'complete' is unreachable while any requires:'operator' story is
-			// pending (decide.ts routes those to 'await-operator'), so no redundant
-			// operator check is needed here.
-			if (
-				opts.autoShipFn !== undefined &&
-				prd.review?.lastVerdict === 'CLEAN' &&
-				prd.review?.autoShipDispatchedAt === undefined
-			) {
-				writePrd({
-					...prd,
-					review: { ...(prd.review ?? {}), autoShipDispatchedAt: clock() },
-				});
-				opts.autoShipFn();
-			}
+			// CAM-191 / ADR 0013: auto-ship dispatch no longer lives here. The
+			// decision (complete + CLEAN + marker absent) and the marker/phase
+			// writes now happen in runSidecarLoop, AFTER clearActive, so
+			// phase:shipping is the last state-file write on this terminal path
+			// (see the outer-loop auto-ship block next to the flipActive
+			// auto-chain block).
 			finishTerminal('complete');
 			return { status: 'complete', iterations, lastOutcome };
 		}
@@ -1658,11 +1630,23 @@ export interface RunSidecarLoopOptions {
 	 */
 	flipActiveFn?: () => void;
 	/**
-	 * Auto-ship callback for auto mode (US-005). When injected, threaded into
-	 * RunSupervisorOptions.autoShipFn so the inner supervisor can call it after
-	 * a CLEAN verdict. See RunSupervisorOptions.autoShipFn for full doc.
+	 * Auto-ship callback for auto mode (US-005 / CAM-181; re-anchored to this
+	 * outer loop by CAM-191 / ADR 0013).
 	 *
-	 * Optional: when absent the supervisor runs unchanged.
+	 * When injected (plan_approval === 'auto'), called AFTER clearActive, once
+	 * the just-returned supervisor result has status === 'complete',
+	 * prd.review.lastVerdict === 'CLEAN', and the fire-once marker
+	 * prd.review.autoShipDispatchedAt is undefined. The marker is written to
+	 * prd.json (via the readPrd/writePrd pair threaded through buildOpts())
+	 * BEFORE this callback runs, so a sidecar restart or in-place binary swap
+	 * never re-dispatches. In production this writes phase:shipping to
+	 * .claude/cam-loop.local.md (makeAutoShipFn -> makeSetPhaseFn), which is
+	 * now the LAST state-file write of the terminal complete tick: it survives
+	 * both the onProgress unlink-on-complete and clearActive's implicit
+	 * phase:idle rewrite (see the block right after clearActive() below).
+	 *
+	 * Optional: when absent (operator mode or plan_approval != 'auto') the
+	 * complete path is unchanged (zero behavior change for all existing tests).
 	 */
 	autoShipFn?: () => void;
 	/**
@@ -1877,15 +1861,9 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 		// Run the deterministic loop. Guards (CAM-36, CAM-44, MAX_ITERATIONS,
 		// event log) all live inside runSupervisor — unchanged.
 		let result: SupervisorResult;
+		let supervisorOpts: RunSupervisorOptions;
 		try {
-			const supervisorOpts = opts.buildOpts();
-			// US-005: Thread autoShipFn from RunSidecarLoopOptions into
-			// RunSupervisorOptions so the inner loop can call it after a CLEAN
-			// verdict. Only injected when plan_approval === 'auto'; absent in
-			// operator mode (zero behavior change for existing callers).
-			if (opts.autoShipFn !== undefined) {
-				supervisorOpts.autoShipFn = opts.autoShipFn;
-			}
+			supervisorOpts = opts.buildOpts();
 			// US-R1-001: Thread escalateFn into RunSupervisorOptions so the inner
 			// loop can call it when the MAX_ROUNDS_DEBT terminal is reached.
 			// Only wired when RESEND_API_KEY env var + resend_recipient are set.
@@ -1903,6 +1881,37 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 		// state file; clearActive() is the safety net that ensures active:false
 		// even when onProgress was absent or failed.
 		opts.clearActive();
+
+		// CAM-191 / ADR 0013: auto-ship decision, moved here (AFTER clearActive)
+		// so phase:shipping is the LAST state-file write on the terminal complete
+		// path: it survives both the onProgress unlink-on-complete (which runs
+		// inside finishTerminal, before runSupervisorFn returns) and clearActive's
+		// implicit phase:idle rewrite above. Symmetric with the flipActive
+		// auto-chain block right below. Four gates, all observable at this
+		// outer-loop level: (1) result.status === 'complete' (the only status
+		// this fires for -- await-operator and MAX_ROUNDS_DEBT never dispatch);
+		// (2) the auto-ship capability is wired (auto mode); (3)
+		// prd.review.lastVerdict === 'CLEAN'; (4) the fire-once marker
+		// prd.review.autoShipDispatchedAt is undefined. The marker is written to
+		// prd.json BEFORE the callback runs, so a sidecar restart or in-place
+		// binary swap never re-dispatches (ADR 0008 semantics, unchanged).
+		if (opts.autoShipFn !== undefined && result.status === 'complete') {
+			const prdAfterComplete = supervisorOpts.readPrd();
+			if (
+				prdAfterComplete !== null &&
+				prdAfterComplete.review?.lastVerdict === 'CLEAN' &&
+				prdAfterComplete.review?.autoShipDispatchedAt === undefined
+			) {
+				supervisorOpts.writePrd({
+					...prdAfterComplete,
+					review: {
+						...(prdAfterComplete.review ?? {}),
+						autoShipDispatchedAt: supervisorOpts.clock(),
+					},
+				});
+				opts.autoShipFn();
+			}
+		}
 
 		// US-005: Auto-chain in auto mode. When flipActiveFn is injected
 		// (plan_approval === 'auto') and pending work remains, flip active:true
