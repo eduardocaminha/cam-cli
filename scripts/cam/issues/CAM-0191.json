@@ -1,9 +1,44 @@
 {
   "id": "CAM-191",
   "title": "auto-ship on CLEAN loses the phase:shipping signal; cycle wedges without shipping",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T04:56:29.629Z",
-  "description": "On a CLEAN review verdict the supervisor writes the fire-once marker prd.review.autoShipDispatchedAt and calls autoShipFn (makeAutoShipFn = setPhase(shipping)) inside runSupervisor, but the phase:shipping write is lost (likely clobbered by clearActive resetting phase to idle when runSupervisor returns complete). Result: cycle sits CLEAN-without-ship, no ship-phase events, no PR; the fire-once marker prevents retry. Observed on CAM-98 (2026-07-06): 3.7min idle after CLEAN, ship ran only after a manual phase:shipping nudge. Prior cycles (PR 139/140/141) auto-shipped fine, so may be a timing/ordering race. Fix: ensure autoShipFn phase:shipping survives the runSupervisor return path (order clearActive vs phase write, or write phase:shipping from the outer loop after terminal complete)."
+  "description": "On a CLEAN review verdict the supervisor writes the fire-once marker prd.review.autoShipDispatchedAt and calls autoShipFn (makeAutoShipFn = setPhase(shipping)) inside runSupervisor, but the phase:shipping write is lost (likely clobbered by clearActive resetting phase to idle when runSupervisor returns complete). Result: cycle sits CLEAN-without-ship, no ship-phase events, no PR; the fire-once marker prevents retry. Observed on CAM-98 (2026-07-06): 3.7min idle after CLEAN, ship ran only after a manual phase:shipping nudge. Prior cycles (PR 139/140/141) auto-shipped fine, so may be a timing/ordering race. Fix: ensure autoShipFn phase:shipping survives the runSupervisor return path (order clearActive vs phase write, or write phase:shipping from the outer loop after terminal complete).",
+  "spec": {
+    "scope": "Fix the auto-ship-on-CLEAN wedge (CAM-191). On a terminal complete+CLEAN return in auto mode, the phase:shipping signal written by autoShipFn inside runSupervisor (src/supervisor/loop.ts:850) is destroyed before the next sidecar tick can read it: first by the production onProgress unlink-on-complete (src/supervisor/host.ts:713-719), then by clearActive rewriting the state file as phase:idle (src/supervisor/loop.ts:1905). The fire-once marker prd.review.autoShipDispatchedAt lives in prd.json (not clobbered) and correctly prevents retry, so the cycle wedges CLEAN-without-ship. Fix: move the auto-ship decision (CLEAN check + autoShipDispatchedAt marker write + setPhase('shipping')) out of runSupervisor into runSidecarLoop, placed AFTER clearActive, symmetric with the existing auto-chain flipActive block (loop.ts:1911), so the phase:shipping write is the LAST state-file write on the terminal path and survives teardown. Drop the autoShipFn param from runSupervisor; wire the auto-ship capability into runSidecarLoop opts. Gate strictly on result.status === 'complete', never awaiting-operator. Preserve the fire-once cross-invocation dedup via the prd.json marker and the operator-mode no-op. Export makeClearActive and add a regression test using the REAL state-file writers that fails against the pre-fix code. OUT OF SCOPE: the onProgress unlink-on-complete behavior (left intact; the last-write fix makes it inert), the manual cam ship path (src/commands/ship.ts), and CAM-208 drain spam.",
+    "acceptanceCriteria": [
+      "runSupervisor (src/supervisor/loop.ts) no longer accepts an autoShipFn parameter and no longer writes phase:shipping or the autoShipDispatchedAt marker inside its terminal complete branch; the auto-ship dispatch logic is removed from runSupervisor entirely.",
+      "runSidecarLoop (src/supervisor/loop.ts) performs the auto-ship decision AFTER clearActive: when the just-returned supervisor result has status === 'complete', prd.review.lastVerdict === 'CLEAN', the auto-ship capability is provided (auto mode), and prd.review.autoShipDispatchedAt === undefined, it writes the autoShipDispatchedAt marker to prd.json and writes phase:shipping to the cam-loop state file as the LAST state-file write of that tick.",
+      "Auto-ship fires ONLY on result.status === 'complete'; a PRD in awaiting-operator (a pending requires:'operator' story) does not auto-ship.",
+      "Fire-once semantics preserved: the prd.review.autoShipDispatchedAt marker in prd.json dedupes the dispatch across ticks and sidecar restarts (guard autoShipDispatchedAt === undefined), per ADR 0008.",
+      "Operator mode (no auto-ship capability wired into runSidecarLoop opts) does not auto-ship and does not crash on the complete path.",
+      "makeClearActive is exported from src/commands/sidecar.ts.",
+      "A regression test drives runSidecarLoop's terminal complete tick with the REAL state-file writers (real makeSetPhaseFn, real makeClearActive, and the real onProgress unlink-on-complete) against a real temporary cam-loop state file, and asserts: (a) after the complete tick the state file exists and has phase:shipping; (b) on the following tick readLoopPhaseFn returns 'shipping' and runShipPhaseFn is invoked exactly once. The test must fail against the pre-fix code (verified by running it before applying the fix).",
+      "Quality gates pass: bun run typecheck (zero errors), bun test (all pass), bun run check:all (biome lint clean)."
+    ],
+    "gotchas": [
+      "The bug is a DETERMINISTIC clobber chain, not a race. Fixed control-flow order on the complete path: write phase:shipping (loop.ts:850) -> onProgress unlinks the state file (host.ts:713-719) -> runSupervisor returns -> clearActive recreates it as phase:idle (loop.ts:1905). Any fix must make the phase:shipping write the LAST write on the terminal path.",
+      "clearActive writes phase:idle IMPLICITLY: makeClearActive omits phase and passes active:false, so renderStateFile derives effectivePhase='idle' (src/commands/next.ts:109-110). It is not an explicit phase write, so grepping for setPhase('idle') will not find it.",
+      "ALL existing auto-ship tests inject clearActive: () => {} no-op and autoShipFn as a call-counter (test/supervisor/auto-chain.test.ts, test/sidecar-ship-phase.test.ts), and hard-code readLoopPhaseFn: () => 'shipping'. They never exercise the real writers on the same file and cannot observe the clobber. The regression test MUST use real writers on a real temp state file.",
+      "makeClearActive is currently NOT exported (function makeClearActive at src/commands/sidecar.ts:307); exporting it is required for the real-writer regression test.",
+      "The auto-ship MUST gate on result.status === 'complete', NOT awaiting-operator. ADR 0008 established that anchoring on the complete branch auto-eliminates the explicit await-operator gate (complete is only reached when all stories including requires:'operator' pass); moving the callsite to the outer loop must preserve that by checking result.status === 'complete'.",
+      "The autoShipDispatchedAt marker lives in prd.json (not the clobbered state file); its fire-once + cross-restart dedup semantics per ADR 0008 must be preserved, and it must NOT be re-armed or cleared by this change.",
+      "The outer-loop auto-ship block runs only on ticks where runSupervisor actually executed (active ticks); after a complete return active becomes false, so subsequent idle ticks skip the block. This natural fire-once-per-complete plus the prd.json marker together guarantee single dispatch.",
+      "The single consumer of phase:shipping is runSidecarLoop at loop.ts:1795 (if loopPhase === 'shipping' -> runShipPhaseFn). Keep using the phase:shipping state signal so auto-ship and manual cam ship share this one consumer; the fix only changes WHERE/WHEN the signal is written (last), not the consumer."
+    ],
+    "domainTerms": [
+      "auto-ship",
+      "phase signal",
+      "fire-once marker",
+      "clobber chain"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 8,
+    "riskReduction": 5,
+    "jobSize": 3
+  }
 }
