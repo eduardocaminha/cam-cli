@@ -339,6 +339,29 @@ describe('closeIssueOnMain — AC1: sets stage:shipped and commits to main', () 
 });
 
 // ---------------------------------------------------------------------------
+// (a.1) Idempotency guard: already-closed when target is stage:'shipped'
+// ---------------------------------------------------------------------------
+
+describe('closeIssueOnMain — idempotency guard: already-closed', () => {
+	test('returns ok:false reason:already-closed for a stage:shipped entry, no commit produced', () => {
+		const shippedEntry = { ...EXISTING_ENTRY, stage: 'shipped' as const };
+		const shippedEntryJson = JSON.stringify(shippedEntry, null, 2) + '\n';
+		const { spawnFn, calls } = makeRecordingSpawn({
+			catFileOutput: frameBlobOutput(shippedEntryJson),
+		});
+		const result = closeIssueOnMain(makeOptions({ spawnFn }));
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('already-closed');
+		}
+		// No mutation: update-ref (and push) must not have been called.
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
+		expect(calls.find((c) => c.args.includes('push'))).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
 // (b) AC2: not-found when id absent on main
 // ---------------------------------------------------------------------------
 

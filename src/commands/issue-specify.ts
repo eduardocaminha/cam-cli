@@ -507,7 +507,8 @@ export interface CloseIssueOnMainResult {
 
 export type CloseIssueOnMainError =
 	| { ok: false; reason: 'diverged' | 'detached-head' | 'missing-main' }
-	| { ok: false; reason: 'not-found' };
+	| { ok: false; reason: 'not-found' }
+	| { ok: false; reason: 'already-closed' };
 
 export type CloseIssueOnMainOutcome = CloseIssueOnMainResult | CloseIssueOnMainError;
 
@@ -517,6 +518,7 @@ export type CloseIssueOnMainOutcome = CloseIssueOnMainResult | CloseIssueOnMainE
  * Guards (in order):
  *   0. Up-to-date (detached-head, missing-main, diverged).
  *   1. Target id exists -- not-found on failure (never a silent ok).
+ *   2. Target stage is not already 'shipped' -- already-closed on failure.
  *
  * Commit message: `chore(cam): close <id> (shipped)`.
  */
@@ -533,6 +535,7 @@ export function closeIssueOnMain(options: CloseIssueOnMainOptions): CloseIssueOn
 	if (entryIndex === -1) return { ok: false, reason: 'not-found' };
 	const entry = allIssues[entryIndex];
 	if (entry === undefined) return { ok: false, reason: 'not-found' };
+	if (entry.stage === 'shipped') return { ok: false, reason: 'already-closed' };
 
 	const mutated: IssueEntry = { ...entry, stage: 'shipped' };
 	const serialized = JSON.stringify(mutated, null, 2) + '\n';

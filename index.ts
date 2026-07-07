@@ -36,6 +36,11 @@ import {
 } from './src/commands/journal.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runIssueList } from './src/commands/issue-list.ts';
+import type {
+	CloseIssueOnMainOutcome,
+	AbandonIssueOnMainOutcome,
+} from './src/commands/issue-specify.ts';
+import { defaultCloseIssueFn, defaultAbandonIssueFn } from './src/release/post-merge.ts';
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
@@ -275,7 +280,7 @@ const SPEC_HELP = renderHelp({
 const ISSUE_HELP = renderHelp({
 	title: 'cam issue',
 	tagline: 'File an issue from free text, or list the actionable backlog',
-	usage: 'cam issue "<free text>" | cam issue list [--all]',
+	usage: 'cam issue "<free text>" | cam issue list [--all] | cam issue close <id> | cam issue abandon <id>',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -288,6 +293,16 @@ const ISSUE_HELP = renderHelp({
 					name: 'list [--all]',
 					description:
 						'Print the actionable backlog (deterministic, in-process, no tmux). --all also includes shipped issues.',
+				},
+				{
+					name: 'close <id>',
+					description:
+						'Deterministically set stage:shipped on main for a subsumed/duplicate issue (in-process, no tmux, no LLM).',
+				},
+				{
+					name: 'abandon <id>',
+					description:
+						"Deterministically set status:abandoned on main for a won't-do issue (in-process, no tmux, no LLM). Stage is left untouched.",
 				},
 			],
 		},
@@ -660,12 +675,19 @@ const RESUME_HELP = renderHelp({
  *     derivedFrom: non-empty when --derived-from was passed (specSource: derived).
  * - mode === 'list': deterministic in-process backlog print (US-003, CAM-190).
  *     all: true when --all was passed (include the shipped group).
+ * - mode === 'close': deterministic in-process stage:shipped mutation on main
+ *     (US-002, CAM-210). id is the required positional issue id.
+ * - mode === 'abandon': deterministic in-process status:abandoned mutation on
+ *     main (US-003, CAM-210). id is the required positional issue id; stage
+ *     is left untouched (only the status axis changes).
  * - help === true: caller should print ISSUE_HELP and exit 0.
  */
 export type ParsedIssueArgs =
 	| { mode: 'text'; text: string; help: false }
 	| { mode: 'file-local'; fastTrack: boolean; derivedFrom: string[]; help: false }
 	| { mode: 'list'; all: boolean; help: false }
+	| { mode: 'close'; id: string; help: false }
+	| { mode: 'abandon'; id: string; help: false }
 	| { mode?: never; help: true };
 
 export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
@@ -685,6 +707,36 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 			}
 		}
 		return { mode: 'list', all, help: false };
+	}
+	// The `close <id>` subcommand is evaluated BEFORE the free-text fallthrough
+	// (alongside `list`) so a missing id is a parse error, never a silent
+	// text-mode fallthrough treating 'close' as an issue title.
+	if (args[0] === 'close') {
+		const id = args[1];
+		if (id === undefined) {
+			printError('cam issue close requires an id (e.g. CAM-42)');
+			return null;
+		}
+		if (args.length > 2) {
+			printError(`unexpected argument: ${args[2]}`);
+			return null;
+		}
+		return { mode: 'close', id, help: false };
+	}
+	// The `abandon <id>` subcommand is evaluated BEFORE the free-text fallthrough
+	// (alongside `list`/`close`) so a missing id is a parse error, never a silent
+	// text-mode fallthrough treating 'abandon' as an issue title.
+	if (args[0] === 'abandon') {
+		const id = args[1];
+		if (id === undefined) {
+			printError('cam issue abandon requires an id (e.g. CAM-42)');
+			return null;
+		}
+		if (args.length > 2) {
+			printError(`unexpected argument: ${args[2]}`);
+			return null;
+		}
+		return { mode: 'abandon', id, help: false };
 	}
 	if (args.includes('--file-local')) {
 		let fastTrack = false;
@@ -1326,6 +1378,23 @@ export interface IssueDispatchDeps {
 	 * in-process (no tmux, no thin-proxy, no claude spawn).
 	 */
 	issueListFn?: () => Promise<number>;
+	/**
+	 * Inject a fake for the `close <id>` branch's underlying closeIssueOnMain
+	 * call. Default: `defaultCloseIssueFn(process.cwd(), id)` (production
+	 * spawnFn+clock; reuses the same wiring as ship-pr.ts/sidecar.ts to avoid
+	 * duplicating the real-spawnSync closure). The printing (printHint on
+	 * success, the machine CAM_ISSUE_RESULT line) and exit-code mapping always
+	 * run in dispatchIssue itself, regardless of injection (US-002).
+	 */
+	closeIssueOnMainFn?: (id: string) => CloseIssueOnMainOutcome;
+	/**
+	 * Inject a fake for the `abandon <id>` branch's underlying abandonIssueOnMain
+	 * call. Default: `defaultAbandonIssueFn(process.cwd(), id)` (production
+	 * spawnFn+clock; mirrors closeIssueOnMainFn's wiring). The printing (printHint
+	 * on success, the machine CAM_ISSUE_RESULT line) and exit-code mapping always
+	 * run in dispatchIssue itself, regardless of injection (US-003).
+	 */
+	abandonIssueOnMainFn?: (id: string) => AbandonIssueOnMainOutcome;
 }
 
 /** Build production CreateLocalIssueOnMainOptions from project root + parsed stdin JSON + CLI flags. */
@@ -1368,6 +1437,32 @@ export async function dispatchIssue(
 		const issueListFn =
 			deps?.issueListFn ?? (async () => runIssueList({ cwd: process.cwd(), all: parsed.all }));
 		return issueListFn();
+	}
+	if (parsed.mode === 'close') {
+		const closeIssueOnMainFn =
+			deps?.closeIssueOnMainFn ?? ((id: string) => defaultCloseIssueFn(process.cwd(), id));
+		const result = closeIssueOnMainFn(parsed.id);
+		if (!result.ok) {
+			printError(`cam issue close ${parsed.id} failed: ${result.reason}`);
+			process.stdout.write(`CAM_ISSUE_RESULT=ERROR reason=${result.reason}\n`);
+			return 1;
+		}
+		printHint(`closed ${result.id} on main (${result.sha})`);
+		process.stdout.write(`CAM_ISSUE_RESULT=${result.id}\n`);
+		return 0;
+	}
+	if (parsed.mode === 'abandon') {
+		const abandonIssueOnMainFn =
+			deps?.abandonIssueOnMainFn ?? ((id: string) => defaultAbandonIssueFn(process.cwd(), id));
+		const result = abandonIssueOnMainFn(parsed.id);
+		if (!result.ok) {
+			printError(`cam issue abandon ${parsed.id} failed: ${result.reason}`);
+			process.stdout.write(`CAM_ISSUE_RESULT=ERROR reason=${result.reason}\n`);
+			return 1;
+		}
+		printHint(`abandoned ${result.id} on main (${result.sha})`);
+		process.stdout.write(`CAM_ISSUE_RESULT=${result.id}\n`);
+		return 0;
 	}
 	if (parsed.mode === 'file-local') {
 		const fileLocalFn =

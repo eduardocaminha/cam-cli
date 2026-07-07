@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.77.0] - 2026-07-07
+
+### Added
+
+- US-003 - Wire cam issue abandon <id> positional subcommand
+- US-002 - Wire cam issue close <id> positional subcommand
+- US-001 - Add already-closed idempotency guard to closeIssueOnMain
+
 ## [0.76.0] - 2026-07-07
 
 ### Added
