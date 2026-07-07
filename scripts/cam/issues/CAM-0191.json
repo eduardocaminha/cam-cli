@@ -1,7 +1,7 @@
 {
   "id": "CAM-191",
   "title": "auto-ship on CLEAN loses the phase:shipping signal; cycle wedges without shipping",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T04:56:29.629Z",
