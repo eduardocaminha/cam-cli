@@ -1,0 +1,66 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-210-issue-close-abandon-cli",
+  "description": "Expose the existing closeIssueOnMain/abandonIssueOnMain on-main mutations as deterministic CLI subcommands `cam issue close <id>` and `cam issue abandon <id>` with a machine-parseable CAM_ISSUE_RESULT line (Layer-1 CLI-exposure, CAM-197 class).",
+  "issueNumber": 210,
+  "relatedDocs": ["CONTEXT.md"],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add already-closed idempotency guard to closeIssueOnMain",
+      "description": "As the orchestrator, I need closeIssueOnMain to reject an already stage:shipped issue with a distinct 'already-closed' reason so that the new CLI subcommand reports an idempotent close as a non-zero error instead of silently re-committing, symmetric with the existing 'already-abandoned' guard.",
+      "acceptanceCriteria": [
+        "CloseIssueOnMainError (src/commands/issue-specify.ts:508-510) is extended with { ok: false; reason: 'already-closed' }. [oracle: grep -q \"'already-closed'\" src/commands/issue-specify.ts]",
+        "closeIssueOnMain returns { ok: false, reason: 'already-closed' } for an entry whose stage === 'shipped', guarded STRICTLY on entry.stage === 'shipped' (never !== 'specified'); a unit test with a stage:'shipped' fixture asserts the error and that no commit is produced. [oracle: bun test test/issue-specify.test.ts]",
+        "Existing close-success coverage stays green: an open stage:'specified' issue still closes ok (the AC1 fixture in test/issue-specify.test.ts must not be broken by the guard). [oracle: bun test test/issue-specify.test.ts]",
+        "Regression: the two existing callers (src/release/ship-pr.ts:150, src/release/post-merge.ts:323) tolerate the new error non-fatally (warning/error narration only, overall step ok:true); both suites pass unchanged. [oracle: bun test test/release/ship-pr.test.ts test/release/post-merge.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/issue-specify.ts (error union at ~508, guard inside closeIssueOnMain at ~523), test/issue-specify.test.ts. Gotchas: (a) closeIssueOnMain is SHARED with the ship path; no existing test asserts an already-shipped close SUCCEEDS, so the guard is safe, but key it strictly on stage === 'shipped'. (b) Mirror the abandon guard shape at issue-specify.ts:424 (entry.status !== 'open' -> already-abandoned) placed after the not-found check. (c) Two test files share the name issue-specify.test.ts: closeIssueOnMain coverage lives in test/issue-specify.test.ts (top-level), abandonIssueOnMain in test/commands/issue-specify.test.ts. (d) closeIssueOnMain is pure return-only; do not add printing inside it. (e) close and abandon are orthogonal axes (stage vs status, src/issues/types.ts); an abandoned issue keeps its stage. Re-check CONTEXT.md entries 'close (issue)' and 'abandon (issue)' before coding."
+    },
+    {
+      "id": "US-002",
+      "title": "Wire cam issue close <id> positional subcommand",
+      "description": "As the orchestrator, I need `cam issue close <id>` to deterministically set stage:shipped on main and emit a machine-parseable CAM_ISSUE_RESULT line so that closing a subsumed or duplicate issue never requires hand-editing CAM-NNNN.json, a manual git commit, or an LLM in the path.",
+      "acceptanceCriteria": [
+        "parseIssueArgs parses ['close', '<id>'] as { mode: 'close', id } via a positional branch placed at the TOP alongside `list`; a missing id yields a parse error or help, never a silent text-mode fallthrough treating 'close' as an issue title. [oracle: bun test test/issue-dispatch.test.ts]",
+        "`cam issue close <id>` on an open, non-shipped issue calls closeIssueOnMain with a production spawnFn+clock, mutates the CAM-NNNN.json on main via the existing commit-tree path (working branch untouched), prints a human printHint line plus the machine line CAM_ISSUE_RESULT=<id>, and exits 0. [oracle: bun test test/issue-dispatch.test.ts]",
+        "`cam issue close <id>` on an ALREADY stage:shipped issue surfaces reason 'already-closed', prints CAM_ISSUE_RESULT=ERROR plus the reason, and exits non-zero. [oracle: bun test test/issue-dispatch.test.ts]",
+        "`cam issue close <id>` on a not-found id prints CAM_ISSUE_RESULT=ERROR and exits non-zero. [oracle: bun test test/issue-dispatch.test.ts]",
+        "The close branch in dispatchIssue is in-process only and NEVER falls through to the runIssue thin-proxy (no tmux send-keys), mirroring the existing --file-local/list invariant test. [oracle: bun test test/issue-dispatch.test.ts]",
+        "ISSUE_HELP documents `close <id>`; `cam issue --help` renders it. [oracle: grep -q 'close <id>' index.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: index.ts (ParsedIssueArgs union at ~656-670, parseIssueArgs at ~671-731, dispatchIssue at ~1358-1420, ISSUE_HELP at ~275), test/issue-dispatch.test.ts. Pattern references: the `list` positional branch in parseIssueArgs for parse shape; the dispatchIssue file-local branch (parse -> in-process call -> map result.ok to exit 0/1) for dispatch shape; _buildCreateIssueOpts (index.ts:1332-1355) for building the production spawnFn (spawnSync wrapped with stdio:'pipe') + clock: () => new Date().toISOString(). Gotchas: (a) closeIssueOnMain is pure return-only; the dispatchIssue branch owns ALL printing (hint + CAM_ISSUE_RESULT line) and exit-code mapping. (b) DELIBERATE inconsistency: siblings --file-local/list print no CAM_ISSUE_* line; this subcommand intentionally ADDS it (structured handback, CAM-197 thesis); do NOT retrofit the line onto --file-local/list (separate follow-up). (c) clock and writeFile are declared-but-unused interface-compat holdovers in CloseIssueOnMainOptions; pass real ones anyway. (d) Add the positional branch BEFORE the free-text fallthrough so args[1] is consumed. (e) Inject a close fn via IssueDispatchDeps for tests, mirroring fileLocalFn/issueListFn. (f) OUT of scope: /cam-issue slash form, reason/comment args, blockedBy warning. Re-check CONTEXT.md 'structured handback line' and 'Layer-1 CLI-exposure' before coding."
+    },
+    {
+      "id": "US-003",
+      "title": "Wire cam issue abandon <id> positional subcommand",
+      "description": "As the orchestrator, I need `cam issue abandon <id>` to deterministically set status:abandoned on main (stage untouched) and emit the same machine-parseable CAM_ISSUE_RESULT line so that dropping a won't-do issue is a single deterministic CLI call with zero LLM in the path.",
+      "acceptanceCriteria": [
+        "parseIssueArgs parses ['abandon', '<id>'] as { mode: 'abandon', id } via a positional branch at the TOP alongside `list`/`close`; a missing id yields a parse error or help, never a text-mode fallthrough treating 'abandon' as an issue title. [oracle: bun test test/issue-dispatch.test.ts]",
+        "`cam issue abandon <id>` on an open issue calls abandonIssueOnMain with a production spawnFn+clock, sets status:abandoned on main with the stage untouched (working branch untouched), prints a human printHint line plus CAM_ISSUE_RESULT=<id>, and exits 0. [oracle: bun test test/issue-dispatch.test.ts]",
+        "`cam issue abandon <id>` on an already-abandoned issue surfaces the existing 'already-abandoned' guard as CAM_ISSUE_RESULT=ERROR and exits non-zero. [oracle: bun test test/issue-dispatch.test.ts]",
+        "`cam issue abandon <id>` on a not-found id prints CAM_ISSUE_RESULT=ERROR and exits non-zero. [oracle: bun test test/issue-dispatch.test.ts]",
+        "The abandon branch in dispatchIssue is in-process only and NEVER falls through to the runIssue thin-proxy (no tmux send-keys). [oracle: bun test test/issue-dispatch.test.ts]",
+        "ISSUE_HELP documents `abandon <id>`; `cam issue --help` renders it. [oracle: grep -q 'abandon <id>' index.ts]",
+        "Full CI gate spine is green: typecheck, tests, embed-vendor, biome, ratchets, ci-parity. [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: index.ts (same regions as US-002: ParsedIssueArgs, parseIssueArgs, dispatchIssue, ISSUE_HELP), test/issue-dispatch.test.ts. Mirror the US-002 close branch exactly; abandonIssueOnMain (src/commands/issue-specify.ts:409) already has the 'already-abandoned' guard (entry.status !== 'open' at :424), so NO change to issue-specify.ts in this story. Gotchas: (a) abandon sets status:'abandoned' and LEAVES stage; do not conflate the axes; assert stage is untouched in the success test. (b) AbandonIssueOnMainError reasons: diverged | detached-head | missing-main | not-found | already-abandoned; map all failures to CAM_ISSUE_RESULT=ERROR + exit 1. (c) abandonIssueOnMain is pure return-only; the CLI branch owns printing and exit codes. (d) abandonIssueOnMain unit coverage lives in test/commands/issue-specify.test.ts; new parse+dispatch tests belong in test/issue-dispatch.test.ts. (e) This is the last story: run `bun run check:all` (AC10) and fix anything red before committing. Re-check CONTEXT.md 'abandon (issue)' before coding."
+    }
+  ]
+}
