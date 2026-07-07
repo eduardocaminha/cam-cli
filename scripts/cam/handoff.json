@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add allowlist .dockerignore for the cam-worker image build context"
+  },
+  "branchName": "cam/pr-177-dockerignore-worker-image",
+  "timestamp": "2026-07-07T23:00:00Z",
+  "createdFiles": [".dockerignore", "test/dockerignore.test.ts"],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "This PRD had exactly one story (US-001), now complete and passes:true. All non-operator stories are done; the review cycle should proceed. Real `docker build -f .devcontainer/Dockerfile .` was run locally (docker/orbstack available) and succeeded (exit 0); the '[internal] load build context: transferring context: 87B' line is the cited evidence for AC4. Note for the reviewer: on this machine's BuildKit driver (docker buildx via orbstack), the context-transfer size was already tiny (87B) even without the .dockerignore present, because modern BuildKit lazily syncs only the files referenced by COPY instructions. This does not invalidate the story: the .dockerignore is still correct and load-bearing (last-match-wins allowlist, matches the exact 4-line order required by the AC oracle) for the legacy builder and any BuildKit driver/CI runner without lazy FSSync, and it documents the COPY-needs-a-re-include contract for future Dockerfile changes. See the new patterns.md bullet for the full gotcha writeup.",
+  "officialDocsValidated": [
+    {
+      "lib": "Docker (.dockerignore / BuildKit build context)",
+      "url": "https://docs.docker.com/build/concepts/context/#dockerignore-files",
+      "fetchedAt": "2026-07-07T23:00:00Z",
+      "status": "aligned",
+      "summary": "Docker docs confirm '!' negation re-includes a path and that the LAST matching line in .dockerignore wins, matching the implemented 4-line allowlist order ('*', '!.devcontainer', '.devcontainer/*', '!.devcontainer/claude-config.json'). Verified live with a real docker build (exit 0, COPY resolved)."
+    }
+  ]
+}

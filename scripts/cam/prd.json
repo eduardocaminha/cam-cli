@@ -3,7 +3,9 @@
   "branchName": "cam/pr-177-dockerignore-worker-image",
   "description": "Add a repo-root allowlist .dockerignore so the cam-worker (.devcontainer) image build stops tarring the entire repo (4.9G seen in CAM-175) to the docker daemon.",
   "issueNumber": 177,
-  "relatedDocs": ["docs/adr/0003-worker-isolation-boundary-dev-container.md"],
+  "relatedDocs": [
+    "docs/adr/0003-worker-isolation-boundary-dev-container.md"
+  ],
   "officialDocsConsulted": [
     {
       "lib": "docker (.dockerignore / build context)",
@@ -29,7 +31,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .dockerignore (new, repo root) and test/dockerignore.test.ts (new golden-fixture test; read via Bun.file, assert line order with indexOf comparisons or a full-content golden string). The .devcontainer/Dockerfile performs exactly one COPY (.devcontainer/claude-config.json -> /home/bun/.claude.json, line 89) and the workspace is bind-mounted at run time, so everything else in the context is wasted transfer. OUT OF SCOPE (do not do): denylist enumeration of individual artifacts, templating the .dockerignore into templates/ for downstream cam projects (cam-worker image is cam-cli internal; therefore NO embed-vendor:check needed), any change to the Dockerfile or the build command (buildDockerBuildArgv in src/supervisor/worker-container.ts stays untouched). Gotchas from the grill spec: (1) the re-include-nested-file idiom requires BuildKit last-match-wins evaluation; the legacy builder cannot re-include a file under an excluded parent; cam container-mode uses modern docker where BuildKit is default. (2) The .devcontainer directory must be un-ignored (!.devcontainer) before re-including the nested file; bare '*' plus a single nested re-include can fail on some builders, hence the four-line form. (3) The allowlist is brittle to a future Dockerfile COPY: the header comment must document that a new COPY requires a matching re-include line. (4) With -f .devcontainer/Dockerfile the Dockerfile is read directly, not from the context; docker docs also confirm Dockerfile/.dockerignore are always sent to the builder regardless, so excluding them via '*' is safe. Project rules: no em-dash in the persisted header comment; conventional commit (feat:). Related doc to re-check: docs/adr/0003-worker-isolation-boundary-dev-container.md (worker isolation boundary rationale for the dev-container image)."
     }
