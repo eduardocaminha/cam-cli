@@ -3,7 +3,10 @@
   "branchName": "cam/pr-201-toolchain-parity",
   "description": "Pin bun+Node to a single source of truth consumed by CI, the Dockerfile, and a fail-closed container preflight with sidecar auto-rebuild; add a check:all guard forbidding toolchain-version-conditioned test skips; keep pins fresh via Renovate automerge. Closes CAM-198 (container Node 18), CAM-192 (image staleness), CAM-180 (manual rebuild ceremony) as subsumed.",
   "issueNumber": 201,
-  "relatedDocs": ["docs/container-test-baseline.md", "docs/recovery-runbook.md"],
+  "relatedDocs": [
+    "docs/container-test-baseline.md",
+    "docs/recovery-runbook.md"
+  ],
   "officialDocsConsulted": [
     {
       "lib": "oven-sh/setup-bun",
@@ -35,7 +38,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .bun-version, .tool-versions, src/config/toolchain.ts, test/config/toolchain.test.ts. Pick the current Node 22 LTS patch release for .tool-versions (issue requires >= 22 for knip's node:util styleText, see CAM-198). Gotcha (spec): setup-bun@v2 already reads package.json packageManager/engines.bun by default; .bun-version is the explicit, Renovate-manageable single source, so do NOT add engines.bun/packageManager to package.json. Follow patterns.md: injectable reader seam, null-on-error, no fs at import time. Downstream consumers: check-ci-parity (US-002), buildDockerBuildArgv (US-003), toolchain assert (US-006/007)."
     },
