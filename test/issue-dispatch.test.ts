@@ -31,10 +31,24 @@
 //       maps ok:true to exit 0 and any !ok reason (already-abandoned /
 //       not-found) to exit 1 with CAM_ISSUE_RESULT=ERROR, and NEVER touches
 //       runIssueFn or fileLocalFn (no thin-proxy).
+//   (m) dispatchIssue's default --file-local implementation (fileLocalFn NOT
+//       injected) emits CAM_ISSUE_RESULT for every outcome (US-001, CAM-212):
+//       success prints the pre-existing 'filed <id> on main' printHint plus
+//       CAM_ISSUE_RESULT=<id> and exits 0; each createLocalIssueOnMainFn
+//       { ok: false, reason } (diverged/detached-head/missing-main/
+//       guardrail-failed) prints CAM_ISSUE_RESULT=ERROR reason=<reason> and
+//       exits 1; unparseable stdin JSON prints CAM_ISSUE_RESULT=ERROR
+//       reason=invalid-json (emitted before createLocalIssueOnMainFn runs)
+//       and exits 1; a thrown exception prints CAM_ISSUE_RESULT=ERROR
+//       reason=exception and exits 1.
+//   (n) dispatchIssue's list branch is CAM_ISSUE_RESULT-free by design
+//       (US-002, CAM-212, regression lock): unlike close/abandon/file-local,
+//       list never writes a CAM_ISSUE_RESULT line on any code path.
 //
 // All external I/O is faked via injectable deps (fileLocalFn, runIssueFn,
-// issueListFn, closeIssueOnMainFn, abandonIssueOnMainFn). No real stdin,
-// git, or tmux is exercised.
+// issueListFn, closeIssueOnMainFn, abandonIssueOnMainFn,
+// createLocalIssueOnMainFn, readStdinFn). No real stdin, git, or tmux is
+// exercised.
 
 import { describe, expect, test } from 'bun:test';
 import { parseIssueArgs, dispatchIssue } from '../index.ts';
@@ -680,5 +694,195 @@ describe('dispatchIssue: abandon routing isolation', () => {
 			expect(code).toBe(1);
 		});
 		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('not-found'))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// dispatchIssue: default --file-local branch emits CAM_ISSUE_RESULT (US-001, CAM-212)
+// ---------------------------------------------------------------------------
+
+describe('dispatchIssue: default file-local CAM_ISSUE_RESULT retrofit', () => {
+	test('success prints the pre-existing filed printHint AND CAM_ISSUE_RESULT=<id>, exits 0', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await dispatchIssue(
+				{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
+				{
+					readStdinFn: async () => JSON.stringify({ title: 'my new issue' }),
+					createLocalIssueOnMainFn: () => ({
+						ok: true,
+						id: 'CAM-42',
+						committedTo: 'main',
+						sha: 'deadbeef',
+						branchWasMain: true,
+					}),
+				},
+			);
+			expect(code).toBe(0);
+		});
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT=CAM-42'))).toBe(true);
+	});
+
+	test('createLocalIssueOnMainFn { ok: false, reason: diverged } prints CAM_ISSUE_RESULT=ERROR reason=diverged, exits 1', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await withSilentStderrAsync(() =>
+				dispatchIssue(
+					{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
+					{
+						readStdinFn: async () => JSON.stringify({ title: 'x' }),
+						createLocalIssueOnMainFn: () => ({ ok: false, reason: 'diverged' }),
+					},
+				),
+			);
+			expect(code).toBe(1);
+		});
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('reason=diverged'))).toBe(
+			true,
+		);
+	});
+
+	test('createLocalIssueOnMainFn { ok: false, reason: detached-head } prints CAM_ISSUE_RESULT=ERROR reason=detached-head, exits 1', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await withSilentStderrAsync(() =>
+				dispatchIssue(
+					{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
+					{
+						readStdinFn: async () => JSON.stringify({ title: 'x' }),
+						createLocalIssueOnMainFn: () => ({ ok: false, reason: 'detached-head' }),
+					},
+				),
+			);
+			expect(code).toBe(1);
+		});
+		expect(
+			lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('reason=detached-head')),
+		).toBe(true);
+	});
+
+	test('createLocalIssueOnMainFn { ok: false, reason: missing-main } prints CAM_ISSUE_RESULT=ERROR reason=missing-main, exits 1', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await withSilentStderrAsync(() =>
+				dispatchIssue(
+					{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
+					{
+						readStdinFn: async () => JSON.stringify({ title: 'x' }),
+						createLocalIssueOnMainFn: () => ({ ok: false, reason: 'missing-main' }),
+					},
+				),
+			);
+			expect(code).toBe(1);
+		});
+		expect(
+			lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('reason=missing-main')),
+		).toBe(true);
+	});
+
+	test('createLocalIssueOnMainFn { ok: false, reason: guardrail-failed } prints CAM_ISSUE_RESULT=ERROR reason=guardrail-failed, exits 1', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await withSilentStderrAsync(() =>
+				dispatchIssue(
+					{ mode: 'file-local', fastTrack: true, derivedFrom: [], help: false },
+					{
+						readStdinFn: async () => JSON.stringify({ title: 'x' }),
+						createLocalIssueOnMainFn: () => ({ ok: false, reason: 'guardrail-failed' }),
+					},
+				),
+			);
+			expect(code).toBe(1);
+		});
+		expect(
+			lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('reason=guardrail-failed')),
+		).toBe(true);
+	});
+
+	test('unparseable stdin JSON prints CAM_ISSUE_RESULT=ERROR reason=invalid-json BEFORE createLocalIssueOnMainFn runs, exits 1', async () => {
+		let createCalled = false;
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await withSilentStderrAsync(() =>
+				dispatchIssue(
+					{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
+					{
+						readStdinFn: async () => 'not valid json {{{',
+						createLocalIssueOnMainFn: () => {
+							createCalled = true;
+							return { ok: true, id: 'CAM-1', committedTo: 'main', sha: 'x', branchWasMain: true };
+						},
+					},
+				),
+			);
+			expect(code).toBe(1);
+		});
+		expect(createCalled).toBe(false);
+		expect(
+			lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('reason=invalid-json')),
+		).toBe(true);
+	});
+
+	test('a thrown exception from createLocalIssueOnMainFn prints CAM_ISSUE_RESULT=ERROR reason=exception, exits 1', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await withSilentStderrAsync(() =>
+				dispatchIssue(
+					{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
+					{
+						readStdinFn: async () => JSON.stringify({ title: 'x' }),
+						createLocalIssueOnMainFn: () => {
+							throw new Error('boom');
+						},
+					},
+				),
+			);
+			expect(code).toBe(1);
+		});
+		expect(
+			lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('reason=exception')),
+		).toBe(true);
+	});
+
+	test('the machine line is written via process.stdout.write, never mixed into printHint/printError text', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			await dispatchIssue(
+				{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
+				{
+					readStdinFn: async () => JSON.stringify({ title: 'x' }),
+					createLocalIssueOnMainFn: () => ({
+						ok: true,
+						id: 'CAM-7',
+						committedTo: 'main',
+						sha: 'sha7',
+						branchWasMain: true,
+					}),
+				},
+			);
+		});
+		// Exactly one line is the bare machine token; it never shares a line with
+		// the human printHint text ('filed ...').
+		const machineLines = lines.filter((l) => l.trim() === 'CAM_ISSUE_RESULT=CAM-7');
+		expect(machineLines.length).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// dispatchIssue: list is CAM_ISSUE_RESULT-free by design (US-002, CAM-212)
+//
+// Unlike close/abandon/file-local (each acts on exactly one issue and reports
+// its id), list is a read over many issues with no single id to report. This
+// is a deliberate design decision, not a forgotten path: the regression test
+// below locks the list branch's stdout contract so a future "fix" does not
+// retrofit a speculative machine line onto it.
+// ---------------------------------------------------------------------------
+
+describe('dispatchIssue: list mode is CAM_ISSUE_RESULT-free by design', () => {
+	test('mode:list dispatch never writes a CAM_ISSUE_RESULT line to stdout', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			await dispatchIssue(
+				{ mode: 'list', all: false, help: false },
+				{
+					issueListFn: async () => {
+						process.stdout.write('CAM-42  Some issue title\n');
+						return 0;
+					},
+				},
+			);
+		});
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT'))).toBe(false);
 	});
 });
