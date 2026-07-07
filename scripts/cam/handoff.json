@@ -1,18 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add already-closed idempotency guard to closeIssueOnMain"
+    "id": "US-002",
+    "title": "Wire cam issue close <id> positional subcommand"
   },
   "branchName": "cam/pr-210-issue-close-abandon-cli",
   "timestamp": "2026-07-07T00:00:00.000Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/issue-specify.ts",
-    "test/issue-specify.test.ts"
+    "index.ts",
+    "test/issue-dispatch.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "closeIssueOnMain now returns { ok: false, reason: 'already-closed' } for a stage:'shipped' entry (guarded strictly on entry.stage === 'shipped', checked after the not-found guard, before any mutation/commit). CloseIssueOnMainError is the union { diverged | detached-head | missing-main } | not-found | already-closed. The two existing callers (ship-pr.ts closeNoneBackendIssue, post-merge.ts performCloseStep) already interpolate `reason` generically into a warning/error narration string with overall step ok:true, so they needed no changes and their suites pass unchanged. US-002 (wire `cam issue close <id>`) should map reason:'already-closed' to a distinct non-zero exit code/message in the new CLI subcommand's CAM_ISSUE_RESULT line, symmetric with how 'already-abandoned' is presumably handled by the abandon subcommand (US-003). Two test files share the name issue-specify.test.ts: closeIssueOnMain coverage is in test/issue-specify.test.ts (top-level, this story's tests), abandonIssueOnMain in test/commands/issue-specify.test.ts (untouched).",
+  "nextStoryContext": "US-002 added `close <id>` to parseIssueArgs (ParsedIssueArgs gained { mode: 'close'; id: string; help: false }, checked at the top of the function alongside `list`, before the --file-local/free-text branches) and a matching dispatchIssue branch. The branch injects at the PRIMITIVE level: IssueDispatchDeps.closeIssueOnMainFn?: (id: string) => CloseIssueOnMainOutcome (same name/shape already used by ship-pr.ts's ShipPrOptions), defaulting to defaultCloseIssueFn(process.cwd(), id) imported from src/release/post-merge.ts (reuses the existing real-spawnSync+clock wiring; do NOT duplicate a spawnFn closure inline in index.ts). dispatchIssue's close branch owns ALL printing: printHint(`closed ${result.id} on main (${result.sha})`) on ok:true plus process.stdout.write(`CAM_ISSUE_RESULT=${result.id}\\n`) and return 0; on !ok, printError(...) plus process.stdout.write(`CAM_ISSUE_RESULT=ERROR reason=${result.reason}\\n`) and return 1. ISSUE_HELP now documents 'close <id>' and the usage line. US-003 (wire `cam issue abandon <id>`) should mirror this exact shape 1:1 against abandonIssueOnMain (src/commands/issue-specify.ts, already implemented and tested in test/commands/issue-specify.test.ts): add { mode: 'abandon'; id } to ParsedIssueArgs, a parse branch alongside close/list, and an IssueDispatchDeps.abandonIssueOnMainFn?: (id: string) => AbandonIssueOnMainOutcome seam with a production default (check whether post-merge.ts/ship-pr.ts already has a defaultAbandonIssueFn-equivalent before writing a new spawnFn+clock closure inline; if not, consider adding one next to defaultCloseIssueFn in post-merge.ts to keep the jscpd-avoidance convention). AbandonIssueOnMainError reasons are diverged/detached-head/missing-main | not-found | already-abandoned (mirrors CloseIssueOnMainError's shape exactly, per issue-specify.ts). Two test files share a naming collision to watch for: test/issue-dispatch.test.ts (this story's parseIssueArgs/dispatchIssue tests, top-level test/) vs test/commands/issue-specify.test.ts (abandonIssueOnMain/closeIssueOnMain primitive coverage, nested test/commands/) -- do not confuse the two when adding US-003 tests.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal TS guard on existing git-plumbing based issue-close primitive; no external library API surface touched." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal TS CLI-dispatch wiring reusing existing internal primitives (closeIssueOnMain, defaultCloseIssueFn); no external library API surface touched." }
   ]
 }
