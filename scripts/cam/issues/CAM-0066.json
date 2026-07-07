@@ -1,7 +1,7 @@
 {
   "id": "CAM-66",
   "title": "Dashboard polish: truncate long story titles (list) + harden the Loop-header ghost",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-16T23:00:00Z",
