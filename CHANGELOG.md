@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.81.0] - 2026-07-07
+
+### Added
+
+- US-001 - Gate meta_loop=auto dispatcher arming on worker_isolation=container
+
 ## [0.80.0] - 2026-07-07
 
 ### Added
