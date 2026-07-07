@@ -1,0 +1,15 @@
+# Allowlist .dockerignore for the cam-worker image build context (US-001,
+# CAM-177). The leading '*' excludes everything in the build context; every
+# line after it is a targeted re-include for exactly what the Dockerfile
+# COPYs. The workspace itself is bind-mounted at container run time (see
+# docs/adr/0003-worker-isolation-boundary-dev-container.md), so nothing else
+# in this repo needs to be sent to the Docker daemon on build.
+#
+# .devcontainer/Dockerfile performs exactly one COPY: claude-config.json ->
+# /home/bun/.claude.json. If a future Dockerfile change adds a new COPY, it
+# MUST come with a matching re-include line below, or the new source path
+# will not exist in the build context and the build will fail.
+*
+!.devcontainer
+.devcontainer/*
+!.devcontainer/claude-config.json
