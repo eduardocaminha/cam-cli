@@ -1,7 +1,7 @@
 {
   "id": "CAM-192",
   "title": "container image-staleness: preflight hot-loops with no backoff, false-stale on Dockerfile touch, ensure-up does not auto-rebuild",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T04:56:47.855Z",

@@ -1,7 +1,7 @@
 {
   "id": "CAM-198",
   "title": "cam-worker image ships Node 18; knip needs 22+, dead-code gate is blind in-container",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T14:10:27.460Z",

@@ -1,7 +1,7 @@
 {
   "id": "CAM-180",
   "title": "Operator ceremony: rebuild cam-worker image (post-CAM-179) and verify zero blocking prompts in interactive docker exec worker",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T10:54:45.510Z",
