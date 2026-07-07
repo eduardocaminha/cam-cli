@@ -22,17 +22,27 @@
 //   AC#3: no notification when Resend is unconfigured (sendEscalation spy count === 0).
 //   AC#4: dedup — staying drained across ticks does NOT re-fire the notification.
 //
-// All tests use injected fakes; no real filesystem or tmux access.
+// Most tests use injected fakes; no real filesystem or tmux access. The
+// US-001 (CAM-208) section at the bottom of this file is the exception: it
+// drives buildMetaLoopFn directly, which reads worker_isolation/meta_loop via
+// readWorkerIsolation/readMetaLoop (real fs reads against a tmpdir fixture,
+// mirroring test/config/worker-isolation.test.ts).
 
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { runSidecarLoop, type RunSidecarLoopOptions } from '../../src/supervisor/loop.ts';
 import { makeInMemoryEventLogger, type WorkerEventLogger } from '../../src/supervisor/events.ts';
 import { observeDecide, type ObserveState } from '../../src/supervisor/observe.ts';
 import { sendEscalation, type ResendSendFn } from '../../src/notify/resend.ts';
-import { DRAIN_NOTIFY_SUBJECT, BLOCKED_CYCLE_ESCALATE_SUBJECT, makeProductionMetaLoopDispatchFn } from '../../src/commands/sidecar.ts';
+import {
+	DRAIN_NOTIFY_SUBJECT,
+	BLOCKED_CYCLE_ESCALATE_SUBJECT,
+	makeProductionMetaLoopDispatchFn,
+	buildMetaLoopFn,
+} from '../../src/commands/sidecar.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 
 // ---------------------------------------------------------------------------
@@ -1429,5 +1439,279 @@ describe('meta-loop-dispatch: pending explicit plan_issue wins (US-004, CAM-203)
 		expect(src).toContain('selectTargetFn');
 		expect(src).toContain('makeReadPlanIssue(claudeDir)');
 		expect(src).toContain('selectPlanTargetFromFile(cwd, targetId)');
+	});
+});
+
+// ===========================================================================
+// US-001 (CAM-208): gate meta_loop=auto dispatcher arming on worker_isolation=container
+// ===========================================================================
+//
+// buildMetaLoopFn runs once at sidecar boot (not per idle tick), so these tests
+// call it directly against a tmpdir project.toml fixture (real fs reads via
+// readMetaLoop/readWorkerIsolation, mirroring test/config/worker-isolation.test.ts)
+// rather than injecting a fake. This is the only way to assert the boot-time
+// warn fires exactly once.
+
+function writeGateProjectToml(cwd: string, content: string): void {
+	const dir = join(cwd, 'scripts/cam');
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, 'project.toml'), content, 'utf8');
+}
+
+/**
+ * Minimal SidecarLoopDepsCtx-shaped object for buildMetaLoopFn. Only `cwd` is
+ * read by the host/off/observe branches; `realSpawnFn` is never invoked in
+ * these tests (constructing the container-branch dispatch closure does not
+ * spawn docker/tmux -- only calling the returned fn would).
+ */
+function makeGateCtx(cwd: string, logEvent: WorkerEventLogger): Parameters<typeof buildMetaLoopFn>[0] {
+	return {
+		cwd,
+		claudeDir: join(cwd, '.claude'),
+		prdPath: join(cwd, 'scripts/cam/prd.json'),
+		sessionName: 'cam-gate-test-session',
+		logEvent,
+		realSpawnFn: (() => ({
+			pid: 0,
+			output: [],
+			stdout: '',
+			stderr: '',
+			status: 0,
+			signal: null,
+		})) as unknown as Parameters<typeof buildMetaLoopFn>[0]['realSpawnFn'],
+	};
+}
+
+/** Capture process.stderr.write calls for the duration of `fn`, then restore. */
+function withCapturedStderr<T>(fn: () => T): { result: T; stderrLines: string[] } {
+	const stderrLines: string[] = [];
+	const original = process.stderr.write.bind(process.stderr);
+	process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+		if (typeof chunk === 'string') stderrLines.push(chunk);
+		return true;
+	}) as typeof process.stderr.write;
+	try {
+		const result = fn();
+		return { result, stderrLines };
+	} finally {
+		process.stderr.write = original;
+	}
+}
+
+describe('buildMetaLoopFn gate (US-001, CAM-208): meta_loop=auto requires worker_isolation=container', () => {
+	let tmpDir: string;
+
+	function setupTmp(): void {
+		tmpDir = mkdtempSync(join(tmpdir(), 'cam-meta-loop-gate-test-'));
+	}
+	function teardownTmp(): void {
+		rmSync(tmpDir, { recursive: true, force: true });
+	}
+
+	test('meta_loop=auto + worker_isolation=host: returns undefined and warns exactly once', () => {
+		setupTmp();
+		try {
+			writeGateProjectToml(
+				tmpDir,
+				'[loop]\nmeta_loop = "auto"\nworker_isolation = "host"\n',
+			);
+			const { logger } = makeInMemoryEventLogger();
+			const ctx = makeGateCtx(tmpDir, logger);
+
+			const { result: fn, stderrLines } = withCapturedStderr(() =>
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+			);
+
+			expect(fn).toBeUndefined();
+			expect(stderrLines.length).toBe(1);
+			expect(stderrLines.join('')).toContain(
+				'meta_loop=auto requires worker_isolation=container; auto-chaining disabled in host mode',
+			);
+		} finally {
+			teardownTmp();
+		}
+	});
+
+	test('meta_loop=auto + worker_isolation absent (defaults to host): returns undefined and warns once', () => {
+		setupTmp();
+		try {
+			writeGateProjectToml(tmpDir, '[loop]\nmeta_loop = "auto"\n');
+			const { logger } = makeInMemoryEventLogger();
+			const ctx = makeGateCtx(tmpDir, logger);
+
+			const { result: fn, stderrLines } = withCapturedStderr(() =>
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+			);
+
+			expect(fn).toBeUndefined();
+			expect(stderrLines.length).toBe(1);
+		} finally {
+			teardownTmp();
+		}
+	});
+
+	test('meta_loop=auto + worker_isolation=container: returns a defined dispatcher, no warning', () => {
+		setupTmp();
+		try {
+			writeGateProjectToml(
+				tmpDir,
+				'[loop]\nmeta_loop = "auto"\nworker_isolation = "container"\n',
+			);
+			const { logger } = makeInMemoryEventLogger();
+			const ctx = makeGateCtx(tmpDir, logger);
+
+			const { result: fn, stderrLines } = withCapturedStderr(() =>
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+			);
+
+			expect(typeof fn).toBe('function');
+			expect(stderrLines.length).toBe(0);
+		} finally {
+			teardownTmp();
+		}
+	});
+
+	test('meta_loop=observe is unchanged regardless of worker_isolation (host)', () => {
+		setupTmp();
+		try {
+			writeGateProjectToml(
+				tmpDir,
+				'[loop]\nmeta_loop = "observe"\nworker_isolation = "host"\n',
+			);
+			const { logger } = makeInMemoryEventLogger();
+			const ctx = makeGateCtx(tmpDir, logger);
+
+			const { result: fn, stderrLines } = withCapturedStderr(() =>
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+			);
+
+			expect(typeof fn).toBe('function');
+			expect(stderrLines.length).toBe(0);
+		} finally {
+			teardownTmp();
+		}
+	});
+
+	test('meta_loop=off returns undefined regardless of worker_isolation, no warning', () => {
+		setupTmp();
+		try {
+			writeGateProjectToml(
+				tmpDir,
+				'[loop]\nmeta_loop = "off"\nworker_isolation = "host"\n',
+			);
+			const { logger } = makeInMemoryEventLogger();
+			const ctx = makeGateCtx(tmpDir, logger);
+
+			const { result: fn, stderrLines } = withCapturedStderr(() =>
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+			);
+
+			expect(fn).toBeUndefined();
+			expect(stderrLines.length).toBe(0);
+		} finally {
+			teardownTmp();
+		}
+	});
+
+	test('options.runMetaLoopObserveFn override wins over the gate even in host mode (no warning)', () => {
+		setupTmp();
+		try {
+			writeGateProjectToml(
+				tmpDir,
+				'[loop]\nmeta_loop = "auto"\nworker_isolation = "host"\n',
+			);
+			const { logger } = makeInMemoryEventLogger();
+			const ctx = makeGateCtx(tmpDir, logger);
+			const overrideFn = async () => {};
+
+			const { result: fn, stderrLines } = withCapturedStderr(() =>
+				buildMetaLoopFn(ctx, { runMetaLoopObserveFn: overrideFn }, logger, { apiKey: '', recipient: '' }),
+			);
+
+			expect(fn).toBe(overrideFn);
+			expect(stderrLines.length).toBe(0);
+		} finally {
+			teardownTmp();
+		}
+	});
+
+	// Regression test (per story notes item 6): (a) host -> undefined + boot warn
+	// exactly once; (b) container -> defined dispatcher. Also drives the resolved
+	// (undefined) fn through N idle ticks of the real sidecar loop to prove zero
+	// 'meta-loop-dispatch' refused events and no additional stderr warnings.
+	test('regression: host across N idle ticks emits zero refused dispatch events and exactly one boot warn', async () => {
+		setupTmp();
+		try {
+			writeGateProjectToml(
+				tmpDir,
+				'[loop]\nmeta_loop = "auto"\nworker_isolation = "host"\n',
+			);
+			const { logger, events } = makeInMemoryEventLogger();
+			const ctx = makeGateCtx(tmpDir, logger);
+
+			// (a) Boot-time resolution: runs once, mirroring buildSidecarLoopDeps.
+			const { result: runMetaLoopObserveFn, stderrLines } = withCapturedStderr(() =>
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+			);
+			expect(runMetaLoopObserveFn).toBeUndefined();
+			expect(stderrLines.length).toBe(1);
+
+			// Drive 5 idle ticks with the resolved (undefined) fn wired in as
+			// runMetaLoopObserveFn, exactly as the production sidecar does.
+			const loopOpts = makeIdleLoopOpts(5, {
+				runMetaLoopObserveFn,
+				hasPendingStories: () => false,
+			});
+
+			try {
+				await runSidecarLoop(loopOpts);
+			} catch (e) {
+				if (e !== ESCAPE) throw e;
+			}
+
+			const refusedEvents = events.filter(
+				(ev) => ev.kind === 'meta-loop-dispatch' && (ev.detail as { refused?: boolean }).refused === true,
+			);
+			expect(refusedEvents.length).toBe(0);
+			// No additional stderr writes beyond the single boot-time warn captured
+			// above: the idle loop never calls buildMetaLoopFn again per tick.
+			expect(stderrLines.length).toBe(1);
+		} finally {
+			teardownTmp();
+		}
+	});
+
+	// (b) container -> production dispatcher (not undefined); behavior unchanged.
+	test('regression: container mode still returns the production dispatch fn', () => {
+		setupTmp();
+		try {
+			writeGateProjectToml(
+				tmpDir,
+				'[loop]\nmeta_loop = "auto"\nworker_isolation = "container"\n',
+			);
+			const { logger } = makeInMemoryEventLogger();
+			const ctx = makeGateCtx(tmpDir, logger);
+
+			const { result: fn } = withCapturedStderr(() =>
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+			);
+
+			expect(fn).toBeDefined();
+			expect(typeof fn).toBe('function');
+		} finally {
+			teardownTmp();
+		}
+	});
+});
+
+describe('buildMetaLoopFn gate: file-assert oracle (AC#3)', () => {
+	test('sidecar.ts contains the exact boot-warn string', () => {
+		const src = readFileSync(join(import.meta.dir, '../../src/commands/sidecar.ts'), 'utf8');
+		expect(src).toContain('meta_loop=auto requires worker_isolation=container; auto-chaining disabled in host mode');
+	});
+
+	test('sidecar.ts exports buildMetaLoopFn for the regression test (AC#6)', () => {
+		const src = readFileSync(join(import.meta.dir, '../../src/commands/sidecar.ts'), 'utf8');
+		expect(src).toContain('export function buildMetaLoopFn');
 	});
 });

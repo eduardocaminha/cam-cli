@@ -1909,24 +1909,48 @@ function makeProductionPlanPhaseFn(
  *
  * Branching:
  *   meta_loop=observe -> production observe fn (wouldSelect / drained observe events only)
- *   meta_loop=auto    -> production dispatch fn (observe events + phase:planning writes)
+ *   meta_loop=auto    -> production dispatch fn, gated on worker_isolation=container
+ *                        (US-001, CAM-208): host mode never arms the auto-dispatcher
+ *                        (a permanent boot-time config mismatch, not the transient
+ *                        per-tick container-preflight-not-ready refuse handled by
+ *                        evaluateDrainPreconditions), and emits a single boot-time
+ *                        warning instead (this function runs once at sidecar boot).
  *   meta_loop=off     -> undefined (zero behavior change for the default case)
+ *
+ * options.runMetaLoopObserveFn (the injected-seam override) always takes precedence
+ * over the worker_isolation gate below, matching pre-existing test expectations.
+ *
+ * Exported for the regression test (US-001, CAM-208): buildMetaLoopFn is not called
+ * per idle tick, so exercising it directly is the only way to assert the boot-time
+ * warn fires exactly once.
  */
-function buildMetaLoopFn(
+export function buildMetaLoopFn(
 	ctx: SidecarLoopDepsCtx,
 	options: SidecarOptions,
 	logEvent: WorkerEventLogger,
 	resendConfig: { apiKey: string; recipient: string },
 ): RunSidecarLoopOptions['runMetaLoopObserveFn'] {
-	const metaLoop = readMetaLoop(join(ctx.cwd, 'scripts/cam/project.toml'));
-	return (
-		options.runMetaLoopObserveFn ??
-		(metaLoop === 'observe'
-			? makeProductionMetaLoopObserveFn(ctx.cwd, logEvent, resendConfig.apiKey, resendConfig.recipient)
-			: metaLoop === 'auto'
-			? buildProductionDispatchFn(ctx, logEvent, resendConfig)
-			: undefined)
-	);
+	if (options.runMetaLoopObserveFn !== undefined) return options.runMetaLoopObserveFn;
+
+	const configPath = join(ctx.cwd, 'scripts/cam/project.toml');
+	const metaLoop = readMetaLoop(configPath);
+
+	if (metaLoop === 'observe') {
+		return makeProductionMetaLoopObserveFn(ctx.cwd, logEvent, resendConfig.apiKey, resendConfig.recipient);
+	}
+
+	if (metaLoop === 'auto') {
+		const workerIsolation = readWorkerIsolation(configPath);
+		if (workerIsolation !== 'container') {
+			process.stderr.write(
+				'[cam] meta_loop=auto requires worker_isolation=container; auto-chaining disabled in host mode\n',
+			);
+			return undefined;
+		}
+		return buildProductionDispatchFn(ctx, logEvent, resendConfig);
+	}
+
+	return undefined;
 }
 
 /**
