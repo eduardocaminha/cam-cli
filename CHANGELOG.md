@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.83.0] - 2026-07-07
+
+### Added
+
+- US-001 - Add allowlist .dockerignore for the cam-worker image build context
+
 ## [0.82.0] - 2026-07-07
 
 ### Added
