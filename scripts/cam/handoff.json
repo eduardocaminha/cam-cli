@@ -1,32 +1,30 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Pin bun and Node versions with a shared toolchain reader" },
+  "lastCompletedStory": { "id": "US-003", "title": "Feed the worker Dockerfile toolchain from the pins" },
   "branchName": "cam/pr-201-toolchain-parity",
-  "timestamp": "2026-07-07T03:00:00Z",
-  "createdFiles": [
-    "test/fixtures/bun-pin-aligned.yml",
-    "test/fixtures/bun-pin-missing.yml",
-    "test/fixtures/bun-pin-floating.yml",
-    "test/fixtures/bun-pin-no-step.yml"
-  ],
+  "timestamp": "2026-07-07T04:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    ".github/workflows/ci.yml",
-    "scripts/check-ci-parity.ts",
-    "test/check-ci-parity.test.ts",
+    ".devcontainer/Dockerfile",
+    "src/supervisor/worker-container.ts",
+    "test/supervisor/worker-container.test.ts",
+    "test/supervisor/ensure-container.test.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [
-    "RE-VERIFIED 2026-07-07T03:00:00Z (FOURTH implementer session on this branch, no code changes made, no new chore commit created per the 'stop appending near-duplicate commits' guidance from the prior handoff): US-002's implementation is STILL fully done and green locally at commit 5c888ca. `bun run typecheck`: 0 errors. `bun test test/check-ci-parity.test.ts`: 23 pass / 0 fail. `git push origin cam/pr-201-toolchain-parity` retried and rejected with the IDENTICAL error: 'refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflow` scope'. Remote tip is still cc9d067 -- the local commits on top (5c888ca, cf5e6ff, b7efa8e, a3cc466, 17b06ee) have never reached the remote across FOUR separate implementer sessions now. This remains a HARD, PERSISTENT, OPERATOR-LEVEL BLOCKER, not a flaky/transient failure. FIX REQUIRED (operator action, unchanged): (1) grant the configured token the `workflow` OAuth scope (classic PAT) or 'Workflows: write' permission (fine-grained PAT / GitHub App installation token); (2) from this same working tree, run `git push origin cam/pr-201-toolchain-parity` (no re-implementation needed, commit 5c888ca already correct); (3) flip US-002.passes back to true in prd.json; (4) re-write this handoff.json's lastCompletedStory to US-002 and clear this openQuestion. DO NOT re-implement US-002 from scratch in any future session; read commit 5c888ca first. DO NOT keep creating additional 're-confirm' chore commits each session -- this pattern is now saturated at four independent confirmations; future sessions should re-attempt the push once, and if it fails identically, exit BLOCKED_QUALITY without further git churn until the operator signals the token is fixed.",
-    "Root cause remains confirmed as PAT/token permission scope, not a code defect, across four independent re-checks (2026-07-07T01:25, T00:00, T02:00, T03:00). No test or gate change is needed once the operator fixes the token permission. Because US-002 sits above US-003..US-006 in priority and cannot be marked passes:true without a successful push, the PRD will stay stuck on US-002 for any autonomous session until the operator acts."
+    "Note (informational, not blocking): US-002's PAT `workflow`-scope push blocker documented in the prior handoff is RESOLVED as of commit 2dd3a9c (US-002.passes flipped to true, and `git rev-parse HEAD` == `git rev-parse origin/cam/pr-201-toolchain-parity` confirmed at the start of this session -- the branch was fully pushed and in sync before this story began). No further action needed on that front.",
+    "This session found US-003's Dockerfile/worker-container.ts/worker-container.test.ts changes already fully written but UNCOMMITTED in the working tree at session start (a prior session's work-in-progress that never reached a commit). All 4 US-003 acceptance-criteria oracles were re-verified independently in this session (file-asserts + bun test test/supervisor/worker-container.test.ts) before committing, plus the full `bun run check:all` spine, so the pre-existing diff is now verified-and-committed, not blindly trusted.",
+    "One pre-existing test (test/supervisor/ensure-container.test.ts, AC4 host-mode test) asserted the OLD invariant 'no --build-arg at all when build opts are absent'. Since US-003 makes BUN_VERSION/NODE_VERSION build-args unconditional (always emitted, not gated on hostUid/hostGid), this test was updated in this session to assert the narrower invariant: no HOST_UID/HOST_GID build-arg (still correct), while asserting BUN_VERSION/NODE_VERSION build-args ARE present. This is the correct AC4 reading for US-003 (US-003 AC3 explicitly requires the toolchain args to be sourced from the US-001 reader 'by default').",
+    "scripts/file-size-budget.json ceilings were raised for the 3 touched files (worker-container.ts 278->350, worker-container.test.ts 458->507, ensure-container.test.ts 917->924->925) with a CAM-150 tracker reference prepended to the _ref field, satisfying check:file-size's staged-diff tracker-reference requirement. Gotcha for future stories: the budget line-count uses `content.split('\\n').length` (scripts/check-file-sizes.ts), which is ONE MORE than `wc -l` for any file ending in a trailing newline (wc -l counts newline characters, split('\\n') produces a trailing empty string). Always cross-check the ceiling against the actual `check:file-size` failure output (which reports the split-based count), not `wc -l`, to avoid an off-by-one retry loop."
   ],
-  "nextStoryContext": "US-001 (bun/node version pins + toolchain reader) remains the true last-pushed-and-complete story on the remote (origin tip cc9d067). US-002 is fully implemented locally (commit 5c888ca) but cannot be pushed due to a PAT `workflow` scope restriction confirmed across FOUR independent sessions (2026-07-07 handoff timestamps T01:25, T00:00, T02:00, T03:00). A follow-on session should: (1) run `git push origin cam/pr-201-toolchain-parity` FIRST, cheaply, before doing anything else; (2) if it now succeeds (operator fixed the token), flip US-002.passes to true, update this handoff's lastCompletedStory, and proceed to US-003; (3) if it still fails identically, do NOT re-implement and do NOT create another chore commit -- just emit BLOCKED_QUALITY directly (the existing 5c888ca/cf5e6ff/b7efa8e/a3cc466/17b06ee commits already capture all needed work; this handoff.json update is the last one needed until the operator acts). US-003 (worker Dockerfile toolchain), once unblocked, should read readPinnedBunVersion/readPinnedNodeVersion from src/config/toolchain.ts directly to build the Docker build-arg, mirroring how checkBunVersionPin (added in the pending US-002 commit) consumes the same reader, rather than re-parsing .bun-version/.tool-versions or grepping ci.yml.",
+  "nextStoryContext": "US-004 (Drop bun-version-conditioned skips; make Ink stdin tests version-agnostic) is next by priority. It touches Ink stdin test infrastructure, not the Docker/toolchain surface US-001..US-003 touched -- read its `notes` field fresh rather than assuming continuity with worker-container.ts. US-005/US-006/US-007 remain queued after it and DO continue the toolchain-parity thread (check:all guard gate, preflight fail-closed assert, auto-rebuild-on-mismatch): those three should read src/config/toolchain.ts's readPinnedBunVersion/readPinnedNodeVersion (added in US-001) and buildDockerBuildArgv's resolveBunVersion/resolveNodeVersion (added in this US-003 commit, bbe5602) as the established seams, rather than re-parsing pin files or re-implementing resolution logic.",
   "officialDocsValidated": [
     {
-      "lib": "oven-sh/setup-bun",
-      "version": "v2",
-      "url": "https://github.com/oven-sh/setup-bun",
-      "fetchedAt": "2026-07-07T01:19:00Z",
+      "lib": "docker (Dockerfile ARG/FROM interaction)",
+      "version": "n/a (Dockerfile reference is versionless/rolling)",
+      "url": "https://docs.docker.com/reference/dockerfile/",
+      "fetchedAt": "2026-07-07T03:55:00Z",
       "status": "ok",
-      "summary": "Confirmed bun-version-file is a supported input on setup-bun@v2 that reads the pinned version from a file (e.g. .bun-version); without an explicit bun-version or bun-version-file input the action falls back through package.json packageManager/engines.bun and finally to 'latest'. The ci.yml change (adding bun-version-file: .bun-version) matches the documented API and eliminates the prior implicit 'latest' float. This validation stands even though the commit is not yet pushed. Re-verified 2026-07-07 (third time, T02:00): no code change since original validation, only a re-check of the push blocker; still holds."
+      "summary": "Web search corroborated (direct WebFetch to docs.docker.com failed with no output in this sandbox, so WebSearch was used as the fallback path -- recorded per Step 5.5's fetch_failed contingency, but a substitute successful validation was obtained): an ARG declared before the first FROM is scoped only to that FROM line and is NOT visible to any instruction after FROM; it must be re-declared (bare ARG, no value) after FROM to be usable in subsequent RUN steps. This exactly matches the implementation's structure (ARG BUN_VERSION before FROM, consumed only by `FROM oven/bun:${BUN_VERSION}-slim`; ARG NODE_VERSION re-declared immediately after FROM before the Node-install RUN step uses it) and the Dockerfile's own inline comment documenting this gotcha."
     }
   ]
 }

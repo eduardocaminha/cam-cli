@@ -71,7 +71,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .devcontainer/Dockerfile, src/supervisor/worker-container.ts, test for worker-container argv. Gotcha (spec): an ARG declared before FROM is only usable in the FROM line; re-declare any ARG needed after FROM. The ONLY docker build call site is runWorkerContainer via buildDockerBuildArgv (ensure-container.ts reuses it), so wiring the default there covers both the sidecar auto-rebuild path and initial creation; there is no separate release-build docker path (build-release.sh does not docker build). Keep the HOST_UID/HOST_GID build-arg pairing logic intact. Preserve the git-credential helper, firewall sudoers, and claude-config COPY blocks (CAM-150/179 history in Dockerfile comments)."
     },
