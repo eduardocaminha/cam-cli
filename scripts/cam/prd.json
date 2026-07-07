@@ -1,0 +1,30 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-208-auto-drain-host-gate",
+  "description": "Gate meta_loop=auto arming on worker_isolation=container so host mode no-ops with one boot warn instead of hot-spinning container-not-active refusals every 2s",
+  "issueNumber": 208,
+  "relatedDocs": ["docs/adr/0007-inter-cycle-unattended-drain.md", "CONTEXT.md"],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Gate meta_loop=auto dispatcher arming on worker_isolation=container",
+      "description": "As a cam operator running meta_loop=auto with worker_isolation=host, I need the sidecar auto-drain dispatcher to never be armed (with a single boot-time warning instead), so that the event log and console are not spammed with a container-not-active refusal every ~2s idle tick.",
+      "acceptanceCriteria": [
+        "With meta_loop=auto and worker_isolation=host, buildMetaLoopFn (src/commands/sidecar.ts) returns undefined so the auto-dispatcher is never armed; across N idle ticks the sidecar emits zero meta-loop-dispatch events with {refused:true, reason:'container-not-active'} to .claude/cam-worker-events.jsonl and zero 'auto-drain refused' warnings to stderr. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "With meta_loop=auto and worker_isolation=container, buildMetaLoopFn still returns the production dispatch fn (behavior unchanged), and the transient per-tick refuse for container preflight-not-ready remains handled by evaluateDrainPreconditions and is NOT suppressed: src/supervisor/drain-preconditions.ts has zero diff on this branch. [oracle: git diff main --stat -- src/supervisor/drain-preconditions.ts | wc -l returns 0]",
+        "When meta_loop=auto and worker_isolation is not container, exactly one warning is emitted at sidecar boot time inside buildMetaLoopFn (which runs once): 'meta_loop=auto requires worker_isolation=container; auto-chaining disabled in host mode'; it is never emitted per idle tick. [oracle: grep -q 'auto-chaining disabled in host mode' src/commands/sidecar.ts && bun test test/commands/sidecar-meta-loop.test.ts]",
+        "meta_loop=observe is unchanged (makeProductionMetaLoopObserveFn stays isolation-agnostic and is armed regardless of worker_isolation); meta_loop=off still returns undefined. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "The options.runMetaLoopObserveFn ?? override still takes precedence over the new worker_isolation gate, so existing tests that inject the seam are unaffected. [oracle: bun test]",
+        "A regression test covers: (a) meta_loop=auto + worker_isolation=host results in buildMetaLoopFn returning undefined AND the boot warn firing exactly once; (b) meta_loop=auto + worker_isolation=container results in buildMetaLoopFn returning a defined dispatcher. [oracle: bun test test/commands/sidecar-meta-loop.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/sidecar.ts (buildMetaLoopFn, ~lines 1915-1930) and test/commands/sidecar-meta-loop.test.ts (extend the existing suite; it already drives runSidecarLoop with injected fakes and has file-assert oracle patterns to mirror). Implementation shape per settled spec: read readWorkerIsolation(join(ctx.cwd, 'scripts/cam/project.toml')) (already imported at sidecar.ts:43; same path-join pattern as the readMetaLoop call at line 1921); when meta_loop === 'auto' and isolation !== 'container', emit the one boot warn and return undefined instead of buildProductionDispatchFn(ctx, logEvent, resendConfig). Keep the options.runMetaLoopObserveFn ?? override AHEAD of the gate. Warn style: process.stderr.write('[cam] ...\\n') as at sidecar.ts:1227. Gotchas from spec: (1) intentional asymmetry, worker_isolation=host is a permanent boot-time config mismatch (config read once at boot) so do NOT arm the dispatcher, while container + preflight-not-ready is transient so the per-tick refuse in evaluateDrainPreconditions MUST stay; the gate lives in buildMetaLoopFn, never in evaluateDrainPreconditions and never in the per-tick dispatch closure (handlePreconditionRefuse) or the 2s spam returns. (2) readWorkerIsolation already fail-closes to 'host' for any non-container value, aligning with the gate direction. (3) ADR 0007 is an immutable historical record: do not rewrite it and do not add a new ADR (implementation refinement, not a new architectural decision). (4) buildMetaLoopFn is currently not exported; either export it for the regression test or assert through the sidecar boot path with a warnFn/stderr capture, following the existing injected-seam style in test/commands/sidecar-meta-loop.test.ts. (5) buildMetaLoopFn was extracted specifically to keep nested ternaries under biome noExcessiveCognitiveComplexity(max=15); adding the gate may require restructuring the ternary chain into statements to stay under budget (check:all runs biome lint with --error-on-warnings). (6) CONTEXT.md already carries the domain terms (meta_loop, worker_isolation, auto-drain) from the CAM-208 domain-docs commit; no glossary work needed."
+    }
+  ]
+}
