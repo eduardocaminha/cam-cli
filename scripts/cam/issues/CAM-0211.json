@@ -1,0 +1,9 @@
+{
+  "id": "CAM-211",
+  "title": "cam sidecar --help starts the daemon (no --help guard); undocumented deterministic flags across commands",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-07T14:24:58.134Z",
+  "description": "Safety bug hit live 2026-07-07: cam sidecar --help does NOT print usage, it STARTS the long-lived sidecar daemon (the arg is ignored, the daemon boots) — a stray sidecar spawned and had to be killed by hand. cam sidecar is also absent from cam --help (internal command, undiscoverable). Separately, real deterministic flags are undocumented in their command --help: cam issue --file-local (the commit-to-main filer used by the orchestrator), the cam journal append stdin-JSON schema, and the cam issue close/abandon that CAM-210 will add. Fix: (1) add a --help/-h short-circuit guard to EVERY command incl. internal ones (print usage, exit 0, NEVER start a daemon or mutate on --help); (2) document the deterministic stdin-JSON / --file-local flags in each command --help; (3) list internal commands (sidecar) in cam --help or mark them explicitly internal. Concrete Layer-1 instance of CAM-197 (discoverable + safe deterministic CLI). Origin: operator noticed a --help that did not work + the stray-sidecar incident during CAM-201, 2026-07-07."
+}
