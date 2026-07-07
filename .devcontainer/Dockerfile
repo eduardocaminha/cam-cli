@@ -3,17 +3,50 @@
 # auto-updater so the container stays reproducible.
 # Note: Claude Code CLI rejects --dangerously-skip-permissions when run as root,
 # so the final USER directive switches to the non-root bun user.
+#
+# BUN_VERSION and NODE_VERSION are fed at build time from the repo-root pin
+# files (.bun-version, .tool-versions) via buildDockerBuildArgv
+# (src/supervisor/worker-container.ts, US-003, CAM-150), so the container
+# toolchain never drifts from the host/CI pins.
+# ARG declared before FROM is only in scope for the FROM line itself; it must
+# be re-declared after FROM to be usable in a later RUN step (see NODE_VERSION
+# below).
+ARG BUN_VERSION
 
-FROM oven/bun:1.2-slim
+FROM oven/bun:${BUN_VERSION}-slim
 
-# Install git, Node.js/npm, and firewall tooling.
-# oven/bun:1.2-slim ships only bun; Node.js is not included.
-# sudo, iptables, ipset, dnsutils (dig), and curl are required by init-firewall.sh.
+# Install git and firewall tooling. Node.js/npm are installed separately below
+# from a pinned upstream binary tarball (see ARG NODE_VERSION), not via apt,
+# so the exact .tool-versions patch version is reproduced (Debian/apt only
+# ships a floating, often stale, major-stream snapshot).
+# oven/bun:${BUN_VERSION}-slim ships only bun; Node.js is not included.
+# sudo, iptables, ipset, dnsutils (dig), curl, jq are required by
+# init-firewall.sh; xz-utils and ca-certificates are required by the Node.js
+# binary download below.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        git nodejs npm \
+        git \
         sudo iptables ipset dnsmasq dnsutils curl jq \
+        xz-utils ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js pinned to the exact .tool-versions target (>= 22) from the
+# official upstream binary tarball at nodejs.org/dist. ARG must be re-declared
+# here (after FROM) to be usable in this RUN step.
+ARG NODE_VERSION
+RUN ARCH="$(dpkg --print-architecture)" \
+    && case "$ARCH" in \
+        amd64) NODE_ARCH="x64" ;; \
+        arm64) NODE_ARCH="arm64" ;; \
+        *) echo "unsupported architecture: $ARCH" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSLo /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+    && mkdir -p /usr/local/lib/nodejs \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local/lib/nodejs --strip-components=1 \
+    && rm /tmp/node.tar.xz \
+    && ln -s /usr/local/lib/nodejs/bin/node /usr/local/bin/node \
+    && ln -s /usr/local/lib/nodejs/bin/npm /usr/local/bin/npm \
+    && ln -s /usr/local/lib/nodejs/bin/npx /usr/local/bin/npx
 
 # Grant the bun user passwordless sudo for the firewall init script only.
 # postStartCommand in devcontainer.json runs: sudo bash /workspace/.devcontainer/init-firewall.sh

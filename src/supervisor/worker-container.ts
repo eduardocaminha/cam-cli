@@ -22,6 +22,8 @@
 //
 // noUncheckedIndexedAccess: no unguarded array indexing in this file.
 
+import { readPinnedBunVersion, readPinnedNodeVersion } from '../config/toolchain.ts';
+
 /** Default Docker image tag built and run by this module. */
 export const DEFAULT_IMAGE_TAG = 'cam-worker:latest';
 
@@ -78,6 +80,24 @@ export interface DockerBuildArgvOptions {
 	 * Must be paired with `hostUid`; if either is absent no --build-arg is emitted.
 	 */
 	hostGid?: number;
+
+	/**
+	 * Pinned bun version passed as the BUN_VERSION build-arg (drives
+	 * `FROM oven/bun:${BUN_VERSION}-slim` in the Dockerfile).
+	 * Defaults to `readPinnedBunVersion()` (reads repo-root `.bun-version`,
+	 * US-001). Explicit override is injectable for tests so they never depend
+	 * on the real pin file's contents.
+	 */
+	bunVersion?: string;
+
+	/**
+	 * Pinned Node.js version passed as the NODE_VERSION build-arg (drives the
+	 * pinned upstream Node.js binary install in the Dockerfile).
+	 * Defaults to `readPinnedNodeVersion()` (reads repo-root `.tool-versions`,
+	 * US-001). Explicit override is injectable for tests so they never depend
+	 * on the real pin file's contents.
+	 */
+	nodeVersion?: string;
 }
 
 /** Options for `buildDockerRunArgv`. */
@@ -162,17 +182,69 @@ export function resolveHostIds(spawnFn: ContainerSpawnFn): HostIds {
 // ---------------------------------------------------------------------------
 
 /**
+ * Resolve the BUN_VERSION build-arg value: an explicit override wins,
+ * otherwise falls back to `readPinnedBunVersion()` (repo-root `.bun-version`,
+ * US-001). Throws when neither is available so a missing/malformed pin file
+ * fails the build loudly instead of silently floating to whatever tag the
+ * Dockerfile happens to hardcode.
+ */
+function resolveBunVersion(explicit: string | undefined): string {
+	if (explicit !== undefined) return explicit;
+	const pinned = readPinnedBunVersion();
+	if (pinned === null) {
+		throw new Error(
+			'Cannot resolve BUN_VERSION build-arg: .bun-version is missing or malformed (expected an exact semver like 1.3.13)',
+		);
+	}
+	return pinned;
+}
+
+/**
+ * Resolve the NODE_VERSION build-arg value: an explicit override wins,
+ * otherwise falls back to `readPinnedNodeVersion()` (repo-root
+ * `.tool-versions`, US-001). Throws when neither is available, mirroring
+ * `resolveBunVersion`.
+ */
+function resolveNodeVersion(explicit: string | undefined): string {
+	if (explicit !== undefined) return explicit;
+	const pinned = readPinnedNodeVersion();
+	if (pinned === null) {
+		throw new Error(
+			'Cannot resolve NODE_VERSION build-arg: .tool-versions is missing or malformed (expected a "nodejs X.Y.Z" line)',
+		);
+	}
+	return pinned;
+}
+
+/**
  * Build the argv for `docker build` (without the leading `'docker'` binary).
  *
  * Default resulting command:
  *
- *   docker build -t cam-worker:latest -f .devcontainer/Dockerfile .
+ *   docker build -t cam-worker:latest -f .devcontainer/Dockerfile \
+ *     --build-arg BUN_VERSION=<pinned> --build-arg NODE_VERSION=<pinned> .
+ *
+ * BUN_VERSION and NODE_VERSION are ALWAYS emitted (sourced from the US-001
+ * toolchain reader by default) since the Dockerfile's `FROM` line and Node.js
+ * install step require them; `hostUid`/`hostGid` remain optional.
  */
 export function buildDockerBuildArgv(opts?: DockerBuildArgvOptions): string[] {
 	const dockerfilePath = opts?.dockerfilePath ?? '.devcontainer/Dockerfile';
 	const imageTag = opts?.imageTag ?? DEFAULT_IMAGE_TAG;
 	const buildContext = opts?.buildContext ?? '.';
-	const argv = ['build', '-t', imageTag, '-f', dockerfilePath];
+	const bunVersion = resolveBunVersion(opts?.bunVersion);
+	const nodeVersion = resolveNodeVersion(opts?.nodeVersion);
+	const argv = [
+		'build',
+		'-t',
+		imageTag,
+		'-f',
+		dockerfilePath,
+		'--build-arg',
+		`BUN_VERSION=${bunVersion}`,
+		'--build-arg',
+		`NODE_VERSION=${nodeVersion}`,
+	];
 	if (opts?.hostUid !== undefined && opts?.hostGid !== undefined) {
 		argv.push('--build-arg', `HOST_UID=${opts.hostUid}`, '--build-arg', `HOST_GID=${opts.hostGid}`);
 	}

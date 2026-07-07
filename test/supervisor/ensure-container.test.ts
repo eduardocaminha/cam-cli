@@ -416,20 +416,28 @@ describe('ensureWorkerContainer: hostUid/hostGid forwarded to docker build argv'
 		expect(buildCall?.args).toContain('HOST_GID=20');
 	});
 
-	// AC4: host mode / no build opts -> no --build-arg emitted
-	test('no --build-arg when build opts are absent (host mode behavior unchanged)', () => {
+	// AC4: host mode / no build opts -> no HOST_UID/HOST_GID --build-arg emitted.
+	// BUN_VERSION/NODE_VERSION --build-arg pairs ARE always emitted (US-003:
+	// sourced from the US-001 toolchain reader by default), so this only
+	// asserts the HOST_UID/HOST_GID pair remains absent.
+	test('no HOST_UID/HOST_GID --build-arg when build opts are absent (host mode behavior unchanged)', () => {
 		const probe = makeRoutedProbe({
 			info: { stdout: '', exitCode: 0 },
 			image: { stdout: '', exitCode: 0 },
 			inspect: { stdout: '', exitCode: 1 }, // absent -> created
 		});
 		const spawn = makeRecordingSpawnFn();
-		// No build option passed = same as host mode (no build-args expected)
+		// No build option passed = same as host mode (no HOST_UID/HOST_GID build-args expected)
 		ensureWorkerContainer(makeOpts(probe.fn, spawn.fn));
 
 		const buildCall = spawn.calls.find((c) => c.cmd === 'docker' && c.args[0] === 'build');
 		expect(buildCall).toBeDefined();
-		expect(buildCall?.args).not.toContain('--build-arg');
+		const args = buildCall?.args ?? [];
+		expect(args.some((a) => a.startsWith('HOST_UID='))).toBe(false);
+		expect(args.some((a) => a.startsWith('HOST_GID='))).toBe(false);
+		// BUN_VERSION/NODE_VERSION are still emitted (always-on toolchain pins).
+		expect(args.some((a) => a.startsWith('BUN_VERSION='))).toBe(true);
+		expect(args.some((a) => a.startsWith('NODE_VERSION='))).toBe(true);
 	});
 });
 
