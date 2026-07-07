@@ -16,6 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - name: Install tmux
         run: brew install tmux
       - name: Install deps
