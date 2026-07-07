@@ -104,7 +104,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-version-skips.ts, scripts/check-all.ts (GATES entry), test/check-version-skips.test.ts, test/fixtures/version-skip-guard/*. Follow the gate-spine convention (patterns.md CAM-59): add to GATES only, verify with bun run check:ci-parity. Two-pass detection handles the real incident shape: a module-level const derived from Bun.version (bunVersionOk) later used in skipIf. Exclude test/fixtures/ from the real scan so the guard's own fixtures do not trip it; scan only test/ (not scripts/) to avoid the debt-marker self-reference gotcha (patterns.md CAM-60). Mirror check-debt-markers.ts structure (exported pure checker + CLI entrypoint + injectable file-list seam). Follow the oracle-friendly manifest design bullet when adding the GATES entry."
     },
