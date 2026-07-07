@@ -1,7 +1,7 @@
 {
   "id": "CAM-213",
   "title": "Expose spec persist via deterministic CLI (cam spec --persist <id>, stdin JSON) instead of inline specifyIssueOnMain",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-07T15:12:46.924Z",
