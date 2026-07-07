@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add merge-watch-poll-error event vocabulary and consecutiveNullPolls state persistence"
+  },
+  "branchName": "cam/pr-170-merge-watch-poll-error",
+  "timestamp": "2026-07-07T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/events.ts",
+    "src/release/merge-watch.ts",
+    "test/release/merge-watch.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 wires the actual behavior: change GhPollFn's return type to a discriminated result (PrStatus on success, an error result carrying gh stderr on failure -- no more bare null), increment MergeWatchState.consecutiveNullPolls on each error result (reset to 0 on the next successful poll), and emit the new 'merge-watch-poll-error' event (kind added in US-001) via logEvent at the configured threshold N, edge-triggered (once per crossing, not every tick past threshold). Use the exact interfaces added in US-001: MergeWatchPollErrorEventDetail { prNumber, consecutiveNullPolls, lastStderr } and MergeWatchState.consecutiveNullPolls?: number (mirrors pollCount/updateBranchCount: optional, absent=0, always written by writeMergeWatchState). Also thread an orchestrator narration carrying the gh stderr per the story description. docs/recovery-runbook.md section (t) lists merge-watch event kinds narratively but is not exhaustive (merge-watch-stalled from CAM-182 is already absent from it); update that section's event-kind list only if the story's acceptance criteria require doc changes -- US-001 did not.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-001 is a pure internal TS/JSON vocabulary + state-persistence addition (event kind union, detail interface, optional state field); no external library API surface was exercised. The PRD's own officialDocsConsulted entry (gh pr view --json) covers the GhPollFn discriminated-result work that US-002 will implement."
+    }
+  ]
+}
