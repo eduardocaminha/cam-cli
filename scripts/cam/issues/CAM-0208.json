@@ -1,9 +1,39 @@
 {
   "id": "CAM-208",
   "title": "Meta-loop auto-drain hot-spins in host mode (container-not-active every 2s)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-07T14:11:42.846Z",
-  "description": "With meta_loop=auto and worker_isolation=host, the sidecar auto-drain refuses every ~2s with reason container-not-active, spamming the event log and console (kind:meta-loop-dispatch, refused:true). Observed 2026-07-07 during CAM-201 host-mode operation. Expected: no-op quietly or back off when worker_isolation != container, not a tight 2s refuse-loop. Low priority."
+  "description": "With meta_loop=auto and worker_isolation=host, the sidecar auto-drain refuses every ~2s with reason container-not-active, spamming the event log and console (kind:meta-loop-dispatch, refused:true). Observed 2026-07-07 during CAM-201 host-mode operation. Expected: no-op quietly or back off when worker_isolation != container, not a tight 2s refuse-loop. Low priority.",
+  "spec": {
+    "acceptanceCriteria": [
+      "With meta_loop=auto and worker_isolation=host, buildMetaLoopFn (src/commands/sidecar.ts) returns undefined so the auto-dispatcher is never armed; across N idle ticks the sidecar emits zero meta-loop-dispatch events with {refused:true, reason:container-not-active} to .claude/cam-worker-events.jsonl and zero 'auto-drain refused' warnings to stderr.",
+      "With meta_loop=auto and worker_isolation=container, buildMetaLoopFn still returns the production dispatch fn (behavior unchanged); the transient per-tick refuse for preflight-not-ready remains handled by evaluateDrainPreconditions (drain-preconditions.ts) and is NOT suppressed.",
+      "When meta_loop=auto and worker_isolation=host, exactly one warning is emitted at sidecar boot time (in buildMetaLoopFn, which runs once): 'meta_loop=auto requires worker_isolation=container; auto-chaining disabled in host mode'. It is emitted once at startup, never per idle tick.",
+      "meta_loop=observe is unchanged (makeProductionMetaLoopObserveFn is isolation-agnostic and still armed regardless of worker_isolation); meta_loop=off still returns undefined.",
+      "The options.runMetaLoopObserveFn ?? override still takes precedence over the new gate so tests that inject the seam are unaffected.",
+      "bun run typecheck (zero errors), bun test, and bun run check:all all pass.",
+      "A regression test covers: (a) meta_loop=auto + worker_isolation=host -> buildMetaLoopFn returns undefined AND the boot warn fires exactly once; (b) meta_loop=auto + worker_isolation=container -> buildMetaLoopFn returns a defined dispatcher."
+    ],
+    "scope": "Gate the meta_loop==='auto' branch of buildMetaLoopFn (src/commands/sidecar.ts ~line 1915) on worker_isolation. Read readWorkerIsolation(join(ctx.cwd,'scripts/cam/project.toml')); when it is not 'container', emit one boot-time stderr warn and return undefined instead of buildProductionDispatchFn(ctx, logEvent, resendConfig). Keep the options.runMetaLoopObserveFn ?? override in front of the gate. Do NOT touch the observe or off branches, and do NOT touch evaluateDrainPreconditions (drain-preconditions.ts) so the transient container-preflight-not-ready refuse-per-tick is preserved. Add a regression test mirroring sidecar.ts under test/.",
+    "gotchas": [
+      "Intentional asymmetry: worker_isolation=host is a permanent config mismatch (host never becomes container without a sidecar restart, since config is read once at boot) -> do NOT arm the dispatcher. worker_isolation=container with preflight-not-ready is transient (Docker still coming up) -> KEEP the per-tick refuse from evaluateDrainPreconditions. The correct gate is boot-time static in buildMetaLoopFn, NOT inside evaluateDrainPreconditions (moving it there would also kill the transient case).",
+      "The one-time warn must live in buildMetaLoopFn (runs once at boot), never in the per-tick dispatch closure (handlePreconditionRefuse), or the 2s spam returns.",
+      "Keep the options.runMetaLoopObserveFn ?? override ahead of the worker_isolation gate so injected-seam tests keep working.",
+      "readWorkerIsolation already fail-closes to 'host' for any non-'container' value, which aligns with the gate direction.",
+      "ADR 0007 (inter-cycle-unattended-drain) already documents that auto-drain is container-gated and refuses fail-closed; it describes the step-2 refuse covering the host case. After this fix the host case never reaches step 2 (dispatcher not armed). ADR 0007 is an immutable historical record; do not rewrite it. This change is an implementation refinement, not a new architectural decision, so no new ADR is warranted."
+    ],
+    "domainTerms": [
+      "meta_loop",
+      "worker_isolation",
+      "auto-drain"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 2
+  }
 }
