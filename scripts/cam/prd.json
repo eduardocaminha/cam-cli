@@ -32,7 +32,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/spec.ts (add runSpecPersist + SpecPersistOptions next to runSpecWriteDocs, same injection shape: readStdin/spawnFn/clock/writeStdout plus a persistFn full-bypass for branch-isolation tests); index.ts (ParsedSpecArgs union ~line 847, parseSpecArgs ~line 861, SpecDispatchDeps ~line 908, dispatchSpec ~line 927, SPEC_HELP ~line 229); test/commands/spec.test.ts (mirror the existing describe blocks: parseSpecArgs --write-docs, dispatchSpec routing isolation, runSpecWriteDocs). Gotchas: (1) specifyIssueOnMain (src/commands/issue-specify.ts:313) already validates spec+wsjf+integrity and enforces all guards; --persist must NOT re-validate, only marshal stdin and map the SpecifyIssueOnMainOutcome discriminated union. (2) sha exists only on the ok:true arm; guard the union before interpolating. (3) invalid-json is a persist-specific reason token, not a specifyIssueOnMain reason. (4) blockedBy is optional: spread it into the options only when present (exactOptionalPropertyTypes-style spreads as in _buildCreateIssueOpts, index.ts:1406). (5) Print the machine line + human hint inside runSpecPersist mirroring runSpecWriteDocs (spec.ts:260-308), not in dispatchSpec; CAM-210's dispatchIssue close/abandon (index.ts:1441-1466) is the sibling precedent for the RESULT-line wording. (6) noUncheckedIndexedAccess: guard array/regex-group access. (7) Never register --permission-mode. (8) Production spawnFn wrapper: spawnSync(cmd, args, {...opts, stdio: 'pipe'}) as SpawnSyncReturns<string>, same as spec.ts:266-268."
     },
