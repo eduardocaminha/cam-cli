@@ -37,18 +37,13 @@ import {
 } from '../src/commands/dashboard.ts';
 import { DashboardApp, STORY_TOKENS_PLACEHOLDER, selectionReducer, type SelectionState } from '../src/ui/Dashboard.tsx';
 import type { TranscriptUsage } from '../src/transcript/usage.ts';
+import { flushInk, waitForFrame } from './helpers/flush-ink.ts';
+import { installTerminalSizeMock } from './helpers/mock-terminal-size.ts';
 
-// ---------------------------------------------------------------------------
-// Bun version probe: ink-testing-library stdin-driven state updates require
-// bun >=1.3 for correct single-tick flushing (React 19 macrotask scheduling
-// differs in bun 1.2.x). Tests that drive useInput handlers and assert the
-// result after one tick are skipped on bun 1.2.x (env-specific limitation
-// of the in-container oven/bun:1.2-slim base image, not a production gap).
-// ---------------------------------------------------------------------------
-const [_bunMajorStr, _bunMinorStr] = Bun.version.split('.');
-const bunVersionOk =
-	parseInt(_bunMajorStr ?? '0', 10) > 1 ||
-	parseInt(_bunMinorStr ?? '0', 10) >= 3;
+// Root-cause fix for stdin-driven Ink render flakiness (CAM-201): stub the
+// synchronous `tput` shell-out ink-testing-library's fake stdout otherwise
+// triggers on every render (see test/helpers/mock-terminal-size.ts).
+installTerminalSizeMock();
 
 // --- Fakes -----------------------------------------------------------------
 
@@ -1146,14 +1141,20 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 		};
 	}
 
-	/** Wait one macrotask so React can flush state updates and re-render. */
-	const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+	/** Flush ink-testing-library stdin-driven state updates (two macrotask ticks; CAM-201). */
+	const tick = flushInk;
 
-	/** Poll for the accent-bg row (fixes a back-to-back-keypress flake, US-002/CAM-202). */
+	/**
+	 * Poll for the accent-bg row (fixes a back-to-back-keypress flake,
+	 * US-002/CAM-202). Default timeout is generous (3000ms, comfortably under
+	 * bun's 5000ms per-test timeout) because Ink's synchronous `tput` window
+	 * probe can stall well past a single macrotask tick under heavy concurrent
+	 * test-suite CPU contention (CAM-201).
+	 */
 	const waitForAccentLine = async (
 		lastFrame: () => string | undefined,
 		expectedId: string,
-		timeoutMs = 500,
+		timeoutMs = 3000,
 	): Promise<string | undefined> => {
 		const deadline = Date.now() + timeoutMs;
 		let accentLine: string | undefined;
@@ -1181,7 +1182,7 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 		unmount();
 	});
 
-	it.skipIf(!bunVersionOk)('j keypress moves selection down: second row gets accent background', async () => {
+	it('j keypress moves selection down: second row gets accent background', async () => {
 		const { lastFrame, stdin, unmount } = render(
 			React.createElement(DashboardApp, {
 				readSnapshot: () => makeNavData(),
@@ -1190,16 +1191,14 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 			}),
 		);
 		stdin.write('j');
-		await tick();
-		const frame = lastFrame() ?? '';
 		// The line carrying the accent-bg escape must be the US-002 row.
-		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		const accentLine = await waitForAccentLine(lastFrame, 'US-002');
 		expect(accentLine).toBeDefined();
 		expect(accentLine).toContain('US-002');
 		unmount();
 	});
 
-	it.skipIf(!bunVersionOk)('down arrow (\\u001B[B) moves selection down', async () => {
+	it('down arrow (\\u001B[B) moves selection down', async () => {
 		const { lastFrame, stdin, unmount } = render(
 			React.createElement(DashboardApp, {
 				readSnapshot: () => makeNavData(),
@@ -1208,10 +1207,8 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 			}),
 		);
 		// Full ANSI escape for downArrow: ESC (U+001B) + "[B".
-		stdin.write('[B');
-		await tick();
-		const frame = lastFrame() ?? '';
-		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		stdin.write('\x1b[B');
+		const accentLine = await waitForAccentLine(lastFrame, 'US-002');
 		expect(accentLine).toBeDefined();
 		expect(accentLine).toContain('US-002');
 		unmount();
@@ -1228,7 +1225,6 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 		stdin.write('j'); // down to index 1
 		await tick();
 		stdin.write('k'); // back up to index 0
-		await tick();
 		// US-001 should now be highlighted (index 0).
 		const accentLine = await waitForAccentLine(lastFrame, 'US-001');
 		expect(accentLine).toBeDefined();
@@ -1236,7 +1232,7 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 		unmount();
 	});
 
-	it.skipIf(!bunVersionOk)('up arrow (\\u001B[A) moves selection up', async () => {
+	it('up arrow (\\u001B[A) moves selection up', async () => {
 		const { lastFrame, stdin, unmount } = render(
 			React.createElement(DashboardApp, {
 				readSnapshot: () => makeNavData(),
@@ -1246,16 +1242,14 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 		);
 		stdin.write('j'); // down to index 1
 		await tick();
-		stdin.write('[A'); // up arrow: ESC + "[A"
-		await tick();
-		const frame = lastFrame() ?? '';
-		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		stdin.write('\x1b[A'); // up arrow: ESC + "[A"
+		const accentLine = await waitForAccentLine(lastFrame, 'US-001');
 		expect(accentLine).toBeDefined();
 		expect(accentLine).toContain('US-001');
 		unmount();
 	});
 
-	it.skipIf(!bunVersionOk)('j past last row clamps: last row stays highlighted', async () => {
+	it('j past last row clamps: last row stays highlighted', async () => {
 		const { lastFrame, stdin, unmount } = render(
 			React.createElement(DashboardApp, {
 				readSnapshot: () => makeNavData(),
@@ -1269,9 +1263,7 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 		stdin.write('j');
 		await tick();
 		stdin.write('j'); // clamps at 2
-		await tick();
-		const frame = lastFrame() ?? '';
-		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		const accentLine = await waitForAccentLine(lastFrame, 'US-003');
 		expect(accentLine).toBeDefined();
 		expect(accentLine).toContain('US-003');
 		unmount();
@@ -1288,9 +1280,7 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 		stdin.write('k'); // clamps at 0
 		await tick();
 		stdin.write('k'); // still 0
-		await tick();
-		const frame = lastFrame() ?? '';
-		const accentLine = frame.split('\n').find((l) => l.includes(ACCENT_BG));
+		const accentLine = await waitForAccentLine(lastFrame, 'US-001');
 		expect(accentLine).toBeDefined();
 		expect(accentLine).toContain('US-001');
 		unmount();
@@ -1312,8 +1302,9 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 		stdin.write('j');
 		await tick();
 		stdin.write('k');
-		await tick();
-		const frame = lastFrame() ?? '';
+		// Poll rather than trust a fixed tick count settled in time (CAM-201):
+		// under heavy concurrent-suite load Ink's render itself can lag.
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('no prd.json found'));
 		// Empty list shows the "(no prd.json found)" placeholder, no accent bg.
 		expect(frame).toContain('no prd.json found');
 		expect(frame).not.toContain(ACCENT_BG);
@@ -1377,8 +1368,8 @@ describe('DashboardApp detail view (US-006)', () => {
 		chalk.level = savedChalkLevel;
 	});
 
-	/** Wait one macrotask for React to flush state updates. */
-	const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+	/** Flush ink-testing-library stdin-driven state updates (two macrotask ticks; CAM-201). */
+	const tick = flushInk;
 
 	function makeDetailData(): DashboardData {
 		return {
@@ -1415,7 +1406,7 @@ describe('DashboardApp detail view (US-006)', () => {
 		};
 	}
 
-	it.skipIf(!bunVersionOk)('Enter (\\r) opens detail view showing id, title, AC, notes, and review verdict', async () => {
+	it('Enter (\\r) opens detail view showing id, title, AC, notes, and review verdict', async () => {
 		const { lastFrame, stdin, unmount } = render(
 			React.createElement(DashboardApp, {
 				readSnapshot: () => makeDetailData(),
@@ -1425,8 +1416,10 @@ describe('DashboardApp detail view (US-006)', () => {
 		);
 		// First row (US-001, priority 1) is selected initially.
 		stdin.write('\r'); // Enter
-		await tick();
-		const frame = lastFrame() ?? '';
+		// Poll for the detail keybar rather than a fixed tick count: the
+		// number of macrotask ticks React needs to settle this state update
+		// is not a stable constant across toolchains (CAM-201).
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('back to list'));
 		// Story id and title
 		expect(frame).toContain('US-001');
 		expect(frame).toContain('first story');
@@ -1451,11 +1444,12 @@ describe('DashboardApp detail view (US-006)', () => {
 			}),
 		);
 		stdin.write('\r'); // Enter detail
-		await tick();
+		await waitForFrame(lastFrame, (f) => f.includes('back to list'));
 		stdin.write(''); // Esc back to list
-		// Ink buffers lone ESC for 20ms (pending escape) before flush; wait > 20ms.
-		await new Promise((r) => setTimeout(r, 50));
-		const frame = lastFrame() ?? '';
+		// Ink buffers lone ESC for 20ms (pending escape) before flush; poll
+		// rather than a fixed wait (CAM-201: settling time is not stable under
+		// heavy concurrent-suite CPU contention).
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('/cam-next'));
 		// List-mode keybar is back
 		expect(frame).toContain('/cam-next');
 		expect(frame).toContain('close pane');
