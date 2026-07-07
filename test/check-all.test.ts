@@ -50,18 +50,19 @@ function makeRecordingSpawn(exitCodes: number[]): { calls: Call[]; fn: SpawnFn }
 // ---------------------------------------------------------------------------
 
 describe('GATES manifest', () => {
-	test('has 10 gates in order: typecheck, test, embed-vendor, lint, file-size, debt-markers, coverage, dead-code, dup, ci-parity', () => {
-		expect(GATES).toHaveLength(10);
+	test('has 11 gates in order: typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity', () => {
+		expect(GATES).toHaveLength(11);
 		expect(GATES[0]?.name).toBe('typecheck');
 		expect(GATES[1]?.name).toBe('test');
 		expect(GATES[2]?.name).toBe('embed-vendor');
 		expect(GATES[3]?.name).toBe('lint');
 		expect(GATES[4]?.name).toBe('file-size');
 		expect(GATES[5]?.name).toBe('debt-markers');
-		expect(GATES[6]?.name).toBe('coverage');
-		expect(GATES[7]?.name).toBe('dead-code');
-		expect(GATES[8]?.name).toBe('dup');
-		expect(GATES[9]?.name).toBe('ci-parity');
+		expect(GATES[6]?.name).toBe('version-skips');
+		expect(GATES[7]?.name).toBe('coverage');
+		expect(GATES[8]?.name).toBe('dead-code');
+		expect(GATES[9]?.name).toBe('dup');
+		expect(GATES[10]?.name).toBe('ci-parity');
 	});
 
 	test('typecheck gate: bunx tsc --noEmit', () => {
@@ -105,29 +106,36 @@ describe('GATES manifest', () => {
 		expect(gate?.args).toEqual(['scripts/check-debt-markers.ts']);
 	});
 
-	test('coverage gate: bun scripts/check-coverage.ts', () => {
+	test('version-skips gate: bun scripts/check-version-skips.ts', () => {
 		const gate = GATES[6];
+		expect(gate?.name).toBe('version-skips');
+		expect(gate?.cmd).toBe('bun');
+		expect(gate?.args).toEqual(['scripts/check-version-skips.ts']);
+	});
+
+	test('coverage gate: bun scripts/check-coverage.ts', () => {
+		const gate = GATES[7];
 		expect(gate?.name).toBe('coverage');
 		expect(gate?.cmd).toBe('bun');
 		expect(gate?.args).toEqual(['scripts/check-coverage.ts']);
 	});
 
 	test('dead-code gate: bunx --bun knip@6.24.0', () => {
-		const gate = GATES[7];
+		const gate = GATES[8];
 		expect(gate?.name).toBe('dead-code');
 		expect(gate?.cmd).toBe('bunx');
 		expect(gate?.args).toEqual(['--bun', 'knip@6.24.0']);
 	});
 
 	test('dup gate: bunx jscpd@5 --config .jscpd.json src scripts', () => {
-		const gate = GATES[8];
+		const gate = GATES[9];
 		expect(gate?.name).toBe('dup');
 		expect(gate?.cmd).toBe('bunx');
 		expect(gate?.args).toEqual(['jscpd@5', '--config', '.jscpd.json', 'src', 'scripts']);
 	});
 
 	test('ci-parity gate: bun run check:ci-parity', () => {
-		const gate = GATES[9];
+		const gate = GATES[10];
 		expect(gate?.name).toBe('ci-parity');
 		expect(gate?.cmd).toBe('bun');
 		expect(gate?.args).toEqual(['run', 'check:ci-parity']);
@@ -313,14 +321,14 @@ describe('--json mode (onResults)', () => {
 		}
 	});
 
-	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, file-size, debt-markers, coverage, dead-code, dup, ci-parity)', () => {
-		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity)', () => {
+		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 		let captured: GateResult[] | null = null;
 		runGates({ spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		const names = results.map((r) => r.name);
-		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'file-size', 'debt-markers', 'coverage', 'dead-code', 'dup', 'ci-parity']);
+		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'file-size', 'debt-markers', 'version-skips', 'coverage', 'dead-code', 'dup', 'ci-parity']);
 	});
 
 	test('onResults receives durationMs as a non-negative number', () => {
