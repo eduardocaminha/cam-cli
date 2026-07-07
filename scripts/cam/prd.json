@@ -40,7 +40,7 @@
         "Full quality spine passes, including biome lint --error-on-warnings. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (dispatchIssue list branch, ~lines 1478-1482: comment only, no behavior change), test/issue-dispatch.test.ts (regression test; capture stdout the same way the US-001 tests do and assert the captured output contains no CAM_ISSUE_RESULT substring when mode==='list' dispatches). runIssueList internals (src/commands/issue-list.ts) are out of scope: read-only verification via the negative grep, no edits there. This story is deliberately behavior-neutral: it exists to encode the design decision from the CAM-212 spec (gotcha: 'the list no-line outcome is a deliberate design decision, not a forgotten path') so a future reviewer does not retrofit a speculative machine token onto list. Do not invent any new machine line or flag for list."
     }

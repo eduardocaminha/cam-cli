@@ -1,11 +1,11 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Emit CAM_ISSUE_RESULT machine line on cam issue --file-local (all outcomes)" },
+  "lastCompletedStory": { "id": "US-002", "title": "Regression-lock cam issue list as CAM_ISSUE_RESULT-free by design" },
   "branchName": "cam/pr-212-issue-result-retrofit",
-  "timestamp": "2026-07-07T18:30:00Z",
+  "timestamp": "2026-07-07T19:00:00Z",
   "modifiedFiles": ["index.ts", "test/issue-dispatch.test.ts"],
   "openQuestions": [],
-  "nextStoryContext": "US-002 (regression-lock cam issue list as CAM_ISSUE_RESULT-free by design) is next. The --file-local retrofit is done: dispatchIssue's file-local branch now owns the CAM_ISSUE_RESULT machine-line convention itself, mirroring close/abandon (index.ts ~1496-1552). Two new injectable seams were added to IssueDispatchDeps: createLocalIssueOnMainFn (fine-grained fake for the createLocalIssueOnMain call) and readStdinFn (fine-grained stdin fake); the pre-existing whole-branch fileLocalFn override still takes priority when present so the old US-003 branch-isolation tests stay green unchanged. New tests live in the 'dispatchIssue: default file-local CAM_ISSUE_RESULT retrofit' describe block at the end of test/issue-dispatch.test.ts. `cam issue list` (mode:'list') already routes to issueListFn and was NOT touched by this story; US-002 should confirm/regression-lock that runIssueList never emits a CAM_ISSUE_RESULT line (list is a read-only backlog print, not a mutation outcome).",
+  "nextStoryContext": "This was the last story in the CAM-212 PRD (US-001 and US-002 both now passes:true). dispatchIssue's list branch (index.ts ~1564-1573) now carries an in-code comment documenting the deliberate mutation-outcome-contract decision, and test/issue-dispatch.test.ts has a new 'dispatchIssue: list mode is CAM_ISSUE_RESULT-free by design' regression test asserting the dispatcher never writes a CAM_ISSUE_RESULT line for mode:list, even when the injected issueListFn writes ordinary table output. src/commands/issue-list.ts (runIssueList internals) was NOT touched, per the story's explicit out-of-scope note; it was only verified read-only via negative grep. No further work is queued under this PRD; the next implementer invocation should find prd.json PRD_COMPLETE and exit without touching files.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure CLI-dispatch retrofit (stdout convention + injectable seams); no external library API surface touched (Bun.stdin.text and JSON.parse are runtime builtins already validated in prior stories)." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure in-repo regression-lock story: an in-code comment plus a bun:test regression test over dispatchIssue's existing list branch. No external library API surface touched." }
   ]
 }
