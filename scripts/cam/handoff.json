@@ -1,16 +1,15 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Rewrite /cam-spec persist final step to pipe JSON into cam spec --persist (both copies)" },
+  "lastCompletedStory": { "id": "US-R1-001", "title": "Review round 1 fix 001: address reviewer finding" },
   "branchName": "cam/pr-213-spec-persist-cli",
-  "timestamp": "2026-07-07T17:20:00Z",
+  "timestamp": "2026-07-07T18:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/commands/cam-spec.md",
-    "templates/commands/cam-spec.md",
-    "src/vendor/_generated.ts"
+    "src/commands/spec.ts",
+    "test/commands/spec.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "All userStories in this PRD (US-001, US-002) now have passes:true. This was the last story of CAM-213: the /cam-spec 'Final step: persist the spec' now pipes { spec, wsjf, blockedBy? } JSON into `cam spec --persist <id>` via a single-quoted heredoc (mirroring the existing --write-docs safe-quoting prose), documents the CAM_SPEC_RESULT handback contract, and the error-handling table's diverged/detached-head row now points at the CLI's own CAM_SPEC_RESULT=ERROR reason=<reason> line instead of 'the guard error from specifyIssueOnMain'. Both copies (.claude/commands/cam-spec.md and templates/commands/cam-spec.md) are byte-identical; src/vendor/_generated.ts was regenerated via bun run embed-vendor and embed-vendor:check is clean. The separate 'Final step: persist the domain docs' (cam spec --write-docs) section was left untouched per the PRD's decision A (persist and write-docs are two pipes). Next agent invocation should find no non-operator passes:false stories and emit PRD_COMPLETE so the orchestrator runs /cam-review.",
+  "nextStoryContext": "This was the review-round-1 fix story for CAM-213 (prd.review.lastVerdict was FIXES_PENDING:1, 1 WARNING finding). Fixed: runSpecPersist (src/commands/spec.ts) now guards that the JSON.parse'd stdin payload is a non-null, non-array object immediately after the parse try/catch, before branching into either the real specifyIssueOnMain call or the persistFn test bypass. A malformed-shape payload (verified against the exact repro: `echo 'null' | cam spec --persist CAM-999`, plus 5, \"hi\", [] as belt-and-suspenders) now cleanly emits `CAM_SPEC_RESULT=ERROR reason=invalid-spec` and exits 1, instead of an uncaught TypeError with no handback line. Two new tests added to test/commands/spec.test.ts describe('runSpecPersist'): one exercising the real specifyIssueOnMain path (proves zero git spawn calls happen), one exercising the persistFn-bypass path (proves persistFn is never called). All userStories in prd.json now have passes:true (US-001, US-002, US-R1-001). Next agent invocation should find no non-operator passes:false stories and emit PRD_COMPLETE so the orchestrator re-runs /cam-review for round 2 (the review cycle is not yet terminal: prd.review.lastVerdict is still the stale FIXES_PENDING:1 from round 1 until the next review dispatch overwrites it).",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure prompt-doc rewrite (markdown prose + a bash heredoc pipe into the already-implemented, already-tested cam spec --persist CLI from US-001). No new external dependency or library API surface touched." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure JS/TypeScript null-guard fix (JSON.parse result shape validation) plus test additions. No new external dependency or library API surface touched; specifyIssueOnMain/validateSpec are internal project code already covered by the CAM-213 US-001 officialDocsValidated entry." }
   ]
 }
