@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Truncate long story titles in the Stories list rows"
+  },
+  "branchName": "cam/pr-66-dashboard-truncate-loop-ghost",
+  "timestamp": "2026-07-07T23:29:07Z",
+  "createdFiles": ["test/ui/dashboard-story-row.test.tsx"],
+  "modifiedFiles": ["src/ui/Dashboard.tsx", "scripts/file-size-budget.json"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added an exported pure helper `truncateTitle(title, maxWidth)` and a fixed `STORY_TITLE_MAX_WIDTH = 40` constant in src/ui/Dashboard.tsx, applied to the title segment in both StoryRow variants (selected accent-bg row + unselected flex row). The detail subview (StoryDetailView, line ~314) is untouched by design (full title stays readable there). US-002 (Loop-header ghost hardening) targets src/commands/dashboard.ts only (runDashboardInk / the resize handler / CURSOR usage) and is unrelated to Dashboard.tsx, so no file overlap is expected; its own file-assert oracle says 'adds only src/commands/dashboard.ts beyond US-001's file', confirming Dashboard.tsx is expected to already show up as changed in the story-scoped diff. The file-size-budget.json ceiling for src/ui/Dashboard.tsx was raised 625->646 with tracker ref #66 staged in the same commit (US-001 pushed it just over budget); if US-002 also grows a tracked file, follow the same raise-and-retry procedure documented in patterns.md.",
+  "officialDocsValidated": [
+    {
+      "lib": "ink",
+      "url": "https://github.com/vadimdemedes/ink",
+      "fetchedAt": "2026-07-07T23:29:07Z",
+      "status": "aligned",
+      "summary": "Confirmed Ink 7's Text wrap=\"truncate-end\" operates on the WHOLE text content of a single Text node (container-width based, no partial-segment truncation), which validates the story's Option (b) decision to use a standalone pure truncateTitle(title, maxWidth) helper applied only to the title segment, instead of Ink's built-in wrap prop, since the selected row concatenates icon+id+title+tokens into one Text node with backgroundColor and container-width truncation would have eaten the trailing tokens text."
+    }
+  ]
+}

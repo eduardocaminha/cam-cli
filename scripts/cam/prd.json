@@ -31,7 +31,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/ui/Dashboard.tsx (StoryRow, lines 543-580; both render sites 562 and 573), new test test/ui/dashboard-story-row.test.tsx. Operator decision (settled at grill time): truncate the list row to a fixed width with a trailing ellipsis; do NOT change the PRD schema and do NOT touch the detail subview (line 314 renders the full title, keep as-is). Implementation options: (a) Ink-native `<Text wrap=\"truncate-end\">` cuts at container width and appends the ellipsis automatically (confirmed against Ink 7 docs), but on the selected row the whole line is one string with backgroundColor, so container-width truncation would eat the trailing tokens text; (b) a small exported pure helper (e.g. truncateTitle(title, max)) applied to the title segment only, in both variants, keeps the tokens column visible and is directly unit-testable. Width source: DashboardApp already computes cols via useStdout (line 133); either thread a title budget down through StoriesSection -> StoryRow or use a fixed constant budget (operator chose fixed width). Gotchas from scripts/cam/patterns.md: ink-testing-library keypress simulation via render().stdin; React 19 setState after useInput needs one macrotask tick before lastFrame(); chalk.level is 0 under ink-testing-library unless forced; success/failure is the glyph, never divider color. noUncheckedIndexedAccess is on: guard any string/array indexing in the helper."
     },
