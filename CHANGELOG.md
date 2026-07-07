@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.84.0] - 2026-07-07
+
+### Added
+
+- US-002 - Harden the Loop-header ghost against resize/reflow storms
+- US-001 - Truncate long story titles in the Stories list rows
+
 ## [0.83.0] - 2026-07-07
 
 ### Added
