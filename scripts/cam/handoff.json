@@ -1,36 +1,27 @@
 {
-  "lastCompletedStory": { "id": "US-007", "title": "Auto-rebuild worker image on toolchain mismatch; escalate on rebuild failure" },
+  "lastCompletedStory": { "id": "US-008", "title": "Add Renovate config auto-updating the toolchain pins" },
   "branchName": "cam/pr-201-toolchain-parity",
-  "timestamp": "2026-07-07T06:15:00Z",
+  "timestamp": "2026-07-07T06:30:00Z",
   "createdFiles": [
-    "test/commands/sidecar-toolchain.test.ts"
+    "renovate.json",
+    "test/renovate-config.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/toolchain-assert.ts",
-    "src/supervisor/ensure-container.ts",
-    "src/supervisor/loop.ts",
-    "src/supervisor/host.ts",
-    "src/commands/sidecar.ts",
-    "test/supervisor/ensure-container.test.ts",
-    "test/supervisor/loop.test.ts",
-    "scripts/file-size-budget.json",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "US-007's AC prose (not its literal oracles) implied a bigger architectural fix than the two oracles alone require: 'the toolchain assert ... runs on every container ensure invocation and the ensure path is exercised before dispatch cycles ... auto-rebuilds on the next cycle with zero operator action'. The only NAMED oracles are `bun test test/ensure-container.test.ts` (unit-level) and a grep for `ToolchainMismatchError` in sidecar.ts. I implemented the full intent anyway (not just the minimum to pass the two named oracles): added a SECOND seam, `RunSupervisorOptions.ensureContainerFn` (loop.ts), invoked once per dispatch cycle immediately before the existing (read-only) `preflightContainerFn`, wired in host.ts's `buildSupervisorOptions` via the same `makeProductionEnsureContainerFn(cwd)` closure sidecar.ts already calls once at boot. This closes the actual CAM-192 bug (a stale/mismatched container previously blocked forever until an operator restarted the sidecar, since the boot-only ensureContainerFn call never re-ran). This is a bigger diff than the literal oracles demand; flagging in case a reviewer wants to scope it down to boot-only. I believe the larger fix is correct and necessary (a boot-only guard does not satisfy 'so a pin bump merged to main propagates to the running loop with zero operator action' from the story's own description), but it touches loop.ts (RunSupervisorOptions type + dispatch-site try/catch) and host.ts (new production wiring) in addition to ensure-container.ts and sidecar.ts.",
-    "No dedicated host.ts unit test file exists in this repo for buildSupervisorOptions internals (e.g. no host.test.ts asserting preflightContainerFn wiring either) -- I did not add one for the new ensureContainerFn wiring either, matching the existing convention that this wiring is exercised indirectly via loop.test.ts's injected-seam tests plus the sidecar-toolchain.test.ts boot-time tests, not a host.ts-specific test. If a future story wants host.ts-level coverage of the container wiring, that would be new ground, not a regression.",
-    "Raised 6 file-size budget ceilings (sidecar.ts, ensure-container.ts, host.ts, loop.ts, and their two largest test files) with a tracker ref in the same commit as the implementation (CAM-60/CAM-79 ratchet convention: raise + tracker ref staged together). No separate follow-up needed."
+    "All PRD user stories (US-001..US-008) now have passes:true; no non-operator stories remain. This was the last story in the toolchain-parity PRD. The review cycle (prd.review) should now run to a terminal verdict via the sidecar; nothing further to implement unless review produces FIXES_PENDING follow-up stories.",
+    "Two out-of-band OPERATOR follow-ups called out at ship time (not implemented in code, per the story's own notes): (1) install the Renovate GitHub App on this repo (public repo, free) so renovate.json actually takes effect; (2) confirm the CI workflow (`ci` job in .github/workflows/ci.yml) is configured as a required branch-protection status check on main, since Renovate automerge only proceeds once required status checks are green and renovate.json intentionally does not set `ignoreTests`."
   ],
-  "nextStoryContext": "US-008 (Add Renovate config auto-updating the toolchain pins) is next by priority, and is the last non-operator story in this PRD (US-001..US-007 all now pass). It is a much smaller, standalone story: create renovate.json at repo root (bun-version manager for .bun-version, asdf manager for .tool-versions, dockerfile manager for the Docker base image in .devcontainer/Dockerfile, github-actions manager for the workflow files) with packageRules enabling automerge:true for patch+minor+major matchUpdateTypes on those four managers, and critically must NOT set ignoreTests (automerge must stay gated on the required CI status check). Add test/renovate-config.test.ts that JSON.parses renovate.json and asserts the shape (schema field present, no manager disabled, automerge:true present, matchUpdateTypes includes major). No source code wiring needed this story (pure config + test), unlike US-001 through US-007 in this thread. Per the story's own notes: a one-time OPERATOR action (installing the Renovate GitHub App on the repo) is out of scope for the autonomous implementer and should be called out in the PR body at ship time, not implemented in code. Also verify the CI workflow is a required branch-protection check on main at ship time (repo-settings side, not code).",
+  "nextStoryContext": "This was the final non-operator story in the PRD (US-001 through US-008 all pass now). No further implementation stories are expected from this PRD unless the review cycle files FIXES_PENDING follow-ups. If a new story arrives later touching renovate.json, remember the negative-oracle gotcha documented in patterns.md: description prose must not contain the literal substring 'ignoreTests' even in a negated explanatory sentence, since the story's oracle greps the whole file byte-for-byte.",
   "officialDocsValidated": [
     {
-      "lib": "docker (docker exec / docker rm / docker build --build-arg exit-code + argv semantics)",
-      "version": "n/a (CLI behavior, not a package version)",
-      "url": "https://manpages.ubuntu.com/manpages/focal/man1/docker-container-exec.1.html",
-      "fetchedAt": "2026-07-07T06:05:00Z",
-      "status": "ok",
-      "summary": "Confirmed via WebSearch that docker exec is specified to propagate the exit code of the executed command (chroot-standard semantics; e.g. 126 when the command could not be invoked), matching the existing ToolchainExecFn/ConfigSpawnFn/FirewallSpawnFn convention already relied upon in this codebase (a non-zero exit is treated as a real failure, never silently coerced to success). Some historical Docker/Compose version-specific bugs return 0 regardless of the inner command's exit code, but these are documented as version/platform-specific deviations from spec, not the current behavior this code targets. No change needed to the implementation; the existing seam design (mirroring container-firewall.ts/container-config.ts) already matches the documented contract."
+      "lib": "renovate (packageRules: matchManagers, matchUpdateTypes, automerge, ignoreTests semantics)",
+      "url": "https://docs.renovatebot.com/configuration-options/",
+      "fetchedAt": "2026-07-07T06:25:00Z",
+      "status": "aligned",
+      "summary": "Confirmed via WebSearch against docs.renovatebot.com that matchManagers/matchUpdateTypes/automerge/enabled are current valid packageRules fields, and that ignoreTests is a real (opt-in) escape hatch that bypasses the default required-status-check gating for automerge. renovate.json intentionally omits ignoreTests, so automerge for all four managers (bun-version, asdf, dockerfile, github-actions) stays gated on the required CI status check, matching the story's acceptance criteria. No code/config change needed as a result of this check."
     }
   ]
 }

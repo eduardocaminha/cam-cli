@@ -152,7 +152,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: renovate.json, test/renovate-config.test.ts. Official docs consulted: the bun-version manager matches /(^|/)\\.bun-version$/ by default with npm versioning (https://docs.renovatebot.com/modules/manager/bun-version/); .tool-versions is the asdf manager; both are enabled by default under config:recommended, so the config mainly adds packageRules with automerge + matchUpdateTypes [patch, minor, major]. Renovate automerge waits for required branch status checks by default; the CI workflow must be a required check on main (repo-settings side, verify at ship). One-time out-of-band operator action (spec gotcha, NOT a story): install the Renovate GitHub App on the repo (public repo, free). Keep the config lint-clean JSON (biome does not lint .json by default, but keep 2-space style consistent)."
     }
