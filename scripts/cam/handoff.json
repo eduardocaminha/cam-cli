@@ -1,40 +1,34 @@
 {
-  "lastCompletedStory": { "id": "US-005", "title": "Add check:all guard gate forbidding toolchain-version-conditioned skips" },
+  "lastCompletedStory": { "id": "US-006", "title": "Add fail-closed container toolchain assert to the preflight layer" },
   "branchName": "cam/pr-201-toolchain-parity",
-  "timestamp": "2026-07-07T04:45:00Z",
+  "timestamp": "2026-07-07T05:30:00Z",
   "createdFiles": [
-    "scripts/check-version-skips.ts",
-    "test/check-version-skips.test.ts",
-    "test/fixtures/version-skip-guard/direct-bun-version.ts",
-    "test/fixtures/version-skip-guard/direct-process-version.ts",
-    "test/fixtures/version-skip-guard/process-versions-skipunless.ts",
-    "test/fixtures/version-skip-guard/single-hop-derived.ts",
-    "test/fixtures/version-skip-guard/derived-bun-version.ts",
-    "test/fixtures/version-skip-guard/renamed-derived-probe.ts",
-    "test/fixtures/version-skip-guard/legal-platform-skip.ts",
-    "test/fixtures/version-skip-guard/legal-env-skip.ts",
-    "test/fixtures/version-skip-guard/legal-capability-skip.ts"
+    "src/supervisor/toolchain-assert.ts",
+    "test/toolchain-assert.test.ts"
   ],
   "modifiedFiles": [
-    "scripts/check-all.ts",
-    "test/check-all.test.ts",
-    "test/gates-manifest.test.ts",
-    "scripts/file-size-budget.json",
-    "scripts/cam/patterns.md"
+    "src/supervisor/preflight-container.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md",
+    "test/commands/setup-merge-mode.test.ts",
+    "test/integration/issue-file-on-main.test.ts",
+    "test/integration/journal-append-on-main.test.ts",
+    "test/integration/ship-finalize-dirty-prd.test.ts",
+    "test/interactivity/interactivity.test.ts"
   ],
   "openQuestions": [
-    "During the post-fix full-suite `bun test` run (after the check-all.test.ts / gates-manifest.test.ts updates but before the file-size ratchet fix), exactly one run out of the full sequence reported '1 fail' with no captured test name (the terminal output scrolled past before I isolated it). 23 subsequent full-suite `bun test` re-runs (across several minutes, no further code changes) were all clean (0 fail). I could not identify which test it was or reproduce it again, and nothing in this story's diff (scripts/check-version-skips.ts, check-all.ts GATES entry, the two updated manifest test files, the file-size budget, and the new fixtures) touches Ink/tmux/timing surfaces that are the usual source of this repo's documented flakes (patterns.md CAM-186/CAM-201 mock-terminal-size bullets). Flagging per the no-flaky-evasion rule (CAM-202) rather than silently discarding it: if a similar single-run '1 fail' recurs in CI or a future worker's suite, it is NOT yet root-caused and should not be waved through as 'known flaky' on the strength of this note alone.",
-    "The story's acceptance criteria list 'skipUnless' as a skip form the gate must detect, but bun:test's real public API has no `skipUnless` member (confirmed via Step 5.5 WebSearch against bun.com/reference/bun/test/Test/skipIf and bun.com/docs/test/writing-tests: the real forms are `skip`, `skipIf`, `todoIf`, `todo`, `if`, `failing`). The gate treats all four story-named forms (skipIf/skip/skipUnless/todoIf) as pure TEXT patterns (a `.formName(` regex), not runtime-verified bun:test calls, so detecting a nonexistent `skipUnless` costs nothing at scan time; the one fixture exercising it (`process-versions-skipunless.ts`) needed a `// @ts-expect-error` to keep `bun run typecheck` green. If a future bun:test release ever adds a real `skipUnless`, no gate change is needed."
+    "While bringing `bun test` green for this story I hit a real, reproducible (not story-caused) flake: across ~30 full-suite `bun test` runs BEFORE any fix, 30-50% failed with 'this test timed out after 5000ms', always in a real-subprocess integration test (test/integration/journal-append-on-main.test.ts, test/integration/issue-file-on-main.test.ts, test/integration/ship-finalize-dirty-prd.test.ts Case A/B pairs, test/commands/setup-merge-mode.test.ts AC-7's test.each, test/interactivity/interactivity.test.ts's Esc-keypress test), never the same one twice, and never in my own new toolchain-assert.ts/test (a pure function with zero I/O). Root cause: bun's default 5000ms per-test timeout is too tight for real `git`/`claude`-on-PATH subprocess calls under this sandboxed environment's transient CPU contention (confirmed empirically that bunfig.toml's [test].timeout AND a preload setDefaultTimeout() workaround are BOTH silently ignored on this bun 1.2.23 -- ruled out as a fix path). Fix applied: added an explicit `{ timeout: 20_000 }` third argument to each of the affected tests (6 test blocks across 5 files) -- this brought 15/15 subsequent full-suite runs to 0 fail, and `bun run check:all` (the full spine) is green twice in a row. This is the SAME flake class already documented for CAM-186/CAM-201 (ink/terminal-size subprocess stalls) just manifesting via git/claude subprocess calls instead of ink renders -- see the new patterns.md bullet. Flagging per CAM-202 no-flaky-evasion discipline: if a DIFFERENT real-subprocess integration test (one of the other ~75 files using mkdtempSync + real git that I did NOT touch) starts timing out in a future story, apply the same `{ timeout: 20_000 }` fix rather than re-litigating root cause; this was not an exhaustive audit of every real-subprocess test in the repo, only the ones this session actually observed failing.",
+    "Also confirmed (unrelated aside, not actioned): the host sandbox's own `bun --version` is 1.2.23 while the repo's pinned `.bun-version` is 1.3.13 -- a live instance of exactly the drift class US-006/US-007 target, just on the HOST toolchain rather than the cam-worker CONTAINER toolchain. Out of scope for this story (which is container-only per its AC), but worth noting since it's the same failure mode this thread of stories is designed to catch."
   ],
-  "nextStoryContext": "US-006 (Add fail-closed container toolchain assert to the preflight layer) is next by priority. It continues the CAM-201 toolchain-parity thread: US-001..US-003 built the toolchain-pin reader (`src/config/toolchain.ts`: readPinnedBunVersion/readPinnedNodeVersion) and wired it into the Dockerfile build-arg path (`buildDockerBuildArgv`'s resolveBunVersion/resolveNodeVersion in `src/supervisor/worker-container.ts`); US-004 removed the only two pre-existing Bun.version-conditioned skips; US-005 (this story) added the `version-skips` gate to the GATES manifest (scripts/check-all.ts, now 11 gates) that permanently forbids reintroducing that anti-pattern in test/. US-006 should look at the container preflight layer (likely `src/supervisor/ensure-container.ts` / container-config.ts precedent, per patterns.md's FirewallError/ContainerConfigError fail-closed-throw convention) and assert the RUNNING container's actual bun/node version matches the pinned versions from `src/config/toolchain.ts`, throwing (fail-closed, no worker dispatch) on mismatch rather than silently drifting -- this is the other half of the cam/pr-66 incident class (the container drifted from the pin without anyone noticing until CI went red).",
+  "nextStoryContext": "US-007 (Auto-rebuild worker image on toolchain mismatch; escalate on rebuild failure) is next by priority. It wires assertContainerToolchain (src/supervisor/toolchain-assert.ts, this story) into the actual dispatch/ensure path: (1) preflightWorkerContainer (preflight-container.ts) needs a new branch that calls assertContainerToolchain and returns { ready:false, reason:'toolchain-mismatch' } (the reason string already exists in the type union from this story, just unwired to a real computation) -- likely needs a containerName + execFn added to PreflightWorkerContainerOptions, or a separate composing function that layers the toolchain check on top of the existing daemon/image checks; (2) ensureWorkerContainer (ensure-container.ts) needs a new branch (mirroring the existing 'image-stale' -> rm+rebuild branch) that reacts to 'toolchain-mismatch' by forcing a rebuild (docker rm -f + runWorkerContainer, action:'rebuilt') rather than reusing the running container; (3) per the story title, a rebuild FAILURE must escalate (fail-closed, no worker dispatch) -- follow the FirewallError/ContainerConfigError typed-throw convention (a new ToolchainMismatchError or reuse a rebuild-failure signal) so runSidecar's boot path can catch it and abort before entering runSidecarLoop, same as the firewall/config-repair steps do today. The exec seam for the actual bun/node probe inside the running container needs a production ToolchainExecFn wired the same way makeProductionEnsureContainerFn wires spawnFn/probe/statFn/firewallSpawnFn/configSpawnFn today (all spawnSync-backed, CI has no real docker so tests must inject fakes throughout, matching the DockerProbe/ConfigSpawnFn precedent).",
   "officialDocsValidated": [
     {
-      "lib": "bun:test (skip-form API surface)",
+      "lib": "bun (bun --version / node --version output format; bunfig.toml [test].timeout)",
       "version": "bun 1.2.23",
-      "url": "https://bun.com/reference/bun/test/Test/skipIf",
-      "fetchedAt": "2026-07-07T04:44:00Z",
+      "url": "https://bun.com/docs/installation",
+      "fetchedAt": "2026-07-07T05:15:00Z",
       "status": "aligned",
-      "summary": "Confirmed via WebSearch (bun.com/reference/bun/test/Test/skipIf + bun.com/docs/test/writing-tests): bun:test's real skip-form API is skip/skipIf/todo/todoIf/if/failing -- there is no real 'skipUnless'. The gate (scripts/check-version-skips.ts) intentionally treats all four story-named forms (skipIf/skip/skipUnless/todoIf) as textual patterns rather than runtime-verified API calls, so this is a documented, deliberate divergence (see openQuestions), not a misunderstanding of the real API; the one fixture using the nonexistent form carries a // @ts-expect-error so bun run typecheck stays green."
+      "summary": "Confirmed via WebSearch + a live empirical test in a throwaway tmp fixture: `bun --version` prints the bare semver with no 'v' prefix (matches assertContainerToolchain's exact-match comparison for bun), `node --version` always prefixes 'v' (matches the stripLeadingV() comparison for node). Separately confirmed bunfig.toml's `[test].timeout` key (and a preload-script setDefaultTimeout() workaround) is silently ignored on this exact bun version -- ruled it out as a fix path for the flaky-timeout gate issue documented in openQuestions/patterns.md, used per-test `{ timeout: 20_000 }` overrides instead."
     }
   ]
 }
