@@ -1,7 +1,7 @@
 {
   "id": "CAM-208",
   "title": "Meta-loop auto-drain hot-spins in host mode (container-not-active every 2s)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-07T14:11:42.846Z",
