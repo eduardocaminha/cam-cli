@@ -1,0 +1,9 @@
+{
+  "id": "CAM-209",
+  "title": "Harden worker Dockerfile Node tarball download with SHASUMS256 verification",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-07T14:11:57.438Z",
+  "description": "The worker image (.devcontainer/Dockerfile, US-003/US-R3-002) downloads the Node.js tarball from nodejs.org over HTTPS with no checksum/signature verification. Reviewer SUGGESTION on PR #149 (CAM-201 round 4): add a curl of SHASUMS256.txt + sha256sum -c before extracting, to harden the supply chain and catch a corrupted/truncated download. Low-risk given HTTPS + pinned exact version; nice-to-have."
+}
