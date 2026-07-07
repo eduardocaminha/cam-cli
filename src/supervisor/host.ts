@@ -45,6 +45,7 @@ import { WORKER_REPORT_FILENAME, buildWorkerReportSendKeysArgv } from './worker-
 import type { ReviewReport } from './review-report.ts';
 import { REVIEW_REPORT_FILENAME } from './review-report.ts';
 import { preflightWorkerContainer } from './preflight-container.ts';
+import { makeProductionEnsureContainerFn } from './ensure-container.ts';
 import { readWorkerIsolation } from '../config/models.ts';
 
 // ---------------------------------------------------------------------------
@@ -446,6 +447,16 @@ export function buildSupervisorOptions(
 	// 'host' (default) leaves every existing loop behavior unchanged.
 	const workerIsolation = readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'));
 
+	// US-007 (CAM-192/CAM-201): production container ensure/reconcile +
+	// auto-rebuild seam. Reuses the SAME closure the sidecar calls once at boot
+	// (makeProductionEnsureContainerFn), so per-cycle reconcile never drifts
+	// from the boot-time reconcile. Only wired in container mode: the loop
+	// (runSupervisor) only ever invokes it when workerIsolation === 'container',
+	// but leaving it undefined in host mode avoids constructing an unused
+	// docker-mutating closure.
+	const ensureContainerFn: RunSupervisorOptions['ensureContainerFn'] =
+		workerIsolation === 'container' ? makeProductionEnsureContainerFn(cwd) : undefined;
+
 	// Per-worker timeout: configurable via CAM_WORKER_TIMEOUT_MS env var. When
 	// unset, the fallback is isolation-aware (US-003 / CAM-187): container
 	// workers get DEFAULT_CONTAINER_WORKER_TIMEOUT_MS (60 min) so long container
@@ -778,6 +789,9 @@ export function buildSupervisorOptions(
 		// US-005 / B-1 + B-2: container preflight seam.
 		// Fail-closed in container mode (workerIsolation === 'container').
 		preflightContainerFn,
+		// US-007: container ensure/reconcile + auto-rebuild seam, run before
+		// preflightContainerFn on every dispatch cycle in container mode.
+		ensureContainerFn,
 		// US-004 / B-2 (CAM-152): isolation mode drives dockerExecWrap + fail-closed.
 		workerIsolation,
 		// CAM-188 / US-001: kill-pane on every terminal exit so the session returns

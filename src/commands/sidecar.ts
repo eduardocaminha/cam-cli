@@ -29,6 +29,7 @@ import { randomUUID } from 'node:crypto';
 import { runSidecarLoop, type RunSidecarLoopOptions, type SpawnFn as LoopSpawnFn, type IsPaneAlive } from '../supervisor/loop.ts';
 import { FirewallError } from '../supervisor/container-firewall.ts';
 import { ContainerConfigError } from '../supervisor/container-config.ts';
+import { ToolchainMismatchError } from '../supervisor/toolchain-assert.ts';
 import { buildSupervisorOptions, makeNotifyOrchestrator } from '../supervisor/host.ts';
 import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/events.ts';
 import { parseStateFile, type LoopPhase } from './status.ts';
@@ -743,6 +744,43 @@ function buildShipEscalateFn(cwd: string): (() => Promise<void>) | undefined {
 			html: '<p><strong>[cam]</strong> The deterministic ship phase failed. Manual intervention required.</p>',
 		});
 	};
+}
+
+/**
+ * Build the production toolchain-mismatch escalateFn (US-007, CAM-192/CAM-201).
+ *
+ * Mirrors buildShipEscalateFn's shape with a toolchain-specific subject.
+ * Returns undefined when Resend is unconfigured (inert, zero behavior change).
+ */
+function buildToolchainEscalateFn(cwd: string): (() => Promise<void>) | undefined {
+	const resendCfg = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
+	if (resendCfg.apiKey === '' || resendCfg.recipient === '') return undefined;
+	return async (): Promise<void> => {
+		await sendEscalation({
+			apiKey: resendCfg.apiKey,
+			recipient: resendCfg.recipient,
+			subject: '[cam] Container toolchain mismatch: rebuild did not converge',
+			html: '<p><strong>[cam]</strong> The cam-worker container toolchain still mismatches the repo pins after an auto-rebuild attempt. No worker will be dispatched. Manual intervention required.</p>',
+		});
+	};
+}
+
+/**
+ * Fire an escalateFn best-effort (fire-and-forget), swallowing any error to
+ * stderr so a Resend failure never blocks the caller. Shared by the
+ * ensure-container boot-time catch (runSidecar) below.
+ */
+function fireEscalateBestEffort(escalateFn: (() => Promise<void>) | undefined): void {
+	if (escalateFn === undefined) return;
+	void (async () => {
+		try {
+			await escalateFn();
+		} catch (e) {
+			process.stderr.write(
+				`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+			);
+		}
+	})();
 }
 
 /**
@@ -2001,6 +2039,52 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 // ---------------------------------------------------------------------------
 
 /**
+ * Boot-time container ensure/reconcile guard (US-001/CAM-176, US-007/CAM-192,
+ * CAM-201). Runs `ensureContainerFn` (production: `makeProductionEnsureContainerFn`)
+ * once at sidecar boot, in container mode only.
+ *
+ * FirewallError / ContainerConfigError / ToolchainMismatchError are caught
+ * specifically (instanceof) so a bare catch cannot accidentally swallow an
+ * unexpected runtime error; any other thrown value is rethrown.
+ *
+ * Returns `true` when the caller should abort boot (no worker will be
+ * dispatched), `false` when it is safe to proceed into `runSidecarLoop`.
+ *
+ * Extracted from `runSidecar` to keep that function under biome's
+ * noExcessiveCognitiveComplexity(max=15) limit (CAM-60 factory/helper pattern).
+ */
+function runContainerEnsureGuard(cwd: string, options: SidecarOptions): boolean {
+	const isolation = readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'));
+	if (isolation !== 'container') return false;
+
+	try {
+		(options.ensureContainerFn ?? makeProductionEnsureContainerFn(cwd))();
+		return false;
+	} catch (e) {
+		if (e instanceof FirewallError) {
+			process.stderr.write(
+				`[cam] container firewall init failed — no worker will be dispatched.\n${e.stderrTail}\n`,
+			);
+			return true;
+		}
+		if (e instanceof ContainerConfigError) {
+			process.stderr.write(
+				`[cam] container config repair failed — no worker will be dispatched.\n${e.stderrTail}\n`,
+			);
+			return true;
+		}
+		if (e instanceof ToolchainMismatchError) {
+			process.stderr.write(
+				`[cam] container toolchain mismatch — rebuild did not converge, no worker will be dispatched.\n${e.message}\n`,
+			);
+			fireEscalateBestEffort(buildToolchainEscalateFn(cwd));
+			return true;
+		}
+		throw e;
+	}
+}
+
+/**
  * Run the sidecar supervisor loop.
  *
  * This is the PRODUCTION caller of runSupervisor. It is spawned as a detached
@@ -2024,29 +2108,7 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	// egress firewall before dispatching (container mode only).
 	// In host mode this block is a complete no-op (zero docker calls, zero
 	// firewall calls).
-	// FirewallError is thrown by ensureWorkerContainer when init-firewall.sh
-	// exits non-zero; we catch it specifically (instanceof) so that a bare
-	// catch cannot accidentally swallow an unexpected runtime error.
-	const isolation = readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'));
-	if (isolation === 'container') {
-		try {
-			(options.ensureContainerFn ?? makeProductionEnsureContainerFn(cwd))();
-		} catch (e) {
-			if (e instanceof FirewallError) {
-				process.stderr.write(
-					`[cam] container firewall init failed — no worker will be dispatched.\n${e.stderrTail}\n`,
-				);
-				return;
-			}
-			if (e instanceof ContainerConfigError) {
-				process.stderr.write(
-					`[cam] container config repair failed — no worker will be dispatched.\n${e.stderrTail}\n`,
-				);
-				return;
-			}
-			throw e;
-		}
-	}
+	if (runContainerEnsureGuard(cwd, options)) return;
 
 	const deps = buildSidecarLoopDeps(
 		{ cwd, claudeDir, prdPath, sessionName, logEvent, realSpawnFn },

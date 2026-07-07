@@ -9,10 +9,11 @@
 //
 // This is a pure, injectable helper (mirrors the `DockerProbe` /
 // `ConfigSpawnFn` seam shapes in preflight-container.ts / container-config.ts).
-// Wiring it into the ensure/dispatch path (so a mismatch actually blocks
-// worker dispatch, surfacing the 'toolchain-mismatch' preflight reason) is
-// US-007 -- this story lands tested-but-inert, mirroring how
-// preflight-container.ts landed before its CAM-150 wiring.
+// Wired into `ensureWorkerContainer` (ensure-container.ts, US-007): a mismatch
+// triggers an auto-rebuild (docker rm -f + runWorkerContainer + re-assert); a
+// rebuild failure or a still-mismatching re-assert throws `ToolchainMismatchError`
+// below, caught (instanceof) by `runSidecar` / the per-cycle dispatch guard in
+// `runSupervisor`, mirroring `FirewallError` / `ContainerConfigError`.
 //
 // noUncheckedIndexedAccess: no unguarded array indexing in this file.
 
@@ -124,4 +125,40 @@ export function assertContainerToolchain(
 		return { ok: false, mismatches };
 	}
 	return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// ToolchainMismatchError
+// ---------------------------------------------------------------------------
+
+/** Render a short human-readable summary of a mismatch list for the error message. */
+function summarizeMismatches(mismatches: ToolchainMismatch[]): string {
+	return mismatches
+		.map((m) => `${m.tool}: expected ${m.expected ?? '<unreadable pin>'}, got ${m.actual ?? '<probe failed>'}`)
+		.join('; ');
+}
+
+/**
+ * Typed error thrown by `ensureWorkerContainer` (US-007, CAM-201/CAM-192) when
+ * the running container's toolchain still mismatches the repo pins after an
+ * auto-rebuild attempt, or when the rebuild itself fails to converge.
+ *
+ * Caught specifically (instanceof check) in `runSidecar`, mirroring
+ * `FirewallError` / `ContainerConfigError`: the sidecar aborts boot / blocks
+ * dispatch fail-closed rather than letting a drifted container run silently.
+ */
+export class ToolchainMismatchError extends Error {
+	/** The mismatches detected on the (possibly post-rebuild) re-assert. */
+	mismatches: ToolchainMismatch[];
+
+	constructor(mismatches: ToolchainMismatch[], stage: 'rebuild-failed' | 'still-mismatched') {
+		const detail = summarizeMismatches(mismatches);
+		const reason =
+			stage === 'rebuild-failed'
+				? `rebuild failed while recovering from a toolchain mismatch (${detail})`
+				: `still mismatched after rebuild (${detail})`;
+		super(`cam-worker container toolchain mismatch: ${reason}`);
+		this.name = 'ToolchainMismatchError';
+		this.mismatches = mismatches;
+	}
 }

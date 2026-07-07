@@ -30,6 +30,10 @@ import {
 	ContainerConfigError,
 	type ConfigSpawnFn,
 } from '../../src/supervisor/container-config.ts';
+import {
+	ToolchainMismatchError,
+	type ToolchainExecFn,
+} from '../../src/supervisor/toolchain-assert.ts';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -920,5 +924,189 @@ describe('ensureWorkerContainer: ContainerConfigError thrown on non-zero config 
 		expect(caughtError).toBeInstanceOf(ContainerConfigError);
 		// Still no mutation calls (reused branch)
 		expect(spawn.calls).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-007: toolchain assert + auto-rebuild
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a ToolchainExecFn whose bun/node reported versions can change across
+ * calls (to simulate "mismatched on first probe, matching after rebuild").
+ * `sequence` supplies one { bunVersion, nodeVersion } pair per assert round
+ * (index 0 = first assert, index 1 = re-assert after rebuild, ...). The last
+ * entry is reused for any call beyond the sequence length.
+ */
+function makeSequencedToolchainExecFn(
+	sequence: Array<{ bunVersion: string; nodeVersion: string }>,
+): { fn: ToolchainExecFn; calls: { cmd: string; args: string[] }[] } {
+	const calls: { cmd: string; args: string[] }[] = [];
+	let round = -1;
+	const fn: ToolchainExecFn = (cmd, args) => {
+		calls.push({ cmd, args });
+		// Two exec calls per assert round: bun first, then node.
+		if (args.includes('bun')) round++;
+		const idx = Math.min(round, sequence.length - 1);
+		const entry = sequence[idx] ?? sequence[sequence.length - 1];
+		if (args.includes('bun')) {
+			return { stdout: entry?.bunVersion ?? '', stderr: '', exitCode: 0 };
+		}
+		return { stdout: entry?.nodeVersion ?? '', stderr: '', exitCode: 0 };
+	};
+	return { fn, calls };
+}
+
+const PINNED_BUN = '1.3.13';
+const PINNED_NODE = 'v22.23.1';
+const BUN_PIN_PATH = '/repo/.bun-version';
+const NODE_PIN_PATH = '/repo/.tool-versions';
+
+/** Fixed pin fixture, decoupled from the real repo-root .bun-version/.tool-versions. */
+const TOOLCHAIN_FIXTURE_OPTS = {
+	toolchainBunVersionPath: BUN_PIN_PATH,
+	toolchainToolVersionsPath: NODE_PIN_PATH,
+	toolchainReadFileFn: (path: string): string => {
+		if (path === BUN_PIN_PATH) return '1.3.13\n';
+		if (path === NODE_PIN_PATH) return 'nodejs 22.23.1\n';
+		throw new Error(`ENOENT: ${path}`);
+	},
+};
+
+/** Probe fixture for a running, non-stale container (the common "reused" case). */
+function runningProbe(): { fn: DockerProbe; calls: string[][] } {
+	return makeRoutedProbe({
+		info: { stdout: '', exitCode: 0 },
+		image: { stdout: '', exitCode: 0 },
+		inspect: { stdout: 'true\n', exitCode: 0 },
+	});
+}
+
+describe('ensureWorkerContainer: US-007 toolchain assert + auto-rebuild', () => {
+	test('no toolchainExecFn -> zero toolchain exec calls (host mode / legacy)', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const result = ensureWorkerContainer(makeOpts(probe.fn, spawn.fn));
+		expect(result.action).toBe('reused');
+		expect(spawn.calls).toHaveLength(0);
+	});
+
+	test('AC3: matching toolchain -> zero rm/build calls, only the two cheap execs run', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const toolchain = makeSequencedToolchainExecFn([
+			{ bunVersion: PINNED_BUN, nodeVersion: PINNED_NODE },
+		]);
+		const result = ensureWorkerContainer(
+			makeOpts(probe.fn, spawn.fn, { toolchainExecFn: toolchain.fn, ...TOOLCHAIN_FIXTURE_OPTS }),
+		);
+
+		expect(result.action).toBe('reused');
+		// Exactly two toolchain execs (bun + node), no re-assert round.
+		expect(toolchain.calls).toHaveLength(2);
+		expect(toolchain.calls[0]?.args).toContain('bun');
+		expect(toolchain.calls[1]?.args).toContain('node');
+		// Zero rm/build/run calls: mismatch never happened.
+		expect(spawn.calls.filter((c) => c.args[0] === 'rm')).toHaveLength(0);
+		expect(spawn.calls.filter((c) => c.args[0] === 'build')).toHaveLength(0);
+		expect(spawn.calls.filter((c) => c.args[0] === 'run')).toHaveLength(0);
+	});
+
+	test('AC1: mismatch -> docker rm -f + rebuild + re-assert, action=rebuilt', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		// Round 0 (first assert): bun mismatched. Round 1 (re-assert): matches.
+		const toolchain = makeSequencedToolchainExecFn([
+			{ bunVersion: '1.2.23', nodeVersion: PINNED_NODE },
+			{ bunVersion: PINNED_BUN, nodeVersion: PINNED_NODE },
+		]);
+		const result = ensureWorkerContainer(
+			makeOpts(probe.fn, spawn.fn, { toolchainExecFn: toolchain.fn, ...TOOLCHAIN_FIXTURE_OPTS }),
+		);
+
+		expect(result.action).toBe('rebuilt');
+		const rmCall = spawn.calls.find((c) => c.cmd === 'docker' && c.args[0] === 'rm');
+		const buildCall = spawn.calls.find((c) => c.cmd === 'docker' && c.args[0] === 'build');
+		const runCall = spawn.calls.find((c) => c.cmd === 'docker' && c.args[0] === 'run');
+		expect(rmCall).toBeDefined();
+		expect(rmCall?.args).toContain('-f');
+		expect(buildCall).toBeDefined();
+		expect(runCall).toBeDefined();
+		// Four toolchain execs total: 2 for the first assert, 2 for the re-assert.
+		expect(toolchain.calls).toHaveLength(4);
+	});
+
+	test('AC1: rebuild-triggered docker build carries --build-arg BUN_VERSION + HOST_UID/HOST_GID', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const toolchain = makeSequencedToolchainExecFn([
+			{ bunVersion: '1.2.23', nodeVersion: PINNED_NODE },
+			{ bunVersion: PINNED_BUN, nodeVersion: PINNED_NODE },
+		]);
+		ensureWorkerContainer(
+			makeOpts(probe.fn, spawn.fn, {
+				toolchainExecFn: toolchain.fn,
+				build: { hostUid: 501, hostGid: 20 },
+				...TOOLCHAIN_FIXTURE_OPTS,
+			}),
+		);
+
+		const buildCall = spawn.calls.find((c) => c.cmd === 'docker' && c.args[0] === 'build');
+		expect(buildCall).toBeDefined();
+		const args = buildCall?.args ?? [];
+		expect(args.some((a) => a.startsWith('BUN_VERSION='))).toBe(true);
+		expect(args).toContain('HOST_UID=501');
+		expect(args).toContain('HOST_GID=20');
+	});
+
+	test('AC2: rebuild failure (docker build exits non-zero) throws ToolchainMismatchError', () => {
+		const probe = runningProbe();
+		// Every spawnFn call fails (simulates a build failure).
+		const spawn = makeRecordingSpawnFn(1);
+		const toolchain = makeSequencedToolchainExecFn([
+			{ bunVersion: '1.2.23', nodeVersion: PINNED_NODE },
+		]);
+
+		expect(() => {
+			ensureWorkerContainer(makeOpts(probe.fn, spawn.fn, { toolchainExecFn: toolchain.fn, ...TOOLCHAIN_FIXTURE_OPTS }));
+		}).toThrow(ToolchainMismatchError);
+	});
+
+	test('AC2: still-mismatched re-assert after a successful rebuild throws ToolchainMismatchError', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		// Both rounds report a mismatch: rebuild "succeeds" (spawnFn exit 0) but
+		// the container still reports the wrong bun version.
+		const toolchain = makeSequencedToolchainExecFn([
+			{ bunVersion: '1.2.23', nodeVersion: PINNED_NODE },
+			{ bunVersion: '1.2.23', nodeVersion: PINNED_NODE },
+		]);
+
+		let caughtError: unknown;
+		try {
+			ensureWorkerContainer(makeOpts(probe.fn, spawn.fn, { toolchainExecFn: toolchain.fn, ...TOOLCHAIN_FIXTURE_OPTS }));
+		} catch (e) {
+			caughtError = e;
+		}
+		expect(caughtError).toBeInstanceOf(ToolchainMismatchError);
+		if (caughtError instanceof ToolchainMismatchError) {
+			expect(caughtError.mismatches.some((m) => m.tool === 'bun')).toBe(true);
+		}
+	});
+
+	test('toolchain assert runs even in the reused branch (unconditional, mirrors firewall/config)', () => {
+		// action=reused (running, matching image) but toolchain mismatched.
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const toolchain = makeSequencedToolchainExecFn([
+			{ bunVersion: '1.2.23', nodeVersion: PINNED_NODE },
+			{ bunVersion: PINNED_BUN, nodeVersion: PINNED_NODE },
+		]);
+		const result = ensureWorkerContainer(
+			makeOpts(probe.fn, spawn.fn, { toolchainExecFn: toolchain.fn, ...TOOLCHAIN_FIXTURE_OPTS }),
+		);
+		// The 4-branch reconcile alone would have returned 'reused'; the
+		// toolchain mismatch upgrades the final action to 'rebuilt'.
+		expect(result.action).toBe('rebuilt');
 	});
 });
