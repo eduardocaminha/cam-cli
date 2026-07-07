@@ -1,0 +1,9 @@
+{
+  "id": "CAM-208",
+  "title": "Meta-loop auto-drain hot-spins in host mode (container-not-active every 2s)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-07T14:11:42.846Z",
+  "description": "With meta_loop=auto and worker_isolation=host, the sidecar auto-drain refuses every ~2s with reason container-not-active, spamming the event log and console (kind:meta-loop-dispatch, refused:true). Observed 2026-07-07 during CAM-201 host-mode operation. Expected: no-op quietly or back off when worker_isolation != container, not a tight 2s refuse-loop. Low priority."
+}
