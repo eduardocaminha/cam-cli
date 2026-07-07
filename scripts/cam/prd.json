@@ -51,7 +51,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-spec.md (persist step at lines 32-56; overview line 7 mentions 'calls the deterministic spec writer (specifyIssueOnMain)' and should reference the CLI; error-handling table line ~131), templates/commands/cam-spec.md (byte-identical twin), src/vendor/_generated.ts (regenerated, never hand-edited). Gotchas: (1) /cam-spec is per-file dual-copy; edit BOTH and keep them identical; templates/commands/cam-spec.md is embedded at build time, so run `bun run embed-vendor` to regenerate src/vendor/_generated.ts and let embed-vendor:check prove no drift. (2) Use <<'EOF' (quoted delimiter) in every example so operator answer content cannot be shell-interpolated (CAM-106). (3) Persisted .md follows the no-em-dash project rule; do not introduce em-dashes in the rewritten prose. (4) The bare `cam spec <id>` thin-proxy description (line 3) stays untouched; only the persist final-step and its cross-references change. (5) Model the handback-parsing prose on the /cam-issue Step 3 output contract (CAM_ISSUE_RESULT grep line)."
     }

@@ -1,16 +1,16 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add cam spec --persist <id> in-process CLI mode with CAM_SPEC_RESULT handback" },
+  "lastCompletedStory": { "id": "US-002", "title": "Rewrite /cam-spec persist final step to pipe JSON into cam spec --persist (both copies)" },
   "branchName": "cam/pr-213-spec-persist-cli",
-  "timestamp": "2026-07-07T16:55:37Z",
+  "timestamp": "2026-07-07T17:20:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "src/commands/spec.ts",
-    "test/commands/spec.test.ts"
+    ".claude/commands/cam-spec.md",
+    "templates/commands/cam-spec.md",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 rewrites the /cam-spec persist final step (both templates/commands/cam-spec.md and .claude/commands/cam-spec.md, per the self-hosting invariant) to pipe the assembled JSON into `cam spec --persist <id>` instead of a throwaway bun script. runSpecPersist (src/commands/spec.ts) and dispatchSpec's mode:'persist' branch (index.ts) are in place and tested (test/commands/spec.test.ts). Usage: `echo '<json>' | cam spec --persist <id>` where <json> is `{ spec: Spec, wsjf: WsjfScore, blockedBy?: string[] }` (Spec = { acceptanceCriteria: string[], scope: string, gotchas: string[], domainTerms: string[] }, WsjfScore = { value, timeCriticality, riskReduction, jobSize }). On success it prints `CAM_SPEC_RESULT=<id> sha=<sha>` and exits 0; on failure it prints `CAM_SPEC_RESULT=ERROR reason=<reason>` and exits 1 (reasons: invalid-spec, invalid-wsjf, not-found, wrong-stage, not-open, integrity-error, diverged, detached-head, missing-main, invalid-json). SPEC_HELP already documents --persist. No re-validation needed in the prompt doc: specifyIssueOnMain does full guard/validation, the CLI only marshals stdin JSON.",
+  "nextStoryContext": "All userStories in this PRD (US-001, US-002) now have passes:true. This was the last story of CAM-213: the /cam-spec 'Final step: persist the spec' now pipes { spec, wsjf, blockedBy? } JSON into `cam spec --persist <id>` via a single-quoted heredoc (mirroring the existing --write-docs safe-quoting prose), documents the CAM_SPEC_RESULT handback contract, and the error-handling table's diverged/detached-head row now points at the CLI's own CAM_SPEC_RESULT=ERROR reason=<reason> line instead of 'the guard error from specifyIssueOnMain'. Both copies (.claude/commands/cam-spec.md and templates/commands/cam-spec.md) are byte-identical; src/vendor/_generated.ts was regenerated via bun run embed-vendor and embed-vendor:check is clean. The separate 'Final step: persist the domain docs' (cam spec --write-docs) section was left untouched per the PRD's decision A (persist and write-docs are two pipes). Next agent invocation should find no non-operator passes:false stories and emit PRD_COMPLETE so the orchestrator runs /cam-review.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal wiring: CLI arg parsing (index.ts) + stdin JSON marshalling into the already-tested specifyIssueOnMain primitive (issue-specify.ts, node:child_process/Bun builtins only, no new external dependency)." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure prompt-doc rewrite (markdown prose + a bash heredoc pipe into the already-implemented, already-tested cam spec --persist CLI from US-001). No new external dependency or library API surface touched." }
   ]
 }
