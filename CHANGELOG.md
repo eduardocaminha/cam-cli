@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.80.0] - 2026-07-07
+
+### Added
+
+- US-002 - Real-writer regression test: phase:shipping survives the terminal teardown
+- US-001 - Move auto-ship dispatch from runSupervisor to runSidecarLoop post-clearActive
+
 ## [0.79.0] - 2026-07-07
 
 ### Added
