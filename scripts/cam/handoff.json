@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add already-closed idempotency guard to closeIssueOnMain"
+  },
+  "branchName": "cam/pr-210-issue-close-abandon-cli",
+  "timestamp": "2026-07-07T00:00:00.000Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/issue-specify.ts",
+    "test/issue-specify.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "closeIssueOnMain now returns { ok: false, reason: 'already-closed' } for a stage:'shipped' entry (guarded strictly on entry.stage === 'shipped', checked after the not-found guard, before any mutation/commit). CloseIssueOnMainError is the union { diverged | detached-head | missing-main } | not-found | already-closed. The two existing callers (ship-pr.ts closeNoneBackendIssue, post-merge.ts performCloseStep) already interpolate `reason` generically into a warning/error narration string with overall step ok:true, so they needed no changes and their suites pass unchanged. US-002 (wire `cam issue close <id>`) should map reason:'already-closed' to a distinct non-zero exit code/message in the new CLI subcommand's CAM_ISSUE_RESULT line, symmetric with how 'already-abandoned' is presumably handled by the abandon subcommand (US-003). Two test files share the name issue-specify.test.ts: closeIssueOnMain coverage is in test/issue-specify.test.ts (top-level, this story's tests), abandonIssueOnMain in test/commands/issue-specify.test.ts (untouched).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal TS guard on existing git-plumbing based issue-close primitive; no external library API surface touched." }
+  ]
+}

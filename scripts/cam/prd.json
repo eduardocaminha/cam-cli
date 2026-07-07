@@ -3,7 +3,9 @@
   "branchName": "cam/pr-210-issue-close-abandon-cli",
   "description": "Expose the existing closeIssueOnMain/abandonIssueOnMain on-main mutations as deterministic CLI subcommands `cam issue close <id>` and `cam issue abandon <id>` with a machine-parseable CAM_ISSUE_RESULT line (Layer-1 CLI-exposure, CAM-197 class).",
   "issueNumber": 210,
-  "relatedDocs": ["CONTEXT.md"],
+  "relatedDocs": [
+    "CONTEXT.md"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -19,7 +21,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/issue-specify.ts (error union at ~508, guard inside closeIssueOnMain at ~523), test/issue-specify.test.ts. Gotchas: (a) closeIssueOnMain is SHARED with the ship path; no existing test asserts an already-shipped close SUCCEEDS, so the guard is safe, but key it strictly on stage === 'shipped'. (b) Mirror the abandon guard shape at issue-specify.ts:424 (entry.status !== 'open' -> already-abandoned) placed after the not-found check. (c) Two test files share the name issue-specify.test.ts: closeIssueOnMain coverage lives in test/issue-specify.test.ts (top-level), abandonIssueOnMain in test/commands/issue-specify.test.ts. (d) closeIssueOnMain is pure return-only; do not add printing inside it. (e) close and abandon are orthogonal axes (stage vs status, src/issues/types.ts); an abandoned issue keeps its stage. Re-check CONTEXT.md entries 'close (issue)' and 'abandon (issue)' before coding."
     },
