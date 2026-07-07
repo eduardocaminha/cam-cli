@@ -1,7 +1,7 @@
 {
   "id": "CAM-210",
   "title": "Expose issue close + abandon via deterministic CLI (cam issue close/abandon <id>)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-07T14:24:19.004Z",
