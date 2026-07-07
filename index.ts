@@ -27,6 +27,7 @@ import { runInit } from './src/commands/init.ts';
 import {
 	createLocalIssueOnMain,
 	type CreateLocalIssueOnMainOptions,
+	type CreateLocalIssueOnMainOutcome,
 } from './src/commands/issue-file.ts';
 import {
 	appendJournalEntryOnMain,
@@ -1409,10 +1410,29 @@ export async function dispatchJournal(
 /** Injectable deps for dispatchIssue — all optional; production uses real impls. */
 export interface IssueDispatchDeps {
 	/**
-	 * Inject a fake for the --file-local branch.
-	 * Default: reads stdin as JSON and routes to createLocalIssueOnMain (in-process, no tmux).
+	 * Inject a fake for the WHOLE --file-local branch (full bypass). Default:
+	 * reads stdin as JSON and routes to createLocalIssueOnMain (in-process, no
+	 * tmux). Takes priority over `createLocalIssueOnMainFn`/`readStdinFn` below
+	 * when present, preserving the existing branch-isolation tests (US-003).
 	 */
 	fileLocalFn?: () => Promise<number>;
+	/**
+	 * Inject a fake for the --file-local branch's underlying createLocalIssueOnMain
+	 * call. Only consulted when `fileLocalFn` is absent. Default:
+	 * `createLocalIssueOnMain(_buildCreateIssueOpts(process.cwd(), stdinData, flags))`
+	 * (production spawnFn+clock). The printing (printHint on success, the machine
+	 * CAM_ISSUE_RESULT line) and exit-code mapping always run in dispatchIssue
+	 * itself, regardless of injection (US-001, CAM-212).
+	 */
+	createLocalIssueOnMainFn?: (
+		stdinData: FileLocalStdinPayload,
+		flags: { specSource?: 'grill' | 'derived' | 'operator'; derivedFrom?: string[] },
+	) => CreateLocalIssueOnMainOutcome;
+	/**
+	 * Inject a fake stdin-text reader for the --file-local branch. Only
+	 * consulted when `fileLocalFn` is absent. Default: `Bun.stdin.text()`.
+	 */
+	readStdinFn?: () => Promise<string>;
 	/** Inject a fake runIssue thin-proxy. Default: calls the real runIssue with the parsed text. */
 	runIssueFn?: () => Promise<number>;
 	/**
@@ -1439,10 +1459,18 @@ export interface IssueDispatchDeps {
 	abandonIssueOnMainFn?: (id: string) => AbandonIssueOnMainOutcome;
 }
 
+/** Shape of the JSON payload `cam issue --file-local` reads from stdin. */
+type FileLocalStdinPayload = {
+	title: string;
+	description?: string;
+	priority?: string;
+	wsjf?: WsjfScore;
+};
+
 /** Build production CreateLocalIssueOnMainOptions from project root + parsed stdin JSON + CLI flags. */
 function _buildCreateIssueOpts(
 	cwd: string,
-	parsedStdin: { title: string; description?: string; priority?: string; wsjf?: WsjfScore },
+	parsedStdin: FileLocalStdinPayload,
 	flags?: { specSource?: 'grill' | 'derived' | 'operator'; derivedFrom?: string[] },
 ): CreateLocalIssueOnMainOptions {
 	return {
@@ -1463,6 +1491,64 @@ function _buildCreateIssueOpts(
 		clock: () => new Date().toISOString(),
 		readProjectToml: () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8'),
 	};
+}
+
+/**
+ * Default --file-local implementation: reads stdin as JSON, routes to
+ * createLocalIssueOnMain, and owns the CAM_ISSUE_RESULT machine-line
+ * convention for every outcome (CAM-212 retrofit, mirrors close/abandon).
+ *
+ *   - unparseable stdin JSON: CAM_ISSUE_RESULT=ERROR reason=invalid-json,
+ *     emitted BEFORE createLocalIssueOnMainFn runs (invalid-json is a
+ *     file-local-specific token, not a member of CreateLocalIssueOnMainOutcome).
+ *   - createLocalIssueOnMainFn returns { ok: false, reason }: the pre-existing
+ *     printError already fired inside createLocalIssueOnMain; this function
+ *     additionally emits CAM_ISSUE_RESULT=ERROR reason=<reason>.
+ *   - the create path throws: CAM_ISSUE_RESULT=ERROR reason=exception.
+ *   - success: the pre-existing printHint plus CAM_ISSUE_RESULT=<id>.
+ */
+async function runFileLocalDefault(
+	parsed: Extract<ParsedIssueArgs, { mode: 'file-local' }>,
+	deps?: IssueDispatchDeps,
+): Promise<number> {
+	const readStdin = deps?.readStdinFn ?? (() => Bun.stdin.text());
+	const stdinText = await readStdin();
+	let stdinData: FileLocalStdinPayload;
+	try {
+		stdinData = JSON.parse(stdinText) as FileLocalStdinPayload;
+	} catch (err) {
+		printError(`cam issue --file-local: invalid JSON from stdin: ${String(err)}`);
+		process.stdout.write('CAM_ISSUE_RESULT=ERROR reason=invalid-json\n');
+		return 1;
+	}
+	// Derive specSource from CLI flags (never from content heuristics).
+	const specSource: 'operator' | 'derived' | undefined = parsed.fastTrack
+		? 'operator'
+		: parsed.derivedFrom.length > 0
+			? 'derived'
+			: undefined;
+	const flags = {
+		...(specSource !== undefined ? { specSource } : {}),
+		...(parsed.derivedFrom.length > 0 ? { derivedFrom: parsed.derivedFrom } : {}),
+	};
+	const createLocalIssueOnMainFn =
+		deps?.createLocalIssueOnMainFn ??
+		((data, f) => createLocalIssueOnMain(_buildCreateIssueOpts(process.cwd(), data, f)));
+	try {
+		const result = createLocalIssueOnMainFn(stdinData, flags);
+		if (!result.ok) {
+			// printError already fired inside createLocalIssueOnMain
+			process.stdout.write(`CAM_ISSUE_RESULT=ERROR reason=${result.reason}\n`);
+			return 1;
+		}
+		printHint(`filed ${result.id} on main (${result.sha})`);
+		process.stdout.write(`CAM_ISSUE_RESULT=${result.id}\n`);
+		return 0;
+	} catch (err) {
+		printError(`cam issue --file-local failed: ${String(err)}`);
+		process.stdout.write('CAM_ISSUE_RESULT=ERROR reason=exception\n');
+		return 1;
+	}
 }
 
 /**
@@ -1507,47 +1593,12 @@ export async function dispatchIssue(
 		return 0;
 	}
 	if (parsed.mode === 'file-local') {
-		const fileLocalFn =
-			deps?.fileLocalFn ??
-			(async () => {
-				const stdinText = await Bun.stdin.text();
-				let stdinData: { title: string; description?: string; priority?: string; wsjf?: WsjfScore };
-				try {
-					stdinData = JSON.parse(stdinText) as {
-						title: string;
-						description?: string;
-						priority?: string;
-						wsjf?: WsjfScore;
-					};
-				} catch (err) {
-					printError(`cam issue --file-local: invalid JSON from stdin: ${String(err)}`);
-					return 1;
-				}
-				// Derive specSource from CLI flags (never from content heuristics).
-				const specSource: 'operator' | 'derived' | undefined = parsed.fastTrack
-					? 'operator'
-					: parsed.derivedFrom.length > 0
-						? 'derived'
-						: undefined;
-				const flags = {
-					...(specSource !== undefined ? { specSource } : {}),
-					...(parsed.derivedFrom.length > 0 ? { derivedFrom: parsed.derivedFrom } : {}),
-				};
-				try {
-					const result = createLocalIssueOnMain(
-						_buildCreateIssueOpts(process.cwd(), stdinData, flags),
-					);
-					if (!result.ok) {
-						// printError already fired inside createLocalIssueOnMain
-						return 1;
-					}
-					printHint(`filed ${result.id} on main (${result.sha})`);
-					return 0;
-				} catch (err) {
-					printError(`cam issue --file-local failed: ${String(err)}`);
-					return 1;
-				}
-			});
+		// `fileLocalFn` (whole-branch override) takes priority when present,
+		// preserving the pre-CAM-212 branch-isolation tests (US-003). The
+		// finer-grained default below owns the CAM_ISSUE_RESULT machine-line
+		// convention regardless of whether `createLocalIssueOnMainFn`/
+		// `readStdinFn` are individually injected.
+		const fileLocalFn = deps?.fileLocalFn ?? (() => runFileLocalDefault(parsed, deps));
 		return fileLocalFn();
 	}
 	// Free-text thin-proxy path (text mode or unexpected help=true — help is handled in main()).
