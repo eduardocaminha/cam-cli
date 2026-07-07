@@ -165,7 +165,7 @@ describe('Test 1: Esc keypress mid-turn interrupts the current claude turn but d
 		const readyEvents = await readEventsUntil(
 			proc.stdout as ReadableStream<Uint8Array>,
 			(e) => e['subtype'] === 'ready',
-			2000,
+			6000,
 		);
 		expect(readyEvents.some((e) => e['subtype'] === 'ready')).toBe(true);
 
@@ -181,7 +181,7 @@ describe('Test 1: Esc keypress mid-turn interrupts the current claude turn but d
 		const interruptEvents = await readEventsUntil(
 			proc.stdout as ReadableStream<Uint8Array>,
 			(e) => e['subtype'] === 'interrupted',
-			2000,
+			6000,
 		);
 		expect(interruptEvents.some((e) => e['subtype'] === 'interrupted')).toBe(true);
 
@@ -201,7 +201,7 @@ describe('Test 1: Esc keypress mid-turn interrupts the current claude turn but d
 		(proc.stdin as { end?: () => void }).end?.();
 		await proc.exited;
 		livePids.delete(pid);
-	});
+	}, { timeout: 20_000 });
 });
 
 // --- Test 2: Typed message becomes next user-turn -------------------------

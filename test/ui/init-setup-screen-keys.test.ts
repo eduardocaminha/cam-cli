@@ -27,19 +27,13 @@ import type { CheckDef } from '../../src/ui/InitScreen.tsx';
 import { SetupScreen } from '../../src/ui/SetupScreen.tsx';
 import { Splash } from '../../src/ui/Splash.tsx';
 import { CAM_VERSION } from '../../src/version.ts';
+import { waitForFrame } from '../helpers/flush-ink.ts';
+import { installTerminalSizeMock } from '../helpers/mock-terminal-size.ts';
 
-// ---------------------------------------------------------------------------
-// Bun version probe: SetupScreen keyboard-navigation tests drive Ink's Select
-// component via stdin.write + await tick(). In bun 1.2.x the macrotask
-// scheduling differs from bun >=1.3: one tick is not enough to flush a React
-// state update triggered by stdin input, so the wizard does not advance and
-// the "All set" assertion fails. This is env-specific: the oven/bun:1.2-slim
-// container image locks bun at 1.2.x; the host uses bun 1.3+.
-// ---------------------------------------------------------------------------
-const [_setupBunMajorStr, _setupBunMinorStr] = Bun.version.split('.');
-const bunVersionOk =
-	parseInt(_setupBunMajorStr ?? '0', 10) > 1 ||
-	parseInt(_setupBunMinorStr ?? '0', 10) >= 3;
+// Root-cause fix for stdin-driven Ink render flakiness (CAM-201): stub the
+// synchronous `tput` shell-out ink-testing-library's fake stdout otherwise
+// triggers on every render (see test/helpers/mock-terminal-size.ts).
+installTerminalSizeMock();
 
 // ---------------------------------------------------------------------------
 // Shared console.error spy — captures ALL console.error calls across all tests
@@ -65,11 +59,6 @@ afterAll(() => {
 	);
 	expect(keyWarnings).toEqual([]);
 });
-
-// ---------------------------------------------------------------------------
-// Helper: wait one macrotask tick so React flushes async state updates.
-// ---------------------------------------------------------------------------
-const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
 // ---------------------------------------------------------------------------
 // Test 1: InitScreen — success path
@@ -174,7 +163,7 @@ describe('InitScreen — failure path', () => {
 // ---------------------------------------------------------------------------
 
 describe('SetupScreen — existing-project path', () => {
-	test.skipIf(!bunVersionOk)('renders all wizard sections and the "All set" done state when all steps are answered', async () => {
+	test('renders all wizard sections and the "All set" done state when all steps are answered', async () => {
 		let doneCallCount = 0;
 
 		const { lastFrame, stdin, unmount } = render(
@@ -191,19 +180,19 @@ describe('SetupScreen — existing-project path', () => {
 		const initial = lastFrame() ?? '';
 		expect(initial).toContain('Project');
 
-		await tick();
+		// Poll for each step's landing marker rather than a fixed tick count:
+		// the number of macrotask ticks React needs to settle a state update
+		// is not a stable constant across toolchains (CAM-201).
 		stdin.write('\r'); // Select mode (existing, the default)
-		await tick();
+		await waitForFrame(lastFrame, (f) => f.includes('Issue system'));
 		stdin.write('\r'); // Select issue system (none, the default)
-		await tick();
+		await waitForFrame(lastFrame, (f) => f.includes('Merge mode'));
 		stdin.write('\r'); // Select merge mode (immediate, the default)
-		await tick();
+		await waitForFrame(lastFrame, (f) => f.includes('Plan approval'));
 		stdin.write('\r'); // Select plan approval (auto, the default)
 
 		// Allow the done setTimeout to fire.
-		await new Promise((r) => setTimeout(r, 200));
-
-		const frame = lastFrame() ?? '';
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('All set'));
 		expect(frame).toContain('All set');
 		expect(frame).toContain('✓');
 		expect(frame).toContain('Next');
@@ -217,7 +206,7 @@ describe('SetupScreen — existing-project path', () => {
 // ---------------------------------------------------------------------------
 
 describe('SetupScreen — new-project path', () => {
-	test.skipIf(!bunVersionOk)('navigates to the description step when project mode is "new" and completes', async () => {
+	test('navigates to the description step when project mode is "new" and completes', async () => {
 		const { lastFrame, stdin, unmount } = render(
 			createElement(SetupScreen, {
 				prefilled: {},
@@ -226,23 +215,23 @@ describe('SetupScreen — new-project path', () => {
 			}),
 		);
 
-		await tick();
 		// Down arrow selects "New project" (second option in MODE_OPTIONS).
+		// Poll for each step's landing marker rather than a fixed tick count:
+		// the number of macrotask ticks React needs to settle a state update
+		// is not a stable constant across toolchains (CAM-201).
 		stdin.write('\x1b[B');
-		await tick();
+		await waitForFrame(lastFrame, (f) => f.includes('❯ New project'));
 		stdin.write('\r'); // Confirm "New project"
-		await tick();
+		await waitForFrame(lastFrame, (f) => f.includes('Issue system'));
 		stdin.write('\r'); // Confirm issue system
-		await tick();
+		await waitForFrame(lastFrame, (f) => f.includes('Merge mode'));
 		stdin.write('\r'); // Confirm merge mode
-		await tick();
+		await waitForFrame(lastFrame, (f) => f.includes('Plan approval'));
 		stdin.write('\r'); // Confirm plan approval
-		await tick();
+		await waitForFrame(lastFrame, (f) => f.includes('Project summary'));
 		// Description text-input: pressing Enter with empty draft confirms and skips.
 		stdin.write('\r');
-		await new Promise((r) => setTimeout(r, 200));
-
-		const frame = lastFrame() ?? '';
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('All set'));
 		// "All set" should appear at the end of the wizard.
 		expect(frame).toContain('All set');
 		expect(frame).toContain('✓');

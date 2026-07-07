@@ -36,6 +36,9 @@ import { buildImplementerWorkerArgv } from './worker-argv.ts';
 import { readPhaseModel, readBackend } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
 import { dockerExecWrap } from './docker-exec.ts';
+import { FirewallError } from './container-firewall.ts';
+import { ContainerConfigError } from './container-config.ts';
+import { ToolchainMismatchError } from './toolchain-assert.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { formatReviewVerdictLine, formatWorkerReportSummary, type WorkerReport } from './worker-report.ts';
 import { buildResultDetail } from './events.ts';
@@ -410,6 +413,28 @@ export interface RunSupervisorOptions {
 	 */
 	preflightContainerFn?: () => PreflightResult;
 	/**
+	 * Container ensure/reconcile + auto-rebuild seam (US-007, CAM-192/CAM-201).
+	 *
+	 * When injected AND `workerIsolation === 'container'`, called once per
+	 * implement dispatch immediately BEFORE `preflightContainerFn` (so a
+	 * reconcile/rebuild lands before the read-only preflight check observes
+	 * it). Production wiring: `makeProductionEnsureContainerFn` (ensure-container.ts),
+	 * the same closure the sidecar calls once at boot -- reusing it here means a
+	 * pin bump merged to main while the loop is running is picked up on the
+	 * NEXT dispatch cycle, with zero operator action (no sidecar restart
+	 * required).
+	 *
+	 * A thrown `FirewallError` / `ContainerConfigError` / `ToolchainMismatchError`
+	 * (instanceof checks) is caught here: the loop blocks fail-closed with a
+	 * container-named reason, escalates via `escalateFn` (best-effort), and
+	 * returns `{ status: 'blocked' }` without ever dispatching a host worker.
+	 *
+	 * Optional: when absent (existing callers / tests that do not inject this
+	 * dep) the loop behavior is byte-for-byte unchanged. In host mode this seam
+	 * is never invoked regardless of presence.
+	 */
+	ensureContainerFn?: () => void;
+	/**
 	 * Worker isolation mode (US-004 / B-2 CAM-152).
 	 *
 	 * 'container': wraps shellCmd through dockerExecWrap before respawn-pane and
@@ -681,6 +706,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// US-005 / B-1 + B-2: container preflight seam. Observe-only in B-1; fail-closed in
 	// container mode (B-2 / CAM-152). See workerIsolation below.
 	const preflightContainerFn = opts.preflightContainerFn;
+	// US-007 (CAM-192/CAM-201): container ensure/reconcile + auto-rebuild seam,
+	// called before preflightContainerFn on every dispatch cycle in container mode.
+	const ensureContainerFn = opts.ensureContainerFn;
 	// US-004 / B-2 (CAM-152): worker isolation mode. 'container' enables dockerExecWrap
 	// and fail-closed preflight. Default 'host' preserves all existing behavior byte-for-byte.
 	const workerIsolation = opts.workerIsolation ?? 'host';
@@ -895,6 +923,43 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// triggering a false-positive on the first poll tick of the new run.
 			// Best-effort: clearWorkerReport handles the no-file case gracefully.
 			clearWorkerReport?.();
+
+			// US-007 (CAM-192/CAM-201): container ensure/reconcile + auto-rebuild,
+			// run BEFORE the read-only preflight check so a merged pin bump (or a
+			// stale image) is reconciled/rebuilt before dispatch, on every cycle --
+			// not just at sidecar boot. Only invoked in container mode.
+			if (ensureContainerFn !== undefined && workerIsolation === 'container') {
+				try {
+					ensureContainerFn();
+				} catch (e) {
+					let containerReason: string;
+					if (e instanceof FirewallError) {
+						containerReason = `container-firewall-failed: ${e.stderrTail} (advisory ${advisoryStoryId ?? 'unknown'})`;
+					} else if (e instanceof ContainerConfigError) {
+						containerReason = `container-config-failed: ${e.stderrTail} (advisory ${advisoryStoryId ?? 'unknown'})`;
+					} else if (e instanceof ToolchainMismatchError) {
+						containerReason = `container-toolchain-mismatch: ${e.message} (advisory ${advisoryStoryId ?? 'unknown'})`;
+					} else {
+						throw e;
+					}
+					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
+					iterations++;
+					if (opts.escalateFn !== undefined) {
+						const escalateFn = opts.escalateFn;
+						void (async () => {
+							try {
+								await escalateFn();
+							} catch (escErr) {
+								process.stderr.write(
+									`[cam] escalateFn error (swallowed): ${escErr instanceof Error ? escErr.message : String(escErr)}\n`,
+								);
+							}
+						})();
+					}
+					finishTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+			}
 
 			// US-005 / B-1 + B-2: container preflight. In B-1 this was observe-only.
 			// In B-2 (CAM-152, US-004), container mode is fail-closed: a not-ready result

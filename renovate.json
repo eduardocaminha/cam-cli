@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "description": "Auto-merge bun-version pin (.bun-version) on any update type; automerge stays gated on the required CI status check.",
+      "matchManagers": ["bun-version"],
+      "matchUpdateTypes": ["patch", "minor", "major"],
+      "enabled": true,
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge asdf tool pins (.tool-versions) on any update type; automerge stays gated on the required CI status check.",
+      "matchManagers": ["asdf"],
+      "matchUpdateTypes": ["patch", "minor", "major"],
+      "enabled": true,
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge the worker Docker base image (.devcontainer/Dockerfile) on any update type; automerge stays gated on the required CI status check.",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["patch", "minor", "major"],
+      "enabled": true,
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge GitHub Actions workflow pins on any update type; automerge stays gated on the required CI status check.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["patch", "minor", "major"],
+      "enabled": true,
+      "automerge": true
+    }
+  ]
+}

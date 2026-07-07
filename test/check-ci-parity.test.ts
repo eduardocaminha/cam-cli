@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+	checkBunVersionPin,
 	checkParity,
 	checkParityFromFile,
 	extractBunRunScripts,
@@ -143,6 +144,71 @@ describe('checkParity - missing-gate workflow', () => {
 			expect(err).not.toContain("'bun run typecheck'");
 			expect(err).not.toContain("'bun run test'");
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// checkBunVersionPin: passing shapes
+// ---------------------------------------------------------------------------
+
+describe('checkBunVersionPin - passing workflow shapes', () => {
+	test('passes when setup-bun pins via bun-version-file: .bun-version and the pin file is valid', () => {
+		const yaml = loadFixture('bun-pin-aligned.yml');
+		const result = checkBunVersionPin(yaml, '1.3.13');
+		expect(result.ok).toBe(true);
+		expect(result.errors).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// checkBunVersionPin: failing shapes
+// ---------------------------------------------------------------------------
+
+describe('checkBunVersionPin - failing workflow shapes', () => {
+	test('fails when the setup-bun step lacks bun-version-file', () => {
+		const yaml = loadFixture('bun-pin-missing.yml');
+		const result = checkBunVersionPin(yaml, '1.3.13');
+		expect(result.ok).toBe(false);
+		expect(result.errors.join('\n')).toContain('bun-version-file: .bun-version');
+	});
+
+	test('fails when the setup-bun step floats via bun-version: latest', () => {
+		const yaml = loadFixture('bun-pin-floating.yml');
+		const result = checkBunVersionPin(yaml, '1.3.13');
+		expect(result.ok).toBe(false);
+		expect(result.errors.join('\n')).toContain('floats via');
+	});
+
+	test('fails when there is no oven-sh/setup-bun step at all', () => {
+		const yaml = loadFixture('bun-pin-no-step.yml');
+		const result = checkBunVersionPin(yaml, '1.3.13');
+		expect(result.ok).toBe(false);
+		expect(result.errors.join('\n')).toContain('no oven-sh/setup-bun step');
+	});
+
+	test('fails when the .bun-version pin file is absent/malformed (pinnedBunVersion is null)', () => {
+		const yaml = loadFixture('bun-pin-aligned.yml');
+		const result = checkBunVersionPin(yaml, null);
+		expect(result.ok).toBe(false);
+		expect(result.errors.join('\n')).toContain('.bun-version is missing or malformed');
+	});
+
+	test('does not throw on empty YAML and reports a clear error', () => {
+		const result = checkBunVersionPin('', '1.3.13');
+		expect(result.ok).toBe(false);
+		expect(result.errors.length).toBeGreaterThan(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// checkParityFromFile: bun-version-file pin is enforced end-to-end
+// ---------------------------------------------------------------------------
+
+describe('checkParityFromFile - bun-version-file pin enforcement', () => {
+	test('passes against the real ci.yml (which pins bun-version-file: .bun-version)', () => {
+		const realCiYml = join(import.meta.dir, '..', '.github', 'workflows', 'ci.yml');
+		const result = checkParityFromFile(realCiYml, GATES);
+		expect(result.ok).toBe(true);
 	});
 });
 

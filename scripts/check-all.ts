@@ -83,6 +83,7 @@ export const GATES: Gate[] = [
 	g('lint', 'bunx biome lint --error-on-warnings'),
 	g('file-size', 'bun scripts/check-file-sizes.ts'),
 	g('debt-markers', 'bun scripts/check-debt-markers.ts'),
+	g('version-skips', 'bun scripts/check-version-skips.ts'),
 	g('coverage', 'bun scripts/check-coverage.ts'),
 	// --bun: run knip on Bun's own runtime, not a delegated system `node` (avoids a <20 node:util gap).
 	g('dead-code', 'bunx --bun knip@6.24.0'),

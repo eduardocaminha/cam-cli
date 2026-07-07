@@ -24,8 +24,14 @@ import {
 	type DockerBuildArgvOptions,
 	type DockerRunArgvOptions,
 } from '../../src/supervisor/worker-container.ts';
+import { readPinnedBunVersion, readPinnedNodeVersion } from '../../src/config/toolchain.ts';
 
 const SAMPLE_WORKSPACE = '/home/user/projects/cam-cli';
+
+// Most argv-shape tests below pass explicit bunVersion/nodeVersion overrides
+// so their assertions never depend on the real repo-root pin files
+// (US-003, AC3: "explicit overrides still injectable for tests").
+const PIN_OVERRIDES = { bunVersion: '1.9.9', nodeVersion: '22.9.9' } as const;
 
 // ---------------------------------------------------------------------------
 // buildDockerBuildArgv
@@ -33,7 +39,7 @@ const SAMPLE_WORKSPACE = '/home/user/projects/cam-cli';
 
 describe('buildDockerBuildArgv', () => {
 	test('produces build argv with default options', () => {
-		const argv = buildDockerBuildArgv();
+		const argv = buildDockerBuildArgv(PIN_OVERRIDES);
 		expect(argv[0]).toBe('build');
 		expect(argv).toContain('-t');
 		expect(argv).toContain(DEFAULT_IMAGE_TAG);
@@ -44,26 +50,26 @@ describe('buildDockerBuildArgv', () => {
 	});
 
 	test('accepts custom dockerfilePath', () => {
-		const argv = buildDockerBuildArgv({ dockerfilePath: 'docker/Worker.dockerfile' });
+		const argv = buildDockerBuildArgv({ ...PIN_OVERRIDES, dockerfilePath: 'docker/Worker.dockerfile' });
 		expect(argv).toContain('-f');
 		expect(argv).toContain('docker/Worker.dockerfile');
 		expect(argv).not.toContain('.devcontainer/Dockerfile');
 	});
 
 	test('accepts custom imageTag', () => {
-		const argv = buildDockerBuildArgv({ imageTag: 'cam-worker:v2' });
+		const argv = buildDockerBuildArgv({ ...PIN_OVERRIDES, imageTag: 'cam-worker:v2' });
 		expect(argv).toContain('-t');
 		expect(argv).toContain('cam-worker:v2');
 		expect(argv).not.toContain(DEFAULT_IMAGE_TAG);
 	});
 
 	test('accepts custom buildContext', () => {
-		const argv = buildDockerBuildArgv({ buildContext: './docker' });
+		const argv = buildDockerBuildArgv({ ...PIN_OVERRIDES, buildContext: './docker' });
 		expect(argv[argv.length - 1]).toBe('./docker');
 	});
 
 	test('order: build -t <tag> -f <file> <context>', () => {
-		const argv = buildDockerBuildArgv();
+		const argv = buildDockerBuildArgv(PIN_OVERRIDES);
 		const tIdx = argv.indexOf('-t');
 		const fIdx = argv.indexOf('-f');
 		expect(tIdx).toBeGreaterThan(-1);
@@ -74,7 +80,7 @@ describe('buildDockerBuildArgv', () => {
 
 	// AC4: hostUid + hostGid -> --build-arg HOST_UID=<uid> --build-arg HOST_GID=<gid>
 	test('emits --build-arg HOST_UID and HOST_GID when both hostUid and hostGid are provided', () => {
-		const argv = buildDockerBuildArgv({ hostUid: 501, hostGid: 20 });
+		const argv = buildDockerBuildArgv({ ...PIN_OVERRIDES, hostUid: 501, hostGid: 20 });
 		const uidIdx = argv.indexOf('HOST_UID=501');
 		const gidIdx = argv.indexOf('HOST_GID=20');
 		expect(uidIdx).toBeGreaterThan(-1);
@@ -84,29 +90,72 @@ describe('buildDockerBuildArgv', () => {
 	});
 
 	test('build context is still the last arg when hostUid and hostGid are provided', () => {
-		const argv = buildDockerBuildArgv({ hostUid: 1000, hostGid: 1000, buildContext: './ctx' });
+		const argv = buildDockerBuildArgv({ ...PIN_OVERRIDES, hostUid: 1000, hostGid: 1000, buildContext: './ctx' });
 		expect(argv[argv.length - 1]).toBe('./ctx');
 	});
 
-	// AC5: absent hostUid/hostGid -> NO --build-arg token, argv byte-identical to today
-	test('emits NO --build-arg when neither hostUid nor hostGid is provided', () => {
+	// AC5: absent hostUid/hostGid -> NO HOST_UID/HOST_GID --build-arg token
+	test('emits NO HOST_UID/HOST_GID --build-arg when neither hostUid nor hostGid is provided', () => {
+		const argv = buildDockerBuildArgv(PIN_OVERRIDES);
+		expect(argv.some((a) => a.startsWith('HOST_UID='))).toBe(false);
+		expect(argv.some((a) => a.startsWith('HOST_GID='))).toBe(false);
+	});
+
+	test('emits NO HOST_UID/HOST_GID --build-arg when only hostUid is provided (hostGid absent)', () => {
+		const argv = buildDockerBuildArgv({ ...PIN_OVERRIDES, hostUid: 501 });
+		expect(argv.some((a) => a.startsWith('HOST_UID='))).toBe(false);
+		expect(argv.some((a) => a.startsWith('HOST_GID='))).toBe(false);
+	});
+
+	test('emits NO HOST_UID/HOST_GID --build-arg when only hostGid is provided (hostUid absent)', () => {
+		const argv = buildDockerBuildArgv({ ...PIN_OVERRIDES, hostGid: 20 });
+		expect(argv.some((a) => a.startsWith('HOST_UID='))).toBe(false);
+		expect(argv.some((a) => a.startsWith('HOST_GID='))).toBe(false);
+	});
+
+	test('default argv without hostUid/hostGid is byte-identical to baseline (with explicit toolchain pins)', () => {
+		const argv = buildDockerBuildArgv(PIN_OVERRIDES);
+		expect(argv).toEqual([
+			'build',
+			'-t',
+			DEFAULT_IMAGE_TAG,
+			'-f',
+			'.devcontainer/Dockerfile',
+			'--build-arg',
+			'BUN_VERSION=1.9.9',
+			'--build-arg',
+			'NODE_VERSION=22.9.9',
+			'.',
+		]);
+	});
+
+	// AC3: BUN_VERSION/NODE_VERSION are sourced from the US-001 toolchain
+	// reader by default (no explicit override), reading the real repo-root
+	// .bun-version / .tool-versions pin files.
+	test('defaults BUN_VERSION and NODE_VERSION to the toolchain reader when no override is given', () => {
 		const argv = buildDockerBuildArgv();
-		expect(argv).not.toContain('--build-arg');
+		const pinnedBun = readPinnedBunVersion();
+		const pinnedNode = readPinnedNodeVersion();
+		expect(pinnedBun).not.toBeNull();
+		expect(pinnedNode).not.toBeNull();
+		expect(argv).toContain(`BUN_VERSION=${pinnedBun}`);
+		expect(argv).toContain(`NODE_VERSION=${pinnedNode}`);
 	});
 
-	test('emits NO --build-arg when only hostUid is provided (hostGid absent)', () => {
-		const argv = buildDockerBuildArgv({ hostUid: 501 });
-		expect(argv).not.toContain('--build-arg');
+	test('explicit bunVersion/nodeVersion override the toolchain reader default', () => {
+		const argv = buildDockerBuildArgv({ bunVersion: '9.9.9', nodeVersion: '20.1.2' });
+		expect(argv).toContain('BUN_VERSION=9.9.9');
+		expect(argv).toContain('NODE_VERSION=20.1.2');
 	});
 
-	test('emits NO --build-arg when only hostGid is provided (hostUid absent)', () => {
-		const argv = buildDockerBuildArgv({ hostGid: 20 });
-		expect(argv).not.toContain('--build-arg');
-	});
-
-	test('default argv without hostUid/hostGid is byte-identical to baseline', () => {
-		const argv = buildDockerBuildArgv();
-		expect(argv).toEqual(['build', '-t', DEFAULT_IMAGE_TAG, '-f', '.devcontainer/Dockerfile', '.']);
+	test('BUN_VERSION and NODE_VERSION are each preceded by --build-arg', () => {
+		const argv = buildDockerBuildArgv(PIN_OVERRIDES);
+		const bunIdx = argv.indexOf('BUN_VERSION=1.9.9');
+		const nodeIdx = argv.indexOf('NODE_VERSION=22.9.9');
+		expect(bunIdx).toBeGreaterThan(-1);
+		expect(argv[bunIdx - 1]).toBe('--build-arg');
+		expect(nodeIdx).toBeGreaterThan(-1);
+		expect(argv[nodeIdx - 1]).toBe('--build-arg');
 	});
 });
 

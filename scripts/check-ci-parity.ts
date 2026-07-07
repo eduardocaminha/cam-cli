@@ -13,6 +13,7 @@ import { load } from 'js-yaml';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { readPinnedBunVersion } from '../src/config/toolchain.ts';
 import { GATES, type Gate } from './check-all.ts';
 
 // ---------------------------------------------------------------------------
@@ -136,7 +137,102 @@ export function checkParity(
 }
 
 /**
- * Load a CI workflow YAML from disk and run the parity check.
+ * Check that the workflow's `oven-sh/setup-bun` step pins bun via
+ * `bun-version-file: .bun-version` instead of floating to latest or an
+ * inline version string (US-002, CAM-201 PRD: toolchain parity).
+ *
+ * Fails when:
+ *   - No `oven-sh/setup-bun` step is found in any job.
+ *   - The step's `with.bun-version-file` is not exactly `.bun-version`.
+ *   - The step floats via `with.bun-version` (e.g. `latest`) instead.
+ *   - `pinnedBunVersion` is `null` (the `.bun-version` pin file itself is
+ *     missing or malformed): a `bun-version-file` pin that points at a
+ *     broken/absent file is not a real pin.
+ *
+ * `pinnedBunVersion` is injected (rather than read from disk here) so unit
+ * tests can simulate a missing/malformed `.bun-version` without touching the
+ * filesystem; production callers pass `readPinnedBunVersion()`.
+ *
+ * @param workflowYaml     Raw YAML content of the CI workflow file.
+ * @param pinnedBunVersion Result of `readPinnedBunVersion()` (or `null` to
+ *                         simulate an absent/malformed pin file).
+ */
+export function checkBunVersionPin(
+	workflowYaml: string,
+	pinnedBunVersion: string | null,
+): ParityResult {
+	const errors: string[] = [];
+
+	if (pinnedBunVersion === null) {
+		errors.push(
+			'.bun-version is missing or malformed (expected an exact semver like 1.3.13)',
+		);
+	}
+
+	if (!workflowYaml.trim()) {
+		errors.push('ci.yml is empty; cannot verify the bun-version-file pin');
+		return { ok: false, errors };
+	}
+
+	const doc = load(workflowYaml) as Record<string, unknown> | null;
+	if (!doc || typeof doc !== 'object') {
+		errors.push('ci.yml did not parse as a YAML object');
+		return { ok: false, errors };
+	}
+
+	const jobs = doc['jobs'];
+	let setupBunStep: Record<string, unknown> | null = null;
+
+	if (jobs && typeof jobs === 'object') {
+		outer: for (const job of Object.values(jobs as Record<string, unknown>)) {
+			if (!job || typeof job !== 'object') continue;
+			const steps = (job as Record<string, unknown>)['steps'];
+			if (!Array.isArray(steps)) continue;
+			for (const step of steps) {
+				if (!step || typeof step !== 'object') continue;
+				const uses = (step as Record<string, unknown>)['uses'];
+				if (typeof uses === 'string' && uses.startsWith('oven-sh/setup-bun')) {
+					setupBunStep = step as Record<string, unknown>;
+					break outer;
+				}
+			}
+		}
+	}
+
+	if (!setupBunStep) {
+		errors.push('ci.yml has no oven-sh/setup-bun step');
+		return { ok: false, errors };
+	}
+
+	const withBlock = setupBunStep['with'];
+	const withRecord =
+		withBlock && typeof withBlock === 'object'
+			? (withBlock as Record<string, unknown>)
+			: undefined;
+	const bunVersionFile = withRecord?.['bun-version-file'];
+	const floatingVersion = withRecord?.['bun-version'];
+
+	if (bunVersionFile !== '.bun-version') {
+		errors.push(
+			`setup-bun step lacks 'bun-version-file: .bun-version' (found: ${
+				bunVersionFile === undefined ? 'none' : JSON.stringify(bunVersionFile)
+			})`,
+		);
+	}
+
+	if (typeof floatingVersion === 'string') {
+		errors.push(
+			`setup-bun step floats via 'bun-version: ${floatingVersion}' instead of pinning through bun-version-file`,
+		);
+	}
+
+	return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Load a CI workflow YAML from disk and run the parity check, including the
+ * bun-version-file pin assertion (checkBunVersionPin) against the real
+ * `.bun-version` pin file.
  *
  * Returns a ParityResult. When the file does not exist the result has ok:false
  * and errors contains a 'ci.yml not found' message.
@@ -152,7 +248,12 @@ export function checkParityFromFile(
 		};
 	}
 	const yaml = readFileSync(filePath, 'utf8');
-	return checkParity(yaml, gates);
+	const parity = checkParity(yaml, gates);
+	const bunPin = checkBunVersionPin(yaml, readPinnedBunVersion());
+	return {
+		ok: parity.ok && bunPin.ok,
+		errors: [...parity.errors, ...bunPin.errors],
+	};
 }
 
 // ---------------------------------------------------------------------------

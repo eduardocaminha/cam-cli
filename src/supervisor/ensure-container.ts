@@ -42,6 +42,12 @@ import {
 	ContainerConfigError,
 	type ConfigSpawnFn,
 } from './container-config.ts';
+import {
+	assertContainerToolchain,
+	ToolchainMismatchError,
+	type ToolchainExecFn,
+} from './toolchain-assert.ts';
+import type { ReadFileFn } from '../config/toolchain.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -142,6 +148,42 @@ export interface EnsureWorkerContainerOptions {
 	 * When absent, no config call is made (host-mode / legacy callers).
 	 */
 	configSpawnFn?: ConfigSpawnFn;
+
+	/**
+	 * Injectable exec seam for the US-006/US-007 toolchain assert (two cheap
+	 * `docker exec <containerName> bun|node --version` calls).
+	 *
+	 * When provided, `ensureWorkerContainer` calls `assertContainerToolchain`
+	 * UNCONDITIONALLY after the 4-branch reconcile returns, regardless of which
+	 * action was taken. On a mismatch it tears down the container (`docker rm -f`)
+	 * and rebuilds via `runWorkerContainer` (same `--build-arg BUN_VERSION` /
+	 * `HOST_UID` / `HOST_GID` path as the image-stale branch), then re-asserts.
+	 *
+	 * A rebuild failure (non-zero build/run exit) or a still-mismatching
+	 * re-assert throws `ToolchainMismatchError` so the caller (sidecar boot /
+	 * per-cycle dispatch guard) can abort fail-closed: dispatch is allowed only
+	 * after a passing re-assert.
+	 *
+	 * The docker build is triggered ONLY on an actual mismatch (never
+	 * unconditionally per ensure call): a reused+matching container produces
+	 * zero build/rm calls, just the two cheap toolchain-probe execs.
+	 *
+	 * When absent, no toolchain assert is made (host-mode / legacy callers).
+	 */
+	toolchainExecFn?: ToolchainExecFn;
+
+	/**
+	 * Override the `.bun-version` path forwarded to `assertContainerToolchain`.
+	 * Tests use this (paired with `toolchainReadFileFn`) to avoid depending on
+	 * the real repo-root pin file contents.
+	 */
+	toolchainBunVersionPath?: string;
+
+	/** Override the `.tool-versions` path forwarded to `assertContainerToolchain`. */
+	toolchainToolVersionsPath?: string;
+
+	/** Injectable file reader forwarded to `assertContainerToolchain`'s pin readers. */
+	toolchainReadFileFn?: ReadFileFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +231,116 @@ function applyConfigIfPresent(
 	}
 }
 
+/**
+ * Run the US-006/US-007 toolchain assert unconditionally, auto-rebuilding on
+ * a mismatch. No-op when `toolchainExecFn` is absent (host mode / legacy
+ * callers). Returns `'rebuilt'` when a rebuild was triggered (so the caller
+ * can update `action`), or `null` when no rebuild was needed (assert absent
+ * or already passing).
+ *
+ * Throws `ToolchainMismatchError` when the rebuild itself fails to converge
+ * (non-zero build/run exit) or the re-assert after a successful rebuild still
+ * reports a mismatch. Dispatch is allowed only after a passing re-assert.
+ */
+function applyToolchainIfPresent(
+	containerName: string,
+	imageTag: string,
+	toolchainExecFn: ToolchainExecFn | undefined,
+	opts: Pick<EnsureWorkerContainerOptions, 'spawnFn' | 'workspaceFolder' | 'build'> & {
+		toolchainBunVersionPath?: string;
+		toolchainToolVersionsPath?: string;
+		toolchainReadFileFn?: ReadFileFn;
+	},
+): EnsureContainerAction | null {
+	if (toolchainExecFn === undefined) return null;
+
+	const assertOpts = {
+		containerName,
+		execFn: toolchainExecFn,
+		bunVersionPath: opts.toolchainBunVersionPath,
+		toolVersionsPath: opts.toolchainToolVersionsPath,
+		readFileFn: opts.toolchainReadFileFn,
+	};
+	const first = assertContainerToolchain(assertOpts);
+	if (first.ok) return null;
+
+	// Mismatch: tear down and rebuild (mirrors the image-stale branch), then
+	// re-assert. The docker build is triggered ONLY here (on an actual
+	// mismatch), never unconditionally.
+	opts.spawnFn('docker', ['rm', '-f', containerName]);
+	const rebuildResult = runWorkerContainer({
+		spawnFn: opts.spawnFn,
+		build: opts.build,
+		run: { containerName, workspaceFolder: opts.workspaceFolder, imageTag },
+	});
+	if (rebuildResult.buildExitCode !== 0 || rebuildResult.runExitCode !== 0) {
+		throw new ToolchainMismatchError(first.mismatches, 'rebuild-failed');
+	}
+
+	const second = assertContainerToolchain(assertOpts);
+	if (!second.ok) {
+		throw new ToolchainMismatchError(second.mismatches, 'still-mismatched');
+	}
+
+	return 'rebuilt';
+}
+
+/**
+ * Run the 4-branch reconcile (running/stopped/absent/image-stale) and return
+ * the action taken. Extracted from `ensureWorkerContainer` to keep that
+ * function under biome's noExcessiveLinesPerFunction(maxLines=80) limit.
+ */
+function reconcileContainerAction(
+	opts: Pick<EnsureWorkerContainerOptions, 'spawnFn' | 'probe' | 'statFn' | 'workspaceFolder' | 'build'>,
+	containerName: string,
+	imageTag: string,
+	dockerfilePath: string,
+): EnsureContainerAction {
+	const { spawnFn, probe, statFn } = opts;
+
+	// --- Branch 4: image-stale detection ---
+	// preflightWorkerContainer checks daemon reachability, image existence, and
+	// Dockerfile mtime.  When it returns `image-stale` the existing container
+	// (if any) must be torn down so the rebuilt image can replace it.
+	const preflight = preflightWorkerContainer({ probe, statFn, imageTag, dockerfilePath });
+
+	if (preflight.ready === false && preflight.reason === 'image-stale') {
+		// Remove the stale container (best-effort; ignore exit code in case it
+		// is already absent).
+		spawnFn('docker', ['rm', '-f', containerName]);
+		runWorkerContainer({
+			spawnFn,
+			build: opts.build,
+			run: { containerName, workspaceFolder: opts.workspaceFolder, imageTag },
+		});
+		return 'rebuilt';
+	}
+
+	// --- Branches 1-3: probe container running state ---
+	// `docker inspect -f {{.State.Running}} <name>` returns:
+	//   stdout "true"  + exit 0 → container is running
+	//   stdout "false" + exit 0 → container exists but is stopped
+	//   exit non-zero           → container is absent (no such object)
+	const inspect = probe(['inspect', '-f', '{{.State.Running}}', containerName]);
+
+	if (inspect.exitCode !== 0) {
+		// Branch 3: absent → build + run
+		runWorkerContainer({
+			spawnFn,
+			build: opts.build,
+			run: { containerName, workspaceFolder: opts.workspaceFolder, imageTag },
+		});
+		return 'created';
+	}
+	if (inspect.stdout.trim() === 'true') {
+		// Branch 1: running → reuse (no-op)
+		return 'reused';
+	}
+	// Branch 2: stopped → docker start
+	spawnFn('docker', ['start', containerName]);
+	return 'started';
+}
+
 // ---------------------------------------------------------------------------
 // Core reconciliation function
 // ---------------------------------------------------------------------------
@@ -213,58 +365,31 @@ function applyConfigIfPresent(
 export function ensureWorkerContainer(
 	opts: EnsureWorkerContainerOptions,
 ): EnsureWorkerContainerResult {
-	const { spawnFn, probe, statFn } = opts;
 	const containerName = opts.containerName ?? DEFAULT_CONTAINER_NAME;
 	const imageTag = opts.imageTag ?? DEFAULT_IMAGE_TAG;
 	const dockerfilePath = opts.dockerfilePath ?? '.devcontainer/Dockerfile';
 
-	// --- Branch 4: image-stale detection ---
-	// preflightWorkerContainer checks daemon reachability, image existence, and
-	// Dockerfile mtime.  When it returns `image-stale` the existing container
-	// (if any) must be torn down so the rebuilt image can replace it.
-	const preflight = preflightWorkerContainer({
-		probe,
-		statFn,
-		imageTag,
-		dockerfilePath,
+	// --- Branches 1-4: reconcile to a running state ---
+	// (running -> reuse | stopped -> start | absent -> created | image-stale -> rebuilt)
+	let action = reconcileContainerAction(opts, containerName, imageTag, dockerfilePath);
+
+	// --- Unconditional toolchain assert (US-006/US-007) ---
+	// Runs after the 4-branch reconcile above, regardless of which action was
+	// taken, so a merged pin bump is caught even on a `reused` (already-running)
+	// container. On mismatch: tear down + rebuild + re-assert (updates `action`
+	// to 'rebuilt'). Throws ToolchainMismatchError when the rebuild cannot
+	// converge; the caller (sidecar boot / per-cycle dispatch guard) aborts
+	// fail-closed. When toolchainExecFn is absent, this is a complete no-op.
+	const toolchainAction = applyToolchainIfPresent(containerName, imageTag, opts.toolchainExecFn, {
+		spawnFn: opts.spawnFn,
+		workspaceFolder: opts.workspaceFolder,
+		build: opts.build,
+		toolchainBunVersionPath: opts.toolchainBunVersionPath,
+		toolchainToolVersionsPath: opts.toolchainToolVersionsPath,
+		toolchainReadFileFn: opts.toolchainReadFileFn,
 	});
-
-	let action: EnsureContainerAction;
-
-	if (preflight.ready === false && preflight.reason === 'image-stale') {
-		// Remove the stale container (best-effort; ignore exit code in case it
-		// is already absent).
-		spawnFn('docker', ['rm', '-f', containerName]);
-		runWorkerContainer({
-			spawnFn,
-			build: opts.build,
-			run: { containerName, workspaceFolder: opts.workspaceFolder, imageTag },
-		});
-		action = 'rebuilt';
-	} else {
-		// --- Branches 1-3: probe container running state ---
-		// `docker inspect -f {{.State.Running}} <name>` returns:
-		//   stdout "true"  + exit 0 → container is running
-		//   stdout "false" + exit 0 → container exists but is stopped
-		//   exit non-zero           → container is absent (no such object)
-		const inspect = probe(['inspect', '-f', '{{.State.Running}}', containerName]);
-
-		if (inspect.exitCode !== 0) {
-			// Branch 3: absent → build + run
-			runWorkerContainer({
-				spawnFn,
-				build: opts.build,
-				run: { containerName, workspaceFolder: opts.workspaceFolder, imageTag },
-			});
-			action = 'created';
-		} else if (inspect.stdout.trim() === 'true') {
-			// Branch 1: running → reuse (no-op)
-			action = 'reused';
-		} else {
-			// Branch 2: stopped → docker start
-			spawnFn('docker', ['start', containerName]);
-			action = 'started';
-		}
+	if (toolchainAction !== null) {
+		action = toolchainAction;
 	}
 
 	// --- Unconditional firewall apply ---
@@ -354,15 +479,28 @@ export function makeProductionEnsureContainerFn(cwd: string): () => void {
 				exitCode: r.status ?? 1,
 			};
 		};
+		// toolchainExecFn wraps spawnSync with stderr capture, mirroring
+		// firewallSpawnFn/configSpawnFn (US-007).
+		const toolchainExecFn: ToolchainExecFn = (cmd, args) => {
+			const r = spawnSync(cmd, args, { encoding: 'utf8' });
+			return {
+				stdout: typeof r.stdout === 'string' ? r.stdout : '',
+				stderr: typeof r.stderr === 'string' ? r.stderr : '',
+				exitCode: r.status ?? 1,
+			};
+		};
 		const { uid: hostUid, gid: hostGid } = resolveHostIds(spawnFn);
 		// Throws FirewallError on firewall non-convergence; caught by runSidecar.
 		// Throws ContainerConfigError on config repair failure; caught by runSidecar.
+		// Throws ToolchainMismatchError on toolchain non-convergence; caught by
+		// runSidecar (boot) and the per-cycle dispatch guard in runSupervisor.
 		ensureWorkerContainer({
 			spawnFn,
 			probe,
 			statFn,
 			firewallSpawnFn,
 			configSpawnFn,
+			toolchainExecFn,
 			workspaceFolder: cwd,
 			build: { hostUid, hostGid },
 		});

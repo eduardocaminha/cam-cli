@@ -44,6 +44,9 @@ import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import { formatWorkerReportSummary, type WorkerReport } from '../../src/supervisor/worker-report.ts';
 import { readFileSync } from 'node:fs';
 import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
+import { FirewallError } from '../../src/supervisor/container-firewall.ts';
+import { ContainerConfigError } from '../../src/supervisor/container-config.ts';
+import { ToolchainMismatchError } from '../../src/supervisor/toolchain-assert.ts';
 
 // ---------------------------------------------------------------------------
 // Fake builder helpers
@@ -3278,6 +3281,185 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 			const result = await runSupervisor(opts);
 
 			expect(result.status).toBe('complete');
+		});
+	});
+
+	// US-007 (CAM-192/CAM-201): container ensure/reconcile + auto-rebuild seam,
+	// invoked per dispatch cycle (before preflightContainerFn) in container mode.
+	describe('US-007: ensureContainerFn per-cycle seam (container mode)', () => {
+		/**
+		 * Shared base: one-story PRD that completes in one iteration via report file.
+		 * (Local copy of the US-004/B-2 describe block's helper; that one is
+		 * function-scoped to its own describe and not reachable here.)
+		 */
+		function oneStoryBase(): Partial<RunSupervisorOptions> {
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+			const fakeReport: WorkerReport = {
+				outcome: 'DONE',
+				story: 'US-001',
+				gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+				notes: 'none',
+			};
+			let prdCall = 0;
+			return {
+				readPrd: () => {
+					prdCall++;
+					return prdCall <= 1 ? prd_impl : prd_done;
+				},
+				readHandoff: () => makeHandoff('US-001'),
+				capturePane: (_paneId) => donePane('US-001'),
+				readWorkerReport: () => fakeReport,
+			};
+		}
+
+		test('ensureContainerFn is called before preflightContainerFn on every dispatch', async () => {
+			const calls: string[] = [];
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				workerIsolation: 'container',
+				ensureContainerFn: () => {
+					calls.push('ensure');
+				},
+				preflightContainerFn: () => {
+					calls.push('preflight');
+					return { ready: true };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			expect(calls[0]).toBe('ensure');
+			expect(calls[1]).toBe('preflight');
+		});
+
+		test('absent ensureContainerFn leaves loop behavior unchanged (backward compat)', async () => {
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: true }),
+				// ensureContainerFn intentionally absent
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+		});
+
+		test('host mode never invokes ensureContainerFn', async () => {
+			let called = false;
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				// workerIsolation intentionally absent -> defaults to 'host'
+				ensureContainerFn: () => {
+					called = true;
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			expect(called).toBe(false);
+		});
+
+		test('FirewallError thrown by ensureContainerFn blocks dispatch fail-closed', async () => {
+			let respawnCalled = false;
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				workerIsolation: 'container',
+				ensureContainerFn: () => {
+					throw new FirewallError('iptables: permission denied');
+				},
+				spawn: (_cmd, args) => {
+					if (args.includes('respawn-pane')) respawnCalled = true;
+					return { stdout: '', exitCode: 0 };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			expect(respawnCalled).toBe(false);
+			expect(result.lastOutcome?.detail).toContain('container-firewall-failed');
+		});
+
+		test('ContainerConfigError thrown by ensureContainerFn blocks dispatch fail-closed', async () => {
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				workerIsolation: 'container',
+				ensureContainerFn: () => {
+					throw new ContainerConfigError('chown: operation not permitted');
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			expect(result.lastOutcome?.detail).toContain('container-config-failed');
+		});
+
+		test('ToolchainMismatchError thrown by ensureContainerFn blocks dispatch fail-closed', async () => {
+			let respawnCalled = false;
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				workerIsolation: 'container',
+				ensureContainerFn: () => {
+					throw new ToolchainMismatchError(
+						[{ tool: 'bun', expected: '1.3.13', actual: '1.2.23' }],
+						'still-mismatched',
+					);
+				},
+				spawn: (_cmd, args) => {
+					if (args.includes('respawn-pane')) respawnCalled = true;
+					return { stdout: '', exitCode: 0 };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('blocked');
+			expect(respawnCalled).toBe(false);
+			expect(result.lastOutcome?.detail).toContain('container-toolchain-mismatch');
+		});
+
+		test('ToolchainMismatchError escalates via escalateFn (best-effort)', async () => {
+			let escalated = false;
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				workerIsolation: 'container',
+				ensureContainerFn: () => {
+					throw new ToolchainMismatchError(
+						[{ tool: 'node', expected: '22.23.1', actual: '18.0.0' }],
+						'rebuild-failed',
+					);
+				},
+				escalateFn: async () => {
+					escalated = true;
+				},
+			});
+
+			await runSupervisor(opts);
+			// escalateFn is fired-and-forgotten (async IIFE); a microtask flush lets it run.
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(escalated).toBe(true);
+		});
+
+		test('an unrelated thrown error from ensureContainerFn is NOT swallowed', async () => {
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				workerIsolation: 'container',
+				ensureContainerFn: () => {
+					throw new Error('unexpected runtime error');
+				},
+			});
+
+			await expect(runSupervisor(opts)).rejects.toThrow('unexpected runtime error');
 		});
 	});
 

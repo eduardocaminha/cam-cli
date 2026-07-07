@@ -6,6 +6,21 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.76.0] - 2026-07-07
+
+### Added
+
+- US-R3-002 - Fix claude-off-PATH regression in worker Dockerfile (US-003)
+- US-R3-001 - Add ARG BUN_VERSION/NODE_VERSION literal defaults to the worker Dockerfile
+- US-008 - Add Renovate config auto-updating the toolchain pins
+- US-007 - Auto-rebuild worker image on toolchain mismatch; escalate on rebuild failure
+- US-006 - Add fail-closed container toolchain assert to the preflight layer
+- US-005 - Add check:all guard gate forbidding toolchain-version-conditioned skips
+- US-004 - Drop bun-version-conditioned skips; make Ink stdin tests version-agnostic
+- US-003 - Feed the worker Dockerfile toolchain from the pins
+- US-002 - Pin CI bun via bun-version-file and enforce it in ci-parity
+- US-001 - Pin bun and Node versions with a shared toolchain reader
+
 ## [0.75.0] - 2026-07-06
 
 ### Added
