@@ -49,3 +49,12 @@ Um timestamp duravel gravado no prd.json (ex: autoShipDispatchedAt) que deduplic
 
 **clobber chain**:
 Sequencia deterministica de escritas ao mesmo arquivo de estado, no mesmo caminho de controle, onde uma escrita anterior e sobrescrita ou apagada por escritas posteriores; no cam, phase:shipping (escrito primeiro) e destruido pelo unlink do onProgress e depois pela reescrita idle do clearActive.
+
+**meta_loop**:
+cam project.toml [loop] key controlling inter-cycle behavior: off (no chaining), observe (emit would-dispatch events, no state mutation), auto (deterministic auto-dispatcher chains the next plannable backlog issue as a new autonomous cycle). Read via readMetaLoop, fail-closed to off.
+
+**worker_isolation**:
+cam project.toml [loop] key selecting where implementer/reviewer workers run: host (same machine as the operator) or container (isolated dev-container sandbox). Read via readWorkerIsolation, fail-closed to host. The auto-drain (meta_loop=auto) is gated to container-only (ADR 0007); in host mode the dispatcher is not armed (CAM-208).
+
+**auto-drain**:
+the inter-cycle unattended dispatcher (meta_loop=auto) that, at a safe idle boundary, selects the next plannable backlog issue and writes phase:planning to chain a new autonomous cycle. Container-gated by design (ADR 0007). worker_isolation=host is a permanent mismatch and does not arm it; worker_isolation=container with Docker preflight not yet ready is a transient state that refuses per-tick until ready.
