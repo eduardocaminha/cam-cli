@@ -55,6 +55,7 @@ import {
 	MERGE_WATCH_FILENAME,
 	SHIP_STALLED_FILENAME,
 	type GhPollFn,
+	type GhPollResult,
 	type PrStatus,
 	type StepMergeWatchOptions,
 	type UpdateBranchFn,
@@ -481,6 +482,36 @@ export function updateShipStalledMarker(
 }
 
 /**
+ * Parse a `gh pr view` spawnSync result into a discriminated GhPollResult
+ * (US-001, CAM-170): ok:true with the parsed PrStatus on a zero exit with
+ * well-shaped JSON, ok:false carrying the gh stderr (or a synthesized message
+ * when stderr is empty) on a non-zero exit or a JSON-parse/shape failure.
+ *
+ * Extracted from ghPollFn to keep it under the biome complexity/line limits
+ * (CAM-60 factory/helper pattern).
+ */
+function parseGhPollResult(result: SpawnSyncReturns<string>): GhPollResult {
+	if ((result.status ?? 1) !== 0) {
+		const stderr = result.stderr && result.stderr.trim().length > 0
+			? result.stderr.trim()
+			: `gh pr view exited with status ${result.status ?? 'unknown'}`;
+		return { ok: false, stderr };
+	}
+	try {
+		const parsed: unknown = JSON.parse(result.stdout);
+		if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+			return { ok: true, status: parsed as PrStatus };
+		}
+		return { ok: false, stderr: 'gh pr view returned unexpected JSON shape' };
+	} catch {
+		const stderr = result.stderr && result.stderr.trim().length > 0
+			? result.stderr.trim()
+			: 'gh pr view returned malformed JSON';
+		return { ok: false, stderr };
+	}
+}
+
+/**
  * Build the production runMergeWatchFn closure for ci-gated ship mode.
  *
  * This factory is called by runSidecar when merge_mode == "ci-gated".
@@ -508,21 +539,14 @@ function makeProductionMergeWatchFn(
 			return;
 		}
 
-		const ghPollFn: GhPollFn = (prNumber): PrStatus | null => {
+		const ghPollFn: GhPollFn = (prNumber): GhPollResult => {
 			// Read-only poll: keeps the ambient GITHUB_TOKEN (no env stripping).
 			const result = spawnSync(
 				'gh',
 				['pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,statusCheckRollup,autoMergeRequest,url'],
 				{ encoding: 'utf8' },
 			);
-			if ((result.status ?? 1) !== 0) return null;
-			try {
-				const parsed: unknown = JSON.parse(result.stdout);
-				if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-					return parsed as PrStatus;
-				}
-				return null;
-			} catch { return null; }
+			return parseGhPollResult(result);
 		};
 
 		// Mutation: `gh pr update-branch` runs with GITHUB_TOKEN stripped from the

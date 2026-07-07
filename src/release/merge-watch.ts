@@ -29,6 +29,7 @@ import type {
 	MergeWatchCiRedEventDetail,
 	MergeWatchPostMergeDoneEventDetail,
 	MergeWatchStalledEventDetail,
+	MergeWatchPollErrorEventDetail,
 } from '../supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
@@ -374,13 +375,36 @@ export interface PrStatus {
 }
 
 /**
+ * Discriminated result of one gh poll (US-001, CAM-170).
+ *
+ * - ok:true carries the parsed PrStatus (a normal poll of a still-open PR).
+ * - ok:false carries the gh stderr text (non-zero exit or JSON-parse failure)
+ *   so a revoked/stale GITHUB_TOKEN is diagnosable instead of a bare null.
+ */
+export type GhPollResult = { ok: true; status: PrStatus } | { ok: false; stderr: string };
+
+/**
  * Injectable gh poll function.
  *
- * Production: calls `gh pr view <N> --json state,mergeStateStatus` via spawnSync.
- * Tests: returns a controlled PrStatus sequence.
- * Returns null on gh error (poll is silently retried).
+ * Production: calls `gh pr view <N> --json state,mergeStateStatus,...` via
+ * spawnSync and surfaces stderr into the error result on failure.
+ * Tests: returns a controlled GhPollResult sequence.
+ * A gh error (ok:false) is silently retried by the state machine (never
+ * changes the watch outcome); it only increments MergeWatchState.consecutiveNullPolls
+ * and, on an edge-triggered crossing of POLL_ERROR_THRESHOLD, emits an advisory
+ * 'merge-watch-poll-error' event (see stepMergeWatch).
  */
-export type GhPollFn = (prNumber: number) => PrStatus | null;
+export type GhPollFn = (prNumber: number) => GhPollResult;
+
+/**
+ * Number of consecutive gh poll failures that trigger one
+ * 'merge-watch-poll-error' event + orchestrator narration (US-001, CAM-170).
+ * Three minutes at the default 60s poll interval. Edge-triggered: fires once
+ * per crossing (=== POLL_ERROR_THRESHOLD after increment), not on every tick
+ * past the threshold; a later successful poll resets the counter and re-arms
+ * a future crossing.
+ */
+export const POLL_ERROR_THRESHOLD = 3;
 
 /**
  * Injectable gh pr update-branch invocable (US-001, CAM-182).
@@ -756,6 +780,42 @@ export interface StepMergeWatchOptions {
 }
 
 /**
+ * Handle a failed gh poll result (US-001, CAM-170): increment
+ * consecutiveNullPolls and edge-trigger the 'merge-watch-poll-error' event +
+ * orchestrator narration exactly once per crossing of POLL_ERROR_THRESHOLD
+ * (=== check, not >=, so ticks past the threshold stay silent until a
+ * successful poll resets the counter). Always returns 'continue': a gh error
+ * never changes the watch outcome (silent retry).
+ *
+ * Extracted from stepMergeWatch to keep it under the biome complexity/line
+ * limits (CAM-60 factory/helper pattern).
+ */
+function handlePollError(
+	state: MergeWatchState,
+	stderr: string,
+	newPollCount: number,
+	newLastPolledAt: number,
+	opts: StepMergeWatchOptions,
+): StepMergeWatchResult {
+	const consecutiveNullPolls = (state.consecutiveNullPolls ?? 0) + 1;
+	if (consecutiveNullPolls === POLL_ERROR_THRESHOLD) {
+		opts.notifyOrchestrator(
+			`[cam] merge-watch: PR #${state.prNumber} gh poll failed ${consecutiveNullPolls}x in a row: ${stderr}`,
+		);
+		const pollErrorDetail: MergeWatchPollErrorEventDetail = {
+			prNumber: state.prNumber,
+			consecutiveNullPolls,
+			lastStderr: stderr,
+		};
+		opts.logEvent?.('merge-watch-poll-error', pollErrorDetail);
+	}
+	return {
+		kind: 'continue',
+		state: { ...state, pollCount: newPollCount, lastPolledAt: newLastPolledAt, consecutiveNullPolls },
+	};
+}
+
+/**
  * Advance the merge-watch state machine by one tick.
  *
  * Pure function: no FS, no sleep, no Date.now(). The caller owns persistence
@@ -810,18 +870,15 @@ export function stepMergeWatch(
 	}
 
 	// Call pollFn exactly once.
-	const status = pollFn(state.prNumber);
+	const pollResult = pollFn(state.prNumber);
 	const newPollCount = pollCount + 1;
 	const newLastPolledAt = now;
 
-	if (status === null) {
-		// gh error: silent retry. Advance counters so the throttle fires correctly
-		// on the next tick (the caller will sleep before calling us again).
-		return {
-			kind: 'continue',
-			state: { ...state, pollCount: newPollCount, lastPolledAt: newLastPolledAt },
-		};
+	if (!pollResult.ok) {
+		return handlePollError(state, pollResult.stderr, newPollCount, newLastPolledAt, opts);
 	}
+
+	const status = pollResult.status;
 
 	// Delegate to processPollResult with a reconstructed opts bag.
 	const mergeWatchOpts: MergeWatchOptions = {
@@ -840,10 +897,17 @@ export function stepMergeWatch(
 		return { kind: 'terminal', outcome: result.outcome };
 	}
 
-	// Non-terminal: keep watching with updated counters. Merge in the new
-	// updateBranchCount only when a BEHIND auto-recovery attempt ran; otherwise
-	// preserve whatever was already on state (undefined stays undefined).
-	const nextState: MergeWatchState = { ...state, pollCount: newPollCount, lastPolledAt: newLastPolledAt };
+	// Non-terminal: keep watching with updated counters. Reset consecutiveNullPolls
+	// to 0 on any successful poll (re-arms the emit-once threshold for a later
+	// failure streak). Merge in the new updateBranchCount only when a BEHIND
+	// auto-recovery attempt ran; otherwise preserve whatever was already on
+	// state (undefined stays undefined).
+	const nextState: MergeWatchState = {
+		...state,
+		pollCount: newPollCount,
+		lastPolledAt: newLastPolledAt,
+		consecutiveNullPolls: 0,
+	};
 	if (result !== null && 'updateBranchCount' in result) {
 		nextState.updateBranchCount = result.updateBranchCount;
 	}
@@ -865,7 +929,9 @@ export function stepMergeWatch(
  *   - timeout: maxPolls exhausted -> narrate + stop.
  *
  * Non-terminal outcomes (loop continues):
- *   - pollFn returns null (gh error): silent retry.
+ *   - pollFn returns ok:false (gh error): silent retry (never changes the
+ *     watch outcome), advisory 'merge-watch-poll-error' event edge-triggered
+ *     at POLL_ERROR_THRESHOLD consecutive failures (see stepMergeWatch).
  *   - state=="OPEN" && mergeStateStatus!="BLOCKED" (CLEAN, BEHIND, etc.):
  *     keep polling.
  *   - state=="OPEN" && mergeStateStatus=="BLOCKED" && no failed check in rollup

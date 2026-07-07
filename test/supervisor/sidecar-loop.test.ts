@@ -463,7 +463,7 @@ describe('runSidecarLoop + merge-watch: one-step-per-tick (US-003)', () => {
 		writeMergeWatchState(stateFilePath, { prNumber: 10, mergedBranch: 'cam/test' });
 
 		// Non-terminal pollFn: OPEN+CLEAN (never terminal)
-		const pollFn: GhPollFn = () => ({ state: 'OPEN', mergeStateStatus: 'CLEAN' });
+		const pollFn: GhPollFn = () => ({ ok: true, status: { state: 'OPEN', mergeStateStatus: 'CLEAN' } });
 
 		const runMergeWatchFn = async () => {
 			// Count pollFn calls for this invocation.
@@ -531,7 +531,7 @@ describe('runSidecarLoop + merge-watch: one-step-per-tick (US-003)', () => {
 			if (state === null) return;
 
 			// pollFn: MERGED immediately
-			const pollFn: GhPollFn = () => ({ state: 'MERGED', mergeStateStatus: 'MERGED' });
+			const pollFn: GhPollFn = () => ({ ok: true, status: { state: 'MERGED', mergeStateStatus: 'MERGED' } });
 
 			const result = stepMergeWatch(state, 0, pollFn, {
 				cwd: '/fake',
