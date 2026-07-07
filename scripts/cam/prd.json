@@ -54,7 +54,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .github/workflows/ci.yml, scripts/check-ci-parity.ts, test/check-ci-parity.test.ts, test/ci-workflow.test.ts (may assert workflow shape; update if stale). Gate-spine convention (patterns.md, CAM-59): CI calls only bun run check:all; ci-parity is the sync-enforcer, so extend checkParity/checkParityFromFile rather than adding a new ci.yml step. Reuse readPinnedBunVersion from US-001 (or the injectable-read pattern) so the assertion compares against the actual pin file, satisfying the spec AC that the CI-resolved bun equals .bun-version."
     },
