@@ -40,7 +40,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (ParsedIssueArgs union at ~656-670, parseIssueArgs at ~671-731, dispatchIssue at ~1358-1420, ISSUE_HELP at ~275), test/issue-dispatch.test.ts. Pattern references: the `list` positional branch in parseIssueArgs for parse shape; the dispatchIssue file-local branch (parse -> in-process call -> map result.ok to exit 0/1) for dispatch shape; _buildCreateIssueOpts (index.ts:1332-1355) for building the production spawnFn (spawnSync wrapped with stdio:'pipe') + clock: () => new Date().toISOString(). Gotchas: (a) closeIssueOnMain is pure return-only; the dispatchIssue branch owns ALL printing (hint + CAM_ISSUE_RESULT line) and exit-code mapping. (b) DELIBERATE inconsistency: siblings --file-local/list print no CAM_ISSUE_* line; this subcommand intentionally ADDS it (structured handback, CAM-197 thesis); do NOT retrofit the line onto --file-local/list (separate follow-up). (c) clock and writeFile are declared-but-unused interface-compat holdovers in CloseIssueOnMainOptions; pass real ones anyway. (d) Add the positional branch BEFORE the free-text fallthrough so args[1] is consumed. (e) Inject a close fn via IssueDispatchDeps for tests, mirroring fileLocalFn/issueListFn. (f) OUT of scope: /cam-issue slash form, reason/comment args, blockedBy warning. Re-check CONTEXT.md 'structured handback line' and 'Layer-1 CLI-exposure' before coding."
     },
