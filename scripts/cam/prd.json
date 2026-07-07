@@ -136,7 +136,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/ensure-container.ts, src/commands/sidecar.ts, tests (ensure-container + sidecar fail-closed spy test: when ensureContainerFn throws ToolchainMismatchError the loop deps are never built). Follow the applyFirewallIfPresent/applyConfigIfPresent extraction style to stay under biome complexity 15. After a rebuild the firewall + config repair must still run (they are unconditional post-reconcile steps). Gotchas (spec): docker build takes minutes but Docker layer cache reduces cost; rebuild only on mismatch. If ensureContainerFn is currently invoked once per sidecar boot, move/also invoke the ensure (or at minimum the assert-and-rebuild path) into the per-cycle path the sidecar loop runs before dispatch, so a merge picked up by the running loop triggers the rebuild without a sidecar restart; keep host-mode (isolation != container) a complete no-op. This story delivers the CAM-192 (image staleness) and CAM-180 (manual rebuild ceremony) closures; US-003 delivers CAM-198 (Node 18). Reference all three as subsumed/closed in the PR body at ship time."
     },

@@ -1,34 +1,36 @@
 {
-  "lastCompletedStory": { "id": "US-006", "title": "Add fail-closed container toolchain assert to the preflight layer" },
+  "lastCompletedStory": { "id": "US-007", "title": "Auto-rebuild worker image on toolchain mismatch; escalate on rebuild failure" },
   "branchName": "cam/pr-201-toolchain-parity",
-  "timestamp": "2026-07-07T05:30:00Z",
+  "timestamp": "2026-07-07T06:15:00Z",
   "createdFiles": [
-    "src/supervisor/toolchain-assert.ts",
-    "test/toolchain-assert.test.ts"
+    "test/commands/sidecar-toolchain.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/preflight-container.ts",
+    "src/supervisor/toolchain-assert.ts",
+    "src/supervisor/ensure-container.ts",
+    "src/supervisor/loop.ts",
+    "src/supervisor/host.ts",
+    "src/commands/sidecar.ts",
+    "test/supervisor/ensure-container.test.ts",
+    "test/supervisor/loop.test.ts",
+    "scripts/file-size-budget.json",
     "scripts/cam/prd.json",
-    "scripts/cam/patterns.md",
-    "test/commands/setup-merge-mode.test.ts",
-    "test/integration/issue-file-on-main.test.ts",
-    "test/integration/journal-append-on-main.test.ts",
-    "test/integration/ship-finalize-dirty-prd.test.ts",
-    "test/interactivity/interactivity.test.ts"
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "While bringing `bun test` green for this story I hit a real, reproducible (not story-caused) flake: across ~30 full-suite `bun test` runs BEFORE any fix, 30-50% failed with 'this test timed out after 5000ms', always in a real-subprocess integration test (test/integration/journal-append-on-main.test.ts, test/integration/issue-file-on-main.test.ts, test/integration/ship-finalize-dirty-prd.test.ts Case A/B pairs, test/commands/setup-merge-mode.test.ts AC-7's test.each, test/interactivity/interactivity.test.ts's Esc-keypress test), never the same one twice, and never in my own new toolchain-assert.ts/test (a pure function with zero I/O). Root cause: bun's default 5000ms per-test timeout is too tight for real `git`/`claude`-on-PATH subprocess calls under this sandboxed environment's transient CPU contention (confirmed empirically that bunfig.toml's [test].timeout AND a preload setDefaultTimeout() workaround are BOTH silently ignored on this bun 1.2.23 -- ruled out as a fix path). Fix applied: added an explicit `{ timeout: 20_000 }` third argument to each of the affected tests (6 test blocks across 5 files) -- this brought 15/15 subsequent full-suite runs to 0 fail, and `bun run check:all` (the full spine) is green twice in a row. This is the SAME flake class already documented for CAM-186/CAM-201 (ink/terminal-size subprocess stalls) just manifesting via git/claude subprocess calls instead of ink renders -- see the new patterns.md bullet. Flagging per CAM-202 no-flaky-evasion discipline: if a DIFFERENT real-subprocess integration test (one of the other ~75 files using mkdtempSync + real git that I did NOT touch) starts timing out in a future story, apply the same `{ timeout: 20_000 }` fix rather than re-litigating root cause; this was not an exhaustive audit of every real-subprocess test in the repo, only the ones this session actually observed failing.",
-    "Also confirmed (unrelated aside, not actioned): the host sandbox's own `bun --version` is 1.2.23 while the repo's pinned `.bun-version` is 1.3.13 -- a live instance of exactly the drift class US-006/US-007 target, just on the HOST toolchain rather than the cam-worker CONTAINER toolchain. Out of scope for this story (which is container-only per its AC), but worth noting since it's the same failure mode this thread of stories is designed to catch."
+    "US-007's AC prose (not its literal oracles) implied a bigger architectural fix than the two oracles alone require: 'the toolchain assert ... runs on every container ensure invocation and the ensure path is exercised before dispatch cycles ... auto-rebuilds on the next cycle with zero operator action'. The only NAMED oracles are `bun test test/ensure-container.test.ts` (unit-level) and a grep for `ToolchainMismatchError` in sidecar.ts. I implemented the full intent anyway (not just the minimum to pass the two named oracles): added a SECOND seam, `RunSupervisorOptions.ensureContainerFn` (loop.ts), invoked once per dispatch cycle immediately before the existing (read-only) `preflightContainerFn`, wired in host.ts's `buildSupervisorOptions` via the same `makeProductionEnsureContainerFn(cwd)` closure sidecar.ts already calls once at boot. This closes the actual CAM-192 bug (a stale/mismatched container previously blocked forever until an operator restarted the sidecar, since the boot-only ensureContainerFn call never re-ran). This is a bigger diff than the literal oracles demand; flagging in case a reviewer wants to scope it down to boot-only. I believe the larger fix is correct and necessary (a boot-only guard does not satisfy 'so a pin bump merged to main propagates to the running loop with zero operator action' from the story's own description), but it touches loop.ts (RunSupervisorOptions type + dispatch-site try/catch) and host.ts (new production wiring) in addition to ensure-container.ts and sidecar.ts.",
+    "No dedicated host.ts unit test file exists in this repo for buildSupervisorOptions internals (e.g. no host.test.ts asserting preflightContainerFn wiring either) -- I did not add one for the new ensureContainerFn wiring either, matching the existing convention that this wiring is exercised indirectly via loop.test.ts's injected-seam tests plus the sidecar-toolchain.test.ts boot-time tests, not a host.ts-specific test. If a future story wants host.ts-level coverage of the container wiring, that would be new ground, not a regression.",
+    "Raised 6 file-size budget ceilings (sidecar.ts, ensure-container.ts, host.ts, loop.ts, and their two largest test files) with a tracker ref in the same commit as the implementation (CAM-60/CAM-79 ratchet convention: raise + tracker ref staged together). No separate follow-up needed."
   ],
-  "nextStoryContext": "US-007 (Auto-rebuild worker image on toolchain mismatch; escalate on rebuild failure) is next by priority. It wires assertContainerToolchain (src/supervisor/toolchain-assert.ts, this story) into the actual dispatch/ensure path: (1) preflightWorkerContainer (preflight-container.ts) needs a new branch that calls assertContainerToolchain and returns { ready:false, reason:'toolchain-mismatch' } (the reason string already exists in the type union from this story, just unwired to a real computation) -- likely needs a containerName + execFn added to PreflightWorkerContainerOptions, or a separate composing function that layers the toolchain check on top of the existing daemon/image checks; (2) ensureWorkerContainer (ensure-container.ts) needs a new branch (mirroring the existing 'image-stale' -> rm+rebuild branch) that reacts to 'toolchain-mismatch' by forcing a rebuild (docker rm -f + runWorkerContainer, action:'rebuilt') rather than reusing the running container; (3) per the story title, a rebuild FAILURE must escalate (fail-closed, no worker dispatch) -- follow the FirewallError/ContainerConfigError typed-throw convention (a new ToolchainMismatchError or reuse a rebuild-failure signal) so runSidecar's boot path can catch it and abort before entering runSidecarLoop, same as the firewall/config-repair steps do today. The exec seam for the actual bun/node probe inside the running container needs a production ToolchainExecFn wired the same way makeProductionEnsureContainerFn wires spawnFn/probe/statFn/firewallSpawnFn/configSpawnFn today (all spawnSync-backed, CI has no real docker so tests must inject fakes throughout, matching the DockerProbe/ConfigSpawnFn precedent).",
+  "nextStoryContext": "US-008 (Add Renovate config auto-updating the toolchain pins) is next by priority, and is the last non-operator story in this PRD (US-001..US-007 all now pass). It is a much smaller, standalone story: create renovate.json at repo root (bun-version manager for .bun-version, asdf manager for .tool-versions, dockerfile manager for the Docker base image in .devcontainer/Dockerfile, github-actions manager for the workflow files) with packageRules enabling automerge:true for patch+minor+major matchUpdateTypes on those four managers, and critically must NOT set ignoreTests (automerge must stay gated on the required CI status check). Add test/renovate-config.test.ts that JSON.parses renovate.json and asserts the shape (schema field present, no manager disabled, automerge:true present, matchUpdateTypes includes major). No source code wiring needed this story (pure config + test), unlike US-001 through US-007 in this thread. Per the story's own notes: a one-time OPERATOR action (installing the Renovate GitHub App on the repo) is out of scope for the autonomous implementer and should be called out in the PR body at ship time, not implemented in code. Also verify the CI workflow is a required branch-protection check on main at ship time (repo-settings side, not code).",
   "officialDocsValidated": [
     {
-      "lib": "bun (bun --version / node --version output format; bunfig.toml [test].timeout)",
-      "version": "bun 1.2.23",
-      "url": "https://bun.com/docs/installation",
-      "fetchedAt": "2026-07-07T05:15:00Z",
-      "status": "aligned",
-      "summary": "Confirmed via WebSearch + a live empirical test in a throwaway tmp fixture: `bun --version` prints the bare semver with no 'v' prefix (matches assertContainerToolchain's exact-match comparison for bun), `node --version` always prefixes 'v' (matches the stripLeadingV() comparison for node). Separately confirmed bunfig.toml's `[test].timeout` key (and a preload-script setDefaultTimeout() workaround) is silently ignored on this exact bun version -- ruled it out as a fix path for the flaky-timeout gate issue documented in openQuestions/patterns.md, used per-test `{ timeout: 20_000 }` overrides instead."
+      "lib": "docker (docker exec / docker rm / docker build --build-arg exit-code + argv semantics)",
+      "version": "n/a (CLI behavior, not a package version)",
+      "url": "https://manpages.ubuntu.com/manpages/focal/man1/docker-container-exec.1.html",
+      "fetchedAt": "2026-07-07T06:05:00Z",
+      "status": "ok",
+      "summary": "Confirmed via WebSearch that docker exec is specified to propagate the exit code of the executed command (chroot-standard semantics; e.g. 126 when the command could not be invoked), matching the existing ToolchainExecFn/ConfigSpawnFn/FirewallSpawnFn convention already relied upon in this codebase (a non-zero exit is treated as a real failure, never silently coerced to success). Some historical Docker/Compose version-specific bugs return 0 regardless of the inner command's exit code, but these are documented as version/platform-specific deviations from spec, not the current behavior this code targets. No change needed to the implementation; the existing seam design (mirroring container-firewall.ts/container-config.ts) already matches the documented contract."
     }
   ]
 }
