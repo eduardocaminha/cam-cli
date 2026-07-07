@@ -540,6 +540,27 @@ function StoriesSection({
 /** Dark foreground for use on the accent-green selected-row background. */
 const DARK = '#000000';
 
+/**
+ * Fixed row budget (chars) for a story title in the Stories list (US-001).
+ * A fixed constant, not derived from terminal width: the tokens column must
+ * stay visible on the same row regardless of pane width, and threading a
+ * dynamic budget down from DashboardApp's `cols` would still need a cap to
+ * leave room for the icon/id/tokens segments sharing the row.
+ */
+const STORY_TITLE_MAX_WIDTH = 40;
+
+/**
+ * Truncates `title` to at most `maxWidth` characters, cutting with a
+ * trailing ellipsis (…) when it exceeds the budget. Titles within budget are
+ * returned unchanged (no ellipsis appended). Exported for direct unit testing.
+ */
+export function truncateTitle(title: string, maxWidth: number): string {
+	if (maxWidth <= 0) return '';
+	if (title.length <= maxWidth) return title;
+	if (maxWidth === 1) return '…';
+	return `${title.slice(0, maxWidth - 1)}…`;
+}
+
 function StoryRow({
 	story,
 	isCurrent,
@@ -559,7 +580,7 @@ function StoryRow({
 	if (isSelected) {
 		// Selected row: accent background, dark fg. The glyph still encodes pass-state
 		// (✓/→/◌); the background color signals selection only.
-		const line = `${icon} ${story.id.padEnd(9)} ${story.title}  ${tokens ? renderTokensLine(tokens) : STORY_TOKENS_PLACEHOLDER}`;
+		const line = `${icon} ${story.id.padEnd(9)} ${truncateTitle(story.title, STORY_TITLE_MAX_WIDTH)}  ${tokens ? renderTokensLine(tokens) : STORY_TOKENS_PLACEHOLDER}`;
 		return (
 			<Text backgroundColor={colors.accent} color={DARK}>{line}</Text>
 		);
@@ -570,7 +591,7 @@ function StoryRow({
 			<Box width={9}>
 				<Text color={titleColor}>{story.id}</Text>
 			</Box>
-			<Text color={titleColor}>{story.title}</Text>
+			<Text color={titleColor}>{truncateTitle(story.title, STORY_TITLE_MAX_WIDTH)}</Text>
 			<Text color={colors.muted}>
 				{'  '}
 				{tokens ? renderTokensLine(tokens) : STORY_TOKENS_PLACEHOLDER}
