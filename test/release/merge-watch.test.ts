@@ -1405,6 +1405,41 @@ describe('merge-watch durable state I/O (US-002)', () => {
 		expect(read?.pollCount).toBe(1);
 		expect(read?.lastPolledAt).toBeUndefined();
 	});
+
+	// US-001 (CAM-170): consecutiveNullPolls round-trips through write+read
+	test('US-001: write then read round-trips consecutiveNullPolls', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, {
+			prNumber: 55,
+			mergedBranch: 'cam/poll-error-test',
+			pollCount: 4,
+			consecutiveNullPolls: 3,
+		});
+
+		const read = readMergeWatchState(filePath);
+
+		expect(read?.consecutiveNullPolls).toBe(3);
+	});
+
+	// US-001 (CAM-170): legacy state file without the field reads back absent (fresh)
+	test('US-001: legacy state file without consecutiveNullPolls reads back absent (fresh)', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeFileSync(filePath, JSON.stringify({ prNumber: 8, mergedBranch: 'cam/legacy-poll' }), 'utf8');
+
+		const state = readMergeWatchState(filePath);
+
+		expect(state).not.toBeNull();
+		expect(state?.consecutiveNullPolls).toBeUndefined();
+	});
+
+	// US-001 (CAM-170): writeMergeWatchState defaults consecutiveNullPolls to 0 when absent
+	test('US-001: writeMergeWatchState defaults consecutiveNullPolls to 0 when absent in state', () => {
+		const filePath = join(tempDir, '.cam-merge-watch.json');
+		writeMergeWatchState(filePath, { prNumber: 1, mergedBranch: 'cam/b' });
+
+		const read = readMergeWatchState(filePath);
+		expect(read?.consecutiveNullPolls).toBe(0);
+	});
 });
 
 // ---------------------------------------------------------------------------

@@ -100,6 +100,9 @@ export function readMergeWatchState(filePath: string): MergeWatchState | null {
 		if (typeof obj['updateBranchCount'] === 'number') {
 			state.updateBranchCount = obj['updateBranchCount'] as number;
 		}
+		if (typeof obj['consecutiveNullPolls'] === 'number') {
+			state.consecutiveNullPolls = obj['consecutiveNullPolls'] as number;
+		}
 		return state;
 	} catch {
 		return null;
@@ -109,9 +112,10 @@ export function readMergeWatchState(filePath: string): MergeWatchState | null {
 /**
  * Write MergeWatchState to a persistent file (durable, not consume-on-read).
  *
- * Always writes prNumber, mergedBranch, and pollCount (defaulting to 0 when
- * absent in the state). Writes lastPolledAt only when it is defined (undefined
- * is omitted from the JSON so a fresh-state read bypasses the throttle check).
+ * Always writes prNumber, mergedBranch, pollCount, updateBranchCount, and
+ * consecutiveNullPolls (all defaulting to 0 when absent in the state). Writes
+ * lastPolledAt only when it is defined (undefined is omitted from the JSON so
+ * a fresh-state read bypasses the throttle check).
  *
  * Call after every non-terminal stepMergeWatch tick so the state survives a
  * sidecar restart. Single-writer assumption: only the sidecar writes this file
@@ -123,6 +127,7 @@ export function writeMergeWatchState(filePath: string, state: MergeWatchState): 
 		mergedBranch: state.mergedBranch,
 		pollCount: state.pollCount ?? 0,
 		updateBranchCount: state.updateBranchCount ?? 0,
+		consecutiveNullPolls: state.consecutiveNullPolls ?? 0,
 	};
 	if (state.lastPolledAt !== undefined) {
 		payload['lastPolledAt'] = state.lastPolledAt;
@@ -315,6 +320,13 @@ export interface MergeWatchState {
 	 * Capped at MAX_UPDATE_BRANCH_ATTEMPTS.
 	 */
 	updateBranchCount?: number;
+	/**
+	 * Number of consecutive gh polls that have failed so far (US-001,
+	 * CAM-170). Absent = 0 (fresh state; a legacy state file predating this
+	 * field reads back as fresh, mirroring pollCount). Reset to 0 on the next
+	 * successful poll.
+	 */
+	consecutiveNullPolls?: number;
 }
 
 /**

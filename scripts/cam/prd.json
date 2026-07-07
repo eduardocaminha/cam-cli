@@ -28,7 +28,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/events.ts (WorkerEventKind union at ~line 99, WorkerEventDetail union at ~line 389, detail interfaces near MergeWatchStalledEventDetail at ~line 256), src/release/merge-watch.ts (MergeWatchState interface ~line 295, readMergeWatchState ~line 79, writeMergeWatchState ~line 120), test/release/merge-watch.test.ts. This story is purely additive: no behavior change, no GhPollFn signature change (that is US-002). Spec keeps the legacy name consecutiveNullPolls even though US-002 will count discriminated error results; follow the spec verbatim. Mirror the pollCount persistence convention exactly: always written (default 0), optional on the interface, legacy read treated as fresh. Doc reference: docs/recovery-runbook.md section (t) lists the merge-watch event kinds; re-check it before coding."
     },
