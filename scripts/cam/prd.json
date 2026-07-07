@@ -1,0 +1,58 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-66-dashboard-truncate-loop-ghost",
+  "description": "Dashboard polish: truncate long story titles in the Stories list rows and harden the Loop-header ghost under resize/reflow storms",
+  "issueNumber": 66,
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "ink",
+      "url": "https://github.com/vadimdemedes/ink",
+      "version": "^7.0.3",
+      "fetchedAt": "2026-07-07T23:11:48Z",
+      "summary": "Confirmed the Text `wrap` prop values: wrap (default), hard, truncate/truncate-end (cut at container width with a trailing ellipsis), truncate-middle, truncate-start. Truncation adds the ellipsis character automatically. The README does not document Ink's previous-frame line-count tracking or any resize/reflow ghosting behavior, so the app-side alt-screen clear in dashboard.ts remains the sanctioned mitigation.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Truncate long story titles in the Stories list rows",
+      "description": "As a cam operator watching `cam dashboard`, I need long story titles in the Stories list to be truncated to a fixed width with a trailing ellipsis so that titles never wrap and interleave with the per-story token counts, keeping one story per terminal line (the full title stays readable in the Enter detail subview from CAM-50).",
+      "acceptanceCriteria": [
+        "A story whose title exceeds the row budget renders as a single line in the Stories list, cut with a trailing ellipsis (…), in BOTH row variants: the selected row (accent background string at Dashboard.tsx:562) and the unselected row (flex Box at Dashboard.tsx:573). [oracle: bun test test/ui/dashboard-story-row.test.tsx]",
+        "The per-story tokens text (renderTokensLine output or STORY_TOKENS_PLACEHOLDER) remains visible on the same row and never interleaves with a wrapped title. [oracle: bun test test/ui/dashboard-story-row.test.tsx]",
+        "The story detail subview (StoryDetailView, opened with Enter) still renders the full untruncated title; no PRD schema change is made. [oracle: bun test test/ui/dashboard-story-row.test.tsx]",
+        "Short titles (within budget) render unchanged, with no ellipsis appended. [oracle: bun test test/ui/dashboard-story-row.test.tsx]",
+        "Source changes are contained to src/ui/Dashboard.tsx (tests may be added under test/ui/). [oracle: file-assert: git diff --name-only origin/main...HEAD -- src/ lists only src/ui/Dashboard.tsx]",
+        "Verify the screen renders correctly via ink-testing-library lastFrame(); pass/fail state stays signalled by the ✓/✗/→/◌ glyph, never by divider color. [oracle: bun test test/ui/dashboard-story-row.test.tsx]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/ui/Dashboard.tsx (StoryRow, lines 543-580; both render sites 562 and 573), new test test/ui/dashboard-story-row.test.tsx. Operator decision (settled at grill time): truncate the list row to a fixed width with a trailing ellipsis; do NOT change the PRD schema and do NOT touch the detail subview (line 314 renders the full title, keep as-is). Implementation options: (a) Ink-native `<Text wrap=\"truncate-end\">` cuts at container width and appends the ellipsis automatically (confirmed against Ink 7 docs), but on the selected row the whole line is one string with backgroundColor, so container-width truncation would eat the trailing tokens text; (b) a small exported pure helper (e.g. truncateTitle(title, max)) applied to the title segment only, in both variants, keeps the tokens column visible and is directly unit-testable. Width source: DashboardApp already computes cols via useStdout (line 133); either thread a title budget down through StoriesSection -> StoryRow or use a fixed constant budget (operator chose fixed width). Gotchas from scripts/cam/patterns.md: ink-testing-library keypress simulation via render().stdin; React 19 setState after useInput needs one macrotask tick before lastFrame(); chalk.level is 0 under ink-testing-library unless forced; success/failure is the glyph, never divider color. noUncheckedIndexedAccess is on: guard any string/array indexing in the helper."
+    },
+    {
+      "id": "US-002",
+      "title": "Harden the Loop-header ghost against resize/reflow storms",
+      "description": "As a cam operator running `cam dashboard` in a tmux pane that the cam-run window-resized hook reflows, I need the alt-screen clear to survive a rapid burst of resize events so that the Loop section header no longer stacks/duplicates (ghosts) when Ink's previous-frame line count goes stale at the old width.",
+      "acceptanceCriteria": [
+        "Rapid successive resize events (a reflow/dispatch storm) cannot leave stale frame lines on the alt screen: a full clear (CURSOR.clear) is re-asserted after the burst settles (trailing/debounced re-clear or periodic full-clear, implementer's choice per the issue spec). [oracle: bun test test/dashboard.test.ts]",
+        "The hardened clear logic is extracted behind injectable seams (write fn + timer/clock) and unit-tested with a simulated burst of N resize events, asserting at least one CURSOR.clear write lands after the final event of the burst. [oracle: bun test test/dashboard.test.ts]",
+        "Single-resize behavior is preserved: one resize event still writes an immediate full clear ahead of Ink's repaint (current behavior at src/commands/dashboard.ts:837-849, registered before render()). [oracle: bun test test/dashboard.test.ts]",
+        "Cleanup on exit removes every listener and timer the hardening adds (no leaked interval/timeout keeps the process alive after q/Ctrl+C), mirroring the existing cleanup() idempotence. [oracle: bun test test/dashboard.test.ts]",
+        "Source changes are contained to src/commands/dashboard.ts (tests may be added under test/). [oracle: file-assert: git diff --name-only origin/main...HEAD -- src/ for this story adds only src/commands/dashboard.ts beyond US-001's file]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/dashboard.ts (runDashboardInk, lines 820-892; onResize handler at 837-849; CURSOR constants at 59-64), test/dashboard.test.ts (existing suite already unit-tests composeDashboard and CURSOR usage; add cases there or a sibling file). The one-shot clear-on-resize already mitigates a single resize; the ghost recurs only under a storm (intermittent, dogfood 2026-06-16 screenshots), so the fix is bounded re-assertion: either a trailing debounced clear a tick after the last resize event, or a low-frequency periodic clear aligned with the poll interval (DEFAULT_POLL_INTERVAL_MS = 2000). Extract the handler wiring into an exported factory (e.g. makeResizeClearer({ writeFn, setTimeoutFn/clearTimeoutFn })) so the burst test never touches the real process.stdout: the test/dashboard.test.ts suite already follows the injected reader/writer convention (scripts/cam/patterns.md: inject fake reader/writer shapes instead of touching real stdin/stdout). Real-terminal reproduction is inherently a ceremony; the automated stand-in is the seam-injected burst test above, and an optional real-tmux check (tmux-pty: resize-pane loop + capture-pane asserting a single 'Loop' line) can follow the test/integration/tmux-introspect.test.ts skip-when-absent pattern if the implementer wants belt-and-braces. Keep the try/catch swallow on write failures (a failed clear risks a transient ghost, never a crash). Do not register anything that fires before enterAltScreen. Biome cognitive-complexity limit is 15: prefer the extracted factory over inlining more branches into runDashboardInk."
+    }
+  ]
+}
