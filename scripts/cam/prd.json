@@ -28,7 +28,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-coverage.ts, scripts/check-file-sizes.ts, new scripts/ratchet-diff.ts (module name is the contract for the grep oracle; keep it under scripts/ so the jscpd scan and the file-size glob cover it). Gotchas: (a) KV_RE differs between the two scripts (floats [\\d.]+ in coverage, ints \\d+ in file-sizes); parameterize the value pattern or prove the existing tests pass with a unified one, never silently change accepted budget syntax. (b) scripts/file-size-budget.json pins check-coverage.ts at 261 and check-file-sizes.ts at 209 lines with ~1 line of headroom each; the extraction shrinks both, never raise a ceiling. Adding a NEW budget key for ratchet-diff.ts is neither a raise nor a lower and passes without a tracker ref. (c) Keep the DI pattern: GetStagedDiffFn stays injectable, tests inject in-memory fakes, no real git calls in tests. (d) Doc maintenance: the header comments of both scripts describe the mirrored DI pattern; update them in the same commit if the mirror moves to the shared module. Both files keep their MIT-free CAM-60 provenance comments intact."
     },

@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Extract shared ratchet-diff helpers for the check scripts"
+  },
+  "branchName": "cam/pr-120-jscpd-dedup-ratchet-down",
+  "timestamp": "2026-07-08T13:30:00Z",
+  "createdFiles": [
+    "scripts/ratchet-diff.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/check-coverage.ts",
+    "scripts/check-file-sizes.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 shrank scripts/check-coverage.ts to 234 lines (ceiling 261) and scripts/check-file-sizes.ts to 181 lines (ceiling 209); both ceilings were left unchanged (never raise). scripts/ratchet-diff.ts (57 lines) is new and intentionally NOT added to scripts/file-size-budget.json (consistent with existing convention: not every scripts/*.ts has a budget entry, e.g. scripts/check-version-skips.ts). jscpd on src+scripts after this story: still passing at the current threshold (6); US-003 (lower threshold to 4) should re-measure after US-002 lands, per its own notes, since US-002 is the other dedup story. US-002 (extract parseSubcommandArgs in index.ts) is independent of this story's files (index.ts untouched here) and can proceed without any dependency on this change.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure internal refactor: moved existing node:child_process spawnSync usage (already present, no new library) into a shared module. No new external API surface introduced."
+    }
+  ]
+}
