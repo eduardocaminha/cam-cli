@@ -518,10 +518,17 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		const newRound = roundsCompleted + 1;
 
 		if (verdictKind === 'CLEAN') {
+			// CAM-115: a CLEAN verdict clears findings carried over from a prior
+			// FIXES_PENDING round (line ~586 below), so prd.review.findings always
+			// reflects the current round instead of showing stale findings. This
+			// scope is CLEAN-only: the MAX_ROUNDS_DEBT write paths (below, and
+			// src/supervisor/loop.ts) intentionally keep the last round's findings
+			// to document the debt and must not be touched here.
+			const { findings: _staleFindings, ...reviewWithoutFindings } = prd.review ?? {};
 			writePrd({
 				...prd,
 				review: {
-					...(prd.review ?? {}),
+					...reviewWithoutFindings,
 					roundsCompleted: newRound,
 					maxRounds,
 					lastVerdict: 'CLEAN',

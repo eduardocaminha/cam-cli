@@ -324,6 +324,46 @@ describe('makeReviewDispatch', () => {
 		expect(written?.review?.roundsCompleted).toBe(1);
 	});
 
+	test('CLEAN verdict clears findings carried over from a prior FIXES_PENDING round (CAM-115)', () => {
+		// Round 1: FIXES_PENDING with file-based findings persisted to prd.review.findings.
+		const round1Written: PrdSnapshot[] = [];
+		const round1Findings = [
+			{ severity: 'CRITICAL', file: 'src/foo.ts', line: 10, text: 'stale finding from round 1' },
+		];
+		const round1Opts = makeDispatchOpts({
+			paneText: 'no tag here',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd: round1Written,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:1', findings: round1Findings }),
+		});
+		const round1Dispatch = makeReviewDispatch(round1Opts);
+		const round1Result = round1Dispatch(SAMPLE_UUID);
+
+		expect(round1Result.status).toBe('ok');
+		const round1Prd = round1Written[0];
+		expect(round1Prd?.review?.findings?.length).toBe(1);
+
+		// Round 2: CLEAN, starting from the prd written by round 1 (findings still attached).
+		const round2Written: PrdSnapshot[] = [];
+		const round2Opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: round1Prd,
+			capturedWrittenPrd: round2Written,
+		});
+		const round2Dispatch = makeReviewDispatch(round2Opts);
+		const round2Result = round2Dispatch(SAMPLE_UUID);
+
+		expect(round2Result.status).toBe('ok');
+		const round2Prd = round2Written[0];
+		expect(round2Prd?.review?.lastVerdict).toBe('CLEAN');
+		expect(round2Prd?.review?.roundsCompleted).toBe(2);
+		// The CLEAN round must not carry over round 1's stale findings.
+		expect(round2Prd?.review?.findings).toBeUndefined();
+	});
+
 	test('FIXES_PENDING: creates US-RX-NNN stories with passes=false', () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({
