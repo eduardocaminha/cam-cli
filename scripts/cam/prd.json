@@ -39,7 +39,7 @@
         "Full quality spine passes including biome lint (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-orchestrator.md, templates/agents/subagent-orchestrator.md, src/vendor/_generated.ts (regenerated, never hand-edited). The exit-4 note lives at line 339 of both copies ('Refuse-to-arm fallback (exit 4)') under '### Recycle flow (cycle-close)' in the '## Self-handoff lifecycle' section (starts line 328). Add the exit-3 case next to it: exit 3 means the handoff file .claude/.cam-orch-handoff.json is absent, i.e. step 1 (write the handoff) was skipped; recovery is write the handoff, then re-run cam journal append --cycle-close. Gotchas: dual-copy is per-file and not guaranteed byte-identical repo-wide (memory: cam-dual-copy-is-per-file), diff the two copies for this section before editing (currently identical here); edit BOTH copies then run bun run embed-vendor, and the embed-vendor:check gate applies. Style: agent-instruction .md files keep the existing em-dash style of the surrounding section. Do not touch the --cycle-close arm logic, exit codes, watcher, or backstop. Spec source: CAM-217 spec (settled at grill), AC3."
     }
