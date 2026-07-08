@@ -1,23 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Make RunTriageOptions.clock optional, mirroring the unused-clock command pattern"
+    "id": "US-003",
+    "title": "Refactor runKahn under the cognitive-complexity budget and drop the rank.ts biome override"
   },
   "branchName": "cam/pr-128-cam108-review-suggestions",
-  "timestamp": "2026-07-08T17:45:00Z",
+  "timestamp": "2026-07-08T18:10:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/triage.ts",
-    "index.ts",
-    "test/triage.test.ts"
+    "src/issues/rank.ts",
+    "biome.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 made RunTriageOptions.clock optional (clock?: ClockFn) in src/commands/triage.ts, rewrote its doc comment to drop the 'required/reserved-for-future' claim, removed the dead 'clock: () => new Date().toISOString()' injection at the dispatchTriage call site in index.ts (the only remaining occurrence of that literal in index.ts now belongs to a different, unrelated dispatcher at ~line 1536 and was NOT touched), and deleted all 16 dead 'clock: () => ...' call-site lines from test/triage.test.ts (more than the '~8' the PRD note estimated; verified exhaustively via grep, not by sampling). Left test/integration/triage-real-git.test.ts and test/integration/triage-ref-only.test.ts untouched -- they still pass a clock literal, which remains valid TypeScript now that the field is optional, and the story's AC only named test/triage.test.ts. Next story (US-003) refactors runKahn (src/issues/rank.ts, per the PRD description mentioning 'the CAM-108 review') under the cognitive-complexity budget and drops the rank.ts biome noExcessiveCognitiveComplexity override/suppression -- read src/issues/rank.ts and biome.json (or wherever the per-file override lives) in full before editing; this is a pure refactor (extract-helper style, same family as the noExcessiveLinesPerFunction extractions already documented in patterns.md) with no external library surface, so Step 5.5 will again likely be 'no_external_lib_touched' unless runKahn touches something unexpected.",
+  "nextStoryContext": "US-003 removed the per-file 'src/issues/rank.ts' override block from biome.json's overrides array (was at ~lines 204-213, sat between the src/supervisor/review.ts and src/transcript/usage.ts override blocks; every other override was left untouched). Stripping the override surfaced TWO complexity violations, not just the one named in the story title: runKahn (complexity 20) AND buildGraph (complexity 17, not mentioned in the story notes). Both were refactored by extraction. runKahn -> collectZeroInDegreeLayer (loop+filter), sortLayerByWsjf (the WSJF-desc/numericIdSuffix-asc comparator, logic byte-identical to before), drainLayer (push ranked entry + delete from mutableInDegree + decrement successors' in-degree). The nextRank mutable counter was dropped entirely in favor of `rank: ranked.length + 1` computed inline in drainLayer's push (monotonic invariant: ranked only grows via push, so length+1 == the old nextRank++ at every call site) -- this preserves the dense-1-based-rank invariant exactly. buildGraph -> initGraphEntries (single loop, no branching: zero in-degree + empty successors per universe issue) and recordBlockedByEdges (one issue's blockedBy loop: the 3-way isSatisfied OR short-circuit + get-or-create-successor-list branch), both called from buildGraph's existing two top-level loops. rankIssues (the exported entry point) was untouched -- residualIds derivation (Array.from(mutableInDegree.keys()) after runKahn returns) and all other call-site wiring is unchanged. All 24 existing rank.test.ts assertions pass with ZERO edits (behavior lock held). Verification method for the actual complexity score before writing helpers: temporarily jq-strip the rank.ts override block from biome.json into a scratch file, run `bunx biome lint src/issues/rank.ts` against it, restore the original biome.json -- do this BEFORE assuming the story-title-named function is the only offender in a file covered by a whole-file override. No stories remain in prd.json with passes:false and requires!=operator as of this write; the next implementer should re-run the jq priority query fresh in case new stories were filed since this handoff was written, and if none remain, emit PRD_COMPLETE immediately without touching files.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal TypeScript interface change (clock field optionality) plus dead call-site removal; no external library API surface touched."
+      "summary": "Pure internal TypeScript refactor (extract-helper for cognitive-complexity budget) plus a biome.json config override removal; no external library API surface touched."
     }
   ]
 }
