@@ -1,0 +1,9 @@
+{
+  "id": "CAM-228",
+  "title": "Auditor: checklist C.8 exige browser+E2E e contradiz F.19/F.20 (risco BLOCK espurio)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T23:05:48.551Z",
+  "description": ".claude/agents/subagent-auditor.md:66 (C.8) manda: every UI-touching story has browser verification AND E2E test. F.19 (:92) do MESMO prompt manda flagar qualquer story que exija browser/E2E/database (cam-cli e terminal CLI sem DB/server/browser) e F.20 (:93) diz que telas Ink verificam via glifo. Instrucoes diretamente contraditorias ao mesmo agente; C.8 pode gerar finding critical espurio (no browser verification) -> BLOCK falso -> re-plan queimado (MAX_REPLAN_ROUNDS=2) -> plan-escalated (plan-runner.ts:847). B.5 (:60) tambem stale: ordena DB -> server -> client -> tests -> E2E (template web generico; ordering cam-cli e types -> core -> surface -> polish). Fix na copia .claude (a copia templates e generica web-app, C.8 la e coerente); reescrever C.8 pra: stories de UI/Ink verificam via ink-testing-library + glifo. Origem: auditoria planner/auditor 2026-07-08."
+}
