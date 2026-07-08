@@ -37,7 +37,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Item (2) of CAM-115. The code half of the original finding is ALREADY resolved: selectPlannableFromFile now reads via readBacklogFromMain (git ls-tree + git cat-file --batch against the main ref, CAM-90), never the working tree. What remains is prose drift in cam-plan.md line 9 (the '|| ls scripts/cam/issues/' working-tree fallback is presented without qualification) and line 10 (the argument-N path instructs reading the working-tree file scripts/cam/issues/<prefix>-<N-padded>.json while selectPlanTargetFromFile reads from main). Gotcha: dual-copy is PER-FILE (.claude/commands/cam-plan.md vs templates/commands/cam-plan.md are not guaranteed byte-identical; diff both before editing, keep both in sync). Editing templates/ requires regenerating the embed (bun run embed-vendor) so embed-vendor:check passes. Prose only; do not change src/issues/select.ts or backlog.ts in this story."
     },
