@@ -1,15 +1,15 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add curated invariants block to scripts/cam/CLAUDE.md and demote patterns.md to grep-on-demand there" },
+  "lastCompletedStory": { "id": "US-002", "title": "Implementer agent: patterns.md grep-on-demand, drop AGENTS.md ref and CLAUDE.md re-read" },
   "branchName": "cam/pr-223-worker-context-diet",
   "timestamp": "2026-07-08T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/CLAUDE.md",
-    "templates/scripts/cam/CLAUDE.md",
+    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-implementer.md",
     "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 (implementer agent) should point at the curated invariants block added in scripts/cam/CLAUDE.md's 'Codebase Patterns' section (1364 bytes, well under the 2.5KB cap) and drop the AGENTS.md reference plus the mandatory full-read of patterns.md — the grep-on-demand wording pattern used here ('grep scripts/cam/patterns.md for the section/keywords matching the subsystem this story touches') is the template to reuse in the .claude/agents/implementer.md system prompt. Note: no AGENTS.md file exists in this repo (confirmed via find), so US-002's 'drop AGENTS.md ref' likely targets the implementer agent's own prose, not a real file. patterns.md itself (292KB) was left untouched per this story's scope; it still needs no restructuring for grep-on-demand to work since it's already bullet-per-line.",
+  "nextStoryContext": "US-003 (planner agent) should drop journal.md and integral patterns.md from Project Context, and remove AGENTS.md refs there too — reuse the same wording patterns landed here: 'grep-on-demand, not a full read; grep for the section/keywords matching the subsystem this story touches and read only the matching bullets' for patterns.md, and the auto-load note ('scripts/cam/CLAUDE.md auto-loads via Claude Code's nested-CLAUDE.md mechanism: it is already in context before you start, so do not re-read it') wherever a mandate to re-read scripts/cam/CLAUDE.md appears. Both .claude/agents/subagent-implementer.md and templates/agents/subagent-implementer.md were edited (dual-copy is per-file specialization, not byte-identical — .claude's copy has extra 'use the Read tool' mandate language in its Inputs-read-order step 4 that the templates copy lacks; preserved both as-is). The 'append a bullet to patterns.md' post-implementation flow and the Layer A behavioral-gate section were left untouched (out of this story's scope). Remember to run `bun run embed-vendor` after any templates/ edit, then `bun run embed-vendor:check`.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
