@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.92.0] - 2026-07-08
+
+### Added
+
+- US-004 - Replace the manual archive rule in templates and agent file
+- US-003 - Auto-invoke the archive check on the --cycle-close path
+- US-002 - Wire cam journal archive [--threshold N] CLI subcommand
+- US-001 - Add archiveJournalOnMain core logic (pure move, atomic on-main commit)
+
 ## [0.91.0] - 2026-07-08
 
 ### Added

@@ -27,6 +27,8 @@ import {
 	type JournalCycleEntry,
 	type AppendJournalEntryOnMainValidationError,
 } from '../../src/commands/journal.ts';
+import { DEFAULT_THRESHOLD as JOURNAL_ARCHIVE_DEFAULT_THRESHOLD } from '../../src/commands/journal-archive.ts';
+import type { ArchiveJournalOnMainResult } from '../../src/commands/journal-archive.ts';
 import { dispatchJournal, parseJournalArgs, main } from '../../index.ts';
 
 // ---------------------------------------------------------------------------
@@ -606,6 +608,7 @@ describe('dispatchJournal', () => {
 			recordCycleTokensFn: () => {},
 			handoffExistsFn: () => true,
 			watcherAliveFn: () => true,
+			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }), // no real git
 			armRecycleMarkerFn: () => { markerArmed = true; },
 		});
 
@@ -709,6 +712,7 @@ describe('dispatchJournal', () => {
 			recordCycleTokensFn: () => {},
 			handoffExistsFn: () => true,
 			watcherAliveFn: () => true,
+			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }), // no real git
 			armRecycleMarkerFn: () => { markerArmed = true; },
 		});
 
@@ -732,6 +736,131 @@ describe('dispatchJournal', () => {
 
 		expect(code).toBe(0);
 		expect(markerArmed).toBe(false);
+	});
+
+	// ---------------------------------------------------------------------------
+	// US-003 (CAM-125): auto-invoke the archive check on --cycle-close
+	// ---------------------------------------------------------------------------
+
+	test('US-003: archive check runs after CAM_JOURNAL_APPENDED + recordCycleTokens, before armMarker + CAM_ORCH_HANDOFF_DUE (call-order oracle)', async () => {
+		const order: string[] = [];
+		const parsed = parseJournalArgs(['append', '--cycle-close']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+			writeStdout: (line) => {
+				if (line.startsWith('CAM_JOURNAL_APPENDED')) order.push('appended');
+				if (line.startsWith('CAM_ORCH_HANDOFF_DUE')) order.push('handoff-due');
+			},
+			recordCycleTokensFn: () => { order.push('record-tokens'); },
+			handoffExistsFn: () => true,
+			watcherAliveFn: () => true,
+			archiveFn: (threshold): ArchiveJournalOnMainResult => {
+				expect(threshold).toBe(JOURNAL_ARCHIVE_DEFAULT_THRESHOLD);
+				order.push('archive-check');
+				return { ok: true, archived: 0, entries: 3, sha: '' };
+			},
+			armRecycleMarkerFn: () => { order.push('arm-marker'); },
+		});
+
+		expect(code).toBe(0);
+		expect(order).toEqual(['appended', 'record-tokens', 'archive-check', 'arm-marker', 'handoff-due']);
+	});
+
+	test('US-003: archiveFn returns ok:false -- logs a warning, exit code unchanged, marker still armed, handoff still emitted', async () => {
+		const stdoutLines: string[] = [];
+		let markerArmed = false;
+		let sawWarning = false;
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string' && /archive check failed/.test(chunk)) sawWarning = true;
+			return true;
+		}) as typeof process.stdout.write;
+
+		try {
+			const parsed = parseJournalArgs(['append', '--cycle-close']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+				appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+				writeStdout: (line) => stdoutLines.push(line),
+				recordCycleTokensFn: () => {},
+				handoffExistsFn: () => true,
+				watcherAliveFn: () => true,
+				archiveFn: (): ArchiveJournalOnMainResult => ({ ok: false, reason: 'diverged' }),
+				armRecycleMarkerFn: () => { markerArmed = true; },
+			});
+
+			expect(code).toBe(0);
+			expect(markerArmed).toBe(true);
+			expect(stdoutLines).toHaveLength(2);
+			expect(stdoutLines[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
+			expect(sawWarning).toBe(true);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('US-003: archiveFn throws -- logs a warning, exit code unchanged, marker still armed, handoff still emitted', async () => {
+		const stdoutLines: string[] = [];
+		let markerArmed = false;
+		let sawWarning = false;
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string' && /archive check threw/.test(chunk)) sawWarning = true;
+			return true;
+		}) as typeof process.stdout.write;
+
+		try {
+			const parsed = parseJournalArgs(['append', '--cycle-close']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+				appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+				writeStdout: (line) => stdoutLines.push(line),
+				recordCycleTokensFn: () => {},
+				handoffExistsFn: () => true,
+				watcherAliveFn: () => true,
+				archiveFn: (): ArchiveJournalOnMainResult => { throw new Error('boom'); },
+				armRecycleMarkerFn: () => { markerArmed = true; },
+			});
+
+			expect(code).toBe(0);
+			expect(markerArmed).toBe(true);
+			expect(stdoutLines).toHaveLength(2);
+			expect(stdoutLines[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
+			expect(sawWarning).toBe(true);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('US-003: plain append (no --cycle-close) never calls archiveFn', async () => {
+		let archiveCalled = false;
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'abc' }),
+			writeStdout: () => {},
+			recordCycleTokensFn: () => {},
+			archiveFn: (): ArchiveJournalOnMainResult => {
+				archiveCalled = true;
+				return { ok: true, archived: 0, entries: 0, sha: '' };
+			},
+		});
+
+		expect(code).toBe(0);
+		expect(archiveCalled).toBe(false);
 	});
 });
 
@@ -1245,5 +1374,211 @@ describe('JOURNAL_HELP block', () => {
 		expect(output.toLowerCase()).toContain('recycle marker');
 		expect(output).toContain('exit 3');
 		expect(output).toContain('exit 4');
+	});
+
+	test('cam journal --help output mentions journal archive [--threshold N]', async () => {
+		const stdoutChunks: string[] = [];
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array) => {
+			stdoutChunks.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+			return true;
+		}) as typeof process.stdout.write;
+
+		let exitCode: number | undefined;
+		try {
+			exitCode = await main(['bun', 'index.ts', 'journal', '--help']);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+
+		const output = stdoutChunks.join('');
+		expect(exitCode).toBe(0);
+		expect(output).toContain('journal archive [--threshold N]');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-002 (CAM-125): `cam journal archive [--threshold N]` CLI subcommand
+// ---------------------------------------------------------------------------
+
+describe('parseJournalArgs — archive subcommand', () => {
+	test('archive with no --threshold returns the default threshold', () => {
+		const parsed = parseJournalArgs(['archive']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+		expect(parsed.mode).toBe('archive');
+		if (parsed.mode !== 'archive') return;
+		expect(parsed.threshold).toBe(50);
+	});
+
+	test('archive --threshold 10 parses the explicit positive integer', () => {
+		const parsed = parseJournalArgs(['archive', '--threshold', '10']);
+		expect(parsed).toEqual({ mode: 'archive', threshold: 10, help: false });
+	});
+
+	test('archive --threshold with a non-numeric value returns null (usage error)', () => {
+		const stdoutLines: string[] = [];
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = (chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string') stdoutLines.push(chunk);
+			return true;
+		};
+		try {
+			expect(parseJournalArgs(['archive', '--threshold', 'abc'])).toBeNull();
+			expect(stdoutLines.join('')).toMatch(/positive integer/i);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('archive --threshold with a missing value returns null (usage error)', () => {
+		const stdoutLines: string[] = [];
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = (chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string') stdoutLines.push(chunk);
+			return true;
+		};
+		try {
+			expect(parseJournalArgs(['archive', '--threshold'])).toBeNull();
+			expect(stdoutLines.join('')).toMatch(/positive integer/i);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('archive --threshold 0 (not positive) returns null (usage error)', () => {
+		const stdoutLines: string[] = [];
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = (chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string') stdoutLines.push(chunk);
+			return true;
+		};
+		try {
+			expect(parseJournalArgs(['archive', '--threshold', '0'])).toBeNull();
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('archive --threshold -5 (negative) returns null (usage error)', () => {
+		const stdoutLines: string[] = [];
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = (chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string') stdoutLines.push(chunk);
+			return true;
+		};
+		try {
+			expect(parseJournalArgs(['archive', '--threshold', '-5'])).toBeNull();
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+});
+
+describe('dispatchJournal — archive mode', () => {
+	test('archive mode never reads stdin', async () => {
+		let stdinCalled = false;
+		const parsed = parseJournalArgs(['archive']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => {
+				stdinCalled = true;
+				return '{}';
+			},
+			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 5, sha: '' }),
+			writeStdout: () => {},
+		});
+
+		expect(code).toBe(0);
+		expect(stdinCalled).toBe(false);
+	});
+
+	test('archive mode passes the parsed threshold to archiveFn', async () => {
+		let capturedThreshold: number | undefined;
+		const parsed = parseJournalArgs(['archive', '--threshold', '7']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		await dispatchJournal(parsed, {
+			archiveFn: (threshold): ArchiveJournalOnMainResult => {
+				capturedThreshold = threshold;
+				return { ok: true, archived: 0, entries: 3, sha: '' };
+			},
+			writeStdout: () => {},
+		});
+
+		expect(capturedThreshold).toBe(7);
+	});
+
+	test('successful archive: prints CAM_JOURNAL_ARCHIVED=<k> sha=<sha> and returns 0', async () => {
+		const stdoutLines: string[] = [];
+		const parsed = parseJournalArgs(['archive']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 3, entries: 9, sha: 'abc1234' }),
+			writeStdout: (line) => stdoutLines.push(line),
+		});
+
+		expect(code).toBe(0);
+		expect(stdoutLines).toHaveLength(1);
+		expect(stdoutLines[0]).toBe('CAM_JOURNAL_ARCHIVED=3 sha=abc1234\n');
+	});
+
+	test('below-threshold no-op: prints CAM_JOURNAL_ARCHIVE=noop entries=<n> threshold=<t> and returns 0', async () => {
+		const stdoutLines: string[] = [];
+		const parsed = parseJournalArgs(['archive', '--threshold', '50']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 5, sha: '' }),
+			writeStdout: (line) => stdoutLines.push(line),
+		});
+
+		expect(code).toBe(0);
+		expect(stdoutLines).toHaveLength(1);
+		expect(stdoutLines[0]).toBe('CAM_JOURNAL_ARCHIVE=noop entries=5 threshold=50\n');
+	});
+
+	test('archiveFn returns ok:false: exits 1, no sentinel emitted', async () => {
+		const stdoutLines: string[] = [];
+		const parsed = parseJournalArgs(['archive']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: false, reason: 'diverged' }),
+			writeStdout: (line) => stdoutLines.push(line),
+		});
+
+		expect(code).toBe(1);
+		expect(stdoutLines).toHaveLength(0);
+	});
+
+	test('archive mode never calls appendFn or recordCycleTokensFn', async () => {
+		let appendCalled = false;
+		let recordCalled = false;
+		const parsed = parseJournalArgs(['archive']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		await dispatchJournal(parsed, {
+			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }),
+			appendFn: () => {
+				appendCalled = true;
+				return { ok: true, cycleId: 'x', sha: 'abc' };
+			},
+			recordCycleTokensFn: () => {
+				recordCalled = true;
+			},
+			writeStdout: () => {},
+		});
+
+		expect(appendCalled).toBe(false);
+		expect(recordCalled).toBe(false);
 	});
 });

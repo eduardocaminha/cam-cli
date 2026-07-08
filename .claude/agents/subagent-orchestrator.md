@@ -291,9 +291,12 @@ is documented in the file's own header.
 
 **Maintenance:**
 
-- When the file exceeds ~50 entries, propose to the human that you summarize
-  the oldest third into a "Pre-<date> summary" block and archive raw entries
-  to `scripts/cam/journal.archive.md`. Do not do this autonomously.
+- `cam journal archive [--threshold N]` handles archival deterministically:
+  once entries exceed the threshold (default 50), it moves the oldest third
+  verbatim to `scripts/cam/journal.archive.md` in one atomic on-main commit.
+  No summarization -- entries are relocated as-is, never rewritten.
+- This runs automatically on the `--cycle-close` path (best-effort, never
+  blocks handoff). A manual run is also fine at any time.
 
 ---
 
