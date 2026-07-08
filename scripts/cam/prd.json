@@ -1,0 +1,86 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-125-journal-archive",
+  "description": "cam journal archive: deterministic GC that moves the oldest third of journal.md entries to journal.archive.md on main when the entry count exceeds a configurable threshold (default 50), auto-invoked at cycle close.",
+  "issueNumber": 125,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add archiveJournalOnMain core logic (pure move, atomic on-main commit)",
+      "description": "As the cam orchestrator, I need a deterministic function that moves the oldest third of journal.md entries to scripts/cam/journal.archive.md on main when the entry count exceeds a threshold, so the journal stops growing without bound and no LLM summarization is involved.",
+      "acceptanceCriteria": [
+        "New module src/commands/journal-archive.ts exports archiveJournalOnMain(options) with injectable cwd, spawnFn, threshold (default 50), and clock (now, default () => new Date()). [oracle: bun test test/commands/journal-archive.test.ts]",
+        "Entry counting considers only '## ' headers strictly AFTER the '<!-- ENTRIES_BELOW -->' marker; preamble headers (## Format, ## Guidelines, ## Entries) are never counted, moved, or altered. [oracle: bun test test/commands/journal-archive.test.ts]",
+        "When entry count <= threshold the function returns a no-op success result ({ ok: true, archived: 0, entries: <n> }) and performs NO mutation: the fake spawnFn records no hash-object/write-tree/commit-tree/update-ref calls. [oracle: bun test test/commands/journal-archive.test.ts]",
+        "When entry count > threshold the oldest floor(count/3) entries (minimum 1) are MOVED verbatim (byte-identical blocks, original chronological order) to scripts/cam/journal.archive.md: cumulative append after existing archive content read from main via git show; when the archive file is absent from main it is bootstrapped with a minimal header. [oracle: bun test test/commands/journal-archive.test.ts]",
+        "journal.md is rewritten preserving the preamble and the ENTRIES_BELOW marker, with a pointer line referencing scripts/cam/journal.archive.md that carries the injected clock date, followed by the remaining (newest) entries. [oracle: bun test test/commands/journal-archive.test.ts]",
+        "Both files land in ONE atomic on-main commit via commitTreeToMain with a 2-element FileWrite[] (commit message 'chore(cam): journal archive <k> entries'), followed by best-effort push; journal.md and journal.archive.md are read from main via git show, never from the working tree. [oracle: bun test test/commands/journal-archive.test.ts]",
+        "Guard and push reuse the shared exports checkMainUpToDate and pushMainBestEffort imported from src/git/on-main.ts; no private copy is added. [oracle: grep -q \"from '../git/on-main.ts'\" src/commands/journal-archive.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New file src/commands/journal-archive.ts + test/commands/journal-archive.test.ts (mirror the fake-SpawnFn pattern of test/commands/journal-append.test.ts). Reuse commitTreeToMain multi-file FileWrite[] support (CAM-90) from src/git/on-main.ts; import checkMainUpToDate/pushMainBestEffort from there too (jscpd duplication gate trips on a 5th verbatim guard copy, see the GOTCHA comment in src/git/on-main.ts lines 275-282). journal.ts already carries a private guard copy: do NOT copy it again. Result type follows the discriminated-union pattern of AppendJournalEntryOnMainResult (journal.ts). The live journal has ~112 entries after 3 preamble headers, so grep -c '^## ' over the whole file overcounts: the marker-relative scan is load-bearing. noUncheckedIndexedAccess: guard array index access. Do not add src/commands/journal-archive.ts to scripts/file-size-budget.json unless the gate demands it."
+    },
+    {
+      "id": "US-002",
+      "title": "Wire cam journal archive [--threshold N] CLI subcommand",
+      "description": "As a cam operator, I need 'cam journal archive' available as a sibling of 'cam journal append' so I can run the deterministic GC manually with an optional custom threshold.",
+      "acceptanceCriteria": [
+        "parseJournalArgs accepts 'archive' as a subcommand and returns a new union member { mode: 'archive', threshold: number, help: false }; --threshold <n> parses a positive integer and an invalid or missing value after the flag produces a usage error and non-zero exit. [oracle: bun test]",
+        "dispatchJournal routes mode 'archive' WITHOUT reading stdin (append remains the only stdin path) and calls archiveJournalOnMain via an injectable dep so tests need no real git. [oracle: bun test]",
+        "On a successful archive run the command prints 'CAM_JOURNAL_ARCHIVED=<k> sha=<sha>' and exits 0; on the below-threshold no-op it prints 'CAM_JOURNAL_ARCHIVE=noop entries=<n> threshold=<t>' and exits 0; on failure it exits 1. [oracle: bun test]",
+        "JOURNAL_HELP usage and the top-level command list in index.ts mention 'journal archive [--threshold N]'. [oracle: grep -q 'journal archive' index.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: index.ts (parseJournalArgs ~line 1292, JournalDispatchDeps ~line 1307, dispatchJournal ~line 1357, JOURNAL_HELP ~line 345, command list ~line 95, case 'journal' ~line 2004) + test/commands/journal-append.test.ts or a new dispatch test file. GOTCHA: dispatchJournal currently reads stdin unconditionally before branching; archive mode must branch BEFORE the readStdin call or it hangs waiting for stdin. Sentinel parsing is a recurring bug class in this project (memory: supervisor-sentinel-parse-fragility): keep sentinel strings exact, single-line, machine-greppable. Keep exit-code semantics consistent with append (0 ok / 1 failure); do not reuse append's exit 3/4 codes."
+    },
+    {
+      "id": "US-003",
+      "title": "Auto-invoke the archive check on the --cycle-close path",
+      "description": "As the cam loop, I need the archive check to run automatically at cycle close so journal GC happens deterministically without operator or orchestrator discretion.",
+      "acceptanceCriteria": [
+        "On the 'cam journal append --cycle-close' success path, the archive check (default threshold) runs strictly AFTER the CAM_JOURNAL_APPENDED write and recordCycleTokens, and strictly BEFORE the recycle marker is armed and CAM_ORCH_HANDOFF_DUE is emitted. [oracle: bun test with an injected call-order recorder]",
+        "The archive check is best-effort: an archiveFn that throws or returns ok:false logs a warning, does NOT change the exit code, and does NOT prevent marker arming or the CAM_ORCH_HANDOFF_DUE emission. [oracle: bun test]",
+        "Plain 'cam journal append' (without --cycle-close) never triggers the archive check. [oracle: bun test]",
+        "The archive check is injectable via JournalDispatchDeps so tests run hermetically without real git. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: index.ts (dispatchJournal --cycle-close block, lines ~1409-1448) + dispatch tests. Ordering rationale (load-bearing): once the recycle marker is armed the watcher SIGTERMs the orchestrator wrapper, which can kill this cam subprocess mid-archive; running the check before armMarker keeps the mutation window inside the safe part of the sequence. The existing sequence comment 'journal entry persisted -> cycle-tokens persisted -> THEN handoff' must be extended, not violated. The issue spec allows cycle-close OR boot check; cycle-close was chosen because it is the code-driven deterministic hook (boot-side check would add a second writer and a read on every boot)."
+    },
+    {
+      "id": "US-004",
+      "title": "Replace the manual archive rule in templates and agent file",
+      "description": "As a cam-managed project, I need the documented '>50 entries: summarize and archive manually' rule replaced by the deterministic 'cam journal archive' behavior so agent instructions match what the product now does.",
+      "acceptanceCriteria": [
+        "templates/agents/subagent-orchestrator.md Maintenance section: the 'propose to the human that you summarize ... Do not do this autonomously' rule is replaced by the deterministic behavior (archival is a pure move performed by 'cam journal archive', auto-run at cycle close; manual run allowed; no summarization). [oracle: grep -q 'cam journal archive' templates/agents/subagent-orchestrator.md]",
+        ".claude/agents/subagent-orchestrator.md receives the matching edit (dual copy is per-file: diff both copies before editing, do not assume byte-identity). [oracle: grep -q 'cam journal archive' .claude/agents/subagent-orchestrator.md]",
+        "templates/scripts/cam/journal.md guideline bullet: the 'summarize the oldest third' text is replaced by the move-based 'cam journal archive' description. [oracle: grep -q 'cam journal archive' templates/scripts/cam/journal.md]",
+        "The live scripts/cam/journal.md is NOT edited on this branch. [oracle: test -z \"$(git diff --name-only $(git merge-base origin/main HEAD)..HEAD -- scripts/cam/journal.md)\"]",
+        "Vendor drift check passes after regenerating the embed (bun run embed-vendor then bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: templates/agents/subagent-orchestrator.md (~line 294), .claude/agents/subagent-orchestrator.md (~line 294), templates/scripts/cam/journal.md (~line 41), plus src/vendor/_generated.ts via bun run embed-vendor. GOTCHA (memory cam-dual-copy-is-per-file): .claude/ vs templates/ copies are NOT uniformly byte-identical; diff each pair before editing. GOTCHA (memory cam-finalize-clobbers-stale-branch-backlog): scripts/cam/journal.md is mutated on main by commit-tree during live cycles; editing the branch copy risks clobbering appended entries at squash-merge, so its stale guideline text is intentionally out of scope here. Style: templates/scripts/cam/journal.md is human-readable persisted markdown, avoid em-dash in NEW text; agent instruction files (.claude/agents/*.md, templates/agents/*.md) are LLM-consumed and exempt."
+    }
+  ]
+}
