@@ -3,7 +3,9 @@
   "branchName": "cam/pr-215-plan-preflight-failed-surfacing",
   "description": "Surface silent plan-preflight failures: gitignore the runtime trigger, add a durable .cam-plan-preflight-failed.json marker with notify + orchestrator boot-read, mirroring ship-stalled/plan-escalated.",
   "issueNumber": 215,
-  "relatedDocs": ["scripts/cam/patterns.md"],
+  "relatedDocs": [
+    "scripts/cam/patterns.md"
+  ],
   "officialDocsConsulted": [],
   "userStories": [
     {
@@ -20,7 +22,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .gitignore only. Place the three entries next to the existing sibling .claude/.cam-plan-escalated.json (.gitignore:85), same path style. These are the three runtime artifacts currently untracked and not ignored (AC1 of the issue spec). Do NOT touch src/supervisor/plan-preflight.ts: AC7 explicitly rejects loosening the gate to -uno; the trigger is resolved by this gitignore hygiene plus the surfacing stories that follow."
     },

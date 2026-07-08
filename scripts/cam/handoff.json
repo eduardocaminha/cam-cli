@@ -1,0 +1,12 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Gitignore the three untracked runtime artifacts" },
+  "branchName": "cam/pr-215-plan-preflight-failed-surfacing",
+  "timestamp": "2026-07-08T13:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [".gitignore"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 only touched .gitignore, adding .claude/.cam-sidecar-session.json, .claude/.cam-ship-stalled.json, and .claude/.cam-plan-preflight-failed.json next to the existing .cam-plan-escalated.json entry (line ~85). src/supervisor/plan-preflight.ts was left untouched (AC7): its --porcelain gate is not to be loosened. US-002 is next: create src/supervisor/plan-preflight-marker.ts mirroring src/supervisor/plan-escalation.ts (the closest sibling: filename constant, { step, detail, writtenAt } interface with no issueId, Omit<Marker, 'writtenAt'> writer-params type, shape-guarded read returning null on any malformation, write/remove that never throw, plus a pure single-line-vs-multiline truncation helper). Field name is writtenAt (not ts, which is what ship-stalled uses).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
