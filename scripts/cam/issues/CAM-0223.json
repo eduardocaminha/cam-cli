@@ -1,9 +1,38 @@
 {
   "id": "CAM-223",
   "title": "Dieta de contexto dos workers (prompt-side): patterns.md/journal.md viram grep-on-demand, refs mortas removidas",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T22:59:42.087Z",
-  "description": "Auditoria 2026-07-08 mediu o bill de contexto por spawn: implementer ~86k tok/story (85% = ler patterns.md inteiro, 292KB, mandado no step 5), planner ~128k tok/round (92% = patterns.md + journal.md inteiros, mandados na secao Project Context), reviewer carrega lessons.archive.md aposentado (20KB, citado na linha 77). Alem disso: scripts/cam/CLAUDE.md auto-carrega via nested-CLAUDE.md E e mandado re-ler (double-load no implementer step 4 e planner), e AGENTS.md e referenciado em 3 lugares (planner frontmatter, planner Project Context, implementer step 4) mas NAO EXISTE no repo. Proposta: invariantes duraveis (~2KB: Bun-only, noUncheckedIndexedAccess, Ink glyph, no --permission-mode, gates) passam a viver so no scripts/cam/CLAUDE.md que ja auto-carrega; patterns.md deixa de ser leitura mandatoria integral e vira referencia grep-on-demand (worker grepa a secao do subsistema que a story toca); planner dropa journal.md inteiramente (PRD nunca cita historico); mandados de re-read de CLAUDE.md e refs a AGENTS.md removidos; reviewer re-aponta a citacao de lessons.archive.md. Ganho estimado ~73k tok/story no implementer (maior desperdicio do sistema, frequencia por-story). Doc-only (agents .md ambas as copias + scripts/cam/CLAUDE.md ambas as copias + re-embed), zero mudanca de harness. Fluxo de append de novos patterns segue intacto (GC do patterns.md e issue separada). Origem: auditoria de contexto operador 2026-07-08."
+  "description": "Auditoria 2026-07-08 mediu o bill de contexto por spawn: implementer ~86k tok/story (85% = ler patterns.md inteiro, 292KB, mandado no step 5), planner ~128k tok/round (92% = patterns.md + journal.md inteiros, mandados na secao Project Context), reviewer carrega lessons.archive.md aposentado (20KB, citado na linha 77). Alem disso: scripts/cam/CLAUDE.md auto-carrega via nested-CLAUDE.md E e mandado re-ler (double-load no implementer step 4 e planner), e AGENTS.md e referenciado em 3 lugares (planner frontmatter, planner Project Context, implementer step 4) mas NAO EXISTE no repo. Proposta: invariantes duraveis (~2KB: Bun-only, noUncheckedIndexedAccess, Ink glyph, no --permission-mode, gates) passam a viver so no scripts/cam/CLAUDE.md que ja auto-carrega; patterns.md deixa de ser leitura mandatoria integral e vira referencia grep-on-demand (worker grepa a secao do subsistema que a story toca); planner dropa journal.md inteiramente (PRD nunca cita historico); mandados de re-read de CLAUDE.md e refs a AGENTS.md removidos; reviewer re-aponta a citacao de lessons.archive.md. Ganho estimado ~73k tok/story no implementer (maior desperdicio do sistema, frequencia por-story). Doc-only (agents .md ambas as copias + scripts/cam/CLAUDE.md ambas as copias + re-embed), zero mudanca de harness. Fluxo de append de novos patterns segue intacto (GC do patterns.md e issue separada). Origem: auditoria de contexto operador 2026-07-08.",
+  "spec": {
+    "scope": "Dieta de contexto prompt-side dos workers, opcao A (invariantes no CLAUDE.md auto-carregado). MUDANCA 1 (invariantes): scripts/cam/CLAUDE.md secao Codebase Patterns ganha o bloco curado de invariantes duraveis (max ~2KB: Bun-only/Bun.spawn/Bun.file, noUncheckedIndexedAccess guard, Ink glyph success/failure, nunca --permission-mode flag, quality gates typecheck/test/check:all/embed-vendor). Esse arquivo ja auto-carrega via nested-CLAUDE.md em todo worker, entao os invariantes chegam com zero leitura extra. MUDANCA 2 (patterns.md grep-on-demand): toda instrucao que manda ler scripts/cam/patterns.md INTEIRO no story-start (scripts/cam/CLAUDE.md step 3 e secao Codebase Patterns, subagent-implementer.md step 5) vira: grep patterns.md pela secao/palavras-chave do subsistema que a story toca, ler so os bullets relevantes. Fluxo de APPEND de patterns novos segue intacto; routing: insight que e invariante duravel vai pro CLAUDE.md secao Codebase Patterns (curado), o resto vai pro patterns.md. MUDANCA 3 (planner): remover journal.md e patterns.md integral da secao Project Context do subagent-planner.md; planner le issue + CLAUDE.md (auto) + grep-on-demand de patterns; PRD nunca cita historico de journal. MUDANCA 4 (refs mortas): remover toda referencia a AGENTS.md (subagent-planner.md frontmatter description e Project Context, subagent-implementer.md step 4; arquivo nao existe no repo); remover o mandado de RE-LER scripts/cam/CLAUDE.md (double-load; anotar que auto-carrega). MUDANCA 5 (reviewer): remover/re-apontar a citacao de lessons.archive.md (subagent-reviewer.md ~linha 77; arquivo aposentado, regra Ink glyph vive nos invariantes). Tudo doc-only nas DUAS copias (.claude/ e templates/ com edit equivalente, nao byte-copy: as copias sao especializadas por design) + regen do embed. Zero mudanca de harness/codigo. Fora de escopo: reviewer ler changed-files-in-full (postura de qualidade do review), GC/archive do patterns.md (issue separada), injecao harness-side de story no spawn prompt (issue separada). Ganho estimado: ~73k tok/story no implementer, ~118k tok/round no planner (patterns 292KB + journal 178KB hoje).",
+    "acceptanceCriteria": [
+      "nenhum agent .md nem scripts/cam/CLAUDE.md manda ler patterns.md ou journal.md integralmente no start; a instrucao e grep-on-demand do subsistema tocado",
+      "scripts/cam/CLAUDE.md secao Codebase Patterns contem o bloco curado de invariantes (<=2KB) e documenta o routing invariante-vs-pattern; a copia templates/ ganha o equivalente generico com placeholders",
+      "zero referencias a AGENTS.md em subagent-planner.md (frontmatter e corpo) e subagent-implementer.md, nas duas copias",
+      "mandado de re-read de scripts/cam/CLAUDE.md removido dos agents (double-load), com nota de que o arquivo auto-carrega",
+      "subagent-reviewer.md nao cita lessons.archive.md",
+      "edits aplicados nas duas copias (.claude/ e templates/) como edit equivalente; bun run embed-vendor:check verde",
+      "bun run typecheck, bun test e bun run check:all verdes"
+    ],
+    "gotchas": [
+      "dual-copy .claude/ vs templates/ e especializacao intencional por arquivo (generic vs cam-cli); aplicar o edit equivalente em cada lado, nunca sobrescrever um com o outro; a citacao de lessons.archive.md pode existir so na copia .claude do reviewer",
+      "templates/scripts/cam/CLAUDE.md e seed generico com placeholders <project X command>; manter placeholders no bloco de invariantes do template",
+      "NAO consertar aqui outros defeitos conhecidos do mesmo arquivo (ex: ponteiro Step 5.5 errado no template CLAUDE.md, exemplo status:ok do implementer): sao issues separadas do sweep, mudanca cirurgica",
+      "patterns.md continua append-only e nunca truncado; esta issue nao move nem reescreve conteudo do patterns.md",
+      "auditor e reviewer hoje corretamente NAO leem patterns.md; nao introduzir leitura neles"
+    ],
+    "domainTerms": [
+      "invariant (always-loaded rule)",
+      "pattern (grep-on-demand reference)"
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 2
+  }
 }
