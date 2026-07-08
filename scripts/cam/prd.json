@@ -78,7 +78,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/agents/subagent-orchestrator.md (~line 294), .claude/agents/subagent-orchestrator.md (~line 294), templates/scripts/cam/journal.md (~line 41), plus src/vendor/_generated.ts via bun run embed-vendor. GOTCHA (memory cam-dual-copy-is-per-file): .claude/ vs templates/ copies are NOT uniformly byte-identical; diff each pair before editing. GOTCHA (memory cam-finalize-clobbers-stale-branch-backlog): scripts/cam/journal.md is mutated on main by commit-tree during live cycles; editing the branch copy risks clobbering appended entries at squash-merge, so its stale guideline text is intentionally out of scope here. Style: templates/scripts/cam/journal.md is human-readable persisted markdown, avoid em-dash in NEW text; agent instruction files (.claude/agents/*.md, templates/agents/*.md) are LLM-consumed and exempt."
     }
