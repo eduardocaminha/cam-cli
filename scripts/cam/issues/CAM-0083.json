@@ -1,7 +1,7 @@
 {
   "id": "CAM-83",
   "title": "Dashboard: exibir custo acumulado de tokens e tempo total de sessao",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-25T15:00:00Z",
