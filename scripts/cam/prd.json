@@ -71,7 +71,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Item (4) of CAM-115. Root cause: the CLEAN write path in makeReviewDispatch (src/supervisor/review.ts ~lines 520-534) spreads ...(prd.review ?? {}) which retains the findings array written by a previous FIXES_PENDING round (line 586). Scope is CLEAN only, per the issue spec: the MAX_ROUNDS_DEBT write paths (review.ts ~line 545 and src/supervisor/loop.ts lines 823/847/1443) intentionally keep the last round's findings (they document the debt) and must NOT be changed here. Tests live in test/supervisor/review.test.ts (fake readPrd/writePrd/readReviewReport deps, no real tmux). Choose empty-array vs key-removal deliberately and keep the PrdSnapshot type in src/supervisor/decide.ts (findings is already optional) consistent."
     }
