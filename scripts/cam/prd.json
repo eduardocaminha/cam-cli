@@ -27,7 +27,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/triage.ts (the asymmetry: step 4 no-op at ~line 282 prints gateResult.warnings, step 7 commit path at ~line 295 prints the rankIssues warnings), test/triage.test.ts (currently has NO warning assertions; add them here). The two warning sources are semantically distinct: gate warnings are cross-stage blocker notices from runGraphGate (src/issues/gate.ts, ok:true carries warnings[]), rank warnings are WSJF-computation problems from rankIssues (src/issues/rank.ts computeWsjf). Unify by concatenating both on both paths; do not drop either source. Gotchas: codebase uses tab indentation; TS strict with noUncheckedIndexedAccess (array access is T | undefined); tests inject spawnFn fakes, never a real git binary. Re-check the module-header flow comment in triage.ts and update step 6/9 wording if it names the warnings source."
     },
