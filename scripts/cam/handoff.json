@@ -1,20 +1,19 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Remove dead clock/ClockFn from ship-finalize" },
+  "lastCompletedStory": { "id": "US-004", "title": "Clear stale review findings on a CLEAN verdict" },
   "branchName": "cam/pr-115-review-suggestion-followups",
-  "timestamp": "2026-07-08T00:30:00Z",
+  "timestamp": "2026-07-08T01:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/ship-finalize.ts",
-    "src/commands/ship-deps.ts",
-    "test/ship-finalize.test.ts",
-    "test/ship-finalize-hardening.test.ts",
-    "test/integration/ship-finalize-dirty-prd.test.ts",
+    "src/supervisor/review.ts",
+    "test/supervisor/review.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [
     "US-001's open question (a latent selectFn-throw gap in buildProductionDispatchFn's meta_loop=auto dispatch path, src/commands/sidecar.ts ~1504/1509) is still unresolved and out of scope for US-002/US-003/US-004; carry it forward as a follow-up-story candidate, not something to fix opportunistically."
   ],
-  "nextStoryContext": "US-003 is done: ClockFn type export and the clock field were removed from FinalizeCycleCloseOptions in src/commands/ship-finalize.ts; buildShipFinalizeOpts (src/commands/ship-deps.ts) no longer builds a clock; the 3 test fixtures that constructed FinalizeCycleCloseOptions (test/ship-finalize.test.ts, test/ship-finalize-hardening.test.ts, test/integration/ship-finalize-dirty-prd.test.ts) all drop the field (and the now-unused FIXED_TS/FIXED_CLOCK constants). Confirmed untouched: ship-bump.ts's own live ClockFn (opts.clock() still called at ship-bump.ts:193) and issue-specify.ts's own ClockFn -- neither imports from ship-finalize.ts, so no cross-file coupling existed. Full quality spine (bun run check:all: test 3753 pass/0 fail, embed-vendor n/a this story, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity) is green. US-004 (clear stale review findings on CLEAN, src/supervisor/review.ts ~520-534) is next and touches an entirely different file (no overlap with US-003's edits); its own notes already pin the exact CLEAN-only scope (do not touch the MAX_ROUNDS_DEBT write paths) and the test file (test/supervisor/review.test.ts) to extend.",
+  "nextStoryContext": "All 4 non-operator stories in this PRD (CAM-115) now have passes:true (US-001..US-004). US-004: makeReviewDispatch's CLEAN write path in src/supervisor/review.ts (~line 520) now destructures findings out of prd.review before spreading, so a CLEAN verdict no longer carries forward a prior FIXES_PENDING round's stale findings array (key-removal, not empty-array, to match the existing tag-based-path convention). MAX_ROUNDS_DEBT write paths (review.ts and loop.ts) were deliberately left untouched per the story's CLEAN-only scope. New regression test in test/supervisor/review.test.ts drives two sequential makeReviewDispatch calls (FIXES_PENDING round persisting file findings, then CLEAN round) and asserts prd.review.findings is undefined after the CLEAN write. file-size-budget.json ceilings raised for both files (review.ts 642->647, review.test.ts 1605->1642) with a CAM-115 tracker ref. Full quality spine (bun run check:all: test 3755 pass/0 fail, lint ok, file-size ok, debt-markers ok, version-skips ok, coverage ok, dead-code ok, dup ok, ci-parity ok) is green. There is no next non-operator story to implement: the next cam-loop iteration should proceed to /cam-review (review cycle), not another /cam-next implement dispatch.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
