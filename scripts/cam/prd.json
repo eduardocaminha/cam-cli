@@ -92,7 +92,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Verification-and-polish story: expected to change nothing if US-001..US-004 landed cleanly; fix any leftover drift found by the greps (e.g. inconsistent grep-on-demand wording between copies). Zero harness/code changes anywhere in this PRD; if any src/ change appears necessary, HALT and escalate: the issue is doc-only by spec."
     }
