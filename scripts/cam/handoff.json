@@ -1,13 +1,13 @@
 {
-  "lastCompletedStory": { "id": "US-004", "title": "Reviewer agent: re-point retired lessons.archive.md citation to the invariants block" },
+  "lastCompletedStory": { "id": "US-005", "title": "Context-diet consistency sweep across all agent docs" },
   "branchName": "cam/pr-223-worker-context-diet",
-  "timestamp": "2026-07-08T00:45:00Z",
+  "timestamp": "2026-07-08T00:55:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-reviewer.md"
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 is a verification-and-polish sweep across all six files touched by US-001..US-004 (both CLAUDE.md copies, both subagent-planner.md copies, both subagent-implementer.md copies, both subagent-reviewer.md copies). It is expected to require zero further edits if the prior stories landed cleanly (verified: the two US-004 grep oracles already pass, and templates/agents/subagent-reviewer.md never had a lessons.archive.md citation to begin with — it's a generic boilerplate template that diverges from the .claude copy on many unrelated sections, which is pre-existing and out of scope). Run all 7 oracles from scratch (2 greps + bun run check:all + embed-vendor:check + typecheck + test) and fix only what a grep actually flags — do not touch unrelated template drift. Per the story's notes, this is doc-only: if any src/ change looks necessary, HALT and escalate rather than touching harness code.",
+  "nextStoryContext": "PRD CAM-223 is now fully passing (US-001..US-005, all priority 1-5, non-operator). All 7 oracles for US-005 passed from scratch with zero edits required: no leftover 'patterns.md` in full' or journal.md mandates, no AGENTS.md refs in planner/implementer copies, no lessons.archive refs in reviewer copies, and the full quality spine (check:all, embed-vendor:check, typecheck, test) is green. This confirms US-001..US-004 landed cleanly and the context-diet refactor is coherent across both .claude/ and templates/ copies of CLAUDE.md, subagent-planner.md, subagent-implementer.md, subagent-reviewer.md. No further action needed on this PRD; next invocation should find no passes:false non-operator stories and exit PRD_COMPLETE.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
