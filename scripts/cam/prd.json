@@ -42,7 +42,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-preflight-marker.ts (new), test/supervisor/plan/plan-preflight-marker.test.ts (new). Mirror src/supervisor/plan-escalation.ts verbatim in structure (filename constant, interface, read with shape guard, write, remove, doc comments); it is the closer and newer sibling. Field name is writtenAt, NOT ts (ship-stalled uses ts; the issue spec says follow plan-escalated). node:fs existsSync/readFileSync/writeFileSync/unlinkSync are the established pattern in the sibling modules; keep it. The truncation helper lives here because both the US-003 notify line and the US-005 boot-blocker prose reference the same rule."
     },
