@@ -1,0 +1,9 @@
+{
+  "id": "CAM-232",
+  "title": "Seeds de template capados: issues.schema.json sem specSource/derivedFrom + pointers errados",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T23:05:57.139Z",
+  "description": "Drift na direcao perigosa (working copy mais nova que o seed; edits nunca shipam pra downstream, embed le so templates/): (1) templates/scripts/cam/issues.schema.json NAO tem specSource (enum grill/derived/operator), derivedFrom, nem o bloco allOf de validacao condicional que a copia viva tem (+2 dias mais nova); projeto downstream recebe schema sem spec-source tracking. (2) templates/scripts/cam/CLAUDE.md:14 aponta Step 5.5 pra .claude/commands/cam-next.md que tem zero Step 5.5 (vive no system prompt do agente; a copia viva ja foi corrigida). (3) Avaliar: scripts/cam/patterns.md e referenciado como canal de conhecimento pelo CLAUDE.md seedado mas NAO e seedado (downstream nasce sem o arquivo); scripts/cam/orch-handoff.schema.json tambem nao e seedado (handoff.schema.json e). Origem: auditoria dual-copy/embed 2026-07-08."
+}
