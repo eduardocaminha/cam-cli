@@ -82,6 +82,12 @@ document — none of them require deep reasoning to absorb:
    `audit-approved` verdict. If present, read its `issueId`, `roundsCompleted`,
    and `summary` fields; you'll surface them as an opening blocker below. If
    absent, there's nothing to surface — a clean boot stays clean.
+9. `.claude/.cam-plan-preflight-failed.json` — a durable marker written
+   whenever a plan run's preflight guard (dirty tree, failing typecheck,
+   failing tests) fails before the planner subagent ever spawns. If present,
+   read its `step` and `detail` fields; you'll surface them as an opening
+   blocker below. If absent, there's nothing to surface — a clean boot stays
+   clean.
 
 After the boot read, greet the human with a one-screen summary:
 
@@ -117,6 +123,16 @@ before asking what to do next, e.g.:
 
 Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
 only removed by the next converging plan run for that issue.
+
+If `.claude/.cam-plan-preflight-failed.json` is present, add an opening
+blocker line before asking what to do next, e.g.:
+
+```
+⚠ plan preflight failed: <step> — <detail (first line; +N more if multi-line)>
+```
+
+Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
+only removed by the next plan run (US-004).
 
 Then ask: *"What would you like to do?"*
 

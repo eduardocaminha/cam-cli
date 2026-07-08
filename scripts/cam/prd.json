@@ -98,7 +98,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-orchestrator.md, templates/agents/subagent-orchestrator.md, src/vendor/_generated.ts (regenerated, never hand-edited). CRITICAL GOTCHA (cam-dual-copy-is-per-file): the two copies are NOT byte-identical today (tool-list ordering differs around lines 13-15); apply the same edit to EACH copy in place, do NOT copy one file over the other. Model the new step and blocker section on existing step 7/8 (lines ~75-84) and the ship-stalled/plan-escalated blocker sections (lines ~101-118), including the 'Do NOT delete the marker yourself' sentence and the 'If absent, a clean boot stays clean' framing. If no doc-content test harness exists for the boot steps, assert the blocker prose via grep on both copies instead of a new test file. Persisted markdown follows the operator's style rule: no em-dash, no decorative emoji, except this file is agent-consumed (.claude/agents/) where the existing style already governs; match the surrounding text exactly."
     }
