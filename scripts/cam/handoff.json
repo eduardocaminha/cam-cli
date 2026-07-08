@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Propagate real backlog read errors from the select seams" },
+  "branchName": "cam/pr-115-review-suggestion-followups",
+  "timestamp": "2026-07-08T08:30:20Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/issues/select.ts",
+    "src/commands/sidecar.ts",
+    "src/supervisor/plan-runner.ts",
+    "scripts/file-size-budget.json",
+    "test/issues/select.test.ts",
+    "test/commands/sidecar-meta-loop.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [
+    "US-001 fix is scoped exactly to the story's 4 ACs: select.ts no longer swallows read/parse errors, and the one explicitly-named unguarded caller (makeProductionMetaLoopObserveFn, the meta_loop=observe tick) now catches+logs+skips instead of crashing. While auditing every reachable caller I found a structurally-identical latent gap NOT named in this story's notes: buildProductionDispatchFn's selectFn/selectTargetFn (meta_loop=auto dispatch path, src/commands/sidecar.ts ~1504/1509, feeding dispatchOrDrain/handlePendingTarget) is invoked through the exact same unguarded `await opts.runMetaLoopObserveFn()` slot in loop.ts as the observe closure I hardened, but the PRD only called out the observe closure and the plan-runner selectIssueFn path (the latter is already safe -- an existing outer try/catch in makeProductionPlanPhaseFn catches any exception from the whole plan-phase tick). Left unfixed per Surgical Changes (out of this story's literal AC scope): a real backlog read/parse error under meta_loop=auto would now crash the sidecar's idle tick instead of the pre-fix silent-null/possible-false-drain behavior. Recommend a follow-up story/issue to add the same selectFn-throw guard to buildProductionDispatchFn's dispatchOrDrain/handlePendingTarget path (or, more elegantly, hoist ONE try/catch around `await opts.runMetaLoopObserveFn()` itself in loop.ts, mirroring the existing runPlanPhaseFn/runShipPhaseFn outer guards, which would cover both observe and auto-dispatch modes with a single change)."
+  ],
+  "nextStoryContext": "US-002 (align cam-plan prose with the read-from-main backlog seam) and US-003 (remove dead clock/ClockFn from ship-finalize.ts) are independent of this story's edits and can proceed without extra setup. US-004 (clear stale review findings on CLEAN) is also independent. No shared files between US-001 and US-002/003/004 as far as this story touched. Full quality spine (bun run check:all) is green on this branch as of this story.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
