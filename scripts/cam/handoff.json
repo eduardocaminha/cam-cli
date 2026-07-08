@@ -1,0 +1,17 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add archiveJournalOnMain core logic (pure move, atomic on-main commit)" },
+  "branchName": "cam/pr-125-journal-archive",
+  "timestamp": "2026-07-08T00:00:00.000Z",
+  "createdFiles": [
+    "src/commands/journal-archive.ts",
+    "test/commands/journal-archive.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "archiveJournalOnMain(options) is exported from src/commands/journal-archive.ts: { cwd, spawnFn, threshold?: number (default 50), clock?: () => Date }. Result union: ArchiveJournalOnMainSuccess { ok: true, archived: number, entries: number, sha: string (empty on no-op) } | error variants { ok: false, reason: 'diverged' | 'detached-head' | 'missing-main' | 'journal-missing' | 'marker-missing' }. US-002 (wire `cam journal archive [--threshold N]` CLI subcommand) should mirror the argv-parsing style already used for `cam journal append` (parseJournalArgs / dispatchJournal in index.ts): strip mode-selecting flags first via .filter(), scan the remainder for --threshold's numeric value. Wire archiveJournalOnMain with a real SpawnFn (Bun.spawnSync-backed, same wrapper used elsewhere) and a real clock (() => new Date()). No new CLI sentinel format is prescribed by US-001; US-002's own acceptance criteria will define the printed sentinel shape (mirror CAM_JOURNAL_APPENDED=... style if consistent, e.g. CAM_JOURNAL_ARCHIVED=<archived> entries=<entries>). Commit message format already fixed by US-001: 'chore(cam): journal archive <k> entries'. Do not re-derive the guard/push logic: checkMainUpToDate and pushMainBestEffort are imported directly from src/git/on-main.ts (no private copy), confirmed via a grep oracle in the PRD. The real scripts/cam/journal.md currently has 111 post-marker entries (threshold default 50 means a real run would archive floor(111/3)=37 -- be careful about invoking the real CLI against this repo's own journal.md in any integration test; use a fixture/tmp git repo like test/integration/journal-append-on-main.test.ts does, not the live journal.md.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
