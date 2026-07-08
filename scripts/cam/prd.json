@@ -74,7 +74,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-reviewer.md (line ~77). The lessons.archive.md citation exists only in the .claude copy (verified by grep); the templates copy likely needs no edit, just verification. OUT OF SCOPE per issue spec: the reviewer checklist item referencing AGENTS.md in templates/agents/subagent-reviewer.md line ~100 (AGENTS.md removal is scoped to planner + implementer only); the reviewer's read-changed-files-in-full posture (quality stance, separate issue). Do not touch subagent-auditor.md."
     },

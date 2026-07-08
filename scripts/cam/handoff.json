@@ -1,15 +1,13 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Planner agent: drop journal.md and integral patterns.md from Project Context, remove AGENTS.md refs" },
+  "lastCompletedStory": { "id": "US-004", "title": "Reviewer agent: re-point retired lessons.archive.md citation to the invariants block" },
   "branchName": "cam/pr-223-worker-context-diet",
-  "timestamp": "2026-07-08T00:30:00Z",
+  "timestamp": "2026-07-08T00:45:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-planner.md",
-    "templates/agents/subagent-planner.md",
-    "src/vendor/_generated.ts"
+    ".claude/agents/subagent-reviewer.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 (reviewer agent) only needs the lessons.archive.md citation re-pointed to the durable invariants block in scripts/cam/CLAUDE.md; per its notes, that citation exists only in .claude/agents/subagent-reviewer.md (~line 77), the templates copy likely needs no edit (verify with grep first). Do not introduce a patterns.md/journal.md full-read mandate into either reviewer copy — they correctly don't have one today, and the acceptance criteria explicitly forbid adding one. Do not touch subagent-auditor.md, and do not remove the AGENTS.md reference in templates/agents/subagent-reviewer.md ~line 100 (that removal is scoped to planner + implementer only, not reviewer, per this issue's spec). Also out of scope: the reviewer's read-changed-files-in-full posture (separate issue).",
+  "nextStoryContext": "US-005 is a verification-and-polish sweep across all six files touched by US-001..US-004 (both CLAUDE.md copies, both subagent-planner.md copies, both subagent-implementer.md copies, both subagent-reviewer.md copies). It is expected to require zero further edits if the prior stories landed cleanly (verified: the two US-004 grep oracles already pass, and templates/agents/subagent-reviewer.md never had a lessons.archive.md citation to begin with — it's a generic boilerplate template that diverges from the .claude copy on many unrelated sections, which is pre-existing and out of scope). Run all 7 oracles from scratch (2 greps + bun run check:all + embed-vendor:check + typecheck + test) and fix only what a grep actually flags — do not touch unrelated template drift. Per the story's notes, this is doc-only: if any src/ change looks necessary, HALT and escalate rather than touching harness code.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
