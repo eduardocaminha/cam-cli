@@ -1,0 +1,9 @@
+{
+  "id": "CAM-214",
+  "title": "Harness circuit-breaker for repeated identical BLOCKED_AMBIGUITY on the same story ID",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T02:15:37.187Z",
+  "description": "Problem: CAM-92's PRD had self-contradictory acceptance criteria (AC1-3 dedup collapses the formatWorkerReportSummary( call-site count in loop.ts to 1, while a pre-existing CAM-94 static-grep test \"AC7\" pins it at 3, and AC4 forbade touching existing supervisor tests). The sidecar re-dispatched the SAME single story across 10 consecutive fresh implementer sessions, each hitting the identical deterministic contradiction and returning BLOCKED_AMBIGUITY, before an operator amended the PRD. ~10 sessions of ~10-15k output tokens each with zero PRD-side progress = pure waste.\n\nAsk: add a harness-level circuit breaker that detects repeated identical terminal-blocked outcomes (same storyId + same outcome.kind + unchanged PRD) across N consecutive sessions and halts the auto-dispatch loop, surfacing a durable escalation marker to the orchestrator (mirroring .cam-plan-escalated.json) instead of re-spinning. Suggested: threshold N=2 or 3; key on (storyId, outcome.kind, prd content hash) so a real PRD amendment resets the counter. Out of scope: fixing any specific PRD (that is an operator/planner amendment)."
+}
