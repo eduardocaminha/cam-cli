@@ -35,6 +35,11 @@ import {
 	type JournalCycleEntry,
 	type AppendJournalEntryOnMainResult,
 } from './src/commands/journal.ts';
+import {
+	archiveJournalOnMain,
+	DEFAULT_THRESHOLD as JOURNAL_ARCHIVE_DEFAULT_THRESHOLD,
+	type ArchiveJournalOnMainResult,
+} from './src/commands/journal-archive.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runIssueList } from './src/commands/issue-list.ts';
 import type {
@@ -93,6 +98,7 @@ const HELP = renderHelp({
 				{ name: 'tag', description: 'Create and push the vX.Y.Z git tag for the current CAM_VERSION on main' },
 				{ name: 'issue "<text>"', description: 'File an issue from free text; opens /cam-issue create in a pane' },
 				{ name: 'journal append [--force]', description: 'Append a structured cycle entry to scripts/cam/journal.md on main (reads JSON from stdin)' },
+				{ name: 'journal archive [--threshold N]', description: 'Move the oldest third of scripts/cam/journal.md entries to journal.archive.md on main once entries exceed the threshold (default 50)' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
@@ -345,7 +351,7 @@ const ISSUE_HELP = renderHelp({
 const JOURNAL_HELP = renderHelp({
 	title: 'cam journal',
 	tagline: 'Append a structured cycle entry to scripts/cam/journal.md on main',
-	usage: 'cam journal append [--force] [--cycle-close]  (reads JSON from stdin)',
+	usage: 'cam journal append [--force] [--cycle-close]  |  cam journal archive [--threshold N]',
 	sections: [
 		{
 			heading: 'Subcommands',
@@ -353,6 +359,10 @@ const JOURNAL_HELP = renderHelp({
 				{
 					name: 'append [--force]',
 					description: 'Read a JSON cycle entry from stdin and append it to journal.md on main via commit-tree',
+				},
+				{
+					name: 'archive [--threshold N]',
+					description: 'Move the oldest third of journal.md entries to journal.archive.md on main once entries exceed N (default 50); no stdin read',
 				},
 			],
 		},
@@ -399,7 +409,15 @@ const JOURNAL_HELP = renderHelp({
 				'          before arming the recycle marker.\n' +
 				'  exit 4  --cycle-close requested but no live recycle watcher was found\n' +
 				'          (.claude/.cam-watcher.pid absent or the process is dead); use\n' +
-				'          /exit manually or start `cam run` to restart the watcher.',
+				'          /exit manually or start `cam run` to restart the watcher.\n' +
+				'\n' +
+				'`cam journal archive [--threshold N]`:\n' +
+				'  Does not read stdin. Moves the oldest floor(entries/3) post-marker\n' +
+				'  entries from journal.md to journal.archive.md in one atomic on-main\n' +
+				'  commit when the entry count exceeds N (default 50). Prints\n' +
+				'  `CAM_JOURNAL_ARCHIVED=<k> sha=<commit-sha>` and exits 0 on a successful\n' +
+				'  archive; prints `CAM_JOURNAL_ARCHIVE=noop entries=<n> threshold=<t>` and\n' +
+				'  exits 0 when at or below the threshold; exits 1 on failure.',
 		},
 	],
 	footer:
@@ -1283,19 +1301,39 @@ export async function dispatchShip(
 /**
  * Discriminated union returned by parseJournalArgs.
  * - mode === 'append': dispatch the journal append subcommand.
+ * - mode === 'archive': dispatch the journal archive subcommand (no stdin).
  * - help === true: caller should print JOURNAL_HELP and exit 0.
  */
 export type ParsedJournalArgs =
 	| { mode: 'append'; force: boolean; cycleClose: boolean; help: false }
+	| { mode: 'archive'; threshold: number; help: false }
 	| { mode?: never; help: true };
+
+const JOURNAL_USAGE =
+	'Usage: cam journal append [--force] [--cycle-close]  (reads JSON from stdin)\n' +
+	'       cam journal archive [--threshold N]';
 
 export function parseJournalArgs(args: string[]): ParsedJournalArgs | null {
 	if (args.includes('--help') || args.includes('-h')) {
 		return { help: true };
 	}
 	const subCommand = args[0];
+	if (subCommand === 'archive') {
+		const rest = args.slice(1);
+		const thresholdFlagIdx = rest.indexOf('--threshold');
+		if (thresholdFlagIdx === -1) {
+			return { mode: 'archive', threshold: JOURNAL_ARCHIVE_DEFAULT_THRESHOLD, help: false };
+		}
+		const rawValue = rest[thresholdFlagIdx + 1];
+		const threshold = rawValue !== undefined ? Number(rawValue) : NaN;
+		if (!Number.isInteger(threshold) || threshold <= 0) {
+			printFatalHint('Usage: cam journal archive [--threshold N]  (N must be a positive integer)');
+			return null;
+		}
+		return { mode: 'archive', threshold, help: false };
+	}
 	if (subCommand !== 'append') {
-		printFatalHint('Usage: cam journal append [--force] [--cycle-close]  (reads JSON from stdin)');
+		printFatalHint(JOURNAL_USAGE);
 		return null;
 	}
 	const rest = args.slice(1);
@@ -1313,6 +1351,12 @@ export interface JournalDispatchDeps {
 	 * Default: calls the real impl with process.cwd() and a real spawnSync.
 	 */
 	appendFn?: (entry: JournalCycleEntry, force: boolean) => AppendJournalEntryOnMainResult;
+	/**
+	 * Injectable archiveJournalOnMain, keyed by the resolved --threshold value.
+	 * Default: calls the real impl with process.cwd() and a real spawnSync.
+	 * Used on the 'archive' mode path only; append never touches this.
+	 */
+	archiveFn?: (threshold: number) => ArchiveJournalOnMainResult;
 	/** Injectable stdout writer. Default: `process.stdout.write`. */
 	writeStdout?: (line: string) => void;
 	/**
@@ -1362,9 +1406,37 @@ export async function dispatchJournal(
 		process.stdout.write(JOURNAL_HELP);
 		return 0;
 	}
-	const readStdin = deps?.readStdin ?? (() => Bun.stdin.text());
 	const writeStdout =
 		deps?.writeStdout ?? ((line: string) => { process.stdout.write(line); });
+
+	// 'archive' branches BEFORE any stdin read: it takes no input and must not
+	// block waiting on a stdin stream the caller never intends to provide.
+	if (parsed.mode === 'archive') {
+		const archiveFn =
+			deps?.archiveFn ??
+			((threshold: number) =>
+				archiveJournalOnMain({
+					cwd: process.cwd(),
+					spawnFn: (cmd, args, opts) =>
+						spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
+					threshold,
+				}));
+		const archiveResult = archiveFn(parsed.threshold);
+		if (!archiveResult.ok) {
+			// printError already fired inside archiveJournalOnMain
+			return 1;
+		}
+		if (archiveResult.archived === 0) {
+			writeStdout(
+				`CAM_JOURNAL_ARCHIVE=noop entries=${archiveResult.entries} threshold=${parsed.threshold}\n`,
+			);
+			return 0;
+		}
+		writeStdout(`CAM_JOURNAL_ARCHIVED=${archiveResult.archived} sha=${archiveResult.sha}\n`);
+		return 0;
+	}
+
+	const readStdin = deps?.readStdin ?? (() => Bun.stdin.text());
 
 	const stdinText = await readStdin();
 	let journalEntry: JournalCycleEntry;

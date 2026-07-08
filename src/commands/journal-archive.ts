@@ -31,7 +31,10 @@ export type { SpawnFn };
 const JOURNAL_PATH = 'scripts/cam/journal.md';
 const ARCHIVE_PATH = 'scripts/cam/journal.archive.md';
 const ENTRIES_MARKER = '<!-- ENTRIES_BELOW -->';
-const DEFAULT_THRESHOLD = 50;
+/** Archive when the post-marker entry count exceeds this. Exported so the CLI
+ *  arg parser (index.ts parseJournalArgs) can mirror the same default when
+ *  --threshold is not passed. */
+export const DEFAULT_THRESHOLD = 50;
 
 const ARCHIVE_HEADER = [
 	'# Cam Journal Archive',

@@ -41,7 +41,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (parseJournalArgs ~line 1292, JournalDispatchDeps ~line 1307, dispatchJournal ~line 1357, JOURNAL_HELP ~line 345, command list ~line 95, case 'journal' ~line 2004) + test/commands/journal-append.test.ts or a new dispatch test file. GOTCHA: dispatchJournal currently reads stdin unconditionally before branching; archive mode must branch BEFORE the readStdin call or it hangs waiting for stdin. Sentinel parsing is a recurring bug class in this project (memory: supervisor-sentinel-parse-fragility): keep sentinel strings exact, single-line, machine-greppable. Keep exit-code semantics consistent with append (0 ok / 1 failure); do not reuse append's exit 3/4 codes."
     },
