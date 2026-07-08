@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.87.0] - 2026-07-08
+
+### Added
+
+- US-R1-001 - address reviewer finding: guard the auto-dispatch selector seams
+- US-004 - Clear stale review findings on a CLEAN verdict
+- US-003 - Remove dead clock/ClockFn from ship-finalize
+- US-002 - Align cam-plan prose with the read-from-main backlog seam
+- US-001 - Propagate real backlog read errors from the select seams
+
 ## [0.86.0] - 2026-07-08
 
 ### Added
