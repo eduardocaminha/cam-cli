@@ -32,7 +32,7 @@ import { Section } from './Section.tsx';
 import type { DashboardData } from '../commands/dashboard.ts';
 import type { PrdStory } from '../commands/status.ts';
 import { formatWallClock } from '../commands/status.ts';
-import { renderTokensLine, type TranscriptUsage } from '../transcript/usage.ts';
+import { formatTokens, renderTokensLine, type TranscriptUsage } from '../transcript/usage.ts';
 import { tmuxArgs } from '../tmux/session.ts';
 
 /** Max width of the iteration progress bar (cells). Shrinks to fit narrow
@@ -415,6 +415,11 @@ function SummaryPanel({
 							cacheCreation: data.tokensCacheCreation ?? 0,
 						})}
 					</Text>
+				</SummaryRow>
+			) : null}
+			{data.sessionWorkerTokens !== undefined ? (
+				<SummaryRow label="cost">
+					<Text color={colors.muted}>{formatTokens(data.sessionWorkerTokens)} tokens</Text>
 				</SummaryRow>
 			) : null}
 			<SummaryRow label="branch">

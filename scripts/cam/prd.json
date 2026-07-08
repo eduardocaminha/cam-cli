@@ -49,7 +49,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/dashboard.ts (pure parser next to parseRecentProgress + readSnapshot wiring + DashboardData field), src/ui/Dashboard.tsx (SummaryPanel row), test/dashboard.test.ts. Event log: .claude/cam-worker-events.jsonl (EVENT_LOG_PATH in dashboard.ts); TokensEventDetail shape lives in src/supervisor/events.ts. Precedent: recordCycleTokens (src/commands/journal.ts; scripts/cam/patterns.md CAM-131 bullet) sums all four fields of worker 'tokens' events; match that formula. The event log is cumulative across cycles and PRDs and is never truncated, so the sum MUST be bounded by the US-001 session start (ts >= sessionStart), never the whole file. Display: reuse renderTokensLine / formatTokens from src/transcript/usage.ts so the wording matches the existing orchestrator tokens row. Cost stays in tokens, not USD (settled in the issue spec: price varies by model/tier). Mirror parseRecentProgress error handling: skip malformed lines, never crash the dashboard. Depends on US-001 for the session-start boundary. Strict TS with noUncheckedIndexedAccess."
     }
