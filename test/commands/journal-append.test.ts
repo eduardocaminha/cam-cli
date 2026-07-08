@@ -27,6 +27,7 @@ import {
 	type JournalCycleEntry,
 	type AppendJournalEntryOnMainValidationError,
 } from '../../src/commands/journal.ts';
+import { DEFAULT_THRESHOLD as JOURNAL_ARCHIVE_DEFAULT_THRESHOLD } from '../../src/commands/journal-archive.ts';
 import type { ArchiveJournalOnMainResult } from '../../src/commands/journal-archive.ts';
 import { dispatchJournal, parseJournalArgs, main } from '../../index.ts';
 
@@ -607,6 +608,7 @@ describe('dispatchJournal', () => {
 			recordCycleTokensFn: () => {},
 			handoffExistsFn: () => true,
 			watcherAliveFn: () => true,
+			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }), // no real git
 			armRecycleMarkerFn: () => { markerArmed = true; },
 		});
 
@@ -710,6 +712,7 @@ describe('dispatchJournal', () => {
 			recordCycleTokensFn: () => {},
 			handoffExistsFn: () => true,
 			watcherAliveFn: () => true,
+			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }), // no real git
 			armRecycleMarkerFn: () => { markerArmed = true; },
 		});
 
@@ -733,6 +736,131 @@ describe('dispatchJournal', () => {
 
 		expect(code).toBe(0);
 		expect(markerArmed).toBe(false);
+	});
+
+	// ---------------------------------------------------------------------------
+	// US-003 (CAM-125): auto-invoke the archive check on --cycle-close
+	// ---------------------------------------------------------------------------
+
+	test('US-003: archive check runs after CAM_JOURNAL_APPENDED + recordCycleTokens, before armMarker + CAM_ORCH_HANDOFF_DUE (call-order oracle)', async () => {
+		const order: string[] = [];
+		const parsed = parseJournalArgs(['append', '--cycle-close']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+			writeStdout: (line) => {
+				if (line.startsWith('CAM_JOURNAL_APPENDED')) order.push('appended');
+				if (line.startsWith('CAM_ORCH_HANDOFF_DUE')) order.push('handoff-due');
+			},
+			recordCycleTokensFn: () => { order.push('record-tokens'); },
+			handoffExistsFn: () => true,
+			watcherAliveFn: () => true,
+			archiveFn: (threshold): ArchiveJournalOnMainResult => {
+				expect(threshold).toBe(JOURNAL_ARCHIVE_DEFAULT_THRESHOLD);
+				order.push('archive-check');
+				return { ok: true, archived: 0, entries: 3, sha: '' };
+			},
+			armRecycleMarkerFn: () => { order.push('arm-marker'); },
+		});
+
+		expect(code).toBe(0);
+		expect(order).toEqual(['appended', 'record-tokens', 'archive-check', 'arm-marker', 'handoff-due']);
+	});
+
+	test('US-003: archiveFn returns ok:false -- logs a warning, exit code unchanged, marker still armed, handoff still emitted', async () => {
+		const stdoutLines: string[] = [];
+		let markerArmed = false;
+		let sawWarning = false;
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string' && /archive check failed/.test(chunk)) sawWarning = true;
+			return true;
+		}) as typeof process.stdout.write;
+
+		try {
+			const parsed = parseJournalArgs(['append', '--cycle-close']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+				appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+				writeStdout: (line) => stdoutLines.push(line),
+				recordCycleTokensFn: () => {},
+				handoffExistsFn: () => true,
+				watcherAliveFn: () => true,
+				archiveFn: (): ArchiveJournalOnMainResult => ({ ok: false, reason: 'diverged' }),
+				armRecycleMarkerFn: () => { markerArmed = true; },
+			});
+
+			expect(code).toBe(0);
+			expect(markerArmed).toBe(true);
+			expect(stdoutLines).toHaveLength(2);
+			expect(stdoutLines[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
+			expect(sawWarning).toBe(true);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('US-003: archiveFn throws -- logs a warning, exit code unchanged, marker still armed, handoff still emitted', async () => {
+		const stdoutLines: string[] = [];
+		let markerArmed = false;
+		let sawWarning = false;
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string' && /archive check threw/.test(chunk)) sawWarning = true;
+			return true;
+		}) as typeof process.stdout.write;
+
+		try {
+			const parsed = parseJournalArgs(['append', '--cycle-close']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+				appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+				writeStdout: (line) => stdoutLines.push(line),
+				recordCycleTokensFn: () => {},
+				handoffExistsFn: () => true,
+				watcherAliveFn: () => true,
+				archiveFn: (): ArchiveJournalOnMainResult => { throw new Error('boom'); },
+				armRecycleMarkerFn: () => { markerArmed = true; },
+			});
+
+			expect(code).toBe(0);
+			expect(markerArmed).toBe(true);
+			expect(stdoutLines).toHaveLength(2);
+			expect(stdoutLines[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
+			expect(sawWarning).toBe(true);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('US-003: plain append (no --cycle-close) never calls archiveFn', async () => {
+		let archiveCalled = false;
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'abc' }),
+			writeStdout: () => {},
+			recordCycleTokensFn: () => {},
+			archiveFn: (): ArchiveJournalOnMainResult => {
+				archiveCalled = true;
+				return { ok: true, archived: 0, entries: 0, sha: '' };
+			},
+		});
+
+		expect(code).toBe(0);
+		expect(archiveCalled).toBe(false);
 	});
 });
 

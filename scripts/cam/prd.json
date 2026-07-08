@@ -59,7 +59,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (dispatchJournal --cycle-close block, lines ~1409-1448) + dispatch tests. Ordering rationale (load-bearing): once the recycle marker is armed the watcher SIGTERMs the orchestrator wrapper, which can kill this cam subprocess mid-archive; running the check before armMarker keeps the mutation window inside the safe part of the sequence. The existing sequence comment 'journal entry persisted -> cycle-tokens persisted -> THEN handoff' must be extended, not violated. The issue spec allows cycle-close OR boot check; cycle-close was chosen because it is the code-driven deterministic hook (boot-side check would add a second writer and a read on every boot)."
     },

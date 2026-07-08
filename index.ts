@@ -75,7 +75,7 @@ import { ORCH_RECYCLE_MARKER } from './src/tmux/session.ts';
 import { watcherAlive } from './src/supervisor/sidecar-pid.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
 import type { WsjfScore } from './src/issues/types.ts';
-import { printError, printFatalHint, printHint } from './src/logging/color.ts';
+import { printError, printFatalHint, printHint, printWarning } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { CAM_VERSION } from './src/version.ts';
 
@@ -1352,9 +1352,14 @@ export interface JournalDispatchDeps {
 	 */
 	appendFn?: (entry: JournalCycleEntry, force: boolean) => AppendJournalEntryOnMainResult;
 	/**
-	 * Injectable archiveJournalOnMain, keyed by the resolved --threshold value.
+	 * Injectable archiveJournalOnMain, keyed by a threshold value.
 	 * Default: calls the real impl with process.cwd() and a real spawnSync.
-	 * Used on the 'archive' mode path only; append never touches this.
+	 * Used on two paths, sharing one dep so tests and production stay in sync:
+	 *   1. 'archive' mode: keyed by the parsed --threshold value.
+	 *   2. --cycle-close (US-003): auto-invoked with the default threshold as
+	 *      a best-effort check after CAM_JOURNAL_APPENDED + recordCycleTokens
+	 *      and before the recycle marker is armed. Plain 'append' (no
+	 *      --cycle-close) never calls this.
 	 */
 	archiveFn?: (threshold: number) => ArchiveJournalOnMainResult;
 	/** Injectable stdout writer. Default: `process.stdout.write`. */
@@ -1394,6 +1399,21 @@ export interface JournalDispatchDeps {
 }
 
 /**
+ * Default archiveFn: the real archiveJournalOnMain with process.cwd() and a
+ * real spawnSync. Shared by the 'archive' mode dispatch and the --cycle-close
+ * auto-invoked check (US-003) so both paths fall back to the same production
+ * behavior when a test/caller does not inject `deps.archiveFn`.
+ */
+function defaultArchiveFn(threshold: number): ArchiveJournalOnMainResult {
+	return archiveJournalOnMain({
+		cwd: process.cwd(),
+		spawnFn: (cmd, args, opts) =>
+			spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
+		threshold,
+	});
+}
+
+/**
  * Route a parsed `cam journal` call.  Exported so unit tests can inject fakes
  * for stdin, appendFn, and writeStdout to verify sentinel emission, the
  * invalid-JSON guard, and --force propagation without touching real git or I/O.
@@ -1412,15 +1432,7 @@ export async function dispatchJournal(
 	// 'archive' branches BEFORE any stdin read: it takes no input and must not
 	// block waiting on a stdin stream the caller never intends to provide.
 	if (parsed.mode === 'archive') {
-		const archiveFn =
-			deps?.archiveFn ??
-			((threshold: number) =>
-				archiveJournalOnMain({
-					cwd: process.cwd(),
-					spawnFn: (cmd, args, opts) =>
-						spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
-					threshold,
-				}));
+		const archiveFn = deps?.archiveFn ?? defaultArchiveFn;
 		const archiveResult = archiveFn(parsed.threshold);
 		if (!archiveResult.ok) {
 			// printError already fired inside archiveJournalOnMain
@@ -1505,6 +1517,27 @@ export async function dispatchJournal(
 			);
 			return 4;
 		}
+
+		// US-003: auto-invoke the archive check (default threshold) at cycle
+		// close, deterministically -- no operator/orchestrator discretion.
+		// Ordering is load-bearing: strictly AFTER CAM_JOURNAL_APPENDED +
+		// recordCycleTokens (both already ran above), strictly BEFORE the
+		// marker is armed and CAM_ORCH_HANDOFF_DUE is emitted, because once the
+		// marker is armed the watcher can SIGTERM this process mid-archive.
+		// Best-effort: a throw or ok:false logs a warning only -- it must never
+		// change dispatchJournal's exit code or block marker arming / handoff.
+		const archiveFn = deps?.archiveFn ?? defaultArchiveFn;
+		try {
+			const archiveResult = archiveFn(JOURNAL_ARCHIVE_DEFAULT_THRESHOLD);
+			if (!archiveResult.ok) {
+				printWarning(
+					`cam journal append --cycle-close: archive check failed (${archiveResult.reason}); continuing`,
+				);
+			}
+		} catch (err) {
+			printWarning(`cam journal append --cycle-close: archive check threw; continuing: ${String(err)}`);
+		}
+
 		const armMarker =
 			deps?.armRecycleMarkerFn ??
 			(() => {
