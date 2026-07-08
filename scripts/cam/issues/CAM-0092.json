@@ -1,7 +1,7 @@
 {
   "id": "CAM-92",
   "title": "Extrair narrateReport() helper no loop.ts (dedup dos ~9 blocos inline de notifyOrchestrator)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-26T02:35:11.986Z",
