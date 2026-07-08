@@ -62,7 +62,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts (PostAuditActionResult union at :932, runPostAuditAction options + arm), src/commands/sidecar.ts (new makeWritePreflightFailedMarkerFn factory next to makeWriteEscalationMarkerFn:1696, wiring in runPostPlanActions:1746, exitPhaseAfterPlan:1600), test/supervisor/plan/plan-runner-postaudit.test.ts. GOTCHA (issue spec): at the point preflight fails inside runPlanPhase (plan-runner.ts:748-758) notifyFn is NOT in scope (only logEvent is); marker write and notify MUST happen one layer up in runPostAuditAction where notifyFn is already constructed. notifyFn (makeNotifyOrchestrator, host.ts:198) is best-effort silent no-op when the orch pane is gone: the durable marker is the source of truth, so write the marker regardless of notify outcome (write before or independent of notify). Follow the seam pattern: optional writer fn in the options bag, ?? no-op default, exactly like writeEscalationMarkerFn (plan-runner.ts:815, :849)."
     },
