@@ -38,6 +38,7 @@ import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
 import type { PlanApproval, WorkerIsolation } from '../config/models.ts';
 import type { LoopPhase } from '../commands/status.ts';
 import type { PreflightResult } from './preflight-container.ts';
+import { truncatePreflightDetail, type PlanPreflightFailedWriterParams } from './plan-preflight-marker.ts';
 import { buildPlannerWorkerArgv, buildAuditorWorkerArgv } from './plan-argv.ts';
 import { readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
@@ -925,14 +926,19 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
  *                          plan-escalated was already written unconditionally
  *                          by runPlanPhaseWithReplan before this result is
  *                          produced.
+ * preflight-failed        - a plan-preflight check failed before the planner
+ *                          was ever spawned (US-003, CAM-215): the durable
+ *                          marker is written and notifyFn is called here, no
+ *                          branch/commit/flip.
  * no-action              - planResult was neither audit-approved,
- *                          audit-blocked, nor plan-escalated (e.g.
- *                          preflight-failed, timeout).
+ *                          audit-blocked, plan-escalated, nor preflight-failed
+ *                          (e.g. timeout, mutex-busy).
  */
 export type PostAuditActionResult =
 	| { kind: 'branch-created'; branchName: string }
 	| { kind: 'awaiting-operator-approval' }
 	| { kind: 'escalated' }
+	| { kind: 'preflight-failed' }
 	| { kind: 'no-action' };
 
 /** Options for runPostAuditAction. All side effects are injected. */
@@ -989,6 +995,18 @@ export interface RunPostAuditOptions {
 	 * that do not inject it.
 	 */
 	logEvent?: WorkerEventLogger;
+	/**
+	 * Durable plan-preflight-failed marker writer seam (US-003, CAM-215).
+	 * Invoked with the FULL untruncated { step, detail } on a preflight-failed
+	 * planResult, regardless of notifyFn's presence or outcome: notifyFn is a
+	 * best-effort silent no-op when the orchestrator pane is gone, but the
+	 * durable marker is the source of truth for a recycled orchestrator
+	 * (src/supervisor/plan-preflight-marker.ts, US-002). Optional: defaults to
+	 * a no-op for backward compat. Production wiring (sidecar.ts) constructs
+	 * the full PlanPreflightFailedMarker (adding writtenAt) and calls
+	 * writePlanPreflightFailedMarker against the .claude/ dir.
+	 */
+	writePreflightFailedMarkerFn?: (params: PlanPreflightFailedWriterParams) => void;
 }
 
 /**
@@ -1064,6 +1082,31 @@ function handlePlanTargetInvalid(
 }
 
 /**
+ * Handle the preflight-failed terminal (US-003, CAM-215): a plan-preflight
+ * check failed before the planner was ever spawned (dirty tree, failing
+ * typecheck, failing tests, etc; see plan-preflight.ts). Writes the durable
+ * marker with the FULL untruncated detail (writePreflightFailedMarkerFn seam),
+ * regardless of notifyFn's outcome -- the marker is the source of truth for a
+ * recycled orchestrator, notifyFn is best-effort. Then pushes a one-line pane
+ * narration (step then detail, detail truncated via truncatePreflightDetail,
+ * mirroring the existing ship-stalled/plan-escalated pane-line format).
+ *
+ * Extracted from runPostAuditAction to keep that function under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
+ * extraction pattern), mirroring handlePlanTargetInvalid.
+ */
+function handlePreflightFailed(
+	step: string,
+	detail: string,
+	notifyFn: ((msg: string) => void) | undefined,
+	writePreflightFailedMarkerFn: ((params: PlanPreflightFailedWriterParams) => void) | undefined,
+): PostAuditActionResult {
+	writePreflightFailedMarkerFn?.({ step, detail });
+	notifyFn?.(`[cam] plan preflight failed: ${step} - ${truncatePreflightDetail(detail)}`);
+	return { kind: 'preflight-failed' };
+}
+
+/**
  * Execute the post-audit action after runPlanPhase returns.
  *
  * On audit-approved + proceed-branch (auto mode):
@@ -1084,6 +1127,11 @@ function handlePlanTargetInvalid(
  *   re-plan decision, and the durable marker write for plan-escalated, already
  *   happened inside runPlanPhaseWithReplan, CAM-151 / CAM-204).
  *
+ * On preflight-failed (US-003, CAM-215):
+ *   Writes the durable plan-preflight-failed marker (writePreflightFailedMarkerFn,
+ *   full untruncated detail) then calls notifyFn with a truncated one-line
+ *   narration. Returns { kind: 'preflight-failed' }. No branch/commit/flip.
+ *
  * On any other planResult kind:
  *   Returns { kind: 'no-action' }.
  *
@@ -1102,6 +1150,7 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		notifyFn,
 		removeEscalationMarkerFn,
 		logEvent,
+		writePreflightFailedMarkerFn,
 	} = opts;
 
 	// planner-failed: planner produced no prd.json; notify best-effort, no escalate
@@ -1141,6 +1190,11 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 			void escalateFn(); // best-effort: fire-and-forget, never throws by contract
 		}
 		return { kind: 'escalated' };
+	}
+
+	// preflight-failed (US-003, CAM-215): see handlePreflightFailed.
+	if (planResult.kind === 'preflight-failed') {
+		return handlePreflightFailed(planResult.step, planResult.detail, notifyFn, writePreflightFailedMarkerFn);
 	}
 
 	// Non-approved: nothing to do
