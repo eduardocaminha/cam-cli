@@ -58,7 +58,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-planner.md (frontmatter line 3, gotchas bullet line ~144, Project Context line ~151), templates/agents/subagent-planner.md (frontmatter line 3, gotchas bullet line ~139, Project Context line ~144), plus embed regen. The two copies differ by design: the .claude copy names cam-cli specifics, the templates copy is generic; apply the equivalent edit to each. Note the templates copy's Project Context says 'Read the project's CLAUDE.md and AGENTS.md files': drop only AGENTS.md and the full-read mandates, keep the generic structure. Keep wording consistent with the grep-on-demand phrasing established in US-001/US-002."
     },
