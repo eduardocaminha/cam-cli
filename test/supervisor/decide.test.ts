@@ -484,3 +484,46 @@ describe('promoteVerdictTo signal', () => {
 		expect((action as Record<string, unknown>)['promoteVerdictTo']).toBeUndefined();
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Terminal detection keys off the verdict STRING, never findings length
+// (US-001, CAM-232): a CLEAN verdict may legitimately carry a non-empty
+// `findings` array (cosmetic SUGGESTIONs), and that must not defeat terminal
+// detection. Locks decideNextAction's use of TERMINAL_VERDICTS against a
+// future regression to `findings.length === 0` gating.
+// ---------------------------------------------------------------------------
+
+describe('terminal detection keys off verdict string, not findings length', () => {
+	test('lastVerdict CLEAN with non-empty findings still yields complete', () => {
+		const prd: PrdSnapshot = {
+			userStories: [makeStory('US-001', 1, true)],
+			review: {
+				roundsCompleted: 1,
+				maxRounds: 3,
+				lastVerdict: 'CLEAN',
+				findings: [{ severity: 'SUGGESTION', text: 'Consider renaming this.' }],
+			},
+		};
+		const action = decideNextAction(prd);
+		expect(action).toEqual({ kind: 'complete' });
+	});
+
+	test('lastVerdict CLEAN with non-empty findings and a pending operator story yields await-operator', () => {
+		const prd: PrdSnapshot = {
+			userStories: [
+				makeStory('US-001', 1, true),
+				makeStory('US-002', 2, false, 'operator'),
+			],
+			review: {
+				roundsCompleted: 1,
+				maxRounds: 3,
+				lastVerdict: 'CLEAN',
+				findings: [
+					{ severity: 'SUGGESTION', file: 'src/foo.ts', line: 3, text: 'Nit.' },
+				],
+			},
+		};
+		const action = decideNextAction(prd);
+		expect(action).toEqual({ kind: 'await-operator', pendingStoryIds: ['US-002'] });
+	});
+});

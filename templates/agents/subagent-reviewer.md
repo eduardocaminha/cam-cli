@@ -156,26 +156,32 @@ After your CRITICAL / WARNING / SUGGESTION / SUMMARY sections, emit the verdict 
 
 ## Exit report protocol
 
-Before printing the terminal verdict tag (the last line of your output), write `scripts/cam/review-report.json` with the following shape:
+Before printing the terminal verdict tag (the last line of your output), write `scripts/cam/review-report.json` with the following shape. **`verdict: "CLEAN"` means no BLOCKING findings, not no findings**: cosmetic SUGGESTIONs (and any other non-blocking findings) that surfaced during the review still populate the `findings` array on a CLEAN verdict — they just did not stop CLEAN from being emitted.
 
-For a CLEAN verdict (no tmux oracle run):
+For a CLEAN verdict (no tmux oracle run), carrying a cosmetic SUGGESTION:
 
 ```json
 {
   "verdict": "CLEAN",
-  "findings": []
+  "findings": [
+    { "severity": "SUGGESTION", "file": "src/foo.ts", "line": 12, "text": "Consider extracting this into a named helper." }
+  ]
 }
 ```
 
-For a CLEAN verdict (with tmux oracle run at Layer B):
+For a CLEAN verdict (with tmux oracle run at Layer B), carrying a cosmetic SUGGESTION:
 
 ```json
 {
   "verdict": "CLEAN",
-  "findings": [],
+  "findings": [
+    { "severity": "SUGGESTION", "text": "Consider a shorter variable name here." }
+  ],
   "artifactOfRecord": "scripts/cam/review-artifact.txt"
 }
 ```
+
+When the review truly surfaced zero findings of any severity, `findings` is legitimately `[]` — the shapes above show the common case (a SUGGESTION-carrying CLEAN); they do not require you to invent a finding when none exists.
 
 For a FIXES_PENDING verdict:
 
