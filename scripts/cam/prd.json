@@ -21,7 +21,7 @@
         "Full quality spine passes including biome lint (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (JOURNAL_HELP at lines 345-393: usage field at 348, Options section 359-367, Behaviour body already notes the exit-1 duplicate case at line 380; extend, do not restructure) and test/commands/journal-append.test.ts. Gotcha (root cause of CAM-217): the flag parse lives at index.ts:1258 (parseJournalArgs) and the arm block at index.ts:1367-1399 (dispatchJournal); src/commands/journal.ts is the pure appendJournalEntryOnMain library and legitimately has no flag, do not touch it or look for the flag there. Test pattern: follow the ISSUE_HELP block test at test/issue.test.ts:333 (intercept process.stdout.write, import main from ../../index.ts, run main(['bun','index.ts','journal','--help']), restore in finally); dispatchJournal's help path writes via process.stdout.write directly, not the injectable writeStdout, so interception is required. Consistency: the printFatalHint usage string at index.ts:1253 repeats the usage line; keep it in sync with the new usage text. Spec source: CAM-217 spec (settled at grill), doc and help text only."
     },
