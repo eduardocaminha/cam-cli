@@ -44,7 +44,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/triage.ts (RunTriageOptions at ~lines 63-77; clock declared at ~line 72, never read inside runTriage), index.ts (dispatchTriage ~lines 1679-1697; the triage clock injection is at ~line 1692; a DIFFERENT clock injection at ~line 1536 belongs to another dispatcher and must NOT be touched), test/triage.test.ts (~8 call sites pass clock: () => '2026-06-28T12:00:00.000Z'). Pattern to mirror: src/commands/spec.ts declares clock?: ClockFn. Keep the exported ClockFn type alias (it is part of the module's public surface and re-exported conventions). The spec settled 'optional or used'; runTriage has no timestamp need today, so optional is the surgical choice; do not invent a use. Gotcha: writeFile in the same options block is the precedent for a retained-but-optional injectable."
     },

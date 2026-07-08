@@ -1,22 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Unify triage warnings source between no-op and commit paths"
+    "id": "US-002",
+    "title": "Make RunTriageOptions.clock optional, mirroring the unused-clock command pattern"
   },
   "branchName": "cam/pr-128-cam108-review-suggestions",
-  "timestamp": "2026-07-08T17:20:00Z",
+  "timestamp": "2026-07-08T17:45:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "src/commands/triage.ts",
+    "index.ts",
     "test/triage.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 fixed the asymmetry in runTriage (src/commands/triage.ts): both the no-op path (changed===0) and the commit path now build ONE unified `warnings` binding (gateResult.warnings concatenated with rankIssues warnings) above the branch and pass that same binding to printTriageOutput on both sides. Added test/triage.test.ts describe block 'runTriage: unified warnings source (US-001)' with two tests (no-op run, commit run) sharing one fixture (CAM-30/31/32) that yields both a cross-stage gate warning and a missing-wsjf rank warning. Next story (US-002, RunTriageOptions.clock optional) touches the same RunTriageOptions interface in triage.ts -- read the full current file before editing, the clock field docstring at line ~68-72 already flags it as 'unused today; reserved for future timestamped commit messages', so making it optional should be a narrow interface + call-site change mirroring whatever 'unused-clock command pattern' notes says.",
+  "nextStoryContext": "US-002 made RunTriageOptions.clock optional (clock?: ClockFn) in src/commands/triage.ts, rewrote its doc comment to drop the 'required/reserved-for-future' claim, removed the dead 'clock: () => new Date().toISOString()' injection at the dispatchTriage call site in index.ts (the only remaining occurrence of that literal in index.ts now belongs to a different, unrelated dispatcher at ~line 1536 and was NOT touched), and deleted all 16 dead 'clock: () => ...' call-site lines from test/triage.test.ts (more than the '~8' the PRD note estimated; verified exhaustively via grep, not by sampling). Left test/integration/triage-real-git.test.ts and test/integration/triage-ref-only.test.ts untouched -- they still pass a clock literal, which remains valid TypeScript now that the field is optional, and the story's AC only named test/triage.test.ts. Next story (US-003) refactors runKahn (src/issues/rank.ts, per the PRD description mentioning 'the CAM-108 review') under the cognitive-complexity budget and drops the rank.ts biome noExcessiveCognitiveComplexity override/suppression -- read src/issues/rank.ts and biome.json (or wherever the per-file override lives) in full before editing; this is a pure refactor (extract-helper style, same family as the noExcessiveLinesPerFunction extractions already documented in patterns.md) with no external library surface, so Step 5.5 will again likely be 'no_external_lib_touched' unless runKahn touches something unexpected.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal refactor of runTriage's warnings plumbing plus bun:test additions; no external library API surface touched."
+      "summary": "Pure internal TypeScript interface change (clock field optionality) plus dead call-site removal; no external library API surface touched."
     }
   ]
 }
