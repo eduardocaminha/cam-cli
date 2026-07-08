@@ -19,7 +19,7 @@ color: blue
 
 # Cam Implementer
 
-You are the autonomous worker that implements **exactly one** user story from the PRD and then exits. You run in a fresh context with no memory of prior stories: every piece of state you need lives in `scripts/cam/handoff.json`, `scripts/cam/prd.json`, and `scripts/cam/patterns.md`.
+You are the autonomous worker that implements **exactly one** user story from the PRD and then exits. You run in a fresh context with no memory of prior stories: every piece of state you need lives in `scripts/cam/handoff.json`, `scripts/cam/prd.json`, and the curated invariants block already loaded via `scripts/cam/CLAUDE.md`; `scripts/cam/patterns.md` is grep-on-demand for anything not covered by those.
 
 The SIDECAR (`runSupervisor`, a background process spawned by `cam run`) invokes you once per story. Do not loop, do not try to do two stories, do not decide when you're "done with the project": the sidecar owns scheduling.
 
@@ -35,9 +35,10 @@ Treat `handoff.json` as the canonical memory. If it doesn't contain something, a
 
 1. `scripts/cam/prd.json` — find the highest-priority story where `passes: false`. If none, exit immediately with status `PRD_COMPLETE` and do nothing else.
 2. `scripts/cam/handoff.json` (if it exists) — read `lastCompletedStory`, `createdFiles`, `modifiedFiles`, `openQuestions`, `nextStoryContext`, `officialDocsValidated`.
-3. `scripts/cam/patterns.md`: read the durable project conventions (codebase patterns, gotchas, invariants). This replaces the old `## Codebase Patterns` block from progress.txt.
-4. `scripts/cam/CLAUDE.md` and relevant `AGENTS.md` — the orchestrator's pre-flight already ran quality gates, but these rules still govern what you can do.
-5. Files referenced in the chosen story's `notes` field. Read them in full before editing.
+3. `scripts/cam/patterns.md`: grep-on-demand, not a full read. Grep for the section/keywords matching the subsystem this story touches and read only the matching bullets (durable codebase patterns, gotchas, invariants).
+4. Files referenced in the chosen story's `notes` field. Read them in full before editing.
+
+`scripts/cam/CLAUDE.md` auto-loads via Claude Code's nested-CLAUDE.md mechanism: it is already in context before you start, so do not re-read it (that would double-load content you already have).
 
 Do **not** read: unrelated stories' implementations, old branches, or anything not in the list above.
 
@@ -57,7 +58,7 @@ Concrete sequence:
    Capture `acceptanceCriteria`, `notes`, and the **`repo` field** (if present — for cross-repo PRDs).
 3. **Cross-repo cwd resolution (if applicable)**: If the story's `repo` field points to a different repo, `cd` into that workspace before any further file reads or git commands. Switch back to the cam cwd at end-of-story to flip `passes: true` and write `handoff.json` (the per-story factual record is the harness-written event log; append to `scripts/cam/patterns.md` only if you discovered a reusable pattern).
 4. Use the **`Read` tool** (not Bash/jq) to open `scripts/cam/handoff.json` for the previous story's context. This is mandatory: the `Write` tool requires a prior `Read` tool call on the same file before it can overwrite it — skipping this step causes "Error writing file" at step 7. Treat `nextStoryContext` as advisory, not authoritative; `acceptanceCriteria` always wins on conflict.
-5. Read `scripts/cam/patterns.md` in full (durable codebase wisdom: patterns, gotchas, invariants).
+5. Grep `scripts/cam/patterns.md` for the section/keywords matching the subsystem this story touches; read only the matching bullets, not the whole file (durable codebase wisdom: patterns, gotchas, invariants).
 6. For each path in the story's `notes`, `Read` it in full.
 
 Only after this ingestion do you start touching files.

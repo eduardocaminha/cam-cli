@@ -74,7 +74,7 @@ The artifact-of-record is the reviewer's Layer B evidence, never the implementer
 - [ ] No `--permission-mode` flag added to any subcommand (guarded by `test/no-permission-mode-flag.test.ts`).
 
 ### Ink / TUI
-- [ ] Ink screens signal success/failure with the ✓ (accent) / ✗ (destructive) glyph, NOT divider color (see `lessons.archive.md` 2026-06-05).
+- [ ] Ink screens signal success/failure with the ✓ (accent) / ✗ (destructive) glyph, NOT divider color (see the durable invariants block in `scripts/cam/CLAUDE.md`).
 - [ ] New screens reuse shared design tokens (`src/design/tokens.ts`, `src/ui/theme.ts`) rather than inlining colors.
 - [ ] No unnecessary re-renders; effects/intervals (e.g. dashboard polling) are cleaned up on unmount.
 - [ ] Interactive components are testable via injected reader/writer shapes (no direct real stdin/stdout coupling).

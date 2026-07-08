@@ -1,6 +1,6 @@
 ---
 name: subagent-planner
-description: Converts an issue or description into a structured PRD (prd.json) with small, dependency-ordered user stories. READ the project context (CLAUDE.md, AGENTS.md) before generating. Invoked from /cam-plan Step 7 after scope is approved.
+description: Converts an issue or description into a structured PRD (prd.json) with small, dependency-ordered user stories. Project context (CLAUDE.md) auto-loads via nested-CLAUDE.md; grep patterns.md for the rest before generating. Invoked from /cam-plan Step 7 after scope is approved.
 model: claude-opus-4-8
 effort: xhigh
 tools:
@@ -136,12 +136,12 @@ UI stories MUST also include:
 The `notes` field should include:
 - **File paths** that will likely need changes.
 - **Skills** the implementation agent should load (from the issue body).
-- **Gotchas** specific to this project (read `CLAUDE.md` and `AGENTS.md` for these).
+- **Gotchas** specific to this project (grep `scripts/cam/patterns.md` for these; `scripts/cam/CLAUDE.md` auto-loads and is already in context).
 - **Doc section references** from `relatedDocs` that the implementer must re-check before coding.
 
 ## Project Context
 
-Read the project's `CLAUDE.md` and `AGENTS.md` files to understand:
+The project's `CLAUDE.md` auto-loads via Claude Code's nested-CLAUDE.md mechanism: it is already in context before you start, so do not re-read it. `scripts/cam/patterns.md` is grep-on-demand, not a full read: grep for the section/keywords matching the subsystem the issue touches and read only the matching bullets. Use these plus the issue body to understand:
 - Tech stack and key dependencies.
 - Database tables and their purposes.
 - API route patterns and conventions.

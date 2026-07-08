@@ -4,7 +4,7 @@
 
 1. Read the PRD at `prd.json` (in the same directory as this file).
 2. Read `handoff.json` (if it exists) for context from the previous story iteration.
-3. Read `scripts/cam/patterns.md` for durable project conventions (codebase patterns, gotchas, invariants).
+3. The curated invariants block ("Codebase Patterns" section below, already in context) covers durable project rules. For anything else, grep `scripts/cam/patterns.md` for the section/keywords matching the subsystem this story touches and read only the matching bullets, not the whole file.
 4. Check you are on the correct branch from PRD `branchName`. If not, check it out or create from main.
 5. Pick the **highest priority** user story where `passes: false` and `requires != "operator"`.
 6. Implement that single user story.
@@ -58,15 +58,17 @@ The agent does NOT hand-write a prose progress record. The event log is supervis
 
 ## Codebase Patterns (durable wisdom)
 
-Reusable patterns, project conventions, library quirks, and gotchas live in `scripts/cam/patterns.md` (durable, versioned on main, never truncated). This replaces the old `## Codebase Patterns` block that used to sit at the top of `progress.txt`.
+**Curated invariants** (small, durable, always in context; read in full every story):
 
-When a story reveals a new reusable insight, append a bullet to `scripts/cam/patterns.md`. Example patterns already documented there:
+- **Bun-only**: `Bun.spawn` / `Bun.$` / `Bun.file`, never `node:child_process` / `node:fs` / npm / pnpm / vite.
+- **`noUncheckedIndexedAccess`**: array indexing and regex capture groups are `T | undefined`; always guard.
+- **Ink success/failure**: signal via the glyph (accent/destructive), never via divider color.
+- **Never add a `--permission-mode` flag** to any subcommand; permission mode is fixed by the harness, not a CLI knob.
+- **Quality gates**: `bun run typecheck`, `bun test`, `bun run check:all` (lint spine) always; `bun run embed-vendor` + `embed-vendor:check` only when `vendor/`/`templates/` changed.
 
-- Bun runtime: always `Bun.spawn` / `Bun.$` / `Bun.file` over Node.js equivalents.
-- `noUncheckedIndexedAccess`: array indexing and regex capture groups are `T | undefined`.
-- Ink screens: signal success/failure with the glyph (accent/destructive), never by divider color.
+**Invariant vs. pattern routing**: a new insight that is durable, project-wide, and worth loading every story goes into the curated block above. Everything else (a one-off gotcha, a library quirk, a narrower convention) is appended as a bullet to `scripts/cam/patterns.md` (durable, versioned on main, never truncated) instead of growing this block.
 
-Read `scripts/cam/patterns.md` at story start (step 3 above) so the patterns are in context before you touch files.
+`scripts/cam/patterns.md` is grep-on-demand, not a mandatory full read: grep it for the section/keywords matching the subsystem this story touches and read only the matching bullets. When a story reveals a new reusable insight that isn't a durable invariant, append a bullet to `scripts/cam/patterns.md`.
 
 ## Knowledge-Layer Routing
 
