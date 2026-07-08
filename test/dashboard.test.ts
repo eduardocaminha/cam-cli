@@ -32,12 +32,14 @@ import {
 	readRecentProgress,
 	readSnapshot,
 	runDashboard,
+	sumSessionWorkerTokens,
 	type DashboardData,
 	type DashboardReader,
 	type DashboardWriter,
 } from '../src/commands/dashboard.ts';
 import { DashboardApp, STORY_TOKENS_PLACEHOLDER, selectionReducer, type SelectionState } from '../src/ui/Dashboard.tsx';
 import type { TranscriptUsage } from '../src/transcript/usage.ts';
+import { writeSidecarSessionStart } from '../src/supervisor/session-start.ts';
 import { flushInk, waitForFrame } from './helpers/flush-ink.ts';
 import { installTerminalSizeMock } from './helpers/mock-terminal-size.ts';
 
@@ -260,6 +262,73 @@ describe('parseRecentProgress (event log)', () => {
 	});
 });
 
+// --- sumSessionWorkerTokens (US-002, PR-83) ---------------------------------
+
+describe('sumSessionWorkerTokens', () => {
+	function tokensLine(ts: string, detail: Partial<Record<string, number>>): string {
+		return JSON.stringify({ ts, storyId: 'US-001', uuid: 'u', kind: 'tokens', detail });
+	}
+
+	test('sums all four TokensEventDetail fields across matching events', () => {
+		const jsonl = [
+			tokensLine('2026-04-28T22:05:00Z', {
+				inputTokens: 1000,
+				outputTokens: 200,
+				cacheReadTokens: 50,
+				cacheCreationTokens: 25,
+			}),
+			tokensLine('2026-04-28T22:10:00Z', {
+				inputTokens: 500,
+				outputTokens: 100,
+				cacheReadTokens: 0,
+				cacheCreationTokens: 10,
+			}),
+		].join('\n');
+		// (1000+200+50+25) + (500+100+0+10) = 1275 + 610 = 1885
+		expect(sumSessionWorkerTokens(jsonl, '2026-04-28T22:00:00Z')).toBe(1885);
+	});
+
+	test('excludes events timestamped before the session start', () => {
+		const jsonl = [
+			tokensLine('2026-04-28T21:00:00Z', { inputTokens: 9999, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }),
+			tokensLine('2026-04-28T22:10:00Z', { inputTokens: 100, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }),
+		].join('\n');
+		expect(sumSessionWorkerTokens(jsonl, '2026-04-28T22:00:00Z')).toBe(100);
+	});
+
+	test("excludes 'cycle-tokens' aggregate events so worker spend is never double-counted", () => {
+		const jsonl = [
+			tokensLine('2026-04-28T22:05:00Z', { inputTokens: 100, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }),
+			JSON.stringify({
+				ts: '2026-04-28T22:06:00Z',
+				storyId: undefined,
+				uuid: 'cycle-close',
+				kind: 'cycle-tokens',
+				detail: { cycleId: 'c', issueNumber: 'CAM-1', orchTokens: 0, workerTokens: 100, total: 100, recordedAt: '2026-04-28T22:06:00Z' },
+			}),
+		].join('\n');
+		expect(sumSessionWorkerTokens(jsonl, '2026-04-28T22:00:00Z')).toBe(100);
+	});
+
+	test('skips malformed lines without crashing', () => {
+		const jsonl = [
+			'{ this is not valid json',
+			tokensLine('2026-04-28T22:05:00Z', { inputTokens: 100, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }),
+			'',
+		].join('\n');
+		expect(sumSessionWorkerTokens(jsonl, '2026-04-28T22:00:00Z')).toBe(100);
+	});
+
+	test('a missing log (null) yields no total', () => {
+		expect(sumSessionWorkerTokens(null, '2026-04-28T22:00:00Z')).toBeUndefined();
+	});
+
+	test('a present log with no matching events in the session window yields no total', () => {
+		const jsonl = tokensLine('2026-04-28T21:00:00Z', { inputTokens: 100, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 });
+		expect(sumSessionWorkerTokens(jsonl, '2026-04-28T22:00:00Z')).toBeUndefined();
+	});
+});
+
 // --- readRecentProgress + readSnapshot (filesystem) -----------------------
 
 describe('readRecentProgress (IO)', () => {
@@ -304,6 +373,105 @@ describe('readSnapshot', () => {
 			expect(snap.startedAtMs).toBe(0);
 			expect(snap.paused).toBe(false);
 			expect(snap.recent).toEqual([]);
+			// US-001 (PR-83): no sidecar session-start marker present -> undefined,
+			// never throws.
+			expect(snap.sessionStartedAtMs).toBeUndefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('sessionStartedAtMs is populated from the sidecar session-start marker and stays stable across state-file rewrites (US-001, PR-83)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-session-start-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeSidecarSessionStart(join(dir, '.claude'), '2026-04-28T20:00:00Z');
+			writeFileSync(
+				join(dir, '.claude', 'cam-loop.local.md'),
+				['---', 'active: true', 'iteration: 1', 'max_iterations: 30', 'started_at: "2026-04-28T22:00:00Z"', '---', ''].join(
+					'\n',
+				),
+			);
+
+			const first = readSnapshot({ cwd: dir, nowMs: Date.parse('2026-04-28T22:30:00Z') });
+			expect(first.sessionStartedAtMs).toBe(Date.parse('2026-04-28T20:00:00Z'));
+			expect(first.startedAtMs).toBe(Date.parse('2026-04-28T22:00:00Z'));
+
+			// Simulate a fresh loop start within the same sidecar session: the
+			// state file's started_at moves forward, but the session marker is
+			// untouched.
+			writeFileSync(
+				join(dir, '.claude', 'cam-loop.local.md'),
+				['---', 'active: true', 'iteration: 1', 'max_iterations: 30', 'started_at: "2026-04-28T23:00:00Z"', '---', ''].join(
+					'\n',
+				),
+			);
+			const second = readSnapshot({ cwd: dir, nowMs: Date.parse('2026-04-28T23:30:00Z') });
+			expect(second.sessionStartedAtMs).toBe(Date.parse('2026-04-28T20:00:00Z'));
+			expect(second.startedAtMs).toBe(Date.parse('2026-04-28T23:00:00Z'));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('sessionWorkerTokens sums tokens events at-or-after the session start (US-002, PR-83)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-session-tokens-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeSidecarSessionStart(join(dir, '.claude'), '2026-04-28T20:00:00Z');
+			writeFileSync(
+				join(dir, '.claude', 'cam-worker-events.jsonl'),
+				[
+					// Before the session started: excluded.
+					JSON.stringify({
+						ts: '2026-04-28T18:00:00Z',
+						storyId: 'US-OLD',
+						uuid: 'u0',
+						kind: 'tokens',
+						detail: { inputTokens: 9999, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+					}),
+					// After session start: included.
+					JSON.stringify({
+						ts: '2026-04-28T20:05:00Z',
+						storyId: 'US-001',
+						uuid: 'u1',
+						kind: 'tokens',
+						detail: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 50, cacheCreationTokens: 25 },
+					}),
+					JSON.stringify({
+						ts: '2026-04-28T20:10:00Z',
+						storyId: 'US-002',
+						uuid: 'u2',
+						kind: 'tokens',
+						detail: { inputTokens: 500, outputTokens: 100, cacheReadTokens: 0, cacheCreationTokens: 10 },
+					}),
+				].join('\n') + '\n',
+			);
+
+			const snap = readSnapshot({ cwd: dir, nowMs: Date.parse('2026-04-28T22:30:00Z') });
+			// (1000+200+50+25) + (500+100+0+10) = 1275 + 610 = 1885
+			expect(snap.sessionWorkerTokens).toBe(1885);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('sessionWorkerTokens stays undefined when no sidecar session-start marker is present (US-002, PR-83)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-session-tokens-no-marker-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'cam-worker-events.jsonl'),
+				JSON.stringify({
+					ts: '2026-04-28T20:05:00Z',
+					storyId: 'US-001',
+					uuid: 'u1',
+					kind: 'tokens',
+					detail: { inputTokens: 1000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+				}) + '\n',
+			);
+			const snap = readSnapshot({ cwd: dir, nowMs: Date.parse('2026-04-28T22:30:00Z') });
+			expect(snap.sessionWorkerTokens).toBeUndefined();
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -1110,6 +1278,92 @@ describe('DashboardApp Loop section per-story progress (US-002)', () => {
 		// Should show 5m (since last_activity), not 30m (since started_at).
 		expect(frame).toMatch(/5m/);
 		expect(frame).not.toMatch(/30m/);
+		unmount();
+	});
+
+	it('session row shows a muted placeholder when sessionStartedAtMs is unknown', () => {
+		const data = makeData({
+			idle: false,
+			paused: false,
+			startedAtMs: Date.parse('2026-04-28T22:00:00Z'),
+		});
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => data,
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		const sessionLine = frame.split('\n').find((line) => line.includes('session'));
+		expect(sessionLine).toBeDefined();
+		expect(sessionLine).toContain('—');
+		unmount();
+	});
+
+	it('session row shows total-session elapsed, distinct from the since row', () => {
+		// sessionStartedAtMs is 2 hours before nowMs; last_activity is 5 minutes
+		// before nowMs. The session row must show ~2h, the since row must show ~5m.
+		const nowMs = Date.parse('2026-04-28T22:30:00Z');
+		const data = makeData({
+			idle: false,
+			paused: false,
+			startedAtMs: Date.parse('2026-04-28T22:00:00Z'),
+			lastActivity: '2026-04-28T22:25:00Z', // 5m ago -> since row
+			sessionStartedAtMs: Date.parse('2026-04-28T20:30:00Z'), // 2h ago -> session row
+			nowMs,
+		});
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => data,
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		const lines = frame.split('\n');
+		const sinceLine = lines.find((line) => line.includes('since'));
+		const sessionLine = lines.find((line) => line.includes('session'));
+		expect(sinceLine).toBeDefined();
+		expect(sessionLine).toBeDefined();
+		expect(sinceLine).toMatch(/5m/);
+		expect(sessionLine).toMatch(/2h/);
+		unmount();
+	});
+
+	it('cost row is omitted when sessionWorkerTokens is undefined (US-002, PR-83)', () => {
+		const data = makeData({
+			idle: false,
+			paused: false,
+			startedAtMs: Date.parse('2026-04-28T22:00:00Z'),
+		});
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => data,
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		expect(frame.split('\n').some((line) => line.includes('cost'))).toBe(false);
+		unmount();
+	});
+
+	it('cost row renders the session-cumulative worker token total, formatted in tokens (US-002, PR-83)', () => {
+		const data = makeData({
+			idle: false,
+			paused: false,
+			startedAtMs: Date.parse('2026-04-28T22:00:00Z'),
+			sessionWorkerTokens: 482_000,
+		});
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => data,
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		const costLine = frame.split('\n').find((line) => line.includes('cost'));
+		expect(costLine).toBeDefined();
+		expect(costLine).toContain('482k tokens');
+		expect(costLine).not.toContain('$');
 		unmount();
 	});
 });

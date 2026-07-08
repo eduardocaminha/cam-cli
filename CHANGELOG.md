@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.85.0] - 2026-07-08
+
+### Added
+
+- US-002 - Accumulate session worker-token total from the event log and render it in the dashboard header
+- US-001 - Track sidecar session start and render total session elapsed in the dashboard header
+
 ## [0.84.0] - 2026-07-07
 
 ### Added

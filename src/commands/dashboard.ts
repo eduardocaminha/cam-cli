@@ -40,6 +40,7 @@ import {
 	transcriptPathForSession,
 	type TranscriptUsage,
 } from "../transcript/usage.ts";
+import { readSidecarSessionStart } from "../supervisor/session-start.ts";
 
 // --- Constants -------------------------------------------------------------
 
@@ -201,6 +202,25 @@ export interface DashboardData {
 	 * (US-001). Undefined when absent (no review run yet or old prd.json).
 	 */
 	reviewLastVerdict?: string;
+	/**
+	 * Wall-clock start time of the current sidecar SESSION, in ms since epoch
+	 * (US-001, PR-83). Distinct from `startedAtMs`, which comes from the loop's state
+	 * file and resets on every fresh story-implementation cycle. Read from the
+	 * dedicated once-per-process marker the sidecar writes at startup
+	 * (`.claude/.cam-sidecar-session.json`, see `session-start.ts`). Undefined
+	 * when the marker is absent or unreadable (e.g. the sidecar has never run).
+	 */
+	sessionStartedAtMs?: number;
+	/**
+	 * Session-cumulative worker token total (US-002, PR-83): the sum of all
+	 * worker 'tokens' events at-or-after the sidecar session start, across every
+	 * story in the current session. Expressed in tokens, never USD (price varies
+	 * by model/tier). Undefined when the event log is absent, the session-start
+	 * marker is unknown, or no 'tokens' events fall inside the session window —
+	 * the renderer omits the row in all three cases. Computed by
+	 * `sumSessionWorkerTokens`.
+	 */
+	sessionWorkerTokens?: number;
 }
 
 /**
@@ -434,6 +454,23 @@ export function readSnapshot(options: { cwd: string; nowMs: number; claudeDir?: 
 		}
 	}
 
+	// US-001 (PR-83): total-session elapsed, read from the dedicated once-per-process
+	// marker the sidecar writes at startup (project-local `.claude/`, NOT the
+	// `claudeDir` option above which points at the transcript home dir).
+	// Absent/unreadable marker leaves the field undefined without throwing.
+	const sessionStartIso = readSidecarSessionStart(join(cwd, ".claude"));
+	if (sessionStartIso !== null) {
+		const sessionStartMs = Date.parse(sessionStartIso);
+		if (Number.isFinite(sessionStartMs)) {
+			data.sessionStartedAtMs = sessionStartMs;
+			// US-002 (PR-83): bound the worker-token sum by the same session-start
+			// marker so the total reflects "since this sidecar session began", not
+			// the whole (never-truncated) event log.
+			const sessionTokens = sumSessionWorkerTokens(readEventLogBody(cwd), sessionStartIso);
+			if (sessionTokens !== undefined) data.sessionWorkerTokens = sessionTokens;
+		}
+	}
+
 	return data;
 }
 
@@ -536,6 +573,76 @@ export function readRecentProgress(cwd: string): string[] {
 		return [];
 	}
 	return parseRecentProgress(body);
+}
+
+/**
+ * Read the raw event-log body under `cwd`, or null when the file is absent
+ * or unreadable. Shared by `readRecentProgress` (via its own inline read) and
+ * `readSnapshot`'s session-worker-token summation (US-002, PR-83).
+ */
+function readEventLogBody(cwd: string): string | null {
+	const path = join(cwd, EVENT_LOG_PATH);
+	if (!existsSync(path)) return null;
+	try {
+		return readFileSync(path, "utf8");
+	} catch {
+		return null;
+	}
+}
+
+/** Coerce an unknown JSON value to a number (0 if not a number). */
+function toNumberOrZero(v: unknown): number {
+	return typeof v === "number" ? v : 0;
+}
+
+/**
+ * Pure exported helper (US-002, PR-83): sum worker 'tokens' events from the
+ * event-log JSONL, counting only events timestamped at-or-after
+ * `sessionStartIso`. Each 'tokens' event contributes all four
+ * TokensEventDetail fields (inputTokens + outputTokens + cacheReadTokens +
+ * cacheCreationTokens), mirroring the `extractTokensFromLine` formula in
+ * `recordCycleTokens` (journal.ts, CAM-131). 'cycle-tokens' aggregate events
+ * are excluded by construction (only `kind === "tokens"` lines are summed),
+ * so a worker's spend already folded into a closed cycle's aggregate is never
+ * double-counted alongside its own raw event.
+ *
+ * Malformed lines are skipped, never fatal. `jsonl === null` (missing event
+ * log) yields `undefined` (no total). When the log is present but no 'tokens'
+ * event falls at-or-after the session start, this also yields `undefined`
+ * (distinct from a real `0` total, which requires at least one matching
+ * event whose four fields happen to sum to zero) — both cases mean "no total
+ * to show" for the caller.
+ */
+export function sumSessionWorkerTokens(jsonl: string | null, sessionStartIso: string): number | undefined {
+	if (jsonl === null) return undefined;
+	const sessionStartMs = Date.parse(sessionStartIso);
+	let total = 0;
+	let matched = false;
+	for (const line of jsonl.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed.length === 0) continue;
+		let event: unknown;
+		try {
+			event = JSON.parse(trimmed);
+		} catch {
+			continue; // skip a malformed line, never crash the dashboard
+		}
+		if (typeof event !== "object" || event === null) continue;
+		const e = event as { ts?: unknown; kind?: unknown; detail?: unknown };
+		if (e.kind !== "tokens") continue;
+		if (typeof e.ts !== "string") continue;
+		const ts = Date.parse(e.ts);
+		if (!Number.isFinite(ts) || ts < sessionStartMs) continue;
+		if (typeof e.detail !== "object" || e.detail === null) continue;
+		const d = e.detail as Record<string, unknown>;
+		total +=
+			toNumberOrZero(d["inputTokens"]) +
+			toNumberOrZero(d["outputTokens"]) +
+			toNumberOrZero(d["cacheReadTokens"]) +
+			toNumberOrZero(d["cacheCreationTokens"]);
+		matched = true;
+	}
+	return matched ? total : undefined;
 }
 
 /**

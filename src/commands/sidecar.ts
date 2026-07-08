@@ -74,6 +74,7 @@ import { finalizeCycleClose } from './ship-finalize.ts';
 import { runShipBump } from '../release/ship-bump.ts';
 import { buildShipFinalizeOpts, buildShipBumpOpts } from './ship-deps.ts';
 import { REVIEW_ARTIFACT_FILENAME } from '../supervisor/review-report.ts';
+import { writeSidecarSessionStart } from '../supervisor/session-start.ts';
 import { printHint, printWarning } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
@@ -227,6 +228,19 @@ export interface SidecarOptions {
 	 * throws FirewallError, this spy must never be called.
 	 */
 	runSidecarLoopFn?: (opts: RunSidecarLoopOptions) => Promise<void>;
+	/**
+	 * Override the session-start recorder (US-001, PR-83, dashboard
+	 * total-session elapsed).
+	 *
+	 * Production: writes `.claude/.cam-sidecar-session.json` once, before the
+	 * poll loop starts, via `writeSidecarSessionStart`. The supervisor lock's
+	 * `startedAt` resets on every active cycle (see session-start.ts header),
+	 * so this dedicated once-per-process record is what the dashboard reads
+	 * for the "session" elapsed row.
+	 * Tests: inject a spy to assert it fires exactly once per runSidecar call,
+	 * regardless of how many active/idle cycles the injected loop simulates.
+	 */
+	writeSessionStartFn?: (claudeDir: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -2151,6 +2165,13 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	const sessionName = projectSessionName(cwd);
 	const logEvent =
 		options.logEventFn ?? makeFileEventLogger(join(claudeDir, 'cam-worker-events.jsonl'));
+
+	// US-001 (PR-83): record the session-start timestamp exactly once, at
+	// process startup, before the poll loop runs any active/idle cycle. See
+	// session-start.ts for why the supervisor lock's startedAt cannot be
+	// reused for this.
+	(options.writeSessionStartFn ??
+		((dir: string) => writeSidecarSessionStart(dir, new Date().toISOString())))(claudeDir);
 
 	// US-001 / CAM-176: ensure the worker container is running AND apply the
 	// egress firewall before dispatching (container mode only).
