@@ -1,6 +1,6 @@
 ---
 name: subagent-planner
-description: Converts an issue or description into a structured PRD (prd.json) with small, dependency-ordered user stories. READ the project context (CLAUDE.md, AGENTS.md) before generating. Invoked from /cam-plan Step 7 after scope is approved.
+description: Converts an issue or description into a structured PRD (prd.json) with small, dependency-ordered user stories. Project context (CLAUDE.md) auto-loads via nested-CLAUDE.md; grep patterns.md for the rest before generating. Invoked from /cam-plan Step 7 after scope is approved.
 model: claude-opus-4-8
 effort: xhigh
 tools:
@@ -141,14 +141,14 @@ Stories that touch `vendor/` or `templates/` MUST also include:
 The `notes` field should include:
 - **File paths** that will likely need changes.
 - **Skills** the implementation agent should load (from the issue body).
-- **Gotchas** specific to this project (read `CLAUDE.md` and `AGENTS.md` for these).
+- **Gotchas** specific to this project (grep `scripts/cam/patterns.md` for these; `scripts/cam/CLAUDE.md` auto-loads and is already in context).
 - **Doc section references** from `relatedDocs` that the implementer must re-check before coding.
 
 ## Project Context
 
 This is **cam-cli**: the `cam` binary itself, an autonomous Claude Code loop driver. Stack: **Bun >= 1.2 + TypeScript (strict, `noUncheckedIndexedAccess`) + React 19 rendered via Ink 7** for terminal UIs. No database, no HTTP server, no browser. Config is TOML (`src/config/toml.ts`); state is JSON (`prd.json`, `handoff.json`). It shells out to `claude`, `tmux`, `git`, and optionally `gh` / the Linear GraphQL API. Distributed as a single-file binary (`bun build --compile`) with `vendor/` + `claude-code-harness/` embedded at build time.
 
-Read the project's `CLAUDE.md` (root and `scripts/cam/CLAUDE.md`), `scripts/cam/patterns.md`, and `scripts/cam/journal.md` to understand:
+`scripts/cam/CLAUDE.md` auto-loads via Claude Code's nested-CLAUDE.md mechanism: it is already in context before you start, so do not re-read it. `scripts/cam/patterns.md` is grep-on-demand, not a full read: grep for the section/keywords matching the subsystem the issue touches and read only the matching bullets. Use these plus the issue body to understand:
 - Tech stack and key dependencies (above).
 - Command layout: `index.ts` dispatches subcommands implemented under `src/commands/*` (`init`, `run`, `next`, `plan`, `status`, `dashboard`, `resume`, `stop`, `setup`, `claude`, `retry-monitor`).
 - Domain terms: **orchestrator** (long-lived human-facing agent), **worker** (fresh per-story subagent), **PRD** / **story** / **handoff** / **journal**, **cycle**, **issue system** (`linear` | `github` | `none`, in `project.toml`), **tmux pane/split**.
