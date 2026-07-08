@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.91.0] - 2026-07-08
+
+### Added
+
+- US-003 - Refactor runKahn under the cognitive-complexity budget and drop the rank.ts biome override
+- US-002 - Make RunTriageOptions.clock optional, mirroring the unused-clock command pattern
+- US-001 - Unify triage warnings source between no-op and commit paths
+
 ## [0.90.0] - 2026-07-08
 
 ### Added
