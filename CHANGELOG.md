@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-07-08
+
+### Added
+
+- US-003 - Ratchet the jscpd threshold down to 4
+- US-002 - Extract shared subcommand arg-parse helper in index.ts
+- US-001 - Extract shared ratchet-diff helpers for the check scripts
+
 ## [0.89.0] - 2026-07-08
 
 ### Added
