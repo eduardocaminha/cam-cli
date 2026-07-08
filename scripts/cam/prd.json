@@ -1,0 +1,29 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-92-narrate-report-helper",
+  "description": "Extract private narrateReport()/notifyBlocked() helpers in src/supervisor/loop.ts to dedupe the inline notifyOrchestrator blocks from CAM-78 and lower the loop.ts file-size ceiling",
+  "issueNumber": 92,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Dedupe inline notifyOrchestrator blocks in loop.ts behind private helpers and lower the file-size ceiling",
+      "description": "As a cam-cli maintainer, I need the repeated inline notifyOrchestrator blocks in src/supervisor/loop.ts (3 report-narration blocks plus 7 identical blocked-terminal template lines, the descendants of the 9 blocks flagged in the CAM-78 review) extracted into private helpers (narrateReport() for the report-summary push, one helper for the BLOCKED template) so that the orchestrator-pane narration has a single source, loop.ts shrinks, and the CAM-78 file-size raise headroom is given back.",
+      "acceptanceCriteria": [
+        "A private narrateReport helper exists in src/supervisor/loop.ts and is the only place there that calls formatWorkerReportSummary (grep count for formatWorkerReportSummary in loop.ts is at most 2: the import line plus the helper body). [oracle: grep -q 'narrateReport' src/supervisor/loop.ts && [ \"$(grep -c 'formatWorkerReportSummary' src/supervisor/loop.ts)\" -le 2 ]]",
+        "The three inline report-narration sites (finalize-success ~1309, genuine-advance ~1371, PRD_COMPLETE ~1380-1382) call the helper; zero raw inline copies of the block remain. [oracle: ! grep -qF \"{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }\" src/supervisor/loop.ts]",
+        "The seven identical blocked-terminal notify lines (~1237, 1249, 1267, 1285, 1296, 1314, 1346) go through one private helper; the template literal appears exactly once in loop.ts (inside the helper). [oracle: [ \"$(grep -cF \"?? 'unknown'} BLOCKED:\" src/supervisor/loop.ts)\" -eq 1 ]]",
+        "Pure refactor, behavior byte-identical: no existing supervisor test assertion is modified (test/supervisor/loop.test.ts and test/supervisor/notify-orchestrator.test.ts unchanged vs origin/main) and all pass; the CAM-78 placement rule holds (notify fires AFTER the no-progress guard, the retry path emits nothing, the report is re-read at call time). [oracle: [ -z \"$(git diff origin/main -- test/supervisor/loop.test.ts test/supervisor/notify-orchestrator.test.ts)\" ] && bun test test/supervisor/]",
+        "The file-size ceiling for src/supervisor/loop.ts in scripts/file-size-budget.json is lowered from 1931 to the new post-refactor line count (reverting the CAM-78 raise headroom; lowering a ceiling always passes the ratchet), with the reduction noted in the _ref string per the existing convention. [oracle: [ \"$(jq '.\\\"src/supervisor/loop.ts\\\"' scripts/file-size-budget.json)\" -lt 1931 ]]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes, including lint and the file-size ratchet (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/loop.ts (only source file), scripts/file-size-budget.json (lower the ceiling). Tests: test/supervisor/loop.test.ts, test/supervisor/notify-orchestrator.test.ts, test/supervisor/host-notify-orch.test.ts already pin the narration behavior; a pure refactor keeps them green unmodified (adding a small new test is allowed, editing existing assertions is not). HISTORY (verified against git): at the CAM-78 merge (8b2fa12) there were exactly 9 inline `{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }` blocks; later work replaced the 6 blocked-path copies with the `[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}` template and CAM-187 added a 7th (no-commit, ~1267). Today the issue's ~9 call-sites are: 3 narrate blocks + 7 BLOCKED lines. GOTCHAS (re-read scripts/cam/patterns.md bullets 'notifyOrchestrator placement rule in loop.ts (US-003, CAM-78)' and 'Single-pusher invariant (US-003, CAM-78)' before coding): (1) narrateReport must re-read via readWorkerReport?.() inside the helper at call time, never capture a report value early (fileReader-closure binding is out of scope at the sites); (2) notify placement stays AFTER the no-progress guard, the no-progress RETRY path must still emit nothing (the discriminating test asserts zero calls); (3) helpers stay private to loop.ts, do not export (no code path outside loop.ts may call notifyOrchestrator); (4) lastOutcome/advisoryStoryId/readWorkerReport/opts are locals of runSupervisor, so define the helpers as closures inside runSupervisor (near the readWorkerReport binding ~684) or pass args explicitly. OUT OF SCOPE: the review-branch line ~1420 (`[cam] review BLOCKED: ${blockedDetail}`, different shape) and the formatReviewVerdictLine sites (~1449, ~1481). Budget: check-file-sizes.ts only requires a tracker ref when RAISING a ceiling; lowering always passes."
+    }
+  ]
+}
