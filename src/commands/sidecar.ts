@@ -38,7 +38,7 @@ import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
 import { runPlanPhaseWithReplan, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult, type PlanEscalationWriterParams } from '../supervisor/plan-runner.ts';
 import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FILENAME, type PlanEscalatedMarker } from '../supervisor/plan-escalation.ts';
-import { writePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
+import { writePlanPreflightFailedMarker, removePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
@@ -1798,6 +1798,12 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 		logEvent: o.logEvent,
 		// US-003 (CAM-215): durable plan-preflight-failed marker writer.
 		writePreflightFailedMarkerFn: makeWritePreflightFailedMarkerFn(o.claudeDir),
+		// US-004 (CAM-215, Option B): remove the durable plan-preflight-failed
+		// marker on ANY non-preflight-failed planResult (not gated on
+		// convergence or issueId, unlike removeEscalationMarkerFn above).
+		// removePlanPreflightFailedMarker never throws when the file is
+		// already absent (best-effort unlinkSync).
+		removePreflightFailedMarkerFn: () => removePlanPreflightFailedMarker(join(o.claudeDir, PLAN_PREFLIGHT_FAILED_FILENAME)),
 	});
 	exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(o.claudeDir, o.cwd)); // US-R1-002
 }

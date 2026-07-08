@@ -1007,6 +1007,22 @@ export interface RunPostAuditOptions {
 	 * writePlanPreflightFailedMarker against the .claude/ dir.
 	 */
 	writePreflightFailedMarkerFn?: (params: PlanPreflightFailedWriterParams) => void;
+	/**
+	 * Remove the durable plan-preflight-failed marker (US-004, CAM-215,
+	 * Option B). Called for EVERY planResult whose kind is NOT
+	 * 'preflight-failed', regardless of which kind it is. Unlike
+	 * removeEscalationMarkerFn (gated on the single proceed-branch convergence
+	 * path), this removal is NOT gated on convergence and NOT gated on issueId:
+	 * the marker itself carries no issueId (a preflight failure is an
+	 * environment-level problem, not tied to a specific issue), so "marker
+	 * present" must always mean "the LAST plan attempt died in preflight" -
+	 * any subsequent non-preflight-failed result, whatever its kind, means a
+	 * stale marker must not outlive it. Optional: defaults to a no-op for
+	 * backward compat with tests that do not inject it; production wiring
+	 * (sidecar.ts) always supplies it via removePlanPreflightFailedMarker,
+	 * sibling of removeEscalationMarkerFn's wiring.
+	 */
+	removePreflightFailedMarkerFn?: () => void;
 }
 
 /**
@@ -1107,6 +1123,25 @@ function handlePreflightFailed(
 }
 
 /**
+ * Best-effort remove the durable plan-preflight-failed marker for any
+ * planResult kind other than 'preflight-failed' (US-004, CAM-215, Option B).
+ * Not gated on convergence or issueId - see the field doc on
+ * RunPostAuditOptions.removePreflightFailedMarkerFn.
+ *
+ * Extracted from runPostAuditAction to keep that function under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
+ * extraction pattern).
+ */
+function removePreflightMarkerUnlessPreflightFailed(
+	kind: PlanPhaseResult['kind'],
+	removePreflightFailedMarkerFn: (() => void) | undefined,
+): void {
+	if (kind !== 'preflight-failed') {
+		removePreflightFailedMarkerFn?.();
+	}
+}
+
+/**
  * Execute the post-audit action after runPlanPhase returns.
  *
  * On audit-approved + proceed-branch (auto mode):
@@ -1132,6 +1167,11 @@ function handlePreflightFailed(
  *   full untruncated detail) then calls notifyFn with a truncated one-line
  *   narration. Returns { kind: 'preflight-failed' }. No branch/commit/flip.
  *
+ * On ANY planResult whose kind is NOT preflight-failed (US-004, CAM-215,
+ * Option B), before the branch dispatch below:
+ *   Calls removePreflightFailedMarkerFn() (best-effort). Not gated on
+ *   convergence or issueId - see the field doc on RunPostAuditOptions.
+ *
  * On any other planResult kind:
  *   Returns { kind: 'no-action' }.
  *
@@ -1151,7 +1191,11 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		removeEscalationMarkerFn,
 		logEvent,
 		writePreflightFailedMarkerFn,
+		removePreflightFailedMarkerFn,
 	} = opts;
+
+	// US-004 (CAM-215, Option B): see removePreflightMarkerUnlessPreflightFailed.
+	removePreflightMarkerUnlessPreflightFailed(planResult.kind, removePreflightFailedMarkerFn);
 
 	// planner-failed: planner produced no prd.json; notify best-effort, no escalate
 	// (US-003, CAM-155). Do NOT fire escalateFn: a transient planner no-op is not an

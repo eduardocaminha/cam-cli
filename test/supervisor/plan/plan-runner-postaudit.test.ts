@@ -142,6 +142,7 @@ function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 	notifyMessages: string[];
 	removeMarkerCalled: { n: number };
 	preflightMarkerCalls: PlanPreflightFailedWriterParams[];
+	removePreflightMarkerCalled: { n: number };
 } {
 	const gitCalls: GitCall[] = [];
 	const setPhaseCalls: LoopPhase[] = [];
@@ -149,6 +150,7 @@ function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 	const notifyMessages: string[] = [];
 	const removeMarkerCalled = { n: 0 };
 	const preflightMarkerCalls: PlanPreflightFailedWriterParams[] = [];
+	const removePreflightMarkerCalled = { n: 0 };
 
 	const spawnFn: SpawnFn = (cmd, args) => {
 		gitCalls.push({ cmd, args });
@@ -165,10 +167,20 @@ function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 		notifyFn: (msg) => { notifyMessages.push(msg); },
 		removeEscalationMarkerFn: () => { removeMarkerCalled.n++; },
 		writePreflightFailedMarkerFn: (params) => { preflightMarkerCalls.push(params); },
+		removePreflightFailedMarkerFn: () => { removePreflightMarkerCalled.n++; },
 		...overrides,
 	};
 
-	return { opts, gitCalls, setPhaseCalls, escalateCalled, notifyMessages, removeMarkerCalled, preflightMarkerCalls };
+	return {
+		opts,
+		gitCalls,
+		setPhaseCalls,
+		escalateCalled,
+		notifyMessages,
+		removeMarkerCalled,
+		preflightMarkerCalls,
+		removePreflightMarkerCalled,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -618,6 +630,71 @@ describe('runPostAuditAction', () => {
 	});
 
 	// -------------------------------------------------------------------------
+	// removePreflightFailedMarkerFn wiring (US-004, CAM-215, Option B): fired
+	// for EVERY planResult kind that is not itself preflight-failed, not
+	// gated on convergence (unlike removeEscalationMarkerFn above) and not
+	// gated on issueId.
+	// -------------------------------------------------------------------------
+
+	test('audit-approved (proceed-branch): removePreflightFailedMarkerFn is called once (Option B)', () => {
+		const { opts, removePreflightMarkerCalled } = makeOpts({ planResult: APPROVED_RESULT });
+		runPostAuditAction(opts);
+		expect(removePreflightMarkerCalled.n).toBe(1);
+	});
+
+	test('planner-failed: removePreflightFailedMarkerFn is called once (Option B)', () => {
+		const { opts, removePreflightMarkerCalled } = makeOpts({ planResult: { kind: 'planner-failed' } });
+		runPostAuditAction(opts);
+		expect(removePreflightMarkerCalled.n).toBe(1);
+	});
+
+	test('mutex-busy: removePreflightFailedMarkerFn is called once (Option B)', () => {
+		const { opts, removePreflightMarkerCalled } = makeOpts({ planResult: { kind: 'mutex-busy' } });
+		runPostAuditAction(opts);
+		expect(removePreflightMarkerCalled.n).toBe(1);
+	});
+
+	test('audit-approved + pause-operator: removePreflightFailedMarkerFn is still called (not gated on convergence)', () => {
+		const { opts, removePreflightMarkerCalled } = makeOpts({ readPlanApprovalFn: () => 'operator' });
+		runPostAuditAction(opts);
+		expect(removePreflightMarkerCalled.n).toBe(1);
+	});
+
+	test('audit-blocked: removePreflightFailedMarkerFn is still called (not gated on convergence)', () => {
+		const { opts, removePreflightMarkerCalled } = makeOpts({ planResult: BLOCKED_RESULT });
+		runPostAuditAction(opts);
+		expect(removePreflightMarkerCalled.n).toBe(1);
+	});
+
+	test('plan-escalated: removePreflightFailedMarkerFn is still called (not gated on convergence)', () => {
+		const { opts, removePreflightMarkerCalled } = makeOpts({ planResult: ESCALATED_RESULT });
+		runPostAuditAction(opts);
+		expect(removePreflightMarkerCalled.n).toBe(1);
+	});
+
+	test('plan-target-invalid: removePreflightFailedMarkerFn is still called (not gated on issueId)', () => {
+		const { opts, removePreflightMarkerCalled } = makeOpts({ planResult: TARGET_INVALID_RESULT });
+		runPostAuditAction(opts);
+		expect(removePreflightMarkerCalled.n).toBe(1);
+	});
+
+	test('preflight-failed: removePreflightFailedMarkerFn is NOT called (the arm writes, never unlinks its own marker)', () => {
+		const { opts, removePreflightMarkerCalled } = makeOpts({ planResult: PREFLIGHT_FAILED_RESULT });
+		runPostAuditAction(opts);
+		expect(removePreflightMarkerCalled.n).toBe(0);
+	});
+
+	test('absent removePreflightFailedMarkerFn is safe (backward compat)', () => {
+		const { opts } = makeOpts({ removePreflightFailedMarkerFn: undefined });
+		expect(() => runPostAuditAction(opts)).not.toThrow();
+	});
+
+	test('absent removePreflightFailedMarkerFn on preflight-failed is safe (backward compat)', () => {
+		const { opts } = makeOpts({ planResult: PREFLIGHT_FAILED_RESULT, removePreflightFailedMarkerFn: undefined });
+		expect(() => runPostAuditAction(opts)).not.toThrow();
+	});
+
+	// -------------------------------------------------------------------------
 	// PostAuditActionResult kinds are exhaustive and distinct
 	// -------------------------------------------------------------------------
 
@@ -671,6 +748,21 @@ describe('sidecar.ts production wiring oracle - runPostAuditAction (US-R1-001)',
 		expect(callMatch?.[0]).toContain('setPhaseFn');
 		expect(callMatch?.[0]).toContain('branchName');
 		expect(callMatch?.[0]).toContain('readPlanApprovalFn');
+	});
+
+	// US-004 (CAM-215): the remove seam is sibling to removeEscalationMarkerFn
+	// wiring in the same runPostAuditAction call.
+	test('sidecar.ts imports removePlanPreflightFailedMarker from plan-preflight-marker.ts', () => {
+		expect(source).toContain('removePlanPreflightFailedMarker');
+		expect(source).toContain("from '../supervisor/plan-preflight-marker.ts'");
+	});
+
+	test('runPostAuditAction call wires removePreflightFailedMarkerFn against PLAN_PREFLIGHT_FAILED_FILENAME', () => {
+		const callMatch = source.match(/runPostAuditAction\(\{[\s\S]*?\}\)/);
+		expect(callMatch).not.toBeNull();
+		expect(callMatch?.[0]).toContain('removePreflightFailedMarkerFn');
+		expect(callMatch?.[0]).toContain('removePlanPreflightFailedMarker(');
+		expect(callMatch?.[0]).toContain('PLAN_PREFLIGHT_FAILED_FILENAME');
 	});
 });
 
