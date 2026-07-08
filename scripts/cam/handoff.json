@@ -1,20 +1,22 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Carry SUGGESTION findings through the reviewer CLEAN exit report" },
+  "lastCompletedStory": { "id": "US-002", "title": "Add suggestion fingerprint, follow-up builder, and dedup helpers" },
   "branchName": "cam/pr-189-suggestion-followups",
-  "timestamp": "2026-07-08T20:20:00Z",
+  "timestamp": "2026-07-08T21:10:00Z",
   "createdFiles": [
-    "test/templates/subagent-reviewer-clean-findings.test.ts"
+    "src/supervisor/suggestion-followups.ts",
+    "test/suggestion-followups.test.ts"
   ],
-  "modifiedFiles": [
-    ".claude/agents/subagent-reviewer.md",
-    "templates/agents/subagent-reviewer.md",
-    "src/vendor/_generated.ts",
-    "test/supervisor/decide.test.ts",
-    "scripts/file-size-budget.json"
-  ],
+  "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "US-001 rewrote both CLEAN examples in the subagent-reviewer exit report protocol section (dev copy .claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md, lines ~158-206) so they carry a SUGGESTION finding instead of `findings: []`, with a new sentence stating CLEAN means no BLOCKING findings, not no findings. decide.ts already keyed terminal detection off TERMINAL_VERDICTS (verdict string), not findings length -- no production code change was needed there, only a locking regression test (test/supervisor/decide.test.ts, new 'terminal detection keys off verdict string, not findings length' describe block) plus a doc-gate test (test/templates/subagent-reviewer-clean-findings.test.ts, describe.each over dev/template copies mirroring test/templates/orchestrator-boot.test.ts). Ran bun run embed-vendor BEFORE bun test, embed-vendor:check is clean. Raised test/supervisor/decide.test.ts's file-size-budget.json ceiling 487->530 with a new _ref entry (US-002/US-003 of this PRD will likely touch src/supervisor/decide.ts and/or src/commands/sidecar.ts for the follow-up-filing behavior -- check current line counts against the budget before those edits). US-002 (fingerprint/follow-up-builder/dedup helpers) and US-003 (file follow-ups at terminal verdict in runSidecarLoop) are next; the review-report.json findings array (now legitimately non-empty on CLEAN) is the structured input those stories will read to build follow-up issues.",
+  "nextStoryContext": "US-002 added a PURE module src/supervisor/suggestion-followups.ts with 4 exports: fingerprintFinding(finding) -> 12-hex-char sha256 prefix (Bun.CryptoHasher('sha256'), fields normalized-and-joined with '::' delimiter so missing file/line never collides with a distinct text); buildFollowUpIssue(finding, { source, round? }) -> { title, description } where title is the finding text truncated at 80 chars (ellipsis '…'), and description is finding.text + blank line + 'Source: <source>' + optional 'Review round: <n>' + optional 'Location: <file>[:<line>]' + blank line + 'suggestion-fingerprint: <hash>'; extractSuggestions(report) filters findings to severity==='SUGGESTION'; dedupSuggestions(backlog, report) scans open (status==='open') IssueEntry.description strings for a 'suggestion-fingerprint: <hex>' line via regex, builds a Set of already-filed fingerprints, then walks extractSuggestions(report) skipping any finding whose fingerprintFinding() is in that set OR already seen earlier in the same batch. All 4 are exported with types FollowUpProvenance and FollowUpIssue. US-003 (next, priority 3) wires this into runSidecarLoop: per its notes, add optional readReviewReportFn/fileSuggestionsFn/notify deps to RunSidecarLoopOptions (loop.ts:1517), wire production deps in buildSidecarLoopDeps (sidecar.ts:2141-2196) using makeReadReviewReport(cwd) from host.ts:134, createLocalIssueOnMain (issue-file.ts:271), readBacklogFromMain (issues/backlog.ts), and these US-002 helpers; place the hook in runSidecarLoop next to the CAM-191/ADR-0013 auto-ship block (loop.ts:1882-1911), strictly AFTER opts.clearActive() and before the flipActiveFn continue, gated on result.status in ('complete','awaiting-operator') AND re-read prd.review.lastVerdict in TERMINAL_VERDICTS (decide.ts:66). For provenance when calling buildFollowUpIssue from that hook: pass source = prd.branchName (no 'cycle id' concept exists in the codebase today, confirmed by grep), round = prd.review.roundsCompleted. Gotcha caught during this story: writing '\\u0000' (raw NUL) into a JSON-tool-authored TS source file produces an actual raw NUL byte in the file (the `file` command then reports it as 'data', not text, and grep silently no-ops without -a) -- use a plain ASCII delimiter like '::' instead of NUL for any future field-join-then-hash helper, never a NUL escape typed into a Write/Edit content string.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    {
+      "lib": "Bun (Bun.CryptoHasher hashing API)",
+      "version": "current",
+      "url": "https://bun.com/docs/api/hashing",
+      "fetchedAt": "2026-07-08T21:05:00Z",
+      "status": "ok",
+      "summary": "Confirmed constructor new Bun.CryptoHasher('sha256'), sha256 explicitly supported, update(input) accepts a string, and digest('hex') returns a hex string (not Uint8Array) when an encoding is passed. Matches the implementation and the PRD-level officialDocsConsulted entry; no deprecations noted."
+    }
   ]
 }
