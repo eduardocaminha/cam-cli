@@ -1,7 +1,7 @@
 {
   "id": "CAM-125",
   "title": "cam journal archive: GC deterministico do journal.md (>50 entries -> journal.archive.md)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T01:44:33.545Z",
