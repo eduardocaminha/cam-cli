@@ -26,7 +26,6 @@ export function buildShipFinalizeOpts(cwd: string): FinalizeCycleCloseOptions {
 	return {
 		cwd,
 		spawnFn: spawnSync,
-		clock: () => new Date().toISOString(),
 		readProjectToml: () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8'),
 		readPrd: () => readFileSync(join(cwd, 'scripts/cam/prd.json'), 'utf8'),
 		stashFn: (issueId: string) =>

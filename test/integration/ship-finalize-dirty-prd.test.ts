@@ -99,8 +99,6 @@ function makeTmpRepo(): string {
 const realSpawnFn: SpawnFn = (cmd, args, opts) =>
 	spawnSync(cmd, args, { encoding: opts.encoding, stdio: 'pipe' }) as SpawnSyncReturns<string>;
 
-const FIXED_CLOCK = '2026-06-23T12:00:00.000Z';
-
 // project.toml: 'none' backend
 const PROJECT_TOML = 'issue_system = "none"\nissue_prefix = "CAM"\n';
 
@@ -154,7 +152,6 @@ test.skipIf(!gitAvailable)(
 		finalizeCycleClose({
 			cwd: dir,
 			spawnFn: realSpawnFn,
-			clock: () => FIXED_CLOCK,
 			readProjectToml: () => readFileSync(join(camDir, 'project.toml'), 'utf8'),
 			// Read the dirty (modified) prd.json from disk, as production would
 			readPrd: () => PRD_JSON_MODIFIED,
@@ -209,7 +206,6 @@ test.skipIf(!gitAvailable)(
 		const result = finalizeCycleClose({
 			cwd: dir,
 			spawnFn: realSpawnFn,
-			clock: () => FIXED_CLOCK,
 			readProjectToml: () => readFileSync(join(camDir, 'project.toml'), 'utf8'),
 			// prd.json does not exist on disk; inject the content directly
 			readPrd: () => PRD_JSON,

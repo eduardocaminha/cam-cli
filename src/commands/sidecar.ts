@@ -1075,8 +1075,11 @@ function makeProductionEscalateFn(
  * (US-004/US-005, CAM-132).
  *
  * Extracted from buildSidecarLoopDeps to keep that function under the biome
- * noExcessiveLinesPerFunction(maxLines=80) limit. Not exported: tests inject
- * options.runMetaLoopObserveFn directly.
+ * noExcessiveLinesPerFunction(maxLines=80) limit. Exported (rather than the
+ * previous unexported form) so the regression test for the selector-error
+ * boundary below (US-001, CAM-115) can inject a throwing selectFn without a
+ * real corrupted backlog fixture; production callers still get
+ * options.runMetaLoopObserveFn injected via buildMetaLoopFn.
  *
  * Dedup state is held in the closure (NOT persisted to any file under .claude
  * or the working tree per CAM-68 invariant).
@@ -1084,17 +1087,44 @@ function makeProductionEscalateFn(
  * Internally builds the drain notify fn from apiKey/recipient so that
  * buildSidecarLoopDeps avoids an extra ?? expression (complexity budget).
  * When apiKey or recipient is empty, drainNotify is undefined (inert).
+ *
+ * selectFn defaults to the real selectPlannableFromFile(cwd) seam; tests
+ * override it to simulate a real backlog read/parse error (US-001, CAM-115).
+ * Since selectPlannableFromFile no longer swallows read/parse errors, a throw
+ * here would otherwise propagate through the unguarded
+ * `await opts.runMetaLoopObserveFn()` call in loop.ts's idle tick and crash
+ * the long-lived sidecar. The catch below is that boundary: it logs the real
+ * error via the WorkerEventLogger and skips the tick WITHOUT calling
+ * observeDecide, so a corrupted backlog is never converted into a
+ * drained/empty-backlog observation. lastState is left untouched so the next
+ * tick retries cleanly once the underlying error clears.
  */
-function makeProductionMetaLoopObserveFn(
+export function makeProductionMetaLoopObserveFn(
 	cwd: string,
 	logEvent: WorkerEventLogger,
 	resendApiKey: string,
 	resendRecipient: string,
+	selectFn: () => IssueEntry | null = () => selectPlannableFromFile(cwd),
 ): () => Promise<void> {
 	const drainNotifyFn = makeProductionDrainNotifyFn(resendApiKey, resendRecipient);
 	let lastState: ObserveState = { kind: 'none' };
 	return async (): Promise<void> => {
-		const selected = selectPlannableFromFile(cwd);
+		let selected: IssueEntry | null;
+		try {
+			selected = selectFn();
+		} catch (err: unknown) {
+			logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'sidecar-exit',
+				detail: {
+					reason: 'meta-loop-observe-select-error',
+					error: err instanceof Error ? err.message : String(err),
+				},
+			});
+			return;
+		}
 		const result = observeDecide(selected, lastState);
 		if (result !== null) {
 			lastState = result.newState;
@@ -1340,9 +1370,30 @@ async function handleBlockedCycleBoundary(
  * Deliberately bypasses observeDecide/ctx.observeState: the pending-target
  * branch is a distinct decision point from the drain-dedup path and must not
  * perturb that state.
+ *
+ * selectTargetFn boundary (US-R1-001, CAM-115): selectPlanTargetFromFile no
+ * longer swallows real backlog read/parse errors (mirrors selectFn below).
+ * A throw here is caught, logged via logEvent as a 'sidecar-exit' event, and
+ * the tick is skipped WITHOUT dispatching or clearing plan_issue, so a
+ * transient corrupted-backlog read never gets misread as "target not found".
  */
 function handlePendingTarget(deps: MetaLoopDispatchDeps, targetId: string): void {
-	const resolved = deps.selectTargetFn?.(targetId) ?? null;
+	let resolved: IssueEntry | null;
+	try {
+		resolved = deps.selectTargetFn?.(targetId) ?? null;
+	} catch (err: unknown) {
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'sidecar-exit',
+			detail: {
+				reason: 'meta-loop-dispatch-select-target-error',
+				error: err instanceof Error ? err.message : String(err),
+			},
+		});
+		return;
+	}
 	if (resolved !== null) {
 		deps.setPhaseFn('planning', resolved.id);
 		deps.logEvent({
@@ -1371,6 +1422,12 @@ function handlePendingTarget(deps: MetaLoopDispatchDeps, targetId: string): void
  * A pending explicit plan_issue (US-004, CAM-203) is checked first and, when
  * present, takes over the tick entirely via handlePendingTarget: top-of-queue
  * selection is not consulted at all for that tick.
+ *
+ * selectFn boundary (US-R1-001, CAM-115): mirrors makeProductionMetaLoopObserveFn's
+ * selector-error boundary. selectPlannableFromFile no longer swallows real
+ * backlog read/parse errors, so a throw here is caught, logged via logEvent
+ * as a 'sidecar-exit' event, and the tick is skipped WITHOUT dispatching --
+ * a corrupted backlog must never be misread as a drained/empty backlog.
  */
 async function dispatchOrDrain(
 	deps: MetaLoopDispatchDeps,
@@ -1381,7 +1438,22 @@ async function dispatchOrDrain(
 		handlePendingTarget(deps, pendingTarget);
 		return;
 	}
-	const selected = deps.selectFn();
+	let selected: IssueEntry | null;
+	try {
+		selected = deps.selectFn();
+	} catch (err: unknown) {
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'sidecar-exit',
+			detail: {
+				reason: 'meta-loop-dispatch-select-error',
+				error: err instanceof Error ? err.message : String(err),
+			},
+		});
+		return;
+	}
 	const observeResult = observeDecide(selected, ctx.observeState);
 	if (observeResult !== null) ctx.observeState = observeResult.newState;
 	if (selected === null) {

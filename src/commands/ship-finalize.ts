@@ -39,9 +39,6 @@ export type SpawnFn = (
 	options: { encoding: 'utf8' },
 ) => SpawnSyncReturns<string>;
 
-/** Returns the current ISO 8601 timestamp string. Injectable for tests. */
-export type ClockFn = () => string;
-
 // ---------------------------------------------------------------------------
 // Internal shapes
 // ---------------------------------------------------------------------------
@@ -61,8 +58,6 @@ export interface FinalizeCycleCloseOptions {
 	cwd: string;
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
-	/** Injectable clock -- returns ISO 8601 timestamp. */
-	clock: ClockFn;
 	/** Read scripts/cam/project.toml as raw text. */
 	readProjectToml: () => string;
 	/** Read scripts/cam/prd.json as raw text. */
