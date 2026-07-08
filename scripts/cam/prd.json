@@ -1,0 +1,68 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-120-jscpd-dedup-ratchet-down",
+  "description": "Dedup follow-up from the CAM-107 ship: extract the shared subcommand arg parser in index.ts and the shared diff/spawn helpers between check-coverage.ts and check-file-sizes.ts, then ratchet the jscpd threshold down to 4.",
+  "issueNumber": 120,
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "jscpd",
+      "url": "https://github.com/kucherenko/jscpd/blob/master/apps/jscpd/README.md",
+      "version": "5",
+      "fetchedAt": "2026-07-08T00:00:00Z",
+      "summary": "threshold makes jscpd exit with error when the duplication level exceeds it; docs do not pin lines vs tokens, but an empirical run on v5 with reporters:[\"threshold\"] confirmed the comparison is against the duplicated-LINES percentage (3.52% lines / 4.77% tokens passed at threshold 4 with exit 0).",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Extract shared ratchet-diff helpers for the check scripts",
+      "description": "As a maintainer of the check:all quality spine, I need the duplicated diff-parsing and staged-diff spawn code shared between scripts/check-coverage.ts and scripts/check-file-sizes.ts extracted into one module so that the jscpd dup gate stops flagging these clones and the two ratchet scripts evolve from a single source.",
+      "acceptanceCriteria": [
+        "A shared module scripts/ratchet-diff.ts exports the diff key-value parser (parseDiffKv), the tracker-ref regex, and the staged-diff spawn helper (git diff --cached -U0, injectable), and both check scripts import from it. [oracle: grep -q 'ratchet-diff' scripts/check-coverage.ts && grep -q 'ratchet-diff' scripts/check-file-sizes.ts]",
+        "parseDiffKv is defined exactly once under scripts/. [oracle: test $(grep -h 'function parseDiffKv' scripts/*.ts | wc -l) -eq 1]",
+        "jscpd reports zero clone pairs between check-coverage.ts and check-file-sizes.ts. [oracle: bunx jscpd@5 --config .jscpd.json --reporters json --output /tmp/cam120-jscpd --silent src scripts; jq -e '[.duplicates[] | (.firstFile.name + \" \" + .secondFile.name) | select(contains(\"check-coverage\") and contains(\"check-file-sizes\"))] | length == 0' /tmp/cam120-jscpd/jscpd-report.json]",
+        "Behavior preserved: checkCoverage, parseCoverageOutput, findLoweredFloors, checkFileSizes, findRaisedCeilings, and BUDGET_PATH remain exported from their current files and the existing ratchet tests pass unchanged. [oracle: bun test test/check-coverage.test.ts test/check-file-sizes.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/check-coverage.ts, scripts/check-file-sizes.ts, new scripts/ratchet-diff.ts (module name is the contract for the grep oracle; keep it under scripts/ so the jscpd scan and the file-size glob cover it). Gotchas: (a) KV_RE differs between the two scripts (floats [\\d.]+ in coverage, ints \\d+ in file-sizes); parameterize the value pattern or prove the existing tests pass with a unified one, never silently change accepted budget syntax. (b) scripts/file-size-budget.json pins check-coverage.ts at 261 and check-file-sizes.ts at 209 lines with ~1 line of headroom each; the extraction shrinks both, never raise a ceiling. Adding a NEW budget key for ratchet-diff.ts is neither a raise nor a lower and passes without a tracker ref. (c) Keep the DI pattern: GetStagedDiffFn stays injectable, tests inject in-memory fakes, no real git calls in tests. (d) Doc maintenance: the header comments of both scripts describe the mirrored DI pattern; update them in the same commit if the mirror moves to the shared module. Both files keep their MIT-free CAM-60 provenance comments intact."
+    },
+    {
+      "id": "US-002",
+      "title": "Extract shared subcommand arg-parse helper in index.ts",
+      "description": "As a maintainer of the cam CLI, I need the mirrored spec/plan/issue argument-parsing idioms in index.ts (help-flag detection, unknown-option rejection, single-positional enforcement) factored into one shared helper so that new subcommands stop cloning the parse block (the regression class that raised the dup ratchet at the CAM-107 ship) and the ratchet holds at 4.",
+      "acceptanceCriteria": [
+        "index.ts defines a shared subcommand arg-parse helper named parseSubcommandArgs exactly once, and parseSpecArgs, parsePlanArgs, and parseIssueArgs each use it for their shared idioms. [oracle: test $(grep -c 'parseSubcommandArgs' index.ts) -ge 4]",
+        "Behavior unchanged: all existing parser and dispatch tests pass without modification. [oracle: bun test test/plan.test.ts test/issue.test.ts test/issue-dispatch.test.ts test/commands/spec.test.ts]",
+        "The --permission-mode invariant holds: no parser registers that flag. [oracle: bun test test/no-permission-mode-flag.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: index.ts (parseIssueArgs ~L723, parsePlanArgs ~L827, parseSpecArgs ~L896) plus the parser tests only if assertions must move (prefer zero test edits). The helper name parseSubcommandArgs is the greppable contract; keep the helper INSIDE index.ts (the grill spec says 'extrair em index.ts') and keep parseIssueArgs/parsePlanArgs/parseSpecArgs exported from index.ts because tests import them from there. Shared idioms to factor: --help/-h detection, unknown-option printError-and-return-null, too-many-arguments printError-and-return-null, single-positional capture. Error message strings are asserted by tests; keep them byte-identical. NEVER add --permission-mode (test/no-permission-mode-flag.test.ts greps index.ts for the literal). Context drift note: jscpd no longer flags index.ts today (the parsers diverged since the issue was filed: issue grew list/close/abandon modes, spec grew write-docs/persist); this story is spec-mandated hardening against the recurrence class, so keep it behavior-preserving and minimal, no parser redesign."
+    },
+    {
+      "id": "US-003",
+      "title": "Ratchet the jscpd threshold down to 4",
+      "description": "As the operator of the ship-hygiene gate, I need the .jscpd.json threshold lowered from 6 back to 4 so that the tracked-debt raises from the CAM-107 ship (4 to 5) and CAM-122 (5 to 6) are paid down and the dup ratchet is tight again.",
+      "acceptanceCriteria": [
+        "The .jscpd.json threshold is 4. [oracle: jq -e '.threshold == 4' .jscpd.json]",
+        "The dup gate is green at threshold 4. [oracle: bunx jscpd@5 --config .jscpd.json src scripts]",
+        "The full quality spine is green. [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "File: .jscpd.json (threshold field only; do not touch reporters or ignore). Context drift: the issue spec says lower '5 pra 4', but main raised 5 to 6 at CAM-122 (commit 8936a62) after filing; the settled intent is the down-only ratchet to 4, so change 6 to 4. Measured 2026-07-08 on main: 3.52% duplicated lines (4.77% tokens) on src+scripts, so 4 already passes before dedup and US-001/US-002 add headroom; still land this story LAST so the gate is proven green on the deduped tree. jscpd v5 with reporters:['threshold'] compares the duplicated-LINES percentage and exits nonzero above threshold (verified empirically). The gate command is pinned by test/check-all.test.ts (bunx jscpd@5 --config .jscpd.json src scripts); do not change it. Lowering the threshold is the always-allowed ratchet direction, no tracker ref needed."
+    }
+  ]
+}
