@@ -1,0 +1,9 @@
+{
+  "id": "CAM-217",
+  "title": "cycle-close recycle drift: --cycle-close inexistente + recycle so via context-backstop",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T14:00:39.686Z",
+  "description": "Descoberto no ship do CAM-215 (2026-07-08). Duas facetas de um mesmo gap no self-handoff/recycle do orquestrador. (1) DOC DRIFT: a secao Self-handoff lifecycle do subagent-orchestrator.md (e a copia templates/agents/ e o embed _generated.ts) manda o orquestrador disparar cam journal append --cycle-close para appendar o journal E armar o recycle marker num unico call. Esse flag NAO existe: src/commands/journal.ts parseia apenas --force. Quem emite CAM_ORCH_HANDOFF_DUE=true e o plain cam journal append. (2) COMPORTAMENTO: como o self-trigger nao existe, o recycle no cycle-boundary nunca e armado pelo orquestrador; o unico arm funcional e o context-backstop do orch-recycle-watch (CAM-163) a ~80% da janela. Ou seja, o invariante one-PR-per-session (recycle no fim do ciclo) esta quebrado: o recycle so dispara sob pressao de contexto, nao no boundary. Design pro grill: (a) alinhar o doc a realidade (documentar que plain append emite HANDOFF_DUE e o orquestrador escreve o handoff, e o recycle e armado pelo watcher), vs (b) RECOMENDADO: implementar de fato o arm no cycle-close (o orquestrador, apos escrever o handoff em HANDOFF_DUE, arma o ORCH_RECYCLE_MARKER via um comando deterministico) para o recycle acontecer no boundary como o invariante pede, com o context-backstop como rede secundaria. Gotcha: subagent-orchestrator.md e dual-copy (.claude/agents/ e templates/agents/) mais embed via bun run embed-vendor. Family do CAM-215/CAM-216 (silent e misleading paths no plan/handoff flow). Requer /cam-spec antes de /cam-plan."
+}
