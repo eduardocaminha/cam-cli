@@ -1,0 +1,69 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-128-cam108-review-suggestions",
+  "description": "Resolve the 3 non-blocking SUGGESTIONs from the CAM-108 review (PR #87): unify the triage warnings source between the no-op and commit paths, refactor runKahn out of the biome noExcessiveCognitiveComplexity suppression, and make the never-read RunTriageOptions.clock optional.",
+  "issueNumber": 128,
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "@biomejs/biome",
+      "url": "https://biomejs.dev/linter/rules/no-excessive-cognitive-complexity/",
+      "version": "^2.5.1",
+      "fetchedAt": "2026-07-08T00:00:00Z",
+      "summary": "Rule lint/complexity/noExcessiveCognitiveComplexity defaults to maxAllowedComplexity 15 (range 1-254); loops, conditionals and nesting increment the score. No 2.x breaking changes for this rule; repo root config enables it at level error, so removing the rank.ts override enforces the default budget on runKahn.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Unify triage warnings source between no-op and commit paths",
+      "description": "As a cam operator, I need `cam triage` to print the same warnings whether or not ranks changed, so that cross-stage blocker warnings (from runGraphGate) and WSJF-computation warnings (from rankIssues) are never silently dropped by one of the two code paths.",
+      "acceptanceCriteria": [
+        "runTriage builds one unified warnings list (gateResult.warnings followed by rankIssues warnings) and passes that same list to printTriageOutput on BOTH the no-op path (changed === 0) and the commit path. [oracle: bun test test/triage.test.ts]",
+        "A test exercises a backlog that yields at least one gate warning and one rank warning and asserts both warning lines appear in the output of a no-op run AND of a commit run. [oracle: bun test test/triage.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/triage.ts (the asymmetry: step 4 no-op at ~line 282 prints gateResult.warnings, step 7 commit path at ~line 295 prints the rankIssues warnings), test/triage.test.ts (currently has NO warning assertions; add them here). The two warning sources are semantically distinct: gate warnings are cross-stage blocker notices from runGraphGate (src/issues/gate.ts, ok:true carries warnings[]), rank warnings are WSJF-computation problems from rankIssues (src/issues/rank.ts computeWsjf). Unify by concatenating both on both paths; do not drop either source. Gotchas: codebase uses tab indentation; TS strict with noUncheckedIndexedAccess (array access is T | undefined); tests inject spawnFn fakes, never a real git binary. Re-check the module-header flow comment in triage.ts and update step 6/9 wording if it names the warnings source."
+    },
+    {
+      "id": "US-002",
+      "title": "Make RunTriageOptions.clock optional, mirroring the unused-clock command pattern",
+      "description": "As a cam-cli maintainer, I need RunTriageOptions.clock to stop being a required-but-never-read dependency so that the triage interface follows the codebase convention (clock?: ClockFn when the command does not consume it, as in src/commands/spec.ts) and callers are not forced to inject dead wiring.",
+      "acceptanceCriteria": [
+        "RunTriageOptions.clock is declared optional (clock?: ClockFn) and its doc comment no longer claims it is required or reserved-for-future. [oracle: grep -q 'clock?: ClockFn' src/commands/triage.ts]",
+        "dispatchTriage in index.ts no longer injects clock into runTriage; the only remaining 'clock: () => new Date().toISOString()' literal in index.ts is the non-triage one. [oracle: test \"$(grep -c 'clock: () => new Date().toISOString()' index.ts)\" = \"1\"]",
+        "Test call sites in test/triage.test.ts no longer pass the dead clock argument. [oracle: ! grep -q 'clock:' test/triage.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/triage.ts (RunTriageOptions at ~lines 63-77; clock declared at ~line 72, never read inside runTriage), index.ts (dispatchTriage ~lines 1679-1697; the triage clock injection is at ~line 1692; a DIFFERENT clock injection at ~line 1536 belongs to another dispatcher and must NOT be touched), test/triage.test.ts (~8 call sites pass clock: () => '2026-06-28T12:00:00.000Z'). Pattern to mirror: src/commands/spec.ts declares clock?: ClockFn. Keep the exported ClockFn type alias (it is part of the module's public surface and re-exported conventions). The spec settled 'optional or used'; runTriage has no timestamp need today, so optional is the surgical choice; do not invent a use. Gotcha: writeFile in the same options block is the precedent for a retained-but-optional injectable."
+    },
+    {
+      "id": "US-003",
+      "title": "Refactor runKahn under the cognitive-complexity budget and drop the rank.ts biome override",
+      "description": "As a cam-cli maintainer, I need runKahn in src/issues/rank.ts refactored so its cognitive complexity fits the global noExcessiveCognitiveComplexity budget (default maxAllowedComplexity 15, level error), so that the per-file suppression in biome.json can be removed and rank.ts is linted like the rest of the codebase.",
+      "acceptanceCriteria": [
+        "biome.json contains no override entry for src/issues/rank.ts. [oracle: ! grep -q 'src/issues/rank.ts' biome.json]",
+        "Lint passes with the rule enforced globally (bunx biome lint --error-on-warnings). [oracle: bun run lint]",
+        "Ranking behavior is unchanged: existing rank tests pass with no assertion changes. [oracle: bun test test/issues/rank.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/issues/rank.ts (runKahn at lines 108-142: while(true) + layer collection loop + sort comparator + drain loop with nested conditionals drive the score), biome.json (remove ONLY the src/issues/rank.ts override block at ~lines 204-213; leave every other override untouched), test/issues/rank.test.ts (behavior lock; run before and after the refactor). Refactor by extracting small pure helpers (e.g. collect zero-in-degree layer, sort layer, drain layer) with no I/O. Invariants to preserve exactly: dense 1-based ranks; layer tie-break is WSJF descending then numericIdSuffix ascending; residual keys left in mutableInDegree after return are the cycle members (rankIssues reads them into residualIds, consumed by the graph gate). Gotchas: noExcessiveLinesPerFunction maxLines 80 also applies globally, keep helpers small; noUncheckedIndexedAccess makes Map.get return T | undefined, guard as the current code does; tab indentation."
+    }
+  ]
+}
