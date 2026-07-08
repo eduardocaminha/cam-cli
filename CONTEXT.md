@@ -64,3 +64,6 @@ The deterministic gate the sidecar runs before dispatching a plan phase: git che
 
 **durable surfacing marker**:
 A runtime JSON file the sidecar writes on a silent terminal state (ship stalled, plan escalated, plan preflight failed) so a recycled orchestrator surfaces it at boot as an opening blocker. The pattern is a triad: a durable file, a boot read, and a best-effort pane notify. The file is the source of truth because the notify is a no-op when the orchestrator pane is gone.
+
+**orchestrator self-handoff**:
+The mechanism by which the long-lived cam orchestrator hands its accumulated context to a fresh copy of itself at a cycle boundary, instead of degrading as its context window fills. At cycle close the orchestrator writes a handoff file and arms a recycle marker via cam journal append --cycle-close; a recycle watcher terminates the stale session and the wrapper respawns a fresh orchestrator that rehydrates from the consumed handoff. A context-occupancy backstop (around 80 percent of the window) arms the same recycle autonomously as a secondary trigger. Plain cam journal append signals that a handoff is due but does not arm the recycle.
