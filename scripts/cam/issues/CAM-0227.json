@@ -1,0 +1,9 @@
+{
+  "id": "CAM-227",
+  "title": "Template do orquestrador: Write em disallowedTools contradiz o corpo + enforcement advisory",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T23:05:46.492Z",
+  "description": "templates/agents/subagent-orchestrator.md omite Write de tools: e lista em disallowedTools:, mas o corpo exige Write the handoff first -> .claude/.cam-orch-handoff.json (L339). A copia .claude/ concede Write (drift entre copias, mesmo commit). Severidade mitigada mas real: o orquestrador e spawnado SEM --agent (run.ts:255, setup.ts:443/520), entao o frontmatter dele NUNCA e enforced em runtime (advisory only); porem a declaracao contraditoria pode induzir o modelo downstream a se auto-restringir e matar o self-handoff (exit 3 em loop). Fix minimo: mover Write pra tools: no template + re-embed. Decisao adjacente: passar a spawnar o orquestrador com --agent pra enforce de verdade, ou documentar explicitamente que o frontmatter do orquestrador e advisory. Gap de guard relacionado: vendor/check-agent-frontmatter.ts valida estrutura mas nao compara copias nem valida conteudo de tools vs corpo; nada pega essa classe de drift. Excess grants achados na mesma auditoria (cortar junto se couber cirurgico): orquestrador WebFetch (nunca usa; Linear e curl via Bash, GitHub e gh), implementer WebSearch (corpo so usa WebFetch) e NotebookEdit (unico agente que concede, em CLI Bun sem notebooks). Origem: matriz de ferramentas 2026-07-08."
+}
