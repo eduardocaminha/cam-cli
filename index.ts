@@ -1689,7 +1689,6 @@ export function dispatchTriage(deps?: TriageDispatchDeps): number {
 						...(opts.input !== undefined ? { input: opts.input } : {}),
 						stdio: 'pipe',
 					}) as SpawnSyncReturns<string>,
-				clock: () => new Date().toISOString(),
 			}));
 
 	const result = triageFn();

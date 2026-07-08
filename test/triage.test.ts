@@ -297,7 +297,6 @@ describe('runTriage: AC#1 gate-before-write ordering', () => {
 		const result = runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: (line) => stdout.push(line),
 		});
@@ -321,7 +320,6 @@ describe('runTriage: AC#1 gate-before-write ordering', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: () => {},
 		});
@@ -341,7 +339,6 @@ describe('runTriage: AC#1 gate-before-write ordering', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: () => {},
 		});
@@ -365,7 +362,6 @@ describe('runTriage: AC#2 idempotent no-op', () => {
 		const result = runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1_RANKED], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: () => {},
 		});
@@ -393,7 +389,6 @@ describe('runTriage: AC#3 sentinel output', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1], []),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: (line) => stdout.push(line),
 		});
@@ -408,7 +403,6 @@ describe('runTriage: AC#3 sentinel output', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1_RANKED], []),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: (line) => stdout.push(line),
 		});
@@ -423,7 +417,6 @@ describe('runTriage: AC#3 sentinel output', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_2, ISSUE_CAM_3], []),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: (line) => stdout.push(line),
 		});
@@ -441,7 +434,6 @@ describe('runTriage: AC#3 sentinel output', () => {
 			runTriage({
 				cwd: '/fake/repo',
 				spawnFn: makeOffMainSpawnFn([ISSUE_CAM_5], []),
-				clock: () => '2026-06-28T12:00:00.000Z',
 				writeFile: () => {},
 				writeStdout: (line) => stdout.push(line),
 			});
@@ -465,7 +457,6 @@ describe('runTriage: AC#4 gate hard-fail', () => {
 		const result = runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_2, ISSUE_CAM_3], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: () => {},
 		});
@@ -490,7 +481,6 @@ describe('runTriage: AC#4 gate hard-fail', () => {
 			result = runTriage({
 				cwd: '/fake/repo',
 				spawnFn: makeOffMainSpawnFn([ISSUE_CAM_5], calls),
-				clock: () => '2026-06-28T12:00:00.000Z',
 				writeFile: () => {},
 				writeStdout: () => {},
 			});
@@ -520,7 +510,6 @@ describe('runTriage: on-main path', () => {
 		const result = runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOnMainSpawnFn([ISSUE_CAM_1], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeStdout: () => {},
 		});
 
@@ -541,7 +530,6 @@ describe('runTriage: on-main path', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOnMainSpawnFn([ISSUE_CAM_1], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: () => {},
 		});
@@ -566,7 +554,6 @@ describe('runTriage: guard failures', () => {
 					if (args.includes('--abbrev-ref')) return okResult('HEAD\n');
 					return okResult();
 				},
-				clock: () => '',
 				writeStdout: () => {},
 			});
 		} finally {
@@ -596,7 +583,6 @@ describe('runTriage: guard failures', () => {
 					if (argsStr.includes('fetch')) return okResult();
 					return okResult(MAIN_SHA + '\n');
 				},
-				clock: () => '',
 				writeStdout: () => {},
 			});
 		} finally {
@@ -624,7 +610,6 @@ describe('runTriage: unified warnings source (US-001)', () => {
 				[ISSUE_CAM_30_RANKED, ISSUE_CAM_31, ISSUE_CAM_32_RANKED],
 				[],
 			),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: (line) => stdout.push(line),
 		});
@@ -644,7 +629,6 @@ describe('runTriage: unified warnings source (US-001)', () => {
 		const result = runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_30, ISSUE_CAM_31, ISSUE_CAM_32], []),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: (line) => stdout.push(line),
 		});

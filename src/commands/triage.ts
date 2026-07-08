@@ -68,11 +68,10 @@ export interface RunTriageOptions {
 	cwd: string;
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
-	/** Injectable clock -- returns ISO 8601 timestamp (unused today; reserved for
-	 *  future timestamped commit messages).  Pass `() => new Date().toISOString()`
-	 *  in production; tests inject a fixed value.
+	/** Injectable clock -- returns ISO 8601 timestamp.  Not read by runTriage today;
+	 *  optional so callers are not forced to inject dead wiring.
 	 */
-	clock: ClockFn;
+	clock?: ClockFn;
 	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
 	writeFile?: (path: string, text: string) => void;
 	/** Injectable stdout writer.  Defaults to process.stdout.write. */
