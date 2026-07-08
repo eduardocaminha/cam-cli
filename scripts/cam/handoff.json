@@ -1,0 +1,16 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Document --cycle-close and the exit-code contract in JOURNAL_HELP with a static help-text test" },
+  "branchName": "cam/pr-217-journal-cycle-close-help",
+  "timestamp": "2026-07-08T14:34:33Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "index.ts",
+    "test/commands/journal-append.test.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 done: JOURNAL_HELP (index.ts, JOURNAL_HELP block ~line 345) now lists --cycle-close in the usage line and Options section, and the Behaviour body gained a non-restructuring appended 'Exit-code contract:' paragraph (exit 1 / exit 3 / exit 4) after the existing numbered items 1-8 (kept verbatim, per the story's 'extend, do not restructure' note). printFatalHint's usage string (index.ts ~line 1253) was kept in sync. Gotcha discovered and logged to patterns.md: renderHelp's NAME_COL_WIDTH (24 chars) padding silently disappears once a HelpEntry.name is >= 24 chars, so I reverted an attempted Subcommands-entry rename back to the original 'append [--force]' rather than ship a glitched render -- always eyeball `bun index.ts <cmd> --help` after editing a *_HELP block, not just the source diff. US-002 (next, priority 2) is a doc-only story on a DIFFERENT surface (.claude/agents/subagent-orchestrator.md + templates/agents/subagent-orchestrator.md, the exit-3 refuse-to-arm case next to the existing exit-4 note at line 339 of both copies) and requires bun run embed-vendor + embed-vendor:check since it touches templates/; it does not touch index.ts or JOURNAL_HELP at all, so there is no overlap with this story's diff.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal help-text/prose change (JOURNAL_HELP in index.ts) plus a new static test using the existing bun:test + process.stdout.write interception pattern already established by ISSUE_HELP's test. No external library API surface was touched." }
+  ]
+}
