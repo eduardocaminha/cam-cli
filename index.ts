@@ -345,7 +345,7 @@ const ISSUE_HELP = renderHelp({
 const JOURNAL_HELP = renderHelp({
 	title: 'cam journal',
 	tagline: 'Append a structured cycle entry to scripts/cam/journal.md on main',
-	usage: 'cam journal append [--force]  (reads JSON from stdin)',
+	usage: 'cam journal append [--force] [--cycle-close]  (reads JSON from stdin)',
 	sections: [
 		{
 			heading: 'Subcommands',
@@ -362,6 +362,11 @@ const JOURNAL_HELP = renderHelp({
 				{
 					name: '--force',
 					description: 'Replace an existing entry with the same cycleId instead of rejecting as a duplicate',
+				},
+				{
+					name: '--cycle-close',
+					description:
+						'Append the cycle entry AND arm the orchestrator recycle marker; requires the handoff file (.claude/.cam-orch-handoff.json) to be present and a live recycle watcher',
 				},
 			],
 		},
@@ -384,7 +389,17 @@ const JOURNAL_HELP = renderHelp({
 				'   the working tree or HEAD branch.\n' +
 				'7. Best-effort push to origin main (non-zero exit is logged, not fatal).\n' +
 				'8. On success: prints `CAM_JOURNAL_APPENDED=<cycleId> sha=<commit-sha>`\n' +
-				'   and exits 0.',
+				'   and exits 0.\n' +
+				'\n' +
+				'Exit-code contract:\n' +
+				'  exit 1  invalid JSON on stdin, or a duplicate cycleId rejected without\n' +
+				'          --force.\n' +
+				'  exit 3  --cycle-close requested but the handoff file is absent\n' +
+				'          (.claude/.cam-orch-handoff.json); write the cycle-close handoff\n' +
+				'          before arming the recycle marker.\n' +
+				'  exit 4  --cycle-close requested but no live recycle watcher was found\n' +
+				'          (.claude/.cam-watcher.pid absent or the process is dead); use\n' +
+				'          /exit manually or start `cam run` to restart the watcher.',
 		},
 	],
 	footer:
@@ -1250,7 +1265,7 @@ export function parseJournalArgs(args: string[]): ParsedJournalArgs | null {
 	}
 	const subCommand = args[0];
 	if (subCommand !== 'append') {
-		printFatalHint('Usage: cam journal append [--force]  (reads JSON from stdin)');
+		printFatalHint('Usage: cam journal append [--force] [--cycle-close]  (reads JSON from stdin)');
 		return null;
 	}
 	const rest = args.slice(1);

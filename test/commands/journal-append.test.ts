@@ -27,7 +27,7 @@ import {
 	type JournalCycleEntry,
 	type AppendJournalEntryOnMainValidationError,
 } from '../../src/commands/journal.ts';
-import { dispatchJournal, parseJournalArgs } from '../../index.ts';
+import { dispatchJournal, parseJournalArgs, main } from '../../index.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -1216,4 +1216,34 @@ test('US-002 AC4: --force replaces body, preserves other entries', () => {
 	expect(content).toContain('Other entry.');
 	// Original summary gone
 	expect(content).not.toContain('Original summary.');
+});
+
+// ---------------------------------------------------------------------------
+// CAM-217 US-001: JOURNAL_HELP documents --cycle-close and the exit-code
+// contract (static help-text check, no runtime behavior change).
+// ---------------------------------------------------------------------------
+
+describe('JOURNAL_HELP block', () => {
+	test('cam journal --help output documents --cycle-close and the exit-code contract', async () => {
+		const stdoutChunks: string[] = [];
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array) => {
+			stdoutChunks.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+			return true;
+		}) as typeof process.stdout.write;
+
+		let exitCode: number | undefined;
+		try {
+			exitCode = await main(['bun', 'index.ts', 'journal', '--help']);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+
+		const output = stdoutChunks.join('');
+		expect(exitCode).toBe(0);
+		expect(output).toContain('--cycle-close');
+		expect(output.toLowerCase()).toContain('recycle marker');
+		expect(output).toContain('exit 3');
+		expect(output).toContain('exit 4');
+	});
 });

@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.89.0] - 2026-07-08
+
+### Added
+
+- US-002 - Add the exit-3 refuse-to-arm case to subagent-orchestrator.md (both copies) and regenerate the embed
+- US-001 - Document --cycle-close and the exit-code contract in JOURNAL_HELP with a static help-text test
+
 ## [0.88.0] - 2026-07-08
 
 ### Added
