@@ -111,6 +111,45 @@ const ISSUE_CAM_5: IssueEntry = {
 	wsjf: { value: 1, timeCriticality: 1, riskReduction: 1, jobSize: 1 },
 };
 
+// US-001 fixtures: a backlog that yields BOTH a gate warning (cross-stage
+// blocker) and a rank warning (missing wsjf), used to prove runTriage prints
+// the same unified warnings list on the no-op path and the commit path.
+
+/** Specified+open issue blocked by an idea-stage issue -> gate (cross-stage) warning. */
+const ISSUE_CAM_30: IssueEntry = {
+	id: 'CAM-30',
+	title: 'Blocked by idea-stage issue',
+	stage: 'specified',
+	status: 'open',
+	blockedBy: ['CAM-31'],
+	createdAt: '2026-06-28T00:00:00Z',
+	wsjf: { value: 3, timeCriticality: 2, riskReduction: 1, jobSize: 2 },
+};
+/** Same issue, already ranked=1 (matches computed rank; used for the no-op fixture). */
+const ISSUE_CAM_30_RANKED: IssueEntry = { ...ISSUE_CAM_30, rank: 1 };
+
+/** Idea-stage blocker: out-of-universe and not shipped -> triggers the gate warning. */
+const ISSUE_CAM_31: IssueEntry = {
+	id: 'CAM-31',
+	title: 'Idea-stage blocker',
+	stage: 'idea',
+	status: 'open',
+	blockedBy: [],
+	createdAt: '2026-06-28T00:00:00Z',
+};
+
+/** Specified+open issue with no wsjf field -> triggers the rank (WSJF-computation) warning. */
+const ISSUE_CAM_32: IssueEntry = {
+	id: 'CAM-32',
+	title: 'Issue with no wsjf score',
+	stage: 'specified',
+	status: 'open',
+	blockedBy: [],
+	createdAt: '2026-06-28T00:00:00Z',
+};
+/** Same issue, already ranked=2 (matches computed rank; used for the no-op fixture). */
+const ISSUE_CAM_32_RANKED: IssueEntry = { ...ISSUE_CAM_32, rank: 2 };
+
 /** Serialise a single IssueEntry to JSON (the on-disk file format). */
 function toJson(entry: IssueEntry): string {
 	return JSON.stringify(entry, null, 2) + '\n';
@@ -258,7 +297,6 @@ describe('runTriage: AC#1 gate-before-write ordering', () => {
 		const result = runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: (line) => stdout.push(line),
 		});
@@ -282,7 +320,6 @@ describe('runTriage: AC#1 gate-before-write ordering', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: () => {},
 		});
@@ -302,7 +339,6 @@ describe('runTriage: AC#1 gate-before-write ordering', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: () => {},
 		});
@@ -326,7 +362,6 @@ describe('runTriage: AC#2 idempotent no-op', () => {
 		const result = runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1_RANKED], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: () => {},
 		});
@@ -354,7 +389,6 @@ describe('runTriage: AC#3 sentinel output', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1], []),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: (line) => stdout.push(line),
 		});
@@ -369,7 +403,6 @@ describe('runTriage: AC#3 sentinel output', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1_RANKED], []),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: (line) => stdout.push(line),
 		});
@@ -384,7 +417,6 @@ describe('runTriage: AC#3 sentinel output', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_2, ISSUE_CAM_3], []),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: (line) => stdout.push(line),
 		});
@@ -402,7 +434,6 @@ describe('runTriage: AC#3 sentinel output', () => {
 			runTriage({
 				cwd: '/fake/repo',
 				spawnFn: makeOffMainSpawnFn([ISSUE_CAM_5], []),
-				clock: () => '2026-06-28T12:00:00.000Z',
 				writeFile: () => {},
 				writeStdout: (line) => stdout.push(line),
 			});
@@ -426,7 +457,6 @@ describe('runTriage: AC#4 gate hard-fail', () => {
 		const result = runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_2, ISSUE_CAM_3], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: () => {},
 		});
@@ -451,7 +481,6 @@ describe('runTriage: AC#4 gate hard-fail', () => {
 			result = runTriage({
 				cwd: '/fake/repo',
 				spawnFn: makeOffMainSpawnFn([ISSUE_CAM_5], calls),
-				clock: () => '2026-06-28T12:00:00.000Z',
 				writeFile: () => {},
 				writeStdout: () => {},
 			});
@@ -481,7 +510,6 @@ describe('runTriage: on-main path', () => {
 		const result = runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOnMainSpawnFn([ISSUE_CAM_1], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeStdout: () => {},
 		});
 
@@ -502,7 +530,6 @@ describe('runTriage: on-main path', () => {
 		runTriage({
 			cwd: '/fake/repo',
 			spawnFn: makeOnMainSpawnFn([ISSUE_CAM_1], calls),
-			clock: () => '2026-06-28T12:00:00.000Z',
 			writeFile: () => {},
 			writeStdout: () => {},
 		});
@@ -527,7 +554,6 @@ describe('runTriage: guard failures', () => {
 					if (args.includes('--abbrev-ref')) return okResult('HEAD\n');
 					return okResult();
 				},
-				clock: () => '',
 				writeStdout: () => {},
 			});
 		} finally {
@@ -557,7 +583,6 @@ describe('runTriage: guard failures', () => {
 					if (argsStr.includes('fetch')) return okResult();
 					return okResult(MAIN_SHA + '\n');
 				},
-				clock: () => '',
 				writeStdout: () => {},
 			});
 		} finally {
@@ -568,6 +593,53 @@ describe('runTriage: guard failures', () => {
 		expect(result.kind).toBe('guard');
 		if (result.kind !== 'guard') return;
 		expect(result.reason).toBe('diverged');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001: unified warnings source (gate + rank) on BOTH the no-op and commit paths
+// ---------------------------------------------------------------------------
+
+describe('runTriage: unified warnings source (US-001)', () => {
+	test('no-op run prints both the gate warning and the rank warning', () => {
+		const stdout: string[] = [];
+
+		const result = runTriage({
+			cwd: '/fake/repo',
+			spawnFn: makeOffMainSpawnFn(
+				[ISSUE_CAM_30_RANKED, ISSUE_CAM_31, ISSUE_CAM_32_RANKED],
+				[],
+			),
+			writeFile: () => {},
+			writeStdout: (line) => stdout.push(line),
+		});
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.changed).toBe(0);
+
+		const joined = stdout.join('');
+		expect(joined).toContain('warning: Cross-stage blocker: CAM-30 is blocked by CAM-31');
+		expect(joined).toContain('warning: CAM-32: wsjf field absent');
+	});
+
+	test('commit run prints both the gate warning and the rank warning', () => {
+		const stdout: string[] = [];
+
+		const result = runTriage({
+			cwd: '/fake/repo',
+			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_30, ISSUE_CAM_31, ISSUE_CAM_32], []),
+			writeFile: () => {},
+			writeStdout: (line) => stdout.push(line),
+		});
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.changed).toBeGreaterThan(0);
+
+		const joined = stdout.join('');
+		expect(joined).toContain('warning: Cross-stage blocker: CAM-30 is blocked by CAM-31');
+		expect(joined).toContain('warning: CAM-32: wsjf field absent');
 	});
 });
 

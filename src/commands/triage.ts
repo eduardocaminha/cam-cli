@@ -20,13 +20,16 @@
 //   2. readBacklogFromMain (ls-tree + cat-file, never working-tree).
 //   3. runGraphGate (US-003) -- pure check, no I/O.  Gate MUST run before any write.
 //   4. rankIssues (US-002) -- compute dense 1-based ranks.
-//   5. Diff each ranked issue vs its prior rank (up / down / new / unchanged).
-//   6. If no rank changed: print informational output + sentinel (changed=0 sha=none),
+//   5. Build the unified warnings list: gateResult.warnings (cross-stage blockers)
+//      followed by rankIssues warnings (WSJF-computation problems).  Both paths
+//      below print this same list -- neither source is ever silently dropped.
+//   6. Diff each ranked issue vs its prior rank (up / down / new / unchanged).
+//   7. If no rank changed: print informational output + sentinel (changed=0 sha=none),
 //      no commit (idempotent no-op).
-//   7. Write rank onto each CHANGED {specified,open} entry as a MULTI-FILE
+//   8. Write rank onto each CHANGED {specified,open} entry as a MULTI-FILE
 //      atomic commit (one commit, N files).
-//   8. Best-effort push origin main.
-//   9. Print ranked order, diff, warnings, sentinel.
+//   9. Best-effort push origin main.
+//   10. Print ranked order, diff, unified warnings, sentinel.
 //
 // All external I/O is injectable for unit testing without a real git binary.
 //
@@ -65,11 +68,10 @@ export interface RunTriageOptions {
 	cwd: string;
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
-	/** Injectable clock -- returns ISO 8601 timestamp (unused today; reserved for
-	 *  future timestamped commit messages).  Pass `() => new Date().toISOString()`
-	 *  in production; tests inject a fixed value.
+	/** Injectable clock -- returns ISO 8601 timestamp.  Not read by runTriage today;
+	 *  optional so callers are not forced to inject dead wiring.
 	 */
-	clock: ClockFn;
+	clock?: ClockFn;
 	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
 	writeFile?: (path: string, text: string) => void;
 	/** Injectable stdout writer.  Defaults to process.stdout.write. */
@@ -273,13 +275,18 @@ export function runTriage(options: RunTriageOptions): TriageResult {
 	}
 
 	// 3. Compute dense ranks and diff vs prior ranks.
-	const { ranked, warnings } = rankIssues(allIssues);
+	const { ranked, warnings: rankWarnings } = rankIssues(allIssues);
 	const issueByIdMap = new Map<string, IssueEntry>(allIssues.map((e) => [e.id, e]));
 	const { changed, diffLines, changedFiles } = computeRankDiff(ranked, issueByIdMap);
 
+	// Unified warnings list (gate warnings first, then rank warnings): both the
+	// no-op path and the commit path below print this SAME list, so neither
+	// source is ever silently dropped by one of the two code paths.
+	const warnings = [...gateResult.warnings, ...rankWarnings];
+
 	// 4. Idempotent no-op: if nothing changed, skip commit (AC#2).
 	if (changed === 0) {
-		printTriageOutput(writeStdout, ranked, diffLines, gateResult.warnings, 0, 'none');
+		printTriageOutput(writeStdout, ranked, diffLines, warnings, 0, 'none');
 		return { ok: true, ranked: ranked.length, changed: 0, sha: 'none' };
 	}
 

@@ -202,16 +202,6 @@
       }
     },
     {
-      "includes": ["src/issues/rank.ts"],
-      "linter": {
-        "rules": {
-          "complexity": {
-            "noExcessiveCognitiveComplexity": "off"
-          }
-        }
-      }
-    },
-    {
       "includes": ["src/transcript/usage.ts"],
       "linter": {
         "rules": {
