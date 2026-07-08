@@ -1,7 +1,7 @@
 {
   "id": "CAM-120",
   "title": "Dedup: jscpd subiu 4.0->5.0 no ship do CAM-107 (index.ts spec arg-parse + check-coverage/file-sizes)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-27T13:58:17.995Z",
