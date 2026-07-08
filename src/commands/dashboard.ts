@@ -40,6 +40,7 @@ import {
 	transcriptPathForSession,
 	type TranscriptUsage,
 } from "../transcript/usage.ts";
+import { readSidecarSessionStart } from "../supervisor/session-start.ts";
 
 // --- Constants -------------------------------------------------------------
 
@@ -201,6 +202,15 @@ export interface DashboardData {
 	 * (US-001). Undefined when absent (no review run yet or old prd.json).
 	 */
 	reviewLastVerdict?: string;
+	/**
+	 * Wall-clock start time of the current sidecar SESSION, in ms since epoch
+	 * (US-001, PR-83). Distinct from `startedAtMs`, which comes from the loop's state
+	 * file and resets on every fresh story-implementation cycle. Read from the
+	 * dedicated once-per-process marker the sidecar writes at startup
+	 * (`.claude/.cam-sidecar-session.json`, see `session-start.ts`). Undefined
+	 * when the marker is absent or unreadable (e.g. the sidecar has never run).
+	 */
+	sessionStartedAtMs?: number;
 }
 
 /**
@@ -432,6 +442,16 @@ export function readSnapshot(options: { cwd: string; nowMs: number; claudeDir?: 
 		if (typeof state.last_activity === "string" && state.last_activity.length > 0) {
 			data.lastActivity = state.last_activity;
 		}
+	}
+
+	// US-001 (PR-83): total-session elapsed, read from the dedicated once-per-process
+	// marker the sidecar writes at startup (project-local `.claude/`, NOT the
+	// `claudeDir` option above which points at the transcript home dir).
+	// Absent/unreadable marker leaves the field undefined without throwing.
+	const sessionStartIso = readSidecarSessionStart(join(cwd, ".claude"));
+	if (sessionStartIso !== null) {
+		const sessionStartMs = Date.parse(sessionStartIso);
+		if (Number.isFinite(sessionStartMs)) data.sessionStartedAtMs = sessionStartMs;
 	}
 
 	return data;

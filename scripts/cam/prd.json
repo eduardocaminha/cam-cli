@@ -30,7 +30,7 @@
         "Vendor drift check passes (mandatory if templates/ or vendor/ are touched by the chosen mechanism; trivially green otherwise). [oracle: bun run embed-vendor:check]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/sidecar.ts and/or src/supervisor/host.ts (startup seam), src/commands/dashboard.ts (DashboardData + readSnapshot), src/ui/Dashboard.tsx (SummaryPanel), test/dashboard.test.ts, test/supervisor/. Gotchas: the state file started_at is NOT the session start; it resets on a fresh loop (src/commands/next.ts:327 writes now when no parsed state). The supervisor lock (.claude/.cam-supervisor.lock, src/supervisor/lock.ts; wired at src/supervisor/host.ts:395-419) records startedAt at lock acquisition; verify it spans the whole sidecar session before reusing it. If it is re-acquired per cycle, persist a dedicated once-per-process record from the sidecar entrypoint instead. readSnapshot is shared by the legacy composeDashboard (test-only path) and the Ink app: add optional DashboardData fields so hand-built test fixtures stay valid; snapshotKey in the legacy path may stay unchanged. Ink tests: call installTerminalSizeMock() (test/helpers/mock-terminal-size.ts) and prefer waitForFrame polling over fixed ticks; disambiguate lastFrame() line matching when a substring appears in multiple sections (scripts/cam/patterns.md, 2026-07-07 bullets). formatWallClock lives in src/commands/status.ts. If a state-file frontmatter field is added, update templates/ and run bun run embed-vendor. Strict TS with noUncheckedIndexedAccess."
     },

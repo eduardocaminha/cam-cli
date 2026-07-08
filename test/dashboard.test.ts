@@ -38,6 +38,7 @@ import {
 } from '../src/commands/dashboard.ts';
 import { DashboardApp, STORY_TOKENS_PLACEHOLDER, selectionReducer, type SelectionState } from '../src/ui/Dashboard.tsx';
 import type { TranscriptUsage } from '../src/transcript/usage.ts';
+import { writeSidecarSessionStart } from '../src/supervisor/session-start.ts';
 import { flushInk, waitForFrame } from './helpers/flush-ink.ts';
 import { installTerminalSizeMock } from './helpers/mock-terminal-size.ts';
 
@@ -304,6 +305,42 @@ describe('readSnapshot', () => {
 			expect(snap.startedAtMs).toBe(0);
 			expect(snap.paused).toBe(false);
 			expect(snap.recent).toEqual([]);
+			// US-001 (PR-83): no sidecar session-start marker present -> undefined,
+			// never throws.
+			expect(snap.sessionStartedAtMs).toBeUndefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('sessionStartedAtMs is populated from the sidecar session-start marker and stays stable across state-file rewrites (US-001, PR-83)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-session-start-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeSidecarSessionStart(join(dir, '.claude'), '2026-04-28T20:00:00Z');
+			writeFileSync(
+				join(dir, '.claude', 'cam-loop.local.md'),
+				['---', 'active: true', 'iteration: 1', 'max_iterations: 30', 'started_at: "2026-04-28T22:00:00Z"', '---', ''].join(
+					'\n',
+				),
+			);
+
+			const first = readSnapshot({ cwd: dir, nowMs: Date.parse('2026-04-28T22:30:00Z') });
+			expect(first.sessionStartedAtMs).toBe(Date.parse('2026-04-28T20:00:00Z'));
+			expect(first.startedAtMs).toBe(Date.parse('2026-04-28T22:00:00Z'));
+
+			// Simulate a fresh loop start within the same sidecar session: the
+			// state file's started_at moves forward, but the session marker is
+			// untouched.
+			writeFileSync(
+				join(dir, '.claude', 'cam-loop.local.md'),
+				['---', 'active: true', 'iteration: 1', 'max_iterations: 30', 'started_at: "2026-04-28T23:00:00Z"', '---', ''].join(
+					'\n',
+				),
+			);
+			const second = readSnapshot({ cwd: dir, nowMs: Date.parse('2026-04-28T23:30:00Z') });
+			expect(second.sessionStartedAtMs).toBe(Date.parse('2026-04-28T20:00:00Z'));
+			expect(second.startedAtMs).toBe(Date.parse('2026-04-28T23:00:00Z'));
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -1110,6 +1147,54 @@ describe('DashboardApp Loop section per-story progress (US-002)', () => {
 		// Should show 5m (since last_activity), not 30m (since started_at).
 		expect(frame).toMatch(/5m/);
 		expect(frame).not.toMatch(/30m/);
+		unmount();
+	});
+
+	it('session row shows a muted placeholder when sessionStartedAtMs is unknown', () => {
+		const data = makeData({
+			idle: false,
+			paused: false,
+			startedAtMs: Date.parse('2026-04-28T22:00:00Z'),
+		});
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => data,
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		const sessionLine = frame.split('\n').find((line) => line.includes('session'));
+		expect(sessionLine).toBeDefined();
+		expect(sessionLine).toContain('—');
+		unmount();
+	});
+
+	it('session row shows total-session elapsed, distinct from the since row', () => {
+		// sessionStartedAtMs is 2 hours before nowMs; last_activity is 5 minutes
+		// before nowMs. The session row must show ~2h, the since row must show ~5m.
+		const nowMs = Date.parse('2026-04-28T22:30:00Z');
+		const data = makeData({
+			idle: false,
+			paused: false,
+			startedAtMs: Date.parse('2026-04-28T22:00:00Z'),
+			lastActivity: '2026-04-28T22:25:00Z', // 5m ago -> since row
+			sessionStartedAtMs: Date.parse('2026-04-28T20:30:00Z'), // 2h ago -> session row
+			nowMs,
+		});
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => data,
+				pollIntervalMs: 100_000,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		const lines = frame.split('\n');
+		const sinceLine = lines.find((line) => line.includes('since'));
+		const sessionLine = lines.find((line) => line.includes('session'));
+		expect(sinceLine).toBeDefined();
+		expect(sessionLine).toBeDefined();
+		expect(sinceLine).toMatch(/5m/);
+		expect(sessionLine).toMatch(/2h/);
 		unmount();
 	});
 });

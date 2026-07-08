@@ -1,0 +1,31 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Track sidecar session start and render total session elapsed in the dashboard header"
+  },
+  "branchName": "cam/pr-83-dashboard-session-cost-elapsed",
+  "timestamp": "2026-07-07T00:00:00Z",
+  "createdFiles": [
+    "src/supervisor/session-start.ts",
+    "test/supervisor/session-start.test.ts",
+    "test/commands/sidecar-session-start.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/commands/sidecar.ts",
+    "src/commands/dashboard.ts",
+    "src/ui/Dashboard.tsx",
+    "test/dashboard.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (session elapsed) is done. US-002 (session-cumulative worker-token total in the header) is next and lives in the same 'Loop' SummaryPanel: read the existing per-story token-usage machinery in src/transcript/usage.ts (renderTokensLine, readWorkerSessionMarker, parseTranscriptUsage) plus the event log (.claude/cam-worker-events.jsonl, 'tokens' kind events, see readWorkerTokens in src/supervisor/events.ts) to accumulate a session-cumulative total distinct from the existing per-run 'tokens' row (which shows the CURRENT orchestrator transcript's counts, not a summed session total). The new session-start marker written in this story (src/supervisor/session-start.ts, .claude/.cam-sidecar-session.json) is the natural boundary for 'since session start' accumulation if US-002 needs one -- read it via readSidecarSessionStart(join(cwd, '.claude')) rather than re-deriving session start a second way. Mirror this story's SummaryRow placement convention (state/story/progress/since/session/tokens/branch) when adding the new cost row.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Story only reused already-established internal patterns (node:fs readFileSync/writeFileSync mirroring sidecar-pid.ts, and existing Ink Section/SummaryRow/Text components already used for the since row); no new external API surface was introduced."
+    }
+  ]
+}

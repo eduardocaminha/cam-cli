@@ -360,6 +360,12 @@ function SummaryPanel({
 	const sinceDisplay = Number.isFinite(lastActivityMs)
 		? formatWallClock(Math.max(0, data.nowMs - lastActivityMs))
 		: elapsed;
+	// US-001 (PR-83): total-session elapsed, distinct from `since` (last-activity).
+	// Muted placeholder when the sidecar session-start marker is unknown.
+	const sessionDisplay =
+		data.sessionStartedAtMs !== undefined
+			? formatWallClock(Math.max(0, data.nowMs - data.sessionStartedAtMs))
+			: '—';
 	const storyLabel = data.currentStoryId
 		? `${data.currentStoryId}  ${data.currentStoryTitle}`
 		: data.idle
@@ -395,6 +401,9 @@ function SummaryPanel({
 			    count in the StatusIndicator and progress bar above. */}
 			<SummaryRow label="since">
 				<Text color={colors.muted}>{sinceDisplay}</Text>
+			</SummaryRow>
+			<SummaryRow label="session">
+				<Text color={colors.muted}>{sessionDisplay}</Text>
 			</SummaryRow>
 			{data.tokensInput !== undefined ? (
 				<SummaryRow label="tokens">
