@@ -1,26 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Extract shared ratchet-diff helpers for the check scripts"
+    "id": "US-002",
+    "title": "Extract shared subcommand arg-parse helper in index.ts"
   },
   "branchName": "cam/pr-120-jscpd-dedup-ratchet-down",
-  "timestamp": "2026-07-08T13:30:00Z",
-  "createdFiles": [
-    "scripts/ratchet-diff.ts"
-  ],
+  "timestamp": "2026-07-08T14:10:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "scripts/check-coverage.ts",
-    "scripts/check-file-sizes.ts",
+    "index.ts",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 shrank scripts/check-coverage.ts to 234 lines (ceiling 261) and scripts/check-file-sizes.ts to 181 lines (ceiling 209); both ceilings were left unchanged (never raise). scripts/ratchet-diff.ts (57 lines) is new and intentionally NOT added to scripts/file-size-budget.json (consistent with existing convention: not every scripts/*.ts has a budget entry, e.g. scripts/check-version-skips.ts). jscpd on src+scripts after this story: still passing at the current threshold (6); US-003 (lower threshold to 4) should re-measure after US-002 lands, per its own notes, since US-002 is the other dedup story. US-002 (extract parseSubcommandArgs in index.ts) is independent of this story's files (index.ts untouched here) and can proceed without any dependency on this change.",
+  "nextStoryContext": "US-002 extracted parseSubcommandArgs (help/-h detection, unknown-option rejection, too-many-arguments rejection, single-positional capture) and rewired parseIssueArgs (free-text fallthrough only), parsePlanArgs, and parseSpecArgs to use it. index.ts grew from 2019 to 2049 lines (no file-size budget entry for index.ts, so no ceiling concern). All previously byte-identical printError message strings are unchanged; only the control-flow duplication was removed. Re-measured jscpd on src+scripts after this story: 3.44% duplicated lines (80 clones), well under the current threshold of 6 in .jscpd.json. US-003 (lower the jscpd threshold to 4) should re-measure fresh right before editing .jscpd.json -- 3.44% comfortably clears a threshold of 4, so US-003 likely needs no further dedup work, just the config change plus a check that check:all (which runs jscpd with reporters:[threshold]) still exits ok at the new value.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal refactor: moved existing node:child_process spawnSync usage (already present, no new library) into a shared module. No new external API surface introduced."
+      "summary": "Pure internal TS refactor of index.ts arg-parsing functions; no new external API surface, no library calls added or changed."
     }
   ]
 }

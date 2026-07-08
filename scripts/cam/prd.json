@@ -44,7 +44,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (parseIssueArgs ~L723, parsePlanArgs ~L827, parseSpecArgs ~L896) plus the parser tests only if assertions must move (prefer zero test edits). The helper name parseSubcommandArgs is the greppable contract; keep the helper INSIDE index.ts (the grill spec says 'extrair em index.ts') and keep parseIssueArgs/parsePlanArgs/parseSpecArgs exported from index.ts because tests import them from there. Shared idioms to factor: --help/-h detection, unknown-option printError-and-return-null, too-many-arguments printError-and-return-null, single-positional capture. Error message strings are asserted by tests; keep them byte-identical. NEVER add --permission-mode (test/no-permission-mode-flag.test.ts greps index.ts for the literal). Context drift note: jscpd no longer flags index.ts today (the parsers diverged since the issue was filed: issue grew list/close/abandon modes, spec grew write-docs/persist); this story is spec-mandated hardening against the recurrence class, so keep it behavior-preserving and minimal, no parser redesign."
     },
