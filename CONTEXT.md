@@ -76,3 +76,9 @@ The lifecycle-progress axis of an issue: idea, specified, planned, or shipped. I
 
 **issue status**:
 The disposition axis of an issue: open or abandoned. Orthogonal to stage. An abandoned issue keeps its last stage as history and is excluded from every active backlog view regardless of that stage.
+
+**invariant**:
+A durable, always-applicable project rule a worker must obey on every story (e.g. runtime choice, type-safety guards, quality gates). Invariants are curated and live in the auto-loaded agent instructions, reaching every worker with no extra read.
+
+**pattern**:
+A reusable codebase insight, library quirk, or gotcha recorded for future reference. Patterns are append-only reference material consulted on demand (grep by the subsystem a story touches), not loaded in full at story start.
