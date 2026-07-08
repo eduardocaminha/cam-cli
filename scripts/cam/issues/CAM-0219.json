@@ -1,0 +1,9 @@
+{
+  "id": "CAM-219",
+  "title": "build-release smoke emits false-positive Resend-not-configured warning",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T17:02:34.739Z",
+  "description": "`bun run build:release --install` runs the hermetic init soft-check (`cam init`) in a throwaway `mktemp -d` cwd (scripts/build-release.sh:110-114) with plan_approval defaulting to `auto` and no `resend_recipient` in the fresh temp project.toml. `warnIfResendUnconfigured` (src/commands/setup.ts:264, called unconditionally at setup.ts:648) then prints `plan_approval is auto but Resend is not configured: non-convergence failures will be SILENT` on EVERY build. False positive about the throwaway project: the real cam-cli project IS configured (RESEND_API_KEY in gitignored .env + resend_recipient in project.toml). Cost: erodes the warning's signal and would mask a legitimate warning in build output. FIX (chosen A): add `--plan-approval operator` to the hermetic init invocation at build-release.sh:114 (already passes --merge-mode immediate --issue-system none --existing --no-tmux); the operator branch never hits the auto+no-resend condition, so no warning, and the smoke still verifies the binary runs + soft-checks the validator. REJECTED (B): gating warnIfResendUnconfigured by interactivity/context — a real non-interactive `cam init` in auto mode without Resend SHOULD still warn, so product-side suppression risks hiding real misconfig. P3 (cosmetic; build passes, init exits 0). Defer to the product-release hardening pass. Acceptance: `bun run build:release --install` emits no Resend warning during the init smoke; the smoke still exits 0 and installs the binary."
+}
