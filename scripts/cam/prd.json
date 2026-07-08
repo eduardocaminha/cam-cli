@@ -22,7 +22,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/cam/CLAUDE.md, templates/scripts/cam/CLAUDE.md, plus regenerated embed output (bun run embed-vendor). GOTCHAS from the issue spec: (1) dual-copy is intentional per-file specialization (generic template with <project X command> placeholders vs cam-cli live copy); apply the equivalent edit on each side, never overwrite one with the other. (2) Surgical change: do NOT fix other known defects in the same files (e.g. the wrong Step 5.5 pointer in the template CLAUDE.md); those are separate issues. (3) patterns.md itself is untouched: this story does not move, rewrite, or truncate any patterns.md content. The invariants content to curate already exists as the 3 example bullets in the current 'Codebase Patterns' section plus the constraints list; keep it <=2KB."
     },
