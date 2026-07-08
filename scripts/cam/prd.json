@@ -1,0 +1,77 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-189-suggestion-followups",
+  "description": "Surface reviewer SUGGESTIONs from the terminal review round as auto-filed stage:idea follow-up issues before cycle close, so they are not lost when review-report.json is overwritten or the pane is torn down.",
+  "issueNumber": 189,
+  "relatedDocs": [
+    "docs/adr/0013-auto-ship-escreve-phase-shipping-no-outer-loop-do-sidecar-como-a-ultima-escrita-de-estado-no-caminho-terminal-complete.md",
+    "docs/adr/0008-auto-ship-terminal-anchor.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun (hashing API)",
+      "url": "https://bun.com/docs/api/hashing",
+      "version": "current",
+      "fetchedAt": "2026-07-08T00:00:00Z",
+      "summary": "Confirmed Bun.CryptoHasher supports sha256 with .digest('hex') for the suggestion fingerprint helper; no deprecations or breaking changes noted. Bun.hash (Wyhash) also available but CryptoHasher sha256 is the stable cross-version choice for a persisted fingerprint.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Carry SUGGESTION findings through the reviewer CLEAN exit report",
+      "description": "As the cam sidecar, I need the subagent-reviewer exit protocol to persist SUGGESTION (and other non-blocking) findings into scripts/cam/review-report.json even when the verdict is CLEAN, so that non-blocking findings exist in the structured channel at the terminal round instead of being forced to an empty array.",
+      "acceptanceCriteria": [
+        "Both CLEAN shapes in the exit report protocol (the no-oracle shape and the with-oracle shape) stop forcing findings to an empty array and instead show SUGGESTION findings being carried, in BOTH copies (.claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md), with prose stating that verdict CLEAN means no blocking findings, not no findings. [oracle: file-assert grep for a SUGGESTION-carrying CLEAN example in both files]",
+        "A doc-gate test asserts the CLEAN-with-findings shape in the raw dev copy (readFileSync of .claude/agents/subagent-reviewer.md), the raw template copy, and the embedded copy (templatesContents['agents/subagent-reviewer.md']). [oracle: bun test]",
+        "A regression test locks terminal detection in src/supervisor/decide.ts to the verdict string (TERMINAL_VERDICTS), not findings length: decide with lastVerdict CLEAN and a NON-EMPTY findings array still yields a terminal decision (complete or await-operator). [oracle: bun test]",
+        "The <review> tag semantics are unchanged: cosmetic SUGGESTIONs still do not block CLEAN (existing examples in the Output Format section stay intact). [oracle: file-assert grep -q 'Cosmetic SUGGESTIONs' .claude/agents/subagent-reviewer.md]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/agents/subagent-reviewer.md (exit protocol section, lines ~158-205), templates/agents/subagent-reviewer.md, src/vendor/_generated.ts (regen via bun run embed-vendor), test file for the doc-gate + decide regression. Gotcha (cam dual-copy is per-file): the two agent copies are NOT byte-identical overall; edit each copy's exit-protocol section, do not blind-copy the whole file. Doc-gate test precedent: patterns.md entry for US-005/CAM-215 (assert raw dev copy via readFileSync plus embedded templatesContents in one describe.each; the dev copy is never in templatesContents). Run bun run embed-vendor BEFORE bun test or the embedded-copy assertion sees stale content. decide.ts already keys terminal detection off TERMINAL_VERDICTS (src/supervisor/decide.ts:66, used at :130); the regression test is a lock against a future refactor gating on findings emptiness, and it is what makes the reviewer change safe. Also check test/embedded.test.ts for stale content assertions after editing the templates copy (patterns.md CAM-151 gotcha)."
+    },
+    {
+      "id": "US-002",
+      "title": "Add suggestion fingerprint, follow-up builder, and dedup helpers",
+      "description": "As the cam sidecar, I need pure helpers that fingerprint a SUGGESTION finding, build the follow-up issue title and description with provenance, and dedup against open issues and within a batch, so that the terminal hook can file follow-ups deterministically and idempotently.",
+      "acceptanceCriteria": [
+        "A fingerprint helper returns a stable short hash of a finding's normalized file, line, and text; two findings with the same text but different file or line get different fingerprints, and a missing file or line does not collide with distinct texts (unit tests cover missing-file, missing-line, and same-text-different-location cases). [oracle: bun test]",
+        "An issue-builder helper produces title equal to the truncated finding text and description equal to the full finding text plus provenance (source branch or cycle id, review round when available, file:line when present) plus a suggestion-fingerprint line embedding the hash. [oracle: bun test]",
+        "A dedup helper, given the open backlog entries and a ReviewReport, returns only severity SUGGESTION findings whose fingerprint does NOT appear in any open issue description, and collapses duplicates within the same batch. Fixture: a report with 2 SUGGESTIONs where one hashes to a fingerprint F already present in an open idea issue description yields exactly 1 to-file. [oracle: bun test]",
+        "Non-SUGGESTION severities (CRITICAL, WARNING) are filtered out by the extraction helper. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: new module src/supervisor/suggestion-followups.ts, new test test/suggestion-followups.test.ts. Types: ReviewFinding / ReviewReport at src/supervisor/review-report.ts:21-45 (file and line are OPTIONAL, no stable id; normalize before hashing). Hash: Bun.CryptoHasher('sha256') with .digest('hex'), truncated to a short prefix (confirmed stable in Bun docs, see officialDocsConsulted). Keep this module PURE: accept the backlog array (IssueEntry[] from src/issues/types.ts) as a parameter; no git spawns, no fs reads here (the US-003 hook does the readBacklogFromMain call). Dedup scans the description string of entries with status 'open' for the suggestion-fingerprint line. Persisted issue text follows the no-em-dash rule (plain punctuation only). noUncheckedIndexedAccess: guard array and regex-group access."
+    },
+    {
+      "id": "US-003",
+      "title": "File SUGGESTION follow-ups at the terminal verdict in runSidecarLoop",
+      "description": "As the cam operator, I need the sidecar OUTER loop (runSidecarLoop) to read the terminal review-report.json after clearActive and auto-file the deduped SUGGESTIONs as stage:idea issues on main via createLocalIssueOnMain, pushing one summary line to the orchestrator pane, so that non-blocking findings survive report overwrite and pane teardown on every terminal path (complete AND awaiting-operator).",
+      "acceptanceCriteria": [
+        "The suggestion-filing hook lives in runSidecarLoop alongside the CAM-191/ADR-0013 auto-ship block, strictly AFTER opts.clearActive() and before the flipActiveFn auto-chain continue; NO suggestion-filing code is added inside runSupervisor. [oracle: bun test source-text oracle on src/supervisor/loop.ts, same style as test/sidecar-ship-phase.test.ts AC1]",
+        "Gate: the hook fires when result.status is 'complete' OR 'awaiting-operator' AND the re-read prd (supervisorOpts.readPrd()) has review.lastVerdict in TERMINAL_VERDICTS, so CLEAN and MAX_ROUNDS_DEBT are covered on BOTH terminal statuses and the CLEAN+awaiting-operator case is not silently dropped. Unit tests cover: complete+CLEAN fires, awaiting-operator+CLEAN fires, complete+MAX_ROUNDS_DEBT fires, blocked/error statuses never fire, non-terminal verdict never fires. [oracle: bun test]",
+        "Real-path regression test (ADR-0013 approach): a test drives runSidecarLoop itself (NOT just the extracted helper) to a CLEAN terminal in a temp cwd with a real review-report.json fixture on disk containing 2 SUGGESTIONs, using the real makeClearActive (src/commands/sidecar.ts:323) and a real onProgress state-file writer, with injected spawn/filing fakes; it asserts both SUGGESTIONs are filed and exactly one pane summary line is pushed. [oracle: bun test]",
+        "Each new SUGGESTION is filed via createLocalIssueOnMain (the on-main commit-tree path, default filing with no specSource, which yields stage 'idea' and status 'open'); the working branch is never touched. A fixture report with 2 SUGGESTIONs files 2 issues. [oracle: bun test]",
+        "Dedup is live end-to-end: a SUGGESTION whose fingerprint already appears in an open issue description (read via readBacklogFromMain) is NOT re-filed, and a re-fire on the later 'complete' terminal after an 'awaiting-operator' terminal files 0 and pushes no summary (idempotent re-fire; fingerprint dedup is the idempotency mechanism, no new fire-once marker in prd.json). [oracle: bun test]",
+        "After filing at least one issue, exactly one summary line is pushed to the orchestrator pane (notifyOrchestrator wiring) listing the filed issue ids and the dup-skipped count; a terminal with zero SUGGESTION findings, a missing/unparseable report (reader returns null), or an all-deduped batch files nothing and pushes nothing. [oracle: bun test]",
+        "The hook runs deterministically in the sidecar with no claude spawn; when createLocalIssueOnMain returns ok:false (diverged main, detached head, missing main) or the push fails, the hook skips-and-warns (log/event line) and never crashes the loop. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "PLACEMENT (corrects the blocked plan round; do NOT reuse the old rationale): readReviewReport is only ever called inside src/supervisor/review.ts (lines 435-436); no ReviewReport object is in hand anywhere in loop.ts. loop.ts:1436-1469 is the MAX_ROUNDS_DEBT debt-return path only; the CLEAN terminal is reached separately via decideNextAction action.kind 'complete' at loop.ts:812-837 (and 'await-operator' at 840-861). Per ADR 0013, terminal effects inside runSupervisor are unreliable (onProgress unlink-on-complete + clearActive idle rewrite destroy in-supervisor terminal writes), which is exactly why auto-ship moved to runSidecarLoop after clearActive. Therefore: (1) add optional deps to RunSidecarLoopOptions (loop.ts:1517), e.g. readReviewReportFn plus a fileSuggestionsFn/notify pair, mirroring the autoShipFn doc-comment style; (2) wire production deps in buildSidecarLoopDeps (src/commands/sidecar.ts:2141-2196), same pattern as autoShipFn at 2167-2171, using makeReadReviewReport(cwd) from src/supervisor/host.ts:134 (already exported and shape-guarded, returns null on missing/unparseable), createLocalIssueOnMain (src/commands/issue-file.ts:271), readBacklogFromMain (src/issues/backlog.ts), and the US-002 helpers; (3) place the hook in runSidecarLoop next to the auto-ship block (loop.ts:1882-1911), where supervisorOpts (declared at 1861) is in scope, so supervisorOpts.readPrd() and supervisorOpts.notifyOrchestrator are available exactly as prdAfterComplete already demonstrates; run the hook before the flipActiveFn continue at 1917-1920 or the auto-chain skips it. Import TERMINAL_VERDICTS from src/supervisor/decide.ts:66. If the auto-ship block runs first it writes autoShipDispatchedAt via writePrd; re-read prd in the hook or order the hook before auto-ship; keep the two gates independent. Timing gotcha: review-report.json is ephemeral and overwritten each round, but at this hook no new dispatch has run yet in the same tick, and the file (on disk, gitignored) survives CAM-188 pane teardown. Test precedents: test/sidecar-ship-phase.test.ts (source-text oracle + injected-deps loop drive) and the ADR-0013 regression test (real makeClearActive + real onProgress writers; fakes lying about terminal writers is the documented blind spot this story must not repeat)."
+    }
+  ]
+}
