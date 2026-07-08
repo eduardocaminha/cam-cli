@@ -82,6 +82,11 @@ import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
  *     inside stepMergeWatch fails (non-null stderr) on an edge-triggered
  *     basis, carrying the consecutive-failure count and the last stderr. See
  *     MergeWatchPollErrorEventDetail.
+ *   - 'suggestion-filed' (US-003, CAM-189): emitted by the production
+ *     fileSuggestionsFn closure (sidecar.ts) each time the terminal
+ *     SUGGESTION-follow-up-filing hook runs and has something to report (at
+ *     least one filed, dup-skipped, or failed finding). See
+ *     SuggestionFiledEventDetail.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -115,7 +120,8 @@ export type WorkerEventKind =
 	| 'plan-preflight-failed'
 	| 'plan-escalated'
 	| 'plan-target-invalid'
-	| 'merge-watch-poll-error';
+	| 'merge-watch-poll-error'
+	| 'suggestion-filed';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -404,6 +410,25 @@ export interface PlanTargetInvalidEventDetail {
 	targetId: string;
 }
 
+/**
+ * 'suggestion-filed' event detail (US-003, CAM-189): emitted by the
+ * production fileSuggestionsFn closure (sidecar.ts) each time it runs and has
+ * something to report. Gives a per-tick audit trail of the review SUGGESTION
+ * follow-up-filing hook independently of the single orchestrator-pane summary
+ * line (which only fires when filedIds is non-empty).
+ *   - filedIds: ids of issues actually filed this tick.
+ *   - dupSkipped: SUGGESTIONs skipped because their fingerprint already
+ *     existed in an open issue, or was a duplicate within the same batch.
+ *   - failedCount: SUGGESTIONs whose createLocalIssueOnMain call returned
+ *     ok:false (diverged main, detached head, missing main); skipped and
+ *     warned, never thrown.
+ */
+export interface SuggestionFiledEventDetail {
+	filedIds: string[];
+	dupSkipped: number;
+	failedCount: number;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -426,6 +451,7 @@ export type WorkerEventDetail =
 	| ContainerPreflightEventDetail
 	| PlanEscalatedEventDetail
 	| PlanTargetInvalidEventDetail
+	| SuggestionFiledEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

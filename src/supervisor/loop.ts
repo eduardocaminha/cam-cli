@@ -27,9 +27,11 @@
 //     reader is present, parseAnySentinel is demoted to human-corroboration only:
 //     a DONE sentinel in the pane without a matching report does NOT break the poll.
 
-import { decideNextAction, DEFAULT_MAX_ROUNDS } from './decide.ts';
+import { decideNextAction, DEFAULT_MAX_ROUNDS, TERMINAL_VERDICTS } from './decide.ts';
 import type { PrdSnapshot } from './decide.ts';
 import type { LoopPhase } from '../commands/status.ts';
+import type { ReviewReport } from './review-report.ts';
+import type { FollowUpProvenance } from './suggestion-followups.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
@@ -1647,6 +1649,57 @@ export interface RunSidecarLoopOptions {
 	 */
 	autoShipFn?: () => void;
 	/**
+	 * Read the terminal review-report.json (US-003, CAM-189).
+	 *
+	 * Called once per terminal tick (result.status 'complete' or
+	 * 'awaiting-operator', AND the re-read prd.review.lastVerdict is in
+	 * TERMINAL_VERDICTS), right after clearActive, to source the SUGGESTION
+	 * findings for the follow-up-filing hook (paired with fileSuggestionsFn
+	 * below). Returns null when the file is absent or unparseable (no
+	 * findings to file this tick); the hook then does nothing.
+	 *
+	 * Production wiring (sidecar.ts): makeReadReviewReport(cwd) (host.ts,
+	 * US-002/CAM-75) -- the SAME reader reviewDispatch already uses internally.
+	 *
+	 * Optional: when absent (paired with fileSuggestionsFn) the suggestion-
+	 * filing hook is fully inert (zero behavior change for all existing tests).
+	 */
+	readReviewReportFn?: () => ReviewReport | null;
+	/**
+	 * File SUGGESTION follow-ups from a terminal ReviewReport as deduped idea
+	 * issues (US-003, CAM-189).
+	 *
+	 * Given the report just read via readReviewReportFn and a provenance
+	 * record (source: prd.branchName; round: prd.review.roundsCompleted),
+	 * returns the ids of the issues actually filed plus a count of
+	 * SUGGESTIONs skipped because their fingerprint already existed in an
+	 * open issue (or was a duplicate within the same batch). Never throws: a
+	 * createLocalIssueOnMain failure for one finding (diverged main, detached
+	 * head, missing main) is skip-and-warned internally by the production
+	 * closure (logged, not re-thrown) and does not stop the remaining
+	 * findings in the batch from being attempted.
+	 *
+	 * Idempotency has no prd.json fire-once marker: SUGGESTION fingerprint
+	 * dedup (US-002, dedupSuggestions) IS the idempotency mechanism, so a
+	 * re-fire on a later terminal tick (e.g. a 'complete' status after an
+	 * earlier 'awaiting-operator' status already filed the same findings)
+	 * files 0 and the caller pushes no summary line.
+	 *
+	 * Production wiring (sidecar.ts): makeProductionFileSuggestionsFn(cwd,
+	 * logEvent), which reads the current backlog via readBacklogFromMain,
+	 * dedups via dedupSuggestions (US-002), and files each surviving finding
+	 * via createLocalIssueOnMain (default filing: no specSource, so stage
+	 * stays 'idea' and status 'open'). The working branch is never touched:
+	 * createLocalIssueOnMain always commits+pushes to main directly.
+	 *
+	 * Optional: when absent (paired with readReviewReportFn) the suggestion-
+	 * filing hook is fully inert (zero behavior change for all existing tests).
+	 */
+	fileSuggestionsFn?: (
+		report: ReviewReport,
+		provenance: FollowUpProvenance,
+	) => { filedIds: string[]; dupSkipped: number };
+	/**
 	 * Best-effort escalation callback (US-R1-001).
 	 *
 	 * Threaded into RunSupervisorOptions.escalateFn on each supervisor run so
@@ -1907,6 +1960,57 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 					},
 				});
 				opts.autoShipFn();
+			}
+		}
+
+		// US-003 (CAM-189): file SUGGESTION follow-ups at the terminal verdict.
+		// Runs AFTER clearActive (same ADR-0013 state-file-ordering rationale as
+		// the auto-ship block above) and BEFORE the flipActiveFn auto-chain
+		// continue, so the auto-chain never skips a tick that still needs
+		// filing. Fires on BOTH terminal statuses ('complete' AND
+		// 'awaiting-operator') -- unlike auto-ship, which fires on 'complete'
+		// only -- because a CLEAN review can hand off to the operator (pending
+		// ceremony stories) without the loop ever reaching 'complete', and that
+		// CLEAN+awaiting-operator terminal must not silently drop its
+		// SUGGESTION findings. No prd.json fire-once marker is written here:
+		// SUGGESTION fingerprint dedup (US-002) is the idempotency mechanism, so
+		// a later re-fire (e.g. 'complete' after an earlier 'awaiting-operator')
+		// safely files 0 and pushes nothing.
+		if (
+			opts.readReviewReportFn !== undefined &&
+			opts.fileSuggestionsFn !== undefined &&
+			(result.status === 'complete' || result.status === 'awaiting-operator')
+		) {
+			try {
+				const prdForSuggestions = supervisorOpts.readPrd();
+				const lastVerdict = prdForSuggestions?.review?.lastVerdict;
+				if (prdForSuggestions !== null && lastVerdict != null && TERMINAL_VERDICTS.has(lastVerdict)) {
+					const report = opts.readReviewReportFn();
+					if (report !== null) {
+						const provenance: FollowUpProvenance = {
+							source: prdForSuggestions.branchName ?? '',
+							round: prdForSuggestions.review?.roundsCompleted,
+						};
+						const { filedIds, dupSkipped } = opts.fileSuggestionsFn(report, provenance);
+						if (filedIds.length > 0) {
+							const dupSuffix = dupSkipped > 0 ? ` (${dupSkipped} dup-skipped)` : '';
+							supervisorOpts.notifyOrchestrator?.(
+								`[cam] filed ${filedIds.length} SUGGESTION follow-up${filedIds.length === 1 ? '' : 's'}: ${filedIds.join(', ')}${dupSuffix}`,
+							);
+						}
+					}
+				}
+			} catch (err: unknown) {
+				opts.logEvent?.({
+					ts: new Date().toISOString(),
+					storyId: undefined,
+					uuid: 'sidecar',
+					kind: 'sidecar-exit',
+					detail: {
+						reason: 'suggestion-filing-crash-outer',
+						error: err instanceof Error ? err.message : String(err),
+					},
+				});
 			}
 		}
 

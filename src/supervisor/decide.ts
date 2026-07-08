@@ -18,6 +18,12 @@
 
 /** Minimal prd.json shape consumed by decideNextAction. */
 export interface PrdSnapshot {
+	/**
+	 * Working branch name for this PRD cycle. Not consumed by decideNextAction
+	 * itself; read by the outer runSidecarLoop (US-003, CAM-189) as the
+	 * `source` provenance field when filing SUGGESTION follow-up issues.
+	 */
+	branchName?: string;
 	userStories?: Array<{
 		id?: string;
 		title?: string;

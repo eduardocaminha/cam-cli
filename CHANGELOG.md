@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.93.0] - 2026-07-08
+
+### Added
+
+- US-003 - File SUGGESTION follow-ups at the terminal verdict in runSidecarLoop
+- US-002 - Add suggestion fingerprint, follow-up builder, and dedup helpers
+- US-001 - Carry SUGGESTION findings through the reviewer CLEAN exit report
+
 ## [0.92.0] - 2026-07-08
 
 ### Added
