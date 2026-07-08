@@ -1,16 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add archiveJournalOnMain core logic (pure move, atomic on-main commit)" },
+  "lastCompletedStory": { "id": "US-002", "title": "Wire cam journal archive [--threshold N] CLI subcommand" },
   "branchName": "cam/pr-125-journal-archive",
-  "timestamp": "2026-07-08T00:00:00.000Z",
-  "createdFiles": [
-    "src/commands/journal-archive.ts",
-    "test/commands/journal-archive.test.ts"
-  ],
+  "timestamp": "2026-07-08T19:05:00.000Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/prd.json"
+    "index.ts",
+    "src/commands/journal-archive.ts",
+    "test/commands/journal-append.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "archiveJournalOnMain(options) is exported from src/commands/journal-archive.ts: { cwd, spawnFn, threshold?: number (default 50), clock?: () => Date }. Result union: ArchiveJournalOnMainSuccess { ok: true, archived: number, entries: number, sha: string (empty on no-op) } | error variants { ok: false, reason: 'diverged' | 'detached-head' | 'missing-main' | 'journal-missing' | 'marker-missing' }. US-002 (wire `cam journal archive [--threshold N]` CLI subcommand) should mirror the argv-parsing style already used for `cam journal append` (parseJournalArgs / dispatchJournal in index.ts): strip mode-selecting flags first via .filter(), scan the remainder for --threshold's numeric value. Wire archiveJournalOnMain with a real SpawnFn (Bun.spawnSync-backed, same wrapper used elsewhere) and a real clock (() => new Date()). No new CLI sentinel format is prescribed by US-001; US-002's own acceptance criteria will define the printed sentinel shape (mirror CAM_JOURNAL_APPENDED=... style if consistent, e.g. CAM_JOURNAL_ARCHIVED=<archived> entries=<entries>). Commit message format already fixed by US-001: 'chore(cam): journal archive <k> entries'. Do not re-derive the guard/push logic: checkMainUpToDate and pushMainBestEffort are imported directly from src/git/on-main.ts (no private copy), confirmed via a grep oracle in the PRD. The real scripts/cam/journal.md currently has 111 post-marker entries (threshold default 50 means a real run would archive floor(111/3)=37 -- be careful about invoking the real CLI against this repo's own journal.md in any integration test; use a fixture/tmp git repo like test/integration/journal-append-on-main.test.ts does, not the live journal.md.",
+  "nextStoryContext": "`cam journal archive [--threshold N]` is now wired in index.ts alongside `cam journal append`: ParsedJournalArgs is a 3-member discriminated union (`append` | `archive` | help:true); parseJournalArgs('archive', ...) always resolves a concrete threshold (default mirrors journal-archive.ts's exported `DEFAULT_THRESHOLD` = 50, imported aliased as JOURNAL_ARCHIVE_DEFAULT_THRESHOLD to avoid a duplicated magic number) and rejects a non-positive-integer or missing --threshold value with printFatalHint + null (usage error, exit 1 at the call site). dispatchJournal branches on mode==='archive' BEFORE the stdin read (append is still the only stdin path) via an injectable `archiveFn?: (threshold: number) => ArchiveJournalOnMainResult` dep on JournalDispatchDeps, defaulting to a real archiveJournalOnMain call with process.cwd() + a real spawnSync wrapper (same pattern as appendFn's default). Printed sentinels: success 'CAM_JOURNAL_ARCHIVED=<k> sha=<sha>' (exit 0), below-threshold no-op 'CAM_JOURNAL_ARCHIVE=noop entries=<n> threshold=<t>' (exit 0), failure exit 1 (no sentinel; archiveJournalOnMain already printError'd internally). JOURNAL_HELP's usage line and the top-level `cam --help` command list both literally contain 'journal archive [--threshold N]'. US-003 (auto-invoke the archive check on the --cycle-close path) should call archiveJournalOnMain directly (or dispatchJournal's archive path) from within the --cycle-close branch of dispatchJournal in index.ts, AFTER the append+handoff+marker sequence succeeds -- do not block the existing append sentinel/exit-code contract (exit 3/4 codes stay reserved for the handoff/watcher guards already there). US-004 (replace the manual archive rule in templates and agent file) should grep scripts/cam/CLAUDE.md and any templates/ copy for the old manual-archive prose and point it at the new `cam journal archive` subcommand instead -- remember templates/ + .claude/ dual-copy means editing scripts/cam/CLAUDE.md alone will NOT auto-propagate to templates/ (see cam-dual-copy-is-per-file pattern); check whether embed-vendor:check flags anything.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
