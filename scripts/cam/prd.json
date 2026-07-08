@@ -23,7 +23,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file src/commands/journal-archive.ts + test/commands/journal-archive.test.ts (mirror the fake-SpawnFn pattern of test/commands/journal-append.test.ts). Reuse commitTreeToMain multi-file FileWrite[] support (CAM-90) from src/git/on-main.ts; import checkMainUpToDate/pushMainBestEffort from there too (jscpd duplication gate trips on a 5th verbatim guard copy, see the GOTCHA comment in src/git/on-main.ts lines 275-282). journal.ts already carries a private guard copy: do NOT copy it again. Result type follows the discriminated-union pattern of AppendJournalEntryOnMainResult (journal.ts). The live journal has ~112 entries after 3 preamble headers, so grep -c '^## ' over the whole file overcounts: the marker-relative scan is load-bearing. noUncheckedIndexedAccess: guard array index access. Do not add src/commands/journal-archive.ts to scripts/file-size-budget.json unless the gate demands it."
     },
