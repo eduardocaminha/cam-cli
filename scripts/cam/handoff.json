@@ -1,18 +1,20 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Align cam-plan prose with the read-from-main backlog seam" },
+  "lastCompletedStory": { "id": "US-003", "title": "Remove dead clock/ClockFn from ship-finalize" },
   "branchName": "cam/pr-115-review-suggestion-followups",
-  "timestamp": "2026-07-08T00:00:00Z",
+  "timestamp": "2026-07-08T00:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/commands/cam-plan.md",
-    "templates/commands/cam-plan.md",
-    "src/vendor/_generated.ts",
+    "src/commands/ship-finalize.ts",
+    "src/commands/ship-deps.ts",
+    "test/ship-finalize.test.ts",
+    "test/ship-finalize-hardening.test.ts",
+    "test/integration/ship-finalize-dirty-prd.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [
     "US-001's open question (a latent selectFn-throw gap in buildProductionDispatchFn's meta_loop=auto dispatch path, src/commands/sidecar.ts ~1504/1509) is still unresolved and out of scope for US-002/US-003/US-004; carry it forward as a follow-up-story candidate, not something to fix opportunistically."
   ],
-  "nextStoryContext": "US-002 is done: both cam-plan.md copies (.claude/commands/ and templates/commands/) now state that main:scripts/cam/issues/ (the readBacklogFromMain seam) is the single source of truth for BOTH the no-argument and argument-N resolution paths, with the working-tree `ls scripts/cam/issues/` listing explicitly labeled fallback-only (fires only when `git ls-tree main` fails, e.g. a fresh repo with no issues dir on main yet). Ran `bun run embed-vendor` to regenerate src/vendor/_generated.ts after touching templates/, then `bun run embed-vendor:check` is clean. Full quality spine (bun run check:all: test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity) is green. US-003 (remove dead clock/ClockFn from ship-finalize.ts) and US-004 (clear stale review findings on CLEAN) remain, both independent of US-002's edits (no shared files) and can proceed without extra setup.",
+  "nextStoryContext": "US-003 is done: ClockFn type export and the clock field were removed from FinalizeCycleCloseOptions in src/commands/ship-finalize.ts; buildShipFinalizeOpts (src/commands/ship-deps.ts) no longer builds a clock; the 3 test fixtures that constructed FinalizeCycleCloseOptions (test/ship-finalize.test.ts, test/ship-finalize-hardening.test.ts, test/integration/ship-finalize-dirty-prd.test.ts) all drop the field (and the now-unused FIXED_TS/FIXED_CLOCK constants). Confirmed untouched: ship-bump.ts's own live ClockFn (opts.clock() still called at ship-bump.ts:193) and issue-specify.ts's own ClockFn -- neither imports from ship-finalize.ts, so no cross-file coupling existed. Full quality spine (bun run check:all: test 3753 pass/0 fail, embed-vendor n/a this story, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity) is green. US-004 (clear stale review findings on CLEAN, src/supervisor/review.ts ~520-534) is next and touches an entirely different file (no overlap with US-003's edits); its own notes already pin the exact CLEAN-only scope (do not touch the MAX_ROUNDS_DEBT write paths) and the test file (test/supervisor/review.test.ts) to extend.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
