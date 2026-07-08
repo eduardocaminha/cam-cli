@@ -1307,3 +1307,15 @@ Each entry follows this template:
 - **Decisions**: The PRD was self-contradictory and had burned 10 consecutive implementer sessions (all BLOCKED_AMBIGUITY): AC1-3 dedup collapses the formatWorkerReportSummary( call-site count in loop.ts from 3 to 1, but a pre-existing CAM-94 static-grep test (AC7) pinned it at 3 and AC4 forbade touching existing supervisor tests. Operator authorized a surgical prd.json amendment relaxing AC4 to permit deleting the superseded AC7 test (its intent already covered by the runtime AC2/AC5 tests plus the new AC1-3 oracles). A static source-text-count test is brittle against a legitimate dedup; runtime behavior tests survive it.
 - **Blockers encountered**: 10-session BLOCKED_AMBIGUITY wedge from the contradictory AC, resolved by the operator-authorized PRD amendment (not an 11th implementer attempt). Auto-ship succeeded in host mode; merge-watch recovered a BEHIND PR via gh pr update-branch before the squash, so the CAM-121 clobber hazard (CAM-214 filed on main mid-cycle) did not bite.
 - **Follow-ups**: CAM-214: harness circuit-breaker for repeated identical BLOCKED_AMBIGUITY on the same story ID with an unchanged PRD (halt + escalate instead of re-spinning).
+
+## cam/pr-115-review-suggestion-followups — CAM-115 shipped: follow-ups dos SUGGESTIONs do review do CAM-106
+
+- **Started**: 2026-07-08
+- **Closed**: 2026-07-08
+- **Branch**: cam/pr-115-review-suggestion-followups
+- **Issue**: CAM-115 (#160)
+- **Outcome**: shipped
+- **Summary**: Enderecou as 4 SUGGESTIONs nao-bloqueantes diferidas do review do CAM-106: selectPlannableFromFile passa a retornar null e propagar erro real (em vez de engolir pra undefined), alinhamento do seam de fonte-de-verdade com a prosa do cam-plan, remocao do clock/ClockFn orfao em ship-finalize.ts, e limpeza dos review findings stale no verdict CLEAN. Version 0.86.0 para 0.87.0, tag v0.87.0.
+- **Decisions**: Review round 1 achou 1 CRITICAL: US-001 fez selectPlannableFromFile passar a THROW em erro de leitura/parse e guardou a fn OBSERVE de producao, mas deixou a fn AUTO/DISPATCH desprotegida; no idle tick de meta_loop=auto+container (loop.ts:1811, sem try/catch) um backlog corrompido crasharia o sidecar long-lived, o exato vetor que US-001 queria fechar. Corrigido em US-R1-001 (guard no caller AUTO/DISPATCH), round 2 CLEAN.
+- **Blockers encountered**: O plan de CAM-115 travou no primeiro disparo: o clean-tree preflight (git status --porcelain, untracked-sensitive) recusou porque .claude/.cam-sidecar-session.json estava untracked e nao-gitignored, revertendo phase pra idle sem marker durável nem notify (pareceu que o sinal nunca disparou). Diagnostico via Explore confirmou o gap de surfacing. Mitigado removendo o arquivo runtime (recriável no proximo cam run boot); o fix definitivo (gitignore + surfacing) foi filado como CAM-215.
+- **Follow-ups**: CAM-215 (idea): gitignore do .cam-sidecar-session.json + marker durável/boot-read/notify pro plan-preflight-failed analogo a ship-stalled/plan-escalated + tratar o fallback silencioso plan-target-invalid->top-specified. Proxima acao do operador: /cam-spec CAM-215 (idea->specified) entao /cam-plan.
