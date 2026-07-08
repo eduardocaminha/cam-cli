@@ -60,7 +60,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: .jscpd.json (threshold field only; do not touch reporters or ignore). Context drift: the issue spec says lower '5 pra 4', but main raised 5 to 6 at CAM-122 (commit 8936a62) after filing; the settled intent is the down-only ratchet to 4, so change 6 to 4. Measured 2026-07-08 on main: 3.52% duplicated lines (4.77% tokens) on src+scripts, so 4 already passes before dedup and US-001/US-002 add headroom; still land this story LAST so the gate is proven green on the deduped tree. jscpd v5 with reporters:['threshold'] compares the duplicated-LINES percentage and exits nonzero above threshold (verified empirically). The gate command is pinned by test/check-all.test.ts (bunx jscpd@5 --config .jscpd.json src scripts); do not change it. Lowering the threshold is the always-allowed ratchet direction, no tracker ref needed."
     }
