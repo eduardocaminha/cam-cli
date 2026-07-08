@@ -1,0 +1,9 @@
+{
+  "id": "CAM-223",
+  "title": "Dieta de contexto dos workers (prompt-side): patterns.md/journal.md viram grep-on-demand, refs mortas removidas",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T22:59:42.087Z",
+  "description": "Auditoria 2026-07-08 mediu o bill de contexto por spawn: implementer ~86k tok/story (85% = ler patterns.md inteiro, 292KB, mandado no step 5), planner ~128k tok/round (92% = patterns.md + journal.md inteiros, mandados na secao Project Context), reviewer carrega lessons.archive.md aposentado (20KB, citado na linha 77). Alem disso: scripts/cam/CLAUDE.md auto-carrega via nested-CLAUDE.md E e mandado re-ler (double-load no implementer step 4 e planner), e AGENTS.md e referenciado em 3 lugares (planner frontmatter, planner Project Context, implementer step 4) mas NAO EXISTE no repo. Proposta: invariantes duraveis (~2KB: Bun-only, noUncheckedIndexedAccess, Ink glyph, no --permission-mode, gates) passam a viver so no scripts/cam/CLAUDE.md que ja auto-carrega; patterns.md deixa de ser leitura mandatoria integral e vira referencia grep-on-demand (worker grepa a secao do subsistema que a story toca); planner dropa journal.md inteiramente (PRD nunca cita historico); mandados de re-read de CLAUDE.md e refs a AGENTS.md removidos; reviewer re-aponta a citacao de lessons.archive.md. Ganho estimado ~73k tok/story no implementer (maior desperdicio do sistema, frequencia por-story). Doc-only (agents .md ambas as copias + scripts/cam/CLAUDE.md ambas as copias + re-embed), zero mudanca de harness. Fluxo de append de novos patterns segue intacto (GC do patterns.md e issue separada). Origem: auditoria de contexto operador 2026-07-08."
+}
