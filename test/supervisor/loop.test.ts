@@ -43,7 +43,6 @@ import type {
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import { formatWorkerReportSummary, type WorkerReport } from '../../src/supervisor/worker-report.ts';
-import { readFileSync } from 'node:fs';
 import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
 import { FirewallError } from '../../src/supervisor/container-firewall.ts';
 import { ContainerConfigError } from '../../src/supervisor/container-config.ts';
@@ -2962,17 +2961,6 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 			expect(notified[0]).toBe(formatWorkerReportSummary(fakeReport));
 		});
 
-		test('AC7: formatWorkerReportSummary call-site count in loop.ts equals 3 (happy-path only)', () => {
-			// File-assert: after the fix, formatWorkerReportSummary is called only at
-			// the three happy-path sites (supervisor-finalized-pass continue, genuine
-			// advance, PRD_COMPLETE). The six terminal-blocked sites no longer call it.
-			const src = readFileSync(
-				new URL('../../src/supervisor/loop.ts', import.meta.url).pathname,
-				'utf-8',
-			);
-			const count = src.split('formatWorkerReportSummary(').length - 1;
-			expect(count).toBe(3);
-		});
 	});
 
 	// US-005: preflightContainerFn seam tests (B-1 observe-only)

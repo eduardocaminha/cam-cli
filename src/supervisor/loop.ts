@@ -697,6 +697,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// and fail-closed preflight. Default 'host' preserves all existing behavior byte-for-byte.
 	const workerIsolation = opts.workerIsolation ?? 'host';
 
+	// US-001 (CAM-215): sole notifyOrchestrator narration sources.
+	const narrateReport = (): void => { const r = readWorkerReport?.(); r && opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); };
+	const notifyBlocked = (outcome: WorkerOutcome, advisoryStoryId: string | undefined): void => { opts.notifyOrchestrator?.(`[cam] ${outcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${outcome.detail}`); };
+
 	// --- US-001 progress tracking helpers ---
 	// Compute done/total counts from a PRD snapshot (non-operator stories only).
 	function computeProgress(prd: PrdSnapshot): { storiesDone: number; storiesTotal: number } {
@@ -760,6 +764,14 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 	let iterations = 0;
 	let lastOutcome: WorkerOutcome | null = null;
+
+	// US-001 (CAM-215): shared tail for every blocked-terminal return in the
+	// implement branch (notify + teardown + result), replacing 7 identical copies.
+	const blockedResult = (outcome: WorkerOutcome, advisoryStoryId: string | undefined): SupervisorResult => {
+		notifyBlocked(outcome, advisoryStoryId);
+		finishTerminal('blocked');
+		return { status: 'blocked', iterations, lastOutcome };
+	};
 
 	// CAM-36: counts consecutive worker passes that merely re-confirmed an
 	// already-done story (zero PRD progress). See MAX_NO_PROGRESS_RETRIES.
@@ -1234,9 +1246,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 							storyId: outcome.storyId,
 							detail: `push-verification failed: ${pushCheck.detail}`,
 						};
-						opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
-						finishTerminal('blocked');
-						return { status: 'blocked', iterations, lastOutcome };
+						return blockedResult(lastOutcome, advisoryStoryId);
 					}
 				}
 			}
@@ -1246,9 +1256,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				outcome.kind === 'fail' ||
 				outcome.kind === 'unknown'
 			) {
-				opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
-				finishTerminal('blocked');
-				return { status: 'blocked', iterations, lastOutcome };
+				return blockedResult(lastOutcome, advisoryStoryId);
 			}
 
 			// US-002 (CAM-187): a passes:true story with no matching commit is a
@@ -1264,9 +1272,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// this same guard on its very first iteration instead of storming
 			// review/implement dispatches up to MAX_ITERATIONS.
 			if (outcome.kind === 'no-commit') {
-				opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
-				finishTerminal('blocked');
-				return { status: 'blocked', iterations, lastOutcome };
+				return blockedResult(lastOutcome, advisoryStoryId);
 			}
 
 			if (
@@ -1282,9 +1288,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						storyId: outcome.storyId,
 						detail: `finalize aborted, gates failed for ${outcome.storyId}: ${gate.detail}`,
 					};
-					opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
-					finishTerminal('blocked');
-					return { status: 'blocked', iterations, lastOutcome };
+					return blockedResult(lastOutcome, advisoryStoryId);
 				}
 				const fin = finalizeStory(outcome.storyId);
 				if (!fin.ok) {
@@ -1293,9 +1297,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						storyId: outcome.storyId,
 						detail: `finalize failed for ${outcome.storyId}: ${fin.detail}`,
 					};
-					opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
-					finishTerminal('blocked');
-					return { status: 'blocked', iterations, lastOutcome };
+					return blockedResult(lastOutcome, advisoryStoryId);
 				}
 				lastOutcome = {
 					kind: 'pass',
@@ -1306,14 +1308,12 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				// CAM-36: a successful finalize is real progress; reset the no-op
 				// streak so the "consecutive no-progress" semantics hold (review R1).
 				noProgressStreak = 0;
-				{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
+				narrateReport();
 				continue;
 			}
 
 			if (outcome.kind === 'incomplete') {
-				opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
-				finishTerminal('blocked');
-				return { status: 'blocked', iterations, lastOutcome };
+				return blockedResult(lastOutcome, advisoryStoryId);
 			}
 
 			// CAM-36: no-progress guard. readWorkerOutcome is state-primary, so a
@@ -1343,9 +1343,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						// live state file (US-001 clear-on-exit). Every other terminal
 						// return in this loop does this; the no-progress block is a
 						// real terminal exit too.
-						opts.notifyOrchestrator?.(`[cam] ${lastOutcome.storyId ?? advisoryStoryId ?? 'unknown'} BLOCKED: ${lastOutcome.detail}`);
-						finishTerminal('blocked');
-						return { status: 'blocked', iterations, lastOutcome };
+						return blockedResult(lastOutcome, advisoryStoryId);
 					}
 					// CAM-38: still under the cap, so the loop will re-dispatch the
 					// same still-pending story. Back off first (escalating by streak)
@@ -1368,7 +1366,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					noProgressStreak = 0;
 					// Genuine advance: story was NOT already passing. Notify the
 					// orchestrator pane with the worker-report summary (US-003).
-					{ const r = readWorkerReport?.(); if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); }
+					narrateReport();
 				}
 			}
 
@@ -1377,8 +1375,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// else-branch above; this fires only for the PRD_COMPLETE path that
 			// bypasses the no-progress guard.
 			if (outcome.storyId === undefined) {
-				const r = readWorkerReport?.();
-				if (r) opts.notifyOrchestrator?.(formatWorkerReportSummary(r));
+				narrateReport();
 			}
 			// PRD_COMPLETE or pass: loop will call decideNextAction next iteration.
 			continue;
