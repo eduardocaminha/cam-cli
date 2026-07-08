@@ -1,0 +1,79 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/pr-115-review-suggestion-followups",
+  "description": "Follow-ups from the CAM-106 review SUGGESTIONs: select-seam error propagation, cam-plan source-of-truth prose alignment, dead clock removal in ship-finalize, stale review findings cleared on CLEAN.",
+  "issueNumber": 115,
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Propagate real backlog read errors from the select seams",
+      "description": "As a cam operator, I need selectPlannableFromFile and selectPlanTargetFromFile to return null only for a legitimately empty or unplannable backlog and to let real read/parse errors propagate, so that a corrupted backlog is never silently conflated with a drained one.",
+      "acceptanceCriteria": [
+        "selectPlannableFromFile and selectPlanTargetFromFile contain no catch-all swallow: an error thrown by readBacklogFromMain propagates to the caller. [oracle: file-assert ! grep -q 'catch' src/issues/select.ts]",
+        "Both file-backed selectors return null (never undefined) when the backlog is empty or no candidate qualifies; a regression test asserts strict equality to null. [oracle: bun test test/issues/select.test.ts]",
+        "Docstrings in src/issues/select.ts no longer claim the selectors never throw on read/parse errors. [oracle: file-assert ! grep -q 'never throws' src/issues/select.ts]",
+        "A selector throw inside the sidecar meta-loop observe tick is surfaced with the real error (logged) and is NOT converted into a drained/empty-backlog observation. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Item (1) of CAM-115. The undefined-vs-null half of the finding was already fixed by the CAM-90 cutover (selectPlannableIssue returns IssueEntry|null); what remains is the catch-all swallow in the two file-backed seams (src/issues/select.ts lines 100-109 and 149-163). Callers to review when removing the swallow: makeProductionMetaLoopObserveFn (src/commands/sidecar.ts ~line 1088, calls selectPlannableFromFile directly inside an async tick of the long-lived sidecar; an unhandled rejection here would kill the sidecar, so catch AT THIS BOUNDARY, log the real error via the WorkerEventLogger or stderr, and skip the tick without emitting drained), and the closures at sidecar.ts ~lines 1474/1479/1798 handed to plan-runner as selectIssueFn (called at src/supervisor/plan-runner.ts:752 with no try/catch; decide explicitly whether runPlanPhase should let the throw propagate as fail-loud, and document it). Update the stale CAM-154 docstring on selectPlanTargetFromFile in the same edit (Doc Maintenance). Note readBacklogFromMain itself still skips unparseable per-issue JSON silently; changing backlog.ts is OUT of scope for this story, the spec targets the select.ts seams."
+    },
+    {
+      "id": "US-002",
+      "title": "Align cam-plan prose with the read-from-main backlog seam",
+      "description": "As a cam planner agent, I need the cam-plan command prose to name the main ref as the single source of truth for backlog reads in both the no-argument and argument-N paths, so that the prose matches the readBacklogFromMain seam and never presents a stale working-tree copy as authoritative.",
+      "acceptanceCriteria": [
+        "Both copies of cam-plan.md (.claude/commands/ and templates/commands/) document the main ref as the authoritative backlog source for the no-argument AND the argument-N selection paths (e.g. git ls-tree main / git show main:scripts/cam/issues/<file>). [oracle: file-assert grep -q 'main:scripts/cam/issues' templates/commands/cam-plan.md]",
+        "No prose remains that presents the working tree as the source of truth; any bootstrap fallback (fresh repo without the issues dir on main) is explicitly labeled as fallback-only. [oracle: reviewer-judgment]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Item (2) of CAM-115. The code half of the original finding is ALREADY resolved: selectPlannableFromFile now reads via readBacklogFromMain (git ls-tree + git cat-file --batch against the main ref, CAM-90), never the working tree. What remains is prose drift in cam-plan.md line 9 (the '|| ls scripts/cam/issues/' working-tree fallback is presented without qualification) and line 10 (the argument-N path instructs reading the working-tree file scripts/cam/issues/<prefix>-<N-padded>.json while selectPlanTargetFromFile reads from main). Gotcha: dual-copy is PER-FILE (.claude/commands/cam-plan.md vs templates/commands/cam-plan.md are not guaranteed byte-identical; diff both before editing, keep both in sync). Editing templates/ requires regenerating the embed (bun run embed-vendor) so embed-vendor:check passes. Prose only; do not change src/issues/select.ts or backlog.ts in this story."
+    },
+    {
+      "id": "US-003",
+      "title": "Remove dead clock/ClockFn from ship-finalize",
+      "description": "As a cam-cli maintainer, I need the orphaned clock/ClockFn left in ship-finalize.ts after closedAt was dropped to be removed along with its caller wiring, so that the options contract only declares dependencies the function actually uses.",
+      "acceptanceCriteria": [
+        "The ClockFn type export and the clock field on FinalizeCycleCloseOptions are removed from src/commands/ship-finalize.ts. [oracle: file-assert ! grep -q 'ClockFn' src/commands/ship-finalize.ts]",
+        "buildShipFinalizeOpts (src/commands/ship-deps.ts) no longer passes a clock; all test fixtures constructing FinalizeCycleCloseOptions drop the field. [oracle: bun run typecheck]",
+        "buildShipBumpOpts, src/release/ship-bump.ts, and src/commands/issue-specify.ts keep their own (live) ClockFn untouched. [oracle: file-assert grep -q 'ClockFn' src/release/ship-bump.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Item (3) of CAM-115. Dead code confirmed live: src/commands/ship-finalize.ts line 43 exports ClockFn, line 65 requires clock on FinalizeCycleCloseOptions, but finalizeCycleClose (line 115) never destructures or uses it. Callers passing an ignored clock: buildShipFinalizeOpts (src/commands/ship-deps.ts line 29), test/ship-finalize.test.ts, test/ship-finalize-hardening.test.ts, test/integration/ship-finalize-dirty-prd.test.ts. Object-literal excess-property checking makes typecheck the natural oracle for full caller cleanup. Gotcha: ship-bump.ts and issue-specify.ts define their OWN ClockFn types that ARE used (ship-bump.ts line 193 reads opts.clock()); do not touch them. Verify nothing imports ClockFn from ship-finalize.ts (index.ts line 54 imports only finalizeCycleClose and FinalizeCycleCloseResult)."
+    },
+    {
+      "id": "US-004",
+      "title": "Clear stale review findings on a CLEAN verdict",
+      "description": "As a cam operator inspecting prd.json, I need prd.review.findings to be cleared when the reviewer returns CLEAN, so that the findings list reflects the current round instead of showing the previous round's stale findings.",
+      "acceptanceCriteria": [
+        "After makeReviewDispatch writes a CLEAN verdict, prd.review.findings carried over from a previous FIXES_PENDING round is cleared (empty array or key absent). [oracle: bun test test/supervisor/review.test.ts]",
+        "A regression test covers the sequence: FIXES_PENDING round writing file findings, then a CLEAN round; the CLEAN-written prd no longer carries the earlier round's findings. [oracle: bun test test/supervisor/review.test.ts]",
+        "Non-terminal FIXES_PENDING behavior is unchanged: findings from review-report.json are still written to prd.review.findings. [oracle: bun test test/supervisor/review.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Item (4) of CAM-115. Root cause: the CLEAN write path in makeReviewDispatch (src/supervisor/review.ts ~lines 520-534) spreads ...(prd.review ?? {}) which retains the findings array written by a previous FIXES_PENDING round (line 586). Scope is CLEAN only, per the issue spec: the MAX_ROUNDS_DEBT write paths (review.ts ~line 545 and src/supervisor/loop.ts lines 823/847/1443) intentionally keep the last round's findings (they document the debt) and must NOT be changed here. Tests live in test/supervisor/review.test.ts (fake readPrd/writePrd/readReviewReport deps, no real tmux). Choose empty-array vs key-removal deliberately and keep the PrdSnapshot type in src/supervisor/decide.ts (findings is already optional) consistent."
+    }
+  ]
+}
