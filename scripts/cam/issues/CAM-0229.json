@@ -1,0 +1,9 @@
+{
+  "id": "CAM-229",
+  "title": "Implementer Step 5.5: exemplo emite handoff schema-invalido (status ok + campo version)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T23:05:50.672Z",
+  "description": "O worked example do Step 5.5 em subagent-implementer.md:129 (ambas copias + embed em src/vendor/_generated.ts) instrui gravar officialDocsValidated com status: ok e campo version. O schema (scripts/cam/handoff.schema.json:67) define enum [aligned, corrected, no_external_lib_touched, fetch_failed] (ok nao e membro) e additionalProperties:false (version proibido). Nenhum validador runtime confere (loop.ts:168 e events.ts:478 leem status?: string frouxo), entao o implementer grava handoff schema-invalido SILENCIOSAMENTE toda story. Decidir: (a) consertar o exemplo pra status: aligned e dropar version (minimo), (b) adicionar version ao schema se a informacao e util, (c) adicionar validacao runtime do handoff contra o schema pra essa classe nunca voltar. Origem: auditoria docs 2026-07-08."
+}
