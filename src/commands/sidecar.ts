@@ -1370,9 +1370,30 @@ async function handleBlockedCycleBoundary(
  * Deliberately bypasses observeDecide/ctx.observeState: the pending-target
  * branch is a distinct decision point from the drain-dedup path and must not
  * perturb that state.
+ *
+ * selectTargetFn boundary (US-R1-001, CAM-115): selectPlanTargetFromFile no
+ * longer swallows real backlog read/parse errors (mirrors selectFn below).
+ * A throw here is caught, logged via logEvent as a 'sidecar-exit' event, and
+ * the tick is skipped WITHOUT dispatching or clearing plan_issue, so a
+ * transient corrupted-backlog read never gets misread as "target not found".
  */
 function handlePendingTarget(deps: MetaLoopDispatchDeps, targetId: string): void {
-	const resolved = deps.selectTargetFn?.(targetId) ?? null;
+	let resolved: IssueEntry | null;
+	try {
+		resolved = deps.selectTargetFn?.(targetId) ?? null;
+	} catch (err: unknown) {
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'sidecar-exit',
+			detail: {
+				reason: 'meta-loop-dispatch-select-target-error',
+				error: err instanceof Error ? err.message : String(err),
+			},
+		});
+		return;
+	}
 	if (resolved !== null) {
 		deps.setPhaseFn('planning', resolved.id);
 		deps.logEvent({
@@ -1401,6 +1422,12 @@ function handlePendingTarget(deps: MetaLoopDispatchDeps, targetId: string): void
  * A pending explicit plan_issue (US-004, CAM-203) is checked first and, when
  * present, takes over the tick entirely via handlePendingTarget: top-of-queue
  * selection is not consulted at all for that tick.
+ *
+ * selectFn boundary (US-R1-001, CAM-115): mirrors makeProductionMetaLoopObserveFn's
+ * selector-error boundary. selectPlannableFromFile no longer swallows real
+ * backlog read/parse errors, so a throw here is caught, logged via logEvent
+ * as a 'sidecar-exit' event, and the tick is skipped WITHOUT dispatching --
+ * a corrupted backlog must never be misread as a drained/empty backlog.
  */
 async function dispatchOrDrain(
 	deps: MetaLoopDispatchDeps,
@@ -1411,7 +1438,22 @@ async function dispatchOrDrain(
 		handlePendingTarget(deps, pendingTarget);
 		return;
 	}
-	const selected = deps.selectFn();
+	let selected: IssueEntry | null;
+	try {
+		selected = deps.selectFn();
+	} catch (err: unknown) {
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'sidecar-exit',
+			detail: {
+				reason: 'meta-loop-dispatch-select-error',
+				error: err instanceof Error ? err.message : String(err),
+			},
+		});
+		return;
+	}
 	const observeResult = observeDecide(selected, ctx.observeState);
 	if (observeResult !== null) ctx.observeState = observeResult.newState;
 	if (selected === null) {

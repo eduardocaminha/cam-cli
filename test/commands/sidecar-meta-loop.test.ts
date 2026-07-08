@@ -1511,6 +1511,115 @@ describe('meta-loop-dispatch: pending explicit plan_issue wins (US-004, CAM-203)
 	});
 });
 
+// ---------------------------------------------------------------------------
+// US-R1-001 (CAM-115): a selector throw during an auto-dispatch tick must be
+// surfaced as a logged error and never converted into a dispatch or a drained
+// observation. selectPlannableFromFile/selectPlanTargetFromFile no longer
+// swallow read/parse errors, so dispatchOrDrain/handlePendingTarget now own
+// that boundary too (mirrors the observe-tick fix in the US-001 section above,
+// which only covered makeProductionMetaLoopObserveFn).
+// ---------------------------------------------------------------------------
+
+describe('meta-loop-dispatch: selector error boundary (US-R1-001, CAM-115)', () => {
+	test('a throwing selectFn (no pending target) is caught + logged and does NOT dispatch or drain', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		let setPhaseCallCount = 0;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => { throw new Error('corrupted backlog: unexpected token'); },
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => { setPhaseCallCount++; },
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn();
+
+		expect(setPhaseCallCount).toBe(0);
+		const errorEvents = events.filter(
+			(ev) =>
+				ev.kind === 'sidecar-exit' &&
+				(ev.detail as { reason?: string }).reason === 'meta-loop-dispatch-select-error',
+		);
+		expect(errorEvents.length).toBe(1);
+		expect((errorEvents[0]?.detail as { error?: string }).error).toContain('corrupted backlog');
+
+		// Never converted into a dispatch or a drained observation.
+		expect(events.filter((ev) => ev.kind === 'meta-loop-dispatch').length).toBe(0);
+		expect(events.filter((ev) => ev.kind === 'meta-loop-observe').length).toBe(0);
+	});
+
+	test('a throwing selectTargetFn (pending target present) is caught + logged, plan_issue left untouched', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		let setPhaseCallCount = 0;
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => { throw new Error('selectFn must not be called when a pending target is set'); },
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => { setPhaseCallCount++; },
+			warnFn: () => {},
+			logEvent: logger,
+			readPlanIssueFn: () => 'CAM-201',
+			selectTargetFn: () => { throw new Error('corrupted backlog: unexpected token'); },
+		});
+
+		await dispatchFn();
+
+		// Never dispatches, and never clears the pending plan_issue on a transient error
+		// (setPhaseFn is only called on a successful resolve or a genuine not-found refusal).
+		expect(setPhaseCallCount).toBe(0);
+		const errorEvents = events.filter(
+			(ev) =>
+				ev.kind === 'sidecar-exit' &&
+				(ev.detail as { reason?: string }).reason === 'meta-loop-dispatch-select-target-error',
+		);
+		expect(errorEvents.length).toBe(1);
+		expect((errorEvents[0]?.detail as { error?: string }).error).toContain('corrupted backlog');
+		expect(events.filter((ev) => ev.kind === 'meta-loop-dispatch').length).toBe(0);
+	});
+
+	test('the sidecar outer loop survives a dispatch selectFn throw across ticks', async () => {
+		const { logger } = makeInMemoryEventLogger();
+		let callCount = 0;
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => { callCount++; throw new Error('boom'); },
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => {},
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		// Same wiring seam runMetaLoopObserveFn is used for both meta_loop=observe
+		// and meta_loop=auto in production (buildProductionDispatchFn / sidecar.ts).
+		const loopOpts = makeIdleLoopOpts(3, {
+			runMetaLoopObserveFn: dispatchFn,
+			hasPendingStories: () => false,
+		});
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		// All 3 ticks ran (the ESCAPE sentinel came from sleep(), not a crash
+		// propagating out of the dispatch fn).
+		expect(callCount).toBe(3);
+	});
+});
+
 // ===========================================================================
 // US-001 (CAM-208): gate meta_loop=auto dispatcher arming on worker_isolation=container
 // ===========================================================================
