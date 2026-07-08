@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.94.0] - 2026-07-08
+
+### Added
+
+- US-005 - Context-diet consistency sweep across all agent docs
+- US-004 - Reviewer agent: re-point retired lessons.archive.md citation to the invariants block
+- US-003 - Planner agent: drop journal.md and integral patterns.md from Project Context, remove AGENTS.md refs
+- US-002 - Implementer agent: patterns.md grep-on-demand, drop AGENTS.md ref and CLAUDE.md re-read
+- US-001 - Add curated invariants block to scripts/cam/CLAUDE.md and demote patterns.md to grep-on-demand there
+
 ## [0.93.0] - 2026-07-08
 
 ### Added
