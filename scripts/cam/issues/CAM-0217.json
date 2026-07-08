@@ -1,9 +1,34 @@
 {
   "id": "CAM-217",
   "title": "cycle-close recycle drift: --cycle-close inexistente + recycle so via context-backstop",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T14:00:39.686Z",
-  "description": "Descoberto no ship do CAM-215 (2026-07-08). Duas facetas de um mesmo gap no self-handoff/recycle do orquestrador. (1) DOC DRIFT: a secao Self-handoff lifecycle do subagent-orchestrator.md (e a copia templates/agents/ e o embed _generated.ts) manda o orquestrador disparar cam journal append --cycle-close para appendar o journal E armar o recycle marker num unico call. Esse flag NAO existe: src/commands/journal.ts parseia apenas --force. Quem emite CAM_ORCH_HANDOFF_DUE=true e o plain cam journal append. (2) COMPORTAMENTO: como o self-trigger nao existe, o recycle no cycle-boundary nunca e armado pelo orquestrador; o unico arm funcional e o context-backstop do orch-recycle-watch (CAM-163) a ~80% da janela. Ou seja, o invariante one-PR-per-session (recycle no fim do ciclo) esta quebrado: o recycle so dispara sob pressao de contexto, nao no boundary. Design pro grill: (a) alinhar o doc a realidade (documentar que plain append emite HANDOFF_DUE e o orquestrador escreve o handoff, e o recycle e armado pelo watcher), vs (b) RECOMENDADO: implementar de fato o arm no cycle-close (o orquestrador, apos escrever o handoff em HANDOFF_DUE, arma o ORCH_RECYCLE_MARKER via um comando deterministico) para o recycle acontecer no boundary como o invariante pede, com o context-backstop como rede secundaria. Gotcha: subagent-orchestrator.md e dual-copy (.claude/agents/ e templates/agents/) mais embed via bun run embed-vendor. Family do CAM-215/CAM-216 (silent e misleading paths no plan/handoff flow). Requer /cam-spec antes de /cam-plan."
+  "description": "Descoberto no ship do CAM-215 (2026-07-08). Duas facetas de um mesmo gap no self-handoff/recycle do orquestrador. (1) DOC DRIFT: a secao Self-handoff lifecycle do subagent-orchestrator.md (e a copia templates/agents/ e o embed _generated.ts) manda o orquestrador disparar cam journal append --cycle-close para appendar o journal E armar o recycle marker num unico call. Esse flag NAO existe: src/commands/journal.ts parseia apenas --force. Quem emite CAM_ORCH_HANDOFF_DUE=true e o plain cam journal append. (2) COMPORTAMENTO: como o self-trigger nao existe, o recycle no cycle-boundary nunca e armado pelo orquestrador; o unico arm funcional e o context-backstop do orch-recycle-watch (CAM-163) a ~80% da janela. Ou seja, o invariante one-PR-per-session (recycle no fim do ciclo) esta quebrado: o recycle so dispara sob pressao de contexto, nao no boundary. Design pro grill: (a) alinhar o doc a realidade (documentar que plain append emite HANDOFF_DUE e o orquestrador escreve o handoff, e o recycle e armado pelo watcher), vs (b) RECOMENDADO: implementar de fato o arm no cycle-close (o orquestrador, apos escrever o handoff em HANDOFF_DUE, arma o ORCH_RECYCLE_MARKER via um comando deterministico) para o recycle acontecer no boundary como o invariante pede, com o context-backstop como rede secundaria. Gotcha: subagent-orchestrator.md e dual-copy (.claude/agents/ e templates/agents/) mais embed via bun run embed-vendor. Family do CAM-215/CAM-216 (silent e misleading paths no plan/handoff flow). Requer /cam-spec antes de /cam-plan.",
+  "spec": {
+    "scope": "Documentation and discoverability fix only, no runtime behavior change. Correction to the filed premise: the cam journal append --cycle-close orchestrator-driven recycle arm WORKS as designed. The flag is parsed at index.ts:1258; the arm block at index.ts:1367-1399 checks handoff-present (exit 3) and watcher-alive (exit 4) then writes the ORCH_RECYCLE_MARKER; it is tested in test/commands/journal-append.test.ts and shipped in CAM-162 (PR #120). The recycle is NOT broken and is NOT reachable only via the context-occupancy backstop. The sole real gap is that JOURNAL_HELP (cam journal append --help) lists only --force and omits --cycle-close, which caused a real misdiagnosis: grepping the pure library src/commands/journal.ts (which legitimately has no such flag, because the flag and arm live one layer up in index.ts) led to the false conclusion that the mechanism was broken. In scope: the JOURNAL_HELP text (AC1, AC2), the agent-doc exit-3 completeness gap (AC3), and a static help-text test (AC4). Out of scope: any change to the --cycle-close runtime behavior, the recycle watcher, or the context-occupancy backstop, all of which work.",
+    "acceptanceCriteria": [
+      "AC1 help lists the flag: JOURNAL_HELP (the cam journal append help text in index.ts, currently around lines 345-367) documents --cycle-close. The usage line includes it (for example cam journal append [--force] [--cycle-close]) and there is an entry explaining that --cycle-close appends the cycle entry AND arms the orchestrator recycle marker, requiring the handoff file to be present and a live recycle watcher.",
+      "AC2 help documents exit codes: JOURNAL_HELP documents the exit-code contract for journal append: exit 1 (invalid or duplicate JSON), exit 3 (--cycle-close with the handoff file absent), and exit 4 (--cycle-close with no live recycle watcher).",
+      "AC3 agent-doc exit-3: the Self-handoff lifecycle section of subagent-orchestrator.md adds the exit-3 (handoff-absent) refuse-to-arm case alongside the existing exit-4 note. Both copies are updated (.claude/agents/subagent-orchestrator.md and templates/agents/subagent-orchestrator.md) and the embed is regenerated via bun run embed-vendor.",
+      "AC4 static test: a static assertion verifies JOURNAL_HELP contains the --cycle-close token and the exit-3 and exit-4 mentions, extending test/commands/journal-append.test.ts.",
+      "AC5 gates green: bun run typecheck reports zero errors, bun test reports zero failures, bun run check:all passes (biome), and bun run embed-vendor:check passes (templates touched via AC3)."
+    ],
+    "gotchas": [
+      "The flag and the recycle arm live in index.ts (parseJournalArgs / dispatchJournal), NOT in src/commands/journal.ts (the pure appendJournalEntryOnMain library, which only knows --force). Do not look in journal.ts for the flag; this exact mislocation caused the original misdiagnosis.",
+      "subagent-orchestrator.md is dual-copied (.claude/agents/ and templates/agents/) and embedded in src/vendor/_generated.ts; editing it requires updating both copies plus bun run embed-vendor, and the embed-vendor:check gate applies.",
+      "Doc and help-text only: no runtime behavior change. Do not alter the --cycle-close arm logic, the exit codes, the recycle watcher, or the context-occupancy backstop.",
+      "Plain cam journal append (no flag) intentionally emits CAM_JOURNAL_APPENDED and CAM_ORCH_HANDOFF_DUE but skips the arm block; only --cycle-close arms. The help text should make the plain-vs-cycle-close distinction discoverable."
+    ],
+    "domainTerms": [
+      "orchestrator self-handoff"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 2
+  }
 }
