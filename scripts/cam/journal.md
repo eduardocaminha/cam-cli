@@ -1367,3 +1367,14 @@ Each entry follows this template:
 - **Decisions**: Fully autonomous (meta_loop=auto): auditor approved round 1, sidecar drove implement->review->ship with no operator gating. Binary was rebuilt+reinstalled to 0.90.0 earlier this session, fixing the stale-binary cam-tag no-op from CAM-120.
 - **Blockers encountered**: None. Post-merge completed fully automatically (pull + tag v0.91.0 + close CAM-128 + prune), unlike CAM-120 whose post-merge broke on pull-failed from an unpushed direct-to-main commit; here local main was fully pushed when the branch was cut, so the divergence root cause was absent.
 - **Follow-ups**: CAM-219 filed this session (P3, defer to release hardening): build-release hermetic init smoke emits a false-positive 'Resend not configured' warning; fix = add --plan-approval operator to the smoke invocation at build-release.sh:114.
+
+## cam/pr-125-journal-archive — CAM-125 shipped: deterministic GC of journal.md (cam journal archive) at cycle close
+
+- **Started**: 2026-07-08
+- **Closed**: 2026-07-08
+- **Branch**: cam/pr-125-journal-archive
+- **Issue**: CAM-125
+- **Outcome**: shipped
+- **Summary**: Added `cam journal archive [--threshold N]`: a deterministic GC that moves the oldest third of journal.md entries to journal.archive.md on main when the entry count exceeds a configurable threshold (default 50), via the same commit-tree-to-main plumbing the journal writer uses. Auto-invoked on the --cycle-close path so the journal self-bounds. Shipped fully autonomous (meta_loop=auto): plan converged auditor-APPROVE, 4/4 non-operator stories, review CLEAN round 1, ship ci-gated merged clean at v0.92.0.
+- **Decisions**: Archive threshold is configurable (default 50) and the move is a pure oldest-third slice, keeping the newest two-thirds hot in journal.md. US-004 retired the old manual archive rule from the templates + agent files so the deterministic path is the single source of truth.
+- **Follow-ups**: Installed cam binary still at 0.90.0 (shipped code 0.92.0); a rebuild+reinstall gives cam-tag version-parity and lands the archive feature in the installed binary. Non-blocking (post-merge auto-tag works).
