@@ -1,22 +1,22 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Add suggestion fingerprint, follow-up builder, and dedup helpers" },
+  "lastCompletedStory": { "id": "US-003", "title": "File SUGGESTION follow-ups at the terminal verdict in runSidecarLoop" },
   "branchName": "cam/pr-189-suggestion-followups",
-  "timestamp": "2026-07-08T21:10:00Z",
+  "timestamp": "2026-07-08T20:51:12Z",
   "createdFiles": [
-    "src/supervisor/suggestion-followups.ts",
-    "test/suggestion-followups.test.ts"
+    "test/supervisor/suggestion-filing-hook.test.ts",
+    "test/supervisor/suggestion-filing-production.test.ts"
   ],
-  "modifiedFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/loop.ts",
+    "src/commands/sidecar.ts",
+    "src/supervisor/decide.ts",
+    "src/supervisor/events.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added a PURE module src/supervisor/suggestion-followups.ts with 4 exports: fingerprintFinding(finding) -> 12-hex-char sha256 prefix (Bun.CryptoHasher('sha256'), fields normalized-and-joined with '::' delimiter so missing file/line never collides with a distinct text); buildFollowUpIssue(finding, { source, round? }) -> { title, description } where title is the finding text truncated at 80 chars (ellipsis '…'), and description is finding.text + blank line + 'Source: <source>' + optional 'Review round: <n>' + optional 'Location: <file>[:<line>]' + blank line + 'suggestion-fingerprint: <hash>'; extractSuggestions(report) filters findings to severity==='SUGGESTION'; dedupSuggestions(backlog, report) scans open (status==='open') IssueEntry.description strings for a 'suggestion-fingerprint: <hex>' line via regex, builds a Set of already-filed fingerprints, then walks extractSuggestions(report) skipping any finding whose fingerprintFinding() is in that set OR already seen earlier in the same batch. All 4 are exported with types FollowUpProvenance and FollowUpIssue. US-003 (next, priority 3) wires this into runSidecarLoop: per its notes, add optional readReviewReportFn/fileSuggestionsFn/notify deps to RunSidecarLoopOptions (loop.ts:1517), wire production deps in buildSidecarLoopDeps (sidecar.ts:2141-2196) using makeReadReviewReport(cwd) from host.ts:134, createLocalIssueOnMain (issue-file.ts:271), readBacklogFromMain (issues/backlog.ts), and these US-002 helpers; place the hook in runSidecarLoop next to the CAM-191/ADR-0013 auto-ship block (loop.ts:1882-1911), strictly AFTER opts.clearActive() and before the flipActiveFn continue, gated on result.status in ('complete','awaiting-operator') AND re-read prd.review.lastVerdict in TERMINAL_VERDICTS (decide.ts:66). For provenance when calling buildFollowUpIssue from that hook: pass source = prd.branchName (no 'cycle id' concept exists in the codebase today, confirmed by grep), round = prd.review.roundsCompleted. Gotcha caught during this story: writing '\\u0000' (raw NUL) into a JSON-tool-authored TS source file produces an actual raw NUL byte in the file (the `file` command then reports it as 'data', not text, and grep silently no-ops without -a) -- use a plain ASCII delimiter like '::' instead of NUL for any future field-join-then-hash helper, never a NUL escape typed into a Write/Edit content string.",
+  "nextStoryContext": "US-003 was the last remaining story in this PRD; all 3 stories (US-001, US-002, US-003) now have passes:true. Next `cam next` invocation should route to /cam-review, not a new implementer story. Summary of what US-003 wired: RunSidecarLoopOptions gained two optional deps, readReviewReportFn (() => ReviewReport | null) and fileSuggestionsFn ((report, provenance) => { filedIds: string[]; dupSkipped: number }), both consumed in a new hook in runSidecarLoop placed right after the CAM-191/ADR-0013 auto-ship block (i.e. after opts.clearActive()) and before the flipActiveFn auto-chain continue. The hook gates on result.status in ('complete','awaiting-operator') AND a re-read prd.review.lastVerdict in TERMINAL_VERDICTS (decide.ts), reads scripts/cam/review-report.json, and calls fileSuggestionsFn with provenance {source: prd.branchName, round: prd.review.roundsCompleted}. On >=1 filed id it pushes exactly one summary line via supervisorOpts.notifyOrchestrator (NOT a separately-wired notify closure -- reuses the existing RunSupervisorOptions field). PrdSnapshot (decide.ts) gained an optional branchName field for this purpose. Production wiring lives in sidecar.ts: exported makeProductionFileSuggestionsFn(cwd, spawnFn, logEvent) reads the open backlog via readBacklogFromMain, dedups via the US-002 dedupSuggestions/extractSuggestions helpers, and files survivors via createLocalIssueOnMain (default filing, no specSource -> stage 'idea'); a createLocalIssueOnMain ok:false result is skip-and-warned (failedCount tallied, never thrown) and a new 'suggestion-filed' WorkerEventKind/SuggestionFiledEventDetail (events.ts) records the outcome whenever there's something to report. buildSidecarLoopDeps wires this UNCONDITIONALLY (both operator and auto plan_approval mode -- unlike the flipActiveFn/autoShipFn pair, filing a non-blocking idea issue is not an autonomy escalation so it does not need the auto-mode gate). Idempotency has no prd.json marker: SUGGESTION fingerprint dedup (US-002) is the sole mechanism, proven end-to-end by a two-tick (awaiting-operator then complete) regression test in test/supervisor/suggestion-filing-hook.test.ts. Gotchas hit while writing the real-writer regression test (now captured in patterns.md): a canned/faked runSupervisorFn never invokes onProgress (onProgress is called from inside the REAL runSupervisor only), so that test omits runSupervisorFn and instead seeds a prd where decideNextAction resolves 'complete' immediately; and makeClearActive's implicit phase:idle rewrite always recreates the state file after the real onProgress unlink, so the correct post-run assertion is phase==='idle', not file-absence. File-size budget ceilings were raised for loop.ts/sidecar.ts/decide.ts/events.ts plus two new test-file entries (see scripts/file-size-budget.json _ref for exact deltas).",
   "officialDocsValidated": [
-    {
-      "lib": "Bun (Bun.CryptoHasher hashing API)",
-      "version": "current",
-      "url": "https://bun.com/docs/api/hashing",
-      "fetchedAt": "2026-07-08T21:05:00Z",
-      "status": "ok",
-      "summary": "Confirmed constructor new Bun.CryptoHasher('sha256'), sha256 explicitly supported, update(input) accepts a string, and digest('hex') returns a hex string (not Uint8Array) when an encoding is passed. Matches the implementation and the PRD-level officialDocsConsulted entry; no deprecations noted."
-    }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure wiring story: no new external library or API surface introduced (git CLI plumbing via createLocalIssueOnMain/readBacklogFromMain was already validated in prior stories on this branch)." }
   ]
 }
