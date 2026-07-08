@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Carry SUGGESTION findings through the reviewer CLEAN exit report" },
+  "branchName": "cam/pr-189-suggestion-followups",
+  "timestamp": "2026-07-08T20:20:00Z",
+  "createdFiles": [
+    "test/templates/subagent-reviewer-clean-findings.test.ts"
+  ],
+  "modifiedFiles": [
+    ".claude/agents/subagent-reviewer.md",
+    "templates/agents/subagent-reviewer.md",
+    "src/vendor/_generated.ts",
+    "test/supervisor/decide.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 rewrote both CLEAN examples in the subagent-reviewer exit report protocol section (dev copy .claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md, lines ~158-206) so they carry a SUGGESTION finding instead of `findings: []`, with a new sentence stating CLEAN means no BLOCKING findings, not no findings. decide.ts already keyed terminal detection off TERMINAL_VERDICTS (verdict string), not findings length -- no production code change was needed there, only a locking regression test (test/supervisor/decide.test.ts, new 'terminal detection keys off verdict string, not findings length' describe block) plus a doc-gate test (test/templates/subagent-reviewer-clean-findings.test.ts, describe.each over dev/template copies mirroring test/templates/orchestrator-boot.test.ts). Ran bun run embed-vendor BEFORE bun test, embed-vendor:check is clean. Raised test/supervisor/decide.test.ts's file-size-budget.json ceiling 487->530 with a new _ref entry (US-002/US-003 of this PRD will likely touch src/supervisor/decide.ts and/or src/commands/sidecar.ts for the follow-up-filing behavior -- check current line counts against the budget before those edits). US-002 (fingerprint/follow-up-builder/dedup helpers) and US-003 (file follow-ups at terminal verdict in runSidecarLoop) are next; the review-report.json findings array (now legitimately non-empty on CLEAN) is the structured input those stories will read to build follow-up issues.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

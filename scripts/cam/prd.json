@@ -32,7 +32,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-reviewer.md (exit protocol section, lines ~158-205), templates/agents/subagent-reviewer.md, src/vendor/_generated.ts (regen via bun run embed-vendor), test file for the doc-gate + decide regression. Gotcha (cam dual-copy is per-file): the two agent copies are NOT byte-identical overall; edit each copy's exit-protocol section, do not blind-copy the whole file. Doc-gate test precedent: patterns.md entry for US-005/CAM-215 (assert raw dev copy via readFileSync plus embedded templatesContents in one describe.each; the dev copy is never in templatesContents). Run bun run embed-vendor BEFORE bun test or the embedded-copy assertion sees stale content. decide.ts already keys terminal detection off TERMINAL_VERDICTS (src/supervisor/decide.ts:66, used at :130); the regression test is a lock against a future refactor gating on findings emptiness, and it is what makes the reviewer change safe. Also check test/embedded.test.ts for stale content assertions after editing the templates copy (patterns.md CAM-151 gotcha)."
     },
