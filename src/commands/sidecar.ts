@@ -38,6 +38,7 @@ import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
 import { runPlanPhaseWithReplan, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult, type PlanEscalationWriterParams } from '../supervisor/plan-runner.ts';
 import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FILENAME, type PlanEscalatedMarker } from '../supervisor/plan-escalation.ts';
+import { writePlanPreflightFailedMarker, removePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
@@ -1702,6 +1703,24 @@ function makeWriteEscalationMarkerFn(claudeDir: string): (params: PlanEscalation
 }
 
 /**
+ * Build the real writePreflightFailedMarkerFn for the plan phase (US-003, CAM-215).
+ *
+ * Stamps `writtenAt` (the one field runPostAuditAction's pure seam does NOT
+ * add, keeping plan-runner.ts clock-free) and persists the durable
+ * .cam-plan-preflight-failed.json marker via writePlanPreflightFailedMarker
+ * (src/supervisor/plan-preflight-marker.ts, US-002). Called unconditionally by
+ * runPostAuditAction on a preflight-failed planResult, independent of
+ * notifyFn's presence or outcome (mirrors makeWriteEscalationMarkerFn above).
+ */
+function makeWritePreflightFailedMarkerFn(claudeDir: string): (params: PlanPreflightFailedWriterParams) => void {
+	const filePath = join(claudeDir, PLAN_PREFLIGHT_FAILED_FILENAME);
+	return (params: PlanPreflightFailedWriterParams): void => {
+		const marker: PlanPreflightFailedMarker = { ...params, writtenAt: new Date().toISOString() };
+		writePlanPreflightFailedMarker(filePath, marker);
+	};
+}
+
+/**
  * Build a clearStalePlanArtifacts function for the given cwd (US-002, CAM-155).
  *
  * Removes both:
@@ -1777,6 +1796,14 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 		removeEscalationMarkerFn: () => removePlanEscalatedMarker(join(o.claudeDir, PLAN_ESCALATED_FILENAME)),
 		// US-003 (CAM-203): structured event for the plan-target-invalid terminal.
 		logEvent: o.logEvent,
+		// US-003 (CAM-215): durable plan-preflight-failed marker writer.
+		writePreflightFailedMarkerFn: makeWritePreflightFailedMarkerFn(o.claudeDir),
+		// US-004 (CAM-215, Option B): remove the durable plan-preflight-failed
+		// marker on ANY non-preflight-failed planResult (not gated on
+		// convergence or issueId, unlike removeEscalationMarkerFn above).
+		// removePlanPreflightFailedMarker never throws when the file is
+		// already absent (best-effort unlinkSync).
+		removePreflightFailedMarkerFn: () => removePlanPreflightFailedMarker(join(o.claudeDir, PLAN_PREFLIGHT_FAILED_FILENAME)),
 	});
 	exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(o.claudeDir, o.cwd)); // US-R1-002
 }

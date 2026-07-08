@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.88.0] - 2026-07-08
+
+### Added
+
+- US-005 - Orchestrator boot step 9: read the preflight-failed marker
+- US-004 - Marker removal on any non-preflight-failed plan result (Option B)
+- US-003 - preflight-failed arm in runPostAuditAction with marker write and notify
+- US-002 - Durable plan-preflight-failed marker module
+- US-001 - Gitignore the three untracked runtime artifacts
+
 ## [0.87.0] - 2026-07-08
 
 ### Added

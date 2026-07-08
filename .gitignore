@@ -83,6 +83,12 @@ scripts/cam/review-artifact.txt
 scripts/cam/plan-verdict-report.json
 # Durable plan-escalation marker written on plan non-convergence (US-002, CAM-204)
 .claude/.cam-plan-escalated.json
+# Runtime sidecar session marker written by session-start.ts (CAM-215)
+.claude/.cam-sidecar-session.json
+# Durable ship-stalled marker written by merge-watch.ts (CAM-215)
+.claude/.cam-ship-stalled.json
+# Durable plan-preflight-failed marker written on preflight halt (US-002, CAM-215)
+.claude/.cam-plan-preflight-failed.json
 # Per-run gate timing output written by check-all.ts --json (US-004, CAM-59); read by CI step summary
 gate-results.json
 
