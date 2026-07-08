@@ -1,0 +1,9 @@
+{
+  "id": "CAM-226",
+  "title": "GC do patterns.md: archive threshold espelhando cam journal archive",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T23:05:44.327Z",
+  "description": "patterns.md esta em 292KB / 271 bullets e cresce sem teto (append-only, never truncated por convencao). O journal tem GC deterministico (cam journal archive, threshold 50, move o terco mais velho pra journal.archive.md em commit atomico no main); patterns nao tem nada. Criar mecanismo equivalente (cam patterns archive ou extensao do journal archive) movendo bullets resolvidos/datados pra patterns.archive.md, mantendo o arquivo quente escaneavel. Muitos bullets sao build-notes one-time de 2026-06 (ink-testing timing, tmux resize arithmetic) que documentam mecanica resolvida, nao invariante viva. Interage com CAM-223 (invariantes movem pro CLAUDE.md; patterns vira grep-on-demand) mas e mecanismo independente. Origem: auditoria de contexto 2026-07-08."
+}
