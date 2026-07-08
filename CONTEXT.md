@@ -58,3 +58,9 @@ cam project.toml [loop] key selecting where implementer/reviewer workers run: ho
 
 **auto-drain**:
 the inter-cycle unattended dispatcher (meta_loop=auto) that, at a safe idle boundary, selects the next plannable backlog issue and writes phase:planning to chain a new autonomous cycle. Container-gated by design (ADR 0007). worker_isolation=host is a permanent mismatch and does not arm it; worker_isolation=container with Docker preflight not yet ready is a transient state that refuses per-tick until ready.
+
+**plan preflight**:
+The deterministic gate the sidecar runs before dispatching a plan phase: git checkout main, git pull, prune merged cam branches (best-effort), a clean-tree check (strict git status --porcelain), typecheck, and bun test, halting on the first failing step. A failure reverts phase to idle and, per the durable surfacing marker pattern, writes .claude/.cam-plan-preflight-failed.json for the operator.
+
+**durable surfacing marker**:
+A runtime JSON file the sidecar writes on a silent terminal state (ship stalled, plan escalated, plan preflight failed) so a recycled orchestrator surfaces it at boot as an opening blocker. The pattern is a triad: a durable file, a boot read, and a best-effort pane notify. The file is the source of truth because the notify is a no-op when the orchestrator pane is gone.
