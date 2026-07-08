@@ -25,9 +25,6 @@ import type { SpawnSyncReturns } from 'node:child_process';
 // Helpers
 // ---------------------------------------------------------------------------
 
-const FIXED_TS = '2026-06-23T12:00:00.000Z';
-const clock = () => FIXED_TS;
-
 const PROJECT_TOML_NONE = 'issue_system = "none"\nissue_prefix = "CAM"\n';
 const PROJECT_TOML_GITHUB = 'issue_system = "github"\nissue_prefix = "CAM"\n';
 
@@ -73,7 +70,6 @@ function makeOptions(
 ): FinalizeCycleCloseOptions {
 	return {
 		cwd: '/fake/project',
-		clock,
 		readProjectToml: () => PROJECT_TOML_NONE,
 		readPrd: () => PRD_JSON,
 		stashFn: () => {},
