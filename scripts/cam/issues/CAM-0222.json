@@ -1,9 +1,37 @@
 {
   "id": "CAM-222",
   "title": "Gate de integridade: abandono nao reseta stage, deixa zumbi specified+abandoned",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T21:22:57.927Z",
-  "description": "abandonIssueOnMain e mergeIssueOnMain (src/commands/issue-specify.ts) setam status:'abandoned' sem NUNCA tocar em stage, criando entradas inconsistentes stage:specified + status:abandoned. Todos os readers de codigo ja filtram status corretamente (list.ts:134 exclui abandoned; select.ts e rank.ts exigem status:open; plan.ts:147 recusa cam plan N com alvo nao-plannable), mas o dado cru mente: qualquer query keyed so em stage ressuscita a issue abandonada como se fosse plannable. Aconteceu de verdade 2026-07-08: o orquestrador derivou o backlog com grep de \"stage\":\"specified\" cru e apresentou CAM-99/103/130/184 (todas abandoned) como specified prontas pra planejar. Gate proposto: invariante de integridade no dado, de modo que NENHUM caminho (codigo ou ad-hoc) possa ver uma issue abandonada num bucket ativo. Opcao A: abandono/merge limpam ou movem o stage pra fora de idea|specified|planned. Opcao B: validador deterministico (rodado em cam issue list e/ou como check da spine) que falha loud se existir qualquer entrada status:abandoned com stage in {idea,specified,planned}. Recomendo fix na escrita (abandono) + assercao do invariante. NAO e falta de gate no caminho de plan (esse ja existe); e hardening de integridade pra o dado nao mentir. Origem: pushback do operador (gate, nao memoria)."
+  "description": "abandonIssueOnMain e mergeIssueOnMain (src/commands/issue-specify.ts) setam status:'abandoned' sem NUNCA tocar em stage, criando entradas inconsistentes stage:specified + status:abandoned. Todos os readers de codigo ja filtram status corretamente (list.ts:134 exclui abandoned; select.ts e rank.ts exigem status:open; plan.ts:147 recusa cam plan N com alvo nao-plannable), mas o dado cru mente: qualquer query keyed so em stage ressuscita a issue abandonada como se fosse plannable. Aconteceu de verdade 2026-07-08: o orquestrador derivou o backlog com grep de \"stage\":\"specified\" cru e apresentou CAM-99/103/130/184 (todas abandoned) como specified prontas pra planejar. Gate proposto: invariante de integridade no dado, de modo que NENHUM caminho (codigo ou ad-hoc) possa ver uma issue abandonada num bucket ativo. Opcao A: abandono/merge limpam ou movem o stage pra fora de idea|specified|planned. Opcao B: validador deterministico (rodado em cam issue list e/ou como check da spine) que falha loud se existir qualquer entrada status:abandoned com stage in {idea,specified,planned}. Recomendo fix na escrita (abandono) + assercao do invariante. NAO e falta de gate no caminho de plan (esse ja existe); e hardening de integridade pra o dado nao mentir. Origem: pushback do operador (gate, nao memoria).",
+  "spec": {
+    "scope": "Gate de duas partes contra apresentar/planejar issue nao-plannable, no lado da query (stage e status sao ortogonais por design; abandono preserva stage, nada de reset). PARTE A: adicionar modo maquina `cam issue list --json` emitindo { counts: {idea,specified,planned,shipped}, plannable: [{id,title,rank}], byStage: {idea,specified,planned} }. counts conta so open; abandoned nunca aparece em nenhum dos tres; shipped em byStage/counts so com --all. plannable e a fila specified+open+!blocked ja ordenada. PARTE B: extrair o predicado de plannability duplicado (hoje em select.ts:70/137, rank.ts:213, plan.ts:147, list.ts:134) para um unico isPlannable(entry, backlog) exportado de src/issues/select.ts, e fazer todos esses caminhos chamarem ele; adicionar guard estatico na spine (teste) que falha se `=== \"specified\"` ou `=== 'specified'` aparecer em qualquer arquivo de src/ exceto o modulo canonico que define isPlannable (allowlist de 1 arquivo). PARTE C (doc): atualizar .claude/agents/subagent-orchestrator.md + a copia templates/ (dual-copy) + a skill cam-issue para mandar derivar backlog SO via `cam issue list --json` e nunca ler scripts/cam/issues/*.json cru. Sem migracao dos zumbis existentes (CAM-99/103/130/184): abandono-preserva-stage e intencional e eles ja saem de todo output por serem abandoned. Origem: 2026-07-08 o orquestrador grepou stage cru e apresentou 4 abandoned como plannable; o gate duro de plan (plan.ts:147) ja recusaria, o buraco e o listing humano-facing contornavel + predicado duplicado.",
+    "acceptanceCriteria": [
+      "cam issue list --json emite objeto { counts, plannable, byStage } exatamente com esse shape; abandoned excluido de counts, plannable e byStage; counts conta so open; shipped so aparece com --all",
+      "plannable no --json e computado pelo mesmo isPlannable e vem ordenado (rank asc, id numerico asc), identico a fila de selectPlannableIssue",
+      "isPlannable(entry, backlog) e exportado de um unico modulo canonico e select.ts/rank.ts/plan.ts/list.ts chamam ele; nenhuma dessas rotas reimplementa o predicado stage+status inline",
+      "teste de spine falha se `=== \"specified\"` ou `=== 'specified'` aparecer em qualquer .ts de src/ fora do modulo canonico que define isPlannable",
+      "subagent-orchestrator.md (.claude/ e templates/) + skill cam-issue mandam derivar backlog so via `cam issue list --json`, nunca grep de scripts/cam/issues/*.json cru",
+      "bun run typecheck, bun test, bun run check:all e bun run embed-vendor:check todos verdes"
+    ],
+    "gotchas": [
+      "dual-copy .claude/ vs templates/ NAO e byte-identico por arquivo; diff antes de assumir; tocar templates/ exige embed-vendor:check verde (regen com bun run embed-vendor)",
+      "noUncheckedIndexedAccess: indexacao de array e grupo de regex sao T|undefined, sempre guardar",
+      "o guard ban-literal precisa ele mesmo estar no allowlist (o proprio arquivo de teste contem a string \"specified\") ou usar match que nao case a si mesmo",
+      "cam issue list ja le do main via git plumbing (readBacklogFromMain); o --json deve usar a mesma fonte, nao o working tree"
+    ],
+    "domainTerms": [
+      "plannable issue",
+      "issue stage",
+      "issue status"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 3
+  }
 }
