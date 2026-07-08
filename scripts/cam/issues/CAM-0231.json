@@ -1,0 +1,9 @@
+{
+  "id": "CAM-231",
+  "title": "Cross-repo PRD: decidir aspiracional vs implementar (zero suporte no codigo)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T23:05:55.074Z",
+  "description": "scripts/cam/CLAUDE.md:106-117 (secao Cross-Repo PRDs) e subagent-implementer.md:57-58,117 documentam crossRepoLayout top-level + campo repo por story como se fossem harness-driven. Grep de crossRepoLayout e do campo repo em src/, scripts/ e test/ retorna VAZIO: o supervisor nunca le repo, decideNextAction ignora, zero validacao. O planner tambem nao emite (schema de output dele omite os campos, entao um PRD cross-repo nunca nasce do plan). Feature e inteiramente agent-self-executed cd sem verificacao. Decisao de produto: (a) marcar as secoes como agent-executed/aspiracional e remover a impressao de suporte de harness, ou (b) implementar suporte real (supervisor valida layout, story selection ciente de repo, gates rodando no repo certo). Origem: auditorias implementer e planner 2026-07-08."
+}
