@@ -430,11 +430,19 @@ describe("selectPlannableFromFile -- dir-backed fixture", () => {
 		expect(dirResult?.id).toBe("CAM-9");
 	});
 
-	test("returns null when spawnFn throws", () => {
+	test("propagates the real error when spawnFn throws (US-001, CAM-115: never swallowed into null)", () => {
 		const throwingSpawn: BacklogSpawnFn = () => {
 			throw new Error("git not found");
 		};
-		expect(selectPlannableFromFile("/repo", throwingSpawn)).toBeNull();
+		expect(() => selectPlannableFromFile("/repo", throwingSpawn)).toThrow(
+			"git not found",
+		);
+	});
+
+	test("returns strict null (not undefined) for a legitimately empty backlog", () => {
+		const spawn = makeSpawnFn([]);
+		const result = selectPlannableFromFile("/repo", spawn);
+		expect(result).toBe(null);
 	});
 
 	test("matches selectPlannableIssue for the unranked-high-WSJF fixture (CAM-201 vs CAM-66)", () => {
@@ -587,12 +595,27 @@ describe("selectPlanTargetFromFile -- with targetId (target-aware)", () => {
 		expect(selectPlanTargetFromFile("/repo", "CAM-999", spawn)).toBeNull();
 	});
 
-	test("returns null when spawnFn throws (error safety)", () => {
+	test("propagates the real error when spawnFn throws (US-001, CAM-115: never swallowed into null)", () => {
 		const throwingSpawn: BacklogSpawnFn = () => {
 			throw new Error("git not found");
 		};
-		expect(
+		expect(() =>
 			selectPlanTargetFromFile("/repo", "CAM-1", throwingSpawn),
-		).toBeNull();
+		).toThrow("git not found");
+	});
+
+	test("propagates the real error when spawnFn throws even with no targetId", () => {
+		const throwingSpawn: BacklogSpawnFn = () => {
+			throw new Error("git not found");
+		};
+		expect(() =>
+			selectPlanTargetFromFile("/repo", undefined, throwingSpawn),
+		).toThrow("git not found");
+	});
+
+	test("returns strict null (not undefined) for a legitimately empty backlog with no targetId", () => {
+		const spawn = makeSpawnFn([]);
+		const result = selectPlanTargetFromFile("/repo", undefined, spawn);
+		expect(result).toBe(null);
 	});
 });

@@ -1075,8 +1075,11 @@ function makeProductionEscalateFn(
  * (US-004/US-005, CAM-132).
  *
  * Extracted from buildSidecarLoopDeps to keep that function under the biome
- * noExcessiveLinesPerFunction(maxLines=80) limit. Not exported: tests inject
- * options.runMetaLoopObserveFn directly.
+ * noExcessiveLinesPerFunction(maxLines=80) limit. Exported (rather than the
+ * previous unexported form) so the regression test for the selector-error
+ * boundary below (US-001, CAM-115) can inject a throwing selectFn without a
+ * real corrupted backlog fixture; production callers still get
+ * options.runMetaLoopObserveFn injected via buildMetaLoopFn.
  *
  * Dedup state is held in the closure (NOT persisted to any file under .claude
  * or the working tree per CAM-68 invariant).
@@ -1084,17 +1087,44 @@ function makeProductionEscalateFn(
  * Internally builds the drain notify fn from apiKey/recipient so that
  * buildSidecarLoopDeps avoids an extra ?? expression (complexity budget).
  * When apiKey or recipient is empty, drainNotify is undefined (inert).
+ *
+ * selectFn defaults to the real selectPlannableFromFile(cwd) seam; tests
+ * override it to simulate a real backlog read/parse error (US-001, CAM-115).
+ * Since selectPlannableFromFile no longer swallows read/parse errors, a throw
+ * here would otherwise propagate through the unguarded
+ * `await opts.runMetaLoopObserveFn()` call in loop.ts's idle tick and crash
+ * the long-lived sidecar. The catch below is that boundary: it logs the real
+ * error via the WorkerEventLogger and skips the tick WITHOUT calling
+ * observeDecide, so a corrupted backlog is never converted into a
+ * drained/empty-backlog observation. lastState is left untouched so the next
+ * tick retries cleanly once the underlying error clears.
  */
-function makeProductionMetaLoopObserveFn(
+export function makeProductionMetaLoopObserveFn(
 	cwd: string,
 	logEvent: WorkerEventLogger,
 	resendApiKey: string,
 	resendRecipient: string,
+	selectFn: () => IssueEntry | null = () => selectPlannableFromFile(cwd),
 ): () => Promise<void> {
 	const drainNotifyFn = makeProductionDrainNotifyFn(resendApiKey, resendRecipient);
 	let lastState: ObserveState = { kind: 'none' };
 	return async (): Promise<void> => {
-		const selected = selectPlannableFromFile(cwd);
+		let selected: IssueEntry | null;
+		try {
+			selected = selectFn();
+		} catch (err: unknown) {
+			logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'sidecar-exit',
+				detail: {
+					reason: 'meta-loop-observe-select-error',
+					error: err instanceof Error ? err.message : String(err),
+				},
+			});
+			return;
+		}
 		const result = observeDecide(selected, lastState);
 		if (result !== null) {
 			lastState = result.newState;

@@ -20,7 +20,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Item (1) of CAM-115. The undefined-vs-null half of the finding was already fixed by the CAM-90 cutover (selectPlannableIssue returns IssueEntry|null); what remains is the catch-all swallow in the two file-backed seams (src/issues/select.ts lines 100-109 and 149-163). Callers to review when removing the swallow: makeProductionMetaLoopObserveFn (src/commands/sidecar.ts ~line 1088, calls selectPlannableFromFile directly inside an async tick of the long-lived sidecar; an unhandled rejection here would kill the sidecar, so catch AT THIS BOUNDARY, log the real error via the WorkerEventLogger or stderr, and skip the tick without emitting drained), and the closures at sidecar.ts ~lines 1474/1479/1798 handed to plan-runner as selectIssueFn (called at src/supervisor/plan-runner.ts:752 with no try/catch; decide explicitly whether runPlanPhase should let the throw propagate as fail-loud, and document it). Update the stale CAM-154 docstring on selectPlanTargetFromFile in the same edit (Doc Maintenance). Note readBacklogFromMain itself still skips unparseable per-issue JSON silently; changing backlog.ts is OUT of scope for this story, the spec targets the select.ts seams."
     },

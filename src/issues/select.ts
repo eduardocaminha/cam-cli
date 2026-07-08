@@ -90,7 +90,16 @@ export function selectPlannableIssue(
 
 /**
  * I/O seam: reads the per-issue dir from main via readBacklogFromMain and
- * delegates to selectPlannableIssue. Returns null on any read/parse error.
+ * delegates to selectPlannableIssue. Returns null ONLY when the backlog is
+ * legitimately empty or no candidate qualifies (selectPlannableIssue's own
+ * null case).
+ *
+ * A real read/parse error thrown by readBacklogFromMain propagates to the
+ * caller (US-001, CAM-115): a corrupted backlog must never be silently
+ * conflated with a drained one. Callers that invoke this from a long-lived
+ * async tick (e.g. the sidecar meta-loop observer) are responsible for
+ * guarding their own boundary and logging the real error rather than letting
+ * it crash the process.
  *
  * This is the ONLY place that couples the pure selection logic to the
  * filesystem. Keep it thin so the untested surface stays minimal.
@@ -101,11 +110,7 @@ export function selectPlannableFromFile(
 	cwd: string,
 	spawn?: BacklogSpawnFn,
 ): IssueEntry | null {
-	try {
-		return selectPlannableIssue(readBacklogFromMain(cwd, spawn));
-	} catch {
-		return null;
-	}
+	return selectPlannableIssue(readBacklogFromMain(cwd, spawn));
 }
 
 /**
@@ -142,7 +147,11 @@ export function selectPlannableById(
  * When targetId is undefined or null, delegates to selectPlannableIssue
  * (preserving existing bare `cam plan` behavior: top-of-queue).
  *
- * Returns null on any read/parse error (never throws).
+ * Returns null ONLY when the target is absent/not-plannable or the backlog is
+ * legitimately empty. A real read/parse error thrown by readBacklogFromMain
+ * propagates to the caller (US-001, CAM-115): see selectPlannableFromFile's
+ * docstring for the corrupted-vs-drained rationale and the caller-boundary
+ * contract.
  *
  * @param spawn  Injectable spawnSync (for tests; defaults to the system default).
  */
@@ -151,13 +160,9 @@ export function selectPlanTargetFromFile(
 	targetId: string | undefined | null,
 	spawn?: BacklogSpawnFn,
 ): IssueEntry | null {
-	try {
-		const backlog = readBacklogFromMain(cwd, spawn);
-		if (targetId != null && targetId.length > 0) {
-			return selectPlannableById(backlog, targetId);
-		}
-		return selectPlannableIssue(backlog);
-	} catch {
-		return null;
+	const backlog = readBacklogFromMain(cwd, spawn);
+	if (targetId != null && targetId.length > 0) {
+		return selectPlannableById(backlog, targetId);
 	}
+	return selectPlannableIssue(backlog);
 }

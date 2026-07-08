@@ -207,8 +207,18 @@ export interface RunPlanPhaseOptions {
 
 	/**
 	 * Pick the highest-priority plannable issue. Delegates to
-	 * selectPlannableFromFile (src/issues/select.ts); returns null when the
-	 * backlog is empty or all issues are blocked/non-specified.
+	 * selectPlannableFromFile / selectPlanTargetFromFile (src/issues/select.ts);
+	 * returns null when the backlog is empty, the target is absent/not-plannable,
+	 * or all issues are blocked/non-specified.
+	 *
+	 * A real backlog read/parse error THROWS (US-001, CAM-115: select.ts no
+	 * longer swallows read/parse errors into a false null). runPlanPhase (Step 2
+	 * below) does not catch this call: the throw is deliberately allowed to
+	 * propagate fail-loud out of runPlanPhase / runPlanPhaseWithReplan. The
+	 * production wiring (makeProductionPlanPhaseFn, sidecar.ts) already has an
+	 * outermost try/catch around the whole plan-phase tick that logs the real
+	 * error and resets phase to idle, so this is safe: no additional guard is
+	 * needed inside runPlanPhase itself.
 	 */
 	selectIssueFn: () => IssueEntry | null;
 

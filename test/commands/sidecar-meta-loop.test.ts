@@ -41,6 +41,7 @@ import {
 	DRAIN_NOTIFY_SUBJECT,
 	BLOCKED_CYCLE_ESCALATE_SUBJECT,
 	makeProductionMetaLoopDispatchFn,
+	makeProductionMetaLoopObserveFn,
 	buildMetaLoopFn,
 } from '../../src/commands/sidecar.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
@@ -176,6 +177,74 @@ describe('sidecar-meta-loop: off path (no runMetaLoopObserveFn)', () => {
 		expect(selectCallCount).toBe(0);
 		const observeEvents = events.filter((ev) => ev.kind === 'meta-loop-observe');
 		expect(observeEvents.length).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001 (CAM-115): a selector throw during the observe tick must be
+// surfaced as a logged error and NEVER converted into a drained/empty-backlog
+// observation. selectPlannableFromFile no longer swallows read/parse errors
+// (it used to `catch { return null }`), so makeProductionMetaLoopObserveFn now
+// owns the boundary: it catches, logs via the WorkerEventLogger, and skips
+// the tick without calling observeDecide.
+// ---------------------------------------------------------------------------
+
+describe('sidecar-meta-loop: observe-tick selector error boundary (US-001, CAM-115)', () => {
+	test('a throwing selectFn is caught + logged and does NOT emit a drained meta-loop-observe event', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const observeFn = makeProductionMetaLoopObserveFn('/repo', logger, '', '', () => {
+			throw new Error('corrupted backlog: unexpected token');
+		});
+
+		const loopOpts = makeIdleLoopOpts(3, {
+			runMetaLoopObserveFn: observeFn,
+			hasPendingStories: () => false,
+		});
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		// The real error is logged (not silently dropped).
+		const errorEvents = events.filter(
+			(ev) =>
+				ev.kind === 'sidecar-exit' &&
+				(ev.detail as { reason?: string }).reason === 'meta-loop-observe-select-error',
+		);
+		expect(errorEvents.length).toBeGreaterThan(0);
+		expect((errorEvents[0]?.detail as { error?: string }).error).toContain(
+			'corrupted backlog',
+		);
+
+		// NEVER converted into a drained/empty-backlog observation.
+		const observeEvents = events.filter((ev) => ev.kind === 'meta-loop-observe');
+		expect(observeEvents.length).toBe(0);
+	});
+
+	test('the sidecar outer loop survives a selector throw (does not crash on the tick)', async () => {
+		const { logger } = makeInMemoryEventLogger();
+		let callCount = 0;
+		const observeFn = makeProductionMetaLoopObserveFn('/repo', logger, '', '', () => {
+			callCount++;
+			throw new Error('boom');
+		});
+
+		const loopOpts = makeIdleLoopOpts(3, {
+			runMetaLoopObserveFn: observeFn,
+			hasPendingStories: () => false,
+		});
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		// All 3 ticks ran (the ESCAPE sentinel came from sleep(), not a crash
+		// propagating out of the observe fn).
+		expect(callCount).toBe(3);
 	});
 });
 
