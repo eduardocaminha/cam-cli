@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.86.0] - 2026-07-08
+
+### Added
+
+- US-001 - Dedupe inline notifyOrchestrator blocks in loop.ts behind private helpers and lower the file-size ceiling
+
 ## [0.85.0] - 2026-07-08
 
 ### Added
