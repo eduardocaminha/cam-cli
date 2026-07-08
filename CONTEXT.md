@@ -67,3 +67,12 @@ A runtime JSON file the sidecar writes on a silent terminal state (ship stalled,
 
 **orchestrator self-handoff**:
 The mechanism by which the long-lived cam orchestrator hands its accumulated context to a fresh copy of itself at a cycle boundary, instead of degrading as its context window fills. At cycle close the orchestrator writes a handoff file and arms a recycle marker via cam journal append --cycle-close; a recycle watcher terminates the stale session and the wrapper respawns a fresh orchestrator that rehydrates from the consumed handoff. A context-occupancy backstop (around 80 percent of the window) arms the same recycle autonomously as a secondary trigger. Plain cam journal append signals that a handoff is due but does not arm the recycle.
+
+**plannable issue**:
+An issue eligible to enter planning: its stage is specified, its status is open, and it is not blocked by an unshipped dependency. This is the single condition that qualifies an issue for /cam-plan.
+
+**issue stage**:
+The lifecycle-progress axis of an issue: idea, specified, planned, or shipped. It records how far the issue has advanced and is orthogonal to status.
+
+**issue status**:
+The disposition axis of an issue: open or abandoned. Orthogonal to stage. An abandoned issue keeps its last stage as history and is excluded from every active backlog view regardless of that stage.
