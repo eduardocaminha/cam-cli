@@ -80,7 +80,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts, src/commands/sidecar.ts, test/supervisor/plan/plan-runner-postaudit.test.ts. DESIGN CONTRAST to keep straight: the plan-escalated marker is removed only on convergence for the same flow (removeEscalationMarkerFn fires in the proceed-branch path); this NEW marker uses Option B (remove on ANY non-preflight-failed result) because preflight failures are issue-agnostic environment problems (spec AC5 + gotchas). Do not unify the two removal policies. Cleanest placement: fire the remove seam early in runPostAuditAction before the kind dispatch, guarded on kind !== 'preflight-failed'."
     },
