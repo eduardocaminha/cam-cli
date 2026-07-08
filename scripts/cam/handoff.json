@@ -1,17 +1,12 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Track sidecar session start and render total session elapsed in the dashboard header"
+    "id": "US-002",
+    "title": "Accumulate session worker-token total from the event log and render it in the dashboard header"
   },
   "branchName": "cam/pr-83-dashboard-session-cost-elapsed",
   "timestamp": "2026-07-07T00:00:00Z",
-  "createdFiles": [
-    "src/supervisor/session-start.ts",
-    "test/supervisor/session-start.test.ts",
-    "test/commands/sidecar-session-start.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/sidecar.ts",
     "src/commands/dashboard.ts",
     "src/ui/Dashboard.tsx",
     "test/dashboard.test.ts",
@@ -20,12 +15,12 @@
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 (session elapsed) is done. US-002 (session-cumulative worker-token total in the header) is next and lives in the same 'Loop' SummaryPanel: read the existing per-story token-usage machinery in src/transcript/usage.ts (renderTokensLine, readWorkerSessionMarker, parseTranscriptUsage) plus the event log (.claude/cam-worker-events.jsonl, 'tokens' kind events, see readWorkerTokens in src/supervisor/events.ts) to accumulate a session-cumulative total distinct from the existing per-run 'tokens' row (which shows the CURRENT orchestrator transcript's counts, not a summed session total). The new session-start marker written in this story (src/supervisor/session-start.ts, .claude/.cam-sidecar-session.json) is the natural boundary for 'since session start' accumulation if US-002 needs one -- read it via readSidecarSessionStart(join(cwd, '.claude')) rather than re-deriving session start a second way. Mirror this story's SummaryRow placement convention (state/story/progress/since/session/tokens/branch) when adding the new cost row.",
+  "nextStoryContext": "Both PRD stories (US-001 session elapsed, US-002 session token cost) now pass. This was the last story in prd.json (2 of 2, priority-ordered) -- no non-operator story remains with passes:false. The next agent invocation should find nothing to implement and should defer to the review cycle (/cam-review) rather than picking a story. US-002 added sumSessionWorkerTokens (src/commands/dashboard.ts): a pure helper summing the four TokensEventDetail fields (inputTokens+outputTokens+cacheReadTokens+cacheCreationTokens) across worker 'tokens' events in .claude/cam-worker-events.jsonl at-or-after the US-001 sidecar session-start marker (readSidecarSessionStart), returning undefined (not 0) both when the log is absent and when nothing falls in the session window -- the renderer omits the row in both cases. 'cycle-tokens' aggregate events (CAM-131) are excluded for free since only kind==='tokens' lines are summed. readSnapshot exposes this as the optional sessionWorkerTokens DashboardData field, gated behind the same sessionStartIso-present check used for sessionStartedAtMs. Dashboard.tsx's Loop SummaryPanel renders it as a new 'cost' row (formatTokens(n) + ' tokens', muted, never USD) placed between the existing 'tokens' row (current-run orchestrator usage) and 'branch'. If a future story extends the PRD, mirror this row-placement convention (state/story/progress/since/session/tokens/cost/branch) and the readSnapshot session-start gating pattern (see scripts/cam/patterns.md's 'Session-window token summation' bullet).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Story only reused already-established internal patterns (node:fs readFileSync/writeFileSync mirroring sidecar-pid.ts, and existing Ink Section/SummaryRow/Text components already used for the since row); no new external API surface was introduced."
+      "summary": "Story only reused already-established internal patterns (event-log JSONL parsing mirroring parseRecentProgress/extractTokensFromLine, and the existing Ink Section/SummaryRow/Text components already used for the session row); no new external API surface was introduced."
     }
   ]
 }
