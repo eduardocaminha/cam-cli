@@ -720,6 +720,54 @@ export type ParsedIssueArgs =
 	| { mode: 'abandon'; id: string; help: false }
 	| { mode?: never; help: true };
 
+/**
+ * Shared subcommand arg-parse idiom used by parseIssueArgs (free-text
+ * fallthrough), parsePlanArgs, and parseSpecArgs: --help/-h detection,
+ * unknown-option rejection, too-many-arguments rejection, and single-
+ * positional capture. Callers own their exact error messages (passed via
+ * `onTooMany`/`onUnknownOption`) and any further validation of the captured
+ * positional (e.g. plan's integer parse, spec's empty-id check) -- this
+ * helper only factors the control flow that was previously cloned across
+ * the three parsers (the regression class that raised the dup ratchet at
+ * the CAM-107 ship).
+ *
+ * `onUnknownOption` is optional: omit it to allow tokens starting with `-`
+ * to be captured as the positional (parseIssueArgs' free-text mode accepts
+ * any single token as the issue title, including one that looks like a
+ * flag).
+ *
+ * Returns:
+ *  - `{ help: true }` if `--help`/`-h` is present anywhere in args.
+ *  - `null` if an unknown option or a second positional argument is found
+ *    (the caller's callback has already reported the error).
+ *  - `{ help: false, positional }` otherwise, where `positional` is the
+ *    single captured token (`undefined` when args has no positional).
+ */
+function parseSubcommandArgs(
+	args: string[],
+	opts: {
+		onTooMany: (arg: string) => void;
+		onUnknownOption?: (arg: string) => void;
+	},
+): { help: true } | { help: false; positional?: string } | null {
+	if (args.includes('--help') || args.includes('-h')) {
+		return { help: true };
+	}
+	let positional: string | undefined;
+	for (const arg of args) {
+		if (opts.onUnknownOption && arg.startsWith('-')) {
+			opts.onUnknownOption(arg);
+			return null;
+		}
+		if (positional !== undefined) {
+			opts.onTooMany(arg);
+			return null;
+		}
+		positional = arg;
+	}
+	return { help: false, positional };
+}
+
 export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 	if (args.includes('--help') || args.includes('-h')) {
 		return { help: true };
@@ -800,13 +848,13 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 
 		return { mode: 'file-local', fastTrack, derivedFrom, help: false };
 	}
-	const text = args[0];
+	const parsed = parseSubcommandArgs(args, {
+		onTooMany: (arg) => printError(`unexpected argument: ${arg}`),
+	});
+	if (parsed === null) return null;
+	const text = parsed.help ? undefined : parsed.positional;
 	if (text === undefined || text.trim().length === 0) {
 		printError('cam issue requires a free-text argument');
-		return null;
-	}
-	if (args.length > 1) {
-		printError(`unexpected argument: ${args[1]}`);
 		return null;
 	}
 	return { mode: 'text', text, help: false };
@@ -825,40 +873,30 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
  * diagnostic and exits 1).
  */
 export function parsePlanArgs(args: string[]): { issue?: number; help: boolean } | null {
-	const result: { issue?: number; help: boolean } = { help: false };
-	for (let i = 0; i < args.length; i += 1) {
-		const arg = args[i]!;
-		if (arg === '--help' || arg === '-h') {
-			result.help = true;
-			continue;
-		}
-		if (arg.startsWith('-')) {
-			printError(
-				`unknown plan option: ${arg}`,
-				'cam plan takes an issue number, e.g. `cam plan 21`',
-			);
-			return null;
-		}
-		if (result.issue !== undefined) {
-			printError(
-				'cam plan: too many arguments',
-				'expected a single issue number, e.g. `cam plan 21`',
-			);
-			return null;
-		}
-		// Positional issue number; tolerate a leading `#` (e.g. `cam plan '#21'`).
-		const token = arg.startsWith('#') ? arg.slice(1) : arg;
-		const parsed = Number.parseInt(token, 10);
-		if (!/^\d+$/.test(token) || parsed <= 0) {
-			printError(
-				'cam plan: invalid issue reference',
-				'expected an issue number, e.g. `cam plan 21`',
-			);
-			return null;
-		}
-		result.issue = parsed;
+	const parsed = parseSubcommandArgs(args, {
+		onUnknownOption: (arg) => printError(
+			`unknown plan option: ${arg}`,
+			'cam plan takes an issue number, e.g. `cam plan 21`',
+		),
+		onTooMany: () => printError(
+			'cam plan: too many arguments',
+			'expected a single issue number, e.g. `cam plan 21`',
+		),
+	});
+	if (parsed === null) return null;
+	if (parsed.help) return { help: true };
+	if (parsed.positional === undefined) return { help: false };
+	// Positional issue number; tolerate a leading `#` (e.g. `cam plan '#21'`).
+	const token = parsed.positional.startsWith('#') ? parsed.positional.slice(1) : parsed.positional;
+	const issue = Number.parseInt(token, 10);
+	if (!/^\d+$/.test(token) || issue <= 0) {
+		printError(
+			'cam plan: invalid issue reference',
+			'expected an issue number, e.g. `cam plan 21`',
+		);
+		return null;
 	}
-	return result;
+	return { issue, help: false };
 }
 
 /**
@@ -894,37 +932,29 @@ export type ParsedSpecArgs =
  * Returns `null` on a parse error (the caller prints the usage hint).
  */
 export function parseSpecArgs(args: string[]): ParsedSpecArgs | null {
-	if (args.includes('--help') || args.includes('-h')) {
-		return { help: true };
-	}
 	const writeDocs = args.includes('--write-docs');
 	const persist = args.includes('--persist');
 	const rest = args.filter((a) => a !== '--write-docs' && a !== '--persist');
 
-	let id: string | undefined;
-	for (const arg of rest) {
-		if (arg.startsWith('-')) {
-			printError(
-				`unknown spec option: ${arg}`,
-				'cam spec takes an issue id, e.g. `cam spec CAM-42`',
-			);
-			return null;
-		}
-		if (id !== undefined) {
-			printError(
-				'cam spec: too many arguments',
-				'expected a single issue id, e.g. `cam spec CAM-42`',
-			);
-			return null;
-		}
-		if (arg.length === 0) {
-			printError(
-				'cam spec: empty issue id',
-				'expected an issue id, e.g. `cam spec CAM-42`',
-			);
-			return null;
-		}
-		id = arg;
+	const parsed = parseSubcommandArgs(rest, {
+		onUnknownOption: (arg) => printError(
+			`unknown spec option: ${arg}`,
+			'cam spec takes an issue id, e.g. `cam spec CAM-42`',
+		),
+		onTooMany: () => printError(
+			'cam spec: too many arguments',
+			'expected a single issue id, e.g. `cam spec CAM-42`',
+		),
+	});
+	if (parsed === null) return null;
+	if (parsed.help) return { help: true };
+	const id = parsed.positional;
+	if (id !== undefined && id.length === 0) {
+		printError(
+			'cam spec: empty issue id',
+			'expected an issue id, e.g. `cam spec CAM-42`',
+		);
+		return null;
 	}
 
 	if (writeDocs) {

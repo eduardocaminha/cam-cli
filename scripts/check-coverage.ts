@@ -13,7 +13,9 @@
 //
 // DI pattern mirrors check-file-sizes.ts: pure functions with injectable
 // dependencies so unit tests inject in-memory fakes (no real bun test or
-// git calls in tests).
+// git calls in tests). The diff key-value parser, tracker-ref regex, and
+// staged-diff spawn helper are shared with check-file-sizes.ts via
+// scripts/ratchet-diff.ts (US-001, CAM-120 PRD).
 //
 // Usage: bun scripts/check-coverage.ts
 
@@ -21,6 +23,8 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { parseDiffKv, TRACKER_REF_RE, makeGetStagedDiff } from './ratchet-diff.ts';
+import type { GetStagedDiffFn } from './ratchet-diff.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,7 +50,7 @@ export interface CoverageBudget {
 }
 
 export type GetCoverageFn = () => CoverageReport;
-export type GetStagedDiffFn = (path: string) => string;
+export type { GetStagedDiffFn };
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -55,17 +59,11 @@ export type GetStagedDiffFn = (path: string) => string;
 /** Repo-relative path to the budget file. */
 export const BUDGET_PATH = 'scripts/coverage-budget.json';
 
-/** Matches a valid tracker reference: CAM-NNN, #N, or an https?:// URL. */
-const TRACKER_REF_RE = /CAM-\d+|#\d+|https?:\/\//;
-
 /**
  * Matches the "All files" aggregate row in `bun test --coverage` output.
  * Columns: % Funcs | % Lines (in that order).
  */
 const ALL_FILES_RE = /^All files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/;
-
-/** Matches a JSON key: number pair from a diff line. */
-const KV_RE = /^\s*"([^"]+)":\s*([\d.]+)/;
 
 /**
  * Tolerance (percentage points) applied to floor comparison to absorb
@@ -105,21 +103,6 @@ export function parseCoverageOutput(output: string): CoverageReport {
 // ---------------------------------------------------------------------------
 
 /**
- * Extract all "key": number pairs from diff lines beginning with the given
- * prefix character ('+' or '-'), skipping header lines (--- / +++).
- */
-function parseDiffKv(diffLines: string[], prefix: string): Map<string, number> {
-	const result = new Map<string, number>();
-	for (const line of diffLines) {
-		if (line.startsWith('---') || line.startsWith('+++')) continue;
-		if (!line.startsWith(prefix)) continue;
-		const m = KV_RE.exec(line.slice(1));
-		if (m) result.set(m[1]!, Number(m[2]!));
-	}
-	return result;
-}
-
-/**
  * Parse a unified diff of coverage-budget.json and return every metric key
  * whose numeric floor value was LOWERED (new value < old value).
  */
@@ -152,16 +135,6 @@ function makeDefaultGetCoverage(cwd: string): GetCoverageFn {
 		});
 		const output = (r.stdout ?? '') + (r.stderr ?? '');
 		return parseCoverageOutput(output);
-	};
-}
-
-function makeDefaultGetStagedDiff(cwd: string): GetStagedDiffFn {
-	return (path: string) => {
-		const r = spawnSync('git', ['diff', '--cached', '-U0', path], {
-			encoding: 'utf8',
-			cwd,
-		});
-		return r.stdout ?? '';
 	};
 }
 
@@ -232,7 +205,7 @@ export function checkCoverage(
 	const readBudget =
 		options.readBudget ?? makeDefaultReadBudget(join(cwd, BUDGET_PATH));
 	const getCoverage = options.getCoverage ?? makeDefaultGetCoverage(cwd);
-	const getStagedDiff = options.getStagedDiff ?? makeDefaultGetStagedDiff(cwd);
+	const getStagedDiff = options.getStagedDiff ?? makeGetStagedDiff(cwd);
 
 	const budget = readBudget();
 	const coverage = getCoverage();

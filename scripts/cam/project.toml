@@ -18,3 +18,6 @@ merge_mode = "ci-gated"
 [loop]
 meta_loop = "auto"
 worker_isolation = "host"
+
+[notify]
+resend_recipient = "caminhae@gmail.com"
