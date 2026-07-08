@@ -1,0 +1,9 @@
+{
+  "id": "CAM-222",
+  "title": "Gate de integridade: abandono nao reseta stage, deixa zumbi specified+abandoned",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T21:22:57.927Z",
+  "description": "abandonIssueOnMain e mergeIssueOnMain (src/commands/issue-specify.ts) setam status:'abandoned' sem NUNCA tocar em stage, criando entradas inconsistentes stage:specified + status:abandoned. Todos os readers de codigo ja filtram status corretamente (list.ts:134 exclui abandoned; select.ts e rank.ts exigem status:open; plan.ts:147 recusa cam plan N com alvo nao-plannable), mas o dado cru mente: qualquer query keyed so em stage ressuscita a issue abandonada como se fosse plannable. Aconteceu de verdade 2026-07-08: o orquestrador derivou o backlog com grep de \"stage\":\"specified\" cru e apresentou CAM-99/103/130/184 (todas abandoned) como specified prontas pra planejar. Gate proposto: invariante de integridade no dado, de modo que NENHUM caminho (codigo ou ad-hoc) possa ver uma issue abandonada num bucket ativo. Opcao A: abandono/merge limpam ou movem o stage pra fora de idea|specified|planned. Opcao B: validador deterministico (rodado em cam issue list e/ou como check da spine) que falha loud se existir qualquer entrada status:abandoned com stage in {idea,specified,planned}. Recomendo fix na escrita (abandono) + assercao do invariante. NAO e falta de gate no caminho de plan (esse ja existe); e hardening de integridade pra o dado nao mentir. Origem: pushback do operador (gate, nao memoria)."
+}
