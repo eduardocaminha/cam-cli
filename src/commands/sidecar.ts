@@ -30,7 +30,10 @@ import { runSidecarLoop, type RunSidecarLoopOptions, type SpawnFn as LoopSpawnFn
 import { FirewallError } from '../supervisor/container-firewall.ts';
 import { ContainerConfigError } from '../supervisor/container-config.ts';
 import { ToolchainMismatchError } from '../supervisor/toolchain-assert.ts';
-import { buildSupervisorOptions, makeNotifyOrchestrator } from '../supervisor/host.ts';
+import { buildSupervisorOptions, makeNotifyOrchestrator, makeReadReviewReport } from '../supervisor/host.ts';
+import { extractSuggestions, dedupSuggestions, buildFollowUpIssue } from '../supervisor/suggestion-followups.ts';
+import { readBacklogFromMain, type BacklogSpawnFn } from '../issues/backlog.ts';
+import { createLocalIssueOnMain, type SpawnFn as IssueFileSpawnFn } from './issue-file.ts';
 import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/events.ts';
 import { parseStateFile, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
@@ -150,6 +153,24 @@ export interface SidecarOptions {
 	 * Tests inject a spy to assert the dispatch happened.
 	 */
 	autoShipFn?: RunSidecarLoopOptions['autoShipFn'];
+	/**
+	 * Override the readReviewReportFn (US-003, CAM-189).
+	 *
+	 * Production: makeReadReviewReport(cwd) (host.ts) — reads
+	 * scripts/cam/review-report.json. Paired with fileSuggestionsFn below to
+	 * drive the terminal SUGGESTION-follow-up-filing hook.
+	 * Tests: inject a fake to control the report contents without touching disk.
+	 */
+	readReviewReportFn?: RunSidecarLoopOptions['readReviewReportFn'];
+	/**
+	 * Override the fileSuggestionsFn (US-003, CAM-189).
+	 *
+	 * Production: makeProductionFileSuggestionsFn(cwd, logEvent) — dedups the
+	 * report's SUGGESTION findings against the open backlog (readBacklogFromMain
+	 * + dedupSuggestions) and files each survivor via createLocalIssueOnMain.
+	 * Tests: inject a spy to assert filing without spawning real git.
+	 */
+	fileSuggestionsFn?: RunSidecarLoopOptions['fileSuggestionsFn'];
 	/**
 	 * Override the merge-watch function (US-007).
 	 *
@@ -998,6 +1019,8 @@ interface SidecarLoopDepsResult {
 	runMergeWatchFn: RunSidecarLoopOptions['runMergeWatchFn'];
 	flipActiveFn: RunSidecarLoopOptions['flipActiveFn'];
 	autoShipFn: RunSidecarLoopOptions['autoShipFn'];
+	readReviewReportFn: RunSidecarLoopOptions['readReviewReportFn'];
+	fileSuggestionsFn: RunSidecarLoopOptions['fileSuggestionsFn'];
 	escalateFn: RunSidecarLoopOptions['escalateFn'];
 	runMetaLoopObserveFn: RunSidecarLoopOptions['runMetaLoopObserveFn'];
 	readLoopPhaseFn: RunSidecarLoopOptions['readLoopPhaseFn'];
@@ -2130,6 +2153,101 @@ function buildShipPhaseDeps(
 	};
 }
 
+// ---------------------------------------------------------------------------
+// Suggestion-follow-up filing (US-003, CAM-189)
+// ---------------------------------------------------------------------------
+
+/**
+ * spawnSync-backed IssueFileSpawnFn (issue-file.ts's SpawnFn contract: raw
+ * SpawnSyncReturns, encoding/env/input passthrough). Mirrors index.ts's
+ * `_buildCreateIssueOpts` spawnFn exactly -- the same production wiring
+ * `cam issue --file-local` uses -- so createLocalIssueOnMain's GIT_INDEX_FILE
+ * env plumbing and cat-file --batch stdin both work unchanged here.
+ */
+function issueFileSpawnFn(
+	cmd: string,
+	args: string[],
+	opts: { encoding: 'utf8'; env?: Record<string, string>; input?: string },
+): SpawnSyncReturns<string> {
+	return spawnSync(cmd, args, {
+		encoding: opts.encoding,
+		...(opts.env !== undefined ? { env: opts.env } : {}),
+		...(opts.input !== undefined ? { input: opts.input } : {}),
+		stdio: 'pipe',
+	}) as SpawnSyncReturns<string>;
+}
+
+/** Adapts IssueFileSpawnFn (env optional) to BacklogSpawnFn (no env param). */
+function toBacklogSpawn(spawnFn: IssueFileSpawnFn): BacklogSpawnFn {
+	return (cmd, args, o) => spawnFn(cmd, args, o);
+}
+
+/**
+ * Build the production fileSuggestionsFn (US-003, CAM-189).
+ *
+ * Reads the current open backlog via readBacklogFromMain, dedups the
+ * report's SUGGESTION findings against it (US-002 dedupSuggestions), and
+ * files each surviving finding via createLocalIssueOnMain (default filing:
+ * no specSource, so stage stays 'idea' and status 'open'). The working
+ * branch is never touched: createLocalIssueOnMain always commits+pushes to
+ * main directly (issue-file.ts's on-main commit-tree path), regardless of
+ * the cwd's current checked-out branch.
+ *
+ * A createLocalIssueOnMain failure (diverged main, detached head, missing
+ * main) for one finding is skip-and-warned: the finding is simply excluded
+ * from filedIds and counted in failedCount, never thrown, so the remaining
+ * findings in the batch still get attempted. When there is anything to
+ * report (a file, a dup-skip, or a failure), one 'suggestion-filed' event is
+ * logged for the audit trail.
+ *
+ * spawnFn is injected (production: issueFileSpawnFn, the real spawnSync
+ * wrapper defined above) so tests can exercise the full dedup+file path with
+ * a fake git plumbing recorder, exactly like createLocalIssueOnMain's own
+ * unit tests, without spawning a real git binary. No 'claude' spawn is ever
+ * issued: only git plumbing, via readBacklogFromMain/createLocalIssueOnMain.
+ */
+export function makeProductionFileSuggestionsFn(
+	cwd: string,
+	spawnFn: IssueFileSpawnFn,
+	logEvent: WorkerEventLogger,
+): NonNullable<RunSidecarLoopOptions['fileSuggestionsFn']> {
+	const clock = () => new Date().toISOString();
+	const readProjectToml = () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8');
+	return (report, provenance) => {
+		const backlog = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));
+		const candidates = dedupSuggestions(backlog, report);
+		const dupSkipped = extractSuggestions(report).length - candidates.length;
+		const filedIds: string[] = [];
+		let failedCount = 0;
+		for (const finding of candidates) {
+			const { title, description } = buildFollowUpIssue(finding, provenance);
+			const outcome = createLocalIssueOnMain({
+				cwd,
+				title,
+				description,
+				spawnFn,
+				clock,
+				readProjectToml,
+			});
+			if (outcome.ok) {
+				filedIds.push(outcome.id);
+			} else {
+				failedCount++;
+			}
+		}
+		if (filedIds.length > 0 || dupSkipped > 0 || failedCount > 0) {
+			logEvent({
+				ts: clock(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'suggestion-filed',
+				detail: { filedIds, dupSkipped, failedCount },
+			});
+		}
+		return { filedIds, dupSkipped };
+	};
+}
+
 /**
  * Resolve all injectable sidecar loop deps from SidecarOptions + context.
  *
@@ -2170,6 +2288,15 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	const flipActiveFn = options.flipActiveFn ?? autoChainProduction.flipActiveFn;
 	const autoShipFn = options.autoShipFn ?? autoChainProduction.autoShipFn;
 
+	// US-003 (CAM-189): SUGGESTION-follow-up-filing hook. Unlike the auto-chain
+	// pair above, this is wired unconditionally (both operator and auto
+	// plan_approval mode): filing a non-blocking follow-up idea issue is not an
+	// autonomy escalation, so it does not need the auto-mode gate.
+	const readReviewReportFn: RunSidecarLoopOptions['readReviewReportFn'] =
+		options.readReviewReportFn ?? makeReadReviewReport(cwd);
+	const fileSuggestionsFn: RunSidecarLoopOptions['fileSuggestionsFn'] =
+		options.fileSuggestionsFn ?? makeProductionFileSuggestionsFn(cwd, issueFileSpawnFn, logEvent);
+
 	// US-R1-001: escalateFn from Resend config; only wired when both apiKey and
 	// recipient are non-empty. Production logic extracted to makeProductionEscalateFn
 	// to keep buildSidecarLoopDeps under biome cognitive-complexity limit.
@@ -2190,7 +2317,8 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 
 	return {
 		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
-		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, autoShipFn, escalateFn,
+		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, autoShipFn,
+		readReviewReportFn, fileSuggestionsFn, escalateFn,
 		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps,
 	};
 }
@@ -2297,6 +2425,8 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		runMergeWatchFn: deps.runMergeWatchFn,
 		flipActiveFn: deps.flipActiveFn,
 		autoShipFn: deps.autoShipFn,
+		readReviewReportFn: deps.readReviewReportFn,
+		fileSuggestionsFn: deps.fileSuggestionsFn,
 		escalateFn: deps.escalateFn,
 		runMetaLoopObserveFn: deps.runMetaLoopObserveFn,
 		readLoopPhaseFn: deps.readLoopPhaseFn,
