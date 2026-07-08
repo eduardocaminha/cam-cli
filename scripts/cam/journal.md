@@ -1355,3 +1355,15 @@ Each entry follows this template:
 - **Decisions**: Fully autonomous cycle (meta_loop=auto): plan approved by auditor round 1, sidecar drove implement->review->ship with no operator gating.
 - **Blockers encountered**: Post-merge failed with pull-failed: local main carried an unpushed direct commit (notify.resend_recipient config, filed with CAM-218) that the plan runner branched from; the squash-merge of #163 diverged origin/main from local main so post-merge git pull broke. Root cause is a direct commit to local main left unpushed before the loop cut the branch (the no-direct-main-commit-mid-loop class). Recovery by orchestrator: git reset --hard origin/main (the unpushed commit's content was preserved intact inside the #163 squash, verified), manual git tag v0.90.0 at the merge SHA + push (cam tag no-op'd because the installed binary is stale at 0.89.0 and reads its baked-in version, not src/version.ts), close CAM-120 stage:shipped via commit-tree + push, then this journal append.
 - **Follow-ups**: Installed cam binary is stale at 0.89.0: rebuild+reinstall to 0.90.0 so cam tag reads the shipped version. Consider hardening post-merge to reconcile a diverged local main automatically (reset to origin/main when the local-ahead commits are content-subsumed by the squash), tracked-adjacent to CAM-174.
+
+## cam/pr-128-cam108-review-suggestions — CAM-128 shipped: resolve the 3 non-blocking SUGGESTIONs from the CAM-108 review
+
+- **Started**: 2026-07-08
+- **Closed**: 2026-07-08
+- **Branch**: cam/pr-128-cam108-review-suggestions
+- **Issue**: CAM-128 (#164)
+- **Outcome**: shipped
+- **Summary**: 3 auto stories resolving the non-blocking SUGGESTIONs from the CAM-108 review (PR #87): US-001 unified the triage warnings source between the no-op and commit paths; US-002 made the never-read RunTriageOptions.clock optional; US-003 refactored runKahn out of the biome noExcessiveCognitiveComplexity suppression and dropped rank.t. All GREEN (typecheck ok, 3804 pass / 0 fail). Review CLEAN round 1. v0.90.0 to v0.91.0, PR #164, ci-gated squash-merge, CI green.
+- **Decisions**: Fully autonomous (meta_loop=auto): auditor approved round 1, sidecar drove implement->review->ship with no operator gating. Binary was rebuilt+reinstalled to 0.90.0 earlier this session, fixing the stale-binary cam-tag no-op from CAM-120.
+- **Blockers encountered**: None. Post-merge completed fully automatically (pull + tag v0.91.0 + close CAM-128 + prune), unlike CAM-120 whose post-merge broke on pull-failed from an unpushed direct-to-main commit; here local main was fully pushed when the branch was cut, so the divergence root cause was absent.
+- **Follow-ups**: CAM-219 filed this session (P3, defer to release hardening): build-release hermetic init smoke emits a false-positive 'Resend not configured' warning; fix = add --plan-approval operator to the smoke invocation at build-release.sh:114.
