@@ -11,14 +11,18 @@
 //
 // DI pattern mirrors check-all.ts SpawnFn: pure functions with injectable
 // dependencies so unit tests inject in-memory fakes (no real git/fs calls).
+// The diff key-value parser, tracker-ref regex, and staged-diff spawn helper
+// are shared with check-coverage.ts via scripts/ratchet-diff.ts (US-001,
+// CAM-120 PRD).
 //
 // Usage: bun scripts/check-file-sizes.ts
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
 import { Glob } from 'bun';
+import { parseDiffKv, TRACKER_REF_RE, makeGetStagedDiff } from './ratchet-diff.ts';
+import type { GetStagedDiffFn } from './ratchet-diff.ts';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency types
@@ -30,8 +34,7 @@ export type GetSizesFn = () => Record<string, number>;
 /** Returns the per-file LOC budget as { "repo/relative/path": ceilingLineCount }. */
 export type ReadBudgetFn = () => Record<string, number>;
 
-/** Returns the unified staged diff for a given repo-relative path. */
-export type GetStagedDiffFn = (path: string) => string;
+export type { GetStagedDiffFn };
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -49,30 +52,9 @@ export interface FileSizeResult {
 /** Repo-relative path to the budget file (used as the key and as the diff target). */
 export const BUDGET_PATH = 'scripts/file-size-budget.json';
 
-/** Pattern that matches any of the accepted tracker reference forms. */
-const TRACKER_REF_RE = /CAM-\d+|#\d+|https?:\/\//;
-
-/** Pattern to extract a JSON key-value pair: `"key": number`. */
-const KV_RE = /^\s*"([^"]+)":\s*(\d+)/;
-
 // ---------------------------------------------------------------------------
 // Diff helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Extract all "key": number pairs from diff lines that start with the given
- * prefix character ('+' or '-'), skipping header lines (--- / +++).
- */
-function parseDiffKv(diffLines: string[], prefix: string): Map<string, number> {
-	const result = new Map<string, number>();
-	for (const line of diffLines) {
-		if (line.startsWith('---') || line.startsWith('+++')) continue;
-		if (!line.startsWith(prefix)) continue;
-		const m = KV_RE.exec(line.slice(1));
-		if (m) result.set(m[1]!, Number(m[2]!));
-	}
-	return result;
-}
 
 /**
  * Parse a unified diff string and return every JSON key whose numeric value
@@ -117,16 +99,6 @@ function makeDefaultGetSizes(cwd: string): GetSizesFn {
 			result[file] = content.split('\n').length;
 		}
 		return result;
-	};
-}
-
-function makeDefaultGetStagedDiff(cwd: string): GetStagedDiffFn {
-	return (path: string) => {
-		const r = spawnSync('git', ['diff', '--cached', '-U0', path], {
-			encoding: 'utf8',
-			cwd,
-		});
-		return r.stdout ?? '';
 	};
 }
 
@@ -184,7 +156,7 @@ export function checkFileSizes(options: {
 	const cwd = options.cwd ?? process.cwd();
 	const readBudget = options.readBudget ?? makeDefaultReadBudget(join(cwd, BUDGET_PATH));
 	const getSizes = options.getSizes ?? makeDefaultGetSizes(cwd);
-	const getStagedDiff = options.getStagedDiff ?? makeDefaultGetStagedDiff(cwd);
+	const getStagedDiff = options.getStagedDiff ?? makeGetStagedDiff(cwd);
 
 	const errors: string[] = [];
 	checkSizeCeilings(readBudget(), getSizes(), errors);
