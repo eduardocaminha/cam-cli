@@ -64,6 +64,48 @@ export function computeWsjf(issue: IssueEntry): { wsjf: number; warning: string 
 }
 
 /**
+ * Ensures every universe issue has a zero in-degree entry and an empty
+ * successor list before edges are recorded.
+ */
+function initGraphEntries(
+	universe: IssueEntry[],
+	inDegree: Map<string, number>,
+	successors: Map<string, string[]>,
+): void {
+	for (const issue of universe) {
+		if (!inDegree.has(issue.id)) inDegree.set(issue.id, 0);
+		if (!successors.has(issue.id)) successors.set(issue.id, []);
+	}
+}
+
+/**
+ * Records edges for a single issue's blockedBy list: increments the
+ * issue's in-degree and appends the issue to each unsatisfied
+ * dependency's successor list. Edges to shipped or out-of-universe
+ * blockers are treated as satisfied and skipped.
+ */
+function recordBlockedByEdges(
+	issue: IssueEntry,
+	allById: Map<string, IssueEntry>,
+	universeIds: Set<string>,
+	inDegree: Map<string, number>,
+	successors: Map<string, string[]>,
+): void {
+	for (const depId of issue.blockedBy) {
+		const dep = allById.get(depId);
+		const isSatisfied = dep === undefined || dep.stage === "shipped" || !universeIds.has(depId);
+		if (isSatisfied) continue;
+		inDegree.set(issue.id, (inDegree.get(issue.id) ?? 0) + 1);
+		const sucList = successors.get(depId);
+		if (sucList !== undefined) {
+			sucList.push(issue.id);
+		} else {
+			successors.set(depId, [issue.id]);
+		}
+	}
+}
+
+/**
  * Builds the in-degree map and successor adjacency list for edges
  * internal to the universe (specified+open issues only).
  * Edges to shipped or out-of-universe blockers are treated as satisfied.
@@ -76,28 +118,63 @@ function buildGraph(
 	const inDegree = new Map<string, number>();
 	const successors = new Map<string, string[]>();
 
+	initGraphEntries(universe, inDegree, successors);
 	for (const issue of universe) {
-		if (!inDegree.has(issue.id)) inDegree.set(issue.id, 0);
-		if (!successors.has(issue.id)) successors.set(issue.id, []);
-	}
-
-	for (const issue of universe) {
-		for (const depId of issue.blockedBy) {
-			const dep = allById.get(depId);
-			const isSatisfied =
-				dep === undefined || dep.stage === "shipped" || !universeIds.has(depId);
-			if (isSatisfied) continue;
-			inDegree.set(issue.id, (inDegree.get(issue.id) ?? 0) + 1);
-			const sucList = successors.get(depId);
-			if (sucList !== undefined) {
-				sucList.push(issue.id);
-			} else {
-				successors.set(depId, [issue.id]);
-			}
-		}
+		recordBlockedByEdges(issue, allById, universeIds, inDegree, successors);
 	}
 
 	return { inDegree, successors };
+}
+
+/**
+ * Collects ids with in-degree 0: the next topological layer.
+ */
+function collectZeroInDegreeLayer(mutableInDegree: Map<string, number>): string[] {
+	const layer: string[] = [];
+	for (const [id, deg] of mutableInDegree) {
+		if (deg === 0) layer.push(id);
+	}
+	return layer;
+}
+
+/**
+ * Sorts a layer in place: WSJF descending, then numericIdSuffix ascending.
+ */
+function sortLayerByWsjf(layer: string[], wsjfMap: Map<string, number>): void {
+	layer.sort((a, b) => {
+		const wsjfDiff = (wsjfMap.get(b) ?? 0) - (wsjfMap.get(a) ?? 0);
+		if (wsjfDiff !== 0) return wsjfDiff;
+		return numericIdSuffix(a) - numericIdSuffix(b);
+	});
+}
+
+/**
+ * Appends one dense-ranked entry per id in the layer (rank continues from
+ * ranked.length), removes each id from mutableInDegree, and decrements the
+ * in-degree of each successor.
+ */
+function drainLayer(
+	layer: string[],
+	ranked: RankedEntry[],
+	mutableInDegree: Map<string, number>,
+	wsjfMap: Map<string, number>,
+	successors: Map<string, string[]>,
+	allById: Map<string, IssueEntry>,
+): void {
+	for (const id of layer) {
+		const issue = allById.get(id);
+		ranked.push({
+			id,
+			rank: ranked.length + 1,
+			wsjf: wsjfMap.get(id) ?? 0,
+			stage: issue?.stage ?? "specified",
+		});
+		mutableInDegree.delete(id);
+		for (const sucId of successors.get(id) ?? []) {
+			const cur = mutableInDegree.get(sucId);
+			if (cur !== undefined) mutableInDegree.set(sucId, cur - 1);
+		}
+	}
 }
 
 /**
@@ -112,30 +189,12 @@ function runKahn(
 	allById: Map<string, IssueEntry>,
 ): RankedEntry[] {
 	const ranked: RankedEntry[] = [];
-	let nextRank = 1;
 
 	while (true) {
-		const layer: string[] = [];
-		for (const [id, deg] of mutableInDegree) {
-			if (deg === 0) layer.push(id);
-		}
+		const layer = collectZeroInDegreeLayer(mutableInDegree);
 		if (layer.length === 0) break;
-
-		layer.sort((a, b) => {
-			const wsjfDiff = (wsjfMap.get(b) ?? 0) - (wsjfMap.get(a) ?? 0);
-			if (wsjfDiff !== 0) return wsjfDiff;
-			return numericIdSuffix(a) - numericIdSuffix(b);
-		});
-
-		for (const id of layer) {
-			const issue = allById.get(id);
-			ranked.push({ id, rank: nextRank++, wsjf: wsjfMap.get(id) ?? 0, stage: issue?.stage ?? "specified" });
-			mutableInDegree.delete(id);
-			for (const sucId of successors.get(id) ?? []) {
-				const cur = mutableInDegree.get(sucId);
-				if (cur !== undefined) mutableInDegree.set(sucId, cur - 1);
-			}
-		}
+		sortLayerByWsjf(layer, wsjfMap);
+		drainLayer(layer, ranked, mutableInDegree, wsjfMap, successors, allById);
 	}
 
 	return ranked;

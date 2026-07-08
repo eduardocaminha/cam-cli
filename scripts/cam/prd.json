@@ -61,7 +61,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/issues/rank.ts (runKahn at lines 108-142: while(true) + layer collection loop + sort comparator + drain loop with nested conditionals drive the score), biome.json (remove ONLY the src/issues/rank.ts override block at ~lines 204-213; leave every other override untouched), test/issues/rank.test.ts (behavior lock; run before and after the refactor). Refactor by extracting small pure helpers (e.g. collect zero-in-degree layer, sort layer, drain layer) with no I/O. Invariants to preserve exactly: dense 1-based ranks; layer tie-break is WSJF descending then numericIdSuffix ascending; residual keys left in mutableInDegree after return are the cycle members (rankIssues reads them into residualIds, consumed by the graph gate). Gotchas: noExcessiveLinesPerFunction maxLines 80 also applies globally, keep helpers small; noUncheckedIndexedAccess makes Map.get return T | undefined, guard as the current code does; tab indentation."
     }
