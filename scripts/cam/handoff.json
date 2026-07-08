@@ -1,23 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Extract shared subcommand arg-parse helper in index.ts"
+    "id": "US-003",
+    "title": "Ratchet the jscpd threshold down to 4"
   },
   "branchName": "cam/pr-120-jscpd-dedup-ratchet-down",
-  "timestamp": "2026-07-08T14:10:00Z",
+  "timestamp": "2026-07-08T14:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    ".jscpd.json",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 extracted parseSubcommandArgs (help/-h detection, unknown-option rejection, too-many-arguments rejection, single-positional capture) and rewired parseIssueArgs (free-text fallthrough only), parsePlanArgs, and parseSpecArgs to use it. index.ts grew from 2019 to 2049 lines (no file-size budget entry for index.ts, so no ceiling concern). All previously byte-identical printError message strings are unchanged; only the control-flow duplication was removed. Re-measured jscpd on src+scripts after this story: 3.44% duplicated lines (80 clones), well under the current threshold of 6 in .jscpd.json. US-003 (lower the jscpd threshold to 4) should re-measure fresh right before editing .jscpd.json -- 3.44% comfortably clears a threshold of 4, so US-003 likely needs no further dedup work, just the config change plus a check that check:all (which runs jscpd with reporters:[threshold]) still exits ok at the new value.",
+  "nextStoryContext": "US-003 lowered .jscpd.json threshold from 6 to 4 (config-only change, no dedup work needed: US-001/US-002 already brought src+scripts duplication down to 3.44% duplicated lines, comfortably under 4). Verified `bunx jscpd@5 --config .jscpd.json src scripts` exits 0 at the new threshold, and the full `bun run check:all` spine (test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity) is green. All three stories in this PRD (US-001, US-002, US-003) now have passes:true; this was the last story in the PRD, so the next agent invocation should find no non-operator passes:false stories and emit PRD_COMPLETE.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Pure internal TS refactor of index.ts arg-parsing functions; no new external API surface, no library calls added or changed."
+      "lib": "jscpd",
+      "version": "5.x",
+      "url": "https://raw.githubusercontent.com/kucherenko/jscpd/master/docs/rust.md",
+      "fetchedAt": "2026-07-08T14:25:00Z",
+      "status": "ok",
+      "summary": "Confirmed jscpd v5 threshold reporter semantics match the codebase's existing patterns.md entry: threshold is a config-file number, and the reporter exits 1 only when duplication percentage exceeds it (exit 0 otherwise). Matches the empirically-observed behavior at threshold=4 (exit 0, 3.44-3.52% measured duplication)."
     }
   ]
 }
