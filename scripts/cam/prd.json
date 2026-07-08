@@ -40,7 +40,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-implementer.md (lines ~22, ~38, ~39, ~60, ~112), templates/agents/subagent-implementer.md (same sections, lines ~22, ~38, ~39, ~60, ~108), plus embed regen. Dual-copy is per-file specialization: apply equivalent edits, never byte-copy (memory: cam-dual-copy-is-per-file). Surgical: do NOT fix the implementer 'status:ok' example or any other known defect in these files (separate issues). US-001 defines the grep-on-demand wording and the invariants location; keep this story's wording consistent with what US-001 wrote in scripts/cam/CLAUDE.md."
     },
