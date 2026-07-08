@@ -1,0 +1,9 @@
+{
+  "id": "CAM-224",
+  "title": "Dieta harness-side: sidecar injeta story selecionada + branchName no spawn do implementer",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-08T23:05:39.866Z",
+  "description": "Hoje o spawn prompt do implementer (host.ts:300) e ~75B: Implement the next user story from scripts/cam/prd.json, e o agente le o prd.json inteiro pra jq-selecionar 1 story. O harness JA SABE deterministicamente qual e a proxima story: injetar o record da story selecionada + branchName direto no spawn prompt e remover a leitura do prd.json inteiro do fluxo do agente. Preserva o contrato de isolamento (worker continua atualizando passes:true no prd.json ao final). Par da CAM-223 (dieta prompt-side); esta e a metade que exige codigo de harness. Origem: auditoria de contexto 2026-07-08."
+}
