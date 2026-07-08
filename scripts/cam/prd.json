@@ -54,7 +54,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Item (3) of CAM-115. Dead code confirmed live: src/commands/ship-finalize.ts line 43 exports ClockFn, line 65 requires clock on FinalizeCycleCloseOptions, but finalizeCycleClose (line 115) never destructures or uses it. Callers passing an ignored clock: buildShipFinalizeOpts (src/commands/ship-deps.ts line 29), test/ship-finalize.test.ts, test/ship-finalize-hardening.test.ts, test/integration/ship-finalize-dirty-prd.test.ts. Object-literal excess-property checking makes typecheck the natural oracle for full caller cleanup. Gotcha: ship-bump.ts and issue-specify.ts define their OWN ClockFn types that ARE used (ship-bump.ts line 193 reads opts.clock()); do not touch them. Verify nothing imports ClockFn from ship-finalize.ts (index.ts line 54 imports only finalizeCycleClose and FinalizeCycleCloseResult)."
     },
