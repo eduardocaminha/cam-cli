@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.104.0] - 2026-07-09
+
+### Added
+
+- US-002 - Update scripts/cam/CLAUDE.md 'Your Task' steps to drop full-prd self-select; re-embed vendor
+- US-001 - Inject selected story record + branchName into implementer spawn; make storyId authoritative
+
 ## [0.103.0] - 2026-07-09
 
 ### Added
