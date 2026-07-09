@@ -1,21 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Inject selected story record + branchName into implementer spawn; make storyId authoritative"
+    "id": "US-002",
+    "title": "Update scripts/cam/CLAUDE.md 'Your Task' steps to drop full-prd self-select; re-embed vendor"
   },
   "branchName": "cam/issue-224",
   "timestamp": "2026-07-09T00:00:00Z",
-  "createdFiles": [
-    "src/supervisor/task-prompt.ts",
-    "test/supervisor/task-prompt.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/supervisor/decide.ts",
-    "scripts/file-size-budget.json"
+    "scripts/cam/CLAUDE.md",
+    "templates/scripts/cam/CLAUDE.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 shipped: runSupervisor's implement branch now matches action.storyId (decideNextAction's authoritative pick) against prd.userStories in the already-read snapshot, and builds the per-story prompt via the new buildImplementerTaskPrompt (src/supervisor/task-prompt.ts) instead of sending the generic opts.taskPrompt fallback (still used only if the matched story is somehow absent from the snapshot). PrdSnapshot.userStories entries gained a `description?: string` field (decide.ts) so the builder can embed it. The design-comment block at the top of loop.ts and the inline comment above `const advisoryStoryId = action.storyId;` were reworded from 'worker SELF-SELECTS' to 'decideNextAction's storyId is AUTHORITATIVE'; the outcome.storyId-vs-advisory reconciliation and no-progress guard further down in loop.ts were left byte-for-byte unchanged per the story's AC3 (passes:true ownership stays with the agent, not the sidecar). US-002 (next, priority 2) is the natural follow-on: it updates scripts/cam/CLAUDE.md's 'Your Task' steps to stop telling the implementer to read the full prd.json to self-select a story, since the supervisor now injects the exact story into the spawn prompt; that story's notes call out a vendor re-embed step (bun run embed-vendor) since scripts/cam/CLAUDE.md is a templated/embedded file. Do NOT touch .claude/agents/subagent-implementer.md for either US-001 or US-002 (explicitly out of scope, notes say CAM-229 owns it).",
+  "nextStoryContext": "US-002 shipped: both scripts/cam/CLAUDE.md and templates/scripts/cam/CLAUDE.md's 'Your Task' numbered steps now state that the story to implement (id/title/description/priority/requires/acceptanceCriteria) plus branchName arrives pre-selected in the spawn prompt (US-001's buildImplementerTaskPrompt), instead of instructing the agent to read prd.json in full and pick the highest-priority passes:false story. The old step 5 ('Pick the highest priority user story...') was removed and merged into the renumbered 'Implement that single user story' step, dropping the list from 13 to 12 items; step 8 ('Update the PRD to set passes:true for the completed story') and every step after it were left semantically unchanged (only renumbered). While making the two copies byte-identical over the '## Your Task' .. '## Stop Condition' span (this story's AC3 oracle), I also fixed pre-existing unrelated drift between them that predated this story: a 'you're'/'you are' wording mismatch and a stale Step-5.5 cross-reference (templates copy pointed at '.claude/commands/cam-next.md', which no longer documents Step 5.5; canonicalized both to 'the agent SYSTEM PROMPT', matching the scripts copy). Ran `bun run embed-vendor` + `embed-vendor:check` (clean) since templates/ changed. All PRD stories in this PRD (US-001, US-002) now have passes:true and no non-operator story remains — the next agent invocation should find prd.json fully passing and the PRD in review/ship territory, not another implement story.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
