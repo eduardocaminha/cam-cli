@@ -1,9 +1,37 @@
 {
   "id": "CAM-232",
   "title": "Seeds de template capados: issues.schema.json sem specSource/derivedFrom + pointers errados",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-231"
+  ],
   "createdAt": "2026-07-08T23:05:57.139Z",
-  "description": "Drift na direcao perigosa (working copy mais nova que o seed; edits nunca shipam pra downstream, embed le so templates/): (1) templates/scripts/cam/issues.schema.json NAO tem specSource (enum grill/derived/operator), derivedFrom, nem o bloco allOf de validacao condicional que a copia viva tem (+2 dias mais nova); projeto downstream recebe schema sem spec-source tracking. (2) templates/scripts/cam/CLAUDE.md:14 aponta Step 5.5 pra .claude/commands/cam-next.md que tem zero Step 5.5 (vive no system prompt do agente; a copia viva ja foi corrigida). (3) Avaliar: scripts/cam/patterns.md e referenciado como canal de conhecimento pelo CLAUDE.md seedado mas NAO e seedado (downstream nasce sem o arquivo); scripts/cam/orch-handoff.schema.json tambem nao e seedado (handoff.schema.json e). Origem: auditoria dual-copy/embed 2026-07-08."
+  "description": "Drift na direcao perigosa (working copy mais nova que o seed; edits nunca shipam pra downstream, embed le so templates/): (1) templates/scripts/cam/issues.schema.json NAO tem specSource (enum grill/derived/operator), derivedFrom, nem o bloco allOf de validacao condicional que a copia viva tem (+2 dias mais nova); projeto downstream recebe schema sem spec-source tracking. (2) templates/scripts/cam/CLAUDE.md:14 aponta Step 5.5 pra .claude/commands/cam-next.md que tem zero Step 5.5 (vive no system prompt do agente; a copia viva ja foi corrigida). (3) Avaliar: scripts/cam/patterns.md e referenciado como canal de conhecimento pelo CLAUDE.md seedado mas NAO e seedado (downstream nasce sem o arquivo); scripts/cam/orch-handoff.schema.json tambem nao e seedado (handoff.schema.json e). Origem: auditoria dual-copy/embed 2026-07-08.",
+  "spec": {
+    "scope": "One-time sync of stale/incomplete template seeds so downstream `cam init` projects get correct, complete config. Files: templates/scripts/cam/issues.schema.json (sync spec-source structure from the live copy), templates/scripts/cam/CLAUDE.md (fix the Step 5.5 pointer), and two newly-seeded files templates/scripts/cam/patterns.md (STUB only) and templates/scripts/cam/orch-handoff.schema.json (parity with handoff.schema.json) + re-embed src/vendor/_generated.ts via `bun run embed-vendor`. Out of scope: building an anti-drift template<->live guard (CAM-61 / the copy-comparison guard territory), and seeding cam-cli's live patterns.md content (a stub only, never the 434 cam-cli-specific lines).",
+    "acceptanceCriteria": [
+      "templates/scripts/cam/issues.schema.json includes the specSource field (enum grill/derived/operator), derivedFrom, and the conditional allOf validation block, matching the structural schema in the live scripts/cam/issues.schema.json.",
+      "templates/scripts/cam/CLAUDE.md no longer points Step 5.5 at .claude/commands/cam-next.md; it points at the agent system prompt (matching the already-corrected live copy).",
+      "templates/scripts/cam/patterns.md exists as a STUB (a header + the routing note only), NOT a copy of cam-cli's live 434-line patterns.md; a fresh downstream project can grep it without error and append to it.",
+      "templates/scripts/cam/orch-handoff.schema.json exists, mirroring the live scripts/cam/orch-handoff.schema.json, for seed parity with the already-seeded handoff.schema.json.",
+      "The newly-seeded template files are embedded (embed-vendor globs templates/) and written by `cam init` (verify init lays them down); `bun run embed-vendor:check` passes.",
+      "`bun run typecheck`, `bun test`, and vendor/check are green."
+    ],
+    "gotchas": [
+      "Drift is in the dangerous direction: the working copy is newer than the seed and edits never ship downstream because the embed reads only templates/. This story is the one-time reconciliation, not a recurring guard.",
+      "Seed patterns.md as a STUB: cam-cli's live patterns.md is 434 lines of cam-cli-specific patterns; copying it would pollute every downstream project. A fresh project starts empty.",
+      "orch-handoff.schema.json is doc-only at runtime (handoff.ts:13 references it in a comment; validation is code-based in handoff.ts), so seeding it is parity/consistency, not a functional requirement — but handoff.schema.json IS seeded, so its orch sibling should be too.",
+      "embed-vendor globs the whole templates/ dir, so new files auto-embed; verify `cam init` iterates templatesContents and writes the new files (no manual manifest wiring should be needed, but confirm).",
+      "This shares templates/scripts/cam/CLAUDE.md with CAM-224/226/231, so it is blockedBy CAM-231 (the tail of that file's edit chain) to avoid concurrent edits."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 4,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
