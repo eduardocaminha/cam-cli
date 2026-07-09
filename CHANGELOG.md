@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.108.0] - 2026-07-09
+
+### Added
+
+- US-002 - Seed missing template files: patterns.md stub + orch-handoff.schema.json
+- US-001 - Sync stale existing template seeds (issues.schema spec-source + CLAUDE.md pointer)
+
 ## [0.107.0] - 2026-07-09
 
 ### Added
