@@ -20,7 +20,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit BOTH copies: .claude/agents/subagent-orchestrator.md and templates/agents/subagent-orchestrator.md, then `bun run embed-vendor` to regenerate src/vendor/_generated.ts. Real allowlist is in .claude/hooks/orch-agent-allowlist.sh:63 (Explore|Plan|claude-code-guide|subagent-planner|subagent-auditor|subagent-reviewer). Sidecar is the single pusher: worker-report.ts:12-15. Sections touched: '## Identity' (allowlist bullet ~L42), '### Implementer and reviewer workers', and the reviewer references in '## Sidecar model'. Gotcha: the two copies differ ONLY in frontmatter tools ordering (the `- Write` line position) and are otherwise byte-identical in the body (memory: cam-dual-copy-is-per-file); apply body edits identically to both. embed-vendor:check is a required gate (templates/ touched). Do NOT touch the Write/disallowedTools frontmatter contradiction (that is CAM-227). Prompt-only change; no src/ runtime behavior."
     },

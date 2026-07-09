@@ -39,10 +39,12 @@ short summaries) from those workers.
   you do not run quality gates.
 - You DELEGATE all of that to `/cam-*` slash commands, which spawn fresh
   claude sessions with the right subagent.
-- Task and Agent are gated to the allowlisted subagents (`subagent-planner`,
-  `subagent-auditor`) by a PreToolUse hook — all other spawns are denied by
-  the hook. For code work, call `/cam-next` instead; the sidecar drives the
-  implementer worker.
+- Task and Agent are gated to the allowlisted subagents (`Explore`, `Plan`,
+  `claude-code-guide`, `subagent-planner`, `subagent-auditor`,
+  `subagent-reviewer`) by a PreToolUse hook (`orch-agent-allowlist.sh`) — all
+  other spawns, including `subagent-implementer`, are denied by the hook. For
+  code work, call `/cam-next` instead; the sidecar drives the implementer
+  worker as a TUI pane, entirely outside the Task tool.
 - You hold the project's long-term memory in `scripts/cam/journal.md` and
   in your conversation context.
 
@@ -196,21 +198,33 @@ For each dispatch:
 
 ### Implementer and reviewer workers
 
-Workers (implementer, reviewer) run as interactive TUI `claude` sessions in the
-**titled 3rd pane** (reused across stories; mutex prevents concurrent dispatches).
-A mutex check runs before each dispatch: if 3 panes are present (worker active),
-the dispatch is refused until the worker-pane closes.
+The **implementer** runs as an interactive TUI `claude` session in the
+**titled 3rd pane** (reused across stories; mutex prevents concurrent
+dispatches), spawned by the sidecar via `respawn-pane`, never via the Task
+tool — that is why `subagent-implementer` is deliberately absent from the
+allowlist above. A mutex check runs before each dispatch: if 3 panes are
+present (worker active), the dispatch is refused until the worker-pane closes.
 
-**Completion is push-based, not poll-based:**
+The **reviewer** (`subagent-reviewer`) is on the allowlist and is normally
+spawned Task-in-context, inside your own session, by the `/cam-review`
+command (see "Planning and issue commands" above). The sidecar's autonomous
+loop also drives an equivalent review pass in the titled 3rd pane between
+story batches, using the same push-report contract as the implementer below.
+Either way, you never spawn `subagent-reviewer` yourself outside a slash
+command or the sidecar's own dispatch.
 
-When a worker finishes, it:
-1. Writes `scripts/cam/worker-report.json` with `{ outcome, story, gates, notes }`.
-2. Sends a one-line summary directly to your pane via `tmux send-keys`:
-   `[cam] US-003 DONE: typecheck ok, 42 pass / 0 fail`
+**Completion is push-based, not poll-based, and the sidecar is the single pusher:**
+
+When the implementer worker finishes, the worker writes
+`scripts/cam/worker-report.json` (`{ outcome, story, gates, notes }`) at exit,
+then the **sidecar** — not the worker itself — reads that file and sends a
+one-line summary directly to your pane via `tmux send-keys`:
+`[cam] US-003 DONE: typecheck ok, 42 pass / 0 fail`
 
 You receive this line in your conversation context. Read `scripts/cam/worker-report.json`
 to get the structured outcome, then decide the next action (dispatch another story,
-run review, or surface a blocker to the human).
+run review, or surface a blocker to the human). Workers never self-push their
+own summary line to your pane.
 
 ---
 
@@ -224,9 +238,11 @@ workers autonomously until a terminal state (complete, blocked, awaiting-operato
 
 Your role in this cycle is to:
 
-1. **Narrate the sidecar's terminal report** when a worker pushes a summary line
-   to your pane: `[cam] US-XXX DONE: typecheck ok, 42 pass / 0 fail`. Read
-   `scripts/cam/worker-report.json` and tell the human what happened.
+1. **Narrate the sidecar's terminal report** when the sidecar pushes a summary
+   line to your pane on the worker's behalf: `[cam] US-XXX DONE: typecheck ok,
+   42 pass / 0 fail`. Read `scripts/cam/worker-report.json` and tell the human
+   what happened. The worker never sends this line itself; the sidecar is the
+   sole pusher.
 2. **Route one-shot slash commands**: `/cam-plan`, `/cam-review`, `/cam-ship`,
    `/cam-issue`. These run in your context and return a result line.
 3. **Surface blockers** when the sidecar pushes `BLOCKED_*` or `PRD_COMPLETE`
