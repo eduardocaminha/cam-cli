@@ -1,7 +1,7 @@
 {
   "id": "CAM-231",
   "title": "Cross-repo PRD: decidir aspiracional vs implementar (zero suporte no codigo)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-226",
