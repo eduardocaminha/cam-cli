@@ -1,0 +1,9 @@
+{
+  "id": "CAM-239",
+  "title": "readIssueSystem regressed: throws on legacy `none` instead of normalizing to `local` (CAM-236 mandatory-alias violation)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T09:00:22.618Z",
+  "description": "CAM-236 (PR #171, v0.98.0) shipped a spec violation. The CAM-236 body made the `none`->`local` read-normalization a MANDATORY deprecated alias, not optional: mergeIntoConfig on init does NOT rewrite an existing project.toml value, so a raw rename silently breaks every already-initialized cam project whose project.toml still says issue_system=\"none\" (ship-finalize.ts, ship-pr.ts close/stash gates, issue-list.ts). As shipped, src/config/issue-system.ts readIssueSystem THROWS on `none` (comment: 'Any other value including the legacy none sentinel -> throws') and the PR removed `none` from every code path. Regression to fix: (1) readIssueSystem must normalize none->local (accept `none` as deprecated alias, NOT throw); (2) cam init --issue-system arg validation must accept `none` as a deprecated alias; (3) scripts/build-release.sh smoke invokes `cam init --issue-system none` and now exits 1, which aborted the v0.98 --install. Restore `none` as a deprecated normalized-on-read alias per the original CAM-236 spec; KEEP --issue-system none in the smoke as a permanent regression guard. Severity CRITICAL: any existing cam project on issue_system=\"none\" breaks on 0.98 ship/issue ops. Caught by build-release smoke; auditor APPROVE + reviewer CLEAN (3 rounds) both missed the mandatory-alias requirement."
+}
