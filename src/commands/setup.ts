@@ -759,6 +759,7 @@ export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 		if (arg === '--no-tmux') { result.noTmux = true; continue; }
 		if (arg === '--issue-system') {
 			const next = args[++i];
+			if (next === 'none') { result.issueSystem = 'local'; continue; }
 			if (!next || !(ISSUE_SYSTEMS as readonly string[]).includes(next)) {
 				printError('--issue-system requires: linear | github | local');
 				return null;
@@ -768,6 +769,7 @@ export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 		}
 		if (arg.startsWith('--issue-system=')) {
 			const val = arg.slice('--issue-system='.length);
+			if (val === 'none') { result.issueSystem = 'local'; continue; }
 			if (!(ISSUE_SYSTEMS as readonly string[]).includes(val)) {
 				printError(`--issue-system must be linear, github, or local — got ${val}`);
 				return null;

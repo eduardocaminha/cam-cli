@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.99.0] - 2026-07-09
+
+### Added
+
+- US-002 - Accept --issue-system none as deprecated alias in cam init and restore the build-release smoke to green
+- US-001 - Normalize legacy issue_system 'none' to 'local' in readIssueSystem
+
 ## [0.98.0] - 2026-07-09
 
 ### Added

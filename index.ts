@@ -126,7 +126,7 @@ const INIT_HELP = renderHelp({
 			entries: [
 				{ name: '--new', description: 'Treat this as a new project (skip the new/existing question)' },
 				{ name: '--existing', description: 'Treat this as an existing project' },
-				{ name: '--issue-system <x>', description: 'linear | github | none. Skip the issue-system question' },
+				{ name: '--issue-system <x>', description: 'linear | github | local. Skip the issue-system question' },
 				{ name: '--description "<t>"', description: 'Project description for new projects (skip the prompt)' },
 				{ name: '--no-tmux', description: 'Install templates only; skip spawning the tmux setup session' },
 			],
@@ -145,7 +145,7 @@ const INIT_HELP = renderHelp({
 				'Stage 2 — Project setup wizard (if stage 1 passes):\n' +
 				'  1. Asks: new project or existing?\n' +
 				'  2. Verifies claude is installed and logged in.\n' +
-				'  3. Asks: which issue system (linear | github | none)?\n' +
+				'  3. Asks: which issue system (linear | github | local)?\n' +
 				'  4. If new: asks for a brief project description.\n' +
 				'  5. Installs cam templates into .claude/commands/, .claude/agents/, scripts/cam/.\n' +
 				'  6. Writes scripts/cam/project.toml with per-project config.\n' +

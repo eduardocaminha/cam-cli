@@ -10,7 +10,9 @@
 // Coverage:
 //   1. Absent key -> 'local'.
 //   2. Valid values ('linear', 'github', 'local') -> returned as-is.
-//   3. Invalid values (including the legacy 'none') -> throws.
+//   3. Deprecated alias 'none' -> normalizes to 'local', does NOT throw
+//      (US-001, CAM-239).
+//   4. Truly-unknown values -> throws.
 
 import { describe, expect, test } from 'bun:test';
 import { readIssueSystem } from '../../src/config/issue-system.ts';
@@ -39,13 +41,13 @@ describe('readIssueSystem - valid values', () => {
 	});
 });
 
-describe('readIssueSystem - invalid values throw', () => {
-	test('throws a noisy error for the legacy "none" value', () => {
-		expect(() => readIssueSystem({ issue_system: 'none' })).toThrow(
-			"issue_system invalido: 'none', esperado linear|github|local",
-		);
+describe('readIssueSystem - deprecated alias', () => {
+	test('normalizes the legacy "none" value to "local" and does not throw', () => {
+		expect(readIssueSystem({ issue_system: 'none' })).toBe('local');
 	});
+});
 
+describe('readIssueSystem - invalid values throw', () => {
 	test('throws for an unrecognized string', () => {
 		expect(() => readIssueSystem({ issue_system: 'jira' })).toThrow(
 			"issue_system invalido: 'jira', esperado linear|github|local",
