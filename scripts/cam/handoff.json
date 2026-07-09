@@ -1,19 +1,16 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Add cam issue list --json machine mode" },
+  "lastCompletedStory": { "id": "US-003", "title": "Spine guard test banning inline === 'specified' outside the canonical module" },
   "branchName": "cam/pr-222-plannable-predicate-gate",
   "timestamp": "2026-07-08T00:00:00Z",
-  "createdFiles": [],
+  "createdFiles": [
+    "test/spine/no-inline-specified-predicate.test.ts"
+  ],
   "modifiedFiles": [
-    "index.ts",
-    "src/commands/issue-list.ts",
-    "src/issues/list.ts",
-    "test/issue-dispatch.test.ts",
-    "test/issue-list.test.ts",
-    "test/issues/list.test.ts",
+    "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added `cam issue list --json` (index.ts parseIssueArgs 'list' branch gains a `--json` flag, combinable with `--all`; ParsedIssueArgs 'list' member now carries `json: boolean`). The pure derivation lives in src/issues/list.ts as deriveBacklogJson(backlog, { includeShipped }) -> { counts, plannable, byStage }, reusing the now-exported compareBacklogEntries comparator (ranked-first/ascending-rank/numeric-id) for BOTH plannable and byStage ordering -- this is deliberately NOT selectPlannableIssue's WSJF-aware champion pick (CAM-203), which answers a different question (single winner vs. total-order list). plannable membership is isPlannable (src/issues/plannable.ts via select.ts's re-export), evaluated against the FULL backlog array (every stage), never a status:'open'-pre-filtered subset, because isBlocked needs to see blockers in any stage. Row shape is { id, title, rank } with rank normalized to `null` (never omitted) for unranked entries, since JSON.stringify silently drops undefined-valued keys and the AC's oracle expects the key to always be present. src/commands/issue-list.ts's runIssueList gained a `json?: boolean` option: when true and issue_system is 'none', it writes deriveBacklogJson's JSON.stringify output directly via process.stdout.write with ZERO emitTitle/heading decoration (pure JSON.parse-able stdout); 'linear'/'github' backends ignore --json entirely and keep printing their existing hint (the JSON contract is 'none'-only). US-003 (spine guard banning inline === 'specified' outside plannable.ts) can now encode the grep `grep -rElE \"===\\s*['\\\"]specified['\\\"]\" src --include='*.ts' | grep -v '^src/vendor/'` as a test -- it still returns only src/issues/plannable.ts after this story (verified). US-004 (docs: mandate backlog derivation via `cam issue list --json` only) can now point at this exact JSON shape as the canonical machine contract.",
+  "nextStoryContext": "US-003 added test/spine/no-inline-specified-predicate.test.ts as a single self-contained spine guard: exports findInlineSpecifiedViolations(files, allowlist=[ALLOWLISTED_FILE]) as the pure scanner (unit-tested with synthetic content, never writing a real violating file into src/), plus a real-tree test that globs 'src/**/*.{ts,tsx}', filters out src/vendor/ (documented rationale: it's an auto-generated build-time embed mirroring templates/commands/cam-plan.md prose, already excluded from typecheck), and asserts zero violations outside src/issues/plannable.ts. Confirmed clean on the current tree (post US-001/US-002): only src/issues/plannable.ts and src/vendor/_generated.ts matched the raw grep, and the guard's allowlist + vendor exclusion account for both. No scripts/check-*.ts entrypoint was added and no check-all.ts GATES wiring was needed -- bun test's default recursive discovery already picks up test/spine/ as part of the two mandatory gates (bun test, and check:all which runs bun test as its first sub-gate). US-004 (docs: mandate backlog derivation via `cam issue list --json` only) is next and is docs-only -- it should point at deriveBacklogJson's JSON shape from US-002 as the canonical machine contract; it does not touch src/issues/ so this guard is unaffected.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]

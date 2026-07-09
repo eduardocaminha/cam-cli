@@ -60,7 +60,7 @@
         "Full spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/spine/no-inline-specified-predicate.test.ts (new; mirror existing test layout under test/). Depends on US-001 (allowlist target is src/issues/plannable.ts) and runs after US-002 so the new list code is covered. AUDITOR FINDING 2: the previous plan's single-file allowlist over ALL of src/ was unachievable because src/vendor/_generated.ts embeds the literal (and every embed-vendor regen re-injects it); the scanner MUST exclude src/vendor/ and say why in a comment. Allowlist is exactly one file: src/issues/plannable.ts (not select.ts; select.ts only re-exports and must contain no literal). Use Bun.file/readdir recursion or Bun.$ glob for enumeration (Bun-only, no node:fs preference). noUncheckedIndexedAccess: regex match groups are T | undefined."
     },
