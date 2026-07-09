@@ -1,0 +1,9 @@
+{
+  "id": "CAM-251",
+  "title": "After US-003 removed the only producer of the 'reviewer' sentinel, the 'reviewe…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T19:29:24.368Z",
+  "description": "After US-003 removed the only producer of the 'reviewer' sentinel, the 'reviewer' member of the AnySentinelSource union is now unreachable (parseAnySentinel only returns 'implementer' or 'review-tag'). Pruning it is out of this story's AC scope; consider a follow-up cleanup.\n\nSource: cam/issue-233\nReview round: 1\nLocation: src/supervisor/result.ts:372\n\nsuggestion-fingerprint: 057005e3aa27"
+}
