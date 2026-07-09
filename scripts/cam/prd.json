@@ -44,7 +44,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/setup.ts (parseSetupArgs lines 752-776: two branches validate against ISSUE_SYSTEMS; add the 'none'->'local' alias in both WITHOUT adding 'none' to the ISSUE_SYSTEMS constant at line 748, which also feeds the interactive Select at line 186), index.ts (line 129 help text), plus a new/extended test for parseSetupArgs (parseSetupArgs is already exported). Do NOT edit scripts/build-release.sh nor test/build-release-smoke.test.ts: both are already correct and the static test pins '--issue-system none' in the smoke. Depends on US-001: the smoke only goes green once BOTH the reader (US-001) and this arg validation accept the alias. Gotchas: `bash scripts/build-release.sh` compiles the binary (bun build --compile, takes minutes): run it once at the end, never with --install (hot-swapping the installed 0.97 binary/sidecar is a post-ship operator step, see issue gotcha 2); the smoke is hermetic (tmpdir cwd) by CAM-15 design, keep it that way. Grep scripts/cam/patterns.md for 'init' / 'setup' / 'build-release' bullets before coding."
     }
