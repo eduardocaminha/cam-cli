@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.106.0] - 2026-07-09
+
+### Added
+
+- US-004 - Retrofit 2026-06 build-notes markers + document marking convention
+- US-003 - Best-effort patterns archive on the --cycle-close path
+- US-002 - cam patterns archive CLI wiring + help + sentinel
+- US-001 - archivePatternsOnMain core logic (marker-based, on-main commit-tree)
+
 ## [0.105.0] - 2026-07-09
 
 ### Added
