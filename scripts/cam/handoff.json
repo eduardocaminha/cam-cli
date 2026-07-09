@@ -1,24 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "archivePatternsOnMain core logic (marker-based, on-main commit-tree)"
+    "id": "US-002",
+    "title": "cam patterns archive CLI wiring + help + sentinel"
   },
   "branchName": "cam/issue-226",
   "timestamp": "2026-07-09T00:00:00.000Z",
   "createdFiles": [
-    "src/commands/patterns-archive.ts",
-    "test/commands/patterns-archive.test.ts"
+    "test/commands/patterns-cli.test.ts"
   ],
   "modifiedFiles": [
-    "scripts/cam/prd.json"
+    "index.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "archivePatternsOnMain (src/commands/patterns-archive.ts) is marker-based only: a bullet moves to scripts/cam/patterns.archive.md iff RESOLVED_MARKER_RE (`/\\[resolved \\d{4}-\\d{2}\\]/`, exported) matches anywhere in its text; no threshold/age/count logic. Blocks are parsed by finding lines starting with '- ' (top-level bullets); everything before the first such line is the preserved intro preamble. patterns.archive.md is lazily created (git show returning non-zero -> bootstrap header '# Codebase Patterns Archive'). Guard order and plumbing mirror src/commands/journal-archive.ts exactly (checkMainUpToDate -> read-from-main -> parse -> mutate -> commitTreeToMain([2 FileWrite]) -> pushMainBestEffort), all imported from src/git/on-main.ts, no private copy. US-002 (CLI wiring: `cam patterns archive` + help + sentinel) should call archivePatternsOnMain the same way journal.ts calls archiveJournalOnMain -- look at how `cam journal archive` is registered in index.ts for the wiring shape. US-004 (retrofit markers) must use the exact same regex `[resolved YYYY-MM]` when tagging existing scripts/cam/patterns.md bullets, and should document the convention (probably as a new bullet at the top of patterns.md or in CLAUDE.md) so future contributors know how to mark a bullet resolved.",
+  "nextStoryContext": "`cam patterns archive` is wired in index.ts exactly like `cam journal archive` (parsePatternsArgs / dispatchPatterns / PatternsDispatchDeps / defaultPatternsArchiveFn / PATTERNS_HELP, case 'patterns' in the main switch, top-level HELP entry) but simplified: no --threshold flag (archival is marker-based per US-001's RESOLVED_MARKER_RE), no stdin read, no --force/--cycle-close. Bare `cam patterns` (no subcommand) prints PATTERNS_HELP and exits 0 -- this deliberately diverges from `cam journal`'s bare-invocation error, since patterns has only one subcommand so there's nothing to disambiguate (documented as a patterns.md bullet). Sentinels: `CAM_PATTERNS_ARCHIVED=<n> sha=<sha>` on a successful archive, `CAM_PATTERNS_ARCHIVE=noop` on no marked bullets, exit 1 on any ArchivePatternsOnMainError. US-003 (best-effort patterns archive on the --cycle-close path) should mirror dispatchJournal's US-003 wiring: call archivePatternsOnMain (via the same injectable archiveFn shape used here) after CAM_JOURNAL_APPENDED/recordCycleTokens and before the recycle marker is armed inside dispatchJournal's --cycle-close branch (index.ts ~line 1575-1593), best-effort (a throw or ok:false only logs a printWarning, never changes the exit code). US-004 (retrofit 2026-06 build-notes markers) needs the exact `[resolved YYYY-MM]` regex US-001 defined (RESOLVED_MARKER_RE, exported from src/commands/patterns-archive.ts) and should document the marking convention (probably a new patterns.md preamble line or a CLAUDE.md note) so future contributors know how to mark a bullet resolved by hand.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure git-plumbing reuse (checkMainUpToDate/commitTreeToMain/pushMainBestEffort from src/git/on-main.ts, already validated by the journal-archive precedent). Spot-checked git-commit-tree's official docs (git-scm.com) to confirm -p/parent semantics and no working-tree/index requirement; matches the existing commitTreeToMain implementation exactly, no code change needed."
+      "summary": "Pure CLI-dispatch wiring in index.ts (argv parsing, injectable deps, stdout sentinels) mirroring the existing cam journal archive dispatch shape; no external library surface was exercised or changed."
     }
   ]
 }

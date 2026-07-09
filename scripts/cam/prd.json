@@ -42,7 +42,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Mirror the journal wiring in index.ts: parseJournalArgs (~line 1324), dispatchJournal (~1435), JournalDispatchDeps (injectable archiveFn/writeStdout), defaultArchiveFn (~1416), and the JOURNAL help/usage blocks (~355-427). Add an equivalent patterns block. Single-hub dispatch invariant (patterns.md 'Single-hub dispatch invariant'): `cam` subcommands are thin-proxies; verify whether `cam patterns archive` should run inline (like `cam journal archive`, which does) - journal archive dispatches directly, so patterns archive should too. NO --threshold arg (marker-based). Keep the sentinel-emission pattern (writeStdout injectable). Test template: test/commands/journal-archive.test.ts plus the index.ts dispatch tests."
     },
