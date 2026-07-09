@@ -40,6 +40,10 @@ import {
 	DEFAULT_THRESHOLD as JOURNAL_ARCHIVE_DEFAULT_THRESHOLD,
 	type ArchiveJournalOnMainResult,
 } from './src/commands/journal-archive.ts';
+import {
+	archivePatternsOnMain,
+	type ArchivePatternsOnMainResult,
+} from './src/commands/patterns-archive.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runIssueList } from './src/commands/issue-list.ts';
 import type {
@@ -99,6 +103,7 @@ const HELP = renderHelp({
 				{ name: 'issue "<text>"', description: 'File an issue from free text; opens /cam-issue create in a pane' },
 				{ name: 'journal append [--force]', description: 'Append a structured cycle entry to scripts/cam/journal.md on main (reads JSON from stdin)' },
 				{ name: 'journal archive [--threshold N]', description: 'Move the oldest third of scripts/cam/journal.md entries to journal.archive.md on main once entries exceed the threshold (default 50)' },
+				{ name: 'patterns archive', description: 'Move resolved-marked bullets (`[resolved YYYY-MM]`) from scripts/cam/patterns.md to patterns.archive.md on main' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
@@ -426,6 +431,46 @@ const JOURNAL_HELP = renderHelp({
 	footer:
 		'The orchestrator calls `cam journal append` at cycle close time as the\n' +
 		'deterministic housekeeping channel (read-only orchestrator, gated write via cam).',
+});
+
+const PATTERNS_HELP = renderHelp({
+	title: 'cam patterns',
+	tagline: 'Move resolved-marked bullets from scripts/cam/patterns.md to patterns.archive.md on main',
+	usage: 'cam patterns archive',
+	sections: [
+		{
+			heading: 'Subcommands',
+			entries: [
+				{
+					name: 'archive',
+					description: 'Move bullets carrying `[resolved YYYY-MM]` from patterns.md to patterns.archive.md on main via commit-tree',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Reads scripts/cam/patterns.md from main via `git show main:...`\n' +
+				'   (never from the working tree -- the commit-tree-to-main pattern).\n' +
+				'2. Selection is MARKER-based only: a bullet moves if and only if it\n' +
+				'   carries `[resolved YYYY-MM]` anywhere in its text. Unlike `cam\n' +
+				'   journal archive`, position, age, and count never decide selection\n' +
+				'   -- there is no --threshold flag.\n' +
+				'3. Writes both files to main via git plumbing (hash-object, update-index,\n' +
+				'   write-tree, commit-tree, update-ref) without touching the working\n' +
+				'   tree or HEAD branch.\n' +
+				'4. Best-effort push to origin main (non-zero exit is logged, not fatal).\n' +
+				'5. On success with marked bullets: prints `CAM_PATTERNS_ARCHIVED=<k>\n' +
+				'   sha=<commit-sha>` and exits 0.\n' +
+				'6. On success with no marked bullets: prints `CAM_PATTERNS_ARCHIVE=noop`\n' +
+				'   and exits 0.\n' +
+				'7. On failure (diverged, detached HEAD, missing main, patterns.md\n' +
+				'   missing on main): exits 1.',
+		},
+	],
+	footer:
+		'To mark a bullet resolved, append `[resolved YYYY-MM]` anywhere in its\n' +
+		'text on main; `cam patterns archive` then relocates it verbatim.',
 });
 
 const NEXT_HELP = renderHelp({
@@ -1563,6 +1608,92 @@ export async function dispatchJournal(
 }
 
 // ---------------------------------------------------------------------------
+// cam patterns dispatch (exported for unit testing with injectable deps)
+// ---------------------------------------------------------------------------
+
+/**
+ * Discriminated union returned by parsePatternsArgs.
+ * - mode === 'archive': dispatch the patterns archive subcommand.
+ * - help === true: caller should print PATTERNS_HELP and exit 0. This is the
+ *   default for both `--help`/`-h` AND no subcommand at all (unlike
+ *   parseJournalArgs, which errors on a bare `cam journal`): patterns has a
+ *   single subcommand, so a bare `cam patterns` showing usage is more useful
+ *   than an error.
+ */
+export type ParsedPatternsArgs =
+	| { mode: 'archive'; help: false }
+	| { mode?: never; help: true };
+
+const PATTERNS_USAGE = 'Usage: cam patterns archive';
+
+export function parsePatternsArgs(args: string[]): ParsedPatternsArgs | null {
+	if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+		return { help: true };
+	}
+	const subCommand = args[0];
+	if (subCommand !== 'archive') {
+		printFatalHint(PATTERNS_USAGE);
+		return null;
+	}
+	return { mode: 'archive', help: false };
+}
+
+/** Injectable deps for dispatchPatterns -- all optional; production uses real impls. */
+export interface PatternsDispatchDeps {
+	/**
+	 * Injectable archivePatternsOnMain.
+	 * Default: calls the real impl with process.cwd() and a real spawnSync.
+	 */
+	archiveFn?: () => ArchivePatternsOnMainResult;
+	/** Injectable stdout writer. Default: `process.stdout.write`. */
+	writeStdout?: (line: string) => void;
+}
+
+/**
+ * Default archiveFn: the real archivePatternsOnMain with process.cwd() and a
+ * real spawnSync.
+ */
+function defaultPatternsArchiveFn(): ArchivePatternsOnMainResult {
+	return archivePatternsOnMain({
+		cwd: process.cwd(),
+		spawnFn: (cmd, args, opts) =>
+			spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
+	});
+}
+
+/**
+ * Route a parsed `cam patterns` call. Exported so unit tests can inject fakes
+ * for archiveFn and writeStdout to verify sentinel emission and exit codes
+ * without touching real git or stdout. No --threshold arg: archival is
+ * marker-based (see RESOLVED_MARKER_RE in src/commands/patterns-archive.ts),
+ * not count-based.
+ */
+export function dispatchPatterns(
+	parsed: ParsedPatternsArgs,
+	deps?: PatternsDispatchDeps,
+): number {
+	if (parsed.help) {
+		process.stdout.write(PATTERNS_HELP);
+		return 0;
+	}
+	const writeStdout =
+		deps?.writeStdout ?? ((line: string) => { process.stdout.write(line); });
+
+	const archiveFn = deps?.archiveFn ?? defaultPatternsArchiveFn;
+	const result = archiveFn();
+	if (!result.ok) {
+		// printError already fired inside archivePatternsOnMain
+		return 1;
+	}
+	if (result.archived === 0) {
+		writeStdout('CAM_PATTERNS_ARCHIVE=noop\n');
+		return 0;
+	}
+	writeStdout(`CAM_PATTERNS_ARCHIVED=${result.archived} sha=${result.sha}\n`);
+	return 0;
+}
+
+// ---------------------------------------------------------------------------
 // cam issue dispatch (exported for unit testing with injectable deps)
 // ---------------------------------------------------------------------------
 
@@ -2124,6 +2255,15 @@ async function main(argv: string[]): Promise<number> {
 				return 0;
 			}
 			return dispatchJournal(parsed);
+		}
+		case 'patterns': {
+			const parsed = parsePatternsArgs(argv.slice(3));
+			if (parsed === null) return 1;
+			if (parsed.help) {
+				process.stdout.write(PATTERNS_HELP);
+				return 0;
+			}
+			return dispatchPatterns(parsed);
 		}
 		case 'triage': {
 			const tail = argv.slice(3);
