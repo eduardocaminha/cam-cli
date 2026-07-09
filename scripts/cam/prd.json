@@ -31,7 +31,7 @@
         "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "AUDITOR FIX (finding 1): the two schema copies are NOT byte-identical today and must NOT be made so. scripts/cam/issues.schema.json carries specSource, derivedFrom, and allOf conditional blocks that templates/scripts/cam/issues.schema.json intentionally lacks (repo invariant: cam dual-copy is per-file). Do NOT sync those blocks and do NOT use a full-file diff as an oracle; add the type enum block to each copy independently and verify with the targeted greps above. Files: scripts/cam/issues.schema.json, templates/scripts/cam/issues.schema.json, src/issues/types.ts. Touching templates/ requires bun run embed-vendor before commit."
     },

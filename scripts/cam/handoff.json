@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add optional type field to the issue schema (both copies) and IssueEntry" },
+  "branchName": "cam/issue-235",
+  "timestamp": "2026-07-09T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "scripts/cam/issues.schema.json",
+    "templates/scripts/cam/issues.schema.json",
+    "src/issues/types.ts",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 (cam spec --persist) should persist an optional type onto IssueEntry when the operator supplies one during the grill. The two schema copies are intentionally NOT byte-identical (scripts/cam/issues.schema.json carries specSource/derivedFrom/allOf blocks that templates/scripts/cam/issues.schema.json lacks); the new 'type' enum property was added independently to each copy's properties block, not synced via allOf. No required-array change was made (type stays optional; default 'feat' is a consumer-side concern for US-004/US-005, not this schema). Remember bun run embed-vendor + embed-vendor:check whenever templates/ changes.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure JSON Schema (draft-07) authoring + TS type addition; no runtime schema-validation library (e.g. ajv) is used in this repo to consume issues.schema.json, so no external library API was exercised."
+    }
+  ]
+}
