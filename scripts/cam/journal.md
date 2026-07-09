@@ -572,3 +572,15 @@ Each entry follows this template:
 - **Decisions**: Genuine dual-copy change: the implementer Step 5.5 example is shared, so both agent copies were edited and re-embedded (unlike CAM-228's by-design .claude-only divergence). Diff before assuming divergence (cam-dual-copy-is-per-file). Prompt + one small runtime guard; no other src behavior change.
 - **Blockers encountered**: None during the loop. Ship: PR #178 landed BEHIND (main advanced via the CAM-248 auto-file); the sidecar merge-watch (CAM-182) ran gh pr update-branch (1/2) and squash-merged clean. Post-merge completed cleanly this cycle (pull + close CAM-229 + tag) with NO pull-failed -- no parallel git-fetch poll loop ran (lesson from CAM-228 applied).
 - **Follow-ups**: CAM-248 auto-filed (idea SUGGESTION from the CLEAN review). Continue the autonomous specified chain (operator standing directive: drive to exhaustion): next unblocked specified after CAM-229 are CAM-224 (unblocked by CAM-229), CAM-230, CAM-240 -- re-derive live via cam issue list. CAM-226/231/232/233 stay blocked. Renovate #173 (bun 1.3.14) stays RED until CAM-245 ships (needs /cam-spec first).
+
+## CAM-224 — CAM-224 — Harness diet: sidecar injects selected story + branchName into implementer spawn
+
+- **Started**: 2026-07-09T16:17:35Z
+- **Closed**: 2026-07-09T16:41:53Z
+- **Branch**: cam/issue-224
+- **Issue**: CAM-224
+- **Outcome**: shipped
+- **Summary**: Fifth issue of the operator-directed context-truth-up specified chain (after CAM-225, CAM-227, CAM-228, CAM-229). Harness diet, 2 stories, 100% autonomous after the plan signal. US-001: the sidecar now injects the selected story record + branchName into the implementer spawn prompt and decideNextAction's storyId is authoritative, removing the implementer agent's full-prd.json self-selection read (src runtime change, not prompt-only). US-002: updated scripts/cam/CLAUDE.md 'Your Task' steps to drop full-PRD self-selection to match. Auditor APPROVE, gates green (typecheck ok, 3965 pass / 0 fail), review CLEAN round 1 zero findings. Shipped ci-gated as PR #179, tag v0.104.0.
+- **Decisions**: First non-prompt-only issue of this chain: touched the supervisor spawn path + decideNextAction. Loop flipped active:true straight after plan APPROVE (no manual /cam-next) and auto-shipped after the CLEAN review (CAM-191). Post-merge coherence verified read-only AFTER the sidecar completion push; no git-fetch poll ran (CAM-228 lesson applied).
+- **Blockers encountered**: None. PR #179 merged via the sidecar merge-watch (ci-gated); post-merge completed cleanly (pull + close CAM-224 + tag v0.104.0) with no pull-failed.
+- **Follow-ups**: CAM-249 auto-filed (idea SUGGESTION from the CLEAN review). Continue the autonomous specified chain (operator standing directive): next unblocked plannable after CAM-224 is CAM-226 (newly unblocked by CAM-224), then CAM-230, CAM-240 -- re-derive live via cam issue list. Renovate #173 (bun 1.3.14) stays RED until CAM-245 ships (needs /cam-spec first). Installed cam binary stale; rebuild+reinstall would restore correct cam tag.
