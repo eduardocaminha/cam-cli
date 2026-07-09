@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { IssueEntry } from "../../src/issues/types.ts";
-import { deriveBacklogView } from "../../src/issues/list.ts";
+import { deriveBacklogJson, deriveBacklogView } from "../../src/issues/list.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -245,5 +245,114 @@ describe("deriveBacklogView — unmet blockers", () => {
 		const planned = view.find((g) => g.stage === "planned");
 		const entry3 = planned?.entries.find((e) => e.issue.id === "CAM-3");
 		expect(entry3?.unmetBlockers).toEqual(["CAM-1", "CAM-2"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// deriveBacklogJson (US-002, CAM-222): { counts, plannable, byStage }
+// ---------------------------------------------------------------------------
+
+describe("deriveBacklogJson — shape + counts", () => {
+	test("empty backlog yields zero counts, no plannable, empty byStage groups", () => {
+		const json = deriveBacklogJson([]);
+		expect(json).toEqual({
+			counts: { idea: 0, specified: 0, planned: 0 },
+			plannable: [],
+			byStage: { idea: [], specified: [], planned: [] },
+		});
+	});
+
+	test("counts only status:'open' entries per stage; shipped absent without --all", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", stage: "idea" }),
+			makeIssue({ id: "CAM-2", stage: "idea" }),
+			makeIssue({ id: "CAM-3", stage: "specified" }),
+			makeIssue({ id: "CAM-4", stage: "planned" }),
+			makeIssue({ id: "CAM-5", stage: "shipped" }),
+		];
+		const json = deriveBacklogJson(backlog);
+		expect(json.counts).toEqual({ idea: 2, specified: 1, planned: 1 });
+		expect(json.counts.shipped).toBeUndefined();
+	});
+
+	test("--all (includeShipped) adds shipped to both counts and byStage", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", stage: "shipped" }),
+			makeIssue({ id: "CAM-2", stage: "idea" }),
+		];
+		const json = deriveBacklogJson(backlog, { includeShipped: true });
+		expect(json.counts.shipped).toBe(1);
+		expect(json.byStage.shipped?.map((r) => r.id)).toEqual(["CAM-1"]);
+	});
+});
+
+describe("deriveBacklogJson — status:'abandoned' zombie exclusion (CAM-99/103/130/184)", () => {
+	test("a stage:'specified' + status:'abandoned' fixture appears NOWHERE in the output", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-99", stage: "specified", status: "abandoned" }),
+			makeIssue({ id: "CAM-1", stage: "specified" }),
+		];
+		const json = deriveBacklogJson(backlog, { includeShipped: true });
+		const serialized = JSON.stringify(json);
+		expect(serialized.includes("CAM-99")).toBe(false);
+	});
+
+	test("abandoned entries are excluded from counts even in the shipped group", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", stage: "shipped" }),
+			makeIssue({ id: "CAM-2", stage: "shipped", status: "abandoned" }),
+		];
+		const json = deriveBacklogJson(backlog, { includeShipped: true });
+		expect(json.counts.shipped).toBe(1);
+		expect(json.byStage.shipped?.map((r) => r.id)).toEqual(["CAM-1"]);
+	});
+});
+
+describe("deriveBacklogJson — plannable membership (isPlannable) + ordering", () => {
+	test("plannable is specified + open + not blocked; a blocked entry is excluded", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", stage: "specified" }),
+			makeIssue({ id: "CAM-2", stage: "specified", blockedBy: ["CAM-1"] }),
+		];
+		const json = deriveBacklogJson(backlog);
+		expect(json.plannable.map((r) => r.id)).toEqual(["CAM-1"]);
+		// The blocked entry is still present in byStage.specified.
+		expect(json.byStage.specified.map((r) => r.id)).toEqual(["CAM-1", "CAM-2"]);
+	});
+
+	test("idea/planned entries never appear in plannable", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", stage: "idea" }),
+			makeIssue({ id: "CAM-2", stage: "planned" }),
+		];
+		const json = deriveBacklogJson(backlog);
+		expect(json.plannable).toEqual([]);
+	});
+
+	test("plannable is ordered ranked-first ascending rank, then unranked by numeric id", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-9", stage: "specified" }),
+			makeIssue({ id: "CAM-3", stage: "specified", rank: 2 }),
+			makeIssue({ id: "CAM-1", stage: "specified", rank: 1 }),
+			makeIssue({ id: "CAM-5", stage: "specified" }),
+		];
+		const json = deriveBacklogJson(backlog);
+		expect(json.plannable.map((r) => r.id)).toEqual(["CAM-1", "CAM-3", "CAM-5", "CAM-9"]);
+	});
+
+	test("row shape is exactly { id, title, rank }; rank is null when unranked", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", stage: "specified", title: "Fix the thing" }),
+		];
+		const json = deriveBacklogJson(backlog);
+		expect(json.plannable).toEqual([{ id: "CAM-1", title: "Fix the thing", rank: null }]);
+	});
+
+	test("row shape carries the numeric rank when present", () => {
+		const backlog: IssueEntry[] = [
+			makeIssue({ id: "CAM-1", stage: "specified", rank: 3 }),
+		];
+		const json = deriveBacklogJson(backlog);
+		expect(json.plannable).toEqual([{ id: "CAM-1", title: "Test issue", rank: 3 }]);
 	});
 });

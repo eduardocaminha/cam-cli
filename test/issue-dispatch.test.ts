@@ -11,8 +11,9 @@
 //   (d) The --file-local path NEVER calls the runIssue thin-proxy.
 //   (e) The text path calls runIssueFn and NOT fileLocalFn.
 //   (f) Exit codes are forwarded from the injected fakes.
-//   (g) parseIssueArgs recognizes `list` / `list --all` as { mode: 'list' },
-//       evaluated BEFORE the free-text fallthrough (CAM-190 US-003).
+//   (g) parseIssueArgs recognizes `list` / `list --all` / `list --json` /
+//       `list --all --json` as { mode: 'list' }, evaluated BEFORE the
+//       free-text fallthrough (CAM-190 US-003; --json added CAM-222 US-002).
 //   (h) dispatchIssue routes mode 'list' to issueListFn and NEVER touches
 //       runIssueFn or fileLocalFn (no thin-proxy, no send-keys, no claude spawn).
 //   (i) parseIssueArgs recognizes `close <id>` as { mode: 'close', id },
@@ -153,22 +154,53 @@ describe('parseIssueArgs: --file-local recognition', () => {
 // ---------------------------------------------------------------------------
 
 describe('parseIssueArgs: list subcommand', () => {
-	test('cam issue list returns { mode: list, all: false, help: false }', () => {
+	test('cam issue list returns { mode: list, all: false, json: false, help: false }', () => {
 		const result = parseIssueArgs(['list']);
 		expect(result?.mode).toBe('list');
 		expect(result?.help).toBe(false);
 		if (result?.mode === 'list') {
 			expect(result.all).toBe(false);
+			expect(result.json).toBe(false);
 		}
 	});
 
-	test('cam issue list --all returns { mode: list, all: true, help: false }', () => {
+	test('cam issue list --all returns { mode: list, all: true, json: false, help: false }', () => {
 		const result = parseIssueArgs(['list', '--all']);
 		expect(result?.mode).toBe('list');
 		if (result?.mode === 'list') {
 			expect(result.all).toBe(true);
+			expect(result.json).toBe(false);
 		}
 		expect(result?.help).toBe(false);
+	});
+
+	test('cam issue list --json returns { mode: list, all: false, json: true, help: false }', () => {
+		const result = parseIssueArgs(['list', '--json']);
+		expect(result?.mode).toBe('list');
+		if (result?.mode === 'list') {
+			expect(result.all).toBe(false);
+			expect(result.json).toBe(true);
+		}
+		expect(result?.help).toBe(false);
+	});
+
+	test('cam issue list --all --json combines both flags', () => {
+		const result = parseIssueArgs(['list', '--all', '--json']);
+		expect(result?.mode).toBe('list');
+		if (result?.mode === 'list') {
+			expect(result.all).toBe(true);
+			expect(result.json).toBe(true);
+		}
+		expect(result?.help).toBe(false);
+	});
+
+	test('cam issue list --json --all (flag order does not matter)', () => {
+		const result = parseIssueArgs(['list', '--json', '--all']);
+		expect(result?.mode).toBe('list');
+		if (result?.mode === 'list') {
+			expect(result.all).toBe(true);
+			expect(result.json).toBe(true);
+		}
 	});
 
 	test('a bare "list" positional is never misread as free-text issue creation', () => {
@@ -369,7 +401,7 @@ describe('dispatchIssue: routing isolation', () => {
 		let fileLocalCalled = false;
 
 		const code = await dispatchIssue(
-			{ mode: 'list', all: false, help: false },
+			{ mode: 'list', all: false, json: false, help: false },
 			{
 				issueListFn: async () => {
 					issueListCalled = true;
@@ -395,7 +427,7 @@ describe('dispatchIssue: routing isolation', () => {
 	test('mode:list --all still routes to issueListFn only', async () => {
 		let issueListCalled = false;
 		await dispatchIssue(
-			{ mode: 'list', all: true, help: false },
+			{ mode: 'list', all: true, json: false, help: false },
 			{
 				issueListFn: async () => {
 					issueListCalled = true;
@@ -410,7 +442,7 @@ describe('dispatchIssue: routing isolation', () => {
 
 	test('mode:list forwards issueListFn exit code', async () => {
 		const code = await dispatchIssue(
-			{ mode: 'list', all: false, help: false },
+			{ mode: 'list', all: false, json: false, help: false },
 			{ issueListFn: async () => 1 },
 		);
 		expect(code).toBe(1);
@@ -874,7 +906,7 @@ describe('dispatchIssue: list mode is CAM_ISSUE_RESULT-free by design', () => {
 	test('mode:list dispatch never writes a CAM_ISSUE_RESULT line to stdout', async () => {
 		const lines = await withCapturedStdoutAsync(async () => {
 			await dispatchIssue(
-				{ mode: 'list', all: false, help: false },
+				{ mode: 'list', all: false, json: false, help: false },
 				{
 					issueListFn: async () => {
 						process.stdout.write('CAM-42  Some issue title\n');

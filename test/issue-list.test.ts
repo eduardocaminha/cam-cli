@@ -14,6 +14,16 @@
 //        subprocess calls are the git ls-tree/cat-file pair (never tmux,
 //        never claude).
 //
+// Coverage (US-002, CAM-222 acceptance criteria -- `cam issue list --json`):
+//   AC1: 'none' + --json writes pure JSON (JSON.parse-able, no emitTitle/
+//        heading decoration) with exactly { counts, plannable, byStage }.
+//   AC2: status:'abandoned' entries (including the specified+abandoned
+//        zombie fixture) never appear in the JSON output.
+//   AC4: --json with 'linear'/'github' keeps the existing hint behavior and
+//        exits 0 (the JSON contract is 'none'-only).
+//   AC5 (reuse): --json still routes through readBacklogFromMain, never a
+//        raw working-tree read (same recording-spawn fixture proves it).
+//
 // All I/O is faked: project.toml is written to a real mkdtemp'd tmp dir
 // (mirrors test/config/models.test.ts), and readBacklogFromMain's git calls
 // are answered by an in-memory recording BacklogSpawnFn (mirrors
@@ -352,5 +362,139 @@ describe('runIssueList — deterministic subprocess seam (AC5)', () => {
 
 		expect(code).toBe(0);
 		expect(plain()).toContain('No actionable backlog items.');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// --json machine mode (US-002, CAM-222)
+// ---------------------------------------------------------------------------
+
+describe('runIssueList — --json machine mode', () => {
+	test('writes pure JSON with exactly { counts, plannable, byStage }; no title/heading decoration', () => {
+		const entries = [
+			makeIssue({ id: 'CAM-1', stage: 'specified' }),
+			makeIssue({ id: 'CAM-2', stage: 'idea' }),
+		];
+		const { spawnFn } = makeRecordingBacklogSpawn(entries);
+		const { writer, plain } = makeCapture();
+
+		const code = runIssueList({
+			cwd: tmpDir,
+			configPath: join(tmpDir, 'missing.toml'),
+			spawnFn,
+			writer,
+			json: true,
+		});
+
+		expect(code).toBe(0);
+		const parsed = JSON.parse(plain());
+		expect(Object.keys(parsed).sort()).toEqual(['byStage', 'counts', 'plannable']);
+		expect(parsed).toEqual({
+			counts: { idea: 1, specified: 1, planned: 0 },
+			plannable: [{ id: 'CAM-1', title: 'Test issue', rank: null }],
+			byStage: {
+				idea: [{ id: 'CAM-2', title: 'Test issue', rank: null }],
+				specified: [{ id: 'CAM-1', title: 'Test issue', rank: null }],
+				planned: [],
+			},
+		});
+	});
+
+	test('a stage:specified + status:abandoned zombie fixture appears NOWHERE in the JSON output', () => {
+		const entries = [
+			makeIssue({ id: 'CAM-99', stage: 'specified', status: 'abandoned' }),
+			makeIssue({ id: 'CAM-1', stage: 'specified' }),
+		];
+		const { spawnFn } = makeRecordingBacklogSpawn(entries);
+		const { writer, plain } = makeCapture();
+
+		runIssueList({
+			cwd: tmpDir,
+			configPath: join(tmpDir, 'missing.toml'),
+			spawnFn,
+			writer,
+			json: true,
+			all: true,
+		});
+
+		expect(plain().includes('CAM-99')).toBe(false);
+	});
+
+	test('--all adds shipped to counts and byStage in JSON mode', () => {
+		const entries = [
+			makeIssue({ id: 'CAM-1', stage: 'shipped' }),
+			makeIssue({ id: 'CAM-2', stage: 'idea' }),
+		];
+		const { spawnFn } = makeRecordingBacklogSpawn(entries);
+		const { writer, plain } = makeCapture();
+
+		runIssueList({
+			cwd: tmpDir,
+			configPath: join(tmpDir, 'missing.toml'),
+			spawnFn,
+			writer,
+			json: true,
+			all: true,
+		});
+
+		const parsed = JSON.parse(plain());
+		expect(parsed.counts.shipped).toBe(1);
+		expect(parsed.byStage.shipped).toEqual([{ id: 'CAM-1', title: 'Test issue', rank: null }]);
+	});
+
+	test('--json with issue_system linear still prints the Linear hint (JSON contract is none-only), exits 0', () => {
+		const configPath = writeProjectToml('issue_system = "linear"\n');
+		const { spawnFn, calls } = makeRecordingBacklogSpawn([]);
+		const { writer, plain } = makeCapture();
+
+		const code = runIssueList({ cwd: tmpDir, configPath, spawnFn, writer, json: true });
+
+		expect(code).toBe(0);
+		expect(plain()).toContain('Linear');
+		expect(calls.length).toBe(0);
+	});
+
+	test('--json with issue_system github still prints the gh hint, exits 0', () => {
+		const configPath = writeProjectToml('issue_system = "github"\n');
+		const { spawnFn, calls } = makeRecordingBacklogSpawn([]);
+		const { writer, plain } = makeCapture();
+
+		const code = runIssueList({ cwd: tmpDir, configPath, spawnFn, writer, json: true });
+
+		expect(code).toBe(0);
+		expect(plain()).toContain('gh issue list');
+		expect(calls.length).toBe(0);
+	});
+
+	test('--json still reads the backlog via readBacklogFromMain (git ls-tree/cat-file), never a raw fs read', () => {
+		const entries = [makeIssue({ id: 'CAM-1', stage: 'idea' })];
+		const { spawnFn, calls } = makeRecordingBacklogSpawn(entries);
+		const { writer } = makeCapture();
+
+		runIssueList({ cwd: tmpDir, configPath: join(tmpDir, 'missing.toml'), spawnFn, writer, json: true });
+
+		expect(calls.length).toBe(2);
+		expect(calls.some((c) => c.args.includes('ls-tree'))).toBe(true);
+		expect(calls.some((c) => c.args.includes('cat-file'))).toBe(true);
+	});
+
+	test('empty backlog produces empty JSON groups (no crash on zero entries)', () => {
+		const { spawnFn } = makeRecordingBacklogSpawn([]);
+		const { writer, plain } = makeCapture();
+
+		const code = runIssueList({
+			cwd: tmpDir,
+			configPath: join(tmpDir, 'missing.toml'),
+			spawnFn,
+			writer,
+			json: true,
+		});
+
+		expect(code).toBe(0);
+		expect(JSON.parse(plain())).toEqual({
+			counts: { idea: 0, specified: 0, planned: 0 },
+			plannable: [],
+			byStage: { idea: [], specified: [], planned: [] },
+		});
 	});
 });

@@ -62,14 +62,18 @@ document — none of them require deep reasoning to absorb:
    where past blockers, decisions, and ship outcomes live.
 4. `scripts/cam/prd.json` — the current PRD if a cycle is in progress.
    May not exist if no cycle is active.
-5. The backlog — run `cam issue list` (a real shell command, not an
-   in-process call) to derive the current backlog with live per-stage
-   counts. If the command is unavailable or exits non-zero (e.g. a
-   pre-rebuild binary that predates this feature), fall back to reading
-   `scripts/cam/issues/*.json` directly, filtered by stage (exclude
-   `shipped` and `abandoned` entries). Never answer a backlog question
-   from memory or from a stale handoff — always re-run `cam issue list`
-   fresh.
+5. The backlog — run `cam issue list` (human-readable) or
+   `cam issue list --json` (machine-parseable) — a real shell command, not
+   an in-process call — to derive the current backlog with live per-stage
+   counts. This is the ONLY sanctioned way to derive the backlog: you must
+   never grep or read `scripts/cam/issues/*.json` directly to answer a
+   backlog question, even when the command is unavailable or exits
+   non-zero (e.g. a pre-rebuild binary that predates this feature) —
+   surface that failure to the human instead of falling back to raw
+   issue-file reads, since a raw filter can resurrect abandoned/stale
+   entries the command's own filtering excludes. Never answer a backlog
+   question from memory or from a stale handoff — always re-run `cam
+   issue list` / `cam issue list --json` fresh.
 6. `git status`, `git branch --show-current`, `git log -5 --oneline` — current
    working state.
 7. `.claude/.cam-ship-stalled.json` — a durable marker written whenever a

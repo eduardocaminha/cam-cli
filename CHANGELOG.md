@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.95.0] - 2026-07-09
+
+### Added
+
+- US-004 - Docs: mandate backlog derivation via cam issue list --json only
+- US-003 - Spine guard test banning inline === 'specified' outside the canonical module
+- US-002 - Add cam issue list --json machine mode
+- US-001 - Extract layered plannability predicate and route all inline call sites
+
 ## [0.94.0] - 2026-07-08
 
 ### Added

@@ -47,6 +47,7 @@ import {
 } from './next.ts';
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import { isBlocked } from '../issues/graph.ts';
+import { isPlannable } from '../issues/plannable.ts';
 import { selectPlannableIssue } from '../issues/select.ts';
 import type { IssueEntry } from '../issues/types.ts';
 
@@ -144,7 +145,7 @@ function resolveSpecificIssue(
 		emitTrailingBlank();
 		return { ok: false };
 	}
-	if (entry.stage !== 'specified' || entry.status !== 'open' || isBlocked(entry, backlog)) {
+	if (!isPlannable(entry, backlog)) {
 		const reason = buildNotPlannableReason(entry, backlog);
 		printError(`issue ${entry.id} is not plannable`, reason);
 		emitTrailingBlank();

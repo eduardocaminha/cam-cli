@@ -301,7 +301,8 @@ const SPEC_HELP = renderHelp({
 const ISSUE_HELP = renderHelp({
 	title: 'cam issue',
 	tagline: 'File an issue from free text, or list the actionable backlog',
-	usage: 'cam issue "<free text>" | cam issue list [--all] | cam issue close <id> | cam issue abandon <id>',
+	usage:
+		'cam issue "<free text>" | cam issue list [--all] [--json] | cam issue close <id> | cam issue abandon <id>',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -311,9 +312,11 @@ const ISSUE_HELP = renderHelp({
 					description: 'Free-text description; expanded to title + description by /cam-issue create',
 				},
 				{
-					name: 'list [--all]',
+					name: 'list [--all] [--json]',
 					description:
-						'Print the actionable backlog (deterministic, in-process, no tmux). --all also includes shipped issues.',
+						'Print the actionable backlog (deterministic, in-process, no tmux). --all also includes shipped issues. ' +
+						'--json emits a machine-readable { counts, plannable, byStage } snapshot instead of the rendered table ' +
+						'(combinable with --all); always derived via isPlannable, never a raw fs read.',
 				},
 				{
 					name: 'close <id>',
@@ -723,6 +726,9 @@ const RESUME_HELP = renderHelp({
  *     derivedFrom: non-empty when --derived-from was passed (specSource: derived).
  * - mode === 'list': deterministic in-process backlog print (US-003, CAM-190).
  *     all: true when --all was passed (include the shipped group).
+ *     json: true when --json was passed (emit the { counts, plannable,
+ *       byStage } machine snapshot instead of the rendered table; US-002,
+ *       CAM-222). Combinable with --all.
  * - mode === 'close': deterministic in-process stage:shipped mutation on main
  *     (US-002, CAM-210). id is the required positional issue id.
  * - mode === 'abandon': deterministic in-process status:abandoned mutation on
@@ -733,7 +739,7 @@ const RESUME_HELP = renderHelp({
 export type ParsedIssueArgs =
 	| { mode: 'text'; text: string; help: false }
 	| { mode: 'file-local'; fastTrack: boolean; derivedFrom: string[]; help: false }
-	| { mode: 'list'; all: boolean; help: false }
+	| { mode: 'list'; all: boolean; json: boolean; help: false }
 	| { mode: 'close'; id: string; help: false }
 	| { mode: 'abandon'; id: string; help: false }
 	| { mode?: never; help: true };
@@ -794,15 +800,18 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 	// bare `list` positional is never misread as free-text issue creation.
 	if (args[0] === 'list') {
 		let all = false;
+		let json = false;
 		for (const arg of args.slice(1)) {
 			if (arg === '--all') {
 				all = true;
+			} else if (arg === '--json') {
+				json = true;
 			} else {
 				printError(`unexpected argument: ${arg}`);
 				return null;
 			}
 		}
-		return { mode: 'list', all, help: false };
+		return { mode: 'list', all, json, help: false };
 	}
 	// The `close <id>` subcommand is evaluated BEFORE the free-text fallthrough
 	// (alongside `list`) so a missing id is a parse error, never a silent
@@ -1720,7 +1729,8 @@ export async function dispatchIssue(
 		// code path; its handback is the rendered table plus the process exit
 		// code alone. Do not retrofit a machine line here.
 		const issueListFn =
-			deps?.issueListFn ?? (async () => runIssueList({ cwd: process.cwd(), all: parsed.all }));
+			deps?.issueListFn ??
+			(async () => runIssueList({ cwd: process.cwd(), all: parsed.all, json: parsed.json }));
 		return issueListFn();
 	}
 	if (parsed.mode === 'close') {
