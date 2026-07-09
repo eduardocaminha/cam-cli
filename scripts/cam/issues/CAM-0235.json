@@ -1,0 +1,9 @@
+{
+  "id": "CAM-235",
+  "title": "PR title + labels deterministicos amarrados ao issue (conventional-commit)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T02:34:38.547Z",
+  "description": "Titulo de PR deterministico no formato <type>: <issue-title> (CAM-<N>) e labels do GitHub aplicados na criacao. Depende de um sinal de tipo que hoje nao existe: adicionar campo type (feat/fix/chore/docs, default feat) ao issue schema, capturado no /cam-spec. Titulo e label derivam do type; mapa type->label usa os labels ja existentes no repo (feat->enhancement, fix->bug, docs->documentation). Melhora tambem o subject do squash-commit na main (alimenta classifyBump/versionamento). Toca: issues.schema.json (campo type), fluxo /cam-spec (captura), src/release/pr-body.ts (composePrTitle), src/release/ship-pr.ts (gh pr create --label). Sequencial apos CAM-234. delete_branch_on_merge ja esta ligado e o post-merge ls-remote check ja e idempotente: cleanup nao precisa de mudanca."
+}
