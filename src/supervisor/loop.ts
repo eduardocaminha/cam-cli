@@ -13,11 +13,16 @@
 //   - Workers are always interactive TUI sessions (claude -p is forbidden for
 //     subscription accounts). Completion is detected by polling capture-pane
 //     for the CAM_*_STATUS sentinel line.
-//   - The worker SELF-SELECTS its story. The supervisor calls decideNextAction
-//     only to decide implement-vs-review-vs-complete and for logging. The story
-//     id from decideNextAction is advisory; the actual completed story comes from
-//     handoff.json / the pane sentinel. This eliminates the two-independent-
-//     selectors mismatch without touching the proven agent.
+//   - decideNextAction's storyId is AUTHORITATIVE for the implement dispatch
+//     (US-001, CAM-224): the supervisor matches that id against the
+//     already-read prd.json snapshot and injects the exact story record (id,
+//     title, description, acceptanceCriteria, priority, requires) plus
+//     branchName into the worker's task prompt via buildImplementerTaskPrompt
+//     (task-prompt.ts), instead of asking the worker to re-read prd.json and
+//     self-select. The outcome.storyId-vs-advisory reconciliation and
+//     no-progress guard below (~1330-1350) are retained UNCHANGED as a safety
+//     net: passes:true ownership still lives with the agent (a targeted
+//     prd.json write), never moved to the sidecar.
 //   - writeSessionMarker is keyed to the actualStoryId from the outcome, never
 //     to the advisory storyId from decideNextAction.
 //   - Hard max-iterations cap (default MAX_ITERATIONS = 50) prevents runaway loops.
@@ -35,6 +40,7 @@ import type { FollowUpProvenance } from './suggestion-followups.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
+import { buildImplementerTaskPrompt } from './task-prompt.ts';
 import { readPhaseModel, readBackend } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
 import { dockerExecWrap } from './docker-exec.ts';
@@ -869,8 +875,12 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 		// --- Implement branch ---
 		if (action.kind === 'implement') {
-			// Advisory storyId is used for logging only.
-			// The worker self-selects which story it actually implements.
+			// decideNextAction's storyId is authoritative for this dispatch
+			// (US-001, CAM-224): matched below against the prd snapshot to build
+			// the per-story task prompt. Still named "advisory" because the
+			// outcome reconciliation safety net further down (~1330-1350) trusts
+			// the worker-reported outcome.storyId over this value, not the other
+			// way around.
 			const advisoryStoryId = action.storyId;
 
 			// Mint a fresh uuid for this invocation.
@@ -881,10 +891,22 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			const implModel = readPhaseModel('implementer');
 			const implBackend = readBackend();
 
+			// US-001 (CAM-224): build the per-story task prompt from the exact
+			// story record decideNextAction selected, matched against the prd
+			// snapshot already read at the top of this iteration. Falls back to
+			// the generic opts.taskPrompt only in the defensive case where the
+			// matched story is somehow absent from the snapshot (should not
+			// happen: decideNextAction picked this id FROM the same snapshot).
+			const selectedStory = prd.userStories?.find((s) => s.id === advisoryStoryId);
+			const dispatchTaskPrompt =
+				selectedStory !== undefined
+					? buildImplementerTaskPrompt(selectedStory, prd.branchName ?? '')
+					: taskPrompt;
+
 			// Build the shell command for the worker (always interactive TUI session).
 			const shellCmd = buildImplementerWorkerArgv({
 				uuid,
-				taskPrompt,
+				taskPrompt: dispatchTaskPrompt,
 				permissionMode,
 				model: implModel,
 			});

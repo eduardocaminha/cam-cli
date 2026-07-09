@@ -2,19 +2,18 @@
 
 ## Your Task
 
-1. Read the PRD at `prd.json` (in the same directory as this file).
+1. The story to implement is provided in the spawn prompt (`id`, `title`, `description`, `priority`, `requires`, `acceptanceCriteria`, and `branchName`); you do not read `prd.json` in full to self-select it.
 2. Read `handoff.json` (if it exists) for context from the previous story iteration.
 3. The curated invariants block ("Codebase Patterns" section below, already in context) covers durable project rules. For anything else, grep `scripts/cam/patterns.md` for the section/keywords matching the subsystem this story touches and read only the matching bullets, not the whole file.
-4. Check you're on the correct branch from PRD `branchName`. If not, check it out or create from main.
-5. Pick the **highest priority** user story where `passes: false` and `requires != "operator"`.
-6. Implement that single user story.
-7. Run quality checks (typecheck, lint, test).
-8. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`.
-9. Update the PRD to set `passes: true` for the completed story.
-10. Validate against official library docs (Step 5.5 in `.claude/commands/cam-next.md`): one targeted fetch against the lib the story touched.
-11. Write `handoff.json` for the next iteration (schema: `handoff.schema.json`): include the Step 5.5 validation entries in `officialDocsValidated`.
-12. Push: `git push origin $(git branch --show-current)`.
-13. Print your status line: `CAM_IMPLEMENTER_STATUS=DONE story=US-XXX`.
+4. Check you are on the correct branch from the `branchName` given in the spawn prompt. If not, check it out or create from main.
+5. Implement that single user story.
+6. Run quality checks (typecheck, lint, test).
+7. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`.
+8. Update the PRD to set `passes: true` for the completed story.
+9. Validate against official library docs (Step 5.5 in the agent SYSTEM PROMPT): one targeted fetch against the lib the story touched.
+10. Write `handoff.json` for the next iteration (schema: `handoff.schema.json`). Include the Step 5.5 validation entries in `officialDocsValidated`.
+11. Push: `git push origin $(git branch --show-current)`.
+12. Print your status line: `CAM_IMPLEMENTER_STATUS=DONE story=US-XXX`.
 
 ## Stop Condition
 
