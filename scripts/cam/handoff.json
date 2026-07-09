@@ -1,17 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Add supersession banners to ADRs 0004, 0006, 0008"
+    "id": "US-005",
+    "title": "Correct cam-plan and cam-spec command docs (templated)"
   },
   "branchName": "cam/issue-233",
   "timestamp": "2026-07-09T00:00:00Z",
   "modifiedFiles": [
-    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md",
-    "docs/adr/0006-phase-enum-loop-state-machine.md",
-    "docs/adr/0008-auto-ship-terminal-anchor.md"
+    ".claude/commands/cam-plan.md",
+    "templates/commands/cam-plan.md",
+    ".claude/commands/cam-spec.md",
+    "templates/commands/cam-spec.md",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added a blockquote supersession/update banner immediately after the Status/Data lines (before '## Contexto') in each of the three ADRs, prose-only, no behavior change: ADR 0004 now points to ADR 0006 (active:true hand-off replaced by setPhaseFn('implementing')); ADR 0006 now points to ADR 0012 (BLOCK auto-re-plans up to 2x via MAX_REPLAN_ROUNDS before escalating, superseding its own 'no auto re-plan' Consequencias line) and to ADR 0009/0013 (the 'shipping' phase, described in ADR 0006 as reserved-and-unused, is now in use). docs/adr/ is repo-root domain model, NOT templated (confirmed via patterns.md Domain Model Convention section): no embed-vendor step was needed or run. US-005 (next story) targets cam-plan/cam-spec command docs (templated command docs under .claude/commands/ + templates/commands/) -- unrelated surface, no shared state with US-004.",
+  "nextStoryContext": "US-005 made two doc-accuracy fixes across BOTH templated copies (.claude/commands/ + templates/commands/), regenerated via `bun run embed-vendor` (src/vendor/_generated.ts): (1) cam-plan.md's Argument-N example now shows the N-padded filename `CAM-0151.json` (was `CAM-151.json`), consistent with the surrounding N-padded rule text already present; (2) cam-spec.md now documents `cam spec --write-docs`'s success stdout contract `CAM_DOMAIN_DOCS_WRITTEN=<id> sha=<sha>` (mirrors the existing `CAM_SPEC_RESULT=` contract shown for --persist; ground truth spec.ts:320) and adds `missing-main` to the two existing diverged/detached-head error-table rows (ground truth issue-specify.ts's SpecifyIssueOnMainError union, reason: 'missing-main'). Both file pairs were byte-identical outside these lines per the dual-copy gotcha (memory cam-dual-copy-is-per-lines-per-file), diffed before editing. No behavior change, no TS touched, no new test needed (existing embedded.test.ts / vendor hygiene suite already covers content drift for these files and stayed green). US-006 (next story) targets subagent-implementer.md's PRD_COMPLETE row and a dead cam-review section -- different templated files (.claude/agents/ or .claude/commands/cam-review.md family), no shared state with US-005.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
