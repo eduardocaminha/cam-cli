@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.105.0] - 2026-07-09
+
+### Added
+
+- US-003 - Fix cam-plan.md selection description to champion-vs-champion
+- US-002 - Fix subagent-auditor.md Step 8 description to the deterministic plan runner
+- US-001 - Fix subagent-planner.md: model align, Step 7 description, dead Spec Sourcing
+
 ## [0.104.0] - 2026-07-09
 
 ### Added
