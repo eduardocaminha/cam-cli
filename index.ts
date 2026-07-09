@@ -1416,6 +1416,13 @@ export interface JournalDispatchDeps {
 	 *      --cycle-close) never calls this.
 	 */
 	archiveFn?: (threshold: number) => ArchiveJournalOnMainResult;
+	/**
+	 * Injectable archivePatternsOnMain (US-003, CAM-226). Auto-invoked, best-effort,
+	 * on the --cycle-close path only, after the journal archiveFn check and strictly
+	 * before the recycle marker is armed. Default: calls the real archivePatternsOnMain
+	 * with process.cwd() and a real spawnSync (mirrors defaultArchiveFn).
+	 */
+	patternsArchiveFn?: () => ArchivePatternsOnMainResult;
 	/** Injectable stdout writer. Default: `process.stdout.write`. */
 	writeStdout?: (line: string) => void;
 	/**
@@ -1590,6 +1597,25 @@ export async function dispatchJournal(
 			}
 		} catch (err) {
 			printWarning(`cam journal append --cycle-close: archive check threw; continuing: ${String(err)}`);
+		}
+
+		// US-003 (CAM-226): auto-invoke the patterns archive check, mirroring the
+		// journal archive check above -- same ordering guarantee (strictly before
+		// armMarker, since the watcher can SIGTERM this process once the marker is
+		// armed) and the same best-effort contract (a throw or ok:false only logs
+		// a warning, never changes the exit code or blocks the marker/handoff).
+		const patternsArchiveFn = deps?.patternsArchiveFn ?? defaultPatternsArchiveFn;
+		try {
+			const patternsArchiveResult = patternsArchiveFn();
+			if (!patternsArchiveResult.ok) {
+				printWarning(
+					`cam journal append --cycle-close: patterns archive check failed (${patternsArchiveResult.reason}); continuing`,
+				);
+			}
+		} catch (err) {
+			printWarning(
+				`cam journal append --cycle-close: patterns archive check threw; continuing: ${String(err)}`,
+			);
 		}
 
 		const armMarker =

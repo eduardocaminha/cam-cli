@@ -11,7 +11,24 @@
 
 import { test, expect, describe } from 'bun:test';
 import type { ArchivePatternsOnMainResult } from '../../src/commands/patterns-archive.ts';
-import { dispatchPatterns, parsePatternsArgs } from '../../index.ts';
+import type { ArchiveJournalOnMainResult } from '../../src/commands/journal-archive.ts';
+import type { JournalCycleEntry } from '../../src/commands/journal.ts';
+import { dispatchPatterns, parsePatternsArgs, dispatchJournal, parseJournalArgs } from '../../index.ts';
+
+// ---------------------------------------------------------------------------
+// Fixtures (mirrors test/commands/journal-append.test.ts SAMPLE_ENTRY)
+// ---------------------------------------------------------------------------
+
+const SAMPLE_ENTRY: JournalCycleEntry = {
+	cycleId: 'cam/CAM-226-patterns-cycle-close',
+	title: 'patterns archive on cycle-close',
+	started: '2026-07-09',
+	closed: '2026-07-09',
+	branch: 'cam/issue-226',
+	issue: 'CAM-226',
+	outcome: 'shipped',
+	summary: 'Auto-invoke patterns archive best-effort at cycle close.',
+};
 
 // ---------------------------------------------------------------------------
 // parsePatternsArgs
@@ -137,6 +154,145 @@ describe('dispatchPatterns', () => {
 		});
 
 		expect(code).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// dispatchJournal --cycle-close: auto-invoked patterns archive (US-003, CAM-226)
+// ---------------------------------------------------------------------------
+
+describe('dispatchJournal --cycle-close auto-invokes patternsArchiveFn (US-003)', () => {
+	test('call-order oracle: patternsArchiveFn runs after the journal archiveFn check and before armMarker + CAM_ORCH_HANDOFF_DUE', async () => {
+		const order: string[] = [];
+		const parsed = parseJournalArgs(['append', '--cycle-close']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+			writeStdout: (line) => {
+				if (line.startsWith('CAM_JOURNAL_APPENDED')) order.push('appended');
+				if (line.startsWith('CAM_ORCH_HANDOFF_DUE')) order.push('handoff-due');
+			},
+			recordCycleTokensFn: () => { order.push('record-tokens'); },
+			handoffExistsFn: () => true,
+			watcherAliveFn: () => true,
+			archiveFn: (): ArchiveJournalOnMainResult => {
+				order.push('journal-archive-check');
+				return { ok: true, archived: 0, entries: 0, sha: '' };
+			},
+			patternsArchiveFn: (): ArchivePatternsOnMainResult => {
+				order.push('patterns-archive-check');
+				return { ok: true, archived: 0, sha: '' };
+			},
+			armRecycleMarkerFn: () => { order.push('arm-marker'); },
+		});
+
+		expect(code).toBe(0);
+		expect(order).toEqual([
+			'appended',
+			'record-tokens',
+			'journal-archive-check',
+			'patterns-archive-check',
+			'arm-marker',
+			'handoff-due',
+		]);
+	});
+
+	test('patternsArchiveFn returns ok:false: logs a warning, exit code unchanged, marker still armed, handoff still emitted', async () => {
+		const stdoutLines: string[] = [];
+		let markerArmed = false;
+		let sawWarning = false;
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string' && /patterns archive check failed/.test(chunk)) sawWarning = true;
+			return true;
+		}) as typeof process.stdout.write;
+
+		try {
+			const parsed = parseJournalArgs(['append', '--cycle-close']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+				appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+				writeStdout: (line) => stdoutLines.push(line),
+				recordCycleTokensFn: () => {},
+				handoffExistsFn: () => true,
+				watcherAliveFn: () => true,
+				archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }),
+				patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: false, reason: 'diverged' }),
+				armRecycleMarkerFn: () => { markerArmed = true; },
+			});
+
+			expect(code).toBe(0);
+			expect(markerArmed).toBe(true);
+			expect(stdoutLines).toHaveLength(2);
+			expect(stdoutLines[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
+			expect(sawWarning).toBe(true);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('patternsArchiveFn throws: logs a warning, exit code unchanged, marker still armed, handoff still emitted', async () => {
+		const stdoutLines: string[] = [];
+		let markerArmed = false;
+		let sawWarning = false;
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string' && /patterns archive check threw/.test(chunk)) sawWarning = true;
+			return true;
+		}) as typeof process.stdout.write;
+
+		try {
+			const parsed = parseJournalArgs(['append', '--cycle-close']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+				appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+				writeStdout: (line) => stdoutLines.push(line),
+				recordCycleTokensFn: () => {},
+				handoffExistsFn: () => true,
+				watcherAliveFn: () => true,
+				archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }),
+				patternsArchiveFn: (): ArchivePatternsOnMainResult => { throw new Error('boom'); },
+				armRecycleMarkerFn: () => { markerArmed = true; },
+			});
+
+			expect(code).toBe(0);
+			expect(markerArmed).toBe(true);
+			expect(stdoutLines).toHaveLength(2);
+			expect(stdoutLines[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
+			expect(sawWarning).toBe(true);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('plain append (no --cycle-close) never calls patternsArchiveFn', async () => {
+		let patternsArchiveCalled = false;
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'abc' }),
+			writeStdout: () => {},
+			recordCycleTokensFn: () => {},
+			patternsArchiveFn: (): ArchivePatternsOnMainResult => {
+				patternsArchiveCalled = true;
+				return { ok: true, archived: 0, sha: '' };
+			},
+		});
+
+		expect(code).toBe(0);
+		expect(patternsArchiveCalled).toBe(false);
 	});
 });
 
