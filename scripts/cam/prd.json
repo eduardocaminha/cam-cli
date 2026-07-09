@@ -1,0 +1,46 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-224",
+  "description": "Harness-side context diet: the supervisor injects the selected story record + branchName into the implementer spawn prompt and makes decideNextAction's storyId authoritative, removing the agent's full-prd.json selection read.",
+  "issueNumber": 224,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Inject selected story record + branchName into implementer spawn; make storyId authoritative",
+      "description": "As the cam supervisor, I need to build the implementer spawn task prompt from the story that decideNextAction already selected (embedding id, title, description, acceptanceCriteria, priority, requires) plus branchName, so the worker implements exactly that story without re-reading the full prd.json to self-select.",
+      "acceptanceCriteria": [
+        "A supervisor-owned, exported taskPrompt builder takes the selected story record and branchName and returns a prompt string that embeds the story's id, title, description, acceptanceCriteria, priority, and requires, plus the branchName; the loop calls it using the story matched from decideNextAction's chosen storyId in the already-read prd snapshot, replacing the generic 'Implement the next user story from scripts/cam/prd.json' string for the implement dispatch. [oracle: reviewer-judgment]",
+        "decideNextAction's storyId is authoritative for the implement dispatch: the supervisor selects and injects that exact story record and the loop's design-comment block (loop.ts lines ~16-22) is updated to document authoritative selection instead of worker self-select. [oracle: grep -q 'authoritative' src/supervisor/loop.ts]",
+        "The existing outcome.storyId-vs-advisory reconciliation and no-progress guard (loop.ts ~1330, ~1336) are retained unchanged as a safety net; passes:true ownership stays with the agent (targeted update) and is NOT moved to the sidecar (host.ts:615 finalize path unchanged). [oracle: reviewer-judgment]",
+        "Unit tests cover the taskPrompt builder: given a story record with id/title/description/acceptanceCriteria/priority/requires and a branchName, the returned string contains each field's value and the branchName. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/loop.ts (implement branch ~871-890 builds shellCmd via buildImplementerWorkerArgv({taskPrompt}); today taskPrompt is a static opts field from host.ts:300 - build the per-story prompt here from the prd snapshot already read at top of iteration, matching action.storyId against prd.userStories; update the design-comment block lines 16-22 and the inline comment at ~872-874 that call storyId advisory). src/supervisor/host.ts:299-300 keeps a generic fallback DEFAULT_TASK_PROMPT but the per-story build is the live path. src/supervisor/decide.ts:27-35 PrdSnapshot userStories entry currently lacks `description` - add `description?: string` so the builder can embed it. Builder helper should be an exported function (in loop.ts or a small sibling module) so AC's unit test can import it. GOTCHAS: passes:true during the loop is AGENT-written (targeted) + harness-verified (loop.ts ~1336 no-progress + CAM-187 gate); host.ts:615 story.passes=true is the finalize path, a DIFFERENT thing - do not move ownership to the sidecar. Retain the outcome.storyId-vs-advisory reconciliation. buildImplementerWorkerArgv lives in src/supervisor/worker-argv.ts (shellEscape'd). Blocked on CAM-229 because both touch loop.ts (229 adds officialDocsValidated warn-guard). Out of scope: .claude/agents/subagent-implementer.md (CAM-229 owns it). Grep scripts/cam/patterns.md for 'supervisor' / 'sentinel' before coding."
+    },
+    {
+      "id": "US-002",
+      "title": "Update scripts/cam/CLAUDE.md 'Your Task' steps to drop full-prd self-select; re-embed vendor",
+      "description": "As the implementer agent, I need the 'Your Task' steps to tell me which story to implement (injected in the spawn prompt) instead of instructing me to read prd.json in full to pick the highest-priority story, so the context-diet is complete on the prompt side while the final targeted passes:true update stays intact.",
+      "acceptanceCriteria": [
+        "scripts/cam/CLAUDE.md 'Your Task' steps no longer instruct the agent to read prd.json in full to pick the highest-priority passes:false story; the steps state that the story to implement is provided in the spawn prompt. [oracle: reviewer-judgment]",
+        "The final step that flips the completed story's passes:true via a targeted prd.json update (isolation contract) is preserved in the 'Your Task' steps. [oracle: grep -q 'passes' scripts/cam/CLAUDE.md]",
+        "The identical edit is applied to both copies: scripts/cam/CLAUDE.md and templates/scripts/cam/CLAUDE.md. [oracle: named-command diff <(sed -n '/## Your Task/,/## Stop Condition/p' scripts/cam/CLAUDE.md) <(sed -n '/## Your Task/,/## Stop Condition/p' templates/scripts/cam/CLAUDE.md)]",
+        "The templates copy is re-embedded and drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: scripts/cam/CLAUDE.md and templates/scripts/cam/CLAUDE.md (the nested auto-loaded 'Your Task' steps, currently steps 1-13; step 5 'Pick the highest priority user story' and step 1 'Read the PRD' full-read for selection are the ones to reword; step 9 'Update the PRD to set passes:true for the completed story' MUST stay). Then `bun run embed-vendor` to regenerate src/vendor/_generated.ts, verified by `bun run embed-vendor:check`. GOTCHA (cam-dual-copy-is-per-file): the two CLAUDE.md copies are meant to be identical here - diff before assuming; embed-vendor:check fails if the templates copy embedded in _generated.ts is stale. This is the prompt-side pair of the already-shipped CAM-223; scoped as a distinct template/vendor concern from US-001's harness code."
+    }
+  ]
+}
