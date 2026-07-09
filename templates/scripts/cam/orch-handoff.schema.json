@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Cam Orchestrator Self-Handoff",
+  "description": "Machine-readable state the long-lived orchestrator session writes when it approaches its token budget (CAM-23), so a fresh orchestrator can rehydrate instead of cold-starting after a silent auto-compaction. Written by the orchestrator agent, read by buildOrchestratorBootPrompt on respawn. Hard rule: no handoff field enumerates the backlog; the backlog is always derived live via `cam issue list` (or the stage-filtered fallback over scripts/cam/issues/*.json) in the fresh session, never carried forward as a snapshot in this file.",
+  "type": "object",
+  "required": ["schemaVersion", "writtenAt", "reason"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "description": "Handoff schema version. The reader rejects unknown versions so a forward-incompatible file is never silently mis-read."
+    },
+    "writtenAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when the handoff was written."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Why the handoff was triggered, e.g. 'token-budget-exceeded'."
+    },
+    "projectContext": {
+      "type": "string",
+      "description": "What the project is and where it stands: the durable context a fresh session needs."
+    },
+    "currentCycle": {
+      "type": "string",
+      "description": "The issue or cycle currently in flight (id, branch, state)."
+    },
+    "keyDecisions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Decisions made this session worth carrying forward."
+    },
+    "openState": {
+      "type": "string",
+      "description": "Open working state: what is in progress, what is staged or pushed, what is pending."
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Unresolved questions the fresh session should resolve."
+    },
+    "nextActions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ephemeral, cycle-specific continuation steps the fresh orchestrator should take next (e.g. 'resume PR review for CAM-190'). Never a backlog snapshot: do not enumerate individual backlog issues here. No handoff field enumerates the backlog; it is always derived live via `cam issue list` in the fresh session."
+    }
+  },
+  "additionalProperties": true
+}

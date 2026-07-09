@@ -475,6 +475,40 @@ describe('materializeTemplates — skills/ subtree routing + count', () => {
 	});
 });
 
+describe('materializeTemplates — patterns.md stub + orch-handoff.schema.json seeds (US-002)', () => {
+	// A fresh downstream project must be born with scripts/cam/patterns.md
+	// (a stub, not cam-cli's live 600-line file) and
+	// scripts/cam/orch-handoff.schema.json (parity with the already-seeded
+	// handoff.schema.json).
+	let cwd: string;
+
+	beforeEach(() => {
+		cwd = mkdtempSync(join(tmpdir(), 'cam-seeds-test-'));
+	});
+
+	afterEach(() => {
+		if (cwd && existsSync(cwd)) rmSync(cwd, { recursive: true, force: true });
+	});
+
+	test('writes scripts/cam/patterns.md as a stub (under 30 lines, has the header)', () => {
+		materializeTemplates(cwd);
+		const dst = join(cwd, 'scripts', 'cam', 'patterns.md');
+		expect(existsSync(dst)).toBe(true);
+		const content = readFileSync(dst, 'utf8');
+		expect(content).toContain('# Codebase Patterns');
+		expect(content.split('\n').length).toBeLessThan(30);
+	});
+
+	test('writes scripts/cam/orch-handoff.schema.json matching the embedded template byte-for-byte', () => {
+		materializeTemplates(cwd);
+		const dst = join(cwd, 'scripts', 'cam', 'orch-handoff.schema.json');
+		expect(existsSync(dst)).toBe(true);
+		expect(readFileSync(dst, 'utf8')).toBe(
+			templatesContents['scripts/cam/orch-handoff.schema.json'] ?? '',
+		);
+	});
+});
+
 describe('CAM-119: cam init installs the grill-with-docs skill chain downstream', () => {
 	// Regression guard: asserts that materializeTemplates (the install routine
 	// exercised by `cam init`) writes the grill-with-docs skill chain and every
