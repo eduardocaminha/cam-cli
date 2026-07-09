@@ -5,11 +5,14 @@
 // Unlike the other project.toml readers in this directory (readMergeMode,
 // readPlanApproval, readWorkerIsolation, etc.), which are defensive-by-default
 // (any unrecognized value silently falls back to a safe default),
-// readIssueSystem is deliberately noisy: an invalid value throws. issue_system
-// selects which backend owns issue-close semantics (ship-finalize.ts,
-// ship-pr.ts); silently mapping a typo'd or legacy value to a fallback would
-// make the local-backend close/stash gates skip silently instead of failing
-// loud (US-002, CAM-236).
+// readIssueSystem is deliberately noisy: a truly-unrecognized value throws.
+// issue_system selects which backend owns issue-close semantics
+// (ship-finalize.ts, ship-pr.ts); silently mapping a typo'd value to a
+// fallback would make the local-backend close/stash gates skip silently
+// instead of failing loud (US-002, CAM-236). The one deliberate exception is
+// the deprecated `none` alias, which normalizes to `local` instead of
+// throwing: existing project.toml files written before the rename are never
+// rewritten by mergeIntoConfig, so `none` must keep working (US-001, CAM-239).
 //
 // Takes an already-parsed config object rather than a configPath, mirroring
 // ship-finalize.ts's existing call site: `parseToml` runs once, and the
@@ -30,11 +33,15 @@ const VALID_ISSUE_SYSTEMS: readonly IssueSystem[] = ['linear', 'github', 'local'
  *
  * - Absent key -> `'local'` (the default backend).
  * - Value in `{linear, github, local}` -> returned as-is.
- * - Any other value (including the legacy `none` sentinel) -> throws.
+ * - Deprecated alias `'none'` -> normalized to `'local'` (mergeIntoConfig
+ *   never rewrites an existing project.toml, so pre-rename projects still
+ *   have `issue_system = "none"` on disk).
+ * - Any other value -> throws.
  */
 export function readIssueSystem(config: Record<string, unknown>): IssueSystem {
 	const value = config['issue_system'];
 	if (value === undefined) return 'local';
+	if (value === 'none') return 'local';
 	if (typeof value === 'string' && (VALID_ISSUE_SYSTEMS as readonly string[]).includes(value)) {
 		return value as IssueSystem;
 	}
