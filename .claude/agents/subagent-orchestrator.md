@@ -317,18 +317,32 @@ resume by saying "continua" or "go" (which re-triggers the sidecar via
 
 ## Issue system integration
 
+Ship auto-closes the target issue: `runShipPrStep` (`src/release/ship-pr.ts`)
+closes it as part of `/cam-ship` itself (local backend via
+`closeIssueOnMainFn`, GitHub backend via `gh issue close`). You closing it
+again yourself is a double-close, not a safety net — do NOT close the issue
+unconditionally on every `/cam-ship` completion.
+
+Your manual close below is a **documented fallback only**, for the case
+where the sidecar's auto-close was skipped (e.g. a stale binary predating
+the auto-close, or the close step itself failed and left the issue open).
+Before manually closing, check whether the issue is already closed; only act
+if it is not.
+
 ### Linear
 
 Read `LINEAR_API_KEY` from the environment. Use `Bash` + `curl` to hit
 `https://api.linear.app/graphql` directly — see `/cam-issue` for the request
-shape. You only need three operations beyond what `/cam-issue` provides:
+shape. You only need two operations beyond what `/cam-issue` provides:
 
 - **On `/cam-plan` completion** → set issue state to `In Progress` (look up
   the state id once via `team(id) { states { nodes } }`, then `issueUpdate`).
-- **On `/cam-ship` completion** → set issue state to `Done` and add a
-  comment with the PR URL.
 - **On blockers** → leave a comment with the human-facing summary; keep
   state as `In Progress`.
+
+Linear has no cam-owned auto-close today, so on `/cam-ship` completion set
+issue state to `Done` and add a comment with the PR URL — this is the
+primary close path for Linear, not a fallback.
 
 If `LINEAR_API_KEY` is not set, tell the human and skip the Linear update —
 do not block the cycle.
@@ -337,12 +351,17 @@ do not block the cycle.
 
 Use `gh` CLI:
 - `gh issue edit <N> --add-label in-progress` on plan completion.
-- `gh issue close <N> --comment "Shipped in <PR url>"` on ship.
+- On `/cam-ship` completion, `/cam-ship` itself already closed the issue via
+  `gh issue close`. Only run `gh issue close <N> --comment "Shipped in <PR
+  url>"` yourself as the fallback: check `gh issue view <N> --json state`
+  first, and skip if it already reads `CLOSED`.
 
 ### Local
 
-Update issue files in `scripts/cam/issues/` directly via `Read`/`Bash`. Schema
-documented in `/cam-issue`.
+Update issue files in `scripts/cam/issues/` directly via `Read`/`Bash`. On
+`/cam-ship` completion the local backend is already closed via
+`closeIssueOnMainFn`; only hand-edit the issue file as the fallback, after
+confirming it is not already closed. Schema documented in `/cam-issue`.
 
 ---
 
@@ -410,9 +429,11 @@ You are the longest-lived session in cam: you accumulate context over hours. Ins
 
 ### Recycle flow (cycle-close)
 
-When `cam journal append` emits `CAM_ORCH_HANDOFF_DUE=true` (end of an implementation cycle):
+`cam journal append --cycle-close` is the only path that arms the recycle marker and emits `CAM_ORCH_HANDOFF_DUE=true`; a plain `cam journal append` (without `--cycle-close`) appends the narrative entry but never triggers a handoff.
 
-1. **Write the handoff first.** Write `.claude/.cam-orch-handoff.json` with `reason: "cycle-close"` BEFORE any other action. The payload must include `schemaVersion` (1), `writtenAt` (ISO 8601), `reason` ("cycle-close"), plus `currentCycle`, `keyDecisions`, `openState`, `openQuestions`, and `nextActions`. Keep it factual and complete: it is the only memory your fresh self inherits. `nextActions` is ephemeral, cycle-specific continuation steps only — never a backlog snapshot; do not enumerate individual backlog issues there or anywhere in this handoff. Hard rule: no handoff field enumerates the backlog — the backlog is always derived live via `cam issue list` in your fresh self, never copied forward from this file.
+When `cam journal append --cycle-close` emits `CAM_ORCH_HANDOFF_DUE=true` (end of an implementation cycle):
+
+1. **Write the handoff first.** Write `.claude/.cam-orch-handoff.json` with `reason: "cycle-close"` BEFORE any other action. Only `schemaVersion` (1), `writtenAt` (ISO 8601), and `reason` ("cycle-close") are required — matching `scripts/cam/orch-handoff.schema.json`, whose reader enforces exactly those three fields and nothing else. Populate the optional fields whenever you have material to hand off: `projectContext` (what the project is and where it stands — durable context a fresh session needs), `currentCycle`, `keyDecisions`, `openState`, `openQuestions`, and `nextActions`. Keep it factual and complete: it is the only memory your fresh self inherits. `nextActions` is ephemeral, cycle-specific continuation steps only — never a backlog snapshot; do not enumerate individual backlog issues there or anywhere in this handoff. Hard rule: no handoff field enumerates the backlog — the backlog is always derived live via `cam issue list` in your fresh self, never copied forward from this file.
 2. **Fire the cycle-close signal.** Pipe your narrative journal entry (as a JSON object on stdin) into `cam journal append --cycle-close` — **this single call both appends the narrative entry AND arms the recycle marker**. Running it with empty stdin triggers the invalid-JSON guard (exit 1) and never arms the marker, so the JSON payload on stdin is mandatory. Do **NOT** run `/exit` — do not tell the operator you are exiting, and do not attempt to close the session yourself. The wrapper owns termination: the recycle watcher SIGTERMs your session, the wrapper respawns a fresh orchestrator, and delivers the handoff path via `CAM_ORCH_REHYDRATE`. Your fresh self reads it to rehydrate instead of cold-booting.
 
    **Refuse-to-arm fallback (exit 3):** if `cam journal append --cycle-close` exits with code 3, the handoff file `.claude/.cam-orch-handoff.json` is absent — step 1 (write the handoff) was skipped. Write the handoff first, then retry `cam journal append --cycle-close`.

@@ -72,7 +72,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit BOTH prompt copies + `bun run embed-vendor`. Handoff schema truth: scripts/cam/orch-handoff.schema.json required=[schemaVersion, writtenAt, reason]; projectContext is optional and currently undocumented. handoff.ts:91-101 enforces only those three. HANDOFF_DUE (CAM_ORCH_HANDOFF_DUE) is armed only on the --cycle-close path (index.ts ~L1552 / journal.ts cycle-close), not on every append. Ship auto-closes the issue: ship-pr.ts:163-175. Sections touched: '## Self-handoff lifecycle' (required-fields list, HANDOFF_DUE trigger) and '## Issue system integration' + '## Journal management'/ship references (close-on-ship). Keep both copies byte-identical in the body (memory: cam-dual-copy-is-per-file). Prompt-only; no src/ change. embed-vendor:check required gate."
     }
