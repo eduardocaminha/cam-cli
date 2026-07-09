@@ -85,3 +85,9 @@ A reusable codebase insight, library quirk, or gotcha recorded for future refere
 
 **cam/issue-<N> branch**:
 Nome de branch deterministico do cam, derivado em codigo a partir do numero do issue (prd.issueNumber), sem slug. Um unico nome por issue, no namespace cam/.
+
+**issue type**:
+Campo do issue (enum feat|fix|chore|docs, default feat) que classifica a mudanca. Deriva o prefixo conventional-commit do titulo da PR e o label do GitHub aplicado na criacao.
+
+**type-to-label map**:
+Mapeamento deterministico do issue type para o label do GitHub aplicado na PR: feat->enhancement, fix->bug, docs->documentation, chore->sem label. Usa apenas labels ja existentes no repo.
