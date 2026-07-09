@@ -1,34 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Migrate project.toml, docs, templates and CHANGELOG none->local"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/issue-236",
-  "timestamp": "2026-07-09T06:00:00Z",
+  "timestamp": "2026-07-09T07:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/project.toml",
-    "templates/commands/cam-issue.md",
-    ".claude/commands/cam-issue.md",
-    "templates/agents/subagent-orchestrator.md",
-    ".claude/agents/subagent-orchestrator.md",
-    "docs/recovery-runbook.md",
-    "CHANGELOG.md",
-    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "All 4 stories of CAM-236 (US-001 through US-004) now pass. The PRD is complete pending review.",
-    "Ship gotcha carried over from US-004's own notes: the currently-INSTALLED cam binary (pre-this-PR) still compares === 'none' internally, so this PR's own `cam ship --finalize` may read 'local' from the now-migrated project.toml and skip the local issue-file close for CAM-236 -- the operator/orchestrator may need to close the issue file manually or rebuild+reinstall the binary before shipping this PRD.",
-    "Two remaining 'none' mentions were deliberately left out of AC scope for US-004 (documented as a new patterns.md bullet this story): `.claude/agents/subagent-reviewer.md:72` (`issue_system = none` in an edge-case checklist bullet) and `scripts/cam/patterns.md:46` (the finalizeCycleClose hardening bullet, itself a knowledge doc not a code path). A future small docs-sweep story should close both for full consistency, though neither is a code path or blocks anything functionally.",
+    "All 5 stories of CAM-236 (US-R1-001, US-001 through US-004) now pass. The PRD is complete pending re-review of round 1's fix.",
+    "Ship gotcha carried over from US-004's notes (unchanged by this story): the currently-INSTALLED cam binary (pre-this-PR) still compares === 'none' internally, so this PR's own `cam ship --finalize` may read 'local' from the now-migrated project.toml and skip the local issue-file close for CAM-236 -- the operator/orchestrator may need to close the issue file manually or rebuild+reinstall the binary before shipping this PRD.",
+    "Two remaining 'none' mentions stay deliberately out of AC scope (carried over from US-004): `.claude/agents/subagent-reviewer.md:72` (`issue_system = none` in an edge-case checklist bullet) and `scripts/cam/patterns.md:46` (the finalizeCycleClose hardening bullet, itself a knowledge doc not a code path).",
     "scripts/build-release.sh AC4 smoke still passes '--issue-system none' to the compiled binary (carried over from US-001/US-002/US-003; still out of scope -- no story in CAM-236 touched build-release.sh)."
   ],
-  "nextStoryContext": "CAM-236 (issue_system none -> local rename) is now fully implemented across all 4 stories: US-001 (enum + setup prompts), US-002 (central readIssueSystem reader wired into ship-finalize + ship-pr, noisy-throw on legacy 'none'), US-003 (issue-list wired + test-fixture sweep), US-004 (project.toml + cam-issue.md dual-copy + subagent-orchestrator.md dual-copy + recovery-runbook.md + CHANGELOG breaking-rename note, vendor re-embedded). No production code, test, or template/doc string literal 'none' referring to issue_system remains except: (a) the CHANGELOG breaking-rename note (intentional, the only surviving historical mention), (b) test/config/issue-system.test.ts's deliberate 'throws on legacy none' negative-case test (also intentional, proves the noisy-fail behavior), and (c) the two out-of-AC-scope docs mentions listed in openQuestions. If the next PRD includes a follow-up docs-consistency story, point it at those two files directly instead of re-deriving scope from a fresh grep sweep.",
+  "nextStoryContext": "US-R1-001 resolved review round 1's single CRITICAL finding: US-001's AC1 named-command oracle was pinned to `src/commands/setup.ts` for the `IssueSystem` union literal, but US-002 (a later, already-passed story) legitimately relocated that literal to `src/config/issue-system.ts:24` and left setup.ts as a bare re-export -- so the oracle string stopped matching even though the type itself was untouched and typecheck stayed green throughout. Fix was PRD-only: retargeted US-001's AC1 oracle text/grep-target to `src/config/issue-system.ts` (verified green: `grep -q \"'linear' | 'github' | 'local'\" src/config/issue-system.ts`); zero production code changed. No new code surface for the next reviewer round to inspect beyond re-running all 5 stories' oracles fresh. All quality gates (typecheck, bun test 3951 pass/0 fail, bun run check:all incl. biome lint/file-size/debt-markers/coverage/dead-code/dup/ci-parity) are green on this commit.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure docs/templates/config-literal rename (project.toml, two dual-copy markdown pairs, a runbook, a CHANGELOG entry, and a re-embed of src/vendor/_generated.ts via the existing embed-vendor script). No external library API surface was exercised or touched."
+      "summary": "Pure PRD-state reconciliation (retargeting an acceptance-criteria oracle string) plus a patterns.md knowledge-layer bullet. No production code or external library surface touched."
     }
   ]
 }
