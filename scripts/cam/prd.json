@@ -38,7 +38,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: scripts/cam/CLAUDE.md and templates/scripts/cam/CLAUDE.md (the nested auto-loaded 'Your Task' steps, currently steps 1-13; step 5 'Pick the highest priority user story' and step 1 'Read the PRD' full-read for selection are the ones to reword; step 9 'Update the PRD to set passes:true for the completed story' MUST stay). Then `bun run embed-vendor` to regenerate src/vendor/_generated.ts, verified by `bun run embed-vendor:check`. GOTCHA (cam-dual-copy-is-per-file): the two CLAUDE.md copies are meant to be identical here - diff before assuming; embed-vendor:check fails if the templates copy embedded in _generated.ts is stale. This is the prompt-side pair of the already-shipped CAM-223; scoped as a distinct template/vendor concern from US-001's harness code."
     }
