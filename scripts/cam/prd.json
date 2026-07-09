@@ -1,0 +1,52 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-239",
+  "description": "Restore issue_system 'none' as a deprecated read-normalized alias for 'local' (CAM-236 mandatory-alias regression): readIssueSystem must not throw on 'none', cam init --issue-system must accept it, and the build-release smoke must pass again.",
+  "issueNumber": 239,
+  "type": "fix",
+  "relatedDocs": [
+    "docs/adr/0018-issue-system-none-is-a-deprecated-read-normalized-alias-not-a-removed-value.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Normalize legacy issue_system 'none' to 'local' in readIssueSystem",
+      "description": "As a cam operator with an already-initialized project whose project.toml still says issue_system=\"none\" (mergeIntoConfig never rewrites existing values), I need readIssueSystem to normalize 'none' to 'local' instead of throwing, so that ship-finalize, ship close/stash gates and issue-list keep working on 0.98+ without a manual config migration.",
+      "acceptanceCriteria": [
+        "readIssueSystem({ issue_system: 'none' }) returns 'local' and does NOT throw; a unit test in test/config/issue-system.test.ts asserts this exact equality. [oracle: bun test test/config/issue-system.test.ts]",
+        "Truly-unknown values (e.g. 'jira', a number, an empty string) still throw the fail-loud message \"issue_system invalido: '<value>', esperado linear|github|local\"; unit tests cover at least one string and one non-string case. [oracle: bun test test/config/issue-system.test.ts]",
+        "'none' is NOT reintroduced as a canonical or selectable value: the IssueSystem type stays 'linear' | 'github' | 'local' and 'none' is absent from VALID_ISSUE_SYSTEMS; the alias lives only in the read-normalization branch. [oracle: grep -n \"'linear' | 'github' | 'local'\" src/config/issue-system.ts && ! grep -q \"VALID_ISSUE_SYSTEMS.*none\" src/config/issue-system.ts]",
+        "No downstream === 'none' gate exists: ship-finalize.ts, issue-list.ts and sidecar.ts route issue_system exclusively through readIssueSystem, so 'none' behaves identically to 'local' everywhere. [oracle: git grep -n \"=== 'none'\" src/ returns no issue_system gate]",
+        "The module header comment and the readIssueSystem docstring no longer claim 'the legacy none sentinel -> throws'; they document the deprecated-alias normalization instead. [oracle: ! grep -q 'legacy .none. sentinel . throws' src/config/issue-system.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/config/issue-system.ts (the throw branch at line 41 must gain a `value === 'none' -> return 'local'` normalization BEFORE it; update the header comment lines 6-12 and the docstring line 33, both currently document throw-on-none) and test/config/issue-system.test.ts (the existing test at lines 44-46 asserts readIssueSystem throws on 'none': flip it to assert === 'local' per the new spec, and keep/extend the unknown-value throw tests). Decision record: docs/adr/0018 (already on main): 'none' is alias-only, 'local' stays canonical and fail-loud stays for truly-unknown values. CAM-236 context: the previous AC oracles did not pin the alias, which is why this regression escaped 3 CLEAN review rounds: the unit test asserting {issue_system:'none'} === 'local' is the explicit oracle this issue demands. Grep scripts/cam/patterns.md for 'issue' / 'issue_system' bullets before coding."
+    },
+    {
+      "id": "US-002",
+      "title": "Accept --issue-system none as deprecated alias in cam init and restore the build-release smoke to green",
+      "description": "As an operator (or the build-release smoke) invoking `cam init --issue-system none`, I need the legacy flag accepted as a deprecated alias resolving to 'local', so that init does not exit 1 and `scripts/build-release.sh --install` completes again (the v0.98 install aborted on this exact smoke).",
+      "acceptanceCriteria": [
+        "parseSetupArgs (src/commands/setup.ts) maps 'none' to issueSystem 'local' in BOTH argument forms (`--issue-system none` and `--issue-system=none`); a unit test asserts the parsed result is 'local' for each form, so the value written to project.toml is the canonical 'local'. [oracle: bun test]",
+        "Truly-invalid values (e.g. `--issue-system jira`) still fail loud: printError plus null return, matching current behavior; a unit test covers it. [oracle: bun test]",
+        "The interactive setup Select choices remain exactly ['linear', 'github', 'local']: 'none' is not selectable anywhere. [oracle: grep -n \"'linear', 'github', 'local'\" src/commands/setup.ts]",
+        "The `--issue-system <x>` help text in index.ts lists the canonical values `linear | github | local` (the stale 'none' at index.ts:129 is corrected; the alias is accepted but never advertised as canonical). [oracle: grep -q 'linear | github | local' index.ts && ! grep -q 'linear | github | none' index.ts]",
+        "scripts/build-release.sh keeps invoking `cam init --issue-system none` unchanged: the smoke is the permanent regression guard for the deprecated alias (the static guard test/build-release-smoke.test.ts already pins this; do not weaken either). [oracle: grep -q -- '--issue-system none' scripts/build-release.sh]",
+        "The full build-release smoke passes end-to-end: `bash scripts/build-release.sh` (WITHOUT --install) exits 0 on a machine with claude on PATH, proving the freshly compiled binary survives `init --issue-system none`. [oracle: bash scripts/build-release.sh]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/setup.ts (parseSetupArgs lines 752-776: two branches validate against ISSUE_SYSTEMS; add the 'none'->'local' alias in both WITHOUT adding 'none' to the ISSUE_SYSTEMS constant at line 748, which also feeds the interactive Select at line 186), index.ts (line 129 help text), plus a new/extended test for parseSetupArgs (parseSetupArgs is already exported). Do NOT edit scripts/build-release.sh nor test/build-release-smoke.test.ts: both are already correct and the static test pins '--issue-system none' in the smoke. Depends on US-001: the smoke only goes green once BOTH the reader (US-001) and this arg validation accept the alias. Gotchas: `bash scripts/build-release.sh` compiles the binary (bun build --compile, takes minutes): run it once at the end, never with --install (hot-swapping the installed 0.97 binary/sidecar is a post-ship operator step, see issue gotcha 2); the smoke is hermetic (tmpdir cwd) by CAM-15 design, keep it that way. Grep scripts/cam/patterns.md for 'init' / 'setup' / 'build-release' bullets before coding."
+    }
+  ]
+}
