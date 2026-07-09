@@ -23,6 +23,8 @@ Stories with `requires: "operator"` are **out-of-scope** for autonomous implemen
 
 Note: `requires: "operator"` stories are hand-filed by the operator only (via `/cam-issue`). The subagent-planner no longer emits them (changed in US-003); any story that requires an operator ceremony must be filed manually.
 
+Note: a `CLEAN` verdict is not the same as "no findings." The reviewer can return `CLEAN` while still recording non-blocking SUGGESTIONs; the supervisor's terminal-verdict hook (CAM-189, `src/supervisor/loop.ts`) auto-files those SUGGESTIONs as follow-up backlog issues rather than dropping them. A terminal `CLEAN` state may therefore still carry filed follow-up issues to review later.
+
 ## Project Stack
 
 `cam-cli` is the `cam` binary itself: an autonomous Claude Code loop driver.
