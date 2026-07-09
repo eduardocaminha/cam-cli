@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Truth-up allowlist + reviewer-worker description"
+  },
+  "branchName": "cam/issue-225",
+  "timestamp": "2026-07-09T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 corrected the orchestrator prompt's Identity/allowlist bullet (full set: Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor, subagent-reviewer; subagent-implementer explicitly called out as absent from the allowlist since it is dispatched only as a TUI pane, never via Task) and the '### Implementer and reviewer workers' + '## Sidecar model' sections (sidecar is the sole pusher of worker-report summaries; reviewer is normally Task-in-context via /cam-review, with the sidecar also driving an equivalent pane-based review pass between story batches; workers never self-push via send-keys). Only the body was touched; the two copies still differ ONLY in frontmatter tools ordering (per the existing dual-copy pattern). Next story (US-002) truths-up dispatch protocol + sidecar loop + issueNumber in the same two prompt copies -- re-read the current 'Dispatch protocol' section fresh since this story already touched adjacent subsections ('### Implementer and reviewer workers' sits right above '## Sidecar model'). Do not re-touch the Write/disallowedTools frontmatter contradiction (CAM-227, explicitly out of scope).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Prompt-only truth-up of the orchestrator persona doc; no external library exercised." }
+  ]
+}
