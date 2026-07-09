@@ -1,0 +1,9 @@
+{
+  "id": "CAM-249",
+  "title": "The agent SYSTEM PROMPT still instructs the worker to read prd.json and pick th…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T16:37:05.469Z",
+  "description": "The agent SYSTEM PROMPT still instructs the worker to read prd.json and pick the highest-priority passes:false story (lines 3, 35, 69), which now contradicts the injected spawn prompt's 'do not self-select' directive. This is explicitly out of scope for this PR (PRD notes assign it to CAM-229) and is therefore non-blocking, but the context-diet is only fully realized once CAM-229 lands.\n\nSource: cam/issue-224\nReview round: 1\nLocation: .claude/agents/subagent-implementer.md:35\n\nsuggestion-fingerprint: 0e9df68b6f24"
+}
