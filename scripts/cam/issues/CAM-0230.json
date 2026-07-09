@@ -1,7 +1,7 @@
 {
   "id": "CAM-230",
   "title": "Staleness planner/auditor: frontmatter model, descricoes Step 7/8, Spec Sourcing morto",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-228"
