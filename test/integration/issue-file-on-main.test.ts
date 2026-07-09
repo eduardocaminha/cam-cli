@@ -71,7 +71,7 @@ const realSpawnFn: SpawnFn = (cmd, args, opts) =>
 // Helpers
 // ---------------------------------------------------------------------------
 
-const PROJECT_TOML = 'issue_prefix = "CAM"\nissue_system = "none"\n';
+const PROJECT_TOML = 'issue_prefix = "CAM"\nissue_system = "local"\n';
 const FIXED_CLOCK = '2026-06-25T12:00:00.000Z';
 
 function toJson(entry: IssueEntry): string {

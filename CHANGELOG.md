@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.98.0] - 2026-07-09
+
+### Added
+
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-004 - Migrate project.toml, docs, templates and CHANGELOG none->local
+- US-003 - Wire issue-list to readIssueSystem and sweep remaining 'none' fixtures
+- US-002 - Add central readIssueSystem reader and wire ship-finalize + ship-pr to 'local'
+- US-001 - Rename IssueSystem enum and setup prompts none->local
+
 ## [0.97.0] - 2026-07-09
 
 ### Added

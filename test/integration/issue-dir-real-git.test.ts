@@ -89,7 +89,7 @@ const realSpawnFn: SpawnFn = (cmd, args, opts) =>
 // Repo factory helpers
 // ---------------------------------------------------------------------------
 
-const PROJECT_TOML = 'issue_prefix = "CAM"\nissue_system = "none"\n';
+const PROJECT_TOML = 'issue_prefix = "CAM"\nissue_system = "local"\n';
 const FIXED_CLOCK = '2026-06-28T12:00:00.000Z';
 
 interface RepoHandles {

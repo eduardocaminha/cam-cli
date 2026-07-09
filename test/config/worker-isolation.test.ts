@@ -81,7 +81,7 @@ describe('readWorkerIsolation - absent (default host)', () => {
 
 	test('returns "host" when [loop] section is absent', () => {
 		const path = writeTmpToml(`
-issue_system = "none"
+issue_system = "local"
 backend = "claude"
 `);
 		expect(readWorkerIsolation(path)).toBe('host');

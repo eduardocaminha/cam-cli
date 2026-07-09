@@ -61,7 +61,7 @@ export interface ShipPrStepInput {
 	prdSnapshot: PrdSnapshot;
 	/** Resolved issue id from finalizeCycleClose (e.g. "CAM-149"), or null. */
 	issueId: string | null;
-	/** Issue backend from finalizeCycleClose ("none" | "github" | "linear"). */
+	/** Issue backend from finalizeCycleClose ("local" | "github" | "linear"). */
 	issueBackend: string;
 }
 
@@ -88,9 +88,9 @@ export interface RunShipPrStepOptions extends ShipPrStepInput {
 	 * after this point causes a double post-merge).
 	 */
 	writeMergeWatchStateFn: (state: MergeWatchState) => void;
-	/** Remove the merge-watch state file (immediate-mode "none"-backend cleanup). */
+	/** Remove the merge-watch state file (immediate-mode "local"-backend cleanup). */
 	removeMergeWatchStateFn: () => void;
-	/** Close an issue on main (issue-specify.ts closeIssueOnMain), "none" backend only. */
+	/** Close an issue on main (issue-specify.ts closeIssueOnMain), "local" backend only. */
 	closeIssueOnMainFn: (id: string) => CloseIssueOnMainOutcome;
 	/** Emit an operator-facing hint line (e.g. the auto-merge settings hint). */
 	emitHint: (msg: string) => void;
@@ -148,13 +148,13 @@ function parseGithubIssueNumber(issueId: string | null): number | null {
 /**
  * Read-modify-write the merge-watch state file for the ci-gated path:
  * preserves the issueId stashed by finalizeCycleClose (only ever present for
- * the "none" backend), adds prNumber + mergedBranch, and writes exactly once.
+ * the "local" backend), adds prNumber + mergedBranch, and writes exactly once.
  * Never a blind overwrite: readMergeWatchStateFn runs first.
  */
 function enrichMergeWatchState(opts: RunShipPrStepOptions, prNumber: number): void {
 	const existing = opts.readMergeWatchStateFn();
 	const preservedIssueId =
-		existing?.issueId ?? (opts.issueBackend === 'none' && opts.issueId !== null ? opts.issueId : undefined);
+		existing?.issueId ?? (opts.issueBackend === 'local' && opts.issueId !== null ? opts.issueId : undefined);
 	const state: MergeWatchState = {
 		...(existing ?? {}),
 		prNumber,
@@ -165,7 +165,7 @@ function enrichMergeWatchState(opts: RunShipPrStepOptions, prNumber: number): vo
 }
 
 /** Close the target issue on main via closeIssueOnMainFn, then remove the watch file. */
-function closeNoneBackendIssue(opts: RunShipPrStepOptions): void {
+function closeLocalBackendIssue(opts: RunShipPrStepOptions): void {
 	if (opts.issueId !== null) {
 		const closeResult = opts.closeIssueOnMainFn(opts.issueId);
 		if (!closeResult.ok) {
@@ -198,8 +198,8 @@ function closeGithubIssue(opts: RunShipPrStepOptions, prNumber: number): void {
 
 /** Immediate-mode issue close, branching on issueBackend. */
 function closeIssuePerBackend(opts: RunShipPrStepOptions, prNumber: number): void {
-	if (opts.issueBackend === 'none') {
-		closeNoneBackendIssue(opts);
+	if (opts.issueBackend === 'local') {
+		closeLocalBackendIssue(opts);
 		return;
 	}
 	if (opts.issueBackend === 'github') {

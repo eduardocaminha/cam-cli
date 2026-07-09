@@ -185,7 +185,7 @@ describe('SetupScreen — existing-project path', () => {
 		// is not a stable constant across toolchains (CAM-201).
 		stdin.write('\r'); // Select mode (existing, the default)
 		await waitForFrame(lastFrame, (f) => f.includes('Issue system'));
-		stdin.write('\r'); // Select issue system (none, the default)
+		stdin.write('\r'); // Select issue system (local, the default)
 		await waitForFrame(lastFrame, (f) => f.includes('Merge mode'));
 		stdin.write('\r'); // Select merge mode (immediate, the default)
 		await waitForFrame(lastFrame, (f) => f.includes('Plan approval'));

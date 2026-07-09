@@ -110,7 +110,7 @@ describe('readPhaseModel - fallback on missing file', () => {
 describe('readPhaseModel - fallback on missing section', () => {
 	test('returns default when [models] section is absent', () => {
 		const path = writeTmpToml(`
-issue_system = "none"
+issue_system = "local"
 backend = "claude"
 `);
 		expect(readPhaseModel('orchestrator', path)).toBe('claude-opus-4-8');
@@ -193,7 +193,7 @@ describe('readBackend - fallback on missing file', () => {
 describe('readBackend - fallback on missing key', () => {
 	test('returns default when backend key is absent', () => {
 		const path = writeTmpToml(`
-issue_system = "none"
+issue_system = "local"
 `);
 		expect(readBackend(path)).toBe('claude');
 	});
@@ -286,7 +286,7 @@ describe('readMergeMode - fallback on missing file', () => {
 describe('readMergeMode - fallback on missing [ship] section', () => {
 	test('returns "immediate" when [ship] section is absent', () => {
 		const path = writeTmpToml(`
-issue_system = "none"
+issue_system = "local"
 backend = "claude"
 `);
 		expect(readMergeMode(path)).toBe('immediate');

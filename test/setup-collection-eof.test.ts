@@ -44,7 +44,7 @@ test(
 	async () => {
 		const result = await collectViaReadline(
 			// mergeMode: undefined forces needsMerge=true -> readline branch
-			{ mergeMode: undefined, projectMode: 'existing', issueSystem: 'none' },
+			{ mergeMode: undefined, projectMode: 'existing', issueSystem: 'local' },
 			makeEofStream(),
 		);
 		expect(result.mergeMode).toBe('immediate');
@@ -58,11 +58,11 @@ test(
 		// When every option is pre-filled, collectViaReadline returns them directly
 		// without touching the input stream at all.
 		const result = await collectViaReadline(
-			{ projectMode: 'existing', issueSystem: 'none', mergeMode: 'ci-gated' },
+			{ projectMode: 'existing', issueSystem: 'local', mergeMode: 'ci-gated' },
 			makeEofStream(),
 		);
 		expect(result.projectMode).toBe('existing');
-		expect(result.issueSystem).toBe('none');
+		expect(result.issueSystem).toBe('local');
 		expect(result.mergeMode).toBe('ci-gated');
 	},
 	10_000,
@@ -73,7 +73,7 @@ test(
 	async () => {
 		const start = Date.now();
 		await collectViaReadline(
-			{ mergeMode: undefined, projectMode: 'existing', issueSystem: 'none' },
+			{ mergeMode: undefined, projectMode: 'existing', issueSystem: 'local' },
 			makeEofStream(),
 		);
 		expect(Date.now() - start).toBeLessThan(5000);
@@ -102,7 +102,7 @@ test(
 			makeEofStream(),
 		);
 		expect(result.projectMode).toBe('existing');
-		expect(result.issueSystem).toBe('none');
+		expect(result.issueSystem).toBe('local');
 		expect(result.mergeMode).toBe('immediate');
 		expect(Date.now() - start).toBeLessThan(5000);
 	},

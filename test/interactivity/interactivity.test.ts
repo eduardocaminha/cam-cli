@@ -526,14 +526,14 @@ describe('Test 5: Init and setup interactivity gate — non-interactive path whe
 		const answers = await collectViaReadline(
 			{
 				projectMode: 'existing',
-				issueSystem: 'none',
+				issueSystem: 'local',
 				mergeMode: 'immediate',
 				planApproval: 'auto',
 			},
 			eofStream,
 		);
 		expect(answers.projectMode).toBe('existing');
-		expect(answers.issueSystem).toBe('none');
+		expect(answers.issueSystem).toBe('local');
 		expect(answers.mergeMode).toBe('immediate');
 		expect(answers.planApproval).toBe('auto');
 	});

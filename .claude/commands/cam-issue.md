@@ -21,10 +21,10 @@ the work item exists in the canonical place.
 Read `scripts/cam/project.toml`. Look for the top-level `issue_system` key.
 
 ```toml
-issue_system = "linear" | "github" | "none"
+issue_system = "linear" | "github" | "local"
 ```
 
-If the file does not exist, default to `none` and warn the operator that
+If the file does not exist, default to `local` and warn the operator that
 `cam init` was not run (or did not record an issue system).
 
 ---
@@ -99,7 +99,7 @@ If `gh auth status` fails → tell the operator to run `gh auth login` and exit.
 
 ---
 
-### `none` — local-only
+### `local` — local-only
 
 When the project has no external issue system, the orchestrator stores
 issues as individual JSON files in `scripts/cam/issues/`. Each file is named

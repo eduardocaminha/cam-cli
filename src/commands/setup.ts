@@ -36,6 +36,7 @@ import { createElement } from 'react';
 
 import { mergeIntoConfig } from '../config/toml.ts';
 import { DEFAULTS, type MergeMode, type PlanApproval } from '../config/models.ts';
+import type { IssueSystem } from '../config/issue-system.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 import { applyMergeMode } from './setup-merge-mode.ts';
 import type { SpawnFn as BpSpawnFn } from '../release/branch-protection.ts';
@@ -50,7 +51,7 @@ import { tmuxArgs } from '../tmux/session.ts';
 // ---------------------------------------------------------------------------
 
 export type ProjectMode = 'new' | 'existing';
-export type IssueSystem = 'linear' | 'github' | 'none';
+export type { IssueSystem } from '../config/issue-system.ts';
 
 export interface SetupOptions {
 	projectMode?: ProjectMode;
@@ -182,8 +183,8 @@ export async function collectViaReadline(
 		options.issueSystem ??
 		(await askChoice(
 			'Which issue system does this project use?',
-			['linear', 'github', 'none'] as const,
-			'none',
+			['linear', 'github', 'local'] as const,
+			'local',
 			input,
 		));
 	const mergeMode =
@@ -744,7 +745,7 @@ export interface ParsedSetupArgs {
 	help: boolean;
 }
 
-const ISSUE_SYSTEMS: readonly IssueSystem[] = ['linear', 'github', 'none'];
+const ISSUE_SYSTEMS: readonly IssueSystem[] = ['linear', 'github', 'local'];
 const MERGE_MODES: readonly MergeMode[] = ['immediate', 'ci-gated'];
 const PLAN_APPROVALS: readonly PlanApproval[] = ['auto', 'operator'];
 
@@ -759,7 +760,7 @@ export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 		if (arg === '--issue-system') {
 			const next = args[++i];
 			if (!next || !(ISSUE_SYSTEMS as readonly string[]).includes(next)) {
-				printError('--issue-system requires: linear | github | none');
+				printError('--issue-system requires: linear | github | local');
 				return null;
 			}
 			result.issueSystem = next as IssueSystem;
@@ -768,7 +769,7 @@ export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
 		if (arg.startsWith('--issue-system=')) {
 			const val = arg.slice('--issue-system='.length);
 			if (!(ISSUE_SYSTEMS as readonly string[]).includes(val)) {
-				printError(`--issue-system must be linear, github, or none — got ${val}`);
+				printError(`--issue-system must be linear, github, or local — got ${val}`);
 				return null;
 			}
 			result.issueSystem = val as IssueSystem;

@@ -85,7 +85,7 @@ describe('readPlanApproval - absent (default)', () => {
 
 	test('returns "auto" when [plan] section is absent', () => {
 		const path = writeTmpToml(`
-issue_system = "none"
+issue_system = "local"
 backend = "claude"
 `);
 		expect(readPlanApproval(path)).toBe('auto');

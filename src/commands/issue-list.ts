@@ -3,10 +3,10 @@
 // runIssueList() -- `cam issue list`: print the actionable backlog.
 //
 // Deterministic, in-process command: no tmux, no claude spawn. Reads
-// issue_system from scripts/cam/project.toml (missing file or key defaults to
-// 'none', mirroring the ship-finalize.ts read pattern):
+// issue_system from scripts/cam/project.toml via readIssueSystem (missing
+// file or key defaults to 'local'):
 //
-//   - 'none' (default): reads the backlog via readBacklogFromMain (git
+//   - 'local' (default): reads the backlog via readBacklogFromMain (git
 //     ls-tree + cat-file --batch from the `main` ref -- never a raw fs read
 //     of the working dir) and renders the US-001 deriveBacklogView through
 //     the shared src/logging linear print helpers. With --json, renders
@@ -14,7 +14,7 @@
 //     decoration; US-002, this PRD).
 //   - 'linear' / 'github': these backends own their own listing UX. Prints a
 //     short hint pointing at the native UI and returns 0 -- never hard-fails,
-//     even when --json is passed (the JSON contract only applies to 'none').
+//     even when --json is passed (the JSON contract only applies to 'local').
 //
 // The injected BacklogSpawnFn is the ONLY subprocess seam this command uses:
 // there is no tmux import here at all, so a recording fake proves by
@@ -25,6 +25,7 @@
 
 import { join } from 'node:path';
 
+import { readIssueSystem } from '../config/issue-system.ts';
 import { loadConfig } from '../config/toml.ts';
 import { readBacklogFromMain, type BacklogSpawnFn } from '../issues/backlog.ts';
 import {
@@ -78,7 +79,7 @@ export interface RunIssueListOptions {
 	/**
 	 * --json: emit the machine snapshot ({ counts, plannable, byStage }) as
 	 * pure JSON on stdout instead of the human-readable rendered table
-	 * (US-002). Combinable with --all. Only affects the 'none' issue_system
+	 * (US-002). Combinable with --all. Only affects the 'local' issue_system
 	 * backend; 'linear'/'github' keep printing their hint regardless.
 	 */
 	json?: boolean;
@@ -117,7 +118,7 @@ function renderGroups(groups: BacklogViewGroup[]): boolean {
 	return printedAny;
 }
 
-/** Short hint pointing at the native UI for a non-'none' issue_system backend. */
+/** Short hint pointing at the native UI for a non-'local' issue_system backend. */
 function backendHint(issueSystem: string): string {
 	if (issueSystem === 'linear') {
 		return 'Backlog is tracked in Linear -- open the Linear app to view it.';
@@ -153,8 +154,8 @@ function withWriter<T>(writer: ((s: string) => void) | undefined, fn: () => T): 
 
 /**
  * Print the actionable backlog (`cam issue list`). Always returns 0: the
- * 'linear'/'github' branch is a hint, not an error, and the 'none' branch has
- * no failure path of its own (readBacklogFromMain returns [] on any read
+ * 'linear'/'github' branch is a hint, not an error, and the 'local' branch
+ * has no failure path of its own (readBacklogFromMain returns [] on any read
  * error, rendering an empty backlog rather than throwing).
  */
 export function runIssueList(options: RunIssueListOptions): number {
@@ -163,31 +164,31 @@ export function runIssueList(options: RunIssueListOptions): number {
 
 	return withWriter(options.writer, () => {
 		const config = loadConfig(configPath);
-		const issueSystem = typeof config['issue_system'] === 'string' ? config['issue_system'] : 'none';
+		const issueSystem = readIssueSystem(config);
 
-		if (issueSystem === 'linear' || issueSystem === 'github') {
+		if (issueSystem === 'local') {
+			const backlog = readBacklogFromMain(cwd, options.spawnFn);
+
+			if (options.json) {
+				// Pure JSON on stdout: no emitTitle/heading decoration (US-002 AC1).
+				const json = deriveBacklogJson(backlog, { includeShipped: options.all ?? false });
+				process.stdout.write(`${JSON.stringify(json)}\n`);
+				return 0;
+			}
+
 			emitTitle('cam issue list');
-			emitSectionHeading(issueSystem === 'linear' ? 'Linear' : 'GitHub Issues');
-			emitMutedHint(backendHint(issueSystem));
+			const groups = deriveBacklogView(backlog, { includeShipped: options.all ?? false });
+			const printedAny = renderGroups(groups);
+			if (!printedAny) {
+				printHint('No actionable backlog items.');
+			}
 			emitTrailingBlank();
 			return 0;
 		}
 
-		const backlog = readBacklogFromMain(cwd, options.spawnFn);
-
-		if (options.json) {
-			// Pure JSON on stdout: no emitTitle/heading decoration (US-002 AC1).
-			const json = deriveBacklogJson(backlog, { includeShipped: options.all ?? false });
-			process.stdout.write(`${JSON.stringify(json)}\n`);
-			return 0;
-		}
-
 		emitTitle('cam issue list');
-		const groups = deriveBacklogView(backlog, { includeShipped: options.all ?? false });
-		const printedAny = renderGroups(groups);
-		if (!printedAny) {
-			printHint('No actionable backlog items.');
-		}
+		emitSectionHeading(issueSystem === 'linear' ? 'Linear' : 'GitHub Issues');
+		emitMutedHint(backendHint(issueSystem));
 		emitTrailingBlank();
 		return 0;
 	});

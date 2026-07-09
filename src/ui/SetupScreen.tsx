@@ -68,7 +68,7 @@ const MODE_OPTIONS: readonly SelectOption<ProjectMode>[] = [
 const ISSUE_OPTIONS: readonly SelectOption<IssueSystem>[] = [
 	{ value: 'linear', label: 'Linear', description: 'Issues at app.linear.app' },
 	{ value: 'github', label: 'GitHub', description: 'Issues at github.com/.../issues' },
-	{ value: 'none', label: 'None', description: 'Local-only, no external tracker' },
+	{ value: 'local', label: 'Local', description: 'Local-only, no external tracker' },
 ];
 
 const MERGE_OPTIONS: readonly SelectOption<MergeMode>[] = [
@@ -167,7 +167,7 @@ export function SetupScreen({ prefilled, onDone, onCancel }: SetupScreenProps): 
 						<Select
 							question="Which issue system does this project use?"
 							options={ISSUE_OPTIONS}
-							defaultValue="none"
+							defaultValue="local"
 							onChange={setIssueSystem}
 							onCancel={onCancel}
 						/>
@@ -312,7 +312,7 @@ function modeLabel(mode: ProjectMode): string {
 }
 
 function issueLabel(issue: IssueSystem): string {
-	return issue === 'linear' ? 'Linear' : issue === 'github' ? 'GitHub' : 'None';
+	return issue === 'linear' ? 'Linear' : issue === 'github' ? 'GitHub' : 'Local';
 }
 
 function mergeLabel(mode: MergeMode): string {

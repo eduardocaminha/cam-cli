@@ -406,7 +406,7 @@ describe('AC-7: runSetup writes [ship] merge_mode to project.toml', () => {
 			await runSetup({
 				cwd: workDir,
 				projectMode: 'existing',
-				issueSystem: 'none',
+				issueSystem: 'local',
 				mergeMode,
 				planApproval: 'auto',
 				noTmux: true,
