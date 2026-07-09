@@ -1,9 +1,35 @@
 {
   "id": "CAM-230",
   "title": "Staleness planner/auditor: frontmatter model, descricoes Step 7/8, Spec Sourcing morto",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-228"
+  ],
   "createdAt": "2026-07-08T23:05:52.791Z",
-  "description": "Bundle de staleness nos prompts de plan (auditoria 2026-07-08): (1) subagent-planner.md:4 frontmatter hardcoda model: claude-opus-4-8 mas project.toml:11 define planner = claude-fable-5 e o runtime usa readPhaseModel -> --model claude-fable-5 (plan-argv.ts:83) que sobrepoe o frontmatter; alinhar ou remover o campo. (2) descriptions de planner e auditor dizem Invoked from /cam-plan Step 7/8; real: cam-plan.md virou signal-writer sem steps e quem spawna e o runPlanPhase deterministico (plan-runner.ts:705/718, ADR-0006); reescrever pra spawned by the deterministic plan runner. (3) secao Spec Sourcing do planner (:76-81) referencia campos specSource/Spec/derivedFrom no Task prompt que os builders reais (buildPlannerTaskPrompt plan-runner.ts:67-73, buildReplanPlannerTaskPrompt :96-112) NUNCA passam; guidance morta, deletar ou trocar por leia o issue file. (4) cam-plan.md:11 descreve selecao como rank asc then id asc; real: selectPlannableIssue e champion-vs-champion (min-rank ranked vs max-WSJF unranked, select.ts:64-89); corrigir descricao. Origem: auditoria planner/auditor 2026-07-08."
+  "description": "Bundle de staleness nos prompts de plan (auditoria 2026-07-08): (1) subagent-planner.md:4 frontmatter hardcoda model: claude-opus-4-8 mas project.toml:11 define planner = claude-fable-5 e o runtime usa readPhaseModel -> --model claude-fable-5 (plan-argv.ts:83) que sobrepoe o frontmatter; alinhar ou remover o campo. (2) descriptions de planner e auditor dizem Invoked from /cam-plan Step 7/8; real: cam-plan.md virou signal-writer sem steps e quem spawna e o runPlanPhase deterministico (plan-runner.ts:705/718, ADR-0006); reescrever pra spawned by the deterministic plan runner. (3) secao Spec Sourcing do planner (:76-81) referencia campos specSource/Spec/derivedFrom no Task prompt que os builders reais (buildPlannerTaskPrompt plan-runner.ts:67-73, buildReplanPlannerTaskPrompt :96-112) NUNCA passam; guidance morta, deletar ou trocar por leia o issue file. (4) cam-plan.md:11 descreve selecao como rank asc then id asc; real: selectPlannableIssue e champion-vs-champion (min-rank ranked vs max-WSJF unranked, select.ts:64-89); corrigir descricao. Origem: auditoria planner/auditor 2026-07-08.",
+  "spec": {
+    "scope": "Staleness sweep of the plan-phase prompts. Files: subagent-planner.md (frontmatter model align + Spec Sourcing rewrite + Step 7 description), subagent-auditor.md (Step 8 description), cam-plan.md (selection description) — in BOTH copies (.claude/ and templates/) except the frontmatter model align which is .claude-only, plus re-embed into src/vendor/_generated.ts via `bun run embed-vendor`. Out of scope: removing the frontmatter model field / single-source-of-truth refactor for models (separate concern), auditor C.8/B.5 (CAM-228), orchestrator/implementer prompts.",
+    "acceptanceCriteria": [
+      ".claude/agents/subagent-planner.md frontmatter `model:` is aligned to claude-fable-5 (matching project.toml [models] planner), resolving the drift from the stale claude-opus-4-8 value. The templates/ copy keeps its seed default (not cam-cli-specific).",
+      "The Spec Sourcing section of subagent-planner.md (both copies) no longer references specSource/Spec/derivedFrom Task-prompt fields (which buildPlannerTaskPrompt / buildReplanPlannerTaskPrompt never pass); it is replaced with accurate guidance to read the specified issue file (scripts/cam/issues/<id>.json) for the spec.",
+      "The planner and auditor agent `description:` fields no longer say 'Invoked from /cam-plan Step 7/8'; they say the agent is spawned by the deterministic plan runner (runPlanPhase, ADR-0006) — in both copies.",
+      "cam-plan.md selection description no longer says 'rank asc then id asc'; it accurately describes selectPlannableIssue champion-vs-champion selection (min-rank ranked vs max-WSJF unranked, select.ts:64-89) — in both copies.",
+      "`bun run embed-vendor:check` passes (re-embed applied), vendor/check-agent-frontmatter.ts passes, and `bun run typecheck` and `bun test` are green."
+    ],
+    "gotchas": [
+      "The frontmatter model field is NOT dead config: buildPlannerWorkerArgv always passes --model (readPhaseModel from project.toml wins at spawn), but src/templates/frontmatter.ts rewrites the frontmatter model: line on `cam config` save. Align the value; do not remove the line (removal ripples into cam config / frontmatter.ts / check-agent-frontmatter).",
+      "Items (2) description, (3) Spec Sourcing, (4) selection describe cam-universal architecture (deterministic plan runner, champion selection), so they apply to BOTH copies and require re-embed. Only the frontmatter model align (item 1) is cam-cli-specific (.claude only).",
+      "Both this issue and CAM-228 edit .claude/agents/subagent-auditor.md, so this is blockedBy CAM-228 to avoid concurrent edits to the same file.",
+      "buildPlannerTaskPrompt (plan-runner.ts:67-73) is the real Task-prompt channel; the Spec Sourcing rewrite must match what it actually does (name the issue, don't re-select, write PRD) — the planner reads the issue file itself for the spec."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 4,
+    "jobSize": 2
+  },
+  "type": "chore"
 }
