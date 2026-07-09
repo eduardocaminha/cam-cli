@@ -1,13 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Remove stale merge-watch comment and dead CAM_REVIEWER_STATUS branch"
+    "id": "US-004",
+    "title": "Add supersession banners to ADRs 0004, 0006, 0008"
   },
   "branchName": "cam/issue-233",
   "timestamp": "2026-07-09T00:00:00Z",
-  "modifiedFiles": ["src/release/merge-watch.ts", "src/supervisor/result.ts"],
+  "modifiedFiles": [
+    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md",
+    "docs/adr/0006-phase-enum-loop-state-machine.md",
+    "docs/adr/0008-auto-ship-terminal-anchor.md"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 reworded the merge-watch.ts doc-comment (the watch-state file is written by the orchestrator's ci-gated ship step, runShipPrStep in src/release/ship-pr.ts, not a nonexistent 'cam-ship.md Step 7') and removed the dead CAM_REVIEWER_STATUS regex branch plus its orphaned doc-comment line from parseAnySentinel in src/supervisor/result.ts (no prompt ever emits that sentinel; confirmed via repo-wide grep before deletion, only src/supervisor/result.ts itself and PRD/handoff/issue JSON referenced the string). The AnySentinelSource union type still carries a 'reviewer' member for now (not required by the story's oracle, which only greps for the literal string 'CAM_REVIEWER_STATUS'; left alone per surgical-changes scope). US-004 (next story) targets ADR supersession banners in docs/adr/0004, 0006, 0008 -- unrelated surface, no shared state with US-003.",
+  "nextStoryContext": "US-004 added a blockquote supersession/update banner immediately after the Status/Data lines (before '## Contexto') in each of the three ADRs, prose-only, no behavior change: ADR 0004 now points to ADR 0006 (active:true hand-off replaced by setPhaseFn('implementing')); ADR 0006 now points to ADR 0012 (BLOCK auto-re-plans up to 2x via MAX_REPLAN_ROUNDS before escalating, superseding its own 'no auto re-plan' Consequencias line) and to ADR 0009/0013 (the 'shipping' phase, described in ADR 0006 as reserved-and-unused, is now in use). docs/adr/ is repo-root domain model, NOT templated (confirmed via patterns.md Domain Model Convention section): no embed-vendor step was needed or run. US-005 (next story) targets cam-plan/cam-spec command docs (templated command docs under .claude/commands/ + templates/commands/) -- unrelated surface, no shared state with US-004.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]

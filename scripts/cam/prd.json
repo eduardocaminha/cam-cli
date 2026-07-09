@@ -69,7 +69,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: docs/adr/0004-plan-phase-deterministic-sidecar-runner.md, docs/adr/0006-phase-enum-loop-state-machine.md, docs/adr/0008-auto-ship-terminal-anchor.md. docs/adr/ is repo-root DOMAIN MODEL, NOT templated: NO re-embed (gotcha in issue spec). Banner text is prose-only, no behavior change. Follow the global-CLAUDE no-emdash/no-emoji rule for persisted .md."
     },
