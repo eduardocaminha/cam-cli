@@ -24,7 +24,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/config/issue-system.ts (the throw branch at line 41 must gain a `value === 'none' -> return 'local'` normalization BEFORE it; update the header comment lines 6-12 and the docstring line 33, both currently document throw-on-none) and test/config/issue-system.test.ts (the existing test at lines 44-46 asserts readIssueSystem throws on 'none': flip it to assert === 'local' per the new spec, and keep/extend the unknown-value throw tests). Decision record: docs/adr/0018 (already on main): 'none' is alias-only, 'local' stays canonical and fail-loud stays for truly-unknown values. CAM-236 context: the previous AC oracles did not pin the alias, which is why this regression escaped 3 CLEAN review rounds: the unit test asserting {issue_system:'none'} === 'local' is the explicit oracle this issue demands. Grep scripts/cam/patterns.md for 'issue' / 'issue_system' bullets before coding."
     },
