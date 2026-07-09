@@ -6,6 +6,10 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+### Changed
+
+- BREAKING: `issue_system` value `none` is renamed to `local` (US-001 through US-004, CAM-236). The local, file-based issue backend under `scripts/cam/issues/` is unchanged; only the config/enum literal that selects it is renamed, because `none` was misleading (it suggested no issue tracking, when a full local backend exists). There is no back-compat alias: a `scripts/cam/project.toml` still carrying `issue_system = "none"` now fails loud (`readIssueSystem` throws) instead of silently defaulting, since the old value used to gate close/stash semantics for the local backend and a silent fallback would skip that gate without any signal. Projects on the old value must edit `project.toml` to `issue_system = "local"`.
+
 ## [0.97.0] - 2026-07-09
 
 ### Added

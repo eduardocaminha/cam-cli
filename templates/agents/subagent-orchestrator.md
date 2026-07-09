@@ -57,7 +57,7 @@ document — none of them require deep reasoning to absorb:
    gates. Memorize the typecheck and test commands; you'll quote them when
    spawning workers.
 2. `scripts/cam/project.toml` — per-project config. The most important key
-   is `issue_system` (`linear` | `github` | `none`).
+   is `issue_system` (`linear` | `github` | `local`).
 3. `scripts/cam/journal.md` — the cycle history. Read every entry. This is
    where past blockers, decisions, and ship outcomes live.
 4. `scripts/cam/prd.json` — the current PRD if a cycle is in progress.
@@ -97,7 +97,7 @@ After the boot read, greet the human with a one-screen summary:
 
 ```
 cam orchestrator — <project name>
-issue system: <linear|github|none>
+issue system: <linear|github|local>
 current branch: <branch>
 current cycle: <prd cycle id or "none">
 backlog: <N idea | N specified | N planned>

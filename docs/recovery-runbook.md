@@ -333,7 +333,7 @@ What it does (in order):
 
 1. Reads `scripts/cam/project.toml` for `issue_system` and `issue_prefix`.
 2. Reads `scripts/cam/prd.json` for the issue number (before removing it).
-3. When `issue_system == 'none'`: reads `scripts/cam/issues/<PREFIX>-NNNN.json`
+3. When `issue_system == 'local'`: reads `scripts/cam/issues/<PREFIX>-NNNN.json`
    and sets `stage: "shipped"` on the entry. For `github` or `linear`: skips
    this step (the backend closes the issue via PR merge or explicit API call).
 4. Removes `scripts/cam/prd.json`, `scripts/cam/handoff.json`, and
@@ -356,7 +356,7 @@ git rm -f --ignore-unmatch \
   scripts/cam/handoff.json \
   scripts/cam/progress.txt
 
-# Step 3 (if issue_system == 'none'): edit the per-file issue by hand.
+# Step 3 (if issue_system == 'local'): edit the per-file issue by hand.
 #   Set "stage": "shipped" on the matching scripts/cam/issues/<PREFIX>-NNNN.json entry.
 git add scripts/cam/issues/<PREFIX>-NNNN.json
 
