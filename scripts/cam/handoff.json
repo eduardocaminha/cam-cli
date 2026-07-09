@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Normalize legacy issue_system 'none' to 'local' in readIssueSystem" },
+  "branchName": "cam/issue-239",
+  "timestamp": "2026-07-09T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/config/issue-system.ts",
+    "test/config/issue-system.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added a single alias branch `if (value === 'none') return 'local';` in readIssueSystem, placed BEFORE the VALID_ISSUE_SYSTEMS membership check and AFTER the absent-key check. 'none' stays OUT of VALID_ISSUE_SYSTEMS/IssueSystem type (never selectable again, read-normalized only). No downstream `=== 'none'` gate exists in ship-finalize.ts/issue-list.ts/sidecar.ts (verified via git grep, all already route through readIssueSystem). US-002 is the arg-parsing counterpart (parseSetupArgs in src/commands/setup.ts + index.ts help text + the build-release smoke) and depends on this story's reader fix to make the smoke fully green end-to-end. ADR-0018 (docs/adr/0018-issue-system-none-is-a-deprecated-read-normalized-alias-not-a-removed-value.md) is the decision record backing both stories: 'none' is alias-only, 'local' stays canonical, fail-loud stays for truly-unknown values.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
