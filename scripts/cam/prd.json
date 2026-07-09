@@ -54,7 +54,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-plan.md (line 11 no-argument bullet), templates/commands/cam-plan.md (line 11), plus regenerated src/templates/embedded.ts via `bun run embed-vendor`. Ground the rewrite in src/issues/select.ts:66-86 (selectPlannableIssue): filter isPlannable, split ranked (rank defined) vs unranked, pickRankedChampion = min rank + numeric-id tie-break, pickUnrankedChampion = max computeWsjf + numeric-id tie-break, unranked wins iff its WSJF strictly greater than ranked champion's WSJF (tie to ranked). This is cam-universal, so both copies + re-embed. Keep the surrounding main-ref / fallback-only text on line 11 intact; only the ordering clause changes."
     }

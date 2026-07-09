@@ -1,18 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Fix subagent-auditor.md Step 8 description to the deterministic plan runner"
+    "id": "US-003",
+    "title": "Fix cam-plan.md selection description to champion-vs-champion"
   },
   "branchName": "cam/issue-230",
   "timestamp": "2026-07-09T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-auditor.md",
-    "templates/agents/subagent-auditor.md",
+    ".claude/commands/cam-plan.md",
+    "templates/commands/cam-plan.md",
     "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 was a docs/prompt staleness fix on subagent-auditor.md line 3 (both .claude/ and templates/ copies): rewrote the frontmatter `description:` from 'Invoked from /cam-plan Step 8 between PRD generation and branch creation' to 'Spawned by the deterministic plan runner (runPlanPhase, ADR-0006) between PRD generation and branch creation, not a /cam-plan step', reusing the exact wording pattern from US-001 (subagent-planner.md). Kept the pre-existing READ-ONLY claim intact per the issue note; did not touch C.8/B.5 body content (that was CAM-228, already merged to main before this story ran - confirmed via git log, no rebase was needed since HEAD == merge-base with origin/main). Ran `bun run embed-vendor` to regenerate src/vendor/_generated.ts; embed-vendor:check and check-agent-frontmatter.ts both clean. US-003 (next) targets cam-plan.md's selection description for champion-vs-champion wording - a different file, unrelated to the auditor/planner theme, no shared edits expected.",
+  "nextStoryContext": "US-003 rewrote the no-argument selection bullet (line 11) in both .claude/commands/cam-plan.md and templates/commands/cam-plan.md: replaced the stale 'sorted by rank asc then numeric id asc' claim with an accurate description of selectPlannableIssue's champion-vs-champion logic (src/issues/select.ts:66-86) - best ranked candidate by min rank vs best unranked candidate by max WSJF via computeWsjf, unranked wins only on strictly-higher WSJF, ties go to ranked. Kept the surrounding main-ref/fallback-only text on the same line intact. Ran bun run embed-vendor to regenerate src/vendor/_generated.ts; embed-vendor:check clean. Did not touch scripts/cam/patterns.md: the champion-vs-champion behavior and three-copy cam-plan sync requirement are already documented there (bullets referencing CAM-203/US-001/US-002, CAM-222) - this story was purely a docs-drift fix on cam-plan.md matching that already-documented behavior, no new reusable insight. If a future story finds prd.json exhausted of non-operator passes:false stories, check whether the patterns.md bullet at the CAM-106 entry (line ~171, 'sort order is rank ascending... then id ascending') is now misleading relative to the later champion-vs-champion entries - it predates CAM-203 and describes an earlier version of select.ts; out of scope for US-003 but worth a follow-up issue if noticed again.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
