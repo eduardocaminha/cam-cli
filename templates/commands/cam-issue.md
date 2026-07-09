@@ -142,10 +142,18 @@ Run the deterministic CLI command and render its output verbatim:
 ```bash
 cam issue list
 ```
-Pass `--all` to also include the `shipped` group. This command is
+Pass `--all` to also include the `shipped` group. For machine consumption
+(scripting, structured parsing) use `cam issue list --json` instead, which
+prints the same backlog as a single JSON payload. This command is
 in-process (no tmux, no claude spawn) and reads the backlog straight from
 `main` via git plumbing, so it is always up to date and safe to run fresh
 before answering any backlog question.
+
+**Backlog derivation is `cam issue list` / `cam issue list --json` ONLY.**
+Never grep or read `scripts/cam/issues/*.json` directly to derive or answer
+a backlog question, even filtered by stage — a raw read bypasses the
+command's status/stage filtering and can resurrect abandoned or stale
+entries as if they were plannable.
 
 ---
 

@@ -11,29 +11,31 @@ import { templatesContents } from '../../src/vendor/_generated.ts';
 const PERSONA_KEY = 'agents/subagent-orchestrator.md';
 
 describe('orchestrator boot prompt: cam issue list backlog derivation (US-004)', () => {
-	test('buildOrchestratorBootPrompt instructs deriving the backlog via cam issue list', () => {
+	test('buildOrchestratorBootPrompt instructs deriving the backlog via cam issue list / --json', () => {
 		const prompt = buildOrchestratorBootPrompt();
 		expect(prompt).toContain('cam issue list');
+		expect(prompt).toContain('cam issue list --json');
 	});
 
-	test('buildOrchestratorBootPrompt states the stage-filtered fallback for an unavailable/failing command', () => {
+	test('buildOrchestratorBootPrompt prohibits raw scripts/cam/issues/*.json reads as a backlog-derivation fallback (US-004, CAM-222)', () => {
 		const prompt = buildOrchestratorBootPrompt();
 		expect(prompt).toContain('scripts/cam/issues/*.json');
-		expect(prompt.toLowerCase()).toContain('filtered by stage');
+		expect(prompt.toLowerCase()).toContain('never grep or read');
 	});
 });
 
 describe('embedded orchestrator persona: cam issue list backlog derivation (US-004)', () => {
-	test('embedded persona instructs deriving the backlog via cam issue list', () => {
+	test('embedded persona instructs deriving the backlog via cam issue list / --json', () => {
 		const content = templatesContents[PERSONA_KEY] ?? '';
 		expect(content).toBeTruthy();
 		expect(content).toContain('cam issue list');
+		expect(content).toContain('cam issue list --json');
 	});
 
-	test('embedded persona states the stage-filtered fallback for an unavailable/failing command', () => {
+	test('embedded persona prohibits raw scripts/cam/issues/*.json reads as a backlog-derivation fallback (US-004, CAM-222)', () => {
 		const content = templatesContents[PERSONA_KEY] ?? '';
 		expect(content).toContain('scripts/cam/issues/*.json');
-		expect(content.toLowerCase()).toContain('filtered by stage');
+		expect(content.toLowerCase()).toContain('never grep or read');
 	});
 
 	test('embedded persona greeting spec contains no per-issue enumeration', () => {

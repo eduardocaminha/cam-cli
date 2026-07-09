@@ -739,14 +739,16 @@ describe('buildOrchestratorBootPrompt (CAM-23 rehydration directive)', () => {
 		expect(prompt).toContain('Bash');
 	});
 
-	it('US-004: instructs deriving the backlog via cam issue list, with a stage-filtered fallback', () => {
+	it('US-004: instructs deriving the backlog via cam issue list / --json, prohibiting raw issue-file reads', () => {
 		const prompt = buildOrchestratorBootPrompt();
 		// Primary instruction: derive the backlog via the real `cam issue list` shell command.
 		expect(prompt).toContain('cam issue list');
-		// Explicit fallback for when the command is unavailable or exits non-zero
-		// (e.g. a pre-rebuild binary), reading the per-issue files directly, filtered by stage.
+		expect(prompt).toContain('cam issue list --json');
+		// No fallback to raw issue-file reads is permitted, even when the command
+		// is unavailable or exits non-zero (2026-07-08 incident: a raw stage grep
+		// resurrected abandoned issues as plannable).
+		expect(prompt.toLowerCase()).toContain('never grep or read');
 		expect(prompt).toContain('scripts/cam/issues/*.json');
-		expect(prompt.toLowerCase()).toContain('filtered by stage');
 	});
 });
 

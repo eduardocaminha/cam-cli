@@ -79,7 +79,7 @@
         "Full spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-orchestrator.md, templates/agents/subagent-orchestrator.md, .claude/commands/cam-issue.md, templates/commands/cam-issue.md, src/vendor/_generated.ts (regenerated, never hand-edited). Depends on US-002 (--json must exist before docs mandate it). The 'skill cam-issue' in the spec is the /cam-issue command doc (dual copy); there is no .claude/skills/cam-issue directory. Regenerating the vendor embed re-injects prose literals into src/vendor/_generated.ts; that is fine because US-003's guard excludes src/vendor/ (do not 'fix' the embed). Gotcha (memory + spec): dual-copy is per-file NOT byte-identical; diff each pair first. Agent instruction files are LLM-consumed: em dashes allowed there."
     }
