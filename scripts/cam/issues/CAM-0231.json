@@ -1,9 +1,35 @@
 {
   "id": "CAM-231",
   "title": "Cross-repo PRD: decidir aspiracional vs implementar (zero suporte no codigo)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-226",
+    "CAM-229"
+  ],
   "createdAt": "2026-07-08T23:05:55.074Z",
-  "description": "scripts/cam/CLAUDE.md:106-117 (secao Cross-Repo PRDs) e subagent-implementer.md:57-58,117 documentam crossRepoLayout top-level + campo repo por story como se fossem harness-driven. Grep de crossRepoLayout e do campo repo em src/, scripts/ e test/ retorna VAZIO: o supervisor nunca le repo, decideNextAction ignora, zero validacao. O planner tambem nao emite (schema de output dele omite os campos, entao um PRD cross-repo nunca nasce do plan). Feature e inteiramente agent-self-executed cd sem verificacao. Decisao de produto: (a) marcar as secoes como agent-executed/aspiracional e remover a impressao de suporte de harness, ou (b) implementar suporte real (supervisor valida layout, story selection ciente de repo, gates rodando no repo certo). Origem: auditorias implementer e planner 2026-07-08."
+  "description": "scripts/cam/CLAUDE.md:106-117 (secao Cross-Repo PRDs) e subagent-implementer.md:57-58,117 documentam crossRepoLayout top-level + campo repo por story como se fossem harness-driven. Grep de crossRepoLayout e do campo repo em src/, scripts/ e test/ retorna VAZIO: o supervisor nunca le repo, decideNextAction ignora, zero validacao. O planner tambem nao emite (schema de output dele omite os campos, entao um PRD cross-repo nunca nasce do plan). Feature e inteiramente agent-self-executed cd sem verificacao. Decisao de produto: (a) marcar as secoes como agent-executed/aspiracional e remover a impressao de suporte de harness, ou (b) implementar suporte real (supervisor valida layout, story selection ciente de repo, gates rodando no repo certo). Origem: auditorias implementer e planner 2026-07-08.",
+  "spec": {
+    "scope": "Make the Cross-Repo PRD documentation honest: re-frame it as explicitly agent-self-executed with no harness support/validation, killing the false impression that it is harness-driven. Files: scripts/cam/CLAUDE.md (Cross-Repo PRDs section) and .claude/agents/subagent-implementer.md (:57-58,117 cross-repo cd guidance), in BOTH copies + re-embed src/vendor/_generated.ts via `bun run embed-vendor`. Out of scope: implementing real harness support (supervisor repo-awareness, planner emission, gate-routing, layout validation) — split to CAM-241 as a future epic (related to CAM-147); deleting the sections entirely (rejected: hand-authored cross-repo PRDs do work today via agent cd).",
+    "acceptanceCriteria": [
+      "The Cross-Repo PRDs section in scripts/cam/CLAUDE.md no longer presents crossRepoLayout / per-story repo as harness-driven; it states explicitly that cross-repo is agent-self-executed (the agent cds per the documented layout), that the harness does NOT read the repo field, does NOT validate the layout, and that the planner does NOT emit these fields (so only hand-authored PRDs use them).",
+      "The subagent-implementer.md cross-repo cd guidance (:57-58,117, both copies) carries the same honest framing (agent-executed, unvalidated, hand-authored PRDs only).",
+      "Both docs include a pointer that real harness support is tracked as a future epic (CAM-241, related to CAM-147).",
+      "No code change is made (this is a documentation truth-up); crossRepoLayout and the repo field remain unread by the supervisor.",
+      "`bun run embed-vendor:check` passes (re-embed applied), and `bun run typecheck` and `bun test` are green."
+    ],
+    "gotchas": [
+      "Verified: crossRepoLayout and the story repo field appear ONLY in docs (scripts/cam/CLAUDE.md + templates + the embed) and issue files; grep of src/, scripts/, test/ finds no consumer (supervisor never reads repo, decideNextAction ignores it, planner output schema omits it).",
+      "Do NOT delete the sections: a hand-authored PRD with crossRepoLayout + repo + a compliant agent cd works today; the defect is only the false 'harness-driven' framing. Re-frame, preserving the (fragile, unvalidated) escape hatch.",
+      "This issue shares scripts/cam/CLAUDE.md with CAM-224/CAM-226 and subagent-implementer.md with CAM-229, so it is blockedBy CAM-226 (which is itself blockedBy CAM-224) and CAM-229 to avoid concurrent edits."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 1
+  },
+  "type": "docs"
 }
