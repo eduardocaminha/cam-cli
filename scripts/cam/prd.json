@@ -117,7 +117,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/release/ship-pr.ts (label map + argv in step 2 of runShipPrStep), test/ship-pr.test.ts (spawnFn fake already captures argv). Gotchas (from issue spec): gh pr create --label fails if the label does not exist in the repo; enhancement, bug, documentation already exist (verified via gh label list), chore intentionally maps to no label. gh mutation calls keep the stripGithubToken() env handling: do not change it. Depends on US-005 (PrdSnapshot.type)."
     }
