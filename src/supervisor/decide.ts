@@ -27,6 +27,7 @@ export interface PrdSnapshot {
 	userStories?: Array<{
 		id?: string;
 		title?: string;
+		description?: string;
 		priority?: number;
 		passes?: boolean;
 		requires?: string | null;
