@@ -22,7 +22,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/scripts/cam/issues.schema.json (add the spec-source block copied verbatim from live scripts/cam/issues.schema.json; the ONLY delta between the two files is that block, so a clean sync makes `diff` empty), templates/scripts/cam/CLAUDE.md (Step 5.5 pointer is expected already-correct via CAM-224 -- this is a verify-only grep, reconcile only if it regressed), src/vendor/_generated.ts (regen via `bun run embed-vendor`). GOTCHA: templates/scripts/cam/CLAUDE.md is intentionally a GENERIC template with `<project ...>` placeholders (stack/gate commands are project-adapted by the setup-agent); do NOT sync the whole file to the cam-cli-specific live copy -- only the Step 5.5 pointer is in scope. The lingering `.claude/commands/cam-next.md` Step 5.5 pointer actually still lives in templates/scripts/cam/handoff.schema.json:47 (and the live copy), but that file is OUT OF SCOPE per the issue; do not touch it. embed-vendor globs the whole templates/ dir so the new content auto-embeds; run `bun run embed-vendor` before committing. This shares templates/scripts/cam/CLAUDE.md history with CAM-224/226/231 (all shipped)."
     },

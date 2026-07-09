@@ -56,11 +56,52 @@
     "spec": {
       "description": "Structured specification artifact. Shape is defined by Epico B."
     },
+    "specSource": {
+      "type": "string",
+      "enum": ["grill", "derived", "operator"],
+      "description": "How the spec was produced: grill (interactive grill session), derived (consolidated from sibling issues), operator (hand-filed by operator without a grill)."
+    },
+    "derivedFrom": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Issue ids this issue was derived from. Required (minItems 1) when specSource is derived."
+    },
     "type": {
       "type": "string",
       "enum": ["feat", "fix", "chore", "docs"],
       "description": "Optional PR-title/label signal. Defaults to feat on read when absent."
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "stage": { "const": "specified" } },
+        "required": ["stage"]
+      },
+      "then": {
+        "required": ["specSource"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "specSource": { "const": "derived" } },
+        "required": ["specSource"]
+      },
+      "then": {
+        "required": ["derivedFrom"],
+        "properties": { "derivedFrom": { "minItems": 1 } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "specSource": { "enum": ["derived", "operator"] } },
+        "required": ["specSource"]
+      },
+      "then": {
+        "required": ["description"],
+        "properties": { "description": { "minLength": 1 } }
+      }
+    }
+  ],
   "additionalProperties": false
 }
