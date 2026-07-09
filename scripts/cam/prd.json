@@ -24,7 +24,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Model the new file on src/commands/journal-archive.ts (archiveJournalOnMain, line ~209): same guard order (checkMainUpToDate -> read-from-main -> parse -> mutate), same 2-element FileWrite[] atomic commitTreeToMain, same lazy-archive read (readArchiveFromMain returns null when absent). Shared exports live in src/git/on-main.ts (checkMainUpToDate, commitTreeToMain, pushMainBestEffort, FileWrite, SpawnFn) - import them, do not copy. GOTCHA (issue): the 'oldest third' selection does NOT transfer; patterns bullets are append-only invariants where old != stale. Reuse the PLUMBING, not the criterion. patterns.md bullets are line-level `- ` entries (not `## ` headers like journal); parse everything before the first top-level `- ` as preamble to preserve, then classify each `- ` bullet by whether it carries the resolved marker. Decide the marker regex here (parser is authoritative; US-004 retrofits + documents to match). patterns.md must pre-exist on main (guard 'patterns-missing'). noUncheckedIndexedAccess: guard all array/regex-group access. Test template: test/commands/journal-archive.test.ts (inject a fake SpawnFn, no real git)."
     },

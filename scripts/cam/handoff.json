@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "archivePatternsOnMain core logic (marker-based, on-main commit-tree)"
+  },
+  "branchName": "cam/issue-226",
+  "timestamp": "2026-07-09T00:00:00.000Z",
+  "createdFiles": [
+    "src/commands/patterns-archive.ts",
+    "test/commands/patterns-archive.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "archivePatternsOnMain (src/commands/patterns-archive.ts) is marker-based only: a bullet moves to scripts/cam/patterns.archive.md iff RESOLVED_MARKER_RE (`/\\[resolved \\d{4}-\\d{2}\\]/`, exported) matches anywhere in its text; no threshold/age/count logic. Blocks are parsed by finding lines starting with '- ' (top-level bullets); everything before the first such line is the preserved intro preamble. patterns.archive.md is lazily created (git show returning non-zero -> bootstrap header '# Codebase Patterns Archive'). Guard order and plumbing mirror src/commands/journal-archive.ts exactly (checkMainUpToDate -> read-from-main -> parse -> mutate -> commitTreeToMain([2 FileWrite]) -> pushMainBestEffort), all imported from src/git/on-main.ts, no private copy. US-002 (CLI wiring: `cam patterns archive` + help + sentinel) should call archivePatternsOnMain the same way journal.ts calls archiveJournalOnMain -- look at how `cam journal archive` is registered in index.ts for the wiring shape. US-004 (retrofit markers) must use the exact same regex `[resolved YYYY-MM]` when tagging existing scripts/cam/patterns.md bullets, and should document the convention (probably as a new bullet at the top of patterns.md or in CLAUDE.md) so future contributors know how to mark a bullet resolved.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure git-plumbing reuse (checkMainUpToDate/commitTreeToMain/pushMainBestEffort from src/git/on-main.ts, already validated by the journal-archive precedent). Spot-checked git-commit-tree's official docs (git-scm.com) to confirm -p/parent semantics and no working-tree/index requirement; matches the existing commitTreeToMain implementation exactly, no code change needed."
+    }
+  ]
+}
