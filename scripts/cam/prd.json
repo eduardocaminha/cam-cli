@@ -21,7 +21,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (implement branch ~871-890 builds shellCmd via buildImplementerWorkerArgv({taskPrompt}); today taskPrompt is a static opts field from host.ts:300 - build the per-story prompt here from the prd snapshot already read at top of iteration, matching action.storyId against prd.userStories; update the design-comment block lines 16-22 and the inline comment at ~872-874 that call storyId advisory). src/supervisor/host.ts:299-300 keeps a generic fallback DEFAULT_TASK_PROMPT but the per-story build is the live path. src/supervisor/decide.ts:27-35 PrdSnapshot userStories entry currently lacks `description` - add `description?: string` so the builder can embed it. Builder helper should be an exported function (in loop.ts or a small sibling module) so AC's unit test can import it. GOTCHAS: passes:true during the loop is AGENT-written (targeted) + harness-verified (loop.ts ~1336 no-progress + CAM-187 gate); host.ts:615 story.passes=true is the finalize path, a DIFFERENT thing - do not move ownership to the sidecar. Retain the outcome.storyId-vs-advisory reconciliation. buildImplementerWorkerArgv lives in src/supervisor/worker-argv.ts (shellEscape'd). Blocked on CAM-229 because both touch loop.ts (229 adds officialDocsValidated warn-guard). Out of scope: .claude/agents/subagent-implementer.md (CAM-229 owns it). Grep scripts/cam/patterns.md for 'supervisor' / 'sentinel' before coding."
     },

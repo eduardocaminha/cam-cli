@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Inject selected story record + branchName into implementer spawn; make storyId authoritative"
+  },
+  "branchName": "cam/issue-224",
+  "timestamp": "2026-07-09T00:00:00Z",
+  "createdFiles": [
+    "src/supervisor/task-prompt.ts",
+    "test/supervisor/task-prompt.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/loop.ts",
+    "src/supervisor/decide.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 shipped: runSupervisor's implement branch now matches action.storyId (decideNextAction's authoritative pick) against prd.userStories in the already-read snapshot, and builds the per-story prompt via the new buildImplementerTaskPrompt (src/supervisor/task-prompt.ts) instead of sending the generic opts.taskPrompt fallback (still used only if the matched story is somehow absent from the snapshot). PrdSnapshot.userStories entries gained a `description?: string` field (decide.ts) so the builder can embed it. The design-comment block at the top of loop.ts and the inline comment above `const advisoryStoryId = action.storyId;` were reworded from 'worker SELF-SELECTS' to 'decideNextAction's storyId is AUTHORITATIVE'; the outcome.storyId-vs-advisory reconciliation and no-progress guard further down in loop.ts were left byte-for-byte unchanged per the story's AC3 (passes:true ownership stays with the agent, not the sidecar). US-002 (next, priority 2) is the natural follow-on: it updates scripts/cam/CLAUDE.md's 'Your Task' steps to stop telling the implementer to read the full prd.json to self-select a story, since the supervisor now injects the exact story into the spawn prompt; that story's notes call out a vendor re-embed step (bun run embed-vendor) since scripts/cam/CLAUDE.md is a templated/embedded file. Do NOT touch .claude/agents/subagent-implementer.md for either US-001 or US-002 (explicitly out of scope, notes say CAM-229 owns it).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
