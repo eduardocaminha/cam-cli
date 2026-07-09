@@ -1,29 +1,35 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Rename IssueSystem enum and setup prompts none->local"
+    "id": "US-002",
+    "title": "Add central readIssueSystem reader and wire ship-finalize + ship-pr to 'local'"
   },
   "branchName": "cam/issue-236",
-  "timestamp": "2026-07-09T04:58:01Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-09T05:09:25Z",
+  "createdFiles": [
+    "src/config/issue-system.ts",
+    "test/config/issue-system.test.ts"
+  ],
   "modifiedFiles": [
     "src/commands/setup.ts",
-    "src/ui/SetupScreen.tsx",
-    "test/commands/setup-merge-mode.test.ts",
-    "test/interactivity/interactivity.test.ts",
-    "test/setup-collection-eof.test.ts",
-    "test/ui/init-setup-screen-keys.test.ts"
+    "src/commands/ship-finalize.ts",
+    "src/release/ship-pr.ts",
+    "test/ship-finalize.test.ts",
+    "test/ship-finalize-hardening.test.ts",
+    "test/integration/ship-finalize-dirty-prd.test.ts",
+    "test/release/ship-pr.test.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [
-    "scripts/build-release.sh AC4 smoke still passes '--issue-system none' to the compiled binary; parseSetupArgs now rejects 'none' (only linear|github|local). test/build-release-smoke.test.ts is a static-source guard against the script content, so it stays green, but the actual smoke run in build-release.sh would fail at runtime until the script's literal is updated to 'local'. Not in scope for US-001..US-004 notes; flagging as a follow-up for the operator/next planner.",
-    "scripts/cam/patterns.md:46 (finalizeCycleClose hardening bullet) still documents the guard as issue_system == 'none'; US-004's notes already flag this as a knowledge-doc-only follow-up, not a code path."
+    "scripts/build-release.sh AC4 smoke still passes '--issue-system none' to the compiled binary (carried over from US-001's handoff; still not in scope for US-002/US-003/US-004).",
+    "src/commands/issue-list.ts:166 still reads issue_system via the loose 'typeof config[...] === string ? ... : none' inline pattern (not readIssueSystem) -- this is US-003's explicit target ('sweep remaining none fixtures'), left untouched here on purpose to keep this story's diff to its named sites (ship-finalize.ts, ship-pr.ts, the new config module).",
+    "src/commands/setup.ts hit the file-size ratchet ceiling (838->839, one import line added for the re-exported IssueSystem type) and was bumped in scripts/file-size-budget.json with a CAM-236 tracker ref in the same commit."
   ],
-  "nextStoryContext": "US-002 is next: add src/config/issue-system.ts exporting readIssueSystem(config) returning IssueSystem, and wire ship-finalize.ts + ship-pr.ts off their local 'none' defaults/comparisons onto 'local'. The IssueSystem type now lives in src/commands/setup.ts as 'linear' | 'github' | 'local' (this story removed 'none' from the type, the readline prompt, ISSUE_SYSTEMS validator array, and the Ink ISSUE_OPTIONS/defaultValue/issueLabel in SetupScreen.tsx). Elsewhere in the codebase issue_system is read as a loose string (typeof config['issue_system'] === 'string' ? ... : 'none') so nothing else broke typecheck from this rename; those loose-string default fallbacks ('none') are exactly what US-002/US-003 need to flip to 'local'.",
+  "nextStoryContext": "US-003 is next: wire issue-list.ts to readIssueSystem (src/config/issue-system.ts, added this story) and sweep any other remaining scattered 'none' reads/fixtures across the codebase (grep '\\'none\\'' and 'issue_system' outside vendor/templates). Known site: src/commands/issue-list.ts:166 ('none' fallback + :168 'linear'||'github' branch feeding backendHint/emitSectionHeading) -- readIssueSystem now throws on invalid values instead of defaulting, so any call site that currently treats an absent/invalid issue_system as an inert 'none' sentinel needs to decide whether 'local' is a no-op branch (skip the Linear/GitHub-only summary block) or needs its own explicit handling. IssueSystem type now lives in src/config/issue-system.ts (readIssueSystem(config: Record<string,unknown>): IssueSystem, throws on invalid incl. legacy 'none'); src/commands/setup.ts re-exports it for existing importers (SetupScreen.tsx). project.toml/docs/templates/CHANGELOG none->local migration is US-004's explicit scope, not US-003's.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure string-literal rename ('none'->'local') across an internal type union, a readline choices array, and Ink Select options/defaultValue; no new API surface of Ink, readline, or any external library was exercised."
+      "summary": "Pure internal config-reader addition (readIssueSystem) plus string-literal rename ('none'->'local') in comparisons/comments across two existing modules and their tests; no new API surface of any external library (js-yaml, Bun.TOML, Ink, etc.) was exercised."
     }
   ]
 }
