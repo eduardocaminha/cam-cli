@@ -1,6 +1,7 @@
 import type { IssueEntry } from "./types.ts";
 import { checkReferentialIntegrity } from "./graph.ts";
 import { rankIssues } from "./rank.ts";
+import { isSpecifiedOpen } from "./plannable.ts";
 
 /**
  * The kind of hard failure detected by the graph gate.
@@ -147,7 +148,7 @@ export function runGraphGate(backlog: IssueEntry[]): GateResult {
 
 	// Step 2: Collect cross-stage blocker warnings.
 	const universeIds = new Set(
-		backlog.filter((e) => e.stage === "specified" && e.status === "open").map((e) => e.id),
+		backlog.filter((e) => isSpecifiedOpen(e)).map((e) => e.id),
 	);
 	const byId = new Map(backlog.map((e) => [e.id, e]));
 	const warnings = collectCrossStageWarnings(backlog, universeIds, byId);

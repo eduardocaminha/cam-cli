@@ -1,4 +1,5 @@
 import type { IssueEntry } from "./types.ts";
+import { isSpecifiedOpen } from "./plannable.ts";
 
 /**
  * Result entry for a single ranked issue.
@@ -209,9 +210,7 @@ function runKahn(
  * @returns        RankResult with ranked entries, warnings, and residual cycle ids.
  */
 export function rankIssues(backlog: IssueEntry[]): RankResult {
-	const universe = backlog.filter(
-		(issue) => issue.stage === "specified" && issue.status === "open",
-	);
+	const universe = backlog.filter((issue) => isSpecifiedOpen(issue));
 
 	if (universe.length === 0) {
 		return { ranked: [], warnings: [], residualIds: [] };

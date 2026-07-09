@@ -1,7 +1,9 @@
 import type { IssueEntry } from "./types.ts";
-import { isBlocked } from "./graph.ts";
 import { computeWsjf } from "./rank.ts";
 import { readBacklogFromMain, type BacklogSpawnFn } from "./backlog.ts";
+import { isPlannable, isSpecifiedOpen } from "./plannable.ts";
+
+export { isPlannable, isSpecifiedOpen };
 
 /**
  * Parses the numeric suffix from an issue id (e.g. "CAM-12" -> 12).
@@ -48,8 +50,8 @@ function pickUnrankedChampion(unranked: IssueEntry[]): IssueEntry | undefined {
  * Returns the single highest-priority plannable issue from a backlog,
  * or null when no issue qualifies.
  *
- * Qualification filter:
- *   stage === 'specified' AND status === 'open' AND not blocked
+ * Qualification filter: isPlannable (specified+open, not blocked; see
+ * plannable.ts).
  *
  * Selection is champion-vs-champion (US-001, CAM-203): a pairwise comparator
  * mixing both-ranked-by-rank with mixed-by-WSJF is NOT a total order, so we
@@ -64,12 +66,7 @@ function pickUnrankedChampion(unranked: IssueEntry[]): IssueEntry | undefined {
 export function selectPlannableIssue(
 	backlog: IssueEntry[],
 ): IssueEntry | null {
-	const candidates = backlog.filter(
-		(issue) =>
-			issue.stage === "specified" &&
-			issue.status === "open" &&
-			!isBlocked(issue, backlog),
-	);
+	const candidates = backlog.filter((issue) => isPlannable(issue, backlog));
 
 	if (candidates.length === 0) return null;
 
@@ -117,8 +114,8 @@ export function selectPlannableFromFile(
  * Target-aware plannable selector (US-001, CAM-154).
  *
  * Given a target issue id, returns that exact IssueEntry when it is present in
- * the backlog AND qualifies as plannable (stage === 'specified', status === 'open',
- * not blocked by an unshipped dependency).
+ * the backlog AND qualifies as plannable (isPlannable: specified+open, not
+ * blocked by an unshipped dependency).
  *
  * Returns null (NEVER falls back to top-of-queue) when:
  *   - the id is absent from the backlog, or
@@ -132,11 +129,7 @@ export function selectPlannableById(
 ): IssueEntry | null {
 	const entry = backlog.find((issue) => issue.id === targetId);
 	if (entry === undefined) return null;
-	const plannable =
-		entry.stage === "specified" &&
-		entry.status === "open" &&
-		!isBlocked(entry, backlog);
-	return plannable ? entry : null;
+	return isPlannable(entry, backlog) ? entry : null;
 }
 
 /**
