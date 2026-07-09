@@ -1,14 +1,14 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Fix version.ts comment and add package.json parity assert"
+    "id": "US-003",
+    "title": "Remove stale merge-watch comment and dead CAM_REVIEWER_STATUS branch"
   },
   "branchName": "cam/issue-233",
   "timestamp": "2026-07-09T00:00:00Z",
-  "modifiedFiles": ["src/version.ts", "test/version.test.ts", "scripts/file-size-budget.json"],
+  "modifiedFiles": ["src/release/merge-watch.ts", "src/supervisor/result.ts"],
   "openQuestions": [],
-  "nextStoryContext": "US-002 reworded the src/version.ts comment (no longer describes package.json's version field as hypothetical) and added a real parity test in test/version.test.ts that reads package.json via Bun.file(new URL('../package.json', import.meta.url)).json() and asserts pkg.version === CAM_VERSION strictly. Raised two file-size ceilings (src/version.ts 20->22, test/version.test.ts 84->91) with a tracker-ref entry in scripts/file-size-budget.json's _ref field per the established convention (see patterns.md ~line 432). No re-embed needed (non-templated files). US-003 (next story) targets a stale merge-watch comment + dead CAM_REVIEWER_STATUS branch -- unrelated surface, no shared state with US-002.",
+  "nextStoryContext": "US-003 reworded the merge-watch.ts doc-comment (the watch-state file is written by the orchestrator's ci-gated ship step, runShipPrStep in src/release/ship-pr.ts, not a nonexistent 'cam-ship.md Step 7') and removed the dead CAM_REVIEWER_STATUS regex branch plus its orphaned doc-comment line from parseAnySentinel in src/supervisor/result.ts (no prompt ever emits that sentinel; confirmed via repo-wide grep before deletion, only src/supervisor/result.ts itself and PRD/handoff/issue JSON referenced the string). The AnySentinelSource union type still carries a 'reviewer' member for now (not required by the story's oracle, which only greps for the literal string 'CAM_REVIEWER_STATUS'; left alone per surgical-changes scope). US-004 (next story) targets ADR supersession banners in docs/adr/0004, 0006, 0008 -- unrelated surface, no shared state with US-003.",
   "officialDocsValidated": [
-    { "lib": "bun", "url": "https://bun.com/docs/api/file-io", "fetchedAt": "2026-07-09T00:00:00Z", "status": "aligned", "summary": "Bun.file(path).json() confirmed to return a Promise resolving the file's parsed JSON contents; accepts string paths and file:// URLs, matching the implementation." }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }

@@ -52,7 +52,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/release/merge-watch.ts (comment ~line 288), src/supervisor/result.ts (dead branch ~line 398 plus the CAM_REVIEWER_STATUS doc line ~387). Both audit-authorized dead-removals, not speculative cleanup. Non-templated source, NO re-embed. Verify no other source or test references the removed branch (grep repo for CAM_REVIEWER_STATUS) before deleting; if a test asserts on it, update that test."
     },
