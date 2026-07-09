@@ -11,7 +11,6 @@ tools:
   - Bash
   - WebFetch
   - WebSearch
-  - NotebookEdit
 disallowedTools:
   - AskUserQuestion
 color: blue
@@ -127,7 +126,7 @@ For a story that touches an external library (e.g. `js-yaml`):
 3. Compare the fetched answer against your code.
 4. Record the entry in `handoff.json.officialDocsValidated[]`:
    ```json
-   { "lib": "js-yaml", "version": "4.x", "url": "https://github.com/nodeca/js-yaml", "fetchedAt": "2026-04-27T22:00:00Z", "status": "ok", "summary": "v4 API confirmed matches implementation." }
+   { "lib": "js-yaml", "url": "https://github.com/nodeca/js-yaml", "fetchedAt": "2026-04-27T22:00:00Z", "status": "aligned", "summary": "v4 API confirmed matches implementation." }
    ```
 5. If the fetch revealed a mismatch, revert `passes: true`, fix the code, re-run quality gates, commit a follow-up `fix: [Story ID] - correct <issue>`, and record `status: "corrected"`.
 

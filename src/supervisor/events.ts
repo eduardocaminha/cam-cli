@@ -87,6 +87,11 @@ import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
  *     SUGGESTION-follow-up-filing hook runs and has something to report (at
  *     least one filed, dup-skipped, or failed finding). See
  *     SuggestionFiledEventDetail.
+ *   - 'handoff-schema-warning' (US-002): emitted where the supervisor reads
+ *     the handoff, when handoff.officialDocsValidated contains an entry with
+ *     an invalid `status` (not one of the handoff.schema.json enum values) or
+ *     an unknown object key. Warn-only, non-fatal: it NEVER halts the loop.
+ *     See HandoffSchemaWarningEventDetail and validateOfficialDocsValidated.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -121,7 +126,8 @@ export type WorkerEventKind =
 	| 'plan-escalated'
 	| 'plan-target-invalid'
 	| 'merge-watch-poll-error'
-	| 'suggestion-filed';
+	| 'suggestion-filed'
+	| 'handoff-schema-warning';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -429,6 +435,24 @@ export interface SuggestionFiledEventDetail {
 	failedCount: number;
 }
 
+/**
+ * 'handoff-schema-warning' event detail: one schema violation found in a
+ * handoff.officialDocsValidated entry (US-002). Warn-only — never blocks the
+ * loop, never coerces the offending entry.
+ *   - field: which handoff field the violation was found in (always
+ *     'officialDocsValidated' today; kept as a string so the guard can be
+ *     reused for other handoff fields later without a shape change).
+ *   - index: index of the offending entry within the array.
+ *   - issues: human-readable descriptions of every issue found on that one
+ *     entry (e.g. an invalid status AND an unknown key both collapse into
+ *     this single warning's issues list, per AC: one entry -> one warning).
+ */
+export interface HandoffSchemaWarningEventDetail {
+	field: string;
+	index: number;
+	issues: string[];
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -452,6 +476,7 @@ export type WorkerEventDetail =
 	| PlanEscalatedEventDetail
 	| PlanTargetInvalidEventDetail
 	| SuggestionFiledEventDetail
+	| HandoffSchemaWarningEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */
@@ -537,6 +562,67 @@ export function buildResultDetail(
 		gates: { typecheck: gate, tests: gate },
 		docsValidated,
 	};
+}
+
+/**
+ * Valid `status` values for a handoff.officialDocsValidated entry. Source of
+ * truth: the `status` enum in scripts/cam/handoff.schema.json.
+ */
+export const OFFICIAL_DOCS_VALIDATED_STATUSES = [
+	'aligned',
+	'corrected',
+	'no_external_lib_touched',
+	'fetch_failed',
+] as const;
+
+/**
+ * Keys allowed on a handoff.officialDocsValidated entry. Source of truth: the
+ * item schema's properties in scripts/cam/handoff.schema.json, which sets
+ * `additionalProperties: false`.
+ */
+const OFFICIAL_DOCS_VALIDATED_ALLOWED_KEYS = new Set(['lib', 'status', 'url', 'fetchedAt', 'summary']);
+
+/**
+ * Targeted, hand-rolled schema guard for handoff.officialDocsValidated
+ * (US-002). Checks each entry's `status` against OFFICIAL_DOCS_VALIDATED_STATUSES
+ * and flags any key not in OFFICIAL_DOCS_VALIDATED_ALLOWED_KEYS. This closes the
+ * gap left by the loose `status ?? 'unknown'` reads elsewhere in this module
+ * (and in loop.ts) that silently swallow a malformed entry: the loose default
+ * stays as-is (this guard only warns, it never tightens what downstream
+ * consumers accept).
+ *
+ * Warn-only by design: returns a list of violations for the caller to log via
+ * a 'handoff-schema-warning' event. Never throws, never signals a hard
+ * failure — a schema-invalid Step-5.5 entry must not halt an otherwise-healthy
+ * loop. One offending entry collapses ALL of its issues (bad status, unknown
+ * keys) into a single warning, per the one-entry-one-warning contract.
+ *
+ * Returns [] when `entries` is absent or every entry is conformant.
+ */
+export function validateOfficialDocsValidated(entries: unknown): HandoffSchemaWarningEventDetail[] {
+	if (!Array.isArray(entries)) return [];
+	const warnings: HandoffSchemaWarningEventDetail[] = [];
+	entries.forEach((raw, index) => {
+		if (raw === null || typeof raw !== 'object') {
+			warnings.push({ field: 'officialDocsValidated', index, issues: ['entry is not an object'] });
+			return;
+		}
+		const entry = raw as Record<string, unknown>;
+		const issues: string[] = [];
+		const status = entry.status;
+		if (typeof status !== 'string' || !(OFFICIAL_DOCS_VALIDATED_STATUSES as readonly string[]).includes(status)) {
+			issues.push(`invalid status: ${JSON.stringify(status)}`);
+		}
+		for (const key of Object.keys(entry)) {
+			if (!OFFICIAL_DOCS_VALIDATED_ALLOWED_KEYS.has(key)) {
+				issues.push(`unknown key: ${key}`);
+			}
+		}
+		if (issues.length > 0) {
+			warnings.push({ field: 'officialDocsValidated', index, issues });
+		}
+	});
+	return warnings;
 }
 
 /**

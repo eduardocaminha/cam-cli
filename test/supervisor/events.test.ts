@@ -15,6 +15,8 @@ import {
 	makeFileEventLogger,
 	makeInMemoryEventLogger,
 	readWorkerTokens,
+	validateOfficialDocsValidated,
+	type HandoffSchemaWarningEventDetail,
 	type PushEventDetail,
 	type ReviewVerdictHandbackEventDetail,
 	type WorkerEvent,
@@ -149,6 +151,50 @@ describe('buildResultDetail', () => {
 		});
 		expect(detail.docsValidated).toEqual([{ lib: 'none', status: 'no_external_lib_touched' }]);
 		expect(detail.docsValidated[0]).not.toHaveProperty('url');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// validateOfficialDocsValidated (US-002)
+// ---------------------------------------------------------------------------
+
+describe('validateOfficialDocsValidated', () => {
+	test('conformant entries produce no warnings', () => {
+		const warnings = validateOfficialDocsValidated([
+			{ lib: 'ink', status: 'aligned', url: 'https://ink' },
+			{ lib: 'none', status: 'no_external_lib_touched' },
+		]);
+		expect(warnings).toEqual([]);
+	});
+
+	test('a bad status AND an extra key on one entry collapse into exactly one warning', () => {
+		const warnings = validateOfficialDocsValidated([
+			{ lib: 'js-yaml', status: 'not-a-real-status', version: '4.1.0' },
+		]);
+		expect(warnings).toHaveLength(1);
+		const warning = warnings[0] as HandoffSchemaWarningEventDetail;
+		expect(warning.field).toBe('officialDocsValidated');
+		expect(warning.index).toBe(0);
+		expect(warning.issues.some((i) => i.includes('invalid status'))).toBe(true);
+		expect(warning.issues.some((i) => i.includes('unknown key: version'))).toBe(true);
+	});
+
+	test('one warning per offending entry when multiple entries are invalid', () => {
+		const warnings = validateOfficialDocsValidated([
+			{ lib: 'ok', status: 'aligned' },
+			{ lib: 'bad', status: 'bogus' },
+			{ lib: 'also-bad', status: 'aligned', version: '1.0.0' },
+		]);
+		expect(warnings).toHaveLength(2);
+		expect(warnings.map((w) => w.index)).toEqual([1, 2]);
+	});
+
+	test('absent entries produce no warnings', () => {
+		expect(validateOfficialDocsValidated(undefined)).toEqual([]);
+	});
+
+	test('non-array input produces no warnings', () => {
+		expect(validateOfficialDocsValidated({ lib: 'x' })).toEqual([]);
 	});
 });
 
@@ -374,6 +420,58 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 		const secondDetail = second.detail as ReviewVerdictHandbackEventDetail;
 		expect(secondDetail.verdict).toBe('CLEAN');
 		expect(secondDetail.round).toBe(2);
+	});
+
+	// ---------------------------------------------------------------------------
+	// 'handoff-schema-warning' event (US-002)
+	// ---------------------------------------------------------------------------
+
+	test("emits exactly one 'handoff-schema-warning' for a schema-invalid officialDocsValidated entry, and still completes", async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+
+		const prdReturns: PrdSnapshot[] = [
+			prd(false),
+			prd(true),
+			prd(true, { roundsCompleted: 1, lastVerdict: 'CLEAN' }),
+		];
+		let prdCall = 0;
+
+		const handoff = {
+			lastCompletedStory: { id: 'US-001', title: 'Story US-001' },
+			officialDocsValidated: [{ lib: 'js-yaml', status: 'not-a-real-status', version: '4.1.0' }],
+		};
+
+		const opts: RunSupervisorOptions = {
+			spawn: () => ({ stdout: '', exitCode: 0 }),
+			capturePane: () => 'done\nCAM_IMPLEMENTER_STATUS=DONE story=US-001\n',
+			readPrd: () => prdReturns[prdCall++] ?? null,
+			writePrd: () => {},
+			readHandoff: () => handoff,
+			clock: () => '2026-07-09T00:00:00Z',
+			genUuid: () => FIXED_UUID,
+			reviewDispatch: () => ({ status: 'ok', detail: 'review ok' }),
+			writeSessionMarker: () => {},
+			isPaneAlive: () => true,
+			workerPaneId: '%3',
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			permissionMode: 'bypassPermissions',
+			taskPrompt: 'Implement the next story.',
+			sleepFn: (_ms) => {},
+			nowMs: () => 0,
+			logEvent: logger,
+		};
+
+		// The guard must never halt an otherwise-healthy loop.
+		const result = await runSupervisor(opts);
+		expect(result.status).toBe('complete');
+
+		const warnings = events.filter((e) => e.kind === 'handoff-schema-warning');
+		expect(warnings).toHaveLength(1);
+		const detail = warnings[0]?.detail as HandoffSchemaWarningEventDetail;
+		expect(detail.field).toBe('officialDocsValidated');
+		expect(detail.index).toBe(0);
+		expect(detail.issues.length).toBeGreaterThanOrEqual(2);
 	});
 
 	test('no events emitted when logEvent is absent (zero behavior change)', async () => {

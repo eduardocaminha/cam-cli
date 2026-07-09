@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.103.0] - 2026-07-09
+
+### Added
+
+- US-002 - Add warn-level runtime guard for handoff.officialDocsValidated
+- US-001 - Fix Step 5.5 example + cut NotebookEdit in implementer (both copies) and re-embed
+
 ## [0.102.0] - 2026-07-09
 
 ### Added
