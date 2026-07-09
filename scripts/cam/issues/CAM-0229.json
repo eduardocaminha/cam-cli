@@ -1,9 +1,34 @@
 {
   "id": "CAM-229",
   "title": "Implementer Step 5.5: exemplo emite handoff schema-invalido (status ok + campo version)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T23:05:50.672Z",
-  "description": "O worked example do Step 5.5 em subagent-implementer.md:129 (ambas copias + embed em src/vendor/_generated.ts) instrui gravar officialDocsValidated com status: ok e campo version. O schema (scripts/cam/handoff.schema.json:67) define enum [aligned, corrected, no_external_lib_touched, fetch_failed] (ok nao e membro) e additionalProperties:false (version proibido). Nenhum validador runtime confere (loop.ts:168 e events.ts:478 leem status?: string frouxo), entao o implementer grava handoff schema-invalido SILENCIOSAMENTE toda story. Decidir: (a) consertar o exemplo pra status: aligned e dropar version (minimo), (b) adicionar version ao schema se a informacao e util, (c) adicionar validacao runtime do handoff contra o schema pra essa classe nunca voltar. Origem: auditoria docs 2026-07-08."
+  "description": "O worked example do Step 5.5 em subagent-implementer.md:129 (ambas copias + embed em src/vendor/_generated.ts) instrui gravar officialDocsValidated com status: ok e campo version. O schema (scripts/cam/handoff.schema.json:67) define enum [aligned, corrected, no_external_lib_touched, fetch_failed] (ok nao e membro) e additionalProperties:false (version proibido). Nenhum validador runtime confere (loop.ts:168 e events.ts:478 leem status?: string frouxo), entao o implementer grava handoff schema-invalido SILENCIOSAMENTE toda story. Decidir: (a) consertar o exemplo pra status: aligned e dropar version (minimo), (b) adicionar version ao schema se a informacao e util, (c) adicionar validacao runtime do handoff contra o schema pra essa classe nunca voltar. Origem: auditoria docs 2026-07-08.",
+  "spec": {
+    "scope": "Fix the Step 5.5 worked example that instructs writing a schema-invalid handoff, add a warn-level runtime guard so the class cannot silently recur, and cut the implementer's one definitively-unused tool grant. Files: subagent-implementer.md (Step 5.5 example + frontmatter NotebookEdit cut, BOTH copies) + re-embed src/vendor/_generated.ts via `bun run embed-vendor`; src/supervisor/loop.ts and/or src/supervisor/events.ts (warn-level validation of officialDocsValidated) + a test. Out of scope: adding `version` to the schema (rejected as noise), cutting implementer WebSearch (kept — may be needed to find the Step 5.5 docs URL), a full JSON-schema validator dependency (ajv) — the guard is a targeted check.",
+    "acceptanceCriteria": [
+      "The Step 5.5 worked example in subagent-implementer.md (both copies) writes officialDocsValidated entries with status: \"aligned\" (a valid enum member) and NO `version` field, matching scripts/cam/handoff.schema.json (enum [aligned, corrected, no_external_lib_touched, fetch_failed], additionalProperties:false).",
+      "A warn-level runtime guard validates handoff.officialDocsValidated where the supervisor reads the handoff: each entry's status is checked against the enum and unknown keys are detected; a violation emits a warning event (never a hard failure that halts the loop). With a conformant handoff the guard is silent.",
+      "The guard is a targeted check (no new dependency such as ajv is added).",
+      "The implementer frontmatter no longer grants NotebookEdit in either copy; WebSearch and WebFetch are retained.",
+      "A unit test covers the guard: a schema-invalid officialDocsValidated entry (bad status and/or extra key) produces the warning, and a conformant entry does not.",
+      "`bun run embed-vendor:check` passes (re-embed applied), vendor/check-agent-frontmatter.ts passes, and `bun run typecheck` and `bun test` are green."
+    ],
+    "gotchas": [
+      "handoff.schema.json officialDocsValidated item has additionalProperties:false and status enum [aligned, corrected, no_external_lib_touched, fetch_failed]; the current example emits status:ok + version, both invalid.",
+      "Runtime consumers (loop.ts:168, events.ts:478/530) read status?: string loosely and default to 'unknown', which is exactly why the invalid handoff was written silently every story — the guard closes that gap.",
+      "Do NOT cut implementer WebSearch: finding the Step 5.5 docs URL may legitimately use it. The audit's 'body only uses WebFetch' is a text-inference of the same kind that wrongly flagged orchestrator WebFetch; only NotebookEdit (no notebooks in a Bun CLI) is a confirmed-unused grant.",
+      "The guard must warn, not hard-fail: a hard failure on a minor handoff deviation would halt an otherwise-healthy loop."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 2,
+    "riskReduction": 6,
+    "jobSize": 3
+  },
+  "type": "fix"
 }
