@@ -1,0 +1,9 @@
+{
+  "id": "CAM-252",
+  "title": "US-006b's AC narrative asked to remove the Step 1 Gather-context + Task() secti…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T19:29:26.723Z",
+  "description": "US-006b's AC narrative asked to remove the Step 1 Gather-context + Task() section, but the implementer correctly reframed it (the manual /cam-review path is live, not dead, per src/commands/review.ts). The doc still contains both a 'manual/on-demand only' framing paragraph and the full Step 0-5 flow; a future pass could tighten wording so the 'manual path' scoping is unmistakable at the section headers, not just the intro paragraph.\n\nSource: cam/issue-233\nReview round: 1\nLocation: .claude/commands/cam-review.md\n\nsuggestion-fingerprint: 9dda4cdf6e79"
+}
