@@ -1,7 +1,7 @@
 {
   "id": "CAM-227",
   "title": "Template do orquestrador: Write em disallowedTools contradiz o corpo + enforcement advisory",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-225"
