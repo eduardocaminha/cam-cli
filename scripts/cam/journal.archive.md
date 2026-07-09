@@ -740,3 +740,203 @@ oldest-first. This file is read-only history: do not edit by hand.
 - **Decisions**: Planned via bare cam plan (CAM-154 was top-of-queue at rank 9). plan_approval=auto cascaded straight to ship. issueNumber came out as the STRING 'CAM-154'.
 - **Blockers encountered**: Self-inflicted PR BEHIND: I closed CAM-154 on main by hand (CAM-113 workaround, since finalize closed the phantom CAM-0 because issueNumber was the string 'CAM-154') BEFORE the PR merged, which advanced main; cleared with gh pr update-branch. Sequencing lesson: do the manual close only AFTER merge, or fix CAM-113.
 - **Follow-ups**: Dogfooding revealed CAM-154 shipped FUNCTIONALLY INCOMPLETE (fixed by CAM-157): the selector was threaded but the planner still ignores it. Auditor findings F-01 (bare-plan pins the CLI-time top id) and F-02 (distinct escalation for sidecar-rejected targets) folded into CAM-157 scope.
+
+## cam/CAM-157-plan-runner-authoritative-target — plan-runner authoritative target (planner obeys the selected issue)
+
+- **Started**: 2026-07-02
+- **Closed**: 2026-07-02
+- **Branch**: cam/CAM-157-plan-runner-authoritative-target
+- **Issue**: CAM-157
+- **Outcome**: shipped (PR #117, v0.44.0, merged+tagged; sidecar rebuilt to 0.44.0)
+- **Summary**: Completes CAM-154. Root cause: runPlanPhase selected the target issue (selectIssueFn) but spawned the planner with the generic DEFAULT_PLANNER_TASK_PROMPT, so the subagent-planner re-selected top-of-queue and cam plan --issue N planned the WRONG issue. US-001 threads the selected issue.id into the planner task prompt and adds a real-tmux e2e regression test (plan-runner-target-obey) asserting prd.issueNumber == target: the gate that let CAM-154 ship broken (unit tests mocked selectIssueFn). US-002 makes subagent-planner honor an explicit target id (both .claude/ and templates/ copies + re-embed). 2695 pass, CLEAN round 1.
+- **Decisions**: Filed as P1 (a shipped feature that did not work). Operator directive: no gambiarras, robust root-cause fix, shortcuts only to unblock. Planned via bare cam plan after ranking CAM-157 to rank 1: legitimate (it genuinely was the top priority; bare-plan picking top-of-queue is designed behavior, not a workaround for the broken --issue). issueNumber came out NUMERIC (157) -> finalize closed correctly, no CAM-113/BEHIND.
+- **Blockers encountered**: First cam plan 121 attempt halted silently: runPlanPreflight clean-tree failed on 2 orphan .claude/cam-plan-out-*.log files left by the prior cycle (not gitignored). Isolated by probing the selector (correct) then reading the preflight. Filed CAM-158 (gitignore) and CAM-159 (preflight halt emits no event).
+- **Follow-ups**: Validated in production after rebuild: cam plan 121 planned CAM-121 (issueNumber 121), not top-of-queue CAM-85. CAM-158 and CAM-159 open. cam plan takes a POSITIONAL number (cam plan 121); there is no --issue flag.
+
+## cam/pr-121-post-merge-issue-close — relocate none-backend issue-close to post-merge + robust issueNumber resolution (subsumes CAM-113)
+
+- **Started**: 2026-07-02
+- **Closed**: 2026-07-02
+- **Branch**: cam/pr-121-post-merge-issue-close
+- **Issue**: CAM-121
+- **Outcome**: shipped (PR #118, v0.45.0, merged+tagged; sidecar rebuilt to 0.45.0)
+- **Summary**: Original session goal; umbrella fix subsuming CAM-113. resolveIssueId (US-001) resolves prd.issueNumber whether string ('CAM-154') or number (42) to the canonical id, never the phantom prefix-0. The none-backend close relocates from ship-finalize (branch copy) to the post-merge step on main via closeIssueOnMain (US-003, commit-tree, fail-loud), with the issueId threaded through .cam-merge-watch.json (US-002/004). US-005 closes it in the ci-gated post-merge; US-006 documents both merge modes. Eliminates BY CONSTRUCTION the pre-merge main push that causes BEHIND and the stale-branch-copy clobber. 6 stories + 1 reviewer fix, 2759 pass, CLEAN round 2.
+- **Decisions**: Planned via cam plan 121 (targeting works post-CAM-157: issueNumber 121). Close deferred to post-merge for both ci-gated (runPostMerge) and immediate (cam-ship.md inline closeIssueOnMain) modes. Stash gated by issueSystem===none so github/linear are untouched.
+- **Blockers encountered**: Review round 1 FIXES_PENDING:1 caught a REAL github/linear regression: finalize stashed the issueId gated only by issueId!=null, so a non-none backend in ci-gated mode would call closeIssueOnMain against the none store and get a spurious not-found. US-R1-001 gated the stash behind issueSystem===none. Tests missed it (the AC5 github/linear tests used a no-op stashFn default).
+- **Follow-ups**: This PR's own ship ran the OLD finalize (installed binary was 0.44.0) -> closed CAM-121 on the branch (issueNumber numeric, clean, no BEHIND); the new stash+post-merge path activates for future ships after the 0.45.0 rebuild (done). CAM-158 (gitignore cam-plan-out logs) and CAM-159 (preflight halt observability) remain open. Operational: hand-spawn the sidecar via nohup+disown, never the harness run_in_background (it gets reaped).
+
+## cam/CAM-158-plan-preflight-hardening — plan-preflight hardening: gitignore logs + emit preflight-failed event (subsume CAM-159)
+
+- **Started**: 2026-07-02
+- **Closed**: 2026-07-02
+- **Branch**: cam/pr-158-plan-preflight-hardening
+- **Issue**: CAM-158
+- **Outcome**: shipped (PR #119, v0.46.0, merged+tagged; sidecar rebuilt to 0.46.0)
+- **Summary**: Dois fixes de robustez no plan pre-flight surfacados dogfooding CAM-121. US-001: .gitignore ganha .claude/cam-plan-out-*.log (espelho do .cam-worker-out-*.log, CAM-68), impedindo que logs do pipe-pane do planner/auditor sujam git status --porcelain e tripeiem o step clean-tree. US-002: WorkerEventKind ganha 'plan-preflight-failed'; runPlanPhase emite o evento via logEvent existente quando preflightFn retorna ok:false, paridade com sidecar-exit/spawn-resolution. CAM-159 subsuido e fechado. 2761 pass, check:all verde, review CLEAN round 1.
+- **Decisions**: Planejado via cam plan 158 (targeting ok, numeric issueNumber, sem BEHIND). Auditor APROVOU com 2 suggestions nao-bloqueantes: F-01 cosmtico, F-02 (templates/.gitignore, filado como CAM-160). Ship: race condition merge-watch -- finalizeFn escreveu {issueId} mas sidecar idle deletou (consume-on-read) antes do step pos-PR; corrigi manualmente; filei CAM-161 pro fix de raiz. Post-merge automatico fechou CAM-158 (stage:shipped); CAM-159 fechado manualmente.
+- **Blockers encountered**: Race condition merge-watch: issueId perdido na escritadel race com sidecar poll; workaround manual na ship. CAM-161 filado.
+
+## cam/CAM-162-orch-recycle-core — autonomous orchestrator recycle CORE: marker + wrapper SIGTERM + explicit rehydrate (CAM-141)
+
+- **Started**: 2026-07-02
+- **Closed**: 2026-07-02
+- **Branch**: cam/pr-162-orch-recycle-core
+- **Issue**: CAM-162
+- **Outcome**: shipped (PR #120, v0.47.0, merged+tagged; sidecar rebuilt to 0.47.0)
+- **Summary**: Completa o loop autonomo do CAM-23: no cycle-close o orquestrador recicla (termina+respawna fresco) sem /exit manual. Fato confirmado (claude-code-guide+docs): hooks/in-session NAO encerram sessao interativa -> dono = wrapper cam run, mecanismo = SIGTERM gracioso no PID do claude, NAO send-keys/hook/sidecar. Marker dedicado .cam-orch-recycle armado por `cam journal append --cycle-close` (flag nova, discriminador distinto de --force e handoff-presence). Watcher em modulo separado orch-recycle-watch.ts; entrega explicita do handoff via CAM_ORCH_REHYDRATE no respawn (fix robusto do CAM-141: presenca-de-arquivo deixa de ser sinal). 7 stories + 3 review-fix (US-R1-001 orphan watcher no cam stop; US-R2-001 file-size; US-R2-002 gitignore runtime files), review CLEAN round 3. Split: o token backstop de ocupacao saiu pra CAM-163 (blocked-by).
+- **Decisions**: Operador escolheu recycle IMEDIATO no cycle-close (um PR por sessao; habilita tokens/sessao como metrica de esforco). Design via grill: modelo=julgamento (escreve handoff), wrapper=mecanismo (deterministico). 3 plan-BLOCKs antes de convergir (auditor pegou: check:all por-story, SIGTERM=operator-ceremony, cumulative-vs-occupancy critical no backstop) -> split do backstop pra CAM-163 + fixes precisos (flag --cycle-close, watcher module) -> APPROVE. Auto-recycle so ativa no proximo cam run (watcher spawnado pelo wrapper novo).
+- **Blockers encountered**: 3 plan-BLOCKs (superficie de 8 stories grande demais + subespecificacao minha do discriminador de journal-append); resolvido splitando o backstop e codificando o flag --cycle-close explicito. Ship: o race do merge-watch (CAM-161) recorreu (issueId consumido entre finalize e PR) -> fix manual. Add/add conflict em CAM-0164.json: o worker de US-004 criou o issue file direto (hook nao bloqueia Write), colidindo com o meu cam issue --file-local -> resolvido mantendo a versao do main.
+
+## cam/CAM-163-orch-context-backstop — occupancy backstop for orchestrator recycle watcher (completes CAM-162)
+
+- **Started**: 2026-07-03
+- **Closed**: 2026-07-03
+- **Branch**: cam/CAM-163-orch-context-backstop
+- **Issue**: CAM-163
+- **Outcome**: shipped (PR #122, v0.49.0, merged+tagged; binary reinstalled and sidecar hot-swapped to 0.49.0)
+- **Summary**: Recycle watcher now reads the orchestrator transcript LAST-request context occupancy (parseContextOccupancy, US-001), maps model to context window with ORCH_CONTEXT_BACKSTOP_FRACTION (US-002), and arms ORCH_RECYCLE_MARKER via an injectable armMarkerFn seam when the session crosses the ceiling (US-003). 3 stories, 2825 pass, check:all green, auditor APPROVE (2 important AC-oracle findings), review CLEAN round 1. Backstop only arms on the next cam run (watcher is wrapper-spawned).
+- **Decisions**: Operator chose to ship with the known F-01 defect (off-convention test file) and consolidate post-merge: filed CAM-169. plan_approval auto cascaded plan to implement without pause. PR ops ran with env -u GITHUB_TOKEN pending PAT fix, then the operator rotated the .env PAT mid-cycle.
+- **Blockers encountered**: Merge-watch never detected MERGED: the sidecar inherited a stale revoked GITHUB_TOKEN at spawn (process env beats .env; gh 401 is treated as a silent transient null forever, pollCount 40+). Diagnosis: reproduced the exact pollFn call per-token; fix: respawn sidecar with the token explicitly injected from .env (two respawns, the first inherited the same stale token from the orchestrator shell). Filed CAM-170 (emit poll-error event after N consecutive nulls). F-01 materialized exactly as the auditor predicted and review round 1 CLEAN missed it (CAM-169).
+- **Follow-ups**: CAM-169 (consolidate watcher tests into test/commands/), CAM-170 (merge-watch poll observability), CAM-168 confirmed still open in 0.49.0 (cam journal append has no --cycle-close flag; autonomous recycle self-trigger not armed), CAM-163 backstop goes live for the orchestrator only on the next cam run.
+
+## cam/pr-168-recycle-self-trigger-arm — harden autonomous recycle self-trigger (refuse-to-arm, boot cleanup, doc disambiguation)
+
+- **Started**: 2026-07-03
+- **Closed**: 2026-07-03
+- **Branch**: cam/pr-168-recycle-self-trigger-arm
+- **Issue**: CAM-168
+- **Outcome**: shipped (PR #123, v0.50.0, squash-merged + tagged local/remote; autonomous post-merge via sidecar 52439, CAM-168 stage:shipped)
+- **Summary**: CAM-168's original premise was stale: it asked to add a writer that arms the recycle marker, but CAM-162 had already shipped `cam journal append --cycle-close` which arms ORCH_RECYCLE_MARKER when a handoff is present (index.ts:1176). Verified at runtime (comments-do-not-prove-behaviour lesson) rather than trusting the rehydrated handoff. Operator chose Option A: rescope to the real residual (harden the self-trigger), not close-as-done. 3 stories, review CLEAN round 1, 2829 pass, check:all green, auditor APPROVE. US-001: refuse-to-arm: `--cycle-close` now returns exit 4 when no live recycle watcher exists (was arming a marker no consumer would read), via injectable watcherAliveFn + sidecar-pid.ts watcherAlive + file-size-budget bump. US-002: cam run boot now clears a stale recycle marker on fresh start (the landmine where a leftover marker SIGTERMs the next fresh session). US-003: disambiguated the recycle-ceremony docs in both agent-file copies and re-embedded src/vendor/_generated.ts.
+- **Decisions**: Design fork resolved to refuse-to-arm (exit 4) over silently arming an unconsumed marker: arming without a live watcher is a latent landmine, so fail loud. Scope G1-G4 approved by operator; G4 (end-to-end recycle-ceremony validation on a fresh cam run) is an operator ceremony, hand-filed as a follow-up rather than auto-implemented. plan_approval auto cascaded plan to implement without pause.
+- **Blockers encountered**: Plan phase silently no-op'd on first phase:planning write (mutex-busy): a stale %3 reviewer pane left over from the CAM-163 ship gave 3 panes, so the plan-runner's exactly-2-pane mutex early-returned with no event and the sidecar consumed the signal silently. Fix: tmux -L cam kill-pane -t '%3', re-armed phase:planning with 2 panes. Ambient shell GITHUB_TOKEN was stale/revoked (inherited from cam run): all gh ops ran with env -u GITHUB_TOKEN (keyring gho_) and the sidecar was respawned with the .env token injected, avoiding the CAM-163 merge-watch 401 stall. autoShipFn fired a late duplicate /cam-ship after the manual ship was already done; ignored (would have double-bumped).
+- **Follow-ups**: Hand-file G4 (requires:operator): validate the full recycle ceremony end-to-end on a fresh cam run (watcher present, cycle-close arms marker, SIGTERM, respawn, rehydrate). Lesson to capture: a lingering reviewer pane from a just-shipped cycle silently blocks the next plan via the pane-count mutex with no emitted event; plan-runner should surface mutex-busy rather than return silently.
+
+## cam/pr-85-exponential-backoff-jitter — backoff exponencial-com-jitter no supervisor (jitter-only no cap=3); cap-raise adiado como CAM-171
+
+- **Started**: 2026-07-03
+- **Closed**: 2026-07-03
+- **Branch**: cam/pr-85-exponential-backoff-jitter
+- **Issue**: CAM-85
+- **Outcome**: shipped (PR #124, v0.51.0, squash-merged + tagged local/remote; post-merge autonomo via sidecar 8316, CAM-85 stage:shipped)
+- **Summary**: Trocou o backoff linear (NO_PROGRESS_BACKOFF_MS * streak) por exponencial-com-jitter via novo helper puro computeBackoffMs: min(MAX_BACKOFF_MS, base*2^(streak-1)) * (1 +/- JITTER_FRACTION). Os dois sites de retry (no-progress e dead-worker) roteiam por ele; randomFn injetavel (()=>0.5 = jitter zero nos testes). 2 stories (US-001 + a fix-round US-R1-001), 2836 pass, check:all verde, auditor APPROVE.
+- **Decisions**: Fork de escopo resolvida em jitter-only-agora + follow-up, NAO subir o cap dentro deste PR. Racional: o auditor mostrou (verificado no codigo) que com cap=3 o loop bloqueia NO streak 3 antes de dormir, entao so streaks 1 e 2 chegam ao sleep e para eles 2^(streak-1)={1,2} da a MESMA sequencia {60s,120s} do linear; a unica mudanca observavel entregue foi o jitter. Realizar a janela de 240s do proprio exemplo do CAM-85 exige subir MAX_*_RETRIES 3->4, que e uma decisao de politica de escalacao (tolera 1 streak a mais antes de escalar pro humano; ~4min mais tarde em falha genuina) separavel da mudanca de forma. Operador estava fora do teclado no gate; procedi com best-judgment = o PRD aprovado (Opcao A), que e honesto (docstrings dizem que hoje so o jitter muda) e nao faz mudanca de politica sem sign-off. B preservada como CAM-171, nao vaporware.
+- **Blockers encountered**: Pre-flight do plan achou 3 panes (%0 orch, %1 dashboard, %4 reviewer stale do ship do CAM-168): mesmo landmine mutex-busy do CAM-168; matei %4 antes de escrever phase:planning (proativo desta vez). Review round 1 FIXES_PENDING:1 (WARNING loop.ts:521): docstring do MAX_DEAD_WORKER_RETRIES ainda descrevia o linear removido; eu tinha identificado a mesma linha independentemente antes do reviewer. Loop auto-curou (implementer fix + re-review CLEAN round 2). Todas as ops gh com env -u GITHUB_TOKEN (token ambiente revogado). Sidecar 8316 (token .env injetado) fez o post-merge ci-gated sem stall.
+- **Follow-ups**: CAM-171 (subir retry cap 3->4 para realizar a janela de 240s; avaliar trade-off de escalacao mais lenta, ou fechar wont-fix se jitter-only basta). Coerencia binario/sidecar: sidecar 8316 ainda roda o binario 0.50.0; a mudanca do CAM-85 vive em src/supervisor/loop.ts (que o sidecar executa), mas e comportamentalmente inerte no cap=3 (so jitter), entao rebuild pra 0.51.0 e baixo-valor ate o cap subir. Nenhum rebuild urgente.
+
+## cam/pr-173-orch-pid-resolve — resolver o pid do orquestrador via pgrep -P para o SIGTERM do auto-recycle chegar no macOS
+
+- **Started**: 2026-07-03
+- **Closed**: 2026-07-03
+- **Branch**: cam/pr-173-orch-pid-resolve
+- **Issue**: CAM-173
+- **Outcome**: shipped (PR #125, v0.52.0, squash-merged + tagged local/remote; post-merge autonomo via sidecar 8316, CAM-173 stage:shipped)
+- **Summary**: Root cause P1 do auto-recycle nunca disparar no macOS: o watcher resolvia o pid do orquestrador via pgrep -f <sessionId>, mas o argv do claude inlined do orquestrador tem ~1384 bytes e excede a janela de argv que pgrep -f consegue casar no macOS, entao o lookup retornava vazio e o SIGTERM do recycle era descartado em silencio. Fix approach A (decidido pelo operador, nao re-litigado): o wrapper grava o proprio pid estavel em .cam-orch-pid (ORCH_PID_MARKER) e o watcher le o marker e resolve o claude child via pgrep -P <wrapper_pid> (lookup kernel pai-filho, imune a truncacao de argv, categoricamente diferente do string-match quebrado). O claude fica em FOREGROUND: rejeitei o & echo $! ; wait literal do texto do issue porque backgroundar um TUI redireciona stdin pra /dev/null / dispara SIGTTIN e mataria a interatividade. 5 stories, review CLEAN round 2, 2864 pass, check:all verde, auditor APPROVE. US-001: persiste o wrapper pid no marker (echo $ > .cam-orch-pid no buildOrchestratorPaneCommand; stop.ts remove no stop). US-002: resolve via pgrep -P com evento nao-silencioso de unresolved-pid. US-003: gitignora o marker nas 2 copias + re-embed src/vendor/_generated.ts (classe CAM-68). US-R1-001 (fix-round): exporta readWrapperPid/resolveChildViaPgrep com seam injetavel + testes unit diretos dos guards de parsing. US-R1-002 (fix-round): corrige comentario de header stale que ainda descrevia o pgrep -f. Oraculo real-process em test/integration/orch-recycle-pid-resolve.test.ts spawna wrapper+child reais e afirma que pgrep -P resolve o child.
+- **Decisions**: Approach A foi decisao do operador (foreground + marker deterministico), nao re-litigada A vs B. Preservei o claude em foreground contra o literal do issue (& wait) porque backgroundar TUI quebra stdin/interatividade: launch-readiness acima de fidelidade literal ao texto do issue. plan_approval auto cascateou plan->implement sem pausa. Residual F-01 do auditor (option readSessionIdFn? orfa apos trocar pra pgrep -P) deixado no lugar: trivial, nenhum gate pega, reviewer passou CLEAN; nao vale um round extra.
+- **Blockers encountered**: Pane %6 reviewer lingering ocupava o mutex de 2-panes: matei antes do dispatch (mesma landmine dos CAM-168/85). $BASHPID veio vazio no primeiro teste de captura de pid: diagnostico = bash 3.2.57 default do macOS nao tem $BASHPID; pivotei pra pgrep -P (validado empiricamente que retorna o unico child foreground). Monitores bash em background (run_in_background) foram mortos pelo ambiente 2x no meio do loop: troquei pro Monitor nativo do harness; o push do sidecar ([cam] ... DONE/verdict) provou ser o wake primario confiavel. Todas as ops gh com env -u GITHUB_TOKEN (token .env fine-grained perdeu Pull requests: write; cai no gho_ do keyring).
+- **Follow-ups**: CRITICO (difere do CAM-85, que era inerte): rebuild+reinstall pra 0.52.0 e restart do sidecar sao necessarios pra o fix valer. O fix vive em src/commands/orch-recycle-watch.ts + run.ts que o binario sidecar executa e e comportamentalmente ATIVO; o sidecar 8316 roda 0.50.0 em memoria, entao auto-recycle segue morto no macOS ate rebuildar+reinstalar+restartar. Operator ceremony (requires:operator): prova live do SIGTERM chegando VIA watcher (nao kill direto como o teste do CAM-164) + respawn + rehydrate, numa cam run fresca com o 0.52.0 instalado. F-01 residual: remover a option readSessionIdFn? orfa em orch-recycle-watch.ts (trivial, opcional).
+
+## operator-ceremony-cam-173-recycle — operator ceremony: live macOS auto-recycle validation (0.52.0)
+
+- **Started**: 2026-07-03T17:26:31Z
+- **Closed**: 2026-07-03T17:26:31Z
+- **Branch**: main
+- **Issue**: CAM-173 / G4 (CAM-168)
+- **Outcome**: validated (operator ceremony)
+- **Summary**: Fired the real cycle-close recycle trigger on binary 0.52.0 to validate macOS auto-recycle end to end (CAM-173 pid-resolve fix + CAM-168 G4). Preconditions verified live: watcher 24203 alive, .cam-orch-pid=24177 (wrapper), pgrep -P resolves the claude child, marker absent pre-fire. Wrote the cycle-close handoff, then armed .cam-orch-recycle via cam journal append --cycle-close. Expected chain: watcher resolves the orchestrator pid via pgrep -P (immune to macOS argv truncation) and SIGTERMs it, wrapper 24177 respawns a fresh orchestrator and delivers CAM_ORCH_REHYDRATE. The respawned session boot-with-rehydrate is the PASS proof; it confirms the empirical signals before declaring PASS.
+- **Follow-ups**: Respawned session to confirm PASS and ask operator whether to close CAM-173 operator-story + G4 (CAM-168) as validated-live. Backlog: CAM-171 (retry cap 3->4), CAM-65 (reviewer pane lingering post-CLEAN), F-01 residual (orphan readSessionIdFn option in orch-recycle-watch.ts).
+
+## operator-ceremony-cam-173-recycle-pass — operator ceremony PASS: macOS auto-recycle validated live (0.52.0)
+
+- **Started**: 2026-07-03T17:32:37Z
+- **Closed**: 2026-07-03T17:32:37Z
+- **Branch**: main
+- **Issue**: CAM-173 / G4 (CAM-168)
+- **Outcome**: validated-live (PASS)
+- **Summary**: Respawned orchestrator confirmed the macOS auto-recycle chain end to end on binary 0.52.0. Empirical signals: handoff consumed (.cam-orch-handoff.json renamed to .consumed.json); .cam-orch-recycle marker absent (the watcher removes it only after killFn SIGTERM on the pgrep -P-resolved pid, orch-recycle-watch.ts:302); prior session 6e539da2 frozen at 14:26 while this session a7c9ae0a booted with a non-empty CAM_ORCH_REHYDRATE; wrapper 24177 / sidecar 24202 / watcher 24203 all alive. The CAM-173 pgrep -P fix resolved the child pid despite the wrapper running under zsh -c (cmd != claude), which was exactly the pgrep -f <uuid> failure mode.
+- **Decisions**: None; ceremony only, no code change. CAM-173 + CAM-168 were already stage:shipped; this closes the G4 live-validation follow-up.
+- **Blockers encountered**: None functional. Honest caveat: .claude/cam-recycle-watcher.log is 0 bytes. That is NOT a failure signal: the watcher tick path emits nothing to stdout/stderr on a successful tick, so the redirect log is empty by design. The prior ceremony entry's expectation that the log would show the pgrep -P + SIGTERM lines was wrong (comments-do-not-prove-behaviour). PASS rests on the observable state transitions (marker consumed + respawn + rehydrate), not on log output.
+- **Follow-ups**: CAM-173 + CAM-168 already stage:shipped (terminal). Next: CAM-171 (retry cap 3 -> 4). Still open: CAM-65 (reviewer pane lingering post-CLEAN), F-01 residual (orphan readSessionIdFn option in orch-recycle-watch.ts).
+
+## cam-171-ship-plus-recycle-pgrep-defect — CAM-171 shipped (retry cap 3 to 4, v0.53.0); found CAM-173 recycle pgrep-blind defect on macOS
+
+- **Started**: 2026-07-03T17:30:00Z
+- **Closed**: 2026-07-03T19:14:48Z
+- **Branch**: main
+- **Issue**: CAM-171
+- **Outcome**: PASS
+- **Summary**: Shipped CAM-171 end to end fully autonomously: spec (inline, description was spec-complete) to /cam-plan to auditor APPROVE to implement US-001 (2864 tests pass) to review CLEAN round 1 to ci-gated ship to CI-merge to sidecar post-merge (tag v0.53.0, branch pruned, issue closed). The retry cap 3 to 4 finally realizes the 240s backoff window CAM-85 promised but shipped inert. Caps are still behaviorally inert until the sidecar (running 0.52.0 in-memory) is rebuilt to 0.53.0.
+- **Decisions**: Bump (not wont-fix): an autonomous loop should ride out 3-7min transient rate-limits without a human, at the cost of tolerating ~1 extra streak (~4min) before escalating a real failure. All gh ops via env -u GITHUB_TOKEN (keyring gho_) because the .env PAT lost Pull-requests:write.
+- **Blockers encountered**: DEFEITO no auto-recycle CAM-173, descoberto ao tentar o cycle-close handoff: claude 2.1.200 reescreve o proprio process-title em runtime, deixando o KERN_PROCARGS2 num estado que o `pgrep` PULA. O processo do orquestrador fica INVISIVEL ao `pgrep` em todo modo (-P, -f, -x, nome), enquanto `ps` o enxerga normal. Logo `pgrep -P <wrapper>` (o fix do CAM-173) volta vazio e o watcher nao SIGTERMa o orquestrador: recycle falha em silencio. Verificado empirico ~10x. Este cycle-close foi completado por `kill -TERM` direto no pid (o watcher/pgrep esta cego), nao pelo marker/watcher.
+- **Follow-ups**: CAM-165: trocar a resolucao de pid do watcher pra ps-based (walk de ppid) ou pra um arquivo .cam-orch-child-pid gravado pelo wrapper no spawn; o spec atual do CAM-165 propoe pgrep -n que tambem falharia. Rebuild+reinstall 0.53.0 e restart do sidecar pra os caps 3 to 4 ficarem vivos. CAM-139 (drainer inter-ciclo) segue nao construido = nao existe autonomia inter-ciclos hoje.
+
+## cam-165-ps-ppid-resolve-shipped — CAM-165 shipped (auto-recycle pid resolution via ps ppid-walk, v0.54.0); fix live pending sidecar restart
+
+- **Started**: 2026-07-03T21:42:29Z
+- **Closed**: 2026-07-03T21:42:29Z
+- **Branch**: cam/pr-165-orch-recycle-ps-pid-resolve
+- **Issue**: CAM-165
+- **Outcome**: shipped (PR #127, v0.54.0, squash-merged + tagged local/remote; post-merge autonomo via sidecar; CAM-165 stage:shipped)
+- **Summary**: Trocou a resolucao de pid do auto-recycle watcher de pgrep (CEGO pro processo do orquestrador no macOS: o claude 2.1.200 reescreve o proprio process-title em runtime, deixando o KERN_PROCARGS2 num estado que o pgrep pula em todo modo -P/-f/-x/nome) para ps ppid-walk (`ps -ax -o pid=,ppid=` filtrando ppid==wrapperPid; tabela de proc do kernel, imune ao rewrite). No recycle-tick o wrapper bash esta bloqueado na linha claude foreground, entao tem exatamente 1 child -> deterministico. US-001 (core ps + drop total do pgrep + oraculo de integracao title-rewriting que REPRODUZ o pgrep-cego + header/comment cleanup) e US-002 (remove eslint-disable no-constant-condition inertes em orch-recycle-watch.ts e retry/launcher.ts). Review CLEAN round 1, 2864 pass, check:all verde, auditor APPROVE. v0.53.0 -> 0.54.0.
+- **Decisions**: Abordagem ps ppid-walk, NAO o `pgrep -n` que a idea original propunha (pgrep e cego em modo nenhum; nao e questao de escolher o candidato certo). Descartado wrapper-grava-child-pid (claude roda foreground; capturar $! exigiria backgroundar o TUI, rejeitado no CAM-173 por quebrar stdin). Oraculo de teste passou a usar um child que reescreve o proprio process.title pra reproduzir o failure mode (o `sleep` anterior dava FALSA confianca: nao reescreve title, entao pgrep -P funcionava no teste e falhava em producao). Re-spec via /cam-spec (a idea CAM-165 era pre-CAM-173 e propunha um fix que nao funciona). Todas as gh ops via env -u GITHUB_TOKEN (keyring gho_; .env PAT sem Pull-requests:write). Rebuild+reinstall 0.54.0 feito (caminho A escolhido pelo operador).
+- **Blockers encountered**: Nenhum funcional. Ironia coberta: o auto-recycle seguia quebrado DURANTE este ciclo (sidecar 24202 + watcher 24203 rodando 0.52.0 em memoria), entao o cycle-close deste ship precisou de kill manual/restart, nao do watcher. Irrelevante pro ship em si (o fix vive no source buildado).
+- **Follow-ups**: 1) RESTART LIMPO (operador): `cam stop && cam run` fresco pra a arvore (wrapper/sidecar/watcher) rodar 0.54.0 com o fix ps + os caps CAM-171 3->4 (inertes em 0.52.0). 2) CERIMONIA requires:operator: na sessao fresca 0.54.0, disparar um cycle-close real -> watcher resolve o pid via ps -> SIGTERM PELO watcher (nao kill manual) -> respawn -> rehydrate = prova live definitiva do fix. 3) Backlog: CAM-139 (drainer inter-ciclo, nao construido = sem autonomia inter-ciclos hoje), CAM-65 (reviewer pane lingering post-CLEAN).
+
+## operator-ceremony-cam-165-recycle-live-0540 — operator ceremony fire: CAM-165 auto-recycle live-validation on 0.54.0 (ps ppid-walk)
+
+- **Started**: 2026-07-03T21:49:49Z
+- **Closed**: 2026-07-03T21:49:49Z
+- **Branch**: main
+- **Issue**: CAM-165 / G4 (CAM-168)
+- **Outcome**: fired (PASS to be confirmed by the respawned session)
+- **Summary**: Fired the real cycle-close recycle trigger on a fresh 0.54.0 tree to validate the CAM-165 pid-resolution fix (ps ppid-walk) live. Operator ran cam stop && cam run first. Preconditions verified live: binary 0.54.0; wrapper pid 98506 (= .cam-orch-pid); orchestrator claude 98511 is the SOLE child of 98506 (the pid pgrep is blind to due to the claude 2.1.200 process-title rewrite, which is exactly what ps ppid-walk resolves); watcher 98533 alive and .cam-watcher.pid=98533 (exit-4 arm-gate satisfied); sidecar 98532 alive; .cam-orch-recycle marker absent pre-fire; handoff written and schema-valid. Expected chain: cam journal append --cycle-close arms .cam-orch-recycle -> watcher resolves the orchestrator pid via ps -ax -o pid=,ppid= filtered by ppid==98506 and SIGTERMs it -> wrapper 98506 respawns a fresh orchestrator and delivers CAM_ORCH_REHYDRATE. The respawned boot-with-rehydrate is the PASS proof.
+- **Decisions**: None; ceremony only, no code change. CAM-165 (PR #127, v0.54.0) and CAM-168 G4 already stage:shipped; this closes the live-validation follow-up.
+- **Blockers encountered**: None expected. Honest caveat carried from the prior ceremony: a 0-byte .claude/cam-recycle-watcher.log is NOT a failure signal (the watcher tick path emits nothing on a successful tick). PASS rests on observable state transitions (handoff consumed + marker removed + respawn + rehydrate), never on log output.
+- **Follow-ups**: Respawned session confirms PASS empirically and asks the operator whether to close the CAM-165 operator ceremony + CAM-168 G4 as validated-live. Backlog: CAM-139 (inter-cycle drainer, not built = no inter-cycle autonomy today), CAM-65 (reviewer pane lingering post-CLEAN), F-01 residual (orphan readSessionIdFn option in orch-recycle-watch.ts).
+
+## cam-152-flip-worker-spawn-container — CAM-152 shipped: flip worker spawn through container (fail-closed worker_isolation, v0.55.0)
+
+- **Started**: 2026-07-03
+- **Closed**: 2026-07-04T00:56:33Z
+- **Branch**: cam/pr-152-flip-worker-spawn-container
+- **Issue**: CAM-152
+- **Outcome**: shipped
+- **Summary**: Routed all four worker spawns (implementer, reviewer, planner, auditor) into the long-lived cam-worker container via a shared dockerExecWrap chokepoint, gated on a fail-closed [loop] worker_isolation flag (default host). 6 stories, review CLEAN round 1, PR #128 squash-merged, v0.55.0. Makes the CAM-150 isolation substrate live and provides the container-active gate that CAM-139 needs.
+- **Decisions**: Grill settled: (1) container persistent + ensure-up idempotent at boot (up/down/absent/stale), no teardown on cam stop; (2) all four workers wrapped incl planner+auditor, which required building a new plan-runner container preflight seam; (3) opt-in flag default host, so zero behavior change until operator flips + rebuilds; (4) fail-closed literal, no host fallback. plan_approval kept auto: operator participates only at spec.
+- **Blockers encountered**: Post-merge pull-failed: an unpushed local-main commit (img cleanup, acde9da) diverged local main from the PR squash (e52d553), so the sidecar git pull refused. Recovered by hand: reset --hard origin/main (lossless, content subsumed by squash) then closeIssueOnMain, cam tag v0.55.0, prune branch.
+- **Follow-ups**: 1. Post-merge resilience to a diverged local main (unpushed pre-branch commit subsumed by squash). 2. Live-validation ceremony (requires:operator): rebuild+reinstall 0.55.0, set worker_isolation=container, run a representative story GREEN inside the container under the firewall + confirm claude auth. 3. CAM-139 now unblocked but gated on container active (needs the ceremony first).
+
+## cam-178-container-worker-uid-align — container worker uid alignment (fix /workspace EACCES)
+
+- **Started**: 2026-07-04
+- **Closed**: 2026-07-04
+- **Branch**: cam/pr-178-container-worker-uid-align
+- **Issue**: CAM-178
+- **Outcome**: shipped
+- **Summary**: Aligned the cam-worker container user uid/gid to the host at build time (Dockerfile HOST_UID/HOST_GID build-args + usermod/chown; worker-container.ts threads --build-arg through ensure-up), fixing the /workspace EACCES (bun uid vs host uid) that blocked all container workers. Shipped v0.56.0 (PR #129), review CLEAN round 1, CI green, auto-merged, post-merge clean.
+- **Decisions**: Fix = build-time uid alignment (operator-chosen over run-as-host-uid-runtime or chown-workspace). First of 3 container-mode blockers found in the CAM-175 live-validation ceremony.
+- **Blockers encountered**: None within CAM-178. Context: the CAM-175 ceremony this session proved CAM-152 container mode is non-functional for real workers; the -p auth smoke passed but hid two integration bugs (onboarding block + EACCES) surfaced only by the real worker dispatch.
+- **Follow-ups**: CAM-179 (onboarding/trust seed) + CAM-176 (firewall wiring) still block container mode. After both ship + rebuild to 0.56.0, re-run CAM-175, then CAM-139. Also filed CAM-174 (post-merge resilience), CAM-177 (.dockerignore). CAM-160 specified but unshipped (ceremony planner could not write its PRD due to CAM-178, now fixed).
+
+## cam-179-container-onboarding-trust-seed — CAM-179 shipped: bake claude onboarding + /workspace trust into worker image; live ceremony exposed CAM-178 build bug
+
+- **Started**: 2026-07-04T10:33:00Z
+- **Closed**: 2026-07-04T11:12:48.425Z
+- **Branch**: cam/pr-179-container-onboarding-trust-seed
+- **Issue**: CAM-179
+- **Outcome**: shipped
+- **Summary**: Baked a claude onboarding + /workspace folder-trust config into the cam-worker image (new .devcontainer/claude-config.json with 5 keys; Dockerfile COPY to /home/bun/.claude.json before the CAM-178 re-home block). One story US-001, review CLEAN round 1, shipped as PR #130, v0.57.0. The key insight from CAM-175 held: seeding top-level hasCompletedOnboarding alone does not suppress the per-project /workspace trust prompt; projects[/workspace].hasTrustDialogAccepted was the missing key.
+- **Decisions**: Bake into the image (not runtime seed) via a versioned config file COPYd before the re-home block so the existing chown re-owns it. Verify prompt-suppression live in an operator ceremony, not via -p smoke (print mode hid this class of bug in CAM-175).
+- **Blockers encountered**: The CAM-180 ceremony rebuild FAILED and exposed a P1 bug (CAM-183): the CAM-178 uid re-home block never builds on macOS. The collision guard renames the group NAME (groupmod -n) but never frees gid 20 (base dialout:20 vs host staff:20), so groupmod -g 20 bun fails. The cached image still has bun uid=1000, meaning the /workspace EACCES that CAM-178 supposedly fixed was never actually resolved on this host. CI has no Docker daemon so the real build was never run. Also lived: PR #130 sat OPEN+BEHIND under strict branch protection and needed a manual gh pr update-branch to merge (filed CAM-182).
+- **Follow-ups**: CAM-183 (P1, fix the re-home groupmod gid collision; verify with a real macOS docker build) blocks all container-mode work and must go first. CAM-180 (verify CAM-179 onboarding) folds into a combined ceremony after CAM-183 lands and the image rebuilds. CAM-181 (auto-ship fires on review CLEAN without checking pending operator stories). CAM-182 (sidecar auto-recover OPEN+BEHIND). Then CAM-176 (firewall), CAM-175 re-run, CAM-139.
+
+## cam-183-rehome-gid-collision — CAM-183 shipped: getent gid-collision branch fixes the container build on macOS; ceremony verified 178/183 + 179 config
+
+- **Started**: 2026-07-04
+- **Closed**: 2026-07-04
+- **Branch**: cam/pr-183-rehome-gid-collision
+- **Issue**: CAM-183
+- **Outcome**: shipped
+- **Summary**: Fixed the CAM-178 uid re-home block in .devcontainer/Dockerfile that never built on macOS (host gid=20 collides with the base gid-20 group; the old groupmod -n rename freed the NAME but not the gid, so groupmod -g 20 bun failed). Replaced with a getent branch: usermod -u -g by numeric gid when the group exists, else groupmod -g then usermod -u. 1 vertical-slice story (Dockerfile rewrite + deterministic Dockerfile-text test), auditor APPROVE, review CLEAN round 1, 2971 tests, shipped v0.58.0 (PR #131).
+- **Decisions**: Combined operator ceremony PASSED empirically (first real docker build on this macOS host, gid=20): build exit 0, bun uid=501 gid=20, /workspace writable, file round-trips to host as 501:20; cam-worker:latest rebuilt+working. CAM-179 config verified bun-readable + 5 keys; live interactive zero-prompt deferred to CAM-175 as the definitive gate. No per-183 operator story filed (avoids the CAM-181 bug).
+- **Blockers encountered**: Stale reviewer panes (CAM-167) wedged paneCountMutex at busy and blocked cam plan; killed after confirming stale via capture-pane. Ship: env -u GITHUB_TOKEN needed on all gh (PAT lacks PR:write); PR sat BLOCKED until CI green then auto-merged (ci-gated, branch not behind).
+- **Follow-ups**: CAM-176 (firewall wiring) NEXT -> re-run CAM-175 (definitive 179 zero-prompt gate + real-story GREEN) -> CAM-139. Also open: CAM-180 (partially done), CAM-181, CAM-182, CAM-177.
