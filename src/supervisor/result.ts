@@ -384,7 +384,6 @@ export interface AnySentinelMatch {
  *
  * Detects (in order):
  *   - CAM_IMPLEMENTER_STATUS=<VALUE> [story=<ID>]
- *   - CAM_REVIEWER_STATUS=<VALUE>
  *   - <review>CLEAN</review> or <review>FIXES_PENDING:N</review>
  *
  * Returns the first match found, or null if none present.
@@ -393,11 +392,6 @@ export function parseAnySentinel(paneText: string): AnySentinelMatch | null {
 	const implMatch = paneText.match(/CAM_IMPLEMENTER_STATUS=\S+/);
 	if (implMatch) {
 		return { source: 'implementer', raw: implMatch[0] ?? '' };
-	}
-
-	const reviewerMatch = paneText.match(/CAM_REVIEWER_STATUS=\S+/);
-	if (reviewerMatch) {
-		return { source: 'reviewer', raw: reviewerMatch[0] ?? '' };
 	}
 
 	const reviewTagMatch = paneText.match(/<review>(CLEAN|FIXES_PENDING:\d+)<\/review>/);
