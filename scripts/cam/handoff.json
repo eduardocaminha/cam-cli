@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Align orchestrator Write grant and mark frontmatter advisory-only" },
+  "branchName": "cam/issue-227",
+  "timestamp": "2026-07-09T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "templates/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 moved Write from disallowedTools to tools in templates/agents/subagent-orchestrator.md (matching the pre-existing .claude/ copy) and added an identical advisory-only sentence (pointing to CAM-240) to the Identity section of both copies. WebFetch was left untouched in tools: for both. Ran bun run embed-vendor + embed-vendor:check clean. This story did NOT implement --agent runtime enforcement (that is CAM-240, explicitly out of scope here).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
