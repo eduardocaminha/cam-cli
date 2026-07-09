@@ -22,7 +22,7 @@
         "Full spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/issues/plannable.ts (new), src/issues/select.ts, src/issues/rank.ts, src/issues/gate.ts, src/commands/plan.ts, test/issues/*. AUDITOR FINDING 1: gate.ts:150 inline-compares the same predicate and MUST be routed through isSpecifiedOpen (it was missing from the previous plan's call-site list). AUDITOR FINDING 3: do NOT route rank.ts:213 or gate.ts:150 through isPlannable; those universes intentionally retain blocked issues (topological ranking, cycle detection). Only select.ts and plan.ts use the blocked-excluding isPlannable. Why a leaf module: select.ts imports computeWsjf from rank.ts, so rank.ts importing from select.ts would create a module cycle; plannable.ts (types.ts + graph.ts only) breaks it, and select.ts re-exports for the spec's public-surface contract. plan.ts:158 buildNotPlannableReason uses !== 'specified' for diagnostics; the guard bans only ===, leave it but consider rewriting it via the predicates for coherence (optional, do not force). list.ts:134 compares stage against a loop VARIABLE (issue.stage === stage), not the literal; it is not a predicate reimplementation and is out of scope here. Gotcha (patterns.md CAM-106 bullet): 'gate-as-code invariant' text references select.ts filtering inline; behavior stays identical so no patterns.md edit required, but append a bullet documenting the new canonical module."
     },
