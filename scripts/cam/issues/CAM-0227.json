@@ -1,9 +1,35 @@
 {
   "id": "CAM-227",
   "title": "Template do orquestrador: Write em disallowedTools contradiz o corpo + enforcement advisory",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-225"
+  ],
   "createdAt": "2026-07-08T23:05:46.492Z",
-  "description": "templates/agents/subagent-orchestrator.md omite Write de tools: e lista em disallowedTools:, mas o corpo exige Write the handoff first -> .claude/.cam-orch-handoff.json (L339). A copia .claude/ concede Write (drift entre copias, mesmo commit). Severidade mitigada mas real: o orquestrador e spawnado SEM --agent (run.ts:255, setup.ts:443/520), entao o frontmatter dele NUNCA e enforced em runtime (advisory only); porem a declaracao contraditoria pode induzir o modelo downstream a se auto-restringir e matar o self-handoff (exit 3 em loop). Fix minimo: mover Write pra tools: no template + re-embed. Decisao adjacente: passar a spawnar o orquestrador com --agent pra enforce de verdade, ou documentar explicitamente que o frontmatter do orquestrador e advisory. Gap de guard relacionado: vendor/check-agent-frontmatter.ts valida estrutura mas nao compara copias nem valida conteudo de tools vs corpo; nada pega essa classe de drift. Excess grants achados na mesma auditoria (cortar junto se couber cirurgico): orquestrador WebFetch (nunca usa; Linear e curl via Bash, GitHub e gh), implementer WebSearch (corpo so usa WebFetch) e NotebookEdit (unico agente que concede, em CLI Bun sem notebooks). Origem: matriz de ferramentas 2026-07-08."
+  "description": "templates/agents/subagent-orchestrator.md omite Write de tools: e lista em disallowedTools:, mas o corpo exige Write the handoff first -> .claude/.cam-orch-handoff.json (L339). A copia .claude/ concede Write (drift entre copias, mesmo commit). Severidade mitigada mas real: o orquestrador e spawnado SEM --agent (run.ts:255, setup.ts:443/520), entao o frontmatter dele NUNCA e enforced em runtime (advisory only); porem a declaracao contraditoria pode induzir o modelo downstream a se auto-restringir e matar o self-handoff (exit 3 em loop). Fix minimo: mover Write pra tools: no template + re-embed. Decisao adjacente: passar a spawnar o orquestrador com --agent pra enforce de verdade, ou documentar explicitamente que o frontmatter do orquestrador e advisory. Gap de guard relacionado: vendor/check-agent-frontmatter.ts valida estrutura mas nao compara copias nem valida conteudo de tools vs corpo; nada pega essa classe de drift. Excess grants achados na mesma auditoria (cortar junto se couber cirurgico): orquestrador WebFetch (nunca usa; Linear e curl via Bash, GitHub e gh), implementer WebSearch (corpo so usa WebFetch) e NotebookEdit (unico agente que concede, em CLI Bun sem notebooks). Origem: matriz de ferramentas 2026-07-08.",
+  "spec": {
+    "scope": "Surgical fix of the orchestrator frontmatter drift, focused on the orchestrator prompt only. Files: templates/agents/subagent-orchestrator.md (move Write from disallowedTools to tools, matching the .claude/ copy and the body's self-handoff requirement), plus an explicit note in both copies that the orchestrator frontmatter is advisory-only (spawned without --agent), and re-embed into src/vendor/_generated.ts via `bun run embed-vendor`. Out of scope: --agent runtime enforcement (CAM-240), implementer excess-grant cuts WebSearch/NotebookEdit (moved to CAM-229), copy-comparison/tools-vs-body guard (CAM-61), and cutting orchestrator WebFetch (rejected: grill-with-docs uses it).",
+    "acceptanceCriteria": [
+      "templates/agents/subagent-orchestrator.md lists Write under `tools:` and does NOT list it under `disallowedTools:`, matching the .claude/ copy and the body's requirement to Write the self-handoff file.",
+      "Both orchestrator prompt copies contain an explicit statement that the frontmatter tools/disallowedTools are advisory-only because the orchestrator is spawned without --agent (run.ts:255, setup.ts:443/520), with a pointer that CAM-240 tracks making it binding.",
+      "Orchestrator WebFetch is RETAINED under `tools:` (not cut), because grill-with-docs uses it to fetch official docs during spec interviews.",
+      "vendor/check-agent-frontmatter.ts still passes for both copies.",
+      "`bun run embed-vendor:check` passes (re-embed applied), and `bun run typecheck` and `bun test` are green."
+    ],
+    "gotchas": [
+      "Dual-copy is per-file and not byte-identical: the .claude/ copy already grants Write; the template omits it. Bring the template in line and diff before re-embedding (memory: cam-dual-copy-is-per-file).",
+      "Do NOT cut orchestrator WebFetch: the tool-matrix audit claimed it is unused, but grill-with-docs fetches official docs via WebFetch during every spec interview. Audit assumption was wrong (comment/audit does not prove runtime behavior).",
+      "The orchestrator is spawned without --agent, so this frontmatter is advisory at runtime; the contradiction is latent but could still induce a downstream model to self-restrict and kill the self-handoff (exit 3 loop). Fix the declaration; do not implement enforcement here.",
+      "embed-vendor:check is a required gate because templates/ is touched."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 6,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
