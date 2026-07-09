@@ -1,0 +1,33 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-231",
+  "description": "Truth-up the Cross-Repo PRD docs: re-frame crossRepoLayout / per-story repo as agent-self-executed (no harness support/validation), not harness-driven.",
+  "issueNumber": 231,
+  "type": "docs",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Re-frame Cross-Repo PRD docs as agent-self-executed (unvalidated)",
+      "description": "As a cam operator/agent, I need the Cross-Repo PRD documentation to state honestly that crossRepoLayout and the per-story repo field are agent-self-executed with zero harness support, so that no reader assumes the supervisor reads repo, validates the layout, or that the planner emits these fields.",
+      "acceptanceCriteria": [
+        "The 'Cross-Repo PRDs' section in scripts/cam/CLAUDE.md no longer presents crossRepoLayout / per-story repo as harness-driven: it states explicitly that cross-repo is agent-self-executed (the agent cds per the documented layout), that the harness does NOT read the repo field, does NOT validate the layout, and that the planner does NOT emit these fields (so only hand-authored PRDs use them). [oracle: file-assert grep -qi 'agent-self-executed' scripts/cam/CLAUDE.md && grep -qi 'does NOT read the repo' scripts/cam/CLAUDE.md && grep -qi 'planner does NOT emit' scripts/cam/CLAUDE.md]",
+        "The same honest framing is applied verbatim-consistent to the second copy templates/scripts/cam/CLAUDE.md. [oracle: file-assert grep -qi 'agent-self-executed' templates/scripts/cam/CLAUDE.md && grep -qi 'does NOT read the repo' templates/scripts/cam/CLAUDE.md]",
+        "The subagent-implementer.md cross-repo cd guidance (around :57-58 and :117) carries the same honest framing (agent-executed, unvalidated, hand-authored PRDs only) in .claude/agents/subagent-implementer.md. [oracle: file-assert grep -qi 'agent-self-executed\\|unvalidated\\|hand-authored' .claude/agents/subagent-implementer.md]",
+        "The same framing is applied to the second copy templates/agents/subagent-implementer.md. [oracle: file-assert grep -qi 'agent-self-executed\\|unvalidated\\|hand-authored' templates/agents/subagent-implementer.md]",
+        "Both docs (CLAUDE.md and subagent-implementer.md) include a pointer that real harness support is tracked as a future epic (CAM-241, related to CAM-147). [oracle: file-assert grep -q 'CAM-241' scripts/cam/CLAUDE.md && grep -q 'CAM-241' .claude/agents/subagent-implementer.md]",
+        "The sections are re-framed, NOT deleted: a hand-authored PRD with crossRepoLayout + per-story repo remains a documented (fragile, unvalidated) escape hatch. [oracle: file-assert grep -q 'crossRepoLayout' scripts/cam/CLAUDE.md]",
+        "No code change is made (documentation truth-up only): crossRepoLayout and the repo field remain unread by the supervisor; no src/ consumer is added. [oracle: named-command sh -c 'test -z \"$(git diff --name-only origin/main -- src/ | grep -v \"src/vendor/_generated.ts\")\"']",
+        "Vendor drift check passes: the embed src/vendor/_generated.ts is regenerated via bun run embed-vendor. [oracle: bun run embed-vendor:check]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/cam/CLAUDE.md (## Cross-Repo PRDs section, ~lines 109-125) + its copy templates/scripts/cam/CLAUDE.md; .claude/agents/subagent-implementer.md (:57-58 cross-repo cwd resolution step, :117 area) + its copy templates/agents/subagent-implementer.md. After editing, run `bun run embed-vendor` to regenerate src/vendor/_generated.ts, then `bun run embed-vendor:check` must be clean. Gotcha (memory: cam-dual-copy-is-per-file): .claude/ and templates/ copies are NOT uniformly byte-identical, edit each copy explicitly and diff before assuming; the embed sources from templates/. Keep all four edits telling the SAME honest story to avoid the copy-divergence this issue exists to fix. Scope discipline (issue spec): DO NOT implement real harness support (supervisor repo-awareness, planner emission, gate-routing, layout validation) and DO NOT delete the sections; those are out of scope (real support split to future epic CAM-241, related to CAM-147). This issue was blockedBy CAM-226/CAM-229 because it shares scripts/cam/CLAUDE.md (CAM-224/226) and subagent-implementer.md (CAM-229); confirm those are merged before editing to avoid concurrent-edit clobber."
+    }
+  ]
+}
