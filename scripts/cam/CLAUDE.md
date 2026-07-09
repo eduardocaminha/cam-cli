@@ -85,6 +85,8 @@ When a story produces a new insight, route it to exactly one canonical channel u
 
 **Location convention:** `scripts/cam/` is cam-harness knowledge (state files, agent instructions, knowledge-layer artifacts). Repo root plus `docs/` is the project domain model (CONTEXT.md, docs/adr/, README, CHANGELOG). Do not move `journal.md` or `patterns.md` out of `scripts/cam/`, and do not move `CONTEXT.md` or `docs/adr/` into it.
 
+**Marking a `patterns.md` bullet resolved:** once a bullet documents a one-time, already-resolved mechanic rather than a living invariant, prefix it with `[resolved YYYY-MM]` immediately after the leading `- ` (e.g. `- [resolved 2026-06] **title** ...`). `cam patterns archive` moves every bullet carrying this marker, verbatim, into `scripts/cam/patterns.archive.md` in one on-main commit; unmarked bullets are left in place. Never mark a durable invariant (Bun runtime, permission-mode, `claude -p` forbidden, `noUncheckedIndexedAccess`, Ink success/failure glyph, single-hub dispatch, sidecar-supervisor) this way.
+
 **Exception (cam-cli only):** `lessons.md` has been retired to `lessons.archive.md` (US-001 of CAM-123). New insights go to the channels above, not to `lessons.archive.md`. This retirement is a cam-cli-specific exception to the etapa-dupla convention in the global CLAUDE.md (section 5, "Capture Lessons"), which records both a chronological diary entry AND a canonical-location entry. For non-cam projects the global etapa-dupla rule still applies in full.
 
 ## Domain Model Convention

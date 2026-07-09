@@ -1,6 +1,6 @@
 {
   "name": "cam-cli",
-  "version": "0.105.0",
+  "version": "0.106.0",
   "module": "index.ts",
   "type": "module",
   "private": true,
