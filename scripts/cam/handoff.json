@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Re-frame Cross-Repo PRD docs as agent-self-executed (unvalidated)" },
+  "branchName": "cam/issue-231",
+  "timestamp": "2026-07-09T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "scripts/cam/CLAUDE.md",
+    "templates/scripts/cam/CLAUDE.md",
+    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-implementer.md",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 was a docs-truth-up only: no src/ consumer was added for crossRepoLayout/repo. All four doc copies (scripts/cam/CLAUDE.md, templates/scripts/cam/CLAUDE.md, .claude/agents/subagent-implementer.md, templates/agents/subagent-implementer.md) now say cross-repo routing is agent-self-executed and unvalidated, with a CAM-241 pointer for future real harness support. Remember: .claude/ and templates/ copies of CLAUDE.md are NOT byte-identical (templates/ is a generic placeholder-based template for cam init consumers) — diff before assuming a shared edit applies to both.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

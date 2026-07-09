@@ -25,7 +25,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/cam/CLAUDE.md (## Cross-Repo PRDs section, ~lines 109-125) + its copy templates/scripts/cam/CLAUDE.md; .claude/agents/subagent-implementer.md (:57-58 cross-repo cwd resolution step, :117 area) + its copy templates/agents/subagent-implementer.md. After editing, run `bun run embed-vendor` to regenerate src/vendor/_generated.ts, then `bun run embed-vendor:check` must be clean. Gotcha (memory: cam-dual-copy-is-per-file): .claude/ and templates/ copies are NOT uniformly byte-identical, edit each copy explicitly and diff before assuming; the embed sources from templates/. Keep all four edits telling the SAME honest story to avoid the copy-divergence this issue exists to fix. Scope discipline (issue spec): DO NOT implement real harness support (supervisor repo-awareness, planner emission, gate-routing, layout validation) and DO NOT delete the sections; those are out of scope (real support split to future epic CAM-241, related to CAM-147). This issue was blockedBy CAM-226/CAM-229 because it shares scripts/cam/CLAUDE.md (CAM-224/226) and subagent-implementer.md (CAM-229); confirm those are merged before editing to avoid concurrent-edit clobber."
     }
