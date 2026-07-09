@@ -1,9 +1,38 @@
 {
   "id": "CAM-234",
   "title": "Nomeacao deterministica de branch: cam/issue-<N> derivado em codigo",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T02:34:24.084Z",
-  "description": "Tirar a nomeacao do branch do planner LLM e deriva-la deterministicamente no plan-runner como cam/issue-<prd.issueNumber> (sem slug). Raiz dos branches orfaos no remote: o LLM inventa slugs diferentes por tentativa de plan (CAM-66 gerou 3 nomes; so o mergeado foi deletado pelo delete_branch_on_merge, os outros 2 sobraram). Mantem o namespace cam/ (zero churn no prefix-matching de plan-preflight/prune). Toca: subagent-planner.md:32 (para de emitir cam/pr-<N>-<slug>), subagent-auditor.md:82 (regex de validacao), derivacao no plan-runner, re-embed vendor. Branch e string opaca em todo src/ (nada parseia slug/numero do branch), zero mudanca de logica/schema. Fallback sem issueNumber a decidir no spec."
+  "description": "Tirar a nomeacao do branch do planner LLM e deriva-la deterministicamente no plan-runner como cam/issue-<prd.issueNumber> (sem slug). Raiz dos branches orfaos no remote: o LLM inventa slugs diferentes por tentativa de plan (CAM-66 gerou 3 nomes; so o mergeado foi deletado pelo delete_branch_on_merge, os outros 2 sobraram). Mantem o namespace cam/ (zero churn no prefix-matching de plan-preflight/prune). Toca: subagent-planner.md:32 (para de emitir cam/pr-<N>-<slug>), subagent-auditor.md:82 (regex de validacao), derivacao no plan-runner, re-embed vendor. Branch e string opaca em todo src/ (nada parseia slug/numero do branch), zero mudanca de logica/schema. Fallback sem issueNumber a decidir no spec.",
+  "spec": {
+    "scope": "Derivar o nome do branch deterministicamente em codigo (plan-runner) como cam/issue-<prd.issueNumber>, sem slug, removendo a autoria do planner LLM. Atualizar o template do planner (para de emitir o formato antigo cam/pr-<N>-<slug>) e do auditor (regex ^cam/issue-<N>$, sem variante slug e sem fallback cam/<slug>). Trocar git checkout -b por -B para idempotencia no re-plan do mesmo issue. Barrar o plan quando prd.issueNumber estiver ausente/null (sem fallback ad-hoc). Re-embed do vendor. NAO tocar prefix-matching cam/ nem schemas (branch e string opaca em src/). Fora de escopo: PR title/labels (CAM-235) e rename issue_system (CAM-236).",
+    "acceptanceCriteria": [
+      "O nome do branch e construido em codigo no plan-runner como a string literal cam/issue-<issueNumber> (sem slug), lendo prd.issueNumber; o planner LLM nao e mais a fonte do nome.",
+      "templates/agents/subagent-planner.md nao instrui mais o planner a emitir branchName no formato cam/pr-<N>-<slug>.",
+      "templates/agents/subagent-auditor.md valida o formato ^cam/issue-<N>$ (numero apenas), sem a variante slug e sem o fallback cam/<slug>.",
+      "O plan-runner cria a branch com git checkout -B cam/issue-<N> (recria a partir do HEAD/main), de modo que re-planejar o mesmo issue com a branch ja existente nao falha com 'already exists'.",
+      "Quando prd.issueNumber e null/ausente, o plan-runner barra com erro explicito e NAO gera branch (sem fallback slug ou ad-hoc).",
+      "src/vendor/_generated.ts e re-embarcado apos editar os templates: bun run embed-vendor:check passa.",
+      "O prefix-matching do namespace cam/ (plan-preflight refs/heads/cam/, prune) permanece inalterado.",
+      "Gates verdes: bun run typecheck, bun test, bun run check:all, bun run embed-vendor:check."
+    ],
+    "gotchas": [
+      "O branch e string opaca em todo src/: nada parseia slug ou numero DO branch (o numero vem de prd.issueNumber, campo separado). Confirmado por blast-radius. Dropar o slug e seguro.",
+      "checkout -B descarta commits nao-pushados de uma tentativa anterior da MESMA branch: e o comportamento intencional num re-plan (o PRD redefine o trabalho), nao um bug.",
+      "O proprio PR que implementa isso nasce com o nome ANTIGO (planejado com o fluxo pre-mudanca); a nova nomeacao so afeta PRDs planejados apos merge + rebuild.",
+      "Re-embed do vendor e obrigatorio: subagent-planner.md e subagent-auditor.md tem copia embarcada em src/vendor/_generated.ts (linhas ~26 e ~29); embed-vendor:check falha se esquecer.",
+      "delete_branch_on_merge ja esta ligado no repo; a nomeacao deterministica (1 nome por issue) e o que elimina os orfaos, nao o setting. Raiz vivida: CAM-66 gerou 3 nomes divergentes."
+    ],
+    "domainTerms": [
+      "cam/issue-<N> branch"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 4,
+    "riskReduction": 4,
+    "jobSize": 3
+  }
 }
