@@ -236,7 +236,7 @@ test.skipIf(!tmuxAvailable)(
 				planResult: planResult!,
 				spawnFn: loopSpawnFn,
 				setPhaseFn: wrappedSetPhase,
-				branchName: 'cam/test-noprd',
+				issueNumber: 42,
 				readPlanApprovalFn: (): PlanApproval => 'auto',
 				escalateFn: undefined,
 				notifyFn: undefined,

@@ -115,7 +115,7 @@ describe('AC3/AC4: plan-target-invalid clears stale plan_issue and exits to idle
 			planResult,
 			spawnFn: (cmd, args) => { gitCalls.push([cmd, ...args]); return { stdout: '', exitCode: 0 }; },
 			setPhaseFn: makeSetPhaseFn(claudeDir, tmpDir),
-			branchName: 'cam/some-branch',
+			issueNumber: 777,
 			readPlanApprovalFn: () => 'auto',
 			notifyFn: (msg) => { notifyMessages.push(msg); },
 			logEvent,
@@ -123,7 +123,7 @@ describe('AC3/AC4: plan-target-invalid clears stale plan_issue and exits to idle
 
 		// AC4: no-action result, no branch/commit git calls.
 		expect(postAuditResult.kind).toBe('no-action');
-		expect(gitCalls.filter((c) => c[1] === 'checkout' && c[2] === '-b').length).toBe(0);
+		expect(gitCalls.filter((c) => c[1] === 'checkout' && c[2] === '-B').length).toBe(0);
 		expect(gitCalls.length).toBe(0);
 
 		// AC2: notify + event fired.

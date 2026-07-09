@@ -203,7 +203,7 @@ describe('runPostAuditAction - planner-failed handling (AC2)', () => {
 			planResult: { kind: 'planner-failed' },
 			spawnFn,
 			setPhaseFn: (phase) => { setPhaseCalls.push(phase); },
-			branchName: 'cam/test-branch',
+			issueNumber: 99,
 			readPlanApprovalFn: (): PlanApproval => 'auto',
 			escalateFn: async () => { escalateCalled.n++; },
 			notifyFn: (msg) => { notifyMessages.push(msg); },

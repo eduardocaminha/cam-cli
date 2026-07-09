@@ -30,7 +30,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts (executeGitProceedBranch ~line 1036 changes -b to -B; RunPostAuditOptions field ~line 961 switches from trusting prd.branchName to deriving from issueNumber; the empty-branchName guard at ~line 1259 is replaced by the explicit missing-issueNumber gate), src/commands/sidecar.ts runPostPlanActions ~lines 1788-1794 (today reads prdRaw.branchName; switch to reading prdRaw.issueNumber and deriving, or pass issueNumber down for plan-runner to derive; keep all git calls behind the injected spawnFn per patterns.md US-R1-001). Tests: test/supervisor/plan/plan-runner.test.ts and plan-runner-postaudit.test.ts assert argv shapes; update the '-b' expectations to '-B' and add the gate cases. Gotchas: (1) checkout -B resets the branch to current HEAD and discards unpushed commits from a prior attempt of the SAME branch; this is intentional re-plan behavior per ADR-0016, do not add protection; plan-preflight has already checked out main and pulled, so HEAD is fresh main. (2) noUncheckedIndexedAccess: guard every indexed access. (3) Branch is an opaque string everywhere else in src/ (nothing parses slug or number out of it); do not touch other consumers. Re-check ADR-0016 (relatedDocs) before coding.",
       "repo": "main-repo"

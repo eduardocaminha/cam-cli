@@ -73,6 +73,23 @@ export function buildPlannerTaskPrompt(issueId: string): string {
 }
 
 /**
+ * Derive the deterministic feature-branch name from prd.issueNumber
+ * (US-001, CAM-236, ADR-0016).
+ *
+ * Returns `cam/issue-<issueNumber>` (no slug) when issueNumber is a
+ * `typeof number`; returns null for null, undefined, or any non-number
+ * value (strings, objects, NaN excluded implicitly since NaN is still
+ * `typeof number` but never appears in a valid prd.json). No ad-hoc
+ * fallback: a missing/invalid issueNumber bars the plan (see the
+ * missing-issueNumber gate in runPostAuditAction), it never falls back to
+ * a planner-authored slug.
+ */
+export function deriveBranchName(issueNumber: unknown): string | null {
+	if (typeof issueNumber !== 'number') return null;
+	return `cam/issue-${issueNumber}`;
+}
+
+/**
  * Round cap for the BLOCK->re-plan loop (CAM-204, ADR-0012). After
  * MAX_REPLAN_ROUNDS re-plan attempts, a still-blocked plan terminates as
  * escalated: there is no plan analog of the review loop's MAX_ROUNDS_DEBT
@@ -947,7 +964,7 @@ export interface RunPostAuditOptions {
 	planResult: PlanPhaseResult;
 	/**
 	 * Spawn a shell command (loop.ts SpawnFn shape).
-	 * Used for git checkout -b, git add, git commit.
+	 * Used for git checkout -B, git add, git commit.
 	 */
 	spawnFn: SpawnFn;
 	/**
@@ -957,8 +974,26 @@ export interface RunPostAuditOptions {
 	 * Production: makeSetPhaseFn(claudeDir, cwd) in sidecar.ts.
 	 */
 	setPhaseFn: (phase: LoopPhase) => void;
-	/** Feature branch name to create from current HEAD (from prd.branchName). */
-	branchName: string;
+	/**
+	 * prd.issueNumber, read verbatim from prd.json (US-001, CAM-236, ADR-0016).
+	 * The branch name is no longer trusted from the planner-authored
+	 * prd.branchName string: runPostAuditAction derives it in code as
+	 * `cam/issue-<issueNumber>` via deriveBranchName(). When issueNumber is
+	 * null, undefined, or not a number, the proceed-branch path is barred by
+	 * the missing-issueNumber gate (no git checkout is spawned, no branch is
+	 * created, no slug or ad-hoc fallback).
+	 */
+	issueNumber: unknown;
+	/**
+	 * Writes the derived branch name back into prd.json's `branchName` field,
+	 * BEFORE the prd.json commit in executeGitProceedBranch (US-001, CAM-236,
+	 * AC4), so the committed PRD and downstream readers (status, dashboard,
+	 * ship, suggestions source) stay coherent with the real branch even if the
+	 * planner emitted something else. Production: rewrites scripts/cam/prd.json
+	 * in place (sidecar.ts). Optional: absent means no rewrite (backward compat
+	 * with tests that do not inject it).
+	 */
+	writePrdBranchNameFn?: (branchName: string) => void;
 	/**
 	 * Returns the plan_approval config value. Production: () => readPlanApproval().
 	 * Tests inject a constant-returning closure to control the path.
@@ -1027,7 +1062,17 @@ export interface RunPostAuditOptions {
 
 /**
  * Execute the three git calls for the proceed-branch path:
- *   checkout -b -> add prd.json -> commit -> setPhaseFn('implementing')
+ *   checkout -B -> [write branchName back into prd.json] -> add prd.json ->
+ *   commit -> setPhaseFn('implementing')
+ *
+ * `checkout -B` (capital B, recreate from current HEAD) is used instead of
+ * `-b` so re-planning the same issue with the branch already existing does
+ * not fail with 'already exists' (US-001, CAM-236, ADR-0016): idempotent
+ * convergence on one branch name per issue.
+ *
+ * writePrdBranchNameFn runs BEFORE `git add`, so the committed prd.json
+ * reflects the derived name even when the planner emitted something else
+ * (US-001, CAM-236, AC4).
  *
  * Extracted from runPostAuditAction to keep that function under the biome
  * cognitive-complexity limit (US-004, CAM-155). All exit-code checks follow
@@ -1037,13 +1082,16 @@ function executeGitProceedBranch(
 	spawnFn: SpawnFn,
 	branchName: string,
 	setPhaseFn: (phase: LoopPhase) => void,
+	writePrdBranchNameFn: ((branchName: string) => void) | undefined,
 ): PostAuditActionResult {
-	const checkoutResult = spawnFn('git', ['checkout', '-b', branchName]);
+	const checkoutResult = spawnFn('git', ['checkout', '-B', branchName]);
 	if ((checkoutResult.exitCode ?? 1) !== 0) {
 		throw new Error(
-			`git checkout -b ${branchName} failed (exit ${checkoutResult.exitCode ?? 'null'})`,
+			`git checkout -B ${branchName} failed (exit ${checkoutResult.exitCode ?? 'null'})`,
 		);
 	}
+
+	writePrdBranchNameFn?.(branchName);
 
 	const addResult = spawnFn('git', ['add', 'scripts/cam/prd.json']);
 	if ((addResult.exitCode ?? 1) !== 0) {
@@ -1123,6 +1171,54 @@ function handlePreflightFailed(
 }
 
 /**
+ * Handle the audit-approved terminal: decide pause-operator vs proceed-branch
+ * (plan_approval config), gate on a missing/invalid issueNumber (US-001,
+ * CAM-236, ADR-0016: replaces the old empty-branchName guard), and on
+ * convergence execute the git calls via executeGitProceedBranch.
+ *
+ * Extracted from runPostAuditAction to keep that function under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
+ * extraction pattern), mirroring handlePlanTargetInvalid / handlePreflightFailed.
+ */
+function handleAuditApproved(
+	issueNumber: unknown,
+	spawnFn: SpawnFn,
+	setPhaseFn: (phase: LoopPhase) => void,
+	writePrdBranchNameFn: ((branchName: string) => void) | undefined,
+	readPlanApprovalFn: () => PlanApproval,
+	notifyFn: ((msg: string) => void) | undefined,
+	removeEscalationMarkerFn: (() => void) | undefined,
+): PostAuditActionResult {
+	const action = decidePostAuditAction(readPlanApprovalFn());
+
+	if (action.kind === 'pause-operator') {
+		return { kind: 'awaiting-operator-approval' }; // AC2
+	}
+
+	// missing-issueNumber gate (US-001, CAM-236, ADR-0016): the branch name is
+	// derived in code from prd.issueNumber, never trusted from the
+	// planner-authored prd.branchName string. When issueNumber is null,
+	// absent, or not a number, the plan is barred here: no git checkout is
+	// spawned, no branch is created, no slug or ad-hoc fallback.
+	const derivedBranchName = deriveBranchName(issueNumber);
+	if (derivedBranchName === null) {
+		notifyFn?.(
+			'[cam] plan skipped: issueNumber is missing or not a number ' +
+			'(prd.json absent, invalid, or issueNumber not a number)',
+		);
+		return { kind: 'no-action' };
+	}
+
+	// proceed-branch: convergence (US-004, CAM-204 AC4). Remove any stale
+	// plan-escalation marker BEFORE creating the branch, so a prior round's
+	// BLOCK escalation never outlives this fresh APPROVE.
+	removeEscalationMarkerFn?.();
+
+	// proceed-branch: create branch BEFORE committing prd.json (AC1, cam-plan.md Step 9)
+	return executeGitProceedBranch(spawnFn, derivedBranchName, setPhaseFn, writePrdBranchNameFn);
+}
+
+/**
  * Best-effort remove the durable plan-preflight-failed marker for any
  * planResult kind other than 'preflight-failed' (US-004, CAM-215, Option B).
  * Not gated on convergence or issueId - see the field doc on
@@ -1147,10 +1243,15 @@ function removePreflightMarkerUnlessPreflightFailed(
  * On audit-approved + proceed-branch (auto mode):
  *   0. removeEscalationMarkerFn() (best-effort; US-004, CAM-204 AC4: a
  *      converging run removes any stale BLOCK escalation marker)
- *   1. git checkout -b <branchName>  (branch BEFORE commit - cam-plan.md Step 9)
- *   2. git add scripts/cam/prd.json
- *   3. git commit -m "chore(cam): commit audited prd.json"
- *   4. setPhaseFn('implementing')    (flip phase to implementing for sidecar loop)
+ *   1. git checkout -B <branchName>  (branch BEFORE commit - cam-plan.md Step 9;
+ *      branchName is derived in code from prd.issueNumber via deriveBranchName,
+ *      US-001, CAM-236, ADR-0016. -B recreates from current HEAD so re-planning
+ *      the same issue is idempotent.)
+ *   2. writePrdBranchNameFn(branchName) (best-effort; writes the derived name
+ *      back into prd.json's branchName field BEFORE the commit, AC4)
+ *   3. git add scripts/cam/prd.json
+ *   4. git commit -m "chore(cam): commit audited prd.json"
+ *   5. setPhaseFn('implementing')    (flip phase to implementing for sidecar loop)
  *   Returns { kind: 'branch-created', branchName }.
  *
  * On audit-approved + pause-operator (operator mode, Half A scope):
@@ -1184,7 +1285,8 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		planResult,
 		spawnFn,
 		setPhaseFn,
-		branchName,
+		issueNumber,
+		writePrdBranchNameFn,
 		readPlanApprovalFn,
 		escalateFn,
 		notifyFn,
@@ -1246,26 +1348,14 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		return { kind: 'no-action' };
 	}
 
-	// audit-approved: decide based on plan_approval config (AC1, AC2, AC4)
-	const action = decidePostAuditAction(readPlanApprovalFn());
-
-	if (action.kind === 'pause-operator') {
-		return { kind: 'awaiting-operator-approval' }; // AC2
-	}
-
-	// empty-branch guard (US-004, CAM-155): a missing/invalid prd.json in the sidecar
-	// yields branchName=''; running `git checkout -b ''` exits 128 and throws, detonating
-	// the plan phase. Pre-check here so a missing PRD escalates cleanly to idle.
-	if (branchName.trim() === '') {
-		notifyFn?.('[cam] plan skipped: branchName is empty (prd.json absent or invalid)');
-		return { kind: 'no-action' };
-	}
-
-	// proceed-branch: convergence (US-004, CAM-204 AC4). Remove any stale
-	// plan-escalation marker BEFORE creating the branch, so a prior round's
-	// BLOCK escalation never outlives this fresh APPROVE.
-	removeEscalationMarkerFn?.();
-
-	// proceed-branch: create branch BEFORE committing prd.json (AC1, cam-plan.md Step 9)
-	return executeGitProceedBranch(spawnFn, branchName, setPhaseFn);
+	// audit-approved: see handleAuditApproved (AC1, AC2, AC4).
+	return handleAuditApproved(
+		issueNumber,
+		spawnFn,
+		setPhaseFn,
+		writePrdBranchNameFn,
+		readPlanApprovalFn,
+		notifyFn,
+		removeEscalationMarkerFn,
+	);
 }
