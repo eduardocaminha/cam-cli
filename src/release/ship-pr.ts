@@ -115,6 +115,26 @@ function stripGithubToken(): Record<string, string> {
 	return env;
 }
 
+/**
+ * Map a conventional-commit `type` (PrdSnapshot.type, US-004/US-005) to the
+ * repo's existing GitHub label. `chore` intentionally maps to no label (the
+ * repo has no "chore" label); an absent/unrecognized type defaults to 'feat'
+ * (mirrors composePrTitle's DEFAULT_TYPE, pr-body.ts), producing 'enhancement'.
+ */
+const TYPE_LABEL_MAP: Record<string, string | null> = {
+	feat: 'enhancement',
+	fix: 'bug',
+	docs: 'documentation',
+	chore: null,
+};
+
+/** Derive the `--label` argv value (or null for no flag) from prdSnapshot.type. */
+function deriveGithubLabel(type: string | undefined): string | null {
+	const key = type?.trim() || 'feat';
+	const mapped = TYPE_LABEL_MAP[key];
+	return mapped === undefined ? 'enhancement' : mapped;
+}
+
 /** Extract the trailing numeric github issue number from an issueId like "CAM-149". */
 function parseGithubIssueNumber(issueId: string | null): number | null {
 	if (issueId === null) return null;
@@ -216,7 +236,10 @@ function postReviewArtifactComment(opts: RunShipPrStepOptions, prNumber: number)
  * Steps (in order):
  *   1. Compose the title/body from prdSnapshot (US-001, no LLM authoring)
  *      and write the body to a temp file.
- *   2. `gh pr create --title <title> --body-file <tmpfile> --base main`
+ *   2. `gh pr create --title <title> --body-file <tmpfile> --base main`,
+ *      appending `--label <label>` derived from prdSnapshot.type via
+ *      TYPE_LABEL_MAP (feat->enhancement, fix->bug, docs->documentation,
+ *      chore->no flag; unrecognized/absent type defaults to 'enhancement')
  *      (mutation: GITHUB_TOKEN stripped). Failure aborts with pr-create-failed.
  *   3. Resolve the PR number via `gh pr view --json number --jq .number`
  *      (read-only: ambient env). A non-numeric result aborts.
@@ -237,11 +260,10 @@ export function runShipPrStep(opts: RunShipPrStepOptions): ShipPrStepOutcome {
 	const bodyFilePath = opts.writeTempFile(body);
 
 	// 2. Create the PR. Mutation: strip GITHUB_TOKEN.
-	const createResult = spawnFn(
-		'gh',
-		['pr', 'create', '--title', title, '--body-file', bodyFilePath, '--base', 'main'],
-		{ encoding: 'utf8', env: stripGithubToken() },
-	);
+	const label = deriveGithubLabel(prdSnapshot.type);
+	const createArgs = ['pr', 'create', '--title', title, '--body-file', bodyFilePath, '--base', 'main'];
+	if (label !== null) createArgs.push('--label', label);
+	const createResult = spawnFn('gh', createArgs, { encoding: 'utf8', env: stripGithubToken() });
 	if ((createResult.status ?? 1) !== 0) {
 		const detail = (createResult.stderr || createResult.stdout || '').trim() || '(no output)';
 		return { ok: false, detail: `gh pr create failed (exit ${createResult.status ?? 'null'}): ${detail}` };

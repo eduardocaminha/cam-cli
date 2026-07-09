@@ -151,6 +151,7 @@ describe('runShipPrStep', () => {
 			const createCall = calls.find((c) => c.args[0] === 'pr' && c.args[1] === 'create');
 			expect(createCall?.args).toEqual([
 				'pr', 'create', '--title', 'feat: Deterministic ship runner (CAM-149)', '--body-file', '/tmp/cam-ship-pr-1.md', '--base', 'main',
+				'--label', 'enhancement',
 			]);
 		});
 
@@ -168,6 +169,42 @@ describe('runShipPrStep', () => {
 
 			const mergeCall = calls.find((c) => c.args[0] === 'pr' && c.args[1] === 'merge');
 			expect(mergeCall?.args).toEqual(['pr', 'merge', '--auto', '--squash']);
+		});
+	});
+
+	describe('type-derived --label on pr create (US-006)', () => {
+		test.each([
+			['feat', 'enhancement'],
+			['fix', 'bug'],
+			['docs', 'documentation'],
+		])('type=%s appends --label %s exactly once', (type, expectedLabel) => {
+			const { opts, calls } = makeOpts();
+			opts.prdSnapshot = { ...PRD_SNAPSHOT, type };
+			runShipPrStep(opts);
+
+			const createCall = calls.find((c) => c.args[0] === 'pr' && c.args[1] === 'create');
+			const labelArgs = createCall?.args.filter((a) => a === '--label') ?? [];
+			expect(labelArgs).toHaveLength(1);
+			expect(createCall?.args).toContain(expectedLabel);
+			expect(createCall?.args.slice(-2)).toEqual(['--label', expectedLabel]);
+		});
+
+		test('type=chore produces no --label flag', () => {
+			const { opts, calls } = makeOpts();
+			opts.prdSnapshot = { ...PRD_SNAPSHOT, type: 'chore' };
+			runShipPrStep(opts);
+
+			const createCall = calls.find((c) => c.args[0] === 'pr' && c.args[1] === 'create');
+			expect(createCall?.args).not.toContain('--label');
+		});
+
+		test('absent type behaves as feat (--label enhancement)', () => {
+			const { opts, calls } = makeOpts();
+			opts.prdSnapshot = { ...PRD_SNAPSHOT, type: undefined };
+			runShipPrStep(opts);
+
+			const createCall = calls.find((c) => c.args[0] === 'pr' && c.args[1] === 'create');
+			expect(createCall?.args.slice(-2)).toEqual(['--label', 'enhancement']);
 		});
 	});
 
