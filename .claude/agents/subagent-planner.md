@@ -29,7 +29,7 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
 ```json
 {
   "project": "<project name>",
-  "branchName": "cam/pr-<N>-<slug>",
+  "branchName": "cam/issue-<issueNumber>",
   "description": "<one-line summary>",
   "issueNumber": null,
   "relatedDocs": ["docs/<deep-dive>.md"],

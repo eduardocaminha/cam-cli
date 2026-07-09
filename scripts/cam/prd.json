@@ -3,7 +3,9 @@
   "branchName": "cam/pr-234-deterministic-branch-naming",
   "description": "Derive the feature branch name deterministically in code as cam/issue-<prd.issueNumber> (no slug), removing the planner LLM as the source of branch names and eliminating orphan remote branches.",
   "issueNumber": 234,
-  "relatedDocs": ["docs/adr/0016-nomeacao-de-branch-derivada-em-codigo-no-formato-cam-issue-n.md"],
+  "relatedDocs": [
+    "docs/adr/0016-nomeacao-de-branch-derivada-em-codigo-no-formato-cam-issue-n.md"
+  ],
   "officialDocsConsulted": [
     {
       "lib": "git (checkout)",
@@ -49,7 +51,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/agents/subagent-planner.md (line 32), templates/agents/subagent-auditor.md (line 82, check 14 under section E. Repo invariants), .claude/agents/subagent-planner.md (line 32), .claude/agents/subagent-auditor.md (line 82), src/vendor/_generated.ts (regenerated, never hand-edited). Gotchas: (1) cam dual-copy is per-file: the .claude/ and templates/ copies of these files are NOT byte-identical overall; edit only the branchName lines in each copy, do not sync whole files. (2) Vendor re-embed is mandatory: both templates have embedded copies in src/vendor/_generated.ts (~lines 26 and 29); embed-vendor:check fails if stale, regenerate with bun run embed-vendor. (3) This very PR was planned pre-change and ships under the old-format branch name; the new naming only affects PRDs planned after merge + rebuild, which is expected per the issue gotchas.",
       "repo": "main-repo"
