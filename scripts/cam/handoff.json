@@ -1,0 +1,29 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Rename IssueSystem enum and setup prompts none->local"
+  },
+  "branchName": "cam/issue-236",
+  "timestamp": "2026-07-09T04:58:01Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/setup.ts",
+    "src/ui/SetupScreen.tsx",
+    "test/commands/setup-merge-mode.test.ts",
+    "test/interactivity/interactivity.test.ts",
+    "test/setup-collection-eof.test.ts",
+    "test/ui/init-setup-screen-keys.test.ts"
+  ],
+  "openQuestions": [
+    "scripts/build-release.sh AC4 smoke still passes '--issue-system none' to the compiled binary; parseSetupArgs now rejects 'none' (only linear|github|local). test/build-release-smoke.test.ts is a static-source guard against the script content, so it stays green, but the actual smoke run in build-release.sh would fail at runtime until the script's literal is updated to 'local'. Not in scope for US-001..US-004 notes; flagging as a follow-up for the operator/next planner.",
+    "scripts/cam/patterns.md:46 (finalizeCycleClose hardening bullet) still documents the guard as issue_system == 'none'; US-004's notes already flag this as a knowledge-doc-only follow-up, not a code path."
+  ],
+  "nextStoryContext": "US-002 is next: add src/config/issue-system.ts exporting readIssueSystem(config) returning IssueSystem, and wire ship-finalize.ts + ship-pr.ts off their local 'none' defaults/comparisons onto 'local'. The IssueSystem type now lives in src/commands/setup.ts as 'linear' | 'github' | 'local' (this story removed 'none' from the type, the readline prompt, ISSUE_SYSTEMS validator array, and the Ink ISSUE_OPTIONS/defaultValue/issueLabel in SetupScreen.tsx). Elsewhere in the codebase issue_system is read as a loose string (typeof config['issue_system'] === 'string' ? ... : 'none') so nothing else broke typecheck from this rename; those loose-string default fallbacks ('none') are exactly what US-002/US-003 need to flip to 'local'.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure string-literal rename ('none'->'local') across an internal type union, a readline choices array, and Ink Select options/defaultValue; no new API surface of Ink, readline, or any external library was exercised."
+    }
+  ]
+}

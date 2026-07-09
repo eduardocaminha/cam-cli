@@ -23,7 +23,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/setup.ts (type :53, readline choices+default :185-186, ISSUE_SYSTEMS :747, --issue-system arg parse nearby), src/ui/SetupScreen.tsx (ISSUE_OPTIONS :68-72, defaultValue :170). The enum change and BOTH prompts must land in this one story or typecheck breaks ('none' literals stop being assignable to IssueSystem). Update setup tests that pass issueSystem values (test/commands/setup-models-defaults.test.ts builds config via issue_system key; the test at :99-106 uses 'linear' and survives). Do NOT touch unrelated 'none' literals (BumpLevel in src/release/bump.ts, ObserveState kind, triage sha): surgical scope is issue_system only."
     },
