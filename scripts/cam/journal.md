@@ -620,3 +620,15 @@ Each entry follows this template:
 - **Decisions**: Scope decision AGAINST implementing cross-repo harness support: kept docs-only, no src runtime change. The stage:specified gate was trustworthy (the /cam-spec output already resolved the decision), so planning it autonomously was correct. Post-merge coherence verified read-only AFTER the sidecar push; no git-fetch poll ran during the merge window (CAM-228 lesson held).
 - **Blockers encountered**: None. PR #182 landed BEHIND (main advanced via the CAM-231 close/patterns-archive on-main commits); the sidecar merge-watch (CAM-182) merged on CI green and the post-merge completed cleanly (pull + close CAM-231 + tag v0.107.0) with no pull-failed. Note: cam patterns archive ran 5 entries on the ship path (CAM-226 feature working live).
 - **Follow-ups**: Continue the autonomous specified chain (operator standing directive: drive to exhaustion): next plannable after CAM-231 is CAM-232 (newly unblocked), then CAM-240; CAM-233 still blocked -- re-derive live via cam issue list. Renovate #173 (bun 1.3.14) stays RED until CAM-245 ships (needs /cam-spec first). Installed cam binary stale; rebuild+reinstall would restore interactive cam tag.
+
+## CAM-232 — Seeds de template capados: sync de seeds stale + arquivos de template faltantes
+
+- **Started**: 2026-07-09T18:12:00Z
+- **Closed**: 2026-07-09T18:28:00Z
+- **Branch**: cam/issue-232
+- **Issue**: CAM-232
+- **Outcome**: shipped
+- **Summary**: Nono issue da cadeia de context-truth-up dirigida pelo operador (apos CAM-225, CAM-227, CAM-228, CAM-229, CAM-224, CAM-230, CAM-226, CAM-231). 2 stories non-operator, 100% autonomo apos o plan signal. US-001: sync one-time dos seeds de template stale (issues.schema spec-source + pointer no CLAUDE.md). US-002: seed dos arquivos de template faltantes (patterns.md stub + orch-handoff.schema.json) para que projetos downstream via cam init recebam config completa e correta. Auditor APPROVE, gates verdes (typecheck ok, 3997 pass / 0 fail), review CLEAN round 1 zero findings. Shipado ci-gated como PR #183, tag v0.108.0.
+- **Decisions**: Escopo mantido em seed sync one-time (corrigir seeds existentes + adicionar os dois arquivos faltantes); nenhum mecanismo de deteccao continua de drift foi adicionado (fora de escopo). Planejado autonomamente: o gate stage:specified era confiavel. Coerencia post-merge verificada read-only APOS o push do sidecar; nenhum git-fetch poll rodou na janela de merge (licao CAM-228).
+- **Blockers encountered**: Nenhum. PR #183 landou BLOCKED ate o CI verde (ci-gated branch protection); o merge-watch do sidecar (CAM-182) mergeou no verde e o post-merge completou limpo (pull + close CAM-232 + tag v0.108.0) sem pull-failed.
+- **Follow-ups**: Continuar a cadeia specified autonoma (diretriz permanente do operador: drenar ate esvaziar): proximo plannable apos CAM-232 e CAM-233 (destravado agora), depois CAM-240 -- re-derivar live via cam issue list. Renovate #173 (bun 1.3.14) segue RED ate CAM-245 shipar (precisa /cam-spec antes). Binario cam instalado stale; rebuild+reinstall restauraria o cam tag interativo.
