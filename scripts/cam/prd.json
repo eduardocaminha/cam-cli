@@ -19,7 +19,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: index.ts (HELP entries at ~line 97 `plan [--issue <N>]` and ~line 99 `next ... launches the autonomous loop as a tmux pane`). Non-templated (index.ts is source, not embedded), so NO re-embed. Cross-check PLAN_HELP at index.ts:209 (`usage: 'cam plan [<N>]'`) as the ground truth for the corrected wording. No-behavior-change: only the HELP description strings move."
     },

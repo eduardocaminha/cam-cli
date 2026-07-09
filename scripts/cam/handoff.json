@@ -1,0 +1,14 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Fix cam binary HELP for next and plan"
+  },
+  "branchName": "cam/issue-233",
+  "timestamp": "2026-07-09T00:00:00Z",
+  "modifiedFiles": ["index.ts"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 fixed only the top-level `cam --help` entries for `next` (line ~99, now 'Trigger the sidecar loop (flips active:true, thin-proxy)', matching README line 133 wording) and `plan` (line ~97, now `plan [<N>]` instead of `plan [--issue <N>]`, matching PLAN_HELP usage at index.ts:209). No behavior change, no argument parser change (plan.ts already only accepted a positional issue number; the old top-level entry text was just stale). US-002 (next story) targets version.ts comment + package.json parity assert -- unrelated surface, no shared state.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
