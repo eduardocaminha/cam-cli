@@ -147,6 +147,13 @@ instead of this command: those tools are disallowed for this reason, and a
 hand-written domain doc bypasses validation and the on-main commit
 guarantees.
 
+The command's own stdout is the handback contract on success (a real write,
+not the noOp path):
+
+```
+CAM_DOMAIN_DOCS_WRITTEN=<id> sha=<sha>   # success, exit 0
+```
+
 A non-zero exit from `cam spec --write-docs` is a real failure and **must be
 reported to the operator, never silently skipped**: print the error and stop.
 This is the exact CAM-109 failure mode this step exists to close: the spec
@@ -161,8 +168,8 @@ the operator that the second write never happened.
 | Issue not `stage:idea` | Stop, print: `<id> is already stage:<stage> — nothing to do` |
 | Issue not `status:open` | Stop, print: `<id> is not open (status:<status>)` |
 | Spec validation fails | Show the validation errors, ask the operator to correct the answers |
-| diverged / detached-head | Stop, print the `CAM_SPEC_RESULT=ERROR reason=<reason>` line from `cam spec --persist`; report to the operator, never retry silently |
+| diverged / detached-head / missing-main | Stop, print the `CAM_SPEC_RESULT=ERROR reason=<reason>` line from `cam spec --persist`; report to the operator, never retry silently |
 | Concurrent loop active | Stop, ask operator to pause the loop first |
 | `cam spec --write-docs` malformed/invalid payload | Stop, print the validation errors from the command's stderr; never silently skip |
-| `cam spec --write-docs` diverged / detached-head | Stop, print the guard error; report to the operator, never silently skip |
+| `cam spec --write-docs` diverged / detached-head / missing-main | Stop, print the guard error; report to the operator, never silently skip |
 | `cam spec --write-docs` noOp (empty payload, nothing to write) | Not a failure: print the muted hint and continue |

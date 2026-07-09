@@ -86,7 +86,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Templated files (BOTH copies): .claude/commands/cam-plan.md + templates/commands/cam-plan.md; .claude/commands/cam-spec.md + templates/commands/cam-spec.md. After editing both copies run `bun run embed-vendor` to refresh src/templates/embedded.ts, then `bun run embed-vendor:check`. Gotcha (memory cam-dual-copy-is-per-file): the two copies are NOT guaranteed byte-identical outside the edited lines; diff before assuming, edit only the audited lines. Ground truth: spec.ts:318 emits `CAM_DOMAIN_DOCS_WRITTEN=<id> sha=`; issue-specify.ts:106 uses reason `missing-main`."
     },
