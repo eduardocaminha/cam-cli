@@ -54,6 +54,8 @@ The agent does NOT hand-write a prose progress record. The event log is supervis
 
 `scripts/cam/patterns.md` is grep-on-demand, not a mandatory full read: grep it for the section/keywords matching the subsystem this story touches and read only the matching bullets. When a story reveals a new reusable insight that isn't a durable invariant, append a bullet to `scripts/cam/patterns.md`.
 
+**Marking a bullet resolved:** once a bullet documents a one-time, already-resolved mechanic rather than a living invariant, prefix it with `[resolved YYYY-MM]` immediately after the leading `- ` (e.g. `- [resolved 2026-06] **title** ...`). `cam patterns archive` moves every bullet carrying this marker, verbatim, into `scripts/cam/patterns.archive.md` in one on-main commit; unmarked bullets are left in place. Never mark a durable, project-wide invariant this way.
+
 ## Cross-Repo PRDs (optional)
 
 Some PRDs span multiple repos. A PRD may declare a top-level `crossRepoLayout` block mapping logical repo names to absolute filesystem paths:

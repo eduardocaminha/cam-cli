@@ -79,7 +79,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Retrofit targets (issue names them): the ink-testing-library bullets ('ink-testing-library keypress simulation', 'ink-testing-library setState re-render timing', 'chalk.level and ANSI in ink-testing-library', 'Ink 7 ESC pending-buffer') and 'tmux window-resized hook + resize-pane -x clamp' - all one-time 2026-06 build-notes documenting resolved mechanics, not living invariants. Do NOT mark durable invariants (Bun runtime, permission-mode, claude -p forbidden, noUncheckedIndexedAccess, Ink success/failure glyph, single-hub dispatch, sidecar-supervisor). Marker format must match the US-001 parser exactly. Document in scripts/cam/CLAUDE.md 'Knowledge-Layer Routing' section (the patterns.md row / routing notes), BOTH copies, then `bun run embed-vendor` to regen src/vendor/_generated.ts. GOTCHA (issue): patterns.md is grep-on-demand since CAM-223 (shipped); this mechanism is for file hygiene/scannability, NOT context reduction - do not reintroduce a full-read. Location convention: patterns.md and patterns.archive.md stay under scripts/cam/, do not relocate. CAM-224 (shared CLAUDE.md editor) is already shipped, so no concurrent-edit risk."
     }
