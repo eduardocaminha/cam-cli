@@ -1,0 +1,9 @@
+{
+  "id": "CAM-244",
+  "title": "Renovate automerge de managers so-container (major) mergeia num CI macOS cego ao container",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T13:45:45.597Z",
+  "description": "As regras de automerge do renovate.json casam matchUpdateTypes incl. 'major' para os managers dockerfile e asdf, mas o CI e macos-latest sem nenhum passo de container/docker (so checkout + gates via bun). Consequencia: um bump so-container (oven/bun docker tag; nodejs em .tool-versions/Dockerfile) auto-mergeia assim que a PR fica verde no CI macOS, que nunca buildou nem rodou a imagem do worker (trap do CAM-178) - ou seja, mudanca de container nao-testada entra na main. Decidir: (a) excluir 'major' (ou o manager inteiro) do automerge para os managers de escopo-container, deixando essas PRs para merge manual apos validacao; ou (b) gatear o automerge desses no harness in-container (CAM-186, scripts/test-in-container.ts) em vez de so no check ci. Os managers exercitados de verdade pelo CI (bun-version, github-actions, e o proprio bun) podem manter automerge. Casa com CAM-201 (toolchain-parity), CAM-178 (CI cego ao container) e CAM-243 (pins do gate)."
+}

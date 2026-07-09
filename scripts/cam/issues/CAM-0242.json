@@ -1,0 +1,9 @@
+{
+  "id": "CAM-242",
+  "title": "Worker herda CLAUDE_CODE_OAUTH_TOKEN do OS env do tmux server em host mode -> pina worker na conta do token (bypassa login Team do config dir)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T13:15:48.476Z",
+  "description": "Em host mode, todo worker (planner/auditor/implementer/reviewer) e filho direto do processo do tmux server. O tmux server e iniciado por cam run com o .env carregado pelo Bun, entao CLAUDE_CODE_OAUTH_TOKEN fica no OS env do processo do server e TODO pane spawnado o herda (respawn-pane inherita o OS env do server, nao a tabela do set-environment). Efeito: o worker autentica na conta do token em vez do login interativo do config dir (~/.claude-pessoal); se a conta do token esta capada (monthly spend limit) todo worker bate no limite e pede /rate-limit-options por-pane. `tmux set-environment -g -u` NAO resolve (nao muda env de processo vivo); limpar o .env so vale pra um server novo (exige restart do cam run). Fix duravel: adicionar CLAUDE_CODE_OAUTH_TOKEN ao WORKER_ENV_UNSET (src/supervisor/worker-argv.ts) para o prefixo `env -u ...` strippar o token no spawn do worker host, forcando o worker a usar o login do config dir. Avaliar: o path de container (worker-container.ts, CAM-150) INTENCIONALMENTE passa -e CLAUDE_CODE_OAUTH_TOKEN (container nao tem config dir logado), entao o strip deve valer so pro host worker, nao quebrar o container. Origem: debug de spend-limit 2026-07-09 (host mode)."
+}
