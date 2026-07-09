@@ -82,7 +82,7 @@
         "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "The two planner agent copies DIFFER today (verified via diff): apply the same section-level edit to each copy independently, never a full-file sync (repo invariant: cam dual-copy is per-file, not byte-identical). Files: .claude/agents/subagent-planner.md, templates/agents/subagent-planner.md. Touching templates/ requires bun run embed-vendor before commit. Depends on US-001 (schema field exists)."
     },

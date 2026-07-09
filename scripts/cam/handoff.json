@@ -1,20 +1,20 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Capture/confirm type in the /cam-spec grill (both command copies)" },
+  "lastCompletedStory": { "id": "US-004", "title": "Planner carries type from the issue into the PRD (both planner agent copies)" },
   "branchName": "cam/issue-235",
   "timestamp": "2026-07-09T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/commands/cam-spec.md",
-    "templates/commands/cam-spec.md",
+    ".claude/agents/subagent-planner.md",
+    "templates/agents/subagent-planner.md",
     "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 (planner carries type from the issue into the PRD, both planner agent copies) is next. The issue's optional top-level `type` field (feat|fix|chore|docs, set via US-002's `specifyIssueOnMain` + US-003's grill capture) needs to flow into the generated PRD so US-005 (composePrTitle) and US-006 (ship-pr label) have something to read. Check the planner agent copies (.claude/agents/*planner*.md and templates/agents/*planner*.md, or wherever /cam-plan's PRD-authoring instructions live) for how they currently read the issue JSON and where the PRD schema/prd.json shape would carry a `type` value (likely a top-level `type` key on the PRD itself, defaulting to 'feat' when the issue has none — the deferred default from US-002/US-003). Both command copies of /cam-spec are byte-identical after this story (re-verify with diff before assuming a single edit suffices, per the cam-dual-copy-is-per-file pattern).",
+  "nextStoryContext": "US-005 (composePrTitle emits <type>: <text> (CAM-<N>)) is next. The PRD now carries a top-level `type` field (defaults to 'feat', copied from the issue by the planner per US-004; the issue's own `type` is optional per US-001/US-002/US-003). Find composePrTitle (grep found it in src/release/pr-body.ts and used from src/release/ship-pr.ts / src/supervisor/ship-runner.ts) and change its title format to prefix with `<type>: ` derived from prdSnapshot.type (defaulting to 'feat' when the PRD lacks the field, for PRDs authored before this story). Do not touch the issue schema or planner again; this story is PRD-consumption only. After this, US-006 (ship-pr GitHub label) reads the same type value.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure Markdown documentation edit to the two /cam-spec command-doc copies (grill instructions + persist-payload example); no external library API was exercised."
+      "summary": "Pure Markdown edit to the two subagent-planner.md schema/instruction copies (added a top-level `type` field to the PRD output schema + copy-from-issue/default-feat instruction) and vendor re-embed; no external library API was exercised."
     }
   ]
 }
