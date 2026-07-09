@@ -524,3 +524,15 @@ Each entry follows this template:
 - **Decisions**: none is a deprecated read-normalized alias for local, not a removed value (ADR 0018): normalize at the single readIssueSystem point, keep it accepted by cam init, guard permanently via the build-release smoke + a unit test. Fix-forward over revert (operator-chosen). This closes the operator-directed branch/PR hygiene theme (CAM-234/235/236) plus its regression.
 - **Blockers encountered**: none during the loop
 - **Follow-ups**: Cosmetic, unfiled: PR #172 was type:fix but bumped MINOR (0.98->0.99) not patch, because classifyBump reads branch commit subjects, not the PRD type. Process note: a mandatory back-compat/alias requirement in an issue body slipped past auditor APPROVE + reviewer CLEAN and was caught only by the build-release smoke; the smoke is load-bearing acceptance.
+
+## cam/pr-175-orch-prompt-truthup — CAM-225 shipped: truth-up orchestrator prompt (dispatch/sidecar/handoff) + boot journal tail-read
+
+- **Started**: 2026-07-09
+- **Closed**: 2026-07-09T13:55:24Z
+- **Branch**: cam/issue-225
+- **Issue**: CAM-225
+- **Outcome**: shipped
+- **Summary**: Truthed-up both orchestrator prompt copies (.claude/agents + templates/agents) plus re-embed to match the real system: full PreToolUse allowlist and reviewer-as-worker, signal-file vs send-keys dispatch (removed the nonexistent CAM_LOOP_STATUS sentinel), documented CAM_ORCH_REHYDRATE step-0, meta_loop=auto auto-plan, CAM-189 auto-filed SUGGESTIONs, switched boot journal-read to tail+grep-on-demand, and corrected handoff required-fields + close-on-ship. 4 stories, review round 1 CLEAN, PR #175 ci-gated, v0.100.0.
+- **Decisions**: Prompt-only; no src runtime change beyond the embed regeneration. Both copies kept byte-identical in the body per cam-dual-copy-is-per-file. First of the operator's 11-issue context-truth-up specified chain (CAM-224/225/226/227/228/229/230/231/232/233/240).
+- **Blockers encountered**: None on the ship. Auto-ship fired on its own (no CAM-191 wedge this cycle). PR #175 landed BEHIND because main advanced (Renovate #174 checkout-v7 merge + CAM-242/243/244/245 filings); sidecar merge-watch CAM-182 ran update-branch (2/2) and it merged clean.
+- **Follow-ups**: Continue the chain topological by blockedBy: next unblocked specified are CAM-227/228/229. Renovate App installed this session: #174 (checkout v7) merged; #173 (bun 1.3.14) RED until CAM-245 ships (brittle literal-pin toolchain test at test/config/toolchain.test.ts). Filed CAM-243 (jscpd@5 native-Rust dup-gate pin spike), CAM-244 (container-manager automerge on container-blind macOS CI), CAM-245 (P2, unblocks Renovate toolchain automerge). Idea follow-ups needing /cam-spec: CAM-237/238/242 (242 deferred by operator).
