@@ -55,6 +55,11 @@
     },
     "spec": {
       "description": "Structured specification artifact. Shape is defined by Epico B."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["feat", "fix", "chore", "docs"],
+      "description": "Optional PR-title/label signal. Defaults to feat on read when absent."
     }
   },
   "additionalProperties": false

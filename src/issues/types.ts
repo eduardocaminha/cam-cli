@@ -48,5 +48,6 @@ export interface IssueEntry {
 	spec?: Spec;
 	specSource?: "grill" | "derived" | "operator";
 	derivedFrom?: string[];
+	type?: "feat" | "fix" | "chore" | "docs";
 }
 
