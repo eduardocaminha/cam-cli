@@ -1,9 +1,37 @@
 {
   "id": "CAM-226",
   "title": "GC do patterns.md: archive threshold espelhando cam journal archive",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-224"
+  ],
   "createdAt": "2026-07-08T23:05:44.327Z",
-  "description": "patterns.md esta em 292KB / 271 bullets e cresce sem teto (append-only, never truncated por convencao). O journal tem GC deterministico (cam journal archive, threshold 50, move o terco mais velho pra journal.archive.md em commit atomico no main); patterns nao tem nada. Criar mecanismo equivalente (cam patterns archive ou extensao do journal archive) movendo bullets resolvidos/datados pra patterns.archive.md, mantendo o arquivo quente escaneavel. Muitos bullets sao build-notes one-time de 2026-06 (ink-testing timing, tmux resize arithmetic) que documentam mecanica resolvida, nao invariante viva. Interage com CAM-223 (invariantes movem pro CLAUDE.md; patterns vira grep-on-demand) mas e mecanismo independente. Origem: auditoria de contexto 2026-07-08."
+  "description": "patterns.md esta em 292KB / 271 bullets e cresce sem teto (append-only, never truncated por convencao). O journal tem GC deterministico (cam journal archive, threshold 50, move o terco mais velho pra journal.archive.md em commit atomico no main); patterns nao tem nada. Criar mecanismo equivalente (cam patterns archive ou extensao do journal archive) movendo bullets resolvidos/datados pra patterns.archive.md, mantendo o arquivo quente escaneavel. Muitos bullets sao build-notes one-time de 2026-06 (ink-testing timing, tmux resize arithmetic) que documentam mecanica resolvida, nao invariante viva. Interage com CAM-223 (invariantes movem pro CLAUDE.md; patterns vira grep-on-demand) mas e mecanismo independente. Origem: auditoria de contexto 2026-07-08.",
+  "spec": {
+    "scope": "Add a deterministic, marker-based GC for scripts/cam/patterns.md mirroring the journal-archive plumbing, so the hot file stays scannable while living invariants are preserved. Files: a new src/commands/patterns-archive.ts (archivePatternsOnMain, mirroring src/commands/journal-archive.ts on-main commit-tree, lazy-create scripts/cam/patterns.archive.md) + `cam patterns archive` wiring in the CLI + tests; a documented marking convention and best-effort auto-run on the --cycle-close path (alongside journal archive); a one-time retrofit marking the already-identified 2026-06 one-time build-notes in patterns.md; the knowledge-layer routing note in scripts/cam/CLAUDE.md (both copies + re-embed). Out of scope: position/age-based or count-threshold archival (rejected: patterns is not chronological and old != stale), moving living invariants, and the CAM-223 invariants-to-CLAUDE.md diet (already shipped, independent).",
+    "acceptanceCriteria": [
+      "`cam patterns archive` moves only bullets carrying an explicit resolved marker (e.g. a leading `[resolved YYYY-MM]` tag or a dedicated resolved/historical section) from scripts/cam/patterns.md to scripts/cam/patterns.archive.md, on main via commit-tree plumbing (mirroring archiveJournalOnMain), without touching the working branch. Unmarked bullets (living invariants) are never moved.",
+      "patterns.archive.md is lazily created (absent-on-main treated as empty), matching the journal.archive.md behavior.",
+      "The archival criterion is NOT position/age/count based: an old-but-unmarked invariant is retained; only marked bullets are archived.",
+      "The already-identified one-time 2026-06 build-notes (e.g. ink-testing timing, tmux resize arithmetic) are retrofitted with the resolved marker so the first archive run has content to move, and the marking convention is documented in scripts/cam/CLAUDE.md's knowledge-layer routing (both copies).",
+      "patterns archive runs best-effort on the --cycle-close path alongside journal archive (never blocks handoff), and a manual `cam patterns archive` invocation also works.",
+      "Unit tests cover: marked bullets are moved, unmarked bullets are retained, empty/absent archive is created, and a no-marked-bullets run is a clean no-op. `bun run embed-vendor:check` passes (scripts/cam/CLAUDE.md templated), `bun run typecheck`, `bun test`, and vendor/check are green."
+    ],
+    "gotchas": [
+      "patterns.md is grep-on-demand since CAM-223 (shipped), so the context-budget pressure is already gone; this mechanism is for file hygiene/scannability, not context reduction. Do not re-introduce a full-read.",
+      "The journal-archive 'oldest third' criterion does NOT transfer: journal entries are chronological (## YYYY-MM-DD), patterns bullets are append-only invariants where old != stale. Reuse the on-main commit-tree plumbing pattern from journal-archive.ts, not its selection criterion.",
+      "Efficacy depends on bullets being marked resolved; unmarked stale bullets won't be archived. This is the accepted trade-off (a marker is the deterministic encoding of an inherently semantic judgment); the convention is documented and the retrofit seeds it.",
+      "Both CAM-226 and CAM-224 edit scripts/cam/CLAUDE.md (different sections: 224 the 'Your Task' steps, 226 the knowledge-layer routing), so this is blockedBy CAM-224 to avoid concurrent edits.",
+      "Location convention: patterns.md and patterns.archive.md stay under scripts/cam/ (cam-harness knowledge); do not relocate."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 3
+  },
+  "type": "chore"
 }
