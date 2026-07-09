@@ -1,7 +1,7 @@
 {
   "id": "CAM-222",
   "title": "Gate de integridade: abandono nao reseta stage, deixa zumbi specified+abandoned",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T21:22:57.927Z",
