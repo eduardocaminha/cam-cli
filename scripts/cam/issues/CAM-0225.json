@@ -1,7 +1,7 @@
 {
   "id": "CAM-225",
   "title": "Truth-up do prompt do orquestrador: dispatch/sidecar/handoff + boot le tail do journal",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T23:05:42.121Z",
