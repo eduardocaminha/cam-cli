@@ -41,7 +41,7 @@ import {
 const FIXED_TS = '2026-06-25T10:00:00.000Z';
 const clock = () => FIXED_TS;
 
-const PROJECT_TOML = 'issue_system = "none"\nissue_prefix = "CAM"\n';
+const PROJECT_TOML = 'issue_system = "local"\nissue_prefix = "CAM"\n';
 
 // Existing issue in the dir (CAM-88). allocateId will return 89.
 const EXISTING_ENTRY = {
@@ -619,7 +619,7 @@ describe('createLocalIssueOnMain — issue_prefix', () => {
 		const result = createLocalIssueOnMain(
 			makeOptions({
 				spawnFn,
-				readProjectToml: () => 'issue_system = "none"\n',
+				readProjectToml: () => 'issue_system = "local"\n',
 			}),
 		);
 		assertOk(result);
@@ -631,7 +631,7 @@ describe('createLocalIssueOnMain — issue_prefix', () => {
 		const result = createLocalIssueOnMain(
 			makeOptions({
 				spawnFn,
-				readProjectToml: () => 'issue_system = "none"\nissue_prefix = "PROJ"\n',
+				readProjectToml: () => 'issue_system = "local"\nissue_prefix = "PROJ"\n',
 			}),
 		);
 		assertOk(result);

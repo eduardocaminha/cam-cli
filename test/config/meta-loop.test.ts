@@ -98,7 +98,7 @@ describe('readMetaLoop - absent (default off)', () => {
 
 	test('returns "off" when [loop] section is absent', () => {
 		const path = writeTmpToml(`
-issue_system = "none"
+issue_system = "local"
 backend = "claude"
 `);
 		expect(readMetaLoop(path)).toBe('off');

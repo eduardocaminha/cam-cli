@@ -3,7 +3,7 @@
 // Tests for runIssueList() in src/commands/issue-list.ts (`cam issue list`).
 //
 // Coverage (US-002 acceptance criteria):
-//   AC1: issue_system read (missing file/key defaults to 'none'); 'none'
+//   AC1: issue_system read (missing file/key defaults to 'local'); 'local'
 //        reads the backlog via readBacklogFromMain and renders through the
 //        src/logging print helpers with the injectable writer seam.
 //   AC2: row shape -- priority (blank when unranked), id, [blocked: ...]
@@ -15,12 +15,12 @@
 //        never claude).
 //
 // Coverage (US-002, CAM-222 acceptance criteria -- `cam issue list --json`):
-//   AC1: 'none' + --json writes pure JSON (JSON.parse-able, no emitTitle/
+//   AC1: 'local' + --json writes pure JSON (JSON.parse-able, no emitTitle/
 //        heading decoration) with exactly { counts, plannable, byStage }.
 //   AC2: status:'abandoned' entries (including the specified+abandoned
 //        zombie fixture) never appear in the JSON output.
 //   AC4: --json with 'linear'/'github' keeps the existing hint behavior and
-//        exits 0 (the JSON contract is 'none'-only).
+//        exits 0 (the JSON contract is 'local'-only).
 //   AC5 (reuse): --json still routes through readBacklogFromMain, never a
 //        raw working-tree read (same recording-spawn fixture proves it).
 //
@@ -132,11 +132,11 @@ function lineWith(plain: string, needle: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// AC1: issue_system read + 'none' backend render path
+// AC1: issue_system read + 'local' backend render path
 // ---------------------------------------------------------------------------
 
 describe('runIssueList — issue_system read (AC1)', () => {
-	test('missing project.toml defaults to none and renders the backlog', () => {
+	test('missing project.toml defaults to local and renders the backlog', () => {
 		const entries = [makeIssue({ id: 'CAM-1', stage: 'idea' })];
 		const { spawnFn, calls } = makeRecordingBacklogSpawn(entries);
 		const { writer, plain } = makeCapture();
@@ -153,7 +153,7 @@ describe('runIssueList — issue_system read (AC1)', () => {
 		expect(calls.length).toBeGreaterThan(0);
 	});
 
-	test('project.toml present without an issue_system key also defaults to none', () => {
+	test('project.toml present without an issue_system key also defaults to local', () => {
 		writeProjectToml('issue_prefix = "CAM"\n');
 		const entries = [makeIssue({ id: 'CAM-1', stage: 'idea' })];
 		const { spawnFn } = makeRecordingBacklogSpawn(entries);
@@ -442,7 +442,7 @@ describe('runIssueList — --json machine mode', () => {
 		expect(parsed.byStage.shipped).toEqual([{ id: 'CAM-1', title: 'Test issue', rank: null }]);
 	});
 
-	test('--json with issue_system linear still prints the Linear hint (JSON contract is none-only), exits 0', () => {
+	test('--json with issue_system linear still prints the Linear hint (JSON contract is local-only), exits 0', () => {
 		const configPath = writeProjectToml('issue_system = "linear"\n');
 		const { spawnFn, calls } = makeRecordingBacklogSpawn([]);
 		const { writer, plain } = makeCapture();

@@ -30,7 +30,7 @@ const VALID_ISSUE_SYSTEMS: readonly IssueSystem[] = ['linear', 'github', 'local'
  *
  * - Absent key -> `'local'` (the default backend).
  * - Value in `{linear, github, local}` -> returned as-is.
- * - Any other value (including the legacy `'none'`) -> throws.
+ * - Any other value (including the legacy `none` sentinel) -> throws.
  */
 export function readIssueSystem(config: Record<string, unknown>): IssueSystem {
 	const value = config['issue_system'];
