@@ -96,4 +96,7 @@ Mapeamento deterministico do issue type para o label do GitHub aplicado na PR: f
 Valor canonico do issue_system para o issue system local (arquivos JSON em scripts/cam/issues/, CLI cam issue list, stages, WSJF, spec flow). Substitui o antigo none, que sugeria ausencia apesar de haver um tracker local completo.
 
 **readIssueSystem**:
-Leitor central do issue_system a partir do project.toml: default local quando ausente, valida contra {linear,github,local}, e lanca erro ruidoso generico para valor desconhecido em vez de cair silenciosamente no ramo errado.
+Central project.toml reader (src/config/issue-system.ts) that selects the issue backend (linear|github|local). Fail-loud on truly-unknown values, but treats the legacy none as the local alias rather than throwing.
+
+**deprecated alias (issue_system)**:
+A legacy config value (none) still accepted on read and normalized to the canonical value (local). Never offered as a selectable option nor written fresh by init, but existing project.toml files carrying it must keep working.
