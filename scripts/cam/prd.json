@@ -59,7 +59,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/issue-list.ts (:6-17 header, :81 flag doc, :120 hint doc, :166 read, :168 branch), test/issue-list.test.ts (AC1 block :135-160, AC4 block :301-320, JSON-contract tests :445/:457), test/issue-file.test.ts (:44, :622, :634), test/config/meta-loop.test.ts:101, test/config/models.test.ts (:113/:196/:289), test/config/plan-approval.test.ts:88, test/config/worker-isolation.test.ts:84, test/integration/issue-dir-real-git.test.ts:92, test/integration/issue-file-on-main.test.ts:74. Depends on US-002 (readIssueSystem). Do not touch legitimate non-issue_system 'none' literals (bump/observe/triage). Add a test asserting missing project.toml / missing key defaults to 'local'."
     },

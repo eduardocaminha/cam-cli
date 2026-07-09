@@ -1,35 +1,34 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Add central readIssueSystem reader and wire ship-finalize + ship-pr to 'local'"
+    "id": "US-003",
+    "title": "Wire issue-list to readIssueSystem and sweep remaining 'none' fixtures"
   },
   "branchName": "cam/issue-236",
-  "timestamp": "2026-07-09T05:09:25Z",
-  "createdFiles": [
-    "src/config/issue-system.ts",
-    "test/config/issue-system.test.ts"
-  ],
+  "timestamp": "2026-07-09T05:30:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/setup.ts",
-    "src/commands/ship-finalize.ts",
-    "src/release/ship-pr.ts",
-    "test/ship-finalize.test.ts",
-    "test/ship-finalize-hardening.test.ts",
-    "test/integration/ship-finalize-dirty-prd.test.ts",
-    "test/release/ship-pr.test.ts",
-    "scripts/file-size-budget.json"
+    "src/commands/issue-list.ts",
+    "src/config/issue-system.ts",
+    "test/config/meta-loop.test.ts",
+    "test/config/models.test.ts",
+    "test/config/plan-approval.test.ts",
+    "test/config/worker-isolation.test.ts",
+    "test/integration/issue-dir-real-git.test.ts",
+    "test/integration/issue-file-on-main.test.ts",
+    "test/issue-file.test.ts",
+    "test/issue-list.test.ts"
   ],
   "openQuestions": [
-    "scripts/build-release.sh AC4 smoke still passes '--issue-system none' to the compiled binary (carried over from US-001's handoff; still not in scope for US-002/US-003/US-004).",
-    "src/commands/issue-list.ts:166 still reads issue_system via the loose 'typeof config[...] === string ? ... : none' inline pattern (not readIssueSystem) -- this is US-003's explicit target ('sweep remaining none fixtures'), left untouched here on purpose to keep this story's diff to its named sites (ship-finalize.ts, ship-pr.ts, the new config module).",
-    "src/commands/setup.ts hit the file-size ratchet ceiling (838->839, one import line added for the re-exported IssueSystem type) and was bumped in scripts/file-size-budget.json with a CAM-236 tracker ref in the same commit."
+    "scripts/build-release.sh AC4 smoke still passes '--issue-system none' to the compiled binary (carried over from US-001/US-002; still not in scope -- US-004 is docs/templates/project.toml, not build-release.sh).",
+    "scripts/cam/patterns.md:46 (the finalizeCycleClose hardening bullet) still says \"issue_system == 'none'\" -- it is a knowledge doc, not a code path, so it was out of AC scope for US-003 and is explicitly flagged out-of-scope for US-004 too (per US-004's own notes field); a follow-up story should update that bullet's prose to 'local' for consistency.",
+    "src/config/issue-system.ts's own doc comment (written in US-002) initially failed the AC2 grep oracle because a backtick-fenced `'none'` inside a doc comment still matches the literal grep pattern; fixed this story by rewording to avoid the quote pair. Worth remembering for any future 'no occurrences of X' oracle: grep matches substrings inside comments/docstrings just as much as inside code."
   ],
-  "nextStoryContext": "US-003 is next: wire issue-list.ts to readIssueSystem (src/config/issue-system.ts, added this story) and sweep any other remaining scattered 'none' reads/fixtures across the codebase (grep '\\'none\\'' and 'issue_system' outside vendor/templates). Known site: src/commands/issue-list.ts:166 ('none' fallback + :168 'linear'||'github' branch feeding backendHint/emitSectionHeading) -- readIssueSystem now throws on invalid values instead of defaulting, so any call site that currently treats an absent/invalid issue_system as an inert 'none' sentinel needs to decide whether 'local' is a no-op branch (skip the Linear/GitHub-only summary block) or needs its own explicit handling. IssueSystem type now lives in src/config/issue-system.ts (readIssueSystem(config: Record<string,unknown>): IssueSystem, throws on invalid incl. legacy 'none'); src/commands/setup.ts re-exports it for existing importers (SetupScreen.tsx). project.toml/docs/templates/CHANGELOG none->local migration is US-004's explicit scope, not US-003's.",
+  "nextStoryContext": "US-004 is next: migrate scripts/cam/project.toml, templates/commands/cam-issue.md + .claude/commands/cam-issue.md (dual-copy, per patterns.md's cam-dual-copy-is-per-file bullet), templates/agents/subagent-orchestrator.md + .claude/agents/subagent-orchestrator.md, and docs/recovery-runbook.md from 'none' to 'local', plus a CHANGELOG breaking-rename note (the only place 'none' should still appear). Both template and installed .claude/ copies must be edited AND src/vendor/_generated.ts regenerated via `bun run embed-vendor` (embed-vendor:check is a mandatory gate for that story since it touches vendor/templates). Known ship gotcha called out in US-004's own notes: the currently-installed cam binary still compares === 'none', so this PR's own ship --finalize may read 'local' from project.toml and skip the local issue-file close for CAM-236 -- the operator may need to close the issue file manually or rebuild+reinstall the binary before shipping this PRD. All production code paths (src/commands/setup.ts, src/ui/SetupScreen.tsx, src/commands/ship-finalize.ts, src/release/ship-pr.ts, src/commands/issue-list.ts, src/config/issue-system.ts) and all test fixtures are now clean of the string literal 'none' as of US-003 -- US-004 is purely docs/templates/project.toml/CHANGELOG, no further src/ or test/ changes expected.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal config-reader addition (readIssueSystem) plus string-literal rename ('none'->'local') in comparisons/comments across two existing modules and their tests; no new API surface of any external library (js-yaml, Bun.TOML, Ink, etc.) was exercised."
+      "summary": "Pure internal wiring: issue-list.ts switched from an inline loose-typed issue_system read + implicit else-fallthrough to readIssueSystem() (added in US-002) with an explicit === 'local' branch, plus a doc-comment fix in issue-system.ts and a codebase-wide test-fixture rename ('none' -> 'local'). No new external library API surface was exercised."
     }
   ]
 }
