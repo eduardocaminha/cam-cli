@@ -9,9 +9,12 @@
 //   - 'none' (default): reads the backlog via readBacklogFromMain (git
 //     ls-tree + cat-file --batch from the `main` ref -- never a raw fs read
 //     of the working dir) and renders the US-001 deriveBacklogView through
-//     the shared src/logging linear print helpers.
+//     the shared src/logging linear print helpers. With --json, renders
+//     deriveBacklogJson as pure JSON on stdout instead (no emitTitle/heading
+//     decoration; US-002, this PRD).
 //   - 'linear' / 'github': these backends own their own listing UX. Prints a
-//     short hint pointing at the native UI and returns 0 -- never hard-fails.
+//     short hint pointing at the native UI and returns 0 -- never hard-fails,
+//     even when --json is passed (the JSON contract only applies to 'none').
 //
 // The injected BacklogSpawnFn is the ONLY subprocess seam this command uses:
 // there is no tmux import here at all, so a recording fake proves by
@@ -24,7 +27,12 @@ import { join } from 'node:path';
 
 import { loadConfig } from '../config/toml.ts';
 import { readBacklogFromMain, type BacklogSpawnFn } from '../issues/backlog.ts';
-import { deriveBacklogView, type BacklogViewEntry, type BacklogViewGroup } from '../issues/list.ts';
+import {
+	deriveBacklogJson,
+	deriveBacklogView,
+	type BacklogViewEntry,
+	type BacklogViewGroup,
+} from '../issues/list.ts';
 import type { IssueStage } from '../issues/types.ts';
 import { printHint, visibleLength } from '../logging/color.ts';
 import {
@@ -67,6 +75,13 @@ export interface RunIssueListOptions {
 	writer?: (s: string) => void;
 	/** --all: include the shipped group. Default view excludes shipped and abandoned. */
 	all?: boolean;
+	/**
+	 * --json: emit the machine snapshot ({ counts, plannable, byStage }) as
+	 * pure JSON on stdout instead of the human-readable rendered table
+	 * (US-002). Combinable with --all. Only affects the 'none' issue_system
+	 * backend; 'linear'/'github' keep printing their hint regardless.
+	 */
+	json?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,9 +165,8 @@ export function runIssueList(options: RunIssueListOptions): number {
 		const config = loadConfig(configPath);
 		const issueSystem = typeof config['issue_system'] === 'string' ? config['issue_system'] : 'none';
 
-		emitTitle('cam issue list');
-
 		if (issueSystem === 'linear' || issueSystem === 'github') {
+			emitTitle('cam issue list');
 			emitSectionHeading(issueSystem === 'linear' ? 'Linear' : 'GitHub Issues');
 			emitMutedHint(backendHint(issueSystem));
 			emitTrailingBlank();
@@ -160,6 +174,15 @@ export function runIssueList(options: RunIssueListOptions): number {
 		}
 
 		const backlog = readBacklogFromMain(cwd, options.spawnFn);
+
+		if (options.json) {
+			// Pure JSON on stdout: no emitTitle/heading decoration (US-002 AC1).
+			const json = deriveBacklogJson(backlog, { includeShipped: options.all ?? false });
+			process.stdout.write(`${JSON.stringify(json)}\n`);
+			return 0;
+		}
+
+		emitTitle('cam issue list');
 		const groups = deriveBacklogView(backlog, { includeShipped: options.all ?? false });
 		const printedAny = renderGroups(groups);
 		if (!printedAny) {

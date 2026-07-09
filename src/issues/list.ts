@@ -4,6 +4,11 @@
 // an IssueEntry[]. Groups open issues by lifecycle stage, sorts within each
 // group, and annotates each entry with its unmet blockers.
 //
+// deriveBacklogJson() -- pure derivation of the `cam issue list --json`
+// machine snapshot ({ counts, plannable, byStage }). See src/commands/
+// issue-list.ts (US-002, this PRD) for the I/O-owning command that renders
+// it to stdout.
+//
 // No I/O here: the file-backed seam (readBacklogFromMain) lives in
 // src/issues/backlog.ts and is wired up by the cam issue list command
 // (src/commands/issue-list.ts, US-002).
@@ -11,6 +16,7 @@
 // CAM-190 US-001.
 
 import type { IssueEntry, IssueStage } from './types.ts';
+import { isPlannable } from './select.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -69,7 +75,7 @@ function numericIdSuffix(id: string): number {
  *   2. among ranked entries, ascending rank value (lower rank = higher priority)
  *   3. tie-break (same rank, or both unranked): ascending numeric id suffix
  */
-function compareBacklogEntries(a: IssueEntry, b: IssueEntry): number {
+export function compareBacklogEntries(a: IssueEntry, b: IssueEntry): number {
 	const aHasRank = a.rank !== undefined;
 	const bHasRank = b.rank !== undefined;
 
@@ -142,4 +148,94 @@ export function deriveBacklogView(
 			})),
 		};
 	});
+}
+
+// ---------------------------------------------------------------------------
+// --json machine view (US-002, this PRD)
+// ---------------------------------------------------------------------------
+
+/** One row in the `--json` output: a minimal issue projection. */
+export interface BacklogJsonRow {
+	id: string;
+	title: string;
+	/** null when the issue is unranked (JSON has no `undefined`; the key is always present). */
+	rank: number | null;
+}
+
+/** Per-stage open-issue counts. `shipped` is present only when `includeShipped` is true. */
+export interface BacklogJsonCounts {
+	idea: number;
+	specified: number;
+	planned: number;
+	shipped?: number;
+}
+
+/** Per-stage open-issue rows (blocked entries included). `shipped` is present only when `includeShipped` is true. */
+export interface BacklogJsonByStage {
+	idea: BacklogJsonRow[];
+	specified: BacklogJsonRow[];
+	planned: BacklogJsonRow[];
+	shipped?: BacklogJsonRow[];
+}
+
+/** The full `cam issue list --json` payload. */
+export interface BacklogJsonView {
+	counts: BacklogJsonCounts;
+	plannable: BacklogJsonRow[];
+	byStage: BacklogJsonByStage;
+}
+
+function toJsonRow(issue: IssueEntry): BacklogJsonRow {
+	return { id: issue.id, title: issue.title, rank: issue.rank ?? null };
+}
+
+/**
+ * Derives the `cam issue list --json` machine snapshot from a full
+ * IssueEntry[] backlog.
+ *
+ * - counts / byStage: per lifecycle-stage groups of status:'open' entries
+ *   ONLY (status:'abandoned' entries never appear anywhere in the output).
+ *   'shipped' is included in both only when `includeShipped` is true
+ *   (mirrors deriveBacklogView's --all semantics); otherwise the key is
+ *   absent (not merely undefined-valued).
+ * - plannable: membership is isPlannable (specified + open + not blocked,
+ *   src/issues/plannable.ts via select.ts) evaluated against the FULL
+ *   backlog (blocker lookups need every stage, not just the open subset).
+ *   A blocked specified+open entry appears in byStage.specified but NOT in
+ *   plannable.
+ *
+ * Sorting: both plannable and each byStage group use compareBacklogEntries
+ * (ranked-first, ascending rank, numeric id suffix tie-break) -- the same
+ * ordering deriveBacklogView uses, NOT selectPlannableIssue's WSJF-aware
+ * champion selection (that answers a different question: "which ONE issue
+ * next", not "rank this list").
+ *
+ * Pure: no I/O. backlog array in, JSON-shaped struct out.
+ */
+export function deriveBacklogJson(
+	backlog: IssueEntry[],
+	options: BacklogViewOptions = {},
+): BacklogJsonView {
+	const stages: IssueStage[] = options.includeShipped
+		? [...DEFAULT_STAGES, 'shipped']
+		: DEFAULT_STAGES;
+
+	const counts = {} as BacklogJsonCounts;
+	const byStage = {} as BacklogJsonByStage;
+
+	for (const stage of stages) {
+		const stageIssues = backlog.filter(
+			(issue) => issue.stage === stage && issue.status === 'open',
+		);
+		stageIssues.sort(compareBacklogEntries);
+		counts[stage] = stageIssues.length;
+		byStage[stage] = stageIssues.map(toJsonRow);
+	}
+
+	const plannable = backlog
+		.filter((issue) => isPlannable(issue, backlog))
+		.sort(compareBacklogEntries)
+		.map(toJsonRow);
+
+	return { counts, plannable, byStage };
 }
