@@ -3,6 +3,11 @@
 - **Status**: aceito (implementado em CAM-117)
 - **Data**: 2026-07-01
 
+> **Nota de atualizacao (2026-07-09)**: o hand-off `active: true` descrito na Decisao acima
+> (item 3, "Acao pos-auditoria") foi substituido pelo enum `LoopPhase` em ADR 0006:
+> `runPostAuditAction` agora chama `setPhaseFn('implementing')` em vez de escrever
+> `active: true` diretamente no arquivo de estado. Ver ADR 0006 para a maquina de estados atual.
+
 ## Contexto
 
 A fase de planejamento do cam (executada via `/cam-plan`) era orquestrada pelo LLM orquestrador: o operador aprovava o escopo, e o orquestrador invocava o planner e o auditor como Task subagents (`Task(subagent_type=...)`), interpretando seus outputs e decidindo o proximo passo em linguagem natural. Esse modelo levava os mesmos problemas do loop de implementacao pre-CAM-55: sem limite deterministico de tentativas, sem isolamento de falha por pane, e a logica de roteamento ficava implicita no prompt do orquestrador.

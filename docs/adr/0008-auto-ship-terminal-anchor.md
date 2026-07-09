@@ -3,6 +3,13 @@
 - **Status**: aceito (implementado em CAM-181 / US-001)
 - **Data**: 2026-07-05
 
+> **Nota de atualizacao (2026-07-09)**: o callsite de `autoShipFn` descrito nesta decisao
+> (dentro do branch `complete` de `runSupervisor`) foi movido para `runSidecarLoop`,
+> posicionado depois de `clearActive`, para sobreviver ao teardown terminal. Ver ADR 0013
+> para o detalhe e o motivo da mudanca de local. A semantica de ancoragem (disparo apenas em
+> `complete` mais CLEAN, marcador persistido `autoShipDispatchedAt`, fire-once cross-restart)
+> permanece valida.
+
 ## Contexto
 
 O auto-ship do cam despacha `/cam-ship` automaticamente quando o ciclo review termina com
