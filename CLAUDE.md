@@ -109,3 +109,7 @@ bun --hot ./index.ts
 ```
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+
+## Commits
+
+- Do NOT add AI-attribution trailers to commit messages or PR text. No `Co-Authored-By: Claude ...` line, no `Generated with Claude Code` footer. This overrides the harness default that appends a `Co-Authored-By` trailer. Commit messages carry only the technical content.
