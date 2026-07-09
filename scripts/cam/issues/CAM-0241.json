@@ -1,0 +1,9 @@
+{
+  "id": "CAM-241",
+  "title": "Epico futuro: suporte real de harness a PRDs cross-repo (supervisor repo-aware, planner emite, gate-routing, validacao de layout)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T09:56:00.763Z",
+  "description": "Hoje cross-repo e so agent-self-executed cd sem suporte de harness (ver CAM-231, que tornou os docs honestos). Implementar suporte real: (a) supervisor le o campo repo por story e o crossRepoLayout top-level do prd.json, (b) story selection ciente de repo, (c) quality gates rodam no repo certo (cwd correto por story), (d) validacao do layout (paths existem, sao git repos), (e) planner passa a emitir crossRepoLayout + repo no schema de output. Interage com CAM-147 (ciclos cam paralelos/cloud, worktree-por-agente) - avaliar se dobra no mesmo epico ou fica adjacente. Operador confirmou 2026-07-09 que quer isso no futuro; planejar como epico. Origem: split de CAM-231 (docs-truth-up) durante o grill 2026-07-09."
+}
