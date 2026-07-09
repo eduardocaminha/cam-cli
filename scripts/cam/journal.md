@@ -548,3 +548,15 @@ Each entry follows this template:
 - **Decisions**: Prompt-only change; both agent copies kept body-identical per cam-dual-copy-is-per-file. At this cycle boundary the operator's no-AI-attribution rule was committed as a chore direct-to-main (commit 6f2e8c3): repo CLAUDE.md now forbids Co-Authored-By / Generated-with trailers, overriding the harness default for every claude session in the repo. Operator decided NOT to clean existing git history of the claude/cursoragent co-author contributors.
 - **Blockers encountered**: none
 - **Follow-ups**: CAM-246 auto-filed (idea SUGGESTION from the CLEAN review). Continue the chain topological by blockedBy: next unblocked specified are CAM-228, CAM-229, CAM-240. Renovate #173 (bun 1.3.14) stays RED until CAM-245 ships (literal-pin toolchain test). CAM-237/238/242 need /cam-spec before joining the DAG (242 deferred by operator).
+
+## CAM-228 — Fix auditor prompt C.8/B.5 self-contradiction (browser+E2E vs F.19/F.20) for cam-cli
+
+- **Started**: 2026-07-09T14:26:12Z
+- **Closed**: 2026-07-09T14:50:00Z
+- **Branch**: cam/issue-228
+- **Issue**: CAM-228
+- **Outcome**: shipped
+- **Summary**: Third issue of the operator-directed 11-issue context-truth-up specified chain (after CAM-225, CAM-227). fix, prompt-only, single story US-001: rewrote C.8 and B.5 in .claude/agents/subagent-auditor.md ONLY, resolving the self-contradiction where C.8 required browser+E2E verification for UI stories while F.19/F.20 of the same prompt forbid browser/E2E for a terminal CLI (spurious C.8 critical -> false BLOCK -> burned re-plan -> plan-escalated). Rewrote so UI/Ink stories verify via ink-testing-library + glyph and genuine interactive ceremonies are flagged requires:operator; updated B.5 ordering from generic web (DB->server->client->tests->E2E) to cam-cli (types->core->surface->polish). Auditor APPROVE, gates green (typecheck ok, 3956 pass / 0 fail, check:all green), review CLEAN round 1. Shipped ci-gated as PR #177, tag v0.102.0.
+- **Decisions**: By-design dual-copy divergence: fixed only the .claude copy; templates/agents/subagent-auditor.md stays generic web-app (C.8 browser+E2E coherent there), NO re-embed. Prompt-only, no src runtime change.
+- **Blockers encountered**: Post-merge fallback required: the sidecar merge-watch merged #177 (after update-branch, PR was BEHIND) but its post-merge step failed with 'pull-failed' -- most likely because a concurrent orchestrator git-fetch poll loop contended for the repo lock. Recovered manually: FF local main, cam issue close CAM-228, created+pushed tag v0.102.0 by hand (installed cam binary is stale, cam tag mis-computed v0.99.0). New memory orch-no-gitfetch-poll-during-postmerge: poll ci-gated merges via gh pr view, never a git fetch loop.
+- **Follow-ups**: CAM-247 auto-filed (idea SUGGESTION from the CLEAN review). Continue the chain: next unblocked specified are CAM-229 and CAM-240. Renovate #173 (bun 1.3.14) stays RED until CAM-245 ships. Installed cam binary is stale; a rebuild+reinstall would restore correct cam tag.
