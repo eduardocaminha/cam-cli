@@ -22,7 +22,7 @@
         "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-implementer.md (Step 5.5 example at ~line 134 + tools frontmatter ~line 13), templates/agents/subagent-implementer.md (same edits), then `bun run embed-vendor` to regenerate src/vendor/_generated.ts (key 'agents/subagent-implementer.md'). GOTCHA (memory: cam dual-copy is per-file): the two copies are NOT byte-identical (steps 4/2 and the exit-report line differ); edit each in place, do not copy one over the other. Only the Step 5.5 example JSON block and the frontmatter tools list change. Do NOT cut WebSearch (may be needed to find the docs URL); only NotebookEdit is a confirmed-unused grant (no notebooks in a Bun CLI). Schema reference: scripts/cam/handoff.schema.json enum [aligned, corrected, no_external_lib_touched, fetch_failed], additionalProperties:false. Frontmatter smoke lives at scripts/smoke/check-agent-frontmatter.ts."
     },
