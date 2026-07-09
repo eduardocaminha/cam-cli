@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.101.0] - 2026-07-09
+
+### Added
+
+- US-001 - Align orchestrator Write grant and mark frontmatter advisory-only
+
 ## [0.100.0] - 2026-07-09
 
 ### Added
