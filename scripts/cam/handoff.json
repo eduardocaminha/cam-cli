@@ -1,16 +1,23 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Spine guard test banning inline === 'specified' outside the canonical module" },
+  "lastCompletedStory": { "id": "US-004", "title": "Docs: mandate backlog derivation via cam issue list --json only" },
   "branchName": "cam/pr-222-plannable-predicate-gate",
   "timestamp": "2026-07-08T00:00:00Z",
-  "createdFiles": [
-    "test/spine/no-inline-specified-predicate.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
+    ".claude/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-orchestrator.md",
+    ".claude/commands/cam-issue.md",
+    "templates/commands/cam-issue.md",
+    "src/commands/run.ts",
+    "src/vendor/_generated.ts",
+    "test/run.test.ts",
+    "test/vendor/orchestrator-backlog-derivation.test.ts",
+    "scripts/file-size-budget.json",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added test/spine/no-inline-specified-predicate.test.ts as a single self-contained spine guard: exports findInlineSpecifiedViolations(files, allowlist=[ALLOWLISTED_FILE]) as the pure scanner (unit-tested with synthetic content, never writing a real violating file into src/), plus a real-tree test that globs 'src/**/*.{ts,tsx}', filters out src/vendor/ (documented rationale: it's an auto-generated build-time embed mirroring templates/commands/cam-plan.md prose, already excluded from typecheck), and asserts zero violations outside src/issues/plannable.ts. Confirmed clean on the current tree (post US-001/US-002): only src/issues/plannable.ts and src/vendor/_generated.ts matched the raw grep, and the guard's allowlist + vendor exclusion account for both. No scripts/check-*.ts entrypoint was added and no check-all.ts GATES wiring was needed -- bun test's default recursive discovery already picks up test/spine/ as part of the two mandatory gates (bun test, and check:all which runs bun test as its first sub-gate). US-004 (docs: mandate backlog derivation via `cam issue list --json` only) is next and is docs-only -- it should point at deriveBacklogJson's JSON shape from US-002 as the canonical machine contract; it does not touch src/issues/ so this guard is unaffected.",
+  "nextStoryContext": "US-004 replaced the raw scripts/cam/issues/*.json stage-filtered fallback with an explicit `cam issue list` / `cam issue list --json` mandate + prohibition on raw issue-file reads, in THREE literal surfaces that all restate the same rule: the persona doc (.claude/agents + templates/agents subagent-orchestrator.md boot-context step 5), the /cam-issue.md list subcommand doc (.claude/commands + templates/commands, byte-identical pair), and buildOrchestratorBootPrompt()'s literal array-of-strings prompt in src/commands/run.ts (a THIRD surface not listed in the story notes' file list, discovered by grepping for the old fallback phrase after editing the docs -- fixed in this story too since leaving it would defeat the incident-prevention purpose). Two existing tests (test/run.test.ts, test/vendor/orchestrator-backlog-derivation.test.ts) pinned the OLD wording and were updated in the same commit rather than left red. File-size budget raised for src/commands/run.ts (790->792) and test/run.test.ts (960->962). No scripts/cam/issues/ files touched (verified via git diff --name-only). This was a docs/prompt-only story: no external library was exercised, so officialDocsValidated records lib:none. Nothing else queued for the next implementer beyond the standard PRD priority scan.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
