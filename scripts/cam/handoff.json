@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Reconcile orchestrator tools list to real runtime usage and fold boot-imperatives + meta_loop-aware boot into the agent body"
+  },
+  "branchName": "cam/issue-240",
+  "timestamp": "2026-07-09T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 flips the root persona spawn to `claude --agent` and is expected to shrink buildOrchestratorBootPrompt (src/commands/run.ts:155) to a minimal nudge, since the boot-imperatives (readiness marker, CAM_ORCH_REHYDRATE, boot reads, backlog derivation, meta_loop-aware greeting) now live in the agent body's Boot context section (this story). The Identity section's 'advisory-only' paragraph (frontmatter is not runtime-enforced) is INTENTIONALLY left unchanged in this story per the PRD notes -- US-002 should update that wording once --agent actually binds tools:/disallowedTools: at runtime. Runtime enforcement of the new `Agent` tool grant is UNVERIFIED-IN-CI (CAM-42: no authenticated interactive claude TUI in the autonomous pipeline) and is gated on the operator live-validation ceremony filed as CAM-253 -- do not treat this story or US-002 as satisfying that ceremony.",
+  "officialDocsValidated": [
+    {
+      "lib": "Claude Code subagents (code.claude.com/docs/en/sub-agents)",
+      "url": "https://code.claude.com/docs/en/sub-agents",
+      "fetchedAt": "2026-07-09T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed: 'If Agent is omitted from the tools list entirely, the agent can't spawn any subagents' (matches AC#1's grant of Agent); 'To preload Skills into context, use the skills field rather than listing Skill here' (matches AC#2's omission of Skill from tools:)."
+    }
+  ]
+}
