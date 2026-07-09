@@ -1,0 +1,9 @@
+{
+  "id": "CAM-236",
+  "title": "Renomear issue_system none->local (valor canonico + none como alias deprecado)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T02:39:08.884Z",
+  "description": "issue_system=none e semanticamente enganoso: existe um issue system local completo (CLI cam issue list, stages, WSJF, spec flow); none sugere ausencia. Adotar local como valor canonico e novo default do cam init, mantendo none como alias deprecado normalizado na leitura (none->local num unico ponto), com comparacoes internas passando a checar ===local. O alias e obrigatorio, nao opcional: as comparacoes ===none que gateiam o close/stash do issue local sao hard e espalhadas (ship-finalize.ts:158/198, ship-pr.ts:137/181) e o mergeIntoConfig do init nao reescreve valor existente, entao rename cru quebraria silenciosamente todo projeto cam ja inicializado com none (o proprio scripts/cam/project.toml:2). issue-list.ts:168 sobrevive (none e o else). Toca: enum setup.ts:53 + array :747 + prompts readline :185/Ink SetupScreen.tsx:68-72, default init, ponto de normalizacao na leitura, docs (cam-issue.md, subagent-orchestrator.md:60, recovery-runbook), fixtures de teste. Independente de CAM-234 e CAM-235."
+}
