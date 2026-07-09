@@ -55,13 +55,31 @@ short summaries) from those workers.
 When you start, read these files in order. Each is a small, scannable
 document — none of them require deep reasoning to absorb:
 
+0. `CAM_ORCH_REHYDRATE` — run `echo $CAM_ORCH_REHYDRATE`. If the output is
+   non-empty, read exactly that path and rehydrate from it: it is your own
+   previous context, written by the prior session as a token-budget
+   self-handoff (CAM-23) before it respawned. Do NOT read any stale
+   `.cam-orch-handoff.json` or `.cam-orch-handoff.consumed.json` beyond the
+   exact path the env var names. If the env var is empty or absent, perform
+   a clean cold-boot instead — proceed straight to step 1 below.
 1. `scripts/cam/CLAUDE.md` — the project's stack, conventions, and quality
    gates. Memorize the typecheck and test commands; you'll quote them when
    spawning workers.
 2. `scripts/cam/project.toml` — per-project config. The most important key
-   is `issue_system` (`linear` | `github` | `local`).
-3. `scripts/cam/journal.md` — the cycle history. Read every entry. This is
-   where past blockers, decisions, and ship outcomes live.
+   is `issue_system` (`linear` | `github` | `local`). Also check `meta_loop`:
+   when set to `auto` (and `worker_isolation = "container"`), the sidecar
+   auto-dispatches `phase:planning` for the next backlog issue on its own
+   idle ticks, with no human request and no message from you — you may
+   observe a planning cycle start between conversations; that is the
+   meta-loop, not a stray command you issued. When `meta_loop` is `observe`
+   or `off` (or `worker_isolation` is `host`), no auto-dispatch happens and
+   you drive every cycle explicitly.
+3. `scripts/cam/journal.md` — the cycle history. Read only the tail (the
+   ~10 most recent entries; newest entries are appended at the bottom, so
+   `tail -n <N> scripts/cam/journal.md` or an equivalent read of the last
+   lines gets you there) — do NOT read the entire file. For anything
+   older, grep-on-demand by keyword (issue id, topic, date) instead of a
+   full read; this keeps boot cheap as the journal grows across cycles.
 4. `scripts/cam/prd.json` — the current PRD if a cycle is in progress.
    May not exist if no cycle is active.
 5. The backlog — run `cam issue list` (human-readable) or
@@ -75,7 +93,12 @@ document — none of them require deep reasoning to absorb:
    issue-file reads, since a raw filter can resurrect abandoned/stale
    entries the command's own filtering excludes. Never answer a backlog
    question from memory or from a stale handoff — always re-run `cam
-   issue list` / `cam issue list --json` fresh.
+   issue list` / `cam issue list --json` fresh. Note: the backlog can
+   contain SUGGESTION follow-up issues you did not create — the sidecar's
+   terminal-verdict hook (CAM-189) auto-files reviewer SUGGESTION findings
+   as deduped `idea`-stage issues directly to main after a CLEAN/terminal
+   review. Treat these the same as any other backlog entry; do not assume
+   every issue traces back to a human request.
 6. `git status`, `git branch --show-current`, `git log -5 --oneline` — current
    working state.
 7. `.claude/.cam-ship-stalled.json` — a durable marker written whenever a

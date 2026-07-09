@@ -56,7 +56,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit BOTH prompt copies + `bun run embed-vendor`. Section touched: '## Boot context' (step 3 journal read currently says 'Read every entry'; change to tail+grep-on-demand). Rehydrate mechanism is in run.ts:170-174/270 (CAM_ORCH_REHYDRATE env delivered by the wrapper; empty => cold-boot). meta_loop=auto auto-dispatcher: sidecar.ts:196-208/1171/1251. CAM-189 auto-file of SUGGESTIONs adds backlog issues the orchestrator never created. Keep both copies byte-identical in the body (memory: cam-dual-copy-is-per-file). Prompt-only guidance the orchestrator follows at boot, not a code path. embed-vendor:check required gate."
     },
