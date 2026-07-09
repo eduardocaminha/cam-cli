@@ -42,7 +42,7 @@
         "Full spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/issues/list.ts (pure JSON-view derivation next to deriveBacklogView), src/commands/issue-list.ts (emit path + option), src/commands/issue.ts (parseIssueArgs discriminated union gains json flag on the list mode; see patterns.md CAM-190 US-003 bullet on reserved-word positional ordering), index.ts (usage text). Depends on US-001 (imports isPlannable via select.ts). Ordering nuance: the spec says plannable is 'identical to selectPlannableIssue's queue'; that means identical MEMBERSHIP predicate. Do NOT assert plannable[0] === selectPlannableIssue's champion in tests: champion selection has a WSJF unranked-vs-ranked rule (CAM-203) that can differ from rank-asc ordering. Sorting helper compareBacklogEntries in src/issues/list.ts already implements ranked-first/rank-asc/numeric-id ordering; reuse it. Use the withWriter seam + recording BacklogSpawnFn fixture pattern (patterns.md CAM-190 US-002 bullet) for deterministic tests. noUncheckedIndexedAccess: guard array/regex indexing."
     },

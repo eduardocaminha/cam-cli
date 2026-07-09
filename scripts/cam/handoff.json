@@ -1,17 +1,19 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Extract layered plannability predicate and route all inline call sites" },
+  "lastCompletedStory": { "id": "US-002", "title": "Add cam issue list --json machine mode" },
   "branchName": "cam/pr-222-plannable-predicate-gate",
   "timestamp": "2026-07-08T00:00:00Z",
-  "createdFiles": ["src/issues/plannable.ts"],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/issues/select.ts",
-    "src/issues/rank.ts",
-    "src/issues/gate.ts",
-    "src/commands/plan.ts",
+    "index.ts",
+    "src/commands/issue-list.ts",
+    "src/issues/list.ts",
+    "test/issue-dispatch.test.ts",
+    "test/issue-list.test.ts",
+    "test/issues/list.test.ts",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 landed src/issues/plannable.ts as the sole owner of `stage === 'specified'` comparisons: isSpecifiedOpen (universe core, used by rank.ts/gate.ts, retains blocked issues) and isPlannable (isSpecifiedOpen + !isBlocked, used by select.ts/plan.ts, excludes blocked issues). select.ts re-exports both. US-002 (cam issue list --json) and US-003 (spine guard banning inline === 'specified' outside plannable.ts) can now build directly on this: the guard oracle `grep -rElE \"===\\s*['\\\"]specified['\\\"]\" src --include='*.ts' | grep -v '^src/vendor/'` already returns only src/issues/plannable.ts as of this story -- US-003 should encode that grep as a test, not re-derive it. Gotcha for any future doc/comment touching this predicate: a grep-based spine guard matches docstring comments too, not just code, so phrase comments by naming isSpecifiedOpen/isPlannable rather than re-typing the literal comparison.",
+  "nextStoryContext": "US-002 added `cam issue list --json` (index.ts parseIssueArgs 'list' branch gains a `--json` flag, combinable with `--all`; ParsedIssueArgs 'list' member now carries `json: boolean`). The pure derivation lives in src/issues/list.ts as deriveBacklogJson(backlog, { includeShipped }) -> { counts, plannable, byStage }, reusing the now-exported compareBacklogEntries comparator (ranked-first/ascending-rank/numeric-id) for BOTH plannable and byStage ordering -- this is deliberately NOT selectPlannableIssue's WSJF-aware champion pick (CAM-203), which answers a different question (single winner vs. total-order list). plannable membership is isPlannable (src/issues/plannable.ts via select.ts's re-export), evaluated against the FULL backlog array (every stage), never a status:'open'-pre-filtered subset, because isBlocked needs to see blockers in any stage. Row shape is { id, title, rank } with rank normalized to `null` (never omitted) for unranked entries, since JSON.stringify silently drops undefined-valued keys and the AC's oracle expects the key to always be present. src/commands/issue-list.ts's runIssueList gained a `json?: boolean` option: when true and issue_system is 'none', it writes deriveBacklogJson's JSON.stringify output directly via process.stdout.write with ZERO emitTitle/heading decoration (pure JSON.parse-able stdout); 'linear'/'github' backends ignore --json entirely and keep printing their existing hint (the JSON contract is 'none'-only). US-003 (spine guard banning inline === 'specified' outside plannable.ts) can now encode the grep `grep -rElE \"===\\s*['\\\"]specified['\\\"]\" src --include='*.ts' | grep -v '^src/vendor/'` as a test -- it still returns only src/issues/plannable.ts after this story (verified). US-004 (docs: mandate backlog derivation via `cam issue list --json` only) can now point at this exact JSON shape as the canonical machine contract.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
