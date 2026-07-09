@@ -1,7 +1,7 @@
 {
   "id": "CAM-236",
   "title": "Renomear issue_system none->local (valor canonico + none como alias deprecado)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T02:39:08.884Z",
