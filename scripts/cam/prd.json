@@ -39,7 +39,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-auditor.md (line 3 description), templates/agents/subagent-auditor.md (line 3 description), plus regenerated src/templates/embedded.ts via `bun run embed-vendor`. GOTCHA (issue): both this issue and CAM-228 edit subagent-auditor.md; CAM-230 is blockedBy CAM-228 to avoid concurrent edits, so this runs only after CAM-228 is merged to main - rebase/merge origin/main before editing. Scope is ONLY the description line 3; do NOT touch auditor C.8/B.5 (that is CAM-228). Keep the description's existing 'READ-ONLY' claim intact."
     },
