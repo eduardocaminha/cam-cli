@@ -150,7 +150,7 @@ describe('runShipPrStep', () => {
 
 			const createCall = calls.find((c) => c.args[0] === 'pr' && c.args[1] === 'create');
 			expect(createCall?.args).toEqual([
-				'pr', 'create', '--title', 'Deterministic ship runner', '--body-file', '/tmp/cam-ship-pr-1.md', '--base', 'main',
+				'pr', 'create', '--title', 'feat: Deterministic ship runner (CAM-149)', '--body-file', '/tmp/cam-ship-pr-1.md', '--base', 'main',
 			]);
 		});
 

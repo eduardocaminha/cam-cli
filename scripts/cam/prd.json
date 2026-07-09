@@ -101,7 +101,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/release/pr-body.ts (PrdSnapshot + composePrTitle), src/supervisor/ship-runner.ts (ShipPrdRecord + toPrdSnapshot), test/pr-body.test.ts. Gotcha (from issue spec): squashMergeCommitTitle=COMMIT_OR_PR_TITLE, so with multiple commits the PR title becomes the squash subject on main and feeds classifyBump (bonus, not the driver: bump is already computed from branch commits). Keep the existing description/project fallback chain for the descriptive text. Depends on US-004 (PRD carries type). Grep scripts/cam/patterns.md for 'pr-body' / 'ship' bullets before coding."
     },

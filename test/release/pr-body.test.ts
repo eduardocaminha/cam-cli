@@ -2,12 +2,14 @@
 //
 // Unit tests for composePrTitle and composePrBody (src/release/pr-body.ts).
 //
-// Verifies: title fallback chain (description -> project -> placeholder,
-// never empty), the four PR body sections, stories table rendering (id,
-// title, checked box on passes:true), Testing/Notes fallback text, and the
+// Verifies: title format '<type>: <descriptive text> (CAM-<N>)' (type
+// defaults to feat, descriptive text falls back description -> project ->
+// placeholder, issue reference is textual 'CAM-<N>' and cleanly omitted when
+// absent), the four PR body sections, stories table rendering (id, title,
+// checked box on passes:true), Testing/Notes fallback text, and the
 // no-em-dash persisted-artifact rule.
 //
-// CAM-149 US-001.
+// CAM-149 US-001, US-005.
 
 import { describe, expect, test } from 'bun:test';
 import { composePrBody, composePrTitle, type PrdSnapshot } from '../../src/release/pr-body.ts';
@@ -16,6 +18,7 @@ const BASE_PRD: PrdSnapshot = {
 	project: 'cam-cli',
 	description: 'Deterministic ship runner for the sidecar loop.',
 	issueNumber: 149,
+	type: 'feat',
 	userStories: [
 		{ id: 'US-001', title: 'Add deterministic PR title/body composer', passes: true },
 		{ id: 'US-002', title: 'Implement the pre-PR ship sequence', passes: false },
@@ -23,21 +26,43 @@ const BASE_PRD: PrdSnapshot = {
 };
 
 describe('composePrTitle', () => {
-	test('returns the PRD description when present', () => {
-		expect(composePrTitle(BASE_PRD)).toBe('Deterministic ship runner for the sidecar loop.');
+	test('returns "<type>: <description> (CAM-<N>)" when all fields are present', () => {
+		expect(composePrTitle(BASE_PRD)).toBe('feat: Deterministic ship runner for the sidecar loop. (CAM-149)');
 	});
 
 	test('falls back to the project name when description is absent', () => {
-		expect(composePrTitle({ project: 'cam-cli' })).toBe('cam-cli');
+		expect(composePrTitle({ project: 'cam-cli', type: 'fix', issueNumber: 7 })).toBe('fix: cam-cli (CAM-7)');
 	});
 
 	test('falls back to the project name when description is empty/whitespace', () => {
-		expect(composePrTitle({ project: 'cam-cli', description: '   ' })).toBe('cam-cli');
+		expect(composePrTitle({ project: 'cam-cli', description: '   ', type: 'feat', issueNumber: 7 })).toBe('feat: cam-cli (CAM-7)');
 	});
 
 	test('never returns an empty string, even with an empty snapshot', () => {
 		const title = composePrTitle({});
 		expect(title.length).toBeGreaterThan(0);
+	});
+
+	test('defaults type to feat when the snapshot lacks one', () => {
+		expect(composePrTitle({ description: 'No type on this PRD.', issueNumber: 5 })).toBe('feat: No type on this PRD. (CAM-5)');
+	});
+
+	test('uses the textual CAM-<N> issue reference, never #<N>', () => {
+		const title = composePrTitle(BASE_PRD);
+		expect(title).toContain('CAM-149');
+		expect(title).not.toContain('#');
+	});
+
+	test('cleanly omits the issue suffix when issueNumber is absent, no trailing whitespace or parens', () => {
+		const title = composePrTitle({ description: 'No issue on this PRD.', type: 'feat' });
+		expect(title).toBe('feat: No issue on this PRD.');
+		expect(title.endsWith(')')).toBe(false);
+		expect(title.endsWith(' ')).toBe(false);
+	});
+
+	test('cleanly omits the issue suffix when issueNumber is null', () => {
+		const title = composePrTitle({ description: 'Null issue.', type: 'feat', issueNumber: null as unknown as undefined });
+		expect(title).toBe('feat: Null issue.');
 	});
 });
 
