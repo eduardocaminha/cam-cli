@@ -1,0 +1,9 @@
+{
+  "id": "CAM-237",
+  "title": "deriveBranchName accepts any typeof number, including negative/zero/non-integer…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T03:37:24.545Z",
+  "description": "deriveBranchName accepts any typeof number, including negative/zero/non-integer issueNumber, which would still produce cam/issue-<n>. In practice prd.issueNumber is always a positive integer, so this is a non-blocking robustness note, not a defect.\n\nSource: cam/pr-234-deterministic-branch-naming\nReview round: 1\nLocation: src/supervisor/plan-runner.ts:88\n\nsuggestion-fingerprint: cd7ad4bd6f55"
+}
