@@ -1,25 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "cam patterns archive CLI wiring + help + sentinel"
+    "id": "US-003",
+    "title": "Best-effort patterns archive on the --cycle-close path"
   },
   "branchName": "cam/issue-226",
   "timestamp": "2026-07-09T00:00:00.000Z",
-  "createdFiles": [
-    "test/commands/patterns-cli.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
     "index.ts",
+    "test/commands/patterns-cli.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "`cam patterns archive` is wired in index.ts exactly like `cam journal archive` (parsePatternsArgs / dispatchPatterns / PatternsDispatchDeps / defaultPatternsArchiveFn / PATTERNS_HELP, case 'patterns' in the main switch, top-level HELP entry) but simplified: no --threshold flag (archival is marker-based per US-001's RESOLVED_MARKER_RE), no stdin read, no --force/--cycle-close. Bare `cam patterns` (no subcommand) prints PATTERNS_HELP and exits 0 -- this deliberately diverges from `cam journal`'s bare-invocation error, since patterns has only one subcommand so there's nothing to disambiguate (documented as a patterns.md bullet). Sentinels: `CAM_PATTERNS_ARCHIVED=<n> sha=<sha>` on a successful archive, `CAM_PATTERNS_ARCHIVE=noop` on no marked bullets, exit 1 on any ArchivePatternsOnMainError. US-003 (best-effort patterns archive on the --cycle-close path) should mirror dispatchJournal's US-003 wiring: call archivePatternsOnMain (via the same injectable archiveFn shape used here) after CAM_JOURNAL_APPENDED/recordCycleTokens and before the recycle marker is armed inside dispatchJournal's --cycle-close branch (index.ts ~line 1575-1593), best-effort (a throw or ok:false only logs a printWarning, never changes the exit code). US-004 (retrofit 2026-06 build-notes markers) needs the exact `[resolved YYYY-MM]` regex US-001 defined (RESOLVED_MARKER_RE, exported from src/commands/patterns-archive.ts) and should document the marking convention (probably a new patterns.md preamble line or a CLAUDE.md note) so future contributors know how to mark a bullet resolved by hand.",
+  "nextStoryContext": "US-003 wired dispatchJournal's --cycle-close branch (index.ts) to auto-invoke a new patternsArchiveFn dep on JournalDispatchDeps, defaulting to the already-existing defaultPatternsArchiveFn (the 'cam patterns archive' dispatcher's own production default, reused via function-declaration hoisting -- see the CAM-226 patterns.md bullet). Ordering: journal archiveFn best-effort check -> patternsArchiveFn best-effort check -> armMarker() -> CAM_ORCH_HANDOFF_DUE; both archive checks are wrapped in their own try/catch and only printWarning on failure, never change dispatchJournal's exit code. Tests live in test/commands/patterns-cli.test.ts (new describe block 'dispatchJournal --cycle-close auto-invokes patternsArchiveFn (US-003)'), not journal-append.test.ts, since the story's oracle pinned that file. US-004 (retrofit 2026-06 build-notes markers + document marking convention) needs: (1) the exact RESOLVED_MARKER_RE regex from src/commands/patterns-archive.ts (/\\[resolved \\d{4}-\\d{2}\\]/, exported) to retrofit `[resolved 2026-06]` markers onto already-resolved bullets dated 2026-06 in scripts/cam/patterns.md, and (2) a short documented marking convention (a preamble line in patterns.md or a CLAUDE.md note) so future contributors/agents know how to hand-mark a bullet resolved. Read patterns.md in full for US-004 (it is the retrofit target) rather than grepping a subsection."
+  ,
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure CLI-dispatch wiring in index.ts (argv parsing, injectable deps, stdout sentinels) mirroring the existing cam journal archive dispatch shape; no external library surface was exercised or changed."
+      "summary": "Pure CLI-dispatch wiring in index.ts (best-effort side-effect call ordering, injectable deps, printWarning) inside the pre-existing dispatchJournal function; no external library surface was exercised or changed."
     }
   ]
 }

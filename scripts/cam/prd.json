@@ -60,7 +60,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "The --cycle-close best-effort block lives in dispatchJournal (index.ts ~1505-1548), inside `if (parsed.cycleClose)`, AFTER the handoff-exists (exit 3) and watcher-alive (exit 4) guards, AFTER the journal-archive try/catch, and BEFORE armMarker(). Add the patterns-archive call in the same try/catch style (printWarning on ok:false or throw, then continue). GOTCHA: once the marker is armed the watcher can SIGTERM this process, so keep the patterns archive strictly before armMarker. Add a patternsArchiveFn dep to JournalDispatchDeps + a default wired to the real archivePatternsOnMain with process.cwd() and a real spawnSync (mirror defaultArchiveFn). This story edits index.ts (same file as US-002) - sequenced after it."
     },
