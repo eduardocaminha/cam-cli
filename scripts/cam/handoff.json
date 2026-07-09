@@ -1,22 +1,23 @@
 {
-  "lastCompletedStory": { "id": "US-005", "title": "composePrTitle emits <type>: <text> (CAM-<N>)" },
+  "lastCompletedStory": { "id": "US-006", "title": "ship-pr applies the type-derived GitHub label on PR creation" },
   "branchName": "cam/issue-235",
   "timestamp": "2026-07-09T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/release/pr-body.ts",
-    "src/supervisor/ship-runner.ts",
-    "test/release/pr-body.test.ts",
+    "src/release/ship-pr.ts",
     "test/release/ship-pr.test.ts",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-006 (ship-pr applies the type-derived GitHub label on PR creation) is next. PrdSnapshot.type and ShipPrdRecord.type now flow through to runShipPrStep's prdSnapshot input (src/release/ship-pr.ts), same field composePrTitle already reads. Add a `--label <type>` (or equivalent gh pr create/edit label call) to the PR-create step in runShipPrStep, deriving the label text from prdSnapshot.type (default 'feat' when absent, matching composePrTitle's DEFAULT_TYPE constant in src/release/pr-body.ts). Check whether the target GitHub repo already has feat/fix/chore/docs labels or whether gh pr create --label silently fails on a missing label (may need --add-label after creation, or a defensive best-effort wrapper like the existing auto-merge-hint / reviewer-artifact-comment steps in runShipPrStep, which are already best-effort and non-aborting). Grep scripts/cam/patterns.md for 'ship-pr' / 'runShipPrStep' bullets before coding.",
+  "nextStoryContext": "All 6 userStories in this PRD now have passes:true (0 remaining). runShipPrStep (src/release/ship-pr.ts) now derives a --label argv from prdSnapshot.type via a local TYPE_LABEL_MAP (feat->enhancement, fix->bug, docs->documentation, chore->no flag; absent/unrecognized type defaults to 'feat'/enhancement, mirroring composePrTitle's DEFAULT_TYPE in pr-body.ts). test/release/ship-pr.test.ts's happy-path fixture assertion was updated to expect the trailing '--label enhancement' (PRD_SNAPSHOT has no explicit type, defaults to feat). This was the actual test path -- the story's notes referenced 'test/ship-pr.test.ts' but the real file is test/release/ship-pr.test.ts. No non-operator stories remain; the next implementer invocation should find prd.json fully passing and this PRD terminal (review cycle governs completion per CLAUDE.md Stop Condition).",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Pure string-composition change to composePrTitle (src/release/pr-body.ts) plus a pass-through optional field on ShipPrdRecord/toPrdSnapshot (src/supervisor/ship-runner.ts); no external library API was exercised."
+      "lib": "gh (GitHub CLI)",
+      "version": "current",
+      "url": "https://cli.github.com/manual/gh_pr_create",
+      "fetchedAt": "2026-07-09T00:00:00Z",
+      "status": "ok",
+      "summary": "Confirmed gh pr create's label flag is --label (not --add-label), matching the implementation's createArgs.push('--label', label)."
     }
   ]
 }
