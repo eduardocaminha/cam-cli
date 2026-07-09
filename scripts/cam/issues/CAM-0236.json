@@ -1,9 +1,39 @@
 {
   "id": "CAM-236",
   "title": "Renomear issue_system none->local (valor canonico + none como alias deprecado)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T02:39:08.884Z",
-  "description": "issue_system=none e semanticamente enganoso: existe um issue system local completo (CLI cam issue list, stages, WSJF, spec flow); none sugere ausencia. Adotar local como valor canonico e novo default do cam init, mantendo none como alias deprecado normalizado na leitura (none->local num unico ponto), com comparacoes internas passando a checar ===local. O alias e obrigatorio, nao opcional: as comparacoes ===none que gateiam o close/stash do issue local sao hard e espalhadas (ship-finalize.ts:158/198, ship-pr.ts:137/181) e o mergeIntoConfig do init nao reescreve valor existente, entao rename cru quebraria silenciosamente todo projeto cam ja inicializado com none (o proprio scripts/cam/project.toml:2). issue-list.ts:168 sobrevive (none e o else). Toca: enum setup.ts:53 + array :747 + prompts readline :185/Ink SetupScreen.tsx:68-72, default init, ponto de normalizacao na leitura, docs (cam-issue.md, subagent-orchestrator.md:60, recovery-runbook), fixtures de teste. Independente de CAM-234 e CAM-235."
+  "description": "issue_system=none e semanticamente enganoso: existe um issue system local completo (CLI cam issue list, stages, WSJF, spec flow); none sugere ausencia. Adotar local como valor canonico e novo default do cam init, mantendo none como alias deprecado normalizado na leitura (none->local num unico ponto), com comparacoes internas passando a checar ===local. O alias e obrigatorio, nao opcional: as comparacoes ===none que gateiam o close/stash do issue local sao hard e espalhadas (ship-finalize.ts:158/198, ship-pr.ts:137/181) e o mergeIntoConfig do init nao reescreve valor existente, entao rename cru quebraria silenciosamente todo projeto cam ja inicializado com none (o proprio scripts/cam/project.toml:2). issue-list.ts:168 sobrevive (none e o else). Toca: enum setup.ts:53 + array :747 + prompts readline :185/Ink SetupScreen.tsx:68-72, default init, ponto de normalizacao na leitura, docs (cam-issue.md, subagent-orchestrator.md:60, recovery-runbook), fixtures de teste. Independente de CAM-234 e CAM-235.",
+  "spec": {
+    "scope": "Adotar local como valor canonico de issue_system, removendo none de todo code path (deprecado apenas em anotacao no CHANGELOG). Enum IssueSystem vira linear|github|local; array validador e prompts (readline, Ink) atualizados; default do cam init passa a local. Introduzir um leitor central readIssueSystem(config) que substitui os ?? 'none' espalhados: key ausente -> local; valor valido -> retorna; valor fora de {linear,github,local} -> erro ruidoso generico (troca o silent-skip por falha recuperavel). Comparacoes internas checam === 'local'. Migrar scripts/cam/project.toml e fixtures de teste none->local no mesmo PR. Atualizar docs. Fora de escopo: naming de branch (CAM-234), PR title/labels (CAM-235).",
+    "acceptanceCriteria": [
+      "O type IssueSystem (src/commands/setup.ts:53) e o array validador ISSUE_SYSTEMS (:747) sao ['linear','github','local']; none removido.",
+      "Os prompts de selecao (readline setup.ts:185 e Ink SetupScreen.tsx:68-72) oferecem local no lugar de none; o default do cam init (readline :186, Ink :170) e local.",
+      "Existe um leitor central readIssueSystem(config) que retorna local quando a key esta ausente, retorna o valor quando pertence a {linear,github,local}, e lanca um erro ruidoso generico (issue_system invalido: '<v>', esperado linear|github|local) para qualquer outro valor.",
+      "ship-finalize.ts e issue-list.ts (e demais sites) leem via readIssueSystem em vez de ?? 'none'; as comparacoes de backend local checam === 'local' (ship-finalize:158/198, ship-pr:137/181).",
+      "A string literal 'none' nao aparece em nenhum code path de issue_system (comparacao, default, enum, prompt); sobrevive apenas como nota de breaking no CHANGELOG.",
+      "scripts/cam/project.toml e as fixtures de teste que usavam issue_system = \"none\" foram migradas para \"local\".",
+      "Docs atualizadas: templates/commands/cam-issue.md (+ copia instalada .claude/commands/cam-issue.md), subagent-orchestrator.md:60, docs/recovery-runbook.",
+      "Gates verdes: bun run typecheck, bun test, bun run check:all, bun run embed-vendor:check."
+    ],
+    "gotchas": [
+      "mergeIntoConfig do init NAO reescreve um valor ja existente: nao ha migrador automatico. A migracao dos toml conhecidos e manual neste PR; um toml legado com 'none' agora FALHA ruidoso em readIssueSystem (intencional, substitui o silent-skip do ship-finalize).",
+      "cam-issue.md tem copia instalada em .claude/commands/cam-issue.md (linhas ~24/27 e a secao 'none' ~102) e copia embarcada em src/vendor/_generated.ts; ambas devem ficar em sync (embed-vendor:check cobre a embarcada).",
+      "issue-list.ts:168 hoje trata none como else (renderiza local); com readIssueSystem central e === 'local' o ramo local fica explicito em vez de fall-through.",
+      "ship-pr.ts recebe issueBackend = o valor de issue_system vindo do ship-finalize; passa a receber 'local'.",
+      "Universo real: so cam-cli (none) e presentation-platform (github) tem project.toml; a migracao local afeta apenas o cam-cli, por isso remover o alias e seguro."
+    ],
+    "domainTerms": [
+      "issue_system=local",
+      "readIssueSystem"
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 3,
+    "riskReduction": 3,
+    "jobSize": 4
+  }
 }
