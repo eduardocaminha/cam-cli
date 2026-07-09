@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Fix Step 5.5 example + cut NotebookEdit in implementer (both copies) and re-embed"
+  },
+  "branchName": "cam/issue-229",
+  "timestamp": "2026-07-09T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-implementer.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [
+    "The AC1/AC2 oracle paths for the frontmatter smoke check reference `scripts/smoke/check-agent-frontmatter.ts`, which does not exist in cam-cli (the vendored copy lives at `vendor/check-agent-frontmatter.ts`). Verified equivalence by running `bun vendor/check-agent-frontmatter.ts .claude/agents/subagent-implementer.md templates/agents/subagent-implementer.md` (exit 0, 2 agent file(s) ok) instead of the literal pinned path. A future docs story should correct the PRD/notes wording, or a `scripts/smoke/` shim could be considered if the literal path needs to resolve for CI."
+  ],
+  "nextStoryContext": "US-001 fixed the Step 5.5 worked example in both subagent-implementer.md copies (status now \"aligned\", no version field, matches handoff.schema.json) and removed the unused NotebookEdit grant from tools frontmatter in both copies. Re-embedded via `bun run embed-vendor`; embed-vendor:check clean. All quality gates green (typecheck, bun test 3956 pass, lint, embed-vendor:check). Next story is US-002 (warn-level runtime guard for handoff.officialDocsValidated) per prd.json priority order.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
