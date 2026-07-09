@@ -477,3 +477,14 @@ Each entry follows this template:
 - **Decisions**: stage and status remain orthogonal by design (abandonment preserves stage as history); integrity is enforced at the query layer, not by mutating zombie entries. Existing zombies (CAM-99/103/130/184) need no migration since abandoned already drops them from every output.
 - **Blockers encountered**: none
 - **Follow-ups**: Version skew: installed binary 0.93.0 lacks the new --json code path; rebuild+reinstall for --json parity. Operator directive: proceed to speccing the 2026-07-08 audit slate starting CAM-224.
+
+## CAM-234 — Deterministic branch naming cam/issue-<N>
+
+- **Started**: 2026-07-09T03:05:11Z
+- **Closed**: 2026-07-09T03:44:43Z
+- **Branch**: cam/pr-234-deterministic-branch-naming
+- **Issue**: CAM-234
+- **Outcome**: shipped
+- **Summary**: Two-part deterministic branch naming. US-001 moved branch-name construction into code (plan-runner derives cam/issue-<issueNumber>, no slug; git checkout -B for idempotent re-plan; bars plan when issueNumber is absent, no ad-hoc fallback). US-002 updated planner and auditor templates to the cam/issue-<N> contract and re-embedded vendor. Root cause fixed: orphan remote branches came from LLM-authored non-deterministic slugs (CAM-66 spawned 3 names, only the merged one was auto-deleted). Fully autonomous post-signal: APPROVE, 2/2 stories, review CLEAN round 1, ci-gated ship (branch behind -> merge-watch update-branch -> CI green -> merged), post-merge tag v0.96.0, GitHub deleted the remote branch (zero orphans).
+- **Decisions**: Branch format cam/issue-<N>, kept cam/ namespace to avoid churn in prefix-matching (rejected issue/cam-<N>). No slug (nothing parses it out). checkout -B over -b. No fallback since issueNumber is always present.
+- **Follow-ups**: CAM-237 (reviewer suggestion). CAM-235 and CAM-236 queued next in the operator-directed branch/PR-hygiene theme. Final rebuild+swap of the sidecar pending after all three merge (deliberate skew: sidecar is 0.95, main is 0.96).
