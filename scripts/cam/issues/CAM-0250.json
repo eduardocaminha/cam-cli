@@ -1,0 +1,9 @@
+{
+  "id": "CAM-250",
+  "title": "US-004 AC5 is satisfied by equivalence (synthetic fixtures use the exact `[reso…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T17:44:55.748Z",
+  "description": "US-004 AC5 is satisfied by equivalence (synthetic fixtures use the exact `[resolved YYYY-MM]` format the retrofit uses, and RESOLVED_MARKER_RE matches 2026-06), but no test applies the parser to the real scripts/cam/patterns.md to prove the 5 retrofitted bullets are the ones selected. A single assertion loading the real file through parsePatternsBullets/isResolved would close the gap directly.\n\nSource: cam/issue-226\nReview round: 1\nLocation: test/commands/patterns-archive.test.ts:158\n\nsuggestion-fingerprint: 46b62a89e616"
+}
