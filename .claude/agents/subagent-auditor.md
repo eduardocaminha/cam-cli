@@ -79,7 +79,7 @@ Work through every section below. For every finding, record `severity` (critical
 
 ### E. Repo invariants
 
-14. `branchName` matches `cam/pr-<N>-<slug>` (or `cam/<slug>` if no issue number)?
+14. `branchName` matches `^cam/issue-<N>$` (number only, no slug, no fallback)?
 15. No story touches hardened hooks or CI workflows without a rationale?
 16. No story adds secrets inline (env var values, tokens, DB URLs)?
 

@@ -1768,11 +1768,34 @@ function makeClearStalePlanArtifacts(cwd: string): () => void {
 }
 
 /**
+ * Writes the derived branch name back into scripts/cam/prd.json's
+ * `branchName` field (US-001, CAM-236, ADR-0016, AC4). Called from
+ * executeGitProceedBranch BEFORE the prd.json commit, so the committed PRD
+ * and downstream readers (status, dashboard, ship, suggestions source) stay
+ * coherent with the real branch even when the planner emitted something
+ * else. Best-effort: a read/parse/write failure here must not detonate the
+ * plan phase (the git checkout -B already succeeded); mirrors the
+ * best-effort contract of the other marker-writer seams in this module.
+ */
+function makeWritePrdBranchNameFn(cwd: string): (branchName: string) => void {
+	return (branchName: string): void => {
+		try {
+			const prdPath = join(cwd, 'scripts/cam/prd.json');
+			const prdRaw = JSON.parse(readFileSync(prdPath, 'utf8')) as Record<string, unknown>;
+			prdRaw.branchName = branchName;
+			writeFileSync(prdPath, JSON.stringify(prdRaw, null, 2) + '\n', 'utf8');
+		} catch { /* best-effort; the branch was already created by git checkout -B */ }
+	};
+}
+
+/**
  * Run the post-audit actions after runPlanPhase returns (US-005, CAM-155).
  *
  * Extracted from makeProductionPlanPhaseFn to keep the outer closure and
  * outer function under biome's noExcessiveLinesPerFunction(maxLines=80) limit.
- * Reads branchName from prd.json, builds escalateFn from Resend config, calls
+ * Reads issueNumber from prd.json (US-001, CAM-236: the branch name is
+ * derived in code from issueNumber, never trusted from the planner-authored
+ * prd.branchName string), builds escalateFn from Resend config, calls
  * runPostAuditAction, and flips the phase via exitPhaseAfterPlan.
  */
 interface PostPlanActionsOpts {
@@ -1785,13 +1808,13 @@ interface PostPlanActionsOpts {
 	logEvent: WorkerEventLogger;
 }
 function runPostPlanActions(o: PostPlanActionsOpts): void {
-	let branchName = '';
+	let issueNumber: unknown;
 	try {
 		const prdRaw = JSON.parse(
 			readFileSync(join(o.cwd, 'scripts/cam/prd.json'), 'utf8'),
-		) as { branchName?: string };
-		branchName = prdRaw.branchName ?? '';
-	} catch { /* fallback: empty string; runPostAuditAction no-ops on no-approved result */ }
+		) as { issueNumber?: unknown };
+		issueNumber = prdRaw.issueNumber;
+	} catch { /* fallback: undefined; runPostAuditAction's missing-issueNumber gate no-ops */ }
 
 	const resendCfg = readResendConfig(join(o.cwd, 'scripts/cam/project.toml'));
 	const escalateFn = (resendCfg.apiKey !== '' && resendCfg.recipient !== '')
@@ -1809,7 +1832,8 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 		planResult: o.planResult,
 		spawnFn: o.loopSpawnFn,
 		setPhaseFn: makeSetPhaseFn(o.claudeDir, o.cwd),
-		branchName,
+		issueNumber,
+		writePrdBranchNameFn: makeWritePrdBranchNameFn(o.cwd),
 		readPlanApprovalFn: () => readPlanApproval(join(o.cwd, 'scripts/cam/project.toml')),
 		escalateFn,
 		notifyFn: makeNotifyOrchestrator(o.sessionName, o.realSpawnFn),

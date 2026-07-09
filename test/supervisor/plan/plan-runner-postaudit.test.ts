@@ -6,7 +6,7 @@
 //   1.  proceed-branch: branch-create git call precedes prd-commit git call (AC1).
 //   2.  proceed-branch: setPhaseFn called exactly once with 'implementing' (AC1, AC5).
 //   3.  proceed-branch: returns { kind: 'branch-created', branchName } (AC1).
-//   4.  proceed-branch: git checkout -b uses the supplied branchName (AC1).
+//   4.  proceed-branch: git checkout -B uses the derived branchName (AC1).
 //   5.  proceed-branch: git add targets scripts/cam/prd.json (AC1).
 //   6.  proceed-branch: git commit fires after git add (AC1).
 //   7.  pause-operator: returns { kind: 'awaiting-operator-approval' } (AC4).
@@ -18,13 +18,13 @@
 //  13.  audit-blocked: setPhaseFn called zero times (AC5).
 //  14.  non-approved planResult: returns { kind: 'no-action' }.
 //  15.  non-approved planResult: no branch/commit/setPhase/escalate calls.
-//  16.  proceed-branch: git checkout -b fails -> throws (spawnSync exit-status guard).
+//  16.  proceed-branch: git checkout -B fails -> throws (spawnSync exit-status guard).
 //  17.  proceed-branch: git add fails -> throws.
 //  18.  proceed-branch: git commit fails -> throws.
 // Production wiring oracle (US-R1-001):
 //  19.  sidecar.ts imports runPostAuditAction from plan-runner.ts.
 //  20.  sidecar.ts calls runPostAuditAction inside makeProductionPlanPhaseFn.
-//  21.  sidecar.ts wires setPhaseFn, branchName, readPlanApprovalFn in the call.
+//  21.  sidecar.ts wires setPhaseFn, issueNumber, writePrdBranchNameFn, readPlanApprovalFn in the call.
 
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -118,7 +118,8 @@ const TARGET_INVALID_RESULT: PlanPhaseResult = {
 	targetId: 'CAM-777',
 };
 
-const BRANCH_NAME = 'cam/CAM-117-plan-runner';
+const ISSUE_NUMBER = 117;
+const BRANCH_NAME = 'cam/issue-117';
 
 // ---------------------------------------------------------------------------
 // Helper: recorded git call
@@ -161,7 +162,7 @@ function makeOpts(overrides: Partial<RunPostAuditOptions> = {}): {
 		planResult: APPROVED_RESULT,
 		spawnFn,
 		setPhaseFn: (phase) => { setPhaseCalls.push(phase); },
-		branchName: BRANCH_NAME,
+		issueNumber: ISSUE_NUMBER,
 		readPlanApprovalFn: (): PlanApproval => 'auto',
 		escalateFn: async () => { escalateCalled.n++; },
 		notifyFn: (msg) => { notifyMessages.push(msg); },
@@ -204,12 +205,12 @@ describe('runPostAuditAction', () => {
 		expect(result.branchName).toBe(BRANCH_NAME);
 	});
 
-	test('proceed-branch: git checkout -b precedes git commit (AC1)', () => {
+	test('proceed-branch: git checkout -B precedes git commit (AC1)', () => {
 		const { opts, gitCalls } = makeOpts();
 		runPostAuditAction(opts);
 
 		const checkoutIdx = gitCalls.findIndex(
-			(c) => c.cmd === 'git' && c.args[0] === 'checkout' && c.args[1] === '-b',
+			(c) => c.cmd === 'git' && c.args[0] === 'checkout' && c.args[1] === '-B',
 		);
 		const commitIdx = gitCalls.findIndex(
 			(c) => c.cmd === 'git' && c.args[0] === 'commit',
@@ -220,12 +221,12 @@ describe('runPostAuditAction', () => {
 		expect(checkoutIdx).toBeLessThan(commitIdx);
 	});
 
-	test('proceed-branch: git checkout -b uses the supplied branchName (AC1)', () => {
+	test('proceed-branch: git checkout -B uses the derived branchName (AC1)', () => {
 		const { opts, gitCalls } = makeOpts();
 		runPostAuditAction(opts);
 
 		const checkoutCall = gitCalls.find(
-			(c) => c.cmd === 'git' && c.args[0] === 'checkout' && c.args[1] === '-b',
+			(c) => c.cmd === 'git' && c.args[0] === 'checkout' && c.args[1] === '-B',
 		);
 		expect(checkoutCall).toBeDefined();
 		expect(checkoutCall?.args[2]).toBe(BRANCH_NAME);
@@ -491,7 +492,7 @@ describe('runPostAuditAction', () => {
 		const { opts, gitCalls } = makeOpts({ planResult: TARGET_INVALID_RESULT });
 		runPostAuditAction(opts);
 		expect(gitCalls.length).toBe(0);
-		const branchCalls = gitCalls.filter((c) => c.args[0] === 'checkout' && c.args[1] === '-b');
+		const branchCalls = gitCalls.filter((c) => c.args[0] === 'checkout' && c.args[1] === '-B');
 		expect(branchCalls.length).toBe(0);
 	});
 
@@ -511,13 +512,13 @@ describe('runPostAuditAction', () => {
 	// spawnSync exit-status guard (US-R1-001 pattern)
 	// -------------------------------------------------------------------------
 
-	test('git checkout -b failure throws (exit-status guard)', () => {
+	test('git checkout -B failure throws (exit-status guard)', () => {
 		const failCheckoutSpawnFn: SpawnFn = (_cmd, args) => {
 			if (args[0] === 'checkout') return { stdout: '', exitCode: 1 };
 			return { stdout: '', exitCode: 0 };
 		};
 		const { opts } = makeOpts({ spawnFn: failCheckoutSpawnFn });
-		expect(() => runPostAuditAction(opts)).toThrow(/git checkout -b/);
+		expect(() => runPostAuditAction(opts)).toThrow(/git checkout -B/);
 	});
 
 	test('git add failure throws (exit-status guard)', () => {
@@ -599,7 +600,7 @@ describe('runPostAuditAction', () => {
 		expect(removeMarkerCalled.n).toBe(1);
 	});
 
-	test('proceed-branch: removeEscalationMarkerFn fires BEFORE the git checkout -b call (AC4)', () => {
+	test('proceed-branch: removeEscalationMarkerFn fires BEFORE the git checkout -B call (AC4)', () => {
 		const order: string[] = [];
 		const { opts } = makeOpts({
 			removeEscalationMarkerFn: () => { order.push('remove-marker'); },
@@ -742,11 +743,12 @@ describe('sidecar.ts production wiring oracle - runPostAuditAction (US-R1-001)',
 		expect(helperMatch?.[0]).toContain('runPostAuditAction(');
 	});
 
-	test('runPostAuditAction call wires setPhaseFn, branchName, readPlanApprovalFn', () => {
+	test('runPostAuditAction call wires setPhaseFn, issueNumber, writePrdBranchNameFn, readPlanApprovalFn', () => {
 		const callMatch = source.match(/runPostAuditAction\(\{[\s\S]*?\}\)/);
 		expect(callMatch).not.toBeNull();
 		expect(callMatch?.[0]).toContain('setPhaseFn');
-		expect(callMatch?.[0]).toContain('branchName');
+		expect(callMatch?.[0]).toContain('issueNumber');
+		expect(callMatch?.[0]).toContain('writePrdBranchNameFn');
 		expect(callMatch?.[0]).toContain('readPlanApprovalFn');
 	});
 
