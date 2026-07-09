@@ -23,7 +23,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file: .claude/agents/subagent-auditor.md (C.8 at line 66, B.5 at line 60). This is intentional self-hosting (declared edit to .claude/agents/*), so auditor rule F.23 should NOT flag it as harness drift. Do NOT touch templates/agents/subagent-auditor.md: its generic web-app C.8/B.5 are coherent for downstream web projects and the divergence is by-design (see memory: cam-dual-copy-is-per-file). Because templates/ is untouched, embed-vendor:check is NOT part of this story's gates. ink-testing-library ^4.0.0 is already a devDependency, used in test/dashboard.test.ts, test/ui/init-setup-screen-keys.test.ts, test/ui/dashboard-story-row.test.tsx, so the tool the rewrite references genuinely exists. Keep the trailing LF byte and frontmatter block intact (check-agent-frontmatter.ts guards it). This is a functional fix: spurious C.8 critical -> false BLOCK -> burned re-plan (MAX_REPLAN_ROUNDS=2) -> plan-escalated (plan-runner.ts:847)."
     }
