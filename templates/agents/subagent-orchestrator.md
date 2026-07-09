@@ -267,7 +267,7 @@ Use `gh` CLI:
 - `gh issue edit <N> --add-label in-progress` on plan completion.
 - `gh issue close <N> --comment "Shipped in <PR url>"` on ship.
 
-### None
+### Local
 
 Update issue files in `scripts/cam/issues/` directly via `Read`/`Bash`. Schema
 documented in `/cam-issue`.
