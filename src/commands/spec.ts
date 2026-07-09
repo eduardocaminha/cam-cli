@@ -26,9 +26,11 @@
 //      failure (diverged / detached-head / missing-main).
 //
 // Acceptance criteria (US-001, CAM-213, --persist path):
-//   1. `echo '<json>' | cam spec --persist <id>` reads { spec, wsjf, blockedBy? }
-//      from stdin and calls specifyIssueOnMain in-process: NO tmux calls, no
-//      send-keys, no pane bootstrap, no orchestrator liveness check.
+//   1. `echo '<json>' | cam spec --persist <id>` reads
+//      { spec, wsjf, blockedBy?, type? } from stdin and calls
+//      specifyIssueOnMain in-process: NO tmux calls, no send-keys, no pane
+//      bootstrap, no orchestrator liveness check. type (US-002, CAM-235) is
+//      optional and forwarded as-is; specifyIssueOnMain validates it.
 //   2. Exit 0 on { ok: true }, printing CAM_SPEC_RESULT=<id> sha=<sha> plus a
 //      human hint; exit 1 on malformed stdin JSON (reason=invalid-json) or any
 //      specifyIssueOnMain guard/validation failure, printing
@@ -66,7 +68,7 @@ import {
 } from './domain-docs.ts';
 import { specifyIssueOnMain, type SpecifyIssueOnMainOutcome } from './issue-specify.ts';
 import type { Spec } from '../issues/spec.ts';
-import type { WsjfScore } from '../issues/types.ts';
+import type { IssueEntry, WsjfScore } from '../issues/types.ts';
 import type { DomainDocsPayload } from '../domain-docs/render.ts';
 
 // --- Types -----------------------------------------------------------------
@@ -326,6 +328,12 @@ interface SpecPersistPayload {
 	spec: Spec;
 	wsjf: WsjfScore;
 	blockedBy?: string[];
+	/**
+	 * Optional issue type captured during the grill (US-002, CAM-235).
+	 * Forwarded as-is to specifyIssueOnMain, which validates it; a payload
+	 * without type leaves the issue entry without a type key.
+	 */
+	type?: IssueEntry['type'];
 }
 
 export interface SpecPersistOptions {
@@ -357,16 +365,16 @@ export interface SpecPersistOptions {
 }
 
 /**
- * `cam spec --persist <id>`: read { spec, wsjf, blockedBy? } as JSON from
- * stdin and call specifyIssueOnMain directly. NO tmux calls, no send-keys, no
- * pane bootstrap, no orchestrator liveness check -- this is the deterministic
- * persist channel FOR the orchestrator (a read-only agent with no Task/inline-TS
- * path), mirroring `cam spec --write-docs` / `cam journal append` /
- * `cam issue --file-local`.
+ * `cam spec --persist <id>`: read { spec, wsjf, blockedBy?, type? } as JSON
+ * from stdin and call specifyIssueOnMain directly. NO tmux calls, no
+ * send-keys, no pane bootstrap, no orchestrator liveness check -- this is the
+ * deterministic persist channel FOR the orchestrator (a read-only agent with
+ * no Task/inline-TS path), mirroring `cam spec --write-docs` /
+ * `cam journal append` / `cam issue --file-local`.
  *
- * specifyIssueOnMain already validates spec + wsjf and enforces all guards;
- * this function only marshals stdin and maps the resulting discriminated
- * union to exit code + machine-readable CAM_SPEC_RESULT line.
+ * specifyIssueOnMain already validates spec + wsjf + type and enforces all
+ * guards; this function only marshals stdin and maps the resulting
+ * discriminated union to exit code + machine-readable CAM_SPEC_RESULT line.
  *
  * Returns 0 on `{ ok: true }`; returns 1 on malformed stdin JSON
  * (reason=invalid-json, specifyIssueOnMain is never called) or any
@@ -409,6 +417,7 @@ export async function runSpecPersist(options: SpecPersistOptions): Promise<numbe
 				spec: (payload as SpecPersistPayload).spec,
 				wsjf: (payload as SpecPersistPayload).wsjf,
 				blockedBy: (payload as SpecPersistPayload).blockedBy,
+				type: (payload as SpecPersistPayload).type,
 				spawnFn,
 				clock,
 			});
@@ -417,6 +426,7 @@ export async function runSpecPersist(options: SpecPersistOptions): Promise<numbe
 		if (
 			outcome.reason === 'invalid-spec' ||
 			outcome.reason === 'invalid-wsjf' ||
+			outcome.reason === 'invalid-type' ||
 			outcome.reason === 'integrity-error'
 		) {
 			printError(`cam spec --persist: ${outcome.reason}`, outcome.errors.join('; '));

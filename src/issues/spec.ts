@@ -111,6 +111,29 @@ export function validateSpecSource(x: unknown): ValidationResult {
 	return { ok: errors.length === 0, errors };
 }
 
+/** The four valid top-level issue `type` enum values. */
+const VALID_ISSUE_TYPES = ["feat", "fix", "chore", "docs"] as const;
+
+/**
+ * Validates the optional top-level `type` field on an issue entry.
+ * Mirrors validateSpecSource style: `type` is optional (absence is not an
+ * error, and no default is applied here -- defaulting is a consumer-side
+ * concern), but a present value outside the enum is rejected.
+ */
+export function validateIssueType(x: unknown): ValidationResult {
+	const errors: string[] = [];
+
+	if (x === undefined) {
+		return { ok: true, errors };
+	}
+
+	if (typeof x !== "string" || !(VALID_ISSUE_TYPES as readonly string[]).includes(x)) {
+		errors.push('type must be one of: "feat", "fix", "chore", "docs"');
+	}
+
+	return { ok: errors.length === 0, errors };
+}
+
 /**
  * Validates a WsjfScore value. Returns { ok: true, errors: [] } on success.
  *

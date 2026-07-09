@@ -31,7 +31,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { checkReferentialIntegrity } from '../issues/graph.ts';
-import { validateSpec, validateWsjf } from '../issues/spec.ts';
+import { validateSpec, validateWsjf, validateIssueType } from '../issues/spec.ts';
 import type { Spec } from '../issues/spec.ts';
 import type { IssueEntry, WsjfScore } from '../issues/types.ts';
 import { readBacklogFromMain, issueFilePath } from '../issues/backlog.ts';
@@ -78,6 +78,13 @@ export interface SpecifyIssueOnMainOptions {
 	wsjf: WsjfScore;
 	/** Ids of issues this one is blocked by (default: []). */
 	blockedBy?: string[];
+	/**
+	 * Optional issue type, captured during the grill. When present, must be
+	 * one of "feat" | "fix" | "chore" | "docs". When absent, no type key is
+	 * written to the issue entry (no default is applied here -- defaulting
+	 * to "feat" is a consumer-side concern for the planner/composer).
+	 */
+	type?: IssueEntry['type'];
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
@@ -109,6 +116,7 @@ export type SpecifyIssueOnMainError =
 	| { ok: false; reason: 'not-open' }
 	| { ok: false; reason: 'invalid-spec'; errors: string[] }
 	| { ok: false; reason: 'invalid-wsjf'; errors: string[] }
+	| { ok: false; reason: 'invalid-type'; errors: string[] }
 	| { ok: false; reason: 'integrity-error'; errors: string[] };
 
 export type SpecifyIssueOnMainOutcome =
@@ -293,6 +301,8 @@ function emitStagePromoted(
  *   0. Up-to-date guard (detached-head, missing-main, diverged).
  *   1. validateSpec -- invalid-spec error on failure.
  *   2. validateWsjf -- invalid-wsjf error on failure.
+ *   2.5. validateIssueType -- invalid-type error on failure (type is optional;
+ *        absence never errors).
  *   3. Target id must exist in the backlog -- not-found on failure.
  *   4. Target issue must be stage:'idea' -- wrong-stage on failure.
  *   5. Target issue must be status:'open' -- not-open on failure.
@@ -300,6 +310,8 @@ function emitStagePromoted(
  * Mutation (in-memory, then committed):
  *   Set entry.spec = spec, entry.wsjf = wsjf,
  *       entry.blockedBy = blockedBy ?? [], entry.stage = 'specified'.
+ *   entry.type is set only when options.type is present; a payload without
+ *   type leaves the entry without a type key (no default is written).
  *
  *   6. checkReferentialIntegrity on the mutated backlog -- integrity-error on failure.
  *
@@ -315,6 +327,7 @@ export function specifyIssueOnMain(
 ): SpecifyIssueOnMainOutcome {
 	const { cwd, id, spec, wsjf, spawnFn, clock } = options;
 	const blockedBy = options.blockedBy ?? [];
+	const type = options.type;
 
 	// Guard 0: up-to-date check.
 	const guard = checkMainUpToDate(cwd, spawnFn);
@@ -333,6 +346,12 @@ export function specifyIssueOnMain(
 	const wsjfResult = validateWsjf(wsjf);
 	if (!wsjfResult.ok) {
 		return { ok: false, reason: 'invalid-wsjf', errors: wsjfResult.errors };
+	}
+
+	// Guard 2.5: validate type (optional; absence is not an error).
+	const typeResult = validateIssueType(type);
+	if (!typeResult.ok) {
+		return { ok: false, reason: 'invalid-type', errors: typeResult.errors };
 	}
 
 	// Read backlog from main via the per-file primitives (never from the working tree).
@@ -359,13 +378,15 @@ export function specifyIssueOnMain(
 		return { ok: false, reason: 'not-open' };
 	}
 
-	// Mutate in-memory.
+	// Mutate in-memory. type is spread in only when present: a payload
+	// without type leaves the entry without a type key (no default written).
 	const mutated: IssueEntry = {
 		...entry,
 		spec,
 		wsjf,
 		blockedBy,
 		stage: 'specified',
+		...(type !== undefined ? { type } : {}),
 	};
 	allIssues[entryIndex] = mutated;
 
