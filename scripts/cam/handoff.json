@@ -1,31 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Derive branch name in code as cam/issue-<N> with checkout -B and missing-issueNumber gate"
+    "id": "US-002",
+    "title": "Update planner and auditor templates to the cam/issue-<N> contract and re-embed vendor"
   },
   "branchName": "cam/pr-234-deterministic-branch-naming",
   "timestamp": "2026-07-09T00:00:00Z",
-  "createdFiles": [
-    "test/supervisor/plan/plan-runner-branch-derivation.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/plan-runner.ts",
-    "src/commands/sidecar.ts",
-    "scripts/file-size-budget.json",
-    "test/supervisor/plan/plan-runner-postaudit.test.ts",
-    "test/plan-runner-no-prd.test.ts",
-    "test/integration/plan-runner-no-prd.test.ts",
-    "test/plan-target-invalid-sidecar.test.ts"
+    "templates/agents/subagent-planner.md",
+    "templates/agents/subagent-auditor.md",
+    ".claude/agents/subagent-planner.md",
+    ".claude/agents/subagent-auditor.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 done: deriveBranchName(issueNumber) in src/supervisor/plan-runner.ts returns 'cam/issue-<N>' (typeof number only, no slug, no fallback) and is the single source of truth for the feature-branch name; RunPostAuditOptions.branchName was REMOVED and replaced by issueNumber (unknown, read verbatim from prd.json) + writePrdBranchNameFn (optional, writes the derived name back into prd.json's branchName field BEFORE 'git add', called from executeGitProceedBranch). executeGitProceedBranch now spawns ['checkout', '-B', <derived>] (capital B, idempotent re-plan) instead of '-b'. The old empty-branchName guard was replaced by a missing-issueNumber gate (handleAuditApproved helper in plan-runner.ts): null/undefined/non-number issueNumber -> notifyFn + no-action, zero git calls. sidecar.ts's runPostPlanActions reads prd.json.issueNumber (not .branchName) and wires makeWritePrdBranchNameFn(cwd). test/plan-runner-empty-branch.test.ts (old contract) was deleted and superseded by test/supervisor/plan/plan-runner-branch-derivation.test.ts. US-002 (planner/auditor template updates to the cam/issue-<N> contract + re-embed vendor) is next: it will touch templates/ + vendor/, so remember to run 'bun run embed-vendor' then 'bun run embed-vendor:check' for that story. scripts/file-size-budget.json ceilings were raised for plan-runner.ts (1272->1362) and sidecar.ts (2438->2461) with a CAM-236 tracker ref in _ref; a subsequent story touching either file may need another raise.",
+  "nextStoryContext": "US-002 done: templates/agents/subagent-planner.md and its .claude/ mirror now instruct the planner to emit 'branchName': 'cam/issue-<issueNumber>' (derived from the issue number) instead of the old 'cam/pr-<N>-<slug>' invented-slug format. templates/agents/subagent-auditor.md and its .claude/ mirror now check 14 (section E, Repo invariants) against the strict regex ^cam/issue-<N>$ (number only; no slug variant, no cam/<slug> no-issue fallback). Only the single branchName line in each of the 4 files was touched (per the dual-copy gotcha: .claude/ and templates/ copies are NOT byte-identical overall, so only the targeted line was edited in each, not a whole-file sync). src/vendor/_generated.ts was regenerated via 'bun run embed-vendor' and embed-vendor:check passes. This is a text/prompt-contract change only (no runtime TS logic touched), consistent with US-001 which did the code-side derivation (deriveBranchName in src/supervisor/plan-runner.ts, already returns 'cam/issue-<N>'). All PRD stories for CAM-236 (US-001, US-002) are now passes:true; if this was the last story, the next actor is /cam-review, not another implementer story. No further branchName-format work is known to remain in this PRD.",
   "officialDocsValidated": [
     {
-      "lib": "git (checkout)",
-      "url": "https://git-scm.com/docs/git-checkout",
-      "fetchedAt": "2026-07-09T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed 'git checkout -B <branch>' creates the branch if absent and resets it to the current start point (HEAD) if it already exists, instead of failing like '-b'; matches executeGitProceedBranch's idempotent re-plan usage."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Story only edits agent-prompt markdown templates (planner/auditor) and regenerates the internal embedded-vendor bundle via cam-cli's own generate-embedded-vendor.ts script; no third-party library API was exercised or changed."
     }
   ]
 }
