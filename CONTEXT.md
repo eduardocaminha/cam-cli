@@ -91,3 +91,9 @@ Campo do issue (enum feat|fix|chore|docs, default feat) que classifica a mudanca
 
 **type-to-label map**:
 Mapeamento deterministico do issue type para o label do GitHub aplicado na PR: feat->enhancement, fix->bug, docs->documentation, chore->sem label. Usa apenas labels ja existentes no repo.
+
+**issue_system=local**:
+Valor canonico do issue_system para o issue system local (arquivos JSON em scripts/cam/issues/, CLI cam issue list, stages, WSJF, spec flow). Substitui o antigo none, que sugeria ausencia apesar de haver um tracker local completo.
+
+**readIssueSystem**:
+Leitor central do issue_system a partir do project.toml: default local quando ausente, valida contra {linear,github,local}, e lanca erro ruidoso generico para valor desconhecido em vez de cair silenciosamente no ramo errado.
