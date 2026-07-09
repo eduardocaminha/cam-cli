@@ -1,6 +1,6 @@
 ---
 name: subagent-planner
-description: Converts an issue or description into a structured PRD (prd.json) with small, dependency-ordered user stories. Project context (CLAUDE.md) auto-loads via nested-CLAUDE.md; grep patterns.md for the rest before generating. Invoked from /cam-plan Step 7 after scope is approved.
+description: Converts an issue or description into a structured PRD (prd.json) with small, dependency-ordered user stories. Project context (CLAUDE.md) auto-loads via nested-CLAUDE.md; grep patterns.md for the rest before generating. Spawned by the deterministic plan runner (runPlanPhase, ADR-0006), not a /cam-plan step.
 model: claude-opus-4-8
 effort: xhigh
 tools:
@@ -78,10 +78,9 @@ Steps when a target issue id is present:
 
 ## Spec Sourcing
 
-The orchestrator's Task prompt includes a `specSource` field that tells you how to treat the spec:
+The task prompt names only the target issue id; it does not carry the spec inline. Read the issue file yourself (`scripts/cam/issues/<id>.json`): its `title` + `description` is the spec. Do not re-litigate scope decisions already recorded there.
 
-- **`"grill"` (or absent)**: the `Spec` field is the settled scope. Do not re-litigate decisions already made at grill time. Use it verbatim to guide story decomposition.
-- **`"derived"` or `"operator"`**: the spec is a proposed scope derived from a parent issue. Use `title` + `description` as the proposed scope. When `derivedFrom` is present in the Task prompt, **read each parent issue** to understand the ancestor scope, decisions, and constraints before generating stories. The planner refines HOW, not WHAT.
+If the issue file's metadata links to one or more parent/ancestor issues, read each of those issue files too (same `scripts/cam/issues/<id>.json` path) to understand the ancestor scope, decisions, and constraints before generating stories. The planner refines HOW, not WHAT.
 
 ## Story Sizing Rules
 
