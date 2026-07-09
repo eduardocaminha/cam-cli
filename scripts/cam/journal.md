@@ -536,3 +536,15 @@ Each entry follows this template:
 - **Decisions**: Prompt-only; no src runtime change beyond the embed regeneration. Both copies kept byte-identical in the body per cam-dual-copy-is-per-file. First of the operator's 11-issue context-truth-up specified chain (CAM-224/225/226/227/228/229/230/231/232/233/240).
 - **Blockers encountered**: None on the ship. Auto-ship fired on its own (no CAM-191 wedge this cycle). PR #175 landed BEHIND because main advanced (Renovate #174 checkout-v7 merge + CAM-242/243/244/245 filings); sidecar merge-watch CAM-182 ran update-branch (2/2) and it merged clean.
 - **Follow-ups**: Continue the chain topological by blockedBy: next unblocked specified are CAM-227/228/229. Renovate App installed this session: #174 (checkout v7) merged; #173 (bun 1.3.14) RED until CAM-245 ships (brittle literal-pin toolchain test at test/config/toolchain.test.ts). Filed CAM-243 (jscpd@5 native-Rust dup-gate pin spike), CAM-244 (container-manager automerge on container-blind macOS CI), CAM-245 (P2, unblocks Renovate toolchain automerge). Idea follow-ups needing /cam-spec: CAM-237/238/242 (242 deferred by operator).
+
+## CAM-227 — Fix orchestrator frontmatter drift (Write in disallowedTools) + mark frontmatter advisory-only
+
+- **Started**: 2026-07-09T14:03:17Z
+- **Closed**: 2026-07-09T14:20:10Z
+- **Branch**: cam/issue-227
+- **Issue**: CAM-227
+- **Outcome**: shipped
+- **Summary**: Second issue of the operator-directed 11-issue context-truth-up specified chain (after CAM-225). The orchestrator agent frontmatter listed Write under disallowedTools while the body grants and relies on Write; the fix aligns the Write grant and marks the frontmatter enforcement as advisory-only in both copies (.claude/agents + templates/agents), then re-embeds. Single story US-001, auditor APPROVE, gates green (typecheck ok, 3956 pass / 0 fail), review CLEAN round 1 with zero findings. Shipped ci-gated as PR #176; PR landed BEHIND because main advanced (CAM-246 auto-file) and the sidecar merge-watch (CAM-182) ran gh pr update-branch and squash-merged clean. Post-merge tag v0.101.0, CAM-227 closed.
+- **Decisions**: Prompt-only change; both agent copies kept body-identical per cam-dual-copy-is-per-file. At this cycle boundary the operator's no-AI-attribution rule was committed as a chore direct-to-main (commit 6f2e8c3): repo CLAUDE.md now forbids Co-Authored-By / Generated-with trailers, overriding the harness default for every claude session in the repo. Operator decided NOT to clean existing git history of the claude/cursoragent co-author contributors.
+- **Blockers encountered**: none
+- **Follow-ups**: CAM-246 auto-filed (idea SUGGESTION from the CLEAN review). Continue the chain topological by blockedBy: next unblocked specified are CAM-228, CAM-229, CAM-240. Renovate #173 (bun 1.3.14) stays RED until CAM-245 ships (literal-pin toolchain test). CAM-237/238/242 need /cam-spec before joining the DAG (242 deferred by operator).
