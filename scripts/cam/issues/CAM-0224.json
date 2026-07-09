@@ -1,9 +1,35 @@
 {
   "id": "CAM-224",
   "title": "Dieta harness-side: sidecar injeta story selecionada + branchName no spawn do implementer",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-229"
+  ],
   "createdAt": "2026-07-08T23:05:39.866Z",
-  "description": "Hoje o spawn prompt do implementer (host.ts:300) e ~75B: Implement the next user story from scripts/cam/prd.json, e o agente le o prd.json inteiro pra jq-selecionar 1 story. O harness JA SABE deterministicamente qual e a proxima story: injetar o record da story selecionada + branchName direto no spawn prompt e remover a leitura do prd.json inteiro do fluxo do agente. Preserva o contrato de isolamento (worker continua atualizando passes:true no prd.json ao final). Par da CAM-223 (dieta prompt-side); esta e a metade que exige codigo de harness. Origem: auditoria de contexto 2026-07-08."
+  "description": "Hoje o spawn prompt do implementer (host.ts:300) e ~75B: Implement the next user story from scripts/cam/prd.json, e o agente le o prd.json inteiro pra jq-selecionar 1 story. O harness JA SABE deterministicamente qual e a proxima story: injetar o record da story selecionada + branchName direto no spawn prompt e remover a leitura do prd.json inteiro do fluxo do agente. Preserva o contrato de isolamento (worker continua atualizando passes:true no prd.json ao final). Par da CAM-223 (dieta prompt-side); esta e a metade que exige codigo de harness. Origem: auditoria de contexto 2026-07-08.",
+  "spec": {
+    "scope": "Make the harness-selected story authoritative and inject it into the implementer spawn, removing the agent's full-prd.json selection read (harness-side half of the context diet; pair of CAM-223 prompt-side, already shipped). Files: src/supervisor/host.ts (default taskPrompt), src/supervisor/loop.ts (build the taskPrompt from the selected story record + branchName; promote decideNextAction storyId from advisory to authoritative) + tests; scripts/cam/CLAUDE.md 'Your Task' steps (remove self-select + full-prd read for selection; keep the final targeted passes:true update) in BOTH copies + re-embed src/vendor/_generated.ts via `bun run embed-vendor`. Out of scope: .claude/agents/subagent-implementer.md (owned by CAM-229), any change to how passes:true is finalized/verified (host.ts:615 finalize, CAM-187 gates).",
+    "acceptanceCriteria": [
+      "The implementer spawn task prompt embeds the full selected-story record (id, title, description/acceptanceCriteria, priority, requires) and the branchName, built by the supervisor from decideNextAction's chosen story — not the generic 'Implement the next user story from scripts/cam/prd.json' string.",
+      "decideNextAction's storyId is authoritative for dispatch: the supervisor injects that exact story and the agent implements it without independently re-selecting; the existing outcome.storyId-vs-selected reconciliation (loop.ts ~1330) is retained as a safety net.",
+      "scripts/cam/CLAUDE.md 'Your Task' steps no longer instruct the agent to read prd.json in full to pick the highest-priority story; the agent is told which story to implement. The final step that flips the completed story's passes:true via a targeted prd.json update is preserved (isolation contract).",
+      "The change is applied to both copies of scripts/cam/CLAUDE.md and re-embedded; `bun run embed-vendor:check` passes.",
+      "Unit tests cover the taskPrompt builder embedding the story record + branchName; `bun run typecheck`, `bun test`, and vendor/check pass green."
+    ],
+    "gotchas": [
+      "decideNextAction already returns { kind:'implement', storyId } (decide.ts:125); today loop.ts:874-877 treats it as advisory ('worker self-selects, storyId is logging only'). This story flips that to authoritative — update the loop.ts comment block (lines ~16-22) that documents the self-select design.",
+      "passes:true during the loop is written by the AGENT (targeted), verified by the harness (loop.ts ~1330 + CAM-187 no-commit gate); host.ts:615 story.passes=true is the finalize path, a different thing. Keep the agent's targeted update; do not move passes:true ownership to the sidecar.",
+      "Both CAM-224 and CAM-229 edit src/supervisor/loop.ts (224 builds the taskPrompt, 229 adds the officialDocsValidated warn-guard), so this is blockedBy CAM-229 to avoid concurrent edits to the same file.",
+      "scripts/cam/CLAUDE.md is the nested-CLAUDE.md auto-loaded for the implementer (the 'Your Task' steps), distinct from .claude/agents/subagent-implementer.md; touching it requires re-embed of the templates copy."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 4
+  },
+  "type": "chore"
 }
