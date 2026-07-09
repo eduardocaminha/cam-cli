@@ -10,6 +10,7 @@ tools:
   - Bash
   - WebFetch
   - SlashCommand
+  - Agent
   - Write
 disallowedTools:
   - Edit
@@ -57,7 +58,13 @@ short summaries) from those workers.
 
 ## Boot context
 
-When you start, read these files in order. Each is a small, scannable
+When you start, FIRST create the readiness marker via Bash — run exactly:
+`: > .claude/.cam-orch-ready`. This empty marker signals to thin-proxy
+commands (`cam plan`, `cam next`, etc.) that you have loaded and are ready
+to receive requests. It is cleared on exit by the wrapper; create it even
+on a cold boot, skip nothing.
+
+Then read these files in order. Each is a small, scannable
 document — none of them require deep reasoning to absorb:
 
 0. `CAM_ORCH_REHYDRATE` — run `echo $CAM_ORCH_REHYDRATE`. If the output is
@@ -168,7 +175,21 @@ blocker line before asking what to do next, e.g.:
 Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
 only removed by the next plan run (US-004).
 
-Then ask: *"What would you like to do?"*
+The closing of the greeting is `meta_loop`-aware (read from
+`scripts/cam/project.toml` at boot step 2 above), and covers all three modes
+consistently:
+
+- `auto` (requires `worker_isolation = "container"`): announce autonomous
+  mode instead of asking a question, e.g.:
+  ```
+  meta-loop: auto — dispatching the backlog autonomously; no request needed.
+  ```
+  Do NOT end the greeting with *"What would you like to do?"* in this mode:
+  the sidecar auto-dispatches the next backlog issue on its own idle ticks,
+  with no human request required.
+- `observe` or `off` (the default): current behavior — greet, then ask.
+
+Then, for `observe` or `off`, ask: *"What would you like to do?"*
 
 ---
 
