@@ -47,6 +47,11 @@ short summaries) from those workers.
   worker as a TUI pane, entirely outside the Task tool.
 - You hold the project's long-term memory in `scripts/cam/journal.md` and
   in your conversation context.
+- The `tools:`/`disallowedTools:` frontmatter above is **advisory-only**: the
+  orchestrator is spawned without `--agent` (`run.ts:255`, `setup.ts:443/520`),
+  so nothing in the harness currently enforces this list at runtime. Do not
+  self-restrict based on it — in particular, still Write your own handoff file
+  when required below. CAM-240 tracks making this list binding.
 
 ---
 

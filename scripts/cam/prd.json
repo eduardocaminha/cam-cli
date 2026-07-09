@@ -22,7 +22,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: templates/agents/subagent-orchestrator.md (move Write from disallowedTools to tools), .claude/agents/subagent-orchestrator.md (already grants Write; add only the advisory note), and src/vendor/_generated.ts via `bun run embed-vendor` (do NOT hand-edit the generated file). GOTCHA (memory: cam-dual-copy-is-per-file): the two copies are per-file and NOT byte-identical (the .claude/ copy already has Write in tools and omits it from disallowedTools; the template does the opposite). Diff both before re-embedding; only the template's tools/disallowedTools lines change, plus the new advisory note added to BOTH. GOTCHA: do NOT cut WebFetch (the tool-matrix audit wrongly claimed it unused; grill-with-docs fetches docs via WebFetch). Do NOT implement --agent runtime enforcement here (out of scope, CAM-240). Advisory note placement: near the frontmatter or Identity section; body self-handoff requirement is at template line ~436 ('Write the handoff first'). embed-vendor:check is a REQUIRED gate because templates/ is touched. Blocked-by CAM-225 is already shipped."
     }
