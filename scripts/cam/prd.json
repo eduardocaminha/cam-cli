@@ -48,7 +48,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/spec.ts (SpecPersistPayload + pass-through), src/commands/issue-specify.ts (SpecifyIssueOnMainOptions + write onto IssueEntry, validation alongside the existing invalid-spec/invalid-wsjf paths), test/issue-specify.test.ts. Depends on US-001 (IssueEntry.type). type is a TOP-LEVEL issue field like specSource, not a field inside spec: do not touch the Spec interface in src/issues/spec.ts. Default feat is applied on READ by consumers (US-004 planner, US-005 composer), never written to the file."
     },

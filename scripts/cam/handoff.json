@@ -1,21 +1,21 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add optional type field to the issue schema (both copies) and IssueEntry" },
+  "lastCompletedStory": { "id": "US-002", "title": "Accept and persist type through cam spec --persist" },
   "branchName": "cam/issue-235",
   "timestamp": "2026-07-09T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/issues.schema.json",
-    "templates/scripts/cam/issues.schema.json",
-    "src/issues/types.ts",
-    "src/vendor/_generated.ts"
+    "src/commands/spec.ts",
+    "src/commands/issue-specify.ts",
+    "src/issues/spec.ts",
+    "test/issue-specify.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 (cam spec --persist) should persist an optional type onto IssueEntry when the operator supplies one during the grill. The two schema copies are intentionally NOT byte-identical (scripts/cam/issues.schema.json carries specSource/derivedFrom/allOf blocks that templates/scripts/cam/issues.schema.json lacks); the new 'type' enum property was added independently to each copy's properties block, not synced via allOf. No required-array change was made (type stays optional; default 'feat' is a consumer-side concern for US-004/US-005, not this schema). Remember bun run embed-vendor + embed-vendor:check whenever templates/ changes.",
+  "nextStoryContext": "US-003 (grill capture/confirm type, both /cam-spec command copies) should prompt the operator/orchestrator during the grill for one of feat|fix|chore|docs and include it as a top-level `type` key in the JSON payload piped to `cam spec --persist <id>` (alongside spec/wsjf/blockedBy). specifyIssueOnMain (src/commands/issue-specify.ts) and the SpecPersistPayload pass-through (src/commands/spec.ts) already accept and validate an optional `type` end-to-end (US-002, CAM-235): validateIssueType in src/issues/spec.ts rejects any value outside the 4-item enum with reason:'invalid-type', and a payload without type leaves the issue entry without a type key (no default is written -- 'feat' defaulting is deferred to US-004 planner / US-005 composePrTitle, not this story or US-002). US-003 only needs to change the two command-doc copies (.claude/commands/cam-spec.md + templates/commands/cam-spec.md, or wherever the grill's persist-payload construction is spec'd) to solicit and forward the type field; no further src/ validation work is needed on the persist path.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure JSON Schema (draft-07) authoring + TS type addition; no runtime schema-validation library (e.g. ajv) is used in this repo to consume issues.schema.json, so no external library API was exercised."
+      "summary": "Pure TypeScript validation (enum membership check) + conditional object-spread mutation; no external library API was exercised. Mirrors the existing validateSpecSource precedent already in src/issues/spec.ts."
     }
   ]
 }
