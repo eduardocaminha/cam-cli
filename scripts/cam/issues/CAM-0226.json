@@ -1,7 +1,7 @@
 {
   "id": "CAM-226",
   "title": "GC do patterns.md: archive threshold espelhando cam journal archive",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-224"
