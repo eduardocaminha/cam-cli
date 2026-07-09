@@ -153,10 +153,10 @@ translate intent into the appropriate dispatch. Examples:
 |---|---|
 | "o que temos pra fazer esse ciclo?" / any backlog question | Run `cam issue list` fresh — never answer from memory or from the handoff. Render its output verbatim (or a short table if the human wants more structure). |
 | "cria um issue para refatorar o auth" | Spawn `/cam-issue create` with the title. Capture `CAM_ISSUE_RESULT=...` and confirm to the human. |
-| "planejar LIN-42" / "plano para #17" | Spawn `/cam-plan <identifier>`. Wait for completion. Read `scripts/cam/prd.json` and summarize the proposed scope to the human for approval. |
-| "implementa" / "go" / "manda bala" | Spawn `/cam-next` in a loop until the worker emits `CAM_LOOP_STATUS=COMPLETE` or you hit an explicit blocker. |
-| "review" | Spawn `/cam-review`. Surface findings. |
-| "ship" | Spawn `/cam-ship`. On success, append a journal entry and update Linear/GitHub. |
+| "planejar LIN-42" / "plano para #17" | Spawn `/cam-plan <identifier>` (writes `phase:planning` to `.claude/cam-loop.local.md`; the sidecar runs `runPlanPhase` on its next tick). On the sidecar's pushed completion line, read `scripts/cam/prd.json` and summarize the proposed scope to the human for approval. |
+| "implementa" / "go" / "manda bala" | Spawn `/cam-next` once (writes `active:true`; the sidecar then loops autonomously across worker invocations until a terminal state). Narrate each pushed `[cam] ...` line; do not re-spawn `/cam-next` in a loop yourself. |
+| "review" | Spawn `/cam-review` (injects the slash command into your pane via send-keys and runs in your context). Surface findings. |
+| "ship" | Spawn `/cam-ship` (writes `phase:shipping` to `.claude/cam-loop.local.md`; the sidecar runs `runShipPhase` on its next tick). On the sidecar's pushed completion line, append a journal entry and update Linear/GitHub. |
 | "tá travado" / "deu ruim" / "ajuda" | Read recent journal entries; if a similar block was solved before, cite it; otherwise, ask clarifying questions and propose a way forward. |
 | "o que aconteceu no ciclo passado?" | Read the relevant journal entry; summarize. |
 
@@ -170,28 +170,59 @@ branches, opening PRs).
 
 All workflow commands dispatch through a single hub: `cam run` owns the session.
 CLI subcommands (`cam plan`, `cam issue`, `cam next`, `cam review`, `cam ship`)
-are thin-proxies that detect the live session and inject the corresponding
-slash command into your pane via atomic `send-keys` (text + Enter in one call).
+are thin-proxies, but they split into two distinct mechanisms:
 
-### Planning and issue commands
+- **Signal-writers** (`cam plan`, `cam next`, `cam ship`): write a phase/active
+  field directly to `.claude/cam-loop.local.md` and return immediately.
+  Nothing is injected into your pane. The **sidecar** (`runSupervisor`, the
+  deterministic background process spawned by `cam run`) polls that file and
+  executes the phase itself (`runPlanPhase`, the autonomous implement/review
+  loop, `runShipPhase`). The `/cam-plan` and `/cam-ship` slash commands do the
+  same signal-write and then narrate when you run them yourself in response
+  to a human request -- they do not run the planning/shipping control-flow in
+  your own context.
+- **Inject commands** (`cam review`, `cam issue`): the CLI thin-proxy detects
+  your live session, waits for you to be idle, then injects the corresponding
+  slash command text into your pane via atomic `send-keys` (text + Enter in
+  one call). `/cam-review` and `/cam-issue` DO run in your context and return
+  a result line.
 
-For `/cam-plan`, `/cam-issue`, `/cam-review`, `/cam-ship`: use the `SlashCommand`
-tool when available, or process the injected command when a CLI thin-proxy sends
-it to your pane. Each command runs in your context and returns a result line.
-
-For each dispatch:
+### Signal-writing commands: plan, next, ship
 
 1. **Pre-flight from your side**: confirm the project state is sane. Don't
-   dispatch `/cam-next` if there's no PRD; don't dispatch `/cam-next` if
-   `prd.json` has no non-null `issueNumber` (all code work must be anchored to
-   a tracked issue — run `/cam-issue` first if one is missing); don't dispatch
-   `/cam-ship` if `prd.json` has unfinished stories.
-2. **Run or delegate**: invoke the slash command with the right arguments.
+   trigger the plan or next phase if there's no PRD. `issueNumber` in
+   `prd.json` is resolved and consumed at ship time (`resolveIssueId` in
+   `src/commands/ship-finalize.ts`), not something the sidecar gates on --
+   as pre-flight hygiene it is still good practice to anchor code work to a
+   tracked issue (run `/cam-issue` first if one is missing). Don't trigger
+   the ship phase if `prd.json` has unfinished stories.
+2. **Write the signal (or let the CLI do it)**: write `phase:planning`,
+   `active:true`, or `phase:shipping` to `.claude/cam-loop.local.md`, or let
+   the `cam plan` / `cam next` / `cam ship` CLI thin-proxy do it when the
+   human ran it from a terminal.
+3. **Narrate, then wait for the sidecar's push**: tell the human the signal
+   was written and which phase the sidecar will run next. Completion arrives
+   later as a pushed `[cam] ...` summary line (see "Sidecar model" below),
+   not as an immediate in-context result.
+4. **Absorb**: append a brief note to your conversation memory ("LIN-42
+   plan signal written, awaiting sidecar"). Do NOT mutate journal.md yet --
+   only on cycle close.
+
+### Inject commands: review, issue
+
+For `/cam-review` and `/cam-issue`: use the `SlashCommand` tool when
+available, or process the injected command when the CLI thin-proxy
+send-keys it into your pane. Both run in your context and return a result
+line.
+
+1. **Pre-flight from your side**: confirm the project state is sane before
+   running the command.
+2. **Run**: invoke the slash command with the right arguments.
 3. **Tail output**: surface the worker's output to the human verbatim. Do
    not summarize unless the human asks.
-4. **Parse result**: every cam slash command emits a final `CAM_*_STATUS=...`
-   or `CAM_*_RESULT=...` line. Grep for that line. Use it to decide the next
-   step.
+4. **Parse result**: `/cam-issue` emits a final `CAM_ISSUE_RESULT=...` line;
+   `/cam-review` emits a `<review>CLEAN</review>` or
+   `<review>FIXES_PENDING:N</review>` tag. Use it to decide the next step.
 5. **Absorb**: append a brief note to your conversation memory ("LIN-42
    plan generated, 5 stories, awaiting approval"). Do NOT mutate journal.md
    yet -- only on cycle close.
@@ -207,7 +238,7 @@ present (worker active), the dispatch is refused until the worker-pane closes.
 
 The **reviewer** (`subagent-reviewer`) is on the allowlist and is normally
 spawned Task-in-context, inside your own session, by the `/cam-review`
-command (see "Planning and issue commands" above). The sidecar's autonomous
+command (see "Inject commands: review, issue" above). The sidecar's autonomous
 loop also drives an equivalent review pass in the titled 3rd pane between
 story batches, using the same push-report contract as the implementer below.
 Either way, you never spawn `subagent-reviewer` yourself outside a slash
@@ -243,8 +274,10 @@ Your role in this cycle is to:
    42 pass / 0 fail`. Read `scripts/cam/worker-report.json` and tell the human
    what happened. The worker never sends this line itself; the sidecar is the
    sole pusher.
-2. **Route one-shot slash commands**: `/cam-plan`, `/cam-review`, `/cam-ship`,
-   `/cam-issue`. These run in your context and return a result line.
+2. **Route one-shot slash commands**: `/cam-plan` and `/cam-ship` write a
+   phase signal for the sidecar to execute (see "Signal-writing commands"
+   above); `/cam-review` and `/cam-issue` run directly in your context and
+   return a result line.
 3. **Surface blockers** when the sidecar pushes `BLOCKED_*` or `PRD_COMPLETE`
    outcomes. Ask the human how to proceed; then trigger the next step (review,
    ship, or new implementation run).
