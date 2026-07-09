@@ -1,21 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-006",
-    "title": "Fix subagent-implementer PRD_COMPLETE row and remove dead cam-review section (templated)"
+    "id": "US-007",
+    "title": "Complete README command table and note CLEAN-with-SUGGESTIONs in scripts CLAUDE.md"
   },
   "branchName": "cam/issue-233",
   "timestamp": "2026-07-09T00:00:00Z",
   "modifiedFiles": [
-    ".claude/agents/subagent-implementer.md",
-    "templates/agents/subagent-implementer.md",
-    ".claude/commands/cam-review.md",
-    "templates/commands/cam-review.md",
+    "README.md",
+    "scripts/cam/CLAUDE.md",
+    "templates/scripts/cam/CLAUDE.md",
     "src/vendor/_generated.ts"
   ],
-  "openQuestions": [
-    "AC2 as literally worded asked to REMOVE cam-review.md's Step 1 (Gather context) + Step 2 (Task spawn) section as 'dead'. Verified against src/supervisor/review.ts, .claude/agents/subagent-orchestrator.md ('Inject commands: review, issue' + 'Implementer and reviewer workers'), and patterns.md's own CAM-225 entry (written 2026-07-09, one day after the 2026-07-08 audit that produced this story) that this premise is factually wrong: the manual/on-demand `/cam-review` path (human via `cam review`, or the orchestrator itself) genuinely still runs Step 0-5 inside the orchestrator's own context via Task(subagent_type=\"subagent-reviewer\"), which is why subagent-reviewer is deliberately kept on orch-agent-allowlist.sh. Only the autonomous sidecar review pass bypasses this file via buildReviewerWorkerArgv/makeReviewDispatch. Deleting Step 1/2 would have broken the manual path and reintroduced the exact confusion CAM-225 corrected the same day. Implemented instead: kept Step 0-5 intact, added a 'Relationship to the autonomous sidecar review pass' paragraph (both .claude/ and templates/ copies) naming buildReviewerWorkerArgv/makeReviewDispatch, satisfying the oracle (grep -q 'buildReviewerWorkerArgv') and the AC's underlying intent without introducing a doc regression. Flagging for human confirmation this deviation from the literal AC wording is the correct call; full rationale in patterns.md CAM-233 bullet."
-  ],
-  "nextStoryContext": "US-006 touched two independent doc surfaces (dual-copy, per cam-dual-copy-is-per-file): (1) subagent-implementer.md's PRD_COMPLETE output-protocol row now says the sidecar's `decideNextAction` autonomously picks review, not 'Orchestrator should run /cam-review' -- this fix is uncontroversial and matches src/supervisor/decide.ts's decideNextAction exactly. (2) cam-review.md got a truth-up paragraph (not a deletion -- see openQuestions for why) clarifying the manual Task()-in-context path (this file) vs the autonomous sidecar path (buildReviewerWorkerArgv/makeReviewDispatch in src/supervisor/review.ts); Step 0-5 were left intact because they are still load-bearing for the manual `/cam-review` trigger. Ran `bun run embed-vendor` + `embed-vendor:check` (clean), `bun run typecheck` (0 errors), `bun test` (3998 pass / 0 fail), `bun run check:all` (all gates ok including lint/file-size/dead-code/dup/ci-parity). US-007 (next story) targets README's command table + a CLEAN-with-SUGGESTIONs note in scripts/cam/CLAUDE.md -- unrelated surface, no shared state with US-006.",
+  "openQuestions": [],
+  "nextStoryContext": "US-007 was a pure-docs story with no shared state risk for the next story: (1) README.md's Commands code block was missing 6 real subcommands present in index.ts's HELP (review, ship, tag, journal append/archive, patterns archive, drain) -- added all of them verbatim from the binary HELP text so the table now lists every real subcommand, not just the AC's 5 grepped names (drain/journal/review/ship/tag). (2) Both scripts/cam/CLAUDE.md and templates/scripts/cam/CLAUDE.md got an identical new paragraph appended to their Stop Condition sections noting CAM-189: a CLEAN verdict is not 'no findings' -- the supervisor's terminal-verdict hook (src/supervisor/loop.ts) auto-files reviewer SUGGESTIONs as follow-up backlog issues. Did NOT rewrite the rest of either Stop Condition section (they already differ in wording/detail per the pre-existing CAM-224 drift noted in patterns.md; this story's AC only required a CAM-189 grep-match in both copies, not exact-match parity). Ran embed-vendor + embed-vendor:check (clean), typecheck (0 errors), bun test (3998 pass / 0 fail), check:all (all green). No shared surface with whatever story comes next; check prd.json for the next-highest-priority story fresh."
+  ,
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]

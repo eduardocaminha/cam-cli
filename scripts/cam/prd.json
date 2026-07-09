@@ -120,7 +120,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: README.md (command table, NON-templated repo-root domain, no re-embed) + scripts/cam/CLAUDE.md and templates/scripts/cam/CLAUDE.md (TEMPLATED, both copies + re-embed). Source the full command list from the binary HELP in index.ts. This file is shared with CAM-224/226/231/232 edits; reconcile against their content (blockedBy places CAM-233 last). After editing both CLAUDE.md copies run `bun run embed-vendor` then `embed-vendor:check`. No-emdash/no-emoji rule applies to both persisted .md files."
     }
