@@ -1,15 +1,20 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Sync stale existing template seeds (issues.schema spec-source + CLAUDE.md pointer)" },
+  "lastCompletedStory": { "id": "US-002", "title": "Seed missing template files: patterns.md stub + orch-handoff.schema.json" },
   "branchName": "cam/issue-232",
   "timestamp": "2026-07-09T00:00:00Z",
-  "createdFiles": [],
+  "createdFiles": [
+    "templates/scripts/cam/patterns.md",
+    "templates/scripts/cam/orch-handoff.schema.json"
+  ],
   "modifiedFiles": [
-    "templates/scripts/cam/issues.schema.json",
     "src/vendor/_generated.ts",
-    "scripts/cam/prd.json"
+    "test/embedded.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 seeds two more template files: templates/scripts/cam/patterns.md (a STUB, NOT a copy of the live 600+ line patterns.md -- header + one routing sentence only, under 30 lines) and templates/scripts/cam/orch-handoff.schema.json (verbatim copy of live scripts/cam/orch-handoff.schema.json, same seed-parity convention just re-applied to issues.schema.json in US-001). Run bun run embed-vendor after adding both files; embed-vendor globs templates/ recursively so no manifest wiring is needed. Note: templates/scripts/cam/CLAUDE.md's Step 5.5 pointer was verified already-correct (references the agent system prompt, not .claude/commands/cam-next.md) -- no change was needed there in US-001.",
+  "nextStoryContext": "All userStories in this PRD (US-001, US-002) now have passes:true. No further implementer work remains on this PRD; the next action is the review cycle (/cam-review), not another implementer story.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]

@@ -41,7 +41,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files: templates/scripts/cam/patterns.md (STUB: keep the generic '# Codebase Patterns' header + one routing-note sentence modeled on the live header prose, but DROP every cam-cli-specific bullet -- the live file is ~600 lines of cam-cli patterns and copying it would pollute every downstream project; a fresh project starts near-empty), templates/scripts/cam/orch-handoff.schema.json (copy live scripts/cam/orch-handoff.schema.json verbatim, same as handoff.schema.json seed parity), src/vendor/_generated.ts (regen via `bun run embed-vendor`). MECHANISM (verified): src/templates/embedded.ts `materializeTemplates(cwd)` iterates `templatesContents` and routes any `scripts/cam/<x>` key to `<cwd>/scripts/cam/<x>`; setup.ts `copyTemplates` calls it. No manual manifest wiring is needed -- new files under templates/scripts/cam/ auto-flow once embedded. The init-write test can call materializeTemplates into a temp dir (see existing test/templates/*.test.ts for patterns). orch-handoff.schema.json is doc-only at runtime (handoff.ts references it in a comment; validation is code-based), so this seed is parity/consistency, not functional. Story touches templates/ -> must run `bun run embed-vendor` and pass embed-vendor:check."
     }
