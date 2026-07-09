@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.96.0] - 2026-07-09
+
+### Added
+
+- US-002 - Update planner and auditor templates to the cam/issue-<N> contract and re-embed vendor
+- US-001 - Derive branch name in code as cam/issue-<N> with checkout -B and missing-issueNumber gate
+
 ## [0.95.0] - 2026-07-09
 
 ### Added
