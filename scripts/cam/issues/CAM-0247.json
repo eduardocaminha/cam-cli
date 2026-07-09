@@ -1,0 +1,9 @@
+{
+  "id": "CAM-247",
+  "title": "C.8 is now a long single paragraph mixing the ink-testing-library requirement, …",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T14:35:27.441Z",
+  "description": "C.8 is now a long single paragraph mixing the ink-testing-library requirement, the no-browser/no-E2E rule, and the requires:operator carve-out; consider splitting into sub-bullets for scanability. Cosmetic only.\n\nSource: cam/issue-228\nReview round: 1\nLocation: .claude/agents/subagent-auditor.md:66\n\nsuggestion-fingerprint: 5e581e08ad7c"
+}
