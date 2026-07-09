@@ -1,9 +1,37 @@
 {
   "id": "CAM-225",
   "title": "Truth-up do prompt do orquestrador: dispatch/sidecar/handoff + boot le tail do journal",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T23:05:42.121Z",
-  "description": "Auditoria 2026-07-08 achou o subagent-orchestrator.md (ambas copias) descrevendo um sistema que nao existe mais. CRITICAL: (a) dispatch protocol L165-174 diz que os 5 thin-proxies injetam slash via send-keys; real: plan/next/ship escrevem sinal em .claude/cam-loop.local.md (plan.ts:219, next.ts, ship.ts), so review/issue injetam; (b) L224-227 diz que /cam-plan e /cam-ship rodam no contexto do orquestrador e retornam result line; real: so escrevem sinal, runners deterministicos executam. STALE: L151 manda spawnar /cam-next em loop ate CAM_LOOP_STATUS=COMPLETE (sentinel inexistente; cam next e one-shot, sidecar loopa e pusha report); L195-206 reviewer descrito como 3rd-pane TUI worker (real: Task in-context via allowlist) e worker self-pusha summary (real: sidecar pusha, worker-report.ts:12-15); L42 allowlist do hook subdeclarado (real: Explore, Plan, claude-code-guide, planner, auditor, reviewer em orch-agent-allowlist.sh:63); L254-264 manda fechar issue no ship (real: ship JA auto-fecha, ship-pr.ts:163-175, risco double-close); L339/346 handoff required fields superdeclarados (handoff.ts:91-101 so exige schemaVersion/writtenAt/reason; projectContext opcional nao documentado); L337 HANDOFF_DUE emitido em TODO append com sucesso (index.ts:1552), so --cycle-close arma recycle; L178-182 issueNumber nao e gate do supervisor (so consumido no ship). OMISSION: meta_loop=auto (sidecar auto-planeja proximo issue, sidecar.ts:196-208), auto-file de SUGGESTIONs CAM-189 (backlog ganha issues que o orquestrador nao criou), rehydrate CAM_ORCH_REHYDRATE como step-0 do boot. CONTEXTO: boot step 3 manda ler journal.md INTEIRO (178KB, ~44k tok, 77% do boot); mudar pra tail (~10 entradas) + grep-on-demand pra ciclos antigos. Origem: auditoria de prompts 2026-07-08."
+  "description": "Auditoria 2026-07-08 achou o subagent-orchestrator.md (ambas copias) descrevendo um sistema que nao existe mais. CRITICAL: (a) dispatch protocol L165-174 diz que os 5 thin-proxies injetam slash via send-keys; real: plan/next/ship escrevem sinal em .claude/cam-loop.local.md (plan.ts:219, next.ts, ship.ts), so review/issue injetam; (b) L224-227 diz que /cam-plan e /cam-ship rodam no contexto do orquestrador e retornam result line; real: so escrevem sinal, runners deterministicos executam. STALE: L151 manda spawnar /cam-next em loop ate CAM_LOOP_STATUS=COMPLETE (sentinel inexistente; cam next e one-shot, sidecar loopa e pusha report); L195-206 reviewer descrito como 3rd-pane TUI worker (real: Task in-context via allowlist) e worker self-pusha summary (real: sidecar pusha, worker-report.ts:12-15); L42 allowlist do hook subdeclarado (real: Explore, Plan, claude-code-guide, planner, auditor, reviewer em orch-agent-allowlist.sh:63); L254-264 manda fechar issue no ship (real: ship JA auto-fecha, ship-pr.ts:163-175, risco double-close); L339/346 handoff required fields superdeclarados (handoff.ts:91-101 so exige schemaVersion/writtenAt/reason; projectContext opcional nao documentado); L337 HANDOFF_DUE emitido em TODO append com sucesso (index.ts:1552), so --cycle-close arma recycle; L178-182 issueNumber nao e gate do supervisor (so consumido no ship). OMISSION: meta_loop=auto (sidecar auto-planeja proximo issue, sidecar.ts:196-208), auto-file de SUGGESTIONs CAM-189 (backlog ganha issues que o orquestrador nao criou), rehydrate CAM_ORCH_REHYDRATE como step-0 do boot. CONTEXTO: boot step 3 manda ler journal.md INTEIRO (178KB, ~44k tok, 77% do boot); mudar pra tail (~10 entradas) + grep-on-demand pra ciclos antigos. Origem: auditoria de prompts 2026-07-08.",
+  "spec": {
+    "scope": "Comprehensive truth-up of the orchestrator prompt to match the real system, in BOTH copies (.claude/agents/subagent-orchestrator.md and templates/agents/subagent-orchestrator.md) plus re-embed into src/vendor/_generated.ts via `bun run embed-vendor`. Also changes the boot journal-read guidance from full-file to tail+grep-on-demand. Out of scope: --agent runtime enforcement (CAM-227), orchestrator context/window backstop (CAM-172), planner/auditor prompt staleness (CAM-228/230), implementer prompt (CAM-229).",
+    "acceptanceCriteria": [
+      "Both orchestrator prompt copies no longer reference the CAM_LOOP_STATUS=COMPLETE sentinel and no longer instruct looping /cam-next until it; the dispatch protocol states that plan/next/ship write a signal to .claude/cam-loop.local.md and only review/issue inject a slash command via send-keys.",
+      "Both copies describe the reviewer as a Task-in-context worker (spawned under the PreToolUse allowlist) whose summary line is pushed by the sidecar (worker-report), NOT as a 3rd-pane TUI worker that self-pushes.",
+      "The allowlist reference in the prompt lists the full set enforced by orch-agent-allowlist.sh (Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor, subagent-reviewer), not a subset.",
+      "The self-handoff section states only schemaVersion, writtenAt, and reason are required fields (matching handoff.ts), documents projectContext as optional, and states HANDOFF_DUE is armed only by `cam journal append --cycle-close`, not by every successful append.",
+      "The boot section documents CAM_ORCH_REHYDRATE as step 0 (rehydrate vs cold-boot), the meta_loop=auto sidecar auto-plan behavior, and CAM-189 auto-filed SUGGESTIONs appearing in the backlog.",
+      "The boot journal step reads only the tail (~10 most recent entries) with grep-on-demand for older cycles, not the entire journal.md.",
+      "The close-on-ship text states ship auto-closes the issue (ship-pr.ts) and that orchestrator manual close is a documented fallback only (used when the sidecar auto-close was skipped, e.g. a stale binary); the unconditional close-on-ship instruction is removed to prevent double-close.",
+      "issueNumber is described accurately (consumed at ship, not a supervisor gate).",
+      "`bun run embed-vendor:check` passes (re-embed applied), and `bun run typecheck` and `bun test` are green."
+    ],
+    "gotchas": [
+      "Dual-copy is per-file and NOT guaranteed byte-identical; diff the two copies before assuming an edit forces re-embed (memory: cam-dual-copy-is-per-file).",
+      "embed-vendor:check is a required gate here because templates/ is touched; regenerate with `bun run embed-vendor` before committing.",
+      "The orchestrator is spawned without --agent, so its frontmatter is advisory only; do NOT try to fix the Write/disallowedTools contradiction here (that is CAM-227).",
+      "This is a prompt-only change; no src/ runtime behavior changes. The journal-tail is guidance the orchestrator follows at boot, not a code path."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 3,
+    "riskReduction": 8,
+    "jobSize": 3
+  },
+  "type": "fix"
 }
