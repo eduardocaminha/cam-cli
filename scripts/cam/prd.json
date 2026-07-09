@@ -10,11 +10,18 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "CRITICAL [src/commands/setup.ts:54]: US-001 AC1 named-command oracle `grep -q \"'linear' | 'github' | 'local'\" src/commands/setup.ts` FAILS at Layer B (exit 1). The IssueSystem union literal was relocated to src/config/issue-system.ts:24 and setup.ts:54 only re-exports it, so the literal no longer appears in setup.ts. The type is functionally correct (typecheck 0 errors; re-export surfaces exactly that union) and the move follows the US-002 notes recommendation, but the acceptance oracle pins the union to setup.ts and thus fails as written. RESOLVED: retargeted US-001's AC1 oracle to src/config/issue-system.ts (the type's real, documented home per US-002's notes), matching the reviewer's first-listed reconciliation option; no production code change needed since the re-export is architecturally correct and typecheck already proved it sound. Oracle verified green: `grep -q \"'linear' | 'github' | 'local'\" src/config/issue-system.ts`."
+    },
+    {
       "id": "US-001",
       "title": "Rename IssueSystem enum and setup prompts none->local",
       "description": "As an operator running cam init/setup, I need the issue-system choice to be 'local' (not 'none') in the type, validator array, readline prompt and Ink screen, so that the local issue backend is named for what it is and new projects default to local.",
       "acceptanceCriteria": [
-        "The type IssueSystem (src/commands/setup.ts) is 'linear' | 'github' | 'local'; 'none' removed. [oracle: grep -q \"'linear' | 'github' | 'local'\" src/commands/setup.ts]",
+        "The type IssueSystem is 'linear' | 'github' | 'local' with 'none' removed; setup.ts re-exports it from its canonical home (src/config/issue-system.ts, landed by US-002) rather than redeclaring the union. [oracle: grep -q \"'linear' | 'github' | 'local'\" src/config/issue-system.ts]",
         "The ISSUE_SYSTEMS validator array is ['linear','github','local']. [oracle: grep -q \"'linear', 'github', 'local'\" src/commands/setup.ts]",
         "The readline prompt offers ['linear','github','local'] with default 'local'; the Ink ISSUE_OPTIONS entry is value 'local' (label 'Local') and Select defaultValue is 'local'. [oracle: ! grep -n \"'none'\" src/commands/setup.ts src/ui/SetupScreen.tsx]",
         "Verify the screen renders correctly (ink-testing-library; success/failure is the checkmark/cross glyph, never divider color). [oracle: bun test test/ui]",
@@ -22,7 +29,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/setup.ts (type :53, readline choices+default :185-186, ISSUE_SYSTEMS :747, --issue-system arg parse nearby), src/ui/SetupScreen.tsx (ISSUE_OPTIONS :68-72, defaultValue :170). The enum change and BOTH prompts must land in this one story or typecheck breaks ('none' literals stop being assignable to IssueSystem). Update setup tests that pass issueSystem values (test/commands/setup-models-defaults.test.ts builds config via issue_system key; the test at :99-106 uses 'linear' and survives). Do NOT touch unrelated 'none' literals (BumpLevel in src/release/bump.ts, ObserveState kind, triage sha): surgical scope is issue_system only."
@@ -40,7 +47,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "New file: src/config/issue-system.ts exporting readIssueSystem(config: Record<string, unknown>): IssueSystem. Watch import direction: IssueSystem type currently lives in src/commands/setup.ts; consider defining the type (or a re-export) in the new config module to avoid commands<->config coupling, keeping setup.ts re-exporting for existing importers. Sites: src/commands/ship-finalize.ts (:70/:96/:153 doc comments, :116 read, :130/:183/:203 issueBackend passthrough, :158/:198 gates), src/release/ship-pr.ts (:64/:91/:93/:151 comments, :157/:201 branches). Migrate fixtures used by these tests in the same story: test/ship-finalize.test.ts:28 (PROJECT_TOML_NONE -> issue_system \"local\"), test/ship-finalize-hardening.test.ts:28, test/integration/ship-finalize-dirty-prd.test.ts:103. Gotcha (patterns.md finalizeCycleClose hardening bullet): the guard 'issue_system == none + issue file absent -> hard failure' now reads 'local'; keep the three idempotency guards intact."
@@ -58,7 +65,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/issue-list.ts (:6-17 header, :81 flag doc, :120 hint doc, :166 read, :168 branch), test/issue-list.test.ts (AC1 block :135-160, AC4 block :301-320, JSON-contract tests :445/:457), test/issue-file.test.ts (:44, :622, :634), test/config/meta-loop.test.ts:101, test/config/models.test.ts (:113/:196/:289), test/config/plan-approval.test.ts:88, test/config/worker-isolation.test.ts:84, test/integration/issue-dir-real-git.test.ts:92, test/integration/issue-file-on-main.test.ts:74. Depends on US-002 (readIssueSystem). Do not touch legitimate non-issue_system 'none' literals (bump/observe/triage). Add a test asserting missing project.toml / missing key defaults to 'local'."
@@ -78,10 +85,23 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Dual-copy is per-file (memory: cam-dual-copy-is-per-file): edit templates/commands/cam-issue.md AND .claude/commands/cam-issue.md AND regen src/vendor/_generated.ts via bun run embed-vendor; same for templates/agents + .claude/agents subagent-orchestrator.md. Persisted .md style rule: no em dash, no decorative emoji in CHANGELOG/docs (agent .md files exempt). project.toml migration is deliberately in this last story to minimize the dogfood window. Ship gotcha to surface in handoff: the INSTALLED cam binary still compares === 'none', so during this PR's own ship --finalize it will read 'local' and skip the local issue-file close for CAM-236; the orchestrator/operator may need to close the issue file manually or rebuild+reinstall the binary first. Out of AC scope but worth a follow-up note: scripts/cam/patterns.md:46 hardening bullet still says issue_system == 'none' (knowledge doc, not a code path)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "src/commands/setup.ts",
+        "line": 54,
+        "text": "US-001 AC1 named-command oracle `grep -q \"'linear' | 'github' | 'local'\" src/commands/setup.ts` FAILS at Layer B (exit 1). The IssueSystem union literal was relocated to src/config/issue-system.ts:24 and setup.ts:54 only re-exports it, so the literal no longer appears in setup.ts. The type is functionally correct (typecheck 0 errors; re-export surfaces exactly that union) and the move follows the US-002 notes recommendation, but the acceptance oracle pins the union to setup.ts and thus fails as written. Reconcile: either update AC1 to target src/config/issue-system.ts (the type's real home) or re-inline the union literal in setup.ts. Per the Layer B protocol a failing tmux-drivable oracle is a hard-constraint FAIL."
+      }
+    ]
+  }
 }
