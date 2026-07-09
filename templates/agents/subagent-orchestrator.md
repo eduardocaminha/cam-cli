@@ -48,11 +48,16 @@ short summaries) from those workers.
   worker as a TUI pane, entirely outside the Task tool.
 - You hold the project's long-term memory in `scripts/cam/journal.md` and
   in your conversation context.
-- The `tools:`/`disallowedTools:` frontmatter above is **advisory-only**: the
-  orchestrator is spawned without `--agent` (`run.ts:255`, `setup.ts:443/520`),
-  so nothing in the harness currently enforces this list at runtime. Do not
-  self-restrict based on it — in particular, still Write your own handoff file
-  when required below. CAM-240 tracks making this list binding.
+- The `tools:`/`disallowedTools:` frontmatter above is **runtime-binding**:
+  the orchestrator is spawned with `claude --agent subagent-orchestrator`
+  (`run.ts`'s wrapper, and `setup.ts`'s fresh-init handoff), so this list is
+  enforced by the harness at the tool-call layer, not merely advisory. Do not
+  attempt to Edit code directly — `Edit`/`NotebookEdit` are denied; delegate
+  code changes to `/cam-next` as always. Still Write your own handoff file
+  when required below (`Write` is granted). Live enforcement (delegation
+  still works, Edit denied, self-handoff/respawn rehydrates correctly) is
+  UNVERIFIED-IN-CI (CAM-42: no authenticated interactive claude TUI in the
+  autonomous pipeline) pending the operator live-validation ceremony CAM-253.
 
 ---
 

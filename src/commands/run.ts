@@ -59,7 +59,7 @@ import {
 	writeWatcherPid,
 	removeWatcherPidIfExists,
 } from '../supervisor/sidecar-pid.ts';
-import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
+import { DEFAULTS, readMetaLoop, readPhaseModel, readBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
 import { checkClaudeAuth } from './run-auth-preflight.ts';
@@ -147,46 +147,33 @@ function tmuxAvailable(spawnFn: SpawnFn): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * The first message we feed claude so the orchestrator persona loads.
+ * The first message we feed claude so the orchestrator persona boots.
  *
- * We point at the agent file rather than inlining its contents — keeping the
- * prompt small and letting claude follow its `.claude/agents/` lookup.
+ * Under `--agent subagent-orchestrator` the frontmatter + body IS the system
+ * prompt (auto-loaded before this message is ever seen), so this nudge no
+ * longer needs to instruct reading the persona file, writing the readiness
+ * marker, rehydrating from CAM_ORCH_REHYDRATE, or deriving the backlog --
+ * all of that now lives in the agent body's "Boot context" section (CAM-240
+ * US-001). This function stays meta_loop-aware because the greeting-vs-
+ * autonomous-dispatch fork is decided by config the parent process can read
+ * before the agent even boots, and reinforcing it in the first user turn
+ * removes any ambiguity about whether to pause and ask.
+ *
+ * @param configPath  Forwarded to readMetaLoop(); overridable by tests.
  */
-export function buildOrchestratorBootPrompt(): string {
-	return [
-		'You are the cam orchestrator for this project.',
-		'',
-		'FIRST ACTION (before anything else): create the readiness marker by running',
-		'this Bash command exactly: `: > .claude/.cam-orch-ready`',
-		'(use the Bash tool — you do NOT have the Write tool). This empty marker',
-		'signals to thin-proxy commands (cam plan, cam next, etc.) that the',
-		'orchestrator agent has loaded and is ready to receive requests. The marker',
-		'is cleared on exit by the bash wrapper. Creating it is mandatory even on a',
-		'cold boot; skip nothing.',
-		'',
-		'Read .claude/agents/subagent-orchestrator.md NOW. That file is your',
-		'system prompt — every instruction in it applies to you for the entire',
-		'duration of this session.',
-		'',
-		'Run Bash: `echo $CAM_ORCH_REHYDRATE`',
-		'If the output is non-empty, read exactly that path and rehydrate from it',
-		'(it is your previous context from the token-budget self-handoff, CAM-23).',
-		'If CAM_ORCH_REHYDRATE is empty or absent, perform a clean cold-boot:',
-		'do NOT read any stale .cam-orch-handoff.json or .cam-orch-handoff.consumed.json.',
-		'',
-		'After reading it, perform the boot context steps it documents (read',
-		'CLAUDE.md, project.toml, journal.md, prd.json, current git state).',
-		'',
-		'Derive the backlog by running `cam issue list` or `cam issue list --json`',
-		'(a real shell command, not an in-process call). This is the ONLY',
-		'sanctioned way to derive the backlog: never grep or read',
-		'scripts/cam/issues/*.json directly, even when the command is',
-		'unavailable or exits non-zero (e.g. a pre-rebuild binary that predates',
-		'this feature) -- surface that failure instead of falling back to raw',
-		'issue-file reads.',
-		'',
-		'Then greet the operator with the one-screen summary it specifies.',
-	].join('\n');
+export function buildOrchestratorBootPrompt(configPath?: string): string {
+	const metaLoop = readMetaLoop(configPath);
+	const lines = ['Boot up as the cam orchestrator; follow your Boot context section.'];
+	if (metaLoop === 'auto') {
+		lines.push(
+			'meta_loop is "auto": once boot is complete, announce autonomous mode and proceed directly into dispatch. Do not close the greeting with a question asking for direction.',
+		);
+	} else {
+		lines.push(
+			`meta_loop is "${metaLoop}": once boot is complete, greet the operator and ask "What would you like to do?".`,
+		);
+	}
+	return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +241,7 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		// (empty in macOS bash 3.2.57). Single-quote-escape the path via q().
 		`printf '%s' "$$" > ${q(opts.pidMarker)}; ` +
 		`while true; do ` +
-		`claude --permission-mode bypassPermissions --session-id "$sid" --model ${q(model)} "$(cat ${q(opts.promptFile)})"; ` +
+		`claude --permission-mode bypassPermissions --session-id "$sid" --model ${q(model)} --agent subagent-orchestrator "$(cat ${q(opts.promptFile)})"; ` +
 		`if [ -f ${q(opts.handoffMarker)} ] && [ "$n" -lt "$max" ]; then ` +
 		// Read the reason field BEFORE consuming (renaming) the handoff so it is
 		// available for the counter decision. jq is used here per operator decision
@@ -393,9 +380,10 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 
 	// The ready marker (.claude/.cam-orch-ready) is NOT written here by the
 	// parent. The orchestrator agent writes it as its FIRST action after boot
-	// (instructed in buildOrchestratorBootPrompt). This ensures the marker
-	// means "agent has loaded and is ready", not "parent is about to spawn"
-	// (US-FIX-005). The bash wrapper removes it on orchestrator exit;
+	// (instructed in its persona body's Boot context section, auto-loaded
+	// under --agent subagent-orchestrator; CAM-240 US-002). This ensures the
+	// marker means "agent has loaded and is ready", not "parent is about to
+	// spawn" (US-FIX-005). The bash wrapper removes it on orchestrator exit;
 	// the SIGINT/SIGTERM handler in runRun removes it on abnormal parent exit.
 	const readyMarkerPath = join(dotClaude, ORCH_READY_MARKER);
 

@@ -39,6 +39,11 @@ describe('buildSetupMenuScript', () => {
 		expect(script).toContain('--permission-mode bypassPermissions');
 	});
 
+	it('spawns the orchestrator persona via --agent subagent-orchestrator (CAM-240 US-002)', () => {
+		const script = buildSetupMenuScript();
+		expect(script).toContain('--agent subagent-orchestrator');
+	});
+
 	it('polls for CAM_SETUP_STATUS=DONE in the config pane', () => {
 		const script = buildSetupMenuScript();
 		expect(script).toContain('CAM_SETUP_STATUS=DONE');

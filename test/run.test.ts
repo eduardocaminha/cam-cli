@@ -589,6 +589,20 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		expect(cmd).toContain('--session-id "$sid"');
 	});
 
+	it('launches the orchestrator persona via --agent subagent-orchestrator (CAM-240 US-002)', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain('--agent subagent-orchestrator');
+		// The flag must sit on the actual claude invocation line, between
+		// --model and the boot-nudge argument (cat of the prompt file), not
+		// merely present somewhere in the assembled script.
+		const claudeIdx = cmd.indexOf('claude --permission-mode');
+		const modelIdx = cmd.indexOf('--model', claudeIdx);
+		const agentIdx = cmd.indexOf('--agent subagent-orchestrator', claudeIdx);
+		const catIdx = cmd.indexOf(`"$(cat ${`'${base.promptFile}'`})"`, claudeIdx);
+		expect(modelIdx).toBeLessThan(agentIdx);
+		expect(agentIdx).toBeLessThan(catIdx);
+	});
+
 	it('guards on the handoff file, consumes it, and rewrites the session marker on respawn', () => {
 		const cmd = buildOrchestratorPaneCommand(base);
 		expect(cmd).toContain(`[ -f '${base.handoffMarker}' ]`);
@@ -694,61 +708,47 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 	});
 });
 
-describe('buildOrchestratorBootPrompt (CAM-23 rehydration directive)', () => {
-	it('directs the orchestrator to rehydrate via CAM_ORCH_REHYDRATE when present (US-005)', () => {
-		const prompt = buildOrchestratorBootPrompt();
-		// Must reference the env var, not an unconditional path check (US-005, CAM-141).
-		expect(prompt).toContain('CAM_ORCH_REHYDRATE');
-		expect(prompt.toLowerCase()).toContain('rehydrate');
-		// Still tells it to read its agent system prompt.
-		expect(prompt).toContain('subagent-orchestrator.md');
-	});
-
-	it('cold-start safe: does NOT unconditionally instruct reading a stale handoff file (US-005)', () => {
-		const prompt = buildOrchestratorBootPrompt();
-		// The old "if .cam-orch-handoff.json exists, read it" instruction is gone;
-		// rehydration is now gated on CAM_ORCH_REHYDRATE being non-empty.
-		// NOTE: the path MAY appear in the cold-boot prohibition clause (do NOT read
-		// any stale .cam-orch-handoff.json) - that is the ONLY acceptable reference.
-		// The boot prompt must NOT instruct an unconditional read of the file.
-		const instructionToReadHandoff =
-			/read.*\.cam-orch-handoff\.json.*first|if.*\.cam-orch-handoff\.json.*exists.*read/i;
-		expect(instructionToReadHandoff.test(prompt)).toBe(false);
-	});
-
-	it('US-FIX-005: instructs the orchestrator to write .cam-orch-ready as FIRST action', () => {
-		const prompt = buildOrchestratorBootPrompt();
-		// The boot prompt must tell the agent to write the ready marker before
-		// anything else (so the marker means "agent loaded", not "parent spawned").
-		expect(prompt).toContain('.claude/.cam-orch-ready');
-		// The instruction must appear BEFORE the subagent-orchestrator.md read
-		// directive so the agent writes the marker as its very first action.
-		expect(prompt.indexOf('.cam-orch-ready')).toBeLessThan(
-			prompt.indexOf('subagent-orchestrator.md'),
+describe('buildOrchestratorBootPrompt (CAM-240 US-002: minimal --agent nudge, meta_loop-aware)', () => {
+	function writeMetaLoopToml(dir: string, metaLoop: string | undefined): string {
+		const path = join(dir, 'project.toml');
+		writeFileSync(
+			path,
+			metaLoop === undefined ? '' : `[loop]\nmeta_loop = "${metaLoop}"\n`,
+			'utf8',
 		);
+		return path;
+	}
+
+	it('is minimal: no longer instructs reading the persona file, writing the ready marker, rehydrating, or deriving the backlog (now owned by the agent body per US-001)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-boot-prompt-'));
+		const configPath = writeMetaLoopToml(dir, undefined);
+		const prompt = buildOrchestratorBootPrompt(configPath);
+		expect(prompt).not.toContain('subagent-orchestrator.md');
+		expect(prompt).not.toContain('.cam-orch-ready');
+		expect(prompt).not.toContain('CAM_ORCH_REHYDRATE');
+		expect(prompt).not.toContain('cam issue list');
 	});
 
-	it('US-FIX-005: marker instruction uses Bash, not the Write tool (orchestrator lacks Write)', () => {
-		// subagent-orchestrator's tools are Read/Glob/Grep/Bash/WebFetch/SlashCommand
-		// — NO Write/Edit. Telling it to "use the Write tool" would silently fail and
-		// the marker would never appear, deadlocking the thin-proxy bootstrap-wait.
-		const prompt = buildOrchestratorBootPrompt();
-		// Must not INSTRUCT using the Write tool (the bug). Clarifying that the
-		// agent does NOT have Write is fine, so match the buggy directive phrasing.
-		expect(prompt).not.toContain('use the Write tool');
-		expect(prompt).toContain('Bash');
+	it('under meta_loop "auto": announces autonomous mode and omits "What would you like to do?"', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-boot-prompt-'));
+		const configPath = writeMetaLoopToml(dir, 'auto');
+		const prompt = buildOrchestratorBootPrompt(configPath);
+		expect(prompt.toLowerCase()).toContain('autonomous');
+		expect(prompt).not.toContain('What would you like to do?');
 	});
 
-	it('US-004: instructs deriving the backlog via cam issue list / --json, prohibiting raw issue-file reads', () => {
-		const prompt = buildOrchestratorBootPrompt();
-		// Primary instruction: derive the backlog via the real `cam issue list` shell command.
-		expect(prompt).toContain('cam issue list');
-		expect(prompt).toContain('cam issue list --json');
-		// No fallback to raw issue-file reads is permitted, even when the command
-		// is unavailable or exits non-zero (2026-07-08 incident: a raw stage grep
-		// resurrected abandoned issues as plannable).
-		expect(prompt.toLowerCase()).toContain('never grep or read');
-		expect(prompt).toContain('scripts/cam/issues/*.json');
+	it('under meta_loop "off": greets and asks "What would you like to do?"', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-boot-prompt-'));
+		const configPath = writeMetaLoopToml(dir, undefined);
+		const prompt = buildOrchestratorBootPrompt(configPath);
+		expect(prompt).toContain('What would you like to do?');
+	});
+
+	it('under meta_loop "observe": greets and asks "What would you like to do?"', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-boot-prompt-'));
+		const configPath = writeMetaLoopToml(dir, 'observe');
+		const prompt = buildOrchestratorBootPrompt(configPath);
+		expect(prompt).toContain('What would you like to do?');
 	});
 });
 
@@ -766,7 +766,8 @@ describe('runRun orch-ready marker (US-FIX-005)', () => {
 		runRun({ cwd, noAttach: true, spawnFn: spawn, spawnSidecarFn, spawnWatcherFn: noopWatcher });
 
 		// The marker must NOT be written by the parent. The orchestrator agent
-		// writes it after boot (instructed by buildOrchestratorBootPrompt).
+		// writes it after boot (instructed by its persona body's Boot context
+		// section, auto-loaded under --agent subagent-orchestrator).
 		const markerPath = join(cwd, '.claude', '.cam-orch-ready');
 		expect(existsSync(markerPath)).toBe(false);
 	});
