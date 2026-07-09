@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.100.0] - 2026-07-09
+
+### Added
+
+- US-004 - Truth-up handoff required fields + close-on-ship
+- US-003 - Truth-up boot section: rehydrate step-0, meta_loop=auto, SUGGESTIONs, journal tail
+- US-002 - Truth-up dispatch protocol + sidecar loop + issueNumber
+- US-001 - Truth-up allowlist + reviewer-worker description
+
 ## [0.99.0] - 2026-07-09
 
 ### Added
