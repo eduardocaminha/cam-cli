@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.102.0] - 2026-07-09
+
+### Added
+
+- US-001 - Fix auditor prompt C.8 and B.5 for cam-cli terminal reality
+
 ## [0.101.0] - 2026-07-09
 
 ### Added
