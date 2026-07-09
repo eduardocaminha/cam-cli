@@ -1,0 +1,9 @@
+{
+  "id": "CAM-240",
+  "title": "Enforcar allowlist do orquestrador em runtime: spawnar o root-persona com --agent (frontmatter binding, nao advisory)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T09:40:07.634Z",
+  "description": "Hoje run.ts:255 e setup.ts:443/520 spawnam o orquestrador SEM --agent, entao tools/disallowedTools do subagent-orchestrator.md sao so advisory (o hook PreToolUse cobre so spawn de subagente via Task/Agent, nao Edit/Write direto). Fazer o invariante 'orquestrador nunca edita codigo' virar real exige: (a) spawnar com --agent no caminho de spawn do root-persona, (b) garantir a lista de tools 100% completa antes de enforcar (senao brica self-handoff/dispatch), (c) validacao live. Separado de CAM-227 (que faz so o fix cirurgico de drift do frontmatter Write/disallowedTools). Origem: fork de enforcement destacado no grill de CAM-227, 2026-07-09."
+}
