@@ -1,9 +1,32 @@
 {
   "id": "CAM-228",
   "title": "Auditor: checklist C.8 exige browser+E2E e contradiz F.19/F.20 (risco BLOCK espurio)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T23:05:48.551Z",
-  "description": ".claude/agents/subagent-auditor.md:66 (C.8) manda: every UI-touching story has browser verification AND E2E test. F.19 (:92) do MESMO prompt manda flagar qualquer story que exija browser/E2E/database (cam-cli e terminal CLI sem DB/server/browser) e F.20 (:93) diz que telas Ink verificam via glifo. Instrucoes diretamente contraditorias ao mesmo agente; C.8 pode gerar finding critical espurio (no browser verification) -> BLOCK falso -> re-plan queimado (MAX_REPLAN_ROUNDS=2) -> plan-escalated (plan-runner.ts:847). B.5 (:60) tambem stale: ordena DB -> server -> client -> tests -> E2E (template web generico; ordering cam-cli e types -> core -> surface -> polish). Fix na copia .claude (a copia templates e generica web-app, C.8 la e coerente); reescrever C.8 pra: stories de UI/Ink verificam via ink-testing-library + glifo. Origem: auditoria planner/auditor 2026-07-08."
+  "description": ".claude/agents/subagent-auditor.md:66 (C.8) manda: every UI-touching story has browser verification AND E2E test. F.19 (:92) do MESMO prompt manda flagar qualquer story que exija browser/E2E/database (cam-cli e terminal CLI sem DB/server/browser) e F.20 (:93) diz que telas Ink verificam via glifo. Instrucoes diretamente contraditorias ao mesmo agente; C.8 pode gerar finding critical espurio (no browser verification) -> BLOCK falso -> re-plan queimado (MAX_REPLAN_ROUNDS=2) -> plan-escalated (plan-runner.ts:847). B.5 (:60) tambem stale: ordena DB -> server -> client -> tests -> E2E (template web generico; ordering cam-cli e types -> core -> surface -> polish). Fix na copia .claude (a copia templates e generica web-app, C.8 la e coerente); reescrever C.8 pra: stories de UI/Ink verificam via ink-testing-library + glifo. Origem: auditoria planner/auditor 2026-07-08.",
+  "spec": {
+    "scope": "Resolve the self-contradiction in the auditor prompt for cam-cli. Single file: .claude/agents/subagent-auditor.md. The templates/agents/subagent-auditor.md copy stays as the generic web-app template (where C.8's browser+E2E requirement is coherent), so this is a by-design divergence between copies and NO re-embed is needed. Out of scope: templates copy, orchestrator/planner/implementer prompts.",
+    "acceptanceCriteria": [
+      "C.8 in .claude/agents/subagent-auditor.md no longer requires browser verification AND E2E tests for UI-touching stories; it instead states that UI/Ink stories are verified via ink-testing-library (render + assert on the actual screen output / glyph) and that genuine interactive ceremonies (e.g. keypress) are flagged requires:operator, never browser/E2E (cam-cli is a terminal CLI with no browser/server/DB).",
+      "C.8 as rewritten is consistent with F.19 (:92) and F.20 (:93) of the same prompt (no instruction tells the auditor to both require and flag browser/E2E).",
+      "B.5 (:60) implementation ordering is updated from the generic web ordering (DB -> server -> client -> tests -> E2E) to the cam-cli ordering (types -> core -> surface -> polish).",
+      "The templates/agents/subagent-auditor.md copy is unchanged (generic web-app template retained), and `bun run embed-vendor:check` is NOT required for this story because templates/ is untouched.",
+      "vendor/check-agent-frontmatter.ts still passes; `bun run typecheck` and `bun test` are green."
+    ],
+    "gotchas": [
+      "Fix ONLY the .claude/ copy. The templates/ copy is intentionally generic web-app where C.8 (browser+E2E) is coherent; do not touch it and do not re-embed (dual-copy divergence is by-design here).",
+      "ink-testing-library ^4.0.0 is already a devDependency and used in test/dashboard.test.ts, test/ui/init-setup-screen-keys.test.ts, test/ui/dashboard-story-row.test.tsx; the rewrite references a tool that genuinely exists in the project.",
+      "The failure this closes is functional, not cosmetic: a spurious C.8 critical -> false BLOCK -> burned re-plan (MAX_REPLAN_ROUNDS=2) -> plan-escalated (plan-runner.ts:847)."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 4,
+    "riskReduction": 8,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
