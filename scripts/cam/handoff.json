@@ -1,7 +1,7 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Truth-up allowlist + reviewer-worker description"
+    "id": "US-002",
+    "title": "Truth-up dispatch protocol + sidecar loop + issueNumber"
   },
   "branchName": "cam/issue-225",
   "timestamp": "2026-07-09T00:00:00Z",
@@ -14,8 +14,8 @@
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 corrected the orchestrator prompt's Identity/allowlist bullet (full set: Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor, subagent-reviewer; subagent-implementer explicitly called out as absent from the allowlist since it is dispatched only as a TUI pane, never via Task) and the '### Implementer and reviewer workers' + '## Sidecar model' sections (sidecar is the sole pusher of worker-report summaries; reviewer is normally Task-in-context via /cam-review, with the sidecar also driving an equivalent pane-based review pass between story batches; workers never self-push via send-keys). Only the body was touched; the two copies still differ ONLY in frontmatter tools ordering (per the existing dual-copy pattern). Next story (US-002) truths-up dispatch protocol + sidecar loop + issueNumber in the same two prompt copies -- re-read the current 'Dispatch protocol' section fresh since this story already touched adjacent subsections ('### Implementer and reviewer workers' sits right above '## Sidecar model'). Do not re-touch the Write/disallowedTools frontmatter contradiction (CAM-227, explicitly out of scope).",
+  "nextStoryContext": "US-002 truthed up the 'Conversation contract' table rows (planejar/implementa/review/ship) and rewrote 'Dispatch protocol' into two named subsections: '### Signal-writing commands: plan, next, ship' (cam plan/next/ship write phase:planning|active:true|phase:shipping directly to .claude/cam-loop.local.md and return immediately; the sidecar runSupervisor polls and executes runPlanPhase/the implement-review loop/runShipPhase; the /cam-plan and /cam-ship slash-command files do the identical signal-write+narrate, never the control-flow itself) and '### Inject commands: review, issue' (cam review/cam issue send-keys the literal slash text into the pane; those DO run in-context and return a result line: CAM_ISSUE_RESULT=... or the reviewer's <review> tag). Removed the nonexistent CAM_LOOP_STATUS=COMPLETE sentinel and the 'loop /cam-next until sentinel' instruction (cam next is one-shot per invocation; the sidecar is what loops). Reworded the issueNumber pre-flight bullet to state it is consumed at ship time only (resolveIssueId in src/commands/ship-finalize.ts) and is pre-flight hygiene guidance, not a supervisor gate. Also fixed two stale cross-references left over from the old 'Planning and issue commands' section name: the 'Implementer and reviewer workers' pointer (now points to 'Inject commands: review, issue') and the 'Sidecar model' section's step 2 (previously claimed /cam-plan and /cam-ship 'run in your context and return a result line', now correctly splits signal-writers vs inject-commands). Both prompt copies stay byte-identical in body (only frontmatter tools ordering differs, per the existing dual-copy pattern -- verified with `diff` before and after). Next stories (US-003 boot section truth-up, US-004 handoff fields truth-up) touch adjacent sections of the SAME file ('## Boot context' and the handoff/self-handoff-lifecycle sections respectively) -- re-read those sections fresh since US-002 did not touch them, but grep for any stale cross-reference into '## Dispatch protocol' or '## Sidecar model' before assuming those sections are untouched by this story's rename.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Prompt-only truth-up of the orchestrator persona doc; no external library exercised." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Prompt-only truth-up of the orchestrator persona doc's dispatch-protocol section; no external library exercised." }
   ]
 }

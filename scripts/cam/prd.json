@@ -38,7 +38,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit BOTH prompt copies + `bun run embed-vendor`. Real behavior: plan.ts writes phase:planning to .claude/cam-loop.local.md (plan.ts:183/266); next.ts writes active:true (next.ts:61/334); the sidecar (runSupervisor) loops one-shot `cam next` dispatches. ship also writes a signal. Only review/issue inject a slash via send-keys. Sections touched: '## Conversation contract' table ('implementa'/'ship'/'planejar' rows), '## Dispatch protocol' (L165-174 signal-vs-inject, L224-227 run-in-context claim), and the pre-flight issueNumber bullet (L178-182). Keep both copies byte-identical in the body (memory: cam-dual-copy-is-per-file). Prompt-only; no src/ change. embed-vendor:check required gate."
     },
