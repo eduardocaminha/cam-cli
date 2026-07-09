@@ -1,0 +1,49 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-232",
+  "description": "One-time sync of stale/incomplete template seeds (issues.schema spec-source, CLAUDE.md pointer, new patterns.md + orch-handoff.schema.json) so downstream `cam init` projects get complete, correct config.",
+  "issueNumber": 232,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Sync stale existing template seeds (issues.schema spec-source + CLAUDE.md pointer)",
+      "description": "As a downstream cam-init project, I need the seeded issues.schema.json to carry spec-source tracking and the seeded CLAUDE.md to point Step 5.5 at the agent system prompt, so a fresh project starts with the same schema and instructions as the live cam-cli copy.",
+      "acceptanceCriteria": [
+        "templates/scripts/cam/issues.schema.json includes the specSource field (enum grill/derived/operator), the derivedFrom array, and the conditional allOf validation block, matching the structure in the live scripts/cam/issues.schema.json. [oracle: file-assert diff -q templates/scripts/cam/issues.schema.json scripts/cam/issues.schema.json (exits 0, no differences)]",
+        "The specSource key is present in the seeded schema. [oracle: grep -q '\"specSource\"' templates/scripts/cam/issues.schema.json]",
+        "templates/scripts/cam/CLAUDE.md does not point Step 5.5 at .claude/commands/cam-next.md (it references the agent system prompt, matching the already-corrected live copy). [oracle: file-assert ! grep -q 'cam-next.md' templates/scripts/cam/CLAUDE.md]",
+        "The template embed is regenerated so the embedded snapshot matches templates/. [oracle: bun run embed-vendor:check]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: templates/scripts/cam/issues.schema.json (add the spec-source block copied verbatim from live scripts/cam/issues.schema.json; the ONLY delta between the two files is that block, so a clean sync makes `diff` empty), templates/scripts/cam/CLAUDE.md (Step 5.5 pointer is expected already-correct via CAM-224 -- this is a verify-only grep, reconcile only if it regressed), src/vendor/_generated.ts (regen via `bun run embed-vendor`). GOTCHA: templates/scripts/cam/CLAUDE.md is intentionally a GENERIC template with `<project ...>` placeholders (stack/gate commands are project-adapted by the setup-agent); do NOT sync the whole file to the cam-cli-specific live copy -- only the Step 5.5 pointer is in scope. The lingering `.claude/commands/cam-next.md` Step 5.5 pointer actually still lives in templates/scripts/cam/handoff.schema.json:47 (and the live copy), but that file is OUT OF SCOPE per the issue; do not touch it. embed-vendor globs the whole templates/ dir so the new content auto-embeds; run `bun run embed-vendor` before committing. This shares templates/scripts/cam/CLAUDE.md history with CAM-224/226/231 (all shipped)."
+    },
+    {
+      "id": "US-002",
+      "title": "Seed missing template files: patterns.md stub + orch-handoff.schema.json",
+      "description": "As a downstream cam-init project, I need patterns.md (as a stub knowledge channel) and orch-handoff.schema.json (parity with the already-seeded handoff.schema.json) laid down by `cam init`, so the project is born with the knowledge-routing file the seeded CLAUDE.md references and with both handoff schemas.",
+      "acceptanceCriteria": [
+        "templates/scripts/cam/patterns.md exists as a STUB (generic header + the routing note only), NOT a copy of cam-cli's live 600-line patterns.md; a fresh downstream project can grep it without error and append to it. [oracle: file-assert grep -q '# Codebase Patterns' templates/scripts/cam/patterns.md && test $(wc -l < templates/scripts/cam/patterns.md) -lt 30]",
+        "templates/scripts/cam/orch-handoff.schema.json exists and mirrors the live scripts/cam/orch-handoff.schema.json verbatim, matching the seed convention of the already-seeded handoff.schema.json. [oracle: file-assert diff -q templates/scripts/cam/orch-handoff.schema.json scripts/cam/orch-handoff.schema.json (exits 0)]",
+        "Both new files are embedded (embed-vendor globs templates/ and the codegen picks them up). [oracle: grep -q 'scripts/cam/patterns.md' src/vendor/_generated.ts && grep -q 'scripts/cam/orch-handoff.schema.json' src/vendor/_generated.ts]",
+        "cam init writes the new seeds: materializing the embedded templates into a temp project dir produces scripts/cam/patterns.md and scripts/cam/orch-handoff.schema.json. [oracle: bun test]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "New files: templates/scripts/cam/patterns.md (STUB: keep the generic '# Codebase Patterns' header + one routing-note sentence modeled on the live header prose, but DROP every cam-cli-specific bullet -- the live file is ~600 lines of cam-cli patterns and copying it would pollute every downstream project; a fresh project starts near-empty), templates/scripts/cam/orch-handoff.schema.json (copy live scripts/cam/orch-handoff.schema.json verbatim, same as handoff.schema.json seed parity), src/vendor/_generated.ts (regen via `bun run embed-vendor`). MECHANISM (verified): src/templates/embedded.ts `materializeTemplates(cwd)` iterates `templatesContents` and routes any `scripts/cam/<x>` key to `<cwd>/scripts/cam/<x>`; setup.ts `copyTemplates` calls it. No manual manifest wiring is needed -- new files under templates/scripts/cam/ auto-flow once embedded. The init-write test can call materializeTemplates into a temp dir (see existing test/templates/*.test.ts for patterns). orch-handoff.schema.json is doc-only at runtime (handoff.ts references it in a comment; validation is code-based), so this seed is parity/consistency, not functional. Story touches templates/ -> must run `bun run embed-vendor` and pass embed-vendor:check."
+    }
+  ]
+}
