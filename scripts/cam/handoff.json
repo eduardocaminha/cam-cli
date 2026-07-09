@@ -1,25 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Best-effort patterns archive on the --cycle-close path"
+    "id": "US-004",
+    "title": "Retrofit 2026-06 build-notes markers + document marking convention"
   },
   "branchName": "cam/issue-226",
   "timestamp": "2026-07-09T00:00:00.000Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "test/commands/patterns-cli.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/cam/patterns.md",
+    "scripts/cam/CLAUDE.md",
+    "templates/scripts/cam/CLAUDE.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 wired dispatchJournal's --cycle-close branch (index.ts) to auto-invoke a new patternsArchiveFn dep on JournalDispatchDeps, defaulting to the already-existing defaultPatternsArchiveFn (the 'cam patterns archive' dispatcher's own production default, reused via function-declaration hoisting -- see the CAM-226 patterns.md bullet). Ordering: journal archiveFn best-effort check -> patternsArchiveFn best-effort check -> armMarker() -> CAM_ORCH_HANDOFF_DUE; both archive checks are wrapped in their own try/catch and only printWarning on failure, never change dispatchJournal's exit code. Tests live in test/commands/patterns-cli.test.ts (new describe block 'dispatchJournal --cycle-close auto-invokes patternsArchiveFn (US-003)'), not journal-append.test.ts, since the story's oracle pinned that file. US-004 (retrofit 2026-06 build-notes markers + document marking convention) needs: (1) the exact RESOLVED_MARKER_RE regex from src/commands/patterns-archive.ts (/\\[resolved \\d{4}-\\d{2}\\]/, exported) to retrofit `[resolved 2026-06]` markers onto already-resolved bullets dated 2026-06 in scripts/cam/patterns.md, and (2) a short documented marking convention (a preamble line in patterns.md or a CLAUDE.md note) so future contributors/agents know how to hand-mark a bullet resolved. Read patterns.md in full for US-004 (it is the retrofit target) rather than grepping a subsection."
+  "nextStoryContext": "US-004 retrofitted the 5 already-identified one-time 2026-06 build-notes bullets in scripts/cam/patterns.md (ink-testing-library keypress simulation, tmux window-resized resize-pane -x clamp, ink-testing-library setState re-render timing, chalk.level/ANSI in ink-testing-library, Ink 7 ESC pending-buffer) with the `- [resolved 2026-06] **title** ...` marker (marker immediately after the leading `- `, matching src/commands/patterns-archive.ts's exported RESOLVED_MARKER_RE = /\\[resolved \\d{4}-\\d{2}\\]/ and the oracle's `^- \\[resolved 2026-06\\]` anchor). Durable invariants (Bun runtime, permission-mode, claude -p forbidden, noUncheckedIndexedAccess, Ink success/failure glyph, single-hub dispatch, sidecar-supervisor, plus other non-2026-06 bullets like the CAM-186 bun-version skip and the CAM-201 retirement note) were left unmarked by design. Documented the marking convention in BOTH scripts/cam/CLAUDE.md (added under 'Knowledge-Layer Routing', after the Location convention paragraph) and templates/scripts/cam/CLAUDE.md (added under 'Codebase Patterns (durable wisdom)', since the template copy has no Knowledge-Layer Routing section at all -- it is a generic placeholder-driven template for downstream `cam init` projects, not a byte-identical mirror; confirmed via diff before editing, consistent with the CAM-123 'cam dual-copy is per-file' pattern). Re-ran `bun run embed-vendor` to regenerate src/vendor/_generated.ts and confirmed embed-vendor:check is clean. This story did NOT run `cam patterns archive` itself (that command already exists from US-001/US-002/US-003 of this same PRD); the next real archive run (manual `cam patterns archive` invocation, or the best-effort --cycle-close auto-invoke wired in US-003) will now have real marked content to move for the first time. No further stories are known to remain in this PRD as of this handoff; if prd.json shows none with passes:false (excluding requires:operator), the next implementer should emit PRD_COMPLETE immediately per the standard selection query."
   ,
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure CLI-dispatch wiring in index.ts (best-effort side-effect call ordering, injectable deps, printWarning) inside the pre-existing dispatchJournal function; no external library surface was exercised or changed."
+      "summary": "Pure markdown retrofit (patterns.md marker prefixes) and documentation addition (CLAUDE.md marking-convention paragraph, both copies) plus embed-vendor regeneration; no external library API was exercised or changed."
     }
   ]
 }
