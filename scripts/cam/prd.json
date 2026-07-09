@@ -1,0 +1,59 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-240",
+  "description": "Make the orchestrator frontmatter allowlist runtime-binding by spawning the root persona under `claude --agent`, reconciling the tools list to real runtime usage, and folding boot-imperatives + meta_loop-aware boot into the agent body.",
+  "issueNumber": 240,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "claude-code (subagents / --agent frontmatter)",
+      "url": "https://code.claude.com/docs/en/sub-agents",
+      "version": "current",
+      "fetchedAt": "2026-07-09T00:00:00.000Z",
+      "summary": "Confirms three correctness points for this PRD: (1) an agent running as the main thread via `claude --agent` spawns subagents using the `Agent` tool, and 'If Agent is omitted from the tools list entirely, the agent can't spawn any subagents' -- so `Agent` (not `Task`) is the load-bearing grant; `Task(...)` works only as a legacy alias (renamed to Agent in v2.1.63). (2) `tools:` should NOT list `Skill` to preload skills -- 'To preload Skills into context, use the skills field rather than listing Skill here'; a `Skill` grant only governs runtime skill invocation, which this orchestrator does not do (it dispatches /cam-* via SlashCommand). (3) `disallowedTools` denies tools from the inherited/specified set, and under a `bypassPermissions` parent the mode takes precedence -- so denial of Edit is enforced at runtime once --agent binds the frontmatter.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Reconcile orchestrator tools list to real runtime usage and fold boot-imperatives + meta_loop-aware boot into the agent body",
+      "description": "As the cam maintainer, I need the subagent-orchestrator prompt (both copies) to grant exactly the tools the orchestrator actually uses at runtime and to carry its boot-imperatives + meta_loop-aware greeting in the agent body, so that when CAM-240 flips the root persona to `claude --agent` (US-002) the now-binding frontmatter neither bricks delegation nor mis-grants unused tools, and boot still works without a separate bootstrap prompt file.",
+      "acceptanceCriteria": [
+        "In BOTH copies (.claude/agents/subagent-orchestrator.md and templates/agents/subagent-orchestrator.md) the `tools:` list includes `Agent` (the load-bearing grant for main-thread subagent spawning under --agent, per the consulted docs: 'If Agent is omitted from the tools list entirely, the agent can't spawn any subagents'), alongside Read, Glob, Grep, Bash, WebFetch, SlashCommand, and Write. [oracle: grep -q '^  - Agent' .claude/agents/subagent-orchestrator.md && grep -q '^  - Agent' templates/agents/subagent-orchestrator.md]",
+        "`Skill` is NOT listed under `tools:` in either copy, and no `skills:` frontmatter field is added: the orchestrator body dispatches /cam-* via the SlashCommand tool and invokes zero skills via the Skill tool, and the docs direct skill preloading (if ever needed) to a `skills:` field rather than a `Skill` tools grant. [oracle: bash -c '! grep -qE \"^  - Skill$\" .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md']",
+        "`disallowedTools:` in both copies retains exactly Edit, NotebookEdit, and AskUserQuestion (unchanged). [oracle: grep -q 'Edit' ...; grep -q 'NotebookEdit' ...; grep -q 'AskUserQuestion' ... in both files]",
+        "The agent body contains a Boot context section carrying the boot-imperatives so they execute under --agent without a separate bootstrap prompt file: create the readiness marker via Bash (`: > .claude/.cam-orch-ready`), read `$CAM_ORCH_REHYDRATE` for rehydrate-vs-cold-boot, perform the boot context reads (CLAUDE.md, project.toml, journal.md tail, prd.json, git state), derive the backlog via `cam issue list`, then greet. [oracle: grep -q '.cam-orch-ready' .claude/agents/subagent-orchestrator.md && grep -q 'CAM_ORCH_REHYDRATE' .claude/agents/subagent-orchestrator.md]",
+        "The body Boot context is meta_loop-aware and describes all three modes consistently: under `[loop] meta_loop = auto` the boot announces autonomous mode and does NOT end with 'What would you like to do?'; under `off` (default) and `observe` it greets and asks (current behavior). [oracle: grep -qi 'meta_loop' .claude/agents/subagent-orchestrator.md]",
+        "Vendor drift check passes (re-embed applied via `bun run embed-vendor`). [oracle: bun run embed-vendor:check]",
+        "The orchestrator frontmatter still passes the structural checker. [oracle: bun vendor/check-agent-frontmatter.ts .claude/agents/subagent-orchestrator.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/agents/subagent-orchestrator.md, templates/agents/subagent-orchestrator.md, src/vendor/_generated.ts (regenerated, do not hand-edit). Edit order per issue gotcha: CAM-225 -> CAM-227 (both shipped) -> CAM-240; the frontmatter already lists Write in tools (CAM-227). AUDITOR CORRECTIONS APPLIED: (a) require `Agent` specifically, not `Task|Agent` -- docs say `Agent` is the valid main-thread tools entry and the load-bearing spawn grant; `Task` is only a legacy alias and may be additionally listed but must NOT stand alone. (b) DROP `Skill` from the enumerated list in issue AC#1: the runtime audit (grep of the body) shows /cam-* dispatch goes through SlashCommand and the reviewer/planner/auditor subagents are spawned via the Agent tool, with zero Skill-tool invocations, so `Skill` is not a tool the orchestrator 'actually uses'; per docs, preloading (not needed here) would use `skills:`. GOTCHA: dual-copy is per-file and NOT byte-identical (memory: cam-dual-copy-is-per-file); diff both copies before re-embedding. GOTCHA: embed-vendor:check is a required gate because templates/ + vendor/ are touched. The boot-imperatives currently live in run.ts buildOrchestratorBootPrompt (run.ts:155-190); this story moves their canonical home into the body so US-002 can send only a minimal nudge. Keep the existing note (from CAM-227) that documents the tools; once --agent binds them (US-002) update any advisory-only wording. RUNTIME-ENFORCEMENT CAVEAT: flipping to --agent (US-002) makes this allowlist runtime-binding; that runtime behavior is UNVERIFIED-IN-CI (CAM-42: the autonomous pipeline cannot boot an authenticated interactive claude TUI) and is gated on the operator live-validation ceremony filed as CAM-253. This automated story must NOT be treated as satisfying issue AC#5."
+    },
+    {
+      "id": "US-002",
+      "title": "Spawn the orchestrator root persona under `claude --agent` with a meta_loop-aware boot nudge",
+      "description": "As the cam maintainer, I need `cam run` (and the `cam init` setup handoff) to launch the orchestrator with `--agent subagent-orchestrator` plus a minimal meta_loop-aware boot nudge instead of catting the full prompt file, so that the frontmatter tools/disallowedTools allowlist becomes runtime-binding (orchestrator can delegate but can never Edit code) and the boot behaves correctly for all three meta_loop modes.",
+      "acceptanceCriteria": [
+        "buildOrchestratorPaneCommand's inner claude invocation is `claude --permission-mode bypassPermissions --session-id \"$sid\" --model <model> --agent subagent-orchestrator <boot-nudge>`, launching the frontmatter-defined persona instead of catting the full prompt file as the first user message. [oracle: grep -q -- '--agent subagent-orchestrator' src/commands/run.ts]",
+        "The respawn wrapper is otherwise unchanged: the bounded while-loop, `export CAM_ORCH_REHYDRATE=<consumed>`, `uuidgen | tr 'A-Z' 'a-z'` lowercasing, the pid marker write, the handoff consume/rename to .consumed.json, and the teardown (rm state/ready/pid + kill-session) are all preserved. [oracle: bun test test/run.test.ts]",
+        "buildOrchestratorBootPrompt reads readMetaLoop() and is meta_loop-aware: under `auto` it announces autonomous mode and omits 'What would you like to do?'; under `off` and `observe` it greets and asks. [oracle: bun test test/run.test.ts]",
+        "A unit test asserts the assembled orchestrator pane command contains `--agent subagent-orchestrator` and that the wrapper structure (while-loop, rehydrate export, uuid lowercasing, pid marker, teardown) is intact. [oracle: bun test test/run.test.ts]",
+        "The `cam init` setup handoff (setup.ts handoff() orchestrator split) also spawns with `--agent subagent-orchestrator`, since buildOrchestratorBootPrompt is now a minimal nudge and the boot-imperatives live only in the auto-loaded agent body; leaving this path on the no-agent cat would break the fresh-init boot. [oracle: grep -q -- '--agent subagent-orchestrator' src/commands/setup.ts]",
+        "No `--permission-mode` CLI flag is added to any subcommand; `bypassPermissions` stays hardcoded in the wrapper (2026-06-06 macOS amfid lesson). [oracle: bun test test/no-permission-mode-flag.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/commands/run.ts (buildOrchestratorPaneCommand ~L242-297, buildOrchestratorBootPrompt ~L155-190), src/commands/setup.ts (handoff() orchestrator split ~L440-445; do NOT touch the setup-agent spawn at ~L521, that is the config wizard, not the orchestrator), test/run.test.ts. readMetaLoop is in src/config/models.ts (returns 'off'|'observe'|'auto', fail-closed default 'off'). SCOPE NOTE: the issue Files list names only run.ts, but buildOrchestratorBootPrompt is shared with setup.ts's orchestrator handoff (setup.ts:515 writes the same prompt file); once the imperatives move to the body-only (US-001) and the nudge goes minimal, setup.ts MUST also switch to --agent or the fresh-init orchestrator boots with no system prompt. The issue description itself names setup.ts:443/520 as part of the same defect, so switching it is a necessary consequence, not scope creep. GOTCHA: keep the boot-nudge minimal but sufficient as the first user turn under --agent (the body auto-loads as the system prompt); the docs' `initialPrompt` frontmatter field is the model's notion of this first turn. Do NOT change the wrapper's env-rehydrate/uuid/pid/teardown logic (out of scope per issue). RUNTIME-ENFORCEMENT CAVEAT: this story is the change that makes the allowlist runtime-binding, but the runtime behavior (delegation still works; Edit denied; self-handoff/respawn rehydrates under --agent) is UNVERIFIED-IN-CI per CAM-42 and is gated on the operator live-validation ceremony filed as CAM-253. Do not represent typecheck/tests as satisfying issue AC#5; they exercise argv shape and meta_loop branching only, not a live authenticated --agent session."
+    }
+  ]
+}
