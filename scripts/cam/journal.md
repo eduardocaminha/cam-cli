@@ -665,3 +665,15 @@ Each entry follows this template:
 - **Issue**: CAM-223
 - **Outcome**: shipped (PR #167, v0.94.0)
 - **Summary**: Born from the operator-driven 2026-07-08 prompt/context audit (8 Explore agents over all cam agents vs code). Implementer was reading patterns.md (292KB) in full every story (~85% of an ~86k-token bill) and planner read patterns+journal (~92% of ~128k/round). Shipped: curated invariants block in the auto-loaded scripts/cam/CLAUDE.md (option A, operator grill), patterns.md demoted to grep-on-demand, planner dropped journal.md entirely, dead refs removed (AGENTS.md nonexistent, reviewer citing retired lessons.archive.md, CLAUDE.md double-load), both copies plus re-embed. Plan APPROVE round 1, 5/5 stories all 3900 tests green, review CLEAN round 1 with zero findings, ci-gated merge, fully autonomous post-spec. Same session also: accepted abandonment of CAM-99/103/130/184 (stage/status orthogonality decided, ADR + glossary written, integrity-gate issue specified), and filed the remaining audit slate as idea issues with embedded file:line evidence, identifiable by 'Origem: auditoria 2026-07-08'. Audit criticals still open ride that slate (orchestrator dispatch-protocol truth-up, auditor C.8 contradiction, implementer Step 5.5 schema-invalid example, template Write contradiction).
+
+## cam/pr-222-plannable-predicate-gate — CAM-222 shipped: two-part query-side plannability gate (isPlannable + cam issue list --json + spine guard + docs)
+
+- **Started**: 2026-07-09T01:35:10Z
+- **Closed**: 2026-07-09T02:12:48Z
+- **Branch**: cam/pr-222-plannable-predicate-gate
+- **Issue**: CAM-222
+- **Outcome**: shipped
+- **Summary**: Fully autonomous after the plan signal: plan APPROVE, 4/4 stories, review CLEAN round 1 (zero findings), ship ci-gated merged as PR #168, post-merge tag v0.95.0 + close clean. Closes the 2026-07-08 zombie-resurrection hole: a layered isPlannable(entry, backlog) predicate (specified+open core vs core+!blocked) is now the single source routing select/rank/plan/list; cam issue list --json emits {counts, plannable, byStage} (abandoned excluded from all three, counts open-only, shipped only with --all); a spine guard test bans inline stage-literal comparisons outside the canonical module; docs (orchestrator .claude/ + templates/ dual-copy + skill cam-issue) now mandate backlog derivation via the CLI, never raw grep of issues/*.json.
+- **Decisions**: stage and status remain orthogonal by design (abandonment preserves stage as history); integrity is enforced at the query layer, not by mutating zombie entries. Existing zombies (CAM-99/103/130/184) need no migration since abandoned already drops them from every output.
+- **Blockers encountered**: none
+- **Follow-ups**: Version skew: installed binary 0.93.0 lacks the new --json code path; rebuild+reinstall for --json parity. Operator directive: proceed to speccing the 2026-07-08 audit slate starting CAM-224.
