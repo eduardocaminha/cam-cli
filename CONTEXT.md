@@ -82,3 +82,6 @@ A durable, always-applicable project rule a worker must obey on every story (e.g
 
 **pattern**:
 A reusable codebase insight, library quirk, or gotcha recorded for future reference. Patterns are append-only reference material consulted on demand (grep by the subsystem a story touches), not loaded in full at story start.
+
+**cam/issue-<N> branch**:
+Nome de branch deterministico do cam, derivado em codigo a partir do numero do issue (prd.issueNumber), sem slug. Um unico nome por issue, no namespace cam/.
