@@ -57,13 +57,13 @@ Work through every section below. For every finding, record `severity` (critical
 ### B. Story atomicity
 
 4. Every story fits in one conversation turn (roughly 1-3 files or one well-scoped refactor)? Flag any story that looks like it hides 2+ features.
-5. Every story ordered by dependency (DB → server → client → tests → E2E)? Flag out-of-order stories that would fail on implementation.
+5. Every story ordered by dependency (types → core → surface → polish, the cam-cli ordering — this is a terminal CLI, not a web app, so there is no DB/server/client/E2E tier)? Flag out-of-order stories that would fail on implementation.
 6. Story IDs sequential (`US-001`, `US-002`...)? Flag gaps or duplicates.
 
 ### C. Acceptance criteria health
 
 7. Every story has typecheck and lint/test in acceptance criteria?
-8. Every UI-touching story has browser verification AND E2E test in acceptance criteria?
+8. Every UI/Ink-touching story is verified via `ink-testing-library` (render the component, assert on the actual screen output / glyph) in acceptance criteria? cam-cli is a terminal CLI with no browser, no server, and no database: end-to-end tests and any check that opens a browser are never applicable to it — flag any story that demands either. A genuinely interactive ceremony (e.g. a real TUI keypress that only a human can drive) is not solved by such a requirement; it must instead be tagged `requires: "operator"`.
 9. Every acceptance criterion **has an oracle** — a named verification method the implementer can run without ambiguity. The three accepted oracle kinds are:
    - **named-command**: a shell command or tool invocation whose exit-code or stdout decides pass/fail (e.g. `bun test`, `bun run typecheck`, `bun run embed-vendor:check`).
    - **file-assert**: a structural or content property of a named file (e.g. "file `foo.json` contains key `bar`", "embedded file includes phrase `has an oracle`").
